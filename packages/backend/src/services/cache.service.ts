@@ -1,0 +1,115 @@
+import { injectable, inject } from 'tsyringe';
+import { Redis } from 'ioredis';
+import { TOKENS } from '@/container.js';
+import { createChildLogger } from '@/lib/logger.js';
+
+const logger = createChildLogger('CacheService');
+
+export type RedisClient = Redis;
+
+export function createRedisClient(url: string): RedisClient {
+  const redis = new Redis(url, {
+    maxRetriesPerRequest: 3,
+    retryStrategy(times: number) {
+      const delay = Math.min(times * 50, 2000);
+      return delay;
+    },
+    lazyConnect: true,
+  });
+
+  redis.on('connect', () => {
+    logger.info('Connected to Redis');
+  });
+
+  redis.on('error', (error: Error) => {
+    logger.error('Redis connection error', { error: error.message });
+  });
+
+  redis.on('close', () => {
+    logger.warn('Redis connection closed');
+  });
+
+  redis.connect().catch((err: Error) => {
+    logger.error('Failed to connect to Redis', { error: err.message });
+  });
+
+  return redis;
+}
+
+@injectable()
+export class CacheService {
+  private readonly redis: RedisClient;
+
+  constructor(@inject(TOKENS.RedisClient) redis: RedisClient) {
+    this.redis = redis;
+  }
+
+  async get<T>(key: string): Promise<T | null> {
+    const value = await this.redis.get(key);
+    if (!value) return null;
+
+    try {
+      return JSON.parse(value) as T;
+    } catch {
+      return value as unknown as T;
+    }
+  }
+
+  async set<T>(key: string, value: T, ttlSeconds?: number): Promise<void> {
+    const serialized = typeof value === 'string' ? value : JSON.stringify(value);
+
+    if (ttlSeconds) {
+      await this.redis.setex(key, ttlSeconds, serialized);
+    } else {
+      await this.redis.set(key, serialized);
+    }
+  }
+
+  async delete(key: string): Promise<void> {
+    await this.redis.del(key);
+  }
+
+  async deletePattern(pattern: string): Promise<void> {
+    const keys = await this.redis.keys(pattern);
+    if (keys.length > 0) {
+      await this.redis.del(...keys);
+    }
+  }
+
+  async exists(key: string): Promise<boolean> {
+    const result = await this.redis.exists(key);
+    return result === 1;
+  }
+
+  async expire(key: string, ttlSeconds: number): Promise<void> {
+    await this.redis.expire(key, ttlSeconds);
+  }
+
+  async ttl(key: string): Promise<number> {
+    return this.redis.ttl(key);
+  }
+
+  async incr(key: string): Promise<number> {
+    return this.redis.incr(key);
+  }
+
+  async sadd(key: string, ...members: string[]): Promise<number> {
+    return this.redis.sadd(key, ...members);
+  }
+
+  async srem(key: string, ...members: string[]): Promise<number> {
+    return this.redis.srem(key, ...members);
+  }
+
+  async smembers(key: string): Promise<string[]> {
+    return this.redis.smembers(key);
+  }
+
+  async publish(channel: string, message: string): Promise<number> {
+    return this.redis.publish(channel, message);
+  }
+
+  getClient(): RedisClient {
+    return this.redis;
+  }
+}
