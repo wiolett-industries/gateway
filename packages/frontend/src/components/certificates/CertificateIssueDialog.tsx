@@ -1,0 +1,326 @@
+import { ChevronLeft, ChevronRight, Plus, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { api } from "@/services/api";
+import { useCAStore } from "@/stores/ca";
+import type { CertificateType, KeyAlgorithm, Template } from "@/types";
+
+interface CertificateIssueDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  caId?: string;
+}
+
+export function CertificateIssueDialog({
+  open,
+  onOpenChange,
+  caId,
+}: CertificateIssueDialogProps) {
+  const { cas } = useCAStore();
+  const [step, setStep] = useState(1);
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [isIssuing, setIsIssuing] = useState(false);
+
+  // Form state
+  const [selectedCAId, setSelectedCAId] = useState(caId || "");
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const [type, setType] = useState<CertificateType>("server");
+  const [commonName, setCommonName] = useState("");
+  const [organization, setOrganization] = useState("");
+  const [country, setCountry] = useState("");
+  const [validityDays, setValidityDays] = useState(365);
+  const [keyAlgorithm, setKeyAlgorithm] = useState<KeyAlgorithm>("EC-P256");
+  const [sans, setSans] = useState<string[]>([]);
+  const [sanInput, setSanInput] = useState("");
+
+  useEffect(() => {
+    if (open) {
+      api.listTemplates().then(({ data }) => setTemplates(data)).catch(() => {});
+      setStep(1);
+      setSelectedCAId(caId || "");
+      setSelectedTemplateId("");
+      setCommonName("");
+      setOrganization("");
+      setCountry("");
+      setSans([]);
+      setSanInput("");
+    }
+  }, [open, caId]);
+
+  const handleTemplateSelect = (templateId: string) => {
+    setSelectedTemplateId(templateId);
+    const template = templates.find((t) => t.id === templateId);
+    if (template) {
+      setType(template.type);
+      setKeyAlgorithm(template.keyAlgorithm);
+      setValidityDays(template.validityDays);
+    }
+  };
+
+  const addSAN = () => {
+    if (sanInput.trim() && !sans.includes(sanInput.trim())) {
+      setSans([...sans, sanInput.trim()]);
+      setSanInput("");
+    }
+  };
+
+  const removeSAN = (san: string) => {
+    setSans(sans.filter((s) => s !== san));
+  };
+
+  const handleIssue = async () => {
+    if (!selectedCAId) {
+      toast.error("Please select a CA");
+      return;
+    }
+    if (!commonName.trim()) {
+      toast.error("Common Name is required");
+      return;
+    }
+
+    setIsIssuing(true);
+    try {
+      const cert = await api.issueCertificate({
+        caId: selectedCAId,
+        templateId: selectedTemplateId || undefined,
+        type,
+        subject: {
+          commonName,
+          organization: organization || undefined,
+          country: country || undefined,
+        },
+        subjectAlternativeNames: sans.length > 0 ? sans : undefined,
+        validityDays,
+        keyAlgorithm,
+      });
+      toast.success(`Certificate issued for ${commonName}`);
+      onOpenChange(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to issue certificate");
+    } finally {
+      setIsIssuing(false);
+    }
+  };
+
+  const activeCAs = cas.filter((ca) => ca.status === "active");
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-xl">
+        <DialogHeader>
+          <DialogTitle>Issue Certificate</DialogTitle>
+          <DialogDescription>
+            Step {step} of 3 &mdash;{" "}
+            {step === 1 ? "Select CA & Template" : step === 2 ? "Subject Details" : "Review & Issue"}
+          </DialogDescription>
+        </DialogHeader>
+
+        {/* Step 1: CA & Template Selection */}
+        {step === 1 && (
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Issuing CA</label>
+              <select
+                value={selectedCAId}
+                onChange={(e) => setSelectedCAId(e.target.value)}
+                className="flex h-9 w-full border border-input bg-transparent px-3 text-sm"
+              >
+                <option value="">Select a CA...</option>
+                {activeCAs.map((ca) => (
+                  <option key={ca.id} value={ca.id}>{ca.name}</option>
+                ))}
+              </select>
+            </div>
+
+            {templates.length > 0 && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Template (optional)</label>
+                <select
+                  value={selectedTemplateId}
+                  onChange={(e) => handleTemplateSelect(e.target.value)}
+                  className="flex h-9 w-full border border-input bg-transparent px-3 text-sm"
+                >
+                  <option value="">No template</option>
+                  {templates.map((t) => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Certificate Type</label>
+                <select
+                  value={type}
+                  onChange={(e) => setType(e.target.value as CertificateType)}
+                  className="flex h-9 w-full border border-input bg-transparent px-3 text-sm"
+                >
+                  <option value="server">Server</option>
+                  <option value="client">Client</option>
+                  <option value="codesign">Code Signing</option>
+                  <option value="email">Email</option>
+                </select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Key Algorithm</label>
+                <select
+                  value={keyAlgorithm}
+                  onChange={(e) => setKeyAlgorithm(e.target.value as KeyAlgorithm)}
+                  className="flex h-9 w-full border border-input bg-transparent px-3 text-sm"
+                >
+                  <option value="RSA-2048">RSA-2048</option>
+                  <option value="RSA-4096">RSA-4096</option>
+                  <option value="EC-P256">EC-P256</option>
+                  <option value="EC-P384">EC-P384</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Step 2: Subject Details */}
+        {step === 2 && (
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Common Name (CN)</label>
+              <Input
+                value={commonName}
+                onChange={(e) => setCommonName(e.target.value)}
+                placeholder="e.g., api.example.com"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Organization (O)</label>
+                <Input
+                  value={organization}
+                  onChange={(e) => setOrganization(e.target.value)}
+                  placeholder="Optional"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Country (C)</label>
+                <Input
+                  value={country}
+                  onChange={(e) => setCountry(e.target.value)}
+                  placeholder="e.g., US"
+                  maxLength={2}
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Validity (days)</label>
+              <Input
+                type="number"
+                value={validityDays}
+                onChange={(e) => setValidityDays(parseInt(e.target.value) || 365)}
+                min={1}
+                max={3650}
+              />
+            </div>
+
+            {/* SANs */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Subject Alternative Names</label>
+              <div className="flex gap-2">
+                <Input
+                  value={sanInput}
+                  onChange={(e) => setSanInput(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addSAN())}
+                  placeholder="e.g., *.example.com or 192.168.1.1"
+                />
+                <Button variant="outline" size="icon" onClick={addSAN}>
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+              {sans.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-2">
+                  {sans.map((san) => (
+                    <Badge key={san} variant="secondary" className="gap-1">
+                      {san}
+                      <button onClick={() => removeSAN(san)}>
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Step 3: Review */}
+        {step === 3 && (
+          <div className="space-y-3 text-sm">
+            <div className="border border-border p-4 space-y-2">
+              <h3 className="font-semibold">Review</h3>
+              <div className="space-y-1">
+                <p><span className="text-muted-foreground">CA:</span> {activeCAs.find((c) => c.id === selectedCAId)?.name}</p>
+                <p><span className="text-muted-foreground">Type:</span> <span className="capitalize">{type}</span></p>
+                <p><span className="text-muted-foreground">Common Name:</span> {commonName}</p>
+                {organization && <p><span className="text-muted-foreground">Organization:</span> {organization}</p>}
+                {country && <p><span className="text-muted-foreground">Country:</span> {country}</p>}
+                <p><span className="text-muted-foreground">Key Algorithm:</span> {keyAlgorithm}</p>
+                <p><span className="text-muted-foreground">Validity:</span> {validityDays} days</p>
+                {sans.length > 0 && (
+                  <div>
+                    <span className="text-muted-foreground">SANs:</span>
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {sans.map((san) => (
+                        <Badge key={san} variant="secondary" className="text-xs">{san}</Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        <DialogFooter>
+          {step > 1 && (
+            <Button variant="outline" onClick={() => setStep(step - 1)}>
+              <ChevronLeft className="h-4 w-4" />
+              Back
+            </Button>
+          )}
+          <div className="flex-1" />
+          {step < 3 ? (
+            <Button
+              onClick={() => {
+                if (step === 1 && !selectedCAId) {
+                  toast.error("Please select a CA");
+                  return;
+                }
+                if (step === 2 && !commonName.trim()) {
+                  toast.error("Common Name is required");
+                  return;
+                }
+                setStep(step + 1);
+              }}
+            >
+              Next
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          ) : (
+            <Button onClick={handleIssue} disabled={isIssuing}>
+              {isIssuing ? "Issuing..." : "Issue Certificate"}
+            </Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}

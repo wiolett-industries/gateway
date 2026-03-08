@@ -1,0 +1,45 @@
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { ErrorBoundary } from "@/components/common/ErrorBoundary";
+import { DashboardLayout } from "@/components/layout/DashboardLayout";
+import { ThemeProvider } from "@/components/layout/ThemeProvider";
+import { LoginPage } from "@/pages/Login";
+import { AuthCallback } from "@/pages/AuthCallback";
+import { Dashboard } from "@/pages/Dashboard";
+import { CADetail } from "@/pages/CADetail";
+import { Certificates } from "@/pages/Certificates";
+import { CertificateDetail } from "@/pages/CertificateDetail";
+import { Templates } from "@/pages/Templates";
+import { AuditLog } from "@/pages/AuditLog";
+import { Settings } from "@/pages/Settings";
+import { AdminUsers } from "@/pages/AdminUsers";
+
+export default function App() {
+  return (
+    <ErrorBoundary>
+      <ThemeProvider>
+        <BrowserRouter>
+          <Routes>
+            {/* Public routes */}
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/callback" element={<AuthCallback />} />
+
+            {/* Protected routes */}
+            <Route element={<DashboardLayout />}>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/cas/:id" element={<CADetail />} />
+              <Route path="/certificates" element={<Certificates />} />
+              <Route path="/certificates/:id" element={<CertificateDetail />} />
+              <Route path="/templates" element={<Templates />} />
+              <Route path="/audit" element={<AuditLog />} />
+              <Route path="/settings" element={<Settings />} />
+              <Route path="/admin/users" element={<AdminUsers />} />
+            </Route>
+
+            {/* Fallback */}
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </BrowserRouter>
+      </ThemeProvider>
+    </ErrorBoundary>
+  );
+}
