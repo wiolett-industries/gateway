@@ -3,13 +3,11 @@ import {
   Copy,
   Download,
   MoreVertical,
-  RefreshCw,
   ShieldOff,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { toast } from "sonner";
-import { CertificateDetailView } from "@/components/certificates/CertificateDetailView";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -64,7 +62,9 @@ export function CertificateDetail() {
     if (!cert) return;
     if (!confirm("Are you sure you want to revoke this certificate?")) return;
     try {
-      const updated = await api.revokeCertificate(cert.id, { reason: "unspecified" });
+      await api.revokeCertificate(cert.id, "unspecified");
+      // Reload the certificate to get updated status
+      const updated = await api.getCertificate(cert.id);
       setCert(updated);
       toast.success("Certificate revoked");
     } catch (err) {
@@ -72,26 +72,15 @@ export function CertificateDetail() {
     }
   };
 
-  const handleRenew = async () => {
-    if (!cert) return;
-    try {
-      const renewed = await api.renewCertificate(cert.id);
-      setCert(renewed);
-      toast.success("Certificate renewed");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to renew");
-    }
-  };
-
   const handleDownload = async (format: "pem" | "der" | "pkcs12") => {
     if (!cert) return;
     try {
-      const blob = await api.downloadCertificate(cert.id, format);
+      const blob = await api.exportCertificate(cert.id, format);
       const ext = format === "pem" ? "pem" : format === "der" ? "der" : "p12";
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${cert.subject.commonName}.${ext}`;
+      a.download = `${cert.commonName}.${ext}`;
       a.click();
       URL.revokeObjectURL(url);
     } catch {
@@ -126,22 +115,16 @@ export function CertificateDetail() {
           <Award className="h-6 w-6" />
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold">{cert.subject.commonName}</h1>
+              <h1 className="text-2xl font-bold">{cert.commonName}</h1>
               {statusBadge(cert.status)}
             </div>
             <p className="text-sm text-muted-foreground">
-              {cert.type} certificate &middot; Issued by {cert.caName}
+              {cert.type} certificate &middot; Issuer: {cert.issuerDn || cert.caId}
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-          {hasRole("admin", "operator") && cert.status === "active" && (
-            <Button variant="outline" onClick={handleRenew}>
-              <RefreshCw className="h-4 w-4" />
-              Renew
-            </Button>
-          )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="icon">
@@ -169,9 +152,9 @@ export function CertificateDetail() {
                 <Copy className="h-4 w-4" />
                 Copy Serial Number
               </DropdownMenuItem>
-              {cert.pemCertificate && (
+              {cert.certificatePem && (
                 <DropdownMenuItem onClick={() => {
-                  navigator.clipboard.writeText(cert.pemCertificate!);
+                  navigator.clipboard.writeText(cert.certificatePem!);
                   toast.success("PEM copied to clipboard");
                 }}>
                   <Copy className="h-4 w-4" />
@@ -199,17 +182,15 @@ export function CertificateDetail() {
             <h2 className="font-semibold">Certificate Details</h2>
           </div>
           <div className="p-4 space-y-3">
-            <InfoRow label="Common Name" value={cert.subject.commonName} />
-            {cert.subject.organization && <InfoRow label="Organization" value={cert.subject.organization} />}
-            {cert.subject.country && <InfoRow label="Country" value={cert.subject.country} />}
+            <InfoRow label="Common Name" value={cert.commonName} />
+            {cert.subjectDn && <InfoRow label="Subject DN" value={cert.subjectDn} />}
+            {cert.issuerDn && <InfoRow label="Issuer DN" value={cert.issuerDn} />}
             <InfoRow label="Serial Number" value={formatSerialNumber(cert.serialNumber)} />
             <InfoRow label="Key Algorithm" value={cert.keyAlgorithm} />
-            <InfoRow label="Signature Algorithm" value={cert.signatureAlgorithm} />
             <InfoRow label="Valid From" value={formatDate(cert.notBefore)} />
             <InfoRow label="Valid Until" value={formatDate(cert.notAfter)} />
-            <InfoRow label="Issuing CA" value={cert.caName} />
-            {cert.templateName && <InfoRow label="Template" value={cert.templateName} />}
-            <InfoRow label="Issued By" value={cert.issuedBy} />
+            {cert.templateId && <InfoRow label="Template ID" value={cert.templateId} />}
+            <InfoRow label="Issued By" value={cert.issuedById || "-"} />
             {cert.revokedAt && (
               <>
                 <InfoRow label="Revoked At" value={formatDate(cert.revokedAt)} />
@@ -222,11 +203,11 @@ export function CertificateDetail() {
         {/* Side info */}
         <div className="space-y-4">
           {/* SANs */}
-          {cert.subjectAlternativeNames.length > 0 && (
+          {(cert.sans?.length ?? 0) > 0 && (
             <div className="border border-border bg-card p-4 space-y-2">
               <h3 className="font-semibold text-sm">Subject Alternative Names</h3>
               <div className="space-y-1">
-                {cert.subjectAlternativeNames.map((san, i) => (
+                {cert.sans.map((san, i) => (
                   <p key={i} className="text-sm font-mono text-muted-foreground">{san}</p>
                 ))}
               </div>
@@ -234,7 +215,7 @@ export function CertificateDetail() {
           )}
 
           {/* Key Usage */}
-          {cert.keyUsage.length > 0 && (
+          {(cert.keyUsage?.length ?? 0) > 0 && (
             <div className="border border-border bg-card p-4 space-y-2">
               <h3 className="font-semibold text-sm">Key Usage</h3>
               <div className="flex flex-wrap gap-1">
@@ -246,11 +227,11 @@ export function CertificateDetail() {
           )}
 
           {/* Extended Key Usage */}
-          {cert.extendedKeyUsage.length > 0 && (
+          {(cert.extKeyUsage?.length ?? 0) > 0 && (
             <div className="border border-border bg-card p-4 space-y-2">
               <h3 className="font-semibold text-sm">Extended Key Usage</h3>
               <div className="flex flex-wrap gap-1">
-                {cert.extendedKeyUsage.map((eku) => (
+                {cert.extKeyUsage.map((eku) => (
                   <Badge key={eku} variant="secondary" className="text-xs">{eku}</Badge>
                 ))}
               </div>
@@ -270,11 +251,6 @@ export function CertificateDetail() {
           </div>
         </div>
       </div>
-
-      {/* X.509 Decoder */}
-      {cert.pemCertificate && (
-        <CertificateDetailView pem={cert.pemCertificate} />
-      )}
     </div>
   );
 }

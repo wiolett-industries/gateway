@@ -12,7 +12,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useUIStore } from "@/stores/ui";
@@ -23,22 +22,18 @@ export function Settings() {
   const { user } = useAuthStore();
   const { theme, setTheme } = useUIStore();
   const [tokens, setTokens] = useState<ApiToken[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [newTokenName, setNewTokenName] = useState("");
-  const [newTokenScopes, setNewTokenScopes] = useState("read");
-  const [newTokenExpiry, setNewTokenExpiry] = useState(90);
+  const [newTokenPermission, setNewTokenPermission] = useState<"read" | "read-write">("read");
   const [createdSecret, setCreatedSecret] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
 
   const loadTokens = async () => {
     try {
-      const { data } = await api.listTokens();
-      setTokens(data);
+      const data = await api.listTokens();
+      setTokens(data || []);
     } catch {
       // Tokens might not be available
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -56,10 +51,9 @@ export function Settings() {
     try {
       const result = await api.createToken({
         name: newTokenName,
-        scopes: newTokenScopes.split(",").map((s) => s.trim()),
-        expiresInDays: newTokenExpiry,
+        permission: newTokenPermission,
       });
-      setCreatedSecret(result.secret);
+      setCreatedSecret(result.token);
       loadTokens();
       toast.success("API token created");
     } catch (err) {
@@ -95,7 +89,7 @@ export function Settings() {
         <div className="p-4 space-y-3">
           {user && (
             <>
-              <InfoRow label="Name" value={user.name} />
+              <InfoRow label="Name" value={user.name || "Not set"} />
               <InfoRow label="Email" value={user.email} />
               <InfoRow label="Role" value={user.role} />
             </>
@@ -133,8 +127,7 @@ export function Settings() {
           <h2 className="font-semibold">API Tokens</h2>
           <Button size="sm" onClick={() => {
             setNewTokenName("");
-            setNewTokenScopes("read");
-            setNewTokenExpiry(90);
+            setNewTokenPermission("read");
             setCreatedSecret(null);
             setCreateDialogOpen(true);
           }}>
@@ -152,18 +145,13 @@ export function Settings() {
                     <div>
                       <p className="text-sm font-medium">{token.name}</p>
                       <p className="text-xs text-muted-foreground">
-                        {token.prefix}... &middot;{" "}
-                        {token.expiresAt ? `Expires ${formatDate(token.expiresAt)}` : "No expiry"}
-                        {token.lastUsedAt && ` &middot; Last used ${formatDate(token.lastUsedAt)}`}
+                        {token.tokenPrefix}... &middot; Created {formatDate(token.createdAt)}
+                        {token.lastUsedAt && ` · Last used ${formatDate(token.lastUsedAt)}`}
                       </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <div className="flex gap-1">
-                      {token.scopes.map((scope) => (
-                        <Badge key={scope} variant="secondary" className="text-xs">{scope}</Badge>
-                      ))}
-                    </div>
+                    <Badge variant="secondary" className="text-xs">{token.permission}</Badge>
                     <Button
                       variant="ghost"
                       size="icon"
@@ -232,22 +220,15 @@ export function Settings() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Scopes (comma separated)</label>
-                  <Input
-                    value={newTokenScopes}
-                    onChange={(e) => setNewTokenScopes(e.target.value)}
-                    placeholder="read, write, admin"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Expires in (days)</label>
-                  <Input
-                    type="number"
-                    value={newTokenExpiry}
-                    onChange={(e) => setNewTokenExpiry(parseInt(e.target.value) || 90)}
-                    min={1}
-                    max={365}
-                  />
+                  <label className="text-sm font-medium">Permission</label>
+                  <select
+                    value={newTokenPermission}
+                    onChange={(e) => setNewTokenPermission(e.target.value as "read" | "read-write")}
+                    className="flex h-9 w-full border border-input bg-transparent px-3 text-sm"
+                  >
+                    <option value="read">Read only</option>
+                    <option value="read-write">Read &amp; Write</option>
+                  </select>
                 </div>
               </div>
               <DialogFooter>

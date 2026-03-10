@@ -5,7 +5,7 @@ export default defineConfig({
   out: './src/db/migrations',
   dialect: 'postgresql',
   dbCredentials: {
-    url: process.env.DATABASE_URL || 'postgres://dev:dev@localhost:5432/ca_manager',
+    url: process.env.DATABASE_URL || 'postgres://dev:dev@localhost:5433/ca_manager',
   },
   verbose: true,
   strict: true,

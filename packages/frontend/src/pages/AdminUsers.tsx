@@ -1,4 +1,4 @@
-import { MoreVertical, Shield, Trash2, Users } from "lucide-react";
+import { MoreVertical, Shield, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -8,14 +8,12 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import type { User, UserRole } from "@/types";
-import { formatDate } from "@/lib/utils";
 
 const roleBadge = (role: UserRole) => {
   switch (role) {
@@ -23,8 +21,6 @@ const roleBadge = (role: UserRole) => {
       return <Badge className="bg-destructive text-destructive-foreground">Admin</Badge>;
     case "operator":
       return <Badge className="bg-[color:var(--color-warning)] text-white">Operator</Badge>;
-    case "auditor":
-      return <Badge variant="secondary">Auditor</Badge>;
     case "viewer":
       return <Badge variant="secondary">Viewer</Badge>;
     default:
@@ -47,8 +43,8 @@ export function AdminUsers() {
 
   const loadUsers = async () => {
     try {
-      const { data } = await api.listUsers();
-      setUsers(data);
+      const data = await api.listUsers();
+      setUsers(data || []);
     } catch (err) {
       toast.error("Failed to load users");
     } finally {
@@ -67,17 +63,6 @@ export function AdminUsers() {
       loadUsers();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to update role");
-    }
-  };
-
-  const handleDelete = async (user: User) => {
-    if (!confirm(`Delete user "${user.name}"? This action cannot be undone.`)) return;
-    try {
-      await api.deleteUser(user.id);
-      toast.success("User deleted");
-      loadUsers();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to delete user");
     }
   };
 
@@ -111,7 +96,6 @@ export function AdminUsers() {
                 <tr className="border-b border-border text-left">
                   <th className="p-3 text-xs font-medium text-muted-foreground">User</th>
                   <th className="p-3 text-xs font-medium text-muted-foreground">Role</th>
-                  <th className="p-3 text-xs font-medium text-muted-foreground">Created</th>
                   <th className="p-3 text-xs font-medium text-muted-foreground w-12"></th>
                 </tr>
               </thead>
@@ -120,14 +104,11 @@ export function AdminUsers() {
                   <tr key={user.id} className="hover:bg-accent transition-colors">
                     <td className="p-3">
                       <div>
-                        <p className="text-sm font-medium">{user.name}</p>
+                        <p className="text-sm font-medium">{user.name || "Unnamed"}</p>
                         <p className="text-xs text-muted-foreground">{user.email}</p>
                       </div>
                     </td>
                     <td className="p-3">{roleBadge(user.role)}</td>
-                    <td className="p-3 text-sm text-muted-foreground">
-                      {formatDate(user.createdAt)}
-                    </td>
                     <td className="p-3">
                       {currentUser?.id !== user.id && (
                         <DropdownMenu>
@@ -145,21 +126,9 @@ export function AdminUsers() {
                               <Shield className="h-4 w-4" />
                               Set as Operator
                             </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleRoleChange(user.id, "auditor")}>
-                              <Shield className="h-4 w-4" />
-                              Set as Auditor
-                            </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => handleRoleChange(user.id, "viewer")}>
                               <Shield className="h-4 w-4" />
                               Set as Viewer
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              onClick={() => handleDelete(user)}
-                              className="text-destructive"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                              Delete User
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>

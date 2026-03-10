@@ -1,13 +1,12 @@
-import { ChevronLeft, ChevronRight, ScrollText, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, ScrollText } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
-import type { AuditLogEntry, PaginatedResponse } from "@/types";
+import type { AuditLogEntry } from "@/types";
 import { formatDateTime } from "@/lib/utils";
 
 const actionColors: Record<string, string> = {
@@ -42,15 +41,15 @@ export function AuditLog() {
     const load = async () => {
       setIsLoading(true);
       try {
-        const response = await api.listAuditLogs({
+        const response = await api.getAuditLog({
           page,
           limit: 50,
           action: actionFilter || undefined,
           resourceType: resourceTypeFilter || undefined,
         });
-        setEntries(response.data);
-        setTotalPages(response.totalPages);
-        setTotal(response.total);
+        setEntries(response.data || []);
+        setTotalPages(response.pagination?.totalPages ?? 1);
+        setTotal(response.pagination?.total ?? 0);
       } catch (err) {
         console.error("Failed to load audit logs:", err);
       } finally {
@@ -120,7 +119,6 @@ export function AuditLog() {
                 <tr className="border-b border-border text-left">
                   <th className="p-3 text-xs font-medium text-muted-foreground">Timestamp</th>
                   <th className="p-3 text-xs font-medium text-muted-foreground">Action</th>
-                  <th className="p-3 text-xs font-medium text-muted-foreground">Actor</th>
                   <th className="p-3 text-xs font-medium text-muted-foreground">Resource</th>
                   <th className="p-3 text-xs font-medium text-muted-foreground">IP Address</th>
                 </tr>
@@ -138,18 +136,12 @@ export function AuditLog() {
                     </td>
                     <td className="p-3">
                       <div>
-                        <p className="text-sm font-medium">{entry.actorName}</p>
-                        <p className="text-xs text-muted-foreground">{entry.actorEmail}</p>
-                      </div>
-                    </td>
-                    <td className="p-3">
-                      <div>
-                        <p className="text-sm">{entry.resourceName}</p>
+                        <p className="text-sm">{entry.resourceId || "-"}</p>
                         <p className="text-xs text-muted-foreground capitalize">{entry.resourceType}</p>
                       </div>
                     </td>
                     <td className="p-3 text-sm font-mono text-muted-foreground">
-                      {entry.ipAddress}
+                      {entry.ipAddress || "-"}
                     </td>
                   </tr>
                 ))}

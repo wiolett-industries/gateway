@@ -35,24 +35,20 @@ export function CertificateIssueDialog({
   // Form state
   const [selectedCAId, setSelectedCAId] = useState(caId || "");
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
-  const [type, setType] = useState<CertificateType>("server");
+  const [type, setType] = useState<CertificateType>("tls-server");
   const [commonName, setCommonName] = useState("");
-  const [organization, setOrganization] = useState("");
-  const [country, setCountry] = useState("");
   const [validityDays, setValidityDays] = useState(365);
-  const [keyAlgorithm, setKeyAlgorithm] = useState<KeyAlgorithm>("EC-P256");
+  const [keyAlgorithm, setKeyAlgorithm] = useState<KeyAlgorithm>("ecdsa-p256");
   const [sans, setSans] = useState<string[]>([]);
   const [sanInput, setSanInput] = useState("");
 
   useEffect(() => {
     if (open) {
-      api.listTemplates().then(({ data }) => setTemplates(data)).catch(() => {});
+      api.listTemplates().then((data) => setTemplates(data || [])).catch(() => {});
       setStep(1);
       setSelectedCAId(caId || "");
       setSelectedTemplateId("");
       setCommonName("");
-      setOrganization("");
-      setCountry("");
       setSans([]);
       setSanInput("");
     }
@@ -62,7 +58,7 @@ export function CertificateIssueDialog({
     setSelectedTemplateId(templateId);
     const template = templates.find((t) => t.id === templateId);
     if (template) {
-      setType(template.type);
+      setType(template.certType);
       setKeyAlgorithm(template.keyAlgorithm);
       setValidityDays(template.validityDays);
     }
@@ -91,16 +87,12 @@ export function CertificateIssueDialog({
 
     setIsIssuing(true);
     try {
-      const cert = await api.issueCertificate({
+      await api.issueCertificate({
         caId: selectedCAId,
         templateId: selectedTemplateId || undefined,
         type,
-        subject: {
-          commonName,
-          organization: organization || undefined,
-          country: country || undefined,
-        },
-        subjectAlternativeNames: sans.length > 0 ? sans : undefined,
+        commonName,
+        sans: sans.length > 0 ? sans : [],
         validityDays,
         keyAlgorithm,
       });
@@ -113,7 +105,7 @@ export function CertificateIssueDialog({
     }
   };
 
-  const activeCAs = cas.filter((ca) => ca.status === "active");
+  const activeCAs = (cas || []).filter((ca) => ca.status === "active");
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -138,7 +130,7 @@ export function CertificateIssueDialog({
               >
                 <option value="">Select a CA...</option>
                 {activeCAs.map((ca) => (
-                  <option key={ca.id} value={ca.id}>{ca.name}</option>
+                  <option key={ca.id} value={ca.id}>{ca.commonName}</option>
                 ))}
               </select>
             </div>
@@ -167,9 +159,9 @@ export function CertificateIssueDialog({
                   onChange={(e) => setType(e.target.value as CertificateType)}
                   className="flex h-9 w-full border border-input bg-transparent px-3 text-sm"
                 >
-                  <option value="server">Server</option>
-                  <option value="client">Client</option>
-                  <option value="codesign">Code Signing</option>
+                  <option value="tls-server">TLS Server</option>
+                  <option value="tls-client">TLS Client</option>
+                  <option value="code-signing">Code Signing</option>
                   <option value="email">Email</option>
                 </select>
               </div>
@@ -180,10 +172,10 @@ export function CertificateIssueDialog({
                   onChange={(e) => setKeyAlgorithm(e.target.value as KeyAlgorithm)}
                   className="flex h-9 w-full border border-input bg-transparent px-3 text-sm"
                 >
-                  <option value="RSA-2048">RSA-2048</option>
-                  <option value="RSA-4096">RSA-4096</option>
-                  <option value="EC-P256">EC-P256</option>
-                  <option value="EC-P384">EC-P384</option>
+                  <option value="rsa-2048">RSA-2048</option>
+                  <option value="rsa-4096">RSA-4096</option>
+                  <option value="ecdsa-p256">ECDSA-P256</option>
+                  <option value="ecdsa-p384">ECDSA-P384</option>
                 </select>
               </div>
             </div>
@@ -200,25 +192,6 @@ export function CertificateIssueDialog({
                 onChange={(e) => setCommonName(e.target.value)}
                 placeholder="e.g., api.example.com"
               />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Organization (O)</label>
-                <Input
-                  value={organization}
-                  onChange={(e) => setOrganization(e.target.value)}
-                  placeholder="Optional"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Country (C)</label>
-                <Input
-                  value={country}
-                  onChange={(e) => setCountry(e.target.value)}
-                  placeholder="e.g., US"
-                  maxLength={2}
-                />
-              </div>
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Validity (days)</label>
@@ -267,11 +240,9 @@ export function CertificateIssueDialog({
             <div className="border border-border p-4 space-y-2">
               <h3 className="font-semibold">Review</h3>
               <div className="space-y-1">
-                <p><span className="text-muted-foreground">CA:</span> {activeCAs.find((c) => c.id === selectedCAId)?.name}</p>
+                <p><span className="text-muted-foreground">CA:</span> {activeCAs.find((c) => c.id === selectedCAId)?.commonName}</p>
                 <p><span className="text-muted-foreground">Type:</span> <span className="capitalize">{type}</span></p>
                 <p><span className="text-muted-foreground">Common Name:</span> {commonName}</p>
-                {organization && <p><span className="text-muted-foreground">Organization:</span> {organization}</p>}
-                {country && <p><span className="text-muted-foreground">Country:</span> {country}</p>}
                 <p><span className="text-muted-foreground">Key Algorithm:</span> {keyAlgorithm}</p>
                 <p><span className="text-muted-foreground">Validity:</span> {validityDays} days</p>
                 {sans.length > 0 && (
