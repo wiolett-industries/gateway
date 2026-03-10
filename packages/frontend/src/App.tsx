@@ -19,11 +19,8 @@ export default function App() {
       <ThemeProvider>
         <BrowserRouter>
           <Routes>
-            {/* Public routes */}
             <Route path="/login" element={<LoginPage />} />
             <Route path="/callback" element={<AuthCallback />} />
-
-            {/* Protected routes */}
             <Route element={<DashboardLayout />}>
               <Route path="/" element={<Dashboard />} />
               <Route path="/cas/:id" element={<CADetail />} />
@@ -34,8 +31,6 @@ export default function App() {
               <Route path="/settings" element={<Settings />} />
               <Route path="/admin/users" element={<AdminUsers />} />
             </Route>
-
-            {/* Fallback */}
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>

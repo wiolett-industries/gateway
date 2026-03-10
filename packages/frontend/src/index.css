@@ -206,3 +206,7 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-muted-foreground);
 }
+
+@import "./css/animations.css";
+@import "./css/base.css";
+@import "./css/scrollbars.css";

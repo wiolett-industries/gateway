@@ -1,32 +1,13 @@
-import { MoreVertical, Shield, Users } from "lucide-react";
+import { Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import type { User, UserRole } from "@/types";
 
-const roleBadge = (role: UserRole) => {
-  switch (role) {
-    case "admin":
-      return <Badge className="bg-destructive text-destructive-foreground">Admin</Badge>;
-    case "operator":
-      return <Badge className="bg-[color:var(--color-warning)] text-white">Operator</Badge>;
-    case "viewer":
-      return <Badge variant="secondary">Viewer</Badge>;
-    default:
-      return <Badge variant="secondary">{role}</Badge>;
-  }
-};
+const ROLES: UserRole[] = ["admin", "operator", "viewer"];
 
 export function AdminUsers() {
   const navigate = useNavigate();
@@ -45,7 +26,7 @@ export function AdminUsers() {
     try {
       const data = await api.listUsers();
       setUsers(data || []);
-    } catch (err) {
+    } catch {
       toast.error("Failed to load users");
     } finally {
       setIsLoading(false);
@@ -72,7 +53,7 @@ export function AdminUsers() {
         <Skeleton className="h-8 w-48" />
         <div className="space-y-2">
           {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="h-16" />
+            <Skeleton key={i} className="h-14" />
           ))}
         </div>
       </div>
@@ -89,59 +70,72 @@ export function AdminUsers() {
 
       {/* Users table */}
       {users.length > 0 ? (
-        <div className="border border-border bg-card">
+        <div className="border border-border rounded-md bg-card overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-border text-left">
-                  <th className="p-3 text-xs font-medium text-muted-foreground">User</th>
-                  <th className="p-3 text-xs font-medium text-muted-foreground">Role</th>
-                  <th className="p-3 text-xs font-medium text-muted-foreground w-12"></th>
+                <tr className="border-b border-border text-left bg-muted/40">
+                  <th className="p-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">Name</th>
+                  <th className="p-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">Email</th>
+                  <th className="p-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">Role</th>
+                  <th className="p-3 text-xs font-medium text-muted-foreground uppercase tracking-wider w-20">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {users.map((user) => (
-                  <tr key={user.id} className="hover:bg-accent transition-colors">
-                    <td className="p-3">
-                      <div>
-                        <p className="text-sm font-medium">{user.name || "Unnamed"}</p>
-                        <p className="text-xs text-muted-foreground">{user.email}</p>
-                      </div>
-                    </td>
-                    <td className="p-3">{roleBadge(user.role)}</td>
-                    <td className="p-3">
-                      {currentUser?.id !== user.id && (
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
-                              <MoreVertical className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => handleRoleChange(user.id, "admin")}>
-                              <Shield className="h-4 w-4" />
-                              Set as Admin
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleRoleChange(user.id, "operator")}>
-                              <Shield className="h-4 w-4" />
-                              Set as Operator
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleRoleChange(user.id, "viewer")}>
-                              <Shield className="h-4 w-4" />
-                              Set as Viewer
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                {users.map((user) => {
+                  const isSelf = currentUser?.id === user.id;
+                  return (
+                    <tr
+                      key={user.id}
+                      className={
+                        isSelf
+                          ? "bg-primary/5 border-l-2 border-l-primary"
+                          : "hover:bg-accent transition-colors"
+                      }
+                    >
+                      <td className="p-3 text-sm font-medium">
+                        <span className="flex items-center gap-2">
+                          {user.name || user.email}
+                          {isSelf && (
+                            <span className="text-xs text-muted-foreground">(you)</span>
+                          )}
+                        </span>
+                      </td>
+                      <td className="p-3 text-sm text-muted-foreground">{user.email}</td>
+                      <td className="p-3">
+                        <select
+                          value={user.role}
+                          disabled={isSelf}
+                          onChange={(e) => handleRoleChange(user.id, e.target.value as UserRole)}
+                          className={
+                            "rounded-md border border-input bg-background px-2 py-1 text-sm " +
+                            "focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 " +
+                            (isSelf ? "opacity-50 cursor-not-allowed" : "cursor-pointer")
+                          }
+                        >
+                          {ROLES.map((role) => (
+                            <option key={role} value={role}>
+                              {role.charAt(0).toUpperCase() + role.slice(1)}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="p-3 text-sm text-muted-foreground">
+                        {isSelf ? (
+                          <span className="text-xs italic">N/A</span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">Change role</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         </div>
       ) : (
-        <div className="flex flex-col items-center gap-2 py-16 border border-border bg-card">
+        <div className="flex flex-col items-center gap-2 py-16 border border-border rounded-md bg-card">
           <Users className="h-12 w-12 text-muted-foreground" />
           <p className="text-muted-foreground">No users found</p>
         </div>

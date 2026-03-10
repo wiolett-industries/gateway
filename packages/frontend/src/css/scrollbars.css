@@ -1,0 +1,4 @@
+.dashboard-scrollbar ::-webkit-scrollbar, .dashboard-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+.dashboard-scrollbar ::-webkit-scrollbar-track, .dashboard-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.dashboard-scrollbar ::-webkit-scrollbar-thumb, .dashboard-scrollbar::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 0; }
+.dashboard-scrollbar ::-webkit-scrollbar-thumb:hover, .dashboard-scrollbar::-webkit-scrollbar-thumb:hover { background: var(--color-muted-foreground); }

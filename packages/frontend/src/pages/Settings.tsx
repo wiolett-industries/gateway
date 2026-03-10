@@ -91,7 +91,7 @@ export function Settings() {
             <>
               <InfoRow label="Name" value={user.name || "Not set"} />
               <InfoRow label="Email" value={user.email} />
-              <InfoRow label="Role" value={user.role} />
+              <InfoRow label="Role" value={user.role} capitalize />
             </>
           )}
         </div>
@@ -103,19 +103,21 @@ export function Settings() {
           <h2 className="font-semibold">Appearance</h2>
         </div>
         <div className="p-4">
-          <div className="flex gap-2">
+          <div className="flex gap-0 border border-border w-fit">
             {(["light", "dark", "system"] as const).map((t) => (
-              <Button
+              <button
                 key={t}
-                variant={theme === t ? "default" : "outline"}
-                size="sm"
                 onClick={() => setTheme(t)}
-                className="capitalize"
+                className={`flex items-center gap-2 px-4 py-2 text-sm capitalize transition-colors ${
+                  theme === t
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-transparent text-muted-foreground hover:text-foreground hover:bg-accent"
+                }`}
               >
-                {t === "light" && <Sun className="h-4 w-4" />}
-                {t === "dark" && <Moon className="h-4 w-4" />}
+                {t === "light" && <Sun className="h-3.5 w-3.5" />}
+                {t === "dark" && <Moon className="h-3.5 w-3.5" />}
                 {t}
-              </Button>
+              </button>
             ))}
           </div>
         </div>
@@ -245,11 +247,11 @@ export function Settings() {
   );
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
+function InfoRow({ label, value, capitalize = false }: { label: string; value: string; capitalize?: boolean }) {
   return (
     <div className="flex items-start justify-between gap-4">
       <span className="text-sm text-muted-foreground">{label}</span>
-      <span className="text-sm font-medium capitalize">{value}</span>
+      <span className={`text-sm font-medium ${capitalize ? "capitalize" : ""}`}>{value}</span>
     </div>
   );
 }
