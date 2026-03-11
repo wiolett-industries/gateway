@@ -1,6 +1,7 @@
 import { Copy, Key, Moon, Plus, Sun, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { PageTransition } from "@/components/common/PageTransition";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -75,6 +76,7 @@ export function Settings() {
   };
 
   return (
+    <PageTransition>
     <div className="h-full overflow-y-auto p-6 space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Settings</h1>
@@ -226,7 +228,7 @@ export function Settings() {
                   <select
                     value={newTokenPermission}
                     onChange={(e) => setNewTokenPermission(e.target.value as "read" | "read-write")}
-                    className="flex h-9 w-full border border-input bg-transparent px-3 text-sm"
+                    className="h-9 w-full text-sm"
                   >
                     <option value="read">Read only</option>
                     <option value="read-write">Read &amp; Write</option>
@@ -244,6 +246,7 @@ export function Settings() {
         </DialogContent>
       </Dialog>
     </div>
+    </PageTransition>
   );
 }
 

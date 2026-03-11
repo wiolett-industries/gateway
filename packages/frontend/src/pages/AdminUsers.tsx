@@ -2,6 +2,7 @@ import { Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { PageTransition } from "@/components/common/PageTransition";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
@@ -61,6 +62,7 @@ export function AdminUsers() {
   }
 
   return (
+    <PageTransition>
     <div className="h-full overflow-y-auto p-6 space-y-4">
       {/* Header */}
       <div>
@@ -108,8 +110,7 @@ export function AdminUsers() {
                           disabled={isSelf}
                           onChange={(e) => handleRoleChange(user.id, e.target.value as UserRole)}
                           className={
-                            "rounded-md border border-input bg-background px-2 py-1 text-sm " +
-                            "focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 " +
+                            "h-9 w-full text-sm " +
                             (isSelf ? "opacity-50 cursor-not-allowed" : "cursor-pointer")
                           }
                         >
@@ -141,5 +142,6 @@ export function AdminUsers() {
         </div>
       )}
     </div>
+    </PageTransition>
   );
 }

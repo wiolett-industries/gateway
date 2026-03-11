@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { PageTransition } from "@/components/common/PageTransition";
 import { CATree } from "@/components/ca/CATree";
 import { CACreateDialog } from "@/components/ca/CACreateDialog";
 import { Badge } from "@/components/ui/badge";
@@ -91,6 +92,7 @@ export function Dashboard() {
   }
 
   return (
+    <PageTransition>
     <div className="h-full overflow-y-auto p-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -160,5 +162,6 @@ export function Dashboard() {
 
       <CACreateDialog open={createDialogOpen} onOpenChange={setCreateDialogOpen} />
     </div>
+    </PageTransition>
   );
 }

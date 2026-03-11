@@ -1,6 +1,7 @@
 import { ChevronLeft, ChevronRight, ScrollText } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { PageTransition } from "@/components/common/PageTransition";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -61,6 +62,7 @@ export function AuditLog() {
   }, [page, actionFilter, resourceTypeFilter]);
 
   return (
+    <PageTransition>
     <div className="h-full overflow-y-auto p-6 space-y-4">
       {/* Header */}
       <div>
@@ -73,7 +75,7 @@ export function AuditLog() {
         <select
           value={actionFilter}
           onChange={(e) => { setActionFilter(e.target.value); setPage(1); }}
-          className="h-9 border border-input bg-transparent px-3 text-sm"
+          className="h-9 w-full text-sm"
         >
           <option value="">All actions</option>
           <option value="ca.create">CA Create</option>
@@ -93,7 +95,7 @@ export function AuditLog() {
         <select
           value={resourceTypeFilter}
           onChange={(e) => { setResourceTypeFilter(e.target.value); setPage(1); }}
-          className="h-9 border border-input bg-transparent px-3 text-sm"
+          className="h-9 w-full text-sm"
         >
           <option value="">All resources</option>
           <option value="ca">Certificate Authority</option>
@@ -184,5 +186,6 @@ export function AuditLog() {
         </div>
       )}
     </div>
+    </PageTransition>
   );
 }

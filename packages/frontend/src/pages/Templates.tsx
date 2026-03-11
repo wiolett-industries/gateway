@@ -1,6 +1,7 @@
 import { FileText, MoreVertical, Pencil, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { PageTransition } from "@/components/common/PageTransition";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -138,6 +139,7 @@ export function Templates() {
   }
 
   return (
+    <PageTransition>
     <div className="h-full overflow-y-auto p-6 space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -234,7 +236,7 @@ export function Templates() {
                 <select
                   value={certType}
                   onChange={(e) => setCertType(e.target.value as CertificateType)}
-                  className="flex h-9 w-full border border-input bg-transparent px-3 text-sm"
+                  className="h-9 w-full text-sm"
                 >
                   <option value="tls-server">TLS Server</option>
                   <option value="tls-client">TLS Client</option>
@@ -258,7 +260,7 @@ export function Templates() {
               <select
                 value={keyAlgorithm}
                 onChange={(e) => setKeyAlgorithm(e.target.value as KeyAlgorithm)}
-                className="flex h-9 w-full border border-input bg-transparent px-3 text-sm"
+                className="h-9 w-full text-sm"
               >
                 <option value="rsa-2048">RSA-2048</option>
                 <option value="rsa-4096">RSA-4096</option>
@@ -277,5 +279,6 @@ export function Templates() {
         </DialogContent>
       </Dialog>
     </div>
+    </PageTransition>
   );
 }
