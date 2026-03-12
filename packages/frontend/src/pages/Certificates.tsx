@@ -15,6 +15,7 @@ import { CertificateIssueDialog } from "@/components/certificates/CertificateIss
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAuthStore } from "@/stores/auth";
 import { useCAStore } from "@/stores/ca";
 import { useCertificatesStore } from "@/stores/certificates";
@@ -133,38 +134,35 @@ export function Certificates() {
             >
               <div className="flex flex-wrap gap-3 border border-border bg-card p-3 mt-2">
                 <div className="w-40">
-                  <select
-                    value={filters.status}
-                    onChange={(e) => setFilters({ status: e.target.value as CertificateStatus | "all" })}
-                    className="h-9 w-full text-sm"
-                  >
-                    {statusOptions.map((opt) => (
-                      <option key={opt.value} value={opt.value}>{opt.label}</option>
-                    ))}
-                  </select>
+                  <Select value={filters.status} onValueChange={(v) => setFilters({ status: v as CertificateStatus | "all" })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {statusOptions.map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="w-40">
-                  <select
-                    value={filters.type}
-                    onChange={(e) => setFilters({ type: e.target.value as CertificateType | "all" })}
-                    className="h-9 w-full text-sm"
-                  >
-                    {typeOptions.map((opt) => (
-                      <option key={opt.value} value={opt.value}>{opt.label}</option>
-                    ))}
-                  </select>
+                  <Select value={filters.type} onValueChange={(v) => setFilters({ type: v as CertificateType | "all" })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {typeOptions.map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="w-48">
-                  <select
-                    value={filters.caId}
-                    onChange={(e) => setFilters({ caId: e.target.value })}
-                    className="h-9 w-full text-sm"
-                  >
-                    <option value="all">All CAs</option>
-                    {(cas || []).map((ca) => (
-                      <option key={ca.id} value={ca.id}>{ca.commonName}</option>
-                    ))}
-                  </select>
+                  <Select value={filters.caId} onValueChange={(v) => setFilters({ caId: v })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All CAs</SelectItem>
+                      {(cas || []).map((ca) => (
+                        <SelectItem key={ca.id} value={ca.id}>{ca.commonName}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
             </motion.div>

@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { api } from "@/services/api";
 import { useCAStore } from "@/stores/ca";
 import type { CertificateType, KeyAlgorithm, Template } from "@/types";
@@ -123,60 +124,55 @@ export function CertificateIssueDialog({
           <div className="space-y-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">Issuing CA</label>
-              <select
-                value={selectedCAId}
-                onChange={(e) => setSelectedCAId(e.target.value)}
-                className="h-9 w-full text-sm"
-              >
-                <option value="">Select a CA...</option>
-                {activeCAs.map((ca) => (
-                  <option key={ca.id} value={ca.id}>{ca.commonName}</option>
-                ))}
-              </select>
+              <Select value={selectedCAId || undefined} onValueChange={(v) => setSelectedCAId(v)}>
+                <SelectTrigger><SelectValue placeholder="Select a CA..." /></SelectTrigger>
+                <SelectContent>
+                  {activeCAs.map((ca) => (
+                    <SelectItem key={ca.id} value={ca.id}>{ca.commonName}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             {templates.length > 0 && (
               <div className="space-y-2">
                 <label className="text-sm font-medium">Template (optional)</label>
-                <select
-                  value={selectedTemplateId}
-                  onChange={(e) => handleTemplateSelect(e.target.value)}
-                  className="h-9 w-full text-sm"
-                >
-                  <option value="">No template</option>
-                  {templates.map((t) => (
-                    <option key={t.id} value={t.id}>{t.name}</option>
-                  ))}
-                </select>
+                <Select value={selectedTemplateId || "none"} onValueChange={(v) => handleTemplateSelect(v === "none" ? "" : v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No template</SelectItem>
+                    {templates.map((t) => (
+                      <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             )}
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <label className="text-sm font-medium">Certificate Type</label>
-                <select
-                  value={type}
-                  onChange={(e) => setType(e.target.value as CertificateType)}
-                  className="h-9 w-full text-sm"
-                >
-                  <option value="tls-server">TLS Server</option>
-                  <option value="tls-client">TLS Client</option>
-                  <option value="code-signing">Code Signing</option>
-                  <option value="email">Email</option>
-                </select>
+                <Select value={type} onValueChange={(v) => setType(v as CertificateType)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="tls-server">TLS Server</SelectItem>
+                    <SelectItem value="tls-client">TLS Client</SelectItem>
+                    <SelectItem value="code-signing">Code Signing</SelectItem>
+                    <SelectItem value="email">Email</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">Key Algorithm</label>
-                <select
-                  value={keyAlgorithm}
-                  onChange={(e) => setKeyAlgorithm(e.target.value as KeyAlgorithm)}
-                  className="h-9 w-full text-sm"
-                >
-                  <option value="rsa-2048">RSA-2048</option>
-                  <option value="rsa-4096">RSA-4096</option>
-                  <option value="ecdsa-p256">ECDSA-P256</option>
-                  <option value="ecdsa-p384">ECDSA-P384</option>
-                </select>
+                <Select value={keyAlgorithm} onValueChange={(v) => setKeyAlgorithm(v as KeyAlgorithm)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="rsa-2048">RSA-2048</SelectItem>
+                    <SelectItem value="rsa-4096">RSA-4096</SelectItem>
+                    <SelectItem value="ecdsa-p256">ECDSA-P256</SelectItem>
+                    <SelectItem value="ecdsa-p384">ECDSA-P384</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
           </div>

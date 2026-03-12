@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -98,16 +99,15 @@ export function CACreateDialog({ open, onOpenChange, parentId }: CACreateDialogP
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">Key Algorithm</label>
-              <select
-                value={keyAlgorithm}
-                onChange={(e) => setKeyAlgorithm(e.target.value as KeyAlgorithm)}
-                className="h-9 w-full text-sm"
-              >
-                <option value="ecdsa-p256">ECDSA P-256</option>
-                <option value="ecdsa-p384">ECDSA P-384</option>
-                <option value="rsa-2048">RSA 2048</option>
-                <option value="rsa-4096">RSA 4096</option>
-              </select>
+              <Select value={keyAlgorithm} onValueChange={(v) => setKeyAlgorithm(v as KeyAlgorithm)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ecdsa-p256">ECDSA P-256</SelectItem>
+                  <SelectItem value="ecdsa-p384">ECDSA P-384</SelectItem>
+                  <SelectItem value="rsa-2048">RSA 2048</SelectItem>
+                  <SelectItem value="rsa-4096">RSA 4096</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Validity (years)</label>

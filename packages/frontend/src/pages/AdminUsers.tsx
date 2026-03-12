@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { PageTransition } from "@/components/common/PageTransition";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
@@ -100,21 +101,16 @@ export function AdminUsers() {
                       </td>
                       <td className="p-3 text-sm text-muted-foreground">{user.email}</td>
                       <td className="p-3">
-                        <select
-                          value={user.role}
-                          disabled={isSelf}
-                          onChange={(e) => handleRoleChange(user.id, e.target.value as UserRole)}
-                          className={
-                            "h-9 w-full text-sm " +
-                            (isSelf ? "opacity-50 cursor-not-allowed" : "cursor-pointer")
-                          }
-                        >
-                          {ROLES.map((role) => (
-                            <option key={role} value={role}>
-                              {role.charAt(0).toUpperCase() + role.slice(1)}
-                            </option>
-                          ))}
-                        </select>
+                        <Select value={user.role} onValueChange={(v) => handleRoleChange(user.id, v as UserRole)} disabled={isSelf}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {ROLES.map((role) => (
+                              <SelectItem key={role} value={role}>
+                                {role.charAt(0).toUpperCase() + role.slice(1)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </td>
                       <td className="p-3 text-sm text-muted-foreground">
                         {isSelf ? (

@@ -19,6 +19,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
@@ -228,16 +229,15 @@ export function Templates() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <label className="text-sm font-medium">Certificate Type</label>
-                <select
-                  value={certType}
-                  onChange={(e) => setCertType(e.target.value as CertificateType)}
-                  className="h-9 w-full text-sm"
-                >
-                  <option value="tls-server">TLS Server</option>
-                  <option value="tls-client">TLS Client</option>
-                  <option value="code-signing">Code Signing</option>
-                  <option value="email">Email</option>
-                </select>
+                <Select value={certType} onValueChange={(v) => setCertType(v as CertificateType)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="tls-server">TLS Server</SelectItem>
+                    <SelectItem value="tls-client">TLS Client</SelectItem>
+                    <SelectItem value="code-signing">Code Signing</SelectItem>
+                    <SelectItem value="email">Email</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">Validity (days)</label>
@@ -252,16 +252,15 @@ export function Templates() {
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Key Algorithm</label>
-              <select
-                value={keyAlgorithm}
-                onChange={(e) => setKeyAlgorithm(e.target.value as KeyAlgorithm)}
-                className="h-9 w-full text-sm"
-              >
-                <option value="rsa-2048">RSA-2048</option>
-                <option value="rsa-4096">RSA-4096</option>
-                <option value="ecdsa-p256">ECDSA-P256</option>
-                <option value="ecdsa-p384">ECDSA-P384</option>
-              </select>
+              <Select value={keyAlgorithm} onValueChange={(v) => setKeyAlgorithm(v as KeyAlgorithm)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="rsa-2048">RSA-2048</SelectItem>
+                  <SelectItem value="rsa-4096">RSA-4096</SelectItem>
+                  <SelectItem value="ecdsa-p256">ECDSA-P256</SelectItem>
+                  <SelectItem value="ecdsa-p384">ECDSA-P384</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
