@@ -9,6 +9,7 @@ import {
   PanelLeftClose,
   ScrollText,
   Settings,
+  Shield,
   ShieldCheck,
   Users,
   X,
@@ -51,6 +52,7 @@ function getInitials(name: string | null): string {
 
 const navigation = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
+  { name: "CAs", href: "/cas", icon: Shield },
   { name: "Certificates", href: "/certificates", icon: Award },
   { name: "Templates", href: "/templates", icon: FileText },
 ];

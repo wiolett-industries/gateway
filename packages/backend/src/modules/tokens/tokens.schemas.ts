@@ -1,15 +1,30 @@
 import { z } from 'zod';
 
+export const AVAILABLE_SCOPES = [
+  'ca:read',
+  'ca:create:root',
+  'ca:create:intermediate',
+  'ca:revoke',
+  'cert:read',
+  'cert:issue',
+  'cert:revoke',
+  'cert:export',
+  'template:read',
+  'template:manage',
+  'admin:users',
+  'admin:audit',
+] as const;
+
 export const CreateTokenSchema = z.object({
   name: z.string().min(1).max(255),
-  permission: z.enum(['read', 'read-write']).default('read-write'),
+  scopes: z.array(z.string()).min(1, 'At least one scope is required'),
 });
 
 export const TokenResponseSchema = z.object({
   id: z.string(),
   name: z.string(),
   tokenPrefix: z.string(),
-  permission: z.enum(['read', 'read-write']),
+  scopes: z.array(z.string()),
   lastUsedAt: z.string().nullable(),
   createdAt: z.string(),
 });

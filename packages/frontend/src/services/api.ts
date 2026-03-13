@@ -274,7 +274,7 @@ class ApiClient {
     return this.request<ApiToken[]>("/tokens");
   }
 
-  async createToken(data: { name: string; permission?: string }): Promise<ApiToken & { token: string }> {
+  async createToken(data: { name: string; scopes: string[] }): Promise<ApiToken & { token: string }> {
     return this.request(`/tokens`, {
       method: "POST",
       body: JSON.stringify(data),

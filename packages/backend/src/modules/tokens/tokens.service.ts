@@ -29,16 +29,16 @@ export class TokensService {
       name: input.name,
       tokenHash,
       tokenPrefix,
-      permission: input.permission,
+      scopes: input.scopes,
     }).returning();
 
-    logger.info('Created API token', { tokenId: token.id, userId });
+    logger.info('Created API token', { tokenId: token.id, userId, scopes: input.scopes });
 
     return {
       id: token.id,
       name: token.name,
       tokenPrefix: token.tokenPrefix,
-      permission: token.permission,
+      scopes: token.scopes,
       lastUsedAt: token.lastUsedAt?.toISOString() ?? null,
       createdAt: token.createdAt.toISOString(),
       token: raw,
@@ -54,7 +54,7 @@ export class TokensService {
       id: t.id,
       name: t.name,
       tokenPrefix: t.tokenPrefix,
-      permission: t.permission,
+      scopes: t.scopes,
       lastUsedAt: t.lastUsedAt?.toISOString() ?? null,
       createdAt: t.createdAt.toISOString(),
     }));
@@ -101,5 +101,27 @@ export class TokensService {
       avatarUrl: user.avatarUrl,
       role: user.role,
     };
+  }
+
+  async getTokenScopes(rawToken: string): Promise<string[]> {
+    const tokenHash = hashToken(rawToken);
+    const token = await this.db.query.apiTokens.findFirst({
+      where: eq(apiTokens.tokenHash, tokenHash),
+    });
+    return token?.scopes || [];
+  }
+
+  /**
+   * Check if scopes grant a required permission.
+   * Supports hierarchical matching: 'cert:issue' grants 'cert:issue:ca-123'
+   */
+  static hasScope(scopes: string[], requiredScope: string): boolean {
+    if (scopes.includes(requiredScope)) return true;
+    const parts = requiredScope.split(':');
+    for (let i = parts.length - 1; i >= 1; i--) {
+      const prefix = parts.slice(0, i).join(':');
+      if (scopes.includes(prefix)) return true;
+    }
+    return false;
   }
 }

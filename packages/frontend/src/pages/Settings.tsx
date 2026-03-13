@@ -13,20 +13,25 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
+import { useCAStore } from "@/stores/ca";
 import { useUIStore } from "@/stores/ui";
-import type { ApiToken } from "@/types";
+import { TOKEN_SCOPES, type ApiToken } from "@/types";
 import { formatDate } from "@/lib/utils";
+
+const SCOPE_GROUPS = [...new Set(TOKEN_SCOPES.map((s) => s.group))];
 
 export function Settings() {
   const { user } = useAuthStore();
   const { theme, setTheme } = useUIStore();
+  const { cas } = useCAStore();
   const [tokens, setTokens] = useState<ApiToken[]>([]);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [newTokenName, setNewTokenName] = useState("");
-  const [newTokenPermission, setNewTokenPermission] = useState<"read" | "read-write">("read");
+  const [selectedScopes, setSelectedScopes] = useState<string[]>([]);
+  const [caSpecificScopes, setCaSpecificScopes] = useState<Record<string, string>>({});
   const [createdSecret, setCreatedSecret] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
 
@@ -35,7 +40,7 @@ export function Settings() {
       const data = await api.listTokens();
       setTokens(data || []);
     } catch {
-      // Tokens might not be available
+      // ignore
     }
   };
 
@@ -43,18 +48,36 @@ export function Settings() {
     loadTokens();
   }, []);
 
+  const toggleScope = (scope: string) => {
+    setSelectedScopes((prev) =>
+      prev.includes(scope) ? prev.filter((s) => s !== scope) : [...prev, scope]
+    );
+  };
+
   const handleCreateToken = async () => {
     if (!newTokenName.trim()) {
       toast.error("Token name is required");
       return;
     }
 
+    // Build final scopes: base scopes + CA-specific scopes
+    const finalScopes = [...selectedScopes];
+    for (const [baseScope, caId] of Object.entries(caSpecificScopes)) {
+      if (caId && selectedScopes.includes(baseScope)) {
+        // Replace generic scope with CA-specific one
+        const idx = finalScopes.indexOf(baseScope);
+        if (idx !== -1) finalScopes[idx] = `${baseScope}:${caId}`;
+      }
+    }
+
+    if (finalScopes.length === 0) {
+      toast.error("Select at least one scope");
+      return;
+    }
+
     setIsCreating(true);
     try {
-      const result = await api.createToken({
-        name: newTokenName,
-        permission: newTokenPermission,
-      });
+      const result = await api.createToken({ name: newTokenName, scopes: finalScopes });
       setCreatedSecret(result.token);
       loadTokens();
       toast.success("API token created");
@@ -74,6 +97,14 @@ export function Settings() {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to revoke token");
     }
+  };
+
+  const openCreateDialog = () => {
+    setNewTokenName("");
+    setSelectedScopes([]);
+    setCaSpecificScopes({});
+    setCreatedSecret(null);
+    setCreateDialogOpen(true);
   };
 
   return (
@@ -129,13 +160,11 @@ export function Settings() {
       {/* API Tokens */}
       <div className="border border-border bg-card">
         <div className="flex items-center justify-between border-b border-border p-4">
-          <h2 className="font-semibold">API Tokens</h2>
-          <Button size="sm" onClick={() => {
-            setNewTokenName("");
-            setNewTokenPermission("read");
-            setCreatedSecret(null);
-            setCreateDialogOpen(true);
-          }}>
+          <div>
+            <h2 className="font-semibold">API Tokens</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">Granular tokens for programmatic access</p>
+          </div>
+          <Button size="sm" onClick={openCreateDialog}>
             <Plus className="h-4 w-4" />
             Create Token
           </Button>
@@ -144,28 +173,32 @@ export function Settings() {
           {tokens.length > 0 ? (
             <div className="divide-y divide-border">
               {tokens.map((token) => (
-                <div key={token.id} className="flex items-center justify-between py-3">
-                  <div className="flex items-center gap-3">
-                    <Key className="h-4 w-4 text-muted-foreground" />
-                    <div>
+                <div key={token.id} className="flex items-center justify-between py-3 gap-4">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <Key className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <div className="min-w-0">
                       <p className="text-sm font-medium">{token.name}</p>
                       <p className="text-xs text-muted-foreground">
-                        {token.tokenPrefix}... &middot; Created {formatDate(token.createdAt)}
-                        {token.lastUsedAt && ` · Last used ${formatDate(token.lastUsedAt)}`}
+                        {token.tokenPrefix}... &middot; {formatDate(token.createdAt)}
+                        {token.lastUsedAt && ` · Used ${formatDate(token.lastUsedAt)}`}
                       </p>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {(token.scopes || []).map((scope) => (
+                          <Badge key={scope} variant="secondary" className="text-[10px] px-1.5 py-0 font-mono">
+                            {scope}
+                          </Badge>
+                        ))}
+                      </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Badge variant="secondary" className="text-xs">{token.permission}</Badge>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-destructive"
-                      onClick={() => handleRevokeToken(token)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-destructive shrink-0"
+                    onClick={() => handleRevokeToken(token)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
                 </div>
               ))}
             </div>
@@ -179,18 +212,18 @@ export function Settings() {
 
       {/* Create Token Dialog */}
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Create API Token</DialogTitle>
             <DialogDescription>
-              Create a new API token for programmatic access
+              Select granular permissions for this token
             </DialogDescription>
           </DialogHeader>
 
           {createdSecret ? (
             <div className="space-y-4">
-              <div className="border border-[color:var(--color-warning)]/30 bg-[color:var(--color-warning)]/5 p-3">
-                <p className="text-sm font-medium text-[color:var(--color-warning)]">
+              <div className="border border-yellow-600/30 bg-yellow-600/5 p-3">
+                <p className="text-sm font-medium text-yellow-600 dark:text-yellow-400">
                   Copy this token now. It will not be shown again.
                 </p>
               </div>
@@ -222,22 +255,65 @@ export function Settings() {
                     value={newTokenName}
                     onChange={(e) => setNewTokenName(e.target.value)}
                     placeholder="e.g., CI/CD Pipeline"
+                    autoFocus
                   />
                 </div>
+
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Permission</label>
-                  <Select value={newTokenPermission} onValueChange={(v) => setNewTokenPermission(v as "read" | "read-write")}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="read">Read only</SelectItem>
-                      <SelectItem value="read-write">Read & Write</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <label className="text-sm font-medium">Scopes</label>
+                  <div className="border border-border max-h-64 overflow-y-auto">
+                    {SCOPE_GROUPS.map((group, gi) => (
+                      <div key={group}>
+                        {gi > 0 && <Separator />}
+                        <div className="px-3 py-1.5 bg-muted/50">
+                          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{group}</p>
+                        </div>
+                        {TOKEN_SCOPES.filter((s) => s.group === group).map((scope) => {
+                          const isSelected = selectedScopes.includes(scope.value);
+                          const canLimitToCA = scope.value === "cert:issue" || scope.value === "ca:create:intermediate";
+                          return (
+                            <div key={scope.value}>
+                              <label className="flex items-center gap-3 px-3 py-2 hover:bg-accent transition-colors cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => toggleScope(scope.value)}
+                                  className="form-checkbox"
+                                />
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm">{scope.label}</p>
+                                  <p className="text-xs text-muted-foreground font-mono">{scope.value}</p>
+                                </div>
+                              </label>
+                              {/* CA-specific restriction for cert:issue and ca:create:intermediate */}
+                              {canLimitToCA && isSelected && (cas || []).length > 0 && (
+                                <div className="px-3 pb-2 pl-10">
+                                  <select
+                                    value={caSpecificScopes[scope.value] || ""}
+                                    onChange={(e) => setCaSpecificScopes((prev) => ({ ...prev, [scope.value]: e.target.value }))}
+                                    className="h-8 w-full text-xs"
+                                  >
+                                    <option value="">All CAs (no restriction)</option>
+                                    {(cas || []).map((ca) => (
+                                      <option key={ca.id} value={ca.id}>{ca.commonName}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {selectedScopes.length} scope{selectedScopes.length !== 1 ? "s" : ""} selected
+                  </p>
                 </div>
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>Cancel</Button>
-                <Button onClick={handleCreateToken} disabled={isCreating}>
+                <Button onClick={handleCreateToken} disabled={isCreating || selectedScopes.length === 0}>
                   {isCreating ? "Creating..." : "Create Token"}
                 </Button>
               </DialogFooter>

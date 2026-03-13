@@ -8,6 +8,13 @@
       "when": 1774648199546,
       "tag": "0000_gray_rocket_raccoon",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1774666000000,
+      "tag": "0001_token_scopes",
+      "breakpoints": true
     }
   ]
 }
