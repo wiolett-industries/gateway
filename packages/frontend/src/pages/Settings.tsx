@@ -15,6 +15,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import { confirm } from "@/components/common/ConfirmDialog";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useCAStore } from "@/stores/ca";
@@ -90,7 +91,8 @@ export function Settings() {
   };
 
   const handleRevokeToken = async (token: ApiToken) => {
-    if (!confirm(`Revoke token "${token.name}"?`)) return;
+    const ok = await confirm({ title: "Revoke Token", description: `Are you sure you want to revoke "${token.name}"? This action cannot be undone.`, confirmLabel: "Revoke" });
+    if (!ok) return;
     try {
       await api.revokeToken(token.id);
       toast.success("Token revoked");

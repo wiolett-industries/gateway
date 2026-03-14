@@ -33,6 +33,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
 import { CATree } from "@/components/ca/CATree";
 import { CommandPalette } from "@/components/common/CommandPalette";
+import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useCAStore } from "@/stores/ca";
@@ -492,6 +493,7 @@ export function DashboardLayout() {
         </main>
         <Toaster position="bottom-right" />
         <CommandPalette open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} />
+        <ConfirmDialog />
       </div>
     </TooltipProvider>
   );

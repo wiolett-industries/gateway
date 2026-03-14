@@ -10,6 +10,7 @@ import {
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
+import { confirm } from "@/components/common/ConfirmDialog";
 import { PageTransition } from "@/components/common/PageTransition";
 import { CertificateIssueDialog } from "@/components/certificates/CertificateIssueDialog";
 import { Badge } from "@/components/ui/badge";
@@ -72,7 +73,8 @@ export function CADetail() {
 
   const handleRevoke = async () => {
     if (!selectedCA) return;
-    if (!confirm("Are you sure you want to revoke this CA? This will also revoke all certificates issued by it.")) return;
+    const ok = await confirm({ title: "Revoke CA", description: "This will revoke the CA and all certificates issued by it. This action cannot be undone.", confirmLabel: "Revoke CA" });
+    if (!ok) return;
 
     try {
       await api.revokeCA(selectedCA.id, "cessationOfOperation");

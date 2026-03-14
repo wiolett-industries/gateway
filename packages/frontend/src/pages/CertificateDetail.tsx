@@ -8,6 +8,7 @@ import {
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { toast } from "sonner";
+import { confirm } from "@/components/common/ConfirmDialog";
 import { PageTransition } from "@/components/common/PageTransition";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -61,7 +62,8 @@ export function CertificateDetail() {
 
   const handleRevoke = async () => {
     if (!cert) return;
-    if (!confirm("Are you sure you want to revoke this certificate?")) return;
+    const ok = await confirm({ title: "Revoke Certificate", description: "Are you sure you want to revoke this certificate? This action cannot be undone.", confirmLabel: "Revoke" });
+    if (!ok) return;
     try {
       await api.revokeCertificate(cert.id, "unspecified");
       // Reload the certificate to get updated status
