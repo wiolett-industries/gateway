@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
@@ -288,16 +289,15 @@ export function Settings() {
                               {/* CA-specific restriction for cert:issue and ca:create:intermediate */}
                               {canLimitToCA && isSelected && (cas || []).length > 0 && (
                                 <div className="px-3 pb-2 pl-10">
-                                  <select
-                                    value={caSpecificScopes[scope.value] || ""}
-                                    onChange={(e) => setCaSpecificScopes((prev) => ({ ...prev, [scope.value]: e.target.value }))}
-                                    className="h-8 w-full text-xs"
-                                  >
-                                    <option value="">All CAs (no restriction)</option>
-                                    {(cas || []).map((ca) => (
-                                      <option key={ca.id} value={ca.id}>{ca.commonName}</option>
-                                    ))}
-                                  </select>
+                                  <Select value={caSpecificScopes[scope.value] || "all"} onValueChange={(v) => setCaSpecificScopes((prev) => ({ ...prev, [scope.value]: v === "all" ? "" : v }))}>
+                                    <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="all">All CAs (no restriction)</SelectItem>
+                                      {(cas || []).map((ca) => (
+                                        <SelectItem key={ca.id} value={ca.id}>{ca.commonName}</SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
                                 </div>
                               )}
                             </div>
