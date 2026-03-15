@@ -31,12 +31,10 @@ import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Toaster } from "@/components/ui/sonner";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
-import { CATree } from "@/components/ca/CATree";
 import { CommandPalette } from "@/components/common/CommandPalette";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
-import { useCAStore } from "@/stores/ca";
 import { useUIStore } from "@/stores/ui";
 import { cn } from "@/lib/utils";
 
@@ -85,12 +83,7 @@ function SidebarContent({
   const location = useLocation();
   const navigate = useNavigate();
   const { user, hasRole, logout } = useAuthStore();
-  const { cas, fetchCAs } = useCAStore();
   const { sidebarOpen, toggleSidebar } = useUIStore();
-
-  useEffect(() => {
-    fetchCAs();
-  }, [fetchCAs]);
 
   const handleLogout = async () => {
     try {
@@ -256,19 +249,6 @@ function SidebarContent({
                   );
                 })}
               </nav>
-
-              {/* CA Tree */}
-              {cas && cas.length > 0 && (
-                <>
-                  <Separator className="my-1" />
-                  <div className="px-2 pb-2">
-                    <p className="px-3 py-1 text-xs font-medium text-sidebar-foreground/50 uppercase tracking-wider whitespace-nowrap overflow-hidden">
-                      Certificate Authorities
-                    </p>
-                    <CATree cas={cas} onSelect={(id) => { navigate(`/cas/${id}`); onNavigate?.(); }} />
-                  </div>
-                </>
-              )}
 
               {/* Admin navigation */}
               {isAdmin && (

@@ -1,158 +1,106 @@
-import {
-  AlertTriangle,
-  Award,
-  CheckCircle,
-  Clock,
-  Plus,
-  Shield,
-  ShieldAlert,
-  XCircle,
-} from "lucide-react";
+import { Award, CheckCircle, Shield } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { PageTransition } from "@/components/common/PageTransition";
-import { CATree } from "@/components/ca/CATree";
-import { CACreateDialog } from "@/components/ca/CACreateDialog";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useCAStore } from "@/stores/ca";
-import type { CA } from "@/types";
+import type { AuditLogEntry } from "@/types";
+import { formatRelativeDate } from "@/lib/utils";
 
-function StatCard({
-  title,
-  value,
-  icon: Icon,
-  description,
-  variant = "default",
-}: {
-  title: string;
-  value: number;
-  icon: React.ElementType;
-  description?: string;
-  variant?: "default" | "success" | "warning" | "destructive";
+function StatCard({ title, value, icon: Icon, description }: {
+  title: string; value: number; icon: React.ElementType; description?: string;
 }) {
-  const variantClasses = {
-    default: "text-foreground",
-    success: "text-green-600 dark:text-green-400",
-    warning: "text-yellow-600 dark:text-yellow-400",
-    destructive: "text-destructive",
-  };
-
   return (
     <div className="border border-border bg-card p-4 space-y-2">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">{title}</p>
-        <Icon className={`h-4 w-4 ${variantClasses[variant]}`} />
+        <Icon className="h-4 w-4 text-muted-foreground" />
       </div>
-      <p className={`text-2xl font-bold ${variantClasses[variant]}`}>{value}</p>
-      {description && (
-        <p className="text-xs text-muted-foreground">{description}</p>
-      )}
+      <p className="text-2xl font-bold">{value}</p>
+      {description && <p className="text-xs text-muted-foreground">{description}</p>}
     </div>
   );
-}
-
-function computeStats(cas: CA[]) {
-  const activeCAs = cas.filter((ca) => ca.status === "active").length;
-  const totalCAs = cas.length;
-  const totalCerts = cas.reduce((sum, ca) => sum + (ca.certCount || 0), 0);
-
-  return { activeCAs, totalCAs, totalCerts };
 }
 
 export function Dashboard() {
   const navigate = useNavigate();
   const { hasRole } = useAuthStore();
   const { cas, fetchCAs, isLoading } = useCAStore();
-  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [activity, setActivity] = useState<AuditLogEntry[]>([]);
 
   useEffect(() => {
     fetchCAs();
-  }, [fetchCAs]);
+    if (hasRole("admin")) {
+      api.getAuditLog({ limit: 10 }).then((r) => setActivity(r.data || [])).catch(() => {});
+    }
+  }, [fetchCAs, hasRole]);
 
-  const stats = computeStats(cas || []);
+  const activeCAs = (cas || []).filter((ca) => ca.status === "active").length;
+  const totalCAs = (cas || []).length;
+  const totalCerts = (cas || []).reduce((sum, ca) => sum + (ca.certCount || 0), 0);
 
   if (isLoading) {
     return (
-        <div className="flex items-center justify-center py-16">
-          <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-        </div>
+      <div className="flex items-center justify-center py-16">
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+      </div>
     );
   }
 
   return (
     <PageTransition>
     <div className="h-full overflow-y-auto p-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Dashboard</h1>
-          <p className="text-sm text-muted-foreground">PKI infrastructure overview</p>
-        </div>
-        {hasRole("admin") && (
-          <Button onClick={() => setCreateDialogOpen(true)}>
-            <Plus className="h-4 w-4" />
-            Create Root CA
-          </Button>
-        )}
+      <div>
+        <h1 className="text-2xl font-bold">Dashboard</h1>
+        <p className="text-sm text-muted-foreground">PKI infrastructure overview</p>
       </div>
 
-      {/* Stats grid */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <StatCard
-          title="Certificate Authorities"
-          value={stats.activeCAs}
-          icon={Shield}
-          description={`${stats.totalCAs} total`}
-          variant="success"
-        />
-        <StatCard
-          title="Certificates Issued"
-          value={stats.totalCerts}
-          icon={Award}
-          variant="default"
-        />
-        <StatCard
-          title="Active CAs"
-          value={stats.activeCAs}
-          icon={CheckCircle}
-          variant="success"
-        />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <StatCard title="Active CAs" value={activeCAs} icon={Shield} description={`${totalCAs} total`} />
+        <StatCard title="Certificates Issued" value={totalCerts} icon={Award} />
+        <StatCard title="Active Authorities" value={activeCAs} icon={CheckCircle} />
       </div>
 
-      {/* CA Hierarchy */}
+      {/* Recent Activity */}
       <div className="border border-border bg-card">
         <div className="flex items-center justify-between border-b border-border p-4">
-          <h2 className="font-semibold">CA Hierarchy</h2>
-          <Link to="/certificates" className="text-sm text-muted-foreground hover:text-foreground">
-            View all certificates
-          </Link>
-        </div>
-        <div className="p-4">
-          {(cas || []).length > 0 ? (
-            <CATree cas={cas} onSelect={(id) => navigate(`/cas/${id}`)} />
-          ) : (
-            <div className="flex flex-col items-center gap-2 py-8 text-center">
-              <ShieldAlert className="h-8 w-8 text-muted-foreground" />
-              <p className="text-sm text-muted-foreground">No certificate authorities yet</p>
-              <p className="text-xs text-muted-foreground">
-                Create a Root CA to get started with your PKI infrastructure.
-              </p>
-              {hasRole("admin") && (
-                <Button variant="outline" size="sm" onClick={() => setCreateDialogOpen(true)}>
-                  <Plus className="h-4 w-4" />
-                  Create Root CA
-                </Button>
-              )}
-            </div>
+          <h2 className="font-semibold">Recent Activity</h2>
+          {hasRole("admin") && (
+            <Link to="/audit" className="text-sm text-muted-foreground hover:text-foreground">View all</Link>
           )}
         </div>
+        {activity.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-border text-left">
+                  <th className="p-3 text-xs font-medium text-muted-foreground">Action</th>
+                  <th className="p-3 text-xs font-medium text-muted-foreground">Resource</th>
+                  <th className="p-3 text-xs font-medium text-muted-foreground">Time</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {activity.map((entry) => (
+                  <tr key={entry.id}>
+                    <td className="p-3 text-sm">
+                      <span className="font-mono text-xs bg-muted px-1.5 py-0.5">{entry.action}</span>
+                    </td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      {entry.resourceType}{entry.resourceId ? ` / ${entry.resourceId.slice(0, 8)}...` : ""}
+                    </td>
+                    <td className="p-3 text-sm text-muted-foreground">{formatRelativeDate(entry.createdAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="p-8 text-center text-sm text-muted-foreground">
+            {hasRole("admin") ? "No recent activity" : "Activity log is available to administrators"}
+          </div>
+        )}
       </div>
-
-      <CACreateDialog open={createDialogOpen} onOpenChange={setCreateDialogOpen} />
     </div>
     </PageTransition>
   );
