@@ -26,8 +26,6 @@ import { useAuthStore } from "@/stores/auth";
 import type { Certificate } from "@/types";
 import { formatDate, formatSerialNumber, daysUntil } from "@/lib/utils";
 
-};
-
 export function CertificateDetail() {
   const { id } = useParams<{ id: string }>();
   const { hasRole } = useAuthStore();
