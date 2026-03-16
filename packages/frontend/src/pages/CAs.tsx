@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { PageTransition } from "@/components/common/PageTransition";
 import { CACreateDialog } from "@/components/ca/CACreateDialog";
+import { StatusBadge } from "@/components/common/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useAuthStore } from "@/stores/auth";
@@ -63,12 +64,7 @@ function CATable({ title, cas, allCAs, onSelect }: {
                     </span>
                   </td>
                   <td className="p-3">
-                    <Badge
-                      variant={ca.status === "active" ? "outline" : ca.status === "revoked" ? "destructive" : "secondary"}
-                      className={ca.status === "active" ? "border-green-600/50 text-green-700 dark:text-green-400" : ""}
-                    >
-                      {ca.status}
-                    </Badge>
+                    <StatusBadge status={ca.status} />
                   </td>
                 </tr>
               );

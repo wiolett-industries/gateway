@@ -10,6 +10,7 @@ import { useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { PageTransition } from "@/components/common/PageTransition";
+import { StatusBadge } from "@/components/common/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,17 +26,6 @@ import { useAuthStore } from "@/stores/auth";
 import type { Certificate } from "@/types";
 import { formatDate, formatSerialNumber, daysUntil } from "@/lib/utils";
 
-const statusBadge = (status: string) => {
-  switch (status) {
-    case "active":
-      return <Badge className="bg-[color:var(--color-success)] text-white">Active</Badge>;
-    case "revoked":
-      return <Badge variant="destructive">Revoked</Badge>;
-    case "expired":
-      return <Badge variant="secondary">Expired</Badge>;
-    default:
-      return <Badge variant="secondary">{status}</Badge>;
-  }
 };
 
 export function CertificateDetail() {
@@ -119,7 +109,7 @@ export function CertificateDetail() {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-2xl font-bold">{cert.commonName}</h1>
-              {statusBadge(cert.status)}
+              <StatusBadge status={cert.status} />
             </div>
             <p className="text-sm text-muted-foreground">
               {cert.type} certificate &middot; Issuer: {cert.issuerDn || cert.caId}
