@@ -31,7 +31,7 @@ import { formatDate, formatSerialNumber, daysUntil } from "@/lib/utils";
 
 const statusBadge = (status: string) => {
   switch (status) {
-    case "active": return <Badge className="bg-green-600 text-white">Active</Badge>;
+    case "active": return <Badge variant="outline" className="border-green-600/50 text-green-700 dark:text-green-400">Active</Badge>;
     case "revoked": return <Badge variant="destructive">Revoked</Badge>;
     case "expired": return <Badge variant="secondary">Expired</Badge>;
     default: return <Badge variant="secondary">{status}</Badge>;
