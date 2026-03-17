@@ -8,11 +8,18 @@ import {
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { toast } from "sonner";
-import { confirm } from "@/components/common/ConfirmDialog";
 import { PageTransition } from "@/components/common/PageTransition";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,6 +27,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
@@ -48,18 +56,23 @@ export function CertificateDetail() {
     load();
   }, [id]);
 
+  const [revokeDialogOpen, setRevokeDialogOpen] = useState(false);
+  const [revokeReason, setRevokeReason] = useState("unspecified");
+  const [isRevoking, setIsRevoking] = useState(false);
+
   const handleRevoke = async () => {
     if (!cert) return;
-    const ok = await confirm({ title: "Revoke Certificate", description: "Are you sure you want to revoke this certificate? This action cannot be undone.", confirmLabel: "Revoke" });
-    if (!ok) return;
+    setIsRevoking(true);
     try {
-      await api.revokeCertificate(cert.id, "unspecified");
-      // Reload the certificate to get updated status
+      await api.revokeCertificate(cert.id, revokeReason);
       const updated = await api.getCertificate(cert.id);
       setCert(updated);
       toast.success("Certificate revoked");
+      setRevokeDialogOpen(false);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to revoke");
+    } finally {
+      setIsRevoking(false);
     }
   };
 
@@ -155,7 +168,7 @@ export function CertificateDetail() {
               {hasRole("admin", "operator") && cert.status === "active" && (
                 <>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={handleRevoke} className="text-destructive">
+                  <DropdownMenuItem onClick={() => setRevokeDialogOpen(true)} className="text-destructive">
                     <ShieldOff className="h-4 w-4" />
                     Revoke Certificate
                   </DropdownMenuItem>
@@ -242,6 +255,38 @@ export function CertificateDetail() {
           </div>
         </div>
       </div>
+      {/* Revoke Dialog */}
+      <Dialog open={revokeDialogOpen} onOpenChange={setRevokeDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Revoke Certificate</DialogTitle>
+            <DialogDescription>
+              Select a reason for revocation. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Reason</label>
+            <Select value={revokeReason} onValueChange={setRevokeReason}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="unspecified">Unspecified</SelectItem>
+                <SelectItem value="keyCompromise">Key Compromise</SelectItem>
+                <SelectItem value="caCompromise">CA Compromise</SelectItem>
+                <SelectItem value="affiliationChanged">Affiliation Changed</SelectItem>
+                <SelectItem value="superseded">Superseded</SelectItem>
+                <SelectItem value="cessationOfOperation">Cessation of Operation</SelectItem>
+                <SelectItem value="certificateHold">Certificate Hold</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRevokeDialogOpen(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={handleRevoke} disabled={isRevoking}>
+              {isRevoking ? "Revoking..." : "Revoke"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
     </PageTransition>
   );
