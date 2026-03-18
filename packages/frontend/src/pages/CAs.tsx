@@ -136,9 +136,8 @@ function CARows({ ca, children, allCAs, depth, onSelect, onCreateIntermediate }:
         onClick={() => onSelect(ca.id)}
       >
         <td className="p-3">
-          <div className="flex items-center gap-2" style={{ paddingLeft: depth * 20 }}>
-            {depth > 0 && <CornerDownRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
-            <Shield className={`h-4 w-4 shrink-0 ${ca.status === "active" ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground"}`} />
+          <div className="flex items-center gap-1.5" style={{ paddingLeft: depth * 16 }}>
+            {depth > 0 && <CornerDownRight className="h-3 w-3 text-muted-foreground shrink-0" />}
             <span className="text-sm font-medium">{ca.commonName}</span>
           </div>
         </td>
