@@ -205,7 +205,7 @@ export function Certificates() {
                           {formatDate(cert.notAfter)}
                         </span>
                       </td>
-                      <td className="p-3"><StatusBadge status={cert.status} /></td>
+                      <td className="p-3 align-middle"><StatusBadge status={cert.status} /></td>
                     </tr>
                   );
                 })}
@@ -244,7 +244,7 @@ export function Certificates() {
         </div>
       )}
 
-      <CertificateIssueDialog open={issueDialogOpen} onOpenChange={setIssueDialogOpen} />
+      <CertificateIssueDialog open={issueDialogOpen} onOpenChange={setIssueDialogOpen} onSuccess={fetchCertificates} />
     </div>
     </PageTransition>
   );

@@ -40,14 +40,21 @@ export function CADetail() {
   const [issueDialogOpen, setIssueDialogOpen] = useState(false);
   const [createIntermediateOpen, setCreateIntermediateOpen] = useState(false);
 
+  const reloadCerts = async () => {
+    if (!id) return;
+    try {
+      const certs = await api.listCertificates({ caId: id, limit: 50 });
+      setCertificates(certs.data || []);
+    } catch {}
+  };
+
   useEffect(() => {
     if (!id) return;
     const load = async () => {
       setIsLoading(true);
       try {
         await selectCA(id);
-        const certs = await api.listCertificates({ caId: id, limit: 50 });
-        setCertificates(certs.data || []);
+        await reloadCerts();
       } catch { toast.error("Failed to load CA details"); }
       finally { setIsLoading(false); }
     };
@@ -160,7 +167,7 @@ export function CADetail() {
                         <td className="p-3 text-sm font-medium">{cert.commonName}</td>
                         <td className="p-3 text-sm text-muted-foreground">{cert.type}</td>
                         <td className="p-3 text-sm text-muted-foreground">{formatDate(cert.notAfter)}</td>
-                        <td className="p-3"><StatusBadge status={cert.status} /></td>
+                        <td className="p-3 align-middle"><StatusBadge status={cert.status} /></td>
                       </tr>
                     ))}
                   </tbody>
@@ -212,7 +219,7 @@ export function CADetail() {
 
       {id && (
         <>
-          <CertificateIssueDialog open={issueDialogOpen} onOpenChange={setIssueDialogOpen} caId={id} />
+          <CertificateIssueDialog open={issueDialogOpen} onOpenChange={setIssueDialogOpen} caId={id} onSuccess={reloadCerts} />
           <CACreateDialog open={createIntermediateOpen} onOpenChange={setCreateIntermediateOpen} parentId={id} />
         </>
       )}

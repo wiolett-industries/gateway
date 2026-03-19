@@ -146,7 +146,7 @@ function CARows({ ca, children, allCAs, depth, onSelect }: {
             {formatDate(ca.notAfter)}
           </span>
         </td>
-        <td className="p-3"><StatusBadge status={ca.status} /></td>
+        <td className="p-3 align-middle"><StatusBadge status={ca.status} /></td>
       </tr>
       {children.map((child) => (
         <CARows
