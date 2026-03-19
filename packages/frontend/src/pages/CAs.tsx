@@ -1,4 +1,4 @@
-import { CornerDownRight, Plus, Shield, ShieldAlert } from "lucide-react";
+import { CornerDownRight, Plus, ShieldAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { PageTransition } from "@/components/common/PageTransition";
@@ -47,10 +47,16 @@ export function CAs() {
           </p>
         </div>
         {hasRole("admin") && (
-          <Button onClick={() => { setCreateIntermediateParentId(undefined); setCreateDialogOpen(true); }}>
-            <Plus className="h-4 w-4" />
-            Create Root CA
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => { setCreateIntermediateParentId("pick"); setCreateDialogOpen(true); }} disabled={allCAs.length === 0}>
+              <Plus className="h-4 w-4" />
+              Create Intermediate
+            </Button>
+            <Button onClick={() => { setCreateIntermediateParentId(undefined); setCreateDialogOpen(true); }}>
+              <Plus className="h-4 w-4" />
+              Create Root CA
+            </Button>
+          </div>
         )}
       </div>
 
@@ -65,9 +71,6 @@ export function CAs() {
                   <th className="p-3 text-xs font-medium text-muted-foreground">Certificates</th>
                   <th className="p-3 text-xs font-medium text-muted-foreground">Expires</th>
                   <th className="p-3 text-xs font-medium text-muted-foreground">Status</th>
-                  {hasRole("admin") && (
-                    <th className="p-3 text-xs font-medium text-muted-foreground w-10"></th>
-                  )}
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -81,10 +84,6 @@ export function CAs() {
                       allCAs={allCAs}
                       depth={0}
                       onSelect={(id) => navigate(`/cas/${id}`)}
-                      onCreateIntermediate={hasRole("admin") ? (parentId) => {
-                        setCreateIntermediateParentId(parentId);
-                        setCreateDialogOpen(true);
-                      } : undefined}
                     />
                   );
                 })}
@@ -118,13 +117,12 @@ export function CAs() {
   );
 }
 
-function CARows({ ca, children, allCAs, depth, onSelect, onCreateIntermediate }: {
+function CARows({ ca, children, allCAs, depth, onSelect }: {
   ca: CA;
   children: CA[];
   allCAs: CA[];
   depth: number;
   onSelect: (id: string) => void;
-  onCreateIntermediate?: (parentId: string) => void;
 }) {
   const expDays = daysUntil(ca.notAfter);
   const grandchildren = (parentId: string) => allCAs.filter((c) => c.parentId === parentId);
@@ -149,20 +147,6 @@ function CARows({ ca, children, allCAs, depth, onSelect, onCreateIntermediate }:
           </span>
         </td>
         <td className="p-3"><StatusBadge status={ca.status} /></td>
-        {onCreateIntermediate && (
-          <td className="p-3">
-            {ca.status === "active" && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 text-xs text-muted-foreground"
-                onClick={(e) => { e.stopPropagation(); onCreateIntermediate(ca.id); }}
-              >
-                <Plus className="h-3 w-3" />
-              </Button>
-            )}
-          </td>
-        )}
       </tr>
       {children.map((child) => (
         <CARows
@@ -172,7 +156,6 @@ function CARows({ ca, children, allCAs, depth, onSelect, onCreateIntermediate }:
           allCAs={allCAs}
           depth={depth + 1}
           onSelect={onSelect}
-          onCreateIntermediate={onCreateIntermediate}
         />
       ))}
     </>

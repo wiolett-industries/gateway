@@ -18,12 +18,14 @@ import type { KeyAlgorithm } from "@/types";
 interface CACreateDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** undefined = root CA, "pick" = show parent selector, uuid = specific parent */
   parentId?: string;
 }
 
 export function CACreateDialog({ open, onOpenChange, parentId }: CACreateDialogProps) {
-  const { fetchCAs } = useCAStore();
+  const { cas, fetchCAs } = useCAStore();
 
+  const [selectedParentId, setSelectedParentId] = useState<string>("");
   const [commonName, setCommonName] = useState("");
   const [keyAlgorithm, setKeyAlgorithm] = useState<KeyAlgorithm>("ecdsa-p256");
   const [validityYears, setValidityYears] = useState(10);
@@ -31,11 +33,18 @@ export function CACreateDialog({ open, onOpenChange, parentId }: CACreateDialogP
   const [maxValidityDays, setMaxValidityDays] = useState(365);
   const [isSaving, setIsSaving] = useState(false);
 
-  const isIntermediate = !!parentId;
+  const needsParentPicker = parentId === "pick";
+  const resolvedParentId = needsParentPicker ? selectedParentId : parentId;
+  const isIntermediate = !!resolvedParentId;
+  const activeCAs = (cas || []).filter((ca) => ca.status === "active");
 
   const handleCreate = async () => {
     if (!commonName.trim()) {
       toast.error("Common Name is required");
+      return;
+    }
+    if (isIntermediate && !resolvedParentId) {
+      toast.error("Select a parent CA");
       return;
     }
 
@@ -50,17 +59,17 @@ export function CACreateDialog({ open, onOpenChange, parentId }: CACreateDialogP
       };
 
       if (isIntermediate) {
-        await api.createIntermediateCA(parentId!, data);
+        await api.createIntermediateCA(resolvedParentId!, data);
       } else {
         await api.createRootCA(data);
       }
 
-      toast.success(`${isIntermediate ? "Intermediate" : "Root"} CA created successfully`);
+      toast.success(`${isIntermediate ? "Intermediate" : "Root"} CA created`);
       onOpenChange(false);
       await fetchCAs();
 
-      // Reset form
       setCommonName("");
+      setSelectedParentId("");
       setValidityYears(10);
       setPathLengthConstraint(undefined);
       setMaxValidityDays(365);
@@ -80,19 +89,34 @@ export function CACreateDialog({ open, onOpenChange, parentId }: CACreateDialogP
           </DialogTitle>
           <DialogDescription>
             {isIntermediate
-              ? "Create a new intermediate CA signed by the parent CA."
+              ? "Create a new intermediate CA signed by the parent."
               : "Create a new self-signed Root Certificate Authority."}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
+          {needsParentPicker && (
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Parent CA</label>
+              <Select value={selectedParentId || "none"} onValueChange={(v) => setSelectedParentId(v === "none" ? "" : v)}>
+                <SelectTrigger><SelectValue placeholder="Select parent CA..." /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none" disabled>Select parent CA...</SelectItem>
+                  {activeCAs.map((ca) => (
+                    <SelectItem key={ca.id} value={ca.id}>{ca.commonName}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
           <div className="space-y-2">
             <label className="text-sm font-medium">Common Name (CN)</label>
             <Input
               value={commonName}
               onChange={(e) => setCommonName(e.target.value)}
-              placeholder="e.g., My Organization Root CA"
-              autoFocus
+              placeholder={isIntermediate ? "e.g., My Org Intermediate CA" : "e.g., My Organization Root CA"}
+              autoFocus={!needsParentPicker}
             />
           </div>
 
@@ -135,9 +159,6 @@ export function CACreateDialog({ open, onOpenChange, parentId }: CACreateDialogP
                 min={0}
                 max={10}
               />
-              <p className="text-xs text-muted-foreground">
-                Max depth of intermediate CAs below this CA
-              </p>
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Max Cert Validity (days)</label>
@@ -148,18 +169,13 @@ export function CACreateDialog({ open, onOpenChange, parentId }: CACreateDialogP
                 min={1}
                 max={3650}
               />
-              <p className="text-xs text-muted-foreground">
-                Maximum validity for issued certificates
-              </p>
             </div>
           </div>
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button onClick={handleCreate} disabled={isSaving || !commonName.trim()}>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button onClick={handleCreate} disabled={isSaving || !commonName.trim() || (needsParentPicker && !selectedParentId)}>
             {isSaving ? "Creating..." : "Create CA"}
           </Button>
         </DialogFooter>
