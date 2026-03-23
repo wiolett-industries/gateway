@@ -1,5 +1,6 @@
 import { useAuthStore } from "@/stores/auth";
 import type {
+  AccessList,
   Alert,
   ApiError,
   ApiToken,
@@ -8,12 +9,28 @@ import type {
   Certificate,
   CertificateStatus,
   CertificateType,
+  CreateAccessListRequest,
+  CreateProxyHostRequest,
   CreateRootCARequest,
   CreateIntermediateCARequest,
+  DashboardStats,
+  DNSChallenge,
+  FolderTreeNode,
+  GroupedProxyHostsResponse,
+  HealthStatus,
   IssueCertificateRequest,
   IssueCertFromCSRRequest,
+  LinkInternalCertRequest,
   PaginatedResponse,
+  ProxyHost,
+  ProxyHostFolder,
+  ProxyHostType,
+  RequestACMECertRequest,
+  SSLCertificate,
+  SSLCertStatus,
+  SSLCertType,
   Template,
+  UploadCertRequest,
   User,
   UserRole,
 } from "@/types";
@@ -73,6 +90,13 @@ class ApiClient {
     }
 
     return response.json();
+  }
+
+  /**
+   * Unwrap a single-resource response wrapped in `{ data: ... }` by the backend.
+   */
+  private unwrapData<T>(promise: Promise<{ data: T }>): Promise<T> {
+    return promise.then((r) => r.data);
   }
 
   // ── Auth ──────────────────────────────────────────────────────────
@@ -296,6 +320,263 @@ class ApiClient {
       method: "PATCH",
       body: JSON.stringify({ role }),
     });
+  }
+
+  // ── Proxy Hosts ──────────────────────────────────────────────────
+
+  async listProxyHosts(params?: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    type?: ProxyHostType;
+    healthStatus?: HealthStatus;
+    enabled?: boolean;
+    sortBy?: string;
+    sortOrder?: string;
+  }): Promise<PaginatedResponse<ProxyHost>> {
+    const searchParams = new URLSearchParams();
+    if (params?.page) searchParams.set("page", params.page.toString());
+    if (params?.limit) searchParams.set("limit", params.limit.toString());
+    if (params?.search) searchParams.set("search", params.search);
+    if (params?.type) searchParams.set("type", params.type);
+    if (params?.healthStatus) searchParams.set("healthStatus", params.healthStatus);
+    if (params?.enabled !== undefined) searchParams.set("enabled", params.enabled.toString());
+    if (params?.sortBy) searchParams.set("sortBy", params.sortBy);
+    if (params?.sortOrder) searchParams.set("sortOrder", params.sortOrder);
+
+    const query = searchParams.toString();
+    return this.request<PaginatedResponse<ProxyHost>>(
+      `/proxy-hosts${query ? `?${query}` : ""}`
+    );
+  }
+
+  async getProxyHost(id: string): Promise<ProxyHost> {
+    return this.unwrapData(this.request<{ data: ProxyHost }>(`/proxy-hosts/${id}`));
+  }
+
+  async createProxyHost(data: CreateProxyHostRequest): Promise<ProxyHost> {
+    return this.unwrapData(this.request<{ data: ProxyHost }>("/proxy-hosts", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }));
+  }
+
+  async updateProxyHost(id: string, data: Partial<CreateProxyHostRequest>): Promise<ProxyHost> {
+    return this.unwrapData(this.request<{ data: ProxyHost }>(`/proxy-hosts/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }));
+  }
+
+  async deleteProxyHost(id: string): Promise<void> {
+    return this.request<void>(`/proxy-hosts/${id}`, { method: "DELETE" });
+  }
+
+  async toggleProxyHost(id: string, enabled: boolean): Promise<ProxyHost> {
+    return this.unwrapData(this.request<{ data: ProxyHost }>(`/proxy-hosts/${id}/toggle`, {
+      method: "POST",
+      body: JSON.stringify({ enabled }),
+    }));
+  }
+
+  async validateProxyConfig(snippet: string): Promise<{ valid: boolean; errors: string[] }> {
+    return this.unwrapData(this.request<{ data: { valid: boolean; errors: string[] } }>("/proxy-hosts/validate-config", {
+      method: "POST",
+      body: JSON.stringify({ snippet }),
+    }));
+  }
+
+  // ── Proxy Host Folders ─────────────────────────────────────────
+
+  async listFolders(): Promise<FolderTreeNode[]> {
+    return this.unwrapData(this.request<{ data: FolderTreeNode[] }>("/proxy-host-folders"));
+  }
+
+  async getGroupedProxyHosts(params?: {
+    search?: string;
+    type?: ProxyHostType;
+    healthStatus?: HealthStatus;
+    enabled?: boolean;
+  }): Promise<GroupedProxyHostsResponse> {
+    const searchParams = new URLSearchParams();
+    if (params?.search) searchParams.set("search", params.search);
+    if (params?.type) searchParams.set("type", params.type);
+    if (params?.healthStatus) searchParams.set("healthStatus", params.healthStatus);
+    if (params?.enabled !== undefined) searchParams.set("enabled", params.enabled.toString());
+    const query = searchParams.toString();
+    return this.unwrapData(
+      this.request<{ data: GroupedProxyHostsResponse }>(
+        `/proxy-host-folders/grouped${query ? `?${query}` : ""}`
+      )
+    );
+  }
+
+  async createFolder(data: { name: string; parentId?: string }): Promise<ProxyHostFolder> {
+    return this.unwrapData(this.request<{ data: ProxyHostFolder }>("/proxy-host-folders", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }));
+  }
+
+  async updateFolder(id: string, data: { name: string }): Promise<ProxyHostFolder> {
+    return this.unwrapData(this.request<{ data: ProxyHostFolder }>(`/proxy-host-folders/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }));
+  }
+
+  async moveFolder(id: string, parentId: string | null): Promise<ProxyHostFolder> {
+    return this.unwrapData(this.request<{ data: ProxyHostFolder }>(`/proxy-host-folders/${id}/move`, {
+      method: "PUT",
+      body: JSON.stringify({ parentId }),
+    }));
+  }
+
+  async deleteFolder(id: string): Promise<void> {
+    return this.request<void>(`/proxy-host-folders/${id}`, { method: "DELETE" });
+  }
+
+  async reorderFolders(items: { id: string; sortOrder: number }[]): Promise<void> {
+    return this.request<void>("/proxy-host-folders/reorder", {
+      method: "PUT",
+      body: JSON.stringify({ items }),
+    });
+  }
+
+  async reorderHosts(items: { id: string; sortOrder: number }[]): Promise<void> {
+    return this.request<void>("/proxy-host-folders/reorder-hosts", {
+      method: "PUT",
+      body: JSON.stringify({ items }),
+    });
+  }
+
+  async moveHostsToFolder(hostIds: string[], folderId: string | null): Promise<void> {
+    return this.request<void>("/proxy-host-folders/move-hosts", {
+      method: "POST",
+      body: JSON.stringify({ hostIds, folderId }),
+    });
+  }
+
+  // ── SSL Certificates ───────────────────────────────────────────
+
+  async listSSLCertificates(params?: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    type?: SSLCertType;
+    status?: SSLCertStatus;
+    sortBy?: string;
+    sortOrder?: string;
+  }): Promise<PaginatedResponse<SSLCertificate>> {
+    const searchParams = new URLSearchParams();
+    if (params?.page) searchParams.set("page", params.page.toString());
+    if (params?.limit) searchParams.set("limit", params.limit.toString());
+    if (params?.search) searchParams.set("search", params.search);
+    if (params?.type) searchParams.set("type", params.type);
+    if (params?.status) searchParams.set("status", params.status);
+    if (params?.sortBy) searchParams.set("sortBy", params.sortBy);
+    if (params?.sortOrder) searchParams.set("sortOrder", params.sortOrder);
+
+    const query = searchParams.toString();
+    return this.request<PaginatedResponse<SSLCertificate>>(
+      `/ssl-certificates${query ? `?${query}` : ""}`
+    );
+  }
+
+  async getSSLCertificate(id: string): Promise<SSLCertificate> {
+    return this.unwrapData(this.request<{ data: SSLCertificate }>(`/ssl-certificates/${id}`));
+  }
+
+  async requestACMECert(data: RequestACMECertRequest): Promise<SSLCertificate | { challenges: DNSChallenge[] }> {
+    return this.unwrapData(this.request<{ data: SSLCertificate | { challenges: DNSChallenge[] } }>("/ssl-certificates/acme", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }));
+  }
+
+  async uploadCert(data: UploadCertRequest): Promise<SSLCertificate> {
+    return this.unwrapData(this.request<{ data: SSLCertificate }>("/ssl-certificates/upload", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }));
+  }
+
+  async linkInternalCert(data: LinkInternalCertRequest): Promise<SSLCertificate> {
+    return this.unwrapData(this.request<{ data: SSLCertificate }>("/ssl-certificates/internal", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }));
+  }
+
+  async renewSSLCert(id: string): Promise<SSLCertificate> {
+    return this.unwrapData(this.request<{ data: SSLCertificate }>(`/ssl-certificates/${id}/renew`, { method: "POST" }));
+  }
+
+  async completeDNSVerify(id: string): Promise<SSLCertificate> {
+    return this.unwrapData(this.request<{ data: SSLCertificate }>(`/ssl-certificates/${id}/dns-verify`, { method: "POST" }));
+  }
+
+  async deleteSSLCert(id: string): Promise<void> {
+    return this.request<void>(`/ssl-certificates/${id}`, { method: "DELETE" });
+  }
+
+  // ── Access Lists ───────────────────────────────────────────────
+
+  async listAccessLists(params?: {
+    page?: number;
+    limit?: number;
+    search?: string;
+  }): Promise<PaginatedResponse<AccessList>> {
+    const searchParams = new URLSearchParams();
+    if (params?.page) searchParams.set("page", params.page.toString());
+    if (params?.limit) searchParams.set("limit", params.limit.toString());
+    if (params?.search) searchParams.set("search", params.search);
+
+    const query = searchParams.toString();
+    return this.request<PaginatedResponse<AccessList>>(
+      `/access-lists${query ? `?${query}` : ""}`
+    );
+  }
+
+  async getAccessList(id: string): Promise<AccessList> {
+    return this.unwrapData(this.request<{ data: AccessList }>(`/access-lists/${id}`));
+  }
+
+  async createAccessList(data: CreateAccessListRequest): Promise<AccessList> {
+    return this.unwrapData(this.request<{ data: AccessList }>("/access-lists", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }));
+  }
+
+  async updateAccessList(id: string, data: Partial<CreateAccessListRequest>): Promise<AccessList> {
+    return this.unwrapData(this.request<{ data: AccessList }>(`/access-lists/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }));
+  }
+
+  async deleteAccessList(id: string): Promise<void> {
+    return this.request<void>(`/access-lists/${id}`, { method: "DELETE" });
+  }
+
+  // ── Monitoring ─────────────────────────────────────────────────
+
+  async getDashboardStats(): Promise<DashboardStats> {
+    return this.unwrapData(this.request<{ data: DashboardStats }>("/monitoring/dashboard"));
+  }
+
+  async getHealthOverview(): Promise<ProxyHost[]> {
+    return this.unwrapData(this.request<{ data: ProxyHost[] }>("/monitoring/health-status"));
+  }
+
+  // ── SSE (Live Logs) ────────────────────────────────────────────
+
+  createLogStream(hostId: string): EventSource {
+    const sessionId = useAuthStore.getState().sessionId;
+    const params = new URLSearchParams();
+    if (sessionId) params.set("token", sessionId);
+    return new EventSource(`${API_BASE}/monitoring/logs/${hostId}/stream?${params}`);
   }
 }
 

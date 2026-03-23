@@ -1,7 +1,7 @@
 import { injectable, inject } from 'tsyringe';
-import { desc, eq, and, gte, lte } from 'drizzle-orm';
+import { desc, eq, and, gte, lte, count as countFn } from 'drizzle-orm';
 import { TOKENS } from '@/container.js';
-import { auditLog } from '@/db/schema/index.js';
+import { auditLog, users } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
 import type { DrizzleClient } from '@/db/client.js';
 import type { PaginatedResponse } from '@/types.js';
@@ -57,13 +57,27 @@ export class AuditService {
     const where = conditions.length > 0 ? and(...conditions) : undefined;
 
     const [entries, [{ count: totalCount }]] = await Promise.all([
-      this.db.query.auditLog.findMany({
-        where: where ? () => where : undefined,
-        orderBy: [desc(auditLog.createdAt)],
-        limit: params.limit,
-        offset: (params.page - 1) * params.limit,
-      }),
-      this.db.select({ count: (await import('drizzle-orm')).count() }).from(auditLog).where(where),
+      this.db
+        .select({
+          id: auditLog.id,
+          userId: auditLog.userId,
+          action: auditLog.action,
+          resourceType: auditLog.resourceType,
+          resourceId: auditLog.resourceId,
+          details: auditLog.details,
+          ipAddress: auditLog.ipAddress,
+          userAgent: auditLog.userAgent,
+          createdAt: auditLog.createdAt,
+          userName: users.name,
+          userEmail: users.email,
+        })
+        .from(auditLog)
+        .leftJoin(users, eq(auditLog.userId, users.id))
+        .where(where)
+        .orderBy(desc(auditLog.createdAt))
+        .limit(params.limit)
+        .offset((params.page - 1) * params.limit),
+      this.db.select({ count: countFn() }).from(auditLog).where(where),
     ]);
 
     const total = Number(totalCount);

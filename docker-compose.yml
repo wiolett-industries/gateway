@@ -11,7 +11,7 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3000
-      - DATABASE_URL=postgres://ca_manager:${DB_PASSWORD}@postgres:5432/ca_manager
+      - DATABASE_URL=postgres://gateway:${DB_PASSWORD}@postgres:5432/gateway
       - REDIS_URL=redis://redis:6379
       - OIDC_ISSUER=${OIDC_ISSUER}
       - OIDC_CLIENT_ID=${OIDC_CLIENT_ID}
@@ -28,6 +28,18 @@ services:
       - DEFAULT_OCSP_VALIDITY_MINUTES=${DEFAULT_OCSP_VALIDITY_MINUTES:-60}
       - EXPIRY_WARNING_DAYS=${EXPIRY_WARNING_DAYS:-30}
       - EXPIRY_CRITICAL_DAYS=${EXPIRY_CRITICAL_DAYS:-7}
+      - ACME_EMAIL=${ACME_EMAIL:-admin@example.com}
+      - ACME_STAGING=${ACME_STAGING:-false}
+      - HEALTH_CHECK_INTERVAL_SECONDS=${HEALTH_CHECK_INTERVAL_SECONDS:-30}
+      - ACME_RENEWAL_CRON=${ACME_RENEWAL_CRON:-0 3 * * *}
+      - EXPIRY_CHECK_CRON=${EXPIRY_CHECK_CRON:-0 6 * * *}
+      - NGINX_CONTAINER_NAME=${NGINX_CONTAINER_NAME:-gateway-nginx-1}
+    volumes:
+      - nginx_config:/etc/nginx-config
+      - nginx_certs:/etc/nginx-certs
+      - nginx_logs:/var/log/nginx-logs:ro
+      - acme_challenge:/var/www/acme-challenge
+      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       postgres:
         condition: service_healthy
@@ -39,17 +51,40 @@ services:
       timeout: 5s
       retries: 3
 
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/html:/usr/share/nginx/html:ro
+      - nginx_config:/etc/nginx/conf.d/sites
+      - nginx_certs:/etc/nginx/certs
+      - nginx_logs:/var/log/nginx
+      - acme_challenge:/var/www/acme-challenge
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "nginx -t && curl -f http://localhost/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ca_manager
-      POSTGRES_USER: ca_manager
+      POSTGRES_DB: gateway
+      POSTGRES_USER: gateway
       POSTGRES_PASSWORD: ${DB_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ca_manager -d ca_manager"]
+      test: ["CMD-SHELL", "pg_isready -U gateway -d gateway"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -69,3 +104,7 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  nginx_config:
+  nginx_certs:
+  nginx_logs:
+  acme_challenge:

@@ -18,6 +18,20 @@ import { CRLService } from '@/modules/pki/crl.service.js';
 import { OCSPService } from '@/modules/pki/ocsp.service.js';
 import { ExportService } from '@/modules/pki/export.service.js';
 import { AlertService } from '@/modules/audit/alert.service.js';
+import { DockerService } from '@/services/docker.service.js';
+import { ConfigValidatorService } from '@/services/config-validator.service.js';
+import { NginxService } from '@/services/nginx.service.js';
+import { ProxyService } from '@/modules/proxy/proxy.service.js';
+import { FolderService } from '@/modules/proxy/folder.service.js';
+import { ACMEService } from '@/modules/ssl/acme.service.js';
+import { SSLService } from '@/modules/ssl/ssl.service.js';
+import { AccessListService } from '@/modules/access-lists/access-list.service.js';
+import { SchedulerService } from '@/services/scheduler.service.js';
+import { ACMERenewalJob } from '@/jobs/acme-renewal.job.js';
+import { HealthCheckJob } from '@/jobs/health-check.job.js';
+import { ExpiryAlertJob } from '@/jobs/expiry-alert.job.js';
+import { LogStreamService } from '@/modules/monitoring/log-stream.service.js';
+import { MonitoringService } from '@/modules/monitoring/monitoring.service.js';
 
 export { container };
 
@@ -79,8 +93,59 @@ export async function initializeContainer(): Promise<void> {
   const alertService = new AlertService(db);
   container.registerInstance(AlertService, alertService);
 
+  // Gateway services
+  const configValidator = new ConfigValidatorService();
+  container.registerInstance(ConfigValidatorService, configValidator);
+
+  const dockerService = new DockerService(env.DOCKER_SOCKET_PATH, env.NGINX_CONTAINER_NAME);
+  container.registerInstance(DockerService, dockerService);
+
+  const nginxService = new NginxService(
+    env.NGINX_CONFIG_PATH,
+    env.NGINX_CERTS_PATH,
+    env.NGINX_LOGS_PATH,
+    env.ACME_CHALLENGE_PATH,
+    dockerService,
+    configValidator,
+  );
+  container.registerInstance(NginxService, nginxService);
+
+  const folderService = new FolderService(db, auditService);
+  container.registerInstance(FolderService, folderService);
+
+  const proxyService = new ProxyService(db, nginxService, auditService, cryptoService);
+  container.registerInstance(ProxyService, proxyService);
+
+  const acmeService = new ACMEService(env.ACME_CHALLENGE_PATH, env.ACME_EMAIL, env.ACME_STAGING);
+  container.registerInstance(ACMEService, acmeService);
+
+  const accessListService = new AccessListService(db, nginxService, auditService);
+  container.registerInstance(AccessListService, accessListService);
+
+  const sslService = new SSLService(db, acmeService, nginxService, cryptoService, auditService);
+  container.registerInstance(SSLService, sslService);
+
+  // Monitoring services
+  const logStreamService = new LogStreamService(env.NGINX_LOGS_PATH);
+  container.registerInstance(LogStreamService, logStreamService);
+
+  const monitoringService = new MonitoringService(db);
+  container.registerInstance(MonitoringService, monitoringService);
+
   // Seed built-in certificate templates
   await templatesService.seedBuiltinTemplates();
+
+  // Background jobs
+  const scheduler = new SchedulerService();
+  container.registerInstance(SchedulerService, scheduler);
+
+  const acmeRenewalJob = new ACMERenewalJob(db, sslService, alertService);
+  const healthCheckJob = new HealthCheckJob(db);
+  const expiryAlertJob = new ExpiryAlertJob(db, alertService, env.EXPIRY_WARNING_DAYS, env.EXPIRY_CRITICAL_DAYS);
+
+  scheduler.register('acme-renewal', env.ACME_RENEWAL_CRON, () => acmeRenewalJob.run());
+  scheduler.registerInterval('health-check', env.HEALTH_CHECK_INTERVAL_SECONDS * 1000, () => healthCheckJob.run());
+  scheduler.register('expiry-alerts', env.EXPIRY_CHECK_CRON, () => expiryAlertJob.run());
 
   logger.info('Dependency injection container initialized');
 }

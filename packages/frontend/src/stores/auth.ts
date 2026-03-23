@@ -57,7 +57,7 @@ export const useAuthStore = create<AuthState>()(
       },
     }),
     {
-      name: "ca-manager-auth",
+      name: "gateway-auth",
       partialize: (state) => ({
         sessionId: state.sessionId,
       }),

@@ -12,6 +12,11 @@ import { CertificateDetail } from "@/pages/CertificateDetail";
 import { Templates } from "@/pages/Templates";
 import { AuditLog } from "@/pages/AuditLog";
 import { Settings } from "@/pages/Settings";
+import { ProxyHosts } from "@/pages/ProxyHosts";
+import { ProxyHostDetail } from "@/pages/ProxyHostDetail";
+import { SSLCertificates } from "@/pages/SSLCertificates";
+import { SSLCertificateNew } from "@/pages/SSLCertificateNew";
+import { AccessLists } from "@/pages/AccessLists";
 import { AdminUsers } from "@/pages/AdminUsers";
 
 export default function App() {
@@ -24,6 +29,12 @@ export default function App() {
             <Route path="/callback" element={<AuthCallback />} />
             <Route element={<DashboardLayout />}>
               <Route path="/" element={<Dashboard />} />
+              <Route path="/proxy-hosts" element={<ProxyHosts />} />
+              <Route path="/proxy-hosts/new" element={<ProxyHostDetail />} />
+              <Route path="/proxy-hosts/:id" element={<ProxyHostDetail />} />
+              <Route path="/ssl-certificates" element={<SSLCertificates />} />
+              <Route path="/ssl-certificates/new" element={<SSLCertificateNew />} />
+              <Route path="/access-lists" element={<AccessLists />} />
               <Route path="/cas" element={<CAs />} />
               <Route path="/cas/:id" element={<CADetail />} />
               <Route path="/certificates" element={<Certificates />} />

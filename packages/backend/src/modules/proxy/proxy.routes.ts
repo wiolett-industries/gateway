@@ -1,0 +1,90 @@
+import { OpenAPIHono } from '@hono/zod-openapi';
+import { container } from '@/container.js';
+import { authMiddleware, rbacMiddleware } from '@/modules/auth/auth.middleware.js';
+import { AppError } from '@/middleware/error-handler.js';
+import { ProxyService } from './proxy.service.js';
+import {
+  CreateProxyHostSchema,
+  UpdateProxyHostSchema,
+  ProxyHostListQuerySchema,
+  ValidateAdvancedConfigSchema,
+  ToggleProxyHostSchema,
+} from './proxy.schemas.js';
+import type { AppEnv } from '@/types.js';
+
+export const proxyRoutes = new OpenAPIHono<AppEnv>();
+
+proxyRoutes.use('*', authMiddleware);
+
+// List proxy hosts (any authenticated role)
+proxyRoutes.get('/', async (c) => {
+  const proxyService = container.resolve(ProxyService);
+  const rawQuery = c.req.query();
+  const query = ProxyHostListQuerySchema.parse(rawQuery);
+  const result = await proxyService.listProxyHosts(query);
+  return c.json(result);
+});
+
+// Get proxy host detail
+proxyRoutes.get('/:id', async (c) => {
+  const proxyService = container.resolve(ProxyService);
+  const id = c.req.param('id');
+  const host = await proxyService.getProxyHost(id);
+  return c.json({ data: host });
+});
+
+// Create proxy host (admin, operator)
+proxyRoutes.post('/', rbacMiddleware('admin', 'operator'), async (c) => {
+  const proxyService = container.resolve(ProxyService);
+  const user = c.get('user')!;
+  const body = await c.req.json();
+  const input = CreateProxyHostSchema.parse(body);
+  if (input.advancedConfig && user.role !== 'admin') {
+    throw new AppError(403, 'FORBIDDEN', 'Advanced config requires admin role');
+  }
+  const host = await proxyService.createProxyHost(input, user.id);
+  return c.json({ data: host }, 201);
+});
+
+// Update proxy host (admin, operator)
+proxyRoutes.put('/:id', rbacMiddleware('admin', 'operator'), async (c) => {
+  const proxyService = container.resolve(ProxyService);
+  const user = c.get('user')!;
+  const id = c.req.param('id');
+  const body = await c.req.json();
+  const input = UpdateProxyHostSchema.parse(body);
+  if (input.advancedConfig && user.role !== 'admin') {
+    throw new AppError(403, 'FORBIDDEN', 'Advanced config requires admin role');
+  }
+  const host = await proxyService.updateProxyHost(id, input, user.id);
+  return c.json({ data: host });
+});
+
+// Delete proxy host (admin only)
+proxyRoutes.delete('/:id', rbacMiddleware('admin'), async (c) => {
+  const proxyService = container.resolve(ProxyService);
+  const user = c.get('user')!;
+  const id = c.req.param('id');
+  await proxyService.deleteProxyHost(id, user.id);
+  return c.body(null, 204);
+});
+
+// Toggle proxy host enabled/disabled (admin, operator)
+proxyRoutes.post('/:id/toggle', rbacMiddleware('admin', 'operator'), async (c) => {
+  const proxyService = container.resolve(ProxyService);
+  const user = c.get('user')!;
+  const id = c.req.param('id');
+  const body = await c.req.json();
+  const { enabled } = ToggleProxyHostSchema.parse(body);
+  const host = await proxyService.toggleProxyHost(id, enabled, user.id);
+  return c.json({ data: host });
+});
+
+// Validate advanced config snippet (admin, operator)
+proxyRoutes.post('/validate-config', rbacMiddleware('admin', 'operator'), async (c) => {
+  const proxyService = container.resolve(ProxyService);
+  const body = await c.req.json();
+  const { snippet } = ValidateAdvancedConfigSchema.parse(body);
+  const result = await proxyService.validateAdvancedConfig(snippet);
+  return c.json({ data: result });
+});

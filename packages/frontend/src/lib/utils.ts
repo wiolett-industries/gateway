@@ -38,7 +38,26 @@ export function formatRelativeDate(date: string | Date) {
 export function daysUntil(date: string | Date): number {
   const now = new Date();
   const then = new Date(date);
-  return Math.ceil((then.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+  const diff = (then.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+  if (diff <= 0) return 0;
+  return Math.floor(diff);
+}
+
+export function hoursUntil(date: string | Date): number {
+  const now = new Date();
+  const then = new Date(date);
+  const diff = (then.getTime() - now.getTime()) / (1000 * 60 * 60);
+  if (diff <= 0) return 0;
+  return Math.floor(diff);
+}
+
+/** Human-friendly "Xd left" / "Xh left" / "Expires today" */
+export function formatTimeLeft(date: string | Date): string {
+  const days = daysUntil(date);
+  if (days > 0) return `${days}d left`;
+  const hours = hoursUntil(date);
+  if (hours > 0) return `${hours}h left`;
+  return "Expires today";
 }
 
 export function getInitials(name: string) {

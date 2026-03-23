@@ -1,0 +1,92 @@
+import { pgTable, uuid, varchar, text, timestamp, boolean, pgEnum, index, jsonb, integer } from 'drizzle-orm/pg-core';
+import { sslCertificates } from './ssl-certificates.js';
+import { certificates } from './certificates.js';
+import { accessLists } from './access-lists.js';
+import { proxyHostFolders } from './proxy-host-folders.js';
+import { users } from './users.js';
+
+export const proxyHostTypeEnum = pgEnum('proxy_host_type', ['proxy', 'redirect', '404']);
+export const forwardSchemeEnum = pgEnum('forward_scheme', ['http', 'https']);
+export const healthStatusEnum = pgEnum('health_status', ['online', 'offline', 'degraded', 'unknown']);
+
+export interface CustomHeader {
+  name: string;
+  value: string;
+}
+
+export interface CacheOptions {
+  maxAge?: number;
+  staleWhileRevalidate?: number;
+}
+
+export interface RateLimitOptions {
+  requestsPerSecond: number;
+  burst?: number;
+}
+
+export interface RewriteRule {
+  source: string;
+  destination: string;
+  type: 'permanent' | 'temporary';
+}
+
+export const proxyHosts = pgTable('proxy_hosts', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  type: proxyHostTypeEnum('type').notNull().default('proxy'),
+  domainNames: jsonb('domain_names').$type<string[]>().notNull().default([]),
+  enabled: boolean('enabled').notNull().default(true),
+
+  // Upstream — for proxy type
+  forwardHost: varchar('forward_host', { length: 255 }),
+  forwardPort: integer('forward_port'),
+  forwardScheme: forwardSchemeEnum('forward_scheme').default('http'),
+
+  // SSL
+  sslEnabled: boolean('ssl_enabled').notNull().default(false),
+  sslForced: boolean('ssl_forced').notNull().default(false), // HTTP → HTTPS redirect
+  http2Support: boolean('http2_support').notNull().default(true),
+  sslCertificateId: uuid('ssl_certificate_id').references(() => sslCertificates.id, { onDelete: 'set null' }),
+  internalCertificateId: uuid('internal_certificate_id').references(() => certificates.id, { onDelete: 'set null' }),
+
+  // Proxy options
+  websocketSupport: boolean('websocket_support').notNull().default(false),
+
+  // Redirect type options
+  redirectUrl: text('redirect_url'),
+  redirectStatusCode: integer('redirect_status_code').default(301),
+
+  // Custom config — structured
+  customHeaders: jsonb('custom_headers').$type<CustomHeader[]>().default([]),
+  cacheEnabled: boolean('cache_enabled').notNull().default(false),
+  cacheOptions: jsonb('cache_options').$type<CacheOptions>(),
+  rateLimitEnabled: boolean('rate_limit_enabled').notNull().default(false),
+  rateLimitOptions: jsonb('rate_limit_options').$type<RateLimitOptions>(),
+  customRewrites: jsonb('custom_rewrites').$type<RewriteRule[]>().default([]),
+
+  // Custom config — raw nginx
+  advancedConfig: text('advanced_config'),
+
+  // Folder / organization
+  folderId: uuid('folder_id').references(() => proxyHostFolders.id, { onDelete: 'set null' }),
+  sortOrder: integer('sort_order').notNull().default(0),
+
+  // Access list
+  accessListId: uuid('access_list_id').references(() => accessLists.id, { onDelete: 'set null' }),
+
+  // Health check
+  healthCheckEnabled: boolean('health_check_enabled').notNull().default(false),
+  healthCheckUrl: varchar('health_check_url', { length: 500 }).default('/'),
+  healthCheckInterval: integer('health_check_interval').default(30), // seconds
+  healthStatus: healthStatusEnum('health_status').default('unknown'),
+  lastHealthCheckAt: timestamp('last_health_check_at', { withTimezone: true }),
+
+  // Metadata
+  createdById: uuid('created_by_id').notNull().references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  enabledIdx: index('proxy_host_enabled_idx').on(table.enabled),
+  typeIdx: index('proxy_host_type_idx').on(table.type),
+  folderIdx: index('proxy_host_folder_idx').on(table.folderId),
+  createdByIdx: index('proxy_host_created_by_idx').on(table.createdById),
+}));

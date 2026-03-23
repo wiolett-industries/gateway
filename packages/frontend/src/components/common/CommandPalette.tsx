@@ -1,7 +1,9 @@
 import {
   Award,
   FileText,
+  Globe,
   LayoutDashboard,
+  Lock,
   LogOut,
   Monitor,
   Moon,
@@ -10,6 +12,7 @@ import {
   ScrollText,
   Settings,
   Shield,
+  ShieldAlert,
   Sun,
   Users,
 } from "lucide-react";
@@ -22,7 +25,6 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
-  CommandSeparator,
   CommandShortcut,
 } from "@/components/ui/command";
 import { api } from "@/services/api";
@@ -74,12 +76,19 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
           </CommandGroup>
         )}
 
-        <CommandSeparator />
-
         {/* Navigation */}
         <CommandGroup heading="Navigation">
           <CommandItem onSelect={() => handleSelect(() => navigate("/"))}>
             <LayoutDashboard className="mr-2 h-4 w-4" />Dashboard
+          </CommandItem>
+          <CommandItem onSelect={() => handleSelect(() => navigate("/proxy-hosts"))}>
+            <Globe className="mr-2 h-4 w-4" />Proxy Hosts
+          </CommandItem>
+          <CommandItem onSelect={() => handleSelect(() => navigate("/ssl-certificates"))}>
+            <Lock className="mr-2 h-4 w-4" />SSL Certificates
+          </CommandItem>
+          <CommandItem onSelect={() => handleSelect(() => navigate("/access-lists"))}>
+            <ShieldAlert className="mr-2 h-4 w-4" />Access Lists
           </CommandItem>
           <CommandItem onSelect={() => handleSelect(() => navigate("/certificates"))}>
             <Award className="mr-2 h-4 w-4" />Certificates
@@ -102,8 +111,6 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
           </CommandItem>
         </CommandGroup>
 
-        <CommandSeparator />
-
         {/* Actions */}
         <CommandGroup heading="Actions">
           <CommandItem value="toggle sidebar" onSelect={() => handleSelect(() => toggleSidebar())}>
@@ -111,14 +118,18 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
             {sidebarOpen ? "Hide sidebar" : "Show sidebar"}
             <CommandShortcut>⌘J</CommandShortcut>
           </CommandItem>
+          <CommandItem onSelect={() => handleSelect(() => navigate("/proxy-hosts/new"))}>
+            <Plus className="mr-2 h-4 w-4" />New Proxy Host
+          </CommandItem>
+          <CommandItem onSelect={() => handleSelect(() => navigate("/ssl-certificates/new"))}>
+            <Plus className="mr-2 h-4 w-4" />New SSL Certificate
+          </CommandItem>
           {hasRole("admin") && (
             <CommandItem onSelect={() => handleSelect(() => { useUIStore.getState().openModal("createCA"); navigate("/"); })}>
               <Plus className="mr-2 h-4 w-4" />Create Root CA
             </CommandItem>
           )}
         </CommandGroup>
-
-        <CommandSeparator />
 
         <CommandGroup heading="Theme">
           <CommandItem onSelect={() => handleSelect(() => setTheme("light"))}>
@@ -131,8 +142,6 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
             <Monitor className="mr-2 h-4 w-4" />System{theme === "system" && <CommandShortcut>✓</CommandShortcut>}
           </CommandItem>
         </CommandGroup>
-
-        <CommandSeparator />
 
         <CommandGroup heading="Account">
           <CommandItem onSelect={() => handleSelect(handleLogout)}>

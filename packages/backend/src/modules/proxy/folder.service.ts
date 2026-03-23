@@ -1,0 +1,465 @@
+import { eq, and, ilike, sql, asc, inArray, isNull, desc } from 'drizzle-orm';
+import { proxyHostFolders } from '@/db/schema/proxy-host-folders.js';
+import { proxyHosts } from '@/db/schema/proxy-hosts.js';
+import { AuditService } from '@/modules/audit/audit.service.js';
+import { AppError } from '@/middleware/error-handler.js';
+import { createChildLogger } from '@/lib/logger.js';
+import type { DrizzleClient } from '@/db/client.js';
+import type {
+  CreateFolderInput,
+  UpdateFolderInput,
+  MoveFolderInput,
+  ReorderFoldersInput,
+  GroupedHostsQuery,
+  MoveHostsToFolderInput,
+  ReorderHostsInput,
+} from './folder.schemas.js';
+
+const logger = createChildLogger('FolderService');
+
+const MAX_DEPTH = 2; // 0, 1, 2 = three levels
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+type FolderRow = typeof proxyHostFolders.$inferSelect;
+type ProxyHostRow = typeof proxyHosts.$inferSelect;
+
+export interface FolderTreeNode extends FolderRow {
+  children: FolderTreeNode[];
+  hosts: ProxyHostRow[];
+}
+
+export interface GroupedHostsResponse {
+  folders: FolderTreeNode[];
+  ungroupedHosts: ProxyHostRow[];
+  totalHosts: number;
+}
+
+// ---------------------------------------------------------------------------
+// Service
+// ---------------------------------------------------------------------------
+
+export class FolderService {
+  constructor(
+    private readonly db: DrizzleClient,
+    private readonly auditService: AuditService,
+  ) {}
+
+  // -----------------------------------------------------------------------
+  // Create
+  // -----------------------------------------------------------------------
+
+  async createFolder(input: CreateFolderInput, userId: string) {
+    let depth = 0;
+
+    if (input.parentId) {
+      const parent = await this.db.query.proxyHostFolders.findFirst({
+        where: eq(proxyHostFolders.id, input.parentId),
+      });
+      if (!parent) throw new AppError(404, 'FOLDER_NOT_FOUND', 'Parent folder not found');
+      if (parent.depth >= MAX_DEPTH) {
+        throw new AppError(400, 'MAX_DEPTH_EXCEEDED', `Maximum folder nesting depth is ${MAX_DEPTH + 1} levels`);
+      }
+      depth = parent.depth + 1;
+    }
+
+    // Get next sort order within same parent
+    const siblings = await this.db
+      .select({ sortOrder: proxyHostFolders.sortOrder })
+      .from(proxyHostFolders)
+      .where(
+        input.parentId
+          ? eq(proxyHostFolders.parentId, input.parentId)
+          : isNull(proxyHostFolders.parentId),
+      )
+      .orderBy(desc(proxyHostFolders.sortOrder))
+      .limit(1);
+
+    const nextSortOrder = siblings.length > 0 ? siblings[0].sortOrder + 1 : 0;
+
+    const [folder] = await this.db.insert(proxyHostFolders).values({
+      name: input.name,
+      parentId: input.parentId ?? null,
+      sortOrder: nextSortOrder,
+      depth,
+      createdById: userId,
+    }).returning();
+
+    await this.auditService.log({
+      userId,
+      action: 'proxy_host_folder.create',
+      resourceType: 'proxy_host_folder',
+      resourceId: folder.id,
+      details: { name: folder.name, parentId: folder.parentId },
+    });
+
+    logger.info('Created folder', { folderId: folder.id, name: folder.name });
+    return folder;
+  }
+
+  // -----------------------------------------------------------------------
+  // Update (rename)
+  // -----------------------------------------------------------------------
+
+  async updateFolder(id: string, input: UpdateFolderInput, userId: string) {
+    const existing = await this.db.query.proxyHostFolders.findFirst({
+      where: eq(proxyHostFolders.id, id),
+    });
+    if (!existing) throw new AppError(404, 'FOLDER_NOT_FOUND', 'Folder not found');
+
+    const [updated] = await this.db
+      .update(proxyHostFolders)
+      .set({ name: input.name, updatedAt: new Date() })
+      .where(eq(proxyHostFolders.id, id))
+      .returning();
+
+    await this.auditService.log({
+      userId,
+      action: 'proxy_host_folder.update',
+      resourceType: 'proxy_host_folder',
+      resourceId: id,
+      details: { oldName: existing.name, newName: input.name },
+    });
+
+    logger.info('Renamed folder', { folderId: id, name: input.name });
+    return updated;
+  }
+
+  // -----------------------------------------------------------------------
+  // Move folder to new parent
+  // -----------------------------------------------------------------------
+
+  async moveFolder(id: string, input: MoveFolderInput, userId: string) {
+    const folder = await this.db.query.proxyHostFolders.findFirst({
+      where: eq(proxyHostFolders.id, id),
+    });
+    if (!folder) throw new AppError(404, 'FOLDER_NOT_FOUND', 'Folder not found');
+
+    // Same parent — no-op
+    if (folder.parentId === input.parentId) return folder;
+
+    // Validate new parent
+    let newDepth = 0;
+    if (input.parentId) {
+      const newParent = await this.db.query.proxyHostFolders.findFirst({
+        where: eq(proxyHostFolders.id, input.parentId),
+      });
+      if (!newParent) throw new AppError(404, 'FOLDER_NOT_FOUND', 'Target parent folder not found');
+
+      // Circular reference check: target parent must not be a descendant
+      const descendants = await this.getDescendantIds(id);
+      if (descendants.includes(input.parentId)) {
+        throw new AppError(400, 'CIRCULAR_REFERENCE', 'Cannot move folder into its own descendant');
+      }
+
+      newDepth = newParent.depth + 1;
+    }
+
+    // Check depth constraints for entire subtree
+    const maxSubtreeDepth = await this.getMaxSubtreeDepth(id);
+    const subtreeHeight = maxSubtreeDepth - folder.depth;
+    if (newDepth + subtreeHeight > MAX_DEPTH) {
+      throw new AppError(
+        400,
+        'MAX_DEPTH_EXCEEDED',
+        `Moving this folder would exceed the maximum nesting depth of ${MAX_DEPTH + 1} levels`,
+      );
+    }
+
+    // Update folder and all descendants' depths
+    const depthDelta = newDepth - folder.depth;
+
+    // Get next sort order in new parent
+    const siblings = await this.db
+      .select({ sortOrder: proxyHostFolders.sortOrder })
+      .from(proxyHostFolders)
+      .where(
+        input.parentId
+          ? eq(proxyHostFolders.parentId, input.parentId)
+          : isNull(proxyHostFolders.parentId),
+      )
+      .orderBy(desc(proxyHostFolders.sortOrder))
+      .limit(1);
+    const nextSortOrder = siblings.length > 0 ? siblings[0].sortOrder + 1 : 0;
+
+    // Update the folder itself
+    const [updated] = await this.db
+      .update(proxyHostFolders)
+      .set({
+        parentId: input.parentId,
+        depth: newDepth,
+        sortOrder: nextSortOrder,
+        updatedAt: new Date(),
+      })
+      .where(eq(proxyHostFolders.id, id))
+      .returning();
+
+    // Update descendants' depths if delta != 0
+    if (depthDelta !== 0) {
+      const descendantIds = await this.getDescendantIds(id);
+      if (descendantIds.length > 0) {
+        await this.db
+          .update(proxyHostFolders)
+          .set({
+            depth: sql`${proxyHostFolders.depth} + ${depthDelta}`,
+            updatedAt: new Date(),
+          })
+          .where(inArray(proxyHostFolders.id, descendantIds));
+      }
+    }
+
+    await this.auditService.log({
+      userId,
+      action: 'proxy_host_folder.move',
+      resourceType: 'proxy_host_folder',
+      resourceId: id,
+      details: { oldParentId: folder.parentId, newParentId: input.parentId },
+    });
+
+    logger.info('Moved folder', { folderId: id, newParentId: input.parentId });
+    return updated;
+  }
+
+  // -----------------------------------------------------------------------
+  // Delete
+  // -----------------------------------------------------------------------
+
+  async deleteFolder(id: string, userId: string) {
+    const folder = await this.db.query.proxyHostFolders.findFirst({
+      where: eq(proxyHostFolders.id, id),
+    });
+    if (!folder) throw new AppError(404, 'FOLDER_NOT_FOUND', 'Folder not found');
+
+    // Count affected items for audit log
+    const descendantIds = await this.getDescendantIds(id);
+    const allFolderIds = [id, ...descendantIds];
+
+    const affectedHosts = await this.db
+      .select({ id: proxyHosts.id })
+      .from(proxyHosts)
+      .where(inArray(proxyHosts.folderId, allFolderIds));
+
+    // CASCADE deletes subfolders, SET NULL ungroups hosts
+    await this.db.delete(proxyHostFolders).where(eq(proxyHostFolders.id, id));
+
+    await this.auditService.log({
+      userId,
+      action: 'proxy_host_folder.delete',
+      resourceType: 'proxy_host_folder',
+      resourceId: id,
+      details: {
+        name: folder.name,
+        subfoldersDeleted: descendantIds.length,
+        hostsUngrouped: affectedHosts.length,
+      },
+    });
+
+    logger.info('Deleted folder', {
+      folderId: id,
+      subfoldersDeleted: descendantIds.length,
+      hostsUngrouped: affectedHosts.length,
+    });
+  }
+
+  // -----------------------------------------------------------------------
+  // Reorder
+  // -----------------------------------------------------------------------
+
+  async reorderFolders(input: ReorderFoldersInput) {
+    for (const item of input.items) {
+      await this.db
+        .update(proxyHostFolders)
+        .set({ sortOrder: item.sortOrder, updatedAt: new Date() })
+        .where(eq(proxyHostFolders.id, item.id));
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Get folder tree
+  // -----------------------------------------------------------------------
+
+  async getFolderTree(): Promise<FolderTreeNode[]> {
+    const allFolders = await this.db
+      .select()
+      .from(proxyHostFolders)
+      .orderBy(asc(proxyHostFolders.depth), asc(proxyHostFolders.sortOrder));
+
+    return this.buildTree(allFolders, []);
+  }
+
+  // -----------------------------------------------------------------------
+  // Get grouped hosts (main endpoint for the proxy hosts page)
+  // -----------------------------------------------------------------------
+
+  async getGroupedHosts(query: GroupedHostsQuery): Promise<GroupedHostsResponse> {
+    // 1. Fetch all folders
+    const allFolders = await this.db
+      .select()
+      .from(proxyHostFolders)
+      .orderBy(asc(proxyHostFolders.depth), asc(proxyHostFolders.sortOrder));
+
+    // 2. Fetch all hosts (with optional filters)
+    const conditions = [];
+    if (query.type) {
+      conditions.push(eq(proxyHosts.type, query.type));
+    }
+    if (query.enabled !== undefined) {
+      conditions.push(eq(proxyHosts.enabled, query.enabled));
+    }
+    if (query.healthStatus) {
+      conditions.push(eq(proxyHosts.healthStatus, query.healthStatus));
+    }
+    if (query.search) {
+      conditions.push(
+        ilike(sql`${proxyHosts.domainNames}::text`, `%${query.search}%`),
+      );
+    }
+
+    const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const allHosts = await this.db
+      .select()
+      .from(proxyHosts)
+      .where(where)
+      .orderBy(asc(proxyHosts.sortOrder), desc(proxyHosts.createdAt));
+
+    // 3. Group hosts by folderId
+    const hostsByFolder = new Map<string | null, ProxyHostRow[]>();
+    for (const host of allHosts) {
+      const key = host.folderId;
+      if (!hostsByFolder.has(key)) hostsByFolder.set(key, []);
+      hostsByFolder.get(key)!.push(host);
+    }
+
+    // 4. Build tree with hosts attached
+    const tree = this.buildTree(allFolders, allHosts);
+
+    // 5. Ungrouped hosts (folderId = null)
+    const ungroupedHosts = hostsByFolder.get(null) ?? [];
+
+    return {
+      folders: tree,
+      ungroupedHosts,
+      totalHosts: allHosts.length,
+    };
+  }
+
+  // -----------------------------------------------------------------------
+  // Move hosts to folder (batch)
+  // -----------------------------------------------------------------------
+
+  async moveHostsToFolder(input: MoveHostsToFolderInput, userId: string) {
+    // Validate folder exists if not null
+    if (input.folderId) {
+      const folder = await this.db.query.proxyHostFolders.findFirst({
+        where: eq(proxyHostFolders.id, input.folderId),
+      });
+      if (!folder) throw new AppError(404, 'FOLDER_NOT_FOUND', 'Target folder not found');
+    }
+
+    await this.db
+      .update(proxyHosts)
+      .set({ folderId: input.folderId, updatedAt: new Date() })
+      .where(inArray(proxyHosts.id, input.hostIds));
+
+    await this.auditService.log({
+      userId,
+      action: 'proxy_host.move_to_folder',
+      resourceType: 'proxy_host',
+      details: { hostIds: input.hostIds, folderId: input.folderId },
+    });
+
+    logger.info('Moved hosts to folder', {
+      hostCount: input.hostIds.length,
+      folderId: input.folderId,
+    });
+  }
+
+  // -----------------------------------------------------------------------
+  // Reorder hosts within a folder
+  // -----------------------------------------------------------------------
+
+  async reorderHosts(input: ReorderHostsInput) {
+    for (const item of input.items) {
+      await this.db
+        .update(proxyHosts)
+        .set({ sortOrder: item.sortOrder, updatedAt: new Date() })
+        .where(eq(proxyHosts.id, item.id));
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Helpers
+  // -----------------------------------------------------------------------
+
+  private buildTree(folders: FolderRow[], hosts: ProxyHostRow[]): FolderTreeNode[] {
+    // Group hosts by folderId
+    const hostsByFolder = new Map<string, ProxyHostRow[]>();
+    for (const host of hosts) {
+      if (host.folderId) {
+        if (!hostsByFolder.has(host.folderId)) hostsByFolder.set(host.folderId, []);
+        hostsByFolder.get(host.folderId)!.push(host);
+      }
+    }
+
+    // Build nodes
+    const nodeMap = new Map<string, FolderTreeNode>();
+    for (const folder of folders) {
+      nodeMap.set(folder.id, {
+        ...folder,
+        children: [],
+        hosts: hostsByFolder.get(folder.id) ?? [],
+      });
+    }
+
+    // Build tree
+    const roots: FolderTreeNode[] = [];
+    for (const node of nodeMap.values()) {
+      if (node.parentId && nodeMap.has(node.parentId)) {
+        nodeMap.get(node.parentId)!.children.push(node);
+      } else {
+        roots.push(node);
+      }
+    }
+
+    return roots;
+  }
+
+  private async getDescendantIds(folderId: string): Promise<string[]> {
+    // BFS to collect all descendant IDs
+    const descendants: string[] = [];
+    let currentLevel = [folderId];
+
+    while (currentLevel.length > 0) {
+      const children = await this.db
+        .select({ id: proxyHostFolders.id })
+        .from(proxyHostFolders)
+        .where(inArray(proxyHostFolders.parentId, currentLevel));
+
+      const childIds = children.map((c) => c.id);
+      descendants.push(...childIds);
+      currentLevel = childIds;
+    }
+
+    return descendants;
+  }
+
+  private async getMaxSubtreeDepth(folderId: string): Promise<number> {
+    const descendantIds = await this.getDescendantIds(folderId);
+    if (descendantIds.length === 0) {
+      const folder = await this.db.query.proxyHostFolders.findFirst({
+        where: eq(proxyHostFolders.id, folderId),
+      });
+      return folder?.depth ?? 0;
+    }
+
+    const maxDepthResult = await this.db
+      .select({ maxDepth: sql<number>`max(${proxyHostFolders.depth})` })
+      .from(proxyHostFolders)
+      .where(inArray(proxyHostFolders.id, [folderId, ...descendantIds]));
+
+    return maxDepthResult[0]?.maxDepth ?? 0;
+  }
+}

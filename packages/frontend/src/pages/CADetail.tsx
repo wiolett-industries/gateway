@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  ArrowLeft,
   Award,
   Copy,
   Download,
@@ -30,7 +31,7 @@ import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useCAStore } from "@/stores/ca";
 import type { Certificate } from "@/types";
-import { formatDate, formatSerialNumber, daysUntil } from "@/lib/utils";
+import { formatDate, formatSerialNumber, daysUntil, hoursUntil } from "@/lib/utils";
 
 export function CADetail() {
   const { id } = useParams<{ id: string }>();
@@ -92,12 +93,17 @@ export function CADetail() {
     <div className="h-full overflow-y-auto p-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold">{ca.commonName}</h1>
-            <StatusBadge status={ca.status} />
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="icon" onClick={() => navigate("/cas")}>
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-bold">{ca.commonName}</h1>
+              <StatusBadge status={ca.status} />
+            </div>
+            <p className="text-sm text-muted-foreground">{ca.type === "root" ? "Root CA" : "Intermediate CA"}</p>
           </div>
-          <p className="text-sm text-muted-foreground">{ca.type === "root" ? "Root CA" : "Intermediate CA"}</p>
         </div>
         <div className="flex items-center gap-2">
           {hasRole("admin") && ca.status === "active" && (
@@ -214,7 +220,7 @@ export function CADetail() {
             <h3 className="font-semibold text-sm">Summary</h3>
             <div className="space-y-2">
               <SummaryRow label="Certificates" value={ca.certCount.toString()} />
-              <SummaryRow label="Expires in" value={expiryDays > 0 ? `${expiryDays} days` : "Expired"} warn={expiryDays <= 30} />
+              <SummaryRow label="Expires in" value={expiryDays > 0 ? `${expiryDays} days` : hoursUntil(ca.notAfter) > 0 ? `${hoursUntil(ca.notAfter)} hours` : "Expired"} warn={expiryDays <= 30} />
               <SummaryRow label="Type" value={ca.type} capitalize />
               <SummaryRow label="CRL Number" value={ca.crlNumber.toString()} />
             </div>
@@ -223,7 +229,7 @@ export function CADetail() {
           {expiryDays <= 30 && expiryDays > 0 && (
             <div className="flex items-start gap-2 border border-yellow-600/30 bg-yellow-600/5 p-3">
               <AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400 mt-0.5 shrink-0" />
-              <p className="text-sm text-yellow-600 dark:text-yellow-400">Expires in {expiryDays} days.</p>
+              <p className="text-sm text-yellow-600 dark:text-yellow-400">Expires in {expiryDays > 0 ? `${expiryDays} days` : `${hoursUntil(ca.notAfter)} hours`}.</p>
             </div>
           )}
 

@@ -17,6 +17,11 @@ import { tokensRoutes } from '@/modules/tokens/tokens.routes.js';
 import { auditRoutes } from '@/modules/audit/audit.routes.js';
 import { alertRoutes } from '@/modules/audit/alert.routes.js';
 import { adminRoutes } from '@/modules/admin/admin.routes.js';
+import { proxyRoutes } from '@/modules/proxy/proxy.routes.js';
+import { folderRoutes } from '@/modules/proxy/folder.routes.js';
+import { sslRoutes } from '@/modules/ssl/ssl.routes.js';
+import { accessListRoutes } from '@/modules/access-lists/access-list.routes.js';
+import { monitoringRoutes } from '@/modules/monitoring/monitoring.routes.js';
 
 import type { AppEnv } from '@/types.js';
 
@@ -64,14 +69,19 @@ export function createApp() {
   app.route('/api/alerts', alertRoutes);
   app.route('/api/tokens', tokensRoutes);
   app.route('/api/admin', adminRoutes);
+  app.route('/api/proxy-hosts', proxyRoutes);
+  app.route('/api/proxy-host-folders', folderRoutes);
+  app.route('/api/ssl-certificates', sslRoutes);
+  app.route('/api/access-lists', accessListRoutes);
+  app.route('/api/monitoring', monitoringRoutes);
 
   // OpenAPI documentation
   app.doc('/openapi.json', {
     openapi: '3.1.0',
     info: {
-      title: 'CA Manager API',
+      title: 'Gateway API',
       version: '1.0.0',
-      description: 'Self-hosted Certificate Authority management API.\n\n## Authentication\n\nThis API uses session-based authentication via OIDC. After logging in through `/auth/login`, include the session ID as a Bearer token in the Authorization header.\n\nAlternatively, use API tokens for programmatic access.\n\n## Public PKI Endpoints\n\nCRL and OCSP endpoints under `/pki/` are unauthenticated and publicly accessible.',
+      description: 'Self-hosted certificate manager and reverse proxy gateway API.\n\n## Authentication\n\nThis API uses session-based authentication via OIDC. After logging in through `/auth/login`, include the session ID as a Bearer token in the Authorization header.\n\nAlternatively, use API tokens for programmatic access.\n\n## Public PKI Endpoints\n\nCRL and OCSP endpoints under `/pki/` are unauthenticated and publicly accessible.',
     },
     servers: [
       {
@@ -89,6 +99,10 @@ export function createApp() {
       { name: 'Alerts', description: 'Expiry alerts and notifications' },
       { name: 'Tokens', description: 'API token management' },
       { name: 'Admin', description: 'User administration' },
+      { name: 'Proxy Hosts', description: 'Reverse proxy host management' },
+      { name: 'SSL Certificates', description: 'SSL/TLS certificate management (ACME, upload, internal)' },
+      { name: 'Access Lists', description: 'IP access control and basic authentication lists' },
+      { name: 'Monitoring', description: 'Dashboard stats, health checks, and log streaming' },
     ],
   });
 

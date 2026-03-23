@@ -1,14 +1,23 @@
-import { CornerDownRight, Plus, ShieldAlert } from "lucide-react";
+import { CornerDownRight, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { PageTransition } from "@/components/common/PageTransition";
+import { SearchFilterBar } from "@/components/common/SearchFilterBar";
 import { CACreateDialog } from "@/components/ca/CACreateDialog";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAuthStore } from "@/stores/auth";
 import { useCAStore } from "@/stores/ca";
 import type { CA } from "@/types";
 import { formatDate, daysUntil } from "@/lib/utils";
+
+type StatusFilter = "active" | "all";
+
+const statusOptions: { value: StatusFilter; label: string }[] = [
+  { value: "active", label: "Active only" },
+  { value: "all", label: "All statuses" },
+];
 
 export function CAs() {
   const navigate = useNavigate();
@@ -16,17 +25,30 @@ export function CAs() {
   const { cas, fetchCAs, isLoading } = useCAStore();
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [createIntermediateParentId, setCreateIntermediateParentId] = useState<string | undefined>();
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
 
   useEffect(() => {
     fetchCAs();
   }, [fetchCAs]);
 
   const allCAs = cas || [];
-  const rootCAs = allCAs.filter((ca) => !ca.parentId);
+  const filteredByStatus = statusFilter === "all" ? allCAs : allCAs.filter((ca) => ca.status === "active");
+  const visibleCAs = search
+    ? filteredByStatus.filter((ca) => ca.commonName.toLowerCase().includes(search.toLowerCase()))
+    : filteredByStatus;
+  const rootCAs = visibleCAs.filter((ca) => !ca.parentId);
   const activeCAs = allCAs.filter((ca) => ca.status === "active");
   const totalCerts = allCAs.reduce((sum, ca) => sum + (ca.certCount || 0), 0);
 
-  const getChildren = (parentId: string) => allCAs.filter((ca) => ca.parentId === parentId);
+  const getChildren = (parentId: string) => visibleCAs.filter((ca) => ca.parentId === parentId);
+
+  const hasActiveFilters = statusFilter !== "active" || search !== "";
+
+  const resetFilters = () => {
+    setSearch("");
+    setStatusFilter("active");
+  };
 
   if (isLoading) {
     return (
@@ -38,8 +60,9 @@ export function CAs() {
 
   return (
     <PageTransition>
-    <div className="h-full overflow-y-auto p-6 space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="h-full overflow-y-auto p-6 space-y-2">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-2">
         <div>
           <h1 className="text-2xl font-bold">Certificate Authorities</h1>
           <p className="text-sm text-muted-foreground">
@@ -60,7 +83,29 @@ export function CAs() {
         )}
       </div>
 
-      {allCAs.length > 0 ? (
+      {/* Search and filters */}
+      <SearchFilterBar
+        placeholder="Search by common name..."
+        search={search}
+        onSearchChange={setSearch}
+        hasActiveFilters={hasActiveFilters}
+        onReset={resetFilters}
+        filters={
+          <div className="w-40">
+            <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilter)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {statusOptions.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        }
+      />
+
+      {/* Table */}
+      {visibleCAs.length > 0 ? (
         <div className="border border-border bg-card">
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -81,7 +126,7 @@ export function CAs() {
                       key={rootCA.id}
                       ca={rootCA}
                       children={children}
-                      allCAs={allCAs}
+                      allCAs={visibleCAs}
                       depth={0}
                       onSelect={(id) => navigate(`/cas/${id}`)}
                     />
@@ -92,16 +137,11 @@ export function CAs() {
           </div>
         </div>
       ) : (
-        <div className="flex flex-col items-center gap-3 py-16 border border-border bg-card">
-          <ShieldAlert className="h-12 w-12 text-muted-foreground" />
-          <p className="text-lg font-medium">No Certificate Authorities</p>
-          <p className="text-sm text-muted-foreground text-center max-w-md">
-            Create a Root CA to start building your PKI infrastructure.
-          </p>
-          {hasRole("admin") && (
-            <Button onClick={() => setCreateDialogOpen(true)} className="mt-2">
-              <Plus className="h-4 w-4" />
-              Create Root CA
+        <div className="flex flex-col items-center gap-2 py-16 border border-border bg-card">
+          <p className="text-muted-foreground">No Certificate Authorities</p>
+          {hasActiveFilters && (
+            <Button variant="outline" size="sm" onClick={resetFilters}>
+              Clear filters
             </Button>
           )}
         </div>

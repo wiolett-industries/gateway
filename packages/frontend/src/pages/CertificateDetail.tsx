@@ -1,12 +1,12 @@
 import {
-  Award,
+  ArrowLeft,
   Copy,
   Download,
   MoreVertical,
   ShieldOff,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { PageTransition } from "@/components/common/PageTransition";
 import { StatusBadge } from "@/components/common/StatusBadge";
@@ -32,10 +32,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import type { Certificate } from "@/types";
-import { formatDate, formatSerialNumber, daysUntil } from "@/lib/utils";
+import { formatDate, formatSerialNumber, daysUntil, hoursUntil } from "@/lib/utils";
 
 export function CertificateDetail() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const { hasRole } = useAuthStore();
   const [cert, setCert] = useState<Certificate | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -116,7 +117,9 @@ export function CertificateDetail() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Award className="h-6 w-6" />
+          <Button variant="ghost" size="icon" onClick={() => navigate("/certificates")}>
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-2xl font-bold">{cert.commonName}</h1>
@@ -194,7 +197,7 @@ export function CertificateDetail() {
             <InfoRow label="Valid From" value={formatDate(cert.notBefore)} />
             <InfoRow label="Valid Until" value={formatDate(cert.notAfter)} />
             {cert.templateId && <InfoRow label="Template ID" value={cert.templateId} />}
-            <InfoRow label="Issued By" value={cert.issuedById || "-"} />
+            <InfoRow label="Issued By" value={cert.issuedById || "—"} />
             {cert.revokedAt && (
               <>
                 <InfoRow label="Revoked At" value={formatDate(cert.revokedAt)} />
@@ -250,7 +253,7 @@ export function CertificateDetail() {
               expiryDays <= 30 ? "text-[color:var(--color-warning)]" :
               "text-[color:var(--color-success)]"
             }`}>
-              {expiryDays > 0 ? `Expires in ${expiryDays} days` : "Expired"}
+              {expiryDays > 0 ? `Expires in ${expiryDays} days` : hoursUntil(cert.notAfter) > 0 ? `Expires in ${hoursUntil(cert.notAfter)} hours` : "Expired"}
             </p>
           </div>
         </div>

@@ -11,14 +11,15 @@ import '@/modules/auth/auth.service.js';
 
 import { createApp } from '@/app.js';
 import { getEnv } from '@/config/env.js';
-import { initializeContainer } from '@/bootstrap.js';
+import { initializeContainer, container } from '@/bootstrap.js';
 import { logger } from '@/lib/logger.js';
+import { SchedulerService } from '@/services/scheduler.service.js';
 
 async function main() {
   try {
     const env = getEnv();
 
-    logger.info('Starting CA Manager API...', {
+    logger.info('Starting Gateway API...', {
       nodeEnv: env.NODE_ENV,
       port: env.PORT,
     });
@@ -38,9 +39,14 @@ async function main() {
     logger.info(`Server running at http://localhost:${env.PORT}`);
     logger.info(`API Documentation at http://localhost:${env.PORT}/docs`);
 
+    // Start background jobs
+    const scheduler = container.resolve(SchedulerService);
+    scheduler.start();
+
     // Graceful shutdown
     const shutdown = async () => {
       logger.info('Shutting down server...');
+      scheduler.stop();
       server.close(() => {
         logger.info('Server closed');
         process.exit(0);

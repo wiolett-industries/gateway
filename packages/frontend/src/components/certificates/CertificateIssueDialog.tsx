@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { NumericInput } from "@/components/ui/numeric-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { api } from "@/services/api";
 import { useCAStore } from "@/stores/ca";
@@ -110,6 +111,8 @@ export function CertificateIssueDialog({
   };
 
   const activeCAs = (cas || []).filter((ca) => ca.status === "active");
+  const sansRequired = type === "tls-server" || type === "email";
+  const step2Valid = commonName.trim() !== "" && validityDays >= 1 && validityDays <= 3650 && (!sansRequired || sans.length > 0);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -194,18 +197,18 @@ export function CertificateIssueDialog({
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Validity (days)</label>
-              <Input
-                type="number"
-                value={validityDays}
-                onChange={(e) => setValidityDays(parseInt(e.target.value) || 365)}
-                min={1}
-                max={3650}
-              />
+              <NumericInput value={validityDays} onChange={(v) => setValidityDays(v)} min={1} max={3650} />
             </div>
 
             {/* SANs */}
             <div className="space-y-2">
-              <label className="text-sm font-medium">Subject Alternative Names</label>
+              <label className="text-sm font-medium">
+                Subject Alternative Names
+                {sansRequired && <span className="text-destructive ml-1">*</span>}
+              </label>
+              {sansRequired && sans.length === 0 && (
+                <p className="text-xs text-destructive">At least one SAN is required for {type} certificates</p>
+              )}
               <div className="flex gap-2">
                 <Input
                   value={sanInput}
@@ -269,17 +272,8 @@ export function CertificateIssueDialog({
           <div className="flex-1" />
           {step < 3 ? (
             <Button
-              onClick={() => {
-                if (step === 1 && !selectedCAId) {
-                  toast.error("Please select a CA");
-                  return;
-                }
-                if (step === 2 && !commonName.trim()) {
-                  toast.error("Common Name is required");
-                  return;
-                }
-                setStep(step + 1);
-              }}
+              disabled={(step === 1 && !selectedCAId) || (step === 2 && !step2Valid)}
+              onClick={() => setStep(step + 1)}
             >
               Next
               <ChevronRight className="h-4 w-4" />

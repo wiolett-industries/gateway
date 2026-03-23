@@ -25,10 +25,10 @@ export function LoginPage() {
         <div className="flex flex-col items-center gap-4">
           <ShieldCheck className="h-12 w-12 text-foreground" />
           <h1 className="text-2xl font-bold tracking-tight text-foreground">
-            CA Manager
+            Gateway
           </h1>
           <p className="text-sm text-muted-foreground">
-            Private PKI Certificate Authority Management
+            Certificate manager and reverse proxy gateway
           </p>
         </div>
 
