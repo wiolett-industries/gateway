@@ -526,11 +526,8 @@ export class CertService {
     if (!policies?.length) return;
 
     try {
-      const policyInfos = policies.map((p) => ({
-        policyIdentifier: p.oid,
-        ...(p.qualifier ? { policyQualifiers: [{ policyQualifierId: '1.3.6.1.5.5.7.2.1', qualifier: p.qualifier }] } : {}),
-      }));
-      extensions.push(new x509.CertificatePolicyExtension(policyInfos as any, false));
+      const oids = policies.map((p) => p.oid);
+      extensions.push(new x509.CertificatePolicyExtension(oids, false));
     } catch (err) {
       logger.warn('Failed to add Certificate Policies extension', { err });
     }

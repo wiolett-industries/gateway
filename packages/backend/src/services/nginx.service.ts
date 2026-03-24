@@ -664,7 +664,7 @@ export class NginxService {
    * Regenerate every Nginx config file from the provided host list,
    * removing stale files and reloading Nginx.
    */
-  async syncAllConfigs(hosts: ProxyHostConfig[]): Promise<void> {
+  async syncAllConfigs(hosts: ProxyHostConfig[], renderFn?: (host: ProxyHostConfig) => Promise<string>): Promise<void> {
     logger.info('Syncing all Nginx configs', { count: hosts.length });
 
     // Ensure config directory exists
@@ -698,7 +698,7 @@ export class NginxService {
         await this.removeConfig(host.id);
         continue;
       }
-      const config = this.generateConfig(host);
+      const config = renderFn ? await renderFn(host) : this.generateConfig(host);
       await this.writeConfig(host.id, config);
     }
 

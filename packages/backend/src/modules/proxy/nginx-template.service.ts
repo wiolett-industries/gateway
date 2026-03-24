@@ -404,6 +404,7 @@ export class NginxTemplateService {
       description: existing.description,
       type: existing.type,
       content: existing.content,
+      variables: existing.variables ?? [],
       createdById: userId,
     }).returning();
 
@@ -505,8 +506,20 @@ export class NginxTemplateService {
       accessList: host.accessList,
       advancedConfig: host.advancedConfig,
       logPath: `${NGINX_LOGS_PREFIX}/proxy-${host.id}`,
-      // Merge custom template variables (user-defined values override defaults)
-      ...(host.templateVariables ?? {}),
+      // Merge custom template variables (sanitized — user-defined values override defaults)
+      ...this.sanitizeTemplateVariables(host.templateVariables ?? {}),
     };
+  }
+
+  private sanitizeTemplateVariables(vars: Record<string, string | number | boolean>): Record<string, string | number | boolean> {
+    const sanitized: Record<string, string | number | boolean> = {};
+    for (const [key, value] of Object.entries(vars)) {
+      if (typeof value === 'string') {
+        sanitized[key] = value.replace(DANGEROUS_CHARS, '');
+      } else {
+        sanitized[key] = value;
+      }
+    }
+    return sanitized;
   }
 }

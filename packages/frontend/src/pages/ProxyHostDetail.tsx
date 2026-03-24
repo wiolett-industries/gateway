@@ -24,7 +24,6 @@ import type {
   CreateProxyHostRequest,
   CustomHeader,
   ForwardScheme,
-  HealthStatus,
   NginxTemplate,
   ProxyHostFolder,
   ProxyHostType,
@@ -32,7 +31,6 @@ import type {
   SSLCertificate,
 } from "@/types";
 import { cn } from "@/lib/utils";
-import { HealthDot } from "@/components/ui/health-dot";
 import { Switch } from "@/components/ui/switch";
 
 export function ProxyHostDetail() {
@@ -88,7 +86,6 @@ export function ProxyHostDetail() {
   const [healthCheckEnabled, setHealthCheckEnabled] = useState(false);
   const [healthCheckUrl, setHealthCheckUrl] = useState("/");
   const [healthCheckInterval, setHealthCheckInterval] = useState(30);
-  const [healthStatus, setHealthStatus] = useState<HealthStatus>("unknown");
 
   // Raw config
   const [rawConfig, setRawConfig] = useState("");
@@ -143,7 +140,6 @@ export function ProxyHostDetail() {
         setHealthCheckEnabled(host.healthCheckEnabled);
         setHealthCheckUrl(host.healthCheckUrl || "/");
         setHealthCheckInterval(host.healthCheckInterval || 30);
-        setHealthStatus(host.healthStatus);
       } catch {
         toast.error("Failed to load proxy host");
         navigate("/proxy-hosts");
@@ -492,7 +488,12 @@ export function ProxyHostDetail() {
                         <Input
                           type="number"
                           value={String(templateVariables[v.name] ?? v.default ?? "")}
-                          onChange={(e) => setTemplateVariables({ ...templateVariables, [v.name]: e.target.value ? Number(e.target.value) : 0 })}
+                          onChange={(e) => {
+                            const raw = e.target.value;
+                            const next = { ...templateVariables };
+                            if (raw) { next[v.name] = Number(raw); } else { delete next[v.name]; }
+                            setTemplateVariables(next);
+                          }}
                           className="w-48"
                         />
                       ) : (

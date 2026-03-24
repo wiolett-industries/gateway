@@ -7,6 +7,7 @@ import { proxyHosts } from '@/db/schema/proxy-hosts.js';
 import { sslCertificates } from '@/db/schema/ssl-certificates.js';
 import { certificates } from '@/db/schema/certificates.js';
 import { NginxService } from '@/services/nginx.service.js';
+import { NginxTemplateService } from '@/modules/proxy/nginx-template.service.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
 import { AppError } from '@/middleware/error-handler.js';
 import { createChildLogger } from '@/lib/logger.js';
@@ -35,6 +36,7 @@ export class AccessListService {
   constructor(
     private readonly db: DrizzleClient,
     private readonly nginxService: NginxService,
+    private readonly nginxTemplateService: NginxTemplateService,
     private readonly auditService: AuditService,
   ) {}
 
@@ -170,9 +172,10 @@ export class AccessListService {
           sslCertPath: certPaths.sslCertPath,
           sslKeyPath: certPaths.sslKeyPath,
           sslChainPath: certPaths.sslChainPath,
+          templateVariables: (host.templateVariables ?? {}) as Record<string, string | number | boolean>,
         };
 
-        const generatedConfig = this.nginxService.generateConfig(config);
+        const generatedConfig = await this.nginxTemplateService.renderForHost(config, host.nginxTemplateId ?? null);
         await this.nginxService.writeConfig(host.id, generatedConfig);
       }
 

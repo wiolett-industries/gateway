@@ -123,7 +123,7 @@ export async function initializeContainer(): Promise<void> {
   const acmeService = new ACMEService(env.ACME_CHALLENGE_PATH, env.ACME_EMAIL, env.ACME_STAGING);
   container.registerInstance(ACMEService, acmeService);
 
-  const accessListService = new AccessListService(db, nginxService, auditService);
+  const accessListService = new AccessListService(db, nginxService, nginxTemplateService, auditService);
   container.registerInstance(AccessListService, accessListService);
 
   const sslService = new SSLService(db, acmeService, nginxService, cryptoService, auditService);
