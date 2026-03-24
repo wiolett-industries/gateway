@@ -20,6 +20,27 @@ export const certificateTemplates = pgTable('certificate_templates', {
   requireSans: boolean('require_sans').notNull().default(true),
   sanTypes: jsonb('san_types').$type<string[]>().default(['dns', 'ip']),
 
+  // Subject DN defaults
+  subjectDnFields: jsonb('subject_dn_fields').$type<{
+    o?: string; ou?: string; l?: string; st?: string; c?: string; serialNumber?: string;
+  }>().default({}),
+
+  // Distribution points
+  crlDistributionPoints: jsonb('crl_distribution_points').$type<string[]>().default([]),
+  authorityInfoAccess: jsonb('authority_info_access').$type<{
+    ocspUrl?: string; caIssuersUrl?: string;
+  }>().default({}),
+
+  // Policies
+  certificatePolicies: jsonb('certificate_policies').$type<{
+    oid: string; qualifier?: string;
+  }[]>().default([]),
+
+  // Custom extensions
+  customExtensions: jsonb('custom_extensions').$type<{
+    oid: string; critical: boolean; value: string;
+  }[]>().default([]),
+
   // Metadata
   createdById: uuid('created_by_id').references(() => users.id),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

@@ -19,7 +19,9 @@ import { CertificateIssueDialog } from "@/components/certificates/CertificateIss
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Pencil } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -43,6 +45,11 @@ export function CADetail() {
   const [issueDialogOpen, setIssueDialogOpen] = useState(false);
   const [createIntermediateOpen, setCreateIntermediateOpen] = useState(false);
   const [installGuideOpen, setInstallGuideOpen] = useState(false);
+  const [endpointsDialogOpen, setEndpointsDialogOpen] = useState(false);
+  const [epCrlUrl, setEpCrlUrl] = useState("");
+  const [epOcspUrl, setEpOcspUrl] = useState("");
+  const [epCaIssuersUrl, setEpCaIssuersUrl] = useState("");
+  const [isSavingEndpoints, setIsSavingEndpoints] = useState(false);
 
   const reloadCerts = async () => {
     if (!id) return;
@@ -86,6 +93,31 @@ export function CADetail() {
 
   const ca = selectedCA;
   const expiryDays = daysUntil(ca.notAfter);
+
+  const openEndpointsDialog = () => {
+    setEpCrlUrl(ca.crlDistributionUrl || "");
+    setEpOcspUrl(ca.ocspResponderUrl || "");
+    setEpCaIssuersUrl(ca.caIssuersUrl || "");
+    setEndpointsDialogOpen(true);
+  };
+
+  const handleSaveEndpoints = async () => {
+    setIsSavingEndpoints(true);
+    try {
+      await api.updateCA(ca.id, {
+        crlDistributionUrl: epCrlUrl || null,
+        ocspResponderUrl: epOcspUrl || null,
+        caIssuersUrl: epCaIssuersUrl || null,
+      });
+      toast.success("Endpoints updated");
+      setEndpointsDialogOpen(false);
+      fetchCAs();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update endpoints");
+    } finally {
+      setIsSavingEndpoints(false);
+    }
+  };
   const childCAs = (cas || []).filter((c) => c.parentId === ca.id);
 
   return (
@@ -173,6 +205,24 @@ export function CADetail() {
               <InfoRow label="Valid Until" value={formatDate(ca.notAfter)} />
               <InfoRow label="Path Length" value={ca.pathLengthConstraint != null ? ca.pathLengthConstraint.toString() : "Unlimited"} />
               <InfoRow label="Max Cert Validity" value={`${ca.maxValidityDays} days`} />
+            </div>
+          </div>
+
+          {/* Distribution Endpoints */}
+          <div className="border border-border bg-card">
+            <div className="flex items-center justify-between border-b border-border p-4">
+              <h2 className="font-semibold">Distribution Endpoints</h2>
+              {hasRole("admin") && (
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={openEndpointsDialog}>
+                  <Pencil className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+            <div className="p-4 space-y-3">
+              <InfoRow label="CRL Distribution URL" value={ca.crlDistributionUrl || "—"} />
+              <InfoRow label="OCSP Responder URL" value={ca.ocspResponderUrl || "—"} />
+              <InfoRow label="CA Issuers URL" value={ca.caIssuersUrl || "—"} />
+              <p className="text-xs text-muted-foreground">These URLs are automatically embedded into certificates issued under this CA.</p>
             </div>
           </div>
 
@@ -287,6 +337,35 @@ export function CADetail() {
               <p className="text-muted-foreground text-xs">Settings → Privacy and Security → Security → Manage certificates → Import</p>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+      {/* Endpoints Edit Dialog */}
+      <Dialog open={endpointsDialogOpen} onOpenChange={setEndpointsDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Distribution Endpoints</DialogTitle>
+            <DialogDescription>Configure CRL and OCSP URLs for certificates issued under this CA.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">CRL Distribution URL</label>
+              <Input value={epCrlUrl} onChange={(e) => setEpCrlUrl(e.target.value)} placeholder="http://crl.example.com/ca.crl" className="font-mono text-xs" />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">OCSP Responder URL</label>
+              <Input value={epOcspUrl} onChange={(e) => setEpOcspUrl(e.target.value)} placeholder="http://ocsp.example.com" className="font-mono text-xs" />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">CA Issuers URL</label>
+              <Input value={epCaIssuersUrl} onChange={(e) => setEpCaIssuersUrl(e.target.value)} placeholder="http://ca.example.com/cert.pem" className="font-mono text-xs" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEndpointsDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleSaveEndpoints} disabled={isSavingEndpoints}>
+              {isSavingEndpoints ? "Saving..." : "Save"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

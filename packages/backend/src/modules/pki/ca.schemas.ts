@@ -24,5 +24,13 @@ export const ExportCAKeySchema = z.object({
   passphrase: z.string().min(8),
 });
 
+export const UpdateCASchema = z.object({
+  crlDistributionUrl: z.string().url().max(500).optional().nullable(),
+  ocspResponderUrl: z.string().url().max(500).optional().nullable(),
+  caIssuersUrl: z.string().url().max(500).optional().nullable(),
+  maxValidityDays: z.number().int().min(1).max(3650).optional(),
+});
+
 export type CreateRootCAInput = z.infer<typeof CreateRootCASchema>;
 export type CreateIntermediateCAInput = z.infer<typeof CreateIntermediateCASchema>;
+export type UpdateCAInput = z.infer<typeof UpdateCASchema>;

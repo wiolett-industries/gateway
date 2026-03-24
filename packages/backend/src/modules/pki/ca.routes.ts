@@ -6,7 +6,7 @@ import { CryptoService } from '@/services/crypto.service.js';
 import { ExportService } from './export.service.js';
 import { OCSPService } from './ocsp.service.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
-import { CreateRootCASchema, CreateIntermediateCASchema, RevokeCASchema, ExportCAKeySchema } from './ca.schemas.js';
+import { CreateRootCASchema, CreateIntermediateCASchema, RevokeCASchema, ExportCAKeySchema, UpdateCASchema } from './ca.schemas.js';
 import type { AppEnv } from '@/types.js';
 
 export const caRoutes = new OpenAPIHono<AppEnv>();
@@ -47,6 +47,17 @@ caRoutes.post('/:id/intermediate', rbacMiddleware('admin'), async (c) => {
   const input = CreateIntermediateCASchema.parse(body);
   const ca = await caService.createIntermediateCA(parentId, input, user.id);
   return c.json(ca, 201);
+});
+
+// Update CA settings (admin only)
+caRoutes.put('/:id', rbacMiddleware('admin'), async (c) => {
+  const caService = container.resolve(CAService);
+  const user = c.get('user')!;
+  const id = c.req.param('id');
+  const body = await c.req.json();
+  const input = UpdateCASchema.parse(body);
+  const ca = await caService.updateCA(id, input, user.id);
+  return c.json(ca);
 });
 
 // Revoke CA (admin only)

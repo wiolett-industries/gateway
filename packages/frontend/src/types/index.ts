@@ -33,6 +33,9 @@ export interface CA {
   ocspCertPem: string | null;
   crlNumber: number;
   lastCrlAt: string | null;
+  crlDistributionUrl: string | null;
+  ocspResponderUrl: string | null;
+  caIssuersUrl: string | null;
   createdById: string;
   createdAt: string;
   updatedAt: string;
@@ -80,6 +83,26 @@ export interface Certificate {
 }
 
 // Template types
+export interface SubjectDnFields {
+  o?: string;
+  ou?: string;
+  l?: string;
+  st?: string;
+  c?: string;
+  serialNumber?: string;
+}
+
+export interface CertificatePolicy {
+  oid: string;
+  qualifier?: string;
+}
+
+export interface CustomExtension {
+  oid: string;
+  critical: boolean;
+  value: string;
+}
+
 export interface Template {
   id: string;
   name: string;
@@ -92,6 +115,11 @@ export interface Template {
   extKeyUsage: string[];
   requireSans: boolean;
   sanTypes: string[];
+  subjectDnFields: SubjectDnFields;
+  crlDistributionPoints: string[];
+  authorityInfoAccess: { ocspUrl?: string; caIssuersUrl?: string };
+  certificatePolicies: CertificatePolicy[];
+  customExtensions: CustomExtension[];
   createdById: string | null;
   createdAt: string;
   updatedAt: string;
@@ -200,6 +228,7 @@ export interface IssueCertificateRequest {
   sans: string[];
   keyAlgorithm: KeyAlgorithm;
   validityDays: number;
+  subjectDnFields?: SubjectDnFields;
 }
 
 export interface IssueCertFromCSRRequest {

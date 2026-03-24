@@ -138,6 +138,18 @@ class ApiClient {
     });
   }
 
+  async updateCA(id: string, data: {
+    crlDistributionUrl?: string | null;
+    ocspResponderUrl?: string | null;
+    caIssuersUrl?: string | null;
+    maxValidityDays?: number;
+  }): Promise<CA> {
+    return this.request<CA>(`/cas/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  }
+
   async revokeCA(id: string, reason: string): Promise<void> {
     return this.request<void>(`/cas/${id}/revoke`, {
       method: "POST",

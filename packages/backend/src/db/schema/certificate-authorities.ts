@@ -38,6 +38,11 @@ export const certificateAuthorities = pgTable('certificate_authorities', {
   encryptedOcspDek: text('encrypted_ocsp_dek'),
   ocspDekIv: text('ocsp_dek_iv'),
 
+  // Distribution endpoints (embedded into issued certs)
+  crlDistributionUrl: varchar('crl_distribution_url', { length: 500 }),
+  ocspResponderUrl: varchar('ocsp_responder_url', { length: 500 }),
+  caIssuersUrl: varchar('ca_issuers_url', { length: 500 }),
+
   // CRL tracking
   crlNumber: integer('crl_number').notNull().default(0),
   lastCrlAt: timestamp('last_crl_at', { withTimezone: true }),

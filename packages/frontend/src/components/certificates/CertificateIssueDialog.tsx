@@ -45,6 +45,9 @@ export function CertificateIssueDialog({
   const [keyAlgorithm, setKeyAlgorithm] = useState<KeyAlgorithm>("ecdsa-p256");
   const [sans, setSans] = useState<string[]>([]);
   const [sanInput, setSanInput] = useState("");
+  const [dnO, setDnO] = useState("");
+  const [dnOu, setDnOu] = useState("");
+  const [dnC, setDnC] = useState("");
 
   useEffect(() => {
     if (open) {
@@ -91,6 +94,11 @@ export function CertificateIssueDialog({
 
     setIsIssuing(true);
     try {
+      const subjectDnFields = {
+        ...(dnO ? { o: dnO } : {}),
+        ...(dnOu ? { ou: dnOu } : {}),
+        ...(dnC ? { c: dnC } : {}),
+      };
       await api.issueCertificate({
         caId: selectedCAId,
         templateId: selectedTemplateId || undefined,
@@ -99,6 +107,7 @@ export function CertificateIssueDialog({
         sans: sans.length > 0 ? sans : [],
         validityDays,
         keyAlgorithm,
+        ...(Object.keys(subjectDnFields).length > 0 ? { subjectDnFields } : {}),
       });
       toast.success(`Certificate issued for ${commonName}`);
       onOpenChange(false);
@@ -232,6 +241,16 @@ export function CertificateIssueDialog({
                   ))}
                 </div>
               )}
+            </div>
+
+            {/* Subject DN (optional) */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Subject DN (optional)</label>
+              <div className="grid grid-cols-3 gap-2">
+                <Input value={dnO} onChange={(e) => setDnO(e.target.value)} placeholder="Organization (O)" />
+                <Input value={dnOu} onChange={(e) => setDnOu(e.target.value)} placeholder="Org Unit (OU)" />
+                <Input value={dnC} onChange={(e) => setDnC(e.target.value)} placeholder="Country (C)" maxLength={2} />
+              </div>
             </div>
           </div>
         )}
