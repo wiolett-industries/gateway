@@ -4,6 +4,7 @@ import { sslCertificates } from '@/db/schema/ssl-certificates.js';
 import { certificates } from '@/db/schema/certificates.js';
 import { accessLists } from '@/db/schema/access-lists.js';
 import { NginxService } from '@/services/nginx.service.js';
+import { NginxTemplateService } from './nginx-template.service.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
 import { CryptoService } from '@/services/crypto.service.js';
 import { AppError } from '@/middleware/error-handler.js';
@@ -35,6 +36,7 @@ export class ProxyService {
   constructor(
     private readonly db: DrizzleClient,
     private readonly nginxService: NginxService,
+    private readonly nginxTemplateService: NginxTemplateService,
     private readonly auditService: AuditService,
     private readonly cryptoService: CryptoService,
   ) {}
@@ -80,6 +82,8 @@ export class ProxyService {
       advancedConfig: input.advancedConfig ?? null,
       accessListId: input.accessListId ?? null,
       folderId: input.folderId ?? null,
+      nginxTemplateId: input.nginxTemplateId ?? null,
+      templateVariables: input.templateVariables ?? {},
       healthCheckEnabled: input.healthCheckEnabled,
       healthCheckUrl: input.healthCheckUrl ?? '/',
       healthCheckInterval: input.healthCheckInterval ?? 30,
@@ -90,7 +94,7 @@ export class ProxyService {
     try {
       const certPaths = await this.resolveCertPaths(host);
       const accessList = await this.resolveAccessList(host.accessListId);
-      const config = this.buildNginxConfig(host, certPaths, accessList);
+      const config = await this.buildNginxConfig(host, certPaths, accessList);
 
       // 3. Apply config (writes file, tests, reloads or rolls back)
       await this.nginxService.applyConfig(host.id, config);
@@ -160,7 +164,7 @@ export class ProxyService {
     try {
       const certPaths = await this.resolveCertPaths(updated);
       const accessList = await this.resolveAccessList(updated.accessListId);
-      const config = this.buildNginxConfig(updated, certPaths, accessList);
+      const config = await this.buildNginxConfig(updated, certPaths, accessList);
 
       if (updated.enabled) {
         // 4. Apply config with rollback on failure
@@ -379,7 +383,7 @@ export class ProxyService {
         // Re-enable: generate config and apply
         const certPaths = await this.resolveCertPaths(updated);
         const accessList = await this.resolveAccessList(updated.accessListId);
-        const config = this.buildNginxConfig(updated, certPaths, accessList);
+        const config = await this.buildNginxConfig(updated, certPaths, accessList);
         await this.nginxService.applyConfig(id, config);
       } else {
         // Disable: remove config and reload
@@ -415,6 +419,21 @@ export class ProxyService {
 
     logger.info('Toggled proxy host', { hostId: id, enabled });
     return updated;
+  }
+
+  // -----------------------------------------------------------------------
+  // Get rendered nginx config for a host
+  // -----------------------------------------------------------------------
+
+  async getRenderedConfig(id: string): Promise<string> {
+    const host = await this.db.query.proxyHosts.findFirst({
+      where: eq(proxyHosts.id, id),
+    });
+    if (!host) throw new AppError(404, 'PROXY_HOST_NOT_FOUND', 'Proxy host not found');
+
+    const certPaths = await this.resolveCertPaths(host);
+    const accessList = await this.resolveAccessList(host.accessListId);
+    return this.buildNginxConfig(host, certPaths, accessList);
   }
 
   // -----------------------------------------------------------------------
@@ -524,11 +543,11 @@ export class ProxyService {
   // Helpers — build ProxyHostConfig from DB row
   // -----------------------------------------------------------------------
 
-  private buildNginxConfig(
+  private async buildNginxConfig(
     host: ProxyHostRow,
     certPaths: CertPaths,
     accessList: ProxyHostConfig['accessList'],
-  ): string {
+  ): Promise<string> {
     const config: ProxyHostConfig = {
       id: host.id,
       type: host.type,
@@ -554,8 +573,9 @@ export class ProxyService {
       sslCertPath: certPaths.sslCertPath,
       sslKeyPath: certPaths.sslKeyPath,
       sslChainPath: certPaths.sslChainPath,
+      templateVariables: (host.templateVariables ?? {}) as Record<string, string | number | boolean>,
     };
 
-    return this.nginxService.generateConfig(config);
+    return this.nginxTemplateService.renderForHost(config, host.nginxTemplateId ?? null);
   }
 }

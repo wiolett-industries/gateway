@@ -18,6 +18,8 @@ import { SSLCertificates } from "@/pages/SSLCertificates";
 import { SSLCertificateNew } from "@/pages/SSLCertificateNew";
 import { AccessLists } from "@/pages/AccessLists";
 import { AdminUsers } from "@/pages/AdminUsers";
+import { NginxTemplates } from "@/pages/NginxTemplates";
+import { NginxTemplateEdit } from "@/pages/NginxTemplateEdit";
 
 export default function App() {
   return (
@@ -32,6 +34,9 @@ export default function App() {
               <Route path="/proxy-hosts" element={<ProxyHosts />} />
               <Route path="/proxy-hosts/new" element={<ProxyHostDetail />} />
               <Route path="/proxy-hosts/:id" element={<ProxyHostDetail />} />
+              <Route path="/nginx-templates" element={<NginxTemplates />} />
+              <Route path="/nginx-templates/new" element={<NginxTemplateEdit />} />
+              <Route path="/nginx-templates/:id" element={<NginxTemplateEdit />} />
               <Route path="/ssl-certificates" element={<SSLCertificates />} />
               <Route path="/ssl-certificates/new" element={<SSLCertificateNew />} />
               <Route path="/access-lists" element={<AccessLists />} />

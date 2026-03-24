@@ -21,6 +21,8 @@ import type {
   IssueCertificateRequest,
   IssueCertFromCSRRequest,
   LinkInternalCertRequest,
+  NginxTemplate,
+  TemplateVariableDef,
   PaginatedResponse,
   ProxyHost,
   ProxyHostFolder,
@@ -391,6 +393,10 @@ class ApiClient {
     }));
   }
 
+  async getRenderedProxyConfig(id: string): Promise<{ rendered: string }> {
+    return this.unwrapData(this.request<{ data: { rendered: string } }>(`/proxy-hosts/${id}/rendered-config`));
+  }
+
   async validateProxyConfig(snippet: string): Promise<{ valid: boolean; errors: string[] }> {
     return this.unwrapData(this.request<{ data: { valid: boolean; errors: string[] } }>("/proxy-hosts/validate-config", {
       method: "POST",
@@ -467,6 +473,54 @@ class ApiClient {
       method: "POST",
       body: JSON.stringify({ hostIds, folderId }),
     });
+  }
+
+  // ── Nginx Config Templates ─────────────────────────────────────
+
+  async listNginxTemplates(): Promise<NginxTemplate[]> {
+    return this.unwrapData(this.request<{ data: NginxTemplate[] }>("/nginx-templates"));
+  }
+
+  async getNginxTemplate(id: string): Promise<NginxTemplate> {
+    return this.unwrapData(this.request<{ data: NginxTemplate }>(`/nginx-templates/${id}`));
+  }
+
+  async createNginxTemplate(data: { name: string; description?: string; type: string; content: string; variables?: TemplateVariableDef[] }): Promise<NginxTemplate> {
+    return this.unwrapData(this.request<{ data: NginxTemplate }>("/nginx-templates", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }));
+  }
+
+  async updateNginxTemplate(id: string, data: { name?: string; description?: string | null; content?: string; variables?: TemplateVariableDef[] }): Promise<NginxTemplate> {
+    return this.unwrapData(this.request<{ data: NginxTemplate }>(`/nginx-templates/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }));
+  }
+
+  async deleteNginxTemplate(id: string): Promise<void> {
+    return this.request<void>(`/nginx-templates/${id}`, { method: "DELETE" });
+  }
+
+  async cloneNginxTemplate(id: string): Promise<NginxTemplate> {
+    return this.unwrapData(this.request<{ data: NginxTemplate }>(`/nginx-templates/${id}/clone`, {
+      method: "POST",
+    }));
+  }
+
+  async previewNginxTemplate(content: string, hostId?: string): Promise<{ rendered: string }> {
+    return this.unwrapData(this.request<{ data: { rendered: string } }>("/nginx-templates/preview", {
+      method: "POST",
+      body: JSON.stringify({ content, hostId }),
+    }));
+  }
+
+  async testNginxTemplate(content: string): Promise<{ rendered: string; valid: boolean; errors: string[] }> {
+    return this.unwrapData(this.request<{ data: { rendered: string; valid: boolean; errors: string[] } }>("/nginx-templates/test", {
+      method: "POST",
+      body: JSON.stringify({ content }),
+    }));
   }
 
   // ── SSL Certificates ───────────────────────────────────────────

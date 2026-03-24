@@ -31,6 +31,7 @@
     "bcryptjs": "^3.0.3",
     "dotenv": "^17.2.3",
     "drizzle-orm": "^0.38.3",
+    "handlebars": "^4.7.9",
     "hono": "^4.6.16",
     "ioredis": "^5.4.2",
     "nanoid": "^5.0.9",

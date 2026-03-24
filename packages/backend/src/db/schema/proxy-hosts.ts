@@ -2,6 +2,7 @@ import { pgTable, uuid, varchar, text, timestamp, boolean, pgEnum, index, jsonb,
 import { sslCertificates } from './ssl-certificates.js';
 import { certificates } from './certificates.js';
 import { accessLists } from './access-lists.js';
+import { nginxTemplates } from './nginx-templates.js';
 import { proxyHostFolders } from './proxy-host-folders.js';
 import { users } from './users.js';
 
@@ -69,6 +70,10 @@ export const proxyHosts = pgTable('proxy_hosts', {
   // Folder / organization
   folderId: uuid('folder_id').references(() => proxyHostFolders.id, { onDelete: 'set null' }),
   sortOrder: integer('sort_order').notNull().default(0),
+
+  // Nginx config template
+  nginxTemplateId: uuid('nginx_template_id').references(() => nginxTemplates.id, { onDelete: 'set null' }),
+  templateVariables: jsonb('template_variables').$type<Record<string, string | number | boolean>>().default({}),
 
   // Access list
   accessListId: uuid('access_list_id').references(() => accessLists.id, { onDelete: 'set null' }),

@@ -45,6 +45,7 @@ export interface ProxyHostConfig {
   sslCertPath: string | null;
   sslKeyPath: string | null;
   sslChainPath: string | null;
+  templateVariables?: Record<string, string | number | boolean>;
 }
 
 // ---------------------------------------------------------------------------

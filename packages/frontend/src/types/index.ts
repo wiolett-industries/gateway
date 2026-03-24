@@ -292,6 +292,8 @@ export interface ProxyHost {
   accessListId: string | null;
   folderId: string | null;
   sortOrder: number;
+  nginxTemplateId: string | null;
+  templateVariables: Record<string, string | number | boolean>;
   healthCheckEnabled: boolean;
   healthCheckUrl: string;
   healthCheckInterval: number;
@@ -401,6 +403,8 @@ export interface CreateProxyHostRequest {
   advancedConfig?: string;
   accessListId?: string;
   folderId?: string;
+  nginxTemplateId?: string;
+  templateVariables?: Record<string, string | number | boolean>;
   healthCheckEnabled?: boolean;
   healthCheckUrl?: string;
   healthCheckInterval?: number;
@@ -426,6 +430,26 @@ export interface GroupedProxyHostsResponse {
   folders: FolderTreeNode[];
   ungroupedHosts: ProxyHost[];
   totalHosts: number;
+}
+
+// Nginx Config Template Types
+export interface TemplateVariableDef {
+  name: string;
+  type: 'string' | 'number' | 'boolean';
+  default?: string | number | boolean;
+  description?: string;
+}
+
+export interface NginxTemplate {
+  id: string;
+  name: string;
+  description: string | null;
+  isBuiltin: boolean;
+  type: ProxyHostType;
+  content: string;
+  variables: TemplateVariableDef[];
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface RequestACMECertRequest {
