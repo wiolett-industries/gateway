@@ -1,8 +1,8 @@
-import * as acme from 'acme-client';
-import * as x509 from '@peculiar/x509';
 import crypto from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import * as x509 from '@peculiar/x509';
+import * as acme from 'acme-client';
 import { createChildLogger } from '@/lib/logger.js';
 
 const logger = createChildLogger('ACMEService');
@@ -13,13 +13,16 @@ export class ACMEService {
   constructor(
     private readonly acmeChallengePath: string,
     private readonly acmeEmail: string,
-    private readonly staging: boolean,
+    private readonly staging: boolean
   ) {}
 
   /**
    * Request a certificate via HTTP-01 challenge (fully automatic).
    */
-  async requestCertHTTP01(domains: string[], staging?: boolean): Promise<{
+  async requestCertHTTP01(
+    domains: string[],
+    staging?: boolean
+  ): Promise<{
     certificatePem: string;
     privateKeyPem: string;
     chainPem: string;
@@ -121,7 +124,10 @@ export class ACMEService {
    * Start DNS-01 challenge — returns records user must create.
    * Does NOT verify yet; user must create TXT records first.
    */
-  async requestCertDNS01Start(domains: string[], staging?: boolean): Promise<{
+  async requestCertDNS01Start(
+    domains: string[],
+    staging?: boolean
+  ): Promise<{
     accountKey: string;
     orderUrl: string;
     challenges: Array<{
@@ -190,7 +196,7 @@ export class ACMEService {
     accountKeyPem: string,
     orderUrl: string,
     domains: string[],
-    staging?: boolean,
+    staging?: boolean
   ): Promise<{
     certificatePem: string;
     privateKeyPem: string;
@@ -260,9 +266,7 @@ export class ACMEService {
 
   private getDirectoryUrl(staging?: boolean): string {
     const useStaging = staging !== undefined ? staging : this.staging;
-    return useStaging
-      ? acme.directory.letsencrypt.staging
-      : acme.directory.letsencrypt.production;
+    return useStaging ? acme.directory.letsencrypt.staging : acme.directory.letsencrypt.production;
   }
 
   /**

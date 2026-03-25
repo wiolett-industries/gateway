@@ -1,8 +1,8 @@
-import { injectable, inject } from 'tsyringe';
 import { nanoid } from 'nanoid';
-import { CacheService } from './cache.service.js';
+import { injectable } from 'tsyringe';
 import { getEnv } from '@/config/env.js';
 import type { SessionData, User } from '@/types.js';
+import type { CacheService } from './cache.service.js';
 
 const SESSION_PREFIX = 'session:';
 const USER_SESSIONS_PREFIX = 'user_sessions:';
@@ -18,7 +18,7 @@ export class SessionService {
   ): Promise<{ sessionId: string; expiresAt: number }> {
     const env = getEnv();
     const sessionId = nanoid(32);
-    const expiresAt = Date.now() + (env.SESSION_EXPIRY * 1000);
+    const expiresAt = Date.now() + env.SESSION_EXPIRY * 1000;
 
     const sessionData: SessionData = {
       userId: user.id,
@@ -29,11 +29,7 @@ export class SessionService {
       expiresAt,
     };
 
-    await this.cache.set(
-      `${SESSION_PREFIX}${sessionId}`,
-      sessionData,
-      env.SESSION_EXPIRY
-    );
+    await this.cache.set(`${SESSION_PREFIX}${sessionId}`, sessionData, env.SESSION_EXPIRY);
 
     await this.cache.sadd(`${USER_SESSIONS_PREFIX}${user.id}`, sessionId);
 
@@ -64,15 +60,11 @@ export class SessionService {
 
     const remainingTtl = Math.max(1, Math.floor((session.expiresAt - Date.now()) / 1000));
 
-    await this.cache.set(
-      `${SESSION_PREFIX}${sessionId}`,
-      updatedSession,
-      remainingTtl
-    );
+    await this.cache.set(`${SESSION_PREFIX}${sessionId}`, updatedSession, remainingTtl);
   }
 
   async refreshSession(sessionId: string, session?: SessionData | null): Promise<boolean> {
-    const resolved = session ?? await this.getSession(sessionId);
+    const resolved = session ?? (await this.getSession(sessionId));
     if (!resolved) return false;
 
     const env = getEnv();
@@ -81,14 +73,10 @@ export class SessionService {
 
     if (remaining > halfTtl) return false;
 
-    const newExpiresAt = Date.now() + (env.SESSION_EXPIRY * 1000);
+    const newExpiresAt = Date.now() + env.SESSION_EXPIRY * 1000;
     resolved.expiresAt = newExpiresAt;
 
-    await this.cache.set(
-      `${SESSION_PREFIX}${sessionId}`,
-      resolved,
-      env.SESSION_EXPIRY
-    );
+    await this.cache.set(`${SESSION_PREFIX}${sessionId}`, resolved, env.SESSION_EXPIRY);
 
     return true;
   }

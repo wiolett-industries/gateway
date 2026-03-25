@@ -1,5 +1,5 @@
-import { DragOverlay as DndDragOverlay } from "@dnd-kit/core";
 import type { Active } from "@dnd-kit/core";
+import { DragOverlay as DndDragOverlay } from "@dnd-kit/core";
 import { ProxyHostRow } from "./ProxyHostRow";
 
 interface DragOverlayProps {

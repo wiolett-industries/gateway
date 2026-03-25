@@ -1,13 +1,19 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
+import { AuditService } from '@/modules/audit/audit.service.js';
 import { authMiddleware, rbacMiddleware } from '@/modules/auth/auth.middleware.js';
-import { CAService } from './ca.service.js';
 import { CryptoService } from '@/services/crypto.service.js';
+import type { AppEnv } from '@/types.js';
+import {
+  CreateIntermediateCASchema,
+  CreateRootCASchema,
+  ExportCAKeySchema,
+  RevokeCASchema,
+  UpdateCASchema,
+} from './ca.schemas.js';
+import { CAService } from './ca.service.js';
 import { ExportService } from './export.service.js';
 import { OCSPService } from './ocsp.service.js';
-import { AuditService } from '@/modules/audit/audit.service.js';
-import { CreateRootCASchema, CreateIntermediateCASchema, RevokeCASchema, ExportCAKeySchema, UpdateCASchema } from './ca.schemas.js';
-import type { AppEnv } from '@/types.js';
 
 export const caRoutes = new OpenAPIHono<AppEnv>();
 
@@ -83,7 +89,7 @@ caRoutes.delete('/:id', rbacMiddleware('admin'), async (c) => {
 // Export CA private key (admin only)
 caRoutes.post('/:id/export-key', rbacMiddleware('admin'), async (c) => {
   const caService = container.resolve(CAService);
-  const cryptoService = container.resolve(CryptoService);
+  const _cryptoService = container.resolve(CryptoService);
   const exportService = container.resolve(ExportService);
   const auditService = container.resolve(AuditService);
   const user = c.get('user')!;

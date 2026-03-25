@@ -1,38 +1,36 @@
 import 'reflect-metadata';
-import { container, TOKENS } from '@/container.js';
 import { getEnv } from '@/config/env.js';
+import { container, TOKENS } from '@/container.js';
 import { createDrizzleClient } from '@/db/client.js';
-import { createRedisClient } from '@/services/cache.service.js';
+import { ACMERenewalJob } from '@/jobs/acme-renewal.job.js';
+import { ExpiryAlertJob } from '@/jobs/expiry-alert.job.js';
+import { HealthCheckJob } from '@/jobs/health-check.job.js';
 import { logger } from '@/lib/logger.js';
-
-import { CacheService } from '@/services/cache.service.js';
-import { SessionService } from '@/services/session.service.js';
-import { CryptoService } from '@/services/crypto.service.js';
-import { AuthService } from '@/modules/auth/auth.service.js';
-import { TokensService } from '@/modules/tokens/tokens.service.js';
+import { AccessListService } from '@/modules/access-lists/access-list.service.js';
+import { AlertService } from '@/modules/audit/alert.service.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
-import { TemplatesService } from '@/modules/pki/templates.service.js';
+import { AuthService } from '@/modules/auth/auth.service.js';
+import { LogStreamService } from '@/modules/monitoring/log-stream.service.js';
+import { MonitoringService } from '@/modules/monitoring/monitoring.service.js';
 import { CAService } from '@/modules/pki/ca.service.js';
 import { CertService } from '@/modules/pki/cert.service.js';
 import { CRLService } from '@/modules/pki/crl.service.js';
-import { OCSPService } from '@/modules/pki/ocsp.service.js';
 import { ExportService } from '@/modules/pki/export.service.js';
-import { AlertService } from '@/modules/audit/alert.service.js';
-import { DockerService } from '@/services/docker.service.js';
-import { ConfigValidatorService } from '@/services/config-validator.service.js';
-import { NginxService } from '@/services/nginx.service.js';
-import { ProxyService } from '@/modules/proxy/proxy.service.js';
+import { OCSPService } from '@/modules/pki/ocsp.service.js';
+import { TemplatesService } from '@/modules/pki/templates.service.js';
 import { FolderService } from '@/modules/proxy/folder.service.js';
 import { NginxTemplateService } from '@/modules/proxy/nginx-template.service.js';
+import { ProxyService } from '@/modules/proxy/proxy.service.js';
 import { ACMEService } from '@/modules/ssl/acme.service.js';
 import { SSLService } from '@/modules/ssl/ssl.service.js';
-import { AccessListService } from '@/modules/access-lists/access-list.service.js';
+import { TokensService } from '@/modules/tokens/tokens.service.js';
+import { CacheService, createRedisClient } from '@/services/cache.service.js';
+import { ConfigValidatorService } from '@/services/config-validator.service.js';
+import { CryptoService } from '@/services/crypto.service.js';
+import { DockerService } from '@/services/docker.service.js';
+import { NginxService } from '@/services/nginx.service.js';
 import { SchedulerService } from '@/services/scheduler.service.js';
-import { ACMERenewalJob } from '@/jobs/acme-renewal.job.js';
-import { HealthCheckJob } from '@/jobs/health-check.job.js';
-import { ExpiryAlertJob } from '@/jobs/expiry-alert.job.js';
-import { LogStreamService } from '@/modules/monitoring/log-stream.service.js';
-import { MonitoringService } from '@/modules/monitoring/monitoring.service.js';
+import { SessionService } from '@/services/session.service.js';
 
 export { container };
 
@@ -107,7 +105,7 @@ export async function initializeContainer(): Promise<void> {
     env.NGINX_LOGS_PATH,
     env.ACME_CHALLENGE_PATH,
     dockerService,
-    configValidator,
+    configValidator
   );
   container.registerInstance(NginxService, nginxService);
 

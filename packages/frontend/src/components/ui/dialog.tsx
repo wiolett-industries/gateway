@@ -14,7 +14,10 @@ const DialogOverlay = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Overlay
     ref={ref}
-    className={cn("dialog-overlay fixed inset-0 z-50 bg-black/50 overflow-hidden sm:overflow-y-auto flex items-end sm:items-start justify-center sm:py-12", className)}
+    className={cn(
+      "dialog-overlay fixed inset-0 z-50 bg-black/50 overflow-hidden sm:overflow-y-auto flex items-end sm:items-start justify-center sm:py-12",
+      className
+    )}
     {...props}
   />
 ));
@@ -95,13 +98,13 @@ DialogDescription.displayName = DialogPrimitive.Description.displayName;
 
 export {
   Dialog,
-  DialogPortal,
-  DialogOverlay,
-  DialogTrigger,
   DialogClose,
   DialogContent,
-  DialogHeader,
-  DialogFooter,
-  DialogTitle,
   DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogOverlay,
+  DialogPortal,
+  DialogTitle,
+  DialogTrigger,
 };

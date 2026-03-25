@@ -1,8 +1,8 @@
-import { createChildLogger } from '@/lib/logger.js';
-import type { DockerService } from './docker.service.js';
-import type { ConfigValidatorService } from './config-validator.service.js';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { createChildLogger } from '@/lib/logger.js';
+import type { ConfigValidatorService } from './config-validator.service.js';
+import type { DockerService } from './docker.service.js';
 
 const logger = createChildLogger('NginxService');
 
@@ -56,10 +56,10 @@ export class NginxService {
   constructor(
     private readonly configPath: string,
     private readonly certsPath: string,
-    private readonly logsPath: string,
-    private readonly acmeChallengePath: string,
+    readonly _logsPath: string,
+    readonly _acmeChallengePath: string,
     private readonly dockerService: DockerService,
-    private readonly configValidator: ConfigValidatorService,
+    private readonly configValidator: ConfigValidatorService
   ) {}
 
   // -----------------------------------------------------------------------
@@ -123,9 +123,7 @@ export class NginxService {
       const opts = host.rateLimitOptions as Record<string, unknown>;
       const rps = opts.requestsPerSecond ?? 10;
       rateLimitBurst = (opts.burst as number) ?? 20;
-      lines.push(
-        `limit_req_zone $binary_remote_addr zone=ratelimit_${host.id}:10m rate=${rps}r/s;`,
-      );
+      lines.push(`limit_req_zone $binary_remote_addr zone=ratelimit_${host.id}:10m rate=${rps}r/s;`);
       lines.push('');
     }
 
@@ -133,7 +131,7 @@ export class NginxService {
     if (host.cacheEnabled && host.cacheOptions) {
       const maxAge = (host.cacheOptions as Record<string, unknown>).maxAge ?? 3600;
       lines.push(
-        `proxy_cache_path /tmp/nginx-cache-${host.id} levels=1:2 keys_zone=cache_${host.id}:10m max_size=100m inactive=${maxAge}s;`,
+        `proxy_cache_path /tmp/nginx-cache-${host.id} levels=1:2 keys_zone=cache_${host.id}:10m max_size=100m inactive=${maxAge}s;`
       );
       lines.push('');
     }
@@ -193,7 +191,7 @@ export class NginxService {
       }
       lines.push('    ssl_protocols TLSv1.2 TLSv1.3;');
       lines.push(
-        '    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;',
+        '    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;'
       );
       lines.push('    ssl_prefer_server_ciphers off;');
       lines.push('    ssl_session_cache shared:SSL:10m;');
@@ -203,12 +201,8 @@ export class NginxService {
     }
 
     // --- Per-host logging ---
-    lines.push(
-      `    access_log ${NGINX_LOGS_PREFIX}/proxy-${host.id}.access.log;`,
-    );
-    lines.push(
-      `    error_log ${NGINX_LOGS_PREFIX}/proxy-${host.id}.error.log warn;`,
-    );
+    lines.push(`    access_log ${NGINX_LOGS_PREFIX}/proxy-${host.id}.access.log;`);
+    lines.push(`    error_log ${NGINX_LOGS_PREFIX}/proxy-${host.id}.error.log warn;`);
     lines.push('');
 
     // --- ACME challenge (on the main block too, when SSL is not forced) ---
@@ -239,24 +233,18 @@ export class NginxService {
 
     // Rate limiting
     if (host.rateLimitEnabled && host.rateLimitOptions) {
-      lines.push(
-        `        limit_req zone=ratelimit_${host.id} burst=${rateLimitBurst} nodelay;`,
-      );
+      lines.push(`        limit_req zone=ratelimit_${host.id} burst=${rateLimitBurst} nodelay;`);
     }
 
     // Cache
     if (host.cacheEnabled && host.cacheOptions) {
-      const stale =
-        (host.cacheOptions as Record<string, unknown>).staleWhileRevalidate ?? 60;
+      const _stale = (host.cacheOptions as Record<string, unknown>).staleWhileRevalidate ?? 60;
       lines.push(`        proxy_cache cache_${host.id};`);
       lines.push(
-        '        proxy_cache_valid 200 301 302 ' +
-          `${(host.cacheOptions as Record<string, unknown>).maxAge ?? 3600}s;`,
+        `        proxy_cache_valid 200 301 302 ${(host.cacheOptions as Record<string, unknown>).maxAge ?? 3600}s;`
       );
       lines.push(`        proxy_cache_use_stale error timeout updating http_500 http_502 http_503 http_504;`);
-      lines.push(
-        `        proxy_cache_background_update on;`,
-      );
+      lines.push(`        proxy_cache_background_update on;`);
       lines.push('        add_header X-Cache-Status $upstream_cache_status;');
     }
 
@@ -267,9 +255,7 @@ export class NginxService {
     // Standard proxy headers
     lines.push('        proxy_set_header Host $host;');
     lines.push('        proxy_set_header X-Real-IP $remote_addr;');
-    lines.push(
-      '        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;',
-    );
+    lines.push('        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;');
     lines.push('        proxy_set_header X-Forwarded-Proto $scheme;');
     lines.push('        proxy_set_header X-Forwarded-Host $host;');
     lines.push('        proxy_set_header X-Forwarded-Port $server_port;');
@@ -296,9 +282,7 @@ export class NginxService {
       for (const header of host.customHeaders) {
         const safeName = this.sanitizeNginxValue(header.name);
         const safeValue = this.sanitizeNginxValue(header.value);
-        lines.push(
-          `        proxy_set_header ${safeName} "${safeValue}";`,
-        );
+        lines.push(`        proxy_set_header ${safeName} "${safeValue}";`);
       }
       lines.push('');
     }
@@ -310,9 +294,7 @@ export class NginxService {
         const flag = rewrite.type === 'permanent' ? 'permanent' : 'redirect';
         const safeSource = this.sanitizeNginxValue(rewrite.source);
         const safeDest = this.sanitizeNginxValue(rewrite.destination);
-        lines.push(
-          `        rewrite ${safeSource} ${safeDest} ${flag};`,
-        );
+        lines.push(`        rewrite ${safeSource} ${safeDest} ${flag};`);
       }
       lines.push('');
     }
@@ -350,7 +332,7 @@ export class NginxService {
       lines.push('# }');
     }
 
-    return lines.join('\n') + '\n';
+    return `${lines.join('\n')}\n`;
   }
 
   // -----------------------------------------------------------------------
@@ -369,12 +351,8 @@ export class NginxService {
     lines.push('    listen [::]:80;');
     lines.push(`    server_name ${serverNames};`);
     lines.push('');
-    lines.push(
-      `    access_log ${NGINX_LOGS_PREFIX}/proxy-${host.id}.access.log;`,
-    );
-    lines.push(
-      `    error_log ${NGINX_LOGS_PREFIX}/proxy-${host.id}.error.log warn;`,
-    );
+    lines.push(`    access_log ${NGINX_LOGS_PREFIX}/proxy-${host.id}.access.log;`);
+    lines.push(`    error_log ${NGINX_LOGS_PREFIX}/proxy-${host.id}.error.log warn;`);
     lines.push('');
 
     // ACME challenge
@@ -418,17 +396,13 @@ export class NginxService {
       }
       lines.push('    ssl_protocols TLSv1.2 TLSv1.3;');
       lines.push(
-        '    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;',
+        '    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;'
       );
       lines.push('    ssl_prefer_server_ciphers off;');
       lines.push('');
 
-      lines.push(
-        `    access_log ${NGINX_LOGS_PREFIX}/proxy-${host.id}.access.log;`,
-      );
-      lines.push(
-        `    error_log ${NGINX_LOGS_PREFIX}/proxy-${host.id}.error.log warn;`,
-      );
+      lines.push(`    access_log ${NGINX_LOGS_PREFIX}/proxy-${host.id}.access.log;`);
+      lines.push(`    error_log ${NGINX_LOGS_PREFIX}/proxy-${host.id}.error.log warn;`);
       lines.push('');
 
       lines.push('    location / {');
@@ -438,7 +412,7 @@ export class NginxService {
       lines.push('}');
     }
 
-    return lines.join('\n') + '\n';
+    return `${lines.join('\n')}\n`;
   }
 
   // -----------------------------------------------------------------------
@@ -454,12 +428,8 @@ export class NginxService {
     lines.push('    listen [::]:80;');
     lines.push(`    server_name ${serverNames};`);
     lines.push('');
-    lines.push(
-      `    access_log ${NGINX_LOGS_PREFIX}/proxy-${host.id}.access.log;`,
-    );
-    lines.push(
-      `    error_log ${NGINX_LOGS_PREFIX}/proxy-${host.id}.error.log warn;`,
-    );
+    lines.push(`    access_log ${NGINX_LOGS_PREFIX}/proxy-${host.id}.access.log;`);
+    lines.push(`    error_log ${NGINX_LOGS_PREFIX}/proxy-${host.id}.error.log warn;`);
     lines.push('');
     lines.push('    location / {');
     lines.push('        return 404;');
@@ -487,16 +457,12 @@ export class NginxService {
       }
       lines.push('    ssl_protocols TLSv1.2 TLSv1.3;');
       lines.push(
-        '    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;',
+        '    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;'
       );
       lines.push('    ssl_prefer_server_ciphers off;');
       lines.push('');
-      lines.push(
-        `    access_log ${NGINX_LOGS_PREFIX}/proxy-${host.id}.access.log;`,
-      );
-      lines.push(
-        `    error_log ${NGINX_LOGS_PREFIX}/proxy-${host.id}.error.log warn;`,
-      );
+      lines.push(`    access_log ${NGINX_LOGS_PREFIX}/proxy-${host.id}.access.log;`);
+      lines.push(`    error_log ${NGINX_LOGS_PREFIX}/proxy-${host.id}.error.log warn;`);
       lines.push('');
       lines.push('    location / {');
       lines.push('        return 404;');
@@ -504,7 +470,7 @@ export class NginxService {
       lines.push('}');
     }
 
-    return lines.join('\n') + '\n';
+    return `${lines.join('\n')}\n`;
   }
 
   // -----------------------------------------------------------------------
@@ -596,9 +562,7 @@ export class NginxService {
         await this.removeConfig(hostId);
       }
 
-      throw new Error(
-        `Nginx config test failed: ${testResult.error ?? 'unknown error'}`,
-      );
+      throw new Error(`Nginx config test failed: ${testResult.error ?? 'unknown error'}`);
     }
 
     // 5. Reload
@@ -620,7 +584,7 @@ export class NginxService {
     certId: string,
     certPem: string,
     keyPem: string,
-    chainPem?: string,
+    chainPem?: string
   ): Promise<{ certPath: string; keyPath: string; chainPath?: string }> {
     const certDir = path.join(this.certsPath, certId);
     await fs.mkdir(certDir, { recursive: true });
@@ -672,16 +636,10 @@ export class NginxService {
 
     // Read current config files on disk
     const existingFiles = await fs.readdir(this.configPath);
-    const existingConfFiles = existingFiles.filter(
-      (f) => f.startsWith('proxy-host-') && f.endsWith('.conf'),
-    );
+    const existingConfFiles = existingFiles.filter((f) => f.startsWith('proxy-host-') && f.endsWith('.conf'));
 
     // Build set of expected file names
-    const expectedFiles = new Set(
-      hosts
-        .filter((h) => h.enabled)
-        .map((h) => `proxy-host-${h.id}.conf`),
-    );
+    const expectedFiles = new Set(hosts.filter((h) => h.enabled).map((h) => `proxy-host-${h.id}.conf`));
 
     // Remove configs that are no longer expected
     for (const file of existingConfFiles) {
@@ -708,9 +666,7 @@ export class NginxService {
       logger.error('Nginx config test failed during sync', {
         error: testResult.error,
       });
-      throw new Error(
-        `Nginx config test failed during sync: ${testResult.error ?? 'unknown error'}`,
-      );
+      throw new Error(`Nginx config test failed during sync: ${testResult.error ?? 'unknown error'}`);
     }
 
     // Reload Nginx

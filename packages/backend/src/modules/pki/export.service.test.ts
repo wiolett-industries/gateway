@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeAll } from 'vitest';
-import { ExportService } from './export.service.js';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { CryptoService } from '@/services/crypto.service.js';
+import { ExportService } from './export.service.js';
 
 describe('ExportService', () => {
   let exportService: ExportService;

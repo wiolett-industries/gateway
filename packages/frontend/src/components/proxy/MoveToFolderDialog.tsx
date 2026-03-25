@@ -1,5 +1,5 @@
-import { useState } from "react";
 import { ChevronRight, Folder } from "lucide-react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -9,8 +9,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type { FolderTreeNode } from "@/types";
 import { cn } from "@/lib/utils";
+import type { FolderTreeNode } from "@/types";
 
 interface MoveToFolderDialogProps {
   open: boolean;
@@ -42,14 +42,10 @@ function FolderOption({
         style={{ paddingLeft: `${depth * 20 + 12}px` }}
         onClick={() => onSelect(folder.id)}
       >
-        {folder.children.length > 0 && (
-          <ChevronRight className="h-3 w-3 text-muted-foreground" />
-        )}
+        {folder.children.length > 0 && <ChevronRight className="h-3 w-3 text-muted-foreground" />}
         <Folder className="h-4 w-4 text-muted-foreground" />
         <span>{folder.name}</span>
-        <span className="text-xs text-muted-foreground ml-auto">
-          {folder.hosts.length} hosts
-        </span>
+        <span className="text-xs text-muted-foreground ml-auto">{folder.hosts.length} hosts</span>
       </button>
       {folder.children.map((child) => (
         <FolderOption
@@ -109,7 +105,9 @@ export function MoveToFolderDialog({
           ))}
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
           <Button onClick={handleMove} disabled={selected === currentFolderId}>
             Move
           </Button>

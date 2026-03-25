@@ -1,17 +1,17 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
 import { authMiddleware, rbacMiddleware } from '@/modules/auth/auth.middleware.js';
-import { FolderService } from './folder.service.js';
+import type { AppEnv } from '@/types.js';
 import {
   CreateFolderSchema,
-  UpdateFolderSchema,
-  MoveFolderSchema,
-  ReorderFoldersSchema,
   GroupedHostsQuerySchema,
+  MoveFolderSchema,
   MoveHostsToFolderSchema,
+  ReorderFoldersSchema,
   ReorderHostsSchema,
+  UpdateFolderSchema,
 } from './folder.schemas.js';
-import type { AppEnv } from '@/types.js';
+import { FolderService } from './folder.service.js';
 
 export const folderRoutes = new OpenAPIHono<AppEnv>();
 

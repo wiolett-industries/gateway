@@ -1,8 +1,8 @@
-import { eq, and } from 'drizzle-orm';
 import { lookup } from 'node:dns/promises';
+import { and, eq } from 'drizzle-orm';
+import type { DrizzleClient } from '@/db/client.js';
 import { proxyHosts } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
-import type { DrizzleClient } from '@/db/client.js';
 
 const logger = createChildLogger('HealthCheckJob');
 
@@ -13,15 +13,15 @@ type HealthStatus = 'online' | 'offline' | 'degraded' | 'unknown';
 /** Check if an IP address is in a private/reserved range */
 function isPrivateIP(ip: string): boolean {
   // IPv4 private ranges
-  if (/^127\./.test(ip)) return true;           // loopback
-  if (/^10\./.test(ip)) return true;            // RFC 1918
+  if (/^127\./.test(ip)) return true; // loopback
+  if (/^10\./.test(ip)) return true; // RFC 1918
   if (/^172\.(1[6-9]|2\d|3[0-1])\./.test(ip)) return true; // RFC 1918
-  if (/^192\.168\./.test(ip)) return true;      // RFC 1918
-  if (/^169\.254\./.test(ip)) return true;      // link-local
-  if (/^0\./.test(ip)) return true;             // current network
+  if (/^192\.168\./.test(ip)) return true; // RFC 1918
+  if (/^169\.254\./.test(ip)) return true; // link-local
+  if (/^0\./.test(ip)) return true; // current network
   if (ip === '::1' || ip === '::') return true; // IPv6 loopback
-  if (/^f[cd]/i.test(ip)) return true;          // IPv6 ULA
-  if (/^fe80:/i.test(ip)) return true;          // IPv6 link-local
+  if (/^f[cd]/i.test(ip)) return true; // IPv6 ULA
+  if (/^fe80:/i.test(ip)) return true; // IPv6 link-local
   return false;
 }
 
@@ -31,10 +31,7 @@ export class HealthCheckJob {
   async run(): Promise<void> {
     // Query proxy hosts with health checks enabled
     const hosts = await this.db.query.proxyHosts.findMany({
-      where: and(
-        eq(proxyHosts.healthCheckEnabled, true),
-        eq(proxyHosts.enabled, true),
-      ),
+      where: and(eq(proxyHosts.healthCheckEnabled, true), eq(proxyHosts.enabled, true)),
     });
 
     if (hosts.length === 0) {
@@ -69,7 +66,7 @@ export class HealthCheckJob {
         }
 
         return { hostId: host.id, status: newStatus };
-      }),
+      })
     );
 
     // Summarize results
@@ -81,9 +78,15 @@ export class HealthCheckJob {
     for (const result of results) {
       if (result.status === 'fulfilled') {
         switch (result.value.status) {
-          case 'online': online++; break;
-          case 'offline': offline++; break;
-          case 'degraded': degraded++; break;
+          case 'online':
+            online++;
+            break;
+          case 'offline':
+            offline++;
+            break;
+          case 'degraded':
+            degraded++;
+            break;
         }
       } else {
         errors++;

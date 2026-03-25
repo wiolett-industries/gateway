@@ -1,5 +1,5 @@
-import { Filter, Search, X } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
+import { Filter, Search, X } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

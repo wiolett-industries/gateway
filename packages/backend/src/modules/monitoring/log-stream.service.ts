@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
-import { createChildLogger } from '@/lib/logger.js';
 import path from 'node:path';
+import { createChildLogger } from '@/lib/logger.js';
 
 const logger = createChildLogger('LogStreamService');
 
@@ -27,11 +27,7 @@ export class LogStreamService {
    * Spawns `tail -f` on the host's access log and parses each line.
    * Returns a cleanup function to terminate the tail process.
    */
-  createStream(
-    hostId: string,
-    onData: (entry: LogEntry) => void,
-    onError: (error: Error) => void,
-  ): () => void {
+  createStream(hostId: string, onData: (entry: LogEntry) => void, onError: (error: Error) => void): () => void {
     const logFile = path.join(this.logsPath, `proxy-${hostId}.access.log`);
 
     // Path confinement check to prevent directory traversal

@@ -1,16 +1,16 @@
-import { CryptoService } from '@/services/crypto.service.js';
-import { createChildLogger } from '@/lib/logger.js';
 import forge from 'node-forge';
+import { createChildLogger } from '@/lib/logger.js';
+import type { CryptoService } from '@/services/crypto.service.js';
 
-const logger = createChildLogger('ExportService');
+const _logger = createChildLogger('ExportService');
 
 export class ExportService {
-  constructor(private readonly cryptoService: CryptoService) {}
+  constructor(readonly _cryptoService: CryptoService) {}
 
   exportPEM(certPem: string, chainPems?: string[]): string {
     const parts = [certPem.trim()];
     if (chainPems) {
-      parts.push(...chainPems.map(p => p.trim()));
+      parts.push(...chainPems.map((p) => p.trim()));
     }
     return parts.join('\n');
   }
@@ -26,7 +26,7 @@ export class ExportService {
   exportPKCS12(certPem: string, privateKeyPem: string, passphrase: string, chainPems?: string[]): Buffer {
     const cert = forge.pki.certificateFromPem(certPem);
     const key = forge.pki.privateKeyFromPem(privateKeyPem);
-    const chain = chainPems?.map(p => forge.pki.certificateFromPem(p)) || [];
+    const chain = chainPems?.map((p) => forge.pki.certificateFromPem(p)) || [];
 
     const p12Asn1 = forge.pkcs12.toPkcs12Asn1(key, [cert, ...chain], passphrase, {
       algorithm: '3des',
@@ -37,7 +37,7 @@ export class ExportService {
     return Buffer.from(p12Der, 'binary');
   }
 
-  exportJKS(certPem: string, privateKeyPem: string | null, passphrase: string, alias: string): Buffer {
+  exportJKS(certPem: string, privateKeyPem: string | null, passphrase: string, _alias: string): Buffer {
     // JKS export using node-forge
     // Note: JKS is a Java-specific format. For a proper implementation,
     // we'd need a dedicated JKS library. For now, we export as PKCS#12

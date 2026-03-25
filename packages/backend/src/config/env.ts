@@ -30,7 +30,10 @@ const envSchema = z.object({
   APP_URL: z.string().url().default('http://localhost:3000'),
 
   // PKI Master Key — 32 bytes as 64-char hex string for envelope encryption
-  PKI_MASTER_KEY: z.string().min(64).regex(/^[0-9a-fA-F]+$/),
+  PKI_MASTER_KEY: z
+    .string()
+    .min(64)
+    .regex(/^[0-9a-fA-F]+$/),
 
   // PKI defaults
   DEFAULT_CRL_VALIDITY_HOURS: z.coerce.number().default(24),
@@ -44,8 +47,8 @@ const envSchema = z.object({
 
   // Background Jobs
   HEALTH_CHECK_INTERVAL_SECONDS: z.coerce.number().default(30),
-  ACME_RENEWAL_CRON: z.string().default('0 3 * * *'),   // 3 AM daily
-  EXPIRY_CHECK_CRON: z.string().default('0 6 * * *'),   // 6 AM daily
+  ACME_RENEWAL_CRON: z.string().default('0 3 * * *'), // 3 AM daily
+  EXPIRY_CHECK_CRON: z.string().default('0 6 * * *'), // 6 AM daily
 
   // Nginx
   NGINX_CONFIG_PATH: z.string().default('/etc/nginx-config'),

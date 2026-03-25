@@ -1,18 +1,17 @@
-import { eq, and, ilike, sql, count, desc } from 'drizzle-orm';
+import { and, count, desc, eq, ilike, sql } from 'drizzle-orm';
+import type { DrizzleClient } from '@/db/client.js';
+import { accessLists } from '@/db/schema/access-lists.js';
+import { certificates } from '@/db/schema/certificates.js';
 import { proxyHosts } from '@/db/schema/index.js';
 import { sslCertificates } from '@/db/schema/ssl-certificates.js';
-import { certificates } from '@/db/schema/certificates.js';
-import { accessLists } from '@/db/schema/access-lists.js';
-import { NginxService } from '@/services/nginx.service.js';
-import { NginxTemplateService } from './nginx-template.service.js';
-import { AuditService } from '@/modules/audit/audit.service.js';
-import { CryptoService } from '@/services/crypto.service.js';
-import { AppError } from '@/middleware/error-handler.js';
 import { createChildLogger } from '@/lib/logger.js';
-import type { DrizzleClient } from '@/db/client.js';
-import type { ProxyHostConfig } from '@/services/nginx.service.js';
-import type { CreateProxyHostInput, UpdateProxyHostInput, ProxyHostListQuery } from './proxy.schemas.js';
+import { AppError } from '@/middleware/error-handler.js';
+import type { AuditService } from '@/modules/audit/audit.service.js';
+import type { CryptoService } from '@/services/crypto.service.js';
+import type { NginxService, ProxyHostConfig } from '@/services/nginx.service.js';
 import type { PaginatedResponse } from '@/types.js';
+import type { NginxTemplateService } from './nginx-template.service.js';
+import type { CreateProxyHostInput, ProxyHostListQuery, UpdateProxyHostInput } from './proxy.schemas.js';
 
 const logger = createChildLogger('ProxyService');
 
@@ -38,7 +37,7 @@ export class ProxyService {
     private readonly nginxService: NginxService,
     private readonly nginxTemplateService: NginxTemplateService,
     private readonly auditService: AuditService,
-    private readonly cryptoService: CryptoService,
+    private readonly cryptoService: CryptoService
   ) {}
 
   // -----------------------------------------------------------------------
@@ -53,42 +52,45 @@ export class ProxyService {
         throw new AppError(
           400,
           'INVALID_ADVANCED_CONFIG',
-          `Advanced config is invalid: ${validation.errors.join(', ')}`,
+          `Advanced config is invalid: ${validation.errors.join(', ')}`
         );
       }
     }
 
     // 1. Insert into DB
-    const [host] = await this.db.insert(proxyHosts).values({
-      type: input.type,
-      domainNames: input.domainNames,
-      forwardHost: input.forwardHost ?? null,
-      forwardPort: input.forwardPort ?? null,
-      forwardScheme: input.forwardScheme,
-      sslEnabled: input.sslEnabled,
-      sslForced: input.sslForced,
-      http2Support: input.http2Support,
-      websocketSupport: input.websocketSupport,
-      sslCertificateId: input.sslCertificateId ?? null,
-      internalCertificateId: input.internalCertificateId ?? null,
-      redirectUrl: input.redirectUrl ?? null,
-      redirectStatusCode: input.redirectStatusCode ?? 301,
-      customHeaders: input.customHeaders,
-      cacheEnabled: input.cacheEnabled,
-      cacheOptions: input.cacheOptions ?? null,
-      rateLimitEnabled: input.rateLimitEnabled,
-      rateLimitOptions: input.rateLimitOptions ?? null,
-      customRewrites: input.customRewrites,
-      advancedConfig: input.advancedConfig ?? null,
-      accessListId: input.accessListId ?? null,
-      folderId: input.folderId ?? null,
-      nginxTemplateId: input.nginxTemplateId ?? null,
-      templateVariables: input.templateVariables ?? {},
-      healthCheckEnabled: input.healthCheckEnabled,
-      healthCheckUrl: input.healthCheckUrl ?? '/',
-      healthCheckInterval: input.healthCheckInterval ?? 30,
-      createdById: userId,
-    }).returning();
+    const [host] = await this.db
+      .insert(proxyHosts)
+      .values({
+        type: input.type,
+        domainNames: input.domainNames,
+        forwardHost: input.forwardHost ?? null,
+        forwardPort: input.forwardPort ?? null,
+        forwardScheme: input.forwardScheme,
+        sslEnabled: input.sslEnabled,
+        sslForced: input.sslForced,
+        http2Support: input.http2Support,
+        websocketSupport: input.websocketSupport,
+        sslCertificateId: input.sslCertificateId ?? null,
+        internalCertificateId: input.internalCertificateId ?? null,
+        redirectUrl: input.redirectUrl ?? null,
+        redirectStatusCode: input.redirectStatusCode ?? 301,
+        customHeaders: input.customHeaders,
+        cacheEnabled: input.cacheEnabled,
+        cacheOptions: input.cacheOptions ?? null,
+        rateLimitEnabled: input.rateLimitEnabled,
+        rateLimitOptions: input.rateLimitOptions ?? null,
+        customRewrites: input.customRewrites,
+        advancedConfig: input.advancedConfig ?? null,
+        accessListId: input.accessListId ?? null,
+        folderId: input.folderId ?? null,
+        nginxTemplateId: input.nginxTemplateId ?? null,
+        templateVariables: input.templateVariables ?? {},
+        healthCheckEnabled: input.healthCheckEnabled,
+        healthCheckUrl: input.healthCheckUrl ?? '/',
+        healthCheckInterval: input.healthCheckInterval ?? 30,
+        createdById: userId,
+      })
+      .returning();
 
     // 2. Resolve SSL cert paths and build nginx config
     try {
@@ -108,7 +110,7 @@ export class ProxyService {
       throw new AppError(
         500,
         'NGINX_CONFIG_FAILED',
-        `Failed to apply Nginx config: ${error instanceof Error ? error.message : 'unknown error'}`,
+        `Failed to apply Nginx config: ${error instanceof Error ? error.message : 'unknown error'}`
       );
     }
 
@@ -139,7 +141,7 @@ export class ProxyService {
         throw new AppError(
           400,
           'INVALID_ADVANCED_CONFIG',
-          `Advanced config is invalid: ${validation.errors.join(', ')}`,
+          `Advanced config is invalid: ${validation.errors.join(', ')}`
         );
       }
     }
@@ -189,10 +191,7 @@ export class ProxyService {
       }
       rollbackData.updatedAt = existing.updatedAt;
       try {
-        await this.db
-          .update(proxyHosts)
-          .set(rollbackData)
-          .where(eq(proxyHosts.id, id));
+        await this.db.update(proxyHosts).set(rollbackData).where(eq(proxyHosts.id, id));
       } catch (rollbackError) {
         logger.error('Failed to rollback DB after nginx config failure', {
           hostId: id,
@@ -202,7 +201,7 @@ export class ProxyService {
       throw new AppError(
         500,
         'NGINX_CONFIG_FAILED',
-        `Failed to apply Nginx config: ${error instanceof Error ? error.message : 'unknown error'}`,
+        `Failed to apply Nginx config: ${error instanceof Error ? error.message : 'unknown error'}`
       );
     }
 
@@ -330,9 +329,7 @@ export class ProxyService {
     }
     if (query.search) {
       // Search across domain names (cast jsonb to text for ilike)
-      conditions.push(
-        ilike(sql`${proxyHosts.domainNames}::text`, `%${query.search}%`),
-      );
+      conditions.push(ilike(sql`${proxyHosts.domainNames}::text`, `%${query.search}%`));
     }
 
     const where = conditions.length > 0 ? and(...conditions) : undefined;
@@ -406,7 +403,7 @@ export class ProxyService {
       throw new AppError(
         500,
         'NGINX_CONFIG_FAILED',
-        `Failed to apply Nginx config: ${error instanceof Error ? error.message : 'unknown error'}`,
+        `Failed to apply Nginx config: ${error instanceof Error ? error.message : 'unknown error'}`
       );
     }
 
@@ -459,7 +456,7 @@ export class ProxyService {
         where: eq(sslCertificates.id, host.sslCertificateId),
       });
 
-      if (sslCert && sslCert.certificatePem && sslCert.privateKeyPem) {
+      if (sslCert?.certificatePem && sslCert.privateKeyPem) {
         // Decrypt the private key
         let keyPem: string;
         if (sslCert.encryptedDek && sslCert.dekIv) {
@@ -476,7 +473,7 @@ export class ProxyService {
           sslCert.id,
           sslCert.certificatePem,
           keyPem,
-          sslCert.chainPem ?? undefined,
+          sslCert.chainPem ?? undefined
         );
 
         return {
@@ -493,18 +490,14 @@ export class ProxyService {
         where: eq(certificates.id, host.internalCertificateId),
       });
 
-      if (cert && cert.certificatePem && cert.encryptedPrivateKey && cert.encryptedDek && cert.dekIv) {
+      if (cert?.certificatePem && cert.encryptedPrivateKey && cert.encryptedDek && cert.dekIv) {
         const keyPem = this.cryptoService.decryptPrivateKey({
           encryptedPrivateKey: cert.encryptedPrivateKey,
           encryptedDek: cert.encryptedDek,
           dekIv: cert.dekIv,
         });
 
-        const paths = await this.nginxService.deployCertificate(
-          `internal-${cert.id}`,
-          cert.certificatePem,
-          keyPem,
-        );
+        const paths = await this.nginxService.deployCertificate(`internal-${cert.id}`, cert.certificatePem, keyPem);
 
         return {
           sslCertPath: paths.certPath,
@@ -521,9 +514,7 @@ export class ProxyService {
   // Helpers — access list resolution
   // -----------------------------------------------------------------------
 
-  private async resolveAccessList(
-    accessListId: string | null,
-  ): Promise<ProxyHostConfig['accessList']> {
+  private async resolveAccessList(accessListId: string | null): Promise<ProxyHostConfig['accessList']> {
     if (!accessListId) return null;
 
     const list = await this.db.query.accessLists.findFirst({
@@ -546,7 +537,7 @@ export class ProxyService {
   private async buildNginxConfig(
     host: ProxyHostRow,
     certPaths: CertPaths,
-    accessList: ProxyHostConfig['accessList'],
+    accessList: ProxyHostConfig['accessList']
   ): Promise<string> {
     const config: ProxyHostConfig = {
       id: host.id,

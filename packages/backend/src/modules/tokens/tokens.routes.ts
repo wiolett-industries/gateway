@@ -1,9 +1,9 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
 import { authMiddleware } from '@/modules/auth/auth.middleware.js';
-import { TokensService } from './tokens.service.js';
-import { CreateTokenSchema } from './tokens.schemas.js';
 import type { AppEnv } from '@/types.js';
+import { CreateTokenSchema } from './tokens.schemas.js';
+import { TokensService } from './tokens.service.js';
 
 export const tokensRoutes = new OpenAPIHono<AppEnv>();
 

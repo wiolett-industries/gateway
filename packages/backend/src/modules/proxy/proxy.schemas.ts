@@ -6,11 +6,7 @@ import { z } from 'zod';
 
 const domainNameRegex = /^(\*\.)?([a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/;
 
-const DomainNameSchema = z
-  .string()
-  .min(1)
-  .max(253)
-  .regex(domainNameRegex, 'Invalid domain name format');
+const DomainNameSchema = z.string().min(1).max(253).regex(domainNameRegex, 'Invalid domain name format');
 
 const CustomHeaderSchema = z.object({
   name: z.string().min(1).max(255),
@@ -43,7 +39,12 @@ export const CreateProxyHostSchema = z
     domainNames: z.array(DomainNameSchema).min(1, 'At least one domain name is required'),
 
     // Upstream — proxy type
-    forwardHost: z.string().min(1).max(255).regex(/^[a-zA-Z0-9._-]+$/, 'Invalid hostname').optional(),
+    forwardHost: z
+      .string()
+      .min(1)
+      .max(255)
+      .regex(/^[a-zA-Z0-9._-]+$/, 'Invalid hostname')
+      .optional(),
     forwardPort: z.number().int().min(1).max(65535).optional(),
     forwardScheme: z.enum(['http', 'https']).default('http'),
 
@@ -124,45 +125,56 @@ export const CreateProxyHostSchema = z
 // Update — partial version (all fields optional)
 // ---------------------------------------------------------------------------
 
-export const UpdateProxyHostSchema = z
-  .object({
-    type: z.enum(['proxy', 'redirect', '404']).optional(),
-    domainNames: z.array(DomainNameSchema).min(1, 'At least one domain name is required').optional(),
+export const UpdateProxyHostSchema = z.object({
+  type: z.enum(['proxy', 'redirect', '404']).optional(),
+  domainNames: z.array(DomainNameSchema).min(1, 'At least one domain name is required').optional(),
 
-    forwardHost: z.string().min(1).max(255).regex(/^[a-zA-Z0-9._-]+$/, 'Invalid hostname').optional().nullable(),
-    forwardPort: z.number().int().min(1).max(65535).optional().nullable(),
-    forwardScheme: z.enum(['http', 'https']).optional(),
+  forwardHost: z
+    .string()
+    .min(1)
+    .max(255)
+    .regex(/^[a-zA-Z0-9._-]+$/, 'Invalid hostname')
+    .optional()
+    .nullable(),
+  forwardPort: z.number().int().min(1).max(65535).optional().nullable(),
+  forwardScheme: z.enum(['http', 'https']).optional(),
 
-    sslEnabled: z.boolean().optional(),
-    sslForced: z.boolean().optional(),
-    http2Support: z.boolean().optional(),
-    websocketSupport: z.boolean().optional(),
-    sslCertificateId: z.string().uuid().optional().nullable(),
-    internalCertificateId: z.string().uuid().optional().nullable(),
+  sslEnabled: z.boolean().optional(),
+  sslForced: z.boolean().optional(),
+  http2Support: z.boolean().optional(),
+  websocketSupport: z.boolean().optional(),
+  sslCertificateId: z.string().uuid().optional().nullable(),
+  internalCertificateId: z.string().uuid().optional().nullable(),
 
-    redirectUrl: z.string().url().max(2048).optional().nullable(),
-    redirectStatusCode: z.union([z.literal(301), z.literal(302), z.literal(307), z.literal(308)]).optional().nullable(),
+  redirectUrl: z.string().url().max(2048).optional().nullable(),
+  redirectStatusCode: z
+    .union([z.literal(301), z.literal(302), z.literal(307), z.literal(308)])
+    .optional()
+    .nullable(),
 
-    customHeaders: z.array(CustomHeaderSchema).optional(),
-    cacheEnabled: z.boolean().optional(),
-    cacheOptions: CacheOptionsSchema.optional().nullable(),
-    rateLimitEnabled: z.boolean().optional(),
-    rateLimitOptions: RateLimitOptionsSchema.optional().nullable(),
-    customRewrites: z.array(RewriteRuleSchema).optional(),
+  customHeaders: z.array(CustomHeaderSchema).optional(),
+  cacheEnabled: z.boolean().optional(),
+  cacheOptions: CacheOptionsSchema.optional().nullable(),
+  rateLimitEnabled: z.boolean().optional(),
+  rateLimitOptions: RateLimitOptionsSchema.optional().nullable(),
+  customRewrites: z.array(RewriteRuleSchema).optional(),
 
-    advancedConfig: z.string().max(10000).optional().nullable(),
+  advancedConfig: z.string().max(10000).optional().nullable(),
 
-    accessListId: z.string().uuid().optional().nullable(),
+  accessListId: z.string().uuid().optional().nullable(),
 
-    folderId: z.string().uuid().optional().nullable(),
+  folderId: z.string().uuid().optional().nullable(),
 
-    nginxTemplateId: z.string().uuid().optional().nullable(),
-    templateVariables: z.record(z.union([z.string(), z.number(), z.boolean()])).optional().nullable(),
+  nginxTemplateId: z.string().uuid().optional().nullable(),
+  templateVariables: z
+    .record(z.union([z.string(), z.number(), z.boolean()]))
+    .optional()
+    .nullable(),
 
-    healthCheckEnabled: z.boolean().optional(),
-    healthCheckUrl: z.string().max(500).regex(/^\//, 'Must start with /').optional().nullable(),
-    healthCheckInterval: z.number().int().min(5).max(3600).optional().nullable(),
-  });
+  healthCheckEnabled: z.boolean().optional(),
+  healthCheckUrl: z.string().max(500).regex(/^\//, 'Must start with /').optional().nullable(),
+  healthCheckInterval: z.number().int().min(5).max(3600).optional().nullable(),
+});
 
 // ---------------------------------------------------------------------------
 // List query — pagination + filters

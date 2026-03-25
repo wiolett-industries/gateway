@@ -13,7 +13,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { NumericInput } from "@/components/ui/numeric-input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { api } from "@/services/api";
 import { useCAStore } from "@/stores/ca";
 import type { CertificateType, KeyAlgorithm, Template } from "@/types";
@@ -51,7 +57,10 @@ export function CertificateIssueDialog({
 
   useEffect(() => {
     if (open) {
-      api.listTemplates().then((data) => setTemplates(data || [])).catch(() => {});
+      api
+        .listTemplates()
+        .then((data) => setTemplates(data || []))
+        .catch(() => {});
       setStep(1);
       setSelectedCAId(caId || "");
       setSelectedTemplateId("");
@@ -121,7 +130,11 @@ export function CertificateIssueDialog({
 
   const activeCAs = (cas || []).filter((ca) => ca.status === "active");
   const sansRequired = type === "tls-server" || type === "email";
-  const step2Valid = commonName.trim() !== "" && validityDays >= 1 && validityDays <= 3650 && (!sansRequired || sans.length > 0);
+  const step2Valid =
+    commonName.trim() !== "" &&
+    validityDays >= 1 &&
+    validityDays <= 3650 &&
+    (!sansRequired || sans.length > 0);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -130,7 +143,11 @@ export function CertificateIssueDialog({
           <DialogTitle>Issue Certificate</DialogTitle>
           <DialogDescription>
             Step {step} of 3 &mdash;{" "}
-            {step === 1 ? "Select CA & Template" : step === 2 ? "Subject Details" : "Review & Issue"}
+            {step === 1
+              ? "Select CA & Template"
+              : step === 2
+                ? "Subject Details"
+                : "Review & Issue"}
           </DialogDescription>
         </DialogHeader>
 
@@ -140,10 +157,14 @@ export function CertificateIssueDialog({
             <div className="space-y-2">
               <label className="text-sm font-medium">Issuing CA</label>
               <Select value={selectedCAId || undefined} onValueChange={(v) => setSelectedCAId(v)}>
-                <SelectTrigger><SelectValue placeholder="Select a CA..." /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a CA..." />
+                </SelectTrigger>
                 <SelectContent>
                   {activeCAs.map((ca) => (
-                    <SelectItem key={ca.id} value={ca.id}>{ca.commonName}</SelectItem>
+                    <SelectItem key={ca.id} value={ca.id}>
+                      {ca.commonName}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -152,12 +173,19 @@ export function CertificateIssueDialog({
             {templates.length > 0 && (
               <div className="space-y-2">
                 <label className="text-sm font-medium">Template (optional)</label>
-                <Select value={selectedTemplateId || "none"} onValueChange={(v) => handleTemplateSelect(v === "none" ? "" : v)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                <Select
+                  value={selectedTemplateId || "none"}
+                  onValueChange={(v) => handleTemplateSelect(v === "none" ? "" : v)}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">No template</SelectItem>
                     {templates.map((t) => (
-                      <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                      <SelectItem key={t.id} value={t.id}>
+                        {t.name}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -168,7 +196,9 @@ export function CertificateIssueDialog({
               <div className="space-y-2">
                 <label className="text-sm font-medium">Certificate Type</label>
                 <Select value={type} onValueChange={(v) => setType(v as CertificateType)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="tls-server">TLS Server</SelectItem>
                     <SelectItem value="tls-client">TLS Client</SelectItem>
@@ -179,8 +209,13 @@ export function CertificateIssueDialog({
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">Key Algorithm</label>
-                <Select value={keyAlgorithm} onValueChange={(v) => setKeyAlgorithm(v as KeyAlgorithm)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                <Select
+                  value={keyAlgorithm}
+                  onValueChange={(v) => setKeyAlgorithm(v as KeyAlgorithm)}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="rsa-2048">RSA-2048</SelectItem>
                     <SelectItem value="rsa-4096">RSA-4096</SelectItem>
@@ -206,7 +241,12 @@ export function CertificateIssueDialog({
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Validity (days)</label>
-              <NumericInput value={validityDays} onChange={(v) => setValidityDays(v)} min={1} max={3650} />
+              <NumericInput
+                value={validityDays}
+                onChange={(v) => setValidityDays(v)}
+                min={1}
+                max={3650}
+              />
             </div>
 
             {/* SANs */}
@@ -216,7 +256,9 @@ export function CertificateIssueDialog({
                 {sansRequired && <span className="text-destructive ml-1">*</span>}
               </label>
               {sansRequired && sans.length === 0 && (
-                <p className="text-xs text-destructive">At least one SAN is required for {type} certificates</p>
+                <p className="text-xs text-destructive">
+                  At least one SAN is required for {type} certificates
+                </p>
               )}
               <div className="flex gap-2">
                 <Input
@@ -247,9 +289,22 @@ export function CertificateIssueDialog({
             <div className="space-y-2">
               <label className="text-sm font-medium">Subject DN (optional)</label>
               <div className="grid grid-cols-3 gap-2">
-                <Input value={dnO} onChange={(e) => setDnO(e.target.value)} placeholder="Organization (O)" />
-                <Input value={dnOu} onChange={(e) => setDnOu(e.target.value)} placeholder="Org Unit (OU)" />
-                <Input value={dnC} onChange={(e) => setDnC(e.target.value)} placeholder="Country (C)" maxLength={2} />
+                <Input
+                  value={dnO}
+                  onChange={(e) => setDnO(e.target.value)}
+                  placeholder="Organization (O)"
+                />
+                <Input
+                  value={dnOu}
+                  onChange={(e) => setDnOu(e.target.value)}
+                  placeholder="Org Unit (OU)"
+                />
+                <Input
+                  value={dnC}
+                  onChange={(e) => setDnC(e.target.value)}
+                  placeholder="Country (C)"
+                  maxLength={2}
+                />
               </div>
             </div>
           </div>
@@ -261,17 +316,31 @@ export function CertificateIssueDialog({
             <div className="border border-border p-4 space-y-2">
               <h3 className="font-semibold">Review</h3>
               <div className="space-y-1">
-                <p><span className="text-muted-foreground">CA:</span> {activeCAs.find((c) => c.id === selectedCAId)?.commonName}</p>
-                <p><span className="text-muted-foreground">Type:</span> <span className="capitalize">{type}</span></p>
-                <p><span className="text-muted-foreground">Common Name:</span> {commonName}</p>
-                <p><span className="text-muted-foreground">Key Algorithm:</span> {keyAlgorithm}</p>
-                <p><span className="text-muted-foreground">Validity:</span> {validityDays} days</p>
+                <p>
+                  <span className="text-muted-foreground">CA:</span>{" "}
+                  {activeCAs.find((c) => c.id === selectedCAId)?.commonName}
+                </p>
+                <p>
+                  <span className="text-muted-foreground">Type:</span>{" "}
+                  <span className="capitalize">{type}</span>
+                </p>
+                <p>
+                  <span className="text-muted-foreground">Common Name:</span> {commonName}
+                </p>
+                <p>
+                  <span className="text-muted-foreground">Key Algorithm:</span> {keyAlgorithm}
+                </p>
+                <p>
+                  <span className="text-muted-foreground">Validity:</span> {validityDays} days
+                </p>
                 {sans.length > 0 && (
                   <div>
                     <span className="text-muted-foreground">SANs:</span>
                     <div className="flex flex-wrap gap-1 mt-1">
                       {sans.map((san) => (
-                        <Badge key={san} variant="secondary" className="text-xs">{san}</Badge>
+                        <Badge key={san} variant="secondary" className="text-xs">
+                          {san}
+                        </Badge>
                       ))}
                     </div>
                   </div>

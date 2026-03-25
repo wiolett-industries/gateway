@@ -155,7 +155,11 @@ export interface Alert {
 export const TOKEN_SCOPES = [
   { value: "ca:read", label: "View CAs", group: "Certificate Authorities" },
   { value: "ca:create:root", label: "Create Root CAs", group: "Certificate Authorities" },
-  { value: "ca:create:intermediate", label: "Create Intermediate CAs", group: "Certificate Authorities" },
+  {
+    value: "ca:create:intermediate",
+    label: "Create Intermediate CAs",
+    group: "Certificate Authorities",
+  },
   { value: "ca:revoke", label: "Revoke CAs", group: "Certificate Authorities" },
   { value: "cert:read", label: "View Certificates", group: "Certificates" },
   { value: "cert:issue", label: "Issue Certificates (any CA)", group: "Certificates" },
@@ -241,9 +245,9 @@ export interface IssueCertFromCSRRequest {
 }
 
 // Proxy Host Types
-export type ProxyHostType = 'proxy' | 'redirect' | '404';
-export type ForwardScheme = 'http' | 'https';
-export type HealthStatus = 'online' | 'offline' | 'degraded' | 'unknown';
+export type ProxyHostType = "proxy" | "redirect" | "404";
+export type ForwardScheme = "http" | "https";
+export type HealthStatus = "online" | "offline" | "degraded" | "unknown";
 
 export interface CustomHeader {
   name: string;
@@ -263,7 +267,7 @@ export interface RateLimitOptions {
 export interface RewriteRule {
   source: string;
   destination: string;
-  type: 'permanent' | 'temporary';
+  type: "permanent" | "temporary";
 }
 
 export interface ProxyHost {
@@ -308,9 +312,9 @@ export interface ProxyHost {
 }
 
 // SSL Certificate Types
-export type SSLCertType = 'acme' | 'upload' | 'internal';
-export type SSLCertStatus = 'active' | 'expired' | 'pending' | 'error';
-export type ACMEChallengeType = 'http-01' | 'dns-01';
+export type SSLCertType = "acme" | "upload" | "internal";
+export type SSLCertStatus = "active" | "expired" | "pending" | "error";
+export type ACMEChallengeType = "http-01" | "dns-01";
 
 export interface SSLCertificate {
   id: string;
@@ -332,7 +336,7 @@ export interface SSLCertificate {
 
 // Access List Types
 export interface IPRule {
-  type: 'allow' | 'deny';
+  type: "allow" | "deny";
   value: string;
 }
 
@@ -435,7 +439,7 @@ export interface GroupedProxyHostsResponse {
 // Nginx Config Template Types
 export interface TemplateVariableDef {
   name: string;
-  type: 'string' | 'number' | 'boolean';
+  type: "string" | "number" | "boolean";
   default?: string | number | boolean;
   description?: string;
 }

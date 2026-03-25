@@ -1,21 +1,16 @@
-import { eq, and, or, ilike, desc, count, lte } from 'drizzle-orm';
-import * as x509 from '@peculiar/x509';
 import crypto from 'node:crypto';
-import { sslCertificates, certificates } from '@/db/schema/index.js';
-import { AppError } from '@/middleware/error-handler.js';
-import { createChildLogger } from '@/lib/logger.js';
+import * as x509 from '@peculiar/x509';
+import { and, count, desc, eq, ilike, lte, or } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
-import type { NginxService } from '@/services/nginx.service.js';
-import type { CryptoService } from '@/services/crypto.service.js';
+import { certificates, sslCertificates } from '@/db/schema/index.js';
+import { createChildLogger } from '@/lib/logger.js';
+import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
-import type { ACMEService } from './acme.service.js';
-import type {
-  RequestACMECertInput,
-  UploadCertInput,
-  LinkInternalCertInput,
-  SSLCertListQuery,
-} from './ssl.schemas.js';
+import type { CryptoService } from '@/services/crypto.service.js';
+import type { NginxService } from '@/services/nginx.service.js';
 import type { PaginatedResponse } from '@/types.js';
+import type { ACMEService } from './acme.service.js';
+import type { LinkInternalCertInput, RequestACMECertInput, SSLCertListQuery, UploadCertInput } from './ssl.schemas.js';
 
 const logger = createChildLogger('SSLService');
 
@@ -27,7 +22,7 @@ export class SSLService {
     private readonly acmeService: ACMEService,
     private readonly nginxService: NginxService,
     private readonly cryptoService: CryptoService,
-    private readonly auditService: AuditService,
+    private readonly auditService: AuditService
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -53,24 +48,27 @@ export class SSLService {
         dekIv: acmeKeyEncrypted.dekIv,
       });
 
-      const [cert] = await this.db.insert(sslCertificates).values({
-        name,
-        type: 'acme',
-        domainNames: input.domains,
-        certificatePem: result.certificatePem,
-        privateKeyPem: encrypted.encryptedPrivateKey,
-        encryptedDek: encrypted.encryptedDek,
-        dekIv: encrypted.dekIv,
-        chainPem: result.chainPem,
-        acmeProvider: input.provider,
-        acmeChallengeType: 'http-01',
-        acmeAccountKey: acmeAccountKeyBlob,
-        notBefore: result.notBefore,
-        notAfter: result.notAfter,
-        autoRenew: input.autoRenew,
-        status: 'active',
-        createdById: userId,
-      }).returning();
+      const [cert] = await this.db
+        .insert(sslCertificates)
+        .values({
+          name,
+          type: 'acme',
+          domainNames: input.domains,
+          certificatePem: result.certificatePem,
+          privateKeyPem: encrypted.encryptedPrivateKey,
+          encryptedDek: encrypted.encryptedDek,
+          dekIv: encrypted.dekIv,
+          chainPem: result.chainPem,
+          acmeProvider: input.provider,
+          acmeChallengeType: 'http-01',
+          acmeAccountKey: acmeAccountKeyBlob,
+          notBefore: result.notBefore,
+          notAfter: result.notAfter,
+          autoRenew: input.autoRenew,
+          status: 'active',
+          createdById: userId,
+        })
+        .returning();
 
       // Deploy cert files to nginx
       try {
@@ -78,15 +76,18 @@ export class SSLService {
           cert.id,
           result.certificatePem,
           result.privateKeyPem,
-          result.chainPem || undefined,
+          result.chainPem || undefined
         );
       } catch (deployError) {
         const deployMessage = deployError instanceof Error ? deployError.message : 'Unknown deploy error';
-        await this.db.update(sslCertificates).set({
-          status: 'error',
-          renewalError: `Certificate deploy failed: ${deployMessage}`,
-          updatedAt: new Date(),
-        }).where(eq(sslCertificates.id, cert.id));
+        await this.db
+          .update(sslCertificates)
+          .set({
+            status: 'error',
+            renewalError: `Certificate deploy failed: ${deployMessage}`,
+            updatedAt: new Date(),
+          })
+          .where(eq(sslCertificates.id, cert.id));
         throw deployError;
       }
 
@@ -122,18 +123,21 @@ export class SSLService {
     });
 
     // Save pending cert with ACME state
-    const [cert] = await this.db.insert(sslCertificates).values({
-      name,
-      type: 'acme',
-      domainNames: input.domains,
-      acmeProvider: input.provider,
-      acmeChallengeType: 'dns-01',
-      acmeAccountKey: dns01AcmeAccountKeyBlob,
-      acmeOrderUrl: result.orderUrl,
-      autoRenew: input.autoRenew,
-      status: 'pending',
-      createdById: userId,
-    }).returning();
+    const [cert] = await this.db
+      .insert(sslCertificates)
+      .values({
+        name,
+        type: 'acme',
+        domainNames: input.domains,
+        acmeProvider: input.provider,
+        acmeChallengeType: 'dns-01',
+        acmeAccountKey: dns01AcmeAccountKeyBlob,
+        acmeOrderUrl: result.orderUrl,
+        autoRenew: input.autoRenew,
+        status: 'pending',
+        createdById: userId,
+      })
+      .returning();
 
     await this.auditService.log({
       userId,
@@ -166,8 +170,10 @@ export class SSLService {
     });
 
     if (!cert) throw new AppError(404, 'SSL_CERT_NOT_FOUND', 'SSL certificate not found');
-    if (cert.status !== 'pending') throw new AppError(400, 'NOT_PENDING', 'Certificate is not pending DNS verification');
-    if (cert.acmeChallengeType !== 'dns-01') throw new AppError(400, 'NOT_DNS01', 'Certificate is not a DNS-01 challenge');
+    if (cert.status !== 'pending')
+      throw new AppError(400, 'NOT_PENDING', 'Certificate is not pending DNS verification');
+    if (cert.acmeChallengeType !== 'dns-01')
+      throw new AppError(400, 'NOT_DNS01', 'Certificate is not a DNS-01 challenge');
     if (!cert.acmeAccountKey || !cert.acmeOrderUrl) {
       throw new AppError(400, 'MISSING_ACME_STATE', 'Missing ACME state data for verification');
     }
@@ -186,25 +192,28 @@ export class SSLService {
         decryptedAccountKey,
         cert.acmeOrderUrl,
         cert.domainNames,
-        dns01IsStaging,
+        dns01IsStaging
       );
 
       // Encrypt private key
       const encrypted = this.cryptoService.encryptPrivateKey(result.privateKeyPem);
 
       // Update cert in DB
-      await this.db.update(sslCertificates).set({
-        certificatePem: result.certificatePem,
-        privateKeyPem: encrypted.encryptedPrivateKey,
-        encryptedDek: encrypted.encryptedDek,
-        dekIv: encrypted.dekIv,
-        chainPem: result.chainPem,
-        notBefore: result.notBefore,
-        notAfter: result.notAfter,
-        status: 'active',
-        acmeOrderUrl: null, // Clear order URL after completion
-        updatedAt: new Date(),
-      }).where(eq(sslCertificates.id, certId));
+      await this.db
+        .update(sslCertificates)
+        .set({
+          certificatePem: result.certificatePem,
+          privateKeyPem: encrypted.encryptedPrivateKey,
+          encryptedDek: encrypted.encryptedDek,
+          dekIv: encrypted.dekIv,
+          chainPem: result.chainPem,
+          notBefore: result.notBefore,
+          notAfter: result.notAfter,
+          status: 'active',
+          acmeOrderUrl: null, // Clear order URL after completion
+          updatedAt: new Date(),
+        })
+        .where(eq(sslCertificates.id, certId));
 
       // Deploy to nginx — separate try/catch since cert is already valid at this point
       try {
@@ -212,16 +221,19 @@ export class SSLService {
           certId,
           result.certificatePem,
           result.privateKeyPem,
-          result.chainPem || undefined,
+          result.chainPem || undefined
         );
       } catch (deployError) {
         const deployMsg = deployError instanceof Error ? deployError.message : 'Unknown deploy error';
         logger.error('Certificate obtained but deploy to nginx failed', { certId, error: deployMsg });
         // Keep status as 'active' — cert is valid, just not deployed yet
-        await this.db.update(sslCertificates).set({
-          renewalError: `Deploy failed: ${deployMsg}`,
-          updatedAt: new Date(),
-        }).where(eq(sslCertificates.id, certId));
+        await this.db
+          .update(sslCertificates)
+          .set({
+            renewalError: `Deploy failed: ${deployMsg}`,
+            updatedAt: new Date(),
+          })
+          .where(eq(sslCertificates.id, certId));
         throw new AppError(500, 'DEPLOY_FAILED', `Certificate obtained but deploy failed: ${deployMsg}`);
       }
 
@@ -244,11 +256,14 @@ export class SSLService {
       if (error instanceof AppError) throw error;
       // ACME verification itself failed — cert is not valid
       const message = error instanceof Error ? error.message : 'Unknown verification error';
-      await this.db.update(sslCertificates).set({
-        status: 'error',
-        renewalError: message,
-        updatedAt: new Date(),
-      }).where(eq(sslCertificates.id, certId));
+      await this.db
+        .update(sslCertificates)
+        .set({
+          status: 'error',
+          renewalError: message,
+          updatedAt: new Date(),
+        })
+        .where(eq(sslCertificates.id, certId));
 
       throw new AppError(400, 'DNS01_VERIFICATION_FAILED', `DNS-01 verification failed: ${message}`);
     }
@@ -281,21 +296,24 @@ export class SSLService {
     // Encrypt private key
     const encrypted = this.cryptoService.encryptPrivateKey(input.privateKeyPem);
 
-    const [cert] = await this.db.insert(sslCertificates).values({
-      name: input.name,
-      type: 'upload',
-      domainNames: domains,
-      certificatePem: input.certificatePem,
-      privateKeyPem: encrypted.encryptedPrivateKey,
-      encryptedDek: encrypted.encryptedDek,
-      dekIv: encrypted.dekIv,
-      chainPem: input.chainPem || null,
-      notBefore: parsedCert.notBefore,
-      notAfter: parsedCert.notAfter,
-      autoRenew: false,
-      status: 'active',
-      createdById: userId,
-    }).returning();
+    const [cert] = await this.db
+      .insert(sslCertificates)
+      .values({
+        name: input.name,
+        type: 'upload',
+        domainNames: domains,
+        certificatePem: input.certificatePem,
+        privateKeyPem: encrypted.encryptedPrivateKey,
+        encryptedDek: encrypted.encryptedDek,
+        dekIv: encrypted.dekIv,
+        chainPem: input.chainPem || null,
+        notBefore: parsedCert.notBefore,
+        notAfter: parsedCert.notAfter,
+        autoRenew: false,
+        status: 'active',
+        createdById: userId,
+      })
+      .returning();
 
     // Deploy cert files to nginx
     try {
@@ -303,15 +321,18 @@ export class SSLService {
         cert.id,
         input.certificatePem,
         input.privateKeyPem,
-        input.chainPem || undefined,
+        input.chainPem || undefined
       );
     } catch (deployError) {
       const deployMessage = deployError instanceof Error ? deployError.message : 'Unknown deploy error';
-      await this.db.update(sslCertificates).set({
-        status: 'error',
-        renewalError: `Certificate deploy failed: ${deployMessage}`,
-        updatedAt: new Date(),
-      }).where(eq(sslCertificates.id, cert.id));
+      await this.db
+        .update(sslCertificates)
+        .set({
+          status: 'error',
+          renewalError: `Certificate deploy failed: ${deployMessage}`,
+          updatedAt: new Date(),
+        })
+        .where(eq(sslCertificates.id, cert.id));
       throw deployError;
     }
 
@@ -339,7 +360,8 @@ export class SSLService {
     });
 
     if (!pkiCert) throw new AppError(404, 'PKI_CERT_NOT_FOUND', 'Internal PKI certificate not found');
-    if (pkiCert.status !== 'active') throw new AppError(400, 'PKI_CERT_NOT_ACTIVE', 'Internal PKI certificate is not active');
+    if (pkiCert.status !== 'active')
+      throw new AppError(400, 'PKI_CERT_NOT_ACTIVE', 'Internal PKI certificate is not active');
 
     // Auto-generate name from cert CN if not provided
     const name = input.name || pkiCert.commonName;
@@ -372,29 +394,28 @@ export class SSLService {
       encryptedData = this.cryptoService.encryptPrivateKey(privateKeyPem);
     }
 
-    const [cert] = await this.db.insert(sslCertificates).values({
-      name,
-      type: 'internal',
-      domainNames: domains,
-      certificatePem: pkiCert.certificatePem,
-      privateKeyPem: encryptedData?.encryptedPrivateKey || null,
-      encryptedDek: encryptedData?.encryptedDek || null,
-      dekIv: encryptedData?.dekIv || null,
-      internalCertId: input.internalCertId,
-      notBefore: pkiCert.notBefore,
-      notAfter: pkiCert.notAfter,
-      autoRenew: false,
-      status: 'active',
-      createdById: userId,
-    }).returning();
+    const [cert] = await this.db
+      .insert(sslCertificates)
+      .values({
+        name,
+        type: 'internal',
+        domainNames: domains,
+        certificatePem: pkiCert.certificatePem,
+        privateKeyPem: encryptedData?.encryptedPrivateKey || null,
+        encryptedDek: encryptedData?.encryptedDek || null,
+        dekIv: encryptedData?.dekIv || null,
+        internalCertId: input.internalCertId,
+        notBefore: pkiCert.notBefore,
+        notAfter: pkiCert.notAfter,
+        autoRenew: false,
+        status: 'active',
+        createdById: userId,
+      })
+      .returning();
 
     // Deploy the PKI cert's PEM to nginx cert files
     if (privateKeyPem) {
-      await this.nginxService.deployCertificate(
-        cert.id,
-        pkiCert.certificatePem,
-        privateKeyPem,
-      );
+      await this.nginxService.deployCertificate(cert.id, pkiCert.certificatePem, privateKeyPem);
     }
 
     await this.auditService.log({
@@ -439,7 +460,11 @@ export class SSLService {
         const renewIsStaging = cert.acmeProvider === 'letsencrypt-staging';
         result = await this.acmeService.requestCertHTTP01(cert.domainNames, renewIsStaging);
       } else {
-        throw new AppError(400, 'DNS01_NO_AUTO_RENEW', 'DNS-01 certificates cannot be automatically renewed. Use the ACME request flow again.');
+        throw new AppError(
+          400,
+          'DNS01_NO_AUTO_RENEW',
+          'DNS-01 certificates cannot be automatically renewed. Use the ACME request flow again.'
+        );
       }
 
       // Encrypt private key
@@ -477,7 +502,7 @@ export class SSLService {
         certId,
         result.certificatePem,
         result.privateKeyPem,
-        result.chainPem || undefined,
+        result.chainPem || undefined
       );
 
       await this.auditService.log({
@@ -500,11 +525,14 @@ export class SSLService {
 
       const message = error instanceof Error ? error.message : 'Unknown renewal error';
 
-      await this.db.update(sslCertificates).set({
-        status: 'error',
-        renewalError: `Renewal failed: ${message}`,
-        updatedAt: new Date(),
-      }).where(eq(sslCertificates.id, certId));
+      await this.db
+        .update(sslCertificates)
+        .set({
+          status: 'error',
+          renewalError: `Renewal failed: ${message}`,
+          updatedAt: new Date(),
+        })
+        .where(eq(sslCertificates.id, certId));
 
       throw new AppError(500, 'RENEWAL_FAILED', `Certificate renewal failed: ${message}`);
     }
@@ -529,12 +557,9 @@ export class SSLService {
     });
 
     if (referencingHosts.length > 0) {
-      throw new AppError(
-        409,
-        'CERT_IN_USE',
-        'Certificate is in use by proxy hosts',
-        { proxyHostIds: referencingHosts.map((h) => h.id) },
-      );
+      throw new AppError(409, 'CERT_IN_USE', 'Certificate is in use by proxy hosts', {
+        proxyHostIds: referencingHosts.map((h) => h.id),
+      });
     }
 
     // Remove cert files from nginx
@@ -564,11 +589,7 @@ export class SSLService {
     if (params.type) conditions.push(eq(sslCertificates.type, params.type));
     if (params.status) conditions.push(eq(sslCertificates.status, params.status));
     if (params.search) {
-      conditions.push(
-        or(
-          ilike(sslCertificates.name, `%${params.search}%`),
-        )!,
-      );
+      conditions.push(or(ilike(sslCertificates.name, `%${params.search}%`))!);
     }
 
     const where = conditions.length > 0 ? and(...conditions) : undefined;
@@ -628,7 +649,7 @@ export class SSLService {
       where: and(
         eq(sslCertificates.status, 'active'),
         eq(sslCertificates.autoRenew, true),
-        lte(sslCertificates.notAfter, threshold),
+        lte(sslCertificates.notAfter, threshold)
       ),
       columns: {
         privateKeyPem: false,
@@ -650,9 +671,7 @@ export class SSLService {
     const domains: string[] = [];
 
     // Try SAN extension first
-    const sanExtension = cert.extensions.find(
-      (ext) => ext.type === '2.5.29.17',
-    );
+    const sanExtension = cert.extensions.find((ext) => ext.type === '2.5.29.17');
 
     if (sanExtension) {
       try {

@@ -1,8 +1,8 @@
 import { ChevronDown, ChevronRight, Shield } from "lucide-react";
-import { useState, useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
-import type { CA } from "@/types";
 import { cn } from "@/lib/utils";
+import type { CA } from "@/types";
 
 interface CATreeProps {
   cas: CA[];
@@ -25,7 +25,7 @@ function buildTree(cas: CA[]): CATreeNodeData[] {
   for (const ca of cas) {
     const node = map.get(ca.id)!;
     if (ca.parentId && map.has(ca.parentId)) {
-      map.get(ca.parentId)!.children.push(node);
+      map.get(ca.parentId)?.children.push(node);
     } else {
       roots.push(node);
     }
@@ -91,7 +91,10 @@ function CATreeNodeComponent({
         {ca.status !== "active" && (
           <Badge
             variant="secondary"
-            className={cn("text-[10px] px-1 py-0 leading-tight", ca.status === "revoked" && "text-destructive")}
+            className={cn(
+              "text-[10px] px-1 py-0 leading-tight",
+              ca.status === "revoked" && "text-destructive"
+            )}
           >
             {ca.status}
           </Badge>

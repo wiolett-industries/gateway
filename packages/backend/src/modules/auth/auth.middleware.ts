@@ -1,13 +1,16 @@
 import type { MiddlewareHandler } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { container } from '@/container.js';
-import { SessionService } from '@/services/session.service.js';
 import { TokensService } from '@/modules/tokens/tokens.service.js';
+import { SessionService } from '@/services/session.service.js';
 import type { AppEnv, UserRole } from '@/types.js';
 
 const SESSION_COOKIE_NAME = 'session_id';
 
-function extractCredential(c: { req: { header: (name: string) => string | undefined }; cookie?: (name: string) => string | undefined }): { type: 'session' | 'apitoken'; value: string } | null {
+function extractCredential(c: {
+  req: { header: (name: string) => string | undefined };
+  cookie?: (name: string) => string | undefined;
+}): { type: 'session' | 'apitoken'; value: string } | null {
   if (c.cookie) {
     const cookieSession = c.cookie(SESSION_COOKIE_NAME);
     if (cookieSession) return { type: 'session', value: cookieSession };

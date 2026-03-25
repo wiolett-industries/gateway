@@ -10,8 +10,8 @@ import '@/services/session.service.js';
 import '@/modules/auth/auth.service.js';
 
 import { createApp } from '@/app.js';
+import { container, initializeContainer } from '@/bootstrap.js';
 import { getEnv } from '@/config/env.js';
-import { initializeContainer, container } from '@/bootstrap.js';
 import { logger } from '@/lib/logger.js';
 import { SchedulerService } from '@/services/scheduler.service.js';
 

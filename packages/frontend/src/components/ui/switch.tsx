@@ -1,6 +1,12 @@
 import { cn } from "@/lib/utils";
 
-export function Switch({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+export function Switch({
+  checked,
+  onChange,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
   return (
     <button
       type="button"

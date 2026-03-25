@@ -1,7 +1,8 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
-interface NumericInputProps extends Omit<React.ComponentProps<"input">, "value" | "onChange" | "type"> {
+interface NumericInputProps
+  extends Omit<React.ComponentProps<"input">, "value" | "onChange" | "type"> {
   value: number;
   onChange: (value: number, raw: string) => void;
   min?: number;
@@ -22,12 +23,14 @@ const NumericInput = React.forwardRef<HTMLInputElement, NumericInputProps>(
     // Sync when value changes externally
     React.useEffect(() => {
       const parsed = parseInt(raw, 10);
-      if (!isNaN(parsed) && parsed === value) return;
+      if (!Number.isNaN(parsed) && parsed === value) return;
       setRaw(String(value));
-    }, [value]);
+    }, [value, raw]);
 
     const parsed = parseInt(raw, 10);
-    const isInvalid = raw.trim() === "" || isNaN(parsed) ||
+    const isInvalid =
+      raw.trim() === "" ||
+      Number.isNaN(parsed) ||
       (min !== undefined && parsed < min) ||
       (max !== undefined && parsed > max);
 
@@ -35,7 +38,7 @@ const NumericInput = React.forwardRef<HTMLInputElement, NumericInputProps>(
       const newRaw = e.target.value;
       setRaw(newRaw);
       const num = parseInt(newRaw, 10);
-      onChange(isNaN(num) ? value : num, newRaw);
+      onChange(Number.isNaN(num) ? value : num, newRaw);
     };
 
     return (

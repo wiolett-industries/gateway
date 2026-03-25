@@ -1,14 +1,14 @@
 import { create } from "zustand";
-import type {
-  SSLCertificate,
-  SSLCertType,
-  SSLCertStatus,
-  RequestACMECertRequest,
-  UploadCertRequest,
-  LinkInternalCertRequest,
-  DNSChallenge,
-} from "@/types";
 import { api } from "@/services/api";
+import type {
+  DNSChallenge,
+  LinkInternalCertRequest,
+  RequestACMECertRequest,
+  SSLCertificate,
+  SSLCertStatus,
+  SSLCertType,
+  UploadCertRequest,
+} from "@/types";
 
 interface SSLCertFilters {
   search: string;
@@ -30,7 +30,9 @@ interface SSLState {
   fetchCertificates: () => Promise<void>;
   selectCertificate: (id: string) => Promise<void>;
   clearSelected: () => void;
-  requestACME: (data: RequestACMECertRequest) => Promise<SSLCertificate | { challenges: DNSChallenge[] }>;
+  requestACME: (
+    data: RequestACMECertRequest
+  ) => Promise<SSLCertificate | { challenges: DNSChallenge[] }>;
   uploadCert: (data: UploadCertRequest) => Promise<SSLCertificate>;
   linkInternal: (data: LinkInternalCertRequest) => Promise<SSLCertificate>;
   renewCert: (id: string) => Promise<SSLCertificate>;

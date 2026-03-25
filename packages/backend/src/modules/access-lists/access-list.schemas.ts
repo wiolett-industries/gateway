@@ -10,8 +10,7 @@ import { z } from 'zod';
  * Examples:
  *   192.168.1.0/24   10.0.0.1   ::1   2001:db8::/32   fe80::1
  */
-const ipOrCidrRegex =
-  /^(?:(?:\d{1,3}\.){3}\d{1,3}(?:\/\d{1,2})?|[0-9a-fA-F:]+(?:\/\d{1,3})?)$/;
+const ipOrCidrRegex = /^(?:(?:\d{1,3}\.){3}\d{1,3}(?:\/\d{1,2})?|[0-9a-fA-F:]+(?:\/\d{1,3})?)$/;
 
 const IPRuleSchema = z.object({
   type: z.enum(['allow', 'deny']),

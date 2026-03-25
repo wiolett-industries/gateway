@@ -1,6 +1,6 @@
 import { create } from "zustand";
-import type { ProxyHost, ProxyHostType, HealthStatus, CreateProxyHostRequest } from "@/types";
 import { api } from "@/services/api";
+import type { CreateProxyHostRequest, HealthStatus, ProxyHost, ProxyHostType } from "@/types";
 
 interface ProxyHostFilters {
   search: string;

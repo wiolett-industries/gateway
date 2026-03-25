@@ -1,13 +1,13 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
-  hasRole,
-  canManageCAs,
-  canIssueCertificates,
-  canRevokeCertificates,
-  canManageUsers,
-  canManageTemplates,
   canExportCAKeys,
+  canIssueCertificates,
+  canManageCAs,
+  canManageTemplates,
+  canManageUsers,
+  canRevokeCertificates,
   canViewAuditLog,
+  hasRole,
 } from './permissions.js';
 
 describe('RBAC permissions', () => {

@@ -14,13 +14,10 @@ export function CertificateDetailView({ pem }: CertificateDetailViewProps) {
   // Parse basic PEM info (the actual X.509 decoding would be done by a library in production)
   const lines = pem.trim().split("\n");
   const isValidPEM =
-    lines[0]?.includes("BEGIN CERTIFICATE") &&
-    lines[lines.length - 1]?.includes("END CERTIFICATE");
+    lines[0]?.includes("BEGIN CERTIFICATE") && lines[lines.length - 1]?.includes("END CERTIFICATE");
 
   // Extract base64 content (between begin/end markers)
-  const base64Content = lines
-    .filter((l) => !l.startsWith("-----"))
-    .join("");
+  const base64Content = lines.filter((l) => !l.startsWith("-----")).join("");
 
   // Estimate key size from base64 length
   const derLength = Math.ceil((base64Content.length * 3) / 4);
@@ -78,9 +75,7 @@ export function CertificateDetailView({ pem }: CertificateDetailViewProps) {
               <h3 className="text-sm font-medium">PEM Content</h3>
               <div className="bg-muted p-3 font-mono text-xs overflow-x-auto">
                 <p className="text-muted-foreground">{lines[0]}</p>
-                <p className="text-foreground">
-                  {base64Content.slice(0, 64)}...
-                </p>
+                <p className="text-foreground">{base64Content.slice(0, 64)}...</p>
                 <p className="text-muted-foreground">
                   ...({base64Content.length} base64 characters)
                 </p>

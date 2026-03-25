@@ -1,15 +1,15 @@
-import { useEffect, useRef } from "react";
-import { EditorView, lineNumbers, highlightActiveLine, keymap } from "@codemirror/view";
-import { EditorState } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import {
   bracketMatching,
-  syntaxHighlighting,
   HighlightStyle,
   StreamLanguage,
+  syntaxHighlighting,
 } from "@codemirror/language";
-import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
+import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
+import { EditorState } from "@codemirror/state";
+import { EditorView, highlightActiveLine, keymap, lineNumbers } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
+import { useEffect, useRef } from "react";
 
 // ---------------------------------------------------------------------------
 // Nginx + Handlebars stream parser
@@ -244,7 +244,7 @@ const highlightStyles = syntaxHighlighting(
       backgroundColor: "rgba(229, 192, 123, 0.06)",
       borderRadius: "2px",
     },
-  ]),
+  ])
 );
 
 // ---------------------------------------------------------------------------
@@ -306,7 +306,7 @@ export function CodeEditor({
       viewRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [onChange, readOnly, value]);
 
   useEffect(() => {
     const view = viewRef.current;

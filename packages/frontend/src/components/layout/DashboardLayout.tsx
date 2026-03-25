@@ -20,7 +20,8 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { ResizeHandle } from "@/components/ui/resize-handle";
+import { CommandPalette } from "@/components/common/CommandPalette";
+import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,17 +32,16 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { ResizeHandle } from "@/components/ui/resize-handle";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Toaster } from "@/components/ui/sonner";
-import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
-import { CommandPalette } from "@/components/common/CommandPalette";
-import { ConfirmDialog } from "@/components/common/ConfirmDialog";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useUIStore } from "@/stores/ui";
-import { cn } from "@/lib/utils";
 
 function getInitials(name: string | null): string {
   if (!name) return "?";
@@ -144,7 +144,12 @@ function SidebarContent({
         <p className="text-xs text-muted-foreground capitalize mt-0.5">{user?.role}</p>
       </div>
       <DropdownMenuSeparator />
-      <DropdownMenuItem onClick={() => { navigate("/settings"); onNavigate?.(); }}>
+      <DropdownMenuItem
+        onClick={() => {
+          navigate("/settings");
+          onNavigate?.();
+        }}
+      >
         <Settings className="mr-2 h-4 w-4" />
         Settings
       </DropdownMenuItem>
@@ -190,7 +195,10 @@ function SidebarContent({
                   <Button
                     variant="ghost"
                     size="icon"
-                    className={cn("h-8 w-8", location.pathname === item.href && "bg-sidebar-accent")}
+                    className={cn(
+                      "h-8 w-8",
+                      location.pathname === item.href && "bg-sidebar-accent"
+                    )}
                     onClick={() => navigate(item.href)}
                   >
                     <item.icon className="h-4 w-4" />
@@ -239,7 +247,10 @@ function SidebarContent({
             )}
 
             {/* Header */}
-            <div className="flex items-center justify-between px-2" style={{ paddingTop: 10, paddingBottom: 10, paddingLeft: 10 }}>
+            <div
+              className="flex items-center justify-between px-2"
+              style={{ paddingTop: 10, paddingBottom: 10, paddingLeft: 10 }}
+            >
               <span className="flex items-center gap-1.5 text-sm font-semibold text-foreground/80 whitespace-nowrap pl-1">
                 <img src="/android-chrome-192x192.png" alt="Gateway" className="h-5 w-5" />
                 Gateway
@@ -253,7 +264,12 @@ function SidebarContent({
                 ) : (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-10 w-10 md:h-7 md:w-7" onClick={toggleSidebar}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-10 w-10 md:h-7 md:w-7"
+                        onClick={toggleSidebar}
+                      >
                         <PanelLeftClose className="h-4 w-4" />
                       </Button>
                     </TooltipTrigger>
@@ -490,7 +506,12 @@ export function DashboardLayout() {
         <div className="flex h-screen flex-col bg-background">
           <header className="flex h-14 shrink-0 items-center justify-between border-b border-border px-2">
             <div className="flex items-center">
-              <Button variant="ghost" size="icon" className="h-11 w-11" onClick={() => setMobileMenuOpen(true)}>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-11 w-11"
+                onClick={() => setMobileMenuOpen(true)}
+              >
                 <Menu className="h-5 w-5" />
               </Button>
               <span className="ml-2 flex items-center gap-1.5 text-sm font-semibold">

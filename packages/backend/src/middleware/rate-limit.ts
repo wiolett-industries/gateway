@@ -1,9 +1,9 @@
 import type { MiddlewareHandler } from 'hono';
-import { container, TOKENS } from '@/container.js';
 import { getEnv } from '@/config/env.js';
+import { container, TOKENS } from '@/container.js';
 import { AppError } from '@/middleware/error-handler.js';
-import type { AppEnv } from '@/types.js';
 import type { RedisClient } from '@/services/cache.service.js';
+import type { AppEnv } from '@/types.js';
 
 interface RateLimitConfig {
   windowMs: number;
@@ -17,9 +17,7 @@ export function createRateLimiter(config: RateLimitConfig): MiddlewareHandler<Ap
   return async (c, next) => {
     const redis = container.resolve<RedisClient>(TOKENS.RedisClient);
 
-    const clientIp = c.req.header('x-forwarded-for')?.split(',')[0]?.trim()
-      || c.req.header('x-real-ip')
-      || 'unknown';
+    const clientIp = c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || c.req.header('x-real-ip') || 'unknown';
 
     const key = `${keyPrefix}:${clientIp}`;
     const now = Date.now();
@@ -39,7 +37,7 @@ export function createRateLimiter(config: RateLimitConfig): MiddlewareHandler<Ap
         return;
       }
 
-      const requestCount = results[1]?.[1] as number || 0;
+      const requestCount = (results[1]?.[1] as number) || 0;
 
       c.res.headers.set('X-RateLimit-Limit', String(maxRequests));
       c.res.headers.set('X-RateLimit-Remaining', String(Math.max(0, maxRequests - requestCount - 1)));

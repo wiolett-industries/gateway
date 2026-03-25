@@ -1,9 +1,9 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { z } from 'zod';
 import { container } from '@/container.js';
+import { AuditService } from '@/modules/audit/audit.service.js';
 import { authMiddleware, rbacMiddleware } from '@/modules/auth/auth.middleware.js';
 import { AuthService } from '@/modules/auth/auth.service.js';
-import { AuditService } from '@/modules/audit/audit.service.js';
 import type { AppEnv } from '@/types.js';
 
 export const adminRoutes = new OpenAPIHono<AppEnv>();

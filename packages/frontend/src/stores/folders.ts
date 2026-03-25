@@ -1,12 +1,12 @@
 import { create } from "zustand";
+import { api } from "@/services/api";
 import type {
   FolderTreeNode,
+  HealthStatus,
   ProxyHost,
   ProxyHostFolder,
   ProxyHostType,
-  HealthStatus,
 } from "@/types";
-import { api } from "@/services/api";
 
 interface FolderFilters {
   search: string;

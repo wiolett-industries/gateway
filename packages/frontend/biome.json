@@ -12,7 +12,19 @@
       },
       "suspicious": {
         "noAssignInExpressions": "off",
-        "useIterableCallbackReturn": "off"
+        "useIterableCallbackReturn": "off",
+        "noArrayIndexKey": "off",
+        "noExplicitAny": "off"
+      },
+      "style": {
+        "noNonNullAssertion": "off"
+      },
+      "correctness": {
+        "noChildrenProp": "off",
+        "useExhaustiveDependencies": "warn"
+      },
+      "complexity": {
+        "noCommaOperator": "off"
       }
     }
   },

@@ -2,9 +2,9 @@ import { OpenAPIHono } from '@hono/zod-openapi';
 import { streamSSE } from 'hono/streaming';
 import { container } from '@/container.js';
 import { authMiddleware } from '@/modules/auth/auth.middleware.js';
-import { MonitoringService } from './monitoring.service.js';
-import { LogStreamService } from './log-stream.service.js';
 import type { AppEnv } from '@/types.js';
+import { LogStreamService } from './log-stream.service.js';
+import { MonitoringService } from './monitoring.service.js';
 
 export const monitoringRoutes = new OpenAPIHono<AppEnv>();
 
@@ -45,21 +45,25 @@ monitoringRoutes.get('/logs/:hostId/stream', async (c) => {
     const cleanup = logStreamService.createStream(
       hostId,
       (entry) => {
-        stream.writeSSE({
-          data: JSON.stringify(entry),
-          event: 'log',
-        }).catch(() => {
-          // Stream likely closed, ignore write errors
-        });
+        stream
+          .writeSSE({
+            data: JSON.stringify(entry),
+            event: 'log',
+          })
+          .catch(() => {
+            // Stream likely closed, ignore write errors
+          });
       },
       (error) => {
-        stream.writeSSE({
-          data: JSON.stringify({ error: error.message }),
-          event: 'error',
-        }).catch(() => {
-          // Stream likely closed, ignore write errors
-        });
-      },
+        stream
+          .writeSSE({
+            data: JSON.stringify({ error: error.message }),
+            event: 'error',
+          })
+          .catch(() => {
+            // Stream likely closed, ignore write errors
+          });
+      }
     );
 
     // Keep connection alive with periodic pings

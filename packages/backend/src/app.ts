@@ -1,28 +1,27 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { apiReference } from '@scalar/hono-api-reference';
 import { cors } from 'hono/cors';
-import { secureHeaders } from 'hono/secure-headers';
 import { requestId } from 'hono/request-id';
+import { secureHeaders } from 'hono/secure-headers';
 
 import { errorHandler } from '@/middleware/error-handler.js';
 import { loggerMiddleware } from '@/middleware/logger.js';
 import { rateLimitMiddleware } from '@/middleware/rate-limit.js';
-
+import { accessListRoutes } from '@/modules/access-lists/access-list.routes.js';
+import { adminRoutes } from '@/modules/admin/admin.routes.js';
+import { alertRoutes } from '@/modules/audit/alert.routes.js';
+import { auditRoutes } from '@/modules/audit/audit.routes.js';
 import { authRoutes } from '@/modules/auth/auth.routes.js';
+import { monitoringRoutes } from '@/modules/monitoring/monitoring.routes.js';
 import { caRoutes } from '@/modules/pki/ca.routes.js';
 import { certRoutes } from '@/modules/pki/cert.routes.js';
-import { templateRoutes } from '@/modules/pki/templates.routes.js';
 import { publicPkiRoutes } from '@/modules/pki/public.routes.js';
-import { tokensRoutes } from '@/modules/tokens/tokens.routes.js';
-import { auditRoutes } from '@/modules/audit/audit.routes.js';
-import { alertRoutes } from '@/modules/audit/alert.routes.js';
-import { adminRoutes } from '@/modules/admin/admin.routes.js';
-import { proxyRoutes } from '@/modules/proxy/proxy.routes.js';
+import { templateRoutes } from '@/modules/pki/templates.routes.js';
 import { folderRoutes } from '@/modules/proxy/folder.routes.js';
 import { nginxTemplateRoutes } from '@/modules/proxy/nginx-template.routes.js';
+import { proxyRoutes } from '@/modules/proxy/proxy.routes.js';
 import { sslRoutes } from '@/modules/ssl/ssl.routes.js';
-import { accessListRoutes } from '@/modules/access-lists/access-list.routes.js';
-import { monitoringRoutes } from '@/modules/monitoring/monitoring.routes.js';
+import { tokensRoutes } from '@/modules/tokens/tokens.routes.js';
 
 import type { AppEnv } from '@/types.js';
 
@@ -33,14 +32,17 @@ export function createApp() {
   app.use('*', requestId());
   app.use('*', loggerMiddleware);
   app.use('*', secureHeaders());
-  app.use('*', cors({
-    origin: (origin) => origin || '*',
-    credentials: true,
-    allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowHeaders: ['Content-Type', 'Authorization', 'X-Request-ID'],
-    exposeHeaders: ['X-Request-ID'],
-    maxAge: 86400,
-  }));
+  app.use(
+    '*',
+    cors({
+      origin: (origin) => origin || '*',
+      credentials: true,
+      allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+      allowHeaders: ['Content-Type', 'Authorization', 'X-Request-ID'],
+      exposeHeaders: ['X-Request-ID'],
+      maxAge: 86400,
+    })
+  );
 
   // Rate limiting for API routes
   app.use('/api/*', rateLimitMiddleware);
@@ -83,7 +85,8 @@ export function createApp() {
     info: {
       title: 'Gateway API',
       version: '1.0.0',
-      description: 'Self-hosted certificate manager and reverse proxy gateway API.\n\n## Authentication\n\nThis API uses session-based authentication via OIDC. After logging in through `/auth/login`, include the session ID as a Bearer token in the Authorization header.\n\nAlternatively, use API tokens for programmatic access.\n\n## Public PKI Endpoints\n\nCRL and OCSP endpoints under `/pki/` are unauthenticated and publicly accessible.',
+      description:
+        'Self-hosted certificate manager and reverse proxy gateway API.\n\n## Authentication\n\nThis API uses session-based authentication via OIDC. After logging in through `/auth/login`, include the session ID as a Bearer token in the Authorization header.\n\nAlternatively, use API tokens for programmatic access.\n\n## Public PKI Endpoints\n\nCRL and OCSP endpoints under `/pki/` are unauthenticated and publicly accessible.',
     },
     servers: [
       {
@@ -109,11 +112,14 @@ export function createApp() {
   });
 
   // Scalar API Reference UI
-  app.get('/docs', apiReference({
-    spec: { url: '/openapi.json' },
-    theme: 'default',
-    layout: 'modern',
-  }));
+  app.get(
+    '/docs',
+    apiReference({
+      spec: { url: '/openapi.json' },
+      theme: 'default',
+      layout: 'modern',
+    })
+  );
 
   return app;
 }

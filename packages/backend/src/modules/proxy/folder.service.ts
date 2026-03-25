@@ -1,18 +1,18 @@
-import { eq, and, ilike, sql, asc, inArray, isNull, desc } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, inArray, isNull, sql } from 'drizzle-orm';
+import type { DrizzleClient } from '@/db/client.js';
 import { proxyHostFolders } from '@/db/schema/proxy-host-folders.js';
 import { proxyHosts } from '@/db/schema/proxy-hosts.js';
-import { AuditService } from '@/modules/audit/audit.service.js';
-import { AppError } from '@/middleware/error-handler.js';
 import { createChildLogger } from '@/lib/logger.js';
-import type { DrizzleClient } from '@/db/client.js';
+import { AppError } from '@/middleware/error-handler.js';
+import type { AuditService } from '@/modules/audit/audit.service.js';
 import type {
   CreateFolderInput,
-  UpdateFolderInput,
-  MoveFolderInput,
-  ReorderFoldersInput,
   GroupedHostsQuery,
+  MoveFolderInput,
   MoveHostsToFolderInput,
+  ReorderFoldersInput,
   ReorderHostsInput,
+  UpdateFolderInput,
 } from './folder.schemas.js';
 
 const logger = createChildLogger('FolderService');
@@ -44,7 +44,7 @@ export interface GroupedHostsResponse {
 export class FolderService {
   constructor(
     private readonly db: DrizzleClient,
-    private readonly auditService: AuditService,
+    private readonly auditService: AuditService
   ) {}
 
   // -----------------------------------------------------------------------
@@ -69,23 +69,22 @@ export class FolderService {
     const siblings = await this.db
       .select({ sortOrder: proxyHostFolders.sortOrder })
       .from(proxyHostFolders)
-      .where(
-        input.parentId
-          ? eq(proxyHostFolders.parentId, input.parentId)
-          : isNull(proxyHostFolders.parentId),
-      )
+      .where(input.parentId ? eq(proxyHostFolders.parentId, input.parentId) : isNull(proxyHostFolders.parentId))
       .orderBy(desc(proxyHostFolders.sortOrder))
       .limit(1);
 
     const nextSortOrder = siblings.length > 0 ? siblings[0].sortOrder + 1 : 0;
 
-    const [folder] = await this.db.insert(proxyHostFolders).values({
-      name: input.name,
-      parentId: input.parentId ?? null,
-      sortOrder: nextSortOrder,
-      depth,
-      createdById: userId,
-    }).returning();
+    const [folder] = await this.db
+      .insert(proxyHostFolders)
+      .values({
+        name: input.name,
+        parentId: input.parentId ?? null,
+        sortOrder: nextSortOrder,
+        depth,
+        createdById: userId,
+      })
+      .returning();
 
     await this.auditService.log({
       userId,
@@ -164,7 +163,7 @@ export class FolderService {
       throw new AppError(
         400,
         'MAX_DEPTH_EXCEEDED',
-        `Moving this folder would exceed the maximum nesting depth of ${MAX_DEPTH + 1} levels`,
+        `Moving this folder would exceed the maximum nesting depth of ${MAX_DEPTH + 1} levels`
       );
     }
 
@@ -175,11 +174,7 @@ export class FolderService {
     const siblings = await this.db
       .select({ sortOrder: proxyHostFolders.sortOrder })
       .from(proxyHostFolders)
-      .where(
-        input.parentId
-          ? eq(proxyHostFolders.parentId, input.parentId)
-          : isNull(proxyHostFolders.parentId),
-      )
+      .where(input.parentId ? eq(proxyHostFolders.parentId, input.parentId) : isNull(proxyHostFolders.parentId))
       .orderBy(desc(proxyHostFolders.sortOrder))
       .limit(1);
     const nextSortOrder = siblings.length > 0 ? siblings[0].sortOrder + 1 : 0;
@@ -312,9 +307,7 @@ export class FolderService {
       conditions.push(eq(proxyHosts.healthStatus, query.healthStatus));
     }
     if (query.search) {
-      conditions.push(
-        ilike(sql`${proxyHosts.domainNames}::text`, `%${query.search}%`),
-      );
+      conditions.push(ilike(sql`${proxyHosts.domainNames}::text`, `%${query.search}%`));
     }
 
     const where = conditions.length > 0 ? and(...conditions) : undefined;

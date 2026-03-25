@@ -1,7 +1,10 @@
 import { Badge } from "@/components/ui/badge";
 import type { HealthStatus } from "@/types";
 
-const healthBadgeVariant: Record<HealthStatus, "success" | "destructive" | "warning" | "secondary"> = {
+const healthBadgeVariant: Record<
+  HealthStatus,
+  "success" | "destructive" | "warning" | "secondary"
+> = {
   online: "success",
   offline: "destructive",
   degraded: "warning",
@@ -16,5 +19,9 @@ const healthLabel: Record<HealthStatus, string> = {
 };
 
 export function HealthDot({ status }: { status: HealthStatus }) {
-  return <Badge variant={healthBadgeVariant[status] || "secondary"}>{healthLabel[status] || "Unknown"}</Badge>;
+  return (
+    <Badge variant={healthBadgeVariant[status] || "secondary"}>
+      {healthLabel[status] || "Unknown"}
+    </Badge>
+  );
 }

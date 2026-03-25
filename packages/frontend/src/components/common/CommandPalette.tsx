@@ -54,13 +54,21 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   };
 
   const handleLogout = async () => {
-    try { await api.logout(); } catch { logout(); }
+    try {
+      await api.logout();
+    } catch {
+      logout();
+    }
     navigate("/login");
   };
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange}>
-      <CommandInput placeholder="Search or type a command..." value={search} onValueChange={setSearch} />
+      <CommandInput
+        placeholder="Search or type a command..."
+        value={search}
+        onValueChange={setSearch}
+      />
       <CommandList>
         <CommandEmpty>No results found.</CommandEmpty>
 
@@ -68,7 +76,11 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         {(cas || []).length > 0 && (
           <CommandGroup heading="Certificate Authorities">
             {(cas || []).slice(0, 5).map((ca) => (
-              <CommandItem key={ca.id} value={`ca ${ca.commonName}`} onSelect={() => handleSelect(() => navigate(`/cas/${ca.id}`))}>
+              <CommandItem
+                key={ca.id}
+                value={`ca ${ca.commonName}`}
+                onSelect={() => handleSelect(() => navigate(`/cas/${ca.id}`))}
+              >
                 <Shield className="mr-2 h-4 w-4" />
                 <span className="truncate">{ca.commonName}</span>
               </CommandItem>
@@ -79,35 +91,44 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         {/* Navigation */}
         <CommandGroup heading="Navigation">
           <CommandItem onSelect={() => handleSelect(() => navigate("/"))}>
-            <LayoutDashboard className="mr-2 h-4 w-4" />Dashboard
+            <LayoutDashboard className="mr-2 h-4 w-4" />
+            Dashboard
           </CommandItem>
           <CommandItem onSelect={() => handleSelect(() => navigate("/proxy-hosts"))}>
-            <Globe className="mr-2 h-4 w-4" />Proxy Hosts
+            <Globe className="mr-2 h-4 w-4" />
+            Proxy Hosts
           </CommandItem>
           <CommandItem onSelect={() => handleSelect(() => navigate("/ssl-certificates"))}>
-            <Lock className="mr-2 h-4 w-4" />SSL Certificates
+            <Lock className="mr-2 h-4 w-4" />
+            SSL Certificates
           </CommandItem>
           <CommandItem onSelect={() => handleSelect(() => navigate("/access-lists"))}>
-            <ShieldAlert className="mr-2 h-4 w-4" />Access Lists
+            <ShieldAlert className="mr-2 h-4 w-4" />
+            Access Lists
           </CommandItem>
           <CommandItem onSelect={() => handleSelect(() => navigate("/certificates"))}>
-            <Award className="mr-2 h-4 w-4" />Certificates
+            <Award className="mr-2 h-4 w-4" />
+            Certificates
           </CommandItem>
           <CommandItem onSelect={() => handleSelect(() => navigate("/templates"))}>
-            <FileText className="mr-2 h-4 w-4" />Templates
+            <FileText className="mr-2 h-4 w-4" />
+            Templates
           </CommandItem>
           {hasRole("admin") && (
             <>
               <CommandItem onSelect={() => handleSelect(() => navigate("/audit"))}>
-                <ScrollText className="mr-2 h-4 w-4" />Audit Log
+                <ScrollText className="mr-2 h-4 w-4" />
+                Audit Log
               </CommandItem>
               <CommandItem onSelect={() => handleSelect(() => navigate("/admin/users"))}>
-                <Users className="mr-2 h-4 w-4" />Users
+                <Users className="mr-2 h-4 w-4" />
+                Users
               </CommandItem>
             </>
           )}
           <CommandItem onSelect={() => handleSelect(() => navigate("/settings"))}>
-            <Settings className="mr-2 h-4 w-4" />Settings
+            <Settings className="mr-2 h-4 w-4" />
+            Settings
           </CommandItem>
         </CommandGroup>
 
@@ -119,33 +140,47 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
             <CommandShortcut>⌘J</CommandShortcut>
           </CommandItem>
           <CommandItem onSelect={() => handleSelect(() => navigate("/proxy-hosts/new"))}>
-            <Plus className="mr-2 h-4 w-4" />New Proxy Host
+            <Plus className="mr-2 h-4 w-4" />
+            New Proxy Host
           </CommandItem>
           <CommandItem onSelect={() => handleSelect(() => navigate("/ssl-certificates/new"))}>
-            <Plus className="mr-2 h-4 w-4" />New SSL Certificate
+            <Plus className="mr-2 h-4 w-4" />
+            New SSL Certificate
           </CommandItem>
           {hasRole("admin") && (
-            <CommandItem onSelect={() => handleSelect(() => { useUIStore.getState().openModal("createCA"); navigate("/"); })}>
-              <Plus className="mr-2 h-4 w-4" />Create Root CA
+            <CommandItem
+              onSelect={() =>
+                handleSelect(() => {
+                  useUIStore.getState().openModal("createCA");
+                  navigate("/");
+                })
+              }
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              Create Root CA
             </CommandItem>
           )}
         </CommandGroup>
 
         <CommandGroup heading="Theme">
           <CommandItem onSelect={() => handleSelect(() => setTheme("light"))}>
-            <Sun className="mr-2 h-4 w-4" />Light{theme === "light" && <CommandShortcut>✓</CommandShortcut>}
+            <Sun className="mr-2 h-4 w-4" />
+            Light{theme === "light" && <CommandShortcut>✓</CommandShortcut>}
           </CommandItem>
           <CommandItem onSelect={() => handleSelect(() => setTheme("dark"))}>
-            <Moon className="mr-2 h-4 w-4" />Dark{theme === "dark" && <CommandShortcut>✓</CommandShortcut>}
+            <Moon className="mr-2 h-4 w-4" />
+            Dark{theme === "dark" && <CommandShortcut>✓</CommandShortcut>}
           </CommandItem>
           <CommandItem onSelect={() => handleSelect(() => setTheme("system"))}>
-            <Monitor className="mr-2 h-4 w-4" />System{theme === "system" && <CommandShortcut>✓</CommandShortcut>}
+            <Monitor className="mr-2 h-4 w-4" />
+            System{theme === "system" && <CommandShortcut>✓</CommandShortcut>}
           </CommandItem>
         </CommandGroup>
 
         <CommandGroup heading="Account">
           <CommandItem onSelect={() => handleSelect(handleLogout)}>
-            <LogOut className="mr-2 h-4 w-4" />Log out
+            <LogOut className="mr-2 h-4 w-4" />
+            Log out
           </CommandItem>
         </CommandGroup>
       </CommandList>
