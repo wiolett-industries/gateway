@@ -257,6 +257,7 @@ interface CodeEditorProps {
   readOnly?: boolean;
   className?: string;
   minHeight?: string;
+  height?: string;
 }
 
 export function CodeEditor({
@@ -265,6 +266,7 @@ export function CodeEditor({
   readOnly = false,
   className = "",
   minHeight = "300px",
+  height,
 }: CodeEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -323,7 +325,7 @@ export function CodeEditor({
     <div
       ref={containerRef}
       className={`border border-border overflow-auto ${className}`}
-      style={{ minHeight }}
+      style={{ minHeight: height ? undefined : minHeight, height }}
     />
   );
 }

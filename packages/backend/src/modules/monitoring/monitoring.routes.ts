@@ -5,6 +5,8 @@ import { authMiddleware } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import { LogStreamService } from './log-stream.service.js';
 import { MonitoringService } from './monitoring.service.js';
+import { NginxConfigService } from './nginx-config.service.js';
+import { NginxStatsService } from './nginx-stats.service.js';
 
 export const monitoringRoutes = new OpenAPIHono<AppEnv>();
 
@@ -83,4 +85,122 @@ monitoringRoutes.get('/logs/:hostId/stream', async (c) => {
     // Keep the stream open — never resolves until client disconnects
     await new Promise(() => {});
   });
+});
+
+// ── Nginx Management ────────────────────────────────────────────────
+
+// Check if nginx container is reachable (any authenticated user)
+monitoringRoutes.get('/nginx/available', async (c) => {
+  const nginxStatsService = container.resolve(NginxStatsService);
+  const available = await nginxStatsService.isAvailable();
+  return c.json({ data: { available } });
+});
+
+// Nginx process info (admin, operator)
+monitoringRoutes.get('/nginx/info', async (c) => {
+  const user = c.get('user')!;
+  if (user.role !== 'admin' && user.role !== 'operator') {
+    return c.json({ code: 'FORBIDDEN', message: 'Admin or operator role required' }, 403);
+  }
+  const nginxStatsService = container.resolve(NginxStatsService);
+  try {
+    const info = await nginxStatsService.getProcessInfo();
+    return c.json({ data: info });
+  } catch (error) {
+    return c.json({ data: null, error: (error as Error).message }, 503);
+  }
+});
+
+// Live nginx stats SSE stream (admin, operator)
+monitoringRoutes.get('/nginx/stats/stream', async (c) => {
+  const user = c.get('user')!;
+  if (user.role !== 'admin' && user.role !== 'operator') {
+    return c.json({ code: 'FORBIDDEN', message: 'Admin or operator role required' }, 403);
+  }
+
+  const nginxStatsService = container.resolve(NginxStatsService);
+
+  return streamSSE(c, async (stream) => {
+    nginxStatsService.registerSSEClient();
+
+    // Send cached process info + buffered history immediately on connect (no async delay)
+    await stream.writeSSE({
+      data: JSON.stringify({
+        connected: true,
+        info: nginxStatsService.getCachedProcessInfo(),
+        history: nginxStatsService.getHistory(),
+      }),
+      event: 'connected',
+    });
+
+    const interval = setInterval(async () => {
+      try {
+        const snapshot = await nginxStatsService.getSnapshot();
+        nginxStatsService.pushHistory(snapshot);
+        await stream.writeSSE({
+          data: JSON.stringify(snapshot),
+          event: 'stats',
+        });
+      } catch {
+        await stream.writeSSE({
+          data: JSON.stringify({ error: 'Failed to collect stats' }),
+          event: 'error',
+        }).catch(() => {});
+      }
+    }, 2000);
+
+    const keepalive = setInterval(() => {
+      stream.writeSSE({ data: '', event: 'ping' }).catch(() => {
+        clearInterval(keepalive);
+      });
+    }, 30_000);
+
+    stream.onAbort(() => {
+      clearInterval(interval);
+      clearInterval(keepalive);
+      nginxStatsService.unregisterSSEClient();
+    });
+
+    await new Promise(() => {});
+  });
+});
+
+// Read global nginx.conf (admin, operator)
+monitoringRoutes.get('/nginx/config', async (c) => {
+  const user = c.get('user')!;
+  if (user.role !== 'admin' && user.role !== 'operator') {
+    return c.json({ code: 'FORBIDDEN', message: 'Admin or operator role required' }, 403);
+  }
+  const nginxConfigService = container.resolve(NginxConfigService);
+  const content = await nginxConfigService.getGlobalConfig();
+  return c.json({ data: { content } });
+});
+
+// Update global nginx.conf (admin only)
+monitoringRoutes.put('/nginx/config', async (c) => {
+  const user = c.get('user')!;
+  if (user.role !== 'admin') {
+    return c.json({ code: 'FORBIDDEN', message: 'Admin role required' }, 403);
+  }
+  const body = await c.req.json<{ content: string }>();
+  if (!body.content || typeof body.content !== 'string') {
+    return c.json({ code: 'INVALID_BODY', message: 'content is required' }, 400);
+  }
+  const nginxConfigService = container.resolve(NginxConfigService);
+  const result = await nginxConfigService.updateGlobalConfig(body.content);
+  if (!result.valid) {
+    return c.json({ data: result }, 422);
+  }
+  return c.json({ data: result });
+});
+
+// Test current nginx config (admin, operator)
+monitoringRoutes.post('/nginx/config/test', async (c) => {
+  const user = c.get('user')!;
+  if (user.role !== 'admin' && user.role !== 'operator') {
+    return c.json({ code: 'FORBIDDEN', message: 'Admin or operator role required' }, 403);
+  }
+  const nginxConfigService = container.resolve(NginxConfigService);
+  const result = await nginxConfigService.testConfig();
+  return c.json({ data: result });
 });

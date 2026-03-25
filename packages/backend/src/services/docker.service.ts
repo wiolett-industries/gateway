@@ -3,7 +3,7 @@ import { createChildLogger } from '@/lib/logger.js';
 
 const logger = createChildLogger('DockerService');
 
-const API_VERSION = '/v1.43';
+const API_VERSION = '/v1.46';
 
 export class DockerService {
   constructor(
@@ -53,7 +53,7 @@ export class DockerService {
     const output = this.stripDockerStreamHeaders(startRes.bodyRaw);
 
     // Step 3: Inspect exec to get exit code
-    const inspectRes = await this.request('GET', `${API_VERSION}/exec/${execId}/inspect`);
+    const inspectRes = await this.request('GET', `${API_VERSION}/exec/${execId}/json`);
 
     if (inspectRes.statusCode !== 200) {
       throw new Error(`Docker exec inspect failed (${inspectRes.statusCode}): ${inspectRes.body}`);
@@ -158,6 +158,34 @@ export class DockerService {
   }
 
   /**
+   * Fetch one-shot container stats from the Docker Engine API.
+   */
+  async getContainerStats(containerName: string): Promise<DockerContainerStats> {
+    const res = await this.request(
+      'GET',
+      `${API_VERSION}/containers/${encodeURIComponent(containerName)}/stats?stream=false`
+    );
+    if (res.statusCode !== 200) {
+      throw new Error(`Docker stats failed (${res.statusCode}): ${res.body}`);
+    }
+    return JSON.parse(res.body) as DockerContainerStats;
+  }
+
+  /**
+   * Inspect a container to get state, uptime, etc.
+   */
+  async inspectContainer(containerName: string): Promise<DockerContainerInspect> {
+    const res = await this.request(
+      'GET',
+      `${API_VERSION}/containers/${encodeURIComponent(containerName)}/json`
+    );
+    if (res.statusCode !== 200) {
+      throw new Error(`Docker inspect failed (${res.statusCode}): ${res.body}`);
+    }
+    return JSON.parse(res.body) as DockerContainerInspect;
+  }
+
+  /**
    * Test the Nginx configuration inside the nginx container.
    */
   async testNginxConfig(): Promise<{ valid: boolean; error?: string }> {
@@ -184,4 +212,36 @@ export class DockerService {
     }
     logger.info('Nginx reloaded successfully');
   }
+}
+
+export interface DockerContainerStats {
+  cpu_stats: {
+    cpu_usage: { total_usage: number };
+    system_cpu_usage: number;
+    online_cpus: number;
+  };
+  precpu_stats: {
+    cpu_usage: { total_usage: number };
+    system_cpu_usage: number;
+  };
+  memory_stats: {
+    usage: number;
+    limit: number;
+    stats?: { cache?: number };
+  };
+  blkio_stats: {
+    io_service_bytes_recursive: Array<{ op: string; value: number }> | null;
+  };
+  networks?: Record<string, { rx_bytes: number; tx_bytes: number }>;
+}
+
+export interface DockerContainerInspect {
+  State: {
+    Status: string;
+    Running: boolean;
+    StartedAt: string;
+  };
+  Config: {
+    Image: string;
+  };
 }

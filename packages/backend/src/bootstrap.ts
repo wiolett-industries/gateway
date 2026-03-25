@@ -12,6 +12,8 @@ import { AuditService } from '@/modules/audit/audit.service.js';
 import { AuthService } from '@/modules/auth/auth.service.js';
 import { LogStreamService } from '@/modules/monitoring/log-stream.service.js';
 import { MonitoringService } from '@/modules/monitoring/monitoring.service.js';
+import { NginxConfigService } from '@/modules/monitoring/nginx-config.service.js';
+import { NginxStatsService } from '@/modules/monitoring/nginx-stats.service.js';
 import { CAService } from '@/modules/pki/ca.service.js';
 import { CertService } from '@/modules/pki/cert.service.js';
 import { CRLService } from '@/modules/pki/crl.service.js';
@@ -133,6 +135,12 @@ export async function initializeContainer(): Promise<void> {
 
   const monitoringService = new MonitoringService(db);
   container.registerInstance(MonitoringService, monitoringService);
+
+  const nginxStatsService = new NginxStatsService(dockerService, env.NGINX_CONTAINER_NAME);
+  container.registerInstance(NginxStatsService, nginxStatsService);
+
+  const nginxConfigService = new NginxConfigService(dockerService, env.NGINX_CONTAINER_NAME);
+  container.registerInstance(NginxConfigService, nginxConfigService);
 
   // Seed built-in templates
   await templatesService.seedBuiltinTemplates();

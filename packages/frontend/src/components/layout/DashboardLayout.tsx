@@ -12,6 +12,7 @@ import {
   PanelLeftClose,
   ScrollText,
   Search,
+  Server,
   Settings,
   ShieldAlert,
   ShieldCheck,
@@ -92,6 +93,8 @@ const navigationGroups: NavGroup[] = [
   },
 ];
 
+const nginxNavItem: NavItem = { name: "Nginx", href: "/nginx", icon: Server };
+
 const adminNavigation: NavItem[] = [
   { name: "Audit Log", href: "/audit", icon: ScrollText },
   { name: "Users", href: "/admin/users", icon: Users },
@@ -124,6 +127,15 @@ function SidebarContent({
   const { user, hasRole, logout } = useAuthStore();
   const { sidebarOpen, toggleSidebar, setCommandPaletteOpen: openPalette } = useUIStore();
 
+  const [nginxAvailable, setNginxAvailable] = useState(false);
+
+  useEffect(() => {
+    const check = () => api.checkNginxAvailable().then(setNginxAvailable);
+    check();
+    const interval = setInterval(check, 30_000);
+    return () => clearInterval(interval);
+  }, []);
+
   const handleLogout = async () => {
     try {
       await api.logout();
@@ -135,6 +147,14 @@ function SidebarContent({
 
   const isAdmin = hasRole("admin");
   const isExpanded = alwaysExpanded || sidebarOpen;
+
+  // Build nav groups with conditional Nginx item
+  const effectiveGroups = navigationGroups.map((group) => {
+    if (group.label === "Management" && nginxAvailable && hasRole("admin", "operator")) {
+      return { ...group, items: [nginxNavItem, ...group.items] };
+    }
+    return group;
+  });
 
   const AccountDropdownContent = () => (
     <>
@@ -296,7 +316,7 @@ function SidebarContent({
 
             {/* Navigation */}
             <ScrollArea className="flex-1 overflow-hidden min-w-0">
-              {navigationGroups.map((group, groupIndex) => (
+              {effectiveGroups.map((group, groupIndex) => (
                 <div key={group.label}>
                   {groupIndex > 0 && <Separator className="my-1" />}
                   <nav className="space-y-0.5 p-2">
