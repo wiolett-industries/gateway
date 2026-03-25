@@ -199,7 +199,7 @@ ACME_STAGING=${ACME_STAGING}
 
 # Rate Limiting
 RATE_LIMIT_WINDOW_MS=60000
-RATE_LIMIT_MAX_REQUESTS=500
+RATE_LIMIT_MAX_REQUESTS=5000
 
 # PKI Defaults
 DEFAULT_CRL_VALIDITY_HOURS=24
@@ -237,7 +237,7 @@ ENVEOF
   echo "Waiting for services to become healthy..."
   local retries=30
   while [ $retries -gt 0 ]; do
-    if docker compose exec -T app curl -sf http://localhost:3000/health > /dev/null 2>&1; then
+    if docker compose exec -T app wget -qO- http://localhost:3000/health > /dev/null 2>&1; then
       break
     fi
     retries=$((retries - 1))

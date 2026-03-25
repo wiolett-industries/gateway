@@ -1,4 +1,7 @@
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { OpenAPIHono } from '@hono/zod-openapi';
+import { serveStatic } from '@hono/node-server/serve-static';
 import { apiReference } from '@scalar/hono-api-reference';
 import { cors } from 'hono/cors';
 import { requestId } from 'hono/request-id';
@@ -120,6 +123,16 @@ export function createApp() {
       layout: 'modern',
     })
   );
+
+  // In production, serve the frontend SPA
+  const publicDir = resolve(process.cwd(), 'public');
+  if (existsSync(publicDir)) {
+    // Serve static assets (JS, CSS, images, etc.)
+    app.use('/*', serveStatic({ root: './public' }));
+
+    // SPA fallback — serve index.html for any non-API route
+    app.get('/*', serveStatic({ path: './public/index.html' }));
+  }
 
   return app;
 }

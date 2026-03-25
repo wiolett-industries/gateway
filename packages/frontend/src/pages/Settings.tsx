@@ -54,7 +54,7 @@ export function Settings() {
 
   useEffect(() => {
     loadTokens();
-  }, [loadTokens]);
+  }, []);
 
   const toggleScope = (scope: string) => {
     setSelectedScopes((prev) =>
@@ -229,6 +229,46 @@ export function Settings() {
           </div>
         </div>
 
+        {/* About */}
+        <div className="border border-border bg-card">
+          <div className="flex items-center justify-between border-b border-border p-4">
+            <div>
+              <h2 className="font-semibold">About</h2>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Application info and updates
+              </p>
+            </div>
+            <Button size="sm" onClick={() => toast.success("Already up to date")}>
+              Check for updates
+            </Button>
+          </div>
+          <div className="p-4 space-y-4">
+            <div className="flex items-center gap-4">
+              <img src="/android-chrome-192x192.png" alt="Gateway" className="h-10 w-10" />
+              <div>
+                <p className="text-sm font-semibold">Gateway</p>
+                <p className="text-xs text-muted-foreground">
+                  Self-hosted certificate manager and reverse proxy gateway
+                </p>
+              </div>
+            </div>
+            <div className="space-y-3">
+              <InfoRow label="Version" value="1.0.0" />
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Status</span>
+                <Badge variant="success" className="text-xs">Up to date</Badge>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <p className="text-center text-xs text-muted-foreground">
+          Powered by{" "}
+          <a href="https://wiolett.net" target="_blank" rel="noopener noreferrer" className="text-foreground hover:underline">
+            Wiolett
+          </a>
+        </p>
+
         {/* Create Token Dialog */}
         <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
           <DialogContent className="sm:max-w-lg">
@@ -371,15 +411,19 @@ function InfoRow({
   label,
   value,
   capitalize = false,
+  custom,
 }: {
   label: string;
-  value: string;
+  value?: string;
   capitalize?: boolean;
+  custom?: React.ReactNode;
 }) {
   return (
     <div className="flex items-start justify-between gap-4">
       <span className="text-sm text-muted-foreground">{label}</span>
-      <span className={`text-sm font-medium ${capitalize ? "capitalize" : ""}`}>{value}</span>
+      {custom || (
+        <span className={`text-sm font-medium ${capitalize ? "capitalize" : ""}`}>{value}</span>
+      )}
     </div>
   );
 }

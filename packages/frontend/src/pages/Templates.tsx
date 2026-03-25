@@ -174,7 +174,7 @@ export function Templates() {
 
   useEffect(() => {
     loadTemplates();
-  }, [loadTemplates]);
+  }, []);
 
   const resetForm = () => {
     setName("");

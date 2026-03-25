@@ -36,7 +36,7 @@ export function NginxTemplates() {
 
   useEffect(() => {
     load();
-  }, [load]);
+  }, []);
 
   const handleClone = async (id: string) => {
     try {
