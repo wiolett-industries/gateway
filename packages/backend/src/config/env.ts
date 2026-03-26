@@ -45,6 +45,11 @@ const envSchema = z.object({
   ACME_EMAIL: z.string().email().default('admin@example.com'),
   ACME_STAGING: z.coerce.boolean().default(false),
 
+  // DNS / Domains
+  PUBLIC_IPV4: z.string().optional(),
+  PUBLIC_IPV6: z.string().optional(),
+  DNS_CHECK_INTERVAL_SECONDS: z.coerce.number().default(300),
+
   // Background Jobs
   HEALTH_CHECK_INTERVAL_SECONDS: z.coerce.number().default(30),
   ACME_RENEWAL_CRON: z.string().default('0 3 * * *'), // 3 AM daily

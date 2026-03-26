@@ -12,6 +12,7 @@ import { loggerMiddleware } from '@/middleware/logger.js';
 import { rateLimitMiddleware } from '@/middleware/rate-limit.js';
 import { accessListRoutes } from '@/modules/access-lists/access-list.routes.js';
 import { adminRoutes } from '@/modules/admin/admin.routes.js';
+import { domainRoutes } from '@/modules/domains/domain.routes.js';
 import { alertRoutes } from '@/modules/audit/alert.routes.js';
 import { auditRoutes } from '@/modules/audit/audit.routes.js';
 import { authRoutes } from '@/modules/auth/auth.routes.js';
@@ -79,6 +80,7 @@ export function createApp() {
   app.route('/api/proxy-host-folders', folderRoutes);
   app.route('/api/nginx-templates', nginxTemplateRoutes);
   app.route('/api/ssl-certificates', sslRoutes);
+  app.route('/api/domains', domainRoutes);
   app.route('/api/access-lists', accessListRoutes);
   app.route('/api/monitoring', monitoringRoutes);
 

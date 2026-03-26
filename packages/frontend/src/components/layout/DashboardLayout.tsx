@@ -4,6 +4,7 @@ import {
   FileCode,
   FileText,
   Globe,
+  Globe2,
   LayoutDashboard,
   Lock,
   LogOut,
@@ -72,6 +73,7 @@ const navigationGroups: NavGroup[] = [
     items: [
       { name: "Dashboard", href: "/", icon: LayoutDashboard },
       { name: "Proxy Hosts", href: "/proxy-hosts", icon: Globe },
+      { name: "Domains", href: "/domains", icon: Globe2 },
       { name: "Config Templates", href: "/nginx-templates", icon: FileCode },
       { name: "SSL Certificates", href: "/ssl-certificates", icon: Lock },
     ],

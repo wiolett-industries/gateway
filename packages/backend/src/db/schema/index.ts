@@ -1,5 +1,6 @@
 export * from './access-lists.js';
 export * from './alerts.js';
+export * from './domains.js';
 export * from './api-tokens.js';
 export * from './audit-log.js';
 export * from './certificate-authorities.js';
