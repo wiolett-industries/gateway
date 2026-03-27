@@ -8,6 +8,7 @@ import {
   PanelLeft,
   PanelLeftClose,
   ScrollText,
+  Search,
   Settings,
   Shield,
   ShieldCheck,
@@ -26,6 +27,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -54,6 +56,7 @@ const navigation = [
   { name: "Authorities", href: "/cas", icon: Shield },
   { name: "Certificates", href: "/certificates", icon: Award },
   { name: "Templates", href: "/templates", icon: FileText },
+  { name: "Settings", href: "/settings", icon: Settings },
 ];
 
 const adminNavigation = [
@@ -83,7 +86,7 @@ function SidebarContent({
   const location = useLocation();
   const navigate = useNavigate();
   const { user, hasRole, logout } = useAuthStore();
-  const { sidebarOpen, toggleSidebar } = useUIStore();
+  const { sidebarOpen, toggleSidebar, setCommandPaletteOpen: openPalette } = useUIStore();
 
   const handleLogout = async () => {
     try {
@@ -224,7 +227,20 @@ function SidebarContent({
               </div>
             </div>
 
-            <Separator />
+            {/* Search */}
+            <div className="relative border-y border-border">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Search..."
+                readOnly
+                onClick={() => openPalette(true)}
+                style={{ height: 44 }}
+                className="pl-9 text-sm border-0 focus-visible:ring-0 focus-visible:outline-none cursor-pointer"
+              />
+              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs tracking-widest text-muted-foreground hidden md:inline">
+                ⌘K
+              </span>
+            </div>
 
             {/* Navigation */}
             <ScrollArea className="flex-1 overflow-hidden min-w-0">
