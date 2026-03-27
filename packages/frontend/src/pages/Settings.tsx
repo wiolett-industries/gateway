@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useUIStore } from "@/stores/ui";
@@ -225,14 +226,13 @@ export function Settings() {
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Permission</label>
-                  <select
-                    value={newTokenPermission}
-                    onChange={(e) => setNewTokenPermission(e.target.value as "read" | "read-write")}
-                    className="h-9 w-full text-sm"
-                  >
-                    <option value="read">Read only</option>
-                    <option value="read-write">Read &amp; Write</option>
-                  </select>
+                  <Select value={newTokenPermission} onValueChange={(v) => setNewTokenPermission(v as "read" | "read-write")}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="read">Read only</SelectItem>
+                      <SelectItem value="read-write">Read & Write</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
               <DialogFooter>

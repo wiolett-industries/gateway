@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { PageTransition } from "@/components/common/PageTransition";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
@@ -28,8 +29,8 @@ export function AuditLog() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
-  const [actionFilter, setActionFilter] = useState("");
-  const [resourceTypeFilter, setResourceTypeFilter] = useState("");
+  const [actionFilter, setActionFilter] = useState("all");
+  const [resourceTypeFilter, setResourceTypeFilter] = useState("all");
 
   useEffect(() => {
     if (!hasRole("admin")) {
@@ -45,8 +46,8 @@ export function AuditLog() {
         const response = await api.getAuditLog({
           page,
           limit: 50,
-          action: actionFilter || undefined,
-          resourceType: resourceTypeFilter || undefined,
+          action: actionFilter !== "all" ? actionFilter : undefined,
+          resourceType: resourceTypeFilter !== "all" ? resourceTypeFilter : undefined,
         });
         setEntries(response.data || []);
         setTotalPages(response.pagination?.totalPages ?? 1);
@@ -72,38 +73,36 @@ export function AuditLog() {
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3">
-        <select
-          value={actionFilter}
-          onChange={(e) => { setActionFilter(e.target.value); setPage(1); }}
-          className="h-9 w-full text-sm"
-        >
-          <option value="">All actions</option>
-          <option value="ca.create">CA Create</option>
-          <option value="ca.revoke">CA Revoke</option>
-          <option value="cert.issue">Cert Issue</option>
-          <option value="cert.revoke">Cert Revoke</option>
-          <option value="cert.renew">Cert Renew</option>
-          <option value="cert.download">Cert Download</option>
-          <option value="template.create">Template Create</option>
-          <option value="template.update">Template Update</option>
-          <option value="template.delete">Template Delete</option>
-          <option value="user.login">User Login</option>
-          <option value="user.logout">User Logout</option>
-          <option value="token.create">Token Create</option>
-          <option value="token.revoke">Token Revoke</option>
-        </select>
-        <select
-          value={resourceTypeFilter}
-          onChange={(e) => { setResourceTypeFilter(e.target.value); setPage(1); }}
-          className="h-9 w-full text-sm"
-        >
-          <option value="">All resources</option>
-          <option value="ca">Certificate Authority</option>
-          <option value="certificate">Certificate</option>
-          <option value="template">Template</option>
-          <option value="user">User</option>
-          <option value="token">API Token</option>
-        </select>
+        <Select value={actionFilter} onValueChange={(v) => { setActionFilter(v); setPage(1); }}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All actions</SelectItem>
+            <SelectItem value="ca.create">CA Create</SelectItem>
+            <SelectItem value="ca.revoke">CA Revoke</SelectItem>
+            <SelectItem value="cert.issue">Cert Issue</SelectItem>
+            <SelectItem value="cert.revoke">Cert Revoke</SelectItem>
+            <SelectItem value="cert.renew">Cert Renew</SelectItem>
+            <SelectItem value="cert.download">Cert Download</SelectItem>
+            <SelectItem value="template.create">Template Create</SelectItem>
+            <SelectItem value="template.update">Template Update</SelectItem>
+            <SelectItem value="template.delete">Template Delete</SelectItem>
+            <SelectItem value="user.login">User Login</SelectItem>
+            <SelectItem value="user.logout">User Logout</SelectItem>
+            <SelectItem value="token.create">Token Create</SelectItem>
+            <SelectItem value="token.revoke">Token Revoke</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={resourceTypeFilter} onValueChange={(v) => { setResourceTypeFilter(v); setPage(1); }}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All resources</SelectItem>
+            <SelectItem value="ca">Certificate Authority</SelectItem>
+            <SelectItem value="certificate">Certificate</SelectItem>
+            <SelectItem value="template">Template</SelectItem>
+            <SelectItem value="user">User</SelectItem>
+            <SelectItem value="token">API Token</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Table */}
