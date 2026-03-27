@@ -2,7 +2,6 @@ import {
   Award,
   ChevronLeft,
   ChevronRight,
-  Download,
   Filter,
   Plus,
   Search,
@@ -30,9 +29,9 @@ const statusOptions: { value: CertificateStatus | "all"; label: string }[] = [
 
 const typeOptions: { value: CertificateType | "all"; label: string }[] = [
   { value: "all", label: "All types" },
-  { value: "server", label: "Server" },
-  { value: "client", label: "Client" },
-  { value: "codesign", label: "Code Signing" },
+  { value: "tls-server", label: "TLS Server" },
+  { value: "tls-client", label: "TLS Client" },
+  { value: "code-signing", label: "Code Signing" },
   { value: "email", label: "Email" },
 ];
 
@@ -147,8 +146,8 @@ export function Certificates() {
               className="h-9 border border-input bg-transparent px-3 text-sm"
             >
               <option value="all">All CAs</option>
-              {cas.map((ca) => (
-                <option key={ca.id} value={ca.id}>{ca.name}</option>
+              {(cas || []).map((ca) => (
+                <option key={ca.id} value={ca.id}>{ca.commonName}</option>
               ))}
             </select>
           </div>
@@ -162,7 +161,7 @@ export function Certificates() {
             <Skeleton key={i} className="h-12" />
           ))}
         </div>
-      ) : certificates.length > 0 ? (
+      ) : (certificates || []).length > 0 ? (
         <div className="border border-border bg-card">
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -186,16 +185,16 @@ export function Certificates() {
                     >
                       <td className="p-3">
                         <div>
-                          <p className="text-sm font-medium">{cert.subject.commonName}</p>
-                          {cert.subjectAlternativeNames.length > 0 && (
+                          <p className="text-sm font-medium">{cert.commonName}</p>
+                          {(cert.sans?.length ?? 0) > 0 && (
                             <p className="text-xs text-muted-foreground">
-                              +{cert.subjectAlternativeNames.length} SANs
+                              +{cert.sans.length} SANs
                             </p>
                           )}
                         </div>
                       </td>
                       <td className="p-3 text-sm capitalize text-muted-foreground">{cert.type}</td>
-                      <td className="p-3 text-sm text-muted-foreground">{cert.caName}</td>
+                      <td className="p-3 text-sm text-muted-foreground">{cert.issuerDn || cert.caId}</td>
                       <td className="p-3">
                         <span className={`text-sm ${expDays <= 30 && expDays > 0 ? "text-[color:var(--color-warning)]" : expDays <= 0 ? "text-destructive" : "text-muted-foreground"}`}>
                           {formatDate(cert.notAfter)}

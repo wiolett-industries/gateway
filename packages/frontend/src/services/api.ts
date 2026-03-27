@@ -8,11 +8,11 @@ import type {
   Certificate,
   CertificateStatus,
   CertificateType,
-  CreateCARequest,
-  DashboardStats,
+  CreateRootCARequest,
+  CreateIntermediateCARequest,
   IssueCertificateRequest,
+  IssueCertFromCSRRequest,
   PaginatedResponse,
-  RevokeCertificateRequest,
   Template,
   User,
   UserRole,
@@ -90,42 +90,53 @@ class ApiClient {
     return `${AUTH_BASE}/login`;
   }
 
-  // ── Dashboard ─────────────────────────────────────────────────────
-
-  async getDashboardStats(): Promise<DashboardStats> {
-    return this.request<DashboardStats>("/dashboard/stats");
-  }
-
   // ── Certificate Authorities ───────────────────────────────────────
 
-  async listCAs(): Promise<PaginatedResponse<CA>> {
-    return this.request<PaginatedResponse<CA>>("/cas");
+  async listCAs(): Promise<CA[]> {
+    return this.request<CA[]>("/cas");
   }
 
   async getCA(id: string): Promise<CA> {
     return this.request<CA>(`/cas/${id}`);
   }
 
-  async createCA(data: CreateCARequest): Promise<CA> {
+  async createRootCA(data: CreateRootCARequest): Promise<CA> {
     return this.request<CA>("/cas", {
       method: "POST",
       body: JSON.stringify(data),
     });
   }
 
-  async revokeCA(id: string, reason: string): Promise<CA> {
-    return this.request<CA>(`/cas/${id}/revoke`, {
+  async createIntermediateCA(parentId: string, data: CreateIntermediateCARequest): Promise<CA> {
+    return this.request<CA>(`/cas/${parentId}/intermediate`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async revokeCA(id: string, reason: string): Promise<void> {
+    return this.request<void>(`/cas/${id}/revoke`, {
       method: "POST",
       body: JSON.stringify({ reason }),
     });
   }
 
-  async getCAChain(id: string): Promise<{ pem: string }> {
-    return this.request<{ pem: string }>(`/cas/${id}/chain`);
+  async deleteCA(id: string): Promise<void> {
+    return this.request<void>(`/cas/${id}`, { method: "DELETE" });
   }
 
-  async getCACRL(id: string): Promise<{ crl: string }> {
-    return this.request<{ crl: string }>(`/cas/${id}/crl`);
+  async exportCAKey(id: string, passphrase: string): Promise<Blob> {
+    const response = await fetch(`${API_BASE}/cas/${id}/export-key`, {
+      method: "POST",
+      headers: this.getHeaders(),
+      body: JSON.stringify({ passphrase }),
+    });
+    if (!response.ok) throw new Error("Failed to export CA key");
+    return response.blob();
+  }
+
+  async generateOCSPResponder(id: string): Promise<void> {
+    return this.request<void>(`/cas/${id}/ocsp-responder`, { method: "POST" });
   }
 
   // ── Certificates ──────────────────────────────────────────────────
@@ -137,6 +148,8 @@ class ApiClient {
     status?: CertificateStatus;
     type?: CertificateType;
     caId?: string;
+    sortBy?: string;
+    sortOrder?: string;
   }): Promise<PaginatedResponse<Certificate>> {
     const searchParams = new URLSearchParams();
     if (params?.page) searchParams.set("page", params.page.toString());
@@ -145,6 +158,8 @@ class ApiClient {
     if (params?.status) searchParams.set("status", params.status);
     if (params?.type) searchParams.set("type", params.type);
     if (params?.caId) searchParams.set("caId", params.caId);
+    if (params?.sortBy) searchParams.set("sortBy", params.sortBy);
+    if (params?.sortOrder) searchParams.set("sortOrder", params.sortOrder);
 
     const query = searchParams.toString();
     return this.request<PaginatedResponse<Certificate>>(
@@ -156,63 +171,63 @@ class ApiClient {
     return this.request<Certificate>(`/certificates/${id}`);
   }
 
-  async issueCertificate(data: IssueCertificateRequest): Promise<Certificate> {
-    return this.request<Certificate>("/certificates", {
+  async issueCertificate(data: IssueCertificateRequest): Promise<{ certificate: Certificate; privateKeyPem: string }> {
+    return this.request(`/certificates`, {
       method: "POST",
       body: JSON.stringify(data),
     });
   }
 
-  async revokeCertificate(id: string, data: RevokeCertificateRequest): Promise<Certificate> {
-    return this.request<Certificate>(`/certificates/${id}/revoke`, {
+  async issueCertificateFromCSR(data: IssueCertFromCSRRequest): Promise<Certificate> {
+    return this.request<Certificate>(`/certificates/from-csr`, {
       method: "POST",
       body: JSON.stringify(data),
     });
   }
 
-  async renewCertificate(id: string): Promise<Certificate> {
-    return this.request<Certificate>(`/certificates/${id}/renew`, {
+  async revokeCertificate(id: string, reason: string): Promise<void> {
+    return this.request<void>(`/certificates/${id}/revoke`, {
       method: "POST",
+      body: JSON.stringify({ reason }),
     });
   }
 
-  async downloadCertificate(id: string, format: "pem" | "der" | "pkcs12"): Promise<Blob> {
-    const sessionId = useAuthStore.getState().sessionId;
-    const headers: HeadersInit = {};
-    if (sessionId) headers.Authorization = `Bearer ${sessionId}`;
-
-    const response = await fetch(`${API_BASE}/certificates/${id}/download?format=${format}`, {
-      headers,
+  async exportCertificate(id: string, format: string, passphrase?: string): Promise<Blob> {
+    const params = new URLSearchParams({ format });
+    if (passphrase) params.set("passphrase", passphrase);
+    const response = await fetch(`${API_BASE}/certificates/${id}/export?${params}`, {
+      headers: this.getHeaders(),
     });
+    if (!response.ok) throw new Error("Failed to export certificate");
+    return response.blob();
+  }
 
-    if (!response.ok) {
-      throw new Error("Failed to download certificate");
-    }
-
+  async downloadChain(id: string): Promise<Blob> {
+    const response = await fetch(`${API_BASE}/certificates/${id}/chain`, {
+      headers: this.getHeaders(),
+    });
+    if (!response.ok) throw new Error("Failed to download chain");
     return response.blob();
   }
 
   // ── Templates ─────────────────────────────────────────────────────
 
-  async listTemplates(): Promise<{ data: Template[] }> {
-    return this.request<{ data: Template[] }>("/templates");
+  async listTemplates(): Promise<Template[]> {
+    return this.request<Template[]>("/templates");
   }
 
   async getTemplate(id: string): Promise<Template> {
     return this.request<Template>(`/templates/${id}`);
   }
 
-  async createTemplate(data: Omit<Template, "id" | "createdAt" | "updatedAt">): Promise<Template> {
+  async createTemplate(data: Partial<Template>): Promise<Template> {
     return this.request<Template>("/templates", {
       method: "POST",
       body: JSON.stringify(data),
     });
   }
 
-  async updateTemplate(
-    id: string,
-    data: Partial<Omit<Template, "id" | "createdAt" | "updatedAt">>
-  ): Promise<Template> {
+  async updateTemplate(id: string, data: Partial<Template>): Promise<Template> {
     return this.request<Template>(`/templates/${id}`, {
       method: "PATCH",
       body: JSON.stringify(data),
@@ -220,30 +235,22 @@ class ApiClient {
   }
 
   async deleteTemplate(id: string): Promise<void> {
-    return this.request<void>(`/templates/${id}`, {
-      method: "DELETE",
-    });
+    return this.request<void>(`/templates/${id}`, { method: "DELETE" });
   }
 
-  // ── Audit Log ─────────────────────────────────────────────────────
+  // ── Audit ─────────────────────────────────────────────────────────
 
-  async listAuditLogs(params?: {
+  async getAuditLog(params?: {
     page?: number;
     limit?: number;
     action?: string;
-    actorId?: string;
     resourceType?: string;
-    from?: string;
-    to?: string;
   }): Promise<PaginatedResponse<AuditLogEntry>> {
     const searchParams = new URLSearchParams();
     if (params?.page) searchParams.set("page", params.page.toString());
     if (params?.limit) searchParams.set("limit", params.limit.toString());
     if (params?.action) searchParams.set("action", params.action);
-    if (params?.actorId) searchParams.set("actorId", params.actorId);
     if (params?.resourceType) searchParams.set("resourceType", params.resourceType);
-    if (params?.from) searchParams.set("from", params.from);
-    if (params?.to) searchParams.set("to", params.to);
 
     const query = searchParams.toString();
     return this.request<PaginatedResponse<AuditLogEntry>>(
@@ -253,64 +260,41 @@ class ApiClient {
 
   // ── Alerts ────────────────────────────────────────────────────────
 
-  async listAlerts(params?: {
-    acknowledged?: boolean;
-    severity?: string;
-  }): Promise<{ data: Alert[] }> {
-    const searchParams = new URLSearchParams();
-    if (params?.acknowledged !== undefined)
-      searchParams.set("acknowledged", params.acknowledged.toString());
-    if (params?.severity) searchParams.set("severity", params.severity);
-
-    const query = searchParams.toString();
-    return this.request<{ data: Alert[] }>(`/alerts${query ? `?${query}` : ""}`);
+  async getAlerts(): Promise<Alert[]> {
+    return this.request<Alert[]>("/alerts");
   }
 
-  async acknowledgeAlert(id: string): Promise<Alert> {
-    return this.request<Alert>(`/alerts/${id}/acknowledge`, {
-      method: "POST",
-    });
+  async dismissAlert(id: string): Promise<void> {
+    return this.request<void>(`/alerts/${id}/dismiss`, { method: "POST" });
   }
 
-  // ── API Tokens ────────────────────────────────────────────────────
+  // ── Tokens ────────────────────────────────────────────────────────
 
-  async listTokens(): Promise<{ data: ApiToken[] }> {
-    return this.request<{ data: ApiToken[] }>("/tokens");
+  async listTokens(): Promise<ApiToken[]> {
+    return this.request<ApiToken[]>("/tokens");
   }
 
-  async createToken(data: {
-    name: string;
-    scopes: string[];
-    expiresInDays?: number;
-  }): Promise<{ token: ApiToken; secret: string }> {
-    return this.request<{ token: ApiToken; secret: string }>("/tokens", {
+  async createToken(data: { name: string; permission?: string }): Promise<ApiToken & { token: string }> {
+    return this.request(`/tokens`, {
       method: "POST",
       body: JSON.stringify(data),
     });
   }
 
   async revokeToken(id: string): Promise<void> {
-    return this.request<void>(`/tokens/${id}`, {
-      method: "DELETE",
-    });
+    return this.request<void>(`/tokens/${id}`, { method: "DELETE" });
   }
 
   // ── Admin ─────────────────────────────────────────────────────────
 
-  async listUsers(): Promise<{ data: User[] }> {
-    return this.request<{ data: User[] }>("/admin/users");
+  async listUsers(): Promise<User[]> {
+    return this.request<User[]>("/admin/users");
   }
 
   async updateUserRole(userId: string, role: UserRole): Promise<User> {
     return this.request<User>(`/admin/users/${userId}/role`, {
       method: "PATCH",
       body: JSON.stringify({ role }),
-    });
-  }
-
-  async deleteUser(userId: string): Promise<void> {
-    return this.request<void>(`/admin/users/${userId}`, {
-      method: "DELETE",
     });
   }
 }

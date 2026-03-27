@@ -17,6 +17,7 @@ interface UIState {
   setResolvedTheme: (theme: ResolvedTheme) => void;
 
   // Sidebar
+  sidebarOpen: boolean;
   sidebarCollapsed: boolean;
   toggleSidebar: () => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
@@ -47,10 +48,11 @@ export const useUIStore = create<UIState>()(
       setResolvedTheme: (resolvedTheme) => set({ resolvedTheme }),
 
       // Sidebar
+      sidebarOpen: true,
       sidebarCollapsed: false,
       toggleSidebar: () =>
-        set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
-      setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
+        set((state) => ({ sidebarOpen: !state.sidebarOpen, sidebarCollapsed: !state.sidebarCollapsed })),
+      setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed, sidebarOpen: !sidebarCollapsed }),
 
       // Mobile
       isMobile: false,
@@ -71,6 +73,7 @@ export const useUIStore = create<UIState>()(
       name: "ca-manager-ui",
       partialize: (state) => ({
         theme: state.theme,
+        sidebarOpen: state.sidebarOpen,
         sidebarCollapsed: state.sidebarCollapsed,
       }),
     }

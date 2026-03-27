@@ -21,7 +21,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
-import type { CertificateType, KeyAlgorithm, SignatureAlgorithm, Template } from "@/types";
+import type { CertificateType, KeyAlgorithm, Template } from "@/types";
 
 export function Templates() {
   const { hasRole } = useAuthStore();
@@ -33,16 +33,15 @@ export function Templates() {
   // Form state
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [type, setType] = useState<CertificateType>("server");
-  const [keyAlgorithm, setKeyAlgorithm] = useState<KeyAlgorithm>("EC-P256");
-  const [signatureAlgorithm, setSignatureAlgorithm] = useState<SignatureAlgorithm>("ECDSAWithSHA256");
+  const [certType, setCertType] = useState<CertificateType>("tls-server");
+  const [keyAlgorithm, setKeyAlgorithm] = useState<KeyAlgorithm>("ecdsa-p256");
   const [validityDays, setValidityDays] = useState(365);
   const [isSaving, setIsSaving] = useState(false);
 
   const loadTemplates = async () => {
     try {
-      const { data } = await api.listTemplates();
-      setTemplates(data);
+      const data = await api.listTemplates();
+      setTemplates(data || []);
     } catch (err) {
       toast.error("Failed to load templates");
     } finally {
@@ -58,9 +57,8 @@ export function Templates() {
     setEditing(null);
     setName("");
     setDescription("");
-    setType("server");
-    setKeyAlgorithm("EC-P256");
-    setSignatureAlgorithm("ECDSAWithSHA256");
+    setCertType("tls-server");
+    setKeyAlgorithm("ecdsa-p256");
     setValidityDays(365);
     setDialogOpen(true);
   };
@@ -68,10 +66,9 @@ export function Templates() {
   const openEdit = (template: Template) => {
     setEditing(template);
     setName(template.name);
-    setDescription(template.description);
-    setType(template.type);
+    setDescription(template.description || "");
+    setCertType(template.certType);
     setKeyAlgorithm(template.keyAlgorithm);
-    setSignatureAlgorithm(template.signatureAlgorithm);
     setValidityDays(template.validityDays);
     setDialogOpen(true);
   };
@@ -88,9 +85,8 @@ export function Templates() {
         await api.updateTemplate(editing.id, {
           name,
           description,
-          type,
+          certType,
           keyAlgorithm,
-          signatureAlgorithm,
           validityDays,
         });
         toast.success("Template updated");
@@ -98,15 +94,13 @@ export function Templates() {
         await api.createTemplate({
           name,
           description,
-          type,
+          certType,
           keyAlgorithm,
-          signatureAlgorithm,
           validityDays,
           keyUsage: [],
-          extendedKeyUsage: [],
-          subjectConstraints: { requireCommonName: true },
-          sanConstraints: { allowDNS: true, allowIP: true, allowEmail: false },
-          isDefault: false,
+          extKeyUsage: [],
+          requireSans: true,
+          sanTypes: ["dns", "ip"],
         });
         toast.success("Template created");
       }
@@ -169,7 +163,7 @@ export function Templates() {
                   <FileText className="h-4 w-4 text-muted-foreground" />
                   <h3 className="font-semibold text-sm">{template.name}</h3>
                 </div>
-                {hasRole("admin", "operator") && (
+                {hasRole("admin", "operator") && !template.isBuiltin && (
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -193,11 +187,11 @@ export function Templates() {
                 {template.description || "No description"}
               </p>
               <div className="flex flex-wrap gap-1">
-                <Badge variant="secondary" className="text-xs capitalize">{template.type}</Badge>
+                <Badge variant="secondary" className="text-xs capitalize">{template.certType}</Badge>
                 <Badge variant="secondary" className="text-xs">{template.keyAlgorithm}</Badge>
                 <Badge variant="secondary" className="text-xs">{template.validityDays}d</Badge>
-                {template.isDefault && (
-                  <Badge className="text-xs">Default</Badge>
+                {template.isBuiltin && (
+                  <Badge className="text-xs">Built-in</Badge>
                 )}
               </div>
             </div>
@@ -238,13 +232,13 @@ export function Templates() {
               <div className="space-y-2">
                 <label className="text-sm font-medium">Certificate Type</label>
                 <select
-                  value={type}
-                  onChange={(e) => setType(e.target.value as CertificateType)}
+                  value={certType}
+                  onChange={(e) => setCertType(e.target.value as CertificateType)}
                   className="flex h-9 w-full border border-input bg-transparent px-3 text-sm"
                 >
-                  <option value="server">Server</option>
-                  <option value="client">Client</option>
-                  <option value="codesign">Code Signing</option>
+                  <option value="tls-server">TLS Server</option>
+                  <option value="tls-client">TLS Client</option>
+                  <option value="code-signing">Code Signing</option>
                   <option value="email">Email</option>
                 </select>
               </div>
@@ -259,34 +253,18 @@ export function Templates() {
                 />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Key Algorithm</label>
-                <select
-                  value={keyAlgorithm}
-                  onChange={(e) => setKeyAlgorithm(e.target.value as KeyAlgorithm)}
-                  className="flex h-9 w-full border border-input bg-transparent px-3 text-sm"
-                >
-                  <option value="RSA-2048">RSA-2048</option>
-                  <option value="RSA-4096">RSA-4096</option>
-                  <option value="EC-P256">EC-P256</option>
-                  <option value="EC-P384">EC-P384</option>
-                </select>
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Signature Algorithm</label>
-                <select
-                  value={signatureAlgorithm}
-                  onChange={(e) => setSignatureAlgorithm(e.target.value as SignatureAlgorithm)}
-                  className="flex h-9 w-full border border-input bg-transparent px-3 text-sm"
-                >
-                  <option value="SHA256WithRSA">SHA256WithRSA</option>
-                  <option value="SHA384WithRSA">SHA384WithRSA</option>
-                  <option value="SHA512WithRSA">SHA512WithRSA</option>
-                  <option value="ECDSAWithSHA256">ECDSAWithSHA256</option>
-                  <option value="ECDSAWithSHA384">ECDSAWithSHA384</option>
-                </select>
-              </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Key Algorithm</label>
+              <select
+                value={keyAlgorithm}
+                onChange={(e) => setKeyAlgorithm(e.target.value as KeyAlgorithm)}
+                className="flex h-9 w-full border border-input bg-transparent px-3 text-sm"
+              >
+                <option value="rsa-2048">RSA-2048</option>
+                <option value="rsa-4096">RSA-4096</option>
+                <option value="ecdsa-p256">ECDSA-P256</option>
+                <option value="ecdsa-p384">ECDSA-P384</option>
+              </select>
             </div>
           </div>
 

@@ -1,16 +1,14 @@
 import {
   AlertTriangle,
   Award,
-  ChevronRight,
   Copy,
-  Download,
   MoreVertical,
   Plus,
   Shield,
   ShieldOff,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { CertificateIssueDialog } from "@/components/certificates/CertificateIssueDialog";
 import { Badge } from "@/components/ui/badge";
@@ -26,7 +24,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useCAStore } from "@/stores/ca";
-import type { CA, Certificate, PaginatedResponse } from "@/types";
+import type { Certificate } from "@/types";
 import { formatDate, formatSerialNumber, daysUntil } from "@/lib/utils";
 
 const statusBadge = (status: string) => {
@@ -46,7 +44,7 @@ export function CADetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { hasRole } = useAuthStore();
-  const { selectedCA, selectCA, fetchCAs } = useCAStore();
+  const { selectedCA, selectCA, fetchCAs, cas } = useCAStore();
   const [certificates, setCertificates] = useState<Certificate[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [issueDialogOpen, setIssueDialogOpen] = useState(false);
@@ -59,7 +57,7 @@ export function CADetail() {
       try {
         await selectCA(id);
         const certs = await api.listCertificates({ caId: id, limit: 50 });
-        setCertificates(certs.data);
+        setCertificates(certs.data || []);
       } catch (err) {
         console.error("Failed to load CA:", err);
         toast.error("Failed to load CA details");
@@ -85,20 +83,10 @@ export function CADetail() {
     }
   };
 
-  const handleDownloadChain = async () => {
-    if (!selectedCA) return;
-    try {
-      const { pem } = await api.getCAChain(selectedCA.id);
-      const blob = new Blob([pem], { type: "application/x-pem-file" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${selectedCA.name}-chain.pem`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch {
-      toast.error("Failed to download certificate chain");
-    }
+  const handleCopyPem = () => {
+    if (!selectedCA?.certificatePem) return;
+    navigator.clipboard.writeText(selectedCA.certificatePem);
+    toast.success("PEM copied to clipboard");
   };
 
   if (isLoading) {
@@ -124,6 +112,9 @@ export function CADetail() {
   const ca = selectedCA;
   const expiryDays = daysUntil(ca.notAfter);
 
+  // Find child CAs (intermediate CAs whose parentId matches this CA)
+  const childCAs = (cas || []).filter((c) => c.parentId === ca.id);
+
   return (
     <div className="h-full overflow-y-auto p-6 space-y-6">
       {/* Header */}
@@ -132,11 +123,11 @@ export function CADetail() {
           <Shield className="h-6 w-6" />
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold">{ca.name}</h1>
+              <h1 className="text-2xl font-bold">{ca.commonName}</h1>
               {statusBadge(ca.status)}
             </div>
             <p className="text-sm text-muted-foreground">
-              {ca.type === "root" ? "Root CA" : "Intermediate CA"} &middot; {ca.subject.commonName}
+              {ca.type === "root" ? "Root CA" : "Intermediate CA"} &middot; {ca.subjectDn || ca.commonName}
             </p>
           </div>
         </div>
@@ -155,10 +146,12 @@ export function CADetail() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={handleDownloadChain}>
-                <Download className="h-4 w-4" />
-                Download Chain
-              </DropdownMenuItem>
+              {ca.certificatePem && (
+                <DropdownMenuItem onClick={handleCopyPem}>
+                  <Copy className="h-4 w-4" />
+                  Copy PEM
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem onClick={() => {
                 navigator.clipboard.writeText(ca.serialNumber);
                 toast.success("Serial number copied");
@@ -187,21 +180,16 @@ export function CADetail() {
             <h2 className="font-semibold">Certificate Details</h2>
           </div>
           <div className="p-4 space-y-3">
-            <InfoRow label="Common Name" value={ca.subject.commonName} />
-            {ca.subject.organization && <InfoRow label="Organization" value={ca.subject.organization} />}
-            {ca.subject.country && <InfoRow label="Country" value={ca.subject.country} />}
+            <InfoRow label="Common Name" value={ca.commonName} />
+            {ca.subjectDn && <InfoRow label="Subject DN" value={ca.subjectDn} />}
+            {ca.issuerDn && <InfoRow label="Issuer DN" value={ca.issuerDn} />}
             <InfoRow label="Serial Number" value={formatSerialNumber(ca.serialNumber)} />
             <InfoRow label="Key Algorithm" value={ca.keyAlgorithm} />
-            <InfoRow label="Signature Algorithm" value={ca.signatureAlgorithm} />
             <InfoRow label="Valid From" value={formatDate(ca.notBefore)} />
             <InfoRow label="Valid Until" value={formatDate(ca.notAfter)} />
-            <InfoRow label="Max Path Length" value={ca.maxPathLength.toString()} />
-            {ca.crlDistributionPoints.length > 0 && (
-              <InfoRow label="CRL Distribution" value={ca.crlDistributionPoints.join(", ")} />
-            )}
-            {ca.ocspResponderUrl && (
-              <InfoRow label="OCSP Responder" value={ca.ocspResponderUrl} />
-            )}
+            <InfoRow label="Path Length Constraint" value={ca.pathLengthConstraint != null ? ca.pathLengthConstraint.toString() : "None"} />
+            <InfoRow label="Max Validity Days" value={ca.maxValidityDays.toString()} />
+            <InfoRow label="CRL Number" value={ca.crlNumber.toString()} />
           </div>
         </div>
 
@@ -212,7 +200,7 @@ export function CADetail() {
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Certificates</span>
-                <span className="font-medium">{ca.certificateCount}</span>
+                <span className="font-medium">{ca.certCount}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Expires in</span>
@@ -237,27 +225,26 @@ export function CADetail() {
           )}
 
           {/* Child CAs */}
-          {ca.children && ca.children.length > 0 && (
+          {childCAs.length > 0 && (
             <div className="border border-border bg-card">
               <div className="border-b border-border p-3">
                 <h3 className="font-semibold text-sm">Child CAs</h3>
               </div>
               <div className="divide-y divide-border">
-                {ca.children.map((child) => (
-                  <Link
+                {childCAs.map((child) => (
+                  <div
                     key={child.id}
-                    to={`/cas/${child.id}`}
-                    className="flex items-center justify-between p-3 hover:bg-accent transition-colors"
+                    onClick={() => navigate(`/cas/${child.id}`)}
+                    className="flex items-center justify-between p-3 hover:bg-accent transition-colors cursor-pointer"
                   >
                     <div className="flex items-center gap-2">
                       <Shield className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-sm">{child.name}</span>
+                      <span className="text-sm">{child.commonName}</span>
                     </div>
                     <div className="flex items-center gap-2">
                       {statusBadge(child.status)}
-                      <ChevronRight className="h-4 w-4 text-muted-foreground" />
                     </div>
-                  </Link>
+                  </div>
                 ))}
               </div>
             </div>
@@ -290,7 +277,7 @@ export function CADetail() {
                     className="hover:bg-accent transition-colors cursor-pointer"
                     onClick={() => navigate(`/certificates/${cert.id}`)}
                   >
-                    <td className="p-3 text-sm font-medium">{cert.subject.commonName}</td>
+                    <td className="p-3 text-sm font-medium">{cert.commonName}</td>
                     <td className="p-3 text-sm capitalize text-muted-foreground">{cert.type}</td>
                     <td className="p-3 text-sm font-mono text-xs text-muted-foreground">
                       {cert.serialNumber.slice(0, 16)}...

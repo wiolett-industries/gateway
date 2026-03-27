@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronRight, Shield, ShieldAlert } from "lucide-react";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
 import type { CA } from "@/types";
 import { cn } from "@/lib/utils";
@@ -10,24 +10,50 @@ interface CATreeProps {
   selectedId?: string;
 }
 
-function CATreeNode({
+interface CATreeNodeData extends CA {
+  children: CATreeNodeData[];
+}
+
+function buildTree(cas: CA[]): CATreeNodeData[] {
+  const map = new Map<string, CATreeNodeData>();
+  const roots: CATreeNodeData[] = [];
+
+  // Create node map
+  for (const ca of cas) {
+    map.set(ca.id, { ...ca, children: [] });
+  }
+
+  // Build tree
+  for (const ca of cas) {
+    const node = map.get(ca.id)!;
+    if (ca.parentId && map.has(ca.parentId)) {
+      map.get(ca.parentId)!.children.push(node);
+    } else {
+      roots.push(node);
+    }
+  }
+
+  return roots;
+}
+
+function CATreeNodeComponent({
   ca,
   depth,
   onSelect,
   selectedId,
 }: {
-  ca: CA;
+  ca: CATreeNodeData;
   depth: number;
   onSelect: (id: string) => void;
   selectedId?: string;
 }) {
   const [expanded, setExpanded] = useState(true);
-  const hasChildren = ca.children && ca.children.length > 0;
+  const hasChildren = ca.children.length > 0;
   const isSelected = selectedId === ca.id;
 
   const statusColor =
     ca.status === "active"
-      ? "text-[color:var(--color-success)]"
+      ? "text-green-600 dark:text-green-400"
       : ca.status === "revoked"
         ? "text-destructive"
         : "text-muted-foreground";
@@ -60,7 +86,10 @@ function CATreeNode({
           <span className="w-3 shrink-0" />
         )}
         <Shield className={cn("h-3.5 w-3.5 shrink-0", statusColor)} />
-        <span className="truncate flex-1">{ca.name}</span>
+        <span className="truncate flex-1">{ca.commonName}</span>
+        {ca.certCount > 0 && (
+          <span className="text-xs text-muted-foreground">{ca.certCount}</span>
+        )}
         {ca.status !== "active" && (
           <Badge
             variant="secondary"
@@ -72,8 +101,8 @@ function CATreeNode({
       </button>
       {hasChildren && expanded && (
         <div>
-          {ca.children!.map((child) => (
-            <CATreeNode
+          {ca.children.map((child) => (
+            <CATreeNodeComponent
               key={child.id}
               ca={child}
               depth={depth + 1}
@@ -88,10 +117,9 @@ function CATreeNode({
 }
 
 export function CATree({ cas, onSelect, selectedId }: CATreeProps) {
-  // Build tree: only show root CAs at top level
-  const rootCAs = cas.filter((ca) => !ca.parentId);
+  const tree = useMemo(() => buildTree(cas || []), [cas]);
 
-  if (rootCAs.length === 0) {
+  if (tree.length === 0) {
     return (
       <div className="flex flex-col items-center gap-1 py-4 text-center">
         <ShieldAlert className="h-5 w-5 text-muted-foreground" />
@@ -102,8 +130,8 @@ export function CATree({ cas, onSelect, selectedId }: CATreeProps) {
 
   return (
     <div className="space-y-0.5">
-      {rootCAs.map((ca) => (
-        <CATreeNode
+      {tree.map((ca) => (
+        <CATreeNodeComponent
           key={ca.id}
           ca={ca}
           depth={0}

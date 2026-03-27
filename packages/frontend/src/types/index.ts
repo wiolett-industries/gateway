@@ -1,92 +1,80 @@
 // User roles
-export type UserRole = "admin" | "operator" | "auditor" | "viewer";
+export type UserRole = "admin" | "operator" | "viewer";
 
 // User
 export interface User {
   id: string;
   email: string;
-  name: string;
-  avatarUrl?: string;
+  name: string | null;
+  avatarUrl: string | null;
   role: UserRole;
-  createdAt: string;
-  updatedAt: string;
 }
 
 // CA types
 export type CAType = "root" | "intermediate";
-export type CAStatus = "active" | "revoked" | "expired" | "pending";
-
-export type KeyAlgorithm = "RSA-2048" | "RSA-4096" | "EC-P256" | "EC-P384";
-export type SignatureAlgorithm =
-  | "SHA256WithRSA"
-  | "SHA384WithRSA"
-  | "SHA512WithRSA"
-  | "ECDSAWithSHA256"
-  | "ECDSAWithSHA384";
+export type CAStatus = "active" | "revoked" | "expired";
+export type KeyAlgorithm = "rsa-2048" | "rsa-4096" | "ecdsa-p256" | "ecdsa-p384";
 
 export interface CA {
   id: string;
-  name: string;
+  parentId: string | null;
   type: CAType;
   status: CAStatus;
-  parentId: string | null;
-  subject: CertificateSubject;
+  commonName: string;
   keyAlgorithm: KeyAlgorithm;
-  signatureAlgorithm: SignatureAlgorithm;
   serialNumber: string;
+  certificatePem: string;
+  subjectDn: string;
+  issuerDn: string | null;
+  pathLengthConstraint: number | null;
+  maxValidityDays: number;
   notBefore: string;
   notAfter: string;
-  maxPathLength: number;
-  crlDistributionPoints: string[];
-  ocspResponderUrl?: string;
-  children?: CA[];
-  certificateCount: number;
+  ocspCertPem: string | null;
+  crlNumber: number;
+  lastCrlAt: string | null;
+  createdById: string;
   createdAt: string;
   updatedAt: string;
-}
-
-export interface CertificateSubject {
-  commonName: string;
-  organization?: string;
-  organizationalUnit?: string;
-  country?: string;
-  state?: string;
-  locality?: string;
+  revokedAt: string | null;
+  revocationReason: string | null;
+  certCount: number;
 }
 
 // Certificate types
-export type CertificateStatus = "active" | "revoked" | "expired" | "pending";
-export type CertificateType = "server" | "client" | "codesign" | "email";
+export type CertificateStatus = "active" | "revoked" | "expired";
+export type CertificateType = "tls-server" | "tls-client" | "code-signing" | "email";
 export type RevocationReason =
   | "unspecified"
   | "keyCompromise"
   | "caCompromise"
   | "affiliationChanged"
   | "superseded"
-  | "cessationOfOperation";
+  | "cessationOfOperation"
+  | "certificateHold";
 
 export interface Certificate {
   id: string;
   caId: string;
-  caName: string;
-  templateId?: string;
-  templateName?: string;
-  type: CertificateType;
+  templateId: string | null;
   status: CertificateStatus;
-  subject: CertificateSubject;
+  type: CertificateType;
+  commonName: string;
+  sans: string[];
   serialNumber: string;
+  certificatePem: string;
   keyAlgorithm: KeyAlgorithm;
-  signatureAlgorithm: SignatureAlgorithm;
+  subjectDn: string;
+  issuerDn: string;
   notBefore: string;
   notAfter: string;
-  subjectAlternativeNames: string[];
+  csrPem: string | null;
+  serverGenerated: boolean;
   keyUsage: string[];
-  extendedKeyUsage: string[];
-  revocationReason?: RevocationReason;
-  revokedAt?: string;
-  pemCertificate?: string;
-  pemChain?: string;
-  issuedBy: string;
+  extKeyUsage: string[];
+  revokedAt: string | null;
+  revocationReason: string | null;
+  issuedById: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -95,80 +83,41 @@ export interface Certificate {
 export interface Template {
   id: string;
   name: string;
-  description: string;
-  type: CertificateType;
+  description: string | null;
+  isBuiltin: boolean;
+  certType: CertificateType;
   keyAlgorithm: KeyAlgorithm;
-  signatureAlgorithm: SignatureAlgorithm;
   validityDays: number;
   keyUsage: string[];
-  extendedKeyUsage: string[];
-  subjectConstraints: {
-    allowedOrganizations?: string[];
-    allowedCountries?: string[];
-    requireCommonName: boolean;
-  };
-  sanConstraints: {
-    allowDNS: boolean;
-    allowIP: boolean;
-    allowEmail: boolean;
-    allowedDomains?: string[];
-  };
-  isDefault: boolean;
+  extKeyUsage: string[];
+  requireSans: boolean;
+  sanTypes: string[];
+  createdById: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
 // Audit log
-export type AuditAction =
-  | "ca.create"
-  | "ca.revoke"
-  | "ca.update"
-  | "cert.issue"
-  | "cert.revoke"
-  | "cert.renew"
-  | "cert.download"
-  | "template.create"
-  | "template.update"
-  | "template.delete"
-  | "user.login"
-  | "user.logout"
-  | "user.create"
-  | "user.update"
-  | "user.delete"
-  | "settings.update"
-  | "token.create"
-  | "token.revoke";
-
 export interface AuditLogEntry {
   id: string;
-  action: AuditAction;
-  actorId: string;
-  actorName: string;
-  actorEmail: string;
+  userId: string | null;
+  action: string;
   resourceType: string;
-  resourceId: string;
-  resourceName: string;
-  details: Record<string, unknown>;
-  ipAddress: string;
-  userAgent: string;
+  resourceId: string | null;
+  details: Record<string, unknown> | null;
+  ipAddress: string | null;
+  userAgent: string | null;
   createdAt: string;
 }
 
 // Alert types
-export type AlertSeverity = "info" | "warning" | "critical";
-export type AlertType = "expiry" | "crl" | "revocation" | "system";
-
 export interface Alert {
   id: string;
-  type: AlertType;
-  severity: AlertSeverity;
-  title: string;
-  message: string;
+  type: "expiry_warning" | "expiry_critical" | "ca_expiry" | "revocation";
   resourceType: string;
   resourceId: string;
-  acknowledged: boolean;
-  acknowledgedBy?: string;
-  acknowledgedAt?: string;
+  message: string;
+  dismissed: boolean;
   createdAt: string;
 }
 
@@ -176,9 +125,8 @@ export interface Alert {
 export interface ApiToken {
   id: string;
   name: string;
-  prefix: string;
-  scopes: string[];
-  expiresAt: string | null;
+  tokenPrefix: string;
+  permission: "read" | "read-write";
   lastUsedAt: string | null;
   createdAt: string;
 }
@@ -186,55 +134,53 @@ export interface ApiToken {
 // Pagination
 export interface PaginatedResponse<T> {
   data: T[];
-  total: number;
-  page: number;
-  limit: number;
-  totalPages: number;
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
 }
 
 // API Error
 export interface ApiError {
   code: string;
   message: string;
-  details?: Record<string, unknown>;
+  details?: unknown;
 }
 
-// Stats
-export interface DashboardStats {
-  totalCAs: number;
-  activeCAs: number;
-  totalCertificates: number;
-  activeCertificates: number;
-  expiringCertificates: number;
-  revokedCertificates: number;
-  recentActivity: AuditLogEntry[];
-  alerts: Alert[];
-}
-
-// Create/Issue request types
-export interface CreateCARequest {
-  name: string;
-  type: CAType;
-  parentId?: string;
-  subject: CertificateSubject;
+// Request types
+export interface CreateRootCARequest {
+  commonName: string;
   keyAlgorithm: KeyAlgorithm;
-  signatureAlgorithm: SignatureAlgorithm;
   validityYears: number;
-  maxPathLength: number;
-  crlDistributionPoints?: string[];
-  ocspResponderUrl?: string;
+  pathLengthConstraint?: number;
+  maxValidityDays?: number;
+}
+
+export interface CreateIntermediateCARequest {
+  commonName: string;
+  keyAlgorithm: KeyAlgorithm;
+  validityYears: number;
+  pathLengthConstraint?: number;
+  maxValidityDays?: number;
 }
 
 export interface IssueCertificateRequest {
   caId: string;
   templateId?: string;
   type: CertificateType;
-  subject: CertificateSubject;
-  subjectAlternativeNames?: string[];
+  commonName: string;
+  sans: string[];
+  keyAlgorithm: KeyAlgorithm;
   validityDays: number;
-  keyAlgorithm?: KeyAlgorithm;
 }
 
-export interface RevokeCertificateRequest {
-  reason: RevocationReason;
+export interface IssueCertFromCSRRequest {
+  caId: string;
+  templateId?: string;
+  type: CertificateType;
+  csrPem: string;
+  validityDays: number;
+  overrideSans?: string[];
 }

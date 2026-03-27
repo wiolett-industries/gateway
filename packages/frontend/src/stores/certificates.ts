@@ -59,9 +59,9 @@ export const useCertificatesStore = create<CertificatesState>()((set, get) => ({
         caId: filters.caId !== "all" ? filters.caId : undefined,
       });
       set({
-        certificates: response.data,
-        total: response.total,
-        totalPages: response.totalPages,
+        certificates: response.data || [],
+        total: response.pagination?.total ?? 0,
+        totalPages: response.pagination?.totalPages ?? 0,
         isLoading: false,
       });
     } catch (err) {

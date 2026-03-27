@@ -1,11 +1,9 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
     ports:
-      - "5432:5432"
+      - "5433:5432"
     environment:
       POSTGRES_DB: ca_manager
       POSTGRES_USER: dev
@@ -22,7 +20,7 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "6380:6379"
     command: redis-server --appendonly yes
     volumes:
       - redis_data:/data
