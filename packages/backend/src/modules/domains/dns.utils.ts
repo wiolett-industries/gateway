@@ -1,8 +1,27 @@
-import dns from 'node:dns/promises';
+import { Resolver } from 'node:dns/promises';
 import { createChildLogger } from '@/lib/logger.js';
 import type { DnsRecords } from '@/db/schema/domains.js';
 
 const logger = createChildLogger('DnsUtils');
+
+// Configured via initDnsResolver()
+let resolver = new Resolver();
+resolver.setServers(['8.8.8.8', '1.1.1.1']);
+
+export function initDnsResolver(servers: string[]): void {
+  resolver = new Resolver();
+  resolver.setServers(servers);
+  logger.info(`DNS resolvers set to: ${servers.join(', ')}`);
+}
+
+const DNS_TIMEOUT_MS = 5000;
+
+function withTimeout<T>(promise: Promise<T>): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error('DNS timeout')), DNS_TIMEOUT_MS)),
+  ]);
+}
 
 let cachedPublicIPv4: string | null = null;
 let cachedPublicIPv6: string | null = null;
@@ -41,12 +60,12 @@ export function getPublicIPs(): { ipv4: string | null; ipv6: string | null } {
 
 export async function resolveDnsRecords(domain: string): Promise<DnsRecords> {
   const [a, aaaa, cname, caa, mx, txt] = await Promise.allSettled([
-    dns.resolve4(domain),
-    dns.resolve6(domain),
-    dns.resolveCname(domain),
-    dns.resolveCaa(domain),
-    dns.resolveMx(domain),
-    dns.resolveTxt(domain),
+    withTimeout(resolver.resolve4(domain)),
+    withTimeout(resolver.resolve6(domain)),
+    withTimeout(resolver.resolveCname(domain)),
+    withTimeout(resolver.resolveCaa(domain)),
+    withTimeout(resolver.resolveMx(domain)),
+    withTimeout(resolver.resolveTxt(domain)),
   ]);
 
   return {

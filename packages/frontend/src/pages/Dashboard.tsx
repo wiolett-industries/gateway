@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { PageTransition } from "@/components/common/PageTransition";
 import { Badge } from "@/components/ui/badge";
-import { HealthDot } from "@/components/ui/health-dot";
+import type { HealthStatus } from "@/types";
 import { cn, daysUntil, formatDate, formatRelativeDate, formatTimeLeft } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
@@ -277,7 +277,9 @@ export function Dashboard() {
                       ? `${host.forwardScheme}://${host.forwardHost}:${host.forwardPort}`
                       : ""}
                   </span>
-                  <HealthDot status={host.healthStatus} />
+                  <Badge variant={({ online: "success", offline: "destructive", degraded: "warning", unknown: "secondary" } as const)[host.healthStatus as HealthStatus] || "secondary"} className="text-xs capitalize">
+                    {host.healthStatus}
+                  </Badge>
                 </Link>
               ))}
             </div>

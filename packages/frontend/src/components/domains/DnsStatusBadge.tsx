@@ -1,18 +1,18 @@
+import { Badge } from "@/components/ui/badge";
 import type { DnsStatus } from "@/types";
 
-const statusConfig: Record<DnsStatus, { color: string; label: string }> = {
-  valid: { color: "bg-green-500", label: "Valid" },
-  invalid: { color: "bg-red-500", label: "Invalid" },
-  pending: { color: "bg-yellow-500", label: "Pending" },
-  unknown: { color: "bg-gray-400", label: "Unknown" },
+const statusConfig: Record<DnsStatus, { variant: "success" | "destructive" | "warning" | "secondary"; label: string }> = {
+  valid: { variant: "success", label: "Valid" },
+  invalid: { variant: "destructive", label: "Invalid" },
+  pending: { variant: "warning", label: "Pending" },
+  unknown: { variant: "secondary", label: "Unknown" },
 };
 
 export function DnsStatusBadge({ status }: { status: DnsStatus }) {
-  const { color, label } = statusConfig[status];
+  const { variant, label } = statusConfig[status];
   return (
-    <span className="inline-flex items-center gap-1.5 text-xs">
-      <span className={`h-2 w-2 rounded-full ${color}`} />
+    <Badge variant={variant} className="text-xs">
       {label}
-    </span>
+    </Badge>
   );
 }
