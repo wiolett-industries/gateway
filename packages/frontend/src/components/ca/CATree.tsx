@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, Shield, ShieldAlert } from "lucide-react";
+import { ChevronDown, ChevronRight, Shield } from "lucide-react";
 import { useState, useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
 import type { CA } from "@/types";
@@ -18,12 +18,10 @@ function buildTree(cas: CA[]): CATreeNodeData[] {
   const map = new Map<string, CATreeNodeData>();
   const roots: CATreeNodeData[] = [];
 
-  // Create node map
   for (const ca of cas) {
     map.set(ca.id, { ...ca, children: [] });
   }
 
-  // Build tree
   for (const ca of cas) {
     const node = map.get(ca.id)!;
     if (ca.parentId && map.has(ca.parentId)) {
@@ -62,38 +60,38 @@ function CATreeNodeComponent({
     <div>
       <button
         className={cn(
-          "flex w-full items-center gap-2 px-2 py-1.5 text-sm hover:bg-sidebar-accent transition-colors text-left",
-          isSelected && "bg-sidebar-accent font-medium"
+          "flex w-full items-center gap-1.5 py-1.5 text-sm hover:bg-accent/50 transition-colors text-left",
+          isSelected && "bg-accent font-medium"
         )}
-        style={{ paddingLeft: `${depth * 16 + 8}px` }}
+        style={{ paddingLeft: `${depth * 12 + 4}px`, paddingRight: 4 }}
         onClick={() => onSelect(ca.id)}
       >
         {hasChildren ? (
-          <button
+          <span
             onClick={(e) => {
               e.stopPropagation();
               setExpanded(!expanded);
             }}
-            className="shrink-0"
+            className="shrink-0 p-0.5"
           >
             {expanded ? (
               <ChevronDown className="h-3 w-3 text-muted-foreground" />
             ) : (
               <ChevronRight className="h-3 w-3 text-muted-foreground" />
             )}
-          </button>
+          </span>
         ) : (
-          <span className="w-3 shrink-0" />
+          <span className="w-4 shrink-0" />
         )}
-        <Shield className={cn("h-3.5 w-3.5 shrink-0", statusColor)} />
+        <Shield className={cn("h-3 w-3 shrink-0", statusColor)} />
         <span className="truncate flex-1">{ca.commonName}</span>
         {ca.certCount > 0 && (
-          <span className="text-xs text-muted-foreground">{ca.certCount}</span>
+          <span className="text-[10px] text-muted-foreground tabular-nums">{ca.certCount}</span>
         )}
         {ca.status !== "active" && (
           <Badge
             variant="secondary"
-            className={cn("text-[10px] px-1.5 py-0", ca.status === "revoked" && "text-destructive")}
+            className={cn("text-[10px] px-1 py-0 leading-tight", ca.status === "revoked" && "text-destructive")}
           >
             {ca.status}
           </Badge>
@@ -120,16 +118,11 @@ export function CATree({ cas, onSelect, selectedId }: CATreeProps) {
   const tree = useMemo(() => buildTree(cas || []), [cas]);
 
   if (tree.length === 0) {
-    return (
-      <div className="flex flex-col items-center gap-1 py-4 text-center">
-        <ShieldAlert className="h-5 w-5 text-muted-foreground" />
-        <p className="text-xs text-muted-foreground">No CAs</p>
-      </div>
-    );
+    return null;
   }
 
   return (
-    <div className="space-y-0.5">
+    <div>
       {tree.map((ca) => (
         <CATreeNodeComponent
           key={ca.id}

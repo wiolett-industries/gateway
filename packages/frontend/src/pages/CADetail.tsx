@@ -12,6 +12,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { PageTransition } from "@/components/common/PageTransition";
+import { CACreateDialog } from "@/components/ca/CACreateDialog";
 import { CertificateIssueDialog } from "@/components/certificates/CertificateIssueDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -32,7 +33,7 @@ import { formatDate, formatSerialNumber, daysUntil } from "@/lib/utils";
 const statusBadge = (status: string) => {
   switch (status) {
     case "active":
-      return <Badge className="bg-[color:var(--color-success)] text-white">Active</Badge>;
+      return <Badge className="bg-green-600 text-white">Active</Badge>;
     case "revoked":
       return <Badge variant="destructive">Revoked</Badge>;
     case "expired":
@@ -50,6 +51,7 @@ export function CADetail() {
   const [certificates, setCertificates] = useState<Certificate[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [issueDialogOpen, setIssueDialogOpen] = useState(false);
+  const [createIntermediateOpen, setCreateIntermediateOpen] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -133,6 +135,12 @@ export function CADetail() {
         </div>
 
         <div className="flex items-center gap-2">
+          {hasRole("admin") && ca.status === "active" && (
+            <Button variant="outline" onClick={() => setCreateIntermediateOpen(true)}>
+              <Shield className="h-4 w-4" />
+              Create Intermediate
+            </Button>
+          )}
           {hasRole("admin", "operator") && ca.status === "active" && (
             <Button onClick={() => setIssueDialogOpen(true)}>
               <Plus className="h-4 w-4" />
@@ -298,11 +306,18 @@ export function CADetail() {
       </div>
 
       {id && (
-        <CertificateIssueDialog
-          open={issueDialogOpen}
-          onOpenChange={setIssueDialogOpen}
-          caId={id}
-        />
+        <>
+          <CertificateIssueDialog
+            open={issueDialogOpen}
+            onOpenChange={setIssueDialogOpen}
+            caId={id}
+          />
+          <CACreateDialog
+            open={createIntermediateOpen}
+            onOpenChange={setCreateIntermediateOpen}
+            parentId={id}
+          />
+        </>
       )}
     </div>
     </PageTransition>

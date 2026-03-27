@@ -63,7 +63,9 @@ export function AdminUsers() {
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold">User Management</h1>
-        <p className="text-sm text-muted-foreground">{users.length} users total</p>
+        <p className="text-sm text-muted-foreground">
+          {users.length} user{users.length !== 1 ? "s" : ""} &middot; Users are created automatically on first OIDC login
+        </p>
       </div>
 
       {/* Users table */}
