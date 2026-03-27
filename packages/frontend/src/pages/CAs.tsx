@@ -1,86 +1,21 @@
-import { Plus, Shield, ShieldAlert } from "lucide-react";
+import { CornerDownRight, Plus, Shield, ShieldAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { PageTransition } from "@/components/common/PageTransition";
 import { CACreateDialog } from "@/components/ca/CACreateDialog";
 import { StatusBadge } from "@/components/common/StatusBadge";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useAuthStore } from "@/stores/auth";
 import { useCAStore } from "@/stores/ca";
 import type { CA } from "@/types";
 import { formatDate, daysUntil } from "@/lib/utils";
 
-function CATable({ title, cas, allCAs, onSelect }: {
-  title: string;
-  cas: CA[];
-  allCAs: CA[];
-  onSelect: (id: string) => void;
-}) {
-  if (cas.length === 0) return null;
-
-  return (
-    <div className="border border-border bg-card">
-      <div className="border-b border-border p-4">
-        <div className="flex items-center justify-between">
-          <h2 className="font-semibold">{title}</h2>
-          <span className="text-xs text-muted-foreground">{cas.length}</span>
-        </div>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-border text-left">
-              <th className="p-3 text-xs font-medium text-muted-foreground">Common Name</th>
-              <th className="p-3 text-xs font-medium text-muted-foreground">Algorithm</th>
-              <th className="p-3 text-xs font-medium text-muted-foreground">Certificates</th>
-              <th className="p-3 text-xs font-medium text-muted-foreground">Expires</th>
-              <th className="p-3 text-xs font-medium text-muted-foreground">Status</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {cas.map((ca) => {
-              const expDays = daysUntil(ca.notAfter);
-              const parentCA = ca.parentId ? allCAs.find((c) => c.id === ca.parentId) : null;
-              return (
-                <tr
-                  key={ca.id}
-                  className="hover:bg-accent transition-colors cursor-pointer"
-                  onClick={() => onSelect(ca.id)}
-                >
-                  <td className="p-3">
-                    <div>
-                      <p className="text-sm font-medium">{ca.commonName}</p>
-                      {parentCA && (
-                        <p className="text-xs text-muted-foreground">signed by {parentCA.commonName}</p>
-                      )}
-                    </div>
-                  </td>
-                  <td className="p-3 text-sm text-muted-foreground">{ca.keyAlgorithm}</td>
-                  <td className="p-3 text-sm text-muted-foreground">{ca.certCount}</td>
-                  <td className="p-3">
-                    <span className={`text-sm ${expDays <= 90 && expDays > 0 ? "text-yellow-600 dark:text-yellow-400" : expDays <= 0 ? "text-destructive" : "text-muted-foreground"}`}>
-                      {formatDate(ca.notAfter)}
-                    </span>
-                  </td>
-                  <td className="p-3">
-                    <StatusBadge status={ca.status} />
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
 export function CAs() {
   const navigate = useNavigate();
   const { hasRole } = useAuthStore();
   const { cas, fetchCAs, isLoading } = useCAStore();
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [createIntermediateParentId, setCreateIntermediateParentId] = useState<string | undefined>();
 
   useEffect(() => {
     fetchCAs();
@@ -88,9 +23,10 @@ export function CAs() {
 
   const allCAs = cas || [];
   const rootCAs = allCAs.filter((ca) => !ca.parentId);
-  const intermediateCAs = allCAs.filter((ca) => !!ca.parentId);
   const activeCAs = allCAs.filter((ca) => ca.status === "active");
   const totalCerts = allCAs.reduce((sum, ca) => sum + (ca.certCount || 0), 0);
+
+  const getChildren = (parentId: string) => allCAs.filter((ca) => ca.parentId === parentId);
 
   if (isLoading) {
     return (
@@ -111,7 +47,7 @@ export function CAs() {
           </p>
         </div>
         {hasRole("admin") && (
-          <Button onClick={() => setCreateDialogOpen(true)}>
+          <Button onClick={() => { setCreateIntermediateParentId(undefined); setCreateDialogOpen(true); }}>
             <Plus className="h-4 w-4" />
             Create Root CA
           </Button>
@@ -119,10 +55,43 @@ export function CAs() {
       </div>
 
       {allCAs.length > 0 ? (
-        <>
-          <CATable title="Root CAs" cas={rootCAs} allCAs={allCAs} onSelect={(id) => navigate(`/cas/${id}`)} />
-          <CATable title="Intermediate CAs" cas={intermediateCAs} allCAs={allCAs} onSelect={(id) => navigate(`/cas/${id}`)} />
-        </>
+        <div className="border border-border bg-card">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-border text-left">
+                  <th className="p-3 text-xs font-medium text-muted-foreground">Common Name</th>
+                  <th className="p-3 text-xs font-medium text-muted-foreground">Algorithm</th>
+                  <th className="p-3 text-xs font-medium text-muted-foreground">Certificates</th>
+                  <th className="p-3 text-xs font-medium text-muted-foreground">Expires</th>
+                  <th className="p-3 text-xs font-medium text-muted-foreground">Status</th>
+                  {hasRole("admin") && (
+                    <th className="p-3 text-xs font-medium text-muted-foreground w-10"></th>
+                  )}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {rootCAs.map((rootCA) => {
+                  const children = getChildren(rootCA.id);
+                  return (
+                    <CARows
+                      key={rootCA.id}
+                      ca={rootCA}
+                      children={children}
+                      allCAs={allCAs}
+                      depth={0}
+                      onSelect={(id) => navigate(`/cas/${id}`)}
+                      onCreateIntermediate={hasRole("admin") ? (parentId) => {
+                        setCreateIntermediateParentId(parentId);
+                        setCreateDialogOpen(true);
+                      } : undefined}
+                    />
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
       ) : (
         <div className="flex flex-col items-center gap-3 py-16 border border-border bg-card">
           <ShieldAlert className="h-12 w-12 text-muted-foreground" />
@@ -139,8 +108,74 @@ export function CAs() {
         </div>
       )}
 
-      <CACreateDialog open={createDialogOpen} onOpenChange={setCreateDialogOpen} />
+      <CACreateDialog
+        open={createDialogOpen}
+        onOpenChange={setCreateDialogOpen}
+        parentId={createIntermediateParentId}
+      />
     </div>
     </PageTransition>
+  );
+}
+
+function CARows({ ca, children, allCAs, depth, onSelect, onCreateIntermediate }: {
+  ca: CA;
+  children: CA[];
+  allCAs: CA[];
+  depth: number;
+  onSelect: (id: string) => void;
+  onCreateIntermediate?: (parentId: string) => void;
+}) {
+  const expDays = daysUntil(ca.notAfter);
+  const grandchildren = (parentId: string) => allCAs.filter((c) => c.parentId === parentId);
+
+  return (
+    <>
+      <tr
+        className="hover:bg-accent transition-colors cursor-pointer"
+        onClick={() => onSelect(ca.id)}
+      >
+        <td className="p-3">
+          <div className="flex items-center gap-2" style={{ paddingLeft: depth * 20 }}>
+            {depth > 0 && <CornerDownRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
+            <Shield className={`h-4 w-4 shrink-0 ${ca.status === "active" ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground"}`} />
+            <span className="text-sm font-medium">{ca.commonName}</span>
+          </div>
+        </td>
+        <td className="p-3 text-sm text-muted-foreground">{ca.keyAlgorithm}</td>
+        <td className="p-3 text-sm text-muted-foreground">{ca.certCount}</td>
+        <td className="p-3">
+          <span className={`text-sm ${expDays <= 90 && expDays > 0 ? "text-amber-600 dark:text-amber-400" : expDays <= 0 ? "text-destructive" : "text-muted-foreground"}`}>
+            {formatDate(ca.notAfter)}
+          </span>
+        </td>
+        <td className="p-3"><StatusBadge status={ca.status} /></td>
+        {onCreateIntermediate && (
+          <td className="p-3">
+            {ca.status === "active" && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs text-muted-foreground"
+                onClick={(e) => { e.stopPropagation(); onCreateIntermediate(ca.id); }}
+              >
+                <Plus className="h-3 w-3" />
+              </Button>
+            )}
+          </td>
+        )}
+      </tr>
+      {children.map((child) => (
+        <CARows
+          key={child.id}
+          ca={child}
+          children={grandchildren(child.id)}
+          allCAs={allCAs}
+          depth={depth + 1}
+          onSelect={onSelect}
+          onCreateIntermediate={onCreateIntermediate}
+        />
+      ))}
+    </>
   );
 }
