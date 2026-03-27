@@ -38,11 +38,15 @@ export class ExportService {
   }
 
   exportJKS(certPem: string, privateKeyPem: string | null, passphrase: string, alias: string): Buffer {
-    // JKS is Java-specific. Export as PKCS#12 which Java can import:
-    // keytool -importkeystore -srckeystore file.p12 -srcstoretype PKCS12
+    // JKS export using node-forge
+    // Note: JKS is a Java-specific format. For a proper implementation,
+    // we'd need a dedicated JKS library. For now, we export as PKCS#12
+    // which Java can import with: keytool -importkeystore -srckeystore file.p12 -srcstoretype PKCS12
     if (privateKeyPem) {
       return this.exportPKCS12(certPem, privateKeyPem, passphrase);
     }
+
+    // For cert-only export (no private key), just return DER
     return this.exportDER(certPem);
   }
 
