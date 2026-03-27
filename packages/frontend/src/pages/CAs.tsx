@@ -135,7 +135,7 @@ function CARows({ ca, children, allCAs, depth, onSelect }: {
       >
         <td className="p-3">
           <div className="flex items-center gap-1.5">
-            {depth > 0 && <CornerDownRight className="h-3 w-3 text-muted-foreground shrink-0 mx-2" />}
+            {depth > 0 && <CornerDownRight className="h-3 w-3 text-muted-foreground shrink-0 ml-0 mr-1" />}
             <span className="text-sm font-medium">{ca.commonName}</span>
           </div>
         </td>
