@@ -1,6 +1,7 @@
 import { FileText, MoreVertical, Pencil, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { confirm } from "@/components/common/ConfirmDialog";
 import { PageTransition } from "@/components/common/PageTransition";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -116,7 +117,8 @@ export function Templates() {
   };
 
   const handleDelete = async (template: Template) => {
-    if (!confirm(`Delete template "${template.name}"?`)) return;
+    const ok = await confirm({ title: "Delete Template", description: `Are you sure you want to delete "${template.name}"? This action cannot be undone.`, confirmLabel: "Delete" });
+    if (!ok) return;
     try {
       await api.deleteTemplate(template.id);
       toast.success("Template deleted");
