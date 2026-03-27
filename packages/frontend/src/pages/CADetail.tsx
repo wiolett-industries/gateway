@@ -18,6 +18,7 @@ import { CertificateIssueDialog } from "@/components/certificates/CertificateIss
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -40,6 +41,7 @@ export function CADetail() {
   const [isLoading, setIsLoading] = useState(true);
   const [issueDialogOpen, setIssueDialogOpen] = useState(false);
   const [createIntermediateOpen, setCreateIntermediateOpen] = useState(false);
+  const [installGuideOpen, setInstallGuideOpen] = useState(false);
 
   const reloadCerts = async () => {
     if (!id) return;
@@ -113,6 +115,29 @@ export function CADetail() {
               <Button variant="outline" size="icon"><MoreVertical className="h-4 w-4" /></Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => {
+                const blob = new Blob([ca.certificatePem || ""], { type: "application/x-pem-file" });
+                const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+                a.download = `${ca.commonName}.pem`; a.click(); URL.revokeObjectURL(a.href);
+              }}>
+                <Download className="h-4 w-4" />Download PEM
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => {
+                const b64 = (ca.certificatePem || "").replace(/-----[^-]+-----/g, "").replace(/\s/g, "");
+                const bin = atob(b64); const arr = new Uint8Array(bin.length);
+                for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+                const blob = new Blob([arr], { type: "application/x-x509-ca-cert" });
+                const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+                a.download = `${ca.commonName}.crt`; a.click(); URL.revokeObjectURL(a.href);
+              }}>
+                <Download className="h-4 w-4" />Download CRT
+              </DropdownMenuItem>
+              {ca.type === "root" && (
+                <DropdownMenuItem onClick={() => setInstallGuideOpen(true)}>
+                  <Shield className="h-4 w-4" />Install Guide
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => { navigator.clipboard.writeText(ca.certificatePem || ""); toast.success("PEM copied"); }}>
                 <Copy className="h-4 w-4" />Copy PEM
               </DropdownMenuItem>
@@ -202,63 +227,6 @@ export function CADetail() {
             </div>
           )}
 
-          {/* Download */}
-          <div className="border border-border bg-card p-4 space-y-3">
-            <h3 className="font-semibold text-sm">Download Certificate</h3>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" className="flex-1" onClick={() => {
-                const blob = new Blob([ca.certificatePem || ""], { type: "application/x-pem-file" });
-                const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
-                a.download = `${ca.commonName}.pem`; a.click(); URL.revokeObjectURL(a.href);
-              }}>
-                <Download className="h-3.5 w-3.5" />PEM
-              </Button>
-              <Button variant="outline" size="sm" className="flex-1" onClick={() => {
-                const b64 = (ca.certificatePem || "").replace(/-----[^-]+-----/g, "").replace(/\s/g, "");
-                const bin = atob(b64); const arr = new Uint8Array(bin.length);
-                for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
-                const blob = new Blob([arr], { type: "application/x-x509-ca-cert" });
-                const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
-                a.download = `${ca.commonName}.crt`; a.click(); URL.revokeObjectURL(a.href);
-              }}>
-                <Download className="h-3.5 w-3.5" />CRT
-              </Button>
-            </div>
-          </div>
-
-          {/* Install Guide */}
-          {ca.type === "root" && (
-            <div className="border border-border bg-card">
-              <div className="border-b border-border p-4"><h3 className="font-semibold text-sm">Install Root CA</h3></div>
-              <div className="p-4 space-y-4 text-sm">
-                <div>
-                  <p className="font-medium mb-1">macOS</p>
-                  <code className="block bg-muted p-2 text-xs font-mono whitespace-pre-wrap">sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain {ca.commonName}.pem</code>
-                </div>
-                <div>
-                  <p className="font-medium mb-1">Windows</p>
-                  <code className="block bg-muted p-2 text-xs font-mono whitespace-pre-wrap">certutil -addstore -f "ROOT" {ca.commonName}.crt</code>
-                </div>
-                <div>
-                  <p className="font-medium mb-1">Ubuntu / Debian</p>
-                  <code className="block bg-muted p-2 text-xs font-mono whitespace-pre-wrap">{`sudo cp ${ca.commonName}.crt /usr/local/share/ca-certificates/\nsudo update-ca-certificates`}</code>
-                </div>
-                <div>
-                  <p className="font-medium mb-1">RHEL / Fedora</p>
-                  <code className="block bg-muted p-2 text-xs font-mono whitespace-pre-wrap">{`sudo cp ${ca.commonName}.pem /etc/pki/ca-trust/source/anchors/\nsudo update-ca-trust`}</code>
-                </div>
-                <div>
-                  <p className="font-medium mb-1">Firefox (all platforms)</p>
-                  <p className="text-muted-foreground text-xs">Settings → Privacy & Security → Certificates → View Certificates → Import</p>
-                </div>
-                <div>
-                  <p className="font-medium mb-1">Chrome / Edge (all platforms)</p>
-                  <p className="text-muted-foreground text-xs">Settings → Privacy and Security → Security → Manage certificates → Import</p>
-                </div>
-              </div>
-            </div>
-          )}
-
           {childCAs.length > 0 && (
             <div className="border border-border bg-card">
               <div className="border-b border-border p-3"><h3 className="font-semibold text-sm">Child CAs</h3></div>
@@ -281,6 +249,40 @@ export function CADetail() {
           <CACreateDialog open={createIntermediateOpen} onOpenChange={setCreateIntermediateOpen} parentId={id} />
         </>
       )}
+
+      <Dialog open={installGuideOpen} onOpenChange={setInstallGuideOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Install Root CA — {ca.commonName}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 text-sm max-h-96 overflow-y-auto">
+            <div>
+              <p className="font-medium mb-1">macOS</p>
+              <code className="block bg-muted p-2 text-xs font-mono whitespace-pre-wrap">sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain {ca.commonName}.pem</code>
+            </div>
+            <div>
+              <p className="font-medium mb-1">Windows</p>
+              <code className="block bg-muted p-2 text-xs font-mono whitespace-pre-wrap">certutil -addstore -f "ROOT" {ca.commonName}.crt</code>
+            </div>
+            <div>
+              <p className="font-medium mb-1">Ubuntu / Debian</p>
+              <code className="block bg-muted p-2 text-xs font-mono whitespace-pre-wrap">{`sudo cp ${ca.commonName}.crt /usr/local/share/ca-certificates/\nsudo update-ca-certificates`}</code>
+            </div>
+            <div>
+              <p className="font-medium mb-1">RHEL / Fedora</p>
+              <code className="block bg-muted p-2 text-xs font-mono whitespace-pre-wrap">{`sudo cp ${ca.commonName}.pem /etc/pki/ca-trust/source/anchors/\nsudo update-ca-trust`}</code>
+            </div>
+            <div>
+              <p className="font-medium mb-1">Firefox</p>
+              <p className="text-muted-foreground text-xs">Settings → Privacy & Security → Certificates → View Certificates → Import</p>
+            </div>
+            <div>
+              <p className="font-medium mb-1">Chrome / Edge</p>
+              <p className="text-muted-foreground text-xs">Settings → Privacy and Security → Security → Manage certificates → Import</p>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
     </PageTransition>
   );
