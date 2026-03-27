@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { PageTransition } from "@/components/common/PageTransition";
-import { Skeleton } from "@/components/ui/skeleton";
+
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import type { User, UserRole } from "@/types";
@@ -50,14 +50,9 @@ export function AdminUsers() {
 
   if (isLoading) {
     return (
-      <div className="h-full overflow-y-auto p-6 space-y-4">
-        <Skeleton className="h-8 w-48" />
-        <div className="space-y-2">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="h-14" />
-          ))}
+        <div className="flex items-center justify-center py-16">
+          <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
         </div>
-      </div>
     );
   }
 

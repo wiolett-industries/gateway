@@ -7,6 +7,7 @@ import {
   Search,
   X,
 } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { PageTransition } from "@/components/common/PageTransition";
@@ -14,7 +15,6 @@ import { CertificateIssueDialog } from "@/components/certificates/CertificateIss
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
 import { useAuthStore } from "@/stores/auth";
 import { useCAStore } from "@/stores/ca";
 import { useCertificatesStore } from "@/stores/certificates";
@@ -39,7 +39,7 @@ const typeOptions: { value: CertificateType | "all"; label: string }[] = [
 const statusBadge = (status: string) => {
   switch (status) {
     case "active":
-      return <Badge className="bg-[color:var(--color-success)] text-white">Active</Badge>;
+      return <Badge className="bg-green-600 text-white">Active</Badge>;
     case "revoked":
       return <Badge variant="destructive">Revoked</Badge>;
     case "expired":
@@ -98,7 +98,7 @@ export function Certificates() {
       </div>
 
       {/* Search and filters */}
-      <div className="space-y-3">
+      <div className="space-y-0">
         <div className="flex gap-2">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -122,46 +122,63 @@ export function Certificates() {
           )}
         </div>
 
-        {showFilters && (
-          <div className="flex flex-wrap gap-3 border border-border bg-card p-3">
-            <select
-              value={filters.status}
-              onChange={(e) => setFilters({ status: e.target.value as CertificateStatus | "all" })}
-              className="h-9 w-full text-sm"
+        <AnimatePresence>
+          {showFilters && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
+              className="overflow-hidden"
             >
-              {statusOptions.map((opt) => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
-            <select
-              value={filters.type}
-              onChange={(e) => setFilters({ type: e.target.value as CertificateType | "all" })}
-              className="h-9 w-full text-sm"
-            >
-              {typeOptions.map((opt) => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
-            <select
-              value={filters.caId}
-              onChange={(e) => setFilters({ caId: e.target.value })}
-              className="h-9 w-full text-sm"
-            >
-              <option value="all">All CAs</option>
-              {(cas || []).map((ca) => (
-                <option key={ca.id} value={ca.id}>{ca.commonName}</option>
-              ))}
-            </select>
-          </div>
-        )}
+              <div className="flex flex-wrap gap-3 border border-border bg-card p-3 mt-2">
+                <div className="w-40">
+                  <select
+                    value={filters.status}
+                    onChange={(e) => setFilters({ status: e.target.value as CertificateStatus | "all" })}
+                    className="h-9 w-full text-sm"
+                  >
+                    {statusOptions.map((opt) => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="w-40">
+                  <select
+                    value={filters.type}
+                    onChange={(e) => setFilters({ type: e.target.value as CertificateType | "all" })}
+                    className="h-9 w-full text-sm"
+                  >
+                    {typeOptions.map((opt) => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="w-48">
+                  <select
+                    value={filters.caId}
+                    onChange={(e) => setFilters({ caId: e.target.value })}
+                    className="h-9 w-full text-sm"
+                  >
+                    <option value="all">All CAs</option>
+                    {(cas || []).map((ca) => (
+                      <option key={ca.id} value={ca.id}>{ca.commonName}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Table */}
       {isLoading ? (
-        <div className="space-y-2">
-          {Array.from({ length: 10 }).map((_, i) => (
-            <Skeleton key={i} className="h-12" />
-          ))}
+        <div className="flex items-center justify-center py-16">
+          <div className="flex flex-col items-center gap-3">
+            <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+            <p className="text-sm text-muted-foreground">Loading certificates...</p>
+          </div>
         </div>
       ) : (certificates || []).length > 0 ? (
         <div className="border border-border bg-card">
@@ -195,10 +212,10 @@ export function Certificates() {
                           )}
                         </div>
                       </td>
-                      <td className="p-3 text-sm capitalize text-muted-foreground">{cert.type}</td>
+                      <td className="p-3 text-sm text-muted-foreground">{cert.type}</td>
                       <td className="p-3 text-sm text-muted-foreground">{cert.issuerDn || cert.caId}</td>
                       <td className="p-3">
-                        <span className={`text-sm ${expDays <= 30 && expDays > 0 ? "text-[color:var(--color-warning)]" : expDays <= 0 ? "text-destructive" : "text-muted-foreground"}`}>
+                        <span className={`text-sm ${expDays <= 30 && expDays > 0 ? "text-yellow-600 dark:text-yellow-400" : expDays <= 0 ? "text-destructive" : "text-muted-foreground"}`}>
                           {formatDate(cert.notAfter)}
                         </span>
                       </td>
@@ -217,21 +234,11 @@ export function Certificates() {
                 Page {page} of {totalPages}
               </p>
               <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={page <= 1}
-                  onClick={() => setPage(page - 1)}
-                >
+                <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>
                   <ChevronLeft className="h-4 w-4" />
                   Previous
                 </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={page >= totalPages}
-                  onClick={() => setPage(page + 1)}
-                >
+                <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(page + 1)}>
                   Next
                   <ChevronRight className="h-4 w-4" />
                 </Button>
