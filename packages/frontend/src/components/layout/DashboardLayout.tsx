@@ -9,13 +9,13 @@ import {
   PanelLeftClose,
   ScrollText,
   Settings,
-  Shield,
   ShieldCheck,
   Users,
   X,
 } from "lucide-react";
-import { useEffect, useState, useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { ResizeHandle } from "@/components/ui/resize-handle";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,6 +31,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Toaster } from "@/components/ui/sonner";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
 import { CATree } from "@/components/ca/CATree";
+import { CommandPalette } from "@/components/common/CommandPalette";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useCAStore } from "@/stores/ca";
@@ -62,9 +63,22 @@ const adminNavigation = [
 interface SidebarContentProps {
   onNavigate?: () => void;
   alwaysExpanded?: boolean;
+  sidebarWidth?: number;
+  onSidebarWidthChange?: (width: number) => void;
+  isResizing?: boolean;
+  onResizeStart?: () => void;
+  onResizeEnd?: () => void;
 }
 
-function SidebarContent({ onNavigate, alwaysExpanded = false }: SidebarContentProps) {
+function SidebarContent({
+  onNavigate,
+  alwaysExpanded = false,
+  sidebarWidth = 260,
+  onSidebarWidthChange,
+  isResizing = false,
+  onResizeStart,
+  onResizeEnd,
+}: SidebarContentProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, hasRole, logout } = useAuthStore();
@@ -109,10 +123,11 @@ function SidebarContent({ onNavigate, alwaysExpanded = false }: SidebarContentPr
 
   return (
     <div
-      style={{ width: alwaysExpanded ? "100%" : isExpanded ? 260 : 48 }}
+      style={{ width: alwaysExpanded ? "100%" : isExpanded ? sidebarWidth : 48 }}
       className={cn(
         "relative flex h-full shrink-0 flex-col bg-sidebar-background overflow-hidden",
-        !alwaysExpanded && "border-r border-sidebar-border transition-[width] duration-200 ease-out"
+        !alwaysExpanded && "border-r border-sidebar-border",
+        !alwaysExpanded && !isResizing && "transition-[width] duration-200 ease-out"
       )}
     >
       <AnimatePresence mode="wait" initial={false}>
@@ -177,6 +192,17 @@ function SidebarContent({ onNavigate, alwaysExpanded = false }: SidebarContentPr
             transition={{ duration: 0.15 }}
             className="flex h-full w-full min-w-0 flex-col"
           >
+            {!alwaysExpanded && onSidebarWidthChange && (
+              <ResizeHandle
+                side="left"
+                onResize={onSidebarWidthChange}
+                onResizeStart={onResizeStart}
+                onResizeEnd={onResizeEnd}
+                minWidth={200}
+                maxWidth={480}
+              />
+            )}
+
             {/* Header */}
             <div className="flex items-center justify-between px-2" style={{ paddingTop: 10, paddingBottom: 10, paddingLeft: 10 }}>
               <span className="flex items-center gap-1.5 text-sm font-semibold text-foreground/80 whitespace-nowrap pl-1">
@@ -215,14 +241,14 @@ function SidebarContent({ onNavigate, alwaysExpanded = false }: SidebarContentPr
                       to={item.href}
                       onClick={onNavigate}
                       className={cn(
-                        "flex items-center gap-3 px-3 py-2 text-sm transition-colors",
+                        "flex items-center gap-3 px-3 py-2 text-sm transition-colors whitespace-nowrap overflow-hidden",
                         isActive
                           ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
                           : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                       )}
                     >
                       <item.icon className="h-4 w-4 shrink-0" />
-                      <span>{item.name}</span>
+                      <span className="truncate">{item.name}</span>
                     </Link>
                   );
                 })}
@@ -233,7 +259,7 @@ function SidebarContent({ onNavigate, alwaysExpanded = false }: SidebarContentPr
                 <>
                   <Separator className="my-1" />
                   <div className="px-2 pb-2">
-                    <p className="px-3 py-1 text-xs font-medium text-sidebar-foreground/50 uppercase tracking-wider">
+                    <p className="px-3 py-1 text-xs font-medium text-sidebar-foreground/50 uppercase tracking-wider whitespace-nowrap overflow-hidden">
                       Certificate Authorities
                     </p>
                     <CATree cas={cas} onSelect={(id) => { navigate(`/cas/${id}`); onNavigate?.(); }} />
@@ -304,6 +330,22 @@ function SidebarContent({ onNavigate, alwaysExpanded = false }: SidebarContentPr
   );
 }
 
+const SIDEBAR_WIDTH_KEY = "ca-manager-sidebar-width";
+const DEFAULT_SIDEBAR_WIDTH = 260;
+
+function readSidebarWidth(): number {
+  try {
+    const stored = localStorage.getItem(SIDEBAR_WIDTH_KEY);
+    if (stored) {
+      const parsed = Number(stored);
+      if (parsed >= 200 && parsed <= 480) return parsed;
+    }
+  } catch {
+    // ignore
+  }
+  return DEFAULT_SIDEBAR_WIDTH;
+}
+
 export function DashboardLayout() {
   const navigate = useNavigate();
   const { isAuthenticated, isLoading, setUser, setLoading, logout } = useAuthStore();
@@ -312,7 +354,32 @@ export function DashboardLayout() {
     setIsMobile,
     mobileMenuOpen,
     setMobileMenuOpen,
+    commandPaletteOpen,
+    setCommandPaletteOpen,
   } = useUIStore();
+
+  const [sidebarWidth, setSidebarWidth] = useState(readSidebarWidth);
+  const [isResizing, setIsResizing] = useState(false);
+
+  const handleSidebarResize = useCallback((width: number) => {
+    setSidebarWidth(width);
+  }, []);
+
+  const handleResizeStart = useCallback(() => {
+    setIsResizing(true);
+  }, []);
+
+  const handleResizeEnd = useCallback(() => {
+    setIsResizing(false);
+    setSidebarWidth((w) => {
+      try {
+        localStorage.setItem(SIDEBAR_WIDTH_KEY, String(w));
+      } catch {
+        // ignore
+      }
+      return w;
+    });
+  }, []);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -339,6 +406,23 @@ export function DashboardLayout() {
     window.addEventListener("resize", checkMobile);
     return () => window.removeEventListener("resize", checkMobile);
   }, [setIsMobile]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && e.key === "k") {
+        e.preventDefault();
+        setCommandPaletteOpen(!commandPaletteOpen);
+      }
+      if (mod && e.key === "j") {
+        e.preventDefault();
+        useUIStore.getState().toggleSidebar();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [commandPaletteOpen, setCommandPaletteOpen]);
 
   if (isLoading) {
     return (
@@ -385,6 +469,7 @@ export function DashboardLayout() {
           </Sheet>
 
           <Toaster position="bottom-center" />
+          <CommandPalette open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} />
         </div>
       </TooltipProvider>
     );
@@ -392,12 +477,19 @@ export function DashboardLayout() {
 
   return (
     <TooltipProvider>
-      <div className="flex h-screen bg-background">
-        <SidebarContent />
+      <div className="flex h-screen bg-background dashboard-scrollbar">
+        <SidebarContent
+          sidebarWidth={sidebarWidth}
+          onSidebarWidthChange={handleSidebarResize}
+          isResizing={isResizing}
+          onResizeStart={handleResizeStart}
+          onResizeEnd={handleResizeEnd}
+        />
         <main className="h-full flex-1 overflow-hidden">
           <Outlet />
         </main>
         <Toaster position="bottom-right" />
+        <CommandPalette open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} />
       </div>
     </TooltipProvider>
   );

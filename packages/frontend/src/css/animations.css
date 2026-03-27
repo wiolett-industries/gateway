@@ -1,0 +1,137 @@
+/* Sheet/Drawer animations */
+@keyframes sheet-slide-in-from-left {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+@keyframes sheet-slide-out-to-left {
+  from { transform: translateX(0); }
+  to { transform: translateX(-100%); }
+}
+@keyframes sheet-slide-in-from-right {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+@keyframes sheet-slide-out-to-right {
+  from { transform: translateX(0); }
+  to { transform: translateX(100%); }
+}
+@keyframes sheet-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes sheet-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+[data-sheet-overlay][data-state="open"] {
+  animation: sheet-fade-in 200ms ease-out;
+}
+[data-sheet-overlay][data-state="closed"] {
+  animation: sheet-fade-out 200ms ease-in;
+}
+[data-sheet-content][data-sheet-side="left"][data-state="open"] {
+  animation: sheet-slide-in-from-left 300ms cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+[data-sheet-content][data-sheet-side="left"][data-state="closed"] {
+  animation: sheet-slide-out-to-left 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+[data-sheet-content][data-sheet-side="right"][data-state="open"] {
+  animation: sheet-slide-in-from-right 300ms cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+[data-sheet-content][data-sheet-side="right"][data-state="closed"] {
+  animation: sheet-slide-out-to-right 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+/* Dialog/Modal animations */
+@keyframes dialog-overlay-show {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes dialog-overlay-hide {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@keyframes dialog-content-show-mobile {
+  from { opacity: 0; transform: translateY(100%); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes dialog-content-hide-mobile {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(100%); }
+}
+@keyframes dialog-content-show {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes dialog-content-hide {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(12px); }
+}
+.dialog-overlay {
+  animation-duration: 200ms;
+  animation-timing-function: cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+.dialog-overlay[data-state="open"] { animation-name: dialog-overlay-show; }
+.dialog-overlay[data-state="closed"] { animation-name: dialog-overlay-hide; }
+.dialog-content {
+  animation-duration: 250ms;
+  animation-timing-function: cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+.dialog-content[data-state="open"] { animation-name: dialog-content-show-mobile; }
+.dialog-content[data-state="closed"] { animation-name: dialog-content-hide-mobile; }
+@media (min-width: 640px) {
+  .dialog-content { animation-duration: 200ms; }
+  .dialog-content[data-state="open"] { animation-name: dialog-content-show; }
+  .dialog-content[data-state="closed"] { animation-name: dialog-content-hide; }
+}
+
+/* Dropdown menu animations */
+@keyframes dropdown-show {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes dropdown-hide {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+.dropdown-content {
+  animation-duration: 120ms;
+  animation-timing-function: cubic-bezier(0.25, 0.1, 0.25, 1);
+  transform-origin: var(--radix-dropdown-menu-content-transform-origin);
+}
+.dropdown-content[data-state="open"] { animation-name: dropdown-show; }
+.dropdown-content[data-state="closed"] { animation-name: dropdown-hide; }
+
+/* Tooltip animations */
+@keyframes tooltip-show {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes tooltip-hide {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+.tooltip-content {
+  animation-duration: 120ms;
+  animation-timing-function: cubic-bezier(0.25, 0.1, 0.25, 1);
+  transform-origin: var(--radix-tooltip-content-transform-origin);
+}
+.tooltip-content[data-state="delayed-open"] { animation-name: tooltip-show; }
+.tooltip-content[data-state="closed"] { animation-name: tooltip-hide; }
+
+/* Sonner toast styling */
+[data-sonner-toaster],
+[data-sonner-toaster][data-sonner-theme='light'],
+[data-sonner-toaster][data-sonner-theme='dark'] {
+  --normal-bg: #27272a;
+  --normal-border: #3f3f46;
+  --normal-text: #fafafa;
+  --border-radius: 0;
+}
+[data-sonner-toast][data-styled='true'] [data-description] { color: #a1a1aa; }
+[data-sonner-toast][data-styled='true'] [data-close-button] {
+  background: #27272a; border-color: #3f3f46; color: #a1a1aa; border-radius: 0;
+}
+[data-sonner-toast][data-styled='true'] [data-close-button]:hover {
+  background: #3f3f46; border-color: #52525b; color: #fafafa;
+}
