@@ -10,6 +10,7 @@ import {
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
+import { PageTransition } from "@/components/common/PageTransition";
 import { CertificateIssueDialog } from "@/components/certificates/CertificateIssueDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -116,6 +117,7 @@ export function CADetail() {
   const childCAs = (cas || []).filter((c) => c.parentId === ca.id);
 
   return (
+    <PageTransition>
     <div className="h-full overflow-y-auto p-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -305,6 +307,7 @@ export function CADetail() {
         />
       )}
     </div>
+    </PageTransition>
   );
 }
 

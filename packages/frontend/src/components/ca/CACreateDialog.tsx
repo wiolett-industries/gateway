@@ -101,7 +101,7 @@ export function CACreateDialog({ open, onOpenChange, parentId }: CACreateDialogP
               <select
                 value={keyAlgorithm}
                 onChange={(e) => setKeyAlgorithm(e.target.value as KeyAlgorithm)}
-                className="flex h-9 w-full border border-input bg-transparent px-3 text-sm"
+                className="h-9 w-full text-sm"
               >
                 <option value="ecdsa-p256">ECDSA P-256</option>
                 <option value="ecdsa-p384">ECDSA P-384</option>

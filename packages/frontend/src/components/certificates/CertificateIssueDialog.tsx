@@ -126,7 +126,7 @@ export function CertificateIssueDialog({
               <select
                 value={selectedCAId}
                 onChange={(e) => setSelectedCAId(e.target.value)}
-                className="flex h-9 w-full border border-input bg-transparent px-3 text-sm"
+                className="h-9 w-full text-sm"
               >
                 <option value="">Select a CA...</option>
                 {activeCAs.map((ca) => (
@@ -141,7 +141,7 @@ export function CertificateIssueDialog({
                 <select
                   value={selectedTemplateId}
                   onChange={(e) => handleTemplateSelect(e.target.value)}
-                  className="flex h-9 w-full border border-input bg-transparent px-3 text-sm"
+                  className="h-9 w-full text-sm"
                 >
                   <option value="">No template</option>
                   {templates.map((t) => (
@@ -157,7 +157,7 @@ export function CertificateIssueDialog({
                 <select
                   value={type}
                   onChange={(e) => setType(e.target.value as CertificateType)}
-                  className="flex h-9 w-full border border-input bg-transparent px-3 text-sm"
+                  className="h-9 w-full text-sm"
                 >
                   <option value="tls-server">TLS Server</option>
                   <option value="tls-client">TLS Client</option>
@@ -170,7 +170,7 @@ export function CertificateIssueDialog({
                 <select
                   value={keyAlgorithm}
                   onChange={(e) => setKeyAlgorithm(e.target.value as KeyAlgorithm)}
-                  className="flex h-9 w-full border border-input bg-transparent px-3 text-sm"
+                  className="h-9 w-full text-sm"
                 >
                   <option value="rsa-2048">RSA-2048</option>
                   <option value="rsa-4096">RSA-4096</option>

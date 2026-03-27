@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { PageTransition } from "@/components/common/PageTransition";
 import { CertificateIssueDialog } from "@/components/certificates/CertificateIssueDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -80,6 +81,7 @@ export function Certificates() {
     filters.status !== "all" || filters.type !== "all" || filters.caId !== "all" || filters.search !== "";
 
   return (
+    <PageTransition>
     <div className="h-full overflow-y-auto p-6 space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -125,7 +127,7 @@ export function Certificates() {
             <select
               value={filters.status}
               onChange={(e) => setFilters({ status: e.target.value as CertificateStatus | "all" })}
-              className="h-9 border border-input bg-transparent px-3 text-sm"
+              className="h-9 w-full text-sm"
             >
               {statusOptions.map((opt) => (
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -134,7 +136,7 @@ export function Certificates() {
             <select
               value={filters.type}
               onChange={(e) => setFilters({ type: e.target.value as CertificateType | "all" })}
-              className="h-9 border border-input bg-transparent px-3 text-sm"
+              className="h-9 w-full text-sm"
             >
               {typeOptions.map((opt) => (
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -143,7 +145,7 @@ export function Certificates() {
             <select
               value={filters.caId}
               onChange={(e) => setFilters({ caId: e.target.value })}
-              className="h-9 border border-input bg-transparent px-3 text-sm"
+              className="h-9 w-full text-sm"
             >
               <option value="all">All CAs</option>
               {(cas || []).map((ca) => (
@@ -251,5 +253,6 @@ export function Certificates() {
 
       <CertificateIssueDialog open={issueDialogOpen} onOpenChange={setIssueDialogOpen} />
     </div>
+    </PageTransition>
   );
 }

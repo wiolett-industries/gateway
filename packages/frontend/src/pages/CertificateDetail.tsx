@@ -8,6 +8,7 @@ import {
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { toast } from "sonner";
+import { PageTransition } from "@/components/common/PageTransition";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -108,6 +109,7 @@ export function CertificateDetail() {
   const expiryDays = daysUntil(cert.notAfter);
 
   return (
+    <PageTransition>
     <div className="h-full overflow-y-auto p-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -252,6 +254,7 @@ export function CertificateDetail() {
         </div>
       </div>
     </div>
+    </PageTransition>
   );
 }
 
