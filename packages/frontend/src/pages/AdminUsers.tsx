@@ -1,15 +1,27 @@
-import { Users } from "lucide-react";
+import { Shield, Users as UsersIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { PageTransition } from "@/components/common/PageTransition";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import type { User, UserRole } from "@/types";
 
-const ROLES: UserRole[] = ["admin", "operator", "viewer"];
+const ROLES: { value: UserRole; label: string; description: string }[] = [
+  { value: "admin", label: "Admin", description: "Full access — manage CAs, users, settings" },
+  { value: "operator", label: "Operator", description: "Issue and revoke certificates" },
+  { value: "viewer", label: "Viewer", description: "Read-only access" },
+];
+
+function getInitials(name: string | null, email: string): string {
+  if (name) {
+    return name.split(" ").map((n) => n[0]).filter(Boolean).slice(0, 2).join("").toUpperCase();
+  }
+  return email[0].toUpperCase();
+}
 
 export function AdminUsers() {
   const navigate = useNavigate();
@@ -42,7 +54,7 @@ export function AdminUsers() {
   const handleRoleChange = async (userId: string, newRole: UserRole) => {
     try {
       await api.updateUserRole(userId, newRole);
-      toast.success("User role updated");
+      toast.success("Role updated");
       loadUsers();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to update role");
@@ -51,87 +63,84 @@ export function AdminUsers() {
 
   if (isLoading) {
     return (
-        <div className="flex items-center justify-center py-16">
-          <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-        </div>
+      <div className="flex items-center justify-center py-16">
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+      </div>
     );
   }
 
+  const admins = users.filter((u) => u.role === "admin").length;
+  const operators = users.filter((u) => u.role === "operator").length;
+  const viewers = users.filter((u) => u.role === "viewer").length;
+
   return (
     <PageTransition>
-    <div className="h-full overflow-y-auto p-6 space-y-4">
-      {/* Header */}
+    <div className="h-full overflow-y-auto p-6 space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">User Management</h1>
+        <h1 className="text-2xl font-bold">Users</h1>
         <p className="text-sm text-muted-foreground">
-          {users.length} user{users.length !== 1 ? "s" : ""} &middot; Users are created automatically on first OIDC login
+          {admins} admin{admins !== 1 ? "s" : ""}, {operators} operator{operators !== 1 ? "s" : ""}, {viewers} viewer{viewers !== 1 ? "s" : ""}
+          &nbsp;&middot; New users get <strong>viewer</strong> role on first OIDC login
         </p>
       </div>
 
-      {/* Users table */}
       {users.length > 0 ? (
-        <div className="border border-border rounded-md bg-card overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-border text-left bg-muted/40">
-                  <th className="p-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">Name</th>
-                  <th className="p-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">Email</th>
-                  <th className="p-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">Role</th>
-                  <th className="p-3 text-xs font-medium text-muted-foreground uppercase tracking-wider w-20">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {users.map((user) => {
-                  const isSelf = currentUser?.id === user.id;
-                  return (
-                    <tr
-                      key={user.id}
-                      className={
-                        isSelf
-                          ? "bg-primary/5 border-l-2 border-l-primary"
-                          : "hover:bg-accent transition-colors"
-                      }
-                    >
-                      <td className="p-3 text-sm font-medium">
-                        <span className="flex items-center gap-2">
-                          {user.name || user.email}
-                          {isSelf && (
-                            <span className="text-xs text-muted-foreground">(you)</span>
-                          )}
-                        </span>
-                      </td>
-                      <td className="p-3 text-sm text-muted-foreground">{user.email}</td>
-                      <td className="p-3">
-                        <Select value={user.role} onValueChange={(v) => handleRoleChange(user.id, v as UserRole)} disabled={isSelf}>
-                          <SelectTrigger><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            {ROLES.map((role) => (
-                              <SelectItem key={role} value={role}>
-                                {role.charAt(0).toUpperCase() + role.slice(1)}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </td>
-                      <td className="p-3 text-sm text-muted-foreground">
-                        {isSelf ? (
-                          <span className="text-xs italic">N/A</span>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">Change role</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+        <div className="border border-border bg-card">
+          <div className="divide-y divide-border">
+            {users.map((user) => {
+              const isSelf = currentUser?.id === user.id;
+              return (
+                <div
+                  key={user.id}
+                  className={`flex items-center gap-4 p-4 ${isSelf ? "bg-primary/5" : ""}`}
+                >
+                  <Avatar className="h-9 w-9 shrink-0">
+                    <AvatarImage src={user.avatarUrl ?? undefined} />
+                    <AvatarFallback className="text-xs">
+                      {getInitials(user.name, user.email)}
+                    </AvatarFallback>
+                  </Avatar>
+
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium truncate">{user.name || user.email}</p>
+                      {isSelf && <Badge variant="secondary" className="text-[10px]">You</Badge>}
+                    </div>
+                    <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+                  </div>
+
+                  <div className="w-40 shrink-0">
+                    {isSelf ? (
+                      <div className="flex items-center gap-2 px-3 py-2 text-sm">
+                        <Shield className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span className="capitalize text-muted-foreground">{user.role}</span>
+                      </div>
+                    ) : (
+                      <Select value={user.role} onValueChange={(v) => handleRoleChange(user.id, v as UserRole)}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {ROLES.map((role) => (
+                            <SelectItem key={role.value} value={role.value}>
+                              <div>
+                                <span>{role.label}</span>
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       ) : (
-        <div className="flex flex-col items-center gap-2 py-16 border border-border rounded-md bg-card">
-          <Users className="h-12 w-12 text-muted-foreground" />
-          <p className="text-muted-foreground">No users found</p>
+        <div className="flex flex-col items-center gap-2 py-16 border border-border bg-card">
+          <UsersIcon className="h-12 w-12 text-muted-foreground" />
+          <p className="text-muted-foreground">No users yet</p>
         </div>
       )}
     </div>
