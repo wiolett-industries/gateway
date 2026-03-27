@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: ./packages/backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATABASE_URL=postgres://ca_manager:${DB_PASSWORD}@postgres:5432/ca_manager
+      - REDIS_URL=redis://redis:6379
+      - OIDC_ISSUER=${OIDC_ISSUER}
+      - OIDC_CLIENT_ID=${OIDC_CLIENT_ID}
+      - OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET}
+      - OIDC_REDIRECT_URI=${OIDC_REDIRECT_URI}
+      - OIDC_SCOPES=${OIDC_SCOPES:-openid email profile}
+      - SESSION_SECRET=${SESSION_SECRET}
+      - SESSION_EXPIRY=${SESSION_EXPIRY:-2592000}
+      - APP_URL=${APP_URL}
+      - PKI_MASTER_KEY=${PKI_MASTER_KEY}
+      - RATE_LIMIT_WINDOW_MS=${RATE_LIMIT_WINDOW_MS:-60000}
+      - RATE_LIMIT_MAX_REQUESTS=${RATE_LIMIT_MAX_REQUESTS:-500}
+      - DEFAULT_CRL_VALIDITY_HOURS=${DEFAULT_CRL_VALIDITY_HOURS:-24}
+      - DEFAULT_OCSP_VALIDITY_MINUTES=${DEFAULT_OCSP_VALIDITY_MINUTES:-60}
+      - EXPIRY_WARNING_DAYS=${EXPIRY_WARNING_DAYS:-30}
+      - EXPIRY_CRITICAL_DAYS=${EXPIRY_CRITICAL_DAYS:-7}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ca_manager
+      POSTGRES_USER: ca_manager
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ca_manager -d ca_manager"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  redis_data:
