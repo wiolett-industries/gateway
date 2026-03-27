@@ -5,6 +5,7 @@ import { ThemeProvider } from "@/components/layout/ThemeProvider";
 import { LoginPage } from "@/pages/Login";
 import { AuthCallback } from "@/pages/AuthCallback";
 import { Dashboard } from "@/pages/Dashboard";
+import { CAs } from "@/pages/CAs";
 import { CADetail } from "@/pages/CADetail";
 import { Certificates } from "@/pages/Certificates";
 import { CertificateDetail } from "@/pages/CertificateDetail";
@@ -23,6 +24,7 @@ export default function App() {
             <Route path="/callback" element={<AuthCallback />} />
             <Route element={<DashboardLayout />}>
               <Route path="/" element={<Dashboard />} />
+              <Route path="/cas" element={<CAs />} />
               <Route path="/cas/:id" element={<CADetail />} />
               <Route path="/certificates" element={<Certificates />} />
               <Route path="/certificates/:id" element={<CertificateDetail />} />

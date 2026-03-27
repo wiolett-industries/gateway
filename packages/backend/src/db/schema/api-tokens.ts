@@ -1,7 +1,23 @@
-import { pgTable, uuid, varchar, text, timestamp, pgEnum, index } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, text, timestamp, jsonb, index } from 'drizzle-orm/pg-core';
 import { users } from './users.js';
 
-export const apiTokenPermissionEnum = pgEnum('api_token_permission', ['read', 'read-write']);
+/**
+ * Granular API token scopes:
+ *   ca:read                    — view all CAs
+ *   ca:create:root             — create root CAs
+ *   ca:create:intermediate     — create intermediates under any CA
+ *   ca:create:intermediate:<id>— create intermediates under specific CA only
+ *   ca:revoke                  — revoke any CA
+ *   cert:read                  — view all certificates
+ *   cert:issue                 — issue certs from any CA
+ *   cert:issue:<id>            — issue certs only from specific CA
+ *   cert:revoke                — revoke any certificate
+ *   cert:export                — export certs (PEM/DER/PKCS12/JKS)
+ *   template:read              — view templates
+ *   template:manage            — create/edit/delete templates
+ *   admin:users                — manage user roles
+ *   admin:audit                — view audit log
+ */
 
 export const apiTokens = pgTable('api_tokens', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -9,7 +25,7 @@ export const apiTokens = pgTable('api_tokens', {
   name: varchar('name', { length: 255 }).notNull(),
   tokenHash: text('token_hash').notNull(),
   tokenPrefix: varchar('token_prefix', { length: 20 }).notNull(),
-  permission: apiTokenPermissionEnum('permission').notNull().default('read-write'),
+  scopes: jsonb('scopes').$type<string[]>().notNull().default([]),
   lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => ({

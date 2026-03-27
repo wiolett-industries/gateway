@@ -121,12 +121,27 @@ export interface Alert {
   createdAt: string;
 }
 
-// API Token
+// API Token scopes
+export const TOKEN_SCOPES = [
+  { value: "ca:read", label: "View CAs", group: "Certificate Authorities" },
+  { value: "ca:create:root", label: "Create Root CAs", group: "Certificate Authorities" },
+  { value: "ca:create:intermediate", label: "Create Intermediate CAs", group: "Certificate Authorities" },
+  { value: "ca:revoke", label: "Revoke CAs", group: "Certificate Authorities" },
+  { value: "cert:read", label: "View Certificates", group: "Certificates" },
+  { value: "cert:issue", label: "Issue Certificates (any CA)", group: "Certificates" },
+  { value: "cert:revoke", label: "Revoke Certificates", group: "Certificates" },
+  { value: "cert:export", label: "Export Certificates", group: "Certificates" },
+  { value: "template:read", label: "View Templates", group: "Templates" },
+  { value: "template:manage", label: "Manage Templates", group: "Templates" },
+  { value: "admin:users", label: "Manage Users", group: "Administration" },
+  { value: "admin:audit", label: "View Audit Log", group: "Administration" },
+] as const;
+
 export interface ApiToken {
   id: string;
   name: string;
   tokenPrefix: string;
-  permission: "read" | "read-write";
+  scopes: string[];
   lastUsedAt: string | null;
   createdAt: string;
 }
