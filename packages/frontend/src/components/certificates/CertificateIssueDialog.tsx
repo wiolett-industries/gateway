@@ -21,12 +21,14 @@ interface CertificateIssueDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   caId?: string;
+  onSuccess?: () => void;
 }
 
 export function CertificateIssueDialog({
   open,
   onOpenChange,
   caId,
+  onSuccess,
 }: CertificateIssueDialogProps) {
   const { cas } = useCAStore();
   const [step, setStep] = useState(1);
@@ -99,6 +101,7 @@ export function CertificateIssueDialog({
       });
       toast.success(`Certificate issued for ${commonName}`);
       onOpenChange(false);
+      onSuccess?.();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to issue certificate");
     } finally {
