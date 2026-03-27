@@ -12,7 +12,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { PageTransition } from "@/components/common/PageTransition";
 import { CertificateIssueDialog } from "@/components/certificates/CertificateIssueDialog";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/common/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -37,18 +37,6 @@ const typeOptions: { value: CertificateType | "all"; label: string }[] = [
   { value: "email", label: "Email" },
 ];
 
-const statusBadge = (status: string) => {
-  switch (status) {
-    case "active":
-      return <Badge variant="outline" className="border-green-600/50 text-green-700 dark:text-green-400">Active</Badge>;
-    case "revoked":
-      return <Badge variant="destructive">Revoked</Badge>;
-    case "expired":
-      return <Badge variant="secondary">Expired</Badge>;
-    default:
-      return <Badge variant="secondary">{status}</Badge>;
-  }
-};
 
 export function Certificates() {
   const navigate = useNavigate();
@@ -217,7 +205,7 @@ export function Certificates() {
                           {formatDate(cert.notAfter)}
                         </span>
                       </td>
-                      <td className="p-3">{statusBadge(cert.status)}</td>
+                      <td className="p-3"><StatusBadge status={cert.status} /></td>
                     </tr>
                   );
                 })}

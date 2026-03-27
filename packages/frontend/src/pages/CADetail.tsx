@@ -14,6 +14,7 @@ import { confirm } from "@/components/common/ConfirmDialog";
 import { PageTransition } from "@/components/common/PageTransition";
 import { CACreateDialog } from "@/components/ca/CACreateDialog";
 import { CertificateIssueDialog } from "@/components/certificates/CertificateIssueDialog";
+import { StatusBadge } from "@/components/common/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,15 +29,6 @@ import { useAuthStore } from "@/stores/auth";
 import { useCAStore } from "@/stores/ca";
 import type { Certificate } from "@/types";
 import { formatDate, formatSerialNumber, daysUntil } from "@/lib/utils";
-
-const statusBadge = (status: string) => {
-  switch (status) {
-    case "active": return <Badge variant="outline" className="border-green-600/50 text-green-700 dark:text-green-400">Active</Badge>;
-    case "revoked": return <Badge variant="destructive">Revoked</Badge>;
-    case "expired": return <Badge variant="secondary">Expired</Badge>;
-    default: return <Badge variant="secondary">{status}</Badge>;
-  }
-};
 
 export function CADetail() {
   const { id } = useParams<{ id: string }>();
@@ -93,7 +85,7 @@ export function CADetail() {
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-bold">{ca.commonName}</h1>
-            {statusBadge(ca.status)}
+            <StatusBadge status={ca.status} />
           </div>
           <p className="text-sm text-muted-foreground">{ca.type === "root" ? "Root CA" : "Intermediate CA"}</p>
         </div>
@@ -168,7 +160,7 @@ export function CADetail() {
                         <td className="p-3 text-sm font-medium">{cert.commonName}</td>
                         <td className="p-3 text-sm text-muted-foreground">{cert.type}</td>
                         <td className="p-3 text-sm text-muted-foreground">{formatDate(cert.notAfter)}</td>
-                        <td className="p-3">{statusBadge(cert.status)}</td>
+                        <td className="p-3"><StatusBadge status={cert.status} /></td>
                       </tr>
                     ))}
                   </tbody>
@@ -209,7 +201,7 @@ export function CADetail() {
                 {childCAs.map((child) => (
                   <div key={child.id} onClick={() => navigate(`/cas/${child.id}`)} className="flex items-center justify-between p-3 hover:bg-accent transition-colors cursor-pointer">
                     <span className="text-sm">{child.commonName}</span>
-                    {statusBadge(child.status)}
+                    <StatusBadge status={child.status} />
                   </div>
                 ))}
               </div>
