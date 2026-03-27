@@ -36,9 +36,9 @@ WORKDIR /app
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nodejs
 
-# Copy backend build
+# Copy backend build + workspace node_modules (dependencies are hoisted)
 COPY --from=backend-builder /app/packages/backend/package.json ./
-COPY --from=backend-builder /app/packages/backend/node_modules ./node_modules
+COPY --from=backend-builder /app/node_modules ./node_modules
 COPY --from=backend-builder /app/packages/backend/dist ./dist
 COPY --from=backend-builder /app/packages/backend/src/db/migrations ./src/db/migrations
 
