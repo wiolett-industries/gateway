@@ -123,54 +123,44 @@ monitoringRoutes.get('/nginx/stats/stream', async (c) => {
 
   const nginxStatsService = container.resolve(NginxStatsService);
 
-  // Use raw Node.js response for reliable SSE streaming
-  const res = c.env.outgoing as import('http').ServerResponse;
+  return streamSSE(c, async (stream) => {
+    nginxStatsService.registerSSEClient();
 
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
-    'Connection': 'keep-alive',
-  });
+    await stream.writeSSE({
+      data: JSON.stringify({
+        connected: true,
+        info: nginxStatsService.getCachedProcessInfo(),
+        history: nginxStatsService.getHistory(),
+      }),
+      event: 'connected',
+    });
 
-  const write = (event: string, data: string) => {
-    res.write(`event: ${event}\ndata: ${data}\n\n`);
-  };
+    let running = true;
 
-  nginxStatsService.registerSSEClient();
+    stream.onAbort(() => {
+      running = false;
+      nginxStatsService.unregisterSSEClient();
+    });
 
-  write('connected', JSON.stringify({
-    connected: true,
-    info: nginxStatsService.getCachedProcessInfo(),
-    history: nginxStatsService.getHistory(),
-  }));
-
-  let running = true;
-
-  const poll = async () => {
-    if (!running) return;
-    try {
-      const snapshot = await nginxStatsService.getSnapshot();
-      nginxStatsService.pushHistory(snapshot);
-      write('stats', JSON.stringify(snapshot));
-    } catch (err) {
-      logger.warn('SSE snapshot error', { error: (err as Error).message });
+    // Poll loop — uses stream.sleep to keep Hono stream alive
+    while (running) {
+      await stream.sleep(2000);
+      if (!running) break;
+      try {
+        const snapshot = await nginxStatsService.getSnapshot();
+        nginxStatsService.pushHistory(snapshot);
+        await stream.writeSSE({
+          data: JSON.stringify(snapshot),
+          event: 'stats',
+        });
+      } catch (err) {
+        logger.warn('SSE snapshot error', { error: (err as Error).message });
+        await stream.writeSSE({
+          data: JSON.stringify({ error: (err as Error).message }),
+          event: 'error',
+        }).catch(() => {});
+      }
     }
-    if (running) setTimeout(poll, 2000);
-  };
-  setTimeout(poll, 2000);
-
-  const keepalive = setInterval(() => {
-    try { write('ping', ''); } catch { clearInterval(keepalive); }
-  }, 30_000);
-
-  res.on('close', () => {
-    running = false;
-    clearInterval(keepalive);
-    nginxStatsService.unregisterSSEClient();
-  });
-
-  // Return empty response — we already wrote headers via raw response
-  return new Response(null, { status: 200 });
   });
 });
 
