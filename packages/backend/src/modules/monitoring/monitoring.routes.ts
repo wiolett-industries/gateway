@@ -123,10 +123,13 @@ monitoringRoutes.get('/nginx/stats/stream', async (c) => {
 
   const nginxStatsService = container.resolve(NginxStatsService);
 
+  c.header('Content-Type', 'text/event-stream');
+  c.header('Cache-Control', 'no-cache');
+  c.header('Connection', 'keep-alive');
+
   return streamSSE(c, async (stream) => {
     nginxStatsService.registerSSEClient();
 
-    // Send cached process info + buffered history immediately on connect (no async delay)
     await stream.writeSSE({
       data: JSON.stringify({
         connected: true,
@@ -142,9 +145,8 @@ monitoringRoutes.get('/nginx/stats/stream', async (c) => {
       running = false;
     });
 
-    // Keep the stream alive by polling in a loop
     while (running) {
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await stream.sleep(2000);
       if (!running) break;
       try {
         const snapshot = await nginxStatsService.getSnapshot();
