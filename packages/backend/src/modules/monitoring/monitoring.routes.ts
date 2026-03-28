@@ -1,4 +1,7 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
+import { createChildLogger } from '@/lib/logger.js';
+
+const logger = createChildLogger('MonitoringRoutes');
 import { streamSSE } from 'hono/streaming';
 import { container } from '@/container.js';
 import { authMiddleware } from '@/modules/auth/auth.middleware.js';
@@ -137,13 +140,17 @@ monitoringRoutes.get('/nginx/stats/stream', async (c) => {
     const poll = async () => {
       if (!running) return;
       try {
+        logger.debug('SSE poll: fetching snapshot...');
         const snapshot = await nginxStatsService.getSnapshot();
+        logger.debug('SSE poll: snapshot ready, writing...');
         nginxStatsService.pushHistory(snapshot);
         await stream.writeSSE({
           data: JSON.stringify(snapshot),
           event: 'stats',
         });
-      } catch {
+        logger.debug('SSE poll: written');
+      } catch (err) {
+        logger.warn('SSE poll error', { error: (err as Error).message });
         await stream.writeSSE({
           data: JSON.stringify({ error: 'Failed to collect stats' }),
           event: 'error',
