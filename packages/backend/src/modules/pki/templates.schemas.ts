@@ -1,15 +1,49 @@
 import { z } from 'zod';
 
+const KeyUsageValues = ['digitalSignature', 'keyEncipherment', 'dataEncipherment', 'keyAgreement', 'nonRepudiation'] as const;
+
+const ExtKeyUsageValues = ['serverAuth', 'clientAuth', 'codeSigning', 'emailProtection', 'timeStamping', 'ocspSigning'] as const;
+
+const SubjectDnFieldsSchema = z.object({
+  o: z.string().max(255).optional(),
+  ou: z.string().max(255).optional(),
+  l: z.string().max(255).optional(),
+  st: z.string().max(255).optional(),
+  c: z.string().max(2).optional(),
+  serialNumber: z.string().max(255).optional(),
+}).default({});
+
+const AuthorityInfoAccessSchema = z.object({
+  ocspUrl: z.string().url().max(500).optional(),
+  caIssuersUrl: z.string().url().max(500).optional(),
+}).default({});
+
+const CertificatePolicySchema = z.object({
+  oid: z.string().regex(/^\d+(\.\d+)+$/, 'Must be a valid OID'),
+  qualifier: z.string().max(1024).optional(),
+});
+
+const CustomExtensionSchema = z.object({
+  oid: z.string().regex(/^\d+(\.\d+)+$/, 'Must be a valid OID'),
+  critical: z.boolean().default(false),
+  value: z.string().regex(/^[0-9a-fA-F]*$/, 'Must be hex-encoded DER').max(10000),
+});
+
 export const CreateTemplateSchema = z.object({
   name: z.string().min(1).max(255),
   description: z.string().optional(),
   certType: z.enum(['tls-server', 'tls-client', 'code-signing', 'email']),
   keyAlgorithm: z.enum(['rsa-2048', 'rsa-4096', 'ecdsa-p256', 'ecdsa-p384']).default('ecdsa-p256'),
   validityDays: z.number().int().min(1).max(3650).default(365),
-  keyUsage: z.array(z.string()),
-  extKeyUsage: z.array(z.string()),
+  keyUsage: z.array(z.enum(KeyUsageValues)),
+  extKeyUsage: z.array(z.string().min(1).max(255)), // allows both named + custom OIDs
   requireSans: z.boolean().default(true),
   sanTypes: z.array(z.enum(['dns', 'ip', 'email', 'uri'])).default(['dns', 'ip']),
+  subjectDnFields: SubjectDnFieldsSchema.optional(),
+  crlDistributionPoints: z.array(z.string().url().max(500)).default([]),
+  authorityInfoAccess: AuthorityInfoAccessSchema.optional(),
+  certificatePolicies: z.array(CertificatePolicySchema).default([]),
+  customExtensions: z.array(CustomExtensionSchema).default([]),
 });
 
 export const UpdateTemplateSchema = CreateTemplateSchema.partial();

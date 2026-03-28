@@ -3,7 +3,7 @@ import { eq, and, or, ilike, desc, asc, count, lte } from 'drizzle-orm';
 import * as x509 from '@peculiar/x509';
 import crypto from 'node:crypto';
 import { TOKENS } from '@/container.js';
-import { certificates, certificateAuthorities } from '@/db/schema/index.js';
+import { certificates, certificateAuthorities, certificateTemplates } from '@/db/schema/index.js';
 import { CryptoService } from '@/services/crypto.service.js';
 import { CAService } from './ca.service.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
@@ -64,8 +64,29 @@ export class CertService {
       ['verify']
     );
 
+    // Load template if provided
+    const template = input.templateId
+      ? await this.db.query.certificateTemplates.findFirst({
+          where: eq(certificateTemplates.id, input.templateId),
+        })
+      : null;
+
+    // Resolve key usage from template or cert type fallback
+    const keyUsageStrings = (template?.keyUsage?.length ?? 0) > 0
+      ? template!.keyUsage as string[]
+      : this.getKeyUsageStrings(input.type);
+    const keyUsageFlags = this.buildKeyUsageFlags(keyUsageStrings);
+
+    // Resolve ext key usage from template or cert type fallback
+    const extKeyUsageStrings = (template?.extKeyUsage?.length ?? 0) > 0
+      ? template!.extKeyUsage as string[]
+      : this.getExtKeyUsageStrings(input.type);
+    const extKeyUsageOids = this.resolveExtKeyUsageOids(extKeyUsageStrings);
+
+    // Build subject DN
+    const subjectDn = this.buildSubjectDn(input.commonName, input.subjectDnFields, template?.subjectDnFields as Record<string, string> | undefined);
+
     // Build extensions
-    const keyUsageFlags = this.getKeyUsageFlags(input.type);
     const extensions: x509.Extension[] = [
       new x509.BasicConstraintsExtension(false, undefined, true),
       new x509.KeyUsagesExtension(keyUsageFlags, true),
@@ -75,22 +96,22 @@ export class CertService {
 
     // Add SAN extension
     if (input.sans.length > 0) {
-      const sanBuilder = new x509.SubjectAlternativeNameExtension(
-        this.buildSANs(input.sans),
-        true
-      );
-      extensions.push(sanBuilder);
+      extensions.push(new x509.SubjectAlternativeNameExtension(this.buildSANs(input.sans), true));
     }
 
     // Add Extended Key Usage
-    const extKeyUsage = this.getExtKeyUsage(input.type);
-    if (extKeyUsage.length > 0) {
-      extensions.push(new x509.ExtendedKeyUsageExtension(extKeyUsage, false));
+    if (extKeyUsageOids.length > 0) {
+      extensions.push(new x509.ExtendedKeyUsageExtension(extKeyUsageOids, false));
     }
+
+    // Add template/CA-level extensions
+    this.addDistributionExtensions(extensions, template ?? null, ca);
+    this.addPolicyExtensions(extensions, template ?? null);
+    this.addCustomExtensions(extensions, template ?? null);
 
     const cert = await x509.X509CertificateGenerator.create({
       serialNumber,
-      subject: `CN=${input.commonName}`,
+      subject: subjectDn,
       issuer: ca.subjectDn,
       notBefore,
       notAfter,
@@ -115,13 +136,13 @@ export class CertService {
       encryptedDek: encrypted.encryptedDek,
       dekIv: encrypted.dekIv,
       keyAlgorithm: input.keyAlgorithm,
-      subjectDn: `CN=${input.commonName}`,
+      subjectDn,
       issuerDn: ca.subjectDn,
       notBefore,
       notAfter,
       serverGenerated: true,
-      keyUsage: this.getKeyUsageStrings(input.type),
-      extKeyUsage: this.getExtKeyUsageStrings(input.type),
+      keyUsage: keyUsageStrings,
+      extKeyUsage: extKeyUsageStrings,
       issuedById: userId,
     }).returning();
 
@@ -172,8 +193,28 @@ export class CertService {
     const caAlgorithm = this.caService.getAlgorithm(ca.keyAlgorithm);
     const caKeys = await this.caService.importKeyPair(ca.certificatePem, caPrivateKeyPem, caAlgorithm, true);
 
+    // Load template if provided
+    const template = input.templateId
+      ? await this.db.query.certificateTemplates.findFirst({
+          where: eq(certificateTemplates.id, input.templateId),
+        })
+      : null;
+
+    // Resolve key usage from template or cert type fallback
+    const keyUsageStrings = (template?.keyUsage?.length ?? 0) > 0
+      ? template!.keyUsage as string[]
+      : this.getKeyUsageStrings(input.type);
+    const keyUsageFlags = this.buildKeyUsageFlags(keyUsageStrings);
+
+    // Resolve ext key usage from template or cert type fallback
+    const extKeyUsageStrings = (template?.extKeyUsage?.length ?? 0) > 0
+      ? template!.extKeyUsage as string[]
+      : this.getExtKeyUsageStrings(input.type);
+    const extKeyUsageOids = this.resolveExtKeyUsageOids(extKeyUsageStrings);
+
+    const subjectDn = `CN=${commonName}`;
+
     // Build extensions
-    const keyUsageFlags = this.getKeyUsageFlags(input.type);
     const extensions: x509.Extension[] = [
       new x509.BasicConstraintsExtension(false, undefined, true),
       new x509.KeyUsagesExtension(keyUsageFlags, true),
@@ -184,10 +225,14 @@ export class CertService {
       extensions.push(new x509.SubjectAlternativeNameExtension(this.buildSANs(sans), true));
     }
 
-    const extKeyUsage = this.getExtKeyUsage(input.type);
-    if (extKeyUsage.length > 0) {
-      extensions.push(new x509.ExtendedKeyUsageExtension(extKeyUsage, false));
+    if (extKeyUsageOids.length > 0) {
+      extensions.push(new x509.ExtendedKeyUsageExtension(extKeyUsageOids, false));
     }
+
+    // Add template/CA-level extensions
+    this.addDistributionExtensions(extensions, template ?? null, ca);
+    this.addPolicyExtensions(extensions, template ?? null);
+    this.addCustomExtensions(extensions, template ?? null);
 
     // Detect key algorithm from CSR
     const csrPublicKey = await csr.publicKey.export(caAlgorithm, ['verify']).catch(() => null);
@@ -195,7 +240,7 @@ export class CertService {
 
     const cert = await x509.X509CertificateGenerator.create({
       serialNumber,
-      subject: `CN=${commonName}`,
+      subject: subjectDn,
       issuer: ca.subjectDn,
       notBefore,
       notAfter,
@@ -216,14 +261,14 @@ export class CertService {
       serialNumber,
       certificatePem,
       keyAlgorithm,
-      subjectDn: `CN=${commonName}`,
+      subjectDn,
       issuerDn: ca.subjectDn,
       notBefore,
       notAfter,
       csrPem: input.csrPem,
       serverGenerated: false,
-      keyUsage: this.getKeyUsageStrings(input.type),
-      extKeyUsage: this.getExtKeyUsageStrings(input.type),
+      keyUsage: keyUsageStrings,
+      extKeyUsage: extKeyUsageStrings,
       issuedById: userId,
     }).returning();
 
@@ -368,20 +413,9 @@ export class CertService {
 
   // --- Helpers ---
 
-  private getKeyUsageFlags(certType: string): number {
-    switch (certType) {
-      case 'tls-server':
-        return x509.KeyUsageFlags.digitalSignature | x509.KeyUsageFlags.keyEncipherment;
-      case 'tls-client':
-        return x509.KeyUsageFlags.digitalSignature;
-      case 'code-signing':
-        return x509.KeyUsageFlags.digitalSignature;
-      case 'email':
-        return x509.KeyUsageFlags.digitalSignature | x509.KeyUsageFlags.keyEncipherment;
-      default:
-        return x509.KeyUsageFlags.digitalSignature;
-    }
-  }
+  // -----------------------------------------------------------------------
+  // Key usage helpers
+  // -----------------------------------------------------------------------
 
   private getKeyUsageStrings(certType: string): string[] {
     switch (certType) {
@@ -393,14 +427,12 @@ export class CertService {
     }
   }
 
-  private getExtKeyUsage(certType: string): string[] {
-    switch (certType) {
-      case 'tls-server': return ['1.3.6.1.5.5.7.3.1']; // serverAuth
-      case 'tls-client': return ['1.3.6.1.5.5.7.3.2']; // clientAuth
-      case 'code-signing': return ['1.3.6.1.5.5.7.3.3']; // codeSigning
-      case 'email': return ['1.3.6.1.5.5.7.3.4']; // emailProtection
-      default: return [];
+  private buildKeyUsageFlags(usages: string[]): number {
+    let flags = 0;
+    for (const u of usages) {
+      if (KEY_USAGE_MAP[u]) flags |= KEY_USAGE_MAP[u];
     }
+    return flags || x509.KeyUsageFlags.digitalSignature;
   }
 
   private getExtKeyUsageStrings(certType: string): string[] {
@@ -410,6 +442,114 @@ export class CertService {
       case 'code-signing': return ['codeSigning'];
       case 'email': return ['emailProtection'];
       default: return [];
+    }
+  }
+
+  private static readonly EXT_KEY_USAGE_OID_MAP: Record<string, string> = {
+    serverAuth: '1.3.6.1.5.5.7.3.1',
+    clientAuth: '1.3.6.1.5.5.7.3.2',
+    codeSigning: '1.3.6.1.5.5.7.3.3',
+    emailProtection: '1.3.6.1.5.5.7.3.4',
+    timeStamping: '1.3.6.1.5.5.7.3.8',
+    ocspSigning: '1.3.6.1.5.5.7.3.9',
+  };
+
+  /** Resolve ext key usage names to OIDs, pass through raw OIDs */
+  private resolveExtKeyUsageOids(usages: string[]): string[] {
+    return usages.map((u) => CertService.EXT_KEY_USAGE_OID_MAP[u] || u);
+  }
+
+  // -----------------------------------------------------------------------
+  // Subject DN helpers
+  // -----------------------------------------------------------------------
+
+  private buildSubjectDn(
+    commonName: string,
+    inputFields?: { o?: string; ou?: string; l?: string; st?: string; c?: string },
+    templateFields?: Record<string, string>,
+  ): string {
+    // Merge: input overrides template defaults
+    const merged = { ...templateFields, ...inputFields };
+    const parts = [`CN=${commonName}`];
+    if (merged.o) parts.push(`O=${merged.o}`);
+    if (merged.ou) parts.push(`OU=${merged.ou}`);
+    if (merged.l) parts.push(`L=${merged.l}`);
+    if (merged.st) parts.push(`ST=${merged.st}`);
+    if (merged.c) parts.push(`C=${merged.c}`);
+    return parts.join(', ');
+  }
+
+  // -----------------------------------------------------------------------
+  // Template extension helpers
+  // -----------------------------------------------------------------------
+
+  private addDistributionExtensions(
+    extensions: x509.Extension[],
+    template: { crlDistributionPoints?: unknown; authorityInfoAccess?: unknown } | null,
+    ca: { crlDistributionUrl?: string | null; ocspResponderUrl?: string | null; caIssuersUrl?: string | null },
+  ) {
+    // CRL Distribution Points: template overrides CA
+    const crlUrls = (template?.crlDistributionPoints as string[] | undefined)?.length
+      ? (template!.crlDistributionPoints as string[])
+      : ca.crlDistributionUrl ? [ca.crlDistributionUrl] : [];
+
+    if (crlUrls.length > 0) {
+      try {
+        extensions.push(new x509.CRLDistributionPointsExtension(crlUrls, false));
+      } catch (err) {
+        logger.warn('Failed to add CRL Distribution Points extension', { err });
+      }
+    }
+
+    // Authority Info Access: merge template + CA
+    const aia = template?.authorityInfoAccess as { ocspUrl?: string; caIssuersUrl?: string } | undefined;
+    const ocspUrl = aia?.ocspUrl || ca.ocspResponderUrl || null;
+    const caIssuersUrl = aia?.caIssuersUrl || ca.caIssuersUrl || null;
+
+    if (ocspUrl || caIssuersUrl) {
+      try {
+        const params: { ocsp?: string[]; caIssuers?: string[] } = {};
+        if (ocspUrl) params.ocsp = [ocspUrl];
+        if (caIssuersUrl) params.caIssuers = [caIssuersUrl];
+        extensions.push(new x509.AuthorityInfoAccessExtension(params, false));
+      } catch (err) {
+        logger.warn('Failed to add AIA extension', { err });
+      }
+    }
+  }
+
+  private addPolicyExtensions(
+    extensions: x509.Extension[],
+    template: { certificatePolicies?: unknown } | null,
+  ) {
+    const policies = template?.certificatePolicies as { oid: string; qualifier?: string }[] | undefined;
+    if (!policies?.length) return;
+
+    try {
+      const policyInfos = policies.map((p) => ({
+        policyIdentifier: p.oid,
+        ...(p.qualifier ? { policyQualifiers: [{ policyQualifierId: '1.3.6.1.5.5.7.2.1', qualifier: p.qualifier }] } : {}),
+      }));
+      extensions.push(new x509.CertificatePolicyExtension(policyInfos as any, false));
+    } catch (err) {
+      logger.warn('Failed to add Certificate Policies extension', { err });
+    }
+  }
+
+  private addCustomExtensions(
+    extensions: x509.Extension[],
+    template: { customExtensions?: unknown } | null,
+  ) {
+    const custom = template?.customExtensions as { oid: string; critical: boolean; value: string }[] | undefined;
+    if (!custom?.length) return;
+
+    for (const ext of custom) {
+      try {
+        const derBytes = Buffer.from(ext.value, 'hex');
+        extensions.push(new x509.Extension(ext.oid, ext.critical, derBytes));
+      } catch (err) {
+        logger.warn('Failed to add custom extension', { oid: ext.oid, err });
+      }
     }
   }
 

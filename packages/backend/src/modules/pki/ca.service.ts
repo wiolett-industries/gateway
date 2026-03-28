@@ -247,6 +247,29 @@ export class CAService {
     };
   }
 
+  async updateCA(id: string, input: { crlDistributionUrl?: string | null; ocspResponderUrl?: string | null; caIssuersUrl?: string | null; maxValidityDays?: number }, userId: string) {
+    const ca = await this.db.query.certificateAuthorities.findFirst({
+      where: eq(certificateAuthorities.id, id),
+    });
+    if (!ca) throw new AppError(404, 'CA_NOT_FOUND', 'Certificate Authority not found');
+
+    const [updated] = await this.db
+      .update(certificateAuthorities)
+      .set({ ...input, updatedAt: new Date() })
+      .where(eq(certificateAuthorities.id, id))
+      .returning();
+
+    await this.auditService.log({
+      userId,
+      action: 'ca.update',
+      resourceType: 'ca',
+      resourceId: id,
+      details: { changes: Object.keys(input) },
+    });
+
+    return this.getCA(id);
+  }
+
   async revokeCA(id: string, reason: string, userId: string) {
     const ca = await this.db.query.certificateAuthorities.findFirst({
       where: eq(certificateAuthorities.id, id),
