@@ -100,8 +100,7 @@ const adminNavigation: NavItem[] = [
   { name: "Users", href: "/admin/users", icon: Users },
 ];
 
-// Flat list of all nav items for collapsed sidebar
-const allNavItems = navigationGroups.flatMap((g) => g.items);
+// Flat list computed inside SidebarContent to include dynamic items
 
 interface SidebarContentProps {
   onNavigate?: () => void;
@@ -155,6 +154,8 @@ function SidebarContent({
     }
     return group;
   });
+
+  const allNavItems = effectiveGroups.flatMap((g) => g.items);
 
   const AccountDropdownContent = () => (
     <>

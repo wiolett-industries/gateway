@@ -183,7 +183,7 @@ export function NginxManagement() {
       es.close();
       eventSourceRef.current = null;
     };
-  }, [activeTab, appendHistory]);
+  }, [activeTab, processSnapshot]);
 
   // Load config when switching to config tab
   useEffect(() => {

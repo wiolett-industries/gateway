@@ -133,7 +133,9 @@ monitoringRoutes.get('/nginx/stats/stream', async (c) => {
       event: 'connected',
     });
 
-    const interval = setInterval(async () => {
+    let running = true;
+    const poll = async () => {
+      if (!running) return;
       try {
         const snapshot = await nginxStatsService.getSnapshot();
         nginxStatsService.pushHistory(snapshot);
@@ -147,7 +149,9 @@ monitoringRoutes.get('/nginx/stats/stream', async (c) => {
           event: 'error',
         }).catch(() => {});
       }
-    }, 2000);
+      if (running) setTimeout(poll, 2000);
+    };
+    setTimeout(poll, 2000);
 
     const keepalive = setInterval(() => {
       stream.writeSSE({ data: '', event: 'ping' }).catch(() => {
@@ -156,7 +160,7 @@ monitoringRoutes.get('/nginx/stats/stream', async (c) => {
     }, 30_000);
 
     stream.onAbort(() => {
-      clearInterval(interval);
+      running = false;
       clearInterval(keepalive);
       nginxStatsService.unregisterSSEClient();
     });

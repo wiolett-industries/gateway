@@ -105,6 +105,13 @@ export class NginxStatsService {
     return this.cachedProcessInfo;
   }
 
+  destroy(): void {
+    if (this.backgroundInterval) {
+      clearInterval(this.backgroundInterval);
+      this.backgroundInterval = null;
+    }
+  }
+
   /** Track SSE client connections so background polling can pause. */
   registerSSEClient(): void {
     this.sseClientCount++;
@@ -117,14 +124,14 @@ export class NginxStatsService {
   /** Push a snapshot to the ring buffer. Called by both background poll and SSE. */
   pushHistory(snapshot: NginxStatsSnapshot): void {
     this.history.push(snapshot);
-    if (this.history.length > MAX_HISTORY) {
-      this.history = this.history.slice(-MAX_HISTORY);
+    while (this.history.length > MAX_HISTORY) {
+      this.history.shift();
     }
   }
 
   /** Get buffered history for instant display on connect. */
   getHistory(): NginxStatsSnapshot[] {
-    return this.history;
+    return [...this.history];
   }
 
   /**

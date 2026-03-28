@@ -3,9 +3,11 @@ import type { DockerService } from '@/services/docker.service.js';
 
 const logger = createChildLogger('NginxConfigService');
 
-const HEREDOC_DELIMITER = '___GATEWAY_CONFIG_EOF___';
+const MAX_CONFIG_SIZE = 1_048_576; // 1 MB
 
 export class NginxConfigService {
+  private updateLock = false;
+
   constructor(
     private readonly dockerService: DockerService,
     private readonly nginxContainerName: string
@@ -22,38 +24,53 @@ export class NginxConfigService {
     return result.output;
   }
 
-  async updateGlobalConfig(content: string): Promise<{ valid: boolean; error?: string }> {
-    logger.info('Updating global nginx.conf');
-
-    // 1. Backup current config
-    const backup = await this.getGlobalConfig();
-
-    // 2. Write new config
-    const writeResult = await this.dockerService.execInContainer(
+  private writeConfig(content: string): Promise<{ exitCode: number; output: string }> {
+    const b64 = Buffer.from(content).toString('base64');
+    return this.dockerService.execInContainer(
       this.nginxContainerName,
-      ['sh', '-c', `cat > /etc/nginx/nginx.conf << '${HEREDOC_DELIMITER}'\n${content}\n${HEREDOC_DELIMITER}`]
+      ['sh', '-c', `echo '${b64}' | base64 -d > /etc/nginx/nginx.conf`]
     );
-    if (writeResult.exitCode !== 0) {
-      throw new Error(`Failed to write nginx.conf: ${writeResult.output}`);
+  }
+
+  async updateGlobalConfig(content: string): Promise<{ valid: boolean; error?: string }> {
+    if (content.length > MAX_CONFIG_SIZE) {
+      return { valid: false, error: 'Config exceeds 1MB limit' };
     }
 
-    // 3. Test
-    const testResult = await this.dockerService.testNginxConfig();
-
-    if (!testResult.valid) {
-      logger.warn('nginx.conf test failed, rolling back', { error: testResult.error });
-      // 4. Rollback
-      await this.dockerService.execInContainer(
-        this.nginxContainerName,
-        ['sh', '-c', `cat > /etc/nginx/nginx.conf << '${HEREDOC_DELIMITER}'\n${backup}\n${HEREDOC_DELIMITER}`]
-      );
-      return { valid: false, error: testResult.error };
+    if (this.updateLock) {
+      return { valid: false, error: 'Another config update is in progress' };
     }
+    this.updateLock = true;
 
-    // 5. Reload
-    await this.dockerService.reloadNginx();
-    logger.info('Global nginx.conf updated and nginx reloaded');
-    return { valid: true };
+    try {
+      logger.info('Updating global nginx.conf');
+
+      // 1. Backup current config
+      const backup = await this.getGlobalConfig();
+
+      // 2. Write new config (base64 encoded to prevent injection)
+      const writeResult = await this.writeConfig(content);
+      if (writeResult.exitCode !== 0) {
+        throw new Error(`Failed to write nginx.conf: ${writeResult.output}`);
+      }
+
+      // 3. Test
+      const testResult = await this.dockerService.testNginxConfig();
+
+      if (!testResult.valid) {
+        logger.warn('nginx.conf test failed, rolling back', { error: testResult.error });
+        // 4. Rollback
+        await this.writeConfig(backup);
+        return { valid: false, error: testResult.error };
+      }
+
+      // 5. Reload
+      await this.dockerService.reloadNginx();
+      logger.info('Global nginx.conf updated and nginx reloaded');
+      return { valid: true };
+    } finally {
+      this.updateLock = false;
+    }
   }
 
   async testConfig(): Promise<{ valid: boolean; error?: string }> {
