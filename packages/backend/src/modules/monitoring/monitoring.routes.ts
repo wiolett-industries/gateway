@@ -140,11 +140,12 @@ monitoringRoutes.get('/nginx/stats/stream', async (c) => {
 
     stream.onAbort(() => {
       running = false;
-      nginxStatsService.unregisterSSEClient();
     });
 
     // Keep the stream alive by polling in a loop
     while (running) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      if (!running) break;
       try {
         const snapshot = await nginxStatsService.getSnapshot();
         nginxStatsService.pushHistory(snapshot);
@@ -152,15 +153,17 @@ monitoringRoutes.get('/nginx/stats/stream', async (c) => {
           data: JSON.stringify(snapshot),
           event: 'stats',
         });
-      } catch {
-        await stream.writeSSE({
-          data: JSON.stringify({ error: 'Failed to collect stats' }),
-          event: 'error',
-        }).catch(() => {});
+      } catch (err) {
+        logger.warn('SSE snapshot error', { error: (err as Error).message });
+        try {
+          await stream.writeSSE({
+            data: JSON.stringify({ error: (err as Error).message }),
+            event: 'error',
+          });
+        } catch { break; }
       }
-      // Wait 2 seconds before next poll
-      await new Promise((resolve) => setTimeout(resolve, 2000));
     }
+    nginxStatsService.unregisterSSEClient();
   });
 });
 
