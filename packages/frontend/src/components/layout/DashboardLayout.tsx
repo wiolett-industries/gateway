@@ -125,8 +125,7 @@ function SidebarContent({
       style={{ width: alwaysExpanded ? "100%" : isExpanded ? sidebarWidth : 48 }}
       className={cn(
         "relative flex h-full shrink-0 flex-col bg-sidebar-background overflow-hidden",
-        !alwaysExpanded && "border-r border-sidebar-border",
-        !alwaysExpanded && !isResizing && "transition-[width] duration-200 ease-out"
+        !alwaysExpanded && "border-r border-sidebar-border"
       )}
     >
       <AnimatePresence mode="wait" initial={false}>
