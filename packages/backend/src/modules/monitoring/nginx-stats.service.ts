@@ -308,10 +308,13 @@ export class NginxStatsService {
 
     let trafficStats: NginxTrafficStats | null = null;
 
+    const withTimeout = <T>(p: Promise<T>, ms = 5000): Promise<T> =>
+      Promise.race([p, new Promise<T>((_, reject) => setTimeout(() => reject(new Error('timeout')), ms))]);
+
     const [stubResult, sysResult, trafficResult] = await Promise.allSettled([
-      this.getStubStatus(),
-      this.getContainerStats(),
-      this.getTrafficStats(),
+      withTimeout(this.getStubStatus()),
+      withTimeout(this.getContainerStats()),
+      withTimeout(this.getTrafficStats()),
     ]);
 
     if (stubResult.status === 'fulfilled') {
