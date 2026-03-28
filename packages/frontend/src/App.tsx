@@ -11,6 +11,7 @@ import { CAs } from "@/pages/CAs";
 import { CertificateDetail } from "@/pages/CertificateDetail";
 import { Certificates } from "@/pages/Certificates";
 import { Dashboard } from "@/pages/Dashboard";
+import { Domains } from "@/pages/Domains";
 import { LoginPage } from "@/pages/Login";
 import { NginxManagement } from "@/pages/NginxManagement";
 import { NginxTemplateEdit } from "@/pages/NginxTemplateEdit";
@@ -40,6 +41,7 @@ export default function App() {
               <Route path="/nginx-templates/:id" element={<NginxTemplateEdit />} />
               <Route path="/ssl-certificates" element={<SSLCertificates />} />
               <Route path="/ssl-certificates/new" element={<SSLCertificateNew />} />
+              <Route path="/domains" element={<Domains />} />
               <Route path="/nginx" element={<NginxManagement />} />
               <Route path="/access-lists" element={<AccessLists />} />
               <Route path="/cas" element={<CAs />} />

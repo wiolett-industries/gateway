@@ -10,11 +10,16 @@ import type {
   CertificateStatus,
   CertificateType,
   CreateAccessListRequest,
+  CreateDomainRequest,
   CreateIntermediateCARequest,
   CreateProxyHostRequest,
   CreateRootCARequest,
   DashboardStats,
+  DnsStatus,
   DNSChallenge,
+  Domain,
+  DomainSearchResult,
+  DomainWithUsage,
   FolderTreeNode,
   GroupedProxyHostsResponse,
   HealthStatus,
@@ -33,6 +38,7 @@ import type {
   SSLCertType,
   Template,
   TemplateVariableDef,
+  UpdateDomainRequest,
   UploadCertRequest,
   User,
   UserRole,
@@ -710,6 +716,67 @@ class ApiClient {
     const params = new URLSearchParams();
     if (sessionId) params.set("token", sessionId);
     return new EventSource(`${API_BASE}/monitoring/logs/${hostId}/stream?${params}`);
+  }
+
+  // ── Domains ────────────────────────────────────────────────────
+
+  async listDomains(params?: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    dnsStatus?: DnsStatus;
+  }): Promise<PaginatedResponse<Domain>> {
+    const sp = new URLSearchParams();
+    if (params?.page) sp.set("page", params.page.toString());
+    if (params?.limit) sp.set("limit", params.limit.toString());
+    if (params?.search) sp.set("search", params.search);
+    if (params?.dnsStatus) sp.set("dnsStatus", params.dnsStatus);
+    const q = sp.toString();
+    return this.request<PaginatedResponse<Domain>>(`/domains${q ? `?${q}` : ""}`);
+  }
+
+  async getDomain(id: string): Promise<DomainWithUsage> {
+    return this.unwrapData(this.request<{ data: DomainWithUsage }>(`/domains/${id}`));
+  }
+
+  async createDomain(data: CreateDomainRequest): Promise<Domain> {
+    return this.unwrapData(
+      this.request<{ data: Domain }>("/domains", {
+        method: "POST",
+        body: JSON.stringify(data),
+      })
+    );
+  }
+
+  async updateDomain(id: string, data: UpdateDomainRequest): Promise<Domain> {
+    return this.unwrapData(
+      this.request<{ data: Domain }>(`/domains/${id}`, {
+        method: "PUT",
+        body: JSON.stringify(data),
+      })
+    );
+  }
+
+  async deleteDomain(id: string): Promise<void> {
+    await this.request<void>(`/domains/${id}`, { method: "DELETE" });
+  }
+
+  async checkDomainDns(id: string): Promise<Domain> {
+    return this.unwrapData(
+      this.request<{ data: Domain }>(`/domains/${id}/check-dns`, { method: "POST" })
+    );
+  }
+
+  async issueDomainCert(id: string): Promise<SSLCertificate> {
+    return this.unwrapData(
+      this.request<{ data: SSLCertificate }>(`/domains/${id}/issue-cert`, { method: "POST" })
+    );
+  }
+
+  async searchDomains(q: string): Promise<DomainSearchResult[]> {
+    return this.unwrapData(
+      this.request<{ data: DomainSearchResult[] }>(`/domains/search?q=${encodeURIComponent(q)}`)
+    );
   }
 
   // ── Nginx Management ──────────────────────────────────────────

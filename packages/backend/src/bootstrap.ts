@@ -10,6 +10,9 @@ import { AccessListService } from '@/modules/access-lists/access-list.service.js
 import { AlertService } from '@/modules/audit/alert.service.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
 import { AuthService } from '@/modules/auth/auth.service.js';
+import { DnsCheckJob } from '@/jobs/dns-check.job.js';
+import { DomainsService } from '@/modules/domains/domain.service.js';
+import { detectPublicIP } from '@/modules/domains/dns.utils.js';
 import { LogStreamService } from '@/modules/monitoring/log-stream.service.js';
 import { MonitoringService } from '@/modules/monitoring/monitoring.service.js';
 import { NginxConfigService } from '@/modules/monitoring/nginx-config.service.js';
@@ -142,6 +145,13 @@ export async function initializeContainer(): Promise<void> {
   const nginxConfigService = new NginxConfigService(dockerService, env.NGINX_CONTAINER_NAME);
   container.registerInstance(NginxConfigService, nginxConfigService);
 
+  // Domain management
+  const domainsService = new DomainsService(db, auditService);
+  container.registerInstance(DomainsService, domainsService);
+
+  // Detect public IP for DNS validation
+  await detectPublicIP(env.PUBLIC_IPV4, env.PUBLIC_IPV6);
+
   // Seed built-in templates
   await templatesService.seedBuiltinTemplates();
   await nginxTemplateService.seedBuiltinTemplates();
@@ -153,6 +163,9 @@ export async function initializeContainer(): Promise<void> {
   const acmeRenewalJob = new ACMERenewalJob(db, sslService, alertService);
   const healthCheckJob = new HealthCheckJob(db);
   const expiryAlertJob = new ExpiryAlertJob(db, alertService, env.EXPIRY_WARNING_DAYS, env.EXPIRY_CRITICAL_DAYS);
+
+  const dnsCheckJob = new DnsCheckJob(domainsService);
+  scheduler.registerInterval('dns-check', env.DNS_CHECK_INTERVAL_SECONDS * 1000, () => dnsCheckJob.run());
 
   scheduler.register('acme-renewal', env.ACME_RENEWAL_CRON, () => acmeRenewalJob.run());
   scheduler.registerInterval('health-check', env.HEALTH_CHECK_INTERVAL_SECONDS * 1000, () => healthCheckJob.run());
