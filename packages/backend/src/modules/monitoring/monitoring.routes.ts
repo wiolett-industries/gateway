@@ -123,64 +123,54 @@ monitoringRoutes.get('/nginx/stats/stream', async (c) => {
 
   const nginxStatsService = container.resolve(NginxStatsService);
 
-  nginxStatsService.registerSSEClient();
-  const encoder = new TextEncoder();
-  let cancelled = false;
+  // Use raw Node.js response for reliable SSE streaming
+  const res = c.env.outgoing as import('http').ServerResponse;
 
-  const body = new ReadableStream({
-    async pull(controller) {
-      if (cancelled) { controller.close(); return; }
-
-      try {
-        const snapshot = await nginxStatsService.getSnapshot();
-        nginxStatsService.pushHistory(snapshot);
-        controller.enqueue(encoder.encode(`event: stats\ndata: ${JSON.stringify(snapshot)}\n\n`));
-      } catch (err) {
-        controller.enqueue(encoder.encode(`event: error\ndata: ${JSON.stringify({ error: (err as Error).message })}\n\n`));
-      }
-
-      // Wait 2s before next pull
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-    },
-    cancel() {
-      cancelled = true;
-      nginxStatsService.unregisterSSEClient();
-    },
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
   });
 
-  // Prepend connected event
-  const connectedEvent = `event: connected\ndata: ${JSON.stringify({
+  const write = (event: string, data: string) => {
+    res.write(`event: ${event}\ndata: ${data}\n\n`);
+  };
+
+  nginxStatsService.registerSSEClient();
+
+  write('connected', JSON.stringify({
     connected: true,
     info: nginxStatsService.getCachedProcessInfo(),
     history: nginxStatsService.getHistory(),
-  })}\n\n`;
+  }));
 
-  const prependedBody = new ReadableStream({
-    async start(controller) {
-      controller.enqueue(encoder.encode(connectedEvent));
-      const reader = body.getReader();
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          controller.enqueue(value);
-        }
-      } finally {
-        controller.close();
-      }
-    },
-    cancel() {
-      cancelled = true;
-      nginxStatsService.unregisterSSEClient();
-    },
+  let running = true;
+
+  const poll = async () => {
+    if (!running) return;
+    try {
+      const snapshot = await nginxStatsService.getSnapshot();
+      nginxStatsService.pushHistory(snapshot);
+      write('stats', JSON.stringify(snapshot));
+    } catch (err) {
+      logger.warn('SSE snapshot error', { error: (err as Error).message });
+    }
+    if (running) setTimeout(poll, 2000);
+  };
+  setTimeout(poll, 2000);
+
+  const keepalive = setInterval(() => {
+    try { write('ping', ''); } catch { clearInterval(keepalive); }
+  }, 30_000);
+
+  res.on('close', () => {
+    running = false;
+    clearInterval(keepalive);
+    nginxStatsService.unregisterSSEClient();
   });
 
-  return new Response(prependedBody, {
-    headers: {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
-    },
+  // Return empty response — we already wrote headers via raw response
+  return new Response(null, { status: 200 });
   });
 });
 
