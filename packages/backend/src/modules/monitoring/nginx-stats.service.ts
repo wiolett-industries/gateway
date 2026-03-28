@@ -246,7 +246,7 @@ export class NginxStatsService {
     // Tail last 200 lines from all access logs
     const result = await this.dockerService.execInContainer(
       this.nginxContainerName,
-      ['sh', '-c', 'tail -n 200 /var/log/nginx/proxy-*.access.log /var/log/nginx/access.log 2>/dev/null || true']
+      ['sh', '-c', 'find /var/log/nginx -name "*.access.log" -o -name "access.log" 2>/dev/null | xargs tail -n 200 2>/dev/null || true']
     );
 
     const statusCodes = { s2xx: 0, s3xx: 0, s4xx: 0, s5xx: 0 };
