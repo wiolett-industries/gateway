@@ -60,10 +60,10 @@ export class CRLService {
     const newCrlNumber = ca.crlNumber + 1;
 
     // Build CRL entries
-    const entries: x509.X509CrlEntry[] = revokedCerts.map(cert => ({
+    const entries = revokedCerts.map(cert => ({
       serialNumber: cert.serialNumber,
       revocationDate: cert.revokedAt || new Date(),
-    }));
+    })) as unknown as x509.X509CrlEntry[];
 
     const thisUpdate = new Date();
     const nextUpdate = new Date();
