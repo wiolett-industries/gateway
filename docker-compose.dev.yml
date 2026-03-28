@@ -1,37 +1,47 @@
+# Development infrastructure — nginx, postgres, redis
+# Backend and frontend run locally via pnpm dev:all
+#
+# Usage:
+#   pnpm dev:infra        # start containers
+#   pnpm dev:all          # start backend + frontend
+#   pnpm dev:infra:down   # stop containers
+
 services:
-  # Nginx is optional for dev — the Vite dev server proxies API calls to the backend.
-  # Uncomment to test nginx configs locally:
-  # nginx:
-  #   image: nginx:1.27-alpine
-  #   restart: unless-stopped
-  #   ports:
-  #     - "80:80"
-  #     - "443:443"
-  #   volumes:
-  #     - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-  #     - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
-  #     - ./nginx/html:/usr/share/nginx/html:ro
-  #     - nginx_config:/etc/nginx/conf.d/sites
-  #     - nginx_certs:/etc/nginx/certs
-  #     - nginx_logs:/var/log/nginx
-  #     - acme_challenge:/var/www/acme-challenge
-  #   healthcheck:
-  #     test: ["CMD-SHELL", "nginx -t && curl -f http://localhost/health || exit 1"]
-  #     interval: 10s
-  #     timeout: 5s
-  #     retries: 3
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: gateway-nginx-1
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - nginx_main_conf:/etc/nginx/conf.d
+      - /tmp/gateway-nginx-config:/etc/nginx/conf.d/sites
+      - /tmp/gateway-nginx-certs:/etc/nginx/certs
+      - /tmp/gateway-nginx-logs:/var/log/nginx
+      - /tmp/gateway-acme-challenge:/var/www/acme-challenge
+    networks:
+      default:
+        ipv4_address: 172.18.0.4
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   postgres:
     image: postgres:16-alpine
-    restart: unless-stopped
+    container_name: gateway-postgres-dev
     ports:
-      - "5433:5432"
+      - "5432:5432"
     environment:
       POSTGRES_DB: gateway
       POSTGRES_USER: dev
       POSTGRES_PASSWORD: dev
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_dev_data:/var/lib/postgresql/data
+    networks:
+      default:
+        ipv4_address: 172.18.0.2
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U dev -d gateway"]
       interval: 5s
@@ -40,18 +50,27 @@ services:
 
   redis:
     image: redis:7-alpine
-    restart: unless-stopped
+    container_name: gateway-redis-dev
     ports:
-      - "6380:6379"
+      - "6379:6379"
     command: redis-server --appendonly yes
     volumes:
-      - redis_data:/data
+      - redis_dev_data:/data
+    networks:
+      default:
+        ipv4_address: 172.18.0.3
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 5s
       retries: 5
 
+networks:
+  default:
+    external: true
+    name: ca-manager_default
+
 volumes:
-  postgres_data:
-  redis_data:
+  nginx_main_conf:
+  postgres_dev_data:
+  redis_dev_data:

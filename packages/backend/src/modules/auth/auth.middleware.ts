@@ -8,7 +8,7 @@ import type { AppEnv, UserRole } from '@/types.js';
 const SESSION_COOKIE_NAME = 'session_id';
 
 function extractCredential(c: {
-  req: { header: (name: string) => string | undefined };
+  req: { header: (name: string) => string | undefined; query: (name: string) => string | undefined };
   cookie?: (name: string) => string | undefined;
 }): { type: 'session' | 'apitoken'; value: string } | null {
   if (c.cookie) {
@@ -23,6 +23,15 @@ function extractCredential(c: {
       return { type: 'apitoken', value };
     }
     return { type: 'session', value };
+  }
+
+  // Query param fallback for SSE (EventSource can't set headers)
+  const queryToken = c.req.query('token');
+  if (queryToken) {
+    if (queryToken.startsWith('gw_')) {
+      return { type: 'apitoken', value: queryToken };
+    }
+    return { type: 'session', value: queryToken };
   }
 
   return null;

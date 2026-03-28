@@ -488,3 +488,53 @@ export interface DNSChallenge {
   recordName: string;
   recordValue: string;
 }
+
+// ── Nginx Monitoring ──────────────────────────────────────────────
+
+export interface NginxStubStatus {
+  activeConnections: number;
+  accepts: number;
+  handled: number;
+  requests: number;
+  reading: number;
+  writing: number;
+  waiting: number;
+}
+
+export interface NginxSystemStats {
+  cpuUsagePercent: number;
+  memoryUsageBytes: number;
+  memoryLimitBytes: number;
+  memoryUsagePercent: number;
+  networkRxBytes: number;
+  networkTxBytes: number;
+  blockReadBytes: number;
+  blockWriteBytes: number;
+}
+
+export interface NginxTrafficStats {
+  statusCodes: { s2xx: number; s3xx: number; s4xx: number; s5xx: number };
+  avgResponseTime: number;
+  p95ResponseTime: number;
+  totalRequests: number;
+}
+
+export interface NginxStatsSnapshot {
+  timestamp: string;
+  stubStatus: NginxStubStatus | null;
+  systemStats: NginxSystemStats | null;
+  trafficStats: NginxTrafficStats | null;
+  derived: {
+    requestsPerSec: number;
+    connectionsPerSec: number;
+  };
+}
+
+export interface NginxProcessInfo {
+  version: string;
+  workerCount: number;
+  uptime: string;
+  uptimeSeconds: number;
+  containerStatus: string;
+  configValid: boolean;
+}

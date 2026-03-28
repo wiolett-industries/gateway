@@ -15,7 +15,9 @@
     "lint": "pnpm -r lint",
     "db:generate": "pnpm --filter backend db:generate",
     "db:migrate": "pnpm --filter backend db:migrate",
-    "db:studio": "pnpm --filter backend db:studio"
+    "db:studio": "pnpm --filter backend db:studio",
+    "dev:infra": "mkdir -p /tmp/gateway-nginx-config /tmp/gateway-nginx-certs /tmp/gateway-nginx-logs /tmp/gateway-acme-challenge && docker compose -f docker-compose.dev.yml up -d && docker cp nginx/nginx.conf gateway-nginx-1:/etc/nginx/nginx.conf && docker cp nginx/default.conf gateway-nginx-1:/etc/nginx/conf.d/default.conf && docker cp nginx/html/. gateway-nginx-1:/usr/share/nginx/html/ && docker exec gateway-nginx-1 nginx -s reload",
+    "dev:infra:down": "docker compose -f docker-compose.dev.yml down"
   },
   "engines": {
     "node": ">=24.0.0",

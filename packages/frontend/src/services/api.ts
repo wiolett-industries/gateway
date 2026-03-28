@@ -21,6 +21,7 @@ import type {
   IssueCertFromCSRRequest,
   IssueCertificateRequest,
   LinkInternalCertRequest,
+  NginxProcessInfo,
   NginxTemplate,
   PaginatedResponse,
   ProxyHost,
@@ -709,6 +710,60 @@ class ApiClient {
     const params = new URLSearchParams();
     if (sessionId) params.set("token", sessionId);
     return new EventSource(`${API_BASE}/monitoring/logs/${hostId}/stream?${params}`);
+  }
+
+  // ── Nginx Management ──────────────────────────────────────────
+
+  async checkNginxAvailable(): Promise<boolean> {
+    try {
+      const result = await this.unwrapData(
+        this.request<{ data: { available: boolean } }>("/monitoring/nginx/available")
+      );
+      return result.available;
+    } catch {
+      return false;
+    }
+  }
+
+  async getNginxInfo(): Promise<NginxProcessInfo | null> {
+    try {
+      return this.unwrapData(
+        this.request<{ data: NginxProcessInfo }>("/monitoring/nginx/info")
+      );
+    } catch {
+      return null;
+    }
+  }
+
+  async getNginxConfig(): Promise<string> {
+    const result = await this.unwrapData(
+      this.request<{ data: { content: string } }>("/monitoring/nginx/config")
+    );
+    return result.content;
+  }
+
+  async updateNginxConfig(content: string): Promise<{ valid: boolean; error?: string }> {
+    return this.unwrapData(
+      this.request<{ data: { valid: boolean; error?: string } }>("/monitoring/nginx/config", {
+        method: "PUT",
+        body: JSON.stringify({ content }),
+      })
+    );
+  }
+
+  async testNginxConfig(): Promise<{ valid: boolean; error?: string }> {
+    return this.unwrapData(
+      this.request<{ data: { valid: boolean; error?: string } }>("/monitoring/nginx/config/test", {
+        method: "POST",
+      })
+    );
+  }
+
+  createNginxStatsStream(): EventSource {
+    const sessionId = useAuthStore.getState().sessionId;
+    const params = new URLSearchParams();
+    if (sessionId) params.set("token", sessionId);
+    return new EventSource(`${API_BASE}/monitoring/nginx/stats/stream?${params}`);
   }
 }
 
