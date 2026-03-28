@@ -26,7 +26,7 @@ const CertificatePolicySchema = z.object({
 const CustomExtensionSchema = z.object({
   oid: z.string().regex(/^\d+(\.\d+)+$/, 'Must be a valid OID'),
   critical: z.boolean().default(false),
-  value: z.string().regex(/^[0-9a-fA-F]*$/, 'Must be hex-encoded DER').max(10000),
+  value: z.string().regex(/^[0-9a-fA-F]+$/, 'Must be non-empty hex-encoded DER').min(4, 'Must be at least 2 bytes (4 hex chars)').max(10000).refine((v) => v.length % 2 === 0, 'Must have even length'),
 });
 
 export const CreateTemplateSchema = z.object({

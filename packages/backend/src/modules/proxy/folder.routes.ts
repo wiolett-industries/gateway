@@ -17,6 +17,8 @@ export const folderRoutes = new OpenAPIHono<AppEnv>();
 
 folderRoutes.use('*', authMiddleware);
 
+// --- Static GET routes first ---
+
 // Get folder tree (any authenticated)
 folderRoutes.get('/', async (c) => {
   const folderService = container.resolve(FolderService);
@@ -24,7 +26,7 @@ folderRoutes.get('/', async (c) => {
   return c.json({ data: tree });
 });
 
-// Get grouped hosts (any authenticated) — main endpoint for proxy hosts page
+// Get grouped hosts (any authenticated)
 folderRoutes.get('/grouped', async (c) => {
   const folderService = container.resolve(FolderService);
   const rawQuery = c.req.query();
@@ -32,6 +34,8 @@ folderRoutes.get('/grouped', async (c) => {
   const result = await folderService.getGroupedHosts(query);
   return c.json({ data: result });
 });
+
+// --- Static POST routes ---
 
 // Create folder (admin, operator)
 folderRoutes.post('/', rbacMiddleware('admin', 'operator'), async (c) => {
@@ -42,6 +46,38 @@ folderRoutes.post('/', rbacMiddleware('admin', 'operator'), async (c) => {
   const folder = await folderService.createFolder(input, user.id);
   return c.json({ data: folder }, 201);
 });
+
+// Move hosts to folder (admin, operator)
+folderRoutes.post('/move-hosts', rbacMiddleware('admin', 'operator'), async (c) => {
+  const folderService = container.resolve(FolderService);
+  const user = c.get('user')!;
+  const body = await c.req.json();
+  const input = MoveHostsToFolderSchema.parse(body);
+  await folderService.moveHostsToFolder(input, user.id);
+  return c.json({ success: true });
+});
+
+// --- Static PUT routes (before /:id) ---
+
+// Reorder folders (admin, operator)
+folderRoutes.put('/reorder', rbacMiddleware('admin', 'operator'), async (c) => {
+  const folderService = container.resolve(FolderService);
+  const body = await c.req.json();
+  const input = ReorderFoldersSchema.parse(body);
+  await folderService.reorderFolders(input);
+  return c.json({ success: true });
+});
+
+// Reorder hosts within a folder (admin, operator)
+folderRoutes.put('/reorder-hosts', rbacMiddleware('admin', 'operator'), async (c) => {
+  const folderService = container.resolve(FolderService);
+  const body = await c.req.json();
+  const input = ReorderHostsSchema.parse(body);
+  await folderService.reorderHosts(input);
+  return c.json({ success: true });
+});
+
+// --- Parameterised routes last ---
 
 // Update folder / rename (admin, operator)
 folderRoutes.put('/:id', rbacMiddleware('admin', 'operator'), async (c) => {
@@ -65,15 +101,6 @@ folderRoutes.put('/:id/move', rbacMiddleware('admin', 'operator'), async (c) => 
   return c.json({ data: folder });
 });
 
-// Reorder folders (admin, operator)
-folderRoutes.put('/reorder', rbacMiddleware('admin', 'operator'), async (c) => {
-  const folderService = container.resolve(FolderService);
-  const body = await c.req.json();
-  const input = ReorderFoldersSchema.parse(body);
-  await folderService.reorderFolders(input);
-  return c.json({ success: true });
-});
-
 // Delete folder (admin)
 folderRoutes.delete('/:id', rbacMiddleware('admin'), async (c) => {
   const folderService = container.resolve(FolderService);
@@ -83,21 +110,8 @@ folderRoutes.delete('/:id', rbacMiddleware('admin'), async (c) => {
   return c.body(null, 204);
 });
 
-// Reorder hosts within a folder (admin, operator)
-folderRoutes.put('/reorder-hosts', rbacMiddleware('admin', 'operator'), async (c) => {
-  const folderService = container.resolve(FolderService);
-  const body = await c.req.json();
-  const input = ReorderHostsSchema.parse(body);
-  await folderService.reorderHosts(input);
-  return c.json({ success: true });
-});
-
-// Move hosts to folder (admin, operator)
-folderRoutes.post('/move-hosts', rbacMiddleware('admin', 'operator'), async (c) => {
-  const folderService = container.resolve(FolderService);
-  const user = c.get('user')!;
-  const body = await c.req.json();
-  const input = MoveHostsToFolderSchema.parse(body);
-  await folderService.moveHostsToFolder(input, user.id);
-  return c.json({ success: true });
+// Clone folder's proxy host (admin, operator)
+folderRoutes.post('/:id/clone', rbacMiddleware('admin', 'operator'), async (c) => {
+  // Placeholder for future clone functionality
+  return c.json({ error: 'Not implemented' }, 501);
 });

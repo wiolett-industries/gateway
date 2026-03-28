@@ -260,7 +260,7 @@ export function ProxyHosts() {
           if (host.id === hostId) return node.id;
         }
         const found = search(node.children);
-        if (found !== undefined) return found;
+        if (found !== null) return found;
       }
       return null;
     };
