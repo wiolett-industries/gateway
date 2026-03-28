@@ -3,7 +3,7 @@ version: '3.8'
 services:
   app:
     build:
-      context: ./packages/backend
+      context: .
       dockerfile: Dockerfile
     restart: unless-stopped
     ports:
@@ -23,7 +23,7 @@ services:
       - APP_URL=${APP_URL}
       - PKI_MASTER_KEY=${PKI_MASTER_KEY}
       - RATE_LIMIT_WINDOW_MS=${RATE_LIMIT_WINDOW_MS:-60000}
-      - RATE_LIMIT_MAX_REQUESTS=${RATE_LIMIT_MAX_REQUESTS:-500}
+      - RATE_LIMIT_MAX_REQUESTS=${RATE_LIMIT_MAX_REQUESTS:-5000}
       - DEFAULT_CRL_VALIDITY_HOURS=${DEFAULT_CRL_VALIDITY_HOURS:-24}
       - DEFAULT_OCSP_VALIDITY_MINUTES=${DEFAULT_OCSP_VALIDITY_MINUTES:-60}
       - EXPIRY_WARNING_DAYS=${EXPIRY_WARNING_DAYS:-30}

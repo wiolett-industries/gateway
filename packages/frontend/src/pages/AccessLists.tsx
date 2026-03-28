@@ -66,7 +66,7 @@ export function AccessLists() {
 
   useEffect(() => {
     loadAccessLists();
-  }, [loadAccessLists]);
+  }, []);
 
   const resetForm = () => {
     setName("");
