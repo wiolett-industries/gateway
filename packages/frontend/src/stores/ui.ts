@@ -70,7 +70,7 @@ export const useUIStore = create<UIState>()(
       closeModal: () => set({ modal: { type: null } }),
     }),
     {
-      name: "ca-manager-ui",
+      name: "gateway-ui",
       partialize: (state) => ({
         theme: state.theme,
         sidebarOpen: state.sidebarOpen,

@@ -20,6 +20,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { NumericInput } from "@/components/ui/numeric-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 import { api } from "@/services/api";
@@ -199,13 +200,7 @@ export function Templates() {
         </div>
       ) : (
         <div className="flex flex-col items-center gap-2 py-16 border border-border bg-card">
-          <FileText className="h-12 w-12 text-muted-foreground" />
           <p className="text-muted-foreground">No templates yet</p>
-          {hasRole("admin", "operator") && (
-            <Button variant="outline" size="sm" onClick={openCreate}>
-              Create your first template
-            </Button>
-          )}
         </div>
       )}
 
@@ -243,13 +238,7 @@ export function Templates() {
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">Validity (days)</label>
-                <Input
-                  type="number"
-                  value={validityDays}
-                  onChange={(e) => setValidityDays(parseInt(e.target.value) || 365)}
-                  min={1}
-                  max={3650}
-                />
+                <NumericInput value={validityDays} onChange={(v) => setValidityDays(v)} min={1} max={3650} />
               </div>
             </div>
             <div className="space-y-2">
@@ -268,7 +257,7 @@ export function Templates() {
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleSave} disabled={isSaving}>
+            <Button onClick={handleSave} disabled={isSaving || validityDays < 1 || validityDays > 3650}>
               {isSaving ? "Saving..." : editing ? "Update" : "Create"}
             </Button>
           </DialogFooter>

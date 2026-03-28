@@ -1,20 +1,15 @@
 import {
-  Award,
   ChevronLeft,
   ChevronRight,
-  Filter,
   Plus,
-  Search,
-  X,
 } from "lucide-react";
-import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { PageTransition } from "@/components/common/PageTransition";
+import { SearchFilterBar } from "@/components/common/SearchFilterBar";
 import { CertificateIssueDialog } from "@/components/certificates/CertificateIssueDialog";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAuthStore } from "@/stores/auth";
 import { useCAStore } from "@/stores/ca";
@@ -56,7 +51,6 @@ export function Certificates() {
   } = useCertificatesStore();
   const [searchInput, setSearchInput] = useState(filters.search);
   const [issueDialogOpen, setIssueDialogOpen] = useState(false);
-  const [showFilters, setShowFilters] = useState(false);
 
   useEffect(() => {
     fetchCertificates();
@@ -67,13 +61,13 @@ export function Certificates() {
   };
 
   const hasActiveFilters =
-    filters.status !== "all" || filters.type !== "all" || filters.caId !== "all" || filters.search !== "";
+    filters.status !== "active" || filters.type !== "all" || filters.caId !== "all" || filters.search !== "";
 
   return (
     <PageTransition>
-    <div className="h-full overflow-y-auto p-6 space-y-4">
+    <div className="h-full overflow-y-auto p-6 space-y-2">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between mb-2">
         <div>
           <h1 className="text-2xl font-bold">Certificates</h1>
           <p className="text-sm text-muted-foreground">{total} certificates total</p>
@@ -87,76 +81,49 @@ export function Certificates() {
       </div>
 
       {/* Search and filters */}
-      <div className="space-y-0">
-        <div className="flex gap-2">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search by common name, serial number..."
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-              className="pl-9"
-            />
-          </div>
-          <Button variant="outline" onClick={() => setShowFilters(!showFilters)}>
-            <Filter className="h-4 w-4" />
-            Filters
-          </Button>
-          {hasActiveFilters && (
-            <Button variant="ghost" size="sm" onClick={() => { resetFilters(); setSearchInput(""); }}>
-              <X className="h-4 w-4" />
-              Clear
-            </Button>
-          )}
-        </div>
-
-        <AnimatePresence>
-          {showFilters && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: "auto", opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
-              className="overflow-hidden"
-            >
-              <div className="flex flex-wrap gap-3 border border-border bg-card p-3 mt-2">
-                <div className="w-40">
-                  <Select value={filters.status} onValueChange={(v) => setFilters({ status: v as CertificateStatus | "all" })}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {statusOptions.map((opt) => (
-                        <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="w-40">
-                  <Select value={filters.type} onValueChange={(v) => setFilters({ type: v as CertificateType | "all" })}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {typeOptions.map((opt) => (
-                        <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="w-48">
-                  <Select value={filters.caId} onValueChange={(v) => setFilters({ caId: v })}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All CAs</SelectItem>
-                      {(cas || []).map((ca) => (
-                        <SelectItem key={ca.id} value={ca.id}>{ca.commonName}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
+      <SearchFilterBar
+        placeholder="Search by common name, serial number..."
+        search={searchInput}
+        onSearchChange={setSearchInput}
+        onSearchSubmit={handleSearch}
+        hasActiveFilters={hasActiveFilters}
+        onReset={() => { resetFilters(); setSearchInput(""); }}
+        filters={
+          <>
+            <div className="w-40">
+              <Select value={filters.status} onValueChange={(v) => setFilters({ status: v as CertificateStatus | "all" })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {statusOptions.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="w-40">
+              <Select value={filters.type} onValueChange={(v) => setFilters({ type: v as CertificateType | "all" })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {typeOptions.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="w-48">
+              <Select value={filters.caId} onValueChange={(v) => setFilters({ caId: v })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All CAs</SelectItem>
+                  {(cas || []).map((ca) => (
+                    <SelectItem key={ca.id} value={ca.id}>{ca.commonName}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </>
+        }
+      />
 
       {/* Table */}
       {isLoading ? (
@@ -234,7 +201,6 @@ export function Certificates() {
         </div>
       ) : (
         <div className="flex flex-col items-center gap-2 py-16 border border-border bg-card">
-          <Award className="h-12 w-12 text-muted-foreground" />
           <p className="text-muted-foreground">No certificates found</p>
           {hasActiveFilters && (
             <Button variant="outline" size="sm" onClick={() => { resetFilters(); setSearchInput(""); }}>

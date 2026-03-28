@@ -1,8 +1,8 @@
 {
-  "name": "ca-manager",
+  "name": "gateway",
   "version": "1.0.0",
   "private": true,
-  "description": "Self-hosted Certificate Authority manager and issuer",
+  "description": "Self-hosted certificate manager and reverse proxy gateway",
   "scripts": {
     "dev": "pnpm --filter backend dev",
     "dev:frontend": "pnpm --filter frontend dev",

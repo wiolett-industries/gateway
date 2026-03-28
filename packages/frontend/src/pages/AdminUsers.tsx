@@ -1,4 +1,4 @@
-import { Shield, Users as UsersIcon } from "lucide-react";
+import { Shield } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -139,7 +139,6 @@ export function AdminUsers() {
         </div>
       ) : (
         <div className="flex flex-col items-center gap-2 py-16 border border-border bg-card">
-          <UsersIcon className="h-12 w-12 text-muted-foreground" />
           <p className="text-muted-foreground">No users yet</p>
         </div>
       )}

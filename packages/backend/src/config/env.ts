@@ -37,6 +37,23 @@ const envSchema = z.object({
   DEFAULT_OCSP_VALIDITY_MINUTES: z.coerce.number().default(60),
   EXPIRY_WARNING_DAYS: z.coerce.number().default(30),
   EXPIRY_CRITICAL_DAYS: z.coerce.number().default(7),
+
+  // ACME
+  ACME_EMAIL: z.string().email().default('admin@example.com'),
+  ACME_STAGING: z.coerce.boolean().default(false),
+
+  // Background Jobs
+  HEALTH_CHECK_INTERVAL_SECONDS: z.coerce.number().default(30),
+  ACME_RENEWAL_CRON: z.string().default('0 3 * * *'),   // 3 AM daily
+  EXPIRY_CHECK_CRON: z.string().default('0 6 * * *'),   // 6 AM daily
+
+  // Nginx
+  NGINX_CONFIG_PATH: z.string().default('/etc/nginx-config'),
+  NGINX_CERTS_PATH: z.string().default('/etc/nginx-certs'),
+  NGINX_LOGS_PATH: z.string().default('/var/log/nginx-logs'),
+  ACME_CHALLENGE_PATH: z.string().default('/var/www/acme-challenge'),
+  DOCKER_SOCKET_PATH: z.string().default('/var/run/docker.sock'),
+  NGINX_CONTAINER_NAME: z.string().default('gateway-nginx-1'),
 });
 
 export type Env = z.infer<typeof envSchema>;

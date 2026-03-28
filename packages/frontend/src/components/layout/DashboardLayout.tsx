@@ -2,7 +2,9 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   Award,
   FileText,
+  Globe,
   LayoutDashboard,
+  Lock,
   LogOut,
   Menu,
   PanelLeft,
@@ -10,7 +12,7 @@ import {
   ScrollText,
   Search,
   Settings,
-  Shield,
+  ShieldAlert,
   ShieldCheck,
   Users,
   X,
@@ -51,18 +53,50 @@ function getInitials(name: string | null): string {
     .toUpperCase();
 }
 
-const navigation = [
-  { name: "Dashboard", href: "/", icon: LayoutDashboard },
-  { name: "Authorities", href: "/cas", icon: Shield },
-  { name: "Certificates", href: "/certificates", icon: Award },
-  { name: "Templates", href: "/templates", icon: FileText },
-  { name: "Settings", href: "/settings", icon: Settings },
+interface NavItem {
+  name: string;
+  href: string;
+  icon: React.ElementType;
+}
+
+interface NavGroup {
+  label: string;
+  items: NavItem[];
+}
+
+const navigationGroups: NavGroup[] = [
+  {
+    label: "Main",
+    items: [
+      { name: "Dashboard", href: "/", icon: LayoutDashboard },
+      { name: "Proxy Hosts", href: "/proxy-hosts", icon: Globe },
+      { name: "SSL Certificates", href: "/ssl-certificates", icon: Lock },
+    ],
+  },
+  {
+    label: "PKI",
+    items: [
+      { name: "Authorities", href: "/cas", icon: ShieldCheck },
+      { name: "Certificates", href: "/certificates", icon: FileText },
+      { name: "Templates", href: "/templates", icon: Award },
+    ],
+  },
+  {
+    label: "Management",
+    items: [
+      { name: "Access Lists", href: "/access-lists", icon: ShieldAlert },
+      { name: "Settings", href: "/settings", icon: Settings },
+    ],
+  },
 ];
 
-const adminNavigation = [
+const adminNavigation: NavItem[] = [
   { name: "Audit Log", href: "/audit", icon: ScrollText },
   { name: "Users", href: "/admin/users", icon: Users },
 ];
+
+// Flat list of all nav items for collapsed sidebar
+const allNavItems = navigationGroups.flatMap((g) => g.items);
 
 interface SidebarContentProps {
   onNavigate?: () => void;
@@ -148,7 +182,7 @@ function SidebarContent({
               <TooltipContent side="right">Open sidebar</TooltipContent>
             </Tooltip>
 
-            {navigation.map((item) => (
+            {allNavItems.map((item) => (
               <Tooltip key={item.href}>
                 <TooltipTrigger asChild>
                   <Button
@@ -205,8 +239,8 @@ function SidebarContent({
             {/* Header */}
             <div className="flex items-center justify-between px-2" style={{ paddingTop: 10, paddingBottom: 10, paddingLeft: 10 }}>
               <span className="flex items-center gap-1.5 text-sm font-semibold text-foreground/80 whitespace-nowrap pl-1">
-                <ShieldCheck className="h-4 w-4" />
-                CA Manager
+                <img src="/android-chrome-192x192.png" alt="Gateway" className="h-5 w-5" />
+                Gateway
               </span>
 
               <div className="flex items-center gap-0.5">
@@ -244,34 +278,44 @@ function SidebarContent({
 
             {/* Navigation */}
             <ScrollArea className="flex-1 overflow-hidden min-w-0">
-              <nav className="space-y-0.5 p-2">
-                {navigation.map((item) => {
-                  const isActive = location.pathname === item.href;
-                  return (
-                    <Link
-                      key={item.href}
-                      to={item.href}
-                      onClick={onNavigate}
-                      className={cn(
-                        "flex items-center gap-3 px-3 py-2 text-sm transition-colors whitespace-nowrap overflow-hidden",
-                        isActive
-                          ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-                          : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                      )}
-                    >
-                      <item.icon className="h-4 w-4 shrink-0" />
-                      <span className="truncate">{item.name}</span>
-                    </Link>
-                  );
-                })}
-              </nav>
+              {navigationGroups.map((group, groupIndex) => (
+                <div key={group.label}>
+                  {groupIndex > 0 && <Separator className="my-1" />}
+                  <nav className="space-y-0.5 p-2">
+                    {groupIndex > 0 && (
+                      <p className="px-3 py-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                        {group.label}
+                      </p>
+                    )}
+                    {group.items.map((item) => {
+                      const isActive = location.pathname === item.href;
+                      return (
+                        <Link
+                          key={item.href}
+                          to={item.href}
+                          onClick={onNavigate}
+                          className={cn(
+                            "flex items-center gap-3 px-3 py-2 text-sm transition-colors whitespace-nowrap overflow-hidden",
+                            isActive
+                              ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                              : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                          )}
+                        >
+                          <item.icon className="h-4 w-4 shrink-0" />
+                          <span className="truncate">{item.name}</span>
+                        </Link>
+                      );
+                    })}
+                  </nav>
+                </div>
+              ))}
 
               {/* Admin navigation */}
               {isAdmin && (
                 <>
                   <Separator className="my-1" />
                   <nav className="space-y-0.5 p-2">
-                    <p className="px-3 py-1 text-xs font-medium text-sidebar-foreground/50 uppercase tracking-wider">
+                    <p className="px-3 py-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
                       Administration
                     </p>
                     {adminNavigation.map((item) => {
@@ -282,14 +326,14 @@ function SidebarContent({
                           to={item.href}
                           onClick={onNavigate}
                           className={cn(
-                            "flex items-center gap-3 px-3 py-2 text-sm transition-colors",
+                            "flex items-center gap-3 px-3 py-2 text-sm transition-colors whitespace-nowrap overflow-hidden",
                             isActive
                               ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
                               : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                           )}
                         >
                           <item.icon className="h-4 w-4 shrink-0" />
-                          <span>{item.name}</span>
+                          <span className="truncate">{item.name}</span>
                         </Link>
                       );
                     })}
@@ -329,7 +373,7 @@ function SidebarContent({
   );
 }
 
-const SIDEBAR_WIDTH_KEY = "ca-manager-sidebar-width";
+const SIDEBAR_WIDTH_KEY = "gateway-sidebar-width";
 const DEFAULT_SIDEBAR_WIDTH = 260;
 
 function readSidebarWidth(): number {
@@ -448,8 +492,8 @@ export function DashboardLayout() {
                 <Menu className="h-5 w-5" />
               </Button>
               <span className="ml-2 flex items-center gap-1.5 text-sm font-semibold">
-                <ShieldCheck className="h-4 w-4" />
-                CA Manager
+                <img src="/android-chrome-192x192.png" alt="Gateway" className="h-5 w-5" />
+                Gateway
               </span>
             </div>
           </header>

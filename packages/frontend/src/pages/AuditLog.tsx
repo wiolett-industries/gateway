@@ -84,6 +84,7 @@ export function AuditLog() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border text-left">
+                  <th className="p-3 text-xs font-medium text-muted-foreground">User</th>
                   <th className="p-3 text-xs font-medium text-muted-foreground">Action</th>
                   <th className="p-3 text-xs font-medium text-muted-foreground">Resource</th>
                   <th className="p-3 text-xs font-medium text-muted-foreground">IP Address</th>
@@ -93,6 +94,7 @@ export function AuditLog() {
               <tbody className="divide-y divide-border">
                 {entries.map((entry) => (
                   <tr key={entry.id}>
+                    <td className="p-3 text-sm">{entry.userName || entry.userEmail || "System"}</td>
                     <td className="p-3 text-sm">
                       <span className="font-mono text-xs bg-muted px-1.5 py-0.5">{entry.action}</span>
                     </td>

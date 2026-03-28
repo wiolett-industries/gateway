@@ -16,7 +16,7 @@ function extractCredential(c: { req: { header: (name: string) => string | undefi
   const authHeader = c.req.header('Authorization');
   if (authHeader?.startsWith('Bearer ')) {
     const value = authHeader.slice(7);
-    if (value.startsWith('cam_')) {
+    if (value.startsWith('gw_')) {
       return { type: 'apitoken', value };
     }
     return { type: 'session', value };

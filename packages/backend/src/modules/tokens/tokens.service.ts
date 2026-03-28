@@ -20,7 +20,7 @@ export class TokensService {
   constructor(@inject(TOKENS.DrizzleClient) private readonly db: DrizzleClient) {}
 
   async createToken(userId: string, input: CreateTokenInput) {
-    const raw = 'cam_' + randomBytes(32).toString('hex');
+    const raw = 'gw_' + randomBytes(32).toString('hex');
     const tokenHash = hashToken(raw);
     const tokenPrefix = raw.slice(0, 10);
 

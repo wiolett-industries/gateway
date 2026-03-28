@@ -30,7 +30,7 @@ interface CertificatesState {
 
 const defaultFilters: CertificateFilters = {
   search: "",
-  status: "all",
+  status: "active",
   type: "all",
   caId: "all",
 };
