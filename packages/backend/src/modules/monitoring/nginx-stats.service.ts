@@ -87,7 +87,7 @@ export class NginxStatsService {
         }
       }
       // Refresh process info periodically (every ~30 polls = ~2 min)
-      if (this.history.length % 30 === 0) {
+      if (this.history.length > 0 && this.history.length % 30 === 0) {
         this.refreshProcessInfo();
       }
     }, BACKGROUND_INTERVAL_MS);
