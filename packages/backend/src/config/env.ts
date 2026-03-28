@@ -48,6 +48,7 @@ const envSchema = z.object({
   // DNS / Domains
   PUBLIC_IPV4: z.string().optional(),
   PUBLIC_IPV6: z.string().optional(),
+  DNS_RESOLVERS: z.string().default('8.8.8.8,1.1.1.1'),
   DNS_CHECK_INTERVAL_SECONDS: z.coerce.number().default(300),
 
   // Background Jobs

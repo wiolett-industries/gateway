@@ -12,7 +12,7 @@ import { AuditService } from '@/modules/audit/audit.service.js';
 import { AuthService } from '@/modules/auth/auth.service.js';
 import { DnsCheckJob } from '@/jobs/dns-check.job.js';
 import { DomainsService } from '@/modules/domains/domain.service.js';
-import { detectPublicIP } from '@/modules/domains/dns.utils.js';
+import { detectPublicIP, initDnsResolver } from '@/modules/domains/dns.utils.js';
 import { LogStreamService } from '@/modules/monitoring/log-stream.service.js';
 import { MonitoringService } from '@/modules/monitoring/monitoring.service.js';
 import { NginxConfigService } from '@/modules/monitoring/nginx-config.service.js';
@@ -149,7 +149,8 @@ export async function initializeContainer(): Promise<void> {
   const domainsService = new DomainsService(db, auditService);
   container.registerInstance(DomainsService, domainsService);
 
-  // Detect public IP for DNS validation
+  // Configure DNS resolvers and detect public IP
+  initDnsResolver(env.DNS_RESOLVERS.split(',').map((s) => s.trim()).filter(Boolean));
   await detectPublicIP(env.PUBLIC_IPV4, env.PUBLIC_IPV6);
 
   // Seed built-in templates

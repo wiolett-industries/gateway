@@ -11,7 +11,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { HealthDot } from "@/components/ui/health-dot";
 import { Switch } from "@/components/ui/switch";
 import { useAuthStore } from "@/stores/auth";
 import type { ProxyHost, ProxyHostType } from "@/types";
@@ -101,7 +100,9 @@ export function ProxyHostRow({
         )}
       </td>
       <td className="p-3">
-        <HealthDot status={host.healthStatus} />
+        <Badge variant={({ online: "success", offline: "destructive", degraded: "warning", unknown: "secondary" } as Record<string, "success" | "destructive" | "warning" | "secondary">)[host.healthStatus] || "secondary"} className="text-xs capitalize">
+          {host.healthStatus}
+        </Badge>
       </td>
       <td className="p-3" onClick={(e) => e.stopPropagation()}>
         <div className={togglingIds.has(host.id) ? "opacity-50 pointer-events-none" : undefined}>

@@ -1,8 +1,9 @@
-import { Globe, MoreVertical, Pencil, Plus, RefreshCw, Shield, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Globe, MoreVertical, Pencil, Plus, RefreshCw, Shield, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { PageTransition } from "@/components/common/PageTransition";
+import { SearchFilterBar } from "@/components/common/SearchFilterBar";
 import { AddDomainDialog } from "@/components/domains/AddDomainDialog";
 import { DnsStatusBadge } from "@/components/domains/DnsStatusBadge";
 import { DomainDetailDialog } from "@/components/domains/DomainDetailDialog";
@@ -14,7 +15,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -131,27 +131,30 @@ export function Domains() {
           )}
         </div>
 
-        {/* Filters */}
-        <div className="flex gap-2">
-          <Input
-            placeholder="Search domains..."
-            value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-            className="max-w-xs"
-          />
-          <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v as DnsStatus | "all"); setPage(1); }}>
-            <SelectTrigger className="w-36">
-              <SelectValue placeholder="DNS Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All statuses</SelectItem>
-              <SelectItem value="valid">Valid</SelectItem>
-              <SelectItem value="invalid">Invalid</SelectItem>
-              <SelectItem value="pending">Pending</SelectItem>
-              <SelectItem value="unknown">Unknown</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        {/* Search and filters */}
+        <SearchFilterBar
+          placeholder="Search domains..."
+          search={search}
+          onSearchChange={(v) => { setSearch(v); setPage(1); }}
+          hasActiveFilters={statusFilter !== "all"}
+          onReset={() => { setSearch(""); setStatusFilter("all"); setPage(1); }}
+          filters={
+            <div className="w-40">
+              <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v as DnsStatus | "all"); setPage(1); }}>
+                <SelectTrigger>
+                  <SelectValue placeholder="DNS Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All statuses</SelectItem>
+                  <SelectItem value="valid">Valid</SelectItem>
+                  <SelectItem value="invalid">Invalid</SelectItem>
+                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="unknown">Unknown</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          }
+        />
 
         {/* Table */}
         {domains.length > 0 ? (
@@ -211,10 +214,12 @@ export function Domains() {
                                 <RefreshCw className="h-4 w-4" />
                                 Check DNS
                               </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleIssueCert(d)}>
-                                <Shield className="h-4 w-4" />
-                                Issue Cert
-                              </DropdownMenuItem>
+                              {d.dnsStatus === "valid" && (
+                                <DropdownMenuItem onClick={() => handleIssueCert(d)}>
+                                  <Shield className="h-4 w-4" />
+                                  Issue Cert
+                                </DropdownMenuItem>
+                              )}
                               <DropdownMenuItem onClick={() => openDetail(d.id)}>
                                 <Pencil className="h-4 w-4" />
                                 Details
@@ -240,14 +245,16 @@ export function Domains() {
 
             {/* Pagination */}
             {totalPages > 1 && (
-              <div className="flex items-center justify-between border-t border-border p-3">
-                <span className="text-xs text-muted-foreground">Page {page} of {totalPages}</span>
-                <div className="flex gap-1">
-                  <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage(page - 1)}>
+              <div className="flex items-center justify-between border-t border-border px-4 py-3">
+                <p className="text-sm text-muted-foreground">Page {page} of {totalPages}</p>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>
+                    <ChevronLeft className="h-4 w-4" />
                     Previous
                   </Button>
-                  <Button size="sm" variant="outline" disabled={page >= totalPages} onClick={() => setPage(page + 1)}>
+                  <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(page + 1)}>
                     Next
+                    <ChevronRight className="h-4 w-4" />
                   </Button>
                 </div>
               </div>
@@ -255,14 +262,7 @@ export function Domains() {
           </div>
         ) : (
           <div className="flex flex-col items-center gap-2 py-16 border border-border bg-card">
-            <Globe className="h-8 w-8 text-muted-foreground" />
             <p className="text-muted-foreground">No domains yet</p>
-            {canEdit && (
-              <Button size="sm" variant="outline" onClick={() => setAddDialogOpen(true)}>
-                <Plus className="h-4 w-4" />
-                Add your first domain
-              </Button>
-            )}
           </div>
         )}
 
