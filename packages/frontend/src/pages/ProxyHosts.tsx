@@ -1,33 +1,36 @@
 import {
-  FolderPlus,
-  Plus,
-} from "lucide-react";
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { toast } from "sonner";
-import {
   DndContext,
   type DragEndEvent,
   PointerSensor,
+  useDroppable,
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
+import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { FolderPlus, Plus } from "lucide-react";
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { PageTransition } from "@/components/common/PageTransition";
 import { SearchFilterBar } from "@/components/common/SearchFilterBar";
+import { DragOverlay } from "@/components/proxy/DragOverlay";
+import { FolderGroup } from "@/components/proxy/FolderGroup";
+import { InlineFolderEditor } from "@/components/proxy/InlineFolderEditor";
+import { MoveToFolderDialog } from "@/components/proxy/MoveToFolderDialog";
+import { ProxyHostRow } from "@/components/proxy/ProxyHostRow";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useAuthStore } from "@/stores/auth";
 import { useFolderStore } from "@/stores/folders";
 import type { HealthStatus, ProxyHostType } from "@/types";
-import { FolderGroup } from "@/components/proxy/FolderGroup";
-import { ProxyHostRow } from "@/components/proxy/ProxyHostRow";
-import { InlineFolderEditor } from "@/components/proxy/InlineFolderEditor";
-import { MoveToFolderDialog } from "@/components/proxy/MoveToFolderDialog";
-import { DragOverlay } from "@/components/proxy/DragOverlay";
-import { useDroppable } from "@dnd-kit/core";
-import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 
 const typeOptions: { value: ProxyHostType | "all"; label: string }[] = [
   { value: "all", label: "All types" },
@@ -150,7 +153,8 @@ export function ProxyHosts() {
   const handleDeleteFolder = async (id: string) => {
     const ok = await confirm({
       title: "Delete Folder",
-      description: "Are you sure? Hosts inside will be moved to ungrouped. Subfolders will be deleted.",
+      description:
+        "Are you sure? Hosts inside will be moved to ungrouped. Subfolders will be deleted.",
       confirmLabel: "Delete",
     });
     if (!ok) return;
@@ -214,9 +218,7 @@ export function ProxyHosts() {
       }
 
       // Same folder: reorder
-      const hostsInFolder = host.folderId
-        ? findHostsInFolder(host.folderId)
-        : ungroupedHosts;
+      const hostsInFolder = host.folderId ? findHostsInFolder(host.folderId) : ungroupedHosts;
 
       const oldIndex = hostsInFolder.findIndex((h) => h.id === hostId);
       const newIndex = hostsInFolder.findIndex((h) => h.id === over.id);
@@ -228,9 +230,7 @@ export function ProxyHosts() {
       reordered.splice(newIndex, 0, moved);
 
       try {
-        await reorderHosts(
-          reordered.map((h, i) => ({ id: h.id, sortOrder: i }))
-        );
+        await reorderHosts(reordered.map((h, i) => ({ id: h.id, sortOrder: i })));
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Failed to reorder");
       }
@@ -288,181 +288,213 @@ export function ProxyHosts() {
         <th className="p-3 text-xs font-medium text-muted-foreground">SSL</th>
         <th className="p-3 text-xs font-medium text-muted-foreground">Health</th>
         <th className="p-3 text-xs font-medium text-muted-foreground">Enabled</th>
-        {hasRole("admin", "operator") && <th className="p-3 text-xs font-medium text-muted-foreground w-10"></th>}
+        {hasRole("admin", "operator") && (
+          <th className="p-3 text-xs font-medium text-muted-foreground w-10"></th>
+        )}
       </tr>
     </thead>
   );
 
   return (
     <PageTransition>
-    <div className="h-full overflow-y-auto p-6 space-y-2">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-2">
-        <div>
-          <h1 className="text-2xl font-bold">Proxy Hosts</h1>
-          <p className="text-sm text-muted-foreground">{totalHosts} proxy hosts total</p>
-        </div>
-        <div className="flex items-center gap-2">
-          {hasRole("admin", "operator") && (
-            <>
-              <Button variant="outline" onClick={() => setIsCreatingFolder(true)}>
-                <FolderPlus className="h-4 w-4" />
-                Add Folder
-              </Button>
-              <Button onClick={() => navigate("/proxy-hosts/new")}>
-                <Plus className="h-4 w-4" />
-                Add Proxy Host
-              </Button>
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* Search and filters */}
-      <SearchFilterBar
-        placeholder="Search by domain name..."
-        search={searchInput}
-        onSearchChange={setSearchInput}
-        onSearchSubmit={handleSearch}
-        hasActiveFilters={hasActiveFilters}
-        onReset={() => { resetFilters(); setSearchInput(""); }}
-        filters={
-          <>
-            <div className="w-40">
-              <Select value={filters.type} onValueChange={(v) => setFilters({ type: v as ProxyHostType | "all" })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {typeOptions.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="w-40">
-              <Select value={filters.healthStatus} onValueChange={(v) => setFilters({ healthStatus: v as HealthStatus | "all" })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {healthOptions.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </>
-        }
-      />
-
-      {/* Inline new folder creation */}
-      {isCreatingFolder && (
-        <div className="border border-border bg-card px-3 py-2">
-          <InlineFolderEditor
-            onSave={handleCreateFolder}
-            onCancel={() => setIsCreatingFolder(false)}
-          />
-        </div>
-      )}
-
-      {/* Content */}
-      {isLoading ? (
-        <div className="flex items-center justify-center py-16">
-          <div className="flex flex-col items-center gap-3">
-            <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-            <p className="text-sm text-muted-foreground">Loading proxy hosts...</p>
+      <div className="h-full overflow-y-auto p-6 space-y-2">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-2">
+          <div>
+            <h1 className="text-2xl font-bold">Proxy Hosts</h1>
+            <p className="text-sm text-muted-foreground">{totalHosts} proxy hosts total</p>
           </div>
-        </div>
-      ) : folders.length > 0 || ungroupedHosts.length > 0 ? (
-        <DndContext
-          sensors={sensors}
-          onDragStart={(event) => setActiveDrag(event.active)}
-          onDragEnd={handleDragEnd}
-          onDragCancel={() => setActiveDrag(null)}
-        >
-          <div className="border border-border bg-card">
-            {/* Table header */}
-            <div className="overflow-x-auto">
-              <table className="w-full" style={{ tableLayout: "fixed" }}>
-                {colGroup}
-                {tableHeaders}
-              </table>
-            </div>
-
-            {/* Folders */}
-            {folders.map((folder) => (
-              <FolderGroup
-                key={folder.id}
-                folder={folder}
-                depth={0}
-                expanded={expandedFolderIds.has(folder.id)}
-                onToggle={() => toggleFolder(folder.id)}
-                onRename={handleRenameFolder}
-                onDelete={handleDeleteFolder}
-                onCreateSubfolder={handleCreateSubfolder}
-                onToggleHost={handleToggle}
-                togglingIds={togglingIds}
-                onMoveHostToFolder={(hostId) => setMoveDialogHostId(hostId)}
-                expandedFolderIds={expandedFolderIds}
-                onToggleFolder={toggleFolder}
-                hasRole={hasRole}
-                colGroup={colGroup}
-              />
-            ))}
-
-            {/* Ungrouped hosts — always visible when folders exist so it's a drop target */}
-            {(folders.length > 0 || ungroupedHosts.length > 0) && (
-              <UngroupedDropZone>
-                {folders.length > 0 && (
-                  <div className="flex items-center gap-2 py-2 px-3 border-b border-border">
-                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Ungrouped</span>
-                    <Badge variant="secondary" className="text-xs">{ungroupedHosts.length}</Badge>
-                  </div>
-                )}
-                {ungroupedHosts.length > 0 && (
-                  <SortableContext
-                    items={ungroupedHosts.map((h) => h.id)}
-                    strategy={verticalListSortingStrategy}
-                  >
-                    <table className="w-full" style={{ tableLayout: "fixed" }}>
-                      {colGroup}
-                      <tbody>
-                        {ungroupedHosts.map((host) => (
-                          <ProxyHostRow
-                            key={host.id}
-                            host={host}
-                            onToggle={handleToggle}
-                            togglingIds={togglingIds}
-                            onMoveToFolder={(hostId) => setMoveDialogHostId(hostId)}
-                          />
-                        ))}
-                      </tbody>
-                    </table>
-                  </SortableContext>
-                )}
-              </UngroupedDropZone>
+          <div className="flex items-center gap-2">
+            {hasRole("admin", "operator") && (
+              <>
+                <Button variant="outline" onClick={() => setIsCreatingFolder(true)}>
+                  <FolderPlus className="h-4 w-4" />
+                  Add Folder
+                </Button>
+                <Button onClick={() => navigate("/proxy-hosts/new")}>
+                  <Plus className="h-4 w-4" />
+                  Add Proxy Host
+                </Button>
+              </>
             )}
           </div>
-
-          <DragOverlay active={activeDrag} />
-        </DndContext>
-      ) : (
-        <div className="flex flex-col items-center gap-2 py-16 border border-border bg-card">
-          <p className="text-muted-foreground">No proxy hosts found</p>
-          {hasActiveFilters && (
-            <Button variant="outline" size="sm" onClick={() => { resetFilters(); setSearchInput(""); }}>
-              Clear filters
-            </Button>
-          )}
         </div>
-      )}
-    </div>
 
-    {/* Move to folder dialog */}
-    <MoveToFolderDialog
-      open={moveDialogHostId !== null}
-      onOpenChange={(open) => { if (!open) setMoveDialogHostId(null); }}
-      folders={folders}
-      currentFolderId={moveDialogHostId ? findHostFolderId(moveDialogHostId) : null}
-      onMove={handleMoveHost}
-    />
+        {/* Search and filters */}
+        <SearchFilterBar
+          placeholder="Search by domain name..."
+          search={searchInput}
+          onSearchChange={setSearchInput}
+          onSearchSubmit={handleSearch}
+          hasActiveFilters={hasActiveFilters}
+          onReset={() => {
+            resetFilters();
+            setSearchInput("");
+          }}
+          filters={
+            <>
+              <div className="w-40">
+                <Select
+                  value={filters.type}
+                  onValueChange={(v) => setFilters({ type: v as ProxyHostType | "all" })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {typeOptions.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="w-40">
+                <Select
+                  value={filters.healthStatus}
+                  onValueChange={(v) => setFilters({ healthStatus: v as HealthStatus | "all" })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {healthOptions.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </>
+          }
+        />
+
+        {/* Inline new folder creation */}
+        {isCreatingFolder && (
+          <div className="border border-border bg-card px-3 py-2">
+            <InlineFolderEditor
+              onSave={handleCreateFolder}
+              onCancel={() => setIsCreatingFolder(false)}
+            />
+          </div>
+        )}
+
+        {/* Content */}
+        {isLoading ? (
+          <div className="flex items-center justify-center py-16">
+            <div className="flex flex-col items-center gap-3">
+              <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+              <p className="text-sm text-muted-foreground">Loading proxy hosts...</p>
+            </div>
+          </div>
+        ) : folders.length > 0 || ungroupedHosts.length > 0 ? (
+          <DndContext
+            sensors={sensors}
+            onDragStart={(event) => setActiveDrag(event.active)}
+            onDragEnd={handleDragEnd}
+            onDragCancel={() => setActiveDrag(null)}
+          >
+            <div className="border border-border bg-card">
+              {/* Table header */}
+              <div className="overflow-x-auto">
+                <table className="w-full" style={{ tableLayout: "fixed" }}>
+                  {colGroup}
+                  {tableHeaders}
+                </table>
+              </div>
+
+              {/* Folders */}
+              {folders.map((folder) => (
+                <FolderGroup
+                  key={folder.id}
+                  folder={folder}
+                  depth={0}
+                  expanded={expandedFolderIds.has(folder.id)}
+                  onToggle={() => toggleFolder(folder.id)}
+                  onRename={handleRenameFolder}
+                  onDelete={handleDeleteFolder}
+                  onCreateSubfolder={handleCreateSubfolder}
+                  onToggleHost={handleToggle}
+                  togglingIds={togglingIds}
+                  onMoveHostToFolder={(hostId) => setMoveDialogHostId(hostId)}
+                  expandedFolderIds={expandedFolderIds}
+                  onToggleFolder={toggleFolder}
+                  hasRole={hasRole}
+                  colGroup={colGroup}
+                />
+              ))}
+
+              {/* Ungrouped hosts — always visible when folders exist so it's a drop target */}
+              {(folders.length > 0 || ungroupedHosts.length > 0) && (
+                <UngroupedDropZone>
+                  {folders.length > 0 && (
+                    <div className="flex items-center gap-2 py-2 px-3 border-b border-border">
+                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                        Ungrouped
+                      </span>
+                      <Badge variant="secondary" className="text-xs">
+                        {ungroupedHosts.length}
+                      </Badge>
+                    </div>
+                  )}
+                  {ungroupedHosts.length > 0 && (
+                    <SortableContext
+                      items={ungroupedHosts.map((h) => h.id)}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      <table className="w-full" style={{ tableLayout: "fixed" }}>
+                        {colGroup}
+                        <tbody>
+                          {ungroupedHosts.map((host) => (
+                            <ProxyHostRow
+                              key={host.id}
+                              host={host}
+                              onToggle={handleToggle}
+                              togglingIds={togglingIds}
+                              onMoveToFolder={(hostId) => setMoveDialogHostId(hostId)}
+                            />
+                          ))}
+                        </tbody>
+                      </table>
+                    </SortableContext>
+                  )}
+                </UngroupedDropZone>
+              )}
+            </div>
+
+            <DragOverlay active={activeDrag} />
+          </DndContext>
+        ) : (
+          <div className="flex flex-col items-center gap-2 py-16 border border-border bg-card">
+            <p className="text-muted-foreground">No proxy hosts found</p>
+            {hasActiveFilters && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  resetFilters();
+                  setSearchInput("");
+                }}
+              >
+                Clear filters
+              </Button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Move to folder dialog */}
+      <MoveToFolderDialog
+        open={moveDialogHostId !== null}
+        onOpenChange={(open) => {
+          if (!open) setMoveDialogHostId(null);
+        }}
+        folders={folders}
+        currentFolderId={moveDialogHostId ? findHostFolderId(moveDialogHostId) : null}
+        onMove={handleMoveHost}
+      />
     </PageTransition>
   );
 }

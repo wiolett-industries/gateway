@@ -62,8 +62,7 @@ export function confirm(opts: {
 }
 
 export function ConfirmDialog() {
-  const { open, title, description, confirmLabel, variant, onConfirm, close } =
-    useConfirmDialog();
+  const { open, title, description, confirmLabel, variant, onConfirm, close } = useConfirmDialog();
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && close()}>

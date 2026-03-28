@@ -1,22 +1,39 @@
 import { z } from 'zod';
 
-const KeyUsageValues = ['digitalSignature', 'keyEncipherment', 'dataEncipherment', 'keyAgreement', 'nonRepudiation'] as const;
+const KeyUsageValues = [
+  'digitalSignature',
+  'keyEncipherment',
+  'dataEncipherment',
+  'keyAgreement',
+  'nonRepudiation',
+] as const;
 
-const ExtKeyUsageValues = ['serverAuth', 'clientAuth', 'codeSigning', 'emailProtection', 'timeStamping', 'ocspSigning'] as const;
+const _ExtKeyUsageValues = [
+  'serverAuth',
+  'clientAuth',
+  'codeSigning',
+  'emailProtection',
+  'timeStamping',
+  'ocspSigning',
+] as const;
 
-const SubjectDnFieldsSchema = z.object({
-  o: z.string().max(255).optional(),
-  ou: z.string().max(255).optional(),
-  l: z.string().max(255).optional(),
-  st: z.string().max(255).optional(),
-  c: z.string().max(2).optional(),
-  serialNumber: z.string().max(255).optional(),
-}).default({});
+const SubjectDnFieldsSchema = z
+  .object({
+    o: z.string().max(255).optional(),
+    ou: z.string().max(255).optional(),
+    l: z.string().max(255).optional(),
+    st: z.string().max(255).optional(),
+    c: z.string().max(2).optional(),
+    serialNumber: z.string().max(255).optional(),
+  })
+  .default({});
 
-const AuthorityInfoAccessSchema = z.object({
-  ocspUrl: z.string().url().max(500).optional(),
-  caIssuersUrl: z.string().url().max(500).optional(),
-}).default({});
+const AuthorityInfoAccessSchema = z
+  .object({
+    ocspUrl: z.string().url().max(500).optional(),
+    caIssuersUrl: z.string().url().max(500).optional(),
+  })
+  .default({});
 
 const CertificatePolicySchema = z.object({
   oid: z.string().regex(/^\d+(\.\d+)+$/, 'Must be a valid OID'),
@@ -26,7 +43,12 @@ const CertificatePolicySchema = z.object({
 const CustomExtensionSchema = z.object({
   oid: z.string().regex(/^\d+(\.\d+)+$/, 'Must be a valid OID'),
   critical: z.boolean().default(false),
-  value: z.string().regex(/^[0-9a-fA-F]+$/, 'Must be non-empty hex-encoded DER').min(4, 'Must be at least 2 bytes (4 hex chars)').max(10000).refine((v) => v.length % 2 === 0, 'Must have even length'),
+  value: z
+    .string()
+    .regex(/^[0-9a-fA-F]+$/, 'Must be non-empty hex-encoded DER')
+    .min(4, 'Must be at least 2 bytes (4 hex chars)')
+    .max(10000)
+    .refine((v) => v.length % 2 === 0, 'Must have even length'),
 });
 
 export const CreateTemplateSchema = z.object({

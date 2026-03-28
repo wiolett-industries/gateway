@@ -1,6 +1,6 @@
 import { create } from "zustand";
-import type { CA } from "@/types";
 import { api } from "@/services/api";
+import type { CA } from "@/types";
 
 interface CAState {
   cas: CA[];

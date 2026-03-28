@@ -1,6 +1,6 @@
 import { create } from "zustand";
-import type { AccessList, CreateAccessListRequest } from "@/types";
 import { api } from "@/services/api";
+import type { AccessList, CreateAccessListRequest } from "@/types";
 
 interface AccessListsState {
   accessLists: AccessList[];
@@ -59,7 +59,8 @@ export const useAccessListsStore = create<AccessListsState>()((set, get) => ({
     const accessList = await api.updateAccessList(id, data);
     set((state) => ({
       accessLists: state.accessLists.map((al) => (al.id === id ? accessList : al)),
-      selectedAccessList: state.selectedAccessList?.id === id ? accessList : state.selectedAccessList,
+      selectedAccessList:
+        state.selectedAccessList?.id === id ? accessList : state.selectedAccessList,
     }));
     return accessList;
   },

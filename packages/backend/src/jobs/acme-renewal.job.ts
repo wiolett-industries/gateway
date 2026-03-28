@@ -1,9 +1,9 @@
-import { eq, and, lte } from 'drizzle-orm';
+import { and, eq, lte } from 'drizzle-orm';
+import type { DrizzleClient } from '@/db/client.js';
 import { sslCertificates } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
-import type { DrizzleClient } from '@/db/client.js';
-import type { SSLService } from '@/modules/ssl/ssl.service.js';
 import type { AlertService } from '@/modules/audit/alert.service.js';
+import type { SSLService } from '@/modules/ssl/ssl.service.js';
 
 const logger = createChildLogger('ACMERenewalJob');
 
@@ -14,7 +14,7 @@ export class ACMERenewalJob {
   constructor(
     private readonly db: DrizzleClient,
     private readonly sslService: SSLService,
-    private readonly alertService: AlertService,
+    private readonly alertService: AlertService
   ) {}
 
   async run(): Promise<void> {
@@ -29,7 +29,7 @@ export class ACMERenewalJob {
         eq(sslCertificates.autoRenew, true),
         eq(sslCertificates.type, 'acme'),
         eq(sslCertificates.status, 'active'),
-        lte(sslCertificates.notAfter, threshold),
+        lte(sslCertificates.notAfter, threshold)
       ),
       columns: {
         privateKeyPem: false,

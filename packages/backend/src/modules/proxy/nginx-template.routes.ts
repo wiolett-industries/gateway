@@ -1,14 +1,14 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
 import { authMiddleware, rbacMiddleware } from '@/modules/auth/auth.middleware.js';
-import { NginxTemplateService } from './nginx-template.service.js';
 import { NginxService } from '@/services/nginx.service.js';
+import type { AppEnv } from '@/types.js';
 import {
   CreateNginxTemplateSchema,
-  UpdateNginxTemplateSchema,
   PreviewNginxTemplateSchema,
+  UpdateNginxTemplateSchema,
 } from './nginx-template.schemas.js';
-import type { AppEnv } from '@/types.js';
+import { NginxTemplateService } from './nginx-template.service.js';
 
 export const nginxTemplateRoutes = new OpenAPIHono<AppEnv>();
 
@@ -131,7 +131,9 @@ nginxTemplateRoutes.post('/test', rbacMiddleware('admin', 'operator'), async (c)
     await nginxService.removeConfig(testId);
     return c.json({ data: { rendered, valid: result.valid, errors: result.error ? [result.error] : [] } });
   } catch (err) {
-    try { await nginxService.removeConfig(testId); } catch {}
+    try {
+      await nginxService.removeConfig(testId);
+    } catch {}
     return c.json({
       data: {
         rendered,

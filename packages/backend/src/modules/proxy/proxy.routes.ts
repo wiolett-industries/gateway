@@ -1,17 +1,16 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
-import { authMiddleware, rbacMiddleware } from '@/modules/auth/auth.middleware.js';
 import { AppError } from '@/middleware/error-handler.js';
-import { ProxyService } from './proxy.service.js';
-import { NginxTemplateService } from './nginx-template.service.js';
+import { authMiddleware, rbacMiddleware } from '@/modules/auth/auth.middleware.js';
+import type { AppEnv } from '@/types.js';
 import {
   CreateProxyHostSchema,
-  UpdateProxyHostSchema,
   ProxyHostListQuerySchema,
-  ValidateAdvancedConfigSchema,
   ToggleProxyHostSchema,
+  UpdateProxyHostSchema,
+  ValidateAdvancedConfigSchema,
 } from './proxy.schemas.js';
-import type { AppEnv } from '@/types.js';
+import { ProxyService } from './proxy.service.js';
 
 export const proxyRoutes = new OpenAPIHono<AppEnv>();
 

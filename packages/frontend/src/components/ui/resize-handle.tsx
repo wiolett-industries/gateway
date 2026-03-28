@@ -32,7 +32,7 @@ export function ResizeHandle({
       setIsDragging(true);
       onResizeStart?.();
     },
-    [onResizeStart],
+    [onResizeStart]
   );
 
   useEffect(() => {
@@ -41,9 +41,7 @@ export function ResizeHandle({
     const handleMouseMove = (e: MouseEvent) => {
       const delta = e.clientX - startXRef.current;
       const newWidth =
-        side === "right"
-          ? startWidthRef.current - delta
-          : startWidthRef.current + delta;
+        side === "right" ? startWidthRef.current - delta : startWidthRef.current + delta;
       const clamped = Math.max(minWidth, Math.min(maxWidth, newWidth));
       onResize(clamped);
     };
@@ -72,7 +70,7 @@ export function ResizeHandle({
         "absolute top-0 bottom-0 w-1 cursor-col-resize z-10 group",
         "hover:bg-primary/30 transition-colors",
         isDragging && "bg-primary/40",
-        side === "left" ? "right-0" : "left-0",
+        side === "left" ? "right-0" : "left-0"
       )}
       onMouseDown={handleMouseDown}
     />

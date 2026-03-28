@@ -1,13 +1,9 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
 import { authMiddleware, rbacMiddleware } from '@/modules/auth/auth.middleware.js';
-import { AccessListService } from './access-list.service.js';
-import {
-  CreateAccessListSchema,
-  UpdateAccessListSchema,
-  AccessListQuerySchema,
-} from './access-list.schemas.js';
 import type { AppEnv } from '@/types.js';
+import { AccessListQuerySchema, CreateAccessListSchema, UpdateAccessListSchema } from './access-list.schemas.js';
+import { AccessListService } from './access-list.service.js';
 
 export const accessListRoutes = new OpenAPIHono<AppEnv>();
 

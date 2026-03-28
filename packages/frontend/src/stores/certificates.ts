@@ -1,6 +1,6 @@
 import { create } from "zustand";
-import type { Certificate, CertificateStatus, CertificateType } from "@/types";
 import { api } from "@/services/api";
+import type { Certificate, CertificateStatus, CertificateType } from "@/types";
 
 interface CertificateFilters {
   search: string;

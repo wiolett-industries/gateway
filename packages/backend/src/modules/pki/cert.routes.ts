@@ -1,19 +1,19 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
 import { authMiddleware, rbacMiddleware } from '@/modules/auth/auth.middleware.js';
-import { CertService } from './cert.service.js';
-import { CRLService } from './crl.service.js';
-import { OCSPService } from './ocsp.service.js';
-import { ExportService } from './export.service.js';
+import type { AppEnv } from '@/types.js';
 import { CAService } from './ca.service.js';
 import {
-  IssueCertificateSchema,
-  IssueCertFromCSRSchema,
-  RevokeCertificateSchema,
   CertificateListQuerySchema,
   ExportCertificateQuerySchema,
+  IssueCertFromCSRSchema,
+  IssueCertificateSchema,
+  RevokeCertificateSchema,
 } from './cert.schemas.js';
-import type { AppEnv } from '@/types.js';
+import { CertService } from './cert.service.js';
+import { CRLService } from './crl.service.js';
+import { ExportService } from './export.service.js';
+import { OCSPService } from './ocsp.service.js';
 
 export const certRoutes = new OpenAPIHono<AppEnv>();
 
@@ -68,7 +68,7 @@ certRoutes.post('/from-csr', rbacMiddleware('admin', 'operator'), async (c) => {
 certRoutes.post('/:id/revoke', rbacMiddleware('admin', 'operator'), async (c) => {
   const certService = container.resolve(CertService);
   const crlService = container.resolve(CRLService);
-  const ocspService = container.resolve(OCSPService);
+  const _ocspService = container.resolve(OCSPService);
   const user = c.get('user')!;
   const id = c.req.param('id');
   const body = await c.req.json();

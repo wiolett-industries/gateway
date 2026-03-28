@@ -1,8 +1,16 @@
-import { useState } from "react";
-import { ChevronDown, ChevronRight, Folder, FolderPlus, MoreVertical, Pencil, Trash2 } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
 import { useDroppable } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { AnimatePresence, motion } from "framer-motion";
+import {
+  ChevronDown,
+  ChevronRight,
+  Folder,
+  FolderPlus,
+  MoreVertical,
+  Pencil,
+  Trash2,
+} from "lucide-react";
+import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,9 +20,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import type { FolderTreeNode, UserRole } from "@/types";
 import { InlineFolderEditor } from "./InlineFolderEditor";
 import { ProxyHostRow } from "./ProxyHostRow";
-import type { FolderTreeNode, UserRole } from "@/types";
 
 interface FolderGroupProps {
   folder: FolderTreeNode;
@@ -78,11 +86,7 @@ export function FolderGroup({
         onClick={onToggle}
       >
         <button type="button" className="text-muted-foreground shrink-0">
-          {expanded ? (
-            <ChevronDown className="h-4 w-4" />
-          ) : (
-            <ChevronRight className="h-4 w-4" />
-          )}
+          {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
         </button>
         <Folder className="h-4 w-4 text-muted-foreground shrink-0" />
 
@@ -101,7 +105,9 @@ export function FolderGroup({
           <span className="text-sm font-medium">{folder.name}</span>
         )}
 
-        <Badge variant="secondary" className="text-xs ml-1">{totalHosts}</Badge>
+        <Badge variant="secondary" className="text-xs ml-1">
+          {totalHosts}
+        </Badge>
 
         {hasRole("admin", "operator") && !isRenaming && (
           <div className="ml-auto" onClick={(e) => e.stopPropagation()}>
@@ -135,7 +141,10 @@ export function FolderGroup({
 
       {/* Inline subfolder creation */}
       {isCreatingSubfolder && (
-        <div className="py-2 px-3 border-b border-border" style={{ paddingLeft: `${(depth + 1) * 24 + 12}px` }}>
+        <div
+          className="py-2 px-3 border-b border-border"
+          style={{ paddingLeft: `${(depth + 1) * 24 + 12}px` }}
+        >
           <InlineFolderEditor
             onSave={(name) => {
               onCreateSubfolder(folder.id, name);

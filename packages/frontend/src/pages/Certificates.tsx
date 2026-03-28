@@ -1,21 +1,23 @@
-import {
-  ChevronLeft,
-  ChevronRight,
-  Plus,
-} from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { CertificateIssueDialog } from "@/components/certificates/CertificateIssueDialog";
 import { PageTransition } from "@/components/common/PageTransition";
 import { SearchFilterBar } from "@/components/common/SearchFilterBar";
-import { CertificateIssueDialog } from "@/components/certificates/CertificateIssueDialog";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { daysUntil, formatDate } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth";
 import { useCAStore } from "@/stores/ca";
 import { useCertificatesStore } from "@/stores/certificates";
 import type { CertificateStatus, CertificateType } from "@/types";
-import { formatDate, daysUntil } from "@/lib/utils";
 
 const statusOptions: { value: CertificateStatus | "all"; label: string }[] = [
   { value: "all", label: "All statuses" },
@@ -31,7 +33,6 @@ const typeOptions: { value: CertificateType | "all"; label: string }[] = [
   { value: "code-signing", label: "Code Signing" },
   { value: "email", label: "Email" },
 ];
-
 
 export function Certificates() {
   const navigate = useNavigate();
@@ -61,157 +62,208 @@ export function Certificates() {
   };
 
   const hasActiveFilters =
-    filters.status !== "active" || filters.type !== "all" || filters.caId !== "all" || filters.search !== "";
+    filters.status !== "active" ||
+    filters.type !== "all" ||
+    filters.caId !== "all" ||
+    filters.search !== "";
 
   return (
     <PageTransition>
-    <div className="h-full overflow-y-auto p-6 space-y-2">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-2">
-        <div>
-          <h1 className="text-2xl font-bold">Certificates</h1>
-          <p className="text-sm text-muted-foreground">{total} certificates total</p>
-        </div>
-        {hasRole("admin", "operator") && (
-          <Button onClick={() => setIssueDialogOpen(true)}>
-            <Plus className="h-4 w-4" />
-            Issue Certificate
-          </Button>
-        )}
-      </div>
-
-      {/* Search and filters */}
-      <SearchFilterBar
-        placeholder="Search by common name, serial number..."
-        search={searchInput}
-        onSearchChange={setSearchInput}
-        onSearchSubmit={handleSearch}
-        hasActiveFilters={hasActiveFilters}
-        onReset={() => { resetFilters(); setSearchInput(""); }}
-        filters={
-          <>
-            <div className="w-40">
-              <Select value={filters.status} onValueChange={(v) => setFilters({ status: v as CertificateStatus | "all" })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {statusOptions.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="w-40">
-              <Select value={filters.type} onValueChange={(v) => setFilters({ type: v as CertificateType | "all" })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {typeOptions.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="w-48">
-              <Select value={filters.caId} onValueChange={(v) => setFilters({ caId: v })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All CAs</SelectItem>
-                  {(cas || []).map((ca) => (
-                    <SelectItem key={ca.id} value={ca.id}>{ca.commonName}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </>
-        }
-      />
-
-      {/* Table */}
-      {isLoading ? (
-        <div className="flex items-center justify-center py-16">
-          <div className="flex flex-col items-center gap-3">
-            <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-            <p className="text-sm text-muted-foreground">Loading certificates...</p>
+      <div className="h-full overflow-y-auto p-6 space-y-2">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-2">
+          <div>
+            <h1 className="text-2xl font-bold">Certificates</h1>
+            <p className="text-sm text-muted-foreground">{total} certificates total</p>
           </div>
-        </div>
-      ) : (certificates || []).length > 0 ? (
-        <div className="border border-border bg-card">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-border text-left">
-                  <th className="p-3 text-xs font-medium text-muted-foreground">Common Name</th>
-                  <th className="p-3 text-xs font-medium text-muted-foreground">Type</th>
-                  <th className="p-3 text-xs font-medium text-muted-foreground">Issuing CA</th>
-                  <th className="p-3 text-xs font-medium text-muted-foreground">Expires</th>
-                  <th className="p-3 text-xs font-medium text-muted-foreground">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {certificates.map((cert) => {
-                  const expDays = daysUntil(cert.notAfter);
-                  return (
-                    <tr
-                      key={cert.id}
-                      className="hover:bg-accent transition-colors cursor-pointer"
-                      onClick={() => navigate(`/certificates/${cert.id}`)}
-                    >
-                      <td className="p-3">
-                        <div>
-                          <p className="text-sm font-medium">{cert.commonName}</p>
-                          {(cert.sans?.length ?? 0) > 0 && (
-                            <p className="text-xs text-muted-foreground">
-                              +{cert.sans.length} SANs
-                            </p>
-                          )}
-                        </div>
-                      </td>
-                      <td className="p-3 text-sm text-muted-foreground">{cert.type}</td>
-                      <td className="p-3 text-sm text-muted-foreground">{cert.issuerDn || cert.caId}</td>
-                      <td className="p-3">
-                        <span className={`text-sm ${expDays <= 30 && expDays > 0 ? "text-yellow-600 dark:text-yellow-400" : expDays <= 0 ? "text-destructive" : "text-muted-foreground"}`}>
-                          {formatDate(cert.notAfter)}
-                        </span>
-                      </td>
-                      <td className="p-3 align-middle"><StatusBadge status={cert.status} /></td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between border-t border-border px-4 py-3">
-              <p className="text-sm text-muted-foreground">
-                Page {page} of {totalPages}
-              </p>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>
-                  <ChevronLeft className="h-4 w-4" />
-                  Previous
-                </Button>
-                <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(page + 1)}>
-                  Next
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          )}
-        </div>
-      ) : (
-        <div className="flex flex-col items-center gap-2 py-16 border border-border bg-card">
-          <p className="text-muted-foreground">No certificates found</p>
-          {hasActiveFilters && (
-            <Button variant="outline" size="sm" onClick={() => { resetFilters(); setSearchInput(""); }}>
-              Clear filters
+          {hasRole("admin", "operator") && (
+            <Button onClick={() => setIssueDialogOpen(true)}>
+              <Plus className="h-4 w-4" />
+              Issue Certificate
             </Button>
           )}
         </div>
-      )}
 
-      <CertificateIssueDialog open={issueDialogOpen} onOpenChange={setIssueDialogOpen} onSuccess={fetchCertificates} />
-    </div>
+        {/* Search and filters */}
+        <SearchFilterBar
+          placeholder="Search by common name, serial number..."
+          search={searchInput}
+          onSearchChange={setSearchInput}
+          onSearchSubmit={handleSearch}
+          hasActiveFilters={hasActiveFilters}
+          onReset={() => {
+            resetFilters();
+            setSearchInput("");
+          }}
+          filters={
+            <>
+              <div className="w-40">
+                <Select
+                  value={filters.status}
+                  onValueChange={(v) => setFilters({ status: v as CertificateStatus | "all" })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {statusOptions.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="w-40">
+                <Select
+                  value={filters.type}
+                  onValueChange={(v) => setFilters({ type: v as CertificateType | "all" })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {typeOptions.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="w-48">
+                <Select value={filters.caId} onValueChange={(v) => setFilters({ caId: v })}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All CAs</SelectItem>
+                    {(cas || []).map((ca) => (
+                      <SelectItem key={ca.id} value={ca.id}>
+                        {ca.commonName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </>
+          }
+        />
+
+        {/* Table */}
+        {isLoading ? (
+          <div className="flex items-center justify-center py-16">
+            <div className="flex flex-col items-center gap-3">
+              <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+              <p className="text-sm text-muted-foreground">Loading certificates...</p>
+            </div>
+          </div>
+        ) : (certificates || []).length > 0 ? (
+          <div className="border border-border bg-card">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-border text-left">
+                    <th className="p-3 text-xs font-medium text-muted-foreground">Common Name</th>
+                    <th className="p-3 text-xs font-medium text-muted-foreground">Type</th>
+                    <th className="p-3 text-xs font-medium text-muted-foreground">Issuing CA</th>
+                    <th className="p-3 text-xs font-medium text-muted-foreground">Expires</th>
+                    <th className="p-3 text-xs font-medium text-muted-foreground">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {certificates.map((cert) => {
+                    const expDays = daysUntil(cert.notAfter);
+                    return (
+                      <tr
+                        key={cert.id}
+                        className="hover:bg-accent transition-colors cursor-pointer"
+                        onClick={() => navigate(`/certificates/${cert.id}`)}
+                      >
+                        <td className="p-3">
+                          <div>
+                            <p className="text-sm font-medium">{cert.commonName}</p>
+                            {(cert.sans?.length ?? 0) > 0 && (
+                              <p className="text-xs text-muted-foreground">
+                                +{cert.sans.length} SANs
+                              </p>
+                            )}
+                          </div>
+                        </td>
+                        <td className="p-3 text-sm text-muted-foreground">{cert.type}</td>
+                        <td className="p-3 text-sm text-muted-foreground">
+                          {cert.issuerDn || cert.caId}
+                        </td>
+                        <td className="p-3">
+                          <span
+                            className={`text-sm ${expDays <= 30 && expDays > 0 ? "text-yellow-600 dark:text-yellow-400" : expDays <= 0 ? "text-destructive" : "text-muted-foreground"}`}
+                          >
+                            {formatDate(cert.notAfter)}
+                          </span>
+                        </td>
+                        <td className="p-3 align-middle">
+                          <StatusBadge status={cert.status} />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between border-t border-border px-4 py-3">
+                <p className="text-sm text-muted-foreground">
+                  Page {page} of {totalPages}
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={page <= 1}
+                    onClick={() => setPage(page - 1)}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    Previous
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={page >= totalPages}
+                    onClick={() => setPage(page + 1)}
+                  >
+                    Next
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="flex flex-col items-center gap-2 py-16 border border-border bg-card">
+            <p className="text-muted-foreground">No certificates found</p>
+            {hasActiveFilters && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  resetFilters();
+                  setSearchInput("");
+                }}
+              >
+                Clear filters
+              </Button>
+            )}
+          </div>
+        )}
+
+        <CertificateIssueDialog
+          open={issueDialogOpen}
+          onOpenChange={setIssueDialogOpen}
+          onSuccess={fetchCertificates}
+        />
+      </div>
     </PageTransition>
   );
 }

@@ -10,19 +10,18 @@ import type {
   CertificateStatus,
   CertificateType,
   CreateAccessListRequest,
+  CreateIntermediateCARequest,
   CreateProxyHostRequest,
   CreateRootCARequest,
-  CreateIntermediateCARequest,
   DashboardStats,
   DNSChallenge,
   FolderTreeNode,
   GroupedProxyHostsResponse,
   HealthStatus,
-  IssueCertificateRequest,
   IssueCertFromCSRRequest,
+  IssueCertificateRequest,
   LinkInternalCertRequest,
   NginxTemplate,
-  TemplateVariableDef,
   PaginatedResponse,
   ProxyHost,
   ProxyHostFolder,
@@ -32,6 +31,7 @@ import type {
   SSLCertStatus,
   SSLCertType,
   Template,
+  TemplateVariableDef,
   UploadCertRequest,
   User,
   UserRole,
@@ -140,12 +140,15 @@ class ApiClient {
     });
   }
 
-  async updateCA(id: string, data: {
-    crlDistributionUrl?: string | null;
-    ocspResponderUrl?: string | null;
-    caIssuersUrl?: string | null;
-    maxValidityDays?: number;
-  }): Promise<CA> {
+  async updateCA(
+    id: string,
+    data: {
+      crlDistributionUrl?: string | null;
+      ocspResponderUrl?: string | null;
+      caIssuersUrl?: string | null;
+      maxValidityDays?: number;
+    }
+  ): Promise<CA> {
     return this.request<CA>(`/cas/${id}`, {
       method: "PUT",
       body: JSON.stringify(data),
@@ -200,16 +203,16 @@ class ApiClient {
     if (params?.sortOrder) searchParams.set("sortOrder", params.sortOrder);
 
     const query = searchParams.toString();
-    return this.request<PaginatedResponse<Certificate>>(
-      `/certificates${query ? `?${query}` : ""}`
-    );
+    return this.request<PaginatedResponse<Certificate>>(`/certificates${query ? `?${query}` : ""}`);
   }
 
   async getCertificate(id: string): Promise<Certificate> {
     return this.request<Certificate>(`/certificates/${id}`);
   }
 
-  async issueCertificate(data: IssueCertificateRequest): Promise<{ certificate: Certificate; privateKeyPem: string }> {
+  async issueCertificate(
+    data: IssueCertificateRequest
+  ): Promise<{ certificate: Certificate; privateKeyPem: string }> {
     return this.request(`/certificates`, {
       method: "POST",
       body: JSON.stringify(data),
@@ -291,9 +294,7 @@ class ApiClient {
     if (params?.resourceType) searchParams.set("resourceType", params.resourceType);
 
     const query = searchParams.toString();
-    return this.request<PaginatedResponse<AuditLogEntry>>(
-      `/audit${query ? `?${query}` : ""}`
-    );
+    return this.request<PaginatedResponse<AuditLogEntry>>(`/audit${query ? `?${query}` : ""}`);
   }
 
   // ── Alerts ────────────────────────────────────────────────────────
@@ -312,7 +313,10 @@ class ApiClient {
     return this.request<ApiToken[]>("/tokens");
   }
 
-  async createToken(data: { name: string; scopes: string[] }): Promise<ApiToken & { token: string }> {
+  async createToken(data: {
+    name: string;
+    scopes: string[];
+  }): Promise<ApiToken & { token: string }> {
     return this.request(`/tokens`, {
       method: "POST",
       body: JSON.stringify(data),
@@ -359,9 +363,7 @@ class ApiClient {
     if (params?.sortOrder) searchParams.set("sortOrder", params.sortOrder);
 
     const query = searchParams.toString();
-    return this.request<PaginatedResponse<ProxyHost>>(
-      `/proxy-hosts${query ? `?${query}` : ""}`
-    );
+    return this.request<PaginatedResponse<ProxyHost>>(`/proxy-hosts${query ? `?${query}` : ""}`);
   }
 
   async getProxyHost(id: string): Promise<ProxyHost> {
@@ -369,17 +371,21 @@ class ApiClient {
   }
 
   async createProxyHost(data: CreateProxyHostRequest): Promise<ProxyHost> {
-    return this.unwrapData(this.request<{ data: ProxyHost }>("/proxy-hosts", {
-      method: "POST",
-      body: JSON.stringify(data),
-    }));
+    return this.unwrapData(
+      this.request<{ data: ProxyHost }>("/proxy-hosts", {
+        method: "POST",
+        body: JSON.stringify(data),
+      })
+    );
   }
 
   async updateProxyHost(id: string, data: Partial<CreateProxyHostRequest>): Promise<ProxyHost> {
-    return this.unwrapData(this.request<{ data: ProxyHost }>(`/proxy-hosts/${id}`, {
-      method: "PUT",
-      body: JSON.stringify(data),
-    }));
+    return this.unwrapData(
+      this.request<{ data: ProxyHost }>(`/proxy-hosts/${id}`, {
+        method: "PUT",
+        body: JSON.stringify(data),
+      })
+    );
   }
 
   async deleteProxyHost(id: string): Promise<void> {
@@ -387,21 +393,27 @@ class ApiClient {
   }
 
   async toggleProxyHost(id: string, enabled: boolean): Promise<ProxyHost> {
-    return this.unwrapData(this.request<{ data: ProxyHost }>(`/proxy-hosts/${id}/toggle`, {
-      method: "POST",
-      body: JSON.stringify({ enabled }),
-    }));
+    return this.unwrapData(
+      this.request<{ data: ProxyHost }>(`/proxy-hosts/${id}/toggle`, {
+        method: "POST",
+        body: JSON.stringify({ enabled }),
+      })
+    );
   }
 
   async getRenderedProxyConfig(id: string): Promise<{ rendered: string }> {
-    return this.unwrapData(this.request<{ data: { rendered: string } }>(`/proxy-hosts/${id}/rendered-config`));
+    return this.unwrapData(
+      this.request<{ data: { rendered: string } }>(`/proxy-hosts/${id}/rendered-config`)
+    );
   }
 
   async validateProxyConfig(snippet: string): Promise<{ valid: boolean; errors: string[] }> {
-    return this.unwrapData(this.request<{ data: { valid: boolean; errors: string[] } }>("/proxy-hosts/validate-config", {
-      method: "POST",
-      body: JSON.stringify({ snippet }),
-    }));
+    return this.unwrapData(
+      this.request<{ data: { valid: boolean; errors: string[] } }>("/proxy-hosts/validate-config", {
+        method: "POST",
+        body: JSON.stringify({ snippet }),
+      })
+    );
   }
 
   // ── Proxy Host Folders ─────────────────────────────────────────
@@ -430,24 +442,30 @@ class ApiClient {
   }
 
   async createFolder(data: { name: string; parentId?: string }): Promise<ProxyHostFolder> {
-    return this.unwrapData(this.request<{ data: ProxyHostFolder }>("/proxy-host-folders", {
-      method: "POST",
-      body: JSON.stringify(data),
-    }));
+    return this.unwrapData(
+      this.request<{ data: ProxyHostFolder }>("/proxy-host-folders", {
+        method: "POST",
+        body: JSON.stringify(data),
+      })
+    );
   }
 
   async updateFolder(id: string, data: { name: string }): Promise<ProxyHostFolder> {
-    return this.unwrapData(this.request<{ data: ProxyHostFolder }>(`/proxy-host-folders/${id}`, {
-      method: "PUT",
-      body: JSON.stringify(data),
-    }));
+    return this.unwrapData(
+      this.request<{ data: ProxyHostFolder }>(`/proxy-host-folders/${id}`, {
+        method: "PUT",
+        body: JSON.stringify(data),
+      })
+    );
   }
 
   async moveFolder(id: string, parentId: string | null): Promise<ProxyHostFolder> {
-    return this.unwrapData(this.request<{ data: ProxyHostFolder }>(`/proxy-host-folders/${id}/move`, {
-      method: "PUT",
-      body: JSON.stringify({ parentId }),
-    }));
+    return this.unwrapData(
+      this.request<{ data: ProxyHostFolder }>(`/proxy-host-folders/${id}/move`, {
+        method: "PUT",
+        body: JSON.stringify({ parentId }),
+      })
+    );
   }
 
   async deleteFolder(id: string): Promise<void> {
@@ -485,18 +503,36 @@ class ApiClient {
     return this.unwrapData(this.request<{ data: NginxTemplate }>(`/nginx-templates/${id}`));
   }
 
-  async createNginxTemplate(data: { name: string; description?: string; type: string; content: string; variables?: TemplateVariableDef[] }): Promise<NginxTemplate> {
-    return this.unwrapData(this.request<{ data: NginxTemplate }>("/nginx-templates", {
-      method: "POST",
-      body: JSON.stringify(data),
-    }));
+  async createNginxTemplate(data: {
+    name: string;
+    description?: string;
+    type: string;
+    content: string;
+    variables?: TemplateVariableDef[];
+  }): Promise<NginxTemplate> {
+    return this.unwrapData(
+      this.request<{ data: NginxTemplate }>("/nginx-templates", {
+        method: "POST",
+        body: JSON.stringify(data),
+      })
+    );
   }
 
-  async updateNginxTemplate(id: string, data: { name?: string; description?: string | null; content?: string; variables?: TemplateVariableDef[] }): Promise<NginxTemplate> {
-    return this.unwrapData(this.request<{ data: NginxTemplate }>(`/nginx-templates/${id}`, {
-      method: "PUT",
-      body: JSON.stringify(data),
-    }));
+  async updateNginxTemplate(
+    id: string,
+    data: {
+      name?: string;
+      description?: string | null;
+      content?: string;
+      variables?: TemplateVariableDef[];
+    }
+  ): Promise<NginxTemplate> {
+    return this.unwrapData(
+      this.request<{ data: NginxTemplate }>(`/nginx-templates/${id}`, {
+        method: "PUT",
+        body: JSON.stringify(data),
+      })
+    );
   }
 
   async deleteNginxTemplate(id: string): Promise<void> {
@@ -504,23 +540,34 @@ class ApiClient {
   }
 
   async cloneNginxTemplate(id: string): Promise<NginxTemplate> {
-    return this.unwrapData(this.request<{ data: NginxTemplate }>(`/nginx-templates/${id}/clone`, {
-      method: "POST",
-    }));
+    return this.unwrapData(
+      this.request<{ data: NginxTemplate }>(`/nginx-templates/${id}/clone`, {
+        method: "POST",
+      })
+    );
   }
 
   async previewNginxTemplate(content: string, hostId?: string): Promise<{ rendered: string }> {
-    return this.unwrapData(this.request<{ data: { rendered: string } }>("/nginx-templates/preview", {
-      method: "POST",
-      body: JSON.stringify({ content, hostId }),
-    }));
+    return this.unwrapData(
+      this.request<{ data: { rendered: string } }>("/nginx-templates/preview", {
+        method: "POST",
+        body: JSON.stringify({ content, hostId }),
+      })
+    );
   }
 
-  async testNginxTemplate(content: string): Promise<{ rendered: string; valid: boolean; errors: string[] }> {
-    return this.unwrapData(this.request<{ data: { rendered: string; valid: boolean; errors: string[] } }>("/nginx-templates/test", {
-      method: "POST",
-      body: JSON.stringify({ content }),
-    }));
+  async testNginxTemplate(
+    content: string
+  ): Promise<{ rendered: string; valid: boolean; errors: string[] }> {
+    return this.unwrapData(
+      this.request<{ data: { rendered: string; valid: boolean; errors: string[] } }>(
+        "/nginx-templates/test",
+        {
+          method: "POST",
+          body: JSON.stringify({ content }),
+        }
+      )
+    );
   }
 
   // ── SSL Certificates ───────────────────────────────────────────
@@ -553,33 +600,50 @@ class ApiClient {
     return this.unwrapData(this.request<{ data: SSLCertificate }>(`/ssl-certificates/${id}`));
   }
 
-  async requestACMECert(data: RequestACMECertRequest): Promise<SSLCertificate | { challenges: DNSChallenge[] }> {
-    return this.unwrapData(this.request<{ data: SSLCertificate | { challenges: DNSChallenge[] } }>("/ssl-certificates/acme", {
-      method: "POST",
-      body: JSON.stringify(data),
-    }));
+  async requestACMECert(
+    data: RequestACMECertRequest
+  ): Promise<SSLCertificate | { challenges: DNSChallenge[] }> {
+    return this.unwrapData(
+      this.request<{ data: SSLCertificate | { challenges: DNSChallenge[] } }>(
+        "/ssl-certificates/acme",
+        {
+          method: "POST",
+          body: JSON.stringify(data),
+        }
+      )
+    );
   }
 
   async uploadCert(data: UploadCertRequest): Promise<SSLCertificate> {
-    return this.unwrapData(this.request<{ data: SSLCertificate }>("/ssl-certificates/upload", {
-      method: "POST",
-      body: JSON.stringify(data),
-    }));
+    return this.unwrapData(
+      this.request<{ data: SSLCertificate }>("/ssl-certificates/upload", {
+        method: "POST",
+        body: JSON.stringify(data),
+      })
+    );
   }
 
   async linkInternalCert(data: LinkInternalCertRequest): Promise<SSLCertificate> {
-    return this.unwrapData(this.request<{ data: SSLCertificate }>("/ssl-certificates/internal", {
-      method: "POST",
-      body: JSON.stringify(data),
-    }));
+    return this.unwrapData(
+      this.request<{ data: SSLCertificate }>("/ssl-certificates/internal", {
+        method: "POST",
+        body: JSON.stringify(data),
+      })
+    );
   }
 
   async renewSSLCert(id: string): Promise<SSLCertificate> {
-    return this.unwrapData(this.request<{ data: SSLCertificate }>(`/ssl-certificates/${id}/renew`, { method: "POST" }));
+    return this.unwrapData(
+      this.request<{ data: SSLCertificate }>(`/ssl-certificates/${id}/renew`, { method: "POST" })
+    );
   }
 
   async completeDNSVerify(id: string): Promise<SSLCertificate> {
-    return this.unwrapData(this.request<{ data: SSLCertificate }>(`/ssl-certificates/${id}/dns-verify`, { method: "POST" }));
+    return this.unwrapData(
+      this.request<{ data: SSLCertificate }>(`/ssl-certificates/${id}/dns-verify`, {
+        method: "POST",
+      })
+    );
   }
 
   async deleteSSLCert(id: string): Promise<void> {
@@ -599,9 +663,7 @@ class ApiClient {
     if (params?.search) searchParams.set("search", params.search);
 
     const query = searchParams.toString();
-    return this.request<PaginatedResponse<AccessList>>(
-      `/access-lists${query ? `?${query}` : ""}`
-    );
+    return this.request<PaginatedResponse<AccessList>>(`/access-lists${query ? `?${query}` : ""}`);
   }
 
   async getAccessList(id: string): Promise<AccessList> {
@@ -609,17 +671,21 @@ class ApiClient {
   }
 
   async createAccessList(data: CreateAccessListRequest): Promise<AccessList> {
-    return this.unwrapData(this.request<{ data: AccessList }>("/access-lists", {
-      method: "POST",
-      body: JSON.stringify(data),
-    }));
+    return this.unwrapData(
+      this.request<{ data: AccessList }>("/access-lists", {
+        method: "POST",
+        body: JSON.stringify(data),
+      })
+    );
   }
 
   async updateAccessList(id: string, data: Partial<CreateAccessListRequest>): Promise<AccessList> {
-    return this.unwrapData(this.request<{ data: AccessList }>(`/access-lists/${id}`, {
-      method: "PUT",
-      body: JSON.stringify(data),
-    }));
+    return this.unwrapData(
+      this.request<{ data: AccessList }>(`/access-lists/${id}`, {
+        method: "PUT",
+        body: JSON.stringify(data),
+      })
+    );
   }
 
   async deleteAccessList(id: string): Promise<void> {

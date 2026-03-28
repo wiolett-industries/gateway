@@ -1,26 +1,25 @@
-import bcrypt from 'bcryptjs';
-import { eq, and, ilike, sql, count, desc } from 'drizzle-orm';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import bcrypt from 'bcryptjs';
+import { and, count, desc, eq, ilike } from 'drizzle-orm';
+import type { DrizzleClient } from '@/db/client.js';
+import type { BasicAuthUser } from '@/db/schema/access-lists.js';
+import { certificates } from '@/db/schema/certificates.js';
 import { accessLists } from '@/db/schema/index.js';
 import { proxyHosts } from '@/db/schema/proxy-hosts.js';
 import { sslCertificates } from '@/db/schema/ssl-certificates.js';
-import { certificates } from '@/db/schema/certificates.js';
-import { NginxService } from '@/services/nginx.service.js';
-import { NginxTemplateService } from '@/modules/proxy/nginx-template.service.js';
-import { AuditService } from '@/modules/audit/audit.service.js';
-import { AppError } from '@/middleware/error-handler.js';
 import { createChildLogger } from '@/lib/logger.js';
-import type { DrizzleClient } from '@/db/client.js';
-import type { CreateAccessListInput, UpdateAccessListInput, AccessListQuery } from './access-list.schemas.js';
+import { AppError } from '@/middleware/error-handler.js';
+import type { AuditService } from '@/modules/audit/audit.service.js';
+import type { NginxTemplateService } from '@/modules/proxy/nginx-template.service.js';
+import type { NginxService, ProxyHostConfig } from '@/services/nginx.service.js';
 import type { PaginatedResponse } from '@/types.js';
-import type { BasicAuthUser } from '@/db/schema/access-lists.js';
-import type { ProxyHostConfig } from '@/services/nginx.service.js';
+import type { AccessListQuery, CreateAccessListInput, UpdateAccessListInput } from './access-list.schemas.js';
 
 const logger = createChildLogger('AccessListService');
 
 /** Path inside the nginx container where htpasswd files are stored. */
-const NGINX_HTPASSWD_PREFIX = '/etc/nginx/htpasswd';
+const _NGINX_HTPASSWD_PREFIX = '/etc/nginx/htpasswd';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -37,7 +36,7 @@ export class AccessListService {
     private readonly db: DrizzleClient,
     private readonly nginxService: NginxService,
     private readonly nginxTemplateService: NginxTemplateService,
-    private readonly auditService: AuditService,
+    private readonly auditService: AuditService
   ) {}
 
   // -----------------------------------------------------------------------
@@ -46,19 +45,20 @@ export class AccessListService {
 
   async create(input: CreateAccessListInput, userId: string) {
     // 1. Hash basic auth passwords before storing
-    const hashedUsers = input.basicAuthUsers.length > 0
-      ? await this.hashPasswords(input.basicAuthUsers)
-      : [];
+    const hashedUsers = input.basicAuthUsers.length > 0 ? await this.hashPasswords(input.basicAuthUsers) : [];
 
     // 2. Insert into DB
-    const [accessList] = await this.db.insert(accessLists).values({
-      name: input.name,
-      description: input.description ?? null,
-      ipRules: input.ipRules,
-      basicAuthEnabled: input.basicAuthEnabled,
-      basicAuthUsers: hashedUsers,
-      createdById: userId,
-    }).returning();
+    const [accessList] = await this.db
+      .insert(accessLists)
+      .values({
+        name: input.name,
+        description: input.description ?? null,
+        ipRules: input.ipRules,
+        basicAuthEnabled: input.basicAuthEnabled,
+        basicAuthUsers: hashedUsers,
+        createdById: userId,
+      })
+      .returning();
 
     // 3. Write htpasswd file for nginx if basic auth enabled
     if (input.basicAuthEnabled && hashedUsers.length > 0) {
@@ -101,18 +101,12 @@ export class AccessListService {
     if (input.basicAuthEnabled !== undefined) updateData.basicAuthEnabled = input.basicAuthEnabled;
 
     if (input.basicAuthUsers !== undefined) {
-      const hashedUsers = input.basicAuthUsers.length > 0
-        ? await this.hashPasswords(input.basicAuthUsers)
-        : [];
+      const hashedUsers = input.basicAuthUsers.length > 0 ? await this.hashPasswords(input.basicAuthUsers) : [];
       updateData.basicAuthUsers = hashedUsers;
     }
 
     // 3. Update DB
-    const [updated] = await this.db
-      .update(accessLists)
-      .set(updateData)
-      .where(eq(accessLists.id, id))
-      .returning();
+    const [updated] = await this.db.update(accessLists).set(updateData).where(eq(accessLists.id, id)).returning();
 
     // 4. Regenerate htpasswd file if basic auth changed
     const basicAuthEnabled = updated.basicAuthEnabled;
@@ -217,14 +211,12 @@ export class AccessListService {
     });
 
     if (referencingHosts.length > 0) {
-      const hostNames = referencingHosts.map(
-        (h) => (h.domainNames as string[]).join(', '),
-      );
+      const hostNames = referencingHosts.map((h) => (h.domainNames as string[]).join(', '));
       throw new AppError(
         409,
         'ACCESS_LIST_IN_USE',
         `Cannot delete access list: it is referenced by ${referencingHosts.length} proxy host(s)`,
-        { proxyHosts: hostNames },
+        { proxyHosts: hostNames }
       );
     }
 
@@ -265,9 +257,7 @@ export class AccessListService {
     return {
       ...accessList,
       // Strip password hashes from response, return only usernames
-      basicAuthUsers: (accessList.basicAuthUsers as BasicAuthUser[]).map(
-        (u) => ({ username: u.username }),
-      ),
+      basicAuthUsers: (accessList.basicAuthUsers as BasicAuthUser[]).map((u) => ({ username: u.username })),
       proxyHostCount: Number(usageCount),
     };
   }
@@ -280,9 +270,7 @@ export class AccessListService {
     const conditions = [];
 
     if (query.search) {
-      conditions.push(
-        ilike(accessLists.name, `%${query.search}%`),
-      );
+      conditions.push(ilike(accessLists.name, `%${query.search}%`));
     }
 
     const where = conditions.length > 0 ? and(...conditions) : undefined;
@@ -302,9 +290,7 @@ export class AccessListService {
     // Strip password hashes from list responses
     const sanitizedEntries = entries.map((entry) => ({
       ...entry,
-      basicAuthUsers: (entry.basicAuthUsers as BasicAuthUser[]).map(
-        (u) => ({ username: u.username }),
-      ),
+      basicAuthUsers: (entry.basicAuthUsers as BasicAuthUser[]).map((u) => ({ username: u.username })),
     }));
 
     return {
@@ -332,9 +318,7 @@ export class AccessListService {
     await fs.mkdir(htpasswdDir, { recursive: true });
 
     const filePath = path.join(htpasswdDir, `access-list-${accessListId}`);
-    const content = users
-      .map((u) => `${u.username}:${u.passwordHash}`)
-      .join('\n') + '\n';
+    const content = `${users.map((u) => `${u.username}:${u.passwordHash}`).join('\n')}\n`;
 
     await fs.writeFile(filePath, content, 'utf-8');
     logger.debug('Htpasswd file written', { filePath });
@@ -361,7 +345,7 @@ export class AccessListService {
    * keys — the cert files should already be deployed on disk.
    */
   private async resolveCertPathsForHost(
-    host: typeof proxyHosts.$inferSelect,
+    host: typeof proxyHosts.$inferSelect
   ): Promise<{ sslCertPath: string | null; sslKeyPath: string | null; sslChainPath: string | null }> {
     const empty = { sslCertPath: null, sslKeyPath: null, sslChainPath: null };
 
@@ -375,7 +359,7 @@ export class AccessListService {
         columns: { id: true, certificatePem: true, chainPem: true },
       });
 
-      if (sslCert && sslCert.certificatePem) {
+      if (sslCert?.certificatePem) {
         return {
           sslCertPath: `${NGINX_CERTS_PREFIX}/${sslCert.id}/fullchain.pem`,
           sslKeyPath: `${NGINX_CERTS_PREFIX}/${sslCert.id}/privkey.pem`,
@@ -390,7 +374,7 @@ export class AccessListService {
         columns: { id: true, certificatePem: true },
       });
 
-      if (cert && cert.certificatePem) {
+      if (cert?.certificatePem) {
         return {
           sslCertPath: `${NGINX_CERTS_PREFIX}/internal-${cert.id}/fullchain.pem`,
           sslKeyPath: `${NGINX_CERTS_PREFIX}/internal-${cert.id}/privkey.pem`,
@@ -406,16 +390,14 @@ export class AccessListService {
   // Helpers — password hashing
   // -----------------------------------------------------------------------
 
-  private async hashPasswords(
-    users: { username: string; password: string }[],
-  ): Promise<BasicAuthUser[]> {
+  private async hashPasswords(users: { username: string; password: string }[]): Promise<BasicAuthUser[]> {
     const BCRYPT_ROUNDS = 10;
 
     return Promise.all(
       users.map(async (u) => ({
         username: u.username,
         passwordHash: await bcrypt.hash(u.password, BCRYPT_ROUNDS),
-      })),
+      }))
     );
   }
 }

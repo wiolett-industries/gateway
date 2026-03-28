@@ -1,9 +1,9 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
 import { authMiddleware, rbacMiddleware } from '@/modules/auth/auth.middleware.js';
-import { TemplatesService } from './templates.service.js';
-import { CreateTemplateSchema, UpdateTemplateSchema } from './templates.schemas.js';
 import type { AppEnv } from '@/types.js';
+import { CreateTemplateSchema, UpdateTemplateSchema } from './templates.schemas.js';
+import { TemplatesService } from './templates.service.js';
 
 export const templateRoutes = new OpenAPIHono<AppEnv>();
 

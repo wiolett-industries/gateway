@@ -1,11 +1,11 @@
+import { count, eq } from 'drizzle-orm';
 import Handlebars from 'handlebars';
-import { eq, count } from 'drizzle-orm';
+import type { DrizzleClient } from '@/db/client.js';
 import { nginxTemplates } from '@/db/schema/nginx-templates.js';
 import { proxyHosts } from '@/db/schema/proxy-hosts.js';
-import { AuditService } from '@/modules/audit/audit.service.js';
-import { AppError } from '@/middleware/error-handler.js';
 import { createChildLogger } from '@/lib/logger.js';
-import type { DrizzleClient } from '@/db/client.js';
+import { AppError } from '@/middleware/error-handler.js';
+import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { ProxyHostConfig } from '@/services/nginx.service.js';
 import type { CreateNginxTemplateInput, UpdateNginxTemplateInput } from './nginx-template.schemas.js';
 
@@ -241,9 +241,24 @@ server {
 `;
 
 const BUILTIN_TEMPLATES = [
-  { name: 'Default Proxy', description: 'Standard reverse proxy with SSL, caching, rate limiting, WebSocket, and access control support.', type: 'proxy' as const, content: BUILTIN_PROXY_TEMPLATE },
-  { name: 'Default Redirect', description: 'HTTP redirect with optional SSL termination.', type: 'redirect' as const, content: BUILTIN_REDIRECT_TEMPLATE },
-  { name: 'Default 404', description: 'Returns 404 for all requests. Use to block domains.', type: '404' as const, content: BUILTIN_DEAD_TEMPLATE },
+  {
+    name: 'Default Proxy',
+    description: 'Standard reverse proxy with SSL, caching, rate limiting, WebSocket, and access control support.',
+    type: 'proxy' as const,
+    content: BUILTIN_PROXY_TEMPLATE,
+  },
+  {
+    name: 'Default Redirect',
+    description: 'HTTP redirect with optional SSL termination.',
+    type: 'redirect' as const,
+    content: BUILTIN_REDIRECT_TEMPLATE,
+  },
+  {
+    name: 'Default 404',
+    description: 'Returns 404 for all requests. Use to block domains.',
+    type: '404' as const,
+    content: BUILTIN_DEAD_TEMPLATE,
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -286,7 +301,7 @@ const SAMPLE_CONTEXT = {
 export class NginxTemplateService {
   constructor(
     private readonly db: DrizzleClient,
-    private readonly auditService: AuditService,
+    private readonly auditService: AuditService
   ) {}
 
   // -----------------------------------------------------------------------
@@ -330,10 +345,13 @@ export class NginxTemplateService {
     // Validate the template compiles
     this.compileTemplate(input.content);
 
-    const [template] = await this.db.insert(nginxTemplates).values({
-      ...input,
-      createdById: userId,
-    }).returning();
+    const [template] = await this.db
+      .insert(nginxTemplates)
+      .values({
+        ...input,
+        createdById: userId,
+      })
+      .returning();
 
     await this.auditService.log({
       userId,
@@ -399,14 +417,17 @@ export class NginxTemplateService {
   async cloneTemplate(id: string, userId: string) {
     const existing = await this.getTemplate(id);
 
-    const [clone] = await this.db.insert(nginxTemplates).values({
-      name: `Copy of ${existing.name}`,
-      description: existing.description,
-      type: existing.type,
-      content: existing.content,
-      variables: existing.variables ?? [],
-      createdById: userId,
-    }).returning();
+    const [clone] = await this.db
+      .insert(nginxTemplates)
+      .values({
+        name: `Copy of ${existing.name}`,
+        description: existing.description,
+        type: existing.type,
+        content: existing.content,
+        variables: existing.variables ?? [],
+        createdById: userId,
+      })
+      .returning();
 
     await this.auditService.log({
       userId,
@@ -437,9 +458,12 @@ export class NginxTemplateService {
 
     // Fallback to hardcoded if DB not seeded yet
     switch (type) {
-      case 'proxy': return BUILTIN_PROXY_TEMPLATE;
-      case 'redirect': return BUILTIN_REDIRECT_TEMPLATE;
-      case '404': return BUILTIN_DEAD_TEMPLATE;
+      case 'proxy':
+        return BUILTIN_PROXY_TEMPLATE;
+      case 'redirect':
+        return BUILTIN_REDIRECT_TEMPLATE;
+      case '404':
+        return BUILTIN_DEAD_TEMPLATE;
     }
   }
 
@@ -467,7 +491,11 @@ export class NginxTemplateService {
     try {
       return Handlebars.compile(content, { noEscape: true });
     } catch (err) {
-      throw new AppError(400, 'INVALID_TEMPLATE', `Template compilation error: ${err instanceof Error ? err.message : 'unknown'}`);
+      throw new AppError(
+        400,
+        'INVALID_TEMPLATE',
+        `Template compilation error: ${err instanceof Error ? err.message : 'unknown'}`
+      );
     }
   }
 
@@ -511,7 +539,9 @@ export class NginxTemplateService {
     };
   }
 
-  private sanitizeTemplateVariables(vars: Record<string, string | number | boolean>): Record<string, string | number | boolean> {
+  private sanitizeTemplateVariables(
+    vars: Record<string, string | number | boolean>
+  ): Record<string, string | number | boolean> {
     const sanitized: Record<string, string | number | boolean> = {};
     for (const [key, value] of Object.entries(vars)) {
       if (typeof value === 'string') {

@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -11,6 +10,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { api } from "@/services/api";
 import { useCAStore } from "@/stores/ca";
 import type { KeyAlgorithm } from "@/types";
@@ -84,9 +90,7 @@ export function CACreateDialog({ open, onOpenChange, parentId }: CACreateDialogP
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>
-            Create {isIntermediate ? "Intermediate" : "Root"} CA
-          </DialogTitle>
+          <DialogTitle>Create {isIntermediate ? "Intermediate" : "Root"} CA</DialogTitle>
           <DialogDescription>
             {isIntermediate
               ? "Create a new intermediate CA signed by the parent."
@@ -98,12 +102,21 @@ export function CACreateDialog({ open, onOpenChange, parentId }: CACreateDialogP
           {needsParentPicker && (
             <div className="space-y-2">
               <label className="text-sm font-medium">Parent CA</label>
-              <Select value={selectedParentId || "none"} onValueChange={(v) => setSelectedParentId(v === "none" ? "" : v)}>
-                <SelectTrigger><SelectValue placeholder="Select parent CA..." /></SelectTrigger>
+              <Select
+                value={selectedParentId || "none"}
+                onValueChange={(v) => setSelectedParentId(v === "none" ? "" : v)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select parent CA..." />
+                </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none" disabled>Select parent CA...</SelectItem>
+                  <SelectItem value="none" disabled>
+                    Select parent CA...
+                  </SelectItem>
                   {activeCAs.map((ca) => (
-                    <SelectItem key={ca.id} value={ca.id}>{ca.commonName}</SelectItem>
+                    <SelectItem key={ca.id} value={ca.id}>
+                      {ca.commonName}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -115,7 +128,9 @@ export function CACreateDialog({ open, onOpenChange, parentId }: CACreateDialogP
             <Input
               value={commonName}
               onChange={(e) => setCommonName(e.target.value)}
-              placeholder={isIntermediate ? "e.g., My Org Intermediate CA" : "e.g., My Organization Root CA"}
+              placeholder={
+                isIntermediate ? "e.g., My Org Intermediate CA" : "e.g., My Organization Root CA"
+              }
               autoFocus={!needsParentPicker}
             />
           </div>
@@ -123,8 +138,13 @@ export function CACreateDialog({ open, onOpenChange, parentId }: CACreateDialogP
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">Key Algorithm</label>
-              <Select value={keyAlgorithm} onValueChange={(v) => setKeyAlgorithm(v as KeyAlgorithm)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+              <Select
+                value={keyAlgorithm}
+                onValueChange={(v) => setKeyAlgorithm(v as KeyAlgorithm)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ecdsa-p256">ECDSA P-256</SelectItem>
                   <SelectItem value="ecdsa-p384">ECDSA P-384</SelectItem>
@@ -138,7 +158,7 @@ export function CACreateDialog({ open, onOpenChange, parentId }: CACreateDialogP
               <Input
                 type="number"
                 value={validityYears}
-                onChange={(e) => setValidityYears(parseInt(e.target.value) || 10)}
+                onChange={(e) => setValidityYears(parseInt(e.target.value, 10) || 10)}
                 min={1}
                 max={30}
               />
@@ -153,7 +173,7 @@ export function CACreateDialog({ open, onOpenChange, parentId }: CACreateDialogP
                 value={pathLengthConstraint ?? ""}
                 onChange={(e) => {
                   const val = e.target.value;
-                  setPathLengthConstraint(val === "" ? undefined : parseInt(val));
+                  setPathLengthConstraint(val === "" ? undefined : parseInt(val, 10));
                 }}
                 placeholder="Optional"
                 min={0}
@@ -165,7 +185,7 @@ export function CACreateDialog({ open, onOpenChange, parentId }: CACreateDialogP
               <Input
                 type="number"
                 value={maxValidityDays}
-                onChange={(e) => setMaxValidityDays(parseInt(e.target.value) || 365)}
+                onChange={(e) => setMaxValidityDays(parseInt(e.target.value, 10) || 365)}
                 min={1}
                 max={3650}
               />
@@ -174,8 +194,13 @@ export function CACreateDialog({ open, onOpenChange, parentId }: CACreateDialogP
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={handleCreate} disabled={isSaving || !commonName.trim() || (needsParentPicker && !selectedParentId)}>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleCreate}
+            disabled={isSaving || !commonName.trim() || (needsParentPicker && !selectedParentId)}
+          >
             {isSaving ? "Creating..." : "Create CA"}
           </Button>
         </DialogFooter>

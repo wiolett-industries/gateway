@@ -1,11 +1,6 @@
-import { eq, sql, and, gt, lt, count } from 'drizzle-orm';
+import { and, count, eq, gt, lt, sql } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
-import {
-  proxyHosts,
-  sslCertificates,
-  certificates,
-  certificateAuthorities,
-} from '@/db/schema/index.js';
+import { certificateAuthorities, certificates, proxyHosts, sslCertificates } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
 
 const logger = createChildLogger('MonitoringService');
@@ -80,29 +75,14 @@ export class MonitoringService {
     ] = await Promise.all([
       // Proxy hosts
       this.db.select({ value: count() }).from(proxyHosts),
-      this.db
-        .select({ value: count() })
-        .from(proxyHosts)
-        .where(eq(proxyHosts.enabled, true)),
-      this.db
-        .select({ value: count() })
-        .from(proxyHosts)
-        .where(eq(proxyHosts.healthStatus, 'online')),
-      this.db
-        .select({ value: count() })
-        .from(proxyHosts)
-        .where(eq(proxyHosts.healthStatus, 'offline')),
-      this.db
-        .select({ value: count() })
-        .from(proxyHosts)
-        .where(eq(proxyHosts.healthStatus, 'degraded')),
+      this.db.select({ value: count() }).from(proxyHosts).where(eq(proxyHosts.enabled, true)),
+      this.db.select({ value: count() }).from(proxyHosts).where(eq(proxyHosts.healthStatus, 'online')),
+      this.db.select({ value: count() }).from(proxyHosts).where(eq(proxyHosts.healthStatus, 'offline')),
+      this.db.select({ value: count() }).from(proxyHosts).where(eq(proxyHosts.healthStatus, 'degraded')),
 
       // SSL certificates
       this.db.select({ value: count() }).from(sslCertificates),
-      this.db
-        .select({ value: count() })
-        .from(sslCertificates)
-        .where(eq(sslCertificates.status, 'active')),
+      this.db.select({ value: count() }).from(sslCertificates).where(eq(sslCertificates.status, 'active')),
       this.db
         .select({ value: count() })
         .from(sslCertificates)
@@ -110,28 +90,16 @@ export class MonitoringService {
           and(
             eq(sslCertificates.status, 'active'),
             gt(sslCertificates.notAfter, now),
-            lt(sslCertificates.notAfter, thirtyDaysFromNow),
-          ),
+            lt(sslCertificates.notAfter, thirtyDaysFromNow)
+          )
         ),
-      this.db
-        .select({ value: count() })
-        .from(sslCertificates)
-        .where(eq(sslCertificates.status, 'expired')),
+      this.db.select({ value: count() }).from(sslCertificates).where(eq(sslCertificates.status, 'expired')),
 
       // PKI certificates
       this.db.select({ value: count() }).from(certificates),
-      this.db
-        .select({ value: count() })
-        .from(certificates)
-        .where(eq(certificates.status, 'active')),
-      this.db
-        .select({ value: count() })
-        .from(certificates)
-        .where(eq(certificates.status, 'revoked')),
-      this.db
-        .select({ value: count() })
-        .from(certificates)
-        .where(eq(certificates.status, 'expired')),
+      this.db.select({ value: count() }).from(certificates).where(eq(certificates.status, 'active')),
+      this.db.select({ value: count() }).from(certificates).where(eq(certificates.status, 'revoked')),
+      this.db.select({ value: count() }).from(certificates).where(eq(certificates.status, 'expired')),
 
       // Certificate authorities
       this.db.select({ value: count() }).from(certificateAuthorities),
@@ -189,7 +157,7 @@ export class MonitoringService {
           WHEN 'online' THEN 2
           WHEN 'unknown' THEN 3
           ELSE 4
-        END`,
+        END`
       );
 
     return hosts;

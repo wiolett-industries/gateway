@@ -1,7 +1,7 @@
-import { MoreVertical } from "lucide-react";
-import { useNavigate } from "react-router-dom";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { MoreVertical } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -38,17 +38,21 @@ export interface ProxyHostRowProps {
   isOverlay?: boolean;
 }
 
-export function ProxyHostRow({ host, depth = 0, onToggle, togglingIds, onMoveToFolder, isOverlay }: ProxyHostRowProps) {
+export function ProxyHostRow({
+  host,
+  depth = 0,
+  onToggle,
+  togglingIds,
+  onMoveToFolder,
+  isOverlay,
+}: ProxyHostRowProps) {
   const navigate = useNavigate();
   const { hasRole } = useAuthStore();
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: host.id, data: { type: "host", host }, disabled: isOverlay });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: host.id,
+    data: { type: "host", host },
+    disabled: isOverlay,
+  });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -75,9 +79,7 @@ export function ProxyHostRow({ host, depth = 0, onToggle, togglingIds, onMoveToF
         <div>
           <p className="text-sm font-medium">{host.domainNames[0]}</p>
           {host.domainNames.length > 1 && (
-            <p className="text-xs text-muted-foreground">
-              +{host.domainNames.length - 1} more
-            </p>
+            <p className="text-xs text-muted-foreground">+{host.domainNames.length - 1} more</p>
           )}
         </div>
       </td>
@@ -85,10 +87,12 @@ export function ProxyHostRow({ host, depth = 0, onToggle, togglingIds, onMoveToF
         {host.type === "proxy" && host.forwardHost
           ? `${host.forwardScheme}://${host.forwardHost}:${host.forwardPort}`
           : host.type === "redirect" && host.redirectUrl
-          ? host.redirectUrl
-          : "—"}
+            ? host.redirectUrl
+            : "—"}
       </td>
-      <td className="p-3"><TypeBadge type={host.type} /></td>
+      <td className="p-3">
+        <TypeBadge type={host.type} />
+      </td>
       <td className="p-3">
         {host.sslEnabled ? (
           <Badge variant="success">SSL</Badge>
@@ -101,10 +105,7 @@ export function ProxyHostRow({ host, depth = 0, onToggle, togglingIds, onMoveToF
       </td>
       <td className="p-3" onClick={(e) => e.stopPropagation()}>
         <div className={togglingIds.has(host.id) ? "opacity-50 pointer-events-none" : undefined}>
-          <Switch
-            checked={host.enabled}
-            onChange={(v) => onToggle(host.id, !v)}
-          />
+          <Switch checked={host.enabled} onChange={(v) => onToggle(host.id, !v)} />
         </div>
       </td>
       {hasRole("admin", "operator") && (

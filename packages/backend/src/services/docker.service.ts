@@ -1,5 +1,5 @@
-import { createChildLogger } from '@/lib/logger.js';
 import http from 'node:http';
+import { createChildLogger } from '@/lib/logger.js';
 
 const logger = createChildLogger('DockerService');
 
@@ -18,23 +18,22 @@ export class DockerService {
    * 2. POST /exec/{id}/start       -> run and capture output
    * 3. GET  /exec/{id}/inspect      -> retrieve exit code
    */
-  async execInContainer(
-    containerName: string,
-    command: string[],
-  ): Promise<{ exitCode: number; output: string }> {
+  async execInContainer(containerName: string, command: string[]): Promise<{ exitCode: number; output: string }> {
     logger.debug('Creating exec instance', { containerName, command });
 
     // Step 1: Create exec instance
-    const createRes = await this.request('POST', `${API_VERSION}/containers/${encodeURIComponent(containerName)}/exec`, {
-      Cmd: command,
-      AttachStdout: true,
-      AttachStderr: true,
-    });
+    const createRes = await this.request(
+      'POST',
+      `${API_VERSION}/containers/${encodeURIComponent(containerName)}/exec`,
+      {
+        Cmd: command,
+        AttachStdout: true,
+        AttachStderr: true,
+      }
+    );
 
     if (createRes.statusCode !== 201) {
-      throw new Error(
-        `Docker exec create failed (${createRes.statusCode}): ${createRes.body}`,
-      );
+      throw new Error(`Docker exec create failed (${createRes.statusCode}): ${createRes.body}`);
     }
 
     const { Id: execId } = JSON.parse(createRes.body) as { Id: string };
@@ -45,9 +44,7 @@ export class DockerService {
     });
 
     if (startRes.statusCode !== 200) {
-      throw new Error(
-        `Docker exec start failed (${startRes.statusCode}): ${startRes.body}`,
-      );
+      throw new Error(`Docker exec start failed (${startRes.statusCode}): ${startRes.body}`);
     }
 
     // The output stream from Docker may contain multiplexed header frames
@@ -59,9 +56,7 @@ export class DockerService {
     const inspectRes = await this.request('GET', `${API_VERSION}/exec/${execId}/inspect`);
 
     if (inspectRes.statusCode !== 200) {
-      throw new Error(
-        `Docker exec inspect failed (${inspectRes.statusCode}): ${inspectRes.body}`,
-      );
+      throw new Error(`Docker exec inspect failed (${inspectRes.statusCode}): ${inspectRes.body}`);
     }
 
     const { ExitCode } = JSON.parse(inspectRes.body) as { ExitCode: number };
@@ -77,7 +72,7 @@ export class DockerService {
   private request(
     method: string,
     path: string,
-    body?: unknown,
+    body?: unknown
   ): Promise<{ statusCode: number; body: string; bodyRaw: Buffer }> {
     return new Promise((resolve, reject) => {
       const payload = body !== undefined ? JSON.stringify(body) : undefined;
@@ -108,7 +103,7 @@ export class DockerService {
             });
           });
           res.on('error', reject);
-        },
+        }
       );
 
       req.on('error', reject);

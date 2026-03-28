@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { CryptoService } from './crypto.service.js';
 
 describe('CryptoService', () => {
@@ -130,9 +130,7 @@ describe('CryptoService', () => {
     });
 
     it('should generate unique serial numbers', () => {
-      const serials = new Set(
-        Array.from({ length: 100 }, () => cryptoService.generateSerialNumber())
-      );
+      const serials = new Set(Array.from({ length: 100 }, () => cryptoService.generateSerialNumber()));
       expect(serials.size).toBe(100);
     });
   });

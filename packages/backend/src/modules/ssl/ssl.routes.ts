@@ -1,14 +1,14 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
 import { authMiddleware, rbacMiddleware } from '@/modules/auth/auth.middleware.js';
-import { SSLService } from './ssl.service.js';
-import {
-  RequestACMECertSchema,
-  UploadCertSchema,
-  LinkInternalCertSchema,
-  SSLCertListQuerySchema,
-} from './ssl.schemas.js';
 import type { AppEnv } from '@/types.js';
+import {
+  LinkInternalCertSchema,
+  RequestACMECertSchema,
+  SSLCertListQuerySchema,
+  UploadCertSchema,
+} from './ssl.schemas.js';
+import { SSLService } from './ssl.service.js';
 
 export const sslRoutes = new OpenAPIHono<AppEnv>();
 

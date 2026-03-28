@@ -1,7 +1,11 @@
 import { z } from 'zod';
 
 const TemplateVariableDefSchema = z.object({
-  name: z.string().min(1).max(100).regex(/^[a-zA-Z_]\w*$/, 'Must be a valid variable name'),
+  name: z
+    .string()
+    .min(1)
+    .max(100)
+    .regex(/^[a-zA-Z_]\w*$/, 'Must be a valid variable name'),
   type: z.enum(['string', 'number', 'boolean']),
   default: z.union([z.string(), z.number(), z.boolean()]).optional(),
   description: z.string().max(500).optional(),

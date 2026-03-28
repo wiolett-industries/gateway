@@ -58,9 +58,7 @@ export class ConfigValidatorService {
 
       for (const directive of ConfigValidatorService.FORBIDDEN_DIRECTIVES) {
         if (trimmed.startsWith(directive.toLowerCase())) {
-          errors.push(
-            `Forbidden directive "${directive.trim()}" found on line ${i + 1}`,
-          );
+          errors.push(`Forbidden directive "${directive.trim()}" found on line ${i + 1}`);
         }
       }
 

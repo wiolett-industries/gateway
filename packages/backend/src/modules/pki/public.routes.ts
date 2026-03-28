@@ -1,9 +1,9 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
+import type { AppEnv } from '@/types.js';
+import { CAService } from './ca.service.js';
 import { CRLService } from './crl.service.js';
 import { OCSPService } from './ocsp.service.js';
-import { CAService } from './ca.service.js';
-import type { AppEnv } from '@/types.js';
 
 export const publicPkiRoutes = new OpenAPIHono<AppEnv>();
 

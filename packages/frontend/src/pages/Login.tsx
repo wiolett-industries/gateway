@@ -24,9 +24,7 @@ export function LoginPage() {
       <div className="w-full max-w-sm space-y-8 text-center">
         <div className="flex flex-col items-center gap-4">
           <ShieldCheck className="h-12 w-12 text-foreground" />
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">
-            Gateway
-          </h1>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">Gateway</h1>
           <p className="text-sm text-muted-foreground">
             Certificate manager and reverse proxy gateway
           </p>

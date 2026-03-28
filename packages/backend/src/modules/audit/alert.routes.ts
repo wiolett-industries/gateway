@@ -1,8 +1,8 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
 import { authMiddleware } from '@/modules/auth/auth.middleware.js';
-import { AlertService } from './alert.service.js';
 import type { AppEnv } from '@/types.js';
+import { AlertService } from './alert.service.js';
 
 export const alertRoutes = new OpenAPIHono<AppEnv>();
 

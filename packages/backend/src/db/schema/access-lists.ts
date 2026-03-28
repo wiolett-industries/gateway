@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, text, timestamp, boolean, jsonb } from 'drizzle-orm/pg-core';
+import { boolean, jsonb, pgTable, text, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
 import { users } from './users.js';
 
 export interface IPRule {
@@ -24,7 +24,9 @@ export const accessLists = pgTable('access_lists', {
   basicAuthUsers: jsonb('basic_auth_users').$type<BasicAuthUser[]>().notNull().default([]),
 
   // Metadata
-  createdById: uuid('created_by_id').notNull().references(() => users.id),
+  createdById: uuid('created_by_id')
+    .notNull()
+    .references(() => users.id),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

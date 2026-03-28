@@ -82,11 +82,14 @@ export const errorHandler: ErrorHandler<AppEnv> = (err, c) => {
 
   logger.error('Unhandled error', {
     requestId,
-    error: err instanceof Error ? {
-      name: err.name,
-      message: err.message,
-      stack: err.stack,
-    } : err,
+    error:
+      err instanceof Error
+        ? {
+            name: err.name,
+            message: err.message,
+            stack: err.stack,
+          }
+        : err,
   });
 
   const isProduction = process.env.NODE_ENV === 'production';
@@ -94,7 +97,7 @@ export const errorHandler: ErrorHandler<AppEnv> = (err, c) => {
   return c.json<ApiError>(
     {
       code: 'INTERNAL_ERROR',
-      message: isProduction ? 'An unexpected error occurred' : (err instanceof Error ? err.message : 'Unknown error'),
+      message: isProduction ? 'An unexpected error occurred' : err instanceof Error ? err.message : 'Unknown error',
     },
     500
   );

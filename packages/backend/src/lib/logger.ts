@@ -23,24 +23,14 @@ const developmentFormat = combine(
   logFormat
 );
 
-const productionFormat = combine(
-  timestamp(),
-  errors({ stack: true }),
-  winston.format.json()
-);
+const productionFormat = combine(timestamp(), errors({ stack: true }), winston.format.json());
 
 export const logger = winston.createLogger({
   level: process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'info' : 'debug'),
   format: process.env.NODE_ENV === 'production' ? productionFormat : developmentFormat,
-  transports: [
-    new winston.transports.Console(),
-  ],
-  exceptionHandlers: [
-    new winston.transports.Console(),
-  ],
-  rejectionHandlers: [
-    new winston.transports.Console(),
-  ],
+  transports: [new winston.transports.Console()],
+  exceptionHandlers: [new winston.transports.Console()],
+  rejectionHandlers: [new winston.transports.Console()],
 });
 
 export function createChildLogger(context: string) {

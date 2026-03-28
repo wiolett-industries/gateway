@@ -70,10 +70,13 @@ export function getInitials(name: string) {
 }
 
 export function formatSerialNumber(serial: string): string {
-  return serial.replace(/(.{2})/g, "$1:").slice(0, -1).toUpperCase();
+  return serial
+    .replace(/(.{2})/g, "$1:")
+    .slice(0, -1)
+    .toUpperCase();
 }
 
 export function truncate(str: string, length: number): string {
   if (str.length <= length) return str;
-  return str.slice(0, length) + "...";
+  return `${str.slice(0, length)}...`;
 }

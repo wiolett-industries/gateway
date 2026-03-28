@@ -35,7 +35,7 @@ export const ReorderFoldersSchema = z.object({
       z.object({
         id: z.string().uuid(),
         sortOrder: z.number().int().min(0),
-      }),
+      })
     )
     .min(1),
 });
@@ -70,7 +70,7 @@ export const ReorderHostsSchema = z.object({
       z.object({
         id: z.string().uuid(),
         sortOrder: z.number().int().min(0),
-      }),
+      })
     )
     .min(1),
 });

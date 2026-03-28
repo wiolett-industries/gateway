@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { createChildLogger } from '@/lib/logger.js';
 
-const logger = createChildLogger('CryptoService');
+const _logger = createChildLogger('CryptoService');
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 12;
@@ -25,8 +25,8 @@ export class CryptoService {
    */
   encryptPrivateKey(privateKeyPem: string): {
     encryptedPrivateKey: string; // base64(iv + authTag + ciphertext)
-    encryptedDek: string;        // base64(iv + authTag + ciphertext)
-    dekIv: string;               // base64 (unused legacy field, kept for schema compat)
+    encryptedDek: string; // base64(iv + authTag + ciphertext)
+    dekIv: string; // base64 (unused legacy field, kept for schema compat)
   } {
     // Generate random DEK
     const dek = crypto.randomBytes(32);
@@ -47,22 +47,12 @@ export class CryptoService {
   /**
    * Decrypt a private key using envelope encryption.
    */
-  decryptPrivateKey(encrypted: {
-    encryptedPrivateKey: string;
-    encryptedDek: string;
-    dekIv: string;
-  }): string {
+  decryptPrivateKey(encrypted: { encryptedPrivateKey: string; encryptedDek: string; dekIv: string }): string {
     // Decrypt DEK with master key
-    const dek = this.aesDecrypt(
-      Buffer.from(encrypted.encryptedDek, 'base64'),
-      this.masterKey
-    );
+    const dek = this.aesDecrypt(Buffer.from(encrypted.encryptedDek, 'base64'), this.masterKey);
 
     // Decrypt private key with DEK
-    const privateKeyBuffer = this.aesDecrypt(
-      Buffer.from(encrypted.encryptedPrivateKey, 'base64'),
-      dek
-    );
+    const privateKeyBuffer = this.aesDecrypt(Buffer.from(encrypted.encryptedPrivateKey, 'base64'), dek);
 
     return privateKeyBuffer.toString('utf-8');
   }

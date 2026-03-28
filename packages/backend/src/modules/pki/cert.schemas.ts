@@ -8,13 +8,15 @@ export const IssueCertificateSchema = z.object({
   sans: z.array(z.string()).default([]),
   keyAlgorithm: z.enum(['rsa-2048', 'rsa-4096', 'ecdsa-p256', 'ecdsa-p384']),
   validityDays: z.number().int().min(1).max(3650),
-  subjectDnFields: z.object({
-    o: z.string().max(255).optional(),
-    ou: z.string().max(255).optional(),
-    l: z.string().max(255).optional(),
-    st: z.string().max(255).optional(),
-    c: z.string().max(2).optional(),
-  }).optional(),
+  subjectDnFields: z
+    .object({
+      o: z.string().max(255).optional(),
+      ou: z.string().max(255).optional(),
+      l: z.string().max(255).optional(),
+      st: z.string().max(255).optional(),
+      c: z.string().max(2).optional(),
+    })
+    .optional(),
 });
 
 export const IssueCertFromCSRSchema = z.object({
@@ -27,15 +29,17 @@ export const IssueCertFromCSRSchema = z.object({
 });
 
 export const RevokeCertificateSchema = z.object({
-  reason: z.enum([
-    'unspecified',
-    'keyCompromise',
-    'caCompromise',
-    'affiliationChanged',
-    'superseded',
-    'cessationOfOperation',
-    'certificateHold',
-  ]).default('unspecified'),
+  reason: z
+    .enum([
+      'unspecified',
+      'keyCompromise',
+      'caCompromise',
+      'affiliationChanged',
+      'superseded',
+      'cessationOfOperation',
+      'certificateHold',
+    ])
+    .default('unspecified'),
 });
 
 export const CertificateListQuerySchema = z.object({

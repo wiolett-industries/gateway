@@ -23,7 +23,11 @@ Command.displayName = CommandPrimitive.displayName;
 const CommandDialog = ({ children, ...props }: React.ComponentProps<typeof Dialog>) => {
   return (
     <Dialog {...props}>
-      <DialogContent className="overflow-hidden p-0 shadow-xl" hideCloseButton aria-describedby={undefined}>
+      <DialogContent
+        className="overflow-hidden p-0 shadow-xl"
+        hideCloseButton
+        aria-describedby={undefined}
+      >
         <DialogPrimitive.Title className="sr-only">Command Palette</DialogPrimitive.Title>
         <Command className="[&_[cmdk-input-wrapper]_svg]:h-4 [&_[cmdk-input-wrapper]_svg]:w-4 [&_[cmdk-input]]:h-11 [&_[cmdk-item]_svg]:h-4 [&_[cmdk-item]_svg]:w-4">
           {children}
@@ -130,11 +134,11 @@ CommandShortcut.displayName = "CommandShortcut";
 export {
   Command,
   CommandDialog,
-  CommandInput,
-  CommandList,
   CommandEmpty,
   CommandGroup,
+  CommandInput,
   CommandItem,
-  CommandShortcut,
+  CommandList,
   CommandSeparator,
+  CommandShortcut,
 };
