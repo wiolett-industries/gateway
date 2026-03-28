@@ -33,10 +33,7 @@ RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 
 WORKDIR /app
 
-RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 nodejs && \
-    mkdir -p /etc/nginx-config /etc/nginx-certs /var/log/nginx-logs /var/www/acme-challenge && \
-    chown -R nodejs:nodejs /etc/nginx-config /etc/nginx-certs /var/log/nginx-logs /var/www/acme-challenge
+RUN mkdir -p /etc/nginx-config /etc/nginx-certs /var/log/nginx-logs /var/www/acme-challenge
 
 # Copy backend package.json and install production deps only
 COPY --from=backend-builder /app/packages/backend/package.json ./
@@ -48,8 +45,6 @@ COPY --from=backend-builder /app/packages/backend/src/db/migrations ./src/db/mig
 
 # Copy frontend build into public/ for the backend to serve
 COPY --from=frontend-builder /app/packages/frontend/dist ./public
-
-USER nodejs
 
 ENV NODE_ENV=production
 ENV PORT=3000
