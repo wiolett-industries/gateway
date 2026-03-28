@@ -82,6 +82,10 @@ export const CreateProxyHostSchema = z
     // Folder
     folderId: z.string().uuid().optional(),
 
+    // Nginx config template
+    nginxTemplateId: z.string().uuid().optional(),
+    templateVariables: z.record(z.union([z.string(), z.number(), z.boolean()])).optional(),
+
     // Health check
     healthCheckEnabled: z.boolean().default(false),
     healthCheckUrl: z.string().max(500).regex(/^\//, 'Must start with /').optional(),
@@ -151,6 +155,9 @@ export const UpdateProxyHostSchema = z
     accessListId: z.string().uuid().optional().nullable(),
 
     folderId: z.string().uuid().optional().nullable(),
+
+    nginxTemplateId: z.string().uuid().optional().nullable(),
+    templateVariables: z.record(z.union([z.string(), z.number(), z.boolean()])).optional().nullable(),
 
     healthCheckEnabled: z.boolean().optional(),
     healthCheckUrl: z.string().max(500).regex(/^\//, 'Must start with /').optional().nullable(),

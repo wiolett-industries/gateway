@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { NumericInput } from "@/components/ui/numeric-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { CodeEditor } from "@/components/ui/code-editor";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import type {
@@ -24,6 +25,7 @@ import type {
   CustomHeader,
   ForwardScheme,
   HealthStatus,
+  NginxTemplate,
   ProxyHostFolder,
   ProxyHostType,
   RewriteRule,
@@ -75,6 +77,10 @@ export function ProxyHostDetail() {
   // Folder
   const [folderId, setFolderId] = useState<string>("");
 
+  // Nginx config template
+  const [nginxTemplateId, setNginxTemplateId] = useState<string>("");
+  const [templateVariables, setTemplateVariables] = useState<Record<string, string | number | boolean>>({});
+
   // Access list
   const [accessListId, setAccessListId] = useState<string>("");
 
@@ -83,6 +89,11 @@ export function ProxyHostDetail() {
   const [healthCheckUrl, setHealthCheckUrl] = useState("/");
   const [healthCheckInterval, setHealthCheckInterval] = useState(30);
   const [healthStatus, setHealthStatus] = useState<HealthStatus>("unknown");
+
+  // Raw config
+  const [rawConfig, setRawConfig] = useState("");
+  const [rawConfigLoaded, setRawConfigLoaded] = useState(false);
+  const [isLoadingRaw, setIsLoadingRaw] = useState(false);
 
   // Log viewer
   const [logLines, setLogLines] = useState<string[]>([]);
@@ -94,6 +105,7 @@ export function ProxyHostDetail() {
   const [accessLists, setAccessLists] = useState<AccessList[]>([]);
   const [pkiCerts, setPkiCerts] = useState<{ id: string; commonName: string }[]>([]);
   const [folderList, setFolderList] = useState<ProxyHostFolder[]>([]);
+  const [nginxTemplateList, setNginxTemplateList] = useState<NginxTemplate[]>([]);
 
   // Load existing proxy host
   useEffect(() => {
@@ -126,6 +138,8 @@ export function ProxyHostDetail() {
         setAdvancedConfig(host.advancedConfig || "");
         setAccessListId(host.accessListId || "");
         setFolderId(host.folderId || "");
+        setNginxTemplateId(host.nginxTemplateId || "");
+        setTemplateVariables(host.templateVariables || {});
         setHealthCheckEnabled(host.healthCheckEnabled);
         setHealthCheckUrl(host.healthCheckUrl || "/");
         setHealthCheckInterval(host.healthCheckInterval || 30);
@@ -161,6 +175,8 @@ export function ProxyHostDetail() {
         };
         flatten(folderRes);
         setFolderList(flat);
+        // Load nginx templates
+        api.listNginxTemplates().then((t) => setNginxTemplateList(t || [])).catch(() => {});
       } catch {
         // non-critical
       }
@@ -175,6 +191,22 @@ export function ProxyHostDetail() {
     };
     loadRelated();
   }, []);
+
+  // Load raw rendered config for this host
+  const loadRawConfig = useCallback(async () => {
+    if (!id || isNew) return;
+    setIsLoadingRaw(true);
+    try {
+      const result = await api.getRenderedProxyConfig(id);
+      setRawConfig(result.rendered);
+      setRawConfigLoaded(true);
+    } catch {
+      setRawConfig("# Could not load rendered config. Save the host first.");
+      setRawConfigLoaded(true);
+    } finally {
+      setIsLoadingRaw(false);
+    }
+  }, [id, isNew]);
 
   // SSE log stream
   const startLogStream = useCallback(() => {
@@ -227,6 +259,8 @@ export function ProxyHostDetail() {
       advancedConfig: advancedConfig || undefined,
       accessListId: accessListId || undefined,
       folderId: folderId || undefined,
+      nginxTemplateId: nginxTemplateId || undefined,
+      templateVariables: Object.keys(templateVariables).length > 0 ? templateVariables : undefined,
       healthCheckEnabled,
       healthCheckUrl,
       healthCheckInterval,
@@ -336,12 +370,6 @@ export function ProxyHostDetail() {
               <h1 className="text-2xl font-bold">
                 {isNew ? "New Proxy Host" : domainNames[0] || "Proxy Host"}
               </h1>
-              {!isNew && (
-                <div className="flex items-center gap-1.5">
-                  <HealthDot status={healthStatus} />
-                  <span className="text-sm text-muted-foreground capitalize">{healthStatus}</span>
-                </div>
-              )}
             </div>
             <p className="text-sm text-muted-foreground">
               {isNew ? "Configure a new proxy host" : "Edit proxy host settings"}
@@ -374,6 +402,7 @@ export function ProxyHostDetail() {
           <TabsTrigger value="advanced">Advanced</TabsTrigger>
           <TabsTrigger value="access">Access List</TabsTrigger>
           <TabsTrigger value="health">Health Check</TabsTrigger>
+          {!isNew && <TabsTrigger value="raw" onClick={() => { if (!rawConfigLoaded) loadRawConfig(); }}>Raw Config</TabsTrigger>}
           {!isNew && <TabsTrigger value="logs" onClick={() => startLogStream()}>Logs</TabsTrigger>}
         </TabsList>
 
@@ -410,6 +439,73 @@ export function ProxyHostDetail() {
                 </Select>
               </div>
             )}
+
+            {/* Config Template */}
+            {nginxTemplateList.length > 0 && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Config Template</label>
+                <Select value={nginxTemplateId || "__none__"} onValueChange={(v) => {
+                  setNginxTemplateId(v === "__none__" ? "" : v);
+                  // Pre-fill defaults from template variables
+                  if (v !== "__none__") {
+                    const tmpl = nginxTemplateList.find((t) => t.id === v);
+                    if (tmpl?.variables?.length) {
+                      const defaults: Record<string, string | number | boolean> = {};
+                      for (const vd of tmpl.variables) {
+                        if (vd.default !== undefined) defaults[vd.name] = vd.default;
+                      }
+                      setTemplateVariables((prev) => ({ ...defaults, ...prev }));
+                    }
+                  }
+                }}>
+                  <SelectTrigger className="w-64"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">Default</SelectItem>
+                    {nginxTemplateList.filter((t) => t.type === type).map((t) => (
+                      <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Template Variables (auto-generated from template schema) */}
+            {(() => {
+              const selectedTemplate = nginxTemplateList.find((t) => t.id === nginxTemplateId);
+              const vars = selectedTemplate?.variables;
+              if (!vars?.length) return null;
+              return (
+                <div className="space-y-3 border border-border p-4">
+                  <h3 className="text-sm font-semibold">Template Variables</h3>
+                  {vars.map((v) => (
+                    <div key={v.name} className="space-y-1">
+                      <label className="text-xs font-medium">{v.name}</label>
+                      {v.description && <p className="text-xs text-muted-foreground">{v.description}</p>}
+                      {v.type === "boolean" ? (
+                        <div className="flex items-center gap-2">
+                          <Switch
+                            checked={templateVariables[v.name] === true || templateVariables[v.name] === "true"}
+                            onChange={(checked) => setTemplateVariables({ ...templateVariables, [v.name]: checked })}
+                          />
+                        </div>
+                      ) : v.type === "number" ? (
+                        <Input
+                          type="number"
+                          value={String(templateVariables[v.name] ?? v.default ?? "")}
+                          onChange={(e) => setTemplateVariables({ ...templateVariables, [v.name]: e.target.value ? Number(e.target.value) : 0 })}
+                          className="w-48"
+                        />
+                      ) : (
+                        <Input
+                          value={String(templateVariables[v.name] ?? v.default ?? "")}
+                          onChange={(e) => setTemplateVariables({ ...templateVariables, [v.name]: e.target.value })}
+                        />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
 
             {/* Domain Names */}
             <div className="space-y-2">
@@ -782,17 +878,37 @@ export function ProxyHostDetail() {
               </motion.div>
             )}
 
-            {!isNew && (
-              <div className="border-t border-border pt-4 space-y-2">
-                <h3 className="text-sm font-semibold">Current Status</h3>
-                <div className="flex items-center gap-2">
-                  <HealthDot status={healthStatus} />
-                  <span className="text-sm capitalize">{healthStatus}</span>
-                </div>
-              </div>
-            )}
           </div>
         </TabsContent>
+
+        {/* Raw Config Tab */}
+        {!isNew && (
+          <TabsContent value="raw">
+            <div className="border border-border bg-card p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-semibold">Rendered Nginx Config</h3>
+                  <p className="text-xs text-muted-foreground">The actual nginx server block generated from the template and this host's settings.</p>
+                </div>
+                <Button variant="outline" size="sm" onClick={loadRawConfig} disabled={isLoadingRaw}>
+                  {isLoadingRaw ? "Loading..." : "Refresh"}
+                </Button>
+              </div>
+              {isLoadingRaw && !rawConfigLoaded ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                </div>
+              ) : (
+                <CodeEditor
+                  value={rawConfig}
+                  onChange={setRawConfig}
+                  readOnly
+                  minHeight="400px"
+                />
+              )}
+            </div>
+          </TabsContent>
+        )}
 
         {/* Logs Tab */}
         {!isNew && (

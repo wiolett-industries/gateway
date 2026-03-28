@@ -19,6 +19,7 @@ import { alertRoutes } from '@/modules/audit/alert.routes.js';
 import { adminRoutes } from '@/modules/admin/admin.routes.js';
 import { proxyRoutes } from '@/modules/proxy/proxy.routes.js';
 import { folderRoutes } from '@/modules/proxy/folder.routes.js';
+import { nginxTemplateRoutes } from '@/modules/proxy/nginx-template.routes.js';
 import { sslRoutes } from '@/modules/ssl/ssl.routes.js';
 import { accessListRoutes } from '@/modules/access-lists/access-list.routes.js';
 import { monitoringRoutes } from '@/modules/monitoring/monitoring.routes.js';
@@ -71,6 +72,7 @@ export function createApp() {
   app.route('/api/admin', adminRoutes);
   app.route('/api/proxy-hosts', proxyRoutes);
   app.route('/api/proxy-host-folders', folderRoutes);
+  app.route('/api/nginx-templates', nginxTemplateRoutes);
   app.route('/api/ssl-certificates', sslRoutes);
   app.route('/api/access-lists', accessListRoutes);
   app.route('/api/monitoring', monitoringRoutes);

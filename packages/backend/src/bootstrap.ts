@@ -23,6 +23,7 @@ import { ConfigValidatorService } from '@/services/config-validator.service.js';
 import { NginxService } from '@/services/nginx.service.js';
 import { ProxyService } from '@/modules/proxy/proxy.service.js';
 import { FolderService } from '@/modules/proxy/folder.service.js';
+import { NginxTemplateService } from '@/modules/proxy/nginx-template.service.js';
 import { ACMEService } from '@/modules/ssl/acme.service.js';
 import { SSLService } from '@/modules/ssl/ssl.service.js';
 import { AccessListService } from '@/modules/access-lists/access-list.service.js';
@@ -113,7 +114,10 @@ export async function initializeContainer(): Promise<void> {
   const folderService = new FolderService(db, auditService);
   container.registerInstance(FolderService, folderService);
 
-  const proxyService = new ProxyService(db, nginxService, auditService, cryptoService);
+  const nginxTemplateService = new NginxTemplateService(db, auditService);
+  container.registerInstance(NginxTemplateService, nginxTemplateService);
+
+  const proxyService = new ProxyService(db, nginxService, nginxTemplateService, auditService, cryptoService);
   container.registerInstance(ProxyService, proxyService);
 
   const acmeService = new ACMEService(env.ACME_CHALLENGE_PATH, env.ACME_EMAIL, env.ACME_STAGING);
@@ -132,8 +136,9 @@ export async function initializeContainer(): Promise<void> {
   const monitoringService = new MonitoringService(db);
   container.registerInstance(MonitoringService, monitoringService);
 
-  // Seed built-in certificate templates
+  // Seed built-in templates
   await templatesService.seedBuiltinTemplates();
+  await nginxTemplateService.seedBuiltinTemplates();
 
   // Background jobs
   const scheduler = new SchedulerService();

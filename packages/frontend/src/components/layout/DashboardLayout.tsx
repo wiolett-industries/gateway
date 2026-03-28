@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Award,
+  FileCode,
   FileText,
   Globe,
   LayoutDashboard,
@@ -70,6 +71,7 @@ const navigationGroups: NavGroup[] = [
     items: [
       { name: "Dashboard", href: "/", icon: LayoutDashboard },
       { name: "Proxy Hosts", href: "/proxy-hosts", icon: Globe },
+      { name: "Config Templates", href: "/nginx-templates", icon: FileCode },
       { name: "SSL Certificates", href: "/ssl-certificates", icon: Lock },
     ],
   },

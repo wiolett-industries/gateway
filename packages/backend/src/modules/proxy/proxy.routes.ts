@@ -3,6 +3,7 @@ import { container } from '@/container.js';
 import { authMiddleware, rbacMiddleware } from '@/modules/auth/auth.middleware.js';
 import { AppError } from '@/middleware/error-handler.js';
 import { ProxyService } from './proxy.service.js';
+import { NginxTemplateService } from './nginx-template.service.js';
 import {
   CreateProxyHostSchema,
   UpdateProxyHostSchema,
@@ -78,6 +79,14 @@ proxyRoutes.post('/:id/toggle', rbacMiddleware('admin', 'operator'), async (c) =
   const { enabled } = ToggleProxyHostSchema.parse(body);
   const host = await proxyService.toggleProxyHost(id, enabled, user.id);
   return c.json({ data: host });
+});
+
+// Get rendered nginx config for a host (admin, operator)
+proxyRoutes.get('/:id/rendered-config', rbacMiddleware('admin', 'operator'), async (c) => {
+  const proxyService = container.resolve(ProxyService);
+  const id = c.req.param('id');
+  const rendered = await proxyService.getRenderedConfig(id);
+  return c.json({ data: { rendered } });
 });
 
 // Validate advanced config snippet (admin, operator)

@@ -7,6 +7,7 @@ export * from './audit-log.js';
 export * from './alerts.js';
 export * from './ssl-certificates.js';
 export * from './access-lists.js';
+export * from './nginx-templates.js';
 export * from './proxy-host-folders.js';
 export * from './proxy-hosts.js';
 export * from './settings.js';
