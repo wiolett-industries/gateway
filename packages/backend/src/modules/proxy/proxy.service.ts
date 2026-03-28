@@ -469,6 +469,11 @@ export class ProxyService {
           keyPem = sslCert.privateKeyPem;
         }
 
+        if (!keyPem.includes('-----BEGIN')) {
+          logger.error('SSL key decryption produced invalid PEM', { certId: sslCert.id, starts: keyPem.substring(0, 20) });
+          throw new Error('Failed to decrypt SSL certificate private key');
+        }
+
         const paths = await this.nginxService.deployCertificate(
           sslCert.id,
           sslCert.certificatePem,
