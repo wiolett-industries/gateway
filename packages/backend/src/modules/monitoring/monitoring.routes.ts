@@ -137,42 +137,30 @@ monitoringRoutes.get('/nginx/stats/stream', async (c) => {
     });
 
     let running = true;
-    const poll = async () => {
-      if (!running) return;
+
+    stream.onAbort(() => {
+      running = false;
+      nginxStatsService.unregisterSSEClient();
+    });
+
+    // Keep the stream alive by polling in a loop
+    while (running) {
       try {
-        logger.debug('SSE poll: fetching snapshot...');
         const snapshot = await nginxStatsService.getSnapshot();
-        logger.debug('SSE poll: snapshot ready, writing...');
         nginxStatsService.pushHistory(snapshot);
         await stream.writeSSE({
           data: JSON.stringify(snapshot),
           event: 'stats',
         });
-        logger.debug('SSE poll: written');
-      } catch (err) {
-        logger.warn('SSE poll error', { error: (err as Error).message });
+      } catch {
         await stream.writeSSE({
           data: JSON.stringify({ error: 'Failed to collect stats' }),
           event: 'error',
         }).catch(() => {});
       }
-      if (running) setTimeout(poll, 2000);
-    };
-    setTimeout(poll, 2000);
-
-    const keepalive = setInterval(() => {
-      stream.writeSSE({ data: '', event: 'ping' }).catch(() => {
-        clearInterval(keepalive);
-      });
-    }, 30_000);
-
-    stream.onAbort(() => {
-      running = false;
-      clearInterval(keepalive);
-      nginxStatsService.unregisterSSEClient();
-    });
-
-    await new Promise(() => {});
+      // Wait 2 seconds before next poll
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
   });
 });
 
