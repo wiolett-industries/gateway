@@ -231,7 +231,7 @@ export function Domains() {
                                 <RefreshCw className="h-4 w-4" />
                                 Check DNS
                               </DropdownMenuItem>
-                              {d.dnsStatus === "valid" && (
+                              {d.dnsStatus === "valid" && !d.sslCertCount && (
                                 <DropdownMenuItem onClick={() => handleIssueCert(d)}>
                                   <Shield className="h-4 w-4" />
                                   Issue Cert
