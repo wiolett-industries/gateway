@@ -544,28 +544,30 @@ DEFAULTEOF
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>404 - Not Found</title>
+    <title>404 — Not Found</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-            background-color: #0f1117;
-            color: #e1e4e8;
+            font-family: system-ui, -apple-system, sans-serif;
+            background: #0e0e0e;
+            color: #e5e5e5;
             display: flex;
             align-items: center;
             justify-content: center;
             min-height: 100vh;
         }
-        .container { text-align: center; padding: 2rem; }
-        .error-code { font-size: 6rem; font-weight: 700; color: #58a6ff; line-height: 1; margin-bottom: 0.5rem; }
-        .error-message { font-size: 1.25rem; color: #8b949e; margin-bottom: 2rem; }
-        .brand { font-size: 0.85rem; color: #30363d; letter-spacing: 0.1em; text-transform: uppercase; }
+        .page { text-align: center; padding: 2rem; }
+        .code { font-size: 5rem; font-weight: 700; color: #e5e5e5; line-height: 1; }
+        .message { font-size: 0.875rem; color: #a3a3a3; margin-top: 0.75rem; }
+        .divider { width: 3rem; height: 1px; background: #2a2a2a; margin: 1.5rem auto; }
+        .brand { font-size: 0.75rem; color: #525252; letter-spacing: 0.05em; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="error-code">404</div>
-        <div class="error-message">Not Found</div>
+    <div class="page">
+        <div class="code">404</div>
+        <div class="message">The requested page was not found</div>
+        <div class="divider"></div>
         <div class="brand">Gateway</div>
     </div>
 </body>
@@ -579,30 +581,32 @@ HTML404EOF
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>502 - Bad Gateway</title>
+    <title>502 — Bad Gateway</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-            background-color: #0f1117;
-            color: #e1e4e8;
+            font-family: system-ui, -apple-system, sans-serif;
+            background: #0e0e0e;
+            color: #e5e5e5;
             display: flex;
             align-items: center;
             justify-content: center;
             min-height: 100vh;
         }
-        .container { text-align: center; padding: 2rem; }
-        .error-code { font-size: 6rem; font-weight: 700; color: #58a6ff; line-height: 1; margin-bottom: 0.5rem; }
-        .error-message { font-size: 1.25rem; color: #8b949e; margin-bottom: 0.5rem; }
-        .error-detail { font-size: 1rem; color: #484f58; margin-bottom: 2rem; }
-        .brand { font-size: 0.85rem; color: #30363d; letter-spacing: 0.1em; text-transform: uppercase; }
+        .page { text-align: center; padding: 2rem; }
+        .code { font-size: 5rem; font-weight: 700; color: #e5e5e5; line-height: 1; }
+        .message { font-size: 0.875rem; color: #a3a3a3; margin-top: 0.75rem; }
+        .detail { font-size: 0.75rem; color: #525252; margin-top: 0.25rem; }
+        .divider { width: 3rem; height: 1px; background: #2a2a2a; margin: 1.5rem auto; }
+        .brand { font-size: 0.75rem; color: #525252; letter-spacing: 0.05em; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="error-code">502</div>
-        <div class="error-message">Bad Gateway</div>
-        <div class="error-detail">The upstream server is not responding</div>
+    <div class="page">
+        <div class="code">502</div>
+        <div class="message">The upstream server is not responding</div>
+        <div class="detail">Please try again in a moment</div>
+        <div class="divider"></div>
         <div class="brand">Gateway</div>
     </div>
 </body>
