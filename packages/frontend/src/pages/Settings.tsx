@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronUp, Copy, Key, Loader2, Moon, Plus, RefreshCw, Sun, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { PageTransition } from "@/components/common/PageTransition";
@@ -49,6 +49,16 @@ export function Settings() {
   const [isUpdating, setIsUpdating] = useState(false);
   const [showReleaseNotes, setShowReleaseNotes] = useState(false);
   const isAdmin = hasRole("admin");
+  const updatePollRef = useRef<ReturnType<typeof setInterval>>(undefined);
+  const updateTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  // Clean up polling on unmount
+  useEffect(() => {
+    return () => {
+      if (updatePollRef.current) clearInterval(updatePollRef.current);
+      if (updateTimeoutRef.current) clearTimeout(updateTimeoutRef.current);
+    };
+  }, []);
 
   const loadTokens = async () => {
     try {
@@ -94,11 +104,12 @@ export function Settings() {
     try {
       await api.triggerUpdate(updateStatus.latestVersion);
       // App will go down — start polling for reconnection
-      const poll = setInterval(async () => {
+      updatePollRef.current = setInterval(async () => {
         try {
           const status = await api.getVersionInfo();
           if (status.currentVersion !== updateStatus.currentVersion) {
-            clearInterval(poll);
+            clearInterval(updatePollRef.current);
+            clearTimeout(updateTimeoutRef.current);
             setIsUpdating(false);
             setUpdateStatus(status);
             toast.success(`Updated to ${status.currentVersion}`);
@@ -108,8 +119,8 @@ export function Settings() {
         }
       }, 3000);
       // Safety timeout after 5 minutes
-      setTimeout(() => {
-        clearInterval(poll);
+      updateTimeoutRef.current = setTimeout(() => {
+        clearInterval(updatePollRef.current);
         setIsUpdating((current) => {
           if (current) toast.error("Update timed out. Please check your server.");
           return false;
