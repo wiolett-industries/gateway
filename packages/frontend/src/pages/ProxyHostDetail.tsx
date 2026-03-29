@@ -1087,12 +1087,14 @@ export function ProxyHostDetail() {
                     <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
                   </div>
                 ) : (
-                  <CodeEditor
-                    value={rawConfig}
-                    onChange={setRawConfig}
-                    readOnly
-                    minHeight="400px"
-                  />
+                  <div style={{ height: "calc(100vh - 280px)" }}>
+                    <CodeEditor
+                      value={rawConfig}
+                      onChange={setRawConfig}
+                      readOnly
+                      height="100%"
+                    />
+                  </div>
                 )}
               </div>
             </TabsContent>
