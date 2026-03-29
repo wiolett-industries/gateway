@@ -15,6 +15,13 @@
       "when": 1774666000000,
       "tag": "0001_token_scopes",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1774751823793,
+      "tag": "0002_gateway_full_schema",
+      "breakpoints": true
     }
   ]
 }
