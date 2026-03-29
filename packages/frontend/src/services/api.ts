@@ -23,6 +23,9 @@ import type {
   FolderTreeNode,
   GroupedProxyHostsResponse,
   HealthStatus,
+  HousekeepingConfig,
+  HousekeepingRunResult,
+  HousekeepingStats,
   IssueCertFromCSRRequest,
   IssueCertificateRequest,
   LinkInternalCertRequest,
@@ -961,6 +964,41 @@ class ApiClient {
       )
     );
     return result.notes;
+  }
+
+  // ── Housekeeping ────────────────────────────────────────────────
+
+  async getHousekeepingConfig(): Promise<HousekeepingConfig> {
+    return this.unwrapData(
+      this.request<{ data: HousekeepingConfig }>("/housekeeping/config")
+    );
+  }
+
+  async updateHousekeepingConfig(config: Partial<HousekeepingConfig>): Promise<HousekeepingConfig> {
+    return this.unwrapData(
+      this.request<{ data: HousekeepingConfig }>("/housekeeping/config", {
+        method: "PUT",
+        body: JSON.stringify(config),
+      })
+    );
+  }
+
+  async getHousekeepingStats(): Promise<HousekeepingStats> {
+    return this.unwrapData(
+      this.request<{ data: HousekeepingStats }>("/housekeeping/stats")
+    );
+  }
+
+  async runHousekeeping(): Promise<HousekeepingRunResult> {
+    return this.unwrapData(
+      this.request<{ data: HousekeepingRunResult }>("/housekeeping/run", { method: "POST" })
+    );
+  }
+
+  async getHousekeepingHistory(): Promise<HousekeepingRunResult[]> {
+    return this.unwrapData(
+      this.request<{ data: HousekeepingRunResult[] }>("/housekeeping/history")
+    );
   }
 }
 

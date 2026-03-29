@@ -55,6 +55,22 @@ export class SchedulerService {
     }
   }
 
+  updateSchedule(name: string, newCron: string): void {
+    const job = this.jobs.find((j) => j.name === name);
+    if (!job) return;
+    job.handle?.stop();
+    job.schedule = newCron;
+    job.handle = cron.schedule(newCron, async () => {
+      logger.debug(`Running job: ${job.name}`);
+      try {
+        await job.task();
+      } catch (error) {
+        logger.error(`Job ${job.name} failed`, { error });
+      }
+    });
+    logger.info(`Updated schedule for ${name}: ${newCron}`);
+  }
+
   stop(): void {
     for (const job of this.jobs) {
       job.handle?.stop();

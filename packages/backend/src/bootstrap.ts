@@ -30,7 +30,9 @@ import { ACMEService } from '@/modules/ssl/acme.service.js';
 import { SSLService } from '@/modules/ssl/ssl.service.js';
 import { SetupService } from '@/modules/setup/setup.service.js';
 import { TokensService } from '@/modules/tokens/tokens.service.js';
+import { HousekeepingJob } from '@/jobs/housekeeping.job.js';
 import { UpdateCheckJob } from '@/jobs/update-check.job.js';
+import { HousekeepingService } from '@/services/housekeeping.service.js';
 import { UpdateService } from '@/services/update.service.js';
 import { CacheService, createRedisClient } from '@/services/cache.service.js';
 import { ConfigValidatorService } from '@/services/config-validator.service.js';
@@ -160,6 +162,10 @@ export async function initializeContainer(): Promise<void> {
   const updateService = new UpdateService(db, dockerService, env);
   container.registerInstance(UpdateService, updateService);
 
+  // Housekeeping service
+  const housekeepingService = new HousekeepingService(db, dockerService, env);
+  container.registerInstance(HousekeepingService, housekeepingService);
+
   // Configure DNS resolvers and detect public IP
   initDnsResolver(env.DNS_RESOLVERS.split(',').map((s) => s.trim()).filter(Boolean));
   await detectPublicIP(env.PUBLIC_IPV4, env.PUBLIC_IPV6);
@@ -185,6 +191,10 @@ export async function initializeContainer(): Promise<void> {
 
   const updateCheckJob = new UpdateCheckJob(updateService);
   scheduler.registerInterval('update-check', env.UPDATE_CHECK_INTERVAL_HOURS * 3_600_000, () => updateCheckJob.run());
+
+  const housekeepingJob = new HousekeepingJob(housekeepingService);
+  const hkConfig = await housekeepingService.getConfig();
+  scheduler.register('housekeeping', hkConfig.cronExpression, () => housekeepingJob.run());
 
   logger.info('Dependency injection container initialized');
 }
