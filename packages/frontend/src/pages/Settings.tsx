@@ -321,28 +321,23 @@ export function Settings() {
 
         {/* Housekeeping */}
         {isAdmin && hkConfig && (
-          <>
-            {/* Housekeeping — Config */}
-            <div className="border border-border bg-card">
-              <div className="flex items-center justify-between border-b border-border p-4">
-                <div className="flex items-center gap-3">
-                  <div>
-                    <h2 className="font-semibold">Housekeeping</h2>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      Automated cleanup of logs, old data, and unused resources
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <Switch
-                    checked={hkConfig.enabled}
-                    onChange={(v) => updateHkConfig({ enabled: v })}
-                  />
-                </div>
+          <div className="border border-border bg-card">
+            <div className="flex items-center justify-between border-b border-border p-4">
+              <div>
+                <h2 className="font-semibold">Housekeeping</h2>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Automated cleanup of logs, old data, and unused resources
+                </p>
               </div>
-              <div className="p-4 space-y-3">
-                <div className="flex items-center justify-between gap-4">
-                  <span className="text-sm text-muted-foreground">Schedule</span>
+              <Switch
+                checked={hkConfig.enabled}
+                onChange={(v) => updateHkConfig({ enabled: v })}
+              />
+            </div>
+            <div className="p-4 space-y-3">
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-sm font-medium">Schedule</span>
+                <div className="flex items-center gap-2">
                   <Input
                     className="w-48 h-8 text-sm font-mono"
                     value={hkConfig.cronExpression}
@@ -350,118 +345,106 @@ export function Settings() {
                     onBlur={() => updateHkConfig({ cronExpression: hkConfig.cronExpression })}
                     disabled={!hkConfig.enabled}
                   />
+                  <Button size="sm" onClick={handleRunHousekeeping} disabled={hkRunning || !hkConfig.enabled}>
+                    {hkRunning ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Play className="h-4 w-4" />
+                    )}
+                    Run Now
+                  </Button>
                 </div>
-                {hkStats?.lastRun && (
-                  <div className="flex items-center justify-between gap-4">
-                    <span className="text-sm text-muted-foreground">Last run</span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-muted-foreground">
-                        {formatRelativeDate(hkStats.lastRun.startedAt)}
-                      </span>
-                      <span className="text-xs text-muted-foreground">&middot;</span>
-                      <span className="text-sm text-muted-foreground capitalize">{hkStats.lastRun.trigger}</span>
-                      <span className="text-xs text-muted-foreground">&middot;</span>
-                      <span className="text-sm text-muted-foreground">{(hkStats.lastRun.totalDurationMs / 1000).toFixed(1)}s</span>
-                      {hkStats.lastRun.overallSuccess ? (
-                        <Badge variant="success" className="text-[10px] px-1.5 py-0">OK</Badge>
-                      ) : (
-                        <Badge variant="destructive" className="text-[10px] px-1.5 py-0">Errors</Badge>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Housekeeping — Cleanup Categories */}
-            <div className="border border-border bg-card">
-              <div className="flex items-center justify-between border-b border-border p-4">
-                <div>
-                  <h2 className="font-semibold">Cleanup Categories</h2>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Configure what gets cleaned up and how long data is retained
-                  </p>
-                </div>
-                <Button size="sm" onClick={handleRunHousekeeping} disabled={hkRunning || !hkConfig.enabled}>
-                  {hkRunning ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Play className="h-4 w-4" />
-                  )}
-                  Run Now
-                </Button>
-              </div>
-              <div className="divide-y divide-border">
-                <HousekeepingRow
-                  label="Nginx Logs"
-                  description="Rotate, compress, and delete old access and error logs"
-                  stat={hkStats ? formatBytes(hkStats.nginxLogs.totalSizeBytes) : "..."}
-                  statDetail={hkStats ? `${hkStats.nginxLogs.fileCount} files` : undefined}
-                  enabled={hkConfig.nginxLogs.enabled}
-                  onToggle={(v) => updateHkConfig({ nginxLogs: { ...hkConfig.nginxLogs, enabled: v } })}
-                  retentionDays={hkConfig.nginxLogs.retentionDays}
-                  onRetentionChange={(v) => updateHkConfig({ nginxLogs: { ...hkConfig.nginxLogs, retentionDays: v } })}
-                  lastResult={hkStats?.lastRun?.categories.find((c) => c.category === "Nginx Logs")}
-                />
-                <HousekeepingRow
-                  label="Audit Log"
-                  description="Delete audit trail entries older than retention period"
-                  stat={hkStats ? hkStats.auditLog.totalRows.toLocaleString() : "..."}
-                  statDetail="rows"
-                  enabled={hkConfig.auditLog.enabled}
-                  onToggle={(v) => updateHkConfig({ auditLog: { ...hkConfig.auditLog, enabled: v } })}
-                  retentionDays={hkConfig.auditLog.retentionDays}
-                  onRetentionChange={(v) => updateHkConfig({ auditLog: { ...hkConfig.auditLog, retentionDays: v } })}
-                  lastResult={hkStats?.lastRun?.categories.find((c) => c.category === "Audit Log")}
-                />
-                <HousekeepingRow
-                  label="Dismissed Alerts"
-                  description="Remove alerts that have been dismissed"
-                  stat={hkStats ? String(hkStats.dismissedAlerts.count) : "..."}
-                  statDetail="entries"
-                  enabled={hkConfig.dismissedAlerts.enabled}
-                  onToggle={(v) => updateHkConfig({ dismissedAlerts: { ...hkConfig.dismissedAlerts, enabled: v } })}
-                  retentionDays={hkConfig.dismissedAlerts.retentionDays}
-                  onRetentionChange={(v) => updateHkConfig({ dismissedAlerts: { ...hkConfig.dismissedAlerts, retentionDays: v } })}
-                  lastResult={hkStats?.lastRun?.categories.find((c) => c.category === "Dismissed Alerts")}
-                />
-                <HousekeepingRow
-                  label="Orphaned Certificates"
-                  description="Remove certificate files no longer referenced in database"
-                  stat={hkStats ? String(hkStats.orphanedCerts.count) : "..."}
-                  statDetail="found"
-                  enabled={hkConfig.orphanedCerts.enabled}
-                  onToggle={(v) => updateHkConfig({ orphanedCerts: { enabled: v } })}
-                  lastResult={hkStats?.lastRun?.categories.find((c) => c.category === "Orphaned Certs")}
-                />
-                <HousekeepingRow
-                  label="ACME Challenges"
-                  description="Clean up leftover ACME validation tokens"
-                  stat={hkStats ? String(hkStats.acmeChallenges.fileCount) : "..."}
-                  statDetail={hkStats ? `files (${formatBytes(hkStats.acmeChallenges.totalSizeBytes)})` : "files"}
-                  enabled={hkConfig.acmeCleanup.enabled}
-                  onToggle={(v) => updateHkConfig({ acmeCleanup: { enabled: v } })}
-                  lastResult={hkStats?.lastRun?.categories.find((c) => c.category === "ACME Challenges")}
-                />
-                <HousekeepingRow
-                  label="Docker Images"
-                  description="Prune old Gateway images from previous updates"
-                  stat={hkStats ? String(hkStats.dockerImages.oldImageCount) : "..."}
-                  statDetail={hkStats ? `old (${formatBytes(hkStats.dockerImages.reclaimableBytes)})` : "old"}
-                  enabled={hkConfig.dockerPrune.enabled}
-                  onToggle={(v) => updateHkConfig({ dockerPrune: { enabled: v } })}
-                  lastResult={hkStats?.lastRun?.categories.find((c) => c.category === "Docker Images")}
-                />
               </div>
               {hkStats?.lastRun && (
-                <div className="border-t border-border px-4 py-2">
-                  <Button variant="link" size="sm" className="px-0 h-auto text-xs" onClick={handleViewHistory}>
-                    View run history
-                  </Button>
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-sm text-muted-foreground">Last run</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground">
+                      {formatRelativeDate(hkStats.lastRun.startedAt)}
+                    </span>
+                    <span className="text-xs text-muted-foreground">&middot;</span>
+                    <span className="text-sm text-muted-foreground capitalize">{hkStats.lastRun.trigger}</span>
+                    <span className="text-xs text-muted-foreground">&middot;</span>
+                    <span className="text-sm text-muted-foreground">{(hkStats.lastRun.totalDurationMs / 1000).toFixed(1)}s</span>
+                    {hkStats.lastRun.overallSuccess ? (
+                      <Badge variant="success" className="text-[10px] px-1.5 py-0">OK</Badge>
+                    ) : (
+                      <Badge variant="destructive" className="text-[10px] px-1.5 py-0">Errors</Badge>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
-          </>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+              <HousekeepingCard
+                label="Nginx Logs"
+                description="Rotate, compress, and delete old logs"
+                stat={hkStats ? formatBytes(hkStats.nginxLogs.totalSizeBytes) : "..."}
+                statDetail={hkStats ? `${hkStats.nginxLogs.fileCount} files` : undefined}
+                enabled={hkConfig.nginxLogs.enabled}
+                onToggle={(v) => updateHkConfig({ nginxLogs: { ...hkConfig.nginxLogs, enabled: v } })}
+                retentionDays={hkConfig.nginxLogs.retentionDays}
+                onRetentionChange={(v) => updateHkConfig({ nginxLogs: { ...hkConfig.nginxLogs, retentionDays: v } })}
+                lastResult={hkStats?.lastRun?.categories.find((c) => c.category === "Nginx Logs")}
+              />
+              <HousekeepingCard
+                label="Audit Log"
+                description="Delete old audit trail entries"
+                stat={hkStats ? hkStats.auditLog.totalRows.toLocaleString() : "..."}
+                statDetail="rows"
+                enabled={hkConfig.auditLog.enabled}
+                onToggle={(v) => updateHkConfig({ auditLog: { ...hkConfig.auditLog, enabled: v } })}
+                retentionDays={hkConfig.auditLog.retentionDays}
+                onRetentionChange={(v) => updateHkConfig({ auditLog: { ...hkConfig.auditLog, retentionDays: v } })}
+                lastResult={hkStats?.lastRun?.categories.find((c) => c.category === "Audit Log")}
+              />
+              <HousekeepingCard
+                label="Dismissed Alerts"
+                description="Remove dismissed alerts"
+                stat={hkStats ? String(hkStats.dismissedAlerts.count) : "..."}
+                statDetail="entries"
+                enabled={hkConfig.dismissedAlerts.enabled}
+                onToggle={(v) => updateHkConfig({ dismissedAlerts: { ...hkConfig.dismissedAlerts, enabled: v } })}
+                retentionDays={hkConfig.dismissedAlerts.retentionDays}
+                onRetentionChange={(v) => updateHkConfig({ dismissedAlerts: { ...hkConfig.dismissedAlerts, retentionDays: v } })}
+                lastResult={hkStats?.lastRun?.categories.find((c) => c.category === "Dismissed Alerts")}
+              />
+              <HousekeepingCard
+                label="Orphaned Certs"
+                description="Remove unreferenced cert files"
+                stat={hkStats ? String(hkStats.orphanedCerts.count) : "..."}
+                statDetail="found"
+                enabled={hkConfig.orphanedCerts.enabled}
+                onToggle={(v) => updateHkConfig({ orphanedCerts: { enabled: v } })}
+                lastResult={hkStats?.lastRun?.categories.find((c) => c.category === "Orphaned Certs")}
+              />
+              <HousekeepingCard
+                label="ACME Challenges"
+                description="Clean up validation tokens"
+                stat={hkStats ? String(hkStats.acmeChallenges.fileCount) : "..."}
+                statDetail={hkStats ? `files (${formatBytes(hkStats.acmeChallenges.totalSizeBytes)})` : "files"}
+                enabled={hkConfig.acmeCleanup.enabled}
+                onToggle={(v) => updateHkConfig({ acmeCleanup: { enabled: v } })}
+                lastResult={hkStats?.lastRun?.categories.find((c) => c.category === "ACME Challenges")}
+              />
+              <HousekeepingCard
+                label="Docker Images"
+                description="Prune old Gateway images"
+                stat={hkStats ? String(hkStats.dockerImages.oldImageCount) : "..."}
+                statDetail={hkStats ? `old (${formatBytes(hkStats.dockerImages.reclaimableBytes)})` : "old"}
+                enabled={hkConfig.dockerPrune.enabled}
+                onToggle={(v) => updateHkConfig({ dockerPrune: { enabled: v } })}
+                lastResult={hkStats?.lastRun?.categories.find((c) => c.category === "Docker Images")}
+              />
+            </div>
+            {hkStats?.lastRun && (
+              <div className="border-t border-border px-4 py-2">
+                <Button variant="link" size="sm" className="px-0 h-auto text-xs" onClick={handleViewHistory}>
+                  View run history
+                </Button>
+              </div>
+            )}
+          </div>
         )}
 
         {/* Update available */}
@@ -796,7 +779,7 @@ function InfoRow({
   );
 }
 
-function HousekeepingRow({
+function HousekeepingCard({
   label,
   description,
   stat,
@@ -824,7 +807,7 @@ function HousekeepingRow({
   }, [retentionDays]);
 
   return (
-    <div className="flex items-center justify-between gap-4 px-4 py-3">
+    <div className="border-t border-r border-border p-4 last:border-r-0 [&:nth-child(2n)]:border-r-0 sm:[&:nth-child(2n)]:border-r lg:[&:nth-child(2n)]:border-r lg:[&:nth-child(3n)]:border-r-0 flex items-center justify-between gap-4">
       <div className="min-w-0">
         <div className="flex items-center gap-2">
           <p className="text-sm font-medium">{label}</p>
@@ -837,31 +820,32 @@ function HousekeepingRow({
           )}
         </div>
         <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
-        {retentionDays !== undefined && onRetentionChange && (
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-1">
-            <span>Keep for</span>
-            <input
-              type="number"
-              className="w-10 bg-transparent border-b border-border text-center text-xs text-foreground tabular-nums outline-none focus:border-primary disabled:opacity-50"
-              min={1}
-              max={365}
-              value={localDays}
-              disabled={!enabled}
-              onChange={(e) => setLocalDays(parseInt(e.target.value, 10) || 1)}
-              onBlur={() => {
-                const v = Math.max(1, Math.min(365, localDays));
-                setLocalDays(v);
-                if (v !== retentionDays) onRetentionChange(v);
-              }}
-            />
-            <span>days</span>
-          </div>
-        )}
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-1">
+          <span>{stat}{statDetail ? ` ${statDetail}` : ""}</span>
+          {retentionDays !== undefined && onRetentionChange && (
+            <>
+              <span>&middot;</span>
+              <span>keep</span>
+              <input
+                type="number"
+                className="w-10 bg-transparent border-b border-border text-center text-xs text-foreground tabular-nums outline-none focus:border-primary disabled:opacity-50"
+                min={1}
+                max={365}
+                value={localDays}
+                disabled={!enabled}
+                onChange={(e) => setLocalDays(parseInt(e.target.value, 10) || 1)}
+                onBlur={() => {
+                  const v = Math.max(1, Math.min(365, localDays));
+                  setLocalDays(v);
+                  if (v !== retentionDays) onRetentionChange(v);
+                }}
+              />
+              <span>days</span>
+            </>
+          )}
+        </div>
       </div>
-      <div className="flex items-center gap-3 shrink-0">
-        <span className="text-xs text-muted-foreground">{stat}{statDetail ? ` ${statDetail}` : ""}</span>
-        <Switch checked={enabled} onChange={onToggle} />
-      </div>
+      <Switch checked={enabled} onChange={onToggle} />
     </div>
   );
 }
