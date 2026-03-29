@@ -2,6 +2,7 @@ import { CornerDownRight, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { CACreateDialog } from "@/components/ca/CACreateDialog";
+import { useUIStore } from "@/stores/ui";
 import { PageTransition } from "@/components/common/PageTransition";
 import { SearchFilterBar } from "@/components/common/SearchFilterBar";
 import { StatusBadge } from "@/components/common/StatusBadge";
@@ -33,6 +34,16 @@ export function CAs() {
   const [createIntermediateParentId, setCreateIntermediateParentId] = useState<
     string | undefined
   >();
+  const modal = useUIStore((s) => s.modal);
+  const closeModal = useUIStore((s) => s.closeModal);
+
+  useEffect(() => {
+    if (modal?.type === "createCA") {
+      setCreateIntermediateParentId(undefined);
+      setCreateDialogOpen(true);
+      closeModal();
+    }
+  }, [modal, closeModal]);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
 
@@ -71,7 +82,7 @@ export function CAs() {
     <PageTransition>
       <div className="h-full overflow-y-auto p-6 space-y-2">
         {/* Header */}
-        <div className="flex items-center justify-between mb-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
           <div>
             <h1 className="text-2xl font-bold">Certificate Authorities</h1>
             <p className="text-sm text-muted-foreground">

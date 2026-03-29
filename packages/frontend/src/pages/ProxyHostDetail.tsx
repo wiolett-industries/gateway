@@ -375,9 +375,9 @@ export function ProxyHostDetail() {
 
   return (
     <PageTransition>
-      <div className="h-full overflow-y-auto p-6 space-y-6">
+      <div className="h-full flex flex-col p-6 gap-6 overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2 shrink-0">
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="icon" onClick={() => navigate("/proxy-hosts")}>
               <ArrowLeft className="h-4 w-4" />
@@ -411,8 +411,8 @@ export function ProxyHostDetail() {
         </div>
 
         {/* Tabs */}
-        <Tabs defaultValue="details">
-          <TabsList>
+        <Tabs defaultValue="details" className="flex flex-col flex-1 min-h-0">
+          <TabsList className="shrink-0">
             <TabsTrigger value="details">Details</TabsTrigger>
             <TabsTrigger value="ssl">SSL</TabsTrigger>
             <TabsTrigger value="custom">Custom Config</TabsTrigger>
@@ -437,7 +437,7 @@ export function ProxyHostDetail() {
           </TabsList>
 
           {/* Details Tab */}
-          <TabsContent value="details">
+          <TabsContent value="details" className="overflow-y-auto flex-1 min-h-0">
             <div className="border border-border bg-card p-6 space-y-6">
               {/* Type */}
               <div className="space-y-2">
@@ -688,7 +688,7 @@ export function ProxyHostDetail() {
           </TabsContent>
 
           {/* SSL Tab */}
-          <TabsContent value="ssl">
+          <TabsContent value="ssl" className="overflow-y-auto flex-1 min-h-0">
             <div className="border border-border bg-card p-6 space-y-6">
               <div className="flex items-center gap-3">
                 <Switch checked={sslEnabled} onChange={setSslEnabled} />
@@ -758,7 +758,7 @@ export function ProxyHostDetail() {
           </TabsContent>
 
           {/* Custom Config Tab */}
-          <TabsContent value="custom">
+          <TabsContent value="custom" className="overflow-y-auto flex-1 min-h-0">
             <div className="border border-border bg-card p-6 space-y-6">
               {/* Custom Headers */}
               <div className="space-y-3">
@@ -925,7 +925,7 @@ export function ProxyHostDetail() {
           </TabsContent>
 
           {/* Advanced Tab */}
-          <TabsContent value="advanced">
+          <TabsContent value="advanced" className="overflow-y-auto flex-1 min-h-0">
             <div className="border border-border bg-card p-6 space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold">Custom Nginx Configuration</h3>
@@ -967,7 +967,7 @@ export function ProxyHostDetail() {
           </TabsContent>
 
           {/* Access List Tab */}
-          <TabsContent value="access">
+          <TabsContent value="access" className="overflow-y-auto flex-1 min-h-0">
             <div className="border border-border bg-card p-6 space-y-4">
               <div className="space-y-2">
                 <label className="text-sm font-medium">Access List</label>
@@ -995,7 +995,7 @@ export function ProxyHostDetail() {
           </TabsContent>
 
           {/* Health Check Tab */}
-          <TabsContent value="health">
+          <TabsContent value="health" className="overflow-y-auto flex-1 min-h-0">
             <div className="border border-border bg-card p-6 space-y-6">
               <div className="flex items-center gap-3">
                 <Switch checked={healthCheckEnabled} onChange={setHealthCheckEnabled} />
@@ -1063,9 +1063,9 @@ export function ProxyHostDetail() {
 
           {/* Raw Config Tab */}
           {!isNew && (
-            <TabsContent value="raw">
-              <div className="border border-border bg-card p-4 space-y-3">
-                <div className="flex items-center justify-between">
+            <TabsContent value="raw" className="flex flex-col flex-1 min-h-0">
+              <div className="border border-border bg-card p-4 flex flex-col flex-1 min-h-0 gap-3">
+                <div className="flex items-center justify-between shrink-0">
                   <div>
                     <h3 className="text-sm font-semibold">Rendered Nginx Config</h3>
                     <p className="text-xs text-muted-foreground">
@@ -1087,12 +1087,11 @@ export function ProxyHostDetail() {
                     <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
                   </div>
                 ) : (
-                  <div style={{ height: "calc(100vh - 280px)" }}>
+                  <div className="flex-1 min-h-0 flex flex-col">
                     <CodeEditor
                       value={rawConfig}
                       onChange={setRawConfig}
                       readOnly
-                      height="100%"
                     />
                   </div>
                 )}
@@ -1102,8 +1101,8 @@ export function ProxyHostDetail() {
 
           {/* Logs Tab */}
           {!isNew && (
-            <TabsContent value="logs">
-              <div className="border border-border bg-card p-4 space-y-3">
+            <TabsContent value="logs" className="flex flex-col flex-1 min-h-0">
+              <div className="border border-border bg-card p-4 flex flex-col flex-1 min-h-0 gap-3">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold">Live Logs</h3>
                   <Button variant="outline" size="sm" onClick={() => setLogLines([])}>

@@ -199,6 +199,10 @@ const editorTheme = EditorView.theme({
     color: "hsl(var(--foreground))",
     fontSize: "13px",
     fontFamily: "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace",
+    height: "100%",
+  },
+  ".cm-scroller": {
+    overflow: "auto",
   },
   ".cm-content": {
     caretColor: "hsl(var(--foreground))",
@@ -324,8 +328,8 @@ export function CodeEditor({
   return (
     <div
       ref={containerRef}
-      className={`border border-border overflow-auto ${className}`}
-      style={{ minHeight: height ? undefined : minHeight, height }}
+      className={`border border-border overflow-hidden flex-1 min-h-0 ${className}`}
+      style={{ minHeight: height ? undefined : minHeight, ...(height && height !== "100%" ? { height } : {}) }}
     />
   );
 }

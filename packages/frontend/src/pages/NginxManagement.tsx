@@ -242,8 +242,8 @@ export function NginxManagement() {
 
   return (
     <PageTransition>
-      <div className="h-full overflow-y-auto p-6 space-y-4">
-        <div className="flex items-center justify-between">
+      <div className={`h-full p-6 ${activeTab === "configuration" ? "flex flex-col gap-4 overflow-hidden" : "space-y-4 overflow-y-auto"}`}>
+        <div className="flex flex-wrap items-center justify-between gap-2 shrink-0">
           <div>
             <h1 className="text-2xl font-bold">Nginx</h1>
             <p className="text-sm text-muted-foreground">
@@ -257,8 +257,8 @@ export function NginxManagement() {
           )}
         </div>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col flex-1 min-h-0">
+          <TabsList className="shrink-0">
             <TabsTrigger value="monitoring">Monitoring</TabsTrigger>
             <TabsTrigger value="configuration">Configuration</TabsTrigger>
           </TabsList>
@@ -361,22 +361,26 @@ export function NginxManagement() {
                       color="#8b5cf6"
                       subtitle={sys ? `${sys.memoryUsagePercent.toFixed(1)}% of ${formatBytes(sys.memoryLimitBytes)}` : undefined}
                     />
-                    <StatCard
-                      label="Network I/O"
-                      value={sys ? `${formatBytes(sys.networkRxBytes)} / ${formatBytes(sys.networkTxBytes)}` : "0 B"}
-                      icon={Activity}
-                      history={h.networkRx || []}
-                      color="#06b6d4"
-                      subtitle="Rx / Tx total"
-                    />
-                    <StatCard
-                      label="Disk I/O"
-                      value={sys ? `${formatBytes(sys.blockReadBytes)} / ${formatBytes(sys.blockWriteBytes)}` : "0 B"}
-                      icon={HardDrive}
-                      history={h.diskRead || []}
-                      color="#f97316"
-                      subtitle="Read / Write total"
-                    />
+                    <div className="col-span-2 md:col-span-1">
+                      <StatCard
+                        label="Network I/O"
+                        value={sys ? `${formatBytes(sys.networkRxBytes)} / ${formatBytes(sys.networkTxBytes)}` : "0 B"}
+                        icon={Activity}
+                        history={h.networkRx || []}
+                        color="#06b6d4"
+                        subtitle="Rx / Tx total"
+                      />
+                    </div>
+                    <div className="col-span-2 md:col-span-1">
+                      <StatCard
+                        label="Disk I/O"
+                        value={sys ? `${formatBytes(sys.blockReadBytes)} / ${formatBytes(sys.blockWriteBytes)}` : "0 B"}
+                        icon={HardDrive}
+                        history={h.diskRead || []}
+                        color="#f97316"
+                        subtitle="Read / Write total"
+                      />
+                    </div>
                   </div>
                 </div>
 
@@ -435,7 +439,7 @@ export function NginxManagement() {
                 {stub && (
                   <div>
                     <h3 className="text-sm font-semibold mb-2 mt-4 text-muted-foreground">Totals (30s trend)</h3>
-                    <div className="grid grid-cols-3 gap-3">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                       <StatCard
                         label="Accepts"
                         value={stub.accepts.toLocaleString()}
@@ -467,20 +471,18 @@ export function NginxManagement() {
             )}
           </TabsContent>
 
-          <TabsContent value="configuration" className="space-y-3 mt-4">
+          <TabsContent value="configuration" className="flex flex-col flex-1 min-h-0 mt-4 gap-3">
             {configLoading ? (
               <div className="flex items-center justify-center py-16">
                 <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
               </div>
             ) : (
               <>
-                {/* Editor — viewport height minus header/tabs/padding/buttons */}
-                <div className="border border-border" style={{ height: "calc(100vh - 217px)" }}>
+                <div className="flex-1 min-h-0 flex flex-col">
                   <CodeEditor
                     value={configContent}
                     onChange={isAdmin ? setConfigContent : () => {}}
                     readOnly={!isAdmin}
-                    height="100%"
                   />
                 </div>
 

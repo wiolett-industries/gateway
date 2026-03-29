@@ -181,6 +181,13 @@ class ApiClient {
       return data;
     }
 
+    // Non-GET: invalidate cached GET requests for this endpoint path
+    const basePath = url.split("?")[0];
+    for (const key of this.cache.keys()) {
+      if (key.startsWith("req:") && key.includes(basePath.replace(/\/[^/]+$/, ""))) {
+        this.cache.delete(key);
+      }
+    }
     return this.fetchRaw<T>(url, options);
   }
 

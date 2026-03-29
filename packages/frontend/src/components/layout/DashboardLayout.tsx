@@ -74,6 +74,11 @@ const navigationGroups: NavGroup[] = [
     label: "Main",
     items: [
       { name: "Dashboard", href: "/", icon: LayoutDashboard },
+    ],
+  },
+  {
+    label: "Reverse Proxy",
+    items: [
       { name: "Proxy Hosts", href: "/proxy-hosts", icon: Globe },
       { name: "Domains", href: "/domains", icon: Globe2 },
       { name: "Config Templates", href: "/nginx-templates", icon: FileCode },
@@ -342,8 +347,8 @@ function SidebarContent({
             <ScrollArea className="flex-1 overflow-hidden min-w-0">
               {effectiveGroups.map((group, groupIndex) => (
                 <div key={group.label}>
-                  {groupIndex > 0 && <Separator className="my-1" />}
-                  <nav className="space-y-0.5 p-2">
+                  {groupIndex > 0 && <Separator />}
+                  <nav className="space-y-0.5 px-2 py-2">
                     {groupIndex > 0 && (
                       <p className="px-3 py-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
                         {group.label}
@@ -539,6 +544,7 @@ export function DashboardLayout() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
+
       if (mod && e.key === "k") {
         e.preventDefault();
         setCommandPaletteOpen(!commandPaletteOpen);
@@ -547,10 +553,49 @@ export function DashboardLayout() {
         e.preventDefault();
         useUIStore.getState().toggleSidebar();
       }
+      if (mod && e.key === ",") {
+        e.preventDefault();
+        navigate("/settings");
+      }
+      // Ctrl+H = new proxy host, Ctrl+S = new SSL cert, Ctrl+R = new root CA
+      if (e.ctrlKey && !e.metaKey && !e.altKey) {
+        switch (e.key) {
+          case "h": e.preventDefault(); navigate("/proxy-hosts/new"); break;
+          case "s":
+            e.preventDefault();
+            navigate("/ssl-certificates");
+            useUIStore.getState().openModal("createSSLCert");
+            break;
+          case "r":
+            e.preventDefault();
+            navigate("/cas");
+            useUIStore.getState().openModal("createCA");
+            break;
+        }
+      }
+      // ⌘+number navigation — follows sidebar order
+      if (mod && !e.altKey && !e.shiftKey) {
+        const routes: Record<string, string> = {
+          "1": "/",
+          "2": "/proxy-hosts",
+          "3": "/domains",
+          "4": "/nginx-templates",
+          "5": "/ssl-certificates",
+          "6": "/cas",
+          "7": "/certificates",
+          "8": "/templates",
+          "9": "/nginx",
+          "0": "/access-lists",
+        };
+        if (e.key in routes) {
+          e.preventDefault();
+          navigate(routes[e.key]);
+        }
+      }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [commandPaletteOpen, setCommandPaletteOpen]);
+  }, [commandPaletteOpen, setCommandPaletteOpen, navigate]);
 
   if (isLoading) {
     return (
