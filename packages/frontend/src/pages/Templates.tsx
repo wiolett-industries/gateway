@@ -2,6 +2,7 @@ import { FileText, Minus, MoreVertical, Pencil, Plus, Trash2 } from "lucide-reac
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
+import { EmptyState } from "@/components/common/EmptyState";
 import { PageTransition } from "@/components/common/PageTransition";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -132,8 +133,9 @@ function toggleInArray(arr: string[], value: string): string[] {
 
 export function Templates() {
   const { hasRole } = useAuthStore();
-  const [templates, setTemplates] = useState<Template[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const cachedTemplates = api.getCached<Template[]>("templates:list");
+  const [templates, setTemplates] = useState<Template[]>(cachedTemplates ?? []);
+  const [isLoading, setIsLoading] = useState(!cachedTemplates);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Template | null>(null);
   const [step, setStep] = useState(0);
@@ -397,9 +399,7 @@ export function Templates() {
             ))}
           </div>
         ) : (
-          <div className="flex flex-col items-center gap-2 py-16 border border-border bg-card">
-            <p className="text-muted-foreground">No templates yet</p>
-          </div>
+          <EmptyState message="No templates." actionLabel="Create one" onAction={() => setDialogOpen(true)} />
         )}
 
         {/* Wizard Dialog */}

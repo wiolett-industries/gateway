@@ -2,6 +2,7 @@ import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { CertificateIssueDialog } from "@/components/certificates/CertificateIssueDialog";
+import { EmptyState } from "@/components/common/EmptyState";
 import { PageTransition } from "@/components/common/PageTransition";
 import { SearchFilterBar } from "@/components/common/SearchFilterBar";
 import { StatusBadge } from "@/components/common/StatusBadge";
@@ -69,9 +70,9 @@ export function Certificates() {
 
   return (
     <PageTransition>
-      <div className="h-full overflow-y-auto p-6 space-y-2">
+      <div className="h-full overflow-y-auto p-6 space-y-4">
         {/* Header */}
-        <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h1 className="text-2xl font-bold">Certificates</h1>
             <p className="text-sm text-muted-foreground">{total} certificates total</p>
@@ -241,21 +242,13 @@ export function Certificates() {
             )}
           </div>
         ) : (
-          <div className="flex flex-col items-center gap-2 py-16 border border-border bg-card">
-            <p className="text-muted-foreground">No certificates found</p>
-            {hasActiveFilters && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  resetFilters();
-                  setSearchInput("");
-                }}
-              >
-                Clear filters
-              </Button>
-            )}
-          </div>
+          <EmptyState
+            message="No certificates."
+            actionLabel="Issue one"
+            onAction={() => setIssueDialogOpen(true)}
+            hasActiveFilters={hasActiveFilters}
+            onReset={() => { resetFilters(); setSearchInput(""); }}
+          />
         )}
 
         <CertificateIssueDialog

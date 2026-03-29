@@ -69,3 +69,19 @@ systemRoutes.get('/release-notes/:version', rbacMiddleware('admin'), async (c) =
     return c.json({ code: 'FETCH_FAILED', message: `Failed to fetch release notes for ${version}` }, 502);
   }
 });
+
+// GET /release-notes — fetch release notes for all versions between current and latest
+systemRoutes.get('/release-notes', rbacMiddleware('admin'), async (c) => {
+  const updateService = container.resolve(UpdateService);
+  const status = await updateService.getCachedStatus();
+  if (!status.latestVersion || !status.updateAvailable) {
+    return c.json({ data: [] });
+  }
+  try {
+    const notes = await updateService.getReleaseNotesSince(status.currentVersion, status.latestVersion);
+    return c.json({ data: notes });
+  } catch {
+    // Fallback to cached latest release notes
+    return c.json({ data: status.releaseNotes ? [{ version: status.latestVersion, notes: status.releaseNotes }] : [] });
+  }
+});

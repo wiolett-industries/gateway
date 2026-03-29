@@ -4,6 +4,7 @@ import { container } from '@/container.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
 import { authMiddleware, rbacMiddleware } from '@/modules/auth/auth.middleware.js';
 import { AuthService } from '@/modules/auth/auth.service.js';
+import { SessionService } from '@/services/session.service.js';
 import type { AppEnv } from '@/types.js';
 
 export const adminRoutes = new OpenAPIHono<AppEnv>();
@@ -13,7 +14,7 @@ adminRoutes.use('*', authMiddleware);
 adminRoutes.use('*', rbacMiddleware('admin'));
 
 const UpdateRoleSchema = z.object({
-  role: z.enum(['admin', 'operator', 'viewer']),
+  role: z.enum(['admin', 'operator', 'viewer', 'blocked']),
 });
 
 // List all users
@@ -34,6 +35,12 @@ adminRoutes.patch('/users/:id/role', async (c) => {
 
   const updatedUser = await authService.updateUserRole(userId, role);
 
+  // Destroy all sessions when blocking a user
+  if (role === 'blocked') {
+    const sessionService = container.resolve(SessionService);
+    await sessionService.destroyAllUserSessions(userId);
+  }
+
   await auditService.log({
     userId: currentUser.id,
     action: 'user.role_update',
@@ -45,4 +52,30 @@ adminRoutes.patch('/users/:id/role', async (c) => {
   });
 
   return c.json(updatedUser);
+});
+
+// Delete user
+adminRoutes.delete('/users/:id', async (c) => {
+  const authService = container.resolve(AuthService);
+  const auditService = container.resolve(AuditService);
+  const currentUser = c.get('user')!;
+  const userId = c.req.param('id');
+
+  if (userId === currentUser.id) {
+    return c.json({ code: 'SELF_DELETE', message: 'Cannot delete your own account' }, 400);
+  }
+
+  await authService.deleteUser(userId);
+
+  await auditService.log({
+    userId: currentUser.id,
+    action: 'user.delete',
+    resourceType: 'user',
+    resourceId: userId,
+    details: {},
+    ipAddress: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || c.req.header('x-real-ip'),
+    userAgent: c.req.header('user-agent'),
+  });
+
+  return c.json({ message: 'User deleted' });
 });

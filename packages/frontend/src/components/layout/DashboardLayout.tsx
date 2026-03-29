@@ -513,6 +513,12 @@ export function DashboardLayout() {
     const checkAuth = async () => {
       try {
         const user = await api.getCurrentUser();
+        if (user.role === "blocked") {
+          setUser(user);
+          setLoading(false);
+          navigate("/blocked");
+          return;
+        }
         setUser(user);
         // Prefetch data for all pages in background
         api.prefetchAll(user.role === "admin");

@@ -2,7 +2,7 @@ import { inArray } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import { settings } from '@/db/schema/settings.js';
 import { createChildLogger } from '@/lib/logger.js';
-import { isNewerVersion } from '@/lib/semver.js';
+import { compareSemver, isNewerVersion } from '@/lib/semver.js';
 import type { Env } from '@/config/env.js';
 import type { DockerService } from './docker.service.js';
 
@@ -160,6 +160,32 @@ export class UpdateService {
 
     const release = (await response.json()) as GitLabRelease;
     return release.description || '';
+  }
+
+  /**
+   * Fetch release notes for all versions between `after` (exclusive) and `upTo` (inclusive).
+   * Returns newest first.
+   */
+  async getReleaseNotesSince(after: string, upTo: string): Promise<{ version: string; notes: string }[]> {
+    const response = await fetch(this.gitlabReleasesUrl, {
+      headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(15_000),
+    });
+
+    if (!response.ok) {
+      throw new Error(`GitLab API returned ${response.status}`);
+    }
+
+    const releases = (await response.json()) as GitLabRelease[];
+
+    // Filter releases: newer than `after` and up to `upTo` (inclusive)
+    return releases
+      .filter((r) => {
+        const tag = r.tag_name;
+        return compareSemver(tag, after) > 0 && compareSemver(tag, upTo) <= 0;
+      })
+      .sort((a, b) => compareSemver(b.tag_name, a.tag_name))
+      .map((r) => ({ version: r.tag_name, notes: r.description || '' }));
   }
 
   async performUpdate(targetVersion: string): Promise<void> {

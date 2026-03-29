@@ -1,5 +1,5 @@
 // User roles
-export type UserRole = "admin" | "operator" | "viewer";
+export type UserRole = "admin" | "operator" | "viewer" | "blocked";
 
 // User
 export interface User {

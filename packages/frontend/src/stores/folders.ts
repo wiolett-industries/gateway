@@ -96,7 +96,8 @@ export const useFolderStore = create<FolderState>()((set, get) => ({
       if (cached) set({ folders: cached.folders, ungroupedHosts: cached.ungroupedHosts, totalHosts: cached.totalHosts });
     }
 
-    set({ isLoading: true, error: null });
+    const hasData = get().folders.length > 0 || get().ungroupedHosts.length > 0;
+    set({ isLoading: !hasData, error: null });
     try {
       const response = await api.getGroupedProxyHosts({
         search: filters.search || undefined,

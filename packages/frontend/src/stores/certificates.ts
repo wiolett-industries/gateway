@@ -48,7 +48,16 @@ export const useCertificatesStore = create<CertificatesState>()((set, get) => ({
 
   fetchCertificates: async () => {
     const { filters, page, limit } = get();
-    set({ isLoading: true, error: null });
+    const isDefault = page === 1 && !filters.search && filters.status === "active" && filters.type === "all" && filters.caId === "all";
+
+    // Show cached data instantly for default view
+    if (isDefault && get().certificates.length === 0) {
+      const cached = api.getCached<{ data: Certificate[]; pagination: { total: number; totalPages: number } }>("certificates:list");
+      if (cached) set({ certificates: cached.data || [], total: cached.pagination?.total ?? 0, totalPages: cached.pagination?.totalPages ?? 0 });
+    }
+
+    const hasData = get().certificates.length > 0;
+    set({ isLoading: !hasData, error: null });
     try {
       const response = await api.listCertificates({
         page,
@@ -58,6 +67,7 @@ export const useCertificatesStore = create<CertificatesState>()((set, get) => ({
         type: filters.type !== "all" ? filters.type : undefined,
         caId: filters.caId !== "all" ? filters.caId : undefined,
       });
+      if (isDefault) api.setCache("certificates:list", response);
       set({
         certificates: response.data || [],
         total: response.pagination?.total ?? 0,
