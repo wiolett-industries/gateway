@@ -463,7 +463,7 @@ export class ProxyService {
           keyPem = this.cryptoService.decryptPrivateKey({
             encryptedPrivateKey: sslCert.privateKeyPem,
             encryptedDek: sslCert.encryptedDek,
-            dekIv: sslCert.dekIv,
+            dekIv: sslCert.dekIv || '',
           });
         } else {
           keyPem = sslCert.privateKeyPem;
