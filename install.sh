@@ -560,7 +560,9 @@ DEFAULTEOF
         .code { font-size: 5rem; font-weight: 700; color: #e5e5e5; line-height: 1; }
         .message { font-size: 0.875rem; color: #a3a3a3; margin-top: 0.75rem; }
         .divider { width: 3rem; height: 1px; background: #2a2a2a; margin: 1.5rem auto; }
-        .brand { font-size: 0.75rem; color: #525252; letter-spacing: 0.05em; }
+        .brand { font-size: 0.75rem; color: #525252; }
+        .brand a { color: #a3a3a3; text-decoration: none; }
+        .brand a:hover { text-decoration: underline; }
     </style>
 </head>
 <body>
@@ -568,7 +570,7 @@ DEFAULTEOF
         <div class="code">404</div>
         <div class="message">The requested page was not found</div>
         <div class="divider"></div>
-        <div class="brand">Gateway</div>
+        <div class="brand">Gateway &middot; Powered by <a href="https://wiolett.net" target="_blank" rel="noopener noreferrer">Wiolett</a></div>
     </div>
 </body>
 </html>
@@ -598,7 +600,9 @@ HTML404EOF
         .message { font-size: 0.875rem; color: #a3a3a3; margin-top: 0.75rem; }
         .detail { font-size: 0.75rem; color: #525252; margin-top: 0.25rem; }
         .divider { width: 3rem; height: 1px; background: #2a2a2a; margin: 1.5rem auto; }
-        .brand { font-size: 0.75rem; color: #525252; letter-spacing: 0.05em; }
+        .brand { font-size: 0.75rem; color: #525252; }
+        .brand a { color: #a3a3a3; text-decoration: none; }
+        .brand a:hover { text-decoration: underline; }
     </style>
 </head>
 <body>
@@ -607,7 +611,7 @@ HTML404EOF
         <div class="message">The upstream server is not responding</div>
         <div class="detail">Please try again in a moment</div>
         <div class="divider"></div>
-        <div class="brand">Gateway</div>
+        <div class="brand">Gateway &middot; Powered by <a href="https://wiolett.net" target="_blank" rel="noopener noreferrer">Wiolett</a></div>
     </div>
 </body>
 </html>
