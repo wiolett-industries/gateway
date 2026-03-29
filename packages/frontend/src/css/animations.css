@@ -141,10 +141,10 @@
   --warning-text: #fafafa !important;
 }
 [data-sonner-toast] { border-radius: 0 !important; }
-[data-sonner-toast][data-styled='true'] [data-description] { color: #a1a1aa; }
-[data-sonner-toast][data-styled='true'] [data-close-button] {
+[data-sonner-toast] [data-description] { color: #a1a1aa; }
+[data-sonner-toast] [data-close-button] {
   background: #27272a !important; border-color: #3f3f46 !important; color: #a1a1aa !important; border-radius: 0 !important;
 }
-[data-sonner-toast][data-styled='true'] [data-close-button]:hover {
+[data-sonner-toast] [data-close-button]:hover {
   background: #3f3f46 !important; border-color: #52525b !important; color: #fafafa !important;
 }
