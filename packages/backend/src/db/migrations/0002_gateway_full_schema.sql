@@ -129,7 +129,6 @@ CREATE TABLE "ssl_certificates" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-ALTER TABLE "api_tokens" ADD COLUMN "scopes" jsonb DEFAULT '[]'::jsonb NOT NULL;--> statement-breakpoint
 ALTER TABLE "certificate_authorities" ADD COLUMN "crl_distribution_url" varchar(500);--> statement-breakpoint
 ALTER TABLE "certificate_authorities" ADD COLUMN "ocsp_responder_url" varchar(500);--> statement-breakpoint
 ALTER TABLE "certificate_authorities" ADD COLUMN "ca_issuers_url" varchar(500);--> statement-breakpoint
@@ -164,5 +163,3 @@ CREATE INDEX "ssl_cert_status_idx" ON "ssl_certificates" USING btree ("status");
 CREATE INDEX "ssl_cert_not_after_idx" ON "ssl_certificates" USING btree ("not_after");--> statement-breakpoint
 CREATE INDEX "ssl_cert_type_idx" ON "ssl_certificates" USING btree ("type");--> statement-breakpoint
 CREATE INDEX "ssl_cert_created_by_idx" ON "ssl_certificates" USING btree ("created_by_id");--> statement-breakpoint
-ALTER TABLE "api_tokens" DROP COLUMN "permission";--> statement-breakpoint
-DROP TYPE "public"."api_token_permission";
