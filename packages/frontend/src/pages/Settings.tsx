@@ -1,6 +1,6 @@
-import { Copy, Key, Loader2, Moon, Plus, RefreshCw, Sun, Trash2 } from "lucide-react";
+import { Check, Copy, Key, Loader2, Moon, Play, Plus, RefreshCw, Sun, Trash2, X } from "lucide-react";
 import Markdown from "react-markdown";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import ReactDOM from "react-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
@@ -24,12 +24,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { formatDate } from "@/lib/utils";
+import { Switch } from "@/components/ui/switch";
+import { formatDate, formatRelativeDate } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useCAStore } from "@/stores/ca";
 import { useUIStore } from "@/stores/ui";
 import { useUpdateStore } from "@/stores/update";
+import type { HousekeepingCategoryResult, HousekeepingConfig, HousekeepingRunResult, HousekeepingStats } from "@/types";
 import { type ApiToken, TOKEN_SCOPES } from "@/types";
 
 const SCOPE_GROUPS = [...new Set(TOKEN_SCOPES.map((s) => s.group))];
@@ -51,6 +53,63 @@ export function Settings() {
   const [releaseNotesOpen, setReleaseNotesOpen] = useState(false);
   const isAdmin = hasRole("admin");
 
+  // Housekeeping state
+  const [hkConfig, setHkConfig] = useState<HousekeepingConfig | null>(null);
+  const [hkStats, setHkStats] = useState<HousekeepingStats | null>(null);
+  const [hkRunning, setHkRunning] = useState(false);
+  const [hkHistoryOpen, setHkHistoryOpen] = useState(false);
+  const [hkHistory, setHkHistory] = useState<HousekeepingRunResult[]>([]);
+
+  const loadHousekeeping = useCallback(async () => {
+    if (!isAdmin) return;
+    try {
+      const [config, stats] = await Promise.all([
+        api.getHousekeepingConfig(),
+        api.getHousekeepingStats(),
+      ]);
+      setHkConfig(config);
+      setHkStats(stats);
+    } catch {
+      // ignore
+    }
+  }, [isAdmin]);
+
+  const updateHkConfig = async (partial: Partial<HousekeepingConfig>) => {
+    try {
+      const updated = await api.updateHousekeepingConfig(partial);
+      setHkConfig(updated);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update config");
+    }
+  };
+
+  const handleRunHousekeeping = async () => {
+    setHkRunning(true);
+    try {
+      const result = await api.runHousekeeping();
+      if (result.overallSuccess) {
+        toast.success(`Housekeeping completed in ${(result.totalDurationMs / 1000).toFixed(1)}s`);
+      } else {
+        toast.warning("Housekeeping completed with some errors");
+      }
+      await loadHousekeeping();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Housekeeping failed");
+    } finally {
+      setHkRunning(false);
+    }
+  };
+
+  const handleViewHistory = async () => {
+    try {
+      const history = await api.getHousekeepingHistory();
+      setHkHistory(history);
+      setHkHistoryOpen(true);
+    } catch {
+      toast.error("Failed to load history");
+    }
+  };
+
   const loadTokens = async () => {
     try {
       const data = await api.listTokens();
@@ -63,7 +122,8 @@ export function Settings() {
   useEffect(() => {
     loadTokens();
     fetchStatus();
-  }, []);
+    loadHousekeeping();
+  }, [loadHousekeeping]);
 
   const handleCheckUpdate = async () => {
     await checkForUpdates();
@@ -259,6 +319,151 @@ export function Settings() {
           </div>
         </div>
 
+        {/* Housekeeping */}
+        {isAdmin && hkConfig && (
+          <>
+            {/* Housekeeping — Config */}
+            <div className="border border-border bg-card">
+              <div className="flex items-center justify-between border-b border-border p-4">
+                <div className="flex items-center gap-3">
+                  <div>
+                    <h2 className="font-semibold">Housekeeping</h2>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Automated cleanup of logs, old data, and unused resources
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Switch
+                    checked={hkConfig.enabled}
+                    onChange={(v) => updateHkConfig({ enabled: v })}
+                  />
+                </div>
+              </div>
+              <div className="p-4 space-y-3">
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-sm text-muted-foreground">Schedule</span>
+                  <Input
+                    className="w-48 h-8 text-sm font-mono"
+                    value={hkConfig.cronExpression}
+                    onChange={(e) => setHkConfig({ ...hkConfig, cronExpression: e.target.value })}
+                    onBlur={() => updateHkConfig({ cronExpression: hkConfig.cronExpression })}
+                    disabled={!hkConfig.enabled}
+                  />
+                </div>
+                {hkStats?.lastRun && (
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-sm text-muted-foreground">Last run</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground">
+                        {formatRelativeDate(hkStats.lastRun.startedAt)}
+                      </span>
+                      <span className="text-xs text-muted-foreground">&middot;</span>
+                      <span className="text-sm text-muted-foreground capitalize">{hkStats.lastRun.trigger}</span>
+                      <span className="text-xs text-muted-foreground">&middot;</span>
+                      <span className="text-sm text-muted-foreground">{(hkStats.lastRun.totalDurationMs / 1000).toFixed(1)}s</span>
+                      {hkStats.lastRun.overallSuccess ? (
+                        <Badge variant="success" className="text-[10px] px-1.5 py-0">OK</Badge>
+                      ) : (
+                        <Badge variant="destructive" className="text-[10px] px-1.5 py-0">Errors</Badge>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Housekeeping — Cleanup Categories */}
+            <div className="border border-border bg-card">
+              <div className="flex items-center justify-between border-b border-border p-4">
+                <div>
+                  <h2 className="font-semibold">Cleanup Categories</h2>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Configure what gets cleaned up and how long data is retained
+                  </p>
+                </div>
+                <Button size="sm" onClick={handleRunHousekeeping} disabled={hkRunning || !hkConfig.enabled}>
+                  {hkRunning ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Play className="h-4 w-4" />
+                  )}
+                  Run Now
+                </Button>
+              </div>
+              <div className="divide-y divide-border">
+                <HousekeepingRow
+                  label="Nginx Logs"
+                  description="Rotate, compress, and delete old access and error logs"
+                  stat={hkStats ? formatBytes(hkStats.nginxLogs.totalSizeBytes) : "..."}
+                  statDetail={hkStats ? `${hkStats.nginxLogs.fileCount} files` : undefined}
+                  enabled={hkConfig.nginxLogs.enabled}
+                  onToggle={(v) => updateHkConfig({ nginxLogs: { ...hkConfig.nginxLogs, enabled: v } })}
+                  retentionDays={hkConfig.nginxLogs.retentionDays}
+                  onRetentionChange={(v) => updateHkConfig({ nginxLogs: { ...hkConfig.nginxLogs, retentionDays: v } })}
+                  lastResult={hkStats?.lastRun?.categories.find((c) => c.category === "Nginx Logs")}
+                />
+                <HousekeepingRow
+                  label="Audit Log"
+                  description="Delete audit trail entries older than retention period"
+                  stat={hkStats ? hkStats.auditLog.totalRows.toLocaleString() : "..."}
+                  statDetail="rows"
+                  enabled={hkConfig.auditLog.enabled}
+                  onToggle={(v) => updateHkConfig({ auditLog: { ...hkConfig.auditLog, enabled: v } })}
+                  retentionDays={hkConfig.auditLog.retentionDays}
+                  onRetentionChange={(v) => updateHkConfig({ auditLog: { ...hkConfig.auditLog, retentionDays: v } })}
+                  lastResult={hkStats?.lastRun?.categories.find((c) => c.category === "Audit Log")}
+                />
+                <HousekeepingRow
+                  label="Dismissed Alerts"
+                  description="Remove alerts that have been dismissed"
+                  stat={hkStats ? String(hkStats.dismissedAlerts.count) : "..."}
+                  statDetail="entries"
+                  enabled={hkConfig.dismissedAlerts.enabled}
+                  onToggle={(v) => updateHkConfig({ dismissedAlerts: { ...hkConfig.dismissedAlerts, enabled: v } })}
+                  retentionDays={hkConfig.dismissedAlerts.retentionDays}
+                  onRetentionChange={(v) => updateHkConfig({ dismissedAlerts: { ...hkConfig.dismissedAlerts, retentionDays: v } })}
+                  lastResult={hkStats?.lastRun?.categories.find((c) => c.category === "Dismissed Alerts")}
+                />
+                <HousekeepingRow
+                  label="Orphaned Certificates"
+                  description="Remove certificate files no longer referenced in database"
+                  stat={hkStats ? String(hkStats.orphanedCerts.count) : "..."}
+                  statDetail="found"
+                  enabled={hkConfig.orphanedCerts.enabled}
+                  onToggle={(v) => updateHkConfig({ orphanedCerts: { enabled: v } })}
+                  lastResult={hkStats?.lastRun?.categories.find((c) => c.category === "Orphaned Certs")}
+                />
+                <HousekeepingRow
+                  label="ACME Challenges"
+                  description="Clean up leftover ACME validation tokens"
+                  stat={hkStats ? String(hkStats.acmeChallenges.fileCount) : "..."}
+                  statDetail={hkStats ? `files (${formatBytes(hkStats.acmeChallenges.totalSizeBytes)})` : "files"}
+                  enabled={hkConfig.acmeCleanup.enabled}
+                  onToggle={(v) => updateHkConfig({ acmeCleanup: { enabled: v } })}
+                  lastResult={hkStats?.lastRun?.categories.find((c) => c.category === "ACME Challenges")}
+                />
+                <HousekeepingRow
+                  label="Docker Images"
+                  description="Prune old Gateway images from previous updates"
+                  stat={hkStats ? String(hkStats.dockerImages.oldImageCount) : "..."}
+                  statDetail={hkStats ? `old (${formatBytes(hkStats.dockerImages.reclaimableBytes)})` : "old"}
+                  enabled={hkConfig.dockerPrune.enabled}
+                  onToggle={(v) => updateHkConfig({ dockerPrune: { enabled: v } })}
+                  lastResult={hkStats?.lastRun?.categories.find((c) => c.category === "Docker Images")}
+                />
+              </div>
+              {hkStats?.lastRun && (
+                <div className="border-t border-border px-4 py-2">
+                  <Button variant="link" size="sm" className="px-0 h-auto text-xs" onClick={handleViewHistory}>
+                    View run history
+                  </Button>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
         {/* Update available */}
         {updateStatus?.updateAvailable && updateStatus.latestVersion && (
           <div className="border bg-card" style={{ borderColor: "rgb(234 179 8 / 0.6)" }}>
@@ -381,6 +586,53 @@ export function Settings() {
             </DialogHeader>
             <div className="overflow-y-auto prose prose-sm dark:prose-invert max-w-none">
               <Markdown>{updateStatus?.releaseNotes ?? ""}</Markdown>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Housekeeping History Dialog */}
+        <Dialog open={hkHistoryOpen} onOpenChange={setHkHistoryOpen}>
+          <DialogContent className="sm:max-w-lg max-h-[80vh] flex flex-col">
+            <DialogHeader>
+              <DialogTitle>Housekeeping History</DialogTitle>
+              <DialogDescription>Last {hkHistory.length} runs</DialogDescription>
+            </DialogHeader>
+            <div className="overflow-y-auto space-y-3">
+              {hkHistory.map((run, i) => (
+                <div key={i} className="border border-border p-3 space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-medium">{new Date(run.startedAt).toLocaleString()}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="capitalize text-muted-foreground">{run.trigger}</span>
+                      <span className="text-muted-foreground">{(run.totalDurationMs / 1000).toFixed(1)}s</span>
+                      {run.overallSuccess ? (
+                        <Badge variant="success" className="text-[10px] px-1.5 py-0">OK</Badge>
+                      ) : (
+                        <Badge variant="destructive" className="text-[10px] px-1.5 py-0">Errors</Badge>
+                      )}
+                    </div>
+                  </div>
+                  <div className="space-y-0.5">
+                    {run.categories.map((cat) => (
+                      <div key={cat.category} className="flex items-center gap-2 text-xs text-muted-foreground">
+                        {cat.success ? (
+                          <Check className="h-3 w-3 text-green-500" />
+                        ) : (
+                          <X className="h-3 w-3 text-destructive" />
+                        )}
+                        <span>{cat.category}: {cat.itemsCleaned} cleaned</span>
+                        {cat.spaceFreedBytes ? <span>({formatBytes(cat.spaceFreedBytes)})</span> : null}
+                        {cat.error && <span className="text-destructive">— {cat.error}</span>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              {hkHistory.length === 0 && (
+                <p className="text-center text-sm text-muted-foreground py-4">
+                  No housekeeping runs yet
+                </p>
+              )}
             </div>
           </DialogContent>
         </Dialog>
@@ -542,4 +794,82 @@ function InfoRow({
       )}
     </div>
   );
+}
+
+function HousekeepingRow({
+  label,
+  description,
+  stat,
+  statDetail,
+  enabled,
+  onToggle,
+  retentionDays,
+  onRetentionChange,
+  lastResult,
+}: {
+  label: string;
+  description: string;
+  stat: string;
+  statDetail?: string;
+  enabled: boolean;
+  onToggle: (v: boolean) => void;
+  retentionDays?: number;
+  onRetentionChange?: (v: number) => void;
+  lastResult?: HousekeepingCategoryResult;
+}) {
+  const [localDays, setLocalDays] = useState(retentionDays ?? 30);
+
+  useEffect(() => {
+    if (retentionDays !== undefined) setLocalDays(retentionDays);
+  }, [retentionDays]);
+
+  return (
+    <div className="flex items-center justify-between gap-4 px-4 py-3">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <p className="text-sm font-medium">{label}</p>
+          {lastResult && (
+            lastResult.success ? (
+              <Check className="h-3 w-3 text-emerald-500 shrink-0" />
+            ) : (
+              <X className="h-3 w-3 text-destructive shrink-0" />
+            )
+          )}
+        </div>
+        <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
+        {retentionDays !== undefined && onRetentionChange && (
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-1">
+            <span>Keep for</span>
+            <input
+              type="number"
+              className="w-10 bg-transparent border-b border-border text-center text-xs text-foreground tabular-nums outline-none focus:border-primary disabled:opacity-50"
+              min={1}
+              max={365}
+              value={localDays}
+              disabled={!enabled}
+              onChange={(e) => setLocalDays(parseInt(e.target.value, 10) || 1)}
+              onBlur={() => {
+                const v = Math.max(1, Math.min(365, localDays));
+                setLocalDays(v);
+                if (v !== retentionDays) onRetentionChange(v);
+              }}
+            />
+            <span>days</span>
+          </div>
+        )}
+      </div>
+      <div className="flex items-center gap-3 shrink-0">
+        <span className="text-xs text-muted-foreground">{stat}{statDetail ? ` ${statDetail}` : ""}</span>
+        <Switch checked={enabled} onChange={onToggle} />
+      </div>
+    </div>
+  );
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  const value = bytes / Math.pow(1024, i);
+  return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[i]}`;
 }

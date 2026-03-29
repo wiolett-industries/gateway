@@ -19,7 +19,7 @@ export function Switch({
       <span
         className={cn(
           "inline-block h-4 w-4 bg-background transition-transform",
-          checked ? "translate-x-4" : "translate-x-0.5"
+          checked ? "translate-x-[17px]" : "translate-x-px"
         )}
       />
     </button>
