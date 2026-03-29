@@ -312,7 +312,7 @@ export function Templates() {
   return (
     <PageTransition>
       <div className="h-full overflow-y-auto p-6 space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h1 className="text-2xl font-bold">Templates</h1>
             <p className="text-sm text-muted-foreground">Certificate issuance templates</p>

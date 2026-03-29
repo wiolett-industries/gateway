@@ -300,7 +300,7 @@ export function ProxyHosts() {
     <PageTransition>
       <div className="h-full overflow-y-auto p-6 space-y-2">
         {/* Header */}
-        <div className="flex items-center justify-between mb-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
           <div>
             <h1 className="text-2xl font-bold">Proxy Hosts</h1>
             <p className="text-sm text-muted-foreground">{totalHosts} proxy hosts total</p>

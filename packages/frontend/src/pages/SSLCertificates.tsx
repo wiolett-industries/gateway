@@ -1,8 +1,9 @@
 import { ChevronLeft, ChevronRight, MoreVertical, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
+import { SSLCertificateCreateDialog } from "@/components/ssl/SSLCertificateCreateDialog";
+import { useUIStore } from "@/stores/ui";
 import { PageTransition } from "@/components/common/PageTransition";
 import { SearchFilterBar } from "@/components/common/SearchFilterBar";
 import { Badge } from "@/components/ui/badge";
@@ -69,8 +70,18 @@ function SSLStatusBadge({ status }: { status: SSLCertStatus }) {
 }
 
 export function SSLCertificates() {
-  const navigate = useNavigate();
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const { hasRole } = useAuthStore();
+  const modal = useUIStore((s) => s.modal);
+  const closeModal = useUIStore((s) => s.closeModal);
+
+  // Open dialog from command palette
+  useEffect(() => {
+    if (modal?.type === "createSSLCert") {
+      setCreateDialogOpen(true);
+      closeModal();
+    }
+  }, [modal, closeModal]);
   const {
     certificates,
     isLoading,
@@ -133,13 +144,13 @@ export function SSLCertificates() {
     <PageTransition>
       <div className="h-full overflow-y-auto p-6 space-y-2">
         {/* Header */}
-        <div className="flex items-center justify-between mb-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
           <div>
             <h1 className="text-2xl font-bold">SSL Certificates</h1>
             <p className="text-sm text-muted-foreground">{total} certificates total</p>
           </div>
           {hasRole("admin", "operator") && (
-            <Button onClick={() => navigate("/ssl-certificates/new")}>
+            <Button onClick={() => setCreateDialogOpen(true)}>
               <Plus className="h-4 w-4" />
               Add Certificate
             </Button>
@@ -367,6 +378,12 @@ export function SSLCertificates() {
           </div>
         )}
       </div>
+
+      <SSLCertificateCreateDialog
+        open={createDialogOpen}
+        onOpenChange={setCreateDialogOpen}
+        onCreated={fetchCertificates}
+      />
     </PageTransition>
   );
 }

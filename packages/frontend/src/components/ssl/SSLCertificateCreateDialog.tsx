@@ -1,9 +1,14 @@
-import { ArrowLeft, CheckCircle, Copy, Minus, Plus, Upload } from "lucide-react";
+import { CheckCircle, Copy, Minus, Plus, Upload } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { PageTransition } from "@/components/common/PageTransition";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -16,9 +21,17 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api } from "@/services/api";
 import type { ACMEChallengeType, DNSChallenge } from "@/types";
 
-export function SSLCertificateNew() {
-  const navigate = useNavigate();
+interface SSLCertificateCreateDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onCreated: () => void;
+}
 
+export function SSLCertificateCreateDialog({
+  open,
+  onOpenChange,
+  onCreated,
+}: SSLCertificateCreateDialogProps) {
   // ACME tab state
   const [acmeDomains, setAcmeDomains] = useState<string[]>([""]);
   const [challengeType, setChallengeType] = useState<ACMEChallengeType>("http-01");
@@ -42,6 +55,7 @@ export function SSLCertificateNew() {
   const [isLinking, setIsLinking] = useState(false);
 
   useEffect(() => {
+    if (!open) return;
     const loadPkiCerts = async () => {
       try {
         const res = await api.listCertificates({
@@ -55,7 +69,26 @@ export function SSLCertificateNew() {
       }
     };
     loadPkiCerts();
-  }, []);
+  }, [open]);
+
+  const resetForm = () => {
+    setAcmeDomains([""]);
+    setChallengeType("http-01");
+    setAcmeProvider("letsencrypt");
+    setDnsChallenges(null);
+    setPendingCertId(null);
+    setUploadName("");
+    setCertPem("");
+    setKeyPem("");
+    setChainPem("");
+    setSelectedPkiCertId("");
+    setInternalName("");
+  };
+
+  const handleClose = (value: boolean) => {
+    if (!value) resetForm();
+    onOpenChange(value);
+  };
 
   const handleRequestACME = async () => {
     const domains = acmeDomains.filter((d) => d.trim() !== "");
@@ -73,7 +106,6 @@ export function SSLCertificateNew() {
       });
       if ("challenges" in result && result.challenges) {
         setDnsChallenges(result.challenges as DNSChallenge[]);
-        // Extract the cert id for DNS verification from the nested certificate object
         if (
           "certificate" in result &&
           result.certificate &&
@@ -84,7 +116,9 @@ export function SSLCertificateNew() {
         toast.success("DNS challenge records created. Please add them to your DNS.");
       } else {
         toast.success("Certificate requested successfully");
-        navigate("/ssl-certificates");
+        resetForm();
+        onOpenChange(false);
+        onCreated();
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to request certificate");
@@ -102,7 +136,9 @@ export function SSLCertificateNew() {
     try {
       await api.completeDNSVerify(pendingCertId);
       toast.success("DNS verification complete. Certificate issued.");
-      navigate("/ssl-certificates");
+      resetForm();
+      onOpenChange(false);
+      onCreated();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "DNS verification failed");
     } finally {
@@ -132,7 +168,9 @@ export function SSLCertificateNew() {
         chainPem: chainPem || undefined,
       });
       toast.success("Certificate uploaded successfully");
-      navigate("/ssl-certificates");
+      resetForm();
+      onOpenChange(false);
+      onCreated();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to upload certificate");
     } finally {
@@ -152,7 +190,9 @@ export function SSLCertificateNew() {
         name: internalName || undefined,
       });
       toast.success("Internal certificate linked");
-      navigate("/ssl-certificates");
+      resetForm();
+      onOpenChange(false);
+      onCreated();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to link certificate");
     } finally {
@@ -161,22 +201,13 @@ export function SSLCertificateNew() {
   };
 
   return (
-    <PageTransition>
-      <div className="h-full overflow-y-auto p-6 space-y-6">
-        {/* Header */}
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => navigate("/ssl-certificates")}>
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <div>
-            <h1 className="text-2xl font-bold">Add SSL Certificate</h1>
-            <p className="text-sm text-muted-foreground">
-              Choose a method to add an SSL certificate
-            </p>
-          </div>
-        </div>
+    <Dialog open={open} onOpenChange={handleClose}>
+      <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Add SSL Certificate</DialogTitle>
+          <DialogDescription>Choose a method to add an SSL certificate.</DialogDescription>
+        </DialogHeader>
 
-        {/* Tabs */}
         <Tabs defaultValue="acme">
           <TabsList>
             <TabsTrigger value="acme">Let's Encrypt</TabsTrigger>
@@ -186,9 +217,8 @@ export function SSLCertificateNew() {
 
           {/* ACME / Let's Encrypt Tab */}
           <TabsContent value="acme">
-            <div className="border border-border bg-card p-6 space-y-6">
+            <div className="space-y-4">
               {dnsChallenges ? (
-                // Show DNS challenge records
                 <div className="space-y-4">
                   <div className="flex items-center gap-2">
                     <CheckCircle className="h-5 w-5 text-amber-500" />
@@ -246,8 +276,7 @@ export function SSLCertificateNew() {
                   </Button>
                 </div>
               ) : (
-                // Show ACME request form
-                <>
+                <div className="space-y-4">
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Domains</label>
                     <div className="space-y-2">
@@ -327,14 +356,14 @@ export function SSLCertificateNew() {
                   <Button onClick={handleRequestACME} disabled={isRequestingACME}>
                     {isRequestingACME ? "Requesting..." : "Request Certificate"}
                   </Button>
-                </>
+                </div>
               )}
             </div>
           </TabsContent>
 
           {/* Upload Tab */}
           <TabsContent value="upload">
-            <div className="border border-border bg-card p-6 space-y-4">
+            <div className="space-y-4">
               <div className="space-y-2">
                 <label className="text-sm font-medium">Name</label>
                 <Input
@@ -379,7 +408,7 @@ export function SSLCertificateNew() {
 
           {/* Internal CA Tab */}
           <TabsContent value="internal">
-            <div className="border border-border bg-card p-6 space-y-4">
+            <div className="space-y-4">
               <p className="text-sm text-muted-foreground">
                 Link an existing PKI certificate from your internal Certificate Authorities for use
                 as an SSL certificate.
@@ -419,7 +448,7 @@ export function SSLCertificateNew() {
             </div>
           </TabsContent>
         </Tabs>
-      </div>
-    </PageTransition>
+      </DialogContent>
+    </Dialog>
   );
 }

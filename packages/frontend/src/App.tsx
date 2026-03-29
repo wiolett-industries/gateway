@@ -19,7 +19,6 @@ import { NginxTemplates } from "@/pages/NginxTemplates";
 import { ProxyHostDetail } from "@/pages/ProxyHostDetail";
 import { ProxyHosts } from "@/pages/ProxyHosts";
 import { Settings } from "@/pages/Settings";
-import { SSLCertificateNew } from "@/pages/SSLCertificateNew";
 import { SSLCertificates } from "@/pages/SSLCertificates";
 import { Templates } from "@/pages/Templates";
 
@@ -40,7 +39,6 @@ export default function App() {
               <Route path="/nginx-templates/new" element={<NginxTemplateEdit />} />
               <Route path="/nginx-templates/:id" element={<NginxTemplateEdit />} />
               <Route path="/ssl-certificates" element={<SSLCertificates />} />
-              <Route path="/ssl-certificates/new" element={<SSLCertificateNew />} />
               <Route path="/domains" element={<Domains />} />
               <Route path="/nginx" element={<NginxManagement />} />
               <Route path="/access-lists" element={<AccessLists />} />
