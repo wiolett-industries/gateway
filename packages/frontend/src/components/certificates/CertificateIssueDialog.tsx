@@ -172,7 +172,7 @@ export function CertificateIssueDialog({
 
             {templates.length > 0 && (
               <div className="space-y-2">
-                <label className="text-sm font-medium">Template (optional)</label>
+                <label className="text-sm font-medium">Template</label>
                 <Select
                   value={selectedTemplateId || "none"}
                   onValueChange={(v) => handleTemplateSelect(v === "none" ? "" : v)}
@@ -195,7 +195,7 @@ export function CertificateIssueDialog({
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <label className="text-sm font-medium">Certificate Type</label>
-                <Select value={type} onValueChange={(v) => setType(v as CertificateType)}>
+                <Select value={type} onValueChange={(v) => { setType(v as CertificateType); setSelectedTemplateId(""); }} disabled={!!selectedTemplateId}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -211,7 +211,8 @@ export function CertificateIssueDialog({
                 <label className="text-sm font-medium">Key Algorithm</label>
                 <Select
                   value={keyAlgorithm}
-                  onValueChange={(v) => setKeyAlgorithm(v as KeyAlgorithm)}
+                  onValueChange={(v) => { setKeyAlgorithm(v as KeyAlgorithm); setSelectedTemplateId(""); }}
+                  disabled={!!selectedTemplateId}
                 >
                   <SelectTrigger>
                     <SelectValue />
