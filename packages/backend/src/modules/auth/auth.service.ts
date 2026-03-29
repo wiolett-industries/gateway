@@ -1,6 +1,6 @@
 import { injectable, inject } from 'tsyringe';
 import * as client from 'openid-client';
-import { eq, count } from 'drizzle-orm';
+import { eq, count, not, like } from 'drizzle-orm';
 import { TOKENS } from '@/container.js';
 import { getEnv } from '@/config/env.js';
 import { SessionService } from '@/services/session.service.js';
@@ -179,10 +179,12 @@ export class AuthService {
       return this.mapDbUserToUser(existingUser);
     }
 
-    // Check if this is the first user — assign admin role
+    // Check if this is the first real user — assign admin role
+    // Exclude system users (e.g. system:gateway-setup) from the count
     const [{ count: userCount }] = await this.db
       .select({ count: count() })
-      .from(users);
+      .from(users)
+      .where(not(like(users.oidcSubject, 'system:%')));
 
     const role: UserRole = userCount === 0 ? 'admin' : 'viewer';
 

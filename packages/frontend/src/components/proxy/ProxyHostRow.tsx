@@ -105,9 +105,15 @@ export function ProxyHostRow({
         </Badge>
       </td>
       <td className="p-3" onClick={(e) => e.stopPropagation()}>
-        <div className={togglingIds.has(host.id) ? "opacity-50 pointer-events-none" : undefined}>
-          <Switch checked={host.enabled} onChange={(v) => onToggle(host.id, !v)} />
-        </div>
+        {host.isSystem ? (
+          <span className="inline-flex h-5 w-9 items-center border border-border bg-primary opacity-50 cursor-not-allowed">
+            <span className="inline-block h-4 w-4 bg-background translate-x-4" />
+          </span>
+        ) : (
+          <div className={togglingIds.has(host.id) ? "opacity-50 pointer-events-none" : undefined}>
+            <Switch checked={host.enabled} onChange={(v) => onToggle(host.id, !v)} />
+          </div>
+        )}
       </td>
       {hasRole("admin", "operator") && (
         <td className="p-3 w-10" onClick={(e) => e.stopPropagation()}>

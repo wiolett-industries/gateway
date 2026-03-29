@@ -393,6 +393,7 @@ export class ProxyService {
       where: eq(proxyHosts.id, id),
     });
     if (!existing) throw new AppError(404, 'PROXY_HOST_NOT_FOUND', 'Proxy host not found');
+    if (existing.isSystem) throw new AppError(403, 'SYSTEM_HOST', 'System proxy hosts cannot be toggled');
 
     const previousEnabled = existing.enabled;
 
