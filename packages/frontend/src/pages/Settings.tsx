@@ -1,6 +1,7 @@
 import { Copy, Key, Loader2, Moon, Plus, RefreshCw, Sun, Trash2 } from "lucide-react";
 import Markdown from "react-markdown";
 import { useEffect, useRef, useState } from "react";
+import ReactDOM from "react-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { PageTransition } from "@/components/common/PageTransition";
@@ -394,11 +395,11 @@ export function Settings() {
           </div>
         </div>
 
-        {/* Updating overlay */}
-        {isUpdating && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+        {/* Updating overlay — rendered via portal to cover entire viewport */}
+        {isUpdating && ReactDOM.createPortal(
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-background">
             <div className="flex flex-col items-center gap-4 text-center">
-              <div className="h-10 w-10 animate-spin rounded-full border-3 border-primary border-t-transparent" />
+              <Loader2 className="h-10 w-10 animate-spin text-muted-foreground" />
               <div>
                 <h2 className="text-lg font-semibold">Updating Gateway</h2>
                 <p className="text-sm text-muted-foreground mt-1">
@@ -409,7 +410,8 @@ export function Settings() {
                 </p>
               </div>
             </div>
-          </div>
+          </div>,
+          document.body
         )}
 
         <p className="text-center text-xs text-muted-foreground">
