@@ -226,7 +226,7 @@ export class UpdateService {
       Image: 'docker:27-cli',
       Cmd: [
         'sh', '-c',
-        `sleep 2 && docker compose --project-name ${composeProject} -f /project/docker-compose.yml up -d app`,
+        `sleep 2 && docker compose --project-name ${composeProject} -f /project/docker-compose.yml up -d --force-recreate app`,
       ],
       HostConfig: {
         Binds: [
