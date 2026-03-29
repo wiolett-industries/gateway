@@ -72,7 +72,8 @@ export class DockerService {
   private request(
     method: string,
     path: string,
-    body?: unknown
+    body?: unknown,
+    timeoutMs?: number
   ): Promise<{ statusCode: number; body: string; bodyRaw: Buffer }> {
     return new Promise((resolve, reject) => {
       const payload = body !== undefined ? JSON.stringify(body) : undefined;
@@ -82,6 +83,7 @@ export class DockerService {
           socketPath: this.socketPath,
           method,
           path,
+          timeout: timeoutMs,
           headers: {
             ...(payload !== undefined
               ? {
@@ -106,6 +108,9 @@ export class DockerService {
         }
       );
 
+      req.on('timeout', () => {
+        req.destroy(new Error(`Docker API request timed out after ${timeoutMs}ms`));
+      });
       req.on('error', reject);
 
       if (payload !== undefined) {
@@ -212,6 +217,145 @@ export class DockerService {
     }
     logger.info('Nginx reloaded successfully');
   }
+
+  /**
+   * Pull a Docker image from a registry.
+   * The Docker API streams progress — we read until the stream ends.
+   */
+  async pullImage(image: string, tag: string): Promise<void> {
+    logger.info('Pulling Docker image', { image, tag });
+    const res = await this.request(
+      'POST',
+      `${API_VERSION}/images/create?fromImage=${encodeURIComponent(image)}&tag=${encodeURIComponent(tag)}`,
+      undefined,
+      300_000 // 5 min timeout for image pulls
+    );
+    if (res.statusCode !== 200) {
+      throw new Error(`Docker image pull failed (${res.statusCode}): ${res.body}`);
+    }
+    // Check last line of streaming output for errors
+    const lines = res.body.trim().split('\n');
+    const last = lines[lines.length - 1];
+    try {
+      const parsed = JSON.parse(last) as { error?: string };
+      if (parsed.error) {
+        throw new Error(`Docker image pull error: ${parsed.error}`);
+      }
+    } catch (e) {
+      if (e instanceof Error && e.message.startsWith('Docker image pull error')) throw e;
+      // Not JSON — ignore parse error
+    }
+    logger.info('Image pulled successfully', { image, tag });
+  }
+
+  /**
+   * Inspect the container this app is running in.
+   * Uses HOSTNAME env var which Docker sets to the short container ID.
+   */
+  async inspectSelf(): Promise<DockerContainerFullInspect> {
+    const hostname = process.env.HOSTNAME;
+    if (!hostname) {
+      throw new Error('HOSTNAME env var not available — cannot self-inspect');
+    }
+    const res = await this.request(
+      'GET',
+      `${API_VERSION}/containers/${encodeURIComponent(hostname)}/json`
+    );
+    if (res.statusCode !== 200) {
+      throw new Error(`Docker self-inspect failed (${res.statusCode}): ${res.body}`);
+    }
+    return JSON.parse(res.body) as DockerContainerFullInspect;
+  }
+
+  /**
+   * Create a container. Returns the container ID.
+   */
+  async createContainer(config: DockerCreateContainerConfig): Promise<string> {
+    const res = await this.request(
+      'POST',
+      `${API_VERSION}/containers/create`,
+      config
+    );
+    if (res.statusCode !== 201) {
+      throw new Error(`Docker container create failed (${res.statusCode}): ${res.body}`);
+    }
+    const { Id } = JSON.parse(res.body) as { Id: string };
+    return Id;
+  }
+
+  /**
+   * Start a container by ID.
+   */
+  async startContainer(id: string): Promise<void> {
+    const res = await this.request(
+      'POST',
+      `${API_VERSION}/containers/${encodeURIComponent(id)}/start`
+    );
+    // 204 = started, 304 = already running
+    if (res.statusCode !== 204 && res.statusCode !== 304) {
+      throw new Error(`Docker container start failed (${res.statusCode}): ${res.body}`);
+    }
+  }
+
+  /**
+   * Wait for a container to exit. Returns the exit code.
+   */
+  async waitContainer(id: string): Promise<number> {
+    const res = await this.request(
+      'POST',
+      `${API_VERSION}/containers/${encodeURIComponent(id)}/wait`,
+      undefined,
+      300_000
+    );
+    if (res.statusCode !== 200) {
+      throw new Error(`Docker container wait failed (${res.statusCode}): ${res.body}`);
+    }
+    const { StatusCode } = JSON.parse(res.body) as { StatusCode: number };
+    return StatusCode;
+  }
+
+  /**
+   * Remove a container by ID.
+   */
+  async removeContainer(id: string): Promise<void> {
+    const res = await this.request(
+      'DELETE',
+      `${API_VERSION}/containers/${encodeURIComponent(id)}?force=true`
+    );
+    if (res.statusCode !== 204 && res.statusCode !== 404) {
+      throw new Error(`Docker container remove failed (${res.statusCode}): ${res.body}`);
+    }
+  }
+
+  /**
+   * Create, start, wait for completion, and clean up a one-shot container.
+   */
+  async runOneShot(config: DockerCreateContainerConfig): Promise<{ exitCode: number; output: string }> {
+    const id = await this.createContainer(config);
+    try {
+      await this.startContainer(id);
+      const exitCode = await this.waitContainer(id);
+      // Capture logs
+      const logRes = await this.request(
+        'GET',
+        `${API_VERSION}/containers/${encodeURIComponent(id)}/logs?stdout=true&stderr=true`
+      );
+      const output = this.stripDockerStreamHeaders(logRes.bodyRaw);
+      return { exitCode, output };
+    } finally {
+      await this.removeContainer(id).catch(() => {});
+    }
+  }
+
+  /**
+   * Create and start a detached container (fire-and-forget).
+   */
+  async runDetached(config: DockerCreateContainerConfig): Promise<string> {
+    const id = await this.createContainer(config);
+    await this.startContainer(id);
+    logger.info('Started detached container', { id: id.slice(0, 12) });
+    return id;
+  }
 }
 
 export interface DockerContainerStats {
@@ -243,5 +387,25 @@ export interface DockerContainerInspect {
   };
   Config: {
     Image: string;
+  };
+}
+
+export interface DockerContainerFullInspect extends DockerContainerInspect {
+  Id: string;
+  Name: string;
+  Config: {
+    Image: string;
+    Labels: Record<string, string>;
+    Env: string[];
+  };
+}
+
+export interface DockerCreateContainerConfig {
+  Image: string;
+  Cmd?: string[];
+  Env?: string[];
+  HostConfig?: {
+    Binds?: string[];
+    AutoRemove?: boolean;
   };
 }

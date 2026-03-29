@@ -32,6 +32,7 @@ services:
       - ACME_RENEWAL_CRON=${ACME_RENEWAL_CRON:-0 3 * * *}
       - EXPIRY_CHECK_CRON=${EXPIRY_CHECK_CRON:-0 6 * * *}
       - NGINX_CONTAINER_NAME=${NGINX_CONTAINER_NAME:-gateway-nginx-1}
+      - APP_VERSION=${GATEWAY_VERSION:-dev}
     volumes:
       - nginx_config:/etc/nginx-config
       - nginx_certs:/etc/nginx-certs

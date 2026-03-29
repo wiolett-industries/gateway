@@ -596,3 +596,13 @@ export interface CreateDomainRequest {
 export interface UpdateDomainRequest {
   description?: string | null;
 }
+
+// System Update
+export interface UpdateStatus {
+  currentVersion: string;
+  latestVersion: string | null;
+  updateAvailable: boolean;
+  releaseNotes: string | null;
+  releaseUrl: string | null;
+  lastCheckedAt: string | null;
+}

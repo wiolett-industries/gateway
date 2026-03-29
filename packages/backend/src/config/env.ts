@@ -28,7 +28,13 @@ const envSchema = z.object({
 
   // App
   APP_URL: z.string().url().default('http://localhost:3000'),
+  APP_VERSION: z.string().default('dev'),
   BIND_HOST: z.string().default('0.0.0.0'),
+
+  // Updates
+  GITLAB_API_URL: z.string().default('https://gitlab.wiolett.net'),
+  GITLAB_PROJECT_PATH: z.string().default('wiolett/gateway'),
+  UPDATE_CHECK_INTERVAL_HOURS: z.coerce.number().default(4),
 
   // PKI Master Key — 32 bytes as 64-char hex string for envelope encryption
   PKI_MASTER_KEY: z

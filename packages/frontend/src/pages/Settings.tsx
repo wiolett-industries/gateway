@@ -1,4 +1,4 @@
-import { Copy, Key, Moon, Plus, Sun, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronUp, Copy, Key, Loader2, Moon, Plus, RefreshCw, Sun, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
@@ -27,12 +27,12 @@ import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useCAStore } from "@/stores/ca";
 import { useUIStore } from "@/stores/ui";
-import { type ApiToken, TOKEN_SCOPES } from "@/types";
+import { type ApiToken, type UpdateStatus, TOKEN_SCOPES } from "@/types";
 
 const SCOPE_GROUPS = [...new Set(TOKEN_SCOPES.map((s) => s.group))];
 
 export function Settings() {
-  const { user } = useAuthStore();
+  const { user, hasRole } = useAuthStore();
   const { theme, setTheme } = useUIStore();
   const { cas } = useCAStore();
   const [tokens, setTokens] = useState<ApiToken[]>([]);
@@ -42,6 +42,13 @@ export function Settings() {
   const [caSpecificScopes, setCaSpecificScopes] = useState<Record<string, string>>({});
   const [createdSecret, setCreatedSecret] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+
+  // Update state
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
+  const [isChecking, setIsChecking] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [showReleaseNotes, setShowReleaseNotes] = useState(false);
+  const isAdmin = hasRole("admin");
 
   const loadTokens = async () => {
     try {
@@ -54,7 +61,65 @@ export function Settings() {
 
   useEffect(() => {
     loadTokens();
+    api.getVersionInfo().then(setUpdateStatus).catch(() => {});
   }, []);
+
+  const handleCheckUpdate = async () => {
+    setIsChecking(true);
+    try {
+      const status = await api.checkForUpdates();
+      setUpdateStatus(status);
+      if (status.updateAvailable) {
+        toast.info(`Update available: ${status.latestVersion}`);
+      } else {
+        toast.success("Already up to date");
+      }
+    } catch {
+      toast.error("Failed to check for updates");
+    } finally {
+      setIsChecking(false);
+    }
+  };
+
+  const handleUpdate = async () => {
+    if (!updateStatus?.latestVersion) return;
+    const ok = await confirm({
+      title: "Update Gateway",
+      description: `Update from ${updateStatus.currentVersion} to ${updateStatus.latestVersion}? The application will restart automatically.`,
+      confirmLabel: "Update",
+    });
+    if (!ok) return;
+
+    setIsUpdating(true);
+    try {
+      await api.triggerUpdate(updateStatus.latestVersion);
+      // App will go down — start polling for reconnection
+      const poll = setInterval(async () => {
+        try {
+          const status = await api.getVersionInfo();
+          if (status.currentVersion !== updateStatus.currentVersion) {
+            clearInterval(poll);
+            setIsUpdating(false);
+            setUpdateStatus(status);
+            toast.success(`Updated to ${status.currentVersion}`);
+          }
+        } catch {
+          // App still down, keep polling
+        }
+      }, 3000);
+      // Safety timeout after 5 minutes
+      setTimeout(() => {
+        clearInterval(poll);
+        setIsUpdating((current) => {
+          if (current) toast.error("Update timed out. Please check your server.");
+          return false;
+        });
+      }, 300_000);
+    } catch {
+      toast.error("Failed to start update");
+      setIsUpdating(false);
+    }
+  };
 
   const toggleScope = (scope: string) => {
     setSelectedScopes((prev) =>
@@ -238,9 +303,16 @@ export function Settings() {
                 Application info and updates
               </p>
             </div>
-            <Button size="sm" onClick={() => toast.success("Already up to date")}>
-              Check for updates
-            </Button>
+            {isAdmin && (
+              <Button size="sm" onClick={handleCheckUpdate} disabled={isChecking}>
+                {isChecking ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4" />
+                )}
+                Check for updates
+              </Button>
+            )}
           </div>
           <div className="p-4 space-y-4">
             <div className="flex items-center gap-4">
@@ -253,14 +325,88 @@ export function Settings() {
               </div>
             </div>
             <div className="space-y-3">
-              <InfoRow label="Version" value="1.0.0" />
+              <InfoRow
+                label="Version"
+                value={updateStatus?.currentVersion ?? "..."}
+              />
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">Status</span>
-                <Badge variant="success" className="text-xs">Up to date</Badge>
+                {updateStatus?.updateAvailable ? (
+                  <Badge variant="warning" className="text-xs">Update available</Badge>
+                ) : (
+                  <Badge variant="success" className="text-xs">Up to date</Badge>
+                )}
+              </div>
+              {updateStatus?.lastCheckedAt && (
+                <InfoRow
+                  label="Last checked"
+                  value={new Date(updateStatus.lastCheckedAt).toLocaleString()}
+                />
+              )}
+            </div>
+
+            {/* Update available section */}
+            {updateStatus?.updateAvailable && updateStatus.latestVersion && (
+              <div className="border border-amber-500/30 bg-amber-500/5 p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium">
+                      {updateStatus.latestVersion} is available
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      You are running {updateStatus.currentVersion}
+                    </p>
+                  </div>
+                  {isAdmin && (
+                    <Button size="sm" onClick={handleUpdate}>
+                      Update to {updateStatus.latestVersion}
+                    </Button>
+                  )}
+                </div>
+
+                {/* Release notes */}
+                {updateStatus.releaseNotes && (
+                  <div>
+                    <button
+                      className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                      onClick={() => setShowReleaseNotes(!showReleaseNotes)}
+                    >
+                      {showReleaseNotes ? (
+                        <ChevronUp className="h-3 w-3" />
+                      ) : (
+                        <ChevronDown className="h-3 w-3" />
+                      )}
+                      Release notes
+                    </button>
+                    {showReleaseNotes && (
+                      <pre className="mt-2 text-xs text-muted-foreground whitespace-pre-wrap bg-muted/50 p-3 max-h-64 overflow-y-auto">
+                        {updateStatus.releaseNotes}
+                      </pre>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Updating overlay */}
+        {isUpdating && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+            <div className="flex flex-col items-center gap-4 text-center">
+              <div className="h-10 w-10 animate-spin rounded-full border-3 border-primary border-t-transparent" />
+              <div>
+                <h2 className="text-lg font-semibold">Updating Gateway</h2>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Updating to {updateStatus?.latestVersion}. The application will restart automatically.
+                </p>
+                <p className="text-xs text-muted-foreground mt-3">
+                  This may take a minute...
+                </p>
               </div>
             </div>
           </div>
-        </div>
+        )}
 
         <p className="text-center text-xs text-muted-foreground">
           Powered by{" "}
