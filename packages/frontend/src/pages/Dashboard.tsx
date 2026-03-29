@@ -8,6 +8,7 @@ import { cn, daysUntil, formatDate, formatRelativeDate, formatTimeLeft } from "@
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useCAStore } from "@/stores/ca";
+import { useUIStore } from "@/stores/ui";
 import { useUpdateStore } from "@/stores/update";
 import type { AuditLogEntry, DashboardStats, ProxyHost } from "@/types";
 
@@ -60,6 +61,7 @@ export function Dashboard() {
   const [statsLoading, setStatsLoading] = useState(true);
   const [expiringItems, setExpiringItems] = useState<ExpiringItem[]>([]);
   const updateStatus = useUpdateStore((s) => s.status);
+  const showUpdateNotifications = useUIStore((s) => s.showUpdateNotifications);
 
   useEffect(() => {
     fetchCAs();
@@ -168,7 +170,7 @@ export function Dashboard() {
         </div>
 
         {/* Update available */}
-        {updateStatus?.updateAvailable && updateStatus.latestVersion && (
+        {updateStatus?.updateAvailable && updateStatus.latestVersion && showUpdateNotifications && (
           <div className="border bg-card" style={{ borderColor: "rgb(234 179 8 / 0.6)" }}>
             <div className="flex items-center justify-between px-4 py-3">
               <div className="flex items-center gap-3">

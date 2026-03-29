@@ -38,7 +38,7 @@ const SCOPE_GROUPS = [...new Set(TOKEN_SCOPES.map((s) => s.group))];
 
 export function Settings() {
   const { user, hasRole } = useAuthStore();
-  const { theme, setTheme } = useUIStore();
+  const { theme, setTheme, showUpdateNotifications, setShowUpdateNotifications } = useUIStore();
   const { cas } = useCAStore();
   const [tokens, setTokens] = useState<ApiToken[]>([]);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -54,7 +54,16 @@ export function Settings() {
   const isAdmin = hasRole("admin");
 
   // Housekeeping state
-  const [hkConfig, setHkConfig] = useState<HousekeepingConfig | null>(null);
+  const [hkConfig, setHkConfig] = useState<HousekeepingConfig>({
+    enabled: true,
+    cronExpression: "0 2 * * *",
+    nginxLogs: { enabled: true, retentionDays: 30 },
+    auditLog: { enabled: true, retentionDays: 90 },
+    dismissedAlerts: { enabled: true, retentionDays: 30 },
+    dockerPrune: { enabled: true },
+    orphanedCerts: { enabled: false },
+    acmeCleanup: { enabled: true },
+  });
   const [hkStats, setHkStats] = useState<HousekeepingStats | null>(null);
   const [hkRunning, setHkRunning] = useState(false);
   const [hkHistoryOpen, setHkHistoryOpen] = useState(false);
@@ -62,16 +71,18 @@ export function Settings() {
 
   const loadHousekeeping = useCallback(async () => {
     if (!isAdmin) return;
-    try {
-      const [config, stats] = await Promise.all([
-        api.getHousekeepingConfig(),
-        api.getHousekeepingStats(),
-      ]);
-      setHkConfig(config);
-      setHkStats(stats);
-    } catch {
-      // ignore
-    }
+    // Use cached data for instant render
+    const cachedConfig = api.getCached<HousekeepingConfig>("housekeeping:config");
+    if (cachedConfig) setHkConfig(cachedConfig);
+    const cachedStats = api.getCached<HousekeepingStats>("housekeeping:stats");
+    if (cachedStats) setHkStats(cachedStats);
+    // Refresh in background
+    api.getHousekeepingConfig()
+      .then((c) => { api.setCache("housekeeping:config", c); setHkConfig(c); })
+      .catch(() => {});
+    api.getHousekeepingStats()
+      .then((s) => { api.setCache("housekeeping:stats", s); setHkStats(s); })
+      .catch(() => {});
   }, [isAdmin]);
 
   const updateHkConfig = async (partial: Partial<HousekeepingConfig>) => {
@@ -223,39 +234,60 @@ export function Settings() {
           <div className="border-b border-border p-4">
             <h2 className="font-semibold">Profile</h2>
           </div>
-          <div className="p-4 space-y-3">
-            {user && (
-              <>
-                <InfoRow label="Name" value={user.name || "Not set"} />
-                <InfoRow label="Email" value={user.email} />
-                <InfoRow label="Role" value={user.role} capitalize />
-              </>
-            )}
-          </div>
+          {user && (
+            <div className="flex items-center gap-4 p-4">
+              <div className="h-10 w-10 bg-muted flex items-center justify-center shrink-0">
+                <span className="text-sm font-medium text-muted-foreground">
+                  {(user.name || user.email).charAt(0).toUpperCase()}
+                </span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium">{user.name || "Not set"}</p>
+                <p className="text-xs text-muted-foreground">{user.email}</p>
+              </div>
+              <Badge variant="secondary" className="text-xs capitalize">{user.role}</Badge>
+            </div>
+          )}
         </div>
 
-        {/* Theme */}
+        {/* Preferences */}
         <div className="border border-border bg-card">
           <div className="border-b border-border p-4">
-            <h2 className="font-semibold">Appearance</h2>
+            <h2 className="font-semibold">Preferences</h2>
           </div>
-          <div className="p-4">
-            <div className="flex gap-0 border border-border w-fit">
-              {(["light", "dark", "system"] as const).map((t) => (
-                <button
-                  key={t}
-                  onClick={() => setTheme(t)}
-                  className={`flex items-center gap-2 px-4 py-2 text-sm capitalize transition-colors ${
-                    theme === t
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-transparent text-muted-foreground hover:text-foreground hover:bg-accent"
-                  }`}
-                >
-                  {t === "light" && <Sun className="h-3.5 w-3.5" />}
-                  {t === "dark" && <Moon className="h-3.5 w-3.5" />}
-                  {t}
-                </button>
-              ))}
+          <div className="divide-y divide-border">
+            <div className="flex items-center justify-between gap-4 px-4 py-3">
+              <div>
+                <p className="text-sm font-medium">Theme</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Choose how the interface looks</p>
+              </div>
+              <div className="flex gap-0 border border-border w-fit shrink-0">
+                {(["light", "dark", "system"] as const).map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => setTheme(t)}
+                    className={`flex items-center gap-2 px-4 py-2 text-sm capitalize transition-colors ${
+                      theme === t
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-transparent text-muted-foreground hover:text-foreground hover:bg-accent"
+                    }`}
+                  >
+                    {t === "light" && <Sun className="h-3.5 w-3.5" />}
+                    {t === "dark" && <Moon className="h-3.5 w-3.5" />}
+                    {t}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex items-center justify-between gap-4 px-4 py-3">
+              <div>
+                <p className="text-sm font-medium">Update notifications</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Show update banners in sidebar and dashboard</p>
+              </div>
+              <Switch
+                checked={showUpdateNotifications}
+                onChange={setShowUpdateNotifications}
+              />
             </div>
           </div>
         </div>
@@ -320,7 +352,7 @@ export function Settings() {
         </div>
 
         {/* Housekeeping */}
-        {isAdmin && hkConfig && (
+        {isAdmin && (
           <div className="border border-border bg-card">
             <div className="flex items-center justify-between border-b border-border p-4">
               <div>

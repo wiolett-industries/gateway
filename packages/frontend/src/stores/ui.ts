@@ -28,6 +28,10 @@ interface UIState {
   mobileMenuOpen: boolean;
   setMobileMenuOpen: (open: boolean) => void;
 
+  // Preferences
+  showUpdateNotifications: boolean;
+  setShowUpdateNotifications: (show: boolean) => void;
+
   // Command palette
   commandPaletteOpen: boolean;
   setCommandPaletteOpen: (open: boolean) => void;
@@ -64,6 +68,10 @@ export const useUIStore = create<UIState>()(
       mobileMenuOpen: false,
       setMobileMenuOpen: (mobileMenuOpen) => set({ mobileMenuOpen }),
 
+      // Preferences
+      showUpdateNotifications: true,
+      setShowUpdateNotifications: (showUpdateNotifications) => set({ showUpdateNotifications }),
+
       // Command palette
       commandPaletteOpen: false,
       setCommandPaletteOpen: (commandPaletteOpen) => set({ commandPaletteOpen }),
@@ -79,6 +87,7 @@ export const useUIStore = create<UIState>()(
         theme: state.theme,
         sidebarOpen: state.sidebarOpen,
         sidebarCollapsed: state.sidebarCollapsed,
+        showUpdateNotifications: state.showUpdateNotifications,
       }),
     }
   )
