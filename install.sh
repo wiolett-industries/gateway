@@ -3,7 +3,7 @@ set -euo pipefail
 IFS=$'\n\t'
 
 # ── Defaults ──────────────────────────────────────────────────────────
-DEFAULT_IMAGE="registry.wiolett.net/wiolett/gateway"
+DEFAULT_IMAGE="registry.gitlab.wiolett.net/wiolett/gateway"
 VERSION="latest"
 LOG_FILE="/tmp/gateway_install.log"
 NO_LOGO=0
