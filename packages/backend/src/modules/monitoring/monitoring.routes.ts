@@ -123,49 +123,61 @@ monitoringRoutes.get('/nginx/stats/stream', async (c) => {
 
   const nginxStatsService = container.resolve(NginxStatsService);
 
-  c.header('Content-Type', 'text/event-stream');
-  c.header('Cache-Control', 'no-cache');
-  c.header('Connection', 'keep-alive');
+  const body = new ReadableStream({
+    start(controller) {
+      nginxStatsService.registerSSEClient();
 
-  return streamSSE(c, async (stream) => {
-    nginxStatsService.registerSSEClient();
+      const encoder = new TextEncoder();
+      const write = (event: string, data: string) => {
+        controller.enqueue(encoder.encode(`event: ${event}\ndata: ${data}\n\n`));
+      };
 
-    await stream.writeSSE({
-      data: JSON.stringify({
+      write('connected', JSON.stringify({
         connected: true,
         info: nginxStatsService.getCachedProcessInfo(),
         history: nginxStatsService.getHistory(),
-      }),
-      event: 'connected',
-    });
+      }));
 
-    let running = true;
-
-    stream.onAbort(() => {
-      running = false;
-    });
-
-    while (running) {
-      await stream.sleep(2000);
-      if (!running) break;
-      try {
-        const snapshot = await nginxStatsService.getSnapshot();
-        nginxStatsService.pushHistory(snapshot);
-        await stream.writeSSE({
-          data: JSON.stringify(snapshot),
-          event: 'stats',
-        });
-      } catch (err) {
-        logger.warn('SSE snapshot error', { error: (err as Error).message });
+      let running = true;
+      const poll = async () => {
+        if (!running) return;
         try {
-          await stream.writeSSE({
-            data: JSON.stringify({ error: (err as Error).message }),
-            event: 'error',
-          });
-        } catch { break; }
-      }
-    }
-    nginxStatsService.unregisterSSEClient();
+          const snapshot = await nginxStatsService.getSnapshot();
+          nginxStatsService.pushHistory(snapshot);
+          write('stats', JSON.stringify(snapshot));
+        } catch (err) {
+          logger.warn('SSE snapshot error', { error: (err as Error).message });
+        }
+        if (running) setTimeout(poll, 2000);
+      };
+      setTimeout(poll, 2000);
+
+      const keepalive = setInterval(() => {
+        try { write('ping', ''); } catch { clearInterval(keepalive); }
+      }, 30_000);
+
+      // cleanup when stream is cancelled
+      const cleanup = () => {
+        running = false;
+        clearInterval(keepalive);
+        nginxStatsService.unregisterSSEClient();
+      };
+
+      // Store cleanup for cancel
+      (controller as unknown as { _cleanup: () => void })._cleanup = cleanup;
+    },
+    cancel(controller) {
+      const cleanup = (controller as unknown as { _cleanup?: () => void })?._cleanup;
+      if (cleanup) cleanup();
+    },
+  });
+
+  return new Response(body, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+    },
   });
 });
 
