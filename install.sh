@@ -4,7 +4,8 @@ IFS=$'\n\t'
 
 # ── Defaults ──────────────────────────────────────────────────────────
 DEFAULT_IMAGE="registry.gitlab.wiolett.net/wiolett/gateway"
-VERSION="latest"
+GITLAB_API="https://gitlab.wiolett.net/api/v4/projects/wiolett%2Fgateway"
+VERSION=""
 LOG_FILE="/tmp/gateway_install.log"
 NO_LOGO=0
 NON_INTERACTIVE=0
@@ -887,7 +888,7 @@ main() {
                 echo "Usage: install.sh [OPTIONS]"
                 echo ""
                 echo "Options:"
-                echo "  --version, -v <tag>     Image version to install (default: latest)"
+                echo "  --version, -v <tag>     Image version to install (default: auto-detect latest)"
                 echo "  --image <image>         Custom image reference"
                 echo "  --no-logo               Suppress the logo banner"
                 echo "  -h, --help              Show this help"
@@ -961,6 +962,19 @@ main() {
             return
         fi
         echo ""
+    fi
+
+    # Resolve version if not specified
+    if [ -z "$VERSION" ]; then
+        info "Fetching latest version..."
+        VERSION=$(curl -sf "${GITLAB_API}/releases" 2>/dev/null \
+            | grep -o '"tag_name":"[^"]*"' | head -1 | cut -d'"' -f4) || true
+        if [ -z "$VERSION" ]; then
+            warn "Could not fetch latest version, falling back to 'latest' tag"
+            VERSION="latest"
+        else
+            info "Latest version: ${VERSION}"
+        fi
     fi
 
     gather_config
