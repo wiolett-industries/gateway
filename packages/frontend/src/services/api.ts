@@ -48,7 +48,104 @@ import type {
 const API_BASE = "/api";
 const AUTH_BASE = "/auth";
 
+interface CacheEntry<T = unknown> {
+  data: T;
+  timestamp: number;
+}
+
+const DEFAULT_CACHE_TTL = 60_000; // 1 minute
+
 class ApiClient {
+  private cache = new Map<string, CacheEntry>();
+
+  /** Get cached data if fresh enough. */
+  getCached<T>(key: string, ttl = DEFAULT_CACHE_TTL): T | undefined {
+    const entry = this.cache.get(key);
+    if (!entry) return undefined;
+    if (Date.now() - entry.timestamp > ttl) {
+      this.cache.delete(key);
+      return undefined;
+    }
+    return entry.data as T;
+  }
+
+  /** Store data in cache. */
+  setCache<T>(key: string, data: T): void {
+    this.cache.set(key, { data, timestamp: Date.now() });
+  }
+
+  /** Invalidate a specific cache key or prefix. */
+  invalidateCache(prefix?: string): void {
+    if (!prefix) {
+      this.cache.clear();
+      return;
+    }
+    for (const key of this.cache.keys()) {
+      if (key.startsWith(prefix)) this.cache.delete(key);
+    }
+  }
+
+  /**
+   * Fetch with cache: returns cached data if available, fetches in background to update.
+   * Returns [data, isFromCache].
+   */
+  async cachedRequest<T>(
+    key: string,
+    fetcher: () => Promise<T>,
+    ttl = DEFAULT_CACHE_TTL
+  ): Promise<T> {
+    const cached = this.getCached<T>(key, ttl);
+    // Always fetch fresh data
+    const fresh = fetcher().then((data) => {
+      this.setCache(key, data);
+      return data;
+    });
+    // If we have cache, return it immediately (fresh fetch still updates cache in background)
+    if (cached !== undefined) return cached;
+    return fresh;
+  }
+
+  /**
+   * Prefetch key data for all pages in background.
+   * Called once after auth to prime the cache.
+   */
+  prefetchAll(isAdmin: boolean): void {
+    const quiet = <T>(p: Promise<T>) => p.then((d) => d).catch(() => {});
+
+    // Dashboard data
+    quiet(this.getDashboardStats().then((d) => this.setCache("dashboard:stats", d)));
+    quiet(this.getHealthOverview().then((d) => this.setCache("dashboard:health", d)));
+
+    // CAs
+    quiet(this.listCAs().then((d) => this.setCache("cas:list", d)));
+
+    // Proxy hosts (grouped)
+    quiet(this.getGroupedProxyHosts({}).then((d) => this.setCache("proxy:grouped", d)));
+
+    // SSL Certificates
+    quiet(this.listSSLCertificates({}).then((d) => this.setCache("ssl:list", d)));
+
+    // Domains
+    quiet(this.listDomains({}).then((d) => this.setCache("domains:list", d)));
+
+    // Templates
+    quiet(this.listTemplates().then((d) => this.setCache("templates:list", d)));
+
+    // Access Lists
+    quiet(this.listAccessLists().then((d) => this.setCache("access-lists:list", d)));
+
+    // Nginx Templates
+    quiet(this.listNginxTemplates().then((d) => this.setCache("nginx-templates:list", d)));
+
+    // Version info
+    quiet(this.getVersionInfo().then((d) => this.setCache("system:version", d)));
+
+    if (isAdmin) {
+      quiet(this.getAuditLog({ limit: 25 }).then((d) => this.setCache("audit:list", d)));
+      quiet(this.listUsers().then((d) => this.setCache("admin:users", d)));
+    }
+  }
+
   private getHeaders(): HeadersInit {
     const headers: HeadersInit = {
       "Content-Type": "application/json",

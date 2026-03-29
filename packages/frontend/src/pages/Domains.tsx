@@ -33,8 +33,9 @@ export function Domains() {
   const canEdit = hasRole("admin", "operator");
   const isAdmin = hasRole("admin");
 
-  const [domains, setDomains] = useState<Domain[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const cachedDomains = api.getCached<{ data: Domain[]; pagination: { totalPages: number } }>("domains:list");
+  const [domains, setDomains] = useState<Domain[]>(cachedDomains?.data ?? []);
+  const [isLoading, setIsLoading] = useState(!cachedDomains);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [search, setSearch] = useState("");
@@ -54,6 +55,7 @@ export function Domains() {
       });
       setDomains(result.data);
       setTotalPages(result.pagination.totalPages);
+      if (page === 1 && !search && statusFilter === "all") api.setCache("domains:list", result);
     } catch {
       toast.error("Failed to load domains");
     } finally {

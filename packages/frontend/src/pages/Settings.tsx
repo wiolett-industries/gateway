@@ -73,7 +73,9 @@ export function Settings() {
 
   useEffect(() => {
     loadTokens();
-    api.getVersionInfo().then(setUpdateStatus).catch(() => {});
+    const cached = api.getCached<UpdateStatus>("system:version");
+    if (cached) setUpdateStatus(cached);
+    api.getVersionInfo().then((d) => { api.setCache("system:version", d); setUpdateStatus(d); }).catch(() => {});
   }, []);
 
   const handleCheckUpdate = async () => {

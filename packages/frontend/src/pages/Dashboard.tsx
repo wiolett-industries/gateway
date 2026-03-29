@@ -64,7 +64,10 @@ export function Dashboard() {
     fetchCAs();
 
     if (hasRole("admin")) {
-      api.getVersionInfo().then(setUpdateStatus).catch(() => {});
+      // Use cache then refetch
+      const cachedVersion = api.getCached<UpdateStatus>("system:version");
+      if (cachedVersion) setUpdateStatus(cachedVersion);
+      api.getVersionInfo().then((d) => { api.setCache("system:version", d); setUpdateStatus(d); }).catch(() => {});
     }
 
     if (hasRole("admin")) {
@@ -74,19 +77,20 @@ export function Dashboard() {
         .catch(() => {});
     }
 
-    // Fetch gateway stats with fallback to CA-derived data
+    // Use cached stats immediately, then refetch
+    const cachedStats = api.getCached<DashboardStats>("dashboard:stats");
+    if (cachedStats) { setStats(cachedStats); setStatsLoading(false); }
     api
       .getDashboardStats()
-      .then((data) => setStats(data))
-      .catch(() => {
-        // API not yet available — derive stats from CAs
-        setStats(null);
-      })
+      .then((data) => { api.setCache("dashboard:stats", data); setStats(data); })
+      .catch(() => { setStats(null); })
       .finally(() => setStatsLoading(false));
 
+    const cachedHealth = api.getCached<ProxyHost[]>("dashboard:health");
+    if (cachedHealth) setHealthHosts(cachedHealth);
     api
       .getHealthOverview()
-      .then((hosts) => setHealthHosts(hosts || []))
+      .then((hosts) => { api.setCache("dashboard:health", hosts || []); setHealthHosts(hosts || []); })
       .catch(() => setHealthHosts([]));
 
     // Fetch expiring SSL certs

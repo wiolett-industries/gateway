@@ -62,6 +62,14 @@ export const useSSLStore = create<SSLState>()((set, get) => ({
 
   fetchCertificates: async () => {
     const { filters, page, limit } = get();
+    const isDefault = page === 1 && !filters.search && filters.type === "all" && filters.status === "active";
+
+    // Show cached data instantly for default view
+    if (isDefault && get().certificates.length === 0) {
+      const cached = api.getCached<{ data: SSLCertificate[]; pagination: { total: number; totalPages: number } }>("ssl:list");
+      if (cached) set({ certificates: cached.data || [], total: cached.pagination?.total ?? 0, totalPages: cached.pagination?.totalPages ?? 0 });
+    }
+
     set({ isLoading: true, error: null });
     try {
       const response = await api.listSSLCertificates({
@@ -71,6 +79,7 @@ export const useSSLStore = create<SSLState>()((set, get) => ({
         type: filters.type !== "all" ? filters.type : undefined,
         status: filters.status !== "all" ? filters.status : undefined,
       });
+      if (isDefault) api.setCache("ssl:list", response);
       set({
         certificates: response.data || [],
         total: response.pagination?.total ?? 0,
