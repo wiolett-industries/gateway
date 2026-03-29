@@ -8,7 +8,8 @@ import { cn, daysUntil, formatDate, formatRelativeDate, formatTimeLeft } from "@
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useCAStore } from "@/stores/ca";
-import type { AuditLogEntry, DashboardStats, ProxyHost, UpdateStatus } from "@/types";
+import { useUpdateStore } from "@/stores/update";
+import type { AuditLogEntry, DashboardStats, ProxyHost } from "@/types";
 
 interface ExpiringItem {
   id: string;
@@ -58,17 +59,10 @@ export function Dashboard() {
   const [healthHosts, setHealthHosts] = useState<ProxyHost[]>([]);
   const [statsLoading, setStatsLoading] = useState(true);
   const [expiringItems, setExpiringItems] = useState<ExpiringItem[]>([]);
-  const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
+  const updateStatus = useUpdateStore((s) => s.status);
 
   useEffect(() => {
     fetchCAs();
-
-    if (hasRole("admin")) {
-      // Use cache then refetch
-      const cachedVersion = api.getCached<UpdateStatus>("system:version");
-      if (cachedVersion) setUpdateStatus(cachedVersion);
-      api.getVersionInfo().then((d) => { api.setCache("system:version", d); setUpdateStatus(d); }).catch(() => {});
-    }
 
     if (hasRole("admin")) {
       api

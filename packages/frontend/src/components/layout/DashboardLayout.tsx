@@ -45,6 +45,7 @@ import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useUIStore } from "@/stores/ui";
+import { useUpdateStore } from "@/stores/update";
 
 function getInitials(name: string | null): string {
   if (!name) return "?";
@@ -130,7 +131,7 @@ function SidebarContent({
   const { sidebarOpen, toggleSidebar, setCommandPaletteOpen: openPalette } = useUIStore();
 
   const [nginxAvailable, setNginxAvailable] = useState(false);
-  const [updateAvailable, setUpdateAvailable] = useState(false);
+  const updateAvailable = useUpdateStore((s) => s.status?.updateAvailable ?? false);
 
   useEffect(() => {
     const check = () => api.checkNginxAvailable().then(setNginxAvailable);
@@ -138,17 +139,6 @@ function SidebarContent({
     const interval = setInterval(check, 30_000);
     return () => clearInterval(interval);
   }, []);
-
-  useEffect(() => {
-    if (user?.role !== "admin") return;
-    const checkUpdate = () =>
-      api.getVersionInfo()
-        .then((s) => setUpdateAvailable(s.updateAvailable))
-        .catch(() => {});
-    checkUpdate();
-    const interval = setInterval(checkUpdate, 30 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, [user?.role]);
 
   const handleLogout = async () => {
     try {
@@ -520,6 +510,8 @@ export function DashboardLayout() {
         setUser(user);
         // Prefetch data for all pages in background
         api.prefetchAll(user.role === "admin");
+        // Fetch update status into global store
+        if (user.role === "admin") useUpdateStore.getState().fetchStatus();
       } catch {
         logout();
         navigate("/login");
