@@ -34,9 +34,10 @@ async function main() {
     const server = serve({
       fetch: app.fetch,
       port: env.PORT,
+      hostname: env.BIND_HOST,
     });
 
-    logger.info(`Server running at http://localhost:${env.PORT}`);
+    logger.info(`Server running at http://${env.BIND_HOST}:${env.PORT}`);
     logger.info(`API Documentation at http://localhost:${env.PORT}/docs`);
 
     // Start background jobs

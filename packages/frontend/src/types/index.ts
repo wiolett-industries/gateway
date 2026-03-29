@@ -247,7 +247,7 @@ export interface IssueCertFromCSRRequest {
 // Proxy Host Types
 export type ProxyHostType = "proxy" | "redirect" | "404";
 export type ForwardScheme = "http" | "https";
-export type HealthStatus = "online" | "offline" | "degraded" | "unknown";
+export type HealthStatus = "online" | "offline" | "degraded" | "unknown" | "disabled";
 
 export interface CustomHeader {
   name: string;
@@ -301,8 +301,11 @@ export interface ProxyHost {
   healthCheckEnabled: boolean;
   healthCheckUrl: string;
   healthCheckInterval: number;
+  healthCheckExpectedStatus: number | null;
+  healthCheckExpectedBody: string | null;
   healthStatus: HealthStatus;
   lastHealthCheckAt: string | null;
+  isSystem?: boolean;
   createdById: string;
   createdAt: string;
   updatedAt: string;
@@ -330,6 +333,7 @@ export interface SSLCertificate {
   lastRenewedAt: string | null;
   renewalError: string | null;
   status: SSLCertStatus;
+  isSystem?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -412,6 +416,8 @@ export interface CreateProxyHostRequest {
   healthCheckEnabled?: boolean;
   healthCheckUrl?: string;
   healthCheckInterval?: number;
+  healthCheckExpectedStatus?: number;
+  healthCheckExpectedBody?: string;
 }
 
 // Proxy Host Folder Types
@@ -559,6 +565,9 @@ export interface Domain {
   dnsStatus: DnsStatus;
   lastDnsCheckAt: string | null;
   dnsRecords: DnsRecords | null;
+  isSystem?: boolean;
+  sslCertCount?: number;
+  proxyHostCount?: number;
   createdById: string;
   createdAt: string;
   updatedAt: string;

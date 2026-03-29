@@ -118,7 +118,14 @@ export function SSLCertificates() {
       await deleteCert(id);
       toast.success("Certificate deleted");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to delete certificate");
+      const msg = err instanceof Error ? err.message : "Failed to delete certificate";
+      if (msg.includes("in use") || msg.includes("CERT_IN_USE")) {
+        toast.error("Cannot delete: certificate is used by proxy hosts. Remove it from proxy hosts first.");
+      } else if (msg.includes("System") || msg.includes("SYSTEM_CERT")) {
+        toast.error("System certificates cannot be deleted.");
+      } else {
+        toast.error(msg);
+      }
     }
   };
 
@@ -219,7 +226,10 @@ export function SSLCertificates() {
                     return (
                       <tr key={cert.id} className="hover:bg-accent transition-colors">
                         <td className="p-3">
-                          <p className="text-sm font-medium">{cert.name}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-medium">{cert.name}</p>
+                            {cert.isSystem && <Badge variant="outline" className="text-[10px] px-1.5 py-0">System</Badge>}
+                          </div>
                         </td>
                         <td className="p-3">
                           <div>
@@ -290,13 +300,15 @@ export function SSLCertificates() {
                                     Renew
                                   </DropdownMenuItem>
                                 )}
-                                <DropdownMenuItem
-                                  onClick={() => handleDelete(cert.id, cert.name)}
-                                  className="text-destructive"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                  Delete
-                                </DropdownMenuItem>
+                                {!cert.isSystem && (
+                                  <DropdownMenuItem
+                                    onClick={() => handleDelete(cert.id, cert.name)}
+                                    className="text-destructive"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                    Delete
+                                  </DropdownMenuItem>
+                                )}
                               </DropdownMenuContent>
                             </DropdownMenu>
                           )}

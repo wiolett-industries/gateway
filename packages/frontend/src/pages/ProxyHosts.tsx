@@ -45,6 +45,7 @@ const healthOptions: { value: HealthStatus | "all"; label: string }[] = [
   { value: "offline", label: "Offline" },
   { value: "degraded", label: "Degraded" },
   { value: "unknown", label: "Unknown" },
+  { value: "disabled", label: "Disabled" },
 ];
 
 function UngroupedDropZone({ children }: { children: React.ReactNode }) {

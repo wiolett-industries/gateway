@@ -88,6 +88,9 @@ export class ProxyService {
         healthCheckEnabled: input.healthCheckEnabled,
         healthCheckUrl: input.healthCheckUrl ?? '/',
         healthCheckInterval: input.healthCheckInterval ?? 30,
+        healthCheckExpectedStatus: input.healthCheckExpectedStatus ?? null,
+        healthCheckExpectedBody: input.healthCheckExpectedBody ?? null,
+        healthStatus: input.healthCheckEnabled ? 'unknown' : 'disabled',
         createdById: userId,
       })
       .returning();
@@ -125,7 +128,12 @@ export class ProxyService {
 
     logger.info('Created proxy host', { hostId: host.id, domains: host.domainNames });
 
-    // 6. Return created host
+    // 6. Fire-and-forget immediate health check
+    if (host.healthCheckEnabled) {
+      this.runImmediateHealthCheck(host.id);
+    }
+
+    // 7. Return created host
     return host;
   }
 
@@ -153,12 +161,24 @@ export class ProxyService {
     if (!existing) throw new AppError(404, 'PROXY_HOST_NOT_FOUND', 'Proxy host not found');
 
     // 2. Update DB
+    const updateData: Record<string, unknown> = {
+      ...input,
+      updatedAt: new Date(),
+    };
+
+    // Update healthStatus when healthCheckEnabled changes
+    if (input.healthCheckEnabled !== undefined) {
+      if (!input.healthCheckEnabled) {
+        updateData.healthStatus = 'disabled';
+      } else if (!existing.healthCheckEnabled) {
+        // Was disabled, now enabled — set to unknown until first check
+        updateData.healthStatus = 'unknown';
+      }
+    }
+
     const [updated] = await this.db
       .update(proxyHosts)
-      .set({
-        ...input,
-        updatedAt: new Date(),
-      })
+      .set(updateData)
       .where(eq(proxyHosts.id, id))
       .returning();
 
@@ -215,6 +235,12 @@ export class ProxyService {
     });
 
     logger.info('Updated proxy host', { hostId: id });
+
+    // Fire immediate health check if healthcheck was just enabled
+    if (input.healthCheckEnabled && !existing.healthCheckEnabled && updated.enabled) {
+      this.runImmediateHealthCheck(id);
+    }
+
     return updated;
   }
 
@@ -228,6 +254,7 @@ export class ProxyService {
       where: eq(proxyHosts.id, id),
     });
     if (!existing) throw new AppError(404, 'PROXY_HOST_NOT_FOUND', 'Proxy host not found');
+    if (existing.isSystem) throw new AppError(403, 'SYSTEM_HOST', 'System proxy hosts cannot be deleted');
 
     // 2. Remove nginx config
     await this.nginxService.removeConfig(id);
@@ -415,7 +442,74 @@ export class ProxyService {
     });
 
     logger.info('Toggled proxy host', { hostId: id, enabled });
+
+    // Fire-and-forget immediate health check when enabling
+    if (enabled && updated.healthCheckEnabled) {
+      this.runImmediateHealthCheck(id);
+    }
+
     return updated;
+  }
+
+  // -----------------------------------------------------------------------
+  // Immediate single-host health check (fire-and-forget)
+  // -----------------------------------------------------------------------
+
+  private runImmediateHealthCheck(hostId: string): void {
+    // Run after a short delay to allow nginx reload to complete
+    setTimeout(async () => {
+      try {
+        const host = await this.db.query.proxyHosts.findFirst({
+          where: eq(proxyHosts.id, hostId),
+        });
+        if (!host || !host.healthCheckEnabled || !host.forwardHost || !host.forwardPort) return;
+
+        const scheme = host.forwardScheme || 'http';
+        const path = host.healthCheckUrl || '/';
+        const url = `${scheme}://${host.forwardHost}:${host.forwardPort}${path}`;
+
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 10_000);
+
+        let status: 'online' | 'offline' | 'degraded' = 'offline';
+        try {
+          const response = await fetch(url, {
+            method: 'GET',
+            signal: controller.signal,
+            redirect: 'follow',
+          });
+          clearTimeout(timeout);
+
+          const expectedStatus = (host as any).healthCheckExpectedStatus as number | null;
+          if (expectedStatus) {
+            status = response.status === expectedStatus ? 'online' : 'offline';
+          } else {
+            if (response.status >= 200 && response.status < 300) status = 'online';
+            else if (response.status >= 500) status = 'offline';
+            else status = 'degraded';
+          }
+
+          // Check expected body if configured
+          const expectedBody = (host as any).healthCheckExpectedBody as string | null;
+          if (expectedBody && status === 'online') {
+            const body = await response.text();
+            if (!body.includes(expectedBody)) status = 'degraded';
+          }
+        } catch {
+          clearTimeout(timeout);
+          status = 'offline';
+        }
+
+        await this.db
+          .update(proxyHosts)
+          .set({ healthStatus: status, lastHealthCheckAt: new Date() })
+          .where(eq(proxyHosts.id, hostId));
+
+        logger.debug('Immediate health check complete', { hostId, status });
+      } catch (err) {
+        logger.debug('Immediate health check failed', { hostId, error: err });
+      }
+    }, 2000);
   }
 
   // -----------------------------------------------------------------------

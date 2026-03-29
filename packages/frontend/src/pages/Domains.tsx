@@ -7,6 +7,7 @@ import { SearchFilterBar } from "@/components/common/SearchFilterBar";
 import { AddDomainDialog } from "@/components/domains/AddDomainDialog";
 import { DnsStatusBadge } from "@/components/domains/DnsStatusBadge";
 import { DomainDetailDialog } from "@/components/domains/DomainDetailDialog";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -94,8 +95,15 @@ export function Domains() {
       await api.deleteDomain(d.id);
       toast.success("Domain deleted");
       loadDomains();
-    } catch {
-      toast.error("Failed to delete domain");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to delete domain";
+      if (msg.includes("in use")) {
+        toast.error("Cannot delete: domain is used by proxy hosts. Remove it from proxy hosts first.");
+      } else if (msg.includes("System")) {
+        toast.error("System domains cannot be deleted.");
+      } else {
+        toast.error(msg);
+      }
     }
   };
 
@@ -182,6 +190,7 @@ export function Domains() {
                         <div className="flex items-center gap-2">
                           <Globe className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                           <span className="text-sm font-medium">{d.domain}</span>
+                          {d.isSystem && <Badge variant="outline" className="text-[10px] px-1.5 py-0">System</Badge>}
                         </div>
                         {d.description && (
                           <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{d.description}</p>
@@ -191,10 +200,18 @@ export function Domains() {
                         <DnsStatusBadge status={d.dnsStatus} />
                       </td>
                       <td className="p-3">
-                        <span className="text-xs text-muted-foreground">—</span>
+                        {d.sslCertCount ? (
+                          <Badge variant="secondary">{d.sslCertCount}</Badge>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
                       </td>
                       <td className="p-3">
-                        <span className="text-xs text-muted-foreground">—</span>
+                        {d.proxyHostCount ? (
+                          <Badge variant="secondary">{d.proxyHostCount}</Badge>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
                       </td>
                       <td className="p-3">
                         <span className="text-xs text-muted-foreground">
@@ -224,7 +241,7 @@ export function Domains() {
                                 <Pencil className="h-4 w-4" />
                                 Details
                               </DropdownMenuItem>
-                              {isAdmin && (
+                              {isAdmin && !d.isSystem && (
                                 <>
                                   <DropdownMenuSeparator />
                                   <DropdownMenuItem onClick={() => handleDelete(d)} className="text-destructive">

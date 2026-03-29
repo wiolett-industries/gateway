@@ -24,6 +24,7 @@ import { templateRoutes } from '@/modules/pki/templates.routes.js';
 import { folderRoutes } from '@/modules/proxy/folder.routes.js';
 import { nginxTemplateRoutes } from '@/modules/proxy/nginx-template.routes.js';
 import { proxyRoutes } from '@/modules/proxy/proxy.routes.js';
+import { setupRoutes } from '@/modules/setup/setup.routes.js';
 import { sslRoutes } from '@/modules/ssl/ssl.routes.js';
 import { tokensRoutes } from '@/modules/tokens/tokens.routes.js';
 
@@ -83,6 +84,7 @@ export function createApp() {
   app.route('/api/domains', domainRoutes);
   app.route('/api/access-lists', accessListRoutes);
   app.route('/api/monitoring', monitoringRoutes);
+  app.route('/api/setup', setupRoutes);
 
   // OpenAPI documentation
   app.doc('/openapi.json', {

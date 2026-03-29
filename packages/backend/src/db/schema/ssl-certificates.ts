@@ -40,6 +40,9 @@ export const sslCertificates = pgTable(
     // Status
     status: sslCertStatusEnum('status').notNull().default('pending'),
 
+    // System flag — locked certs cannot be deleted (e.g. management domain cert)
+    isSystem: boolean('is_system').notNull().default(false),
+
     // Metadata
     createdById: uuid('created_by_id')
       .notNull()

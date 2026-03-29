@@ -28,6 +28,7 @@ import { NginxTemplateService } from '@/modules/proxy/nginx-template.service.js'
 import { ProxyService } from '@/modules/proxy/proxy.service.js';
 import { ACMEService } from '@/modules/ssl/acme.service.js';
 import { SSLService } from '@/modules/ssl/ssl.service.js';
+import { SetupService } from '@/modules/setup/setup.service.js';
 import { TokensService } from '@/modules/tokens/tokens.service.js';
 import { CacheService, createRedisClient } from '@/services/cache.service.js';
 import { ConfigValidatorService } from '@/services/config-validator.service.js';
@@ -148,6 +149,10 @@ export async function initializeContainer(): Promise<void> {
   // Domain management
   const domainsService = new DomainsService(db, auditService);
   container.registerInstance(DomainsService, domainsService);
+
+  // Setup service (bootstrap management SSL)
+  const setupService = new SetupService(db, sslService, proxyService, domainsService);
+  container.registerInstance(SetupService, setupService);
 
   // Configure DNS resolvers and detect public IP
   initDnsResolver(env.DNS_RESOLVERS.split(',').map((s) => s.trim()).filter(Boolean));

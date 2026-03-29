@@ -277,7 +277,7 @@ export function Dashboard() {
                       ? `${host.forwardScheme}://${host.forwardHost}:${host.forwardPort}`
                       : ""}
                   </span>
-                  <Badge variant={({ online: "success", offline: "destructive", degraded: "warning", unknown: "secondary" } as const)[host.healthStatus as HealthStatus] || "secondary"} className="text-xs capitalize">
+                  <Badge variant={({ online: "success", offline: "destructive", degraded: "warning", unknown: "secondary", disabled: "outline" } as const)[host.healthStatus as HealthStatus] || "secondary"} className="text-xs capitalize">
                     {host.healthStatus}
                   </Badge>
                 </Link>
