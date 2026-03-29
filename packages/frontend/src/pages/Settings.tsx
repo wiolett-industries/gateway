@@ -81,7 +81,7 @@ export function Settings() {
       .then((c) => { api.setCache("housekeeping:config", c); setHkConfig(c); })
       .catch(() => {});
     api.getHousekeepingStats()
-      .then((s) => { api.setCache("housekeeping:stats", s); setHkStats(s); })
+      .then((s) => { api.setCache("housekeeping:stats", s); setHkStats(s); setHkRunning(s.isRunning); })
       .catch(() => {});
   }, [isAdmin]);
 
@@ -103,7 +103,11 @@ export function Settings() {
       } else {
         toast.warning("Housekeeping completed with some errors");
       }
-      await loadHousekeeping();
+      // Force-refresh stats bypassing cache
+      api.invalidateCache("req:/api/housekeeping/stats");
+      const freshStats = await api.getHousekeepingStats();
+      api.setCache("housekeeping:stats", freshStats);
+      setHkStats(freshStats);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Housekeeping failed");
     } finally {
@@ -364,6 +368,7 @@ export function Settings() {
               <Switch
                 checked={hkConfig.enabled}
                 onChange={(v) => updateHkConfig({ enabled: v })}
+                disabled={hkRunning}
               />
             </div>
             <div className="p-4 space-y-3">
@@ -375,7 +380,7 @@ export function Settings() {
                     value={hkConfig.cronExpression}
                     onChange={(e) => setHkConfig({ ...hkConfig, cronExpression: e.target.value })}
                     onBlur={() => updateHkConfig({ cronExpression: hkConfig.cronExpression })}
-                    disabled={!hkConfig.enabled}
+                    disabled={!hkConfig.enabled || hkRunning}
                   />
                   <Button size="sm" onClick={handleRunHousekeeping} disabled={hkRunning || !hkConfig.enabled}>
                     {hkRunning ? (
@@ -387,25 +392,6 @@ export function Settings() {
                   </Button>
                 </div>
               </div>
-              {hkStats?.lastRun && (
-                <div className="flex items-center justify-between gap-4">
-                  <span className="text-sm text-muted-foreground">Last run</span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-muted-foreground">
-                      {formatRelativeDate(hkStats.lastRun.startedAt)}
-                    </span>
-                    <span className="text-xs text-muted-foreground">&middot;</span>
-                    <span className="text-sm text-muted-foreground capitalize">{hkStats.lastRun.trigger}</span>
-                    <span className="text-xs text-muted-foreground">&middot;</span>
-                    <span className="text-sm text-muted-foreground">{(hkStats.lastRun.totalDurationMs / 1000).toFixed(1)}s</span>
-                    {hkStats.lastRun.overallSuccess ? (
-                      <Badge variant="success" className="text-[10px] px-1.5 py-0">OK</Badge>
-                    ) : (
-                      <Badge variant="destructive" className="text-[10px] px-1.5 py-0">Errors</Badge>
-                    )}
-                  </div>
-                </div>
-              )}
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
               <HousekeepingCard
@@ -418,6 +404,7 @@ export function Settings() {
                 retentionDays={hkConfig.nginxLogs.retentionDays}
                 onRetentionChange={(v) => updateHkConfig({ nginxLogs: { ...hkConfig.nginxLogs, retentionDays: v } })}
                 lastResult={hkStats?.lastRun?.categories.find((c) => c.category === "Nginx Logs")}
+                disabled={hkRunning}
               />
               <HousekeepingCard
                 label="Audit Log"
@@ -429,6 +416,7 @@ export function Settings() {
                 retentionDays={hkConfig.auditLog.retentionDays}
                 onRetentionChange={(v) => updateHkConfig({ auditLog: { ...hkConfig.auditLog, retentionDays: v } })}
                 lastResult={hkStats?.lastRun?.categories.find((c) => c.category === "Audit Log")}
+                disabled={hkRunning}
               />
               <HousekeepingCard
                 label="Dismissed Alerts"
@@ -440,6 +428,7 @@ export function Settings() {
                 retentionDays={hkConfig.dismissedAlerts.retentionDays}
                 onRetentionChange={(v) => updateHkConfig({ dismissedAlerts: { ...hkConfig.dismissedAlerts, retentionDays: v } })}
                 lastResult={hkStats?.lastRun?.categories.find((c) => c.category === "Dismissed Alerts")}
+                disabled={hkRunning}
               />
               <HousekeepingCard
                 label="Orphaned Certs"
@@ -449,6 +438,7 @@ export function Settings() {
                 enabled={hkConfig.orphanedCerts.enabled}
                 onToggle={(v) => updateHkConfig({ orphanedCerts: { enabled: v } })}
                 lastResult={hkStats?.lastRun?.categories.find((c) => c.category === "Orphaned Certs")}
+                disabled={hkRunning}
               />
               <HousekeepingCard
                 label="ACME Challenges"
@@ -458,6 +448,7 @@ export function Settings() {
                 enabled={hkConfig.acmeCleanup.enabled}
                 onToggle={(v) => updateHkConfig({ acmeCleanup: { enabled: v } })}
                 lastResult={hkStats?.lastRun?.categories.find((c) => c.category === "ACME Challenges")}
+                disabled={hkRunning}
               />
               <HousekeepingCard
                 label="Docker Images"
@@ -467,15 +458,26 @@ export function Settings() {
                 enabled={hkConfig.dockerPrune.enabled}
                 onToggle={(v) => updateHkConfig({ dockerPrune: { enabled: v } })}
                 lastResult={hkStats?.lastRun?.categories.find((c) => c.category === "Docker Images")}
+                disabled={hkRunning}
               />
             </div>
-            {hkStats?.lastRun && (
-              <div className="border-t border-border px-4 py-2">
-                <Button variant="link" size="sm" className="px-0 h-auto text-xs" onClick={handleViewHistory}>
-                  View run history
-                </Button>
+            <div className="border-t border-border px-4 py-3 flex items-center justify-between">
+              <div className="text-xs text-muted-foreground">
+                {hkStats?.lastRun ? (
+                  <span>
+                    Last run {formatRelativeDate(hkStats.lastRun.startedAt)}
+                    {" — "}
+                    {hkStats.lastRun.overallSuccess ? "completed successfully" : "completed with errors"}
+                    {` in ${(hkStats.lastRun.totalDurationMs / 1000).toFixed(1)}s`}
+                  </span>
+                ) : (
+                  <span>No runs yet</span>
+                )}
               </div>
-            )}
+              <button onClick={handleViewHistory} className="text-xs text-muted-foreground hover:text-foreground transition-colors">
+                View history
+              </button>
+            </div>
           </div>
         )}
 
@@ -607,48 +609,56 @@ export function Settings() {
 
         {/* Housekeeping History Dialog */}
         <Dialog open={hkHistoryOpen} onOpenChange={setHkHistoryOpen}>
-          <DialogContent className="sm:max-w-lg max-h-[80vh] flex flex-col">
+          <DialogContent className="sm:max-w-2xl max-h-[80vh] flex flex-col">
             <DialogHeader>
-              <DialogTitle>Housekeeping History</DialogTitle>
-              <DialogDescription>Last {hkHistory.length} runs</DialogDescription>
+              <DialogTitle>Run History</DialogTitle>
             </DialogHeader>
-            <div className="overflow-y-auto space-y-3">
-              {hkHistory.map((run, i) => (
-                <div key={i} className="border border-border p-3 space-y-2">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-medium">{new Date(run.startedAt).toLocaleString()}</span>
-                    <div className="flex items-center gap-2">
-                      <span className="capitalize text-muted-foreground">{run.trigger}</span>
-                      <span className="text-muted-foreground">{(run.totalDurationMs / 1000).toFixed(1)}s</span>
-                      {run.overallSuccess ? (
-                        <Badge variant="success" className="text-[10px] px-1.5 py-0">OK</Badge>
-                      ) : (
-                        <Badge variant="destructive" className="text-[10px] px-1.5 py-0">Errors</Badge>
-                      )}
-                    </div>
-                  </div>
-                  <div className="space-y-0.5">
-                    {run.categories.map((cat) => (
-                      <div key={cat.category} className="flex items-center gap-2 text-xs text-muted-foreground">
-                        {cat.success ? (
-                          <Check className="h-3 w-3 text-green-500" />
-                        ) : (
-                          <X className="h-3 w-3 text-destructive" />
-                        )}
-                        <span>{cat.category}: {cat.itemsCleaned} cleaned</span>
-                        {cat.spaceFreedBytes ? <span>({formatBytes(cat.spaceFreedBytes)})</span> : null}
-                        {cat.error && <span className="text-destructive">— {cat.error}</span>}
-                      </div>
+            {hkHistory.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-border text-left">
+                      <th className="p-3 text-xs font-medium text-muted-foreground">Time</th>
+                      <th className="p-3 text-xs font-medium text-muted-foreground">Trigger</th>
+                      <th className="p-3 text-xs font-medium text-muted-foreground">Duration</th>
+                      <th className="p-3 text-xs font-medium text-muted-foreground">Cleaned</th>
+                      <th className="p-3 text-xs font-medium text-muted-foreground">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {hkHistory.map((run, i) => (
+                      <tr key={i}>
+                        <td className="p-3 text-sm text-muted-foreground">
+                          {formatRelativeDate(run.startedAt)}
+                        </td>
+                        <td className="p-3 text-sm">
+                          <span className="font-mono text-xs bg-muted px-1.5 py-0.5 capitalize">
+                            {run.trigger}
+                          </span>
+                        </td>
+                        <td className="p-3 text-sm text-muted-foreground">
+                          {(run.totalDurationMs / 1000).toFixed(1)}s
+                        </td>
+                        <td className="p-3 text-sm text-muted-foreground">
+                          {run.categories.reduce((s, c) => s + c.itemsCleaned, 0)} items
+                        </td>
+                        <td className="p-3">
+                          {run.overallSuccess ? (
+                            <Badge variant="success" className="text-[10px] px-1.5 py-0">OK</Badge>
+                          ) : (
+                            <Badge variant="destructive" className="text-[10px] px-1.5 py-0">Errors</Badge>
+                          )}
+                        </td>
+                      </tr>
                     ))}
-                  </div>
-                </div>
-              ))}
-              {hkHistory.length === 0 && (
-                <p className="text-center text-sm text-muted-foreground py-4">
-                  No housekeeping runs yet
-                </p>
-              )}
-            </div>
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="text-center text-sm text-muted-foreground py-8">
+                No runs yet
+              </p>
+            )}
           </DialogContent>
         </Dialog>
 
@@ -821,6 +831,7 @@ function HousekeepingCard({
   retentionDays,
   onRetentionChange,
   lastResult,
+  disabled,
 }: {
   label: string;
   description: string;
@@ -831,6 +842,7 @@ function HousekeepingCard({
   retentionDays?: number;
   onRetentionChange?: (v: number) => void;
   lastResult?: HousekeepingCategoryResult;
+  disabled?: boolean;
 }) {
   const [localDays, setLocalDays] = useState(retentionDays ?? 30);
 
@@ -864,7 +876,7 @@ function HousekeepingCard({
                 min={1}
                 max={365}
                 value={localDays}
-                disabled={!enabled}
+                disabled={!enabled || disabled}
                 onChange={(e) => setLocalDays(parseInt(e.target.value, 10) || 1)}
                 onBlur={() => {
                   const v = Math.max(1, Math.min(365, localDays));
@@ -877,7 +889,7 @@ function HousekeepingCard({
           )}
         </div>
       </div>
-      <Switch checked={enabled} onChange={onToggle} />
+      <Switch checked={enabled} onChange={onToggle} disabled={disabled} />
     </div>
   );
 }
