@@ -487,6 +487,10 @@ http {
         ''      close;
     }
 
+    # Docker internal DNS — re-resolve container IPs on restart
+    resolver 127.0.0.11 valid=10s ipv6=off;
+    resolver_timeout 5s;
+
     include /etc/nginx/conf.d/*.conf;
     include /etc/nginx/conf.d/sites/*.conf;
 }

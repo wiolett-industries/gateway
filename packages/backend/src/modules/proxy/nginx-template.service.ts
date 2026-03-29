@@ -98,6 +98,7 @@ server {
 
 {{/if}}
     location / {
+        set $upstream_target {{upstream}};
 {{#if rateLimitEnabled}}
         limit_req zone=ratelimit_{{id}} burst={{rateLimitBurst}} nodelay;
 {{/if}}
@@ -108,7 +109,7 @@ server {
         proxy_cache_background_update on;
         add_header X-Cache-Status $upstream_cache_status;
 {{/if}}
-        proxy_pass {{upstream}};
+        proxy_pass $upstream_target;
 
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
