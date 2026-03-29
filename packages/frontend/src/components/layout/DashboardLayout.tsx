@@ -17,6 +17,7 @@ import {
   Settings,
   ShieldAlert,
   ShieldCheck,
+  ArrowUpCircle,
   Users,
   X,
 } from "lucide-react";
@@ -129,6 +130,7 @@ function SidebarContent({
   const { sidebarOpen, toggleSidebar, setCommandPaletteOpen: openPalette } = useUIStore();
 
   const [nginxAvailable, setNginxAvailable] = useState(false);
+  const [updateAvailable, setUpdateAvailable] = useState(false);
 
   useEffect(() => {
     const check = () => api.checkNginxAvailable().then(setNginxAvailable);
@@ -136,6 +138,17 @@ function SidebarContent({
     const interval = setInterval(check, 30_000);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (user?.role !== "admin") return;
+    const checkUpdate = () =>
+      api.getVersionInfo()
+        .then((s) => setUpdateAvailable(s.updateAvailable))
+        .catch(() => {});
+    checkUpdate();
+    const interval = setInterval(checkUpdate, 30 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [user?.role]);
 
   const handleLogout = async () => {
     try {
@@ -232,6 +245,22 @@ function SidebarContent({
             ))}
 
             <div className="flex-1" />
+
+            {updateAvailable && isAdmin && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-amber-600 dark:text-amber-400"
+                    onClick={() => navigate("/settings")}
+                  >
+                    <ArrowUpCircle className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="right">Update available</TooltipContent>
+              </Tooltip>
+            )}
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -384,6 +413,20 @@ function SidebarContent({
             </ScrollArea>
 
             <Separator />
+
+            {/* Update notification */}
+            {updateAvailable && isAdmin && (
+              <div className="px-2 pt-2">
+                <Link
+                  to="/settings"
+                  onClick={onNavigate}
+                  className="flex items-center gap-2 px-3 py-2 text-sm bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 transition-colors"
+                >
+                  <ArrowUpCircle className="h-4 w-4 shrink-0" />
+                  <span className="truncate">Update available</span>
+                </Link>
+              </div>
+            )}
 
             {/* Account at bottom */}
             <div className="p-2">

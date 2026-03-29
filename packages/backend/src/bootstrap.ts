@@ -30,6 +30,8 @@ import { ACMEService } from '@/modules/ssl/acme.service.js';
 import { SSLService } from '@/modules/ssl/ssl.service.js';
 import { SetupService } from '@/modules/setup/setup.service.js';
 import { TokensService } from '@/modules/tokens/tokens.service.js';
+import { UpdateCheckJob } from '@/jobs/update-check.job.js';
+import { UpdateService } from '@/services/update.service.js';
 import { CacheService, createRedisClient } from '@/services/cache.service.js';
 import { ConfigValidatorService } from '@/services/config-validator.service.js';
 import { CryptoService } from '@/services/crypto.service.js';
@@ -154,6 +156,10 @@ export async function initializeContainer(): Promise<void> {
   const setupService = new SetupService(db, sslService, proxyService, domainsService);
   container.registerInstance(SetupService, setupService);
 
+  // Update service
+  const updateService = new UpdateService(db, dockerService, env);
+  container.registerInstance(UpdateService, updateService);
+
   // Configure DNS resolvers and detect public IP
   initDnsResolver(env.DNS_RESOLVERS.split(',').map((s) => s.trim()).filter(Boolean));
   await detectPublicIP(env.PUBLIC_IPV4, env.PUBLIC_IPV6);
@@ -176,6 +182,9 @@ export async function initializeContainer(): Promise<void> {
   scheduler.register('acme-renewal', env.ACME_RENEWAL_CRON, () => acmeRenewalJob.run());
   scheduler.registerInterval('health-check', env.HEALTH_CHECK_INTERVAL_SECONDS * 1000, () => healthCheckJob.run());
   scheduler.register('expiry-alerts', env.EXPIRY_CHECK_CRON, () => expiryAlertJob.run());
+
+  const updateCheckJob = new UpdateCheckJob(updateService);
+  scheduler.registerInterval('update-check', env.UPDATE_CHECK_INTERVAL_HOURS * 3_600_000, () => updateCheckJob.run());
 
   logger.info('Dependency injection container initialized');
 }

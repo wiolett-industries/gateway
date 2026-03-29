@@ -26,6 +26,7 @@ import { nginxTemplateRoutes } from '@/modules/proxy/nginx-template.routes.js';
 import { proxyRoutes } from '@/modules/proxy/proxy.routes.js';
 import { setupRoutes } from '@/modules/setup/setup.routes.js';
 import { sslRoutes } from '@/modules/ssl/ssl.routes.js';
+import { systemRoutes } from '@/modules/system/system.routes.js';
 import { tokensRoutes } from '@/modules/tokens/tokens.routes.js';
 
 import type { AppEnv } from '@/types.js';
@@ -85,6 +86,7 @@ export function createApp() {
   app.route('/api/access-lists', accessListRoutes);
   app.route('/api/monitoring', monitoringRoutes);
   app.route('/api/setup', setupRoutes);
+  app.route('/api/system', systemRoutes);
 
   // OpenAPI documentation
   app.doc('/openapi.json', {

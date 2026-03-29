@@ -29,6 +29,9 @@ RUN pnpm --filter backend build
 # ── Production image ────────────────────────────────────────────────
 FROM node:24-alpine AS production
 
+ARG APP_VERSION=dev
+ENV APP_VERSION=$APP_VERSION
+
 RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 
 WORKDIR /app

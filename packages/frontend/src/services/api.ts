@@ -39,6 +39,7 @@ import type {
   Template,
   TemplateVariableDef,
   UpdateDomainRequest,
+  UpdateStatus,
   UploadCertRequest,
   User,
   UserRole,
@@ -831,6 +832,38 @@ class ApiClient {
     const params = new URLSearchParams();
     if (sessionId) params.set("token", sessionId);
     return new EventSource(`${API_BASE}/monitoring/nginx/stats/stream?${params}`);
+  }
+
+  // ── System / Updates ──────────────────────────────────��───────────
+
+  async getVersionInfo(): Promise<UpdateStatus> {
+    return this.unwrapData(
+      this.request<{ data: UpdateStatus }>("/system/version")
+    );
+  }
+
+  async checkForUpdates(): Promise<UpdateStatus> {
+    return this.unwrapData(
+      this.request<{ data: UpdateStatus }>("/system/check-update", { method: "POST" })
+    );
+  }
+
+  async triggerUpdate(version: string): Promise<{ status: string; targetVersion: string }> {
+    return this.unwrapData(
+      this.request<{ data: { status: string; targetVersion: string } }>("/system/update", {
+        method: "POST",
+        body: JSON.stringify({ version }),
+      })
+    );
+  }
+
+  async getReleaseNotes(version: string): Promise<string> {
+    const result = await this.unwrapData(
+      this.request<{ data: { version: string; notes: string } }>(
+        `/system/release-notes/${encodeURIComponent(version)}`
+      )
+    );
+    return result.notes;
   }
 }
 
