@@ -80,7 +80,8 @@ export function CADetail() {
       }
     };
     load();
-  }, [id, selectCA, reloadCerts]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
 
   const handleRevoke = async () => {
     if (!selectedCA) return;
