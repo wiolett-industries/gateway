@@ -152,6 +152,7 @@ export function NginxManagement() {
         connected: boolean;
         info: NginxProcessInfo | null;
         history: NginxStatsSnapshot[];
+        snapshot: NginxStatsSnapshot | null;
       };
       setConnected(true);
       setUnavailable(false);
@@ -160,7 +161,9 @@ export function NginxManagement() {
         for (const snapshot of data.history) {
           processSnapshot(snapshot);
         }
-        setStats(data.history[data.history.length - 1]);
+      }
+      if (data.snapshot) {
+        setStats(data.snapshot);
       }
     });
 
