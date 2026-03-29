@@ -42,8 +42,19 @@ export class DomainsService {
       this.db.select({ total: count() }).from(domains).where(where),
     ]);
 
+    const enriched = await Promise.all(
+      rows.map(async (row) => {
+        const usage = await this.getUsage(row.domain);
+        return {
+          ...row,
+          sslCertCount: usage.sslCertificates.length,
+          proxyHostCount: usage.proxyHosts.length,
+        };
+      })
+    );
+
     return {
-      data: rows,
+      data: enriched,
       pagination: {
         page: params.page,
         limit: params.limit,
@@ -110,8 +121,19 @@ export class DomainsService {
   async deleteDomain(id: string, userId: string) {
     const [row] = await this.db.select().from(domains).where(eq(domains.id, id)).limit(1);
     if (!row) throw new Error('Domain not found');
+    if (row.isSystem) throw new Error('System domains cannot be deleted');
 
     const usage = await this.getUsage(row.domain);
+
+    if (usage.proxyHosts.length > 0) {
+      throw Object.assign(new Error('Domain is in use by proxy hosts'), {
+        code: 'DOMAIN_IN_USE',
+        details: {
+          proxyHostCount: usage.proxyHosts.length,
+          proxyHostIds: usage.proxyHosts.map((h) => h.id),
+        },
+      });
+    }
 
     await this.db.delete(domains).where(eq(domains.id, id));
 

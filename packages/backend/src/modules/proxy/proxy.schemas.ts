@@ -91,6 +91,8 @@ export const CreateProxyHostSchema = z
     healthCheckEnabled: z.boolean().default(false),
     healthCheckUrl: z.string().max(500).regex(/^\//, 'Must start with /').optional(),
     healthCheckInterval: z.number().int().min(5).max(3600).optional(),
+    healthCheckExpectedStatus: z.number().int().min(100).max(599).optional(),
+    healthCheckExpectedBody: z.string().max(500).optional(),
   })
   .superRefine((data, ctx) => {
     if (data.type === 'proxy') {
@@ -174,6 +176,8 @@ export const UpdateProxyHostSchema = z.object({
   healthCheckEnabled: z.boolean().optional(),
   healthCheckUrl: z.string().max(500).regex(/^\//, 'Must start with /').optional().nullable(),
   healthCheckInterval: z.number().int().min(5).max(3600).optional().nullable(),
+  healthCheckExpectedStatus: z.number().int().min(100).max(599).optional().nullable(),
+  healthCheckExpectedBody: z.string().max(500).optional().nullable(),
 });
 
 // ---------------------------------------------------------------------------

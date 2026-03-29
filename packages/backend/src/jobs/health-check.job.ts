@@ -133,14 +133,37 @@ export class HealthCheckJob {
 
         clearTimeout(timeout);
 
-        if (response.status >= 200 && response.status < 300) {
-          return 'online';
+        let status: HealthStatus;
+
+        if (host.healthCheckExpectedStatus) {
+          // Custom expected status code check
+          status = response.status === host.healthCheckExpectedStatus ? 'online' : 'offline';
+        } else {
+          // Default 2xx/5xx/other logic
+          if (response.status >= 200 && response.status < 300) {
+            status = 'online';
+          } else if (response.status >= 500) {
+            status = 'offline';
+          } else {
+            // 3xx (after redirect), 4xx, or other non-2xx/non-5xx
+            status = 'degraded';
+          }
         }
-        if (response.status >= 500) {
-          return 'offline';
+
+        // Body content matching (only if status is 'online' and expectedBody is set)
+        if (status === 'online' && host.healthCheckExpectedBody) {
+          try {
+            const body = await response.text();
+            if (!body.includes(host.healthCheckExpectedBody)) {
+              status = 'degraded';
+            }
+          } catch {
+            // Failed to read body — treat as degraded
+            status = 'degraded';
+          }
         }
-        // 3xx (after redirect), 4xx, or other non-2xx/non-5xx
-        return 'degraded';
+
+        return status;
       } finally {
         clearTimeout(timeout);
       }

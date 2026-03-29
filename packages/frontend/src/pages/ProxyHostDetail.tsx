@@ -5,6 +5,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { PageTransition } from "@/components/common/PageTransition";
+import { DomainAutocompleteInput } from "@/components/domains/DomainAutocompleteInput";
 import { Button } from "@/components/ui/button";
 import { CodeEditor } from "@/components/ui/code-editor";
 import { Input } from "@/components/ui/input";
@@ -41,6 +42,7 @@ export function ProxyHostDetail() {
 
   const [isLoading, setIsLoading] = useState(!isNew);
   const [isSaving, setIsSaving] = useState(false);
+  const [isSystemHost, setIsSystemHost] = useState(false);
 
   // Form state
   const [type, setType] = useState<ProxyHostType>("proxy");
@@ -91,6 +93,8 @@ export function ProxyHostDetail() {
   const [healthCheckEnabled, setHealthCheckEnabled] = useState(false);
   const [healthCheckUrl, setHealthCheckUrl] = useState("/");
   const [healthCheckInterval, setHealthCheckInterval] = useState(30);
+  const [healthCheckExpectedStatus, setHealthCheckExpectedStatus] = useState<number | null>(null);
+  const [healthCheckExpectedBody, setHealthCheckExpectedBody] = useState("");
 
   // Raw config
   const [rawConfig, setRawConfig] = useState("");
@@ -142,9 +146,12 @@ export function ProxyHostDetail() {
         setFolderId(host.folderId || "");
         setNginxTemplateId(host.nginxTemplateId || "");
         setTemplateVariables(host.templateVariables || {});
+        setIsSystemHost(!!host.isSystem);
         setHealthCheckEnabled(host.healthCheckEnabled);
         setHealthCheckUrl(host.healthCheckUrl || "/");
         setHealthCheckInterval(host.healthCheckInterval || 30);
+        setHealthCheckExpectedStatus(host.healthCheckExpectedStatus ?? null);
+        setHealthCheckExpectedBody(host.healthCheckExpectedBody || "");
       } catch {
         toast.error("Failed to load proxy host");
         navigate("/proxy-hosts");
@@ -272,6 +279,8 @@ export function ProxyHostDetail() {
       healthCheckEnabled,
       healthCheckUrl,
       healthCheckInterval,
+      healthCheckExpectedStatus: healthCheckExpectedStatus ?? undefined,
+      healthCheckExpectedBody: healthCheckExpectedBody || undefined,
     };
     if (type === "proxy") {
       req.forwardHost = forwardHost;
@@ -386,7 +395,7 @@ export function ProxyHostDetail() {
           </div>
 
           <div className="flex items-center gap-2">
-            {!isNew && hasRole("admin", "operator") && (
+            {!isNew && hasRole("admin", "operator") && !isSystemHost && (
               <Button variant="outline" onClick={handleDelete}>
                 <Trash2 className="h-4 w-4" />
                 Delete
@@ -572,11 +581,11 @@ export function ProxyHostDetail() {
                 <div className="space-y-2">
                   {domainNames.map((domain, i) => (
                     <div key={i} className="flex gap-2">
-                      <Input
+                      <DomainAutocompleteInput
                         value={domain}
-                        onChange={(e) => {
+                        onChange={(val) => {
                           const next = [...domainNames];
-                          next[i] = e.target.value;
+                          next[i] = val;
                           setDomainNames(next);
                         }}
                         placeholder="example.com"
@@ -1017,6 +1026,35 @@ export function ProxyHostDetail() {
                       max={3600}
                       className="w-40"
                     />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Expected Status Code</label>
+                    <Input
+                      type="number"
+                      value={healthCheckExpectedStatus ?? ""}
+                      onChange={(e) =>
+                        setHealthCheckExpectedStatus(
+                          e.target.value ? Number(e.target.value) : null
+                        )
+                      }
+                      placeholder="Any 2xx"
+                      className="w-40"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Leave empty to accept any 2xx status code.
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Expected Response Body</label>
+                    <Input
+                      value={healthCheckExpectedBody}
+                      onChange={(e) => setHealthCheckExpectedBody(e.target.value)}
+                      placeholder="String to match in response"
+                      maxLength={500}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      If set, the response body must contain this string to be considered healthy.
+                    </p>
                   </div>
                 </motion.div>
               )}

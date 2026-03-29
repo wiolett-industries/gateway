@@ -1,0 +1,65 @@
+stages:
+  - build
+  - release
+
+variables:
+  IMAGE: ${CI_REGISTRY_IMAGE}
+  DOCKER_HOST: unix:///var/run/docker.sock
+
+.docker-login: &docker-login
+  before_script:
+    - docker login -u ${CI_REGISTRY_USER} -p ${CI_REGISTRY_PASSWORD} ${CI_REGISTRY}
+
+build:
+  stage: build
+  image: docker:27
+  <<: *docker-login
+  script:
+    - |
+      echo "Building Gateway ${CI_COMMIT_TAG}..."
+      docker build \
+        --cache-from $IMAGE:latest \
+        --tag $IMAGE:$CI_COMMIT_TAG \
+        --tag $IMAGE:${CI_COMMIT_TAG#v} \
+        --tag $IMAGE:latest \
+        --build-arg BUILDKIT_INLINE_CACHE=1 \
+        .
+    - docker push $IMAGE:$CI_COMMIT_TAG
+    - docker push $IMAGE:${CI_COMMIT_TAG#v}
+    - docker push $IMAGE:latest
+    - echo "Pushed $IMAGE:$CI_COMMIT_TAG, $IMAGE:${CI_COMMIT_TAG#v}, $IMAGE:latest"
+  rules:
+    - if: $CI_COMMIT_TAG
+
+release:
+  stage: release
+  image: registry.gitlab.com/gitlab-org/release-cli:latest
+  needs:
+    - build
+  script:
+    - echo "Creating release ${CI_COMMIT_TAG}"
+  release:
+    tag_name: $CI_COMMIT_TAG
+    name: "Gateway $CI_COMMIT_TAG"
+    description: |
+      ## Gateway $CI_COMMIT_TAG
+
+      ### Docker Image
+      ```
+      docker pull $CI_REGISTRY_IMAGE:$CI_COMMIT_TAG
+      ```
+
+      ### Quick Install
+      ```bash
+      mkdir gateway && cd gateway
+      curl -sSLO https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/install.sh
+      bash install.sh --version $CI_COMMIT_TAG
+      ```
+
+      ### Update Existing Installation
+      ```bash
+      # Edit .env: GATEWAY_VERSION=$CI_COMMIT_TAG
+      docker compose pull && docker compose up -d
+      ```
+  rules:
+    - if: $CI_COMMIT_TAG

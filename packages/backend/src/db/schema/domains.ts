@@ -1,4 +1,4 @@
-import { index, jsonb, pgEnum, pgTable, text, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
+import { boolean, index, jsonb, pgEnum, pgTable, text, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
 import { users } from './users.js';
 
 export const dnsStatusEnum = pgEnum('dns_status', ['valid', 'invalid', 'pending', 'unknown']);
@@ -21,6 +21,9 @@ export const domains = pgTable(
     dnsStatus: dnsStatusEnum('dns_status').notNull().default('pending'),
     lastDnsCheckAt: timestamp('last_dns_check_at', { withTimezone: true }),
     dnsRecords: jsonb('dns_records').$type<DnsRecords>(),
+    // System flag — locked domains cannot be deleted (e.g. management domain)
+    isSystem: boolean('is_system').notNull().default(false),
+
     createdById: uuid('created_by_id')
       .notNull()
       .references(() => users.id),

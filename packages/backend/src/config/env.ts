@@ -28,6 +28,7 @@ const envSchema = z.object({
 
   // App
   APP_URL: z.string().url().default('http://localhost:3000'),
+  BIND_HOST: z.string().default('0.0.0.0'),
 
   // PKI Master Key — 32 bytes as 64-char hex string for envelope encryption
   PKI_MASTER_KEY: z
@@ -55,6 +56,9 @@ const envSchema = z.object({
   HEALTH_CHECK_INTERVAL_SECONDS: z.coerce.number().default(30),
   ACME_RENEWAL_CRON: z.string().default('0 3 * * *'), // 3 AM daily
   EXPIRY_CHECK_CRON: z.string().default('0 6 * * *'), // 6 AM daily
+
+  // Setup token for bootstrap API (management SSL provisioning)
+  SETUP_TOKEN: z.string().optional(),
 
   // Nginx
   NGINX_CONFIG_PATH: z.string().default('/etc/nginx-config'),

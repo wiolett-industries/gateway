@@ -548,6 +548,7 @@ export class SSLService {
     });
 
     if (!cert) throw new AppError(404, 'SSL_CERT_NOT_FOUND', 'SSL certificate not found');
+    if (cert.isSystem) throw new AppError(403, 'SYSTEM_CERT', 'System certificates cannot be deleted');
 
     // Check no proxy hosts reference this cert
     const { proxyHosts } = await import('@/db/schema/index.js');
