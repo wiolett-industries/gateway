@@ -123,56 +123,59 @@ monitoringRoutes.get('/nginx/stats/stream', async (c) => {
 
   const nginxStatsService = container.resolve(NginxStatsService);
 
+  nginxStatsService.registerSSEClient();
+  const encoder = new TextEncoder();
+  let cancelled = false;
+
   const body = new ReadableStream({
-    start(controller) {
-      nginxStatsService.registerSSEClient();
+    async pull(controller) {
+      if (cancelled) { controller.close(); return; }
 
-      const encoder = new TextEncoder();
-      const write = (event: string, data: string) => {
-        controller.enqueue(encoder.encode(`event: ${event}\ndata: ${data}\n\n`));
-      };
+      try {
+        const snapshot = await nginxStatsService.getSnapshot();
+        nginxStatsService.pushHistory(snapshot);
+        controller.enqueue(encoder.encode(`event: stats\ndata: ${JSON.stringify(snapshot)}\n\n`));
+      } catch (err) {
+        controller.enqueue(encoder.encode(`event: error\ndata: ${JSON.stringify({ error: (err as Error).message })}\n\n`));
+      }
 
-      write('connected', JSON.stringify({
-        connected: true,
-        info: nginxStatsService.getCachedProcessInfo(),
-        history: nginxStatsService.getHistory(),
-      }));
-
-      let running = true;
-      const poll = async () => {
-        if (!running) return;
-        try {
-          const snapshot = await nginxStatsService.getSnapshot();
-          nginxStatsService.pushHistory(snapshot);
-          write('stats', JSON.stringify(snapshot));
-        } catch (err) {
-          logger.warn('SSE snapshot error', { error: (err as Error).message });
-        }
-        if (running) setTimeout(poll, 2000);
-      };
-      setTimeout(poll, 2000);
-
-      const keepalive = setInterval(() => {
-        try { write('ping', ''); } catch { clearInterval(keepalive); }
-      }, 30_000);
-
-      // cleanup when stream is cancelled
-      const cleanup = () => {
-        running = false;
-        clearInterval(keepalive);
-        nginxStatsService.unregisterSSEClient();
-      };
-
-      // Store cleanup for cancel
-      (controller as unknown as { _cleanup: () => void })._cleanup = cleanup;
+      // Wait 2s before next pull
+      await new Promise((resolve) => setTimeout(resolve, 2000));
     },
-    cancel(controller) {
-      const cleanup = (controller as unknown as { _cleanup?: () => void })?._cleanup;
-      if (cleanup) cleanup();
+    cancel() {
+      cancelled = true;
+      nginxStatsService.unregisterSSEClient();
     },
   });
 
-  return new Response(body, {
+  // Prepend connected event
+  const connectedEvent = `event: connected\ndata: ${JSON.stringify({
+    connected: true,
+    info: nginxStatsService.getCachedProcessInfo(),
+    history: nginxStatsService.getHistory(),
+  })}\n\n`;
+
+  const prependedBody = new ReadableStream({
+    async start(controller) {
+      controller.enqueue(encoder.encode(connectedEvent));
+      const reader = body.getReader();
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          controller.enqueue(value);
+        }
+      } finally {
+        controller.close();
+      }
+    },
+    cancel() {
+      cancelled = true;
+      nginxStatsService.unregisterSSEClient();
+    },
+  });
+
+  return new Response(prependedBody, {
     headers: {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
