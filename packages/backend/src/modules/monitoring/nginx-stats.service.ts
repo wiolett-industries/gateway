@@ -331,6 +331,8 @@ export class NginxStatsService {
 
     if (trafficResult.status === 'fulfilled') {
       trafficStats = trafficResult.value;
+    } else {
+      trafficStats = { statusCodes: { s2xx: 0, s3xx: 0, s4xx: 0, s5xx: 0 }, avgResponseTime: 0, p95ResponseTime: 0, totalRequests: 0 };
     }
 
     let requestsPerSec = 0;
