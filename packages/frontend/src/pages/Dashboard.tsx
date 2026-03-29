@@ -1,4 +1,4 @@
-import { Award, Globe, Lock, Shield } from "lucide-react";
+import { ArrowRight, Award, Globe, Lock, Shield } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { PageTransition } from "@/components/common/PageTransition";
@@ -8,7 +8,7 @@ import { cn, daysUntil, formatDate, formatRelativeDate, formatTimeLeft } from "@
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useCAStore } from "@/stores/ca";
-import type { AuditLogEntry, DashboardStats, ProxyHost } from "@/types";
+import type { AuditLogEntry, DashboardStats, ProxyHost, UpdateStatus } from "@/types";
 
 interface ExpiringItem {
   id: string;
@@ -58,9 +58,14 @@ export function Dashboard() {
   const [healthHosts, setHealthHosts] = useState<ProxyHost[]>([]);
   const [statsLoading, setStatsLoading] = useState(true);
   const [expiringItems, setExpiringItems] = useState<ExpiringItem[]>([]);
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
 
   useEffect(() => {
     fetchCAs();
+
+    if (hasRole("admin")) {
+      api.getVersionInfo().then(setUpdateStatus).catch(() => {});
+    }
 
     if (hasRole("admin")) {
       api
@@ -163,6 +168,30 @@ export function Dashboard() {
           <h1 className="text-2xl font-bold">Dashboard</h1>
           <p className="text-sm text-muted-foreground">Gateway and PKI infrastructure overview</p>
         </div>
+
+        {/* Update available */}
+        {updateStatus?.updateAvailable && updateStatus.latestVersion && (
+          <div className="border bg-card" style={{ borderColor: "rgb(234 179 8 / 0.6)" }}>
+            <div className="flex items-center justify-between px-4 py-3">
+              <div className="flex items-center gap-3">
+                <span className="font-semibold text-sm" style={{ color: "rgb(234 179 8)" }}>
+                  Update Available
+                </span>
+                <span className="text-sm text-muted-foreground">
+                  {updateStatus.latestVersion} is ready to install
+                </span>
+              </div>
+              <Link
+                to="/settings"
+                className="flex items-center gap-1 text-sm font-medium hover:underline"
+                style={{ color: "rgb(234 179 8)" }}
+              >
+                Go to Settings
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+          </div>
+        )}
 
         {/* Stat cards */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
