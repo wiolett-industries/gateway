@@ -459,7 +459,7 @@ export class ProxyService {
       if (sslCert?.certificatePem && sslCert.privateKeyPem) {
         // Decrypt the private key
         let keyPem: string;
-        if (sslCert.encryptedDek && sslCert.dekIv) {
+        if (sslCert.encryptedDek) {
           keyPem = this.cryptoService.decryptPrivateKey({
             encryptedPrivateKey: sslCert.privateKeyPem,
             encryptedDek: sslCert.encryptedDek,
