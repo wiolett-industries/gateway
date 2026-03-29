@@ -299,7 +299,7 @@ export function NginxManagement() {
                       value={String(stub?.activeConnections ?? 0)}
                       icon={Activity}
                       history={h.activeConnections || []}
-                      color="hsl(var(--primary))"
+                      color="#3b82f6"
                     />
                     <StatCard
                       label="Requests/sec"
