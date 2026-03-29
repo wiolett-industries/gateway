@@ -2,6 +2,8 @@
 
 Self-hosted certificate manager and reverse proxy gateway.
 
+> **Note:** The primary source of this project is [Wiolett GitLab](https://gitlab.wiolett.net/wiolett/gateway). The [GitHub repository](https://github.com/wiolett-industries/gateway) is a mirror for public visibility. Issues, feature requests, and pull requests are welcome on [GitHub](https://github.com/wiolett-industries/gateway/issues).
+
 Gateway combines a full PKI (Certificate Authority) infrastructure with a reverse proxy manager — think Nginx Proxy Manager with a built-in CA. Issue and manage TLS certificates, configure proxy hosts, handle SSL termination, and monitor everything from a single interface.
 
 ## Features
@@ -170,7 +172,7 @@ pnpm dev:all          # Start backend + frontend dev servers
 
 ## License
 
-Licensed under the [PolyForm Small Business License 1.0.0](LICENSE).
+Licensed under the [PolyForm Small Business License 1.0.0](LICENSE.md).
 
 - Free for personal use, nonprofits, and small businesses (<10 people, <$100K revenue)
 - Larger commercial use requires a separate license — contact [contact@wiolett.net](mailto:contact@wiolett.net)
