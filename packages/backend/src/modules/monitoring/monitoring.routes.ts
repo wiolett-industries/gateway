@@ -142,6 +142,18 @@ monitoringRoutes.get('/nginx/stats/stream', async (c) => {
       nginxStatsService.unregisterSSEClient();
     });
 
+    // Send first stats snapshot immediately
+    try {
+      const initial = await nginxStatsService.getSnapshot();
+      nginxStatsService.pushHistory(initial);
+      await stream.writeSSE({
+        data: JSON.stringify(initial),
+        event: 'stats',
+      });
+    } catch (err) {
+      logger.warn('SSE initial snapshot error', { error: (err as Error).message });
+    }
+
     // Poll loop — uses stream.sleep to keep Hono stream alive
     while (running) {
       await stream.sleep(2000);
