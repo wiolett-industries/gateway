@@ -30,7 +30,7 @@ INFO_TAG='\033[47m\033[90m'       # light gray bg, dark gray text
 WARN_TAG='\033[43m\033[30m'       # yellow bg, black text
 ERROR_TAG='\033[41m\033[97m'      # red bg, white text
 SUCCESS_TAG='\033[42m\033[97m'    # green bg, white text
-TITLE_TAG='\033[44m\033[97m'      # blue bg, white text
+TITLE_TAG='\033[46m\033[97m'      # cyan bg, white text
 
 # ── Logo ──────────────────────────────────────────────────────────────
 show_logo() {
