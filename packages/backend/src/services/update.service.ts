@@ -77,6 +77,10 @@ export class UpdateService {
   async checkForUpdates(): Promise<UpdateStatus> {
     const currentVersion = this.getCurrentVersion();
 
+    // Always persist the check timestamp
+    const lastCheckedAt = new Date().toISOString();
+    await this.upsertSetting(SETTINGS_KEYS.lastCheckedAt, lastCheckedAt);
+
     if (currentVersion === 'dev') {
       logger.debug('Skipping update check in dev mode');
       return {
@@ -85,7 +89,7 @@ export class UpdateService {
         updateAvailable: false,
         releaseNotes: null,
         releaseUrl: null,
-        lastCheckedAt: new Date().toISOString(),
+        lastCheckedAt,
       };
     }
 
@@ -112,11 +116,9 @@ export class UpdateService {
       const latestVersion = latest.tag_name;
       const releaseNotes = latest.description || null;
       const releaseUrl = latest._links?.self || null;
-      const lastCheckedAt = new Date().toISOString();
 
-      // Persist to settings
+      // Persist release info to settings (lastCheckedAt already saved above)
       await this.upsertSetting(SETTINGS_KEYS.latestVersion, latestVersion);
-      await this.upsertSetting(SETTINGS_KEYS.lastCheckedAt, lastCheckedAt);
       await this.upsertSetting(SETTINGS_KEYS.releaseNotes, releaseNotes ?? '');
       await this.upsertSetting(SETTINGS_KEYS.releaseUrl, releaseUrl ?? '');
 
