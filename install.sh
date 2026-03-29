@@ -283,6 +283,9 @@ write_env() {
 GATEWAY_IMAGE=${GATEWAY_IMAGE:-$DEFAULT_IMAGE}
 GATEWAY_VERSION=${VERSION}
 
+# Compose project directory (used by self-update)
+COMPOSE_PROJECT_DIR=$(pwd)
+
 # Server
 PORT=3000
 APP_PORT=${APP_PORT}

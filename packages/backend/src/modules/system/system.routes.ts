@@ -48,7 +48,7 @@ systemRoutes.post('/update', rbacMiddleware('admin'), async (c) => {
   // The container will be replaced — the response must be sent first.
   setTimeout(() => {
     updateService.performUpdate(version).catch((err) => {
-      logger.error('Update failed', { error: err });
+      logger.error('Update failed', { error: err instanceof Error ? err.message : String(err), stack: err instanceof Error ? err.stack : undefined });
     });
   }, 500);
 
