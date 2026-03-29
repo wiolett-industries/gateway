@@ -1,6 +1,6 @@
 import { Copy, Key, Loader2, Moon, Plus, RefreshCw, Sun, Trash2 } from "lucide-react";
 import Markdown from "react-markdown";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import ReactDOM from "react-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
@@ -29,7 +29,8 @@ import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useCAStore } from "@/stores/ca";
 import { useUIStore } from "@/stores/ui";
-import { type ApiToken, type UpdateStatus, TOKEN_SCOPES } from "@/types";
+import { useUpdateStore } from "@/stores/update";
+import { type ApiToken, TOKEN_SCOPES } from "@/types";
 
 const SCOPE_GROUPS = [...new Set(TOKEN_SCOPES.map((s) => s.group))];
 
@@ -45,22 +46,10 @@ export function Settings() {
   const [createdSecret, setCreatedSecret] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
 
-  // Update state
-  const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
-  const [isChecking, setIsChecking] = useState(false);
-  const [isUpdating, setIsUpdating] = useState(false);
+  // Update state (global store)
+  const { status: updateStatus, isChecking, isUpdating, checkForUpdates, triggerUpdate, fetchStatus } = useUpdateStore();
   const [releaseNotesOpen, setReleaseNotesOpen] = useState(false);
   const isAdmin = hasRole("admin");
-  const updatePollRef = useRef<ReturnType<typeof setInterval>>(undefined);
-  const updateTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
-
-  // Clean up polling on unmount
-  useEffect(() => {
-    return () => {
-      if (updatePollRef.current) clearInterval(updatePollRef.current);
-      if (updateTimeoutRef.current) clearTimeout(updateTimeoutRef.current);
-    };
-  }, []);
 
   const loadTokens = async () => {
     try {
@@ -73,25 +62,16 @@ export function Settings() {
 
   useEffect(() => {
     loadTokens();
-    const cached = api.getCached<UpdateStatus>("system:version");
-    if (cached) setUpdateStatus(cached);
-    api.getVersionInfo().then((d) => { api.setCache("system:version", d); setUpdateStatus(d); }).catch(() => {});
+    fetchStatus();
   }, []);
 
   const handleCheckUpdate = async () => {
-    setIsChecking(true);
-    try {
-      const status = await api.checkForUpdates();
-      setUpdateStatus(status);
-      if (status.updateAvailable) {
-        toast.info(`Update available: ${status.latestVersion}`);
-      } else {
-        toast.success("Already up to date");
-      }
-    } catch {
-      toast.error("Failed to check for updates");
-    } finally {
-      setIsChecking(false);
+    await checkForUpdates();
+    const s = useUpdateStore.getState().status;
+    if (s?.updateAvailable) {
+      toast.info(`Update available: ${s.latestVersion}`);
+    } else {
+      toast.success("Already up to date");
     }
   };
 
@@ -103,37 +83,7 @@ export function Settings() {
       confirmLabel: "Update",
     });
     if (!ok) return;
-
-    setIsUpdating(true);
-    try {
-      await api.triggerUpdate(updateStatus.latestVersion);
-      // App will go down — start polling for reconnection
-      updatePollRef.current = setInterval(async () => {
-        try {
-          const status = await api.getVersionInfo();
-          if (status.currentVersion !== updateStatus.currentVersion) {
-            clearInterval(updatePollRef.current);
-            clearTimeout(updateTimeoutRef.current);
-            setIsUpdating(false);
-            setUpdateStatus(status);
-            toast.success(`Updated to ${status.currentVersion}`);
-          }
-        } catch {
-          // App still down, keep polling
-        }
-      }, 3000);
-      // Safety timeout after 5 minutes
-      updateTimeoutRef.current = setTimeout(() => {
-        clearInterval(updatePollRef.current);
-        setIsUpdating((current) => {
-          if (current) toast.error("Update timed out. Please check your server.");
-          return false;
-        });
-      }, 300_000);
-    } catch {
-      toast.error("Failed to start update");
-      setIsUpdating(false);
-    }
+    triggerUpdate(updateStatus.latestVersion);
   };
 
   const toggleScope = (scope: string) => {
