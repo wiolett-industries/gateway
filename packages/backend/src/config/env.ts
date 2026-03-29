@@ -50,7 +50,7 @@ const envSchema = z.object({
 
   // ACME
   ACME_EMAIL: z.string().email().default('admin@example.com'),
-  ACME_STAGING: z.coerce.boolean().default(false),
+  ACME_STAGING: z.string().default('false').transform((v) => v === 'true' || v === '1'),
 
   // DNS / Domains
   PUBLIC_IPV4: z.string().optional(),
