@@ -1,4 +1,3 @@
-import { lookup } from 'node:dns/promises';
 import { and, eq } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import { proxyHosts } from '@/db/schema/index.js';
@@ -9,21 +8,6 @@ const logger = createChildLogger('HealthCheckJob');
 const HEALTH_CHECK_TIMEOUT_MS = 10_000;
 
 type HealthStatus = 'online' | 'offline' | 'degraded' | 'unknown';
-
-/** Check if an IP address is in a private/reserved range */
-function isPrivateIP(ip: string): boolean {
-  // IPv4 private ranges
-  if (/^127\./.test(ip)) return true; // loopback
-  if (/^10\./.test(ip)) return true; // RFC 1918
-  if (/^172\.(1[6-9]|2\d|3[0-1])\./.test(ip)) return true; // RFC 1918
-  if (/^192\.168\./.test(ip)) return true; // RFC 1918
-  if (/^169\.254\./.test(ip)) return true; // link-local
-  if (/^0\./.test(ip)) return true; // current network
-  if (ip === '::1' || ip === '::') return true; // IPv6 loopback
-  if (/^f[cd]/i.test(ip)) return true; // IPv6 ULA
-  if (/^fe80:/i.test(ip)) return true; // IPv6 link-local
-  return false;
-}
 
 export class HealthCheckJob {
   constructor(private readonly db: DrizzleClient) {}
@@ -107,18 +91,6 @@ export class HealthCheckJob {
     const scheme = host.forwardScheme || 'http';
     const path = host.healthCheckUrl || '/';
     const url = `${scheme}://${host.forwardHost}:${host.forwardPort}${path}`;
-
-    // SSRF protection: resolve hostname and block private/internal IPs
-    try {
-      const resolved = await lookup(host.forwardHost);
-      if (isPrivateIP(resolved.address)) {
-        logger.debug(`Skipping health check for ${host.forwardHost}: resolves to private IP ${resolved.address}`);
-        return 'unknown';
-      }
-    } catch {
-      // DNS resolution failed — host unreachable
-      return 'offline';
-    }
 
     try {
       const controller = new AbortController();

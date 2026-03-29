@@ -71,8 +71,16 @@ export class NginxStatsService {
 
   /** Start background polling at 4s when no SSE clients are connected. */
   private startBackgroundPolling(): void {
-    // Initial fetch of process info
+    // Initial fetch of process info + first snapshot so history is never empty on connect
     this.refreshProcessInfo();
+    this.isAvailable().then(async (available) => {
+      if (available) {
+        try {
+          const snapshot = await this.getSnapshot();
+          this.pushHistory(snapshot);
+        } catch { /* container may be starting */ }
+      }
+    }).catch(() => {});
 
     this.backgroundInterval = setInterval(async () => {
       // Skip stats if SSE clients are already driving snapshots at 2s
