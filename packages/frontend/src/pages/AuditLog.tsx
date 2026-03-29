@@ -14,8 +14,9 @@ import { api } from "@/services/api";
 import type { AuditLogEntry } from "@/types";
 
 export function AuditLog() {
-  const [entries, setEntries] = useState<AuditLogEntry[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const cachedAudit = api.getCached<{ data: AuditLogEntry[]; pagination: { totalPages: number; total: number } }>("audit:list");
+  const [entries, setEntries] = useState<AuditLogEntry[]>(cachedAudit?.data ?? []);
+  const [isLoading, setIsLoading] = useState(!cachedAudit);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
@@ -24,7 +25,7 @@ export function AuditLog() {
 
   useEffect(() => {
     const load = async () => {
-      setIsLoading(true);
+      if (entries.length === 0) setIsLoading(true);
       try {
         const result = await api.getAuditLog({
           page,

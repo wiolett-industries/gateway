@@ -6,6 +6,7 @@ import { AccessLists } from "@/pages/AccessLists";
 import { AdminUsers } from "@/pages/AdminUsers";
 import { AuditLog } from "@/pages/AuditLog";
 import { AuthCallback } from "@/pages/AuthCallback";
+import { BlockedPage } from "@/pages/Blocked";
 import { CADetail } from "@/pages/CADetail";
 import { CAs } from "@/pages/CAs";
 import { CertificateDetail } from "@/pages/CertificateDetail";
@@ -30,6 +31,7 @@ export default function App() {
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/callback" element={<AuthCallback />} />
+            <Route path="/blocked" element={<BlockedPage />} />
             <Route element={<DashboardLayout />}>
               <Route path="/" element={<Dashboard />} />
               <Route path="/proxy-hosts" element={<ProxyHosts />} />

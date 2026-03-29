@@ -25,7 +25,8 @@ export const useCAStore = create<CAState>()((set, get) => ({
     const cached = api.getCached<CA[]>("cas:list");
     if (cached && get().cas.length === 0) set({ cas: cached });
 
-    set({ isLoading: true, error: null });
+    const hasData = get().cas.length > 0;
+    set({ isLoading: !hasData, error: null });
     try {
       const cas = await api.listCAs();
       api.setCache("cas:list", cas);

@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
 
-export type UserRole = 'admin' | 'operator' | 'viewer';
+export type UserRole = 'admin' | 'operator' | 'viewer' | 'blocked';
 
 export interface User {
   id: string;

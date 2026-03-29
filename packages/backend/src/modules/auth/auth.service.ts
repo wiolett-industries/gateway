@@ -264,6 +264,22 @@ export class AuthService {
     return this.mapDbUserToUser(updatedUser);
   }
 
+  async deleteUser(userId: string): Promise<void> {
+    // Destroy all sessions first
+    await this.sessionService.destroyAllUserSessions(userId);
+
+    const result = await this.db
+      .delete(users)
+      .where(eq(users.id, userId))
+      .returning({ id: users.id });
+
+    if (!result.length) {
+      throw new Error('User not found');
+    }
+
+    logger.info('User deleted', { userId });
+  }
+
   async validateSession(sessionId: string): Promise<User | null> {
     return this.sessionService.validateSession(sessionId);
   }

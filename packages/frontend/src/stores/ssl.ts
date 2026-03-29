@@ -70,7 +70,8 @@ export const useSSLStore = create<SSLState>()((set, get) => ({
       if (cached) set({ certificates: cached.data || [], total: cached.pagination?.total ?? 0, totalPages: cached.pagination?.totalPages ?? 0 });
     }
 
-    set({ isLoading: true, error: null });
+    const hasData = get().certificates.length > 0;
+    set({ isLoading: !hasData, error: null });
     try {
       const response = await api.listSSLCertificates({
         page,

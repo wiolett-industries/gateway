@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { CACreateDialog } from "@/components/ca/CACreateDialog";
 import { useUIStore } from "@/stores/ui";
+import { EmptyState } from "@/components/common/EmptyState";
 import { PageTransition } from "@/components/common/PageTransition";
 import { SearchFilterBar } from "@/components/common/SearchFilterBar";
 import { StatusBadge } from "@/components/common/StatusBadge";
@@ -80,9 +81,9 @@ export function CAs() {
 
   return (
     <PageTransition>
-      <div className="h-full overflow-y-auto p-6 space-y-2">
+      <div className="h-full overflow-y-auto p-6 space-y-4">
         {/* Header */}
-        <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h1 className="text-2xl font-bold">Certificate Authorities</h1>
             <p className="text-sm text-muted-foreground">
@@ -177,14 +178,13 @@ export function CAs() {
             </div>
           </div>
         ) : (
-          <div className="flex flex-col items-center gap-2 py-16 border border-border bg-card">
-            <p className="text-muted-foreground">No Certificate Authorities</p>
-            {hasActiveFilters && (
-              <Button variant="outline" size="sm" onClick={resetFilters}>
-                Clear filters
-              </Button>
-            )}
-          </div>
+          <EmptyState
+            message="No certificate authorities."
+            actionLabel="Create one"
+            onAction={() => { setCreateIntermediateParentId(undefined); setCreateDialogOpen(true); }}
+            hasActiveFilters={hasActiveFilters}
+            onReset={resetFilters}
+          />
         )}
 
         <CACreateDialog

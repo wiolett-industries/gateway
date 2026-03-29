@@ -1,7 +1,6 @@
 import {
   AlertTriangle,
   ArrowLeft,
-  Award,
   Copy,
   Download,
   MoreVertical,
@@ -16,6 +15,7 @@ import { toast } from "sonner";
 import { CACreateDialog } from "@/components/ca/CACreateDialog";
 import { CertificateIssueDialog } from "@/components/certificates/CertificateIssueDialog";
 import { confirm } from "@/components/common/ConfirmDialog";
+import { EmptyState } from "@/components/common/EmptyState";
 import { PageTransition } from "@/components/common/PageTransition";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { Badge } from "@/components/ui/badge";
@@ -350,10 +350,7 @@ export function CADetail() {
                   </table>
                 </div>
               ) : (
-                <div className="flex flex-col items-center gap-2 py-8">
-                  <Award className="h-8 w-8 text-muted-foreground" />
-                  <p className="text-sm text-muted-foreground">No certificates issued yet</p>
-                </div>
+                <EmptyState message="No certificates issued yet." actionLabel="Issue one" actionHref={`/certificates?ca=${ca.id}`} />
               )}
             </div>
           </div>

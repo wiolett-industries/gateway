@@ -90,6 +90,19 @@ export const optionalAuthMiddleware: MiddlewareHandler<AppEnv> = async (c, next)
 };
 
 /**
+ * Middleware that rejects blocked users. Apply to all API routes
+ * except /auth/me and /auth/logout (which must remain accessible
+ * so the frontend can detect blocked status and log out).
+ */
+export const requireActiveUser: MiddlewareHandler<AppEnv> = async (c, next) => {
+  const user = c.get('user');
+  if (user?.role === 'blocked') {
+    throw new HTTPException(403, { message: 'Account is blocked' });
+  }
+  await next();
+};
+
+/**
  * RBAC middleware — restricts access to specified roles.
  */
 export function rbacMiddleware(...allowedRoles: UserRole[]): MiddlewareHandler<AppEnv> {
@@ -97,6 +110,9 @@ export function rbacMiddleware(...allowedRoles: UserRole[]): MiddlewareHandler<A
     const user = c.get('user');
     if (!user) {
       throw new HTTPException(401, { message: 'Authentication required' });
+    }
+    if (user.role === 'blocked') {
+      throw new HTTPException(403, { message: 'Account is blocked' });
     }
     if (!allowedRoles.includes(user.role)) {
       throw new HTTPException(403, { message: 'Insufficient permissions' });

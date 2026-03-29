@@ -3,6 +3,7 @@ import { Minus, MoreVertical, Pencil, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
+import { EmptyState } from "@/components/common/EmptyState";
 import { PageTransition } from "@/components/common/PageTransition";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -40,8 +41,9 @@ interface BasicAuthInput {
 
 export function AccessLists() {
   const { hasRole } = useAuthStore();
-  const [accessLists, setAccessLists] = useState<AccessList[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const cachedAccessLists = api.getCached<{ data: AccessList[] }>("access-lists:list");
+  const [accessLists, setAccessLists] = useState<AccessList[]>(cachedAccessLists?.data ?? []);
+  const [isLoading, setIsLoading] = useState(!cachedAccessLists);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<AccessList | null>(null);
 
@@ -248,9 +250,7 @@ export function AccessLists() {
             </div>
           </div>
         ) : (
-          <div className="flex flex-col items-center gap-2 py-16 border border-border bg-card">
-            <p className="text-muted-foreground">No access lists yet</p>
-          </div>
+          <EmptyState message="No access lists." actionLabel="Create one" onAction={openCreate} />
         )}
 
         {/* Create/Edit Dialog */}

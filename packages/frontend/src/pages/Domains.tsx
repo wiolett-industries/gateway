@@ -2,6 +2,7 @@ import { ChevronLeft, ChevronRight, Globe, MoreVertical, Pencil, Plus, RefreshCw
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
+import { EmptyState } from "@/components/common/EmptyState";
 import { PageTransition } from "@/components/common/PageTransition";
 import { SearchFilterBar } from "@/components/common/SearchFilterBar";
 import { AddDomainDialog } from "@/components/domains/AddDomainDialog";
@@ -280,9 +281,11 @@ export function Domains() {
             )}
           </div>
         ) : (
-          <div className="flex flex-col items-center gap-2 py-16 border border-border bg-card">
-            <p className="text-muted-foreground">No domains yet</p>
-          </div>
+          <EmptyState
+            message="No domains."
+            actionLabel="Add one"
+            onAction={() => setAddDialogOpen(true)}
+          />
         )}
 
         <AddDomainDialog open={addDialogOpen} onOpenChange={setAddDialogOpen} onCreated={loadDomains} />

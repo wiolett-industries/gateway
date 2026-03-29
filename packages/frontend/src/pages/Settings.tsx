@@ -51,6 +51,8 @@ export function Settings() {
   // Update state (global store)
   const { status: updateStatus, isChecking, isUpdating, checkForUpdates, triggerUpdate, fetchStatus } = useUpdateStore();
   const [releaseNotesOpen, setReleaseNotesOpen] = useState(false);
+  const [releaseNotesList, setReleaseNotesList] = useState<string[] | null>(null);
+  const [releaseVersions, setReleaseVersions] = useState<string[] | null>(null);
   const isAdmin = hasRole("admin");
 
   // Housekeeping state
@@ -227,7 +229,7 @@ export function Settings() {
 
   return (
     <PageTransition>
-      <div className="h-full overflow-y-auto p-6 space-y-6">
+      <div className="h-full overflow-y-auto p-6 space-y-4">
         <div>
           <h1 className="text-2xl font-bold">Settings</h1>
           <p className="text-sm text-muted-foreground">Account and application settings</p>
@@ -493,7 +495,18 @@ export function Settings() {
               </div>
               <div className="flex items-center gap-2">
                 {updateStatus.releaseNotes && (
-                  <Button size="sm" variant="outline" onClick={() => setReleaseNotesOpen(true)}>
+                  <Button size="sm" variant="outline" onClick={async () => {
+                    setReleaseNotesOpen(true);
+                    try {
+                      const all = await api.getAllReleaseNotes();
+                      if (all.length > 0) {
+                        setReleaseVersions(all.map((r) => r.version));
+                        setReleaseNotesList(all.map((r) => r.notes));
+                      }
+                    } catch {
+                      // Fallback: just show the cached latest release notes
+                    }
+                  }}>
                     Release notes
                   </Button>
                 )}
@@ -597,19 +610,26 @@ export function Settings() {
 
         {/* Release Notes Dialog */}
         <Dialog open={releaseNotesOpen} onOpenChange={setReleaseNotesOpen}>
-          <DialogContent className="sm:max-w-lg max-h-[80vh] flex flex-col">
+          <DialogContent className="sm:max-w-lg">
             <DialogHeader>
-              <DialogTitle>Release Notes — {updateStatus?.latestVersion}</DialogTitle>
+              <DialogTitle>Release Notes</DialogTitle>
             </DialogHeader>
-            <div className="overflow-y-auto prose prose-sm dark:prose-invert max-w-none">
-              <Markdown>{updateStatus?.releaseNotes ?? ""}</Markdown>
+            <div className="prose prose-sm dark:prose-invert max-w-none">
+              {(releaseNotesList ?? [updateStatus?.releaseNotes]).filter(Boolean).map((notes, i) => (
+                <div key={i}>
+                  {releaseNotesList && releaseNotesList.length > 1 && (
+                    <h3 className="text-base font-semibold mt-0">{releaseVersions?.[i]}</h3>
+                  )}
+                  <Markdown>{notes ?? ""}</Markdown>
+                </div>
+              ))}
             </div>
           </DialogContent>
         </Dialog>
 
         {/* Housekeeping History Dialog */}
         <Dialog open={hkHistoryOpen} onOpenChange={setHkHistoryOpen}>
-          <DialogContent className="sm:max-w-2xl max-h-[80vh] flex flex-col">
+          <DialogContent className="sm:max-w-2xl">
             <DialogHeader>
               <DialogTitle>Run History</DialogTitle>
             </DialogHeader>

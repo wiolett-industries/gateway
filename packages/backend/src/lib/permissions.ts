@@ -1,6 +1,7 @@
 import type { UserRole } from '@/types.js';
 
 const ROLE_HIERARCHY: Record<UserRole, number> = {
+  blocked: -1,
   viewer: 0,
   operator: 1,
   admin: 2,

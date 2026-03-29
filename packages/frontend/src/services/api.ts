@@ -128,6 +128,9 @@ class ApiClient {
     // SSL Certificates
     quiet(this.listSSLCertificates({}).then((d) => this.setCache("ssl:list", d)));
 
+    // PKI Certificates
+    quiet(this.listCertificates({}).then((d) => this.setCache("certificates:list", d)));
+
     // Domains
     quiet(this.listDomains({}).then((d) => this.setCache("domains:list", d)));
 
@@ -211,6 +214,11 @@ class ApiClient {
       }
 
       if (response.status === 403) {
+        const body = await response.json().catch(() => ({ message: "" }));
+        if (body.message === "Account is blocked") {
+          window.location.href = "/blocked";
+          throw new Error("Account is blocked");
+        }
         throw new Error("Insufficient permissions");
       }
 
@@ -473,6 +481,10 @@ class ApiClient {
       method: "PATCH",
       body: JSON.stringify({ role }),
     });
+  }
+
+  async deleteUser(userId: string): Promise<void> {
+    await this.request(`/admin/users/${userId}`, { method: "DELETE" });
   }
 
   // ── Proxy Hosts ──────────────────────────────────────────────────
@@ -991,6 +1003,12 @@ class ApiClient {
       )
     );
     return result.notes;
+  }
+
+  async getAllReleaseNotes(): Promise<{ version: string; notes: string }[]> {
+    return this.unwrapData(
+      this.request<{ data: { version: string; notes: string }[] }>("/system/release-notes")
+    );
   }
 
   // ── Housekeeping ────────────────────────────────────────────────

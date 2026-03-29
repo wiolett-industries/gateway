@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
+import { EmptyState } from "@/components/common/EmptyState";
 import { PageTransition } from "@/components/common/PageTransition";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,8 +21,9 @@ import type { NginxTemplate } from "@/types";
 export function NginxTemplates() {
   const navigate = useNavigate();
   const { hasRole } = useAuthStore();
-  const [templates, setTemplates] = useState<NginxTemplate[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const cachedTemplates = api.getCached<NginxTemplate[]>("nginx-templates:list");
+  const [templates, setTemplates] = useState<NginxTemplate[]>(cachedTemplates ?? []);
+  const [isLoading, setIsLoading] = useState(!cachedTemplates);
 
   const load = async () => {
     try {
@@ -149,9 +151,7 @@ export function NginxTemplates() {
             ))}
           </div>
         ) : (
-          <div className="flex flex-col items-center gap-2 py-16 border border-border bg-card">
-            <p className="text-muted-foreground">No config templates yet</p>
-          </div>
+          <EmptyState message="No config templates." actionLabel="Create one" actionHref="/nginx-templates/new" />
         )}
       </div>
     </PageTransition>

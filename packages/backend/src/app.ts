@@ -10,6 +10,7 @@ import { secureHeaders } from 'hono/secure-headers';
 import { errorHandler } from '@/middleware/error-handler.js';
 import { loggerMiddleware } from '@/middleware/logger.js';
 import { rateLimitMiddleware } from '@/middleware/rate-limit.js';
+import { requireActiveUser } from '@/modules/auth/auth.middleware.js';
 import { accessListRoutes } from '@/modules/access-lists/access-list.routes.js';
 import { adminRoutes } from '@/modules/admin/admin.routes.js';
 import { domainRoutes } from '@/modules/domains/domain.routes.js';
@@ -53,6 +54,10 @@ export function createApp() {
 
   // Rate limiting for API routes
   app.use('/api/*', rateLimitMiddleware);
+
+  // Block users with "blocked" role from all API endpoints
+  // (auth routes /auth/me and /auth/logout remain accessible)
+  app.use('/api/*', requireActiveUser);
 
   // Error handler
   app.onError(errorHandler);

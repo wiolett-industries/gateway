@@ -22,6 +22,13 @@
       "when": 1774751823793,
       "tag": "0002_gateway_full_schema",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1774838400000,
+      "tag": "0003_add_blocked_role",
+      "breakpoints": true
     }
   ]
 }

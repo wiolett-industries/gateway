@@ -128,6 +128,7 @@ monitoringRoutes.get('/nginx/stats/stream', async (c) => {
 
     const history = nginxStatsService.getHistory();
 
+    // Send connected event immediately — sleep(0) forces flush
     await stream.writeSSE({
       data: JSON.stringify({
         connected: true,
@@ -137,6 +138,19 @@ monitoringRoutes.get('/nginx/stats/stream', async (c) => {
       }),
       event: 'connected',
     });
+    await stream.sleep(0);
+
+    // Send first fresh snapshot immediately without waiting for poll interval
+    try {
+      const snapshot = await nginxStatsService.getSnapshot();
+      nginxStatsService.pushHistory(snapshot);
+      await stream.writeSSE({
+        data: JSON.stringify(snapshot),
+        event: 'stats',
+      });
+    } catch {
+      // Container may not be available yet — will retry in poll loop
+    }
 
     let running = true;
 
