@@ -373,8 +373,8 @@ services:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health || exit 1"]
       interval: 10s
       timeout: 5s
-      retries: 5
-      start_period: 15s
+      retries: 10
+      start_period: 30s
 
   nginx:
     image: nginx:1.27-alpine
@@ -621,8 +621,8 @@ start_services() {
     info "Starting services..."
     run_quiet docker compose up -d
 
-    info "Waiting for services to become healthy..."
-    local retries=30
+    info "Waiting for services to become healthy (this may take a minute on first start)..."
+    local retries=60
     local port="${APP_PORT:-3000}"
     printf "  "
     while [ $retries -gt 0 ]; do
@@ -631,13 +631,13 @@ start_services() {
         fi
         retries=$((retries - 1))
         printf "."
-        sleep 2
+        sleep 3
     done
     echo ""
 
     if [ $retries -eq 0 ]; then
         echo ""
-        warn "Services did not become healthy within 60 seconds."
+        warn "Services did not become healthy within 3 minutes."
         echo -e "  ${GRAY}Check logs:  docker compose logs${NC}"
         echo -e "  ${GRAY}Retry:       docker compose up -d${NC}"
         exit 1
