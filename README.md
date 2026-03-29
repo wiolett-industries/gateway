@@ -6,6 +6,27 @@ Self-hosted certificate manager and reverse proxy gateway.
 
 Gateway combines a full PKI (Certificate Authority) infrastructure with a reverse proxy manager — think Nginx Proxy Manager with a built-in CA. Issue and manage TLS certificates, configure proxy hosts, handle SSL termination, and monitor everything from a single interface.
 
+## Screenshots
+
+<table>
+<tr>
+<td align="center"><strong>Dashboard</strong></td>
+<td align="center"><strong>Nginx Monitoring</strong></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/dashboard.png" width="450" alt="Dashboard"></td>
+<td><img src="docs/screenshots/nginx-monitoring.png" width="450" alt="Nginx Monitoring"></td>
+</tr>
+<tr>
+<td align="center"><strong>Proxy Host Config</strong></td>
+<td align="center"><strong>Settings</strong></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/proxy-host.png" width="450" alt="Proxy Host Config"></td>
+<td><img src="docs/screenshots/settings.png" width="450" alt="Settings"></td>
+</tr>
+</table>
+
 ## Features
 
 **Reverse Proxy**
