@@ -252,7 +252,8 @@ function SidebarContent({
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-8 w-8 text-amber-600 dark:text-amber-400"
+                    className="h-8 w-8"
+                    style={{ backgroundColor: "rgb(234 179 8)", color: "#111" }}
                     onClick={() => navigate("/settings")}
                   >
                     <ArrowUpCircle className="h-4 w-4" />
@@ -416,16 +417,20 @@ function SidebarContent({
 
             {/* Update notification */}
             {updateAvailable && isAdmin && (
-              <div className="px-2 pt-2">
-                <Link
-                  to="/settings"
-                  onClick={onNavigate}
-                  className="flex items-center gap-2 px-3 py-2 text-sm bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 transition-colors"
-                >
-                  <ArrowUpCircle className="h-4 w-4 shrink-0" />
-                  <span className="truncate">Update available</span>
-                </Link>
-              </div>
+              <>
+                <div className="px-2 py-2">
+                  <Link
+                    to="/settings"
+                    onClick={onNavigate}
+                    className="flex items-center gap-2 px-3 py-2 text-sm font-medium transition-colors"
+                    style={{ backgroundColor: "rgb(234 179 8)", color: "#111" }}
+                  >
+                    <ArrowUpCircle className="h-4 w-4 shrink-0" />
+                    <span className="truncate">Update available</span>
+                  </Link>
+                </div>
+                <Separator />
+              </>
             )}
 
             {/* Account at bottom */}

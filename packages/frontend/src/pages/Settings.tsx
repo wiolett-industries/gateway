@@ -1,4 +1,5 @@
-import { ChevronDown, ChevronUp, Copy, Key, Loader2, Moon, Plus, RefreshCw, Sun, Trash2 } from "lucide-react";
+import { Copy, Key, Loader2, Moon, Plus, RefreshCw, Sun, Trash2 } from "lucide-react";
+import Markdown from "react-markdown";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
@@ -47,7 +48,7 @@ export function Settings() {
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
   const [isChecking, setIsChecking] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
-  const [showReleaseNotes, setShowReleaseNotes] = useState(false);
+  const [releaseNotesOpen, setReleaseNotesOpen] = useState(false);
   const isAdmin = hasRole("admin");
   const updatePollRef = useRef<ReturnType<typeof setInterval>>(undefined);
   const updateTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -305,6 +306,41 @@ export function Settings() {
           </div>
         </div>
 
+        {/* Update available */}
+        {updateStatus?.updateAvailable && updateStatus.latestVersion && (
+          <div className="border bg-card" style={{ borderColor: "rgb(234 179 8 / 0.6)" }}>
+            <div className="flex items-center justify-between border-b border-border p-4">
+              <div>
+                <h2 className="font-semibold" style={{ color: "rgb(234 179 8)" }}>Update Available</h2>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {updateStatus.latestVersion} is ready to install
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                {updateStatus.releaseNotes && (
+                  <Button size="sm" variant="outline" onClick={() => setReleaseNotesOpen(true)}>
+                    Release notes
+                  </Button>
+                )}
+                {isAdmin && (
+                  <Button
+                    size="sm"
+                    onClick={handleUpdate}
+                    style={{ backgroundColor: "rgb(234 179 8)", color: "#111" }}
+                    className="hover:opacity-90"
+                  >
+                    Update to {updateStatus.latestVersion}
+                  </Button>
+                )}
+              </div>
+            </div>
+            <div className="p-4 space-y-3">
+              <InfoRow label="Current version" value={updateStatus.currentVersion} />
+              <InfoRow label="New version" value={updateStatus.latestVersion} />
+            </div>
+          </div>
+        )}
+
         {/* About */}
         <div className="border border-border bg-card">
           <div className="flex items-center justify-between border-b border-border p-4">
@@ -355,49 +391,6 @@ export function Settings() {
                 />
               )}
             </div>
-
-            {/* Update available section */}
-            {updateStatus?.updateAvailable && updateStatus.latestVersion && (
-              <div className="border border-amber-500/30 bg-amber-500/5 p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium">
-                      {updateStatus.latestVersion} is available
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      You are running {updateStatus.currentVersion}
-                    </p>
-                  </div>
-                  {isAdmin && (
-                    <Button size="sm" onClick={handleUpdate}>
-                      Update to {updateStatus.latestVersion}
-                    </Button>
-                  )}
-                </div>
-
-                {/* Release notes */}
-                {updateStatus.releaseNotes && (
-                  <div>
-                    <button
-                      className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                      onClick={() => setShowReleaseNotes(!showReleaseNotes)}
-                    >
-                      {showReleaseNotes ? (
-                        <ChevronUp className="h-3 w-3" />
-                      ) : (
-                        <ChevronDown className="h-3 w-3" />
-                      )}
-                      Release notes
-                    </button>
-                    {showReleaseNotes && (
-                      <pre className="mt-2 text-xs text-muted-foreground whitespace-pre-wrap bg-muted/50 p-3 max-h-64 overflow-y-auto">
-                        {updateStatus.releaseNotes}
-                      </pre>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         </div>
 
@@ -425,6 +418,18 @@ export function Settings() {
             Wiolett
           </a>
         </p>
+
+        {/* Release Notes Dialog */}
+        <Dialog open={releaseNotesOpen} onOpenChange={setReleaseNotesOpen}>
+          <DialogContent className="sm:max-w-lg max-h-[80vh] flex flex-col">
+            <DialogHeader>
+              <DialogTitle>Release Notes — {updateStatus?.latestVersion}</DialogTitle>
+            </DialogHeader>
+            <div className="overflow-y-auto prose prose-sm dark:prose-invert max-w-none">
+              <Markdown>{updateStatus?.releaseNotes ?? ""}</Markdown>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {/* Create Token Dialog */}
         <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
