@@ -207,8 +207,15 @@ const BUILTIN_DEAD_TEMPLATE = `server {
     access_log {{logPath}}.access.log;
     error_log {{logPath}}.error.log warn;
 
+    root /usr/share/nginx/html;
+    error_page 404 /404.html;
+
     location / {
         return 404;
+    }
+
+    location = /404.html {
+        internal;
     }
 }
 {{#if sslEnabled}}
@@ -234,8 +241,15 @@ server {
     access_log {{logPath}}.access.log;
     error_log {{logPath}}.error.log warn;
 
+    root /usr/share/nginx/html;
+    error_page 404 /404.html;
+
     location / {
         return 404;
+    }
+
+    location = /404.html {
+        internal;
     }
 }
 {{/if}}
