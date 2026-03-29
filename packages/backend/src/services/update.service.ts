@@ -168,12 +168,13 @@ export class UpdateService {
     // 1. Self-inspect to discover compose context
     const selfInfo = await this.dockerService.inspectSelf();
     const labels = selfInfo.Config.Labels;
-    const composeDir = labels['com.docker.compose.project.working_dir'];
 
+    // Prefer COMPOSE_PROJECT_DIR env var (set by install script) over Docker label
+    const composeDir = this.env.COMPOSE_PROJECT_DIR || labels['com.docker.compose.project.working_dir'];
     const composeProject = labels['com.docker.compose.project'];
 
     if (!composeDir) {
-      throw new Error('Cannot determine compose project directory from container labels');
+      throw new Error('Cannot determine compose project directory');
     }
     if (!composeProject) {
       throw new Error('Cannot determine compose project name from container labels');

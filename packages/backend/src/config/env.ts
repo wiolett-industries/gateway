@@ -31,6 +31,9 @@ const envSchema = z.object({
   APP_VERSION: z.string().default('dev'),
   BIND_HOST: z.string().default('0.0.0.0'),
 
+  // Compose project dir (for self-update sidecar)
+  COMPOSE_PROJECT_DIR: z.string().optional(),
+
   // Updates
   GITLAB_API_URL: z.string().default('https://gitlab.wiolett.net'),
   GITLAB_PROJECT_PATH: z.string().default('wiolett/gateway'),
