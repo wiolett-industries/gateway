@@ -9,11 +9,25 @@ import '@/services/cache.service.js';
 import '@/services/session.service.js';
 import '@/modules/auth/auth.service.js';
 
+import { resolve } from 'node:path';
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { migrate } from 'drizzle-orm/node-postgres/migrator';
+import pg from 'pg';
+
 import { createApp } from '@/app.js';
 import { container, initializeContainer } from '@/bootstrap.js';
 import { getEnv } from '@/config/env.js';
 import { logger } from '@/lib/logger.js';
 import { SchedulerService } from '@/services/scheduler.service.js';
+
+async function runMigrations(databaseUrl: string) {
+  logger.info('Running database migrations...');
+  const pool = new pg.Pool({ connectionString: databaseUrl });
+  const db = drizzle(pool);
+  await migrate(db, { migrationsFolder: resolve('src/db/migrations') });
+  await pool.end();
+  logger.info('Database migrations completed');
+}
 
 async function main() {
   try {
@@ -23,6 +37,9 @@ async function main() {
       nodeEnv: env.NODE_ENV,
       port: env.PORT,
     });
+
+    // Run database migrations before anything else
+    await runMigrations(env.DATABASE_URL);
 
     // Initialize dependency injection container
     await initializeContainer();
