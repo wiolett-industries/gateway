@@ -54,6 +54,7 @@ export interface HousekeepingStats {
   acmeChallenges: { fileCount: number; totalSizeBytes: number };
   dockerImages: { oldImageCount: number; reclaimableBytes: number };
   lastRun: HousekeepingRunResult | null;
+  isRunning: boolean;
 }
 
 // ── Settings Keys ───────────────────────────────────────────────────
@@ -182,7 +183,7 @@ export class HousekeepingService {
         this.getLastRunResult(),
       ]);
 
-    return { nginxLogs, auditLog: auditLogStats, dismissedAlerts: alertStats, orphanedCerts, acmeChallenges: acme, dockerImages: docker, lastRun };
+    return { nginxLogs, auditLog: auditLogStats, dismissedAlerts: alertStats, orphanedCerts, acmeChallenges: acme, dockerImages: docker, lastRun, isRunning: this.running };
   }
 
   // ── Run All ─────────────────────────────────────────────────────

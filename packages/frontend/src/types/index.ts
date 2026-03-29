@@ -646,4 +646,5 @@ export interface HousekeepingStats {
   acmeChallenges: { fileCount: number; totalSizeBytes: number };
   dockerImages: { oldImageCount: number; reclaimableBytes: number };
   lastRun: HousekeepingRunResult | null;
+  isRunning: boolean;
 }
