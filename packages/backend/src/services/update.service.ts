@@ -168,8 +168,13 @@ export class UpdateService {
     const labels = selfInfo.Config.Labels;
     const composeDir = labels['com.docker.compose.project.working_dir'];
 
+    const composeProject = labels['com.docker.compose.project'];
+
     if (!composeDir) {
       throw new Error('Cannot determine compose project directory from container labels');
+    }
+    if (!composeProject) {
+      throw new Error('Cannot determine compose project name from container labels');
     }
 
     // Determine the image to pull from the current container's image name
@@ -180,7 +185,7 @@ export class UpdateService {
       ? currentImage.substring(0, currentImage.lastIndexOf(':'))
       : currentImage;
 
-    logger.info('Update context', { composeDir, imageBase, targetVersion });
+    logger.info('Update context', { composeDir, composeProject, imageBase, targetVersion });
 
     // 2. Pull the new gateway image
     const tag = targetVersion.startsWith('v') ? targetVersion : `v${targetVersion}`;
@@ -218,7 +223,7 @@ export class UpdateService {
       Image: 'docker:27-cli',
       Cmd: [
         'sh', '-c',
-        `sleep 2 && docker compose -f /project/docker-compose.yml up -d app`,
+        `sleep 2 && docker compose --project-name ${composeProject} -f /project/docker-compose.yml up -d app`,
       ],
       HostConfig: {
         Binds: [
