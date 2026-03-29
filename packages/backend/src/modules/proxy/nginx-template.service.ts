@@ -334,6 +334,12 @@ export class NginxTemplateService {
           isBuiltin: true,
         });
         logger.info('Seeded built-in nginx template', { name: template.name });
+      } else if (existing.content !== template.content) {
+        await this.db
+          .update(nginxTemplates)
+          .set({ content: template.content, updatedAt: new Date() })
+          .where(eq(nginxTemplates.id, existing.id));
+        logger.info('Updated built-in nginx template', { name: template.name });
       }
     }
   }
