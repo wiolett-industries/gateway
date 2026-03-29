@@ -170,4 +170,10 @@ pnpm dev:all          # Start backend + frontend dev servers
 
 ## License
 
-Proprietary. Copyright Wiolett.
+Licensed under the [PolyForm Small Business License 1.0.0](LICENSE).
+
+- Free for personal use, nonprofits, and small businesses (<10 people, <$100K revenue)
+- Larger commercial use requires a separate license — contact [contact@wiolett.net](mailto:contact@wiolett.net)
+- Attribution required — retain all copyright notices and credits
+
+Copyright (c) 2021-2026 [Wiolett](https://wiolett.net)
