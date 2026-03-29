@@ -778,11 +778,12 @@ console.log(JSON.stringify(d));
             sed -i "s|^APP_URL=http://.*|APP_URL=https://${domain}|" .env
             APP_URL="https://${domain}"
         fi
-        sed -i "s|^BIND_HOST=.*|BIND_HOST=127.0.0.1|" .env
-        info "Backend bound to localhost (nginx handles external traffic)"
+        # Restrict app port to localhost on host (nginx handles external traffic)
+        sed -i 's|0\.0\.0\.0:\${APP_PORT:-3000}:3000|127.0.0.1:${APP_PORT:-3000}:3000|' docker-compose.yml
+        info "App port restricted to localhost on host (nginx handles external traffic)"
 
-        # Restart app to pick up BIND_HOST change
-        docker compose restart app >>"$LOG_FILE" 2>&1 || true
+        # Recreate app with updated port binding
+        run_quiet docker compose up -d app
     else
         local response
         response=$(cat /tmp/gateway_ssl_response.json 2>/dev/null || echo "No response")
