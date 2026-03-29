@@ -249,7 +249,7 @@ gather_config() {
     if [ "$DOMAIN" = "localhost" ]; then
         ACME_STAGING="true"
     else
-        if prompt_yes_no "Use Let's Encrypt staging? (recommended for first deploy)" "N"; then
+        if prompt_yes_no "Use Let's Encrypt staging? (for testing only, not valid certs)" "N"; then
             ACME_STAGING="true"
         else
             ACME_STAGING="false"
