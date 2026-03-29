@@ -21,9 +21,14 @@ export const useCAStore = create<CAState>()((set, get) => ({
   error: null,
 
   fetchCAs: async () => {
+    // Show cached data instantly
+    const cached = api.getCached<CA[]>("cas:list");
+    if (cached && get().cas.length === 0) set({ cas: cached });
+
     set({ isLoading: true, error: null });
     try {
       const cas = await api.listCAs();
+      api.setCache("cas:list", cas);
       set({ cas, isLoading: false });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to fetch CAs";

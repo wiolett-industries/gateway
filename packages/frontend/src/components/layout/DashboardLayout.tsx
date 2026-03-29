@@ -518,6 +518,8 @@ export function DashboardLayout() {
       try {
         const user = await api.getCurrentUser();
         setUser(user);
+        // Prefetch data for all pages in background
+        api.prefetchAll(user.role === "admin");
       } catch {
         logout();
         navigate("/login");
