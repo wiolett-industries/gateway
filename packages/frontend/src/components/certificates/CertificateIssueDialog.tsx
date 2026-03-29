@@ -130,12 +130,11 @@ export function CertificateIssueDialog({
 
   const activeCAs = (cas || []).filter((ca) => ca.status === "active");
   const sansRequired = type === "tls-server" || type === "email";
-  const hasSans = sans.length > 0 || sanInput.trim() !== "";
   const step2Valid =
     commonName.trim() !== "" &&
     validityDays >= 1 &&
     validityDays <= 3650 &&
-    (!sansRequired || hasSans);
+    (!sansRequired || sans.length > 0);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -256,7 +255,7 @@ export function CertificateIssueDialog({
                 Subject Alternative Names
                 {sansRequired && <span className="text-destructive ml-1">*</span>}
               </label>
-              {sansRequired && !hasSans && (
+              {sansRequired && sans.length === 0 && (
                 <p className="text-xs text-destructive">
                   At least one SAN is required for {type} certificates
                 </p>
@@ -362,7 +361,7 @@ export function CertificateIssueDialog({
           {step < 3 ? (
             <Button
               disabled={(step === 1 && !selectedCAId) || (step === 2 && !step2Valid)}
-              onClick={() => { addSAN(); setStep(step + 1); }}
+              onClick={() => setStep(step + 1)}
             >
               Next
               <ChevronRight className="h-4 w-4" />
