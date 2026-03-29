@@ -67,12 +67,13 @@ services:
       - acme_challenge:/var/www/acme-challenge
     depends_on:
       app:
-        condition: service_healthy
+        condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost/health || exit 1"]
       interval: 10s
       timeout: 5s
-      retries: 3
+      retries: 5
+      start_period: 30s
 
   postgres:
     image: postgres:16-alpine
