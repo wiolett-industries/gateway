@@ -164,7 +164,27 @@ class ApiClient {
 
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const url = endpoint.startsWith("/auth") ? endpoint : `${API_BASE}${endpoint}`;
+    const method = (options.method || "GET").toUpperCase();
 
+    // For GET requests: return cached data if fresh, refresh in background
+    if (method === "GET") {
+      const cacheKey = `req:${url}`;
+      const cached = this.getCached<T>(cacheKey);
+      if (cached !== undefined) {
+        // Refresh in background
+        this.fetchRaw<T>(url, options).then((data) => this.setCache(cacheKey, data)).catch(() => {});
+        return cached;
+      }
+      // No cache — fetch and cache
+      const data = await this.fetchRaw<T>(url, options);
+      this.setCache(cacheKey, data);
+      return data;
+    }
+
+    return this.fetchRaw<T>(url, options);
+  }
+
+  private async fetchRaw<T>(url: string, options: RequestInit = {}): Promise<T> {
     const response = await fetch(url, {
       ...options,
       headers: {

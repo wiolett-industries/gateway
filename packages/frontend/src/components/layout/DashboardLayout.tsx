@@ -132,6 +132,7 @@ function SidebarContent({
 
   const [nginxAvailable, setNginxAvailable] = useState(false);
   const updateAvailable = useUpdateStore((s) => s.status?.updateAvailable ?? false);
+  const showUpdateNotifications = useUIStore((s) => s.showUpdateNotifications);
 
   useEffect(() => {
     const check = () => api.checkNginxAvailable().then(setNginxAvailable);
@@ -236,7 +237,7 @@ function SidebarContent({
 
             <div className="flex-1" />
 
-            {updateAvailable && isAdmin && (
+            {updateAvailable && isAdmin && showUpdateNotifications && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
@@ -406,7 +407,7 @@ function SidebarContent({
             <Separator />
 
             {/* Update notification */}
-            {updateAvailable && isAdmin && (
+            {updateAvailable && isAdmin && showUpdateNotifications && (
               <>
                 <div className="px-2 py-2">
                   <Link
@@ -521,7 +522,8 @@ export function DashboardLayout() {
     };
 
     checkAuth();
-  }, [setUser, setLoading, logout, navigate]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     const checkMobile = () => {
