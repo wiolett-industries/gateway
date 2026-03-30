@@ -1,21 +1,10 @@
 import { Hono } from 'hono';
-import { HTTPException } from 'hono/http-exception';
-import type { MiddlewareHandler } from 'hono';
 import { container } from '@/container.js';
-import { authMiddleware, rbacMiddleware } from '@/modules/auth/auth.middleware.js';
+import { authMiddleware, rbacMiddleware, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import { AISettingsService } from './ai.settings.service.js';
 import { AIConfigUpdateSchema } from './ai.schemas.js';
 import { AI_TOOLS } from './ai.tools.js';
 import type { AppEnv } from '@/types.js';
-
-/** Block API tokens from accessing AI endpoints — session auth only. */
-const sessionOnly: MiddlewareHandler<AppEnv> = async (c, next) => {
-  const auth = c.req.header('Authorization');
-  if (auth?.startsWith('Bearer gw_')) {
-    throw new HTTPException(403, { message: 'AI endpoints require session authentication. API tokens are not allowed.' });
-  }
-  await next();
-};
 
 export const aiRoutes = new Hono<AppEnv>();
 

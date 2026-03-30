@@ -32,7 +32,8 @@ export interface AppEnv {
 export type AuthenticatedContext = Context<AppEnv> & {
   var: {
     user: User;
-    sessionId: string;
+    sessionId?: string;
+    tokenScopes?: string[];
     requestId: string;
   };
 };

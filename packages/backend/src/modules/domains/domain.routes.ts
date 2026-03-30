@@ -1,6 +1,6 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
-import { authMiddleware } from '@/modules/auth/auth.middleware.js';
+import { authMiddleware, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import { SSLService } from '@/modules/ssl/ssl.service.js';
 import type { AppEnv } from '@/types.js';
 import { CreateDomainSchema, DomainListQuerySchema, UpdateDomainSchema } from './domain.schemas.js';
@@ -9,6 +9,7 @@ import { DomainsService } from './domain.service.js';
 export const domainRoutes = new OpenAPIHono<AppEnv>();
 
 domainRoutes.use('*', authMiddleware);
+domainRoutes.use('*', sessionOnly);
 
 // List domains (paginated)
 domainRoutes.get('/', async (c) => {

@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
 import { createChildLogger } from '@/lib/logger.js';
-import { authMiddleware, rbacMiddleware } from '@/modules/auth/auth.middleware.js';
+import { authMiddleware, rbacMiddleware, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import { UpdateService } from '@/services/update.service.js';
 import type { AppEnv } from '@/types.js';
 
@@ -11,6 +11,7 @@ const logger = createChildLogger('SystemRoutes');
 export const systemRoutes = new OpenAPIHono<AppEnv>();
 
 systemRoutes.use('*', authMiddleware);
+systemRoutes.use('*', sessionOnly);
 
 // GET /version — current version + cached update status (any authenticated user)
 systemRoutes.get('/version', async (c) => {

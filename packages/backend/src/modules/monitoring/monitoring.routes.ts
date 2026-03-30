@@ -4,7 +4,7 @@ import { createChildLogger } from '@/lib/logger.js';
 const logger = createChildLogger('MonitoringRoutes');
 import { streamSSE } from 'hono/streaming';
 import { container } from '@/container.js';
-import { authMiddleware } from '@/modules/auth/auth.middleware.js';
+import { authMiddleware, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import { LogStreamService } from './log-stream.service.js';
 import { MonitoringService } from './monitoring.service.js';
@@ -14,6 +14,7 @@ import { NginxStatsService } from './nginx-stats.service.js';
 export const monitoringRoutes = new OpenAPIHono<AppEnv>();
 
 monitoringRoutes.use('*', authMiddleware);
+monitoringRoutes.use('*', sessionOnly);
 
 // Dashboard stats — aggregate counts for proxy hosts, SSL certs, PKI certs, CAs
 monitoringRoutes.get('/dashboard', async (c) => {

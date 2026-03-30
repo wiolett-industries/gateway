@@ -1,6 +1,6 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
-import { authMiddleware, rbacMiddleware } from '@/modules/auth/auth.middleware.js';
+import { authMiddleware, rbacMiddleware, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import {
   LinkInternalCertSchema,
@@ -13,6 +13,7 @@ import { SSLService } from './ssl.service.js';
 export const sslRoutes = new OpenAPIHono<AppEnv>();
 
 sslRoutes.use('*', authMiddleware);
+sslRoutes.use('*', sessionOnly);
 
 // List SSL certificates (paginated, filterable)
 sslRoutes.get('/', async (c) => {

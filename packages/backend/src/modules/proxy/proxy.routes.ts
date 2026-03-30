@@ -1,7 +1,7 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
 import { AppError } from '@/middleware/error-handler.js';
-import { authMiddleware, rbacMiddleware } from '@/modules/auth/auth.middleware.js';
+import { authMiddleware, rbacMiddleware, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import {
   CreateProxyHostSchema,
@@ -15,6 +15,7 @@ import { ProxyService } from './proxy.service.js';
 export const proxyRoutes = new OpenAPIHono<AppEnv>();
 
 proxyRoutes.use('*', authMiddleware);
+proxyRoutes.use('*', sessionOnly);
 
 // List proxy hosts (any authenticated role)
 proxyRoutes.get('/', async (c) => {

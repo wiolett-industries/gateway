@@ -1,5 +1,6 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
+import { sanitizeFilename } from '@/lib/utils.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
 import { authMiddleware, rbacMiddleware, requireScope } from '@/modules/auth/auth.middleware.js';
 import { CryptoService } from '@/services/crypto.service.js';
@@ -56,7 +57,7 @@ caRoutes.post('/:id/intermediate', rbacMiddleware('admin'), requireScope('ca:cre
 });
 
 // Update CA settings (admin only)
-caRoutes.put('/:id', rbacMiddleware('admin'), requireScope('ca:read'), async (c) => {
+caRoutes.put('/:id', rbacMiddleware('admin'), requireScope('ca:create:root'), async (c) => {
   const caService = container.resolve(CAService);
   const user = c.get('user')!;
   const id = c.req.param('id');
@@ -87,7 +88,7 @@ caRoutes.delete('/:id', rbacMiddleware('admin'), requireScope('ca:revoke'), asyn
 });
 
 // Export CA private key (admin only)
-caRoutes.post('/:id/export-key', rbacMiddleware('admin'), requireScope('ca:revoke'), async (c) => {
+caRoutes.post('/:id/export-key', rbacMiddleware('admin'), requireScope('ca:create:root'), async (c) => {
   const caService = container.resolve(CAService);
   const _cryptoService = container.resolve(CryptoService);
   const exportService = container.resolve(ExportService);
@@ -112,13 +113,13 @@ caRoutes.post('/:id/export-key', rbacMiddleware('admin'), requireScope('ca:revok
   return new Response(p12, {
     headers: {
       'Content-Type': 'application/x-pkcs12',
-      'Content-Disposition': `attachment; filename="${ca.commonName}.p12"`,
+      'Content-Disposition': `attachment; filename="${sanitizeFilename(ca.commonName)}.p12"`,
     },
   });
 });
 
 // Generate OCSP responder cert (admin only)
-caRoutes.post('/:id/ocsp-responder', rbacMiddleware('admin'), requireScope('ca:read'), async (c) => {
+caRoutes.post('/:id/ocsp-responder', rbacMiddleware('admin'), requireScope('ca:create:root'), async (c) => {
   const ocspService = container.resolve(OCSPService);
   const id = c.req.param('id');
   await ocspService.generateOCSPResponderCert(id);
