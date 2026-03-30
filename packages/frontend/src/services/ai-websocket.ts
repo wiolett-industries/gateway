@@ -151,12 +151,18 @@ export class AIWebSocketClient {
   }
 
   private stopPingPong(): void {
-    if (this.pingTimer) { clearInterval(this.pingTimer); this.pingTimer = null; }
+    if (this.pingTimer) {
+      clearInterval(this.pingTimer);
+      this.pingTimer = null;
+    }
     this.clearPongTimeout();
   }
 
   private clearPongTimeout(): void {
-    if (this.pongTimer) { clearTimeout(this.pongTimer); this.pongTimer = null; }
+    if (this.pongTimer) {
+      clearTimeout(this.pongTimer);
+      this.pongTimer = null;
+    }
   }
 
   private handlePongTimeout(): void {
@@ -184,7 +190,10 @@ export class AIWebSocketClient {
   }
 
   private clearReconnectTimer(): void {
-    if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
   }
 
   // ── Helpers ──
@@ -202,7 +211,11 @@ export class AIWebSocketClient {
       this.ws.onmessage = null;
       this.ws.onerror = null;
       this.ws.onclose = null;
-      try { this.ws.close(); } catch { /* ignore */ }
+      try {
+        this.ws.close();
+      } catch {
+        /* ignore */
+      }
       this.ws = null;
     }
   }

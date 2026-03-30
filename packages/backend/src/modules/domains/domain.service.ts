@@ -91,9 +91,7 @@ export class DomainsService {
     });
 
     // Fire-and-forget DNS check
-    this.checkDns(row.id).catch((err) =>
-      logger.warn('Initial DNS check failed', { id: row.id, error: err.message })
-    );
+    this.checkDns(row.id).catch((err) => logger.warn('Initial DNS check failed', { id: row.id, error: err.message }));
 
     return row;
   }
@@ -202,9 +200,7 @@ export class DomainsService {
           enabled: proxyHosts.enabled,
         })
         .from(proxyHosts)
-        .where(
-          sql`${proxyHosts.domainNames} @> ${jsonContains} OR ${proxyHosts.domainNames} @> ${wildcardContains}`
-        ),
+        .where(sql`${proxyHosts.domainNames} @> ${jsonContains} OR ${proxyHosts.domainNames} @> ${wildcardContains}`),
       this.db
         .select({
           id: sslCertificates.id,

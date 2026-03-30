@@ -329,7 +329,10 @@ export function CodeEditor({
     <div
       ref={containerRef}
       className={`border border-border overflow-hidden flex-1 min-h-0 ${className}`}
-      style={{ minHeight: height ? undefined : minHeight, ...(height && height !== "100%" ? { height } : {}) }}
+      style={{
+        minHeight: height ? undefined : minHeight,
+        ...(height && height !== "100%" ? { height } : {}),
+      }}
     />
   );
 }

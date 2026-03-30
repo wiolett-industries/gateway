@@ -3,14 +3,13 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { PageTransition } from "@/components/common/PageTransition";
 import { Badge } from "@/components/ui/badge";
-import type { HealthStatus } from "@/types";
 import { cn, daysUntil, formatDate, formatRelativeDate, formatTimeLeft } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useCAStore } from "@/stores/ca";
 import { useUIStore } from "@/stores/ui";
 import { useUpdateStore } from "@/stores/update";
-import type { AuditLogEntry, DashboardStats, ProxyHost } from "@/types";
+import type { AuditLogEntry, DashboardStats, HealthStatus, ProxyHost } from "@/types";
 
 interface ExpiringItem {
   id: string;
@@ -75,18 +74,29 @@ export function Dashboard() {
 
     // Use cached stats immediately, then refetch
     const cachedStats = api.getCached<DashboardStats>("dashboard:stats");
-    if (cachedStats) { setStats(cachedStats); setStatsLoading(false); }
+    if (cachedStats) {
+      setStats(cachedStats);
+      setStatsLoading(false);
+    }
     api
       .getDashboardStats()
-      .then((data) => { api.setCache("dashboard:stats", data); setStats(data); })
-      .catch(() => { setStats(null); })
+      .then((data) => {
+        api.setCache("dashboard:stats", data);
+        setStats(data);
+      })
+      .catch(() => {
+        setStats(null);
+      })
       .finally(() => setStatsLoading(false));
 
     const cachedHealth = api.getCached<ProxyHost[]>("dashboard:health");
     if (cachedHealth) setHealthHosts(cachedHealth);
     api
       .getHealthOverview()
-      .then((hosts) => { api.setCache("dashboard:health", hosts || []); setHealthHosts(hosts || []); })
+      .then((hosts) => {
+        api.setCache("dashboard:health", hosts || []);
+        setHealthHosts(hosts || []);
+      })
       .catch(() => setHealthHosts([]));
 
     // Fetch expiring SSL certs
@@ -306,7 +316,20 @@ export function Dashboard() {
                       ? `${host.forwardScheme}://${host.forwardHost}:${host.forwardPort}`
                       : ""}
                   </span>
-                  <Badge variant={({ online: "success", offline: "destructive", degraded: "warning", unknown: "secondary", disabled: "outline" } as const)[host.healthStatus as HealthStatus] || "secondary"} className="text-xs capitalize">
+                  <Badge
+                    variant={
+                      (
+                        {
+                          online: "success",
+                          offline: "destructive",
+                          degraded: "warning",
+                          unknown: "secondary",
+                          disabled: "outline",
+                        } as const
+                      )[host.healthStatus as HealthStatus] || "secondary"
+                    }
+                    className="text-xs capitalize"
+                  >
                     {host.healthStatus}
                   </Badge>
                 </Link>

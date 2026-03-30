@@ -474,7 +474,10 @@ export function ProxyHosts() {
             actionLabel="Add one"
             actionHref="/proxy-hosts/new"
             hasActiveFilters={hasActiveFilters}
-            onReset={() => { resetFilters(); setSearchInput(""); }}
+            onReset={() => {
+              resetFilters();
+              setSearchInput("");
+            }}
           />
         )}
       </div>

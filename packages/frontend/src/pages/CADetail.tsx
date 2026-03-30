@@ -80,8 +80,8 @@ export function CADetail() {
       }
     };
     load();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, reloadCerts, selectCA]);
 
   const handleRevoke = async () => {
     if (!selectedCA) return;
@@ -350,7 +350,11 @@ export function CADetail() {
                   </table>
                 </div>
               ) : (
-                <EmptyState message="No certificates issued yet." actionLabel="Issue one" actionHref={`/certificates?ca=${ca.id}`} />
+                <EmptyState
+                  message="No certificates issued yet."
+                  actionLabel="Issue one"
+                  actionHref={`/certificates?ca=${ca.id}`}
+                />
               )}
             </div>
           </div>

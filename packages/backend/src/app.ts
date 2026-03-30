@@ -1,8 +1,8 @@
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { OpenAPIHono } from '@hono/zod-openapi';
-import { createNodeWebSocket } from '@hono/node-ws';
 import { serveStatic } from '@hono/node-server/serve-static';
+import { createNodeWebSocket } from '@hono/node-ws';
+import { OpenAPIHono } from '@hono/zod-openapi';
 import { apiReference } from '@scalar/hono-api-reference';
 import { cors } from 'hono/cors';
 import { requestId } from 'hono/request-id';
@@ -12,14 +12,16 @@ import { getEnv, isDevelopment } from '@/config/env.js';
 import { errorHandler } from '@/middleware/error-handler.js';
 import { loggerMiddleware } from '@/middleware/logger.js';
 import { rateLimitMiddleware } from '@/middleware/rate-limit.js';
-import { requireActiveUser } from '@/modules/auth/auth.middleware.js';
 import { accessListRoutes } from '@/modules/access-lists/access-list.routes.js';
 import { adminRoutes } from '@/modules/admin/admin.routes.js';
-import { domainRoutes } from '@/modules/domains/domain.routes.js';
-import { housekeepingRoutes } from '@/modules/housekeeping/housekeeping.routes.js';
+import { aiRoutes } from '@/modules/ai/ai.routes.js';
+import { authenticateWSConnection, createWSHandlers } from '@/modules/ai/ai.ws.js';
 import { alertRoutes } from '@/modules/audit/alert.routes.js';
 import { auditRoutes } from '@/modules/audit/audit.routes.js';
+import { requireActiveUser } from '@/modules/auth/auth.middleware.js';
 import { authRoutes } from '@/modules/auth/auth.routes.js';
+import { domainRoutes } from '@/modules/domains/domain.routes.js';
+import { housekeepingRoutes } from '@/modules/housekeeping/housekeeping.routes.js';
 import { monitoringRoutes } from '@/modules/monitoring/monitoring.routes.js';
 import { caRoutes } from '@/modules/pki/ca.routes.js';
 import { certRoutes } from '@/modules/pki/cert.routes.js';
@@ -32,8 +34,6 @@ import { setupRoutes } from '@/modules/setup/setup.routes.js';
 import { sslRoutes } from '@/modules/ssl/ssl.routes.js';
 import { systemRoutes } from '@/modules/system/system.routes.js';
 import { tokensRoutes } from '@/modules/tokens/tokens.routes.js';
-import { aiRoutes } from '@/modules/ai/ai.routes.js';
-import { createWSHandlers, authenticateWSConnection } from '@/modules/ai/ai.ws.js';
 
 import type { AppEnv } from '@/types.js';
 
@@ -53,7 +53,11 @@ export function createApp() {
       origin: (origin) => {
         const appOrigin = new URL(getEnv().APP_URL).origin;
         if (origin === appOrigin) return origin;
-        if (isDevelopment() && origin && (origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1'))) {
+        if (
+          isDevelopment() &&
+          origin &&
+          (origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1'))
+        ) {
           return origin;
         }
         return '';
@@ -120,7 +124,11 @@ export function createApp() {
           wsHandlers.onOpen(event, ws);
           // Authenticate after connection opens
           authenticateWSConnection(ws, token).catch(() => {
-            try { ws.close(); } catch { /* ignore */ }
+            try {
+              ws.close();
+            } catch {
+              /* ignore */
+            }
           });
         },
         onMessage: wsHandlers.onMessage,

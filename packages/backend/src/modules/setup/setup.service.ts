@@ -47,10 +47,7 @@ export class SetupService {
       domainId = existingDomain[0].id;
       // Ensure it's marked as system
       if (!existingDomain[0].isSystem) {
-        await this.db
-          .update(domains)
-          .set({ isSystem: true, updatedAt: new Date() })
-          .where(eq(domains.id, domainId));
+        await this.db.update(domains).set({ isSystem: true, updatedAt: new Date() }).where(eq(domains.id, domainId));
       }
       logger.info('Domain already exists, reusing', { domainId });
     } else {
@@ -106,11 +103,7 @@ export class SetupService {
     }
 
     // 4. Check if system proxy host already exists
-    const existingHost = await this.db
-      .select()
-      .from(proxyHosts)
-      .where(eq(proxyHosts.isSystem, true))
-      .limit(1);
+    const existingHost = await this.db.select().from(proxyHosts).where(eq(proxyHosts.isSystem, true)).limit(1);
 
     if (existingHost.length > 0) {
       logger.info('System proxy host already exists', { hostId: existingHost[0].id });
@@ -146,10 +139,7 @@ export class SetupService {
     );
 
     // Mark as system
-    await this.db
-      .update(proxyHosts)
-      .set({ isSystem: true, updatedAt: new Date() })
-      .where(eq(proxyHosts.id, host.id));
+    await this.db.update(proxyHosts).set({ isSystem: true, updatedAt: new Date() }).where(eq(proxyHosts.id, host.id));
 
     logger.info('Management SSL bootstrap complete', { domain, certId, proxyHostId: host.id });
 
@@ -166,12 +156,7 @@ export class SetupService {
    * Bootstrap with a BYO (bring-your-own) certificate.
    * Same as bootstrapManagementSSL but uses uploaded cert instead of ACME.
    */
-  async bootstrapManagementSSLUpload(
-    domain: string,
-    certificatePem: string,
-    privateKeyPem: string,
-    chainPem?: string
-  ) {
+  async bootstrapManagementSSLUpload(domain: string, certificatePem: string, privateKeyPem: string, chainPem?: string) {
     logger.info('Bootstrapping management SSL with BYO cert', { domain });
 
     const systemUserId = await this.ensureSystemUser();
@@ -187,10 +172,7 @@ export class SetupService {
     if (existingDomain.length > 0) {
       domainId = existingDomain[0].id;
       if (!existingDomain[0].isSystem) {
-        await this.db
-          .update(domains)
-          .set({ isSystem: true, updatedAt: new Date() })
-          .where(eq(domains.id, domainId));
+        await this.db.update(domains).set({ isSystem: true, updatedAt: new Date() }).where(eq(domains.id, domainId));
       }
     } else {
       const [row] = await this.db
@@ -237,11 +219,7 @@ export class SetupService {
     }
 
     // 3. Create proxy host
-    const existingHost = await this.db
-      .select()
-      .from(proxyHosts)
-      .where(eq(proxyHosts.isSystem, true))
-      .limit(1);
+    const existingHost = await this.db.select().from(proxyHosts).where(eq(proxyHosts.isSystem, true)).limit(1);
 
     if (existingHost.length > 0) {
       return {
@@ -274,10 +252,7 @@ export class SetupService {
       systemUserId
     );
 
-    await this.db
-      .update(proxyHosts)
-      .set({ isSystem: true, updatedAt: new Date() })
-      .where(eq(proxyHosts.id, host.id));
+    await this.db.update(proxyHosts).set({ isSystem: true, updatedAt: new Date() }).where(eq(proxyHosts.id, host.id));
 
     logger.info('Management SSL (BYO) bootstrap complete', { domain, certId, proxyHostId: host.id });
 

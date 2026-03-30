@@ -56,20 +56,19 @@ function DnsRecordsTable({ records }: { records: DnsRecords }) {
           label="CAA"
           values={records.caa.map((r) => r.issue || r.issuewild || "").filter(Boolean)}
         />
-        <RecordRow
-          label="MX"
-          values={records.mx.map((r) => `${r.priority} ${r.exchange}`)}
-        />
-        <RecordRow
-          label="TXT"
-          values={records.txt.map((r) => r.join("")).slice(0, 3)}
-        />
+        <RecordRow label="MX" values={records.mx.map((r) => `${r.priority} ${r.exchange}`)} />
+        <RecordRow label="TXT" values={records.txt.map((r) => r.join("")).slice(0, 3)} />
       </tbody>
     </table>
   );
 }
 
-export function DomainDetailDialog({ domainId, open, onOpenChange, onUpdated }: DomainDetailDialogProps) {
+export function DomainDetailDialog({
+  domainId,
+  open,
+  onOpenChange,
+  onUpdated,
+}: DomainDetailDialogProps) {
   const { hasRole } = useAuthStore();
   const canEdit = hasRole("admin", "operator");
   const [domain, setDomain] = useState<DomainWithUsage | null>(null);
@@ -198,7 +197,9 @@ export function DomainDetailDialog({ domainId, open, onOpenChange, onUpdated }: 
               <div className="p-3 space-y-3">
                 {domain.usage.proxyHosts.length > 0 && (
                   <div className="space-y-1">
-                    <p className="text-xs text-muted-foreground uppercase tracking-wider">Proxy Hosts</p>
+                    <p className="text-xs text-muted-foreground uppercase tracking-wider">
+                      Proxy Hosts
+                    </p>
                     {domain.usage.proxyHosts.map((ph) => (
                       <Link
                         key={ph.id}
@@ -208,38 +209,58 @@ export function DomainDetailDialog({ domainId, open, onOpenChange, onUpdated }: 
                       >
                         <ExternalLink className="h-3 w-3 text-muted-foreground shrink-0" />
                         <span className="truncate">{ph.domainNames[0]}</span>
-                        {!ph.enabled && <Badge variant="secondary" className="text-[10px]">Off</Badge>}
+                        {!ph.enabled && (
+                          <Badge variant="secondary" className="text-[10px]">
+                            Off
+                          </Badge>
+                        )}
                       </Link>
                     ))}
                   </div>
                 )}
                 {domain.usage.sslCertificates.length > 0 && (
                   <div className="space-y-1">
-                    <p className="text-xs text-muted-foreground uppercase tracking-wider">SSL Certificates</p>
+                    <p className="text-xs text-muted-foreground uppercase tracking-wider">
+                      SSL Certificates
+                    </p>
                     {domain.usage.sslCertificates.map((cert) => (
                       <div key={cert.id} className="flex items-center gap-2 py-1 text-sm">
                         <Lock className="h-3 w-3 text-muted-foreground shrink-0" />
                         <span className="truncate">{cert.domainNames[0]}</span>
-                        <Badge variant={cert.status === "active" ? "success" : "secondary"} className="text-[10px]">
+                        <Badge
+                          variant={cert.status === "active" ? "success" : "secondary"}
+                          className="text-[10px]"
+                        >
                           {cert.status}
                         </Badge>
                       </div>
                     ))}
                   </div>
                 )}
-                {domain.usage.proxyHosts.length === 0 && domain.usage.sslCertificates.length === 0 && (
-                  <p className="text-xs text-muted-foreground">Not used by any proxy hosts or certificates</p>
-                )}
+                {domain.usage.proxyHosts.length === 0 &&
+                  domain.usage.sslCertificates.length === 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      Not used by any proxy hosts or certificates
+                    </p>
+                  )}
               </div>
             </div>
 
             {/* Issue cert action */}
-            {canEdit && domain.usage.sslCertificates.length === 0 && domain.dnsStatus === "valid" && (
-              <Button variant="outline" size="sm" onClick={handleIssueCert} disabled={isIssuingCert} className="w-full">
-                <Shield className="h-3.5 w-3.5" />
-                {isIssuingCert ? "Issuing..." : "Issue Let's Encrypt Certificate"}
-              </Button>
-            )}
+            {canEdit &&
+              domain.usage.sslCertificates.length === 0 &&
+              domain.dnsStatus === "valid" && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleIssueCert}
+                  disabled={isIssuingCert}
+                  className="w-full"
+                >
+                  <Shield className="h-3.5 w-3.5" />
+                  {isIssuingCert ? "Issuing..." : "Issue Let's Encrypt Certificate"}
+                </Button>
+              )}
           </div>
         ) : null}
       </DialogContent>

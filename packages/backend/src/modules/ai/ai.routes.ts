@@ -1,10 +1,10 @@
 import { Hono } from 'hono';
 import { container } from '@/container.js';
 import { authMiddleware, rbacMiddleware, sessionOnly } from '@/modules/auth/auth.middleware.js';
-import { AISettingsService } from './ai.settings.service.js';
-import { AIConfigUpdateSchema } from './ai.schemas.js';
-import { AI_TOOLS } from './ai.tools.js';
 import type { AppEnv } from '@/types.js';
+import { AIConfigUpdateSchema } from './ai.schemas.js';
+import { AISettingsService } from './ai.settings.service.js';
+import { AI_TOOLS } from './ai.tools.js';
 
 export const aiRoutes = new Hono<AppEnv>();
 
@@ -39,7 +39,10 @@ aiRoutes.put('/config', rbacMiddleware('admin'), async (c) => {
 
 // GET /api/ai/tools — list all tool definitions grouped by category (admin only)
 aiRoutes.get('/tools', rbacMiddleware('admin'), async (c) => {
-  const grouped: Record<string, Array<{ name: string; description: string; destructive: boolean; requiredRole: string }>> = {};
+  const grouped: Record<
+    string,
+    Array<{ name: string; description: string; destructive: boolean; requiredRole: string }>
+  > = {};
 
   for (const tool of AI_TOOLS) {
     if (!grouped[tool.category]) grouped[tool.category] = [];

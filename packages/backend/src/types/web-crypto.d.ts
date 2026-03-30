@@ -31,5 +31,13 @@ declare interface CryptoKey {
   readonly usages: KeyUsage[];
 }
 
-declare type KeyType = "private" | "public" | "secret";
-declare type KeyUsage = "decrypt" | "deriveBits" | "deriveKey" | "encrypt" | "sign" | "unwrapKey" | "verify" | "wrapKey";
+declare type KeyType = 'private' | 'public' | 'secret';
+declare type KeyUsage =
+  | 'decrypt'
+  | 'deriveBits'
+  | 'deriveKey'
+  | 'encrypt'
+  | 'sign'
+  | 'unwrapKey'
+  | 'verify'
+  | 'wrapKey';

@@ -1,15 +1,15 @@
-import { readdir, stat, rm } from 'node:fs/promises';
+import { readdir, rm, stat } from 'node:fs/promises';
 import httpModule from 'node:http';
 import { join } from 'node:path';
 import { and, count, eq, lt, min, sql } from 'drizzle-orm';
-import type { DrizzleClient } from '@/db/client.js';
-import { settings } from '@/db/schema/settings.js';
-import { auditLog } from '@/db/schema/audit-log.js';
-import { alerts } from '@/db/schema/alerts.js';
-import { sslCertificates } from '@/db/schema/ssl-certificates.js';
-import { certificates } from '@/db/schema/certificates.js';
-import { createChildLogger } from '@/lib/logger.js';
 import type { Env } from '@/config/env.js';
+import type { DrizzleClient } from '@/db/client.js';
+import { alerts } from '@/db/schema/alerts.js';
+import { auditLog } from '@/db/schema/audit-log.js';
+import { certificates } from '@/db/schema/certificates.js';
+import { settings } from '@/db/schema/settings.js';
+import { sslCertificates } from '@/db/schema/ssl-certificates.js';
+import { createChildLogger } from '@/lib/logger.js';
 import type { DockerService } from './docker.service.js';
 
 const logger = createChildLogger('HousekeepingService');
@@ -109,10 +109,7 @@ export class HousekeepingService {
   // ── Config ──────────────────────────────────────────────────────
 
   async getConfig(): Promise<HousekeepingConfig> {
-    const rows = await this.db
-      .select()
-      .from(settings)
-      .where(sql`${settings.key} LIKE 'housekeeping:%'`);
+    const rows = await this.db.select().from(settings).where(sql`${settings.key} LIKE 'housekeeping:%'`);
 
     const map = new Map(rows.map((r) => [r.key, r.value]));
     const get = <T>(key: string, fallback: T): T => {
@@ -153,14 +150,21 @@ export class HousekeepingService {
     if (partial.enabled !== undefined) updates.push([KEYS.enabled, partial.enabled]);
     if (partial.cronExpression !== undefined) updates.push([KEYS.cron, partial.cronExpression]);
     if (partial.nginxLogs?.enabled !== undefined) updates.push([KEYS.nginxLogsEnabled, partial.nginxLogs.enabled]);
-    if (partial.nginxLogs?.retentionDays !== undefined) updates.push([KEYS.nginxLogsRetention, partial.nginxLogs.retentionDays]);
+    if (partial.nginxLogs?.retentionDays !== undefined)
+      updates.push([KEYS.nginxLogsRetention, partial.nginxLogs.retentionDays]);
     if (partial.auditLog?.enabled !== undefined) updates.push([KEYS.auditLogEnabled, partial.auditLog.enabled]);
-    if (partial.auditLog?.retentionDays !== undefined) updates.push([KEYS.auditLogRetention, partial.auditLog.retentionDays]);
-    if (partial.dismissedAlerts?.enabled !== undefined) updates.push([KEYS.dismissedAlertsEnabled, partial.dismissedAlerts.enabled]);
-    if (partial.dismissedAlerts?.retentionDays !== undefined) updates.push([KEYS.dismissedAlertsRetention, partial.dismissedAlerts.retentionDays]);
-    if (partial.dockerPrune?.enabled !== undefined) updates.push([KEYS.dockerPruneEnabled, partial.dockerPrune.enabled]);
-    if (partial.orphanedCerts?.enabled !== undefined) updates.push([KEYS.orphanedCertsEnabled, partial.orphanedCerts.enabled]);
-    if (partial.acmeCleanup?.enabled !== undefined) updates.push([KEYS.acmeCleanupEnabled, partial.acmeCleanup.enabled]);
+    if (partial.auditLog?.retentionDays !== undefined)
+      updates.push([KEYS.auditLogRetention, partial.auditLog.retentionDays]);
+    if (partial.dismissedAlerts?.enabled !== undefined)
+      updates.push([KEYS.dismissedAlertsEnabled, partial.dismissedAlerts.enabled]);
+    if (partial.dismissedAlerts?.retentionDays !== undefined)
+      updates.push([KEYS.dismissedAlertsRetention, partial.dismissedAlerts.retentionDays]);
+    if (partial.dockerPrune?.enabled !== undefined)
+      updates.push([KEYS.dockerPruneEnabled, partial.dockerPrune.enabled]);
+    if (partial.orphanedCerts?.enabled !== undefined)
+      updates.push([KEYS.orphanedCertsEnabled, partial.orphanedCerts.enabled]);
+    if (partial.acmeCleanup?.enabled !== undefined)
+      updates.push([KEYS.acmeCleanupEnabled, partial.acmeCleanup.enabled]);
 
     for (const [key, value] of updates) {
       await this.upsertSetting(key, value);
@@ -172,18 +176,26 @@ export class HousekeepingService {
   // ── Stats ───────────────────────────────────────────────────────
 
   async getStats(): Promise<HousekeepingStats> {
-    const [nginxLogs, auditLogStats, alertStats, orphanedCerts, acme, docker, lastRun] =
-      await Promise.all([
-        this.getNginxLogStats(),
-        this.getAuditLogStats(),
-        this.getDismissedAlertStats(),
-        this.getOrphanedCertStats(),
-        this.getAcmeChallengeStats(),
-        this.getDockerImageStats(),
-        this.getLastRunResult(),
-      ]);
+    const [nginxLogs, auditLogStats, alertStats, orphanedCerts, acme, docker, lastRun] = await Promise.all([
+      this.getNginxLogStats(),
+      this.getAuditLogStats(),
+      this.getDismissedAlertStats(),
+      this.getOrphanedCertStats(),
+      this.getAcmeChallengeStats(),
+      this.getDockerImageStats(),
+      this.getLastRunResult(),
+    ]);
 
-    return { nginxLogs, auditLog: auditLogStats, dismissedAlerts: alertStats, orphanedCerts, acmeChallenges: acme, dockerImages: docker, lastRun, isRunning: this.running };
+    return {
+      nginxLogs,
+      auditLog: auditLogStats,
+      dismissedAlerts: alertStats,
+      orphanedCerts,
+      acmeChallenges: acme,
+      dockerImages: docker,
+      lastRun,
+      isRunning: this.running,
+    };
   }
 
   // ── Run All ─────────────────────────────────────────────────────
@@ -201,13 +213,19 @@ export class HousekeepingService {
       const config = await this.getConfig();
 
       if (config.nginxLogs.enabled) {
-        categories.push(await this.runCategory('Nginx Logs', () => this.rotateNginxLogs(config.nginxLogs.retentionDays)));
+        categories.push(
+          await this.runCategory('Nginx Logs', () => this.rotateNginxLogs(config.nginxLogs.retentionDays))
+        );
       }
       if (config.auditLog.enabled) {
         categories.push(await this.runCategory('Audit Log', () => this.cleanAuditLog(config.auditLog.retentionDays)));
       }
       if (config.dismissedAlerts.enabled) {
-        categories.push(await this.runCategory('Dismissed Alerts', () => this.cleanDismissedAlerts(config.dismissedAlerts.retentionDays)));
+        categories.push(
+          await this.runCategory('Dismissed Alerts', () =>
+            this.cleanDismissedAlerts(config.dismissedAlerts.retentionDays)
+          )
+        );
       }
       if (config.orphanedCerts.enabled) {
         categories.push(await this.runCategory('Orphaned Certs', () => this.cleanOrphanedCerts()));
@@ -245,11 +263,7 @@ export class HousekeepingService {
   }
 
   async getRunHistory(): Promise<HousekeepingRunResult[]> {
-    const row = await this.db
-      .select()
-      .from(settings)
-      .where(eq(settings.key, KEYS.runHistory))
-      .limit(1);
+    const row = await this.db.select().from(settings).where(eq(settings.key, KEYS.runHistory)).limit(1);
     if (!row.length) return [];
     return (row[0].value as HousekeepingRunResult[]) || [];
   }
@@ -261,7 +275,8 @@ export class HousekeepingService {
 
     // Step 1: Rename active log files with timestamp suffix
     await this.dockerService.execInContainer(containerName, [
-      'sh', '-c',
+      'sh',
+      '-c',
       'cd /var/log/nginx && for f in *.log; do [ -f "$f" ] && [ -s "$f" ] && mv "$f" "${f}.$(date +%Y%m%d%H%M%S)"; done',
     ]);
 
@@ -271,7 +286,8 @@ export class HousekeepingService {
     // Step 3: Compress rotated files and delete old compressed files
     const safeDays = Math.max(1, Math.min(365, Math.floor(Number(retentionDays))));
     const compressResult = await this.dockerService.execInContainer(containerName, [
-      'sh', '-c',
+      'sh',
+      '-c',
       `cd /var/log/nginx && find . -name "*.log.*" ! -name "*.gz" -exec gzip {} \\; 2>/dev/null; DELETED=$(find . -name "*.gz" -mtime +${safeDays} -delete -print | wc -l); echo "$DELETED"`,
     ]);
 
@@ -318,10 +334,7 @@ export class HousekeepingService {
       this.db.select({ id: certificates.id }).from(certificates),
     ]);
 
-    const knownIds = new Set([
-      ...sslRows.map((r) => r.id),
-      ...pkiRows.map((r) => r.id),
-    ]);
+    const knownIds = new Set([...sslRows.map((r) => r.id), ...pkiRows.map((r) => r.id)]);
 
     let cleaned = 0;
     for (const entry of entries) {
@@ -388,7 +401,7 @@ export class HousekeepingService {
       for (const img of images) {
         const tags = img.RepoTags || [];
         // Only consider gateway images
-        const isGatewayImage = tags.some((t) => t.startsWith(imageBase + ':'));
+        const isGatewayImage = tags.some((t) => t.startsWith(`${imageBase}:`));
         if (!isGatewayImage) continue;
 
         // Don't remove the currently running image
@@ -480,10 +493,7 @@ export class HousekeepingService {
   }
 
   private async getDismissedAlertStats(): Promise<HousekeepingStats['dismissedAlerts']> {
-    const [countResult] = await this.db
-      .select({ total: count() })
-      .from(alerts)
-      .where(eq(alerts.dismissed, true));
+    const [countResult] = await this.db.select({ total: count() }).from(alerts).where(eq(alerts.dismissed, true));
     const [oldestResult] = await this.db
       .select({ oldest: min(alerts.createdAt) })
       .from(alerts)
@@ -509,10 +519,7 @@ export class HousekeepingService {
         this.db.select({ id: certificates.id }).from(certificates),
       ]);
 
-      const knownIds = new Set([
-        ...sslRows.map((r) => r.id),
-        ...pkiRows.map((r) => r.id),
-      ]);
+      const knownIds = new Set([...sslRows.map((r) => r.id), ...pkiRows.map((r) => r.id)]);
 
       const orphaned = uuidEntries.filter((e) => !knownIds.has(e));
       return { count: orphaned.length, certIds: orphaned };
@@ -568,7 +575,7 @@ export class HousekeepingService {
 
       for (const img of images) {
         const tags = img.RepoTags || [];
-        const isGateway = tags.some((t) => t.startsWith(imageBase + ':'));
+        const isGateway = tags.some((t) => t.startsWith(`${imageBase}:`));
         if (!isGateway) continue;
         const isCurrent = tags.some((t) => t === currentImage);
         if (isCurrent) continue;
@@ -611,11 +618,7 @@ export class HousekeepingService {
   }
 
   private async getLastRunResult(): Promise<HousekeepingRunResult | null> {
-    const row = await this.db
-      .select()
-      .from(settings)
-      .where(eq(settings.key, KEYS.lastRunResult))
-      .limit(1);
+    const row = await this.db.select().from(settings).where(eq(settings.key, KEYS.lastRunResult)).limit(1);
     if (!row.length) return null;
     return (row[0].value as HousekeepingRunResult) || null;
   }
@@ -641,11 +644,7 @@ export class HousekeepingService {
   }
 
   /** Direct Docker API request (for image listing etc.) */
-  private dockerRequest(
-    method: string,
-    path: string,
-    body?: unknown
-  ): Promise<{ statusCode: number; body: string }> {
+  private dockerRequest(method: string, path: string, body?: unknown): Promise<{ statusCode: number; body: string }> {
     return new Promise((resolve, reject) => {
       const payload = body !== undefined ? JSON.stringify(body) : undefined;
 
@@ -654,9 +653,7 @@ export class HousekeepingService {
           socketPath: this.env.DOCKER_SOCKET_PATH,
           method,
           path: `/v1.46${path}`,
-          headers: payload
-            ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) }
-            : {},
+          headers: payload ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } : {},
         },
         (res) => {
           const chunks: Buffer[] = [];

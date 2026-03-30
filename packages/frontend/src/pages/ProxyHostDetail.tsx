@@ -1033,9 +1033,7 @@ export function ProxyHostDetail() {
                       type="number"
                       value={healthCheckExpectedStatus ?? ""}
                       onChange={(e) =>
-                        setHealthCheckExpectedStatus(
-                          e.target.value ? Number(e.target.value) : null
-                        )
+                        setHealthCheckExpectedStatus(e.target.value ? Number(e.target.value) : null)
                       }
                       placeholder="Any 2xx"
                       className="w-40"
@@ -1088,11 +1086,7 @@ export function ProxyHostDetail() {
                   </div>
                 ) : (
                   <div className="flex-1 min-h-0 flex flex-col">
-                    <CodeEditor
-                      value={rawConfig}
-                      onChange={setRawConfig}
-                      readOnly
-                    />
+                    <CodeEditor value={rawConfig} onChange={setRawConfig} readOnly />
                   </div>
                 )}
               </div>

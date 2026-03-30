@@ -1,10 +1,22 @@
-import { Check, Copy, Key, Loader2, Moon, Play, Plus, RefreshCw, Sun, Trash2, X } from "lucide-react";
-import Markdown from "react-markdown";
+import {
+  Check,
+  Copy,
+  Key,
+  Loader2,
+  Moon,
+  Play,
+  Plus,
+  RefreshCw,
+  Sun,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import ReactDOM from "react-dom";
+import Markdown from "react-markdown";
 import { toast } from "sonner";
-import { confirm } from "@/components/common/ConfirmDialog";
 import { AIToolAccessModal } from "@/components/ai/AIToolAccessModal";
+import { confirm } from "@/components/common/ConfirmDialog";
 import { PageTransition } from "@/components/common/PageTransition";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -33,7 +45,12 @@ import { useAuthStore } from "@/stores/auth";
 import { useCAStore } from "@/stores/ca";
 import { useUIStore } from "@/stores/ui";
 import { useUpdateStore } from "@/stores/update";
-import type { HousekeepingCategoryResult, HousekeepingConfig, HousekeepingRunResult, HousekeepingStats } from "@/types";
+import type {
+  HousekeepingCategoryResult,
+  HousekeepingConfig,
+  HousekeepingRunResult,
+  HousekeepingStats,
+} from "@/types";
 import { type ApiToken, TOKEN_SCOPES } from "@/types";
 
 const SCOPE_GROUPS = [...new Set(TOKEN_SCOPES.map((s) => s.group))];
@@ -51,7 +68,14 @@ export function Settings() {
   const [isCreating, setIsCreating] = useState(false);
 
   // Update state (global store)
-  const { status: updateStatus, isChecking, isUpdating, checkForUpdates, triggerUpdate, fetchStatus } = useUpdateStore();
+  const {
+    status: updateStatus,
+    isChecking,
+    isUpdating,
+    checkForUpdates,
+    triggerUpdate,
+    fetchStatus,
+  } = useUpdateStore();
   const [releaseNotesOpen, setReleaseNotesOpen] = useState(false);
   const [releaseNotesList, setReleaseNotesList] = useState<string[] | null>(null);
   const [releaseVersions, setReleaseVersions] = useState<string[] | null>(null);
@@ -75,12 +99,22 @@ export function Settings() {
 
   // AI Assistant state
   const [aiConfig, setAiConfig] = useState<{
-    enabled: boolean; providerUrl: string; model: string;
-    maxCompletionTokens: number; maxTokensField: string; reasoningEffort: string;
+    enabled: boolean;
+    providerUrl: string;
+    model: string;
+    maxCompletionTokens: number;
+    maxTokensField: string;
+    reasoningEffort: string;
     customSystemPrompt: string;
-    rateLimitMax: number; rateLimitWindowSeconds: number; maxToolRounds: number;
-    disabledTools: string[]; hasApiKey: boolean; apiKeyLast4: string; hasWebSearchKey: boolean;
-    webSearchProvider: string; webSearchBaseUrl: string;
+    rateLimitMax: number;
+    rateLimitWindowSeconds: number;
+    maxToolRounds: number;
+    disabledTools: string[];
+    hasApiKey: boolean;
+    apiKeyLast4: string;
+    hasWebSearchKey: boolean;
+    webSearchProvider: string;
+    webSearchBaseUrl: string;
   } | null>(null);
   const [aiApiKey, setAiApiKey] = useState("");
   const [aiWebSearchKey, setAiWebSearchKey] = useState("");
@@ -90,34 +124,41 @@ export function Settings() {
   const aiHasChanges = (() => {
     if (!aiConfig || !aiSavedConfig) return false;
     if (aiApiKey || aiWebSearchKey) return true;
-    return aiConfig.providerUrl !== aiSavedConfig.providerUrl
-      || aiConfig.model !== aiSavedConfig.model
-      || aiConfig.maxCompletionTokens !== aiSavedConfig.maxCompletionTokens
-      || aiConfig.maxTokensField !== aiSavedConfig.maxTokensField
-      || aiConfig.rateLimitMax !== aiSavedConfig.rateLimitMax
-      || aiConfig.rateLimitWindowSeconds !== aiSavedConfig.rateLimitWindowSeconds
-      || aiConfig.maxToolRounds !== aiSavedConfig.maxToolRounds
-      || aiConfig.customSystemPrompt !== aiSavedConfig.customSystemPrompt
-      || aiConfig.webSearchProvider !== aiSavedConfig.webSearchProvider
-      || aiConfig.webSearchBaseUrl !== aiSavedConfig.webSearchBaseUrl
-      || JSON.stringify(aiConfig.disabledTools) !== JSON.stringify(aiSavedConfig.disabledTools);
+    return (
+      aiConfig.providerUrl !== aiSavedConfig.providerUrl ||
+      aiConfig.model !== aiSavedConfig.model ||
+      aiConfig.maxCompletionTokens !== aiSavedConfig.maxCompletionTokens ||
+      aiConfig.maxTokensField !== aiSavedConfig.maxTokensField ||
+      aiConfig.rateLimitMax !== aiSavedConfig.rateLimitMax ||
+      aiConfig.rateLimitWindowSeconds !== aiSavedConfig.rateLimitWindowSeconds ||
+      aiConfig.maxToolRounds !== aiSavedConfig.maxToolRounds ||
+      aiConfig.customSystemPrompt !== aiSavedConfig.customSystemPrompt ||
+      aiConfig.webSearchProvider !== aiSavedConfig.webSearchProvider ||
+      aiConfig.webSearchBaseUrl !== aiSavedConfig.webSearchBaseUrl ||
+      JSON.stringify(aiConfig.disabledTools) !== JSON.stringify(aiSavedConfig.disabledTools)
+    );
   })();
 
   const loadAIConfig = useCallback(async () => {
     if (!isAdmin) return;
     try {
-      const config = await api.getAIConfig() as any;
+      const config = (await api.getAIConfig()) as any;
       setAiConfig(config);
       setAiSavedConfig(config);
-    } catch { /* AI not configured yet */ }
+    } catch {
+      /* AI not configured yet */
+    }
   }, [isAdmin]);
 
   const updateAIConfig = async (partial: Record<string, unknown>) => {
     try {
-      const updated = await api.updateAIConfig(partial) as any;
-      setAiConfig((prev) => prev ? { ...prev, ...updated } : null);
+      const updated = (await api.updateAIConfig(partial)) as any;
+      setAiConfig((prev) => (prev ? { ...prev, ...updated } : null));
       // Sync AI enabled state so the button appears/disappears without reload
-      api.getAIStatus().then((s) => useAIStore.getState().setEnabled(s.enabled)).catch(() => {});
+      api
+        .getAIStatus()
+        .then((s) => useAIStore.getState().setEnabled(s.enabled))
+        .catch(() => {});
       toast.success("AI settings updated");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to update AI settings");
@@ -132,11 +173,20 @@ export function Settings() {
     const cachedStats = api.getCached<HousekeepingStats>("housekeeping:stats");
     if (cachedStats) setHkStats(cachedStats);
     // Refresh in background
-    api.getHousekeepingConfig()
-      .then((c) => { api.setCache("housekeeping:config", c); setHkConfig(c); })
+    api
+      .getHousekeepingConfig()
+      .then((c) => {
+        api.setCache("housekeeping:config", c);
+        setHkConfig(c);
+      })
       .catch(() => {});
-    api.getHousekeepingStats()
-      .then((s) => { api.setCache("housekeeping:stats", s); setHkStats(s); setHkRunning(s.isRunning); })
+    api
+      .getHousekeepingStats()
+      .then((s) => {
+        api.setCache("housekeeping:stats", s);
+        setHkStats(s);
+        setHkRunning(s.isRunning);
+      })
       .catch(() => {});
   }, [isAdmin]);
 
@@ -194,7 +244,7 @@ export function Settings() {
     fetchStatus();
     loadHousekeeping();
     loadAIConfig();
-  }, [loadHousekeeping, loadAIConfig]);
+  }, [loadHousekeeping, loadAIConfig, fetchStatus, loadTokens]);
 
   const handleCheckUpdate = async () => {
     await checkForUpdates();
@@ -305,7 +355,9 @@ export function Settings() {
                 <p className="text-sm font-medium">{user.name || "Not set"}</p>
                 <p className="text-xs text-muted-foreground">{user.email}</p>
               </div>
-              <Badge variant="secondary" className="text-xs capitalize">{user.role}</Badge>
+              <Badge variant="secondary" className="text-xs capitalize">
+                {user.role}
+              </Badge>
             </div>
           )}
         </div>
@@ -319,7 +371,9 @@ export function Settings() {
             <div className="flex items-center justify-between gap-4 px-4 py-3">
               <div>
                 <p className="text-sm font-medium">Theme</p>
-                <p className="text-xs text-muted-foreground mt-0.5">Choose how the interface looks</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Choose how the interface looks
+                </p>
               </div>
               <div className="flex gap-0 border border-border w-fit shrink-0">
                 {(["light", "dark", "system"] as const).map((t) => (
@@ -342,12 +396,11 @@ export function Settings() {
             <div className="flex items-center justify-between gap-4 px-4 py-3">
               <div>
                 <p className="text-sm font-medium">Update notifications</p>
-                <p className="text-xs text-muted-foreground mt-0.5">Show update banners in sidebar and dashboard</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Show update banners in sidebar and dashboard
+                </p>
               </div>
-              <Switch
-                checked={showUpdateNotifications}
-                onChange={setShowUpdateNotifications}
-              />
+              <Switch checked={showUpdateNotifications} onChange={setShowUpdateNotifications} />
             </div>
             {hasRole("admin", "operator") && (
               <>
@@ -453,253 +506,294 @@ export function Settings() {
                 }}
               />
             </div>
-            <div className={`transition-opacity duration-200 ${!aiConfig.enabled ? "opacity-50 pointer-events-none" : ""}`}>
-            {/* Reasoning Effort */}
-            <div className="border-t border-border px-4 py-3 flex items-center justify-between gap-4">
-              <div>
-                <p className="text-sm font-medium">Reasoning effort</p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Controls thinking depth for reasoning models (o1, o3, o4-mini). Ignored by non-reasoning models.
-                </p>
-              </div>
-              <div className="flex gap-0 border border-border w-fit shrink-0">
-                {(["none", "low", "medium", "high"] as const).map((level) => (
-                  <button
-                    key={level}
-                    onClick={() => {
-                      setAiConfig({ ...aiConfig, reasoningEffort: level });
-                      setAiSavedConfig((prev) => prev ? { ...prev, reasoningEffort: level } : prev);
-                      updateAIConfig({ reasoningEffort: level });
-                    }}
-                    className={`px-3 py-1.5 text-xs capitalize transition-colors ${
-                      aiConfig.reasoningEffort === level
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-transparent text-muted-foreground hover:text-foreground hover:bg-accent"
-                    }`}
-                  >
-                    {level === "none" ? "Default" : level}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2">
-              {/* Provider */}
-              <div className="border-t border-r border-border p-4 space-y-3 max-sm:border-r-0">
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Provider</p>
+            <div
+              className={`transition-opacity duration-200 ${!aiConfig.enabled ? "opacity-50 pointer-events-none" : ""}`}
+            >
+              {/* Reasoning Effort */}
+              <div className="border-t border-border px-4 py-3 flex items-center justify-between gap-4">
                 <div>
-                  <label className="text-xs text-muted-foreground">Base URL</label>
-                  <Input
-                    className="h-8 text-sm mt-1"
-                    placeholder="https://api.openai.com/v1"
-                    value={aiConfig.providerUrl}
-                    onChange={(e) => setAiConfig({ ...aiConfig, providerUrl: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground">Model</label>
-                  <Input
-                    className="h-8 text-sm mt-1"
-                    placeholder="gpt-4o"
-                    value={aiConfig.model}
-                    onChange={(e) => setAiConfig({ ...aiConfig, model: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground">API Key</label>
-                  <Input
-                    className="h-8 text-sm mt-1"
-                    type="password"
-                    placeholder={aiConfig.hasApiKey ? `****${aiConfig.apiKeyLast4}` : "sk-..."}
-                    value={aiApiKey}
-                    onChange={(e) => setAiApiKey(e.target.value)}
-                  />
-                </div>
-              </div>
-
-              {/* Limits */}
-              <div className="border-t border-border p-4 space-y-3">
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Limits</p>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="text-xs text-muted-foreground">Requests</label>
-                    <Input
-                      className="h-8 text-sm mt-1"
-                      type="number"
-                      value={aiConfig.rateLimitMax}
-                      onChange={(e) => setAiConfig({ ...aiConfig, rateLimitMax: Number(e.target.value) })}
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs text-muted-foreground">Window (sec)</label>
-                    <Input
-                      className="h-8 text-sm mt-1"
-                      type="number"
-                      value={aiConfig.rateLimitWindowSeconds}
-                      onChange={(e) => setAiConfig({ ...aiConfig, rateLimitWindowSeconds: Number(e.target.value) })}
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground">Max tool rounds</label>
-                  <Input
-                    className="h-8 text-sm mt-1"
-                    type="number"
-                    value={aiConfig.maxToolRounds}
-                    onChange={(e) => setAiConfig({ ...aiConfig, maxToolRounds: Number(e.target.value) })}
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="text-xs text-muted-foreground">Max tokens</label>
-                    <Input
-                      className="h-8 text-sm mt-1"
-                      type="number"
-                      value={aiConfig.maxCompletionTokens}
-                      onChange={(e) => setAiConfig({ ...aiConfig, maxCompletionTokens: Number(e.target.value) })}
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs text-muted-foreground">Token field</label>
-                    <Select
-                      value={aiConfig.maxTokensField || "max_completion_tokens"}
-                      onValueChange={(v) => setAiConfig({ ...aiConfig, maxTokensField: v })}
-                    >
-                      <SelectTrigger className="h-8 text-sm mt-1">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="max_completion_tokens">max_completion_tokens</SelectItem>
-                        <SelectItem value="max_tokens">max_tokens</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              </div>
-
-              {/* System Prompt */}
-              <div className="border-t border-r border-border p-4 flex flex-col gap-3 max-sm:border-r-0">
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">System Prompt</p>
-                <textarea
-                  className="w-full flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm resize-none min-h-[120px]"
-                  placeholder="Add custom instructions for the AI assistant.&#10;&#10;Examples:&#10;- Company PKI policies and naming conventions&#10;- Preferred certificate settings&#10;- Security guidelines"
-                  value={aiConfig.customSystemPrompt}
-                  onChange={(e) => setAiConfig({ ...aiConfig, customSystemPrompt: e.target.value })}
-                />
-              </div>
-
-              {/* Tools & Web Search */}
-              <div className="border-t border-border p-4 space-y-3">
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Tools</p>
-                <div className="flex items-center justify-between">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium">Tool Access</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {aiConfig.disabledTools.length > 0
-                        ? `${aiConfig.disabledTools.length} tool${aiConfig.disabledTools.length !== 1 ? "s" : ""} disabled`
-                        : "All tools enabled"}
-                    </p>
-                  </div>
-                  <Button variant="outline" size="sm" className="h-7 text-xs shrink-0" onClick={() => setAiToolsModalOpen(true)}>
-                    Manage
-                  </Button>
-                </div>
-                <Separator />
-                <div>
-                  <div className="flex items-center gap-2">
-                    <p className="text-sm font-medium">Web Search</p>
-                    {aiConfig.disabledTools.includes("web_search") && (
-                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Disabled</Badge>
-                    )}
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-0.5 mb-2">
-                    Allow the AI to search the web for information
+                  <p className="text-sm font-medium">Reasoning effort</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Controls thinking depth for reasoning models (o1, o3, o4-mini). Ignored by
+                    non-reasoning models.
                   </p>
-                  <div className="space-y-2">
+                </div>
+                <div className="flex gap-0 border border-border w-fit shrink-0">
+                  {(["none", "low", "medium", "high"] as const).map((level) => (
+                    <button
+                      key={level}
+                      onClick={() => {
+                        setAiConfig({ ...aiConfig, reasoningEffort: level });
+                        setAiSavedConfig((prev) =>
+                          prev ? { ...prev, reasoningEffort: level } : prev
+                        );
+                        updateAIConfig({ reasoningEffort: level });
+                      }}
+                      className={`px-3 py-1.5 text-xs capitalize transition-colors ${
+                        aiConfig.reasoningEffort === level
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-transparent text-muted-foreground hover:text-foreground hover:bg-accent"
+                      }`}
+                    >
+                      {level === "none" ? "Default" : level}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2">
+                {/* Provider */}
+                <div className="border-t border-r border-border p-4 space-y-3 max-sm:border-r-0">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    Provider
+                  </p>
+                  <div>
+                    <label className="text-xs text-muted-foreground">Base URL</label>
+                    <Input
+                      className="h-8 text-sm mt-1"
+                      placeholder="https://api.openai.com/v1"
+                      value={aiConfig.providerUrl}
+                      onChange={(e) => setAiConfig({ ...aiConfig, providerUrl: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground">Model</label>
+                    <Input
+                      className="h-8 text-sm mt-1"
+                      placeholder="gpt-4o"
+                      value={aiConfig.model}
+                      onChange={(e) => setAiConfig({ ...aiConfig, model: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground">API Key</label>
+                    <Input
+                      className="h-8 text-sm mt-1"
+                      type="password"
+                      placeholder={aiConfig.hasApiKey ? `****${aiConfig.apiKeyLast4}` : "sk-..."}
+                      value={aiApiKey}
+                      onChange={(e) => setAiApiKey(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                {/* Limits */}
+                <div className="border-t border-border p-4 space-y-3">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    Limits
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className="text-xs text-muted-foreground">Provider</label>
+                      <label className="text-xs text-muted-foreground">Requests</label>
+                      <Input
+                        className="h-8 text-sm mt-1"
+                        type="number"
+                        value={aiConfig.rateLimitMax}
+                        onChange={(e) =>
+                          setAiConfig({ ...aiConfig, rateLimitMax: Number(e.target.value) })
+                        }
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground">Window (sec)</label>
+                      <Input
+                        className="h-8 text-sm mt-1"
+                        type="number"
+                        value={aiConfig.rateLimitWindowSeconds}
+                        onChange={(e) =>
+                          setAiConfig({
+                            ...aiConfig,
+                            rateLimitWindowSeconds: Number(e.target.value),
+                          })
+                        }
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground">Max tool rounds</label>
+                    <Input
+                      className="h-8 text-sm mt-1"
+                      type="number"
+                      value={aiConfig.maxToolRounds}
+                      onChange={(e) =>
+                        setAiConfig({ ...aiConfig, maxToolRounds: Number(e.target.value) })
+                      }
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-xs text-muted-foreground">Max tokens</label>
+                      <Input
+                        className="h-8 text-sm mt-1"
+                        type="number"
+                        value={aiConfig.maxCompletionTokens}
+                        onChange={(e) =>
+                          setAiConfig({ ...aiConfig, maxCompletionTokens: Number(e.target.value) })
+                        }
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground">Token field</label>
                       <Select
-                        value={aiConfig.webSearchProvider || "tavily"}
-                        onValueChange={(v) => setAiConfig({ ...aiConfig, webSearchProvider: v })}
+                        value={aiConfig.maxTokensField || "max_completion_tokens"}
+                        onValueChange={(v) => setAiConfig({ ...aiConfig, maxTokensField: v })}
                       >
                         <SelectTrigger className="h-8 text-sm mt-1">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="tavily">Tavily — AI-optimized search</SelectItem>
-                          <SelectItem value="brave">Brave Search — privacy-first</SelectItem>
-                          <SelectItem value="serper">Serper — Google results</SelectItem>
-                          <SelectItem value="exa">Exa — semantic search</SelectItem>
-                          <SelectItem value="searxng">SearXNG — self-hosted</SelectItem>
+                          <SelectItem value="max_completion_tokens">
+                            max_completion_tokens
+                          </SelectItem>
+                          <SelectItem value="max_tokens">max_tokens</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
-                    {aiConfig.webSearchProvider === "searxng" ? (
+                  </div>
+                </div>
+
+                {/* System Prompt */}
+                <div className="border-t border-r border-border p-4 flex flex-col gap-3 max-sm:border-r-0">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    System Prompt
+                  </p>
+                  <textarea
+                    className="w-full flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm resize-none min-h-[120px]"
+                    placeholder="Add custom instructions for the AI assistant.&#10;&#10;Examples:&#10;- Company PKI policies and naming conventions&#10;- Preferred certificate settings&#10;- Security guidelines"
+                    value={aiConfig.customSystemPrompt}
+                    onChange={(e) =>
+                      setAiConfig({ ...aiConfig, customSystemPrompt: e.target.value })
+                    }
+                  />
+                </div>
+
+                {/* Tools & Web Search */}
+                <div className="border-t border-border p-4 space-y-3">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    Tools
+                  </p>
+                  <div className="flex items-center justify-between">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium">Tool Access</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {aiConfig.disabledTools.length > 0
+                          ? `${aiConfig.disabledTools.length} tool${aiConfig.disabledTools.length !== 1 ? "s" : ""} disabled`
+                          : "All tools enabled"}
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs shrink-0"
+                      onClick={() => setAiToolsModalOpen(true)}
+                    >
+                      Manage
+                    </Button>
+                  </div>
+                  <Separator />
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium">Web Search</p>
+                      {aiConfig.disabledTools.includes("web_search") && (
+                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                          Disabled
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5 mb-2">
+                      Allow the AI to search the web for information
+                    </p>
+                    <div className="space-y-2">
                       <div>
-                        <label className="text-xs text-muted-foreground">Instance URL</label>
-                        <Input
-                          className="h-8 text-sm mt-1"
-                          placeholder="https://searxng.example.com"
-                          value={aiConfig.webSearchBaseUrl}
-                          onChange={(e) => setAiConfig({ ...aiConfig, webSearchBaseUrl: e.target.value })}
-                        />
+                        <label className="text-xs text-muted-foreground">Provider</label>
+                        <Select
+                          value={aiConfig.webSearchProvider || "tavily"}
+                          onValueChange={(v) => setAiConfig({ ...aiConfig, webSearchProvider: v })}
+                        >
+                          <SelectTrigger className="h-8 text-sm mt-1">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="tavily">Tavily — AI-optimized search</SelectItem>
+                            <SelectItem value="brave">Brave Search — privacy-first</SelectItem>
+                            <SelectItem value="serper">Serper — Google results</SelectItem>
+                            <SelectItem value="exa">Exa — semantic search</SelectItem>
+                            <SelectItem value="searxng">SearXNG — self-hosted</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
-                    ) : (
-                      <div>
-                        <label className="text-xs text-muted-foreground">API Key</label>
-                        <Input
-                          className="h-8 text-sm mt-1"
-                          type="password"
-                          placeholder={aiConfig.hasWebSearchKey ? "Configured — enter new to replace" : "Enter API key"}
-                          value={aiWebSearchKey}
-                          onChange={(e) => setAiWebSearchKey(e.target.value)}
-                        />
-                      </div>
-                    )}
+                      {aiConfig.webSearchProvider === "searxng" ? (
+                        <div>
+                          <label className="text-xs text-muted-foreground">Instance URL</label>
+                          <Input
+                            className="h-8 text-sm mt-1"
+                            placeholder="https://searxng.example.com"
+                            value={aiConfig.webSearchBaseUrl}
+                            onChange={(e) =>
+                              setAiConfig({ ...aiConfig, webSearchBaseUrl: e.target.value })
+                            }
+                          />
+                        </div>
+                      ) : (
+                        <div>
+                          <label className="text-xs text-muted-foreground">API Key</label>
+                          <Input
+                            className="h-8 text-sm mt-1"
+                            type="password"
+                            placeholder={
+                              aiConfig.hasWebSearchKey
+                                ? "Configured — enter new to replace"
+                                : "Enter API key"
+                            }
+                            value={aiWebSearchKey}
+                            onChange={(e) => setAiWebSearchKey(e.target.value)}
+                          />
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-            {/* Save bar */}
-            <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-3">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  loadAIConfig();
-                  setAiApiKey("");
-                  setAiWebSearchKey("");
-                }}
-              >
-                Reset
-              </Button>
-              <Button
-                size="sm"
-                disabled={!aiHasChanges}
-                onClick={async () => {
-                  const updates: Record<string, unknown> = {
-                    providerUrl: aiConfig.providerUrl,
-                    model: aiConfig.model,
-                    maxCompletionTokens: aiConfig.maxCompletionTokens,
-                    maxTokensField: aiConfig.maxTokensField,
-                    reasoningEffort: aiConfig.reasoningEffort,
-                    rateLimitMax: aiConfig.rateLimitMax,
-                    rateLimitWindowSeconds: aiConfig.rateLimitWindowSeconds,
-                    maxToolRounds: aiConfig.maxToolRounds,
-                    customSystemPrompt: aiConfig.customSystemPrompt,
-                    webSearchProvider: aiConfig.webSearchProvider,
-                    webSearchBaseUrl: aiConfig.webSearchBaseUrl,
-                  };
-                  if (aiApiKey) updates.apiKey = aiApiKey;
-                  if (aiWebSearchKey) updates.webSearchApiKey = aiWebSearchKey;
-                  await updateAIConfig(updates);
-                  setAiApiKey("");
-                  setAiWebSearchKey("");
-                  loadAIConfig();
-                }}
-              >
-                Save Changes
-              </Button>
-            </div>
+              {/* Save bar */}
+              <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    loadAIConfig();
+                    setAiApiKey("");
+                    setAiWebSearchKey("");
+                  }}
+                >
+                  Reset
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={!aiHasChanges}
+                  onClick={async () => {
+                    const updates: Record<string, unknown> = {
+                      providerUrl: aiConfig.providerUrl,
+                      model: aiConfig.model,
+                      maxCompletionTokens: aiConfig.maxCompletionTokens,
+                      maxTokensField: aiConfig.maxTokensField,
+                      reasoningEffort: aiConfig.reasoningEffort,
+                      rateLimitMax: aiConfig.rateLimitMax,
+                      rateLimitWindowSeconds: aiConfig.rateLimitWindowSeconds,
+                      maxToolRounds: aiConfig.maxToolRounds,
+                      customSystemPrompt: aiConfig.customSystemPrompt,
+                      webSearchProvider: aiConfig.webSearchProvider,
+                      webSearchBaseUrl: aiConfig.webSearchBaseUrl,
+                    };
+                    if (aiApiKey) updates.apiKey = aiApiKey;
+                    if (aiWebSearchKey) updates.webSearchApiKey = aiWebSearchKey;
+                    await updateAIConfig(updates);
+                    setAiApiKey("");
+                    setAiWebSearchKey("");
+                    loadAIConfig();
+                  }}
+                >
+                  Save Changes
+                </Button>
+              </div>
             </div>
           </div>
         )}
@@ -727,114 +821,153 @@ export function Settings() {
                 disabled={hkRunning}
               />
             </div>
-            <div className={`transition-opacity duration-200 ${!hkConfig.enabled ? "opacity-50 pointer-events-none" : ""}`}>
-            <div className="p-4 space-y-3">
-              <div className="flex items-center justify-between gap-4">
-                <span className="text-sm font-medium">Schedule</span>
-                <div className="flex items-center gap-2">
-                  <Input
-                    className="w-48 h-8 text-sm font-mono"
-                    value={hkConfig.cronExpression}
-                    onChange={(e) => setHkConfig({ ...hkConfig, cronExpression: e.target.value })}
-                    onBlur={() => updateHkConfig({ cronExpression: hkConfig.cronExpression })}
-                    disabled={!hkConfig.enabled || hkRunning}
-                  />
-                  <Button size="sm" onClick={handleRunHousekeeping} disabled={hkRunning || !hkConfig.enabled}>
-                    {hkRunning ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Play className="h-4 w-4" />
-                    )}
-                    Run Now
-                  </Button>
+            <div
+              className={`transition-opacity duration-200 ${!hkConfig.enabled ? "opacity-50 pointer-events-none" : ""}`}
+            >
+              <div className="p-4 space-y-3">
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-sm font-medium">Schedule</span>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      className="w-48 h-8 text-sm font-mono"
+                      value={hkConfig.cronExpression}
+                      onChange={(e) => setHkConfig({ ...hkConfig, cronExpression: e.target.value })}
+                      onBlur={() => updateHkConfig({ cronExpression: hkConfig.cronExpression })}
+                      disabled={!hkConfig.enabled || hkRunning}
+                    />
+                    <Button
+                      size="sm"
+                      onClick={handleRunHousekeeping}
+                      disabled={hkRunning || !hkConfig.enabled}
+                    >
+                      {hkRunning ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Play className="h-4 w-4" />
+                      )}
+                      Run Now
+                    </Button>
+                  </div>
                 </div>
               </div>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-              <HousekeepingCard
-                label="Nginx Logs"
-                description="Rotate, compress, and delete old logs"
-                stat={hkStats ? formatBytes(hkStats.nginxLogs.totalSizeBytes) : "..."}
-                statDetail={hkStats ? `${hkStats.nginxLogs.fileCount} files` : undefined}
-                enabled={hkConfig.nginxLogs.enabled}
-                onToggle={(v) => updateHkConfig({ nginxLogs: { ...hkConfig.nginxLogs, enabled: v } })}
-                retentionDays={hkConfig.nginxLogs.retentionDays}
-                onRetentionChange={(v) => updateHkConfig({ nginxLogs: { ...hkConfig.nginxLogs, retentionDays: v } })}
-                lastResult={hkStats?.lastRun?.categories.find((c) => c.category === "Nginx Logs")}
-                disabled={hkRunning}
-              />
-              <HousekeepingCard
-                label="Audit Log"
-                description="Delete old audit trail entries"
-                stat={hkStats ? hkStats.auditLog.totalRows.toLocaleString() : "..."}
-                statDetail="rows"
-                enabled={hkConfig.auditLog.enabled}
-                onToggle={(v) => updateHkConfig({ auditLog: { ...hkConfig.auditLog, enabled: v } })}
-                retentionDays={hkConfig.auditLog.retentionDays}
-                onRetentionChange={(v) => updateHkConfig({ auditLog: { ...hkConfig.auditLog, retentionDays: v } })}
-                lastResult={hkStats?.lastRun?.categories.find((c) => c.category === "Audit Log")}
-                disabled={hkRunning}
-              />
-              <HousekeepingCard
-                label="Dismissed Alerts"
-                description="Remove dismissed alerts"
-                stat={hkStats ? String(hkStats.dismissedAlerts.count) : "..."}
-                statDetail="entries"
-                enabled={hkConfig.dismissedAlerts.enabled}
-                onToggle={(v) => updateHkConfig({ dismissedAlerts: { ...hkConfig.dismissedAlerts, enabled: v } })}
-                retentionDays={hkConfig.dismissedAlerts.retentionDays}
-                onRetentionChange={(v) => updateHkConfig({ dismissedAlerts: { ...hkConfig.dismissedAlerts, retentionDays: v } })}
-                lastResult={hkStats?.lastRun?.categories.find((c) => c.category === "Dismissed Alerts")}
-                disabled={hkRunning}
-              />
-              <HousekeepingCard
-                label="Orphaned Certs"
-                description="Remove unreferenced cert files"
-                stat={hkStats ? String(hkStats.orphanedCerts.count) : "..."}
-                statDetail="found"
-                enabled={hkConfig.orphanedCerts.enabled}
-                onToggle={(v) => updateHkConfig({ orphanedCerts: { enabled: v } })}
-                lastResult={hkStats?.lastRun?.categories.find((c) => c.category === "Orphaned Certs")}
-                disabled={hkRunning}
-              />
-              <HousekeepingCard
-                label="ACME Challenges"
-                description="Clean up validation tokens"
-                stat={hkStats ? String(hkStats.acmeChallenges.fileCount) : "..."}
-                statDetail={hkStats ? `files (${formatBytes(hkStats.acmeChallenges.totalSizeBytes)})` : "files"}
-                enabled={hkConfig.acmeCleanup.enabled}
-                onToggle={(v) => updateHkConfig({ acmeCleanup: { enabled: v } })}
-                lastResult={hkStats?.lastRun?.categories.find((c) => c.category === "ACME Challenges")}
-                disabled={hkRunning}
-              />
-              <HousekeepingCard
-                label="Docker Images"
-                description="Prune old Gateway images"
-                stat={hkStats ? String(hkStats.dockerImages.oldImageCount) : "..."}
-                statDetail={hkStats ? `old (${formatBytes(hkStats.dockerImages.reclaimableBytes)})` : "old"}
-                enabled={hkConfig.dockerPrune.enabled}
-                onToggle={(v) => updateHkConfig({ dockerPrune: { enabled: v } })}
-                lastResult={hkStats?.lastRun?.categories.find((c) => c.category === "Docker Images")}
-                disabled={hkRunning}
-              />
-            </div>
-            <div className="border-t border-border px-4 py-3 flex items-center justify-between">
-              <div className="text-xs text-muted-foreground">
-                {hkStats?.lastRun ? (
-                  <span>
-                    Last run {formatRelativeDate(hkStats.lastRun.startedAt)}
-                    {" — "}
-                    {hkStats.lastRun.overallSuccess ? "completed successfully" : "completed with errors"}
-                    {` in ${(hkStats.lastRun.totalDurationMs / 1000).toFixed(1)}s`}
-                  </span>
-                ) : (
-                  <span>No runs yet</span>
-                )}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+                <HousekeepingCard
+                  label="Nginx Logs"
+                  description="Rotate, compress, and delete old logs"
+                  stat={hkStats ? formatBytes(hkStats.nginxLogs.totalSizeBytes) : "..."}
+                  statDetail={hkStats ? `${hkStats.nginxLogs.fileCount} files` : undefined}
+                  enabled={hkConfig.nginxLogs.enabled}
+                  onToggle={(v) =>
+                    updateHkConfig({ nginxLogs: { ...hkConfig.nginxLogs, enabled: v } })
+                  }
+                  retentionDays={hkConfig.nginxLogs.retentionDays}
+                  onRetentionChange={(v) =>
+                    updateHkConfig({ nginxLogs: { ...hkConfig.nginxLogs, retentionDays: v } })
+                  }
+                  lastResult={hkStats?.lastRun?.categories.find((c) => c.category === "Nginx Logs")}
+                  disabled={hkRunning}
+                />
+                <HousekeepingCard
+                  label="Audit Log"
+                  description="Delete old audit trail entries"
+                  stat={hkStats ? hkStats.auditLog.totalRows.toLocaleString() : "..."}
+                  statDetail="rows"
+                  enabled={hkConfig.auditLog.enabled}
+                  onToggle={(v) =>
+                    updateHkConfig({ auditLog: { ...hkConfig.auditLog, enabled: v } })
+                  }
+                  retentionDays={hkConfig.auditLog.retentionDays}
+                  onRetentionChange={(v) =>
+                    updateHkConfig({ auditLog: { ...hkConfig.auditLog, retentionDays: v } })
+                  }
+                  lastResult={hkStats?.lastRun?.categories.find((c) => c.category === "Audit Log")}
+                  disabled={hkRunning}
+                />
+                <HousekeepingCard
+                  label="Dismissed Alerts"
+                  description="Remove dismissed alerts"
+                  stat={hkStats ? String(hkStats.dismissedAlerts.count) : "..."}
+                  statDetail="entries"
+                  enabled={hkConfig.dismissedAlerts.enabled}
+                  onToggle={(v) =>
+                    updateHkConfig({ dismissedAlerts: { ...hkConfig.dismissedAlerts, enabled: v } })
+                  }
+                  retentionDays={hkConfig.dismissedAlerts.retentionDays}
+                  onRetentionChange={(v) =>
+                    updateHkConfig({
+                      dismissedAlerts: { ...hkConfig.dismissedAlerts, retentionDays: v },
+                    })
+                  }
+                  lastResult={hkStats?.lastRun?.categories.find(
+                    (c) => c.category === "Dismissed Alerts"
+                  )}
+                  disabled={hkRunning}
+                />
+                <HousekeepingCard
+                  label="Orphaned Certs"
+                  description="Remove unreferenced cert files"
+                  stat={hkStats ? String(hkStats.orphanedCerts.count) : "..."}
+                  statDetail="found"
+                  enabled={hkConfig.orphanedCerts.enabled}
+                  onToggle={(v) => updateHkConfig({ orphanedCerts: { enabled: v } })}
+                  lastResult={hkStats?.lastRun?.categories.find(
+                    (c) => c.category === "Orphaned Certs"
+                  )}
+                  disabled={hkRunning}
+                />
+                <HousekeepingCard
+                  label="ACME Challenges"
+                  description="Clean up validation tokens"
+                  stat={hkStats ? String(hkStats.acmeChallenges.fileCount) : "..."}
+                  statDetail={
+                    hkStats
+                      ? `files (${formatBytes(hkStats.acmeChallenges.totalSizeBytes)})`
+                      : "files"
+                  }
+                  enabled={hkConfig.acmeCleanup.enabled}
+                  onToggle={(v) => updateHkConfig({ acmeCleanup: { enabled: v } })}
+                  lastResult={hkStats?.lastRun?.categories.find(
+                    (c) => c.category === "ACME Challenges"
+                  )}
+                  disabled={hkRunning}
+                />
+                <HousekeepingCard
+                  label="Docker Images"
+                  description="Prune old Gateway images"
+                  stat={hkStats ? String(hkStats.dockerImages.oldImageCount) : "..."}
+                  statDetail={
+                    hkStats ? `old (${formatBytes(hkStats.dockerImages.reclaimableBytes)})` : "old"
+                  }
+                  enabled={hkConfig.dockerPrune.enabled}
+                  onToggle={(v) => updateHkConfig({ dockerPrune: { enabled: v } })}
+                  lastResult={hkStats?.lastRun?.categories.find(
+                    (c) => c.category === "Docker Images"
+                  )}
+                  disabled={hkRunning}
+                />
               </div>
-              <button onClick={handleViewHistory} className="text-xs text-muted-foreground hover:text-foreground transition-colors">
-                View history
-              </button>
-            </div>
+              <div className="border-t border-border px-4 py-3 flex items-center justify-between">
+                <div className="text-xs text-muted-foreground">
+                  {hkStats?.lastRun ? (
+                    <span>
+                      Last run {formatRelativeDate(hkStats.lastRun.startedAt)}
+                      {" — "}
+                      {hkStats.lastRun.overallSuccess
+                        ? "completed successfully"
+                        : "completed with errors"}
+                      {` in ${(hkStats.lastRun.totalDurationMs / 1000).toFixed(1)}s`}
+                    </span>
+                  ) : (
+                    <span>No runs yet</span>
+                  )}
+                </div>
+                <button
+                  onClick={handleViewHistory}
+                  className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  View history
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -844,25 +977,31 @@ export function Settings() {
           <div className="border bg-card" style={{ borderColor: "rgb(234 179 8 / 0.6)" }}>
             <div className="flex items-center justify-between border-b border-border p-4">
               <div>
-                <h2 className="font-semibold" style={{ color: "rgb(234 179 8)" }}>Update Available</h2>
+                <h2 className="font-semibold" style={{ color: "rgb(234 179 8)" }}>
+                  Update Available
+                </h2>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   {updateStatus.latestVersion} is ready to install
                 </p>
               </div>
               <div className="flex items-center gap-2">
                 {updateStatus.releaseNotes && (
-                  <Button size="sm" variant="outline" onClick={async () => {
-                    setReleaseNotesOpen(true);
-                    try {
-                      const all = await api.getAllReleaseNotes();
-                      if (all.length > 0) {
-                        setReleaseVersions(all.map((r) => r.version));
-                        setReleaseNotesList(all.map((r) => r.notes));
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={async () => {
+                      setReleaseNotesOpen(true);
+                      try {
+                        const all = await api.getAllReleaseNotes();
+                        if (all.length > 0) {
+                          setReleaseVersions(all.map((r) => r.version));
+                          setReleaseNotesList(all.map((r) => r.notes));
+                        }
+                      } catch {
+                        // Fallback: just show the cached latest release notes
                       }
-                    } catch {
-                      // Fallback: just show the cached latest release notes
-                    }
-                  }}>
+                    }}
+                  >
                     Release notes
                   </Button>
                 )}
@@ -890,9 +1029,7 @@ export function Settings() {
           <div className="flex items-center justify-between border-b border-border p-4">
             <div>
               <h2 className="font-semibold">About</h2>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Application info and updates
-              </p>
+              <p className="text-xs text-muted-foreground mt-0.5">Application info and updates</p>
             </div>
             {isAdmin && (
               <Button size="sm" onClick={handleCheckUpdate} disabled={isChecking}>
@@ -916,16 +1053,17 @@ export function Settings() {
               </div>
             </div>
             <div className="space-y-3">
-              <InfoRow
-                label="Version"
-                value={updateStatus?.currentVersion ?? "..."}
-              />
+              <InfoRow label="Version" value={updateStatus?.currentVersion ?? "..."} />
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">Status</span>
                 {updateStatus?.updateAvailable ? (
-                  <Badge variant="warning" className="text-xs">Update available</Badge>
+                  <Badge variant="warning" className="text-xs">
+                    Update available
+                  </Badge>
                 ) : (
-                  <Badge variant="success" className="text-xs">Up to date</Badge>
+                  <Badge variant="success" className="text-xs">
+                    Up to date
+                  </Badge>
                 )}
               </div>
               {updateStatus?.lastCheckedAt && (
@@ -939,27 +1077,32 @@ export function Settings() {
         </div>
 
         {/* Updating overlay — rendered via portal to cover entire viewport */}
-        {isUpdating && ReactDOM.createPortal(
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-background">
-            <div className="flex flex-col items-center gap-4 text-center">
-              <Loader2 className="h-10 w-10 animate-spin text-muted-foreground" />
-              <div>
-                <h2 className="text-lg font-semibold">Updating Gateway</h2>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Updating to {updateStatus?.latestVersion}. The application will restart automatically.
-                </p>
-                <p className="text-xs text-muted-foreground mt-3">
-                  This may take a minute...
-                </p>
+        {isUpdating &&
+          ReactDOM.createPortal(
+            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-background">
+              <div className="flex flex-col items-center gap-4 text-center">
+                <Loader2 className="h-10 w-10 animate-spin text-muted-foreground" />
+                <div>
+                  <h2 className="text-lg font-semibold">Updating Gateway</h2>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Updating to {updateStatus?.latestVersion}. The application will restart
+                    automatically.
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-3">This may take a minute...</p>
+                </div>
               </div>
-            </div>
-          </div>,
-          document.body
-        )}
+            </div>,
+            document.body
+          )}
 
         <p className="text-center text-xs text-muted-foreground">
           Powered by{" "}
-          <a href="https://wiolett.net" target="_blank" rel="noopener noreferrer" className="text-foreground hover:underline">
+          <a
+            href="https://wiolett.net"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-foreground hover:underline"
+          >
             Wiolett
           </a>
         </p>
@@ -971,14 +1114,16 @@ export function Settings() {
               <DialogTitle>Release Notes</DialogTitle>
             </DialogHeader>
             <div className="prose prose-sm dark:prose-invert max-w-none">
-              {(releaseNotesList ?? [updateStatus?.releaseNotes]).filter(Boolean).map((notes, i) => (
-                <div key={i}>
-                  {releaseNotesList && releaseNotesList.length > 1 && (
-                    <h3 className="text-base font-semibold mt-0">{releaseVersions?.[i]}</h3>
-                  )}
-                  <Markdown>{notes ?? ""}</Markdown>
-                </div>
-              ))}
+              {(releaseNotesList ?? [updateStatus?.releaseNotes])
+                .filter(Boolean)
+                .map((notes, i) => (
+                  <div key={i}>
+                    {releaseNotesList && releaseNotesList.length > 1 && (
+                      <h3 className="text-base font-semibold mt-0">{releaseVersions?.[i]}</h3>
+                    )}
+                    <Markdown>{notes ?? ""}</Markdown>
+                  </div>
+                ))}
             </div>
           </DialogContent>
         </Dialog>
@@ -1020,9 +1165,13 @@ export function Settings() {
                         </td>
                         <td className="p-3">
                           {run.overallSuccess ? (
-                            <Badge variant="success" className="text-[10px] px-1.5 py-0">OK</Badge>
+                            <Badge variant="success" className="text-[10px] px-1.5 py-0">
+                              OK
+                            </Badge>
                           ) : (
-                            <Badge variant="destructive" className="text-[10px] px-1.5 py-0">Errors</Badge>
+                            <Badge variant="destructive" className="text-[10px] px-1.5 py-0">
+                              Errors
+                            </Badge>
                           )}
                         </td>
                       </tr>
@@ -1031,9 +1180,7 @@ export function Settings() {
                 </table>
               </div>
             ) : (
-              <p className="text-center text-sm text-muted-foreground py-8">
-                No runs yet
-              </p>
+              <p className="text-center text-sm text-muted-foreground py-8">No runs yet</p>
             )}
           </DialogContent>
         </Dialog>
@@ -1231,17 +1378,19 @@ function HousekeepingCard({
       <div className="min-w-0">
         <div className="flex items-center gap-2">
           <p className="text-sm font-medium">{label}</p>
-          {lastResult && (
-            lastResult.success ? (
+          {lastResult &&
+            (lastResult.success ? (
               <Check className="h-3 w-3 text-emerald-500 shrink-0" />
             ) : (
               <X className="h-3 w-3 text-destructive shrink-0" />
-            )
-          )}
+            ))}
         </div>
         <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-1">
-          <span>{stat}{statDetail ? ` ${statDetail}` : ""}</span>
+          <span>
+            {stat}
+            {statDetail ? ` ${statDetail}` : ""}
+          </span>
           {retentionDays !== undefined && onRetentionChange && (
             <>
               <span>&middot;</span>
@@ -1270,15 +1419,25 @@ function HousekeepingCard({
   );
 }
 
-function AIBypassRow({ label, description, checked, onChange, dangerous }: {
-  label: string; description: string; checked: boolean;
-  onChange: (v: boolean) => void; dangerous?: boolean;
+function AIBypassRow({
+  label,
+  description,
+  checked,
+  onChange,
+  dangerous,
+}: {
+  label: string;
+  description: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  dangerous?: boolean;
 }) {
   const handleChange = async (v: boolean) => {
     if (v && dangerous) {
       const ok = await confirm({
         title: `Enable ${label.toLowerCase().replace("ai: ", "")}?`,
-        description: "This may be dangerous. The AI assistant will perform these actions without asking for your confirmation.",
+        description:
+          "This may be dangerous. The AI assistant will perform these actions without asking for your confirmation.",
         confirmLabel: "Enable",
         variant: "destructive",
       });
@@ -1302,6 +1461,6 @@ function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B";
   const units = ["B", "KB", "MB", "GB", "TB"];
   const i = Math.floor(Math.log(bytes) / Math.log(1024));
-  const value = bytes / Math.pow(1024, i);
+  const value = bytes / 1024 ** i;
   return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[i]}`;
 }

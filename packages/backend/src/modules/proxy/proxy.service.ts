@@ -177,11 +177,7 @@ export class ProxyService {
       }
     }
 
-    const [updated] = await this.db
-      .update(proxyHosts)
-      .set(updateData)
-      .where(eq(proxyHosts.id, id))
-      .returning();
+    const [updated] = await this.db.update(proxyHosts).set(updateData).where(eq(proxyHosts.id, id)).returning();
 
     // 3. Regenerate nginx config
     try {
@@ -464,7 +460,7 @@ export class ProxyService {
         const host = await this.db.query.proxyHosts.findFirst({
           where: eq(proxyHosts.id, hostId),
         });
-        if (!host || !host.healthCheckEnabled || !host.forwardHost || !host.forwardPort) return;
+        if (!host?.healthCheckEnabled || !host.forwardHost || !host.forwardPort) return;
 
         const scheme = host.forwardScheme || 'http';
         const path = host.healthCheckUrl || '/';
@@ -566,7 +562,10 @@ export class ProxyService {
         }
 
         if (!keyPem.includes('-----BEGIN')) {
-          logger.error('SSL key decryption produced invalid PEM', { certId: sslCert.id, starts: keyPem.substring(0, 20) });
+          logger.error('SSL key decryption produced invalid PEM', {
+            certId: sslCert.id,
+            starts: keyPem.substring(0, 20),
+          });
           throw new Error('Failed to decrypt SSL certificate private key');
         }
 

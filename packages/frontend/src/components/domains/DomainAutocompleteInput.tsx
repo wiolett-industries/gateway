@@ -10,7 +10,11 @@ interface DomainAutocompleteInputProps {
   placeholder?: string;
 }
 
-export function DomainAutocompleteInput({ value, onChange, placeholder }: DomainAutocompleteInputProps) {
+export function DomainAutocompleteInput({
+  value,
+  onChange,
+  placeholder,
+}: DomainAutocompleteInputProps) {
   const [suggestions, setSuggestions] = useState<DomainSearchResult[]>([]);
   const [open, setOpen] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);

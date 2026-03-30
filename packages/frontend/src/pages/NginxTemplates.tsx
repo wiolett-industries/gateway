@@ -38,7 +38,7 @@ export function NginxTemplates() {
 
   useEffect(() => {
     load();
-  }, []);
+  }, [load]);
 
   const handleClone = async (id: string) => {
     try {
@@ -151,7 +151,11 @@ export function NginxTemplates() {
             ))}
           </div>
         ) : (
-          <EmptyState message="No config templates." actionLabel="Create one" actionHref="/nginx-templates/new" />
+          <EmptyState
+            message="No config templates."
+            actionLabel="Create one"
+            actionHref="/nginx-templates/new"
+          />
         )}
       </div>
     </PageTransition>

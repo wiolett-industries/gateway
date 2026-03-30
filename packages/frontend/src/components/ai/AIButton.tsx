@@ -1,8 +1,8 @@
 import { Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { useUIStore } from "@/stores/ui";
 import { useAIStore } from "@/stores/ai";
+import { useUIStore } from "@/stores/ui";
 
 interface AIButtonProps {
   iconOnly?: boolean;

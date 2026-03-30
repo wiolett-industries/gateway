@@ -2,6 +2,7 @@ import { OpenAPIHono } from '@hono/zod-openapi';
 import { createChildLogger } from '@/lib/logger.js';
 
 const logger = createChildLogger('MonitoringRoutes');
+
 import { streamSSE } from 'hono/streaming';
 import { container } from '@/container.js';
 import { authMiddleware, sessionOnly } from '@/modules/auth/auth.middleware.js';
@@ -173,10 +174,12 @@ monitoringRoutes.get('/nginx/stats/stream', async (c) => {
         });
       } catch (err) {
         logger.warn('SSE snapshot error', { error: (err as Error).message });
-        await stream.writeSSE({
-          data: JSON.stringify({ error: (err as Error).message }),
-          event: 'error',
-        }).catch(() => {});
+        await stream
+          .writeSSE({
+            data: JSON.stringify({ error: (err as Error).message }),
+            event: 'error',
+          })
+          .catch(() => {});
       }
     }
   });

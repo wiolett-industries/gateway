@@ -1,6 +1,6 @@
 import { Resolver } from 'node:dns/promises';
-import { createChildLogger } from '@/lib/logger.js';
 import type { DnsRecords } from '@/db/schema/domains.js';
+import { createChildLogger } from '@/lib/logger.js';
 
 const logger = createChildLogger('DnsUtils');
 
@@ -72,11 +72,14 @@ export async function resolveDnsRecords(domain: string): Promise<DnsRecords> {
     a: a.status === 'fulfilled' ? a.value : [],
     aaaa: aaaa.status === 'fulfilled' ? aaaa.value : [],
     cname: cname.status === 'fulfilled' ? cname.value : [],
-    caa: caa.status === 'fulfilled' ? caa.value.map((r) => ({
-      critical: r.critical,
-      issue: r.issue,
-      issuewild: r.issuewild,
-    })) : [],
+    caa:
+      caa.status === 'fulfilled'
+        ? caa.value.map((r) => ({
+            critical: r.critical,
+            issue: r.issue,
+            issuewild: r.issuewild,
+          }))
+        : [],
     mx: mx.status === 'fulfilled' ? mx.value : [],
     txt: txt.status === 'fulfilled' ? txt.value : [],
   };

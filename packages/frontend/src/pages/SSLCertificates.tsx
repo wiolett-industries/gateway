@@ -2,11 +2,10 @@ import { ChevronLeft, ChevronRight, MoreVertical, Plus, RefreshCw, Trash2 } from
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
-import { SSLCertificateCreateDialog } from "@/components/ssl/SSLCertificateCreateDialog";
-import { useUIStore } from "@/stores/ui";
 import { EmptyState } from "@/components/common/EmptyState";
 import { PageTransition } from "@/components/common/PageTransition";
 import { SearchFilterBar } from "@/components/common/SearchFilterBar";
+import { SSLCertificateCreateDialog } from "@/components/ssl/SSLCertificateCreateDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,6 +24,7 @@ import {
 import { cn, daysUntil, formatDate, hoursUntil } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth";
 import { useSSLStore } from "@/stores/ssl";
+import { useUIStore } from "@/stores/ui";
 import type { SSLCertStatus, SSLCertType } from "@/types";
 
 const typeOptions: { value: SSLCertType | "all"; label: string }[] = [
@@ -132,7 +132,9 @@ export function SSLCertificates() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to delete certificate";
       if (msg.includes("in use") || msg.includes("CERT_IN_USE")) {
-        toast.error("Cannot delete: certificate is used by proxy hosts. Remove it from proxy hosts first.");
+        toast.error(
+          "Cannot delete: certificate is used by proxy hosts. Remove it from proxy hosts first."
+        );
       } else if (msg.includes("System") || msg.includes("SYSTEM_CERT")) {
         toast.error("System certificates cannot be deleted.");
       } else {
@@ -240,7 +242,11 @@ export function SSLCertificates() {
                         <td className="p-3">
                           <div className="flex items-center gap-2">
                             <p className="text-sm font-medium">{cert.name}</p>
-                            {cert.isSystem && <Badge variant="outline" className="text-[10px] px-1.5 py-0">System</Badge>}
+                            {cert.isSystem && (
+                              <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                                System
+                              </Badge>
+                            )}
                           </div>
                         </td>
                         <td className="p-3">
@@ -367,7 +373,10 @@ export function SSLCertificates() {
             actionLabel="Add one"
             onAction={() => setCreateDialogOpen(true)}
             hasActiveFilters={hasActiveFilters}
-            onReset={() => { resetFilters(); setSearchInput(""); }}
+            onReset={() => {
+              resetFilters();
+              setSearchInput("");
+            }}
           />
         )}
       </div>

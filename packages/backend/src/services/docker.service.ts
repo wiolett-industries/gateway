@@ -180,10 +180,7 @@ export class DockerService {
    * Inspect a container to get state, uptime, etc.
    */
   async inspectContainer(containerName: string): Promise<DockerContainerInspect> {
-    const res = await this.request(
-      'GET',
-      `${API_VERSION}/containers/${encodeURIComponent(containerName)}/json`
-    );
+    const res = await this.request('GET', `${API_VERSION}/containers/${encodeURIComponent(containerName)}/json`);
     if (res.statusCode !== 200) {
       throw new Error(`Docker inspect failed (${res.statusCode}): ${res.body}`);
     }
@@ -257,10 +254,7 @@ export class DockerService {
     if (!hostname) {
       throw new Error('HOSTNAME env var not available — cannot self-inspect');
     }
-    const res = await this.request(
-      'GET',
-      `${API_VERSION}/containers/${encodeURIComponent(hostname)}/json`
-    );
+    const res = await this.request('GET', `${API_VERSION}/containers/${encodeURIComponent(hostname)}/json`);
     if (res.statusCode !== 200) {
       throw new Error(`Docker self-inspect failed (${res.statusCode}): ${res.body}`);
     }
@@ -271,11 +265,7 @@ export class DockerService {
    * Create a container. Returns the container ID.
    */
   async createContainer(config: DockerCreateContainerConfig): Promise<string> {
-    const res = await this.request(
-      'POST',
-      `${API_VERSION}/containers/create`,
-      config
-    );
+    const res = await this.request('POST', `${API_VERSION}/containers/create`, config);
     if (res.statusCode !== 201) {
       throw new Error(`Docker container create failed (${res.statusCode}): ${res.body}`);
     }
@@ -287,10 +277,7 @@ export class DockerService {
    * Start a container by ID.
    */
   async startContainer(id: string): Promise<void> {
-    const res = await this.request(
-      'POST',
-      `${API_VERSION}/containers/${encodeURIComponent(id)}/start`
-    );
+    const res = await this.request('POST', `${API_VERSION}/containers/${encodeURIComponent(id)}/start`);
     // 204 = started, 304 = already running
     if (res.statusCode !== 204 && res.statusCode !== 304) {
       throw new Error(`Docker container start failed (${res.statusCode}): ${res.body}`);
@@ -318,10 +305,7 @@ export class DockerService {
    * Remove a container by ID.
    */
   async removeContainer(id: string): Promise<void> {
-    const res = await this.request(
-      'DELETE',
-      `${API_VERSION}/containers/${encodeURIComponent(id)}?force=true`
-    );
+    const res = await this.request('DELETE', `${API_VERSION}/containers/${encodeURIComponent(id)}?force=true`);
     if (res.statusCode !== 204 && res.statusCode !== 404) {
       throw new Error(`Docker container remove failed (${res.statusCode}): ${res.body}`);
     }

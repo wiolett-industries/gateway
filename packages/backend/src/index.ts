@@ -16,11 +16,11 @@ import pg from 'pg';
 
 import { createApp } from '@/app.js';
 import { container, initializeContainer } from '@/bootstrap.js';
-import { TOKENS } from '@/container.js';
 import { getEnv } from '@/config/env.js';
+import { TOKENS } from '@/container.js';
 import { logger } from '@/lib/logger.js';
-import { SchedulerService } from '@/services/scheduler.service.js';
 import type { RedisClient } from '@/services/cache.service.js';
+import { SchedulerService } from '@/services/scheduler.service.js';
 
 async function runMigrations(databaseUrl: string) {
   logger.info('Running database migrations...');

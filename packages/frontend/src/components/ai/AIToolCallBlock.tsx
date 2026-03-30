@@ -1,36 +1,54 @@
-import { useState } from "react";
 import {
+  BookOpen,
   Check,
   ChevronDown,
   ChevronRight,
+  FileText,
+  Globe,
   HelpCircle,
   Loader2,
-  Send,
-  ShieldCheck,
-  Globe,
   Lock,
+  Search,
+  Send,
+  Shield,
+  ShieldCheck,
   Users,
   X,
-  Search,
-  FileText,
-  Shield,
-  BookOpen,
 } from "lucide-react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import type { AIToolCall } from "@/types/ai";
 
 const CATEGORY_ICONS: Record<string, React.ElementType> = {
-  list_cas: ShieldCheck, get_ca: ShieldCheck, create_root_ca: ShieldCheck,
-  create_intermediate_ca: ShieldCheck, delete_ca: ShieldCheck,
-  list_certificates: FileText, get_certificate: FileText, issue_certificate: FileText,
-  revoke_certificate: FileText, list_templates: FileText, create_template: FileText,
+  list_cas: ShieldCheck,
+  get_ca: ShieldCheck,
+  create_root_ca: ShieldCheck,
+  create_intermediate_ca: ShieldCheck,
+  delete_ca: ShieldCheck,
+  list_certificates: FileText,
+  get_certificate: FileText,
+  issue_certificate: FileText,
+  revoke_certificate: FileText,
+  list_templates: FileText,
+  create_template: FileText,
   delete_template: FileText,
-  list_proxy_hosts: Globe, get_proxy_host: Globe, create_proxy_host: Globe,
-  update_proxy_host: Globe, delete_proxy_host: Globe,
-  list_ssl_certificates: Lock, request_acme_cert: Lock, link_internal_cert: Lock,
-  list_domains: Globe, create_domain: Globe, delete_domain: Globe,
-  list_access_lists: Shield, create_access_list: Shield, delete_access_list: Shield,
-  list_users: Users, update_user_role: Users, get_audit_log: Users,
+  list_proxy_hosts: Globe,
+  get_proxy_host: Globe,
+  create_proxy_host: Globe,
+  update_proxy_host: Globe,
+  delete_proxy_host: Globe,
+  list_ssl_certificates: Lock,
+  request_acme_cert: Lock,
+  link_internal_cert: Lock,
+  list_domains: Globe,
+  create_domain: Globe,
+  delete_domain: Globe,
+  list_access_lists: Shield,
+  create_access_list: Shield,
+  delete_access_list: Shield,
+  list_users: Users,
+  update_user_role: Users,
+  get_audit_log: Users,
   get_dashboard_stats: Users,
   web_search: Search,
   internal_documentation: BookOpen,
@@ -63,8 +81,13 @@ export function AIToolCallBlock({ toolCall, onApprove, onReject }: AIToolCallBlo
     }
   };
 
-  const isSkipped = toolCall.result && typeof toolCall.result === "object" && "skipped" in (toolCall.result as Record<string, unknown>);
-  const toolLabel = toolCall.name.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) + (isSkipped ? " (skipped)" : "");
+  const isSkipped =
+    toolCall.result &&
+    typeof toolCall.result === "object" &&
+    "skipped" in (toolCall.result as Record<string, unknown>);
+  const toolLabel =
+    toolCall.name.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) +
+    (isSkipped ? " (skipped)" : "");
 
   const hasArgs = Object.keys(toolCall.arguments).length > 0;
   const hasResult = toolCall.result !== undefined && !isSkipped;
@@ -78,12 +101,18 @@ export function AIToolCallBlock({ toolCall, onApprove, onReject }: AIToolCallBlo
         className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left transition-colors ${hasContent ? "hover:bg-muted/50 cursor-pointer" : "cursor-default"}`}
       >
         {hasContent ? (
-          expanded ? <ChevronDown className="h-3 w-3 shrink-0" /> : <ChevronRight className="h-3 w-3 shrink-0" />
+          expanded ? (
+            <ChevronDown className="h-3 w-3 shrink-0" />
+          ) : (
+            <ChevronRight className="h-3 w-3 shrink-0" />
+          )
         ) : (
           <span className="w-3 shrink-0" />
         )}
         <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-        <span className={`flex-1 truncate font-medium ${isSkipped ? "text-muted-foreground" : ""}`}>{toolLabel}</span>
+        <span className={`flex-1 truncate font-medium ${isSkipped ? "text-muted-foreground" : ""}`}>
+          {toolLabel}
+        </span>
         {!isSkipped && statusIcon()}
       </button>
 
@@ -96,14 +125,20 @@ export function AIToolCallBlock({ toolCall, onApprove, onReject }: AIToolCallBlo
             size="sm"
             variant="outline"
             className="h-6 px-2 text-xs"
-            onClick={(e) => { e.stopPropagation(); onReject?.(toolCall.id); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onReject?.(toolCall.id);
+            }}
           >
             Reject
           </Button>
           <Button
             size="sm"
             className="h-6 px-2 text-xs"
-            onClick={(e) => { e.stopPropagation(); onApprove?.(toolCall.id); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onApprove?.(toolCall.id);
+            }}
           >
             Approve
           </Button>
@@ -123,14 +158,20 @@ export function AIToolCallBlock({ toolCall, onApprove, onReject }: AIToolCallBlo
           )}
           {hasResult && (
             <pre className="text-[11px] bg-muted/50 px-2.5 py-1.5 overflow-x-auto whitespace-pre-wrap max-h-48 border-t border-border">
-              {typeof toolCall.result === "string" ? toolCall.result : JSON.stringify(toolCall.result, null, 2)}
+              {typeof toolCall.result === "string"
+                ? toolCall.result
+                : JSON.stringify(toolCall.result, null, 2)}
             </pre>
           )}
           {hasError && (
-            <p className="text-destructive px-2.5 py-1.5 border-t border-border">{toolCall.error}</p>
+            <p className="text-destructive px-2.5 py-1.5 border-t border-border">
+              {toolCall.error}
+            </p>
           )}
           {toolCall.status === "rejected" && (
-            <p className="text-muted-foreground italic px-2.5 py-1.5 border-t border-border">Rejected by user</p>
+            <p className="text-muted-foreground italic px-2.5 py-1.5 border-t border-border">
+              Rejected by user
+            </p>
           )}
         </div>
       </div>
@@ -138,12 +179,23 @@ export function AIToolCallBlock({ toolCall, onApprove, onReject }: AIToolCallBlo
   );
 }
 
-export function QuestionBlock({ toolCall, onAnswer }: { toolCall: AIToolCall; onAnswer?: (id: string, answer: string) => void }) {
+export function QuestionBlock({
+  toolCall,
+  onAnswer,
+}: {
+  toolCall: AIToolCall;
+  onAnswer?: (id: string, answer: string) => void;
+}) {
   const [answerText, setAnswerText] = useState("");
-  const args = toolCall.arguments as { question?: string; options?: Array<{ label: string; description?: string }>; allowFreeText?: boolean };
+  const args = toolCall.arguments as {
+    question?: string;
+    options?: Array<{ label: string; description?: string }>;
+    allowFreeText?: boolean;
+  };
   const question = args.question || "Please provide more information";
   const options = args.options || [];
-  const allowFreeText = args.allowFreeText !== undefined ? args.allowFreeText : options.length === 0;
+  const allowFreeText =
+    args.allowFreeText !== undefined ? args.allowFreeText : options.length === 0;
   const isAnswered = toolCall.status === "completed" || toolCall.status === "failed";
 
   const handleSubmit = (text: string) => {
@@ -202,7 +254,9 @@ export function QuestionBlock({ toolCall, onAnswer }: { toolCall: AIToolCall; on
               type="text"
               value={answerText}
               onChange={(e) => setAnswerText(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") handleSubmit(answerText); }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleSubmit(answerText);
+              }}
               placeholder={options.length > 0 ? "Or type your answer..." : "Type your answer..."}
               className="w-full bg-background border border-input px-2.5 py-1.5 pr-8 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
               autoFocus

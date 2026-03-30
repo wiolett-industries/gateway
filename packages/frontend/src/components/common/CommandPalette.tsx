@@ -196,10 +196,14 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
             New Proxy Host
             <CommandShortcut>⌃H</CommandShortcut>
           </CommandItem>
-          <CommandItem onSelect={() => handleSelect(() => {
-            navigate("/ssl-certificates");
-            useUIStore.getState().openModal("createSSLCert");
-          })}>
+          <CommandItem
+            onSelect={() =>
+              handleSelect(() => {
+                navigate("/ssl-certificates");
+                useUIStore.getState().openModal("createSSLCert");
+              })
+            }
+          >
             <Plus className="mr-2 h-4 w-4" />
             New SSL Certificate
             <CommandShortcut>⌃S</CommandShortcut>

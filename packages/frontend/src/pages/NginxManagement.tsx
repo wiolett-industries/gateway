@@ -43,7 +43,7 @@ function formatBytes(bytes: number): string {
   const k = 1024;
   const sizes = ["B", "KB", "MB", "GB", "TB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
+  return `${(bytes / k ** i).toFixed(1)} ${sizes[i]}`;
 }
 
 function formatUptime(seconds: number): string {
@@ -64,7 +64,14 @@ interface StatCardProps {
   subtitle?: string;
 }
 
-function StatCard({ label, value, icon: Icon, history, color = "var(--color-primary)", subtitle }: StatCardProps) {
+function StatCard({
+  label,
+  value,
+  icon: Icon,
+  history,
+  color = "var(--color-primary)",
+  subtitle,
+}: StatCardProps) {
   return (
     <div className="border border-border bg-card flex flex-col overflow-hidden">
       <div className="p-4 space-y-2 flex-1">
@@ -76,7 +83,14 @@ function StatCard({ label, value, icon: Icon, history, color = "var(--color-prim
         {subtitle && <p className="text-[10px] text-muted-foreground">{subtitle}</p>}
       </div>
       {history.length >= 2 && (
-        <Sparkline data={history} width={200} height={32} color={color} fillOpacity={0.1} className="w-full" />
+        <Sparkline
+          data={history}
+          width={200}
+          height={32}
+          color={color}
+          fillOpacity={0.1}
+          className="w-full"
+        />
       )}
     </div>
   );
@@ -110,35 +124,38 @@ export function NginxManagement() {
     return next;
   }, []);
 
-  const processSnapshot = useCallback((snapshot: NginxStatsSnapshot) => {
-    if (snapshot.stubStatus) {
-      appendHistory("activeConnections", snapshot.stubStatus.activeConnections);
-      appendHistory("reading", snapshot.stubStatus.reading);
-      appendHistory("writing", snapshot.stubStatus.writing);
-      appendHistory("waiting", snapshot.stubStatus.waiting);
-      appendHistory("accepts_raw", snapshot.stubStatus.accepts);
-      appendHistory("handled_raw", snapshot.stubStatus.handled);
-      appendHistory("requests_raw", snapshot.stubStatus.requests);
-    }
-    if (snapshot.systemStats) {
-      appendHistory("cpu", snapshot.systemStats.cpuUsagePercent);
-      appendHistory("memory", snapshot.systemStats.memoryUsagePercent);
-      appendHistory("networkRx", snapshot.systemStats.networkRxBytes);
-      appendHistory("networkTx", snapshot.systemStats.networkTxBytes);
-      appendHistory("diskRead", snapshot.systemStats.blockReadBytes);
-      appendHistory("diskWrite", snapshot.systemStats.blockWriteBytes);
-    }
-    appendHistory("rps", snapshot.derived.requestsPerSec);
-    appendHistory("cps", snapshot.derived.connectionsPerSec);
-    if (snapshot.trafficStats) {
-      appendHistory("s2xx", snapshot.trafficStats.statusCodes.s2xx);
-      appendHistory("s3xx", snapshot.trafficStats.statusCodes.s3xx);
-      appendHistory("s4xx", snapshot.trafficStats.statusCodes.s4xx);
-      appendHistory("s5xx", snapshot.trafficStats.statusCodes.s5xx);
-      appendHistory("avgRt", snapshot.trafficStats.avgResponseTime);
-      appendHistory("p95Rt", snapshot.trafficStats.p95ResponseTime);
-    }
-  }, [appendHistory]);
+  const processSnapshot = useCallback(
+    (snapshot: NginxStatsSnapshot) => {
+      if (snapshot.stubStatus) {
+        appendHistory("activeConnections", snapshot.stubStatus.activeConnections);
+        appendHistory("reading", snapshot.stubStatus.reading);
+        appendHistory("writing", snapshot.stubStatus.writing);
+        appendHistory("waiting", snapshot.stubStatus.waiting);
+        appendHistory("accepts_raw", snapshot.stubStatus.accepts);
+        appendHistory("handled_raw", snapshot.stubStatus.handled);
+        appendHistory("requests_raw", snapshot.stubStatus.requests);
+      }
+      if (snapshot.systemStats) {
+        appendHistory("cpu", snapshot.systemStats.cpuUsagePercent);
+        appendHistory("memory", snapshot.systemStats.memoryUsagePercent);
+        appendHistory("networkRx", snapshot.systemStats.networkRxBytes);
+        appendHistory("networkTx", snapshot.systemStats.networkTxBytes);
+        appendHistory("diskRead", snapshot.systemStats.blockReadBytes);
+        appendHistory("diskWrite", snapshot.systemStats.blockWriteBytes);
+      }
+      appendHistory("rps", snapshot.derived.requestsPerSec);
+      appendHistory("cps", snapshot.derived.connectionsPerSec);
+      if (snapshot.trafficStats) {
+        appendHistory("s2xx", snapshot.trafficStats.statusCodes.s2xx);
+        appendHistory("s3xx", snapshot.trafficStats.statusCodes.s3xx);
+        appendHistory("s4xx", snapshot.trafficStats.statusCodes.s4xx);
+        appendHistory("s5xx", snapshot.trafficStats.statusCodes.s5xx);
+        appendHistory("avgRt", snapshot.trafficStats.avgResponseTime);
+        appendHistory("p95Rt", snapshot.trafficStats.p95ResponseTime);
+      }
+    },
+    [appendHistory]
+  );
 
   // SSE connection for monitoring
   useEffect(() => {
@@ -242,13 +259,13 @@ export function NginxManagement() {
 
   return (
     <PageTransition>
-      <div className={`h-full p-6 ${activeTab === "configuration" ? "flex flex-col gap-4 overflow-hidden" : "space-y-4 overflow-y-auto"}`}>
+      <div
+        className={`h-full p-6 ${activeTab === "configuration" ? "flex flex-col gap-4 overflow-hidden" : "space-y-4 overflow-y-auto"}`}
+      >
         <div className="flex flex-wrap items-center justify-between gap-2 shrink-0">
           <div>
             <h1 className="text-2xl font-bold">Nginx</h1>
-            <p className="text-sm text-muted-foreground">
-              Server monitoring and configuration
-            </p>
+            <p className="text-sm text-muted-foreground">Server monitoring and configuration</p>
           </div>
           {connected && (
             <Badge variant="success" className="text-xs">
@@ -257,7 +274,11 @@ export function NginxManagement() {
           )}
         </div>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col flex-1 min-h-0">
+        <Tabs
+          value={activeTab}
+          onValueChange={setActiveTab}
+          className="flex flex-col flex-1 min-h-0"
+        >
           <TabsList className="shrink-0">
             <TabsTrigger value="monitoring">Monitoring</TabsTrigger>
             <TabsTrigger value="configuration">Configuration</TabsTrigger>
@@ -295,7 +316,9 @@ export function NginxManagement() {
 
                 {/* Connection Stats */}
                 <div>
-                  <h3 className="text-sm font-semibold mb-2 mt-4 text-muted-foreground">Connections</h3>
+                  <h3 className="text-sm font-semibold mb-2 mt-4 text-muted-foreground">
+                    Connections
+                  </h3>
                   <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
                     <StatCard
                       label="Active"
@@ -344,7 +367,9 @@ export function NginxManagement() {
 
                 {/* System Resources */}
                 <div>
-                  <h3 className="text-sm font-semibold mb-2 mt-4 text-muted-foreground">Resources</h3>
+                  <h3 className="text-sm font-semibold mb-2 mt-4 text-muted-foreground">
+                    Resources
+                  </h3>
                   <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                     <StatCard
                       label="CPU"
@@ -359,12 +384,20 @@ export function NginxManagement() {
                       icon={Server}
                       history={h.memory || []}
                       color="#8b5cf6"
-                      subtitle={sys ? `${sys.memoryUsagePercent.toFixed(1)}% of ${formatBytes(sys.memoryLimitBytes)}` : undefined}
+                      subtitle={
+                        sys
+                          ? `${sys.memoryUsagePercent.toFixed(1)}% of ${formatBytes(sys.memoryLimitBytes)}`
+                          : undefined
+                      }
                     />
                     <div className="col-span-2 md:col-span-1">
                       <StatCard
                         label="Network I/O"
-                        value={sys ? `${formatBytes(sys.networkRxBytes)} / ${formatBytes(sys.networkTxBytes)}` : "0 B"}
+                        value={
+                          sys
+                            ? `${formatBytes(sys.networkRxBytes)} / ${formatBytes(sys.networkTxBytes)}`
+                            : "0 B"
+                        }
                         icon={Activity}
                         history={h.networkRx || []}
                         color="#06b6d4"
@@ -374,7 +407,11 @@ export function NginxManagement() {
                     <div className="col-span-2 md:col-span-1">
                       <StatCard
                         label="Disk I/O"
-                        value={sys ? `${formatBytes(sys.blockReadBytes)} / ${formatBytes(sys.blockWriteBytes)}` : "0 B"}
+                        value={
+                          sys
+                            ? `${formatBytes(sys.blockReadBytes)} / ${formatBytes(sys.blockWriteBytes)}`
+                            : "0 B"
+                        }
                         icon={HardDrive}
                         history={h.diskRead || []}
                         color="#f97316"
@@ -387,7 +424,9 @@ export function NginxManagement() {
                 {/* Traffic — Status Codes & Response Times */}
                 {stats?.trafficStats && (
                   <div>
-                    <h3 className="text-sm font-semibold mb-2 mt-4 text-muted-foreground">Traffic</h3>
+                    <h3 className="text-sm font-semibold mb-2 mt-4 text-muted-foreground">
+                      Traffic
+                    </h3>
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
                       <StatCard
                         label="2xx Success"
@@ -438,7 +477,9 @@ export function NginxManagement() {
                 {/* Cumulative Counters */}
                 {stub && (
                   <div>
-                    <h3 className="text-sm font-semibold mb-2 mt-4 text-muted-foreground">Totals (30s trend)</h3>
+                    <h3 className="text-sm font-semibold mb-2 mt-4 text-muted-foreground">
+                      Totals (30s trend)
+                    </h3>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                       <StatCard
                         label="Accepts"
@@ -493,21 +534,12 @@ export function NginxManagement() {
                       Read-only — admin role required to edit
                     </p>
                   )}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleTest}
-                    disabled={isTesting}
-                  >
+                  <Button variant="outline" size="sm" onClick={handleTest} disabled={isTesting}>
                     <FlaskConical className="h-4 w-4" />
                     {isTesting ? "Testing..." : "Test"}
                   </Button>
                   {isAdmin && (
-                    <Button
-                      size="sm"
-                      onClick={handleSave}
-                      disabled={isSaving || !hasChanges}
-                    >
+                    <Button size="sm" onClick={handleSave} disabled={isSaving || !hasChanges}>
                       <Save className="h-4 w-4" />
                       {isSaving ? "Saving..." : "Save & Reload"}
                     </Button>

@@ -84,8 +84,8 @@ export const proxyHosts = pgTable(
     healthCheckEnabled: boolean('health_check_enabled').notNull().default(false),
     healthCheckUrl: varchar('health_check_url', { length: 500 }).default('/'),
     healthCheckInterval: integer('health_check_interval').default(30), // seconds
-    healthCheckExpectedStatus: integer('health_check_expected_status'),  // null = accept 2xx
-    healthCheckExpectedBody: varchar('health_check_expected_body', { length: 500 }),  // null = don't check body
+    healthCheckExpectedStatus: integer('health_check_expected_status'), // null = accept 2xx
+    healthCheckExpectedBody: varchar('health_check_expected_body', { length: 500 }), // null = don't check body
     healthStatus: healthStatusEnum('health_status').default('unknown'),
     lastHealthCheckAt: timestamp('last_health_check_at', { withTimezone: true }),
 

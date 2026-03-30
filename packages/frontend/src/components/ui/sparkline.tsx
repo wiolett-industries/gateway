@@ -40,12 +40,7 @@ export function Sparkline({
       className={className}
       style={{ display: "block", height }}
     >
-      <polyline
-        points={fillPoints}
-        fill={color}
-        fillOpacity={fillOpacity}
-        stroke="none"
-      />
+      <polyline points={fillPoints} fill={color} fillOpacity={fillOpacity} stroke="none" />
       <polyline
         points={points}
         fill="none"
