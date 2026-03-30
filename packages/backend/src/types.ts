@@ -24,6 +24,7 @@ export interface AppEnv {
   Variables: {
     user?: User;
     sessionId?: string;
+    tokenScopes?: string[];
     requestId: string;
   };
 }

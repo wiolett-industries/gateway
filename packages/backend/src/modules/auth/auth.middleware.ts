@@ -46,11 +46,12 @@ export const authMiddleware: MiddlewareHandler<AppEnv> = async (c, next) => {
 
   if (credential.type === 'apitoken') {
     const tokensService = container.resolve(TokensService);
-    const user = await tokensService.validateToken(credential.value);
-    if (!user) {
+    const result = await tokensService.validateToken(credential.value);
+    if (!result) {
       throw new HTTPException(401, { message: 'Invalid or expired API token' });
     }
-    c.set('user', user);
+    c.set('user', result.user);
+    c.set('tokenScopes', result.scopes);
   } else {
     const sessionService = container.resolve(SessionService);
     const session = await sessionService.getSession(credential.value);
@@ -71,9 +72,10 @@ export const optionalAuthMiddleware: MiddlewareHandler<AppEnv> = async (c, next)
   if (credential) {
     if (credential.type === 'apitoken') {
       const tokensService = container.resolve(TokensService);
-      const user = await tokensService.validateToken(credential.value);
-      if (user) {
-        c.set('user', user);
+      const result = await tokensService.validateToken(credential.value);
+      if (result) {
+        c.set('user', result.user);
+        c.set('tokenScopes', result.scopes);
       }
     } else {
       const sessionService = container.resolve(SessionService);
@@ -123,11 +125,9 @@ export function rbacMiddleware(...allowedRoles: UserRole[]): MiddlewareHandler<A
 
 export function requireScope(scope: string): MiddlewareHandler<AppEnv> {
   return async (c, next) => {
-    const credential = extractCredential(c);
-    if (credential?.type === 'apitoken') {
-      const tokensService = container.resolve(TokensService);
-      const scopes = await tokensService.getTokenScopes(credential.value);
-      if (!TokensService.hasScope(scopes, scope)) {
+    const tokenScopes = c.get('tokenScopes');
+    if (tokenScopes !== undefined) {
+      if (!TokensService.hasScope(tokenScopes, scope)) {
         throw new HTTPException(403, { message: `Token missing required scope: ${scope}` });
       }
     }

@@ -1,6 +1,6 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
-import { authMiddleware, rbacMiddleware } from '@/modules/auth/auth.middleware.js';
+import { authMiddleware, rbacMiddleware, requireScope } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import { CreateTemplateSchema, UpdateTemplateSchema } from './templates.schemas.js';
 import { TemplatesService } from './templates.service.js';
@@ -10,14 +10,14 @@ export const templateRoutes = new OpenAPIHono<AppEnv>();
 templateRoutes.use('*', authMiddleware);
 
 // List templates
-templateRoutes.get('/', async (c) => {
+templateRoutes.get('/', requireScope('template:read'), async (c) => {
   const templatesService = container.resolve(TemplatesService);
   const templates = await templatesService.listTemplates();
   return c.json(templates);
 });
 
 // Get template detail
-templateRoutes.get('/:id', async (c) => {
+templateRoutes.get('/:id', requireScope('template:read'), async (c) => {
   const templatesService = container.resolve(TemplatesService);
   const id = c.req.param('id');
   const template = await templatesService.getTemplate(id);
@@ -28,7 +28,7 @@ templateRoutes.get('/:id', async (c) => {
 });
 
 // Create template (admin only)
-templateRoutes.post('/', rbacMiddleware('admin'), async (c) => {
+templateRoutes.post('/', rbacMiddleware('admin'), requireScope('template:manage'), async (c) => {
   const templatesService = container.resolve(TemplatesService);
   const user = c.get('user')!;
   const body = await c.req.json();
@@ -38,7 +38,7 @@ templateRoutes.post('/', rbacMiddleware('admin'), async (c) => {
 });
 
 // Update template (admin only)
-templateRoutes.patch('/:id', rbacMiddleware('admin'), async (c) => {
+templateRoutes.patch('/:id', rbacMiddleware('admin'), requireScope('template:manage'), async (c) => {
   const templatesService = container.resolve(TemplatesService);
   const id = c.req.param('id');
   const body = await c.req.json();
@@ -48,7 +48,7 @@ templateRoutes.patch('/:id', rbacMiddleware('admin'), async (c) => {
 });
 
 // Delete template (admin only)
-templateRoutes.delete('/:id', rbacMiddleware('admin'), async (c) => {
+templateRoutes.delete('/:id', rbacMiddleware('admin'), requireScope('template:manage'), async (c) => {
   const templatesService = container.resolve(TemplatesService);
   const id = c.req.param('id');
   await templatesService.deleteTemplate(id);

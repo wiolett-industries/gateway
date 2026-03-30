@@ -1,7 +1,7 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
 import { sanitizeFilename } from '@/lib/utils.js';
-import { authMiddleware, rbacMiddleware } from '@/modules/auth/auth.middleware.js';
+import { authMiddleware, rbacMiddleware, requireScope } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import { CAService } from './ca.service.js';
 import {
@@ -21,7 +21,7 @@ export const certRoutes = new OpenAPIHono<AppEnv>();
 certRoutes.use('*', authMiddleware);
 
 // List certificates (paginated, filterable)
-certRoutes.get('/', async (c) => {
+certRoutes.get('/', requireScope('cert:read'), async (c) => {
   const certService = container.resolve(CertService);
   const query = CertificateListQuerySchema.parse({
     caId: c.req.query('caId'),
@@ -38,7 +38,7 @@ certRoutes.get('/', async (c) => {
 });
 
 // Get certificate detail
-certRoutes.get('/:id', async (c) => {
+certRoutes.get('/:id', requireScope('cert:read'), async (c) => {
   const certService = container.resolve(CertService);
   const id = c.req.param('id');
   const cert = await certService.getCertificate(id);
@@ -46,7 +46,7 @@ certRoutes.get('/:id', async (c) => {
 });
 
 // Issue certificate (server-side key generation)
-certRoutes.post('/', rbacMiddleware('admin', 'operator'), async (c) => {
+certRoutes.post('/', rbacMiddleware('admin', 'operator'), requireScope('cert:issue'), async (c) => {
   const certService = container.resolve(CertService);
   const user = c.get('user')!;
   const body = await c.req.json();
@@ -56,7 +56,7 @@ certRoutes.post('/', rbacMiddleware('admin', 'operator'), async (c) => {
 });
 
 // Issue certificate from CSR
-certRoutes.post('/from-csr', rbacMiddleware('admin', 'operator'), async (c) => {
+certRoutes.post('/from-csr', rbacMiddleware('admin', 'operator'), requireScope('cert:issue'), async (c) => {
   const certService = container.resolve(CertService);
   const user = c.get('user')!;
   const body = await c.req.json();
@@ -66,7 +66,7 @@ certRoutes.post('/from-csr', rbacMiddleware('admin', 'operator'), async (c) => {
 });
 
 // Revoke certificate
-certRoutes.post('/:id/revoke', rbacMiddleware('admin', 'operator'), async (c) => {
+certRoutes.post('/:id/revoke', rbacMiddleware('admin', 'operator'), requireScope('cert:revoke'), async (c) => {
   const certService = container.resolve(CertService);
   const crlService = container.resolve(CRLService);
   const _ocspService = container.resolve(OCSPService);
@@ -84,7 +84,7 @@ certRoutes.post('/:id/revoke', rbacMiddleware('admin', 'operator'), async (c) =>
 });
 
 // Export certificate
-certRoutes.post('/:id/export', async (c) => {
+certRoutes.post('/:id/export', requireScope('cert:export'), async (c) => {
   const certService = container.resolve(CertService);
   const exportService = container.resolve(ExportService);
   const id = c.req.param('id');
@@ -146,7 +146,7 @@ certRoutes.post('/:id/export', async (c) => {
 });
 
 // Download certificate chain
-certRoutes.get('/:id/chain', async (c) => {
+certRoutes.get('/:id/chain', requireScope('cert:read'), async (c) => {
   const certService = container.resolve(CertService);
   const caService = container.resolve(CAService);
   const exportService = container.resolve(ExportService);

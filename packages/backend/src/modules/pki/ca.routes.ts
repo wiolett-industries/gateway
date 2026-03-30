@@ -1,7 +1,7 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
-import { authMiddleware, rbacMiddleware } from '@/modules/auth/auth.middleware.js';
+import { authMiddleware, rbacMiddleware, requireScope } from '@/modules/auth/auth.middleware.js';
 import { CryptoService } from '@/services/crypto.service.js';
 import type { AppEnv } from '@/types.js';
 import {
@@ -20,14 +20,14 @@ export const caRoutes = new OpenAPIHono<AppEnv>();
 caRoutes.use('*', authMiddleware);
 
 // List CAs (tree)
-caRoutes.get('/', async (c) => {
+caRoutes.get('/', requireScope('ca:read'), async (c) => {
   const caService = container.resolve(CAService);
   const tree = await caService.getCATree();
   return c.json(tree);
 });
 
 // Get CA detail
-caRoutes.get('/:id', async (c) => {
+caRoutes.get('/:id', requireScope('ca:read'), async (c) => {
   const caService = container.resolve(CAService);
   const id = c.req.param('id');
   const ca = await caService.getCA(id);
@@ -35,7 +35,7 @@ caRoutes.get('/:id', async (c) => {
 });
 
 // Create root CA (admin only)
-caRoutes.post('/', rbacMiddleware('admin'), async (c) => {
+caRoutes.post('/', rbacMiddleware('admin'), requireScope('ca:create:root'), async (c) => {
   const caService = container.resolve(CAService);
   const user = c.get('user')!;
   const body = await c.req.json();
@@ -45,7 +45,7 @@ caRoutes.post('/', rbacMiddleware('admin'), async (c) => {
 });
 
 // Create intermediate CA (admin only)
-caRoutes.post('/:id/intermediate', rbacMiddleware('admin'), async (c) => {
+caRoutes.post('/:id/intermediate', rbacMiddleware('admin'), requireScope('ca:create:intermediate'), async (c) => {
   const caService = container.resolve(CAService);
   const user = c.get('user')!;
   const parentId = c.req.param('id');
@@ -56,7 +56,7 @@ caRoutes.post('/:id/intermediate', rbacMiddleware('admin'), async (c) => {
 });
 
 // Update CA settings (admin only)
-caRoutes.put('/:id', rbacMiddleware('admin'), async (c) => {
+caRoutes.put('/:id', rbacMiddleware('admin'), requireScope('ca:read'), async (c) => {
   const caService = container.resolve(CAService);
   const user = c.get('user')!;
   const id = c.req.param('id');
@@ -67,7 +67,7 @@ caRoutes.put('/:id', rbacMiddleware('admin'), async (c) => {
 });
 
 // Revoke CA (admin only)
-caRoutes.post('/:id/revoke', rbacMiddleware('admin'), async (c) => {
+caRoutes.post('/:id/revoke', rbacMiddleware('admin'), requireScope('ca:revoke'), async (c) => {
   const caService = container.resolve(CAService);
   const user = c.get('user')!;
   const id = c.req.param('id');
@@ -78,7 +78,7 @@ caRoutes.post('/:id/revoke', rbacMiddleware('admin'), async (c) => {
 });
 
 // Delete CA (admin only)
-caRoutes.delete('/:id', rbacMiddleware('admin'), async (c) => {
+caRoutes.delete('/:id', rbacMiddleware('admin'), requireScope('ca:revoke'), async (c) => {
   const caService = container.resolve(CAService);
   const user = c.get('user')!;
   const id = c.req.param('id');
@@ -87,7 +87,7 @@ caRoutes.delete('/:id', rbacMiddleware('admin'), async (c) => {
 });
 
 // Export CA private key (admin only)
-caRoutes.post('/:id/export-key', rbacMiddleware('admin'), async (c) => {
+caRoutes.post('/:id/export-key', rbacMiddleware('admin'), requireScope('ca:revoke'), async (c) => {
   const caService = container.resolve(CAService);
   const _cryptoService = container.resolve(CryptoService);
   const exportService = container.resolve(ExportService);
@@ -118,7 +118,7 @@ caRoutes.post('/:id/export-key', rbacMiddleware('admin'), async (c) => {
 });
 
 // Generate OCSP responder cert (admin only)
-caRoutes.post('/:id/ocsp-responder', rbacMiddleware('admin'), async (c) => {
+caRoutes.post('/:id/ocsp-responder', rbacMiddleware('admin'), requireScope('ca:read'), async (c) => {
   const ocspService = container.resolve(OCSPService);
   const id = c.req.param('id');
   await ocspService.generateOCSPResponderCert(id);
