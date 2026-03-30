@@ -56,11 +56,21 @@ Gateway combines a full PKI (Certificate Authority) infrastructure with a revers
 - Automatic DNS validation (A/AAAA/CNAME/CAA/MX/TXT)
 - Domain usage tracking across proxy hosts and SSL certificates
 
+**AI Assistant** *(optional, disabled by default)*
+- Natural language interface for all system operations — manage CAs, issue certificates, configure proxy hosts, and more through conversation
+- Works with any OpenAI-compatible provider (OpenAI, Anthropic, local models, etc.)
+- 30+ tools with destructive action approval flow and per-tool access control
+- Asks clarifying questions with structured options before acting
+- Built-in knowledge base the AI can query for system-specific context
+- Web search integration (Tavily, Brave, Serper, Exa, or self-hosted SearXNG)
+- Per-user approval bypass preferences, conversation save/restore, configurable rate limits
+- Fully opt-in: enable in Settings > AI Assistant, configure a provider and API key. No data is sent anywhere until explicitly enabled by an admin.
+
 **Administration**
 - OIDC authentication (any OpenID Connect provider)
-- Role-based access control (admin, operator, viewer)
+- Role-based access control (admin, operator, viewer, blocked)
 - Granular API tokens with per-CA scoping
-- Full audit log
+- Full audit log (AI-initiated actions flagged separately)
 - Expiry alerts and notifications
 - In-app updates with one-click self-update
 
