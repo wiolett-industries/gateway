@@ -1,6 +1,7 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
 import { sanitizeFilename } from '@/lib/utils.js';
+import { AuditService } from '@/modules/audit/audit.service.js';
 import { authMiddleware, rbacMiddleware, requireScope } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import { CAService } from './ca.service.js';
@@ -84,9 +85,11 @@ certRoutes.post('/:id/revoke', rbacMiddleware('admin', 'operator'), requireScope
 });
 
 // Export certificate
-certRoutes.post('/:id/export', requireScope('cert:export'), async (c) => {
+certRoutes.post('/:id/export', rbacMiddleware('admin', 'operator'), requireScope('cert:export'), async (c) => {
   const certService = container.resolve(CertService);
   const exportService = container.resolve(ExportService);
+  const auditService = container.resolve(AuditService);
+  const user = c.get('user')!;
   const id = c.req.param('id');
   const body = await c.req.json();
   const { format, passphrase } = ExportCertificateQuerySchema.parse(body);
@@ -120,6 +123,15 @@ certRoutes.post('/:id/export', requireScope('cert:export'), async (c) => {
       if (!privateKey) {
         return c.json({ code: 'NO_PRIVATE_KEY', message: 'Private key not available (CSR-based certificate)' }, 400);
       }
+      await auditService.log({
+        userId: user.id,
+        action: 'cert.export_key',
+        resourceType: 'certificate',
+        resourceId: id,
+        details: { format: 'pkcs12' },
+        ipAddress: c.req.header('x-forwarded-for')?.split(',')[0]?.trim(),
+        userAgent: c.req.header('user-agent'),
+      });
       const p12 = exportService.exportPKCS12(cert.certificatePem, privateKey, passphrase);
       return new Response(p12, {
         headers: {
@@ -134,6 +146,17 @@ certRoutes.post('/:id/export', requireScope('cert:export'), async (c) => {
         return c.json({ code: 'PASSPHRASE_REQUIRED', message: 'Passphrase required for JKS export' }, 400);
       }
       const jksKey = await certService.getCertificatePrivateKey(id);
+      if (jksKey) {
+        await auditService.log({
+          userId: user.id,
+          action: 'cert.export_key',
+          resourceType: 'certificate',
+          resourceId: id,
+          details: { format: 'jks' },
+          ipAddress: c.req.header('x-forwarded-for')?.split(',')[0]?.trim(),
+          userAgent: c.req.header('user-agent'),
+        });
+      }
       const jks = exportService.exportJKS(cert.certificatePem, jksKey, passphrase, cert.commonName);
       return new Response(jks, {
         headers: {

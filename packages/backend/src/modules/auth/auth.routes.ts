@@ -102,8 +102,11 @@ authRoutes.openapi(callbackRoute, async (c) => {
 // Logout
 authRoutes.use('/logout', authMiddleware);
 authRoutes.post('/logout', async (c) => {
+  const sessionId = c.get('sessionId');
+  if (!sessionId) {
+    return c.json({ message: 'Not a session-based login' }, 400);
+  }
   const authService = container.resolve(AuthService);
-  const sessionId = c.get('sessionId')!;
   const logoutUrl = await authService.logout(sessionId);
   deleteCookie(c, SESSION_COOKIE_NAME, { path: '/' });
   return c.json({ message: 'Logged out successfully', logoutUrl });
