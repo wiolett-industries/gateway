@@ -32,9 +32,22 @@ interface UIState {
   showUpdateNotifications: boolean;
   setShowUpdateNotifications: (show: boolean) => void;
 
+  // AI Approval Bypass
+  aiBypassCreateApprovals: boolean;
+  aiBypassEditApprovals: boolean;
+  aiBypassDeleteApprovals: boolean;
+  setAIBypassCreateApprovals: (v: boolean) => void;
+  setAIBypassEditApprovals: (v: boolean) => void;
+  setAIBypassDeleteApprovals: (v: boolean) => void;
+
   // Command palette
   commandPaletteOpen: boolean;
   setCommandPaletteOpen: (open: boolean) => void;
+
+  // AI Panel
+  aiPanelOpen: boolean;
+  setAIPanelOpen: (open: boolean) => void;
+  toggleAIPanel: () => void;
 
   // Modal
   modal: ModalState;
@@ -72,9 +85,22 @@ export const useUIStore = create<UIState>()(
       showUpdateNotifications: true,
       setShowUpdateNotifications: (showUpdateNotifications) => set({ showUpdateNotifications }),
 
+      // AI Approval Bypass
+      aiBypassCreateApprovals: false,
+      aiBypassEditApprovals: false,
+      aiBypassDeleteApprovals: false,
+      setAIBypassCreateApprovals: (aiBypassCreateApprovals) => set({ aiBypassCreateApprovals }),
+      setAIBypassEditApprovals: (aiBypassEditApprovals) => set({ aiBypassEditApprovals }),
+      setAIBypassDeleteApprovals: (aiBypassDeleteApprovals) => set({ aiBypassDeleteApprovals }),
+
       // Command palette
       commandPaletteOpen: false,
       setCommandPaletteOpen: (commandPaletteOpen) => set({ commandPaletteOpen }),
+
+      // AI Panel
+      aiPanelOpen: false,
+      setAIPanelOpen: (aiPanelOpen) => set({ aiPanelOpen }),
+      toggleAIPanel: () => set((state) => ({ aiPanelOpen: !state.aiPanelOpen })),
 
       // Modal
       modal: { type: null },
@@ -88,6 +114,10 @@ export const useUIStore = create<UIState>()(
         sidebarOpen: state.sidebarOpen,
         sidebarCollapsed: state.sidebarCollapsed,
         showUpdateNotifications: state.showUpdateNotifications,
+        aiPanelOpen: state.aiPanelOpen,
+        aiBypassCreateApprovals: state.aiBypassCreateApprovals,
+        aiBypassEditApprovals: state.aiBypassEditApprovals,
+        aiBypassDeleteApprovals: state.aiBypassDeleteApprovals,
       }),
     }
   )

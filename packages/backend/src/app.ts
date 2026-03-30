@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { OpenAPIHono } from '@hono/zod-openapi';
+import { createNodeWebSocket } from '@hono/node-ws';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { apiReference } from '@scalar/hono-api-reference';
 import { cors } from 'hono/cors';
@@ -30,11 +31,16 @@ import { setupRoutes } from '@/modules/setup/setup.routes.js';
 import { sslRoutes } from '@/modules/ssl/ssl.routes.js';
 import { systemRoutes } from '@/modules/system/system.routes.js';
 import { tokensRoutes } from '@/modules/tokens/tokens.routes.js';
+import { aiRoutes } from '@/modules/ai/ai.routes.js';
+import { createWSHandlers, authenticateWSConnection } from '@/modules/ai/ai.ws.js';
 
 import type { AppEnv } from '@/types.js';
 
 export function createApp() {
   const app = new OpenAPIHono<AppEnv>();
+
+  // WebSocket support for AI assistant
+  const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app: app as any });
 
   // Global middleware
   app.use('*', requestId());
@@ -94,6 +100,28 @@ export function createApp() {
   app.route('/api/setup', setupRoutes);
   app.route('/api/system', systemRoutes);
   app.route('/api/housekeeping', housekeepingRoutes);
+  app.route('/api/ai', aiRoutes);
+
+  // AI WebSocket endpoint
+  const wsHandlers = createWSHandlers();
+  app.get(
+    '/api/ai/ws',
+    upgradeWebSocket((c) => {
+      const token = c.req.query('token') || '';
+      return {
+        onOpen(event, ws) {
+          wsHandlers.onOpen(event, ws);
+          // Authenticate after connection opens
+          authenticateWSConnection(ws, token).catch(() => {
+            try { ws.close(); } catch { /* ignore */ }
+          });
+        },
+        onMessage: wsHandlers.onMessage,
+        onClose: wsHandlers.onClose,
+        onError: wsHandlers.onError,
+      };
+    })
+  );
 
   // OpenAPI documentation
   app.doc('/openapi.json', {
@@ -147,5 +175,5 @@ export function createApp() {
     app.get('/*', serveStatic({ path: './public/index.html' }));
   }
 
-  return app;
+  return { app, injectWebSocket };
 }

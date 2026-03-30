@@ -1,0 +1,80 @@
+import { useLocation } from "react-router-dom";
+import type { QuickAction } from "@/types/ai";
+
+const QUICK_ACTIONS: Record<string, QuickAction[]> = {
+  "/": [
+    { label: "System overview", prompt: "Give me an overview of the system status" },
+    { label: "Expiring soon", prompt: "Show certificates expiring in the next 30 days" },
+    { label: "Health summary", prompt: "What's the health status of all proxy hosts?" },
+  ],
+  "/cas": [
+    { label: "List all CAs", prompt: "List all Certificate Authorities" },
+    { label: "Create root CA", prompt: "Help me create a new root CA" },
+    { label: "CA hierarchy", prompt: "Show me the CA hierarchy tree" },
+  ],
+  "/certificates": [
+    { label: "Expiring soon", prompt: "Show certificates expiring in the next 30 days" },
+    { label: "Issue certificate", prompt: "Help me issue a new certificate" },
+    { label: "Revoked certs", prompt: "List all revoked certificates" },
+  ],
+  "/proxy-hosts": [
+    { label: "List all hosts", prompt: "List all proxy hosts with their status" },
+    { label: "Create proxy host", prompt: "Help me create a new proxy host" },
+    { label: "Unhealthy hosts", prompt: "Show proxy hosts that are offline or degraded" },
+  ],
+  "/ssl-certificates": [
+    { label: "List SSL certs", prompt: "List all SSL certificates with expiry dates" },
+    { label: "Request ACME cert", prompt: "Help me request a new Let's Encrypt certificate" },
+    { label: "Expiring SSL", prompt: "Show SSL certificates expiring soon" },
+  ],
+  "/domains": [
+    { label: "DNS status", prompt: "Show the DNS verification status of all domains" },
+    { label: "Add domain", prompt: "Help me register a new domain" },
+  ],
+  "/templates": [
+    { label: "List templates", prompt: "Show all certificate templates" },
+    { label: "Create template", prompt: "Help me create a new certificate template" },
+  ],
+  "/admin/users": [
+    { label: "List users", prompt: "List all users with their roles" },
+    { label: "User activity", prompt: "Show recent audit log activity" },
+  ],
+  "/audit": [
+    { label: "Recent activity", prompt: "Show the last 20 audit log entries" },
+    { label: "AI actions", prompt: "Show audit log entries from AI assistant actions" },
+  ],
+  "/settings": [
+    { label: "System info", prompt: "Show system information and statistics" },
+  ],
+};
+
+const DEFAULT_ACTIONS: QuickAction[] = [
+  { label: "System overview", prompt: "Give me an overview of the system" },
+  { label: "Help", prompt: "What can you help me with?" },
+];
+
+interface QuickActionChipsProps {
+  onSelect: (prompt: string) => void;
+}
+
+export function QuickActionChips({ onSelect }: QuickActionChipsProps) {
+  const location = useLocation();
+
+  const actions = QUICK_ACTIONS[location.pathname]
+    || QUICK_ACTIONS[location.pathname.replace(/\/[^/]+$/, "")]
+    || DEFAULT_ACTIONS;
+
+  return (
+    <div className="flex flex-wrap justify-center gap-1.5 px-3 py-3">
+      {actions.map((action) => (
+        <button
+          key={action.label}
+          onClick={() => onSelect(action.prompt)}
+          className="border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors"
+        >
+          {action.label}
+        </button>
+      ))}
+    </div>
+  );
+}

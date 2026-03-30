@@ -487,6 +487,30 @@ class ApiClient {
     await this.request(`/admin/users/${userId}`, { method: "DELETE" });
   }
 
+  // ── AI Assistant ──
+
+  async getAIStatus(): Promise<{ enabled: boolean }> {
+    return this.request<{ enabled: boolean }>("/ai/status");
+  }
+
+  async getAIConfig(): Promise<Record<string, unknown>> {
+    const res = await this.request<{ data: Record<string, unknown> }>("/ai/config");
+    return res.data;
+  }
+
+  async updateAIConfig(config: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const res = await this.request<{ data: Record<string, unknown> }>("/ai/config", {
+      method: "PUT",
+      body: JSON.stringify(config),
+    });
+    return res.data;
+  }
+
+  async getAITools(): Promise<Record<string, Array<{ name: string; description: string; destructive: boolean; requiredRole: string }>>> {
+    const res = await this.request<{ data: Record<string, Array<{ name: string; description: string; destructive: boolean; requiredRole: string }>> }>("/ai/tools");
+    return res.data;
+  }
+
   // ── Proxy Hosts ──────────────────────────────────────────────────
 
   async listProxyHosts(params?: {

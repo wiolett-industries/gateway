@@ -1,3 +1,5 @@
+export type { AIConfig, AIMessage, AIToolCall, AIToolDef, ChatMessage, PageContext, QuickAction, WSClientMessage, WSServerMessage } from "./ai";
+
 // User roles
 export type UserRole = "admin" | "operator" | "viewer" | "blocked";
 

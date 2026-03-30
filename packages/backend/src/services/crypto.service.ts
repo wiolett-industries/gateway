@@ -121,6 +121,31 @@ export class CryptoService {
     return crypto.createHash('sha1').update(data).digest('hex');
   }
 
+  // --- String encryption (for API keys, secrets) ---
+
+  /**
+   * Encrypt an arbitrary string using envelope encryption.
+   * Returns the encrypted data components for storage.
+   */
+  encryptString(plaintext: string): { encryptedKey: string; encryptedDek: string } {
+    const dek = crypto.randomBytes(32);
+    const encryptedData = this.aesEncrypt(Buffer.from(plaintext, 'utf-8'), dek);
+    const encryptedDek = this.aesEncrypt(dek, this.masterKey);
+    return {
+      encryptedKey: encryptedData.toString('base64'),
+      encryptedDek: encryptedDek.toString('base64'),
+    };
+  }
+
+  /**
+   * Decrypt a string that was encrypted with encryptString().
+   */
+  decryptString(encrypted: { encryptedKey: string; encryptedDek: string }): string {
+    const dek = this.aesDecrypt(Buffer.from(encrypted.encryptedDek, 'base64'), this.masterKey);
+    const data = this.aesDecrypt(Buffer.from(encrypted.encryptedKey, 'base64'), dek);
+    return data.toString('utf-8');
+  }
+
   // --- Internal AES-256-GCM helpers ---
 
   private aesEncrypt(plaintext: Buffer, key: Buffer): Buffer {
