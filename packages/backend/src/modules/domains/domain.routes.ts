@@ -121,7 +121,7 @@ domainRoutes.post('/:id/issue-cert', async (c) => {
   const domainsService = container.resolve(DomainsService);
   const sslService = container.resolve(SSLService);
 
-  let domainRow;
+  let domainRow: Awaited<ReturnType<DomainsService['getDomain']>> | undefined;
   try {
     domainRow = await domainsService.getDomain(c.req.param('id'));
   } catch {
@@ -140,9 +140,6 @@ domainRoutes.post('/:id/issue-cert', async (c) => {
     );
     return c.json({ data: cert }, 201);
   } catch (err) {
-    return c.json(
-      { code: 'CERT_ERROR', message: err instanceof Error ? err.message : 'Failed to issue cert' },
-      400
-    );
+    return c.json({ code: 'CERT_ERROR', message: err instanceof Error ? err.message : 'Failed to issue cert' }, 400);
   }
 });

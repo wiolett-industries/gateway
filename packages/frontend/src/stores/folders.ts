@@ -88,12 +88,22 @@ export const useFolderStore = create<FolderState>()((set, get) => ({
 
   fetchGroupedHosts: async () => {
     const { filters } = get();
-    const isDefaultFilters = !filters.search && filters.type === "all" && filters.healthStatus === "all";
+    const isDefaultFilters =
+      !filters.search && filters.type === "all" && filters.healthStatus === "all";
 
     // Show cached data instantly for default filters
     if (isDefaultFilters && get().folders.length === 0) {
-      const cached = api.getCached<{ folders: FolderTreeNode[]; ungroupedHosts: ProxyHost[]; totalHosts: number }>("proxy:grouped");
-      if (cached) set({ folders: cached.folders, ungroupedHosts: cached.ungroupedHosts, totalHosts: cached.totalHosts });
+      const cached = api.getCached<{
+        folders: FolderTreeNode[];
+        ungroupedHosts: ProxyHost[];
+        totalHosts: number;
+      }>("proxy:grouped");
+      if (cached)
+        set({
+          folders: cached.folders,
+          ungroupedHosts: cached.ungroupedHosts,
+          totalHosts: cached.totalHosts,
+        });
     }
 
     const hasData = get().folders.length > 0 || get().ungroupedHosts.length > 0;

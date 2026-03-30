@@ -1,9 +1,9 @@
 import { inArray } from 'drizzle-orm';
+import type { Env } from '@/config/env.js';
 import type { DrizzleClient } from '@/db/client.js';
 import { settings } from '@/db/schema/settings.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { compareSemver, isNewerVersion, parseSemver } from '@/lib/semver.js';
-import type { Env } from '@/config/env.js';
 import type { DockerService } from './docker.service.js';
 
 const logger = createChildLogger('UpdateService');
@@ -52,17 +52,13 @@ export class UpdateService {
     const allRows = await this.db
       .select()
       .from(settings)
-      .where(
-        inArray(settings.key, Object.values(SETTINGS_KEYS))
-      );
+      .where(inArray(settings.key, Object.values(SETTINGS_KEYS)));
 
     const map = new Map(allRows.map((r) => [r.key, r.value as string]));
 
     const latestVersion = map.get(SETTINGS_KEYS.latestVersion) ?? null;
     const updateAvailable =
-      currentVersion !== 'dev' && latestVersion != null
-        ? isNewerVersion(latestVersion, currentVersion)
-        : false;
+      currentVersion !== 'dev' && latestVersion != null ? isNewerVersion(latestVersion, currentVersion) : false;
 
     return {
       currentVersion,
@@ -239,10 +235,7 @@ export class UpdateService {
     logger.info('Updating .env on host', { composeDir, envTag });
     const envResult = await this.dockerService.runOneShot({
       Image: currentImage, // Use current image (guaranteed available)
-      Cmd: [
-        'sh', '-c',
-        `sed -i 's/^GATEWAY_VERSION=.*/GATEWAY_VERSION=${envTag}/' /host/.env`,
-      ],
+      Cmd: ['sh', '-c', `sed -i 's/^GATEWAY_VERSION=.*/GATEWAY_VERSION=${envTag}/' /host/.env`],
       HostConfig: {
         Binds: [`${composeDir}:/host`],
       },
@@ -258,14 +251,12 @@ export class UpdateService {
     await this.dockerService.runDetached({
       Image: 'docker:27-cli',
       Cmd: [
-        'sh', '-c',
+        'sh',
+        '-c',
         `sleep 2 && docker compose --project-name ${composeProject} -f /project/docker-compose.yml up -d --force-recreate app`,
       ],
       HostConfig: {
-        Binds: [
-          `${composeDir}:/project`,
-          '/var/run/docker.sock:/var/run/docker.sock',
-        ],
+        Binds: [`${composeDir}:/project`, '/var/run/docker.sock:/var/run/docker.sock'],
       },
     });
 

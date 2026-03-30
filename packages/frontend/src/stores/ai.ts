@@ -1,23 +1,36 @@
 import { create } from "zustand";
+import {
+  dropConversation,
+  listConversations,
+  restoreConversation,
+  saveConversation,
+} from "@/services/ai-conversations";
+import { AIWebSocketClient } from "@/services/ai-websocket";
+import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useCAStore } from "@/stores/ca";
 import { useCertificatesStore } from "@/stores/certificates";
 import { useFolderStore } from "@/stores/folders";
-import { useSSLStore } from "@/stores/ssl";
 import { useProxyStore } from "@/stores/proxy";
+import { useSSLStore } from "@/stores/ssl";
 import { useUIStore } from "@/stores/ui";
-import { api } from "@/services/api";
-import { AIWebSocketClient } from "@/services/ai-websocket";
-import {
-  saveConversation,
-  restoreConversation,
-  listConversations,
-  dropConversation,
-} from "@/services/ai-conversations";
-import type { AIMessage, AIToolCall, ChatMessage, PageContext, ToolActionType, WSServerMessage } from "@/types/ai";
+import type {
+  AIMessage,
+  AIToolCall,
+  ChatMessage,
+  PageContext,
+  ToolActionType,
+  WSServerMessage,
+} from "@/types/ai";
 
 function getToolActionType(toolName: string): ToolActionType {
-  if (toolName.startsWith("create_") || toolName.startsWith("issue_") || toolName.startsWith("request_") || toolName === "link_internal_cert") return "create";
+  if (
+    toolName.startsWith("create_") ||
+    toolName.startsWith("issue_") ||
+    toolName.startsWith("request_") ||
+    toolName === "link_internal_cert"
+  )
+    return "create";
   if (toolName.startsWith("update_") || toolName.startsWith("revoke_")) return "edit";
   if (toolName.startsWith("delete_")) return "delete";
   return "other";
@@ -287,9 +300,12 @@ export const useAIStore = create<AIState>()((set, get) => ({
     // (questions that are still "running" — not yet promoted/answered)
     const { messages: msgs } = get();
     const msg = msgs.find((m) => m.toolCalls?.some((tc) => tc.id === toolCallId));
-    const pendingQuestions = msg?.toolCalls?.filter(
-      (tc) => tc.name === "ask_question" && (tc.status === "running" || tc.status === "awaiting_approval")
-    ) || [];
+    const pendingQuestions =
+      msg?.toolCalls?.filter(
+        (tc) =>
+          tc.name === "ask_question" &&
+          (tc.status === "running" || tc.status === "awaiting_approval")
+      ) || [];
 
     if (pendingQuestions.length === 0) {
       // All questions in this batch answered — send all answers
@@ -367,17 +383,35 @@ export const useAIStore = create<AIState>()((set, get) => ({
 
     if (cmd === "/save") {
       if (!arg) {
-        const localMsg: AIMessage = { id: generateId(), role: "assistant", content: "Usage: `/save <name>`", localOnly: true };
+        const localMsg: AIMessage = {
+          id: generateId(),
+          role: "assistant",
+          content: "Usage: `/save <name>`",
+          localOnly: true,
+        };
         set((state) => ({ messages: [...state.messages, localMsg] }));
         return true;
       }
       try {
-        await saveConversation(arg, get().messages.filter((m) => !m.localOnly));
+        await saveConversation(
+          arg,
+          get().messages.filter((m) => !m.localOnly)
+        );
         set({ savedName: arg });
-        const localMsg: AIMessage = { id: generateId(), role: "assistant", content: `Conversation saved as **${arg}** — will auto-save on new messages`, localOnly: true };
+        const localMsg: AIMessage = {
+          id: generateId(),
+          role: "assistant",
+          content: `Conversation saved as **${arg}** — will auto-save on new messages`,
+          localOnly: true,
+        };
         set((state) => ({ messages: [...state.messages, localMsg] }));
       } catch {
-        const localMsg: AIMessage = { id: generateId(), role: "assistant", content: "Failed to save conversation.", localOnly: true };
+        const localMsg: AIMessage = {
+          id: generateId(),
+          role: "assistant",
+          content: "Failed to save conversation.",
+          localOnly: true,
+        };
         set((state) => ({ messages: [...state.messages, localMsg] }));
       }
       return true;
@@ -386,10 +420,18 @@ export const useAIStore = create<AIState>()((set, get) => ({
     if (cmd === "/restore") {
       if (!arg) {
         const convos = await listConversations();
-        const list = convos.length > 0
-          ? convos.map((c) => `- **${c.name}** (${new Date(c.savedAt).toLocaleDateString()})`).join("\n")
-          : "No saved conversations.";
-        const localMsg: AIMessage = { id: generateId(), role: "assistant", content: `**Saved conversations:**\n${list}\n\nUsage: \`/restore <name>\``, localOnly: true };
+        const list =
+          convos.length > 0
+            ? convos
+                .map((c) => `- **${c.name}** (${new Date(c.savedAt).toLocaleDateString()})`)
+                .join("\n")
+            : "No saved conversations.";
+        const localMsg: AIMessage = {
+          id: generateId(),
+          role: "assistant",
+          content: `**Saved conversations:**\n${list}\n\nUsage: \`/restore <name>\``,
+          localOnly: true,
+        };
         set((state) => ({ messages: [...state.messages, localMsg] }));
         return true;
       }
@@ -397,14 +439,29 @@ export const useAIStore = create<AIState>()((set, get) => ({
         const messages = await restoreConversation(arg);
         if (messages) {
           set({ messages, savedName: arg });
-          const localMsg: AIMessage = { id: generateId(), role: "assistant", content: `Restored **${arg}** (${messages.length} messages)`, localOnly: true };
+          const localMsg: AIMessage = {
+            id: generateId(),
+            role: "assistant",
+            content: `Restored **${arg}** (${messages.length} messages)`,
+            localOnly: true,
+          };
           set((state) => ({ messages: [...state.messages, localMsg] }));
         } else {
-          const localMsg: AIMessage = { id: generateId(), role: "assistant", content: `Conversation **${arg}** not found.`, localOnly: true };
+          const localMsg: AIMessage = {
+            id: generateId(),
+            role: "assistant",
+            content: `Conversation **${arg}** not found.`,
+            localOnly: true,
+          };
           set((state) => ({ messages: [...state.messages, localMsg] }));
         }
       } catch {
-        const localMsg: AIMessage = { id: generateId(), role: "assistant", content: "Failed to restore conversation.", localOnly: true };
+        const localMsg: AIMessage = {
+          id: generateId(),
+          role: "assistant",
+          content: "Failed to restore conversation.",
+          localOnly: true,
+        };
         set((state) => ({ messages: [...state.messages, localMsg] }));
       }
       return true;
@@ -412,16 +469,31 @@ export const useAIStore = create<AIState>()((set, get) => ({
 
     if (cmd === "/drop") {
       if (!arg) {
-        const localMsg: AIMessage = { id: generateId(), role: "assistant", content: "Usage: `/drop <name>`", localOnly: true };
+        const localMsg: AIMessage = {
+          id: generateId(),
+          role: "assistant",
+          content: "Usage: `/drop <name>`",
+          localOnly: true,
+        };
         set((state) => ({ messages: [...state.messages, localMsg] }));
         return true;
       }
       try {
         await dropConversation(arg);
-        const localMsg: AIMessage = { id: generateId(), role: "assistant", content: `Deleted **${arg}**`, localOnly: true };
+        const localMsg: AIMessage = {
+          id: generateId(),
+          role: "assistant",
+          content: `Deleted **${arg}**`,
+          localOnly: true,
+        };
         set((state) => ({ messages: [...state.messages, localMsg] }));
       } catch {
-        const localMsg: AIMessage = { id: generateId(), role: "assistant", content: "Failed to delete conversation.", localOnly: true };
+        const localMsg: AIMessage = {
+          id: generateId(),
+          role: "assistant",
+          content: "Failed to delete conversation.",
+          localOnly: true,
+        };
         set((state) => ({ messages: [...state.messages, localMsg] }));
       }
       return true;
@@ -440,9 +512,7 @@ function handleWSMessage(
     case "text_delta":
       set((state) => ({
         messages: state.messages.map((m) =>
-          m.isStreaming && m.role === "assistant"
-            ? { ...m, content: m.content + msg.content }
-            : m
+          m.isStreaming && m.role === "assistant" ? { ...m, content: m.content + msg.content } : m
         ),
       }));
       break;
@@ -467,7 +537,12 @@ function handleWSMessage(
     case "tool_approval_required":
       if (shouldAutoApprove(msg.name)) {
         if (currentRequestId) {
-          wsClient?.send({ type: "tool_approval", requestId: currentRequestId, toolCallId: msg.id, approved: true });
+          wsClient?.send({
+            type: "tool_approval",
+            requestId: currentRequestId,
+            toolCallId: msg.id,
+            approved: true,
+          });
         }
       } else {
         set((state) => ({
@@ -494,7 +569,12 @@ function handleWSMessage(
                 ...m,
                 toolCalls: m.toolCalls!.map((tc) =>
                   tc.id === msg.id
-                    ? { ...tc, status: msg.error ? ("failed" as const) : ("completed" as const), result: msg.result, error: msg.error }
+                    ? {
+                        ...tc,
+                        status: msg.error ? ("failed" as const) : ("completed" as const),
+                        result: msg.result,
+                        error: msg.error,
+                      }
                     : tc
                 ),
               }
@@ -512,15 +592,16 @@ function handleWSMessage(
     case "done": {
       set((state) => ({
         isStreaming: false,
-        messages: state.messages.map((m) =>
-          m.isStreaming ? { ...m, isStreaming: false } : m
-        ),
+        messages: state.messages.map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m)),
       }));
       currentRequestId = null;
       // Auto-save if conversation was previously saved
       const { savedName, messages: msgs } = get();
       if (savedName) {
-        saveConversation(savedName, msgs.filter((m) => !m.localOnly)).catch(() => {});
+        saveConversation(
+          savedName,
+          msgs.filter((m) => !m.localOnly)
+        ).catch(() => {});
       }
       break;
     }
@@ -529,7 +610,7 @@ function handleWSMessage(
       set((state) => ({
         messages: state.messages.map((m) =>
           m.isStreaming && m.role === "assistant"
-            ? { ...m, content: m.content + (m.content ? "\n\n" : "") + `**Error:** ${msg.message}` }
+            ? { ...m, content: `${m.content + (m.content ? "\n\n" : "")}**Error:** ${msg.message}` }
             : m
         ),
       }));

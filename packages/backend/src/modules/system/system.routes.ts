@@ -1,5 +1,5 @@
-import { z } from 'zod';
 import { OpenAPIHono } from '@hono/zod-openapi';
+import { z } from 'zod';
 import { container } from '@/container.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { authMiddleware, rbacMiddleware, sessionOnly } from '@/modules/auth/auth.middleware.js';
@@ -30,9 +30,11 @@ systemRoutes.post('/check-update', rbacMiddleware('admin'), async (c) => {
 // POST /update — trigger self-update (admin only)
 systemRoutes.post('/update', rbacMiddleware('admin'), async (c) => {
   const body = await c.req.json();
-  const { version } = z.object({
-    version: z.string().regex(/^v?\d+\.\d+\.\d+$/, 'Invalid version format'),
-  }).parse(body);
+  const { version } = z
+    .object({
+      version: z.string().regex(/^v?\d+\.\d+\.\d+$/, 'Invalid version format'),
+    })
+    .parse(body);
 
   const updateService = container.resolve(UpdateService);
 
@@ -49,7 +51,10 @@ systemRoutes.post('/update', rbacMiddleware('admin'), async (c) => {
   // The container will be replaced — the response must be sent first.
   setTimeout(() => {
     updateService.performUpdate(version).catch((err) => {
-      logger.error('Update failed', { error: err instanceof Error ? err.message : String(err), stack: err instanceof Error ? err.stack : undefined });
+      logger.error('Update failed', {
+        error: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined,
+      });
     });
   }, 500);
 

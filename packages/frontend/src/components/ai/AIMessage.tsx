@@ -1,7 +1,7 @@
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { AIToolCallBlock } from "./AIToolCallBlock";
 import type { AIMessage as AIMessageType } from "@/types/ai";
+import { AIToolCallBlock } from "./AIToolCallBlock";
 
 interface AIMessageProps {
   message: AIMessageType;
@@ -35,22 +35,27 @@ export function AIMessage({ message, onApprove, onReject, onAnswer }: AIMessageP
 
   const hasContent = !!message.content;
   const hasToolCalls = !!message.toolCalls?.length;
-  const allToolsDone = hasToolCalls && message.toolCalls!.every(
-    (tc) => tc.status === "completed" || tc.status === "failed" || tc.status === "rejected"
-  );
+  const allToolsDone =
+    hasToolCalls &&
+    message.toolCalls!.every(
+      (tc) => tc.status === "completed" || tc.status === "failed" || tc.status === "rejected"
+    );
   const hasError = message.content?.includes("**Error:**");
 
-  const hasActiveQuestion = hasToolCalls && message.toolCalls!.some(
-    (tc) => tc.name === "ask_question" && tc.status === "awaiting_approval"
-  );
+  const hasActiveQuestion =
+    hasToolCalls &&
+    message.toolCalls!.some(
+      (tc) => tc.name === "ask_question" && tc.status === "awaiting_approval"
+    );
 
   // Show thinking when:
   // 1. Streaming with nothing yet (initial)
   // 2. Streaming after all tools completed, waiting for next response
-  const isThinking = message.isStreaming && !hasError && !hasActiveQuestion && (
-    (!hasContent && !hasToolCalls) ||
-    (allToolsDone && !hasContent)
-  );
+  const isThinking =
+    message.isStreaming &&
+    !hasError &&
+    !hasActiveQuestion &&
+    ((!hasContent && !hasToolCalls) || (allToolsDone && !hasContent));
   const isRetrying = message.isStreaming && hasError;
 
   return (
@@ -132,7 +137,11 @@ const markdownComponents = {
   code: ({ children, className, ...props }: React.HTMLAttributes<HTMLElement>) => {
     const isBlock = className?.includes("language-");
     if (isBlock) {
-      return <code className={className} {...props}>{children}</code>;
+      return (
+        <code className={className} {...props}>
+          {children}
+        </code>
+      );
     }
     return (
       <code className="bg-muted px-1 py-0.5 text-xs" {...props}>
@@ -142,7 +151,12 @@ const markdownComponents = {
   },
   table: ({ children, ...props }: React.HTMLAttributes<HTMLTableElement>) => (
     <div className="overflow-x-auto bg-muted/50 border border-border">
-      <table className="min-w-full text-xs [&_th]:bg-muted [&_th]:px-2 [&_th]:py-1.5 [&_th]:text-left [&_th]:font-medium [&_th]:text-muted-foreground [&_td]:px-2 [&_td]:py-1.5 [&_td]:border-t [&_td]:border-border" {...props}>{children}</table>
+      <table
+        className="min-w-full text-xs [&_th]:bg-muted [&_th]:px-2 [&_th]:py-1.5 [&_th]:text-left [&_th]:font-medium [&_th]:text-muted-foreground [&_td]:px-2 [&_td]:py-1.5 [&_td]:border-t [&_td]:border-border"
+        {...props}
+      >
+        {children}
+      </table>
     </div>
   ),
   a: ({ children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => (

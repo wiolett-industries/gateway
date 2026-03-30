@@ -100,7 +100,20 @@ export function ProxyHostRow({
         )}
       </td>
       <td className="p-3">
-        <Badge variant={({ online: "success", offline: "destructive", degraded: "warning", unknown: "secondary", disabled: "outline" } as Record<string, "success" | "destructive" | "warning" | "secondary" | "outline">)[host.healthStatus] || "secondary"} className="text-xs capitalize">
+        <Badge
+          variant={
+            (
+              {
+                online: "success",
+                offline: "destructive",
+                degraded: "warning",
+                unknown: "secondary",
+                disabled: "outline",
+              } as Record<string, "success" | "destructive" | "warning" | "secondary" | "outline">
+            )[host.healthStatus] || "secondary"
+          }
+          className="text-xs capitalize"
+        >
           {host.healthStatus}
         </Badge>
       </td>

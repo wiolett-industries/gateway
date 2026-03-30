@@ -67,7 +67,14 @@ export interface ChatMessage {
 
 export type WSClientMessage =
   | { type: 'chat'; requestId: string; messages: ChatMessage[]; context?: PageContext }
-  | { type: 'tool_approval'; requestId: string; toolCallId: string; approved: boolean; answer?: string; answers?: Record<string, string> }
+  | {
+      type: 'tool_approval';
+      requestId: string;
+      toolCallId: string;
+      approved: boolean;
+      answer?: string;
+      answers?: Record<string, string>;
+    }
   | { type: 'cancel'; requestId: string }
   | { type: 'ping' };
 

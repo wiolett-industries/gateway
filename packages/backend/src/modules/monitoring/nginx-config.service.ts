@@ -14,10 +14,7 @@ export class NginxConfigService {
   ) {}
 
   async getGlobalConfig(): Promise<string> {
-    const result = await this.dockerService.execInContainer(
-      this.nginxContainerName,
-      ['cat', '/etc/nginx/nginx.conf']
-    );
+    const result = await this.dockerService.execInContainer(this.nginxContainerName, ['cat', '/etc/nginx/nginx.conf']);
     if (result.exitCode !== 0) {
       throw new Error(`Failed to read nginx.conf: ${result.output}`);
     }
@@ -26,10 +23,11 @@ export class NginxConfigService {
 
   private writeConfig(content: string): Promise<{ exitCode: number; output: string }> {
     const b64 = Buffer.from(content).toString('base64');
-    return this.dockerService.execInContainer(
-      this.nginxContainerName,
-      ['sh', '-c', `echo '${b64}' | base64 -d > /etc/nginx/nginx.conf`]
-    );
+    return this.dockerService.execInContainer(this.nginxContainerName, [
+      'sh',
+      '-c',
+      `echo '${b64}' | base64 -d > /etc/nginx/nginx.conf`,
+    ]);
   }
 
   async updateGlobalConfig(content: string): Promise<{ valid: boolean; error?: string }> {

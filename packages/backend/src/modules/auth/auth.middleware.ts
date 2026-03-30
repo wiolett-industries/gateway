@@ -138,7 +138,9 @@ export function requireScope(scope: string): MiddlewareHandler<AppEnv> {
 export const sessionOnly: MiddlewareHandler<AppEnv> = async (c, next) => {
   const tokenScopes = c.get('tokenScopes');
   if (tokenScopes !== undefined) {
-    throw new HTTPException(403, { message: 'This endpoint requires session authentication. API tokens are not allowed.' });
+    throw new HTTPException(403, {
+      message: 'This endpoint requires session authentication. API tokens are not allowed.',
+    });
   }
   await next();
 };

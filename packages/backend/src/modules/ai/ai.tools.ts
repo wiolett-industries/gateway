@@ -4,7 +4,8 @@ export const AI_TOOLS: AIToolDefinition[] = [
   // ── PKI - Certificate Authorities ──
   {
     name: 'list_cas',
-    description: 'List all Certificate Authorities with their status, type, and hierarchy. Returns id, commonName, type (root/intermediate), status, notBefore, notAfter, parentId.',
+    description:
+      'List all Certificate Authorities with their status, type, and hierarchy. Returns id, commonName, type (root/intermediate), status, notBefore, notAfter, parentId.',
     parameters: { type: 'object', properties: {} },
     destructive: false,
     category: 'PKI - Certificate Authorities',
@@ -33,9 +34,17 @@ export const AI_TOOLS: AIToolDefinition[] = [
       type: 'object',
       properties: {
         commonName: { type: 'string', description: 'CA common name (e.g., "My Root CA")' },
-        keyAlgorithm: { type: 'string', enum: ['rsa-2048', 'rsa-4096', 'ecdsa-p256', 'ecdsa-p384'], description: 'Key algorithm' },
+        keyAlgorithm: {
+          type: 'string',
+          enum: ['rsa-2048', 'rsa-4096', 'ecdsa-p256', 'ecdsa-p384'],
+          description: 'Key algorithm',
+        },
         validityYears: { type: 'number', description: 'Validity period in years (1-30)' },
-        pathLengthConstraint: { type: 'number', description: 'Max depth of CA chain below this CA. 0 = can only issue end-entity certs, 1 = one level of intermediates, etc. Omit for unlimited.' },
+        pathLengthConstraint: {
+          type: 'number',
+          description:
+            'Max depth of CA chain below this CA. 0 = can only issue end-entity certs, 1 = one level of intermediates, etc. Omit for unlimited.',
+        },
         maxValidityDays: { type: 'number', description: 'Max validity for issued certs in days (default: 825)' },
       },
       required: ['commonName', 'keyAlgorithm', 'validityYears'],
@@ -53,9 +62,17 @@ export const AI_TOOLS: AIToolDefinition[] = [
       properties: {
         parentCaId: { type: 'string', description: 'Parent CA UUID' },
         commonName: { type: 'string', description: 'CA common name' },
-        keyAlgorithm: { type: 'string', enum: ['rsa-2048', 'rsa-4096', 'ecdsa-p256', 'ecdsa-p384'], description: 'Key algorithm' },
+        keyAlgorithm: {
+          type: 'string',
+          enum: ['rsa-2048', 'rsa-4096', 'ecdsa-p256', 'ecdsa-p384'],
+          description: 'Key algorithm',
+        },
         validityYears: { type: 'number', description: 'Validity period in years' },
-        pathLengthConstraint: { type: 'number', description: 'Max depth of CA chain below this CA. 0 = can only issue end-entity certs. Omit to auto-derive from parent.' },
+        pathLengthConstraint: {
+          type: 'number',
+          description:
+            'Max depth of CA chain below this CA. 0 = can only issue end-entity certs. Omit to auto-derive from parent.',
+        },
         maxValidityDays: { type: 'number', description: 'Max validity for issued certs in days' },
       },
       required: ['parentCaId', 'commonName', 'keyAlgorithm', 'validityYears'],
@@ -84,7 +101,8 @@ export const AI_TOOLS: AIToolDefinition[] = [
   // ── PKI - Certificates ──
   {
     name: 'list_certificates',
-    description: 'List PKI certificates with optional filters. Returns paginated results with id, commonName, status, type, caId, notBefore, notAfter.',
+    description:
+      'List PKI certificates with optional filters. Returns paginated results with id, commonName, status, type, caId, notBefore, notAfter.',
     parameters: {
       type: 'object',
       properties: {
@@ -117,16 +135,30 @@ export const AI_TOOLS: AIToolDefinition[] = [
   },
   {
     name: 'issue_certificate',
-    description: 'Issue a new PKI certificate from a CA. Returns the certificate. To use it with proxy hosts, you must then import it as SSL certificate using link_internal_cert.',
+    description:
+      'Issue a new PKI certificate from a CA. Returns the certificate. To use it with proxy hosts, you must then import it as SSL certificate using link_internal_cert.',
     parameters: {
       type: 'object',
       properties: {
         caId: { type: 'string', description: 'Issuing CA UUID' },
         commonName: { type: 'string', description: 'Certificate common name (e.g., "server.example.com")' },
-        keyAlgorithm: { type: 'string', enum: ['rsa-2048', 'rsa-4096', 'ecdsa-p256', 'ecdsa-p384'], description: 'Key algorithm' },
+        keyAlgorithm: {
+          type: 'string',
+          enum: ['rsa-2048', 'rsa-4096', 'ecdsa-p256', 'ecdsa-p384'],
+          description: 'Key algorithm',
+        },
         validityDays: { type: 'number', description: 'Validity in days' },
-        type: { type: 'string', enum: ['tls-server', 'tls-client', 'code-signing', 'email'], description: 'Certificate type. Use tls-server for web/SSL certificates.' },
-        sans: { type: 'array', items: { type: 'string' }, description: 'Subject Alternative Names as plain values WITHOUT type prefix. Examples: "example.com", "*.example.com", "10.0.0.1". Do NOT use "DNS:" or "IP:" prefixes.' },
+        type: {
+          type: 'string',
+          enum: ['tls-server', 'tls-client', 'code-signing', 'email'],
+          description: 'Certificate type. Use tls-server for web/SSL certificates.',
+        },
+        sans: {
+          type: 'array',
+          items: { type: 'string' },
+          description:
+            'Subject Alternative Names as plain values WITHOUT type prefix. Examples: "example.com", "*.example.com", "10.0.0.1". Do NOT use "DNS:" or "IP:" prefixes.',
+        },
         templateId: { type: 'string', description: 'Optional template UUID to use' },
         subjectDnFields: {
           type: 'object',
@@ -181,7 +213,11 @@ export const AI_TOOLS: AIToolDefinition[] = [
       type: 'object',
       properties: {
         name: { type: 'string', description: 'Template name' },
-        type: { type: 'string', enum: ['tls-server', 'tls-client', 'code-signing', 'email'], description: 'Certificate type' },
+        type: {
+          type: 'string',
+          enum: ['tls-server', 'tls-client', 'code-signing', 'email'],
+          description: 'Certificate type',
+        },
         keyAlgorithm: { type: 'string', enum: ['rsa-2048', 'rsa-4096', 'ecdsa-p256', 'ecdsa-p384'] },
         validityDays: { type: 'number', description: 'Default validity in days' },
         keyUsage: { type: 'array', items: { type: 'string' }, description: 'Key usage flags' },
@@ -255,16 +291,42 @@ export const AI_TOOLS: AIToolDefinition[] = [
         forwardScheme: { type: 'string', enum: ['http', 'https'], description: 'Backend scheme (default: http)' },
         sslEnabled: { type: 'boolean', description: 'Enable SSL/TLS' },
         sslForced: { type: 'boolean', description: 'Force HTTPS redirect (default: false)' },
-        sslCertificateId: { type: 'string', description: 'SSL certificate UUID to use (must be from ssl_certificates, not PKI)' },
+        sslCertificateId: {
+          type: 'string',
+          description: 'SSL certificate UUID to use (must be from ssl_certificates, not PKI)',
+        },
         websocketSupport: { type: 'boolean', description: 'Enable WebSocket proxying' },
         http2Support: { type: 'boolean', description: 'Enable HTTP/2' },
         redirectUrl: { type: 'string', description: 'Redirect target URL (for redirect type)' },
         redirectStatusCode: { type: 'number', enum: [301, 302, 307, 308], description: 'Redirect status code' },
-        customHeaders: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, value: { type: 'string' } }, required: ['name', 'value'] }, description: 'Custom HTTP headers to add to proxied requests' },
+        customHeaders: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: { name: { type: 'string' }, value: { type: 'string' } },
+            required: ['name', 'value'],
+          },
+          description: 'Custom HTTP headers to add to proxied requests',
+        },
         cacheEnabled: { type: 'boolean', description: 'Enable response caching' },
-        cacheOptions: { type: 'object', properties: { maxAge: { type: 'number', description: 'Cache max age in seconds' }, staleWhileRevalidate: { type: 'number', description: 'Serve stale while revalidating (seconds)' } }, description: 'Cache configuration (requires cacheEnabled)' },
+        cacheOptions: {
+          type: 'object',
+          properties: {
+            maxAge: { type: 'number', description: 'Cache max age in seconds' },
+            staleWhileRevalidate: { type: 'number', description: 'Serve stale while revalidating (seconds)' },
+          },
+          description: 'Cache configuration (requires cacheEnabled)',
+        },
         rateLimitEnabled: { type: 'boolean', description: 'Enable per-host rate limiting' },
-        rateLimitOptions: { type: 'object', properties: { requestsPerSecond: { type: 'number', description: 'Max requests per second' }, burst: { type: 'number', description: 'Burst allowance' } }, required: ['requestsPerSecond'], description: 'Rate limit configuration (requires rateLimitEnabled)' },
+        rateLimitOptions: {
+          type: 'object',
+          properties: {
+            requestsPerSecond: { type: 'number', description: 'Max requests per second' },
+            burst: { type: 'number', description: 'Burst allowance' },
+          },
+          required: ['requestsPerSecond'],
+          description: 'Rate limit configuration (requires rateLimitEnabled)',
+        },
         accessListId: { type: 'string', description: 'Access list UUID for IP/auth restrictions' },
         nginxTemplateId: { type: 'string', description: 'Custom nginx config template UUID' },
         templateVariables: { type: 'object', description: 'Variables for the nginx template (key-value pairs)' },
@@ -387,13 +449,21 @@ export const AI_TOOLS: AIToolDefinition[] = [
   },
   {
     name: 'request_acme_cert',
-    description: 'Request a new SSL certificate via ACME (Let\'s Encrypt). Requires DNS/HTTP challenge verification.',
+    description: "Request a new SSL certificate via ACME (Let's Encrypt). Requires DNS/HTTP challenge verification.",
     parameters: {
       type: 'object',
       properties: {
-        domains: { type: 'array', items: { type: 'string' }, description: 'Domain names to include in the certificate' },
+        domains: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Domain names to include in the certificate',
+        },
         challengeType: { type: 'string', enum: ['http-01', 'dns-01'], description: 'ACME challenge type' },
-        provider: { type: 'string', enum: ['letsencrypt', 'letsencrypt-staging'], description: 'ACME provider (default: letsencrypt)' },
+        provider: {
+          type: 'string',
+          enum: ['letsencrypt', 'letsencrypt-staging'],
+          description: 'ACME provider (default: letsencrypt)',
+        },
         autoRenew: { type: 'boolean', description: 'Auto-renew before expiry (default: true)' },
       },
       required: ['domains', 'challengeType'],
@@ -406,7 +476,8 @@ export const AI_TOOLS: AIToolDefinition[] = [
 
   {
     name: 'link_internal_cert',
-    description: 'Import a PKI certificate as an SSL certificate so it can be used with proxy hosts. This links an existing PKI certificate (from the Certificates table) into the SSL certificates pool. You MUST use this before assigning a PKI-issued cert to a proxy host.',
+    description:
+      'Import a PKI certificate as an SSL certificate so it can be used with proxy hosts. This links an existing PKI certificate (from the Certificates table) into the SSL certificates pool. You MUST use this before assigning a PKI-issued cert to a proxy host.',
     parameters: {
       type: 'object',
       properties: {
@@ -546,7 +617,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
   },
   {
     name: 'update_user_role',
-    description: 'Change a user\'s role. Available roles: admin, operator, viewer, blocked.',
+    description: "Change a user's role. Available roles: admin, operator, viewer, blocked.",
     parameters: {
       type: 'object',
       properties: {
@@ -590,7 +661,8 @@ export const AI_TOOLS: AIToolDefinition[] = [
   // ── Ask Question ──
   {
     name: 'ask_question',
-    description: 'Ask the user a clarifying question before proceeding. Use this whenever requirements are unclear, ambiguous, or missing critical details. You can provide options for the user to pick from, allow free text input, or both. Always ask rather than guess.',
+    description:
+      'Ask the user a clarifying question before proceeding. Use this whenever requirements are unclear, ambiguous, or missing critical details. You can provide options for the user to pick from, allow free text input, or both. Always ask rather than guess.',
     parameters: {
       type: 'object',
       properties: {
@@ -607,7 +679,11 @@ export const AI_TOOLS: AIToolDefinition[] = [
           },
           description: 'Optional list of choices for the user to pick from',
         },
-        allowFreeText: { type: 'boolean', description: 'Whether to also show a free text input (default: true if no options, false if options provided)' },
+        allowFreeText: {
+          type: 'boolean',
+          description:
+            'Whether to also show a free text input (default: true if no options, false if options provided)',
+        },
       },
       required: ['question'],
     },
@@ -620,13 +696,26 @@ export const AI_TOOLS: AIToolDefinition[] = [
   // ── Internal Documentation ──
   {
     name: 'internal_documentation',
-    description: 'Get detailed internal documentation about a specific topic in this system. Use this whenever you need deeper knowledge about how something works, what fields mean, or what the correct workflow is. Topics: pki, ssl, proxy, domains, access-lists, templates, acme, users, audit, nginx, housekeeping.',
+    description:
+      'Get detailed internal documentation about a specific topic in this system. Use this whenever you need deeper knowledge about how something works, what fields mean, or what the correct workflow is. Topics: pki, ssl, proxy, domains, access-lists, templates, acme, users, audit, nginx, housekeeping.',
     parameters: {
       type: 'object',
       properties: {
         topic: {
           type: 'string',
-          enum: ['pki', 'ssl', 'proxy', 'domains', 'access-lists', 'templates', 'acme', 'users', 'audit', 'nginx', 'housekeeping'],
+          enum: [
+            'pki',
+            'ssl',
+            'proxy',
+            'domains',
+            'access-lists',
+            'templates',
+            'acme',
+            'users',
+            'audit',
+            'nginx',
+            'housekeeping',
+          ],
           description: 'The topic to get documentation about',
         },
       },
@@ -641,7 +730,8 @@ export const AI_TOOLS: AIToolDefinition[] = [
   // ── Web Search (conditional) ──
   {
     name: 'web_search',
-    description: 'Search the web for current information about PKI, certificates, protocols, or any topic. Use when the user asks about something you don\'t know or needs up-to-date information.',
+    description:
+      "Search the web for current information about PKI, certificates, protocols, or any topic. Use when the user asks about something you don't know or needs up-to-date information.",
     parameters: {
       type: 'object',
       properties: {
@@ -684,19 +774,17 @@ export function getOpenAITools(
   const roleHierarchy: Record<string, number> = { blocked: -1, viewer: 0, operator: 1, admin: 2 };
   const userLevel = roleHierarchy[userRole] ?? 0;
 
-  return AI_TOOLS
-    .filter((t) => {
-      if (disabledTools.includes(t.name)) return false;
-      if (t.name === 'web_search' && !webSearchEnabled) return false;
-      const requiredLevel = roleHierarchy[t.requiredRole] ?? 0;
-      return userLevel >= requiredLevel;
-    })
-    .map((t) => ({
-      type: 'function' as const,
-      function: {
-        name: t.name,
-        description: t.description,
-        parameters: t.parameters,
-      },
-    }));
+  return AI_TOOLS.filter((t) => {
+    if (disabledTools.includes(t.name)) return false;
+    if (t.name === 'web_search' && !webSearchEnabled) return false;
+    const requiredLevel = roleHierarchy[t.requiredRole] ?? 0;
+    return userLevel >= requiredLevel;
+  }).map((t) => ({
+    type: 'function' as const,
+    function: {
+      name: t.name,
+      description: t.description,
+      parameters: t.parameters,
+    },
+  }));
 }

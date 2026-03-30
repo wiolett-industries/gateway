@@ -25,7 +25,8 @@ export function BlockedPage() {
         </div>
         <h2 className="text-lg font-semibold text-foreground">Access Blocked</h2>
         <p className="text-sm text-muted-foreground">
-          Your account{user?.email ? ` (${user.email})` : ""} has been blocked by an administrator. Contact your admin if you believe this is an error.
+          Your account{user?.email ? ` (${user.email})` : ""} has been blocked by an administrator.
+          Contact your admin if you believe this is an error.
         </p>
         <button
           onClick={handleLogout}

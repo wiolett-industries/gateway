@@ -15,8 +15,8 @@ import type {
   CreateProxyHostRequest,
   CreateRootCARequest,
   DashboardStats,
-  DnsStatus,
   DNSChallenge,
+  DnsStatus,
   Domain,
   DomainSearchResult,
   DomainWithUsage,
@@ -175,7 +175,9 @@ class ApiClient {
       const cached = this.getCached<T>(cacheKey);
       if (cached !== undefined) {
         // Refresh in background
-        this.fetchRaw<T>(url, options).then((data) => this.setCache(cacheKey, data)).catch(() => {});
+        this.fetchRaw<T>(url, options)
+          .then((data) => this.setCache(cacheKey, data))
+          .catch(() => {});
         return cached;
       }
       // No cache — fetch and cache
@@ -508,8 +510,18 @@ class ApiClient {
     return res.data;
   }
 
-  async getAITools(): Promise<Record<string, Array<{ name: string; description: string; destructive: boolean; requiredRole: string }>>> {
-    const res = await this.request<{ data: Record<string, Array<{ name: string; description: string; destructive: boolean; requiredRole: string }>> }>("/ai/tools");
+  async getAITools(): Promise<
+    Record<
+      string,
+      Array<{ name: string; description: string; destructive: boolean; requiredRole: string }>
+    >
+  > {
+    const res = await this.request<{
+      data: Record<
+        string,
+        Array<{ name: string; description: string; destructive: boolean; requiredRole: string }>
+      >;
+    }>("/ai/tools");
     return res.data;
   }
 
@@ -960,9 +972,7 @@ class ApiClient {
 
   async getNginxInfo(): Promise<NginxProcessInfo | null> {
     try {
-      return this.unwrapData(
-        this.request<{ data: NginxProcessInfo }>("/monitoring/nginx/info")
-      );
+      return this.unwrapData(this.request<{ data: NginxProcessInfo }>("/monitoring/nginx/info"));
     } catch {
       return null;
     }
@@ -1002,9 +1012,7 @@ class ApiClient {
   // ── System / Updates ──────────────────────────────────��───────────
 
   async getVersionInfo(): Promise<UpdateStatus> {
-    return this.unwrapData(
-      this.request<{ data: UpdateStatus }>("/system/version")
-    );
+    return this.unwrapData(this.request<{ data: UpdateStatus }>("/system/version"));
   }
 
   async checkForUpdates(): Promise<UpdateStatus> {
@@ -1040,9 +1048,7 @@ class ApiClient {
   // ── Housekeeping ────────────────────────────────────────────────
 
   async getHousekeepingConfig(): Promise<HousekeepingConfig> {
-    return this.unwrapData(
-      this.request<{ data: HousekeepingConfig }>("/housekeeping/config")
-    );
+    return this.unwrapData(this.request<{ data: HousekeepingConfig }>("/housekeeping/config"));
   }
 
   async updateHousekeepingConfig(config: Partial<HousekeepingConfig>): Promise<HousekeepingConfig> {
@@ -1055,9 +1061,7 @@ class ApiClient {
   }
 
   async getHousekeepingStats(): Promise<HousekeepingStats> {
-    return this.unwrapData(
-      this.request<{ data: HousekeepingStats }>("/housekeeping/stats")
-    );
+    return this.unwrapData(this.request<{ data: HousekeepingStats }>("/housekeeping/stats"));
   }
 
   async runHousekeeping(): Promise<HousekeepingRunResult> {

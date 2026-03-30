@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Separator } from "@/components/ui/separator";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -9,8 +9,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Separator } from "@/components/ui/separator";
 import { api } from "@/services/api";
-import { toast } from "sonner";
 
 interface AIToolAccessModalProps {
   open: boolean;
@@ -26,7 +26,10 @@ export function AIToolAccessModal({
   onSave,
 }: AIToolAccessModalProps) {
   const [tools, setTools] = useState<
-    Record<string, Array<{ name: string; description: string; destructive: boolean; requiredRole: string }>>
+    Record<
+      string,
+      Array<{ name: string; description: string; destructive: boolean; requiredRole: string }>
+    >
   >({});
   const [disabledTools, setDisabledTools] = useState<string[]>(initialDisabled);
   const [loading, setLoading] = useState(false);
@@ -34,7 +37,10 @@ export function AIToolAccessModal({
   useEffect(() => {
     if (open) {
       setDisabledTools(initialDisabled);
-      api.getAITools().then(setTools).catch(() => toast.error("Failed to load tools"));
+      api
+        .getAITools()
+        .then(setTools)
+        .catch(() => toast.error("Failed to load tools"));
     }
   }, [open, initialDisabled]);
 
@@ -63,9 +69,7 @@ export function AIToolAccessModal({
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>AI Tool Access</DialogTitle>
-          <DialogDescription>
-            Control which tools the AI assistant can use
-          </DialogDescription>
+          <DialogDescription>Control which tools the AI assistant can use</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-2">

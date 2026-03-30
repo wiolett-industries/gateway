@@ -3,11 +3,10 @@ import { container, TOKENS } from '@/container.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { canUseAI } from '@/lib/permissions.js';
 import { SessionService } from '@/services/session.service.js';
-import { TokensService } from '@/modules/tokens/tokens.service.js';
+import type { User } from '@/types.js';
 import { AIService } from './ai.service.js';
 import { AISettingsService } from './ai.settings.service.js';
-import type { User } from '@/types.js';
-import type { WSClientMessage, WSServerMessage, PageContext } from './ai.types.js';
+import type { PageContext, WSClientMessage, WSServerMessage } from './ai.types.js';
 
 const logger = createChildLogger('AI-WebSocket');
 
@@ -139,7 +138,11 @@ export function createWSHandlers() {
 
       if (msg.type === 'tool_approval') {
         const pending = state.pendingApproval;
-        logger.info('Tool approval received', { msgToolCallId: msg.toolCallId, pendingToolCallId: pending?.toolCallId, pendingToolName: pending?.toolName });
+        logger.info('Tool approval received', {
+          msgToolCallId: msg.toolCallId,
+          pendingToolCallId: pending?.toolCallId,
+          pendingToolName: pending?.toolName,
+        });
         if (!pending || pending.toolCallId !== msg.toolCallId) {
           send(ws, { type: 'error', requestId: msg.requestId, message: 'No pending approval for this tool call' });
           return;
@@ -184,7 +187,11 @@ export function createWSHandlers() {
           }
         } catch (err) {
           if (!(err instanceof Error && err.name === 'AbortError')) {
-            send(ws, { type: 'error', requestId: msg.requestId, message: err instanceof Error ? err.message : 'Error' });
+            send(ws, {
+              type: 'error',
+              requestId: msg.requestId,
+              message: err instanceof Error ? err.message : 'Error',
+            });
             send(ws, { type: 'done', requestId: msg.requestId });
           }
         } finally {
@@ -233,7 +240,11 @@ export function createWSHandlers() {
           }
         } catch (err) {
           if (!(err instanceof Error && err.name === 'AbortError')) {
-            send(ws, { type: 'error', requestId: msg.requestId, message: err instanceof Error ? err.message : 'Error' });
+            send(ws, {
+              type: 'error',
+              requestId: msg.requestId,
+              message: err instanceof Error ? err.message : 'Error',
+            });
             send(ws, { type: 'done', requestId: msg.requestId });
           }
         } finally {
@@ -269,10 +280,7 @@ export function createWSHandlers() {
  * Authenticate and initialize a WS connection from the query token.
  * Called during the WS upgrade / onOpen.
  */
-export async function authenticateWSConnection(
-  ws: WSContext,
-  token: string
-): Promise<boolean> {
+export async function authenticateWSConnection(ws: WSContext, token: string): Promise<boolean> {
   const state = wsStates.get(ws);
   if (!state) return false;
 

@@ -30,7 +30,10 @@ export function AddDomainDialog({ open, onOpenChange, onCreated }: AddDomainDial
     }
     setIsSaving(true);
     try {
-      await api.createDomain({ domain: domain.trim(), description: description.trim() || undefined });
+      await api.createDomain({
+        domain: domain.trim(),
+        description: description.trim() || undefined,
+      });
       toast.success("Domain added");
       setDomain("");
       setDescription("");
@@ -48,7 +51,9 @@ export function AddDomainDialog({ open, onOpenChange, onCreated }: AddDomainDial
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Add Domain</DialogTitle>
-          <DialogDescription>Register a domain to track its DNS status and manage certificates.</DialogDescription>
+          <DialogDescription>
+            Register a domain to track its DNS status and manage certificates.
+          </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-2">
@@ -70,7 +75,9 @@ export function AddDomainDialog({ open, onOpenChange, onCreated }: AddDomainDial
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
           <Button onClick={handleSubmit} disabled={isSaving}>
             {isSaving ? "Adding..." : "Add Domain"}
           </Button>

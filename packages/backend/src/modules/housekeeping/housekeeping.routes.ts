@@ -1,5 +1,5 @@
-import { z } from 'zod';
 import { OpenAPIHono } from '@hono/zod-openapi';
+import { z } from 'zod';
 import { container } from '@/container.js';
 import { authMiddleware, rbacMiddleware, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import { HousekeepingService } from '@/services/housekeeping.service.js';
@@ -12,28 +12,36 @@ housekeepingRoutes.use('*', authMiddleware);
 housekeepingRoutes.use('*', sessionOnly);
 housekeepingRoutes.use('*', rbacMiddleware('admin'));
 
-const ConfigUpdateSchema = z.object({
-  enabled: z.boolean().optional(),
-  cronExpression: z.string().regex(
-    /^[\d*,\/-]+\s+[\d*,\/-]+\s+[\d*,\/-]+\s+[\d*,\/-]+\s+[\d*,\/-]+$/,
-    'Invalid cron expression'
-  ).optional(),
-  nginxLogs: z.object({
+const ConfigUpdateSchema = z
+  .object({
     enabled: z.boolean().optional(),
-    retentionDays: z.number().int().min(1).max(365).optional(),
-  }).optional(),
-  auditLog: z.object({
-    enabled: z.boolean().optional(),
-    retentionDays: z.number().int().min(1).max(365).optional(),
-  }).optional(),
-  dismissedAlerts: z.object({
-    enabled: z.boolean().optional(),
-    retentionDays: z.number().int().min(1).max(365).optional(),
-  }).optional(),
-  dockerPrune: z.object({ enabled: z.boolean().optional() }).optional(),
-  orphanedCerts: z.object({ enabled: z.boolean().optional() }).optional(),
-  acmeCleanup: z.object({ enabled: z.boolean().optional() }).optional(),
-}).strict();
+    cronExpression: z
+      .string()
+      .regex(/^[\d*,/-]+\s+[\d*,/-]+\s+[\d*,/-]+\s+[\d*,/-]+\s+[\d*,/-]+$/, 'Invalid cron expression')
+      .optional(),
+    nginxLogs: z
+      .object({
+        enabled: z.boolean().optional(),
+        retentionDays: z.number().int().min(1).max(365).optional(),
+      })
+      .optional(),
+    auditLog: z
+      .object({
+        enabled: z.boolean().optional(),
+        retentionDays: z.number().int().min(1).max(365).optional(),
+      })
+      .optional(),
+    dismissedAlerts: z
+      .object({
+        enabled: z.boolean().optional(),
+        retentionDays: z.number().int().min(1).max(365).optional(),
+      })
+      .optional(),
+    dockerPrune: z.object({ enabled: z.boolean().optional() }).optional(),
+    orphanedCerts: z.object({ enabled: z.boolean().optional() }).optional(),
+    acmeCleanup: z.object({ enabled: z.boolean().optional() }).optional(),
+  })
+  .strict();
 
 // GET /config
 housekeepingRoutes.get('/config', async (c) => {

@@ -43,9 +43,7 @@ const QUICK_ACTIONS: Record<string, QuickAction[]> = {
     { label: "Recent activity", prompt: "Show the last 20 audit log entries" },
     { label: "AI actions", prompt: "Show audit log entries from AI assistant actions" },
   ],
-  "/settings": [
-    { label: "System info", prompt: "Show system information and statistics" },
-  ],
+  "/settings": [{ label: "System info", prompt: "Show system information and statistics" }],
 };
 
 const DEFAULT_ACTIONS: QuickAction[] = [
@@ -60,9 +58,10 @@ interface QuickActionChipsProps {
 export function QuickActionChips({ onSelect }: QuickActionChipsProps) {
   const location = useLocation();
 
-  const actions = QUICK_ACTIONS[location.pathname]
-    || QUICK_ACTIONS[location.pathname.replace(/\/[^/]+$/, "")]
-    || DEFAULT_ACTIONS;
+  const actions =
+    QUICK_ACTIONS[location.pathname] ||
+    QUICK_ACTIONS[location.pathname.replace(/\/[^/]+$/, "")] ||
+    DEFAULT_ACTIONS;
 
   return (
     <div className="flex flex-wrap justify-center gap-1.5 px-3 py-3">

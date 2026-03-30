@@ -176,7 +176,7 @@ export function Templates() {
 
   useEffect(() => {
     loadTemplates();
-  }, []);
+  }, [loadTemplates]);
 
   const resetForm = () => {
     setName("");
@@ -399,7 +399,11 @@ export function Templates() {
             ))}
           </div>
         ) : (
-          <EmptyState message="No templates." actionLabel="Create one" onAction={() => setDialogOpen(true)} />
+          <EmptyState
+            message="No templates."
+            actionLabel="Create one"
+            onAction={() => setDialogOpen(true)}
+          />
         )}
 
         {/* Wizard Dialog */}

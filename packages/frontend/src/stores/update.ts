@@ -52,7 +52,7 @@ export const useUpdateStore = create<UpdateState>()((set, get) => ({
           const status = await api.getVersionInfo();
           if (status.currentVersion !== currentVersion) {
             clearInterval(poll);
-            window.location.href = window.location.pathname + "?_v=" + Date.now();
+            window.location.href = `${window.location.pathname}?_v=${Date.now()}`;
           }
         } catch {
           // App still down

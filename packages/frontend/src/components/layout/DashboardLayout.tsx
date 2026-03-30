@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  ArrowUpCircle,
   Award,
   FileCode,
   FileText,
@@ -17,12 +18,13 @@ import {
   Settings,
   ShieldAlert,
   ShieldCheck,
-  ArrowUpCircle,
   Users,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { AIButton } from "@/components/ai/AIButton";
+import { AISidePanel } from "@/components/ai/AISidePanel";
 import { CommandPalette } from "@/components/common/CommandPalette";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -43,12 +45,10 @@ import { Toaster } from "@/components/ui/sonner";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
-import { useAuthStore } from "@/stores/auth";
 import { useAIStore } from "@/stores/ai";
+import { useAuthStore } from "@/stores/auth";
 import { useUIStore } from "@/stores/ui";
 import { useUpdateStore } from "@/stores/update";
-import { AIButton } from "@/components/ai/AIButton";
-import { AISidePanel } from "@/components/ai/AISidePanel";
 
 function getInitials(name: string | null): string {
   if (!name) return "?";
@@ -75,9 +75,7 @@ interface NavGroup {
 const navigationGroups: NavGroup[] = [
   {
     label: "Main",
-    items: [
-      { name: "Dashboard", href: "/", icon: LayoutDashboard },
-    ],
+    items: [{ name: "Dashboard", href: "/", icon: LayoutDashboard }],
   },
   {
     label: "Reverse Proxy",
@@ -532,7 +530,10 @@ export function DashboardLayout() {
         if (user.role === "admin") useUpdateStore.getState().fetchStatus();
         // Check AI availability for operator+ roles
         if (user.role === "admin" || user.role === "operator") {
-          api.getAIStatus().then((s) => useAIStore.getState().setEnabled(s.enabled)).catch(() => {});
+          api
+            .getAIStatus()
+            .then((s) => useAIStore.getState().setEnabled(s.enabled))
+            .catch(() => {});
         }
       } catch {
         logout();
@@ -543,8 +544,8 @@ export function DashboardLayout() {
     };
 
     checkAuth();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [logout, navigate, setLoading, setUser]);
 
   useEffect(() => {
     const checkMobile = () => {
@@ -584,7 +585,10 @@ export function DashboardLayout() {
       // Ctrl+H = new proxy host, Ctrl+S = new SSL cert, Ctrl+R = new root CA
       if (e.ctrlKey && !e.metaKey && !e.altKey) {
         switch (e.key) {
-          case "h": e.preventDefault(); navigate("/proxy-hosts/new"); break;
+          case "h":
+            e.preventDefault();
+            navigate("/proxy-hosts/new");
+            break;
           case "s":
             e.preventDefault();
             navigate("/ssl-certificates");

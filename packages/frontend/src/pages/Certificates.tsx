@@ -247,7 +247,10 @@ export function Certificates() {
             actionLabel="Issue one"
             onAction={() => setIssueDialogOpen(true)}
             hasActiveFilters={hasActiveFilters}
-            onReset={() => { resetFilters(); setSearchInput(""); }}
+            onReset={() => {
+              resetFilters();
+              setSearchInput("");
+            }}
           />
         )}
 

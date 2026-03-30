@@ -1,24 +1,24 @@
-import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Send, Sparkles, Square, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { ResizeHandle } from "@/components/ui/resize-handle";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useAIStore } from "@/stores/ai";
 import { useUIStore } from "@/stores/ui";
+import type { PageContext } from "@/types/ai";
 import { AIMessage } from "./AIMessage";
 import { QuestionBlock } from "./AIToolCallBlock";
 import { QuickActionChips } from "./QuickActionChips";
-import type { PageContext } from "@/types/ai";
 
 function autoResizeTextarea(el: HTMLTextAreaElement, maxRows = 6) {
   const style = getComputedStyle(el);
-  const lineHeight = parseInt(style.lineHeight) || 20;
-  const paddingTop = parseInt(style.paddingTop) || 0;
-  const paddingBottom = parseInt(style.paddingBottom) || 0;
-  const borderTop = parseInt(style.borderTopWidth) || 0;
-  const borderBottom = parseInt(style.borderBottomWidth) || 0;
+  const lineHeight = parseInt(style.lineHeight, 10) || 20;
+  const paddingTop = parseInt(style.paddingTop, 10) || 0;
+  const paddingBottom = parseInt(style.paddingBottom, 10) || 0;
+  const borderTop = parseInt(style.borderTopWidth, 10) || 0;
+  const borderBottom = parseInt(style.borderBottomWidth, 10) || 0;
   const extra = paddingTop + paddingBottom + borderTop + borderBottom;
   const minHeight = lineHeight * (el.rows || 1) + extra;
   const maxHeight = lineHeight * maxRows + extra;
@@ -40,7 +40,9 @@ function readPanelWidth(): number {
       const parsed = Number(stored);
       if (parsed >= MIN_WIDTH && parsed <= MAX_WIDTH) return parsed;
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
   return DEFAULT_WIDTH;
 }
 
@@ -72,8 +74,16 @@ const SLASH_COMMANDS = [
 
 function PanelContent({ onClose }: { onClose: () => void }) {
   const {
-    messages, isStreaming, isConnected, retryAfter,
-    sendMessage, approveTool, rejectTool, answerQuestion, stopStreaming, handleSlashCommand,
+    messages,
+    isStreaming,
+    isConnected,
+    retryAfter,
+    sendMessage,
+    approveTool,
+    rejectTool,
+    answerQuestion,
+    stopStreaming,
+    handleSlashCommand,
   } = useAIStore();
 
   const [input, setInput] = useState("");
@@ -87,7 +97,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, []);
 
   useEffect(() => {
     const timer = setTimeout(() => textareaRef.current?.focus(), 150);
@@ -178,10 +188,18 @@ function PanelContent({ onClose }: { onClose: () => void }) {
       if (msg.role === "assistant" && msg.toolCalls) {
         const allQuestions = msg.toolCalls.filter((tc) => tc.name === "ask_question");
         if (allQuestions.length === 0) continue;
-        const nextUnanswered = allQuestions.find((tc) => tc.status === "awaiting_approval" || tc.status === "running");
+        const nextUnanswered = allQuestions.find(
+          (tc) => tc.status === "awaiting_approval" || tc.status === "running"
+        );
         if (nextUnanswered) {
-          const answeredCount = allQuestions.filter((tc) => tc.status === "completed" || tc.status === "failed" || tc.status === "rejected").length;
-          return { activeQuestion: nextUnanswered, questionIndex: answeredCount + 1, questionsTotal: allQuestions.length };
+          const answeredCount = allQuestions.filter(
+            (tc) => tc.status === "completed" || tc.status === "failed" || tc.status === "rejected"
+          ).length;
+          return {
+            activeQuestion: nextUnanswered,
+            questionIndex: answeredCount + 1,
+            questionsTotal: allQuestions.length,
+          };
         }
       }
     }
@@ -278,7 +296,9 @@ function PanelContent({ onClose }: { onClose: () => void }) {
                     }}
                   >
                     <span className="font-mono text-muted-foreground">/{cmd.name}</span>
-                    <span className="text-muted-foreground/60 ml-auto shrink-0">{cmd.description}</span>
+                    <span className="text-muted-foreground/60 ml-auto shrink-0">
+                      {cmd.description}
+                    </span>
                   </button>
                 ))}
               </motion.div>
@@ -324,7 +344,11 @@ export function AISidePanel({ isMobile = false }: AISidePanelProps) {
   const handleResizeEnd = useCallback(() => {
     setIsResizing(false);
     setPanelWidth((w) => {
-      try { localStorage.setItem(PANEL_WIDTH_KEY, String(w)); } catch { /* ignore */ }
+      try {
+        localStorage.setItem(PANEL_WIDTH_KEY, String(w));
+      } catch {
+        /* ignore */
+      }
       return w;
     });
   }, []);
@@ -354,10 +378,7 @@ export function AISidePanel({ isMobile = false }: AISidePanelProps) {
           className="relative h-full shrink-0 overflow-hidden border-l border-border"
         >
           {/* Inner content pinned to panelWidth so it never reflows */}
-          <div
-            style={{ width: panelWidth }}
-            className="h-full flex flex-col bg-background"
-          >
+          <div style={{ width: panelWidth }} className="h-full flex flex-col bg-background">
             <ResizeHandle
               side="right"
               onResize={setPanelWidth}

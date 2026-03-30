@@ -84,7 +84,14 @@ export interface ChatMessage {
 
 export type WSClientMessage =
   | { type: "chat"; requestId: string; messages: ChatMessage[]; context?: PageContext }
-  | { type: "tool_approval"; requestId: string; toolCallId: string; approved: boolean; answer?: string; answers?: Record<string, string> }
+  | {
+      type: "tool_approval";
+      requestId: string;
+      toolCallId: string;
+      approved: boolean;
+      answer?: string;
+      answers?: Record<string, string>;
+    }
   | { type: "cancel"; requestId: string }
   | { type: "ping" };
 
@@ -92,9 +99,28 @@ export type WSServerMessage =
   | { type: "auth_ok"; userId: string }
   | { type: "auth_error"; message: string }
   | { type: "text_delta"; requestId: string; content: string }
-  | { type: "tool_call_start"; requestId: string; id: string; name: string; arguments: Record<string, unknown> }
-  | { type: "tool_approval_required"; requestId: string; id: string; name: string; arguments: Record<string, unknown> }
-  | { type: "tool_result"; requestId: string; id: string; name: string; result: unknown; error?: string }
+  | {
+      type: "tool_call_start";
+      requestId: string;
+      id: string;
+      name: string;
+      arguments: Record<string, unknown>;
+    }
+  | {
+      type: "tool_approval_required";
+      requestId: string;
+      id: string;
+      name: string;
+      arguments: Record<string, unknown>;
+    }
+  | {
+      type: "tool_result";
+      requestId: string;
+      id: string;
+      name: string;
+      result: unknown;
+      error?: string;
+    }
   | { type: "invalidate_stores"; requestId: string; stores: string[] }
   | { type: "done"; requestId: string }
   | { type: "error"; requestId: string; message: string; code?: string }

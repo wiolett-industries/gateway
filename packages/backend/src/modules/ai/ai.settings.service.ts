@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
-import { settings } from '@/db/schema/settings.js';
-import { CryptoService } from '@/services/crypto.service.js';
 import type { DrizzleClient } from '@/db/client.js';
+import { settings } from '@/db/schema/settings.js';
+import type { CryptoService } from '@/services/crypto.service.js';
 import type { AIConfig, EncryptedValue, MaxTokensField, ReasoningEffort, WebSearchProvider } from './ai.types.js';
 
 const AI_SETTINGS_DEFAULTS: Record<string, unknown> = {
@@ -29,10 +29,7 @@ export class AISettingsService {
   ) {}
 
   async getConfig(): Promise<AIConfig> {
-    const rows = await this.db
-      .select()
-      .from(settings)
-      .where(eq(settings.key, settings.key)); // get all
+    const rows = await this.db.select().from(settings).where(eq(settings.key, settings.key)); // get all
 
     // Filter to ai: prefixed keys
     const aiRows = rows.filter((r) => r.key.startsWith('ai:'));
@@ -66,9 +63,7 @@ export class AISettingsService {
   /**
    * Returns the config with masked API key info for admin display.
    */
-  async getConfigForAdmin(): Promise<
-    AIConfig & { hasApiKey: boolean; apiKeyLast4: string; hasWebSearchKey: boolean }
-  > {
+  async getConfigForAdmin(): Promise<AIConfig & { hasApiKey: boolean; apiKeyLast4: string; hasWebSearchKey: boolean }> {
     const config = await this.getConfig();
     const encrypted = await this.getSetting<EncryptedValue | null>('ai:api_key_encrypted');
     const webSearchEncrypted = await this.getSetting<EncryptedValue | null>('ai:web_search_api_key_encrypted');
@@ -175,11 +170,7 @@ export class AISettingsService {
   // ── Internal helpers ──
 
   private async getSetting<T>(key: string): Promise<T> {
-    const [row] = await this.db
-      .select()
-      .from(settings)
-      .where(eq(settings.key, key))
-      .limit(1);
+    const [row] = await this.db.select().from(settings).where(eq(settings.key, key)).limit(1);
     return (row?.value !== undefined ? row.value : AI_SETTINGS_DEFAULTS[key]) as T;
   }
 

@@ -2,7 +2,6 @@ import { CornerDownRight, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { CACreateDialog } from "@/components/ca/CACreateDialog";
-import { useUIStore } from "@/stores/ui";
 import { EmptyState } from "@/components/common/EmptyState";
 import { PageTransition } from "@/components/common/PageTransition";
 import { SearchFilterBar } from "@/components/common/SearchFilterBar";
@@ -18,6 +17,7 @@ import {
 import { daysUntil, formatDate } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth";
 import { useCAStore } from "@/stores/ca";
+import { useUIStore } from "@/stores/ui";
 import type { CA } from "@/types";
 
 type StatusFilter = "active" | "all";
@@ -181,7 +181,10 @@ export function CAs() {
           <EmptyState
             message="No certificate authorities."
             actionLabel="Create one"
-            onAction={() => { setCreateIntermediateParentId(undefined); setCreateDialogOpen(true); }}
+            onAction={() => {
+              setCreateIntermediateParentId(undefined);
+              setCreateDialogOpen(true);
+            }}
             hasActiveFilters={hasActiveFilters}
             onReset={resetFilters}
           />

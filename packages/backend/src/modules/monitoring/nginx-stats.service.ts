@@ -73,21 +73,28 @@ export class NginxStatsService {
   private startBackgroundPolling(): void {
     // Initial fetch of process info + first snapshot so history is never empty on connect
     this.refreshProcessInfo();
-    this.isAvailable().then(async (available) => {
-      if (available) {
-        try {
-          const snapshot = await this.getSnapshot();
-          this.pushHistory(snapshot);
-        } catch { /* container may be starting */ }
-      }
-    }).catch(() => {});
+    this.isAvailable()
+      .then(async (available) => {
+        if (available) {
+          try {
+            const snapshot = await this.getSnapshot();
+            this.pushHistory(snapshot);
+          } catch {
+            /* container may be starting */
+          }
+        }
+      })
+      .catch(() => {});
 
     this.backgroundInterval = setInterval(async () => {
       // Skip stats if SSE clients are already driving snapshots at 2s
       if (this.sseClientCount === 0) {
         try {
           const available = await this.isAvailable();
-          if (!available) { this.cachedProcessInfo = null; return; }
+          if (!available) {
+            this.cachedProcessInfo = null;
+            return;
+          }
           const snapshot = await this.getSnapshot();
           this.pushHistory(snapshot);
         } catch {
@@ -166,10 +173,11 @@ export class NginxStatsService {
   }
 
   async getStubStatus(): Promise<NginxStubStatus> {
-    const result = await this.dockerService.execInContainer(
-      this.nginxContainerName,
-      ['wget', '-qO-', 'http://127.0.0.1/nginx_status']
-    );
+    const result = await this.dockerService.execInContainer(this.nginxContainerName, [
+      'wget',
+      '-qO-',
+      'http://127.0.0.1/nginx_status',
+    ]);
     if (result.exitCode !== 0) {
       throw new Error(`Failed to fetch stub_status: ${result.output}`);
     }
@@ -184,9 +192,7 @@ export class NginxStatsService {
   private computeSystemStats(raw: DockerContainerStats): NginxSystemStats {
     const cpuDelta = raw.cpu_stats.cpu_usage.total_usage - raw.precpu_stats.cpu_usage.total_usage;
     const systemDelta = raw.cpu_stats.system_cpu_usage - raw.precpu_stats.system_cpu_usage;
-    const cpuPercent = systemDelta > 0
-      ? (cpuDelta / systemDelta) * (raw.cpu_stats.online_cpus || 1) * 100
-      : 0;
+    const cpuPercent = systemDelta > 0 ? (cpuDelta / systemDelta) * (raw.cpu_stats.online_cpus || 1) * 100 : 0;
 
     const memUsage = raw.memory_stats.usage - (raw.memory_stats.stats?.cache ?? 0);
     const memLimit = raw.memory_stats.limit;
@@ -223,16 +229,14 @@ export class NginxStatsService {
   }
 
   async getProcessInfo(): Promise<NginxProcessInfo> {
-    const versionResult = await this.dockerService.execInContainer(
-      this.nginxContainerName,
-      ['nginx', '-v']
-    );
+    const versionResult = await this.dockerService.execInContainer(this.nginxContainerName, ['nginx', '-v']);
     const versionMatch = versionResult.output.match(/nginx\/([\d.]+)/);
 
-    const psResult = await this.dockerService.execInContainer(
-      this.nginxContainerName,
-      ['sh', '-c', 'ps aux | grep "nginx: worker" | grep -v grep | wc -l']
-    );
+    const psResult = await this.dockerService.execInContainer(this.nginxContainerName, [
+      'sh',
+      '-c',
+      'ps aux | grep "nginx: worker" | grep -v grep | wc -l',
+    ]);
 
     const inspect = await this.dockerService.inspectContainer(this.nginxContainerName);
     const startedAt = new Date(inspect.State.StartedAt);
@@ -252,10 +256,11 @@ export class NginxStatsService {
 
   async getTrafficStats(): Promise<NginxTrafficStats> {
     // Tail last 200 lines from all access logs
-    const result = await this.dockerService.execInContainer(
-      this.nginxContainerName,
-      ['sh', '-c', 'find /var/log/nginx -name "*.access.log" -type f 2>/dev/null | xargs tail -n 200 2>/dev/null || true']
-    );
+    const result = await this.dockerService.execInContainer(this.nginxContainerName, [
+      'sh',
+      '-c',
+      'find /var/log/nginx -name "*.access.log" -type f 2>/dev/null | xargs tail -n 200 2>/dev/null || true',
+    ]);
 
     const statusCodes = { s2xx: 0, s3xx: 0, s4xx: 0, s5xx: 0 };
     const responseTimes: number[] = [];
@@ -280,7 +285,7 @@ export class NginxStatsService {
       const rtMatch = line.match(rtRegex);
       if (rtMatch && rtMatch[1] !== '-') {
         const rt = parseFloat(rtMatch[1]);
-        if (!isNaN(rt) && rt >= 0) responseTimes.push(rt);
+        if (!Number.isNaN(rt) && rt >= 0) responseTimes.push(rt);
       }
     }
 
@@ -340,7 +345,12 @@ export class NginxStatsService {
     if (trafficResult.status === 'fulfilled') {
       trafficStats = trafficResult.value;
     } else {
-      trafficStats = { statusCodes: { s2xx: 0, s3xx: 0, s4xx: 0, s5xx: 0 }, avgResponseTime: 0, p95ResponseTime: 0, totalRequests: 0 };
+      trafficStats = {
+        statusCodes: { s2xx: 0, s3xx: 0, s4xx: 0, s5xx: 0 },
+        avgResponseTime: 0,
+        p95ResponseTime: 0,
+        totalRequests: 0,
+      };
     }
 
     let requestsPerSec = 0;
@@ -349,12 +359,8 @@ export class NginxStatsService {
     if (stubStatus && this.previousStubStatus && this.previousTimestamp > 0) {
       const elapsedSec = (now - this.previousTimestamp) / 1000;
       if (elapsedSec > 0) {
-        requestsPerSec = Math.max(0,
-          (stubStatus.requests - this.previousStubStatus.requests) / elapsedSec
-        );
-        connectionsPerSec = Math.max(0,
-          (stubStatus.accepts - this.previousStubStatus.accepts) / elapsedSec
-        );
+        requestsPerSec = Math.max(0, (stubStatus.requests - this.previousStubStatus.requests) / elapsedSec);
+        connectionsPerSec = Math.max(0, (stubStatus.accepts - this.previousStubStatus.accepts) / elapsedSec);
       }
     }
 

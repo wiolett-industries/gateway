@@ -1,25 +1,25 @@
 import OpenAI from 'openai';
+import { container } from '@/container.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { hasRole } from '@/lib/permissions.js';
-import { CAService } from '@/modules/pki/ca.service.js';
-import { CertService } from '@/modules/pki/cert.service.js';
-import { TemplatesService } from '@/modules/pki/templates.service.js';
-import { FolderService } from '@/modules/proxy/folder.service.js';
-import { ProxyService } from '@/modules/proxy/proxy.service.js';
-import { SSLService } from '@/modules/ssl/ssl.service.js';
-import { DomainsService } from '@/modules/domains/domain.service.js';
-import { AccessListService } from '@/modules/access-lists/access-list.service.js';
-import { AuthService } from '@/modules/auth/auth.service.js';
-import { AuditService } from '@/modules/audit/audit.service.js';
-import { MonitoringService } from '@/modules/monitoring/monitoring.service.js';
-import { AISettingsService } from './ai.settings.service.js';
+import type { AccessListService } from '@/modules/access-lists/access-list.service.js';
+import type { AuditService } from '@/modules/audit/audit.service.js';
+import type { AuthService } from '@/modules/auth/auth.service.js';
+import type { DomainsService } from '@/modules/domains/domain.service.js';
+import type { MonitoringService } from '@/modules/monitoring/monitoring.service.js';
+import { CreateIntermediateCASchema, CreateRootCASchema } from '@/modules/pki/ca.schemas.js';
+import type { CAService } from '@/modules/pki/ca.service.js';
+import { IssueCertificateSchema } from '@/modules/pki/cert.schemas.js';
+import type { CertService } from '@/modules/pki/cert.service.js';
+import type { TemplatesService } from '@/modules/pki/templates.service.js';
+import type { FolderService } from '@/modules/proxy/folder.service.js';
+import type { ProxyService } from '@/modules/proxy/proxy.service.js';
+import type { SSLService } from '@/modules/ssl/ssl.service.js';
+import { SessionService } from '@/services/session.service.js';
+import type { User } from '@/types.js';
+import type { AISettingsService } from './ai.settings.service.js';
 import { AI_TOOLS, getOpenAITools, isDestructiveTool, TOOL_STORE_INVALIDATION_MAP } from './ai.tools.js';
 import type { ChatMessage, PageContext, ToolExecutionResult, WSServerMessage } from './ai.types.js';
-import type { User } from '@/types.js';
-import { CreateRootCASchema, CreateIntermediateCASchema } from '@/modules/pki/ca.schemas.js';
-import { IssueCertificateSchema } from '@/modules/pki/cert.schemas.js';
-import { container } from '@/container.js';
-import { SessionService } from '@/services/session.service.js';
 
 const logger = createChildLogger('AIService');
 
@@ -331,9 +331,12 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
     try {
       const cas = await this.caService.getCATree();
       if (cas.length > 0) {
-        const caList = cas.map((ca: { commonName: string; id: string; type: string; status: string }) =>
-          `  - ${ca.commonName} (${ca.type}, ${ca.status}, id: ${ca.id})`
-        ).join('\n');
+        const caList = cas
+          .map(
+            (ca: { commonName: string; id: string; type: string; status: string }) =>
+              `  - ${ca.commonName} (${ca.type}, ${ca.status}, id: ${ca.id})`
+          )
+          .join('\n');
         parts.push(`\n## Certificate Authorities\n${caList}`);
       }
     } catch {
@@ -377,7 +380,14 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
           userId: user.id,
           action: `ai.${toolName}`,
           resourceType: toolDef.category.toLowerCase().replace(/\s+/g, '_'),
-          resourceId: (args.caId || args.certificateId || args.proxyHostId || args.domainId || args.accessListId || args.templateId || args.userId || '') as string,
+          resourceId: (args.caId ||
+            args.certificateId ||
+            args.proxyHostId ||
+            args.domainId ||
+            args.accessListId ||
+            args.templateId ||
+            args.userId ||
+            '') as string,
           details: { ai_initiated: true, arguments: args },
         });
       }
@@ -417,15 +427,23 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
       // ── PKI - Certificates ──
       case 'list_certificates':
         return this.certService.listCertificates({
-          caId: a.caId, status: a.status, search: a.search,
-          page: a.page || 1, limit: a.limit || 50, sortBy: 'createdAt', sortOrder: 'desc',
+          caId: a.caId,
+          status: a.status,
+          search: a.search,
+          page: a.page || 1,
+          limit: a.limit || 50,
+          sortBy: 'createdAt',
+          sortOrder: 'desc',
         });
       case 'get_certificate':
         return this.certService.getCertificate(a.certificateId);
       case 'issue_certificate': {
         const certInput = IssueCertificateSchema.parse(args);
         const result = await this.certService.issueCertificate(certInput, user.id);
-        return { certificate: result.certificate, message: 'Certificate issued successfully. Private key was generated.' };
+        return {
+          certificate: result.certificate,
+          message: 'Certificate issued successfully. Private key was generated.',
+        };
       }
       case 'revoke_certificate':
         await this.certService.revokeCertificate(a.certificateId, a.reason, user.id);
@@ -436,7 +454,19 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
         return this.templatesService.listTemplates();
       case 'create_template':
         return this.templatesService.createTemplate(
-          { name: a.name, certType: a.type, keyAlgorithm: a.keyAlgorithm, validityDays: a.validityDays, keyUsage: a.keyUsage || [], extKeyUsage: a.extendedKeyUsage || [], requireSans: true, sanTypes: ['dns'], crlDistributionPoints: [], certificatePolicies: [], customExtensions: [] },
+          {
+            name: a.name,
+            certType: a.type,
+            keyAlgorithm: a.keyAlgorithm,
+            validityDays: a.validityDays,
+            keyUsage: a.keyUsage || [],
+            extKeyUsage: a.extendedKeyUsage || [],
+            requireSans: true,
+            sanTypes: ['dns'],
+            crlDistributionPoints: [],
+            certificatePolicies: [],
+            customExtensions: [],
+          },
           user.id
         );
       case 'delete_template':
@@ -451,19 +481,27 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
       case 'create_proxy_host':
         return this.proxyService.createProxyHost(
           {
-            type: a.type || 'proxy', domainNames: a.domainNames,
-            forwardHost: a.forwardHost, forwardPort: a.forwardPort,
+            type: a.type || 'proxy',
+            domainNames: a.domainNames,
+            forwardHost: a.forwardHost,
+            forwardPort: a.forwardPort,
             forwardScheme: a.forwardScheme || 'http',
-            sslEnabled: a.sslEnabled || false, sslForced: a.sslForced || false,
-            http2Support: a.http2Support || false, websocketSupport: a.websocketSupport || false,
+            sslEnabled: a.sslEnabled || false,
+            sslForced: a.sslForced || false,
+            http2Support: a.http2Support || false,
+            websocketSupport: a.websocketSupport || false,
             sslCertificateId: a.sslCertificateId,
-            redirectUrl: a.redirectUrl, redirectStatusCode: a.redirectStatusCode,
+            redirectUrl: a.redirectUrl,
+            redirectStatusCode: a.redirectStatusCode,
             customHeaders: a.customHeaders || [],
-            cacheEnabled: a.cacheEnabled || false, cacheOptions: a.cacheOptions,
-            rateLimitEnabled: a.rateLimitEnabled || false, rateLimitOptions: a.rateLimitOptions,
+            cacheEnabled: a.cacheEnabled || false,
+            cacheOptions: a.cacheOptions,
+            rateLimitEnabled: a.rateLimitEnabled || false,
+            rateLimitOptions: a.rateLimitOptions,
             customRewrites: [],
             accessListId: a.accessListId,
-            nginxTemplateId: a.nginxTemplateId, templateVariables: a.templateVariables,
+            nginxTemplateId: a.nginxTemplateId,
+            templateVariables: a.templateVariables,
             healthCheckEnabled: a.healthCheckEnabled || false,
             healthCheckUrl: a.healthCheckUrl,
             healthCheckInterval: a.healthCheckInterval,
@@ -493,13 +531,15 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
       case 'list_ssl_certificates':
         return this.sslService.listCerts({ search: a.search, page: a.page || 1, limit: a.limit || 50 });
       case 'link_internal_cert':
-        return this.sslService.linkInternalCert(
-          { internalCertId: a.internalCertId, name: a.name },
-          user.id
-        );
+        return this.sslService.linkInternalCert({ internalCertId: a.internalCertId, name: a.name }, user.id);
       case 'request_acme_cert':
         return this.sslService.requestACMECert(
-          { domains: a.domains, challengeType: a.challengeType, provider: a.provider || 'letsencrypt', autoRenew: a.autoRenew !== false },
+          {
+            domains: a.domains,
+            challengeType: a.challengeType,
+            provider: a.provider || 'letsencrypt',
+            autoRenew: a.autoRenew !== false,
+          },
           user.id
         );
 
@@ -523,7 +563,7 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
               ...(a.allowIps || []).map((v: string) => ({ value: v, type: 'allow' })),
               ...(a.denyIps || []).map((v: string) => ({ value: v, type: 'deny' })),
             ],
-            basicAuthEnabled: a.basicAuthEnabled ?? !!(a.basicAuthUsers?.length),
+            basicAuthEnabled: a.basicAuthEnabled ?? !!a.basicAuthUsers?.length,
             basicAuthUsers: a.basicAuthUsers || [],
           },
           user.id
@@ -544,7 +584,12 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
         return updated;
       }
       case 'get_audit_log':
-        return this.auditService.getAuditLog({ action: a.action, resourceType: a.resourceType, page: a.page || 1, limit: a.limit || 50 });
+        return this.auditService.getAuditLog({
+          action: a.action,
+          resourceType: a.resourceType,
+          page: a.page || 1,
+          limit: a.limit || 50,
+        });
       case 'get_dashboard_stats':
         return this.monitoringService.getDashboardStats();
 
@@ -606,18 +651,26 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
       body: JSON.stringify({ api_key: apiKey, query, max_results: maxResults, search_depth: 'basic' }),
     });
     if (!res.ok) throw new Error(`Tavily error: ${res.status}`);
-    const data = await res.json() as { results: Array<{ title: string; url: string; content: string }> };
+    const data = (await res.json()) as { results: Array<{ title: string; url: string; content: string }> };
     return { results: data.results.map((r) => ({ title: r.title, url: r.url, snippet: r.content?.slice(0, 500) })) };
   }
 
   private async searchBrave(apiKey: string, query: string, maxResults: number) {
     const params = new URLSearchParams({ q: query, count: String(maxResults) });
     const res = await fetch(`https://api.search.brave.com/res/v1/web/search?${params}`, {
-      headers: { 'Accept': 'application/json', 'Accept-Encoding': 'gzip', 'X-Subscription-Token': apiKey },
+      headers: { Accept: 'application/json', 'Accept-Encoding': 'gzip', 'X-Subscription-Token': apiKey },
     });
     if (!res.ok) throw new Error(`Brave error: ${res.status}`);
-    const data = await res.json() as { web?: { results: Array<{ title: string; url: string; description: string }> } };
-    return { results: (data.web?.results || []).map((r) => ({ title: r.title, url: r.url, snippet: r.description?.slice(0, 500) })) };
+    const data = (await res.json()) as {
+      web?: { results: Array<{ title: string; url: string; description: string }> };
+    };
+    return {
+      results: (data.web?.results || []).map((r) => ({
+        title: r.title,
+        url: r.url,
+        snippet: r.description?.slice(0, 500),
+      })),
+    };
   }
 
   private async searchSerper(apiKey: string, query: string, maxResults: number) {
@@ -627,8 +680,10 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
       body: JSON.stringify({ q: query, num: maxResults }),
     });
     if (!res.ok) throw new Error(`Serper error: ${res.status}`);
-    const data = await res.json() as { organic: Array<{ title: string; link: string; snippet: string }> };
-    return { results: (data.organic || []).map((r) => ({ title: r.title, url: r.link, snippet: r.snippet?.slice(0, 500) })) };
+    const data = (await res.json()) as { organic: Array<{ title: string; link: string; snippet: string }> };
+    return {
+      results: (data.organic || []).map((r) => ({ title: r.title, url: r.link, snippet: r.snippet?.slice(0, 500) })),
+    };
   }
 
   private async searchSearxng(baseUrl: string, query: string, maxResults: number) {
@@ -636,8 +691,12 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
     const params = new URLSearchParams({ q: query, format: 'json', pageno: '1' });
     const res = await fetch(`${url}/search?${params}`);
     if (!res.ok) throw new Error(`SearXNG error: ${res.status}`);
-    const data = await res.json() as { results: Array<{ title: string; url: string; content: string }> };
-    return { results: data.results.slice(0, maxResults).map((r) => ({ title: r.title, url: r.url, snippet: r.content?.slice(0, 500) })) };
+    const data = (await res.json()) as { results: Array<{ title: string; url: string; content: string }> };
+    return {
+      results: data.results
+        .slice(0, maxResults)
+        .map((r) => ({ title: r.title, url: r.url, snippet: r.content?.slice(0, 500) })),
+    };
   }
 
   private async searchExa(apiKey: string, query: string, maxResults: number) {
@@ -647,7 +706,9 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
       body: JSON.stringify({ query, num_results: maxResults, type: 'auto' }),
     });
     if (!res.ok) throw new Error(`Exa error: ${res.status}`);
-    const data = await res.json() as { results: Array<{ title: string; url: string; text?: string; author?: string }> };
+    const data = (await res.json()) as {
+      results: Array<{ title: string; url: string; text?: string; author?: string }>;
+    };
     return { results: data.results.map((r) => ({ title: r.title, url: r.url, snippet: r.text?.slice(0, 500) })) };
   }
 
@@ -698,18 +759,18 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
 
       messages = trimToTokenBudget(messages, maxContextTokens);
 
-      let stream;
+      let stream: Awaited<ReturnType<typeof client.chat.completions.create>> | undefined;
       try {
         stream = await client.chat.completions.create({
           model: config.model || 'gpt-4o',
           messages: messages as unknown as OpenAI.ChatCompletionMessageParam[],
-          tools: tools.length > 0 ? tools as OpenAI.ChatCompletionTool[] : undefined,
+          tools: tools.length > 0 ? (tools as OpenAI.ChatCompletionTool[]) : undefined,
           stream: true,
           ...(config.maxTokensField === 'max_tokens'
             ? { max_tokens: config.maxCompletionTokens }
             : { max_completion_tokens: config.maxCompletionTokens }),
           ...(config.reasoningEffort && config.reasoningEffort !== 'none'
-            ? { reasoning_effort: config.reasoningEffort } as Record<string, unknown>
+            ? ({ reasoning_effort: config.reasoningEffort } as Record<string, unknown>)
             : {}),
         });
       } catch (err) {
@@ -784,12 +845,16 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
       // Parse all tool args first
       const parsedToolCalls = toolCalls.map((tc) => {
         let parsedArgs: Record<string, unknown> = {};
-        try { parsedArgs = JSON.parse(tc.arguments || '{}'); } catch { /* empty */ }
+        try {
+          parsedArgs = JSON.parse(tc.arguments || '{}');
+        } catch {
+          /* empty */
+        }
         return { ...tc, parsedArgs };
       });
 
       // Separate: questions, destructive (first only), and immediate tools
-      const questionTools: (typeof parsedToolCalls) = [];
+      const questionTools: typeof parsedToolCalls = [];
       let destructiveTool: (typeof parsedToolCalls)[number] | null = null;
 
       for (const tc of parsedToolCalls) {
@@ -806,12 +871,29 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
 
         if (isDestructiveTool(tc.name)) {
           // Additional destructive tool — skip
-          messages.push({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify({ skipped: 'Another action is pending approval.' }) });
-          yield { type: 'tool_result', requestId, id: tc.id, name: tc.name, result: { skipped: 'Another action is pending approval.' } };
+          messages.push({
+            role: 'tool',
+            tool_call_id: tc.id,
+            content: JSON.stringify({ skipped: 'Another action is pending approval.' }),
+          });
+          yield {
+            type: 'tool_result',
+            requestId,
+            id: tc.id,
+            name: tc.name,
+            result: { skipped: 'Another action is pending approval.' },
+          };
         } else {
           const result = await this.executeTool(user, tc.name, tc.parsedArgs);
           messages.push({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify(result.error || result.result) });
-          yield { type: 'tool_result', requestId, id: tc.id, name: tc.name, result: result.result, error: result.error };
+          yield {
+            type: 'tool_result',
+            requestId,
+            id: tc.id,
+            name: tc.name,
+            result: result.result,
+            error: result.error,
+          };
           if (result.invalidateStores.length > 0) {
             yield { type: 'invalidate_stores', requestId, stores: result.invalidateStores };
           }
@@ -826,7 +908,11 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
         // Pause with the first question; frontend will collect all answers
         const first = questionTools[0];
         yield {
-          type: 'tool_approval_required', requestId, id: first.id, name: 'ask_question', arguments: first.parsedArgs,
+          type: 'tool_approval_required',
+          requestId,
+          id: first.id,
+          name: 'ask_question',
+          arguments: first.parsedArgs,
           _pendingMessages: messages,
           _allQuestions: questionTools.map((q) => ({ id: q.id, args: q.parsedArgs })),
         } as any;
@@ -835,8 +921,21 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
 
       // Destructive tool pause
       if (destructiveTool) {
-        yield { type: 'tool_call_start', requestId, id: destructiveTool.id, name: destructiveTool.name, arguments: destructiveTool.parsedArgs };
-        yield { type: 'tool_approval_required', requestId, id: destructiveTool.id, name: destructiveTool.name, arguments: destructiveTool.parsedArgs, _pendingMessages: messages } as any;
+        yield {
+          type: 'tool_call_start',
+          requestId,
+          id: destructiveTool.id,
+          name: destructiveTool.name,
+          arguments: destructiveTool.parsedArgs,
+        };
+        yield {
+          type: 'tool_approval_required',
+          requestId,
+          id: destructiveTool.id,
+          name: destructiveTool.name,
+          arguments: destructiveTool.parsedArgs,
+          _pendingMessages: messages,
+        } as any;
         return;
       }
 
@@ -856,7 +955,7 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
     toolArgs: Record<string, unknown>,
     approved: boolean,
     pendingMessages: Record<string, unknown>[],
-    pageContext: PageContext | undefined,
+    _pageContext: PageContext | undefined,
     signal: AbortSignal,
     requestId: string,
     answer?: string,
@@ -882,7 +981,14 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
         tool_call_id: toolCallId,
         content: JSON.stringify({ error: 'User rejected this action.' }),
       });
-      yield { type: 'tool_result', requestId, id: toolCallId, name: toolName, result: undefined, error: 'Rejected by user' };
+      yield {
+        type: 'tool_result',
+        requestId,
+        id: toolCallId,
+        name: toolName,
+        result: undefined,
+        error: 'Rejected by user',
+      };
     } else {
       const result = await this.executeTool(user, toolName, toolArgs);
       pendingMessages.push({
@@ -924,18 +1030,18 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
     for (let round = 0; round < maxRounds; round++) {
       if (signal.aborted) return;
 
-      let stream;
+      let stream: Awaited<ReturnType<typeof client.chat.completions.create>> | undefined;
       try {
         stream = await client.chat.completions.create({
           model: config.model || 'gpt-4o',
           messages: messages as unknown as OpenAI.ChatCompletionMessageParam[],
-          tools: tools.length > 0 ? tools as OpenAI.ChatCompletionTool[] : undefined,
+          tools: tools.length > 0 ? (tools as OpenAI.ChatCompletionTool[]) : undefined,
           stream: true,
           ...(config.maxTokensField === 'max_tokens'
             ? { max_tokens: config.maxCompletionTokens }
             : { max_completion_tokens: config.maxCompletionTokens }),
           ...(config.reasoningEffort && config.reasoningEffort !== 'none'
-            ? { reasoning_effort: config.reasoningEffort } as Record<string, unknown>
+            ? ({ reasoning_effort: config.reasoningEffort } as Record<string, unknown>)
             : {}),
         });
       } catch (err) {
@@ -998,25 +1104,52 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
 
       const parsedToolCalls = toolCalls.map((tc) => {
         let parsedArgs: Record<string, unknown> = {};
-        try { parsedArgs = JSON.parse(tc.arguments || '{}'); } catch { /* empty */ }
+        try {
+          parsedArgs = JSON.parse(tc.arguments || '{}');
+        } catch {
+          /* empty */
+        }
         return { ...tc, parsedArgs };
       });
 
-      const questionTools2: (typeof parsedToolCalls) = [];
+      const questionTools2: typeof parsedToolCalls = [];
       let destructiveTool2: (typeof parsedToolCalls)[number] | null = null;
 
       for (const tc of parsedToolCalls) {
-        if (tc.name === 'ask_question') { questionTools2.push(tc); continue; }
-        if (isDestructiveTool(tc.name) && !destructiveTool2) { destructiveTool2 = tc; continue; }
+        if (tc.name === 'ask_question') {
+          questionTools2.push(tc);
+          continue;
+        }
+        if (isDestructiveTool(tc.name) && !destructiveTool2) {
+          destructiveTool2 = tc;
+          continue;
+        }
 
         yield { type: 'tool_call_start', requestId, id: tc.id, name: tc.name, arguments: tc.parsedArgs };
         if (isDestructiveTool(tc.name)) {
-          messages.push({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify({ skipped: 'Another action is pending approval.' }) });
-          yield { type: 'tool_result', requestId, id: tc.id, name: tc.name, result: { skipped: 'Another action is pending approval.' } };
+          messages.push({
+            role: 'tool',
+            tool_call_id: tc.id,
+            content: JSON.stringify({ skipped: 'Another action is pending approval.' }),
+          });
+          yield {
+            type: 'tool_result',
+            requestId,
+            id: tc.id,
+            name: tc.name,
+            result: { skipped: 'Another action is pending approval.' },
+          };
         } else {
           const result = await this.executeTool(user, tc.name, tc.parsedArgs);
           messages.push({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify(result.error || result.result) });
-          yield { type: 'tool_result', requestId, id: tc.id, name: tc.name, result: result.result, error: result.error };
+          yield {
+            type: 'tool_result',
+            requestId,
+            id: tc.id,
+            name: tc.name,
+            result: result.result,
+            error: result.error,
+          };
           if (result.invalidateStores.length > 0) {
             yield { type: 'invalidate_stores', requestId, stores: result.invalidateStores };
           }
@@ -1029,15 +1162,33 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
         }
         const first = questionTools2[0];
         yield {
-          type: 'tool_approval_required', requestId, id: first.id, name: 'ask_question', arguments: first.parsedArgs,
-          _pendingMessages: messages, _allQuestions: questionTools2.map((q) => ({ id: q.id, args: q.parsedArgs })),
+          type: 'tool_approval_required',
+          requestId,
+          id: first.id,
+          name: 'ask_question',
+          arguments: first.parsedArgs,
+          _pendingMessages: messages,
+          _allQuestions: questionTools2.map((q) => ({ id: q.id, args: q.parsedArgs })),
         } as any;
         return;
       }
 
       if (destructiveTool2) {
-        yield { type: 'tool_call_start', requestId, id: destructiveTool2.id, name: destructiveTool2.name, arguments: destructiveTool2.parsedArgs };
-        yield { type: 'tool_approval_required', requestId, id: destructiveTool2.id, name: destructiveTool2.name, arguments: destructiveTool2.parsedArgs, _pendingMessages: messages } as any;
+        yield {
+          type: 'tool_call_start',
+          requestId,
+          id: destructiveTool2.id,
+          name: destructiveTool2.name,
+          arguments: destructiveTool2.parsedArgs,
+        };
+        yield {
+          type: 'tool_approval_required',
+          requestId,
+          id: destructiveTool2.id,
+          name: destructiveTool2.name,
+          arguments: destructiveTool2.parsedArgs,
+          _pendingMessages: messages,
+        } as any;
         return;
       }
     }
@@ -1048,7 +1199,10 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
   /**
    * Get context size estimate for /context command.
    */
-  async getContextEstimate(user: User, pageContext?: PageContext): Promise<{
+  async getContextEstimate(
+    user: User,
+    pageContext?: PageContext
+  ): Promise<{
     systemTokens: number;
     toolsTokens: number;
     totalOverhead: number;

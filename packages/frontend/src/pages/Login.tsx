@@ -38,15 +38,20 @@ export function LoginPage() {
             Sign in with OIDC
           </Button>
           <div className="space-y-1">
-          <p className="text-xs text-muted-foreground">
-            Authenticate via your organization's identity provider
-          </p>
-          <p className="text-xs text-muted-foreground">
-            Powered by{" "}
-            <a href="https://wiolett.net" target="_blank" rel="noopener noreferrer" className="text-foreground hover:underline">
-              Wiolett
-            </a>
-          </p>
+            <p className="text-xs text-muted-foreground">
+              Authenticate via your organization's identity provider
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Powered by{" "}
+              <a
+                href="https://wiolett.net"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-foreground hover:underline"
+              >
+                Wiolett
+              </a>
+            </p>
           </div>
         </div>
       </div>

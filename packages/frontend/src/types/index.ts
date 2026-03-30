@@ -1,4 +1,14 @@
-export type { AIConfig, AIMessage, AIToolCall, AIToolDef, ChatMessage, PageContext, QuickAction, WSClientMessage, WSServerMessage } from "./ai";
+export type {
+  AIConfig,
+  AIMessage,
+  AIToolCall,
+  AIToolDef,
+  ChatMessage,
+  PageContext,
+  QuickAction,
+  WSClientMessage,
+  WSServerMessage,
+} from "./ai";
 
 // User roles
 export type UserRole = "admin" | "operator" | "viewer" | "blocked";
@@ -577,7 +587,12 @@ export interface Domain {
 
 export interface DomainUsage {
   proxyHosts: Array<{ id: string; domainNames: string[]; enabled: boolean }>;
-  sslCertificates: Array<{ id: string; domainNames: string[]; status: string; notAfter: string | null }>;
+  sslCertificates: Array<{
+    id: string;
+    domainNames: string[];
+    status: string;
+    notAfter: string | null;
+  }>;
 }
 
 export interface DomainWithUsage extends Domain {

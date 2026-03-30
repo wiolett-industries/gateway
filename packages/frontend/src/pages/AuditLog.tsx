@@ -14,7 +14,10 @@ import { api } from "@/services/api";
 import type { AuditLogEntry } from "@/types";
 
 export function AuditLog() {
-  const cachedAudit = api.getCached<{ data: AuditLogEntry[]; pagination: { totalPages: number; total: number } }>("audit:list");
+  const cachedAudit = api.getCached<{
+    data: AuditLogEntry[];
+    pagination: { totalPages: number; total: number };
+  }>("audit:list");
   const [entries, setEntries] = useState<AuditLogEntry[]>(cachedAudit?.data ?? []);
   const [isLoading, setIsLoading] = useState(!cachedAudit);
   const [page, setPage] = useState(1);
@@ -43,7 +46,7 @@ export function AuditLog() {
       }
     };
     load();
-  }, [page, actionFilter, resourceFilter]);
+  }, [page, actionFilter, resourceFilter, entries.length]);
 
   return (
     <PageTransition>

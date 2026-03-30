@@ -7,7 +7,7 @@ export function parseSemver(version: string): [number, number, number] | null {
   const clean = version.replace(/^v/, '');
   const match = clean.match(/^(\d+)\.(\d+)\.(\d+)/);
   if (!match) return null;
-  return [parseInt(match[1]), parseInt(match[2]), parseInt(match[3])];
+  return [parseInt(match[1], 10), parseInt(match[2], 10), parseInt(match[3], 10)];
 }
 
 /** Returns 1 if a > b, -1 if a < b, 0 if equal. */
