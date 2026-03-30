@@ -2,7 +2,7 @@ import { OpenAPIHono } from '@hono/zod-openapi';
 import { z } from 'zod';
 import { container } from '@/container.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
-import { authMiddleware, rbacMiddleware } from '@/modules/auth/auth.middleware.js';
+import { authMiddleware, rbacMiddleware, requireScope } from '@/modules/auth/auth.middleware.js';
 import { AuthService } from '@/modules/auth/auth.service.js';
 import { SessionService } from '@/services/session.service.js';
 import type { AppEnv } from '@/types.js';
@@ -18,14 +18,14 @@ const UpdateRoleSchema = z.object({
 });
 
 // List all users
-adminRoutes.get('/users', async (c) => {
+adminRoutes.get('/users', requireScope('admin:users'), async (c) => {
   const authService = container.resolve(AuthService);
   const userList = await authService.listUsers();
   return c.json(userList);
 });
 
 // Update user role
-adminRoutes.patch('/users/:id/role', async (c) => {
+adminRoutes.patch('/users/:id/role', requireScope('admin:users'), async (c) => {
   const authService = container.resolve(AuthService);
   const auditService = container.resolve(AuditService);
   const currentUser = c.get('user')!;
@@ -39,11 +39,9 @@ adminRoutes.patch('/users/:id/role', async (c) => {
 
   const updatedUser = await authService.updateUserRole(userId, role);
 
-  // Destroy all sessions when blocking a user
-  if (role === 'blocked') {
-    const sessionService = container.resolve(SessionService);
-    await sessionService.destroyAllUserSessions(userId);
-  }
+  // Destroy all sessions on role change to force re-login with updated role
+  const sessionService = container.resolve(SessionService);
+  await sessionService.destroyAllUserSessions(userId);
 
   await auditService.log({
     userId: currentUser.id,
@@ -59,7 +57,7 @@ adminRoutes.patch('/users/:id/role', async (c) => {
 });
 
 // Delete user
-adminRoutes.delete('/users/:id', async (c) => {
+adminRoutes.delete('/users/:id', requireScope('admin:users'), async (c) => {
   const authService = container.resolve(AuthService);
   const auditService = container.resolve(AuditService);
   const currentUser = c.get('user')!;

@@ -73,7 +73,7 @@ export class TokensService {
     logger.info('Revoked API token', { tokenId, userId });
   }
 
-  async validateToken(rawToken: string): Promise<User | null> {
+  async validateToken(rawToken: string): Promise<{ user: User; scopes: string[] } | null> {
     const tokenHash = hashToken(rawToken);
 
     const token = await this.db.query.apiTokens.findFirst({
@@ -96,12 +96,15 @@ export class TokensService {
     if (user.role === 'blocked') return null;
 
     return {
-      id: user.id,
-      oidcSubject: user.oidcSubject,
-      email: user.email,
-      name: user.name,
-      avatarUrl: user.avatarUrl,
-      role: user.role,
+      user: {
+        id: user.id,
+        oidcSubject: user.oidcSubject,
+        email: user.email,
+        name: user.name,
+        avatarUrl: user.avatarUrl,
+        role: user.role,
+      },
+      scopes: token.scopes || [],
     };
   }
 

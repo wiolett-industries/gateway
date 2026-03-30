@@ -540,9 +540,7 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
           throw new Error('Cannot change your own role');
         }
         const updated = await this.authService.updateUserRole(a.userId, a.role);
-        if (a.role === 'blocked') {
-          await container.resolve(SessionService).destroyAllUserSessions(a.userId);
-        }
+        await container.resolve(SessionService).destroyAllUserSessions(a.userId);
         return updated;
       }
       case 'get_audit_log':
