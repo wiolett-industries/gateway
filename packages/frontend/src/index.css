@@ -207,6 +207,11 @@ body {
   background: var(--color-muted-foreground);
 }
 
+/* Hide textarea resize grip (white dot in bottom-right corner) */
+textarea::-webkit-resizer {
+  display: none;
+}
+
 @import "./css/animations.css";
 @import "./css/base.css";
 @import "./css/scrollbars.css";

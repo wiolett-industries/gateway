@@ -32,6 +32,8 @@ import { SetupService } from '@/modules/setup/setup.service.js';
 import { TokensService } from '@/modules/tokens/tokens.service.js';
 import { HousekeepingJob } from '@/jobs/housekeeping.job.js';
 import { UpdateCheckJob } from '@/jobs/update-check.job.js';
+import { AISettingsService } from '@/modules/ai/ai.settings.service.js';
+import { AIService } from '@/modules/ai/ai.service.js';
 import { HousekeepingService } from '@/services/housekeeping.service.js';
 import { UpdateService } from '@/services/update.service.js';
 import { CacheService, createRedisClient } from '@/services/cache.service.js';
@@ -150,6 +152,10 @@ export async function initializeContainer(): Promise<void> {
   const nginxConfigService = new NginxConfigService(dockerService, env.NGINX_CONTAINER_NAME);
   container.registerInstance(NginxConfigService, nginxConfigService);
 
+  // AI Settings
+  const aiSettingsService = new AISettingsService(db, cryptoService);
+  container.registerInstance(AISettingsService, aiSettingsService);
+
   // Domain management
   const domainsService = new DomainsService(db, auditService);
   container.registerInstance(DomainsService, domainsService);
@@ -165,6 +171,23 @@ export async function initializeContainer(): Promise<void> {
   // Housekeeping service
   const housekeepingService = new HousekeepingService(db, dockerService, env);
   container.registerInstance(HousekeepingService, housekeepingService);
+
+  // AI Service (depends on many services above)
+  const aiService = new AIService(
+    aiSettingsService,
+    caService,
+    certService,
+    templatesService,
+    proxyService,
+    folderService,
+    sslService,
+    domainsService,
+    accessListService,
+    authService,
+    auditService,
+    monitoringService
+  );
+  container.registerInstance(AIService, aiService);
 
   // Configure DNS resolvers and detect public IP
   initDnsResolver(env.DNS_RESOLVERS.split(',').map((s) => s.trim()).filter(Boolean));

@@ -45,7 +45,7 @@ async function main() {
     await initializeContainer();
 
     // Create the Hono app
-    const app = createApp();
+    const { app, injectWebSocket } = createApp();
 
     // Start the server
     const server = serve({
@@ -53,6 +53,9 @@ async function main() {
       port: env.PORT,
       hostname: env.BIND_HOST,
     });
+
+    // Inject WebSocket support into the HTTP server
+    injectWebSocket(server);
 
     logger.info(`Server running at http://${env.BIND_HOST}:${env.PORT}`);
     logger.info(`API Documentation at http://localhost:${env.PORT}/docs`);

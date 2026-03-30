@@ -1,0 +1,50 @@
+import { Sparkles } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useUIStore } from "@/stores/ui";
+import { useAIStore } from "@/stores/ai";
+
+interface AIButtonProps {
+  iconOnly?: boolean;
+}
+
+export function AIButton({ iconOnly = false }: AIButtonProps) {
+  const { toggleAIPanel, aiPanelOpen } = useUIStore();
+  const isEnabled = useAIStore((s) => s.isEnabled);
+
+  if (isEnabled === false) return null;
+
+  if (iconOnly) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className={`h-8 w-8 ${aiPanelOpen ? "bg-sidebar-accent text-primary" : ""}`}
+            onClick={toggleAIPanel}
+          >
+            <Sparkles className="h-4 w-4" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="right">AI Assistant (⌘I)</TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className={`h-10 w-10 md:h-7 md:w-7 ${aiPanelOpen ? "text-primary" : ""}`}
+          onClick={toggleAIPanel}
+        >
+          <Sparkles className="h-4 w-4" />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>AI Assistant (⌘I)</TooltipContent>
+    </Tooltip>
+  );
+}

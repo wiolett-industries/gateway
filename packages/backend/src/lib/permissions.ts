@@ -38,3 +38,7 @@ export function canExportCAKeys(role: UserRole): boolean {
 export function canViewAuditLog(role: UserRole): boolean {
   return role === 'admin';
 }
+
+export function canUseAI(role: UserRole): boolean {
+  return role === 'admin' || role === 'operator';
+}

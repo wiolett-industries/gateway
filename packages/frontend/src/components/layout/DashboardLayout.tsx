@@ -44,8 +44,11 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
+import { useAIStore } from "@/stores/ai";
 import { useUIStore } from "@/stores/ui";
 import { useUpdateStore } from "@/stores/update";
+import { AIButton } from "@/components/ai/AIButton";
+import { AISidePanel } from "@/components/ai/AISidePanel";
 
 function getInitials(name: string | null): string {
   if (!name) return "?";
@@ -242,6 +245,8 @@ function SidebarContent({
 
             <div className="flex-1" />
 
+            {hasRole("admin", "operator") && <AIButton iconOnly />}
+
             {updateAvailable && isAdmin && showUpdateNotifications && (
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -306,6 +311,7 @@ function SidebarContent({
               </span>
 
               <div className="flex items-center gap-0.5">
+                {hasRole("admin", "operator") && <AIButton />}
                 {alwaysExpanded ? (
                   <Button variant="ghost" size="icon" className="h-10 w-10" onClick={onNavigate}>
                     <X className="h-4 w-4" />
@@ -524,6 +530,10 @@ export function DashboardLayout() {
         api.prefetchAll(user.role === "admin");
         // Fetch update status into global store
         if (user.role === "admin") useUpdateStore.getState().fetchStatus();
+        // Check AI availability for operator+ roles
+        if (user.role === "admin" || user.role === "operator") {
+          api.getAIStatus().then((s) => useAIStore.getState().setEnabled(s.enabled)).catch(() => {});
+        }
       } catch {
         logout();
         navigate("/login");
@@ -558,6 +568,14 @@ export function DashboardLayout() {
       if (mod && e.key === "j") {
         e.preventDefault();
         useUIStore.getState().toggleSidebar();
+      }
+      if (mod && e.key === "i") {
+        e.preventDefault();
+        const { hasRole } = useAuthStore.getState();
+        const aiEnabled = useAIStore.getState().isEnabled;
+        if (hasRole("admin", "operator") && aiEnabled !== false) {
+          useUIStore.getState().toggleAIPanel();
+        }
       }
       if (mod && e.key === ",") {
         e.preventDefault();
@@ -636,6 +654,7 @@ export function DashboardLayout() {
                 <img src="/android-chrome-192x192.png" alt="Gateway" className="h-5 w-5" />
                 Gateway
               </span>
+              {useAuthStore.getState().hasRole("admin", "operator") && <AIButton />}
             </div>
           </header>
 
@@ -652,6 +671,7 @@ export function DashboardLayout() {
             </SheetContent>
           </Sheet>
 
+          <AISidePanel isMobile />
           <Toaster position="bottom-center" />
           <CommandPalette open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} />
         </div>
@@ -672,6 +692,7 @@ export function DashboardLayout() {
         <main className="h-full flex-1 overflow-hidden">
           <Outlet />
         </main>
+        <AISidePanel />
         <Toaster position="bottom-right" />
         <CommandPalette open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} />
         <ConfirmDialog />
