@@ -176,6 +176,7 @@ export function Templates() {
 
   useEffect(() => {
     loadTemplates();
+    // biome-ignore lint/correctness/useExhaustiveDependencies: load-once pattern
   }, [loadTemplates]);
 
   const resetForm = () => {

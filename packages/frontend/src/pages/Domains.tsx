@@ -78,6 +78,7 @@ export function Domains() {
 
   useEffect(() => {
     loadDomains();
+    // biome-ignore lint/correctness/useExhaustiveDependencies: load-once pattern
   }, [loadDomains]);
 
   const handleCheckDns = async (d: Domain) => {

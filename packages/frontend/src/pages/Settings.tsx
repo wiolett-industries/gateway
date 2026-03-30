@@ -244,6 +244,7 @@ export function Settings() {
     fetchStatus();
     loadHousekeeping();
     loadAIConfig();
+    // biome-ignore lint/correctness/useExhaustiveDependencies: load-once pattern
   }, [loadHousekeeping, loadAIConfig, fetchStatus, loadTokens]);
 
   const handleCheckUpdate = async () => {

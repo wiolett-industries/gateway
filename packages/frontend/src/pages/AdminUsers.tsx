@@ -66,6 +66,7 @@ export function AdminUsers() {
 
   useEffect(() => {
     loadUsers();
+    // biome-ignore lint/correctness/useExhaustiveDependencies: load-once pattern
   }, [loadUsers]);
 
   const handleRoleChange = async (userId: string, newRole: UserRole) => {

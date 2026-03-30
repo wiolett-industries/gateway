@@ -136,7 +136,11 @@ export function createWSHandlers() {
         const freshUser = await authenticateFromToken(state.sessionToken);
         if (!freshUser || !canUseAI(freshUser.role)) {
           send(ws, { type: 'auth_error', message: 'Session expired or role changed' });
-          try { ws.close(); } catch { /* ignore */ }
+          try {
+            ws.close();
+          } catch {
+            /* ignore */
+          }
           return;
         }
         state.user = freshUser;
