@@ -1,3 +1,4 @@
+import { timingSafeEqual, createHmac } from 'node:crypto';
 import { Hono } from 'hono';
 import { getEnv } from '@/config/env.js';
 import { container } from '@/container.js';
@@ -9,12 +10,19 @@ const logger = createChildLogger('SetupRoutes');
 
 export const setupRoutes = new Hono<AppEnv>();
 
-/** Verify setup token middleware */
 function verifySetupToken(authHeader: string | undefined): boolean {
   const env = getEnv();
   if (!env.SETUP_TOKEN) return false;
-  const token = authHeader?.replace('Bearer ', '');
-  return !!token && token === env.SETUP_TOKEN;
+  if (!authHeader?.startsWith('Bearer ')) return false;
+  const token = authHeader.slice(7);
+  if (!token) return false;
+  try {
+    const a = createHmac('sha256', 'setup-token-verify').update(token).digest();
+    const b = createHmac('sha256', 'setup-token-verify').update(env.SETUP_TOKEN).digest();
+    return timingSafeEqual(a, b);
+  } catch {
+    return false;
+  }
 }
 
 /**

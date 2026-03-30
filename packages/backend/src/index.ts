@@ -16,9 +16,11 @@ import pg from 'pg';
 
 import { createApp } from '@/app.js';
 import { container, initializeContainer } from '@/bootstrap.js';
+import { TOKENS } from '@/container.js';
 import { getEnv } from '@/config/env.js';
 import { logger } from '@/lib/logger.js';
 import { SchedulerService } from '@/services/scheduler.service.js';
+import type { RedisClient } from '@/services/cache.service.js';
 
 async function runMigrations(databaseUrl: string) {
   logger.info('Running database migrations...');
@@ -68,10 +70,32 @@ async function main() {
     const shutdown = async () => {
       logger.info('Shutting down server...');
       scheduler.stop();
+
+      try {
+        const redis = container.resolve<RedisClient>(TOKENS.RedisClient);
+        await redis.quit();
+        logger.info('Redis connection closed');
+      } catch (err) {
+        logger.error('Failed to close Redis', { err });
+      }
+
+      try {
+        const db = container.resolve(TOKENS.DrizzleClient) as any;
+        await db.$client?.end?.();
+        logger.info('Database pool closed');
+      } catch (err) {
+        logger.error('Failed to close database pool', { err });
+      }
+
       server.close(() => {
         logger.info('Server closed');
         process.exit(0);
       });
+
+      setTimeout(() => {
+        logger.error('Forced shutdown after timeout');
+        process.exit(1);
+      }, 10_000);
     };
 
     process.on('SIGTERM', shutdown);

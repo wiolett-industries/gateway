@@ -5,6 +5,7 @@ import { certificates } from '@/db/schema/certificates.js';
 import { proxyHosts } from '@/db/schema/index.js';
 import { sslCertificates } from '@/db/schema/ssl-certificates.js';
 import { createChildLogger } from '@/lib/logger.js';
+import { escapeLike } from '@/lib/utils.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { CryptoService } from '@/services/crypto.service.js';
@@ -356,7 +357,7 @@ export class ProxyService {
     }
     if (query.search) {
       // Search across domain names (cast jsonb to text for ilike)
-      conditions.push(ilike(sql`${proxyHosts.domainNames}::text`, `%${query.search}%`));
+      conditions.push(ilike(sql`${proxyHosts.domainNames}::text`, `%${escapeLike(query.search)}%`));
     }
 
     const where = conditions.length > 0 ? and(...conditions) : undefined;

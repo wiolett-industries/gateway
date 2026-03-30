@@ -2,7 +2,7 @@ import { inArray } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import { settings } from '@/db/schema/settings.js';
 import { createChildLogger } from '@/lib/logger.js';
-import { compareSemver, isNewerVersion } from '@/lib/semver.js';
+import { compareSemver, isNewerVersion, parseSemver } from '@/lib/semver.js';
 import type { Env } from '@/config/env.js';
 import type { DockerService } from './docker.service.js';
 
@@ -205,6 +205,9 @@ export class UpdateService {
     if (!composeProject) {
       throw new Error('Cannot determine compose project name from container labels');
     }
+    if (!/^[a-zA-Z0-9_-]+$/.test(composeProject)) {
+      throw new Error(`Invalid compose project name: ${composeProject}`);
+    }
 
     // Determine the image to pull from the current container's image name
     const currentImage = selfInfo.Config.Image;
@@ -215,6 +218,10 @@ export class UpdateService {
       : currentImage;
 
     logger.info('Update context', { composeDir, composeProject, imageBase, targetVersion });
+
+    if (!parseSemver(targetVersion)) {
+      throw new Error(`Invalid version format: ${targetVersion}`);
+    }
 
     // 2. Pull the new gateway image
     const tag = targetVersion.startsWith('v') ? targetVersion : `v${targetVersion}`;

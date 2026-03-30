@@ -1,5 +1,6 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
+import { sanitizeFilename } from '@/lib/utils.js';
 import { authMiddleware, rbacMiddleware } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import { CAService } from './ca.service.js';
@@ -83,14 +84,12 @@ certRoutes.post('/:id/revoke', rbacMiddleware('admin', 'operator'), async (c) =>
 });
 
 // Export certificate
-certRoutes.get('/:id/export', async (c) => {
+certRoutes.post('/:id/export', async (c) => {
   const certService = container.resolve(CertService);
   const exportService = container.resolve(ExportService);
   const id = c.req.param('id');
-  const { format, passphrase } = ExportCertificateQuerySchema.parse({
-    format: c.req.query('format'),
-    passphrase: c.req.query('passphrase'),
-  });
+  const body = await c.req.json();
+  const { format, passphrase } = ExportCertificateQuerySchema.parse(body);
 
   const cert = await certService.getCertificate(id);
 
@@ -99,7 +98,7 @@ certRoutes.get('/:id/export', async (c) => {
       return new Response(cert.certificatePem, {
         headers: {
           'Content-Type': 'application/x-pem-file',
-          'Content-Disposition': `attachment; filename="${cert.commonName}.pem"`,
+          'Content-Disposition': `attachment; filename="${sanitizeFilename(cert.commonName)}.pem"`,
         },
       });
 
@@ -108,7 +107,7 @@ certRoutes.get('/:id/export', async (c) => {
       return new Response(der, {
         headers: {
           'Content-Type': 'application/x-x509-ca-cert',
-          'Content-Disposition': `attachment; filename="${cert.commonName}.der"`,
+          'Content-Disposition': `attachment; filename="${sanitizeFilename(cert.commonName)}.der"`,
         },
       });
     }
@@ -125,7 +124,7 @@ certRoutes.get('/:id/export', async (c) => {
       return new Response(p12, {
         headers: {
           'Content-Type': 'application/x-pkcs12',
-          'Content-Disposition': `attachment; filename="${cert.commonName}.p12"`,
+          'Content-Disposition': `attachment; filename="${sanitizeFilename(cert.commonName)}.p12"`,
         },
       });
     }
@@ -139,7 +138,7 @@ certRoutes.get('/:id/export', async (c) => {
       return new Response(jks, {
         headers: {
           'Content-Type': 'application/x-java-keystore',
-          'Content-Disposition': `attachment; filename="${cert.commonName}.jks"`,
+          'Content-Disposition': `attachment; filename="${sanitizeFilename(cert.commonName)}.jks"`,
         },
       });
     }
@@ -170,7 +169,7 @@ certRoutes.get('/:id/chain', async (c) => {
   return new Response(fullChain, {
     headers: {
       'Content-Type': 'application/x-pem-file',
-      'Content-Disposition': `attachment; filename="${cert.commonName}-chain.pem"`,
+      'Content-Disposition': `attachment; filename="${sanitizeFilename(cert.commonName)}-chain.pem"`,
     },
   });
 });

@@ -85,6 +85,7 @@ export class TokensService {
     this.db.update(apiTokens)
       .set({ lastUsedAt: new Date() })
       .where(eq(apiTokens.id, token.id))
+      .execute()
       .catch(err => logger.error('Failed to update lastUsedAt', { err }));
 
     const user = await this.db.query.users.findFirst({
@@ -92,6 +93,7 @@ export class TokensService {
     });
 
     if (!user) return null;
+    if (user.role === 'blocked') return null;
 
     return {
       id: user.id,

@@ -16,6 +16,10 @@ import { AISettingsService } from './ai.settings.service.js';
 import { AI_TOOLS, getOpenAITools, isDestructiveTool, TOOL_STORE_INVALIDATION_MAP } from './ai.tools.js';
 import type { ChatMessage, PageContext, ToolExecutionResult, WSServerMessage } from './ai.types.js';
 import type { User } from '@/types.js';
+import { CreateRootCASchema, CreateIntermediateCASchema } from '@/modules/pki/ca.schemas.js';
+import { IssueCertificateSchema } from '@/modules/pki/cert.schemas.js';
+import { container } from '@/container.js';
+import { SessionService } from '@/services/session.service.js';
 
 const logger = createChildLogger('AIService');
 
@@ -398,17 +402,14 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
         return this.caService.getCATree();
       case 'get_ca':
         return this.caService.getCA(a.caId);
-      case 'create_root_ca':
-        return this.caService.createRootCA(
-          { commonName: a.commonName, keyAlgorithm: a.keyAlgorithm, validityYears: a.validityYears, maxValidityDays: a.maxValidityDays || 825 },
-          user.id
-        );
-      case 'create_intermediate_ca':
-        return this.caService.createIntermediateCA(
-          a.parentCaId,
-          { commonName: a.commonName, keyAlgorithm: a.keyAlgorithm, validityYears: a.validityYears, maxValidityDays: a.maxValidityDays || 825 },
-          user.id
-        );
+      case 'create_root_ca': {
+        const rootCaInput = CreateRootCASchema.parse(args);
+        return this.caService.createRootCA(rootCaInput, user.id);
+      }
+      case 'create_intermediate_ca': {
+        const intCaInput = CreateIntermediateCASchema.parse(args);
+        return this.caService.createIntermediateCA(a.parentCaId, intCaInput, user.id);
+      }
       case 'delete_ca':
         await this.caService.deleteCA(a.caId, user.id);
         return { success: true };
@@ -422,10 +423,8 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
       case 'get_certificate':
         return this.certService.getCertificate(a.certificateId);
       case 'issue_certificate': {
-        const result = await this.certService.issueCertificate(
-          { caId: a.caId, commonName: a.commonName, keyAlgorithm: a.keyAlgorithm, validityDays: a.validityDays, type: a.type, sans: a.sans || [], templateId: a.templateId, subjectDnFields: a.subjectDnFields },
-          user.id
-        );
+        const certInput = IssueCertificateSchema.parse(args);
+        const result = await this.certService.issueCertificate(certInput, user.id);
         return { certificate: result.certificate, message: 'Certificate issued successfully. Private key was generated.' };
       }
       case 'revoke_certificate':
@@ -536,8 +535,16 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
       // ── Administration ──
       case 'list_users':
         return this.authService.listUsers();
-      case 'update_user_role':
-        return this.authService.updateUserRole(a.userId, a.role);
+      case 'update_user_role': {
+        if (a.userId === user.id) {
+          throw new Error('Cannot change your own role');
+        }
+        const updated = await this.authService.updateUserRole(a.userId, a.role);
+        if (a.role === 'blocked') {
+          await container.resolve(SessionService).destroyAllUserSessions(a.userId);
+        }
+        return updated;
+      }
       case 'get_audit_log':
         return this.auditService.getAuditLog({ action: a.action, resourceType: a.resourceType, page: a.page || 1, limit: a.limit || 50 });
       case 'get_dashboard_stats':

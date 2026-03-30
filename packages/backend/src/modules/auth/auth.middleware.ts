@@ -121,4 +121,18 @@ export function rbacMiddleware(...allowedRoles: UserRole[]): MiddlewareHandler<A
   };
 }
 
+export function requireScope(scope: string): MiddlewareHandler<AppEnv> {
+  return async (c, next) => {
+    const credential = extractCredential(c);
+    if (credential?.type === 'apitoken') {
+      const tokensService = container.resolve(TokensService);
+      const scopes = await tokensService.getTokenScopes(credential.value);
+      if (!TokensService.hasScope(scopes, scope)) {
+        throw new HTTPException(403, { message: `Token missing required scope: ${scope}` });
+      }
+    }
+    await next();
+  };
+}
+
 export { SESSION_COOKIE_NAME };

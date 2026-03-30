@@ -32,6 +32,7 @@ export class SessionService {
     await this.cache.set(`${SESSION_PREFIX}${sessionId}`, sessionData, env.SESSION_EXPIRY);
 
     await this.cache.sadd(`${USER_SESSIONS_PREFIX}${user.id}`, sessionId);
+    await this.cache.expire(`${USER_SESSIONS_PREFIX}${user.id}`, env.SESSION_EXPIRY + 86400);
 
     return { sessionId, expiresAt };
   }

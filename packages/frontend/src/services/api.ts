@@ -377,10 +377,12 @@ class ApiClient {
   }
 
   async exportCertificate(id: string, format: string, passphrase?: string): Promise<Blob> {
-    const params = new URLSearchParams({ format });
-    if (passphrase) params.set("passphrase", passphrase);
-    const response = await fetch(`${API_BASE}/certificates/${id}/export?${params}`, {
+    const body: Record<string, string> = { format };
+    if (passphrase) body.passphrase = passphrase;
+    const response = await fetch(`${API_BASE}/certificates/${id}/export`, {
+      method: "POST",
       headers: this.getHeaders(),
+      body: JSON.stringify(body),
     });
     if (!response.ok) throw new Error("Failed to export certificate");
     return response.blob();

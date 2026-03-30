@@ -270,7 +270,10 @@ export class CAService {
     return this.getCA(id);
   }
 
-  async revokeCA(id: string, reason: string, userId: string) {
+  async revokeCA(id: string, reason: string, userId: string, _depth = 0) {
+    if (_depth > 10) {
+      throw new AppError(400, 'CA_CHAIN_TOO_DEEP', 'CA revocation chain exceeds maximum depth');
+    }
     const ca = await this.db.query.certificateAuthorities.findFirst({
       where: eq(certificateAuthorities.id, id),
     });
@@ -288,7 +291,7 @@ export class CAService {
       where: and(eq(certificateAuthorities.parentId, id), eq(certificateAuthorities.status, 'active')),
     });
     for (const child of children) {
-      await this.revokeCA(child.id, 'caCompromise', userId);
+      await this.revokeCA(child.id, 'caCompromise', userId, _depth + 1);
     }
 
     // Revoke all certificates issued by this CA
@@ -367,8 +370,9 @@ export class CAService {
   getAlgorithm(keyAlgorithm: string): EcdsaParams | RsaHashedKeyAlgorithm {
     switch (keyAlgorithm) {
       case 'rsa-2048':
-      case 'rsa-4096':
         return { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' };
+      case 'rsa-4096':
+        return { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-384' };
       case 'ecdsa-p256':
         return { name: 'ECDSA', namedCurve: 'P-256', hash: 'SHA-256' } as any;
       case 'ecdsa-p384':

@@ -23,7 +23,6 @@ const envSchema = z.object({
   RATE_LIMIT_MAX_REQUESTS: z.coerce.number().default(5000),
 
   // Session
-  SESSION_SECRET: z.string().min(32),
   SESSION_EXPIRY: z.coerce.number().default(2592000), // 30 days
 
   // App
@@ -42,7 +41,7 @@ const envSchema = z.object({
   // PKI Master Key — 32 bytes as 64-char hex string for envelope encryption
   PKI_MASTER_KEY: z
     .string()
-    .min(64)
+    .length(64)
     .regex(/^[0-9a-fA-F]+$/),
 
   // PKI defaults
@@ -52,7 +51,7 @@ const envSchema = z.object({
   EXPIRY_CRITICAL_DAYS: z.coerce.number().default(7),
 
   // ACME
-  ACME_EMAIL: z.string().email().default('admin@example.com'),
+  ACME_EMAIL: z.string().email().optional(),
   ACME_STAGING: z.string().default('false').transform((v) => v === 'true' || v === '1'),
 
   // DNS / Domains

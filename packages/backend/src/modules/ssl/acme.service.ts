@@ -12,9 +12,16 @@ x509.cryptoProvider.set(crypto.webcrypto as any);
 export class ACMEService {
   constructor(
     private readonly acmeChallengePath: string,
-    private readonly acmeEmail: string,
+    private readonly acmeEmail: string | undefined,
     private readonly staging: boolean
   ) {}
+
+  private getAcmeEmail(): string {
+    if (!this.acmeEmail) {
+      throw new Error('ACME_EMAIL must be configured to use ACME certificate issuance');
+    }
+    return this.acmeEmail;
+  }
 
   /**
    * Request a certificate via HTTP-01 challenge (fully automatic).
@@ -43,7 +50,7 @@ export class ACMEService {
 
     await client.createAccount({
       termsOfServiceAgreed: true,
-      contact: [`mailto:${this.acmeEmail}`],
+      contact: [`mailto:${this.getAcmeEmail()}`],
     });
 
     // 3. Create order
@@ -149,7 +156,7 @@ export class ACMEService {
 
     await client.createAccount({
       termsOfServiceAgreed: true,
-      contact: [`mailto:${this.acmeEmail}`],
+      contact: [`mailto:${this.getAcmeEmail()}`],
     });
 
     // 3. Create order
@@ -214,7 +221,7 @@ export class ACMEService {
 
     await client.createAccount({
       termsOfServiceAgreed: true,
-      contact: [`mailto:${this.acmeEmail}`],
+      contact: [`mailto:${this.getAcmeEmail()}`],
     });
 
     // 2. Get existing order

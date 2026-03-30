@@ -1,5 +1,6 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
+import { sanitizeFilename } from '@/lib/utils.js';
 import type { AppEnv } from '@/types.js';
 import { CAService } from './ca.service.js';
 import { CRLService } from './crl.service.js';
@@ -28,9 +29,17 @@ publicPkiRoutes.get('/crl/:caId', async (c) => {
 
 // OCSP responder (POST — application/ocsp-request)
 publicPkiRoutes.post('/ocsp/:caId', async (c) => {
+  const contentLength = parseInt(c.req.header('content-length') || '0', 10);
+  if (contentLength > 10240) {
+    return c.json({ code: 'PAYLOAD_TOO_LARGE', message: 'OCSP request too large' }, 413);
+  }
+
   const ocspService = container.resolve(OCSPService);
   const caId = c.req.param('caId');
   const body = await c.req.arrayBuffer();
+  if (body.byteLength > 10240) {
+    return c.json({ code: 'PAYLOAD_TOO_LARGE', message: 'OCSP request too large' }, 413);
+  }
 
   const response = await ocspService.handleOCSPRequest(caId, Buffer.from(body));
 
@@ -43,10 +52,13 @@ publicPkiRoutes.post('/ocsp/:caId', async (c) => {
 
 // OCSP responder (GET — base64-encoded request in URL)
 publicPkiRoutes.get('/ocsp/:caId/:encodedRequest', async (c) => {
+  const encodedRequest = c.req.param('encodedRequest');
+  if (encodedRequest.length > 13654) {
+    return c.json({ code: 'PAYLOAD_TOO_LARGE', message: 'OCSP request too large' }, 413);
+  }
+
   const ocspService = container.resolve(OCSPService);
   const caId = c.req.param('caId');
-  const encodedRequest = c.req.param('encodedRequest');
-
   const requestDer = Buffer.from(encodedRequest, 'base64');
   const response = await ocspService.handleOCSPRequest(caId, requestDer);
 
@@ -67,7 +79,7 @@ publicPkiRoutes.get('/ca/:caId/cert', async (c) => {
     return new Response(ca.certificatePem, {
       headers: {
         'Content-Type': 'application/x-pem-file',
-        'Content-Disposition': `attachment; filename="${ca.commonName}.pem"`,
+        'Content-Disposition': `attachment; filename="${sanitizeFilename(ca.commonName)}.pem"`,
         'Cache-Control': 'public, max-age=86400',
       },
     });

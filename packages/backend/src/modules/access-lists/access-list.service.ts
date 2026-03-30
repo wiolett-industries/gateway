@@ -9,6 +9,7 @@ import { accessLists } from '@/db/schema/index.js';
 import { proxyHosts } from '@/db/schema/proxy-hosts.js';
 import { sslCertificates } from '@/db/schema/ssl-certificates.js';
 import { createChildLogger } from '@/lib/logger.js';
+import { escapeLike } from '@/lib/utils.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { NginxTemplateService } from '@/modules/proxy/nginx-template.service.js';
@@ -270,7 +271,7 @@ export class AccessListService {
     const conditions = [];
 
     if (query.search) {
-      conditions.push(ilike(accessLists.name, `%${query.search}%`));
+      conditions.push(ilike(accessLists.name, `%${escapeLike(query.search)}%`));
     }
 
     const where = conditions.length > 0 ? and(...conditions) : undefined;

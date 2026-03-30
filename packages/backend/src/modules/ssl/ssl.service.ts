@@ -4,6 +4,7 @@ import { and, count, desc, eq, ilike, lte, or } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import { certificates, sslCertificates } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
+import { escapeLike } from '@/lib/utils.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { CryptoService } from '@/services/crypto.service.js';
@@ -590,7 +591,7 @@ export class SSLService {
     if (params.type) conditions.push(eq(sslCertificates.type, params.type));
     if (params.status) conditions.push(eq(sslCertificates.status, params.status));
     if (params.search) {
-      conditions.push(or(ilike(sslCertificates.name, `%${params.search}%`))!);
+      conditions.push(or(ilike(sslCertificates.name, `%${escapeLike(params.search)}%`))!);
     }
 
     const where = conditions.length > 0 ? and(...conditions) : undefined;
