@@ -33,6 +33,13 @@ export const CreateTokenResponseSchema = TokenResponseSchema.extend({
   token: z.string(),
 });
 
+export const ROLE_ALLOWED_SCOPES: Record<string, readonly string[]> = {
+  admin: AVAILABLE_SCOPES,
+  operator: ['ca:read', 'cert:read', 'cert:issue', 'cert:revoke', 'cert:export', 'template:read'],
+  viewer: ['ca:read', 'cert:read', 'template:read'],
+  blocked: [],
+};
+
 export type CreateTokenInput = z.infer<typeof CreateTokenSchema>;
 export type TokenResponse = z.infer<typeof TokenResponseSchema>;
 export type CreateTokenResponse = z.infer<typeof CreateTokenResponseSchema>;

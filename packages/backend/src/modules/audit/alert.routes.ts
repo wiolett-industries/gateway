@@ -1,6 +1,6 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
-import { authMiddleware, sessionOnly } from '@/modules/auth/auth.middleware.js';
+import { authMiddleware, rbacMiddleware, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import { AlertService } from './alert.service.js';
 
@@ -15,7 +15,7 @@ alertRoutes.get('/', async (c) => {
   return c.json(alerts);
 });
 
-alertRoutes.post('/:id/dismiss', async (c) => {
+alertRoutes.post('/:id/dismiss', rbacMiddleware('admin', 'operator'), async (c) => {
   const alertService = container.resolve(AlertService);
   const id = c.req.param('id');
   await alertService.dismissAlert(id);

@@ -70,8 +70,9 @@ export function createApp() {
     })
   );
 
-  // Rate limiting for API routes
+  // Rate limiting for API and public PKI routes
   app.use('/api/*', rateLimitMiddleware);
+  app.use('/pki/*', rateLimitMiddleware);
 
   // Safely no-ops when user is not set (unauthenticated); route-level authMiddleware handles 401
   app.use('/api/*', requireActiveUser);

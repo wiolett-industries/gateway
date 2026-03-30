@@ -23,6 +23,7 @@ interface PendingApproval {
 
 interface WSConnectionState {
   user: User | null;
+  sessionToken: string | null;
   authenticated: boolean;
   currentAbortController: AbortController | null;
   currentRequestId: string | null;
@@ -84,6 +85,7 @@ export function createWSHandlers() {
     onOpen(_event: Event, ws: WSContext) {
       const state: WSConnectionState = {
         user: null,
+        sessionToken: null,
         authenticated: false,
         currentAbortController: null,
         currentRequestId: null,
@@ -108,7 +110,12 @@ export function createWSHandlers() {
 
       let msg: WSClientMessage;
       try {
-        msg = JSON.parse(typeof event.data === 'string' ? event.data : String(event.data));
+        const raw = JSON.parse(typeof event.data === 'string' ? event.data : String(event.data));
+        if (!raw || typeof raw !== 'object' || typeof raw.type !== 'string') {
+          send(ws, { type: 'error', requestId: '', message: 'Invalid message format' });
+          return;
+        }
+        msg = raw as WSClientMessage;
       } catch {
         send(ws, { type: 'error', requestId: '', message: 'Invalid JSON' });
         return;
@@ -122,6 +129,17 @@ export function createWSHandlers() {
       if (!state.authenticated) {
         send(ws, { type: 'auth_error', message: 'Not authenticated' });
         return;
+      }
+
+      // Re-validate session on each message to catch role changes
+      if (state.sessionToken) {
+        const freshUser = await authenticateFromToken(state.sessionToken);
+        if (!freshUser || !canUseAI(freshUser.role)) {
+          send(ws, { type: 'auth_error', message: 'Session expired or role changed' });
+          try { ws.close(); } catch { /* ignore */ }
+          return;
+        }
+        state.user = freshUser;
       }
 
       const user = state.user!;
@@ -303,6 +321,7 @@ export async function authenticateWSConnection(ws: WSContext, token: string): Pr
   }
 
   state.user = user;
+  state.sessionToken = token;
   state.authenticated = true;
   send(ws, { type: 'auth_ok', userId: user.id });
   return true;

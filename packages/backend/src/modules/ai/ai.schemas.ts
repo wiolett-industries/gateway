@@ -20,9 +20,9 @@ export const ChatMessageSchema = z.object({
 });
 
 export const PageContextSchema = z.object({
-  route: z.string(),
-  resourceType: z.string().optional(),
-  resourceId: z.string().optional(),
+  route: z.string().max(200),
+  resourceType: z.string().max(50).optional(),
+  resourceId: z.string().max(100).optional(),
 });
 
 export const ChatRequestSchema = z.object({
@@ -32,7 +32,7 @@ export const ChatRequestSchema = z.object({
 
 export const AIConfigUpdateSchema = z.object({
   enabled: z.boolean().optional(),
-  providerUrl: z.string().optional(),
+  providerUrl: z.string().url().optional(),
   apiKey: z.string().optional(),
   model: z.string().optional(),
   customSystemPrompt: z.string().optional(),
@@ -45,7 +45,7 @@ export const AIConfigUpdateSchema = z.object({
   disabledTools: z.array(z.string()).optional(),
   webSearchApiKey: z.string().optional(),
   webSearchProvider: z.enum(['tavily', 'brave', 'serper', 'searxng', 'exa']).optional(),
-  webSearchBaseUrl: z.string().optional(),
+  webSearchBaseUrl: z.string().url().optional(),
 });
 
 export const ToolApprovalSchema = z.object({

@@ -2,7 +2,7 @@ import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
 import { authMiddleware, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
-import { CreateTokenSchema } from './tokens.schemas.js';
+import { CreateTokenSchema, ROLE_ALLOWED_SCOPES } from './tokens.schemas.js';
 import { TokensService } from './tokens.service.js';
 
 export const tokensRoutes = new OpenAPIHono<AppEnv>();
@@ -22,6 +22,16 @@ tokensRoutes.post('/', async (c) => {
   const user = c.get('user')!;
   const body = await c.req.json();
   const input = CreateTokenSchema.parse(body);
+
+  const allowedScopes = ROLE_ALLOWED_SCOPES[user.role] || [];
+  const disallowed = input.scopes.filter((s) => !allowedScopes.includes(s));
+  if (disallowed.length > 0) {
+    return c.json(
+      { code: 'SCOPE_NOT_ALLOWED', message: `Your role cannot grant scopes: ${disallowed.join(', ')}` },
+      403
+    );
+  }
+
   const result = await tokensService.createToken(user.id, input);
   return c.json(result, 201);
 });
