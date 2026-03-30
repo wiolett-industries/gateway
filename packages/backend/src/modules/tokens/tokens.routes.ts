@@ -1,6 +1,6 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
-import { authMiddleware } from '@/modules/auth/auth.middleware.js';
+import { authMiddleware, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import { CreateTokenSchema } from './tokens.schemas.js';
 import { TokensService } from './tokens.service.js';
@@ -8,6 +8,7 @@ import { TokensService } from './tokens.service.js';
 export const tokensRoutes = new OpenAPIHono<AppEnv>();
 
 tokensRoutes.use('*', authMiddleware);
+tokensRoutes.use('*', sessionOnly);
 
 tokensRoutes.get('/', async (c) => {
   const tokensService = container.resolve(TokensService);

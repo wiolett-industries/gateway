@@ -17,7 +17,7 @@ export const AVAILABLE_SCOPES = [
 
 export const CreateTokenSchema = z.object({
   name: z.string().min(1).max(255),
-  scopes: z.array(z.string()).min(1, 'At least one scope is required'),
+  scopes: z.array(z.enum(AVAILABLE_SCOPES)).min(1, 'At least one scope is required'),
 });
 
 export const TokenResponseSchema = z.object({

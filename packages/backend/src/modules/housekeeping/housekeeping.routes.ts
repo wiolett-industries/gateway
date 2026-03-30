@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
-import { authMiddleware, rbacMiddleware } from '@/modules/auth/auth.middleware.js';
+import { authMiddleware, rbacMiddleware, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import { HousekeepingService } from '@/services/housekeeping.service.js';
 import { SchedulerService } from '@/services/scheduler.service.js';
 import type { AppEnv } from '@/types.js';
@@ -9,6 +9,7 @@ import type { AppEnv } from '@/types.js';
 export const housekeepingRoutes = new OpenAPIHono<AppEnv>();
 
 housekeepingRoutes.use('*', authMiddleware);
+housekeepingRoutes.use('*', sessionOnly);
 housekeepingRoutes.use('*', rbacMiddleware('admin'));
 
 const ConfigUpdateSchema = z.object({

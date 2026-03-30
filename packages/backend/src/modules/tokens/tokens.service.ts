@@ -108,14 +108,6 @@ export class TokensService {
     };
   }
 
-  async getTokenScopes(rawToken: string): Promise<string[]> {
-    const tokenHash = hashToken(rawToken);
-    const token = await this.db.query.apiTokens.findFirst({
-      where: eq(apiTokens.tokenHash, tokenHash),
-    });
-    return token?.scopes || [];
-  }
-
   /**
    * Check if scopes grant a required permission.
    * Supports hierarchical matching: 'cert:issue' grants 'cert:issue:ca-123'

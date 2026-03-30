@@ -1,6 +1,6 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
-import { authMiddleware, rbacMiddleware } from '@/modules/auth/auth.middleware.js';
+import { authMiddleware, rbacMiddleware, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import {
   CreateFolderSchema,
@@ -16,6 +16,7 @@ import { FolderService } from './folder.service.js';
 export const folderRoutes = new OpenAPIHono<AppEnv>();
 
 folderRoutes.use('*', authMiddleware);
+folderRoutes.use('*', sessionOnly);
 
 // --- Static GET routes first ---
 
