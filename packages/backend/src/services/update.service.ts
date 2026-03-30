@@ -198,6 +198,9 @@ export class UpdateService {
     if (!composeDir) {
       throw new Error('Cannot determine compose project directory');
     }
+    if (!/^\/[a-zA-Z0-9/_.-]+$/.test(composeDir)) {
+      throw new Error(`Invalid compose directory path: ${composeDir}`);
+    }
     if (!composeProject) {
       throw new Error('Cannot determine compose project name from container labels');
     }

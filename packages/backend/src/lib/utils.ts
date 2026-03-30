@@ -24,11 +24,16 @@ export function isPrivateUrl(urlStr: string): boolean {
   try {
     const url = new URL(urlStr);
     if (!['http:', 'https:'].includes(url.protocol)) return true;
-    const host = url.hostname;
+    const host = url.hostname.replace(/^\[|\]$/g, '');
     if (host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '0.0.0.0') return true;
     if (host.startsWith('10.') || host.startsWith('192.168.') || host.startsWith('169.254.')) return true;
     if (/^172\.(1[6-9]|2\d|3[01])\./.test(host)) return true;
-    if (host.endsWith('.local') || host.endsWith('.internal')) return true;
+    if (host.startsWith('100.') && /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(host)) return true;
+    if (host.includes('::ffff:')) return true;
+    if (host.startsWith('fd') || host.startsWith('fc')) return true;
+    if (host.startsWith('fe80')) return true;
+    if (/^\d+$/.test(host)) return true;
+    if (host.endsWith('.local') || host.endsWith('.internal') || host.endsWith('.localhost')) return true;
     return false;
   } catch {
     return true;
