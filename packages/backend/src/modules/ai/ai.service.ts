@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 import { container } from '@/container.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { hasRole } from '@/lib/permissions.js';
+import { isPrivateUrl } from '@/lib/utils.js';
 import type { AccessListService } from '@/modules/access-lists/access-list.service.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { AuthService } from '@/modules/auth/auth.service.js';
@@ -514,8 +515,12 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
           user.id
         );
       case 'update_proxy_host': {
-        const { proxyHostId, ...updateFields } = a;
-        return this.proxyService.updateProxyHost(proxyHostId, updateFields, user.id);
+        const { proxyHostId, advancedConfig: _ac, ...updateFields } = a;
+        if (_ac && user.role !== 'admin') {
+          throw new Error('Advanced config requires admin role');
+        }
+        const fields = _ac && user.role === 'admin' ? { ...updateFields, advancedConfig: _ac } : updateFields;
+        return this.proxyService.updateProxyHost(proxyHostId, fields, user.id);
       }
       case 'delete_proxy_host':
         await this.proxyService.deleteProxyHost(a.proxyHostId, user.id);
@@ -690,6 +695,9 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
   }
 
   private async searchSearxng(baseUrl: string, query: string, maxResults: number) {
+    if (!baseUrl || isPrivateUrl(baseUrl)) {
+      return { error: 'SearXNG base URL is not configured or points to a private address' };
+    }
     const url = baseUrl.replace(/\/+$/, '');
     const params = new URLSearchParams({ q: query, format: 'json', pageno: '1' });
     const res = await fetch(`${url}/search?${params}`);

@@ -55,9 +55,12 @@ export class AISettingsService {
       rateLimitWindowSeconds: getValue<number>('ai:rate_limit_window_seconds'),
       maxToolRounds: getValue<number>('ai:max_tool_rounds'),
       disabledTools: getValue<string[]>('ai:disabled_tools'),
-      webSearchEnabled: !!webSearchEncrypted,
       webSearchProvider: getValue<WebSearchProvider>('ai:web_search_provider'),
       webSearchBaseUrl: getValue<string>('ai:web_search_base_url'),
+      webSearchEnabled:
+        getValue<WebSearchProvider>('ai:web_search_provider') === 'searxng'
+          ? !!getValue<string>('ai:web_search_base_url')
+          : !!webSearchEncrypted,
     };
   }
 
