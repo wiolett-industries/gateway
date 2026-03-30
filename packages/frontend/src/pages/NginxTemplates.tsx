@@ -38,6 +38,7 @@ export function NginxTemplates() {
 
   useEffect(() => {
     load();
+    // biome-ignore lint/correctness/useExhaustiveDependencies: load-once pattern
   }, [load]);
 
   const handleClone = async (id: string) => {

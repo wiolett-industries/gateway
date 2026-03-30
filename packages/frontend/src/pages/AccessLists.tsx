@@ -68,6 +68,7 @@ export function AccessLists() {
 
   useEffect(() => {
     loadAccessLists();
+    // biome-ignore lint/correctness/useExhaustiveDependencies: load-once pattern
   }, [loadAccessLists]);
 
   const resetForm = () => {

@@ -315,6 +315,7 @@ export class AccessListService {
    * Writes to: {configPath}/htpasswd/access-list-{id}
    */
   private async writeHtpasswd(accessListId: string, users: BasicAuthUser[]): Promise<void> {
+    // biome-ignore lint/complexity/useLiteralKeys: accessing private property cross-service
     const htpasswdDir = path.join(this.nginxService['configPath'], 'htpasswd');
     await fs.mkdir(htpasswdDir, { recursive: true });
 
@@ -326,6 +327,7 @@ export class AccessListService {
   }
 
   private async removeHtpasswd(accessListId: string): Promise<void> {
+    // biome-ignore lint/complexity/useLiteralKeys: accessing private property cross-service
     const htpasswdDir = path.join(this.nginxService['configPath'], 'htpasswd');
     const filePath = path.join(htpasswdDir, `access-list-${accessListId}`);
     try {

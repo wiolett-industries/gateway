@@ -277,6 +277,7 @@ export class HousekeepingService {
     await this.dockerService.execInContainer(containerName, [
       'sh',
       '-c',
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: shell syntax, not JS template
       'cd /var/log/nginx && for f in *.log; do [ -f "$f" ] && [ -s "$f" ] && mv "$f" "${f}.$(date +%Y%m%d%H%M%S)"; done',
     ]);
 
