@@ -9,6 +9,7 @@ import { CAService } from './ca.service.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
 import { AppError } from '@/middleware/error-handler.js';
 import { createChildLogger } from '@/lib/logger.js';
+import { escapeLike } from '@/lib/utils.js';
 import type { DrizzleClient } from '@/db/client.js';
 import type { IssueCertificateInput, IssueCertFromCSRInput, CertificateListQuery } from './cert.schemas.js';
 import type { PaginatedResponse } from '@/types.js';
@@ -173,6 +174,11 @@ export class CertService {
       throw new AppError(400, 'INVALID_CSR', 'Failed to parse CSR');
     }
 
+    const csrValid = await csr.verify();
+    if (!csrValid) {
+      throw new AppError(400, 'INVALID_CSR_SIGNATURE', 'CSR signature verification failed');
+    }
+
     // Extract CN from CSR subject
     const csrSubject = csr.subject;
     const cnMatch = csrSubject.match(/CN=([^,]+)/);
@@ -306,8 +312,8 @@ export class CertService {
     if (params.search) {
       conditions.push(
         or(
-          ilike(certificates.commonName, `%${params.search}%`),
-          ilike(certificates.serialNumber, `%${params.search}%`),
+          ilike(certificates.commonName, `%${escapeLike(params.search)}%`),
+          ilike(certificates.serialNumber, `%${escapeLike(params.search)}%`),
         )!
       );
     }

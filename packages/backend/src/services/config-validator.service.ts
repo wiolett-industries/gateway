@@ -21,6 +21,17 @@ export class ConfigValidatorService {
     'env ',
     'ssl_certificate',
     'ssl_certificate_key',
+    'proxy_pass',
+    'root',
+    'alias',
+    'fastcgi_pass',
+    'uwsgi_pass',
+    'scgi_pass',
+    'grpc_pass',
+    'internal',
+    'satisfy',
+    'auth_basic_user_file',
+    'content_by_lua',
   ];
 
   /**

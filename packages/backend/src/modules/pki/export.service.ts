@@ -29,7 +29,7 @@ export class ExportService {
     const chain = chainPems?.map((p) => forge.pki.certificateFromPem(p)) || [];
 
     const p12Asn1 = forge.pkcs12.toPkcs12Asn1(key, [cert, ...chain], passphrase, {
-      algorithm: '3des',
+      algorithm: 'aes256',
       friendlyName: cert.subject.getField('CN')?.value || 'certificate',
     });
 

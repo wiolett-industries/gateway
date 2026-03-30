@@ -12,6 +12,8 @@ import type { DrizzleClient } from '@/db/client.js';
 
 const logger = createChildLogger('OCSPService');
 
+logger.warn('OCSP responder is not fully implemented — responses will return INTERNAL_ERROR');
+
 const OCSP_CACHE_PREFIX = 'ocsp:';
 
 // OCSP response status codes

@@ -57,11 +57,15 @@ export function createRateLimiter(config: RateLimitConfig): MiddlewareHandler<Ap
   };
 }
 
+let _cachedLimiter: MiddlewareHandler<AppEnv> | null = null;
+
 export const rateLimitMiddleware: MiddlewareHandler<AppEnv> = async (c, next) => {
-  const env = getEnv();
-  const limiter = createRateLimiter({
-    windowMs: env.RATE_LIMIT_WINDOW_MS,
-    maxRequests: env.RATE_LIMIT_MAX_REQUESTS,
-  });
-  return limiter(c, next);
+  if (!_cachedLimiter) {
+    const env = getEnv();
+    _cachedLimiter = createRateLimiter({
+      windowMs: env.RATE_LIMIT_WINDOW_MS,
+      maxRequests: env.RATE_LIMIT_MAX_REQUESTS,
+    });
+  }
+  return _cachedLimiter(c, next);
 };

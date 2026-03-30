@@ -8,6 +8,7 @@ import { cors } from 'hono/cors';
 import { requestId } from 'hono/request-id';
 import { secureHeaders } from 'hono/secure-headers';
 
+import { getEnv, isDevelopment } from '@/config/env.js';
 import { errorHandler } from '@/middleware/error-handler.js';
 import { loggerMiddleware } from '@/middleware/logger.js';
 import { rateLimitMiddleware } from '@/middleware/rate-limit.js';
@@ -49,7 +50,14 @@ export function createApp() {
   app.use(
     '*',
     cors({
-      origin: (origin) => origin || '*',
+      origin: (origin) => {
+        const appOrigin = new URL(getEnv().APP_URL).origin;
+        if (origin === appOrigin) return origin;
+        if (isDevelopment() && origin && (origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1'))) {
+          return origin;
+        }
+        return '';
+      },
       credentials: true,
       allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
       allowHeaders: ['Content-Type', 'Authorization', 'X-Request-ID'],
@@ -61,8 +69,7 @@ export function createApp() {
   // Rate limiting for API routes
   app.use('/api/*', rateLimitMiddleware);
 
-  // Block users with "blocked" role from all API endpoints
-  // (auth routes /auth/me and /auth/logout remain accessible)
+  // Safely no-ops when user is not set (unauthenticated); route-level authMiddleware handles 401
   app.use('/api/*', requireActiveUser);
 
   // Error handler

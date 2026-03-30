@@ -33,6 +33,10 @@ adminRoutes.patch('/users/:id/role', async (c) => {
   const body = await c.req.json();
   const { role } = UpdateRoleSchema.parse(body);
 
+  if (userId === currentUser.id) {
+    return c.json({ code: 'SELF_DEMOTION', message: 'Cannot change your own role' }, 400);
+  }
+
   const updatedUser = await authService.updateUserRole(userId, role);
 
   // Destroy all sessions when blocking a user

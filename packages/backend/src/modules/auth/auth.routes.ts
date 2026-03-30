@@ -81,9 +81,17 @@ authRoutes.openapi(callbackRoute, async (c) => {
       path: '/',
     });
 
-    const baseUrl = result.returnTo || env.APP_URL;
+    let baseUrl = env.APP_URL;
+    if (result.returnTo) {
+      try {
+        if (new URL(result.returnTo).origin === new URL(env.APP_URL).origin) {
+          baseUrl = result.returnTo;
+        }
+      } catch {
+        // Invalid URL, use default
+      }
+    }
     const redirectUrl = new URL('/callback', baseUrl);
-    redirectUrl.searchParams.set('session', result.sessionId);
     return c.redirect(redirectUrl.toString(), 302);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Authentication failed';
