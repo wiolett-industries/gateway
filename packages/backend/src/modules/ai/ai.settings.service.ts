@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import { settings } from '@/db/schema/settings.js';
+import { isPrivateUrl } from '@/lib/utils.js';
 import type { CryptoService } from '@/services/crypto.service.js';
 import type { AIConfig, EncryptedValue, MaxTokensField, ReasoningEffort, WebSearchProvider } from './ai.types.js';
 
@@ -105,6 +106,13 @@ export class AISettingsService {
 
     for (const [field, value] of Object.entries(updates)) {
       if (value === undefined) continue;
+
+      // Block private/internal URLs for SSRF prevention
+      if ((field === 'providerUrl' || field === 'webSearchBaseUrl') && typeof value === 'string' && value !== '') {
+        if (isPrivateUrl(value)) {
+          throw new Error(`${field} cannot point to a private or internal address`);
+        }
+      }
 
       // Handle API key encryption
       if (field === 'apiKey') {

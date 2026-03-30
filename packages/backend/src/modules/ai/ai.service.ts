@@ -345,9 +345,12 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
 
     // Page context
     if (pageContext?.route) {
-      parts.push(`\n## Current Page Context\nThe user is currently viewing: ${pageContext.route}`);
+      const safeRoute = pageContext.route.replace(/[^a-zA-Z0-9/_\-.:]/g, '');
+      parts.push(`\n## Current Page Context\nThe user is currently viewing: ${safeRoute}`);
       if (pageContext.resourceType && pageContext.resourceId) {
-        parts.push(`Focused resource: ${pageContext.resourceType} with ID ${pageContext.resourceId}`);
+        const safeType = pageContext.resourceType.replace(/[^a-zA-Z0-9_-]/g, '');
+        const safeId = pageContext.resourceId.replace(/[^a-zA-Z0-9_-]/g, '');
+        parts.push(`Focused resource: ${safeType} with ID ${safeId}`);
       }
     }
 
