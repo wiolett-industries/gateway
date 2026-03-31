@@ -1,44 +1,64 @@
-import type { UserRole } from '@/types.js';
+/**
+ * Scope-based permission helpers.
+ * Replaces the old role-based helpers (hasRole, canManageCAs, etc.)
+ */
 
-const ROLE_HIERARCHY: Record<UserRole, number> = {
-  blocked: -1,
-  viewer: 0,
-  operator: 1,
-  admin: 2,
-};
-
-export function hasRole(userRole: UserRole, requiredRole: UserRole): boolean {
-  return ROLE_HIERARCHY[userRole] >= ROLE_HIERARCHY[requiredRole];
+/**
+ * Check if a set of scopes grants a required permission.
+ * Supports hierarchical matching: 'cert:issue' grants 'cert:issue:ca-123'
+ */
+export function hasScope(scopes: string[], requiredScope: string): boolean {
+  if (scopes.includes(requiredScope)) return true;
+  const parts = requiredScope.split(':');
+  for (let i = parts.length - 1; i >= 1; i--) {
+    const prefix = parts.slice(0, i).join(':');
+    if (scopes.includes(prefix)) return true;
+  }
+  return false;
 }
 
-export function canManageCAs(role: UserRole): boolean {
-  return role === 'admin';
+/** Check if scopes grant any of the required scopes */
+export function hasAnyScope(scopes: string[], requiredScopes: string[]): boolean {
+  return requiredScopes.some((s) => hasScope(scopes, s));
 }
 
-export function canIssueCertificates(role: UserRole): boolean {
-  return role === 'admin' || role === 'operator';
+/** Check if scopes grant all of the required scopes */
+export function hasAllScopes(scopes: string[], requiredScopes: string[]): boolean {
+  return requiredScopes.every((s) => hasScope(scopes, s));
 }
 
-export function canRevokeCertificates(role: UserRole): boolean {
-  return role === 'admin' || role === 'operator';
+/** Check if a user can use the AI assistant */
+export function canUseAI(scopes: string[]): boolean {
+  return hasScope(scopes, 'ai:use');
 }
 
-export function canManageUsers(role: UserRole): boolean {
-  return role === 'admin';
+/** Check if all requested scopes are a subset of the allowed scopes */
+export function isScopeSubset(requestedScopes: string[], allowedScopes: string[]): boolean {
+  return requestedScopes.every((s) => hasScope(allowedScopes, s));
 }
 
-export function canManageTemplates(role: UserRole): boolean {
-  return role === 'admin';
-}
+/**
+ * Check if actor can manage target based on scope containment.
+ * Returns null if allowed, or an error message string if denied.
+ *
+ * Rules:
+ * 1. Target has admin:system → actor must also have admin:system
+ * 2. Target's scopes must be a subset of actor's scopes
+ *    (you can't touch someone who has permissions you lack)
+ */
+export function canManageUser(
+  actorScopes: string[],
+  targetScopes: string[],
+): string | null {
+  // Rule 1: admin:system is a hard shield
+  if (targetScopes.includes('admin:system') && !actorScopes.includes('admin:system')) {
+    return 'Cannot manage a system administrator';
+  }
 
-export function canExportCAKeys(role: UserRole): boolean {
-  return role === 'admin';
-}
+  // Rule 2: target's scopes must be contained by actor's scopes
+  if (!isScopeSubset(targetScopes, actorScopes)) {
+    return 'Cannot manage a user with permissions you do not possess';
+  }
 
-export function canViewAuditLog(role: UserRole): boolean {
-  return role === 'admin';
-}
-
-export function canUseAI(role: UserRole): boolean {
-  return role === 'admin' || role === 'operator';
+  return null;
 }

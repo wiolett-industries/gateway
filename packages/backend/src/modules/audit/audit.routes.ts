@@ -1,13 +1,12 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
-import { authMiddleware, rbacMiddleware, requireScope } from '@/modules/auth/auth.middleware.js';
+import { authMiddleware, requireScope } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import { AuditService } from './audit.service.js';
 
 export const auditRoutes = new OpenAPIHono<AppEnv>();
 
 auditRoutes.use('*', authMiddleware);
-auditRoutes.use('*', rbacMiddleware('admin'));
 
 auditRoutes.get('/', requireScope('admin:audit'), async (c) => {
   const auditService = container.resolve(AuditService);

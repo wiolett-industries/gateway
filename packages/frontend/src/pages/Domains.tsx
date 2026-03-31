@@ -9,7 +9,7 @@ import {
   Shield,
   Trash2,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
@@ -40,9 +40,9 @@ import { useAuthStore } from "@/stores/auth";
 import type { DnsStatus, Domain } from "@/types";
 
 export function Domains() {
-  const { hasRole } = useAuthStore();
-  const canEdit = hasRole("admin", "operator");
-  const isAdmin = hasRole("admin");
+  const { hasScope } = useAuthStore();
+  const canEdit = hasScope("proxy:manage");
+  const isAdmin = hasScope("proxy:delete");
 
   const cachedDomains = api.getCached<{ data: Domain[]; pagination: { totalPages: number } }>(
     "domains:list"
@@ -58,7 +58,7 @@ export function Domains() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
 
-  const loadDomains = async () => {
+  const loadDomains = useCallback(async () => {
     try {
       const result = await api.listDomains({
         page,
@@ -74,11 +74,10 @@ export function Domains() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [page, search, statusFilter]);
 
   useEffect(() => {
     loadDomains();
-    // biome-ignore lint/correctness/useExhaustiveDependencies: load-once pattern
   }, [loadDomains]);
 
   const handleCheckDns = async (d: Domain) => {

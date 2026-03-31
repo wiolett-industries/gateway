@@ -29,7 +29,7 @@ const statusOptions: { value: StatusFilter; label: string }[] = [
 
 export function CAs() {
   const navigate = useNavigate();
-  const { hasRole } = useAuthStore();
+  const { hasScope } = useAuthStore();
   const { cas, fetchCAs, isLoading } = useCAStore();
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [createIntermediateParentId, setCreateIntermediateParentId] = useState<
@@ -91,7 +91,7 @@ export function CAs() {
               {totalCerts !== 1 ? "s" : ""} issued
             </p>
           </div>
-          {hasRole("admin") && (
+          {hasScope("ca:create:root") && (
             <div className="flex items-center gap-2">
               <Button
                 variant="outline"
@@ -180,11 +180,10 @@ export function CAs() {
         ) : (
           <EmptyState
             message="No certificate authorities."
-            actionLabel="Create one"
-            onAction={() => {
+            {...(hasScope("ca:create:root") ? { actionLabel: "Create one", onAction: () => {
               setCreateIntermediateParentId(undefined);
               setCreateDialogOpen(true);
-            }}
+            } } : {})}
             hasActiveFilters={hasActiveFilters}
             onReset={resetFilters}
           />

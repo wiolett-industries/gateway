@@ -1,77 +1,116 @@
 import { describe, expect, it } from 'vitest';
-import {
-  canExportCAKeys,
-  canIssueCertificates,
-  canManageCAs,
-  canManageTemplates,
-  canManageUsers,
-  canRevokeCertificates,
-  canViewAuditLog,
-  hasRole,
-} from './permissions.js';
+import { hasScope, hasAnyScope, hasAllScopes, canUseAI, isScopeSubset, canManageUser } from './permissions.js';
 
-describe('RBAC permissions', () => {
-  describe('hasRole', () => {
-    it('admin has all roles', () => {
-      expect(hasRole('admin', 'admin')).toBe(true);
-      expect(hasRole('admin', 'operator')).toBe(true);
-      expect(hasRole('admin', 'viewer')).toBe(true);
+describe('Scope-based permissions', () => {
+  describe('hasScope', () => {
+    it('exact match', () => {
+      expect(hasScope(['cert:read', 'cert:issue'], 'cert:issue')).toBe(true);
     });
 
-    it('operator has operator and viewer roles', () => {
-      expect(hasRole('operator', 'admin')).toBe(false);
-      expect(hasRole('operator', 'operator')).toBe(true);
-      expect(hasRole('operator', 'viewer')).toBe(true);
+    it('no match', () => {
+      expect(hasScope(['cert:read'], 'cert:issue')).toBe(false);
     });
 
-    it('viewer only has viewer role', () => {
-      expect(hasRole('viewer', 'admin')).toBe(false);
-      expect(hasRole('viewer', 'operator')).toBe(false);
-      expect(hasRole('viewer', 'viewer')).toBe(true);
+    it('hierarchical: parent grants child', () => {
+      expect(hasScope(['cert:issue'], 'cert:issue:ca-123')).toBe(true);
+    });
+
+    it('hierarchical: child does not grant parent', () => {
+      expect(hasScope(['cert:issue:ca-123'], 'cert:issue')).toBe(false);
+    });
+
+    it('hierarchical: exact resource match', () => {
+      expect(hasScope(['cert:issue:ca-123'], 'cert:issue:ca-123')).toBe(true);
+    });
+
+    it('hierarchical: different resource no match', () => {
+      expect(hasScope(['cert:issue:ca-123'], 'cert:issue:ca-456')).toBe(false);
+    });
+
+    it('empty scopes', () => {
+      expect(hasScope([], 'cert:read')).toBe(false);
     });
   });
 
-  describe('permission checks', () => {
-    it('only admin can manage CAs', () => {
-      expect(canManageCAs('admin')).toBe(true);
-      expect(canManageCAs('operator')).toBe(false);
-      expect(canManageCAs('viewer')).toBe(false);
+  describe('hasAnyScope', () => {
+    it('matches one of many', () => {
+      expect(hasAnyScope(['cert:read'], ['admin:users', 'cert:read'])).toBe(true);
     });
 
-    it('admin and operator can issue certificates', () => {
-      expect(canIssueCertificates('admin')).toBe(true);
-      expect(canIssueCertificates('operator')).toBe(true);
-      expect(canIssueCertificates('viewer')).toBe(false);
+    it('matches none', () => {
+      expect(hasAnyScope(['cert:read'], ['admin:users', 'admin:audit'])).toBe(false);
+    });
+  });
+
+  describe('hasAllScopes', () => {
+    it('has all', () => {
+      expect(hasAllScopes(['cert:read', 'cert:issue'], ['cert:read', 'cert:issue'])).toBe(true);
     });
 
-    it('admin and operator can revoke certificates', () => {
-      expect(canRevokeCertificates('admin')).toBe(true);
-      expect(canRevokeCertificates('operator')).toBe(true);
-      expect(canRevokeCertificates('viewer')).toBe(false);
+    it('missing one', () => {
+      expect(hasAllScopes(['cert:read'], ['cert:read', 'cert:issue'])).toBe(false);
+    });
+  });
+
+  describe('canUseAI', () => {
+    it('user with ai:use can use AI', () => {
+      expect(canUseAI(['ai:use', 'cert:read'])).toBe(true);
     });
 
-    it('only admin can manage users', () => {
-      expect(canManageUsers('admin')).toBe(true);
-      expect(canManageUsers('operator')).toBe(false);
-      expect(canManageUsers('viewer')).toBe(false);
+    it('user without ai:use cannot use AI', () => {
+      expect(canUseAI(['cert:read', 'cert:issue'])).toBe(false);
+    });
+  });
+
+  describe('isScopeSubset', () => {
+    it('subset passes', () => {
+      expect(isScopeSubset(['cert:read', 'cert:issue'], ['cert:read', 'cert:issue', 'ca:read'])).toBe(true);
     });
 
-    it('only admin can manage templates', () => {
-      expect(canManageTemplates('admin')).toBe(true);
-      expect(canManageTemplates('operator')).toBe(false);
-      expect(canManageTemplates('viewer')).toBe(false);
+    it('resource-scoped is subset of parent', () => {
+      expect(isScopeSubset(['cert:issue:ca-123'], ['cert:issue'])).toBe(true);
     });
 
-    it('only admin can export CA keys', () => {
-      expect(canExportCAKeys('admin')).toBe(true);
-      expect(canExportCAKeys('operator')).toBe(false);
-      expect(canExportCAKeys('viewer')).toBe(false);
+    it('non-subset fails', () => {
+      expect(isScopeSubset(['admin:users'], ['cert:read', 'cert:issue'])).toBe(false);
+    });
+  });
+
+  describe('canManageUser', () => {
+    it('admin can manage operator', () => {
+      const admin = ['admin:users', 'admin:system', 'cert:read', 'cert:issue'];
+      const operator = ['cert:read', 'cert:issue'];
+      expect(canManageUser(admin, operator)).toBe(null);
     });
 
-    it('only admin can view audit log', () => {
-      expect(canViewAuditLog('admin')).toBe(true);
-      expect(canViewAuditLog('operator')).toBe(false);
-      expect(canViewAuditLog('viewer')).toBe(false);
+    it('operator cannot manage admin (admin has scopes operator lacks)', () => {
+      const operator = ['admin:users', 'cert:read', 'cert:issue'];
+      const admin = ['admin:users', 'admin:system', 'cert:read', 'cert:issue'];
+      expect(canManageUser(operator, admin)).toMatch(/system administrator/);
+    });
+
+    it('admin:system is a hard shield', () => {
+      // Even if actor has MORE scopes overall, lacking admin:system blocks management
+      const actor = ['admin:users', 'cert:read', 'cert:issue', 'proxy:manage', 'ssl:manage'];
+      const target = ['admin:system', 'cert:read'];
+      expect(canManageUser(actor, target)).toMatch(/system administrator/);
+    });
+
+    it('admin:system holder can manage another admin:system holder', () => {
+      const actor = ['admin:users', 'admin:system', 'cert:read'];
+      const target = ['admin:system', 'cert:read'];
+      expect(canManageUser(actor, target)).toBe(null);
+    });
+
+    it('cannot manage user with scope you lack', () => {
+      const actor = ['admin:users', 'cert:read'];
+      const target = ['cert:read', 'cert:issue']; // actor lacks cert:issue
+      expect(canManageUser(actor, target)).toMatch(/permissions you do not possess/);
+    });
+
+    it('equal scopes allows management', () => {
+      const scopes = ['admin:users', 'cert:read', 'cert:issue'];
+      expect(canManageUser(scopes, scopes)).toBe(null);
     });
   });
 });

@@ -1,6 +1,20 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { User, UserRole } from "@/types";
+import type { User } from "@/types";
+
+/**
+ * Check if scopes grant a required permission.
+ * Supports hierarchical matching: 'cert:issue' grants 'cert:issue:ca-123'
+ */
+function scopeMatches(scopes: string[], requiredScope: string): boolean {
+  if (scopes.includes(requiredScope)) return true;
+  const parts = requiredScope.split(":");
+  for (let i = parts.length - 1; i >= 1; i--) {
+    const prefix = parts.slice(0, i).join(":");
+    if (scopes.includes(prefix)) return true;
+  }
+  return false;
+}
 
 interface AuthState {
   user: User | null;
@@ -13,7 +27,8 @@ interface AuthState {
   setLoading: (loading: boolean) => void;
   login: (user: User, sessionId: string) => void;
   logout: () => void;
-  hasRole: (...roles: UserRole[]) => boolean;
+  hasScope: (scope: string) => boolean;
+  hasAnyScope: (...scopes: string[]) => boolean;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -50,10 +65,16 @@ export const useAuthStore = create<AuthState>()(
           isLoading: false,
         }),
 
-      hasRole: (...roles) => {
+      hasScope: (scope) => {
         const user = get().user;
         if (!user) return false;
-        return roles.includes(user.role);
+        return scopeMatches(user.scopes, scope);
+      },
+
+      hasAnyScope: (...scopes) => {
+        const user = get().user;
+        if (!user) return false;
+        return scopes.some((s) => scopeMatches(user.scopes, s));
       },
     }),
     {

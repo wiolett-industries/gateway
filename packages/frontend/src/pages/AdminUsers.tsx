@@ -1,5 +1,5 @@
-import { Ban, Shield, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Ban, Lock, Trash2, Unlock } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
@@ -17,14 +17,7 @@ import {
 } from "@/components/ui/select";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
-import type { User, UserRole } from "@/types";
-
-const ROLES: { value: UserRole; label: string }[] = [
-  { value: "admin", label: "Admin" },
-  { value: "operator", label: "Operator" },
-  { value: "viewer", label: "Viewer" },
-  { value: "blocked", label: "Blocked" },
-];
+import type { PermissionGroup, User } from "@/types";
 
 function getInitials(name: string | null, email: string): string {
   if (name) {
@@ -41,19 +34,20 @@ function getInitials(name: string | null, email: string): string {
 
 export function AdminUsers() {
   const navigate = useNavigate();
-  const { user: currentUser, hasRole } = useAuthStore();
+  const { user: currentUser, hasScope } = useAuthStore();
   const cachedUsers = api.getCached<User[]>("admin:users");
   const [users, setUsers] = useState<User[]>(cachedUsers ?? []);
+  const [groups, setGroups] = useState<PermissionGroup[]>([]);
   const [isLoading, setIsLoading] = useState(!cachedUsers);
 
   useEffect(() => {
-    if (!hasRole("admin")) {
+    if (!hasScope("admin:users")) {
       navigate("/");
       return;
     }
-  }, [hasRole, navigate]);
+  }, [hasScope, navigate]);
 
-  const loadUsers = async () => {
+  const loadUsers = useCallback(async () => {
     try {
       const data = await api.listUsers();
       setUsers(data || []);
@@ -62,34 +56,57 @@ export function AdminUsers() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     loadUsers();
-    // biome-ignore lint/correctness/useExhaustiveDependencies: load-once pattern
   }, [loadUsers]);
 
-  const handleRoleChange = async (userId: string, newRole: UserRole) => {
+  useEffect(() => {
+    api
+      .listGroups()
+      .then(setGroups)
+      .catch(() => {});
+  }, []);
+
+  const reloadUsers = useCallback(() => {
+    api.invalidateCache("req:");
+    api.invalidateCache("admin:users");
+    return loadUsers();
+  }, [loadUsers]);
+
+  const handleGroupChange = async (userId: string, groupId: string) => {
     try {
-      await api.updateUserRole(userId, newRole);
-      toast.success(newRole === "blocked" ? "User blocked" : "Role updated");
-      loadUsers();
+      await api.updateUserGroup(userId, groupId);
+      toast.success("Group updated");
+      reloadUsers();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to update role");
+      toast.error(err instanceof Error ? err.message : "Failed to update group");
+    }
+  };
+
+  const handleBlockToggle = async (user: User) => {
+    const newBlocked = !user.isBlocked;
+    try {
+      await api.blockUser(user.id, newBlocked);
+      toast.success(newBlocked ? "User blocked" : "User unblocked");
+      reloadUsers();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update user");
     }
   };
 
   const handleDelete = async (user: User) => {
     const ok = await confirm({
       title: "Delete User",
-      description: `Delete "${user.name || user.email}"? They will be recreated with viewer role on next login.`,
+      description: `Delete "${user.name || user.email}"? They will be recreated with default group on next login.`,
       confirmLabel: "Delete",
     });
     if (!ok) return;
     try {
       await api.deleteUser(user.id);
       toast.success("User deleted");
-      loadUsers();
+      reloadUsers();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to delete user");
     }
@@ -103,10 +120,20 @@ export function AdminUsers() {
     );
   }
 
-  const admins = users.filter((u) => u.role === "admin").length;
-  const operators = users.filter((u) => u.role === "operator").length;
-  const viewers = users.filter((u) => u.role === "viewer").length;
-  const blocked = users.filter((u) => u.role === "blocked").length;
+  // Group users by their group name for summary
+  const groupCounts = new Map<string, number>();
+  let blockedCount = 0;
+  for (const u of users) {
+    if (u.isBlocked) {
+      blockedCount++;
+    } else {
+      groupCounts.set(u.groupName, (groupCounts.get(u.groupName) || 0) + 1);
+    }
+  }
+  const summaryParts = Array.from(groupCounts.entries()).map(
+    ([name, count]) => `${count} ${name.toLowerCase()}${count !== 1 ? "s" : ""}`
+  );
+  if (blockedCount > 0) summaryParts.push(`${blockedCount} blocked`);
 
   return (
     <PageTransition>
@@ -114,10 +141,8 @@ export function AdminUsers() {
         <div>
           <h1 className="text-2xl font-bold">Users</h1>
           <p className="text-sm text-muted-foreground">
-            {admins} admin{admins !== 1 ? "s" : ""}, {operators} operator
-            {operators !== 1 ? "s" : ""}, {viewers} viewer{viewers !== 1 ? "s" : ""}
-            {blocked > 0 && <>, {blocked} blocked</>}
-            &nbsp;&middot; New users get <strong>viewer</strong> role on first OIDC login
+            {users.length} user{users.length !== 1 ? "s" : ""}
+            {summaryParts.length > 0 && <> &middot; {summaryParts.join(", ")}</>}
           </p>
         </div>
 
@@ -126,11 +151,10 @@ export function AdminUsers() {
             <div className="divide-y divide-border">
               {users.map((user) => {
                 const isSelf = currentUser?.id === user.id;
-                const isBlocked = user.role === "blocked";
                 return (
                   <div
                     key={user.id}
-                    className={`flex items-center gap-4 p-4 ${isSelf ? "bg-primary/5" : isBlocked ? "opacity-60" : ""}`}
+                    className={`flex items-center gap-4 p-4 ${isSelf ? "bg-primary/5" : user.isBlocked ? "opacity-60" : ""}`}
                   >
                     <Avatar className="h-9 w-9 shrink-0">
                       <AvatarImage src={user.avatarUrl ?? undefined} />
@@ -142,55 +166,70 @@ export function AdminUsers() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <p className="text-sm font-medium truncate">{user.name || user.email}</p>
-                        {isSelf && (
-                          <Badge variant="secondary" className="text-[10px]">
-                            You
-                          </Badge>
-                        )}
-                        {isBlocked && (
-                          <Badge variant="destructive" className="text-[10px]">
+                        {isSelf ? (
+                          <Badge variant="secondary" className="text-[10px] shrink-0">You</Badge>
+                        ) : user.isBlocked ? (
+                          <Badge variant="destructive" className="text-[10px] shrink-0">
                             <Ban className="h-2.5 w-2.5 mr-0.5" />
                             Blocked
                           </Badge>
+                        ) : (
+                          <Badge variant="secondary" className="text-[10px] shrink-0 invisible">You</Badge>
                         )}
                       </div>
                       <p className="text-xs text-muted-foreground truncate">{user.email}</p>
                     </div>
 
-                    <div className="w-40 shrink-0">
+                    <div className="shrink-0">
                       {isSelf ? (
-                        <div className="flex items-center gap-2 px-3 py-2 text-sm">
-                          <Shield className="h-3.5 w-3.5 text-muted-foreground" />
-                          <span className="capitalize text-muted-foreground">{user.role}</span>
-                        </div>
+                        <Badge variant="secondary" className="text-xs">
+                          {user.groupName}
+                        </Badge>
                       ) : (
+                        <div className="w-44">
                         <Select
-                          value={user.role}
-                          onValueChange={(v) => handleRoleChange(user.id, v as UserRole)}
+                          value={user.groupId}
+                          onValueChange={(v) => handleGroupChange(user.id, v)}
                         >
                           <SelectTrigger>
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            {ROLES.map((role) => (
-                              <SelectItem key={role.value} value={role.value}>
-                                {role.label}
+                            {groups.map((group) => (
+                              <SelectItem key={group.id} value={group.id}>
+                                {group.name}
                               </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
+                        </div>
                       )}
                     </div>
 
                     {!isSelf && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
-                        onClick={() => handleDelete(user)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className={`h-8 w-8 shrink-0 text-muted-foreground ${user.isBlocked ? "hover:text-green-600" : "hover:text-orange-600"}`}
+                          onClick={() => handleBlockToggle(user)}
+                          title={user.isBlocked ? "Unblock user" : "Block user"}
+                        >
+                          {user.isBlocked ? (
+                            <Unlock className="h-4 w-4" />
+                          ) : (
+                            <Lock className="h-4 w-4" />
+                          )}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
+                          onClick={() => handleDelete(user)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     )}
                   </div>
                 );

@@ -46,7 +46,7 @@ export function ProxyHostRow({
   isOverlay,
 }: ProxyHostRowProps) {
   const navigate = useNavigate();
-  const { hasRole } = useAuthStore();
+  const { hasScope } = useAuthStore();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: host.id,
     data: { type: "host", host },
@@ -128,7 +128,7 @@ export function ProxyHostRow({
           </div>
         )}
       </td>
-      {hasRole("admin", "operator") && (
+      {hasScope("proxy:manage") && (
         <td className="p-3 w-10" onClick={(e) => e.stopPropagation()}>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

@@ -2,7 +2,7 @@ import { injectable, inject } from 'tsyringe';
 import { eq, and } from 'drizzle-orm';
 import { createHash, randomBytes } from 'node:crypto';
 import { TOKENS } from '@/container.js';
-import { apiTokens, users } from '@/db/schema/index.js';
+import { apiTokens, users, permissionGroups } from '@/db/schema/index.js';
 import { AppError } from '@/middleware/error-handler.js';
 import { createChildLogger } from '@/lib/logger.js';
 import type { DrizzleClient } from '@/db/client.js';
@@ -93,7 +93,12 @@ export class TokensService {
     });
 
     if (!user) return null;
-    if (user.role === 'blocked') return null;
+    if (user.isBlocked) return null;
+
+    // Fetch the user's group for populating the User object
+    const group = await this.db.query.permissionGroups.findFirst({
+      where: eq(permissionGroups.id, user.groupId),
+    });
 
     return {
       user: {
@@ -102,7 +107,10 @@ export class TokensService {
         email: user.email,
         name: user.name,
         avatarUrl: user.avatarUrl,
-        role: user.role,
+        groupId: user.groupId,
+        groupName: group?.name ?? 'unknown',
+        scopes: (group?.scopes as string[]) ?? [],
+        isBlocked: user.isBlocked,
       },
       scopes: token.scopes || [],
     };

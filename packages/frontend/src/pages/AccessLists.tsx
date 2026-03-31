@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { Minus, MoreVertical, Pencil, Plus, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
@@ -40,7 +40,7 @@ interface BasicAuthInput {
 }
 
 export function AccessLists() {
-  const { hasRole } = useAuthStore();
+  const { hasScope } = useAuthStore();
   const cachedAccessLists = api.getCached<{ data: AccessList[] }>("access-lists:list");
   const [accessLists, setAccessLists] = useState<AccessList[]>(cachedAccessLists?.data ?? []);
   const [isLoading, setIsLoading] = useState(!cachedAccessLists);
@@ -55,7 +55,7 @@ export function AccessLists() {
   const [basicAuthUsers, setBasicAuthUsers] = useState<BasicAuthInput[]>([]);
   const [isSaving, setIsSaving] = useState(false);
 
-  const loadAccessLists = async () => {
+  const loadAccessLists = useCallback(async () => {
     try {
       const res = await api.listAccessLists();
       setAccessLists(res.data || []);
@@ -64,11 +64,10 @@ export function AccessLists() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     loadAccessLists();
-    // biome-ignore lint/correctness/useExhaustiveDependencies: load-once pattern
   }, [loadAccessLists]);
 
   const resetForm = () => {
@@ -167,7 +166,7 @@ export function AccessLists() {
               Manage IP rules and basic authentication
             </p>
           </div>
-          {hasRole("admin", "operator") && (
+          {hasScope("access-list:manage") && (
             <Button onClick={openCreate}>
               <Plus className="h-4 w-4" />
               Add Access List
@@ -221,7 +220,7 @@ export function AccessLists() {
                         </span>
                       </td>
                       <td className="p-3">
-                        {hasRole("admin", "operator") && (
+                        {hasScope("access-list:manage") && (
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -233,13 +232,15 @@ export function AccessLists() {
                                 <Pencil className="h-4 w-4" />
                                 Edit
                               </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() => handleDelete(al)}
-                                className="text-destructive"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                                Delete
-                              </DropdownMenuItem>
+                              {hasScope("access-list:delete") && (
+                                <DropdownMenuItem
+                                  onClick={() => handleDelete(al)}
+                                  className="text-destructive"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                  Delete
+                                </DropdownMenuItem>
+                              )}
                             </DropdownMenuContent>
                           </DropdownMenu>
                         )}
@@ -251,7 +252,10 @@ export function AccessLists() {
             </div>
           </div>
         ) : (
-          <EmptyState message="No access lists." actionLabel="Create one" onAction={openCreate} />
+          <EmptyState
+            message="No access lists."
+            {...(hasScope("access-list:manage") ? { actionLabel: "Create one", onAction: openCreate } : {})}
+          />
         )}
 
         {/* Create/Edit Dialog */}

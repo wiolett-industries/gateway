@@ -1,7 +1,12 @@
 import { z } from 'zod';
 
-export const UpdateUserRoleSchema = z.object({
-  role: z.enum(['admin', 'operator', 'viewer']),
+export const UpdateUserGroupSchema = z.object({
+  groupId: z.string().uuid(),
 });
 
-export type UpdateUserRoleInput = z.infer<typeof UpdateUserRoleSchema>;
+export const UpdateBlockSchema = z.object({
+  blocked: z.boolean(),
+});
+
+export type UpdateUserGroupInput = z.infer<typeof UpdateUserGroupSchema>;
+export type UpdateBlockInput = z.infer<typeof UpdateBlockSchema>;

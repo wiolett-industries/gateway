@@ -92,6 +92,7 @@ authRoutes.openapi(callbackRoute, async (c) => {
       }
     }
     const redirectUrl = new URL('/callback', baseUrl);
+    redirectUrl.searchParams.set('session', result.sessionId);
     return c.redirect(redirectUrl.toString(), 302);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Authentication failed';
@@ -128,6 +129,9 @@ authRoutes.get('/me', async (c) => {
     email: user.email,
     name: user.name,
     avatarUrl: user.avatarUrl,
-    role: user.role,
+    groupId: user.groupId,
+    groupName: user.groupName,
+    scopes: user.scopes,
+    isBlocked: user.isBlocked,
   });
 });

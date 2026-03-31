@@ -37,7 +37,7 @@ import type {
 export function ProxyHostDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { hasRole } = useAuthStore();
+  const { hasScope } = useAuthStore();
   const isNew = !id;
 
   const [isLoading, setIsLoading] = useState(!isNew);
@@ -395,13 +395,13 @@ export function ProxyHostDetail() {
           </div>
 
           <div className="flex items-center gap-2">
-            {!isNew && hasRole("admin", "operator") && !isSystemHost && (
+            {!isNew && hasScope("proxy:delete") && !isSystemHost && (
               <Button variant="outline" onClick={handleDelete}>
                 <Trash2 className="h-4 w-4" />
                 Delete
               </Button>
             )}
-            {hasRole("admin", "operator") && (
+            {hasScope("proxy:manage") && (
               <Button onClick={handleSave} disabled={isSaving || !isFormValid}>
                 <Save className="h-4 w-4" />
                 {isSaving ? "Saving..." : "Save"}

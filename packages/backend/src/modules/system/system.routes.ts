@@ -2,7 +2,7 @@ import { OpenAPIHono } from '@hono/zod-openapi';
 import { z } from 'zod';
 import { container } from '@/container.js';
 import { createChildLogger } from '@/lib/logger.js';
-import { authMiddleware, rbacMiddleware, sessionOnly } from '@/modules/auth/auth.middleware.js';
+import { authMiddleware, requireScope, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import { UpdateService } from '@/services/update.service.js';
 import type { AppEnv } from '@/types.js';
 
@@ -21,14 +21,14 @@ systemRoutes.get('/version', async (c) => {
 });
 
 // POST /check-update — manual check against GitLab (admin only)
-systemRoutes.post('/check-update', rbacMiddleware('admin'), async (c) => {
+systemRoutes.post('/check-update', requireScope('admin:update'), async (c) => {
   const updateService = container.resolve(UpdateService);
   const status = await updateService.checkForUpdates();
   return c.json({ data: status });
 });
 
 // POST /update — trigger self-update (admin only)
-systemRoutes.post('/update', rbacMiddleware('admin'), async (c) => {
+systemRoutes.post('/update', requireScope('admin:update'), async (c) => {
   const body = await c.req.json();
   const { version } = z
     .object({
@@ -62,7 +62,7 @@ systemRoutes.post('/update', rbacMiddleware('admin'), async (c) => {
 });
 
 // GET /release-notes/:version — fetch release notes for a specific version
-systemRoutes.get('/release-notes/:version', rbacMiddleware('admin'), async (c) => {
+systemRoutes.get('/release-notes/:version', requireScope('admin:update'), async (c) => {
   const version = c.req.param('version');
   if (!/^v?\d+\.\d+\.\d+$/.test(version)) {
     return c.json({ code: 'INVALID_VERSION', message: 'Invalid version format' }, 400);
@@ -77,7 +77,7 @@ systemRoutes.get('/release-notes/:version', rbacMiddleware('admin'), async (c) =
 });
 
 // GET /release-notes — fetch release notes for all versions between current and latest
-systemRoutes.get('/release-notes', rbacMiddleware('admin'), async (c) => {
+systemRoutes.get('/release-notes', requireScope('admin:update'), async (c) => {
   const updateService = container.resolve(UpdateService);
   const status = await updateService.getCachedStatus();
   if (!status.latestVersion || !status.updateAvailable) {

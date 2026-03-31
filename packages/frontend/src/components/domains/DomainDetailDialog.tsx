@@ -69,8 +69,8 @@ export function DomainDetailDialog({
   onOpenChange,
   onUpdated,
 }: DomainDetailDialogProps) {
-  const { hasRole } = useAuthStore();
-  const canEdit = hasRole("admin", "operator");
+  const { hasScope } = useAuthStore();
+  const canEdit = hasScope("proxy:manage");
   const [domain, setDomain] = useState<DomainWithUsage | null>(null);
   const [description, setDescription] = useState("");
   const [isLoading, setIsLoading] = useState(false);

@@ -1,6 +1,6 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
-import { authMiddleware, rbacMiddleware, sessionOnly } from '@/modules/auth/auth.middleware.js';
+import { authMiddleware, requireScope, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import { AccessListQuerySchema, CreateAccessListSchema, UpdateAccessListSchema } from './access-list.schemas.js';
 import { AccessListService } from './access-list.service.js';
@@ -10,8 +10,8 @@ export const accessListRoutes = new OpenAPIHono<AppEnv>();
 accessListRoutes.use('*', authMiddleware);
 accessListRoutes.use('*', sessionOnly);
 
-// List access lists (any authenticated role)
-accessListRoutes.get('/', async (c) => {
+// List access lists
+accessListRoutes.get('/', requireScope('access-list:read'), async (c) => {
   const accessListService = container.resolve(AccessListService);
   const rawQuery = c.req.query();
   const query = AccessListQuerySchema.parse(rawQuery);
@@ -20,15 +20,15 @@ accessListRoutes.get('/', async (c) => {
 });
 
 // Get access list detail
-accessListRoutes.get('/:id', async (c) => {
+accessListRoutes.get('/:id', requireScope('access-list:read'), async (c) => {
   const accessListService = container.resolve(AccessListService);
   const id = c.req.param('id');
   const accessList = await accessListService.get(id);
   return c.json({ data: accessList });
 });
 
-// Create access list (admin, operator)
-accessListRoutes.post('/', rbacMiddleware('admin', 'operator'), async (c) => {
+// Create access list
+accessListRoutes.post('/', requireScope('access-list:manage'), async (c) => {
   const accessListService = container.resolve(AccessListService);
   const user = c.get('user')!;
   const body = await c.req.json();
@@ -37,8 +37,8 @@ accessListRoutes.post('/', rbacMiddleware('admin', 'operator'), async (c) => {
   return c.json({ data: accessList }, 201);
 });
 
-// Update access list (admin, operator)
-accessListRoutes.put('/:id', rbacMiddleware('admin', 'operator'), async (c) => {
+// Update access list
+accessListRoutes.put('/:id', requireScope('access-list:manage'), async (c) => {
   const accessListService = container.resolve(AccessListService);
   const user = c.get('user')!;
   const id = c.req.param('id');
@@ -48,8 +48,8 @@ accessListRoutes.put('/:id', rbacMiddleware('admin', 'operator'), async (c) => {
   return c.json({ data: accessList });
 });
 
-// Delete access list (admin only)
-accessListRoutes.delete('/:id', rbacMiddleware('admin'), async (c) => {
+// Delete access list
+accessListRoutes.delete('/:id', requireScope('access-list:delete'), async (c) => {
   const accessListService = container.resolve(AccessListService);
   const user = c.get('user')!;
   const id = c.req.param('id');

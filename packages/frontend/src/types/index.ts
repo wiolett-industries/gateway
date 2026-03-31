@@ -10,16 +10,28 @@ export type {
   WSServerMessage,
 } from "./ai";
 
-// User roles
-export type UserRole = "admin" | "operator" | "viewer" | "blocked";
-
 // User
 export interface User {
   id: string;
   email: string;
   name: string | null;
   avatarUrl: string | null;
-  role: UserRole;
+  groupId: string;
+  groupName: string;
+  scopes: string[];
+  isBlocked: boolean;
+}
+
+// Permission Group
+export interface PermissionGroup {
+  id: string;
+  name: string;
+  description: string | null;
+  isBuiltin: boolean;
+  scopes: string[];
+  memberCount?: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // CA types
@@ -163,33 +175,40 @@ export interface Alert {
   createdAt: string;
 }
 
-// API Token scopes
+/** The scope that grants access to the AI assistant — must match backend canUseAI() */
+export const AI_SCOPE = "ai:use" as const;
+
+// API Token / Group scopes
 export const TOKEN_SCOPES = [
-  { value: "ca:read", label: "View CAs", group: "Certificate Authorities" },
-  { value: "ca:create:root", label: "Create Root CAs", group: "Certificate Authorities" },
-  {
-    value: "ca:create:intermediate",
-    label: "Create Intermediate CAs",
-    group: "Certificate Authorities",
-  },
-  { value: "ca:revoke", label: "Revoke CAs", group: "Certificate Authorities" },
-  { value: "cert:read", label: "View Certificates", group: "Certificates" },
-  { value: "cert:issue", label: "Issue Certificates (any CA)", group: "Certificates" },
-  { value: "cert:revoke", label: "Revoke Certificates", group: "Certificates" },
-  { value: "cert:export", label: "Export Certificates", group: "Certificates" },
-  { value: "template:read", label: "View Templates", group: "Templates" },
-  { value: "template:manage", label: "Manage Templates", group: "Templates" },
-  { value: "proxy:read", label: "View Proxy Hosts", group: "Proxy Hosts" },
-  { value: "proxy:manage", label: "Create & Edit Proxy Hosts", group: "Proxy Hosts" },
-  { value: "proxy:delete", label: "Delete Proxy Hosts", group: "Proxy Hosts" },
-  { value: "ssl:read", label: "View SSL Certificates", group: "SSL Certificates" },
-  { value: "ssl:manage", label: "Manage SSL Certificates", group: "SSL Certificates" },
-  { value: "ssl:delete", label: "Delete SSL Certificates", group: "SSL Certificates" },
-  { value: "access-list:read", label: "View Access Lists", group: "Access Lists" },
-  { value: "access-list:manage", label: "Manage Access Lists", group: "Access Lists" },
-  { value: "access-list:delete", label: "Delete Access Lists", group: "Access Lists" },
-  { value: "admin:users", label: "Manage Users", group: "Administration" },
-  { value: "admin:audit", label: "View Audit Log", group: "Administration" },
+  { value: "ca:read", label: "View CAs", desc: "List and view certificate authority details", group: "Certificate Authorities" },
+  { value: "ca:create:root", label: "Create Root CAs", desc: "Create new root certificate authorities", group: "Certificate Authorities" },
+  { value: "ca:create:intermediate", label: "Create Intermediate CAs", desc: "Create intermediate CAs under an existing root", group: "Certificate Authorities" },
+  { value: "ca:revoke", label: "Revoke CAs", desc: "Revoke certificate authorities and their chains", group: "Certificate Authorities" },
+  { value: "cert:read", label: "View Certificates", desc: "List and view issued certificate details", group: "Certificates" },
+  { value: "cert:issue", label: "Issue Certificates", desc: "Issue new certificates from any CA", group: "Certificates" },
+  { value: "cert:revoke", label: "Revoke Certificates", desc: "Revoke issued certificates", group: "Certificates" },
+  { value: "cert:export", label: "Export Certificates", desc: "Download certificates and private keys", group: "Certificates" },
+  { value: "template:read", label: "View Templates", desc: "List and view certificate issuance templates", group: "Templates" },
+  { value: "template:manage", label: "Manage Templates", desc: "Create, edit, and delete certificate templates", group: "Templates" },
+  { value: "proxy:read", label: "View Proxy Hosts", desc: "List and view reverse proxy host configurations", group: "Proxy Hosts" },
+  { value: "proxy:manage", label: "Create & Edit Proxy Hosts", desc: "Create and modify proxy host configurations", group: "Proxy Hosts" },
+  { value: "proxy:delete", label: "Delete Proxy Hosts", desc: "Remove proxy host configurations", group: "Proxy Hosts" },
+  { value: "proxy:advanced", label: "Proxy Advanced Config", desc: "Edit raw nginx advanced configuration blocks", group: "Proxy Hosts" },
+  { value: "ssl:read", label: "View SSL Certificates", desc: "List and view SSL/TLS certificates", group: "SSL Certificates" },
+  { value: "ssl:manage", label: "Manage SSL Certificates", desc: "Upload, request, and renew SSL certificates", group: "SSL Certificates" },
+  { value: "ssl:delete", label: "Delete SSL Certificates", desc: "Remove SSL certificates", group: "SSL Certificates" },
+  { value: "access-list:read", label: "View Access Lists", desc: "List and view IP-based access lists", group: "Access Lists" },
+  { value: "access-list:manage", label: "Manage Access Lists", desc: "Create and edit access list rules", group: "Access Lists" },
+  { value: "access-list:delete", label: "Delete Access Lists", desc: "Remove access lists", group: "Access Lists" },
+  { value: "admin:users", label: "Manage Users", desc: "View, assign groups, block, and delete users", group: "Administration" },
+  { value: "admin:groups", label: "Manage Groups", desc: "Create, edit, and delete permission groups", group: "Administration" },
+  { value: "admin:audit", label: "View Audit Log", desc: "Access the full audit trail of system events", group: "Administration" },
+  { value: "admin:system", label: "System Admin", desc: "Protected flag — holders cannot be managed by non-system-admins", group: "Administration" },
+  { value: "admin:update", label: "Update Application", desc: "Check for and trigger application updates", group: "Administration" },
+  { value: "admin:housekeeping", label: "Housekeeping", desc: "Run cleanup tasks like log rotation and expired cert removal", group: "Administration" },
+  { value: "admin:alerts", label: "System Alerts", desc: "View and dismiss system alerts (expiry warnings, etc.)", group: "Administration" },
+  { value: "admin:ai-config", label: "AI Configuration", desc: "Configure AI model, API keys, and tool access", group: "Administration" },
+  { value: "ai:use", label: "Use AI Assistant", desc: "Access the AI-powered assistant for guided operations", group: "Features" },
 ] as const;
 
 export interface ApiToken {

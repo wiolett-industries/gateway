@@ -1,9 +1,13 @@
 import type { MiddlewareHandler } from 'hono';
+import { eq } from 'drizzle-orm';
 import { HTTPException } from 'hono/http-exception';
-import { container } from '@/container.js';
+import { container, TOKENS } from '@/container.js';
+import type { DrizzleClient } from '@/db/client.js';
+import { permissionGroups } from '@/db/schema/index.js';
+import { AuthService } from '@/modules/auth/auth.service.js';
 import { TokensService } from '@/modules/tokens/tokens.service.js';
 import { SessionService } from '@/services/session.service.js';
-import type { AppEnv, UserRole } from '@/types.js';
+import type { AppEnv } from '@/types.js';
 
 const SESSION_COOKIE_NAME = 'session_id';
 
@@ -51,15 +55,40 @@ export const authMiddleware: MiddlewareHandler<AppEnv> = async (c, next) => {
       throw new HTTPException(401, { message: 'Invalid or expired API token' });
     }
     c.set('user', result.user);
-    c.set('tokenScopes', result.scopes);
+    c.set('effectiveScopes', result.scopes);
+    c.set('isTokenAuth', true);
   } else {
     const sessionService = container.resolve(SessionService);
     const session = await sessionService.getSession(credential.value);
     if (!session) {
       throw new HTTPException(401, { message: 'Invalid or expired session' });
     }
-    c.set('user', session.user);
+    let user = session.user;
+
+    // Re-fetch user from DB if session has stale data (pre-migration)
+    if (!user.scopes || !Array.isArray(user.scopes) || !user.groupId) {
+      const authService = container.resolve(AuthService);
+      const freshUser = await authService.getUserById(user.id);
+      if (!freshUser) {
+        throw new HTTPException(401, { message: 'User no longer exists' });
+      }
+      user = freshUser;
+      sessionService.updateSession(credential.value, { user }).catch(() => {});
+    }
+
+    // Always resolve scopes from the live group definition (not session cache)
+    // so group scope changes take effect without re-login
+    const db = container.resolve<DrizzleClient>(TOKENS.DrizzleClient);
+    const group = await db.query.permissionGroups.findFirst({
+      where: eq(permissionGroups.id, user.groupId),
+      columns: { scopes: true, name: true },
+    });
+    const liveScopes = (group?.scopes as string[]) ?? [];
+
+    c.set('user', { ...user, scopes: liveScopes, groupName: group?.name ?? user.groupName });
     c.set('sessionId', credential.value);
+    c.set('effectiveScopes', liveScopes);
+    c.set('isTokenAuth', false);
     sessionService.refreshSession(credential.value, session).catch(() => {});
   }
 
@@ -75,15 +104,37 @@ export const optionalAuthMiddleware: MiddlewareHandler<AppEnv> = async (c, next)
       const result = await tokensService.validateToken(credential.value);
       if (result) {
         c.set('user', result.user);
-        c.set('tokenScopes', result.scopes);
+        c.set('effectiveScopes', result.scopes);
+        c.set('isTokenAuth', true);
       }
     } else {
       const sessionService = container.resolve(SessionService);
       const session = await sessionService.getSession(credential.value);
       if (session) {
-        c.set('user', session.user);
-        c.set('sessionId', credential.value);
-        sessionService.refreshSession(credential.value, session).catch(() => {});
+        let user = session.user;
+        if (!user.scopes || !Array.isArray(user.scopes) || !user.groupId) {
+          const authService = container.resolve(AuthService);
+          const freshUser = await authService.getUserById(user.id);
+          if (!freshUser) {
+            await sessionService.destroySession(credential.value);
+          } else {
+            user = freshUser;
+            sessionService.updateSession(credential.value, { user }).catch(() => {});
+          }
+        }
+        if (user.groupId) {
+          const db2 = container.resolve<DrizzleClient>(TOKENS.DrizzleClient);
+          const grp = await db2.query.permissionGroups.findFirst({
+            where: eq(permissionGroups.id, user.groupId),
+            columns: { scopes: true, name: true },
+          });
+          const liveScopes = (grp?.scopes as string[]) ?? [];
+          c.set('user', { ...user, scopes: liveScopes, groupName: grp?.name ?? user.groupName });
+          c.set('sessionId', credential.value);
+          c.set('effectiveScopes', liveScopes);
+          c.set('isTokenAuth', false);
+          sessionService.refreshSession(credential.value, session).catch(() => {});
+        }
       }
     }
   }
@@ -98,46 +149,50 @@ export const optionalAuthMiddleware: MiddlewareHandler<AppEnv> = async (c, next)
  */
 export const requireActiveUser: MiddlewareHandler<AppEnv> = async (c, next) => {
   const user = c.get('user');
-  if (user?.role === 'blocked') {
+  if (user?.isBlocked) {
     throw new HTTPException(403, { message: 'Account is blocked' });
   }
   await next();
 };
 
 /**
- * RBAC middleware — restricts access to specified roles.
+ * Unified scope-based permission middleware.
+ * Fires for BOTH session users and API token users.
+ * Session users' scopes come from their permission group.
+ * Token users' scopes come from the token itself.
  */
-export function rbacMiddleware(...allowedRoles: UserRole[]): MiddlewareHandler<AppEnv> {
-  return async (c, next) => {
-    const user = c.get('user');
-    if (!user) {
-      throw new HTTPException(401, { message: 'Authentication required' });
-    }
-    if (user.role === 'blocked') {
-      throw new HTTPException(403, { message: 'Account is blocked' });
-    }
-    if (!allowedRoles.includes(user.role)) {
-      throw new HTTPException(403, { message: 'Insufficient permissions' });
-    }
-    await next();
-  };
-}
-
 export function requireScope(scope: string): MiddlewareHandler<AppEnv> {
   return async (c, next) => {
-    const tokenScopes = c.get('tokenScopes');
-    if (tokenScopes !== undefined) {
-      if (!TokensService.hasScope(tokenScopes, scope)) {
-        throw new HTTPException(403, { message: `Token missing required scope: ${scope}` });
-      }
+    const scopes = c.get('effectiveScopes');
+    if (!scopes || !TokensService.hasScope(scopes, scope)) {
+      throw new HTTPException(403, { message: `Missing required scope: ${scope}` });
     }
     await next();
   };
 }
 
+/**
+ * Resource-scoped permission check.
+ * Builds scopeBase:resourceId from a URL param and checks against effective scopes.
+ */
+export function requireScopeForResource(scopeBase: string, paramName: string): MiddlewareHandler<AppEnv> {
+  return async (c, next) => {
+    const resourceId = c.req.param(paramName);
+    const scopes = c.get('effectiveScopes');
+    const fullScope = resourceId ? `${scopeBase}:${resourceId}` : scopeBase;
+    if (!scopes || !TokensService.hasScope(scopes, fullScope)) {
+      throw new HTTPException(403, { message: `Missing required scope: ${fullScope}` });
+    }
+    await next();
+  };
+}
+
+/**
+ * Middleware that restricts access to session-authenticated users only.
+ * API tokens are not allowed.
+ */
 export const sessionOnly: MiddlewareHandler<AppEnv> = async (c, next) => {
-  const tokenScopes = c.get('tokenScopes');
-  if (tokenScopes !== undefined) {
+  if (c.get('isTokenAuth')) {
     throw new HTTPException(403, {
       message: 'This endpoint requires session authentication. API tokens are not allowed.',
     });

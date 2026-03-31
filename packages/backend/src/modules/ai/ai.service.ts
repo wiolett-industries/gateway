@@ -1,7 +1,7 @@
 import OpenAI from 'openai';
 import { container } from '@/container.js';
 import { createChildLogger } from '@/lib/logger.js';
-import { hasRole } from '@/lib/permissions.js';
+import { hasScope } from '@/lib/permissions.js';
 import { isPrivateUrl } from '@/lib/utils.js';
 import type { AccessListService } from '@/modules/access-lists/access-list.service.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
@@ -188,12 +188,12 @@ Let's Encrypt integration for free SSL certificates.
   users: `# User Management
 
 Users authenticate via OIDC (OpenID Connect).
-- Roles: admin (full access), operator (manage resources), viewer (read-only), blocked (no access).
-- First login creates user with default role (viewer).
-- Admins can change roles via update_user_role.
-- Blocked users see a "blocked" page after login.
-- Deleted users are recreated on next OIDC login (with default role).
-- Users have: id, email, name, avatarUrl, role.`,
+- Users belong to permission groups that define their scopes (permissions).
+- Default groups: Admins (full access), Operators (manage resources), Viewers (read-only).
+- First login creates user in the default group.
+- Admins can change a user's group via update_user_role.
+- Blocked users (isBlocked flag) see a "blocked" page after login.
+- Users have: id, email, name, avatarUrl, groupId, groupName, scopes, isBlocked.`,
 
   audit: `# Audit Log
 
@@ -229,15 +229,123 @@ Automated cleanup tasks, configurable in Settings.
   - Docker Prune: remove unused Docker images.
 - Can be triggered manually from Settings page.
 - Run history tracked (last N runs with per-category results).`,
+
+  permissions: `# Permissions & Scopes
+
+Gateway uses a group-based permission system. Each user belongs to a permission group that defines their scopes (permissions). Scopes control what tools and actions are available.
+
+## All Scopes
+
+### Certificate Authorities
+| Scope | Description |
+|-------|-------------|
+| ca:read | View CAs, their status, hierarchy, and details |
+| ca:create:root | Create and delete root CAs |
+| ca:create:intermediate | Create intermediate CAs signed by a parent CA |
+| ca:revoke | Revoke a Certificate Authority |
+
+### Certificates
+| Scope | Description |
+|-------|-------------|
+| cert:read | View PKI certificates, their status and details |
+| cert:issue | Issue new certificates from a CA |
+| cert:revoke | Revoke issued certificates |
+| cert:export | Download certificate files and private keys |
+
+### Templates
+| Scope | Description |
+|-------|-------------|
+| template:read | View certificate templates |
+| template:manage | Create, update, and delete certificate templates |
+
+### Reverse Proxy
+| Scope | Description |
+|-------|-------------|
+| proxy:read | View proxy hosts, domains, and access lists |
+| proxy:manage | Create, update, enable/disable proxy hosts, manage folders, domains, and access lists |
+| proxy:delete | Delete proxy hosts |
+| proxy:advanced | Edit raw nginx advanced configuration on proxy hosts |
+
+### SSL Certificates
+| Scope | Description |
+|-------|-------------|
+| ssl:read | View SSL certificates (ACME, uploaded, internal) |
+| ssl:manage | Request ACME certs, upload certs, link internal PKI certs as SSL |
+| ssl:delete | Delete SSL certificates |
+
+### Access Lists
+| Scope | Description |
+|-------|-------------|
+| access-list:read | View access lists and their rules |
+| access-list:manage | Create and update access lists (IP rules, basic auth) |
+| access-list:delete | Delete access lists |
+
+### Administration
+| Scope | Description |
+|-------|-------------|
+| admin:users | View and manage users, change user permission groups |
+| admin:groups | View and manage permission groups and their scopes |
+| admin:audit | View the audit log |
+| admin:system | System-level administration — protected scope, shields user from being managed by non-system-admins |
+| admin:update | Apply system updates |
+| admin:housekeeping | Configure and trigger housekeeping cleanup tasks |
+| admin:alerts | View and manage system alerts |
+| admin:ai-config | Configure AI assistant settings (provider, model, tools, etc.) |
+
+### Features
+| Scope | Description |
+|-------|-------------|
+| ai:use | Access the AI assistant |
+
+## Built-in Groups
+
+| Group | Description | Key scopes |
+|-------|-------------|------------|
+| system-admin | Full access including system protection | All scopes |
+| admin | Full access except system protection | All scopes except admin:system |
+| operator | Operational access — manage resources | Read + manage scopes for CA, certs, templates, proxy, SSL, access lists, plus ai:use and admin:alerts |
+| viewer | Read-only access | Read-only scopes: ca:read, cert:read, template:read, proxy:read, ssl:read, access-list:read |
+
+Custom groups can be created by admins with any combination of scopes.
+
+## Hierarchical Matching
+Scopes support hierarchical matching: having "ca:create" grants both "ca:create:root" and "ca:create:intermediate". Some scopes support resource-level suffixes (e.g., "cert:issue:ca-uuid" to restrict issuing to a specific CA).
+
+## Scope Containment Rule
+A user can only manage another user whose scopes are a subset of their own. You cannot grant or modify permissions you do not possess yourself.`,
 };
 
-function getInternalDocumentation(topic: string): { topic: string; content: string } {
+/** Map doc topics to the scope required to read them */
+const DOC_TOPIC_SCOPES: Record<string, string> = {
+  pki: 'ca:read',
+  ssl: 'ssl:read',
+  proxy: 'proxy:read',
+  domains: 'proxy:read',
+  'access-lists': 'access-list:read',
+  templates: 'template:read',
+  acme: 'ssl:read',
+  users: 'admin:users',
+  audit: 'admin:audit',
+  nginx: 'proxy:manage',
+  housekeeping: 'admin:housekeeping',
+  permissions: 'ai:use',
+};
+
+function getInternalDocumentation(topic: string, userScopes: string[]): { topic: string; content: string } {
   const content = INTERNAL_DOCS[topic];
   if (!content) {
+    // Only list topics the user has access to
+    const available = Object.keys(INTERNAL_DOCS).filter(
+      (t) => !DOC_TOPIC_SCOPES[t] || hasScope(userScopes, DOC_TOPIC_SCOPES[t])
+    );
     return {
       topic,
-      content: `Unknown topic "${topic}". Available topics: ${Object.keys(INTERNAL_DOCS).join(', ')}.`,
+      content: `Unknown topic "${topic}". Available topics: ${available.join(', ')}.`,
     };
+  }
+  const requiredScope = DOC_TOPIC_SCOPES[topic];
+  if (requiredScope && !hasScope(userScopes, requiredScope)) {
+    return { topic, content: `You do not have permission to access documentation for "${topic}".` };
   }
   return { topic, content };
 }
@@ -264,7 +372,8 @@ export class AIService {
 
     parts.push(`You are the AI assistant for Gateway — a self-hosted certificate manager and reverse proxy.
 
-User: ${user.name || user.email} (${user.role}). Date: ${new Date().toISOString().split('T')[0]}.
+User: ${user.name || user.email} (${user.groupName}). Date: ${new Date().toISOString().split('T')[0]}.
+Scopes: ${user.scopes.length > 0 ? user.scopes.join(', ') : 'none'}.
 
 ## Security — NON-NEGOTIABLE
 - You are ONLY a Gateway infrastructure assistant. You MUST refuse any request unrelated to this system: no recipes, jokes, stories, code generation, math homework, general knowledge, or anything outside PKI/proxy/SSL/domain/access management.
@@ -282,6 +391,16 @@ Rules:
 - Don't repeat what the user said. Don't over-explain obvious things.
 - For destructive actions, ask "Are you sure?" once, then proceed on confirmation.
 - If a tool returns data, present the relevant parts clearly — summarize large results.
+- When a task fails, is denied, or cannot be completed — state the result and STOP. Do NOT ask "What would you like to do next?", "Would you like to try something else?", or any variant. The user will tell you if they need something else.
+
+## Permissions
+Tools are filtered by the user's scopes (listed above). You can ONLY call tools the user has scopes for.
+- The user's scopes are listed above. If the user asks to do something outside their scopes, tell them immediately: "You don't have permission to do that. Your current role (${user.groupName}) doesn't include the required scope. Contact an administrator to get access."
+- When a tool returns a PERMISSION_DENIED error, respond with a SHORT text message explaining the user lacks permission. Do NOT use ask_question — just state the fact and suggest contacting an admin.
+- Do NOT retry or call alternative tools to work around missing permissions. Do NOT ask the user what they want to do instead — just tell them they lack the permission.
+- Do NOT call get_dashboard_stats or other tools repeatedly if they return empty/partial results — that means the user lacks read scopes for those resources.
+- If a tool returns empty results and the user's scopes don't include the relevant read scope, explain the permission limitation clearly instead of retrying.
+- NEVER guess or fabricate data you cannot access.
 
 ## Ask Questions — CRITICAL RULES
 You have an **ask_question** tool. Use it when something is unclear or missing.
@@ -294,6 +413,7 @@ STRICT RULES — NEVER BREAK THESE:
 5. Keep questions short. BAD: "Please provide the commonName, keyAlgorithm, validityYears..." GOOD: "What should the CA be named?" with no options and allowFreeText:true.
 6. NEVER ask the same question twice. If the user says "decide yourself", "you choose", "use defaults" — pick a sensible default for THAT SPECIFIC question only. It does NOT mean skip all remaining questions. You must still ask other questions that have no default.
 7. NEVER write a question in your text response. ANY question to the user MUST go through ask_question tool. If you need the user to choose between options, that is a question — use the tool. If your response ends with "?" or presents choices, you are doing it WRONG — use ask_question instead.
+8. NEVER use ask_question for errors, failures, or permission denials. When something fails or is denied, respond with a plain text message explaining what happened and STOP. Do NOT ask "What would you like to do?", "Can I help with something else?", or any open-ended follow-up.
 
 When to use defaults vs ask:
 - USE DEFAULTS for: naming, algorithms, validity periods, ports, toggle flags — anything with an obvious standard value.
@@ -307,29 +427,35 @@ CORRECT (multiple small questions):
   ask_question("Certificate domain/SAN?", allowFreeText: true)
 
 ## Knowledge Tool
-You have an **internal_documentation** tool. Use it BEFORE attempting complex tasks to get detailed info about how things work in this system. Available topics: pki, ssl, proxy, domains, access-lists, templates, acme, users, audit, nginx, housekeeping. When unsure about field values, workflows, or constraints — look it up first. It's free, fast, and prevents errors.
+You have an **internal_documentation** tool. Use it BEFORE attempting complex tasks to get detailed info about how things work in this system. Available topics: ${Object.keys(INTERNAL_DOCS).filter((t) => !DOC_TOPIC_SCOPES[t] || hasScope(user.scopes, DOC_TOPIC_SCOPES[t])).join(', ')}. When unsure about field values, workflows, or constraints — look it up first. It's free, fast, and prevents errors.
 
-## Key Facts (use internal_documentation for details)
-- PKI Certificates and SSL Certificates are SEPARATE stores. To use a PKI cert with a proxy host: issue_certificate → link_internal_cert → use the returned SSL cert ID.
-- Certificate types: tls-server, tls-client, code-signing, email. Use "tls-server" for web/SSL.
+## Key Facts (use internal_documentation for details)`);
+
+    if (hasScope(user.scopes, 'cert:read') || hasScope(user.scopes, 'ssl:read')) {
+      parts.push(`- PKI Certificates and SSL Certificates are SEPARATE stores. To use a PKI cert with a proxy host: issue_certificate → link_internal_cert → use the returned SSL cert ID.`);
+    }
+    if (hasScope(user.scopes, 'cert:read')) {
+      parts.push(`- Certificate types: tls-server, tls-client, code-signing, email. Use "tls-server" for web/SSL.
 - SANs are PLAIN values: "example.com", "10.0.0.1". NEVER prefix with "DNS:" or "IP:".
 - Never pass a PKI certificate ID as sslCertificateId on a proxy host.`);
+    }
 
-    // Inventory summary
+    // Inventory summary — only include sections the user has read access to
     try {
       const stats = await this.monitoringService.getDashboardStats();
-      parts.push(`
-## System Inventory
-- Certificate Authorities: ${stats.cas.total} total (${stats.cas.active} active)
-- PKI Certificates: ${stats.pkiCertificates.total} total (${stats.pkiCertificates.active} active, ${stats.pkiCertificates.revoked} revoked, ${stats.pkiCertificates.expired} expired)
-- Proxy Hosts: ${stats.proxyHosts.total} total (${stats.proxyHosts.enabled} enabled, ${stats.proxyHosts.online} online)
-- SSL Certificates: ${stats.sslCertificates.total} total (${stats.sslCertificates.active} active, ${stats.sslCertificates.expiringSoon} expiring soon)`);
+      const inv: string[] = [];
+      if (hasScope(user.scopes, 'ca:read')) inv.push(`- Certificate Authorities: ${stats.cas.total} total (${stats.cas.active} active)`);
+      if (hasScope(user.scopes, 'cert:read')) inv.push(`- PKI Certificates: ${stats.pkiCertificates.total} total (${stats.pkiCertificates.active} active, ${stats.pkiCertificates.revoked} revoked, ${stats.pkiCertificates.expired} expired)`);
+      if (hasScope(user.scopes, 'proxy:read')) inv.push(`- Proxy Hosts: ${stats.proxyHosts.total} total (${stats.proxyHosts.enabled} enabled, ${stats.proxyHosts.online} online)`);
+      if (hasScope(user.scopes, 'ssl:read')) inv.push(`- SSL Certificates: ${stats.sslCertificates.total} total (${stats.sslCertificates.active} active, ${stats.sslCertificates.expiringSoon} expiring soon)`);
+      if (inv.length > 0) parts.push(`\n## System Inventory\n${inv.join('\n')}`);
     } catch {
       // Inventory fetch failed, continue without it
     }
 
-    // CA names summary
+    // CA names summary — only if user can read CAs
     try {
+      if (!hasScope(user.scopes, 'ca:read')) throw new Error('skip');
       const cas = await this.caService.getCATree();
       if (cas.length > 0) {
         const caList = cas
@@ -369,9 +495,9 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
       return { error: `Unknown tool: ${toolName}`, invalidateStores: [] };
     }
 
-    // Permission check
-    if (!hasRole(user.role, toolDef.requiredRole)) {
-      return { error: `Insufficient permissions. Required role: ${toolDef.requiredRole}`, invalidateStores: [] };
+    // Permission check — tools with empty requiredScope are blocked (must be explicit)
+    if (!toolDef.requiredScope || !hasScope(user.scopes, toolDef.requiredScope)) {
+      return { error: `PERMISSION_DENIED: You do not have the "${toolDef.requiredScope || 'unknown'}" scope required for this action. Tell the user they lack this permission and suggest contacting an administrator. Do NOT ask follow-up questions or retry.`, invalidateStores: [] };
     }
 
     try {
@@ -516,10 +642,10 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
         );
       case 'update_proxy_host': {
         const { proxyHostId, advancedConfig: _ac, ...updateFields } = a;
-        if (_ac && user.role !== 'admin') {
-          throw new Error('Advanced config requires admin role');
+        if (_ac && !hasScope(user.scopes, 'proxy:advanced')) {
+          throw new Error('Advanced config requires proxy:advanced scope');
         }
-        const fields = _ac && user.role === 'admin' ? { ...updateFields, advancedConfig: _ac } : updateFields;
+        const fields = _ac && hasScope(user.scopes, 'proxy:advanced') ? { ...updateFields, advancedConfig: _ac } : updateFields;
         return this.proxyService.updateProxyHost(proxyHostId, fields, user.id);
       }
       case 'delete_proxy_host':
@@ -585,9 +711,9 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
         return this.authService.listUsers();
       case 'update_user_role': {
         if (a.userId === user.id) {
-          throw new Error('Cannot change your own role');
+          throw new Error('Cannot change your own group');
         }
-        const updated = await this.authService.updateUserRole(a.userId, a.role);
+        const updated = await this.authService.updateUserGroup(a.userId, a.groupId);
         await container.resolve(SessionService).destroyAllUserSessions(a.userId);
         return updated;
       }
@@ -598,8 +724,19 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
           page: a.page || 1,
           limit: a.limit || 50,
         });
-      case 'get_dashboard_stats':
-        return this.monitoringService.getDashboardStats();
+      case 'get_dashboard_stats': {
+        const stats = await this.monitoringService.getDashboardStats();
+        // Filter stats by user's read scopes — don't leak data they can't access
+        const filtered: Record<string, unknown> = {};
+        if (hasScope(user.scopes, 'proxy:read')) filtered.proxyHosts = stats.proxyHosts;
+        if (hasScope(user.scopes, 'ssl:read')) filtered.sslCertificates = stats.sslCertificates;
+        if (hasScope(user.scopes, 'cert:read')) filtered.pkiCertificates = stats.pkiCertificates;
+        if (hasScope(user.scopes, 'ca:read')) filtered.cas = stats.cas;
+        if (Object.keys(filtered).length === 0) {
+          return { message: 'You do not have permission to view any dashboard statistics. Contact an administrator to get read access to resources.' };
+        }
+        return filtered;
+      }
 
       // ── Ask Question (handled client-side, backend just passes through) ──
       case 'ask_question':
@@ -607,7 +744,7 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
 
       // ── Documentation ──
       case 'internal_documentation':
-        return getInternalDocumentation(a.topic);
+        return getInternalDocumentation(a.topic, user.scopes);
 
       // ── Web Search ──
       case 'web_search':
@@ -748,7 +885,7 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
     });
 
     const systemPrompt = await this.buildSystemPrompt(user, pageContext);
-    const tools = getOpenAITools(config.disabledTools, user.role, config.webSearchEnabled);
+    const tools = getOpenAITools(config.disabledTools, user.scopes, config.webSearchEnabled);
 
     // Build messages array: system + client messages
     let messages: Record<string, unknown>[] = [
@@ -762,7 +899,7 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
       }),
     ];
 
-    const maxContextTokens = 56000;
+    const maxContextTokens = config.maxContextTokens;
     const maxRounds = config.maxToolRounds;
 
     for (let round = 0; round < maxRounds; round++) {
@@ -1033,8 +1170,8 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
       baseURL: config.providerUrl || undefined,
     });
 
-    const tools = getOpenAITools(config.disabledTools, user.role, config.webSearchEnabled);
-    const messages = trimToTokenBudget(pendingMessages, 56000);
+    const tools = getOpenAITools(config.disabledTools, user.scopes, config.webSearchEnabled);
+    const messages = trimToTokenBudget(pendingMessages, config.maxContextTokens);
 
     // Continue with remaining rounds
     const maxRounds = config.maxToolRounds;

@@ -3,6 +3,7 @@ import type { DrizzleClient } from '@/db/client.js';
 import { domains } from '@/db/schema/domains.js';
 import { proxyHosts } from '@/db/schema/proxy-hosts.js';
 import { sslCertificates } from '@/db/schema/ssl-certificates.js';
+import { permissionGroups } from '@/db/schema/permission-groups.js';
 import { users } from '@/db/schema/users.js';
 import { createChildLogger } from '@/lib/logger.js';
 import type { DomainsService } from '@/modules/domains/domain.service.js';
@@ -279,13 +280,19 @@ export class SetupService {
 
     if (existing.length > 0) return existing[0].id;
 
+    // Look up the system-admin group for the system user
+    const adminGroup = await this.db.query.permissionGroups.findFirst({
+      where: eq(permissionGroups.name, 'system-admin'),
+    });
+    if (!adminGroup) throw new Error('system-admin group not found');
+
     const [user] = await this.db
       .insert(users)
       .values({
         oidcSubject: SYSTEM_OIDC_SUBJECT,
         email: 'system@gateway.local',
         name: 'Gateway System',
-        role: 'admin',
+        groupId: adminGroup.id,
       })
       .returning({ id: users.id });
 

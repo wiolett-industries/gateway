@@ -64,7 +64,7 @@ function UngroupedDropZone({ children }: { children: React.ReactNode }) {
 
 export function ProxyHosts() {
   const navigate = useNavigate();
-  const { hasRole } = useAuthStore();
+  const { hasScope } = useAuthStore();
   const {
     folders,
     ungroupedHosts,
@@ -277,7 +277,7 @@ export function ProxyHosts() {
       <col style={{ width: "8%" }} />
       <col style={{ width: "10%" }} />
       <col style={{ width: "8%" }} />
-      {hasRole("admin", "operator") && <col style={{ width: "48px" }} />}
+      {hasScope("proxy:manage") && <col style={{ width: "48px" }} />}
     </colgroup>
   );
 
@@ -290,7 +290,7 @@ export function ProxyHosts() {
         <th className="p-3 text-xs font-medium text-muted-foreground">SSL</th>
         <th className="p-3 text-xs font-medium text-muted-foreground">Health</th>
         <th className="p-3 text-xs font-medium text-muted-foreground">Enabled</th>
-        {hasRole("admin", "operator") && (
+        {hasScope("proxy:manage") && (
           <th className="p-3 text-xs font-medium text-muted-foreground w-10"></th>
         )}
       </tr>
@@ -307,7 +307,7 @@ export function ProxyHosts() {
             <p className="text-sm text-muted-foreground">{totalHosts} proxy hosts total</p>
           </div>
           <div className="flex items-center gap-2">
-            {hasRole("admin", "operator") && (
+            {hasScope("proxy:manage") && (
               <>
                 <Button variant="outline" onClick={() => setIsCreatingFolder(true)}>
                   <FolderPlus className="h-4 w-4" />
@@ -423,7 +423,7 @@ export function ProxyHosts() {
                   onMoveHostToFolder={(hostId) => setMoveDialogHostId(hostId)}
                   expandedFolderIds={expandedFolderIds}
                   onToggleFolder={toggleFolder}
-                  hasRole={hasRole}
+                  canManage={hasScope("proxy:manage")}
                   colGroup={colGroup}
                 />
               ))}
@@ -471,8 +471,7 @@ export function ProxyHosts() {
         ) : (
           <EmptyState
             message="No proxy hosts."
-            actionLabel="Add one"
-            actionHref="/proxy-hosts/new"
+            {...(hasScope("proxy:manage") ? { actionLabel: "Add one", actionHref: "/proxy-hosts/new" } : {})}
             hasActiveFilters={hasActiveFilters}
             onReset={() => {
               resetFilters();

@@ -37,7 +37,7 @@ const typeOptions: { value: CertificateType | "all"; label: string }[] = [
 
 export function Certificates() {
   const navigate = useNavigate();
-  const { hasRole } = useAuthStore();
+  const { hasScope } = useAuthStore();
   const { cas } = useCAStore();
   const {
     certificates,
@@ -77,7 +77,7 @@ export function Certificates() {
             <h1 className="text-2xl font-bold">Certificates</h1>
             <p className="text-sm text-muted-foreground">{total} certificates total</p>
           </div>
-          {hasRole("admin", "operator") && (
+          {hasScope("cert:issue") && (
             <Button onClick={() => setIssueDialogOpen(true)}>
               <Plus className="h-4 w-4" />
               Issue Certificate
@@ -244,8 +244,7 @@ export function Certificates() {
         ) : (
           <EmptyState
             message="No certificates."
-            actionLabel="Issue one"
-            onAction={() => setIssueDialogOpen(true)}
+            {...(hasScope("cert:issue") ? { actionLabel: "Issue one", onAction: () => setIssueDialogOpen(true) } : {})}
             hasActiveFilters={hasActiveFilters}
             onReset={() => {
               resetFilters();

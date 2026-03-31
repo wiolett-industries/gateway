@@ -2,7 +2,7 @@ import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
 import { sanitizeFilename } from '@/lib/utils.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
-import { authMiddleware, rbacMiddleware, requireScope } from '@/modules/auth/auth.middleware.js';
+import { authMiddleware, requireScope } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import { CAService } from './ca.service.js';
 import {
@@ -47,7 +47,7 @@ certRoutes.get('/:id', requireScope('cert:read'), async (c) => {
 });
 
 // Issue certificate (server-side key generation)
-certRoutes.post('/', rbacMiddleware('admin', 'operator'), requireScope('cert:issue'), async (c) => {
+certRoutes.post('/', requireScope('cert:issue'), async (c) => {
   const certService = container.resolve(CertService);
   const user = c.get('user')!;
   const body = await c.req.json();
@@ -57,7 +57,7 @@ certRoutes.post('/', rbacMiddleware('admin', 'operator'), requireScope('cert:iss
 });
 
 // Issue certificate from CSR
-certRoutes.post('/from-csr', rbacMiddleware('admin', 'operator'), requireScope('cert:issue'), async (c) => {
+certRoutes.post('/from-csr', requireScope('cert:issue'), async (c) => {
   const certService = container.resolve(CertService);
   const user = c.get('user')!;
   const body = await c.req.json();
@@ -67,7 +67,7 @@ certRoutes.post('/from-csr', rbacMiddleware('admin', 'operator'), requireScope('
 });
 
 // Revoke certificate
-certRoutes.post('/:id/revoke', rbacMiddleware('admin', 'operator'), requireScope('cert:revoke'), async (c) => {
+certRoutes.post('/:id/revoke', requireScope('cert:revoke'), async (c) => {
   const certService = container.resolve(CertService);
   const crlService = container.resolve(CRLService);
   const _ocspService = container.resolve(OCSPService);
@@ -85,7 +85,7 @@ certRoutes.post('/:id/revoke', rbacMiddleware('admin', 'operator'), requireScope
 });
 
 // Export certificate
-certRoutes.post('/:id/export', rbacMiddleware('admin', 'operator'), requireScope('cert:export'), async (c) => {
+certRoutes.post('/:id/export', requireScope('cert:export'), async (c) => {
   const certService = container.resolve(CertService);
   const exportService = container.resolve(ExportService);
   const auditService = container.resolve(AuditService);

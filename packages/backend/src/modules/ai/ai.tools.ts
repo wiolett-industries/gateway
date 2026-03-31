@@ -1,3 +1,4 @@
+import { hasScope } from '@/lib/permissions.js';
 import type { AIToolDefinition } from './ai.types.js';
 
 export const AI_TOOLS: AIToolDefinition[] = [
@@ -9,7 +10,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     parameters: { type: 'object', properties: {} },
     destructive: false,
     category: 'PKI - Certificate Authorities',
-    requiredRole: 'operator',
+    requiredScope: 'ca:read',
     invalidateStores: [],
   },
   {
@@ -24,7 +25,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'PKI - Certificate Authorities',
-    requiredRole: 'operator',
+    requiredScope: 'ca:read',
     invalidateStores: [],
   },
   {
@@ -51,7 +52,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: true,
     category: 'PKI - Certificate Authorities',
-    requiredRole: 'admin',
+    requiredScope: 'ca:create:root',
     invalidateStores: ['ca'],
   },
   {
@@ -79,7 +80,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: true,
     category: 'PKI - Certificate Authorities',
-    requiredRole: 'admin',
+    requiredScope: 'ca:create:intermediate',
     invalidateStores: ['ca'],
   },
   {
@@ -94,7 +95,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: true,
     category: 'PKI - Certificate Authorities',
-    requiredRole: 'admin',
+    requiredScope: 'ca:revoke',
     invalidateStores: ['ca'],
   },
 
@@ -115,7 +116,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'PKI - Certificates',
-    requiredRole: 'operator',
+    requiredScope: 'cert:read',
     invalidateStores: [],
   },
   {
@@ -130,7 +131,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'PKI - Certificates',
-    requiredRole: 'operator',
+    requiredScope: 'cert:read',
     invalidateStores: [],
   },
   {
@@ -176,7 +177,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: true,
     category: 'PKI - Certificates',
-    requiredRole: 'operator',
+    requiredScope: 'cert:issue',
     invalidateStores: ['certificates', 'ca'],
   },
   {
@@ -192,7 +193,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: true,
     category: 'PKI - Certificates',
-    requiredRole: 'operator',
+    requiredScope: 'cert:revoke',
     invalidateStores: ['certificates', 'ca'],
   },
 
@@ -203,7 +204,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     parameters: { type: 'object', properties: {} },
     destructive: false,
     category: 'PKI - Templates',
-    requiredRole: 'operator',
+    requiredScope: 'template:read',
     invalidateStores: [],
   },
   {
@@ -227,7 +228,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: true,
     category: 'PKI - Templates',
-    requiredRole: 'admin',
+    requiredScope: 'template:manage',
     invalidateStores: ['templates'],
   },
   {
@@ -242,7 +243,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: true,
     category: 'PKI - Templates',
-    requiredRole: 'admin',
+    requiredScope: 'template:manage',
     invalidateStores: ['templates'],
   },
 
@@ -260,7 +261,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'Reverse Proxy',
-    requiredRole: 'operator',
+    requiredScope: 'proxy:read',
     invalidateStores: [],
   },
   {
@@ -275,7 +276,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'Reverse Proxy',
-    requiredRole: 'operator',
+    requiredScope: 'proxy:read',
     invalidateStores: [],
   },
   {
@@ -340,7 +341,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: true,
     category: 'Reverse Proxy',
-    requiredRole: 'operator',
+    requiredScope: 'proxy:manage',
     invalidateStores: ['proxy'],
   },
   {
@@ -362,7 +363,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: true,
     category: 'Reverse Proxy',
-    requiredRole: 'operator',
+    requiredScope: 'proxy:manage',
     invalidateStores: ['proxy'],
   },
   {
@@ -377,7 +378,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: true,
     category: 'Reverse Proxy',
-    requiredRole: 'operator',
+    requiredScope: 'proxy:delete',
     invalidateStores: ['proxy'],
   },
 
@@ -395,7 +396,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'Reverse Proxy',
-    requiredRole: 'operator',
+    requiredScope: 'proxy:manage',
     invalidateStores: ['proxy'],
   },
   {
@@ -411,7 +412,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'Reverse Proxy',
-    requiredRole: 'operator',
+    requiredScope: 'proxy:manage',
     invalidateStores: ['proxy'],
   },
   {
@@ -426,7 +427,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: true,
     category: 'Reverse Proxy',
-    requiredRole: 'operator',
+    requiredScope: 'proxy:delete',
     invalidateStores: ['proxy'],
   },
 
@@ -444,7 +445,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'SSL Certificates',
-    requiredRole: 'operator',
+    requiredScope: 'ssl:read',
     invalidateStores: [],
   },
   {
@@ -470,7 +471,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: true,
     category: 'SSL Certificates',
-    requiredRole: 'operator',
+    requiredScope: 'ssl:manage',
     invalidateStores: ['ssl'],
   },
 
@@ -488,7 +489,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'SSL Certificates',
-    requiredRole: 'operator',
+    requiredScope: 'ssl:manage',
     invalidateStores: ['ssl'],
   },
 
@@ -506,7 +507,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'Domains',
-    requiredRole: 'operator',
+    requiredScope: 'proxy:read',
     invalidateStores: [],
   },
   {
@@ -522,7 +523,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'Domains',
-    requiredRole: 'operator',
+    requiredScope: 'proxy:manage',
     invalidateStores: ['domains'],
   },
   {
@@ -537,7 +538,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: true,
     category: 'Domains',
-    requiredRole: 'operator',
+    requiredScope: 'proxy:delete',
     invalidateStores: ['domains'],
   },
 
@@ -555,7 +556,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'Access Lists',
-    requiredRole: 'operator',
+    requiredScope: 'access-list:read',
     invalidateStores: [],
   },
   {
@@ -586,7 +587,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: true,
     category: 'Access Lists',
-    requiredRole: 'operator',
+    requiredScope: 'access-list:manage',
     invalidateStores: ['accessLists'],
   },
   {
@@ -601,7 +602,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: true,
     category: 'Access Lists',
-    requiredRole: 'operator',
+    requiredScope: 'access-list:delete',
     invalidateStores: ['accessLists'],
   },
 
@@ -612,23 +613,23 @@ export const AI_TOOLS: AIToolDefinition[] = [
     parameters: { type: 'object', properties: {} },
     destructive: false,
     category: 'Administration',
-    requiredRole: 'admin',
+    requiredScope: 'admin:users',
     invalidateStores: [],
   },
   {
     name: 'update_user_role',
-    description: "Change a user's role. Available roles: admin, operator, viewer, blocked.",
+    description: "Change a user's permission group. Use list_users to see available groups.",
     parameters: {
       type: 'object',
       properties: {
         userId: { type: 'string', description: 'User UUID' },
-        role: { type: 'string', enum: ['admin', 'operator', 'viewer', 'blocked'], description: 'New role' },
+        groupId: { type: 'string', description: 'Permission group UUID to assign' },
       },
-      required: ['userId', 'role'],
+      required: ['userId', 'groupId'],
     },
     destructive: true,
     category: 'Administration',
-    requiredRole: 'admin',
+    requiredScope: 'admin:users',
     invalidateStores: ['users'],
   },
   {
@@ -645,7 +646,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'Administration',
-    requiredRole: 'admin',
+    requiredScope: 'admin:audit',
     invalidateStores: [],
   },
   {
@@ -654,7 +655,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     parameters: { type: 'object', properties: {} },
     destructive: false,
     category: 'Administration',
-    requiredRole: 'operator',
+    requiredScope: 'ai:use',
     invalidateStores: [],
   },
 
@@ -689,7 +690,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'Interaction',
-    requiredRole: 'operator',
+    requiredScope: 'ai:use',
     invalidateStores: [],
   },
 
@@ -697,7 +698,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
   {
     name: 'internal_documentation',
     description:
-      'Get detailed internal documentation about a specific topic in this system. Use this whenever you need deeper knowledge about how something works, what fields mean, or what the correct workflow is. Topics: pki, ssl, proxy, domains, access-lists, templates, acme, users, audit, nginx, housekeeping.',
+      'Get detailed internal documentation about a specific topic in this system. Use this whenever you need deeper knowledge about how something works, what fields mean, or what the correct workflow is. Topics: pki, ssl, proxy, domains, access-lists, templates, acme, users, audit, nginx, housekeeping, permissions.',
     parameters: {
       type: 'object',
       properties: {
@@ -715,6 +716,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
             'audit',
             'nginx',
             'housekeeping',
+            'permissions',
           ],
           description: 'The topic to get documentation about',
         },
@@ -723,7 +725,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'Documentation',
-    requiredRole: 'operator',
+    requiredScope: 'ai:use',
     invalidateStores: [],
   },
 
@@ -742,7 +744,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'Web Search',
-    requiredRole: 'operator',
+    requiredScope: 'ai:use',
     invalidateStores: [],
   },
 ];
@@ -763,22 +765,20 @@ export const TOOL_STORE_INVALIDATION_MAP: Record<string, string[]> = Object.from
 /**
  * Get tools in OpenAI function-calling format, filtered by:
  * - Disabled tools (admin config)
- * - User role (only tools the user's role can access)
+ * - User scopes (only tools the user has the required scope for)
  * - Web search availability
  */
 export function getOpenAITools(
   disabledTools: string[],
-  userRole: string,
+  userScopes: string[],
   webSearchEnabled: boolean
 ): Array<{ type: 'function'; function: { name: string; description: string; parameters: Record<string, unknown> } }> {
-  const roleHierarchy: Record<string, number> = { blocked: -1, viewer: 0, operator: 1, admin: 2 };
-  const userLevel = roleHierarchy[userRole] ?? 0;
-
   return AI_TOOLS.filter((t) => {
     if (disabledTools.includes(t.name)) return false;
     if (t.name === 'web_search' && !webSearchEnabled) return false;
-    const requiredLevel = roleHierarchy[t.requiredRole] ?? 0;
-    return userLevel >= requiredLevel;
+    // Every tool must have a requiredScope — reject tools without one
+    if (!t.requiredScope) return false;
+    return hasScope(userScopes, t.requiredScope);
   }).map((t) => ({
     type: 'function' as const,
     function: {

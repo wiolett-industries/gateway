@@ -36,7 +36,7 @@ import type { Certificate } from "@/types";
 export function CertificateDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { hasRole } = useAuthStore();
+  const { hasScope } = useAuthStore();
   const [cert, setCert] = useState<Certificate | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -171,7 +171,7 @@ export function CertificateDetail() {
                     Copy PEM
                   </DropdownMenuItem>
                 )}
-                {hasRole("admin", "operator") && cert.status === "active" && (
+                {hasScope("cert:revoke") && cert.status === "active" && (
                   <>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem

@@ -1,7 +1,8 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
+import { hasScope } from '@/lib/permissions.js';
 import { AppError } from '@/middleware/error-handler.js';
-import { authMiddleware, rbacMiddleware, sessionOnly } from '@/modules/auth/auth.middleware.js';
+import { authMiddleware, requireScope, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import {
   CreateProxyHostSchema,
@@ -17,8 +18,8 @@ export const proxyRoutes = new OpenAPIHono<AppEnv>();
 proxyRoutes.use('*', authMiddleware);
 proxyRoutes.use('*', sessionOnly);
 
-// List proxy hosts (any authenticated role)
-proxyRoutes.get('/', async (c) => {
+// List proxy hosts
+proxyRoutes.get('/', requireScope('proxy:read'), async (c) => {
   const proxyService = container.resolve(ProxyService);
   const rawQuery = c.req.query();
   const query = ProxyHostListQuerySchema.parse(rawQuery);
@@ -27,42 +28,44 @@ proxyRoutes.get('/', async (c) => {
 });
 
 // Get proxy host detail
-proxyRoutes.get('/:id', async (c) => {
+proxyRoutes.get('/:id', requireScope('proxy:read'), async (c) => {
   const proxyService = container.resolve(ProxyService);
   const id = c.req.param('id');
   const host = await proxyService.getProxyHost(id);
   return c.json({ data: host });
 });
 
-// Create proxy host (admin, operator)
-proxyRoutes.post('/', rbacMiddleware('admin', 'operator'), async (c) => {
+// Create proxy host
+proxyRoutes.post('/', requireScope('proxy:manage'), async (c) => {
   const proxyService = container.resolve(ProxyService);
   const user = c.get('user')!;
   const body = await c.req.json();
   const input = CreateProxyHostSchema.parse(body);
-  if (input.advancedConfig && user.role !== 'admin') {
-    throw new AppError(403, 'FORBIDDEN', 'Advanced config requires admin role');
+  const scopes = c.get('effectiveScopes') || [];
+  if (input.advancedConfig && !hasScope(scopes, 'proxy:advanced')) {
+    throw new AppError(403, 'FORBIDDEN', 'Advanced config requires proxy:advanced scope');
   }
   const host = await proxyService.createProxyHost(input, user.id);
   return c.json({ data: host }, 201);
 });
 
-// Update proxy host (admin, operator)
-proxyRoutes.put('/:id', rbacMiddleware('admin', 'operator'), async (c) => {
+// Update proxy host
+proxyRoutes.put('/:id', requireScope('proxy:manage'), async (c) => {
   const proxyService = container.resolve(ProxyService);
   const user = c.get('user')!;
   const id = c.req.param('id');
   const body = await c.req.json();
   const input = UpdateProxyHostSchema.parse(body);
-  if (input.advancedConfig && user.role !== 'admin') {
-    throw new AppError(403, 'FORBIDDEN', 'Advanced config requires admin role');
+  const scopes = c.get('effectiveScopes') || [];
+  if (input.advancedConfig && !hasScope(scopes, 'proxy:advanced')) {
+    throw new AppError(403, 'FORBIDDEN', 'Advanced config requires proxy:advanced scope');
   }
   const host = await proxyService.updateProxyHost(id, input, user.id);
   return c.json({ data: host });
 });
 
-// Delete proxy host (admin only)
-proxyRoutes.delete('/:id', rbacMiddleware('admin'), async (c) => {
+// Delete proxy host
+proxyRoutes.delete('/:id', requireScope('proxy:delete'), async (c) => {
   const proxyService = container.resolve(ProxyService);
   const user = c.get('user')!;
   const id = c.req.param('id');
@@ -70,8 +73,8 @@ proxyRoutes.delete('/:id', rbacMiddleware('admin'), async (c) => {
   return c.body(null, 204);
 });
 
-// Toggle proxy host enabled/disabled (admin, operator)
-proxyRoutes.post('/:id/toggle', rbacMiddleware('admin', 'operator'), async (c) => {
+// Toggle proxy host enabled/disabled
+proxyRoutes.post('/:id/toggle', requireScope('proxy:manage'), async (c) => {
   const proxyService = container.resolve(ProxyService);
   const user = c.get('user')!;
   const id = c.req.param('id');
@@ -81,16 +84,16 @@ proxyRoutes.post('/:id/toggle', rbacMiddleware('admin', 'operator'), async (c) =
   return c.json({ data: host });
 });
 
-// Get rendered nginx config for a host (admin, operator)
-proxyRoutes.get('/:id/rendered-config', rbacMiddleware('admin', 'operator'), async (c) => {
+// Get rendered nginx config for a host
+proxyRoutes.get('/:id/rendered-config', requireScope('proxy:read'), async (c) => {
   const proxyService = container.resolve(ProxyService);
   const id = c.req.param('id');
   const rendered = await proxyService.getRenderedConfig(id);
   return c.json({ data: { rendered } });
 });
 
-// Validate advanced config snippet (admin, operator)
-proxyRoutes.post('/validate-config', rbacMiddleware('admin', 'operator'), async (c) => {
+// Validate advanced config snippet
+proxyRoutes.post('/validate-config', requireScope('proxy:manage'), async (c) => {
   const proxyService = container.resolve(ProxyService);
   const body = await c.req.json();
   const { snippet } = ValidateAdvancedConfigSchema.parse(body);
