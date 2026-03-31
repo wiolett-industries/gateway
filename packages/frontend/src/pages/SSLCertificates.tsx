@@ -72,7 +72,7 @@ function SSLStatusBadge({ status }: { status: SSLCertStatus }) {
 
 export function SSLCertificates() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
-  const { hasRole } = useAuthStore();
+  const { hasScope } = useAuthStore();
   const modal = useUIStore((s) => s.modal);
   const closeModal = useUIStore((s) => s.closeModal);
 
@@ -152,7 +152,7 @@ export function SSLCertificates() {
             <h1 className="text-2xl font-bold">SSL Certificates</h1>
             <p className="text-sm text-muted-foreground">{total} certificates total</p>
           </div>
-          {hasRole("admin", "operator") && (
+          {hasScope("ssl:manage") && (
             <Button onClick={() => setCreateDialogOpen(true)}>
               <Plus className="h-4 w-4" />
               Add Certificate
@@ -304,7 +304,7 @@ export function SSLCertificates() {
                           )}
                         </td>
                         <td className="p-3">
-                          {hasRole("admin", "operator") && (
+                          {hasScope("ssl:manage") && (
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
                                 <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -318,7 +318,7 @@ export function SSLCertificates() {
                                     Renew
                                   </DropdownMenuItem>
                                 )}
-                                {!cert.isSystem && (
+                                {!cert.isSystem && hasScope("ssl:delete") && (
                                   <DropdownMenuItem
                                     onClick={() => handleDelete(cert.id, cert.name)}
                                     className="text-destructive"
@@ -370,8 +370,7 @@ export function SSLCertificates() {
         ) : (
           <EmptyState
             message="No SSL certificates."
-            actionLabel="Add one"
-            onAction={() => setCreateDialogOpen(true)}
+            {...(hasScope("ssl:manage") ? { actionLabel: "Add one", onAction: () => setCreateDialogOpen(true) } : {})}
             hasActiveFilters={hasActiveFilters}
             onReset={() => {
               resetFilters();

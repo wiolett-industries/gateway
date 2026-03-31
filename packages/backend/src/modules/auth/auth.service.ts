@@ -6,9 +6,9 @@ import { getEnv } from '@/config/env.js';
 import { SessionService } from '@/services/session.service.js';
 import { CacheService } from '@/services/cache.service.js';
 import { createChildLogger } from '@/lib/logger.js';
-import { users } from '@/db/schema/index.js';
+import { users, permissionGroups } from '@/db/schema/index.js';
 import type { DrizzleClient } from '@/db/client.js';
-import type { User, UserRole } from '@/types.js';
+import type { User } from '@/types.js';
 
 const logger = createChildLogger('AuthService');
 
@@ -179,14 +179,21 @@ export class AuthService {
       return this.mapDbUserToUser(existingUser);
     }
 
-    // Check if this is the first real user — assign admin role
+    // Check if this is the first real user — assign system-admin group
     // Exclude system users (e.g. system:gateway-setup) from the count
     const [{ count: userCount }] = await this.db
       .select({ count: count() })
       .from(users)
       .where(not(like(users.oidcSubject, 'system:%')));
 
-    const role: UserRole = userCount === 0 ? 'admin' : 'viewer';
+    const groupName = userCount === 0 ? 'system-admin' : 'viewer';
+    const group = await this.db.query.permissionGroups.findFirst({
+      where: eq(permissionGroups.name, groupName),
+    });
+
+    if (!group) {
+      throw new Error(`Built-in group "${groupName}" not found. Has the migration been run?`);
+    }
 
     const [createdUser] = await this.db
       .insert(users)
@@ -195,23 +202,35 @@ export class AuthService {
         email: data.email,
         name: data.name,
         avatarUrl: data.avatarUrl,
-        role,
+        groupId: group.id,
       })
       .returning();
 
-    logger.info('Created new user', { userId: createdUser.id, email: createdUser.email, role });
+    logger.info('Created new user', { userId: createdUser.id, email: createdUser.email, group: groupName });
 
-    return this.mapDbUserToUser(createdUser);
+    return this.mapDbUserToUser(createdUser, group);
   }
 
-  private mapDbUserToUser(dbUser: typeof users.$inferSelect): User {
+  private async mapDbUserToUser(
+    dbUser: typeof users.$inferSelect,
+    group?: typeof permissionGroups.$inferSelect | null
+  ): Promise<User> {
+    if (!group) {
+      group = await this.db.query.permissionGroups.findFirst({
+        where: eq(permissionGroups.id, dbUser.groupId),
+      });
+    }
+
     return {
       id: dbUser.id,
       oidcSubject: dbUser.oidcSubject,
       email: dbUser.email,
       name: dbUser.name,
       avatarUrl: dbUser.avatarUrl,
-      role: dbUser.role,
+      groupId: dbUser.groupId,
+      groupName: group?.name ?? 'unknown',
+      scopes: (group?.scopes as string[]) ?? [],
+      isBlocked: dbUser.isBlocked,
     };
   }
 
@@ -247,13 +266,70 @@ export class AuthService {
     const allUsers = await this.db.query.users.findMany({
       orderBy: (users, { asc }) => [asc(users.createdAt)],
     });
-    return allUsers.map(u => this.mapDbUserToUser(u));
+
+    // Batch-fetch all groups
+    const allGroups = await this.db.query.permissionGroups.findMany();
+    const groupMap = new Map(allGroups.map((g) => [g.id, g]));
+
+    return allUsers.map((u) => {
+      const group = groupMap.get(u.groupId);
+      return {
+        id: u.id,
+        oidcSubject: u.oidcSubject,
+        email: u.email,
+        name: u.name,
+        avatarUrl: u.avatarUrl,
+        groupId: u.groupId,
+        groupName: group?.name ?? 'unknown',
+        scopes: (group?.scopes as string[]) ?? [],
+        isBlocked: u.isBlocked,
+      };
+    });
   }
 
-  async updateUserRole(userId: string, role: UserRole): Promise<User> {
+  async updateUserGroup(userId: string, groupId: string): Promise<User> {
+    // Verify the group exists
+    const group = await this.db.query.permissionGroups.findFirst({
+      where: eq(permissionGroups.id, groupId),
+    });
+    if (!group) {
+      throw new Error('Permission group not found');
+    }
+
     const [updatedUser] = await this.db
       .update(users)
-      .set({ role, updatedAt: new Date() })
+      .set({ groupId, updatedAt: new Date() })
+      .where(eq(users.id, userId))
+      .returning();
+
+    if (!updatedUser) {
+      throw new Error('User not found');
+    }
+
+    return this.mapDbUserToUser(updatedUser, group);
+  }
+
+  async blockUser(userId: string): Promise<User> {
+    const [updatedUser] = await this.db
+      .update(users)
+      .set({ isBlocked: true, updatedAt: new Date() })
+      .where(eq(users.id, userId))
+      .returning();
+
+    if (!updatedUser) {
+      throw new Error('User not found');
+    }
+
+    // Destroy all sessions immediately
+    await this.sessionService.destroyAllUserSessions(userId);
+
+    return this.mapDbUserToUser(updatedUser);
+  }
+
+  async unblockUser(userId: string): Promise<User> {
+    const [updatedUser] = await this.db
+      .update(users)
+      .set({ isBlocked: false, updatedAt: new Date() })
       .where(eq(users.id, userId))
       .returning();
 

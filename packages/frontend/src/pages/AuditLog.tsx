@@ -76,7 +76,7 @@ export function AuditLog() {
                 <SelectItem value="cert.issue">Cert issued</SelectItem>
                 <SelectItem value="cert.revoke">Cert revoked</SelectItem>
                 <SelectItem value="ca.export_key">Key exported</SelectItem>
-                <SelectItem value="user.role_update">Role changed</SelectItem>
+                <SelectItem value="user.group_change">Group changed</SelectItem>
               </SelectContent>
             </Select>
           </div>

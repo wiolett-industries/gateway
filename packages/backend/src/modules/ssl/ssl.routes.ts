@@ -1,6 +1,6 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
-import { authMiddleware, rbacMiddleware, sessionOnly } from '@/modules/auth/auth.middleware.js';
+import { authMiddleware, requireScope, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import {
   LinkInternalCertSchema,
@@ -16,7 +16,7 @@ sslRoutes.use('*', authMiddleware);
 sslRoutes.use('*', sessionOnly);
 
 // List SSL certificates (paginated, filterable)
-sslRoutes.get('/', async (c) => {
+sslRoutes.get('/', requireScope('ssl:read'), async (c) => {
   const sslService = container.resolve(SSLService);
   const query = SSLCertListQuerySchema.parse({
     page: c.req.query('page'),
@@ -30,15 +30,15 @@ sslRoutes.get('/', async (c) => {
 });
 
 // Get SSL certificate detail
-sslRoutes.get('/:id', async (c) => {
+sslRoutes.get('/:id', requireScope('ssl:read'), async (c) => {
   const sslService = container.resolve(SSLService);
   const id = c.req.param('id');
   const cert = await sslService.getCert(id);
   return c.json({ data: cert });
 });
 
-// Request ACME certificate (admin, operator)
-sslRoutes.post('/acme', rbacMiddleware('admin', 'operator'), async (c) => {
+// Request ACME certificate
+sslRoutes.post('/acme', requireScope('ssl:manage'), async (c) => {
   const sslService = container.resolve(SSLService);
   const user = c.get('user')!;
   const body = await c.req.json();
@@ -47,8 +47,8 @@ sslRoutes.post('/acme', rbacMiddleware('admin', 'operator'), async (c) => {
   return c.json({ data: result }, 201);
 });
 
-// Upload certificate (admin, operator)
-sslRoutes.post('/upload', rbacMiddleware('admin', 'operator'), async (c) => {
+// Upload certificate
+sslRoutes.post('/upload', requireScope('ssl:manage'), async (c) => {
   const sslService = container.resolve(SSLService);
   const user = c.get('user')!;
   const body = await c.req.json();
@@ -57,8 +57,8 @@ sslRoutes.post('/upload', rbacMiddleware('admin', 'operator'), async (c) => {
   return c.json({ data: cert }, 201);
 });
 
-// Link internal CA certificate (admin, operator)
-sslRoutes.post('/internal', rbacMiddleware('admin', 'operator'), async (c) => {
+// Link internal CA certificate
+sslRoutes.post('/internal', requireScope('ssl:manage'), async (c) => {
   const sslService = container.resolve(SSLService);
   const user = c.get('user')!;
   const body = await c.req.json();
@@ -67,8 +67,8 @@ sslRoutes.post('/internal', rbacMiddleware('admin', 'operator'), async (c) => {
   return c.json({ data: cert }, 201);
 });
 
-// Manual renew (admin, operator)
-sslRoutes.post('/:id/renew', rbacMiddleware('admin', 'operator'), async (c) => {
+// Manual renew
+sslRoutes.post('/:id/renew', requireScope('ssl:manage'), async (c) => {
   const sslService = container.resolve(SSLService);
   const user = c.get('user')!;
   const id = c.req.param('id');
@@ -76,8 +76,8 @@ sslRoutes.post('/:id/renew', rbacMiddleware('admin', 'operator'), async (c) => {
   return c.json({ data: cert });
 });
 
-// Complete DNS-01 verification (admin, operator)
-sslRoutes.post('/:id/dns-verify', rbacMiddleware('admin', 'operator'), async (c) => {
+// Complete DNS-01 verification
+sslRoutes.post('/:id/dns-verify', requireScope('ssl:manage'), async (c) => {
   const sslService = container.resolve(SSLService);
   const user = c.get('user')!;
   const id = c.req.param('id');
@@ -85,8 +85,8 @@ sslRoutes.post('/:id/dns-verify', rbacMiddleware('admin', 'operator'), async (c)
   return c.json({ data: cert });
 });
 
-// Delete SSL certificate (admin only)
-sslRoutes.delete('/:id', rbacMiddleware('admin'), async (c) => {
+// Delete SSL certificate
+sslRoutes.delete('/:id', requireScope('ssl:delete'), async (c) => {
   const sslService = container.resolve(SSLService);
   const user = c.get('user')!;
   const id = c.req.param('id');

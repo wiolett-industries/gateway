@@ -17,6 +17,7 @@ import Markdown from "react-markdown";
 import { toast } from "sonner";
 import { AIToolAccessModal } from "@/components/ai/AIToolAccessModal";
 import { confirm } from "@/components/common/ConfirmDialog";
+import { ScopeList } from "@/components/common/ScopeList";
 import { PageTransition } from "@/components/common/PageTransition";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -53,19 +54,19 @@ import type {
 } from "@/types";
 import { type ApiToken, TOKEN_SCOPES } from "@/types";
 
-const SCOPE_GROUPS = [...new Set(TOKEN_SCOPES.map((s) => s.group))];
 
 export function Settings() {
-  const { user, hasRole } = useAuthStore();
+  const { user, hasScope } = useAuthStore();
   const { theme, setTheme, showUpdateNotifications, setShowUpdateNotifications } = useUIStore();
   const { cas } = useCAStore();
   const [tokens, setTokens] = useState<ApiToken[]>([]);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [newTokenName, setNewTokenName] = useState("");
   const [selectedScopes, setSelectedScopes] = useState<string[]>([]);
-  const [caSpecificScopes, setCaSpecificScopes] = useState<Record<string, string>>({});
+  const [resourceScopes, setResourceScopes] = useState<Record<string, string[]>>({});
   const [createdSecret, setCreatedSecret] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  const [tokenScopeSearch, setTokenScopeSearch] = useState("");
 
   // Update state (global store)
   const {
@@ -79,7 +80,10 @@ export function Settings() {
   const [releaseNotesOpen, setReleaseNotesOpen] = useState(false);
   const [releaseNotesList, setReleaseNotesList] = useState<string[] | null>(null);
   const [releaseVersions, setReleaseVersions] = useState<string[] | null>(null);
-  const isAdmin = hasRole("admin");
+  const canUpdate = hasScope("admin:update");
+  const canUseAI = hasScope("ai:use");
+  const canHousekeep = hasScope("admin:housekeeping");
+  const canConfigAI = hasScope("admin:ai-config");
 
   // Housekeeping state
   const [hkConfig, setHkConfig] = useState<HousekeepingConfig>({
@@ -109,6 +113,7 @@ export function Settings() {
     rateLimitMax: number;
     rateLimitWindowSeconds: number;
     maxToolRounds: number;
+    maxContextTokens: number;
     disabledTools: string[];
     hasApiKey: boolean;
     apiKeyLast4: string;
@@ -132,6 +137,7 @@ export function Settings() {
       aiConfig.rateLimitMax !== aiSavedConfig.rateLimitMax ||
       aiConfig.rateLimitWindowSeconds !== aiSavedConfig.rateLimitWindowSeconds ||
       aiConfig.maxToolRounds !== aiSavedConfig.maxToolRounds ||
+      aiConfig.maxContextTokens !== aiSavedConfig.maxContextTokens ||
       aiConfig.customSystemPrompt !== aiSavedConfig.customSystemPrompt ||
       aiConfig.webSearchProvider !== aiSavedConfig.webSearchProvider ||
       aiConfig.webSearchBaseUrl !== aiSavedConfig.webSearchBaseUrl ||
@@ -140,7 +146,7 @@ export function Settings() {
   })();
 
   const loadAIConfig = useCallback(async () => {
-    if (!isAdmin) return;
+    if (!canConfigAI) return;
     try {
       const config = (await api.getAIConfig()) as any;
       setAiConfig(config);
@@ -148,7 +154,7 @@ export function Settings() {
     } catch {
       /* AI not configured yet */
     }
-  }, [isAdmin]);
+  }, [canConfigAI]);
 
   const updateAIConfig = async (partial: Record<string, unknown>) => {
     try {
@@ -166,7 +172,7 @@ export function Settings() {
   };
 
   const loadHousekeeping = useCallback(async () => {
-    if (!isAdmin) return;
+    if (!canHousekeep) return;
     // Use cached data for instant render
     const cachedConfig = api.getCached<HousekeepingConfig>("housekeeping:config");
     if (cachedConfig) setHkConfig(cachedConfig);
@@ -188,7 +194,7 @@ export function Settings() {
         setHkRunning(s.isRunning);
       })
       .catch(() => {});
-  }, [isAdmin]);
+  }, [canHousekeep]);
 
   const updateHkConfig = async (partial: Partial<HousekeepingConfig>) => {
     try {
@@ -230,14 +236,14 @@ export function Settings() {
     }
   };
 
-  const loadTokens = async () => {
+  const loadTokens = useCallback(async () => {
     try {
       const data = await api.listTokens();
       setTokens(data || []);
     } catch {
       // ignore
     }
-  };
+  }, []);
 
   useEffect(() => {
     loadTokens();
@@ -280,13 +286,17 @@ export function Settings() {
       return;
     }
 
-    // Build final scopes: base scopes + CA-specific scopes
-    const finalScopes = [...selectedScopes];
-    for (const [baseScope, caId] of Object.entries(caSpecificScopes)) {
-      if (caId && selectedScopes.includes(baseScope)) {
-        // Replace generic scope with CA-specific one
-        const idx = finalScopes.indexOf(baseScope);
-        if (idx !== -1) finalScopes[idx] = `${baseScope}:${caId}`;
+    // Build final scopes: base scopes + resource-specific scopes
+    const finalScopes: string[] = [];
+    for (const scope of selectedScopes) {
+      const resources = resourceScopes[scope];
+      if (resources && resources.length > 0) {
+        // Replace generic scope with resource-specific ones
+        for (const resId of resources) {
+          finalScopes.push(`${scope}:${resId}`);
+        }
+      } else {
+        finalScopes.push(scope);
       }
     }
 
@@ -327,7 +337,8 @@ export function Settings() {
   const openCreateDialog = () => {
     setNewTokenName("");
     setSelectedScopes([]);
-    setCaSpecificScopes({});
+    setResourceScopes({});
+    setTokenScopeSearch("");
     setCreatedSecret(null);
     setCreateDialogOpen(true);
   };
@@ -357,7 +368,7 @@ export function Settings() {
                 <p className="text-xs text-muted-foreground">{user.email}</p>
               </div>
               <Badge variant="secondary" className="text-xs capitalize">
-                {user.role}
+                {user.groupName}
               </Badge>
             </div>
           )}
@@ -403,7 +414,7 @@ export function Settings() {
               </div>
               <Switch checked={showUpdateNotifications} onChange={setShowUpdateNotifications} />
             </div>
-            {hasRole("admin", "operator") && (
+            {canUseAI && (
               <>
                 <AIBypassRow
                   label="AI: bypass create approvals"
@@ -490,7 +501,7 @@ export function Settings() {
         </div>
 
         {/* AI Assistant */}
-        {isAdmin && aiConfig && (
+        {canConfigAI && aiConfig && (
           <div className="border border-border bg-card">
             <div className="flex items-center justify-between p-4">
               <div>
@@ -609,16 +620,29 @@ export function Settings() {
                       />
                     </div>
                   </div>
-                  <div>
-                    <label className="text-xs text-muted-foreground">Max tool rounds</label>
-                    <Input
-                      className="h-8 text-sm mt-1"
-                      type="number"
-                      value={aiConfig.maxToolRounds}
-                      onChange={(e) =>
-                        setAiConfig({ ...aiConfig, maxToolRounds: Number(e.target.value) })
-                      }
-                    />
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-xs text-muted-foreground">Max tool rounds</label>
+                      <Input
+                        className="h-8 text-sm mt-1"
+                        type="number"
+                        value={aiConfig.maxToolRounds}
+                        onChange={(e) =>
+                          setAiConfig({ ...aiConfig, maxToolRounds: Number(e.target.value) })
+                        }
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground">Context tokens</label>
+                      <Input
+                        className="h-8 text-sm mt-1"
+                        type="number"
+                        value={aiConfig.maxContextTokens}
+                        onChange={(e) =>
+                          setAiConfig({ ...aiConfig, maxContextTokens: Number(e.target.value) })
+                        }
+                      />
+                    </div>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
@@ -780,6 +804,7 @@ export function Settings() {
                       rateLimitMax: aiConfig.rateLimitMax,
                       rateLimitWindowSeconds: aiConfig.rateLimitWindowSeconds,
                       maxToolRounds: aiConfig.maxToolRounds,
+                      maxContextTokens: aiConfig.maxContextTokens,
                       customSystemPrompt: aiConfig.customSystemPrompt,
                       webSearchProvider: aiConfig.webSearchProvider,
                       webSearchBaseUrl: aiConfig.webSearchBaseUrl,
@@ -807,7 +832,7 @@ export function Settings() {
         />
 
         {/* Housekeeping */}
-        {isAdmin && (
+        {canHousekeep && (
           <div className="border border-border bg-card">
             <div className="flex items-center justify-between border-b border-border p-4">
               <div>
@@ -1006,7 +1031,7 @@ export function Settings() {
                     Release notes
                   </Button>
                 )}
-                {isAdmin && (
+                {canUpdate && (
                   <Button
                     size="sm"
                     onClick={handleUpdate}
@@ -1032,7 +1057,7 @@ export function Settings() {
               <h2 className="font-semibold">About</h2>
               <p className="text-xs text-muted-foreground mt-0.5">Application info and updates</p>
             </div>
-            {isAdmin && (
+            {canUpdate && (
               <Button size="sm" onClick={handleCheckUpdate} disabled={isChecking}>
                 {isChecking ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -1188,7 +1213,7 @@ export function Settings() {
 
         {/* Create Token Dialog */}
         <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-          <DialogContent className="sm:max-w-lg">
+          <DialogContent className="sm:max-w-2xl">
             <DialogHeader>
               <DialogTitle>Create API Token</DialogTitle>
               <DialogDescription>Select granular permissions for this token</DialogDescription>
@@ -1233,75 +1258,37 @@ export function Settings() {
                     />
                   </div>
 
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Scopes</label>
-                    <div className="border border-border max-h-64 overflow-y-auto">
-                      {SCOPE_GROUPS.map((group, gi) => (
-                        <div key={group}>
-                          {gi > 0 && <Separator />}
-                          <div className="px-3 py-1.5 bg-muted/50">
-                            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                              {group}
-                            </p>
-                          </div>
-                          {TOKEN_SCOPES.filter((s) => s.group === group).map((scope) => {
-                            const isSelected = selectedScopes.includes(scope.value);
-                            const canLimitToCA =
-                              scope.value === "cert:issue" ||
-                              scope.value === "ca:create:intermediate";
-                            return (
-                              <div key={scope.value}>
-                                <label className="flex items-center gap-3 px-3 py-2 hover:bg-accent transition-colors cursor-pointer">
-                                  <input
-                                    type="checkbox"
-                                    checked={isSelected}
-                                    onChange={() => toggleScope(scope.value)}
-                                    className="form-checkbox"
-                                  />
-                                  <div className="flex-1 min-w-0">
-                                    <p className="text-sm">{scope.label}</p>
-                                    <p className="text-xs text-muted-foreground font-mono">
-                                      {scope.value}
-                                    </p>
-                                  </div>
-                                </label>
-                                {/* CA-specific restriction for cert:issue and ca:create:intermediate */}
-                                {canLimitToCA && isSelected && (cas || []).length > 0 && (
-                                  <div className="px-3 pb-2 pl-10">
-                                    <Select
-                                      value={caSpecificScopes[scope.value] || "all"}
-                                      onValueChange={(v) =>
-                                        setCaSpecificScopes((prev) => ({
-                                          ...prev,
-                                          [scope.value]: v === "all" ? "" : v,
-                                        }))
-                                      }
-                                    >
-                                      <SelectTrigger className="h-8 text-xs">
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="all">
-                                          All CAs (no restriction)
-                                        </SelectItem>
-                                        {(cas || []).map((ca) => (
-                                          <SelectItem key={ca.id} value={ca.id}>
-                                            {ca.commonName}
-                                          </SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ))}
+                  <div className="border border-border">
+                    <Input
+                      value={tokenScopeSearch}
+                      onChange={(e) => setTokenScopeSearch(e.target.value)}
+                      placeholder="Search scopes..."
+                      className="border-0 border-b border-border rounded-none h-9 text-sm focus-visible:ring-0"
+                    />
+                    <ScopeList
+                      scopes={TOKEN_SCOPES.filter((s) => {
+                        const userScopes = user?.scopes ?? [];
+                        return userScopes.some((us) => us === s.value || us.startsWith(s.value));
+                      })}
+                      search={tokenScopeSearch}
+                      selected={selectedScopes}
+                      onToggle={toggleScope}
+                      resources={resourceScopes}
+                      onToggleResource={(scope, caId) => {
+                        setResourceScopes((prev) => {
+                          const current = prev[scope] || [];
+                          const has = current.includes(caId);
+                          return { ...prev, [scope]: has ? current.filter((id) => id !== caId) : [...current, caId] };
+                        });
+                      }}
+                      cas={cas}
+                      restrictableScopes={["cert:issue", "ca:create:intermediate"]}
+                    />
+                    <div className="border-t border-border px-3 py-2">
+                      <p className="text-xs text-muted-foreground">
+                        {selectedScopes.length} scope{selectedScopes.length !== 1 ? "s" : ""} selected
+                      </p>
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      {selectedScopes.length} scope{selectedScopes.length !== 1 ? "s" : ""} selected
-                    </p>
                   </div>
                 </div>
                 <DialogFooter>

@@ -44,7 +44,13 @@ async function authenticateFromToken(token: string): Promise<User | null> {
   if (token.startsWith('gw_')) return null;
   const sessionService = container.resolve(SessionService);
   const session = await sessionService.getSession(token);
-  return session?.user ?? null;
+  if (!session?.user) return null;
+
+  // Always resolve live scopes from the group (not stale session cache)
+  const { AuthService } = await import('@/modules/auth/auth.service.js');
+  const authService = container.resolve(AuthService);
+  const freshUser = await authService.getUserById(session.user.id);
+  return freshUser;
 }
 
 async function checkRateLimit(userId: string): Promise<{ allowed: boolean; retryAfter: number }> {
@@ -134,7 +140,7 @@ export function createWSHandlers() {
       // Re-validate session on each message to catch role changes
       if (state.sessionToken) {
         const freshUser = await authenticateFromToken(state.sessionToken);
-        if (!freshUser || !canUseAI(freshUser.role)) {
+        if (!freshUser || !canUseAI(freshUser.scopes)) {
           send(ws, { type: 'auth_error', message: 'Session expired or role changed' });
           try {
             ws.close();
@@ -312,7 +318,7 @@ export async function authenticateWSConnection(ws: WSContext, token: string): Pr
     return false;
   }
 
-  if (!canUseAI(user.role)) {
+  if (!canUseAI(user.scopes)) {
     send(ws, { type: 'auth_error', message: 'Insufficient permissions to use AI assistant' });
     return false;
   }

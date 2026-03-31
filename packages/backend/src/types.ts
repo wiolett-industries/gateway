@@ -1,14 +1,15 @@
 import type { Context } from 'hono';
 
-export type UserRole = 'admin' | 'operator' | 'viewer' | 'blocked';
-
 export interface User {
   id: string;
   oidcSubject: string;
   email: string;
   name: string | null;
   avatarUrl: string | null;
-  role: UserRole;
+  groupId: string;
+  groupName: string;
+  scopes: string[];
+  isBlocked: boolean;
 }
 
 export interface SessionData {
@@ -24,7 +25,8 @@ export interface AppEnv {
   Variables: {
     user?: User;
     sessionId?: string;
-    tokenScopes?: string[];
+    effectiveScopes?: string[];
+    isTokenAuth?: boolean;
     requestId: string;
   };
 }
@@ -33,7 +35,8 @@ export type AuthenticatedContext = Context<AppEnv> & {
   var: {
     user: User;
     sessionId?: string;
-    tokenScopes?: string[];
+    effectiveScopes?: string[];
+    isTokenAuth?: boolean;
     requestId: string;
   };
 };

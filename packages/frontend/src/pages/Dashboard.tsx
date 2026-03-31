@@ -52,7 +52,7 @@ function StatCard({
 }
 
 export function Dashboard() {
-  const { hasRole } = useAuthStore();
+  const { hasScope } = useAuthStore();
   const { cas, fetchCAs, isLoading: casLoading } = useCAStore();
   const [activity, setActivity] = useState<AuditLogEntry[]>([]);
   const [stats, setStats] = useState<DashboardStats | null>(null);
@@ -63,9 +63,11 @@ export function Dashboard() {
   const showUpdateNotifications = useUIStore((s) => s.showUpdateNotifications);
 
   useEffect(() => {
-    fetchCAs();
+    if (hasScope("ca:read")) {
+      fetchCAs();
+    }
 
-    if (hasRole("admin")) {
+    if (hasScope("admin:audit")) {
       api
         .getAuditLog({ limit: 6 })
         .then((r) => setActivity(r.data || []))
@@ -89,50 +91,56 @@ export function Dashboard() {
       })
       .finally(() => setStatsLoading(false));
 
-    const cachedHealth = api.getCached<ProxyHost[]>("dashboard:health");
-    if (cachedHealth) setHealthHosts(cachedHealth);
-    api
-      .getHealthOverview()
-      .then((hosts) => {
-        api.setCache("dashboard:health", hosts || []);
-        setHealthHosts(hosts || []);
-      })
-      .catch(() => setHealthHosts([]));
+    if (hasScope("proxy:read")) {
+      const cachedHealth = api.getCached<ProxyHost[]>("dashboard:health");
+      if (cachedHealth) setHealthHosts(cachedHealth);
+      api
+        .getHealthOverview()
+        .then((hosts) => {
+          api.setCache("dashboard:health", hosts || []);
+          setHealthHosts(hosts || []);
+        })
+        .catch(() => setHealthHosts([]));
+    }
 
     // Fetch expiring SSL certs
-    api
-      .listSSLCertificates({ status: "active", limit: 100 })
-      .then((res) => {
-        const expiring = (res.data || [])
-          .filter((c) => c.notAfter && daysUntil(c.notAfter) <= 30 && daysUntil(c.notAfter) >= 0)
-          .map((c) => ({
-            id: c.id,
-            name: c.name,
-            type: "ssl" as const,
-            expiresAt: c.notAfter!,
-            daysLeft: daysUntil(c.notAfter!),
-          }));
-        setExpiringItems((prev) => [...prev.filter((i) => i.type !== "ssl"), ...expiring]);
-      })
-      .catch(() => {});
+    if (hasScope("ssl:read")) {
+      api
+        .listSSLCertificates({ status: "active", limit: 100 })
+        .then((res) => {
+          const expiring = (res.data || [])
+            .filter((c) => c.notAfter && daysUntil(c.notAfter) <= 30 && daysUntil(c.notAfter) >= 0)
+            .map((c) => ({
+              id: c.id,
+              name: c.name,
+              type: "ssl" as const,
+              expiresAt: c.notAfter!,
+              daysLeft: daysUntil(c.notAfter!),
+            }));
+          setExpiringItems((prev) => [...prev.filter((i) => i.type !== "ssl"), ...expiring]);
+        })
+        .catch(() => {});
+    }
 
     // Fetch expiring PKI certs
-    api
-      .listCertificates({ status: "active", limit: 100 })
-      .then((res) => {
-        const expiring = (res.data || [])
-          .filter((c) => daysUntil(c.notAfter) <= 30 && daysUntil(c.notAfter) >= 0)
-          .map((c) => ({
-            id: c.id,
-            name: c.commonName,
-            type: "pki" as const,
-            expiresAt: c.notAfter,
-            daysLeft: daysUntil(c.notAfter),
-          }));
-        setExpiringItems((prev) => [...prev.filter((i) => i.type !== "pki"), ...expiring]);
-      })
-      .catch(() => {});
-  }, [fetchCAs, hasRole]);
+    if (hasScope("cert:read")) {
+      api
+        .listCertificates({ status: "active", limit: 100 })
+        .then((res) => {
+          const expiring = (res.data || [])
+            .filter((c) => daysUntil(c.notAfter) <= 30 && daysUntil(c.notAfter) >= 0)
+            .map((c) => ({
+              id: c.id,
+              name: c.commonName,
+              type: "pki" as const,
+              expiresAt: c.notAfter,
+              daysLeft: daysUntil(c.notAfter),
+            }));
+          setExpiringItems((prev) => [...prev.filter((i) => i.type !== "pki"), ...expiring]);
+        })
+        .catch(() => {});
+    }
+  }, [fetchCAs, hasScope]);
 
   // Collect expiring CAs from store
   useEffect(() => {
@@ -173,11 +181,12 @@ export function Dashboard() {
 
   return (
     <PageTransition>
-      <div className="h-full overflow-y-auto p-6 space-y-6">
-        <div>
+      <div className="h-full overflow-y-auto p-6">
+        <div className="mb-4">
           <h1 className="text-2xl font-bold">Dashboard</h1>
           <p className="text-sm text-muted-foreground">Gateway and PKI infrastructure overview</p>
         </div>
+        <div className="space-y-6">
 
         {/* Update available */}
         {updateStatus?.updateAvailable && updateStatus.latestVersion && showUpdateNotifications && (
@@ -204,43 +213,55 @@ export function Dashboard() {
         )}
 
         {/* Stat cards */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard
-            title="Proxy Hosts"
-            value={displayStats.proxyHosts.total}
-            icon={Globe}
-            subtitle={`${displayStats.proxyHosts.online} online, ${displayStats.proxyHosts.offline} offline`}
-            href="/proxy-hosts"
-          />
-          <StatCard
-            title="SSL Certificates"
-            value={displayStats.sslCertificates.total}
-            icon={Lock}
-            subtitle={
-              displayStats.sslCertificates.expiringSoon > 0
-                ? `${displayStats.sslCertificates.expiringSoon} expiring soon`
-                : "All certificates valid"
-            }
-            href="/ssl-certificates"
-          />
-          <StatCard
-            title="PKI Certificates"
-            value={displayStats.pkiCertificates.active}
-            icon={Award}
-            subtitle={`${displayStats.pkiCertificates.total} total`}
-            href="/certificates"
-          />
-          <StatCard
-            title="Certificate Authorities"
-            value={displayStats.cas.active}
-            icon={Shield}
-            subtitle={`${displayStats.cas.total} total`}
-            href="/cas"
-          />
-        </div>
+        {(hasScope("proxy:read") || hasScope("ssl:read") || hasScope("cert:read") || hasScope("ca:read")) && (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {hasScope("proxy:read") && (
+              <StatCard
+                title="Proxy Hosts"
+                value={displayStats.proxyHosts.total}
+                icon={Globe}
+                subtitle={`${displayStats.proxyHosts.online} online, ${displayStats.proxyHosts.offline} offline`}
+                href="/proxy-hosts"
+              />
+            )}
+            {hasScope("ssl:read") && (
+              <StatCard
+                title="SSL Certificates"
+                value={displayStats.sslCertificates.total}
+                icon={Lock}
+                subtitle={
+                  displayStats.sslCertificates.expiringSoon > 0
+                    ? `${displayStats.sslCertificates.expiringSoon} expiring soon`
+                    : "All certificates valid"
+                }
+                href="/ssl-certificates"
+              />
+            )}
+            {hasScope("cert:read") && (
+              <StatCard
+                title="PKI Certificates"
+                value={displayStats.pkiCertificates.active}
+                icon={Award}
+                subtitle={`${displayStats.pkiCertificates.total} total`}
+                href="/certificates"
+              />
+            )}
+            {hasScope("ca:read") && (
+              <StatCard
+                title="Certificate Authorities"
+                value={displayStats.cas.active}
+                icon={Shield}
+                subtitle={`${displayStats.cas.total} total`}
+                href="/cas"
+              />
+            )}
+          </div>
+        )}
 
         {/* Expiring Soon */}
-        {expiringItems.length > 0 && (
+        {expiringItems.filter((i) =>
+          i.type === "ssl" ? hasScope("ssl:read") : i.type === "pki" ? hasScope("cert:read") : hasScope("ca:read")
+        ).length > 0 && (
           <div className="border bg-card" style={{ borderColor: "rgb(234 179 8 / 0.6)" }}>
             <div className="flex items-center gap-2 border-b border-border p-4">
               <h2 className="font-semibold" style={{ color: "rgb(234 179 8)" }}>
@@ -251,11 +272,16 @@ export function Dashboard() {
                 className="ml-auto"
                 style={{ backgroundColor: "rgb(234 179 8)", color: "#111" }}
               >
-                {expiringItems.length}
+                {expiringItems.filter((i) =>
+                  i.type === "ssl" ? hasScope("ssl:read") : i.type === "pki" ? hasScope("cert:read") : hasScope("ca:read")
+                ).length}
               </Badge>
             </div>
             <div className="divide-y divide-border">
               {[...expiringItems]
+                .filter((i) =>
+                  i.type === "ssl" ? hasScope("ssl:read") : i.type === "pki" ? hasScope("cert:read") : hasScope("ca:read")
+                )
                 .sort((a, b) => a.daysLeft - b.daysLeft)
                 .map((item) => (
                   <Link
@@ -293,7 +319,7 @@ export function Dashboard() {
         )}
 
         {/* Health Overview */}
-        <div className="border border-border bg-card">
+        {hasScope("proxy:read") && <div className="border border-border bg-card">
           <div className="flex items-center justify-between border-b border-border p-4">
             <h2 className="font-semibold">Health Overview</h2>
             <Link to="/proxy-hosts" className="text-sm text-muted-foreground hover:text-foreground">
@@ -338,15 +364,17 @@ export function Dashboard() {
           ) : (
             <div className="p-8 text-center text-sm text-muted-foreground">
               No proxy hosts configured.{" "}
-              <Link to="/proxy-hosts/new" className="text-foreground hover:underline">
-                Add one
-              </Link>
+              {hasScope("proxy:manage") && (
+                <Link to="/proxy-hosts/new" className="text-foreground hover:underline">
+                  Add one
+                </Link>
+              )}
             </div>
           )}
-        </div>
+        </div>}
 
         {/* Certificate Authorities */}
-        <div className="border border-border bg-card">
+        {hasScope("ca:read") && <div className="border border-border bg-card">
           <div className="flex items-center justify-between border-b border-border p-4">
             <h2 className="font-semibold">Certificate Authorities</h2>
             <Link to="/cas" className="text-sm text-muted-foreground hover:text-foreground">
@@ -376,18 +404,20 @@ export function Dashboard() {
           ) : (
             <div className="p-8 text-center text-sm text-muted-foreground">
               No certificate authorities configured.{" "}
-              <Link to="/cas" className="text-foreground hover:underline">
-                Create one
-              </Link>
+              {hasScope("ca:create:root") && (
+                <Link to="/cas" className="text-foreground hover:underline">
+                  Create one
+                </Link>
+              )}
             </div>
           )}
-        </div>
+        </div>}
 
         {/* Recent Activity */}
         <div className="border border-border bg-card">
           <div className="flex items-center justify-between border-b border-border p-4">
             <h2 className="font-semibold">Recent Activity</h2>
-            {hasRole("admin") && (
+            {hasScope("admin:audit") && (
               <Link to="/audit" className="text-sm text-muted-foreground hover:text-foreground">
                 View all
               </Link>
@@ -429,11 +459,12 @@ export function Dashboard() {
             </div>
           ) : (
             <div className="p-8 text-center text-sm text-muted-foreground">
-              {hasRole("admin")
+              {hasScope("admin:audit")
                 ? "No recent activity"
                 : "Activity log is available to administrators"}
             </div>
           )}
+        </div>
         </div>
       </div>
     </PageTransition>

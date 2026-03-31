@@ -1,23 +1,22 @@
 import { z } from 'zod';
+import { ALL_SCOPES, isValidBaseScope } from '@/lib/scopes.js';
 
-export const AVAILABLE_SCOPES = [
-  'ca:read',
-  'ca:create:root',
-  'ca:create:intermediate',
-  'ca:revoke',
-  'cert:read',
-  'cert:issue',
-  'cert:revoke',
-  'cert:export',
-  'template:read',
-  'template:manage',
-  'admin:users',
-  'admin:audit',
-] as const;
+export const AVAILABLE_SCOPES = ALL_SCOPES;
 
 export const CreateTokenSchema = z.object({
   name: z.string().min(1).max(255),
-  scopes: z.array(z.enum(AVAILABLE_SCOPES)).min(1, 'At least one scope is required'),
+  scopes: z
+    .array(
+      z.string().regex(
+        /^[a-z][a-z0-9-]*:[a-z][a-z0-9-]*(:[a-zA-Z0-9-]+)*$/,
+        'Invalid scope format'
+      )
+    )
+    .min(1, 'At least one scope is required')
+    .refine(
+      (scopes) => scopes.every(isValidBaseScope),
+      'One or more scopes have an unrecognized base scope'
+    ),
 });
 
 export const TokenResponseSchema = z.object({
@@ -32,13 +31,6 @@ export const TokenResponseSchema = z.object({
 export const CreateTokenResponseSchema = TokenResponseSchema.extend({
   token: z.string(),
 });
-
-export const ROLE_ALLOWED_SCOPES: Record<string, readonly string[]> = {
-  admin: AVAILABLE_SCOPES,
-  operator: ['ca:read', 'cert:read', 'cert:issue', 'cert:revoke', 'cert:export', 'template:read'],
-  viewer: ['ca:read', 'cert:read', 'template:read'],
-  blocked: [],
-};
 
 export type CreateTokenInput = z.infer<typeof CreateTokenSchema>;
 export type TokenResponse = z.infer<typeof TokenResponseSchema>;

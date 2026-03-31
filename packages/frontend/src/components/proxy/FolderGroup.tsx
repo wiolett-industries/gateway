@@ -20,7 +20,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { FolderTreeNode, UserRole } from "@/types";
+import type { FolderTreeNode } from "@/types";
 import { InlineFolderEditor } from "./InlineFolderEditor";
 import { ProxyHostRow } from "./ProxyHostRow";
 
@@ -37,7 +37,7 @@ interface FolderGroupProps {
   onMoveHostToFolder: (hostId: string) => void;
   expandedFolderIds: Set<string>;
   onToggleFolder: (id: string) => void;
-  hasRole: (...roles: UserRole[]) => boolean;
+  canManage: boolean;
   colGroup: React.ReactNode;
 }
 
@@ -62,7 +62,7 @@ export function FolderGroup({
   onMoveHostToFolder,
   expandedFolderIds,
   onToggleFolder,
-  hasRole,
+  canManage,
   colGroup,
 }: FolderGroupProps) {
   const [isRenaming, setIsRenaming] = useState(false);
@@ -109,7 +109,7 @@ export function FolderGroup({
           {totalHosts}
         </Badge>
 
-        {hasRole("admin", "operator") && !isRenaming && (
+        {canManage && !isRenaming && (
           <div className="ml-auto" onClick={(e) => e.stopPropagation()}>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -181,7 +181,7 @@ export function FolderGroup({
                 onMoveHostToFolder={onMoveHostToFolder}
                 expandedFolderIds={expandedFolderIds}
                 onToggleFolder={onToggleFolder}
-                hasRole={hasRole}
+                canManage={canManage}
                 colGroup={colGroup}
               />
             ))}

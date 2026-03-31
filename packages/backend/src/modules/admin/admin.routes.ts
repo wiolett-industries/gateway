@@ -1,20 +1,24 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { z } from 'zod';
 import { container } from '@/container.js';
+import { canManageUser, isScopeSubset } from '@/lib/permissions.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
-import { authMiddleware, rbacMiddleware, requireScope } from '@/modules/auth/auth.middleware.js';
+import { authMiddleware, requireScope } from '@/modules/auth/auth.middleware.js';
 import { AuthService } from '@/modules/auth/auth.service.js';
+import { GroupService } from '@/modules/groups/group.service.js';
 import { SessionService } from '@/services/session.service.js';
 import type { AppEnv } from '@/types.js';
 
 export const adminRoutes = new OpenAPIHono<AppEnv>();
 
-// All admin routes require admin role
 adminRoutes.use('*', authMiddleware);
-adminRoutes.use('*', rbacMiddleware('admin'));
 
-const UpdateRoleSchema = z.object({
-  role: z.enum(['admin', 'operator', 'viewer', 'blocked']),
+const UpdateGroupSchema = z.object({
+  groupId: z.string().uuid(),
+});
+
+const UpdateBlockSchema = z.object({
+  blocked: z.boolean(),
 });
 
 // List all users
@@ -24,31 +28,52 @@ adminRoutes.get('/users', requireScope('admin:users'), async (c) => {
   return c.json(userList);
 });
 
-// Update user role
-adminRoutes.patch('/users/:id/role', requireScope('admin:users'), async (c) => {
+// Update user group
+adminRoutes.patch('/users/:id/group', requireScope('admin:users'), async (c) => {
   const authService = container.resolve(AuthService);
+  const groupService = container.resolve(GroupService);
   const auditService = container.resolve(AuditService);
   const currentUser = c.get('user')!;
+  const actorScopes = c.get('effectiveScopes') || [];
   const userId = c.req.param('id');
   const body = await c.req.json();
-  const { role } = UpdateRoleSchema.parse(body);
+  const { groupId } = UpdateGroupSchema.parse(body);
 
   if (userId === currentUser.id) {
-    return c.json({ code: 'SELF_DEMOTION', message: 'Cannot change your own role' }, 400);
+    return c.json({ code: 'SELF_DEMOTION', message: 'Cannot change your own group' }, 400);
   }
 
-  const updatedUser = await authService.updateUserRole(userId, role);
+  // Check privilege boundary against target's CURRENT scopes
+  const targetUser = await authService.getUserById(userId);
+  if (!targetUser) {
+    return c.json({ code: 'NOT_FOUND', message: 'User not found' }, 404);
+  }
+  const denyReason = canManageUser(actorScopes, targetUser.scopes);
+  if (denyReason) {
+    return c.json({ code: 'PRIVILEGE_BOUNDARY', message: denyReason }, 403);
+  }
 
-  // Destroy all sessions on role change to force re-login with updated role
+  // Check privilege boundary against DESTINATION group's scopes
+  const destGroup = await groupService.getGroup(groupId);
+  if (!isScopeSubset(destGroup.scopes as string[], actorScopes)) {
+    return c.json(
+      { code: 'PRIVILEGE_BOUNDARY', message: 'Cannot assign a group with permissions you do not possess' },
+      403,
+    );
+  }
+
+  const updatedUser = await authService.updateUserGroup(userId, groupId);
+
+  // Destroy all sessions so the user picks up new scopes on next login
   const sessionService = container.resolve(SessionService);
   await sessionService.destroyAllUserSessions(userId);
 
   await auditService.log({
     userId: currentUser.id,
-    action: 'user.role_update',
+    action: 'user.group_change',
     resourceType: 'user',
     resourceId: userId,
-    details: { newRole: role },
+    details: { newGroupId: groupId },
     ipAddress: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || c.req.header('x-real-ip'),
     userAgent: c.req.header('user-agent'),
   });
@@ -56,15 +81,69 @@ adminRoutes.patch('/users/:id/role', requireScope('admin:users'), async (c) => {
   return c.json(updatedUser);
 });
 
+// Block / unblock user
+adminRoutes.patch('/users/:id/block', requireScope('admin:users'), async (c) => {
+  const authService = container.resolve(AuthService);
+  const auditService = container.resolve(AuditService);
+  const currentUser = c.get('user')!;
+  const actorScopes = c.get('effectiveScopes') || [];
+  const userId = c.req.param('id');
+  const body = await c.req.json();
+  const { blocked } = UpdateBlockSchema.parse(body);
+
+  if (userId === currentUser.id) {
+    return c.json({ code: 'SELF_BLOCK', message: 'Cannot block yourself' }, 400);
+  }
+
+  // Check privilege boundary
+  const targetUser = await authService.getUserById(userId);
+  if (!targetUser) {
+    return c.json({ code: 'NOT_FOUND', message: 'User not found' }, 404);
+  }
+  const denyReason = canManageUser(actorScopes, targetUser.scopes);
+  if (denyReason) {
+    return c.json({ code: 'PRIVILEGE_BOUNDARY', message: denyReason }, 403);
+  }
+
+  if (blocked) {
+    await authService.blockUser(userId);
+  } else {
+    await authService.unblockUser(userId);
+  }
+
+  await auditService.log({
+    userId: currentUser.id,
+    action: blocked ? 'user.block' : 'user.unblock',
+    resourceType: 'user',
+    resourceId: userId,
+    details: { blocked },
+    ipAddress: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || c.req.header('x-real-ip'),
+    userAgent: c.req.header('user-agent'),
+  });
+
+  return c.json({ message: blocked ? 'User blocked' : 'User unblocked' });
+});
+
 // Delete user
 adminRoutes.delete('/users/:id', requireScope('admin:users'), async (c) => {
   const authService = container.resolve(AuthService);
   const auditService = container.resolve(AuditService);
   const currentUser = c.get('user')!;
+  const actorScopes = c.get('effectiveScopes') || [];
   const userId = c.req.param('id');
 
   if (userId === currentUser.id) {
     return c.json({ code: 'SELF_DELETE', message: 'Cannot delete your own account' }, 400);
+  }
+
+  // Check privilege boundary
+  const targetUser = await authService.getUserById(userId);
+  if (!targetUser) {
+    return c.json({ code: 'NOT_FOUND', message: 'User not found' }, 404);
+  }
+  const denyReason = canManageUser(actorScopes, targetUser.scopes);
+  if (denyReason) {
+    return c.json({ code: 'PRIVILEGE_BOUNDARY', message: denyReason }, 403);
   }
 
   await authService.deleteUser(userId);

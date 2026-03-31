@@ -45,7 +45,7 @@ interface CommandPaletteProps {
 export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
-  const { hasRole, logout } = useAuthStore();
+  const { hasScope, logout } = useAuthStore();
   const { cas } = useCAStore();
   const { setTheme, theme, toggleSidebar, sidebarOpen } = useUIStore();
 
@@ -78,7 +78,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         <CommandEmpty>No results found.</CommandEmpty>
 
         {/* CAs */}
-        {(cas || []).length > 0 && (
+        {hasScope("ca:read") && (cas || []).length > 0 && (
           <>
             <CommandGroup heading="Certificate Authorities">
               {(cas || []).slice(0, 5).map((ca) => (
@@ -105,75 +105,105 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
           </CommandItem>
         </CommandGroup>
 
-        <CommandSeparator />
+        {(hasScope("proxy:read") || hasScope("ssl:read")) && (
+          <>
+            <CommandSeparator />
+            <CommandGroup heading="Reverse Proxy">
+              {hasScope("proxy:read") && (
+                <CommandItem onSelect={() => handleSelect(() => navigate("/proxy-hosts"))}>
+                  <Globe className="mr-2 h-4 w-4" />
+                  Proxy Hosts
+                  <CommandShortcut>⌘2</CommandShortcut>
+                </CommandItem>
+              )}
+              {hasScope("proxy:read") && (
+                <CommandItem onSelect={() => handleSelect(() => navigate("/domains"))}>
+                  <Globe2 className="mr-2 h-4 w-4" />
+                  Domains
+                  <CommandShortcut>⌘3</CommandShortcut>
+                </CommandItem>
+              )}
+              {hasScope("proxy:read") && (
+                <CommandItem onSelect={() => handleSelect(() => navigate("/nginx-templates"))}>
+                  <FileCode className="mr-2 h-4 w-4" />
+                  Config Templates
+                  <CommandShortcut>⌘4</CommandShortcut>
+                </CommandItem>
+              )}
+              {hasScope("ssl:read") && (
+                <CommandItem onSelect={() => handleSelect(() => navigate("/ssl-certificates"))}>
+                  <Lock className="mr-2 h-4 w-4" />
+                  SSL Certificates
+                  <CommandShortcut>⌘5</CommandShortcut>
+                </CommandItem>
+              )}
+            </CommandGroup>
+          </>
+        )}
 
-        <CommandGroup heading="Reverse Proxy">
-          <CommandItem onSelect={() => handleSelect(() => navigate("/proxy-hosts"))}>
-            <Globe className="mr-2 h-4 w-4" />
-            Proxy Hosts
-            <CommandShortcut>⌘2</CommandShortcut>
-          </CommandItem>
-          <CommandItem onSelect={() => handleSelect(() => navigate("/domains"))}>
-            <Globe2 className="mr-2 h-4 w-4" />
-            Domains
-            <CommandShortcut>⌘3</CommandShortcut>
-          </CommandItem>
-          <CommandItem onSelect={() => handleSelect(() => navigate("/nginx-templates"))}>
-            <FileCode className="mr-2 h-4 w-4" />
-            Config Templates
-            <CommandShortcut>⌘4</CommandShortcut>
-          </CommandItem>
-          <CommandItem onSelect={() => handleSelect(() => navigate("/ssl-certificates"))}>
-            <Lock className="mr-2 h-4 w-4" />
-            SSL Certificates
-            <CommandShortcut>⌘5</CommandShortcut>
-          </CommandItem>
-        </CommandGroup>
-
-        <CommandSeparator />
-
-        <CommandGroup heading="PKI">
-          <CommandItem onSelect={() => handleSelect(() => navigate("/cas"))}>
-            <ShieldCheck className="mr-2 h-4 w-4" />
-            Authorities
-            <CommandShortcut>⌘6</CommandShortcut>
-          </CommandItem>
-          <CommandItem onSelect={() => handleSelect(() => navigate("/certificates"))}>
-            <FileText className="mr-2 h-4 w-4" />
-            Certificates
-            <CommandShortcut>⌘7</CommandShortcut>
-          </CommandItem>
-          <CommandItem onSelect={() => handleSelect(() => navigate("/templates"))}>
-            <Award className="mr-2 h-4 w-4" />
-            Templates
-            <CommandShortcut>⌘8</CommandShortcut>
-          </CommandItem>
-        </CommandGroup>
+        {(hasScope("ca:read") || hasScope("cert:read") || hasScope("template:read")) && (
+          <>
+            <CommandSeparator />
+            <CommandGroup heading="PKI">
+              {hasScope("ca:read") && (
+                <CommandItem onSelect={() => handleSelect(() => navigate("/cas"))}>
+                  <ShieldCheck className="mr-2 h-4 w-4" />
+                  Authorities
+                  <CommandShortcut>⌘6</CommandShortcut>
+                </CommandItem>
+              )}
+              {hasScope("cert:read") && (
+                <CommandItem onSelect={() => handleSelect(() => navigate("/certificates"))}>
+                  <FileText className="mr-2 h-4 w-4" />
+                  Certificates
+                  <CommandShortcut>⌘7</CommandShortcut>
+                </CommandItem>
+              )}
+              {hasScope("template:read") && (
+                <CommandItem onSelect={() => handleSelect(() => navigate("/templates"))}>
+                  <Award className="mr-2 h-4 w-4" />
+                  Templates
+                  <CommandShortcut>⌘8</CommandShortcut>
+                </CommandItem>
+              )}
+            </CommandGroup>
+          </>
+        )}
 
         <CommandSeparator />
 
         <CommandGroup heading="Management">
-          <CommandItem onSelect={() => handleSelect(() => navigate("/nginx"))}>
-            <Server className="mr-2 h-4 w-4" />
-            Nginx
-            <CommandShortcut>⌘9</CommandShortcut>
-          </CommandItem>
-          <CommandItem onSelect={() => handleSelect(() => navigate("/access-lists"))}>
-            <ShieldAlert className="mr-2 h-4 w-4" />
-            Access Lists
-            <CommandShortcut>⌘0</CommandShortcut>
-          </CommandItem>
-          {hasRole("admin") && (
-            <>
-              <CommandItem onSelect={() => handleSelect(() => navigate("/audit"))}>
-                <ScrollText className="mr-2 h-4 w-4" />
-                Audit Log
-              </CommandItem>
-              <CommandItem onSelect={() => handleSelect(() => navigate("/admin/users"))}>
-                <Users className="mr-2 h-4 w-4" />
-                Users
-              </CommandItem>
-            </>
+          {hasScope("proxy:manage") && (
+            <CommandItem onSelect={() => handleSelect(() => navigate("/nginx"))}>
+              <Server className="mr-2 h-4 w-4" />
+              Nginx
+              <CommandShortcut>⌘9</CommandShortcut>
+            </CommandItem>
+          )}
+          {hasScope("access-list:read") && (
+            <CommandItem onSelect={() => handleSelect(() => navigate("/access-lists"))}>
+              <ShieldAlert className="mr-2 h-4 w-4" />
+              Access Lists
+              <CommandShortcut>⌘0</CommandShortcut>
+            </CommandItem>
+          )}
+          {hasScope("admin:audit") && (
+            <CommandItem onSelect={() => handleSelect(() => navigate("/audit"))}>
+              <ScrollText className="mr-2 h-4 w-4" />
+              Audit Log
+            </CommandItem>
+          )}
+          {hasScope("admin:users") && (
+            <CommandItem onSelect={() => handleSelect(() => navigate("/admin/users"))}>
+              <Users className="mr-2 h-4 w-4" />
+              Users
+            </CommandItem>
+          )}
+          {hasScope("admin:groups") && (
+            <CommandItem onSelect={() => handleSelect(() => navigate("/admin/groups"))}>
+              <Shield className="mr-2 h-4 w-4" />
+              Groups
+            </CommandItem>
           )}
           <CommandItem onSelect={() => handleSelect(() => navigate("/settings"))}>
             <Settings className="mr-2 h-4 w-4" />
@@ -191,24 +221,28 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
             {sidebarOpen ? "Hide sidebar" : "Show sidebar"}
             <CommandShortcut>⌘J</CommandShortcut>
           </CommandItem>
-          <CommandItem onSelect={() => handleSelect(() => navigate("/proxy-hosts/new"))}>
-            <Plus className="mr-2 h-4 w-4" />
-            New Proxy Host
-            <CommandShortcut>⌃H</CommandShortcut>
-          </CommandItem>
-          <CommandItem
-            onSelect={() =>
-              handleSelect(() => {
-                navigate("/ssl-certificates");
-                useUIStore.getState().openModal("createSSLCert");
-              })
-            }
-          >
-            <Plus className="mr-2 h-4 w-4" />
-            New SSL Certificate
-            <CommandShortcut>⌃S</CommandShortcut>
-          </CommandItem>
-          {hasRole("admin") && (
+          {hasScope("proxy:manage") && (
+            <CommandItem onSelect={() => handleSelect(() => navigate("/proxy-hosts/new"))}>
+              <Plus className="mr-2 h-4 w-4" />
+              New Proxy Host
+              <CommandShortcut>⌃H</CommandShortcut>
+            </CommandItem>
+          )}
+          {hasScope("ssl:manage") && (
+            <CommandItem
+              onSelect={() =>
+                handleSelect(() => {
+                  navigate("/ssl-certificates");
+                  useUIStore.getState().openModal("createSSLCert");
+                })
+              }
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              New SSL Certificate
+              <CommandShortcut>⌃S</CommandShortcut>
+            </CommandItem>
+          )}
+          {hasScope("ca:create:root") && (
             <CommandItem
               onSelect={() =>
                 handleSelect(() => {

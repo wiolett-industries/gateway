@@ -21,6 +21,7 @@ import { auditRoutes } from '@/modules/audit/audit.routes.js';
 import { requireActiveUser } from '@/modules/auth/auth.middleware.js';
 import { authRoutes } from '@/modules/auth/auth.routes.js';
 import { domainRoutes } from '@/modules/domains/domain.routes.js';
+import { groupRoutes } from '@/modules/groups/group.routes.js';
 import { housekeepingRoutes } from '@/modules/housekeeping/housekeeping.routes.js';
 import { monitoringRoutes } from '@/modules/monitoring/monitoring.routes.js';
 import { caRoutes } from '@/modules/pki/ca.routes.js';
@@ -101,6 +102,7 @@ export function createApp() {
   app.route('/api/audit', auditRoutes);
   app.route('/api/alerts', alertRoutes);
   app.route('/api/tokens', tokensRoutes);
+  app.route('/api/admin/groups', groupRoutes);
   app.route('/api/admin', adminRoutes);
   app.route('/api/proxy-hosts', proxyRoutes);
   app.route('/api/proxy-host-folders', folderRoutes);

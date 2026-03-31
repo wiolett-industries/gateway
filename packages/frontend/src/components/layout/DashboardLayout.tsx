@@ -47,6 +47,7 @@ import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAIStore } from "@/stores/ai";
 import { useAuthStore } from "@/stores/auth";
+import { AI_SCOPE } from "@/types";
 import { useUIStore } from "@/stores/ui";
 import { useUpdateStore } from "@/stores/update";
 
@@ -65,6 +66,7 @@ interface NavItem {
   name: string;
   href: string;
   icon: React.ElementType;
+  scope?: string; // if set, item only shows when user has this scope
 }
 
 interface NavGroup {
@@ -80,34 +82,35 @@ const navigationGroups: NavGroup[] = [
   {
     label: "Reverse Proxy",
     items: [
-      { name: "Proxy Hosts", href: "/proxy-hosts", icon: Globe },
-      { name: "Domains", href: "/domains", icon: Globe2 },
-      { name: "Config Templates", href: "/nginx-templates", icon: FileCode },
-      { name: "SSL Certificates", href: "/ssl-certificates", icon: Lock },
+      { name: "Proxy Hosts", href: "/proxy-hosts", icon: Globe, scope: "proxy:read" },
+      { name: "Domains", href: "/domains", icon: Globe2, scope: "proxy:read" },
+      { name: "Config Templates", href: "/nginx-templates", icon: FileCode, scope: "proxy:read" },
+      { name: "SSL Certificates", href: "/ssl-certificates", icon: Lock, scope: "ssl:read" },
     ],
   },
   {
     label: "PKI",
     items: [
-      { name: "Authorities", href: "/cas", icon: ShieldCheck },
-      { name: "Certificates", href: "/certificates", icon: FileText },
-      { name: "Templates", href: "/templates", icon: Award },
+      { name: "Authorities", href: "/cas", icon: ShieldCheck, scope: "ca:read" },
+      { name: "Certificates", href: "/certificates", icon: FileText, scope: "cert:read" },
+      { name: "Templates", href: "/templates", icon: Award, scope: "template:read" },
     ],
   },
   {
     label: "Management",
     items: [
-      { name: "Access Lists", href: "/access-lists", icon: ShieldAlert },
+      { name: "Access Lists", href: "/access-lists", icon: ShieldAlert, scope: "access-list:read" },
       { name: "Settings", href: "/settings", icon: Settings },
     ],
   },
 ];
 
-const nginxNavItem: NavItem = { name: "Nginx", href: "/nginx", icon: Server };
+const nginxNavItem: NavItem = { name: "Nginx", href: "/nginx", icon: Server, scope: "proxy:manage" };
 
 const adminNavigation: NavItem[] = [
-  { name: "Audit Log", href: "/audit", icon: ScrollText },
-  { name: "Users", href: "/admin/users", icon: Users },
+  { name: "Audit Log", href: "/audit", icon: ScrollText, scope: "admin:audit" },
+  { name: "Users", href: "/admin/users", icon: Users, scope: "admin:users" },
+  { name: "Groups", href: "/admin/groups", icon: ShieldCheck, scope: "admin:groups" },
 ];
 
 // Flat list computed inside SidebarContent to include dynamic items
@@ -133,7 +136,7 @@ function SidebarContent({
 }: SidebarContentProps) {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, hasRole, logout } = useAuthStore();
+  const { user, hasScope, logout } = useAuthStore();
   const { sidebarOpen, toggleSidebar, setCommandPaletteOpen: openPalette } = useUIStore();
 
   const [nginxAvailable, setNginxAvailable] = useState(false);
@@ -156,25 +159,32 @@ function SidebarContent({
     navigate("/login");
   };
 
-  const isAdmin = hasRole("admin");
   const isExpanded = alwaysExpanded || sidebarOpen;
 
-  // Build nav groups with conditional Nginx item
-  const effectiveGroups = navigationGroups.map((group) => {
-    if (group.label === "Management" && nginxAvailable && hasRole("admin", "operator")) {
-      return { ...group, items: [nginxNavItem, ...group.items] };
-    }
-    return group;
-  });
+  // Build nav groups with conditional Nginx item and scope filtering
+  const effectiveGroups = navigationGroups
+    .map((group) => {
+      let items = group.items;
+      if (group.label === "Management" && nginxAvailable) {
+        items = [nginxNavItem, ...items];
+      }
+      return {
+        ...group,
+        items: items.filter((item) => !item.scope || hasScope(item.scope)),
+      };
+    })
+    .filter((group) => group.items.length > 0);
 
-  const allNavItems = effectiveGroups.flatMap((g) => g.items);
+  const filteredAdminNav = adminNavigation.filter((item) => !item.scope || hasScope(item.scope));
+
+  const allNavItems = [...effectiveGroups.flatMap((g) => g.items), ...filteredAdminNav];
 
   const AccountDropdownContent = () => (
     <>
       <div className="px-2 py-1.5">
         <p className="text-sm font-medium">{user?.name || "User"}</p>
         <p className="text-xs text-muted-foreground">{user?.email}</p>
-        <p className="text-xs text-muted-foreground capitalize mt-0.5">{user?.role}</p>
+        <p className="text-xs text-muted-foreground capitalize mt-0.5">{user?.groupName}</p>
       </div>
       <DropdownMenuSeparator />
       <DropdownMenuItem
@@ -243,9 +253,9 @@ function SidebarContent({
 
             <div className="flex-1" />
 
-            {hasRole("admin", "operator") && <AIButton iconOnly />}
+            {hasScope(AI_SCOPE) && <AIButton iconOnly />}
 
-            {updateAvailable && isAdmin && showUpdateNotifications && (
+            {updateAvailable && hasScope("admin:update") && showUpdateNotifications && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
@@ -309,7 +319,7 @@ function SidebarContent({
               </span>
 
               <div className="flex items-center gap-0.5">
-                {hasRole("admin", "operator") && <AIButton />}
+                {hasScope(AI_SCOPE) && <AIButton />}
                 {alwaysExpanded ? (
                   <Button variant="ghost" size="icon" className="h-10 w-10" onClick={onNavigate}>
                     <X className="h-4 w-4" />
@@ -382,14 +392,14 @@ function SidebarContent({
               ))}
 
               {/* Admin navigation */}
-              {isAdmin && (
+              {filteredAdminNav.length > 0 && (
                 <>
                   <Separator className="my-1" />
                   <nav className="space-y-0.5 p-2">
                     <p className="px-3 py-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
                       Administration
                     </p>
-                    {adminNavigation.map((item) => {
+                    {filteredAdminNav.map((item) => {
                       const isActive = location.pathname === item.href;
                       return (
                         <Link
@@ -416,7 +426,7 @@ function SidebarContent({
             <Separator />
 
             {/* Update notification */}
-            {updateAvailable && isAdmin && showUpdateNotifications && (
+            {updateAvailable && hasScope("admin:update") && showUpdateNotifications && (
               <>
                 <div className="px-2 py-2">
                   <Link
@@ -517,7 +527,7 @@ export function DashboardLayout() {
     const checkAuth = async () => {
       try {
         const user = await api.getCurrentUser();
-        if (user.role === "blocked") {
+        if (user.isBlocked) {
           setUser(user);
           setLoading(false);
           navigate("/blocked");
@@ -525,11 +535,12 @@ export function DashboardLayout() {
         }
         setUser(user);
         // Prefetch data for all pages in background
-        api.prefetchAll(user.role === "admin");
+        const hasAdminScopes = user.scopes?.some((s: string) => s.startsWith("admin:")) ?? false;
+        api.prefetchAll(hasAdminScopes);
         // Fetch update status into global store
-        if (user.role === "admin") useUpdateStore.getState().fetchStatus();
-        // Check AI availability for operator+ roles
-        if (user.role === "admin" || user.role === "operator") {
+        if (user.scopes?.includes("admin:update")) useUpdateStore.getState().fetchStatus();
+        // Check AI availability
+        if (user.scopes?.includes(AI_SCOPE)) {
           api
             .getAIStatus()
             .then((s) => useAIStore.getState().setEnabled(s.enabled))
@@ -572,9 +583,9 @@ export function DashboardLayout() {
       }
       if (mod && e.key === "i") {
         e.preventDefault();
-        const { hasRole } = useAuthStore.getState();
+        const { hasScope: checkScope } = useAuthStore.getState();
         const aiEnabled = useAIStore.getState().isEnabled;
-        if (hasRole("admin", "operator") && aiEnabled !== false) {
+        if (checkScope(AI_SCOPE) && aiEnabled !== false) {
           useUIStore.getState().toggleAIPanel();
         }
       }
@@ -658,7 +669,7 @@ export function DashboardLayout() {
                 <img src="/android-chrome-192x192.png" alt="Gateway" className="h-5 w-5" />
                 Gateway
               </span>
-              {useAuthStore.getState().hasRole("admin", "operator") && <AIButton />}
+              {useAuthStore.getState().hasScope(AI_SCOPE) && <AIButton />}
             </div>
           </header>
 

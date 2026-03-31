@@ -97,8 +97,8 @@ function StatCard({
 }
 
 export function NginxManagement() {
-  const { hasRole } = useAuthStore();
-  const isAdmin = hasRole("admin");
+  const { hasScope } = useAuthStore();
+  const canManage = hasScope("proxy:manage");
 
   // Monitoring state
   const [stats, setStats] = useState<NginxStatsSnapshot | null>(null);
@@ -522,23 +522,23 @@ export function NginxManagement() {
                 <div className="flex-1 min-h-0 flex flex-col">
                   <CodeEditor
                     value={configContent}
-                    onChange={isAdmin ? setConfigContent : () => {}}
-                    readOnly={!isAdmin}
+                    onChange={canManage ? setConfigContent : () => {}}
+                    readOnly={!canManage}
                   />
                 </div>
 
                 {/* Bottom bar — test result + actions */}
                 <div className="flex items-center justify-end gap-2 mt-3">
-                  {!isAdmin && (
+                  {!canManage && (
                     <p className="text-xs text-muted-foreground">
-                      Read-only — admin role required to edit
+                      Read-only — proxy:manage permission required to edit
                     </p>
                   )}
                   <Button variant="outline" size="sm" onClick={handleTest} disabled={isTesting}>
                     <FlaskConical className="h-4 w-4" />
                     {isTesting ? "Testing..." : "Test"}
                   </Button>
-                  {isAdmin && (
+                  {canManage && (
                     <Button size="sm" onClick={handleSave} disabled={isSaving || !hasChanges}>
                       <Save className="h-4 w-4" />
                       {isSaving ? "Saving..." : "Save & Reload"}

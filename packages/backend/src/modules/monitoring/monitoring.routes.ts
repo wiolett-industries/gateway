@@ -5,7 +5,7 @@ const logger = createChildLogger('MonitoringRoutes');
 
 import { streamSSE } from 'hono/streaming';
 import { container } from '@/container.js';
-import { authMiddleware, sessionOnly } from '@/modules/auth/auth.middleware.js';
+import { authMiddleware, requireScope, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import { LogStreamService } from './log-stream.service.js';
 import { MonitoringService } from './monitoring.service.js';
@@ -101,12 +101,8 @@ monitoringRoutes.get('/nginx/available', async (c) => {
   return c.json({ data: { available } });
 });
 
-// Nginx process info (admin, operator)
-monitoringRoutes.get('/nginx/info', async (c) => {
-  const user = c.get('user')!;
-  if (user.role !== 'admin' && user.role !== 'operator') {
-    return c.json({ code: 'FORBIDDEN', message: 'Admin or operator role required' }, 403);
-  }
+// Nginx process info
+monitoringRoutes.get('/nginx/info', requireScope('proxy:read'), async (c) => {
   const nginxStatsService = container.resolve(NginxStatsService);
   try {
     const info = await nginxStatsService.getProcessInfo();
@@ -116,13 +112,8 @@ monitoringRoutes.get('/nginx/info', async (c) => {
   }
 });
 
-// Live nginx stats SSE stream (admin, operator)
-monitoringRoutes.get('/nginx/stats/stream', async (c) => {
-  const user = c.get('user')!;
-  if (user.role !== 'admin' && user.role !== 'operator') {
-    return c.json({ code: 'FORBIDDEN', message: 'Admin or operator role required' }, 403);
-  }
-
+// Live nginx stats SSE stream
+monitoringRoutes.get('/nginx/stats/stream', requireScope('proxy:read'), async (c) => {
   const nginxStatsService = container.resolve(NginxStatsService);
 
   return streamSSE(c, async (stream) => {
@@ -185,23 +176,15 @@ monitoringRoutes.get('/nginx/stats/stream', async (c) => {
   });
 });
 
-// Read global nginx.conf (admin, operator)
-monitoringRoutes.get('/nginx/config', async (c) => {
-  const user = c.get('user')!;
-  if (user.role !== 'admin' && user.role !== 'operator') {
-    return c.json({ code: 'FORBIDDEN', message: 'Admin or operator role required' }, 403);
-  }
+// Read global nginx.conf
+monitoringRoutes.get('/nginx/config', requireScope('proxy:read'), async (c) => {
   const nginxConfigService = container.resolve(NginxConfigService);
   const content = await nginxConfigService.getGlobalConfig();
   return c.json({ data: { content } });
 });
 
-// Update global nginx.conf (admin only)
-monitoringRoutes.put('/nginx/config', async (c) => {
-  const user = c.get('user')!;
-  if (user.role !== 'admin') {
-    return c.json({ code: 'FORBIDDEN', message: 'Admin role required' }, 403);
-  }
+// Update global nginx.conf
+monitoringRoutes.put('/nginx/config', requireScope('proxy:manage'), async (c) => {
   const body = await c.req.json<{ content: string }>();
   if (!body.content || typeof body.content !== 'string') {
     return c.json({ code: 'INVALID_BODY', message: 'content is required' }, 400);
@@ -214,12 +197,8 @@ monitoringRoutes.put('/nginx/config', async (c) => {
   return c.json({ data: result });
 });
 
-// Test current nginx config (admin, operator)
-monitoringRoutes.post('/nginx/config/test', async (c) => {
-  const user = c.get('user')!;
-  if (user.role !== 'admin' && user.role !== 'operator') {
-    return c.json({ code: 'FORBIDDEN', message: 'Admin or operator role required' }, 403);
-  }
+// Test current nginx config
+monitoringRoutes.post('/nginx/config/test', requireScope('proxy:manage'), async (c) => {
   const nginxConfigService = container.resolve(NginxConfigService);
   const result = await nginxConfigService.testConfig();
   return c.json({ data: result });

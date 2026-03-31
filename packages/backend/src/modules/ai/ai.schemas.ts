@@ -32,20 +32,21 @@ export const ChatRequestSchema = z.object({
 
 export const AIConfigUpdateSchema = z.object({
   enabled: z.boolean().optional(),
-  providerUrl: z.string().url().optional(),
+  providerUrl: z.union([z.string().url(), z.literal('')]).optional(),
   apiKey: z.string().optional(),
   model: z.string().optional(),
   customSystemPrompt: z.string().optional(),
   rateLimitMax: z.number().int().min(1).max(1000).optional(),
   rateLimitWindowSeconds: z.number().int().min(10).max(3600).optional(),
   maxToolRounds: z.number().int().min(1).max(50).optional(),
+  maxContextTokens: z.number().int().min(4000).max(1000000).optional(),
   maxCompletionTokens: z.number().int().min(256).max(128000).optional(),
   maxTokensField: z.enum(['max_tokens', 'max_completion_tokens']).optional(),
   reasoningEffort: z.enum(['low', 'medium', 'high', 'none']).optional(),
   disabledTools: z.array(z.string()).optional(),
   webSearchApiKey: z.string().optional(),
   webSearchProvider: z.enum(['tavily', 'brave', 'serper', 'searxng', 'exa']).optional(),
-  webSearchBaseUrl: z.string().url().optional(),
+  webSearchBaseUrl: z.union([z.string().url(), z.literal('')]).optional(),
 });
 
 export const ToolApprovalSchema = z.object({

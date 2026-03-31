@@ -1,5 +1,3 @@
-import type { UserRole } from '@/types.js';
-
 // ── AI Configuration (stored in settings table) ──
 
 export type WebSearchProvider = 'tavily' | 'brave' | 'serper' | 'searxng' | 'exa';
@@ -18,6 +16,7 @@ export interface AIConfig {
   rateLimitMax: number;
   rateLimitWindowSeconds: number;
   maxToolRounds: number;
+  maxContextTokens: number;
   disabledTools: string[];
   webSearchEnabled: boolean;
   webSearchProvider: WebSearchProvider;
@@ -37,7 +36,7 @@ export interface AIToolDefinition {
   parameters: Record<string, unknown>;
   destructive: boolean;
   category: string;
-  requiredRole: UserRole;
+  requiredScope: string;
   invalidateStores: string[];
 }
 

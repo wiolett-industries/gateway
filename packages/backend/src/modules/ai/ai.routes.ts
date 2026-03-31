@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { container } from '@/container.js';
-import { authMiddleware, rbacMiddleware, sessionOnly } from '@/modules/auth/auth.middleware.js';
+import { authMiddleware, requireScope, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import { AIConfigUpdateSchema } from './ai.schemas.js';
 import { AISettingsService } from './ai.settings.service.js';
@@ -19,14 +19,14 @@ aiRoutes.get('/status', async (c) => {
 });
 
 // GET /api/ai/config — full config for admin display (admin only)
-aiRoutes.get('/config', rbacMiddleware('admin'), async (c) => {
+aiRoutes.get('/config', requireScope('admin:ai-config'), async (c) => {
   const settingsService = container.resolve(AISettingsService);
   const config = await settingsService.getConfigForAdmin();
   return c.json({ data: config });
 });
 
 // PUT /api/ai/config — update config (admin only)
-aiRoutes.put('/config', rbacMiddleware('admin'), async (c) => {
+aiRoutes.put('/config', requireScope('admin:ai-config'), async (c) => {
   const body = AIConfigUpdateSchema.safeParse(await c.req.json());
   if (!body.success) {
     return c.json({ code: 'VALIDATION_ERROR', message: body.error.message }, 400);
@@ -38,10 +38,10 @@ aiRoutes.put('/config', rbacMiddleware('admin'), async (c) => {
 });
 
 // GET /api/ai/tools — list all tool definitions grouped by category (admin only)
-aiRoutes.get('/tools', rbacMiddleware('admin'), async (c) => {
+aiRoutes.get('/tools', requireScope('admin:ai-config'), async (c) => {
   const grouped: Record<
     string,
-    Array<{ name: string; description: string; destructive: boolean; requiredRole: string }>
+    Array<{ name: string; description: string; destructive: boolean; requiredScope: string }>
   > = {};
 
   for (const tool of AI_TOOLS) {
@@ -50,7 +50,7 @@ aiRoutes.get('/tools', rbacMiddleware('admin'), async (c) => {
       name: tool.name,
       description: tool.description,
       destructive: tool.destructive,
-      requiredRole: tool.requiredRole,
+      requiredScope: tool.requiredScope,
     });
   }
 

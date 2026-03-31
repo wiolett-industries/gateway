@@ -45,7 +45,7 @@ import type { Certificate } from "@/types";
 export function CADetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { hasRole } = useAuthStore();
+  const { hasScope } = useAuthStore();
   const { selectedCA, selectCA, fetchCAs, cas } = useCAStore();
   const [certificates, setCertificates] = useState<Certificate[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -166,13 +166,13 @@ export function CADetail() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {hasRole("admin") && ca.status === "active" && (
+            {hasScope("ca:create:intermediate") && ca.status === "active" && (
               <Button variant="outline" onClick={() => setCreateIntermediateOpen(true)}>
                 <Shield className="h-4 w-4" />
                 Create Intermediate
               </Button>
             )}
-            {hasRole("admin", "operator") && ca.status === "active" && (
+            {hasScope("cert:issue") && ca.status === "active" && (
               <Button onClick={() => setIssueDialogOpen(true)}>
                 <Plus className="h-4 w-4" />
                 Issue Certificate
@@ -244,7 +244,7 @@ export function CADetail() {
                   <Copy className="h-4 w-4" />
                   Copy Serial
                 </DropdownMenuItem>
-                {hasRole("admin") && ca.status === "active" && (
+                {hasScope("ca:revoke") && ca.status === "active" && (
                   <>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={handleRevoke} className="text-destructive">
@@ -289,7 +289,7 @@ export function CADetail() {
             <div className="border border-border bg-card">
               <div className="flex items-center justify-between border-b border-border p-4">
                 <h2 className="font-semibold">Distribution Endpoints</h2>
-                {hasRole("admin") && (
+                {hasScope("ca:create:root") && (
                   <Button
                     variant="ghost"
                     size="icon"

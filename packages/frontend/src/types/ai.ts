@@ -42,6 +42,7 @@ export interface AIConfig {
   rateLimitMax: number;
   rateLimitWindowSeconds: number;
   maxToolRounds: number;
+  maxContextTokens: number;
   disabledTools: string[];
   webSearchEnabled: boolean;
   webSearchProvider: WebSearchProvider;

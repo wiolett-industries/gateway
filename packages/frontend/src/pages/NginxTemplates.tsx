@@ -20,7 +20,7 @@ import type { NginxTemplate } from "@/types";
 
 export function NginxTemplates() {
   const navigate = useNavigate();
-  const { hasRole } = useAuthStore();
+  const { hasScope } = useAuthStore();
   const cachedTemplates = api.getCached<NginxTemplate[]>("nginx-templates:list");
   const [templates, setTemplates] = useState<NginxTemplate[]>(cachedTemplates ?? []);
   const [isLoading, setIsLoading] = useState(!cachedTemplates);
@@ -85,7 +85,7 @@ export function NginxTemplates() {
               Nginx server block templates for proxy hosts
             </p>
           </div>
-          {hasRole("admin", "operator") && (
+          {hasScope("proxy:manage") && (
             <Button onClick={() => navigate("/nginx-templates/new")}>
               <Plus className="h-4 w-4" />
               Create Template
@@ -118,13 +118,13 @@ export function NginxTemplates() {
                           Edit
                         </DropdownMenuItem>
                       )}
-                      {hasRole("admin", "operator") && (
+                      {hasScope("proxy:manage") && (
                         <DropdownMenuItem onClick={() => handleClone(t.id)}>
                           <Copy className="h-4 w-4" />
                           Clone
                         </DropdownMenuItem>
                       )}
-                      {!t.isBuiltin && hasRole("admin") && (
+                      {!t.isBuiltin && hasScope("proxy:delete") && (
                         <>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem

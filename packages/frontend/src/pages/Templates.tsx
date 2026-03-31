@@ -1,5 +1,5 @@
 import { FileText, Minus, MoreVertical, Pencil, Plus, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
@@ -132,7 +132,7 @@ function toggleInArray(arr: string[], value: string): string[] {
 // ---------------------------------------------------------------------------
 
 export function Templates() {
-  const { hasRole } = useAuthStore();
+  const { hasScope } = useAuthStore();
   const cachedTemplates = api.getCached<Template[]>("templates:list");
   const [templates, setTemplates] = useState<Template[]>(cachedTemplates ?? []);
   const [isLoading, setIsLoading] = useState(!cachedTemplates);
@@ -163,7 +163,7 @@ export function Templates() {
   const [customExtensions, setCustomExtensions] = useState<CustomExtension[]>([]);
   const [isSaving, setIsSaving] = useState(false);
 
-  const loadTemplates = async () => {
+  const loadTemplates = useCallback(async () => {
     try {
       const data = await api.listTemplates();
       setTemplates(data || []);
@@ -172,11 +172,10 @@ export function Templates() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     loadTemplates();
-    // biome-ignore lint/correctness/useExhaustiveDependencies: load-once pattern
   }, [loadTemplates]);
 
   const resetForm = () => {
@@ -320,7 +319,7 @@ export function Templates() {
             <h1 className="text-2xl font-bold">Templates</h1>
             <p className="text-sm text-muted-foreground">Certificate issuance templates</p>
           </div>
-          {hasRole("admin", "operator") && (
+          {hasScope("template:manage") && (
             <Button onClick={openCreate}>
               <Plus className="h-4 w-4" />
               Create Template
@@ -338,7 +337,7 @@ export function Templates() {
                     <FileText className="h-4 w-4 text-muted-foreground" />
                     <h3 className="font-semibold text-sm">{template.name}</h3>
                   </div>
-                  {hasRole("admin", "operator") && !template.isBuiltin && (
+                  {hasScope("template:manage") && !template.isBuiltin && (
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -402,8 +401,7 @@ export function Templates() {
         ) : (
           <EmptyState
             message="No templates."
-            actionLabel="Create one"
-            onAction={() => setDialogOpen(true)}
+            {...(hasScope("template:manage") ? { actionLabel: "Create one", onAction: () => setDialogOpen(true) } : {})}
           />
         )}
 

@@ -45,7 +45,7 @@ import type {
   UpdateStatus,
   UploadCertRequest,
   User,
-  UserRole,
+  PermissionGroup,
 } from "@/types";
 
 const API_BASE = "/api";
@@ -212,7 +212,8 @@ class ApiClient {
 
       if (response.status === 401) {
         useAuthStore.getState().logout();
-        throw new Error("Authentication required");
+        window.location.href = "/login";
+        throw new Error("Session expired");
       }
 
       if (response.status === 403) {
@@ -480,15 +481,57 @@ class ApiClient {
     return this.request<User[]>("/admin/users");
   }
 
-  async updateUserRole(userId: string, role: UserRole): Promise<User> {
-    return this.request<User>(`/admin/users/${userId}/role`, {
+  async updateUserGroup(userId: string, groupId: string): Promise<User> {
+    return this.request<User>(`/admin/users/${userId}/group`, {
       method: "PATCH",
-      body: JSON.stringify({ role }),
+      body: JSON.stringify({ groupId }),
+    });
+  }
+
+  async blockUser(userId: string, blocked: boolean): Promise<{ message: string }> {
+    return this.request<{ message: string }>(`/admin/users/${userId}/block`, {
+      method: "PATCH",
+      body: JSON.stringify({ blocked }),
     });
   }
 
   async deleteUser(userId: string): Promise<void> {
     await this.request(`/admin/users/${userId}`, { method: "DELETE" });
+  }
+
+  // ── Permission Groups ──
+
+  async listGroups(): Promise<PermissionGroup[]> {
+    return this.request<PermissionGroup[]>("/admin/groups");
+  }
+
+  async getGroup(id: string): Promise<PermissionGroup> {
+    return this.request<PermissionGroup>(`/admin/groups/${id}`);
+  }
+
+  async createGroup(data: {
+    name: string;
+    description?: string;
+    scopes: string[];
+  }): Promise<PermissionGroup> {
+    return this.request<PermissionGroup>("/admin/groups", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateGroup(
+    id: string,
+    data: { name?: string; description?: string | null; scopes?: string[] }
+  ): Promise<PermissionGroup> {
+    return this.request<PermissionGroup>(`/admin/groups/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteGroup(id: string): Promise<void> {
+    await this.request(`/admin/groups/${id}`, { method: "DELETE" });
   }
 
   // ── AI Assistant ──

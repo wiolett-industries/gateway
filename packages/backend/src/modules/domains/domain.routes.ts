@@ -1,6 +1,6 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
-import { authMiddleware, sessionOnly } from '@/modules/auth/auth.middleware.js';
+import { authMiddleware, requireScope, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import { SSLService } from '@/modules/ssl/ssl.service.js';
 import type { AppEnv } from '@/types.js';
 import { CreateDomainSchema, DomainListQuerySchema, UpdateDomainSchema } from './domain.schemas.js';
@@ -12,7 +12,7 @@ domainRoutes.use('*', authMiddleware);
 domainRoutes.use('*', sessionOnly);
 
 // List domains (paginated)
-domainRoutes.get('/', async (c) => {
+domainRoutes.get('/', requireScope('proxy:read'), async (c) => {
   const domainsService = container.resolve(DomainsService);
   const query = DomainListQuerySchema.parse({
     page: c.req.query('page'),
@@ -25,7 +25,7 @@ domainRoutes.get('/', async (c) => {
 });
 
 // Autocomplete search (must be before /:id)
-domainRoutes.get('/search', async (c) => {
+domainRoutes.get('/search', requireScope('proxy:read'), async (c) => {
   const domainsService = container.resolve(DomainsService);
   const q = c.req.query('q') || '';
   if (q.length < 1) return c.json({ data: [] });
@@ -34,7 +34,7 @@ domainRoutes.get('/search', async (c) => {
 });
 
 // Get domain detail with usage
-domainRoutes.get('/:id', async (c) => {
+domainRoutes.get('/:id', requireScope('proxy:read'), async (c) => {
   const domainsService = container.resolve(DomainsService);
   try {
     const domain = await domainsService.getDomain(c.req.param('id'));
@@ -44,12 +44,9 @@ domainRoutes.get('/:id', async (c) => {
   }
 });
 
-// Create domain (admin, operator)
-domainRoutes.post('/', async (c) => {
+// Create domain
+domainRoutes.post('/', requireScope('proxy:manage'), async (c) => {
   const user = c.get('user')!;
-  if (user.role !== 'admin' && user.role !== 'operator') {
-    return c.json({ code: 'FORBIDDEN', message: 'Admin or operator role required' }, 403);
-  }
   const body = await c.req.json();
   const input = CreateDomainSchema.parse(body);
   const domainsService = container.resolve(DomainsService);
@@ -65,12 +62,9 @@ domainRoutes.post('/', async (c) => {
   }
 });
 
-// Update domain (admin, operator)
-domainRoutes.put('/:id', async (c) => {
+// Update domain
+domainRoutes.put('/:id', requireScope('proxy:manage'), async (c) => {
   const user = c.get('user')!;
-  if (user.role !== 'admin' && user.role !== 'operator') {
-    return c.json({ code: 'FORBIDDEN', message: 'Admin or operator role required' }, 403);
-  }
   const body = await c.req.json();
   const input = UpdateDomainSchema.parse(body);
   const domainsService = container.resolve(DomainsService);
@@ -82,12 +76,9 @@ domainRoutes.put('/:id', async (c) => {
   }
 });
 
-// Delete domain (admin only)
-domainRoutes.delete('/:id', async (c) => {
+// Delete domain
+domainRoutes.delete('/:id', requireScope('proxy:delete'), async (c) => {
   const user = c.get('user')!;
-  if (user.role !== 'admin') {
-    return c.json({ code: 'FORBIDDEN', message: 'Admin role required' }, 403);
-  }
   const domainsService = container.resolve(DomainsService);
   try {
     await domainsService.deleteDomain(c.req.param('id'), user.id);
@@ -97,12 +88,8 @@ domainRoutes.delete('/:id', async (c) => {
   }
 });
 
-// Manual DNS check (admin, operator)
-domainRoutes.post('/:id/check-dns', async (c) => {
-  const user = c.get('user')!;
-  if (user.role !== 'admin' && user.role !== 'operator') {
-    return c.json({ code: 'FORBIDDEN', message: 'Admin or operator role required' }, 403);
-  }
+// Manual DNS check
+domainRoutes.post('/:id/check-dns', requireScope('proxy:manage'), async (c) => {
   const domainsService = container.resolve(DomainsService);
   try {
     const domain = await domainsService.checkDns(c.req.param('id'));
@@ -112,12 +99,9 @@ domainRoutes.post('/:id/check-dns', async (c) => {
   }
 });
 
-// Issue ACME cert for domain (admin, operator)
-domainRoutes.post('/:id/issue-cert', async (c) => {
+// Issue ACME cert for domain
+domainRoutes.post('/:id/issue-cert', requireScope('proxy:manage'), async (c) => {
   const user = c.get('user')!;
-  if (user.role !== 'admin' && user.role !== 'operator') {
-    return c.json({ code: 'FORBIDDEN', message: 'Admin or operator role required' }, 403);
-  }
   const domainsService = container.resolve(DomainsService);
   const sslService = container.resolve(SSLService);
 
