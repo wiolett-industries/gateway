@@ -68,8 +68,8 @@ Gateway combines a full PKI (Certificate Authority) infrastructure with a revers
 
 **Administration**
 - OIDC authentication (any OpenID Connect provider)
-- Role-based access control (admin, operator, viewer, blocked)
-- Granular API tokens with per-CA scoping
+- Group-based access control with granular scopes (system-admin, admin, operator, viewer + custom groups)
+- API tokens with per-scope and per-resource access control
 - Full audit log (AI-initiated actions flagged separately)
 - Expiry alerts and notifications
 - In-app updates with one-click self-update
@@ -200,6 +200,14 @@ pnpm dev:all          # Start backend + frontend dev servers
 - **Backend:** Hono, Drizzle ORM, PostgreSQL, Redis, Node.js
 - **Frontend:** React, Vite, Tailwind CSS, shadcn/ui
 - **Infrastructure:** Docker, Nginx, Let's Encrypt (ACME)
+
+## Roadmap
+
+- [x] Opt-in AI assistant with tool calling, approval flows, and any OpenAI-compatible provider
+- [x] Group-based permission system with granular scopes for users and API tokens
+- [ ] Per-user quota management for AI assistant (token budgets, request limits)
+- [ ] Webhook notifications with built-in templates (Discord, Telegram, Slack, email, and custom HTTP)
+- [ ] Local authentication (username/password) as an alternative to OIDC
 
 ## License
 
