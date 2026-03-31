@@ -151,6 +151,8 @@ export function AdminUsers() {
             <div className="divide-y divide-border">
               {users.map((user) => {
                 const isSelf = currentUser?.id === user.id;
+                const isSystemUser = user.oidcSubject?.startsWith("system:");
+                const isReadOnly = isSelf || isSystemUser;
                 return (
                   <div
                     key={user.id}
@@ -168,6 +170,8 @@ export function AdminUsers() {
                         <p className="text-sm font-medium truncate">{user.name || user.email}</p>
                         {isSelf ? (
                           <Badge variant="secondary" className="text-[10px] shrink-0">You</Badge>
+                        ) : isSystemUser ? (
+                          <Badge variant="outline" className="text-[10px] shrink-0">System</Badge>
                         ) : user.isBlocked ? (
                           <Badge variant="destructive" className="text-[10px] shrink-0">
                             <Ban className="h-2.5 w-2.5 mr-0.5" />
@@ -181,7 +185,7 @@ export function AdminUsers() {
                     </div>
 
                     <div className="shrink-0">
-                      {isSelf ? (
+                      {isReadOnly ? (
                         <Badge variant="secondary" className="text-xs">
                           {user.groupName}
                         </Badge>
@@ -206,7 +210,7 @@ export function AdminUsers() {
                       )}
                     </div>
 
-                    {!isSelf && (
+                    {!isReadOnly && (
                       <div className="flex items-center gap-1">
                         <Button
                           variant="ghost"

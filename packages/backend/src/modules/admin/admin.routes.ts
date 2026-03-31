@@ -48,6 +48,9 @@ adminRoutes.patch('/users/:id/group', requireScope('admin:users'), async (c) => 
   if (!targetUser) {
     return c.json({ code: 'NOT_FOUND', message: 'User not found' }, 404);
   }
+  if (targetUser.oidcSubject.startsWith('system:')) {
+    return c.json({ code: 'SYSTEM_USER', message: 'Cannot modify the system user' }, 403);
+  }
   const denyReason = canManageUser(actorScopes, targetUser.scopes);
   if (denyReason) {
     return c.json({ code: 'PRIVILEGE_BOUNDARY', message: denyReason }, 403);
@@ -100,6 +103,9 @@ adminRoutes.patch('/users/:id/block', requireScope('admin:users'), async (c) => 
   if (!targetUser) {
     return c.json({ code: 'NOT_FOUND', message: 'User not found' }, 404);
   }
+  if (targetUser.oidcSubject.startsWith('system:')) {
+    return c.json({ code: 'SYSTEM_USER', message: 'Cannot modify the system user' }, 403);
+  }
   const denyReason = canManageUser(actorScopes, targetUser.scopes);
   if (denyReason) {
     return c.json({ code: 'PRIVILEGE_BOUNDARY', message: denyReason }, 403);
@@ -140,6 +146,9 @@ adminRoutes.delete('/users/:id', requireScope('admin:users'), async (c) => {
   const targetUser = await authService.getUserById(userId);
   if (!targetUser) {
     return c.json({ code: 'NOT_FOUND', message: 'User not found' }, 404);
+  }
+  if (targetUser.oidcSubject.startsWith('system:')) {
+    return c.json({ code: 'SYSTEM_USER', message: 'Cannot delete the system user' }, 403);
   }
   const denyReason = canManageUser(actorScopes, targetUser.scopes);
   if (denyReason) {
