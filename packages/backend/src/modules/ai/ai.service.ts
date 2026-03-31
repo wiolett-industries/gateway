@@ -713,6 +713,11 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
         if (a.userId === user.id) {
           throw new Error('Cannot change your own group');
         }
+        const targetUser = await this.authService.getUserById(a.userId);
+        if (!targetUser) throw new Error('User not found');
+        if (targetUser.oidcSubject.startsWith('system:')) {
+          throw new Error('Cannot modify the system user');
+        }
         const updated = await this.authService.updateUserGroup(a.userId, a.groupId);
         await container.resolve(SessionService).destroyAllUserSessions(a.userId);
         return updated;

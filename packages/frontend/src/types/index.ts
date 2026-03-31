@@ -13,6 +13,7 @@ export type {
 // User
 export interface User {
   id: string;
+  oidcSubject: string;
   email: string;
   name: string | null;
   avatarUrl: string | null;
