@@ -7,3 +7,11 @@ dist/
 .vite/
 coverage/
 .mcp.json
+
+# Nx
+.nx/cache
+.nx/workspace-data
+
+# Go
+packages/daemons/nginx/bin/
+packages/daemons/nginx/nginx-daemon

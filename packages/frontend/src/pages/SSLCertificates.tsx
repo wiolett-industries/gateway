@@ -370,7 +370,9 @@ export function SSLCertificates() {
         ) : (
           <EmptyState
             message="No SSL certificates."
-            {...(hasScope("ssl:manage") ? { actionLabel: "Add one", onAction: () => setCreateDialogOpen(true) } : {})}
+            {...(hasScope("ssl:manage")
+              ? { actionLabel: "Add one", onAction: () => setCreateDialogOpen(true) }
+              : {})}
             hasActiveFilters={hasActiveFilters}
             onReset={() => {
               resetFilters();

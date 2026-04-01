@@ -1,5 +1,3 @@
-import { promises as fs } from 'node:fs';
-import path from 'node:path';
 import bcrypt from 'bcryptjs';
 import { and, count, desc, eq, ilike } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
@@ -13,14 +11,12 @@ import { escapeLike } from '@/lib/utils.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { NginxTemplateService } from '@/modules/proxy/nginx-template.service.js';
-import type { NginxService, ProxyHostConfig } from '@/services/nginx.service.js';
+import type { NginxConfigGenerator, ProxyHostConfig } from '@/services/nginx-config-generator.service.js';
+import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import type { PaginatedResponse } from '@/types.js';
 import type { AccessListQuery, CreateAccessListInput, UpdateAccessListInput } from './access-list.schemas.js';
 
 const logger = createChildLogger('AccessListService');
-
-/** Path inside the nginx container where htpasswd files are stored. */
-const _NGINX_HTPASSWD_PREFIX = '/etc/nginx/htpasswd';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -35,9 +31,10 @@ type AccessListRow = typeof accessLists.$inferSelect;
 export class AccessListService {
   constructor(
     private readonly db: DrizzleClient,
-    private readonly nginxService: NginxService,
+    readonly _configGenerator: NginxConfigGenerator,
     private readonly nginxTemplateService: NginxTemplateService,
-    private readonly auditService: AuditService
+    private readonly auditService: AuditService,
+    private readonly nodeDispatch: NodeDispatchService
   ) {}
 
   // -----------------------------------------------------------------------
@@ -171,13 +168,8 @@ export class AccessListService {
         };
 
         const generatedConfig = await this.nginxTemplateService.renderForHost(config, host.nginxTemplateId ?? null);
-        await this.nginxService.writeConfig(host.id, generatedConfig);
-      }
-
-      // Test and reload nginx once after all configs are regenerated
-      const testResult = await this.nginxService.testConfig();
-      if (testResult.valid) {
-        await this.nginxService.reloadNginx();
+        const nodeId = await this.nodeDispatch.resolveNodeId(host.nodeId);
+        await this.nodeDispatch.applyConfig(nodeId, host.id, generatedConfig);
       }
     }
 
@@ -315,27 +307,47 @@ export class AccessListService {
    * Writes to: {configPath}/htpasswd/access-list-{id}
    */
   private async writeHtpasswd(accessListId: string, users: BasicAuthUser[]): Promise<void> {
-    // biome-ignore lint/complexity/useLiteralKeys: accessing private property cross-service
-    const htpasswdDir = path.join(this.nginxService['configPath'], 'htpasswd');
-    await fs.mkdir(htpasswdDir, { recursive: true });
-
-    const filePath = path.join(htpasswdDir, `access-list-${accessListId}`);
     const content = `${users.map((u) => `${u.username}:${u.passwordHash}`).join('\n')}\n`;
 
-    await fs.writeFile(filePath, content, 'utf-8');
-    logger.debug('Htpasswd file written', { filePath });
+    // Deploy htpasswd to all nodes that have hosts using this access list
+    const hostsUsingList = await this.db
+      .select({ nodeId: proxyHosts.nodeId })
+      .from(proxyHosts)
+      .where(eq(proxyHosts.accessListId, accessListId));
+
+    const nodeIds = [...new Set(hostsUsingList.map((h) => h.nodeId).filter(Boolean))] as string[];
+    if (nodeIds.length === 0) {
+      // Deploy to default node
+      const defaultId = await this.nodeDispatch.getDefaultNodeId();
+      if (defaultId) nodeIds.push(defaultId);
+    }
+
+    for (const nodeId of nodeIds) {
+      await this.nodeDispatch.deployHtpasswd(nodeId, accessListId, content);
+    }
+    logger.debug('Htpasswd deployed to nodes', { accessListId, nodeCount: nodeIds.length });
   }
 
   private async removeHtpasswd(accessListId: string): Promise<void> {
-    // biome-ignore lint/complexity/useLiteralKeys: accessing private property cross-service
-    const htpasswdDir = path.join(this.nginxService['configPath'], 'htpasswd');
-    const filePath = path.join(htpasswdDir, `access-list-${accessListId}`);
-    try {
-      await fs.unlink(filePath);
-      logger.debug('Htpasswd file removed', { filePath });
-    } catch {
-      // Ignore if the file does not exist
+    const hostsUsingList = await this.db
+      .select({ nodeId: proxyHosts.nodeId })
+      .from(proxyHosts)
+      .where(eq(proxyHosts.accessListId, accessListId));
+
+    const nodeIds = [...new Set(hostsUsingList.map((h) => h.nodeId).filter(Boolean))] as string[];
+    if (nodeIds.length === 0) {
+      const defaultId = await this.nodeDispatch.getDefaultNodeId();
+      if (defaultId) nodeIds.push(defaultId);
     }
+
+    for (const nodeId of nodeIds) {
+      try {
+        await this.nodeDispatch.removeHtpasswd(nodeId, accessListId);
+      } catch {
+        // Ignore
+      }
+    }
+    logger.debug('Htpasswd removed from nodes', { accessListId });
   }
 
   // -----------------------------------------------------------------------

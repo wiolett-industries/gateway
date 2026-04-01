@@ -60,9 +60,7 @@ export function ScopeList({
             restrictableScopes={restrictableScopes}
           />
         ))}
-        {rest.length > 0 && matches.length > 0 && (
-          <div className="border-t border-border" />
-        )}
+        {rest.length > 0 && matches.length > 0 && <div className="border-t border-border" />}
         {rest.map((scope) => (
           <ScopeRow
             key={scope.value}
@@ -89,7 +87,9 @@ export function ScopeList({
         return (
           <div key={cat}>
             <div className="px-3 py-1.5 bg-muted sticky top-0 z-10 border-b border-border">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{cat}</p>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                {cat}
+              </p>
             </div>
             {catScopes.map((scope) => (
               <ScopeRow
@@ -156,10 +156,7 @@ function ScopeRow({
             Restrict to specific CAs (leave unchecked for all):
           </p>
           {(cas || []).map((ca) => (
-            <label
-              key={ca.id}
-              className="flex items-center gap-2 py-0.5 text-xs cursor-pointer"
-            >
+            <label key={ca.id} className="flex items-center gap-2 py-0.5 text-xs cursor-pointer">
               <input
                 type="checkbox"
                 checked={selectedCAs.includes(ca.id)}

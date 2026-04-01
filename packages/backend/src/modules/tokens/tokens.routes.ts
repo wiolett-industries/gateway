@@ -1,7 +1,7 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
-import { authMiddleware, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import { isScopeSubset } from '@/lib/permissions.js';
+import { authMiddleware, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import { CreateTokenSchema } from './tokens.schemas.js';
 import { TokensService } from './tokens.service.js';
@@ -27,9 +27,7 @@ tokensRoutes.post('/', async (c) => {
   // Token scopes must be a subset of the user's group scopes
   const userScopes = user.scopes;
   if (!isScopeSubset(input.scopes, userScopes)) {
-    const disallowed = input.scopes.filter(
-      (s) => !TokensService.hasScope(userScopes, s)
-    );
+    const disallowed = input.scopes.filter((s) => !TokensService.hasScope(userScopes, s));
     return c.json(
       { code: 'SCOPE_NOT_ALLOWED', message: `Your group cannot grant scopes: ${disallowed.join(', ')}` },
       403

@@ -4,8 +4,8 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
-import { ScopeList } from "@/components/common/ScopeList";
 import { PageTransition } from "@/components/common/PageTransition";
+import { ScopeList } from "@/components/common/ScopeList";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,8 +19,8 @@ import { Input } from "@/components/ui/input";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useCAStore } from "@/stores/ca";
-import { TOKEN_SCOPES } from "@/types";
 import type { PermissionGroup } from "@/types";
+import { TOKEN_SCOPES } from "@/types";
 
 /** Scopes that can be restricted to specific CAs */
 const CA_RESTRICTABLE_SCOPES = [
@@ -66,10 +66,7 @@ function parseScopesForForm(scopes: string[]) {
  * If a CA-restrictable scope has resources selected, emit per-resource scopes.
  * Otherwise emit the base scope (unrestricted).
  */
-function buildFinalScopes(
-  baseScopes: string[],
-  resources: Record<string, string[]>,
-): string[] {
+function buildFinalScopes(baseScopes: string[], resources: Record<string, string[]>): string[] {
   const result: string[] = [];
   for (const scope of baseScopes) {
     const res = resources[scope];
@@ -231,7 +228,8 @@ export function AdminGroups() {
           <div>
             <h1 className="text-2xl font-bold">Permission Groups</h1>
             <p className="text-sm text-muted-foreground">
-              {groups.length} group{groups.length !== 1 ? "s" : ""} &middot; Manage scoped access control
+              {groups.length} group{groups.length !== 1 ? "s" : ""} &middot; Manage scoped access
+              control
             </p>
           </div>
           <Button onClick={openCreateDialog}>
@@ -254,7 +252,9 @@ export function AdminGroups() {
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-sm">{group.name}</span>
                       {group.isBuiltin && (
-                        <Badge variant="secondary" className="text-[10px]">Built-in</Badge>
+                        <Badge variant="secondary" className="text-[10px]">
+                          Built-in
+                        </Badge>
                       )}
                     </div>
                     {group.description && (
@@ -265,15 +265,27 @@ export function AdminGroups() {
                         <Users className="h-3 w-3" />
                         {group.memberCount ?? 0} member{(group.memberCount ?? 0) !== 1 ? "s" : ""}
                       </span>
-                      <span>{group.scopes.length} scope{group.scopes.length !== 1 ? "s" : ""}</span>
+                      <span>
+                        {group.scopes.length} scope{group.scopes.length !== 1 ? "s" : ""}
+                      </span>
                     </div>
                   </div>
                   {!group.isBuiltin && (
                     <div className="flex items-center gap-1 shrink-0">
-                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEditDialog(group)}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => openEditDialog(group)}
+                      >
                         <Pencil className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleDelete(group)}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => handleDelete(group)}
+                      >
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>

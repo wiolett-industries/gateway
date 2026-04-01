@@ -61,7 +61,7 @@ adminRoutes.patch('/users/:id/group', requireScope('admin:users'), async (c) => 
   if (!isScopeSubset(destGroup.scopes as string[], actorScopes)) {
     return c.json(
       { code: 'PRIVILEGE_BOUNDARY', message: 'Cannot assign a group with permissions you do not possess' },
-      403,
+      403
     );
   }
 

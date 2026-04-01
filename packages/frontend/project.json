@@ -1,0 +1,33 @@
+{
+  "name": "frontend",
+  "root": "packages/frontend",
+  "sourceRoot": "packages/frontend/src",
+  "targets": {
+    "build": {
+      "command": "pnpm --filter frontend build",
+      "inputs": [
+        "{projectRoot}/src/**/*",
+        "{projectRoot}/tsconfig.json",
+        "{projectRoot}/tsconfig.app.json",
+        "{projectRoot}/vite.config.*",
+        "{projectRoot}/index.html",
+        "{projectRoot}/package.json"
+      ],
+      "outputs": ["{projectRoot}/dist"],
+      "cache": true
+    },
+    "dev": {
+      "command": "pnpm --filter frontend dev",
+      "cache": false
+    },
+    "lint": {
+      "command": "pnpm --filter frontend lint",
+      "inputs": ["{projectRoot}/src/**/*"],
+      "cache": true
+    },
+    "preview": {
+      "command": "pnpm --filter frontend preview",
+      "cache": false
+    }
+  }
+}

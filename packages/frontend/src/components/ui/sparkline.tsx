@@ -5,6 +5,10 @@ interface SparklineProps {
   color?: string;
   fillOpacity?: number;
   className?: string;
+  /** Floor value for the Y axis. Defaults to 0 so low values don't hug the bottom. */
+  minValue?: number;
+  /** Ceiling value for the Y axis. Useful for metrics with a known max (e.g., total memory). */
+  maxValue?: number;
 }
 
 export function Sparkline({
@@ -14,11 +18,13 @@ export function Sparkline({
   color = "currentColor",
   fillOpacity = 0.1,
   className,
+  minValue = 0,
+  maxValue,
 }: SparklineProps) {
   if (data.length < 2) return null;
 
-  const min = Math.min(...data);
-  const max = Math.max(...data);
+  const min = Math.min(minValue, ...data);
+  const max = maxValue != null ? Math.max(maxValue, ...data) : Math.max(...data);
   const range = max - min || 1;
   const stroke = 1.5;
   const top = stroke; // reserve space for stroke at peak

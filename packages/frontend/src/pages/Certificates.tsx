@@ -244,7 +244,9 @@ export function Certificates() {
         ) : (
           <EmptyState
             message="No certificates."
-            {...(hasScope("cert:issue") ? { actionLabel: "Issue one", onAction: () => setIssueDialogOpen(true) } : {})}
+            {...(hasScope("cert:issue")
+              ? { actionLabel: "Issue one", onAction: () => setIssueDialogOpen(true) }
+              : {})}
             hasActiveFilters={hasActiveFilters}
             onReset={() => {
               resetFilters();

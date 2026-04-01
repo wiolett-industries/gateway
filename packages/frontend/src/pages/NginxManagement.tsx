@@ -16,7 +16,7 @@ import { PageTransition } from "@/components/common/PageTransition";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CodeEditor } from "@/components/ui/code-editor";
-import { Sparkline } from "@/components/ui/sparkline";
+import { StatCard } from "@/components/ui/stat-card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
@@ -53,47 +53,6 @@ function formatUptime(seconds: number): string {
   if (days > 0) return `${days}d ${hours}h ${mins}m`;
   if (hours > 0) return `${hours}h ${mins}m`;
   return `${mins}m`;
-}
-
-interface StatCardProps {
-  label: string;
-  value: string;
-  icon: React.ElementType;
-  history: number[];
-  color?: string;
-  subtitle?: string;
-}
-
-function StatCard({
-  label,
-  value,
-  icon: Icon,
-  history,
-  color = "var(--color-primary)",
-  subtitle,
-}: StatCardProps) {
-  return (
-    <div className="border border-border bg-card flex flex-col overflow-hidden">
-      <div className="p-4 space-y-2 flex-1">
-        <div className="flex items-center justify-between">
-          <p className="text-xs text-muted-foreground">{label}</p>
-          <Icon className="h-3.5 w-3.5 text-muted-foreground" />
-        </div>
-        <p className="text-xl font-bold">{value}</p>
-        {subtitle && <p className="text-[10px] text-muted-foreground">{subtitle}</p>}
-      </div>
-      {history.length >= 2 && (
-        <Sparkline
-          data={history}
-          width={200}
-          height={32}
-          color={color}
-          fillOpacity={0.1}
-          className="w-full"
-        />
-      )}
-    </div>
-  );
 }
 
 export function NginxManagement() {
@@ -288,9 +247,10 @@ export function NginxManagement() {
             {unavailable && !connected ? (
               <div className="flex flex-col items-center gap-2 py-16 border border-border bg-card">
                 <Server className="h-8 w-8 text-muted-foreground" />
-                <p className="text-muted-foreground">Nginx container is not available</p>
+                <p className="text-muted-foreground">No nginx nodes connected</p>
                 <p className="text-xs text-muted-foreground">
-                  Start it with <code className="bg-muted px-1.5 py-0.5">pnpm dev:infra</code>
+                  Enroll a node from{" "}
+                  <code className="bg-muted px-1.5 py-0.5">Admin &gt; Nodes</code>
                 </p>
               </div>
             ) : (

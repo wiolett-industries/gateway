@@ -6,17 +6,9 @@ export const AVAILABLE_SCOPES = ALL_SCOPES;
 export const CreateTokenSchema = z.object({
   name: z.string().min(1).max(255),
   scopes: z
-    .array(
-      z.string().regex(
-        /^[a-z][a-z0-9-]*:[a-z][a-z0-9-]*(:[a-zA-Z0-9-]+)*$/,
-        'Invalid scope format'
-      )
-    )
+    .array(z.string().regex(/^[a-z][a-z0-9-]*:[a-z][a-z0-9-]*(:[a-zA-Z0-9-]+)*$/, 'Invalid scope format'))
     .min(1, 'At least one scope is required')
-    .refine(
-      (scopes) => scopes.every(isValidBaseScope),
-      'One or more scopes have an unrecognized base scope'
-    ),
+    .refine((scopes) => scopes.every(isValidBaseScope), 'One or more scopes have an unrecognized base scope'),
 });
 
 export const TokenResponseSchema = z.object({

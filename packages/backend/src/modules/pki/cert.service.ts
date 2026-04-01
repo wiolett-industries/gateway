@@ -1,5 +1,5 @@
 import { injectable, inject } from 'tsyringe';
-import { eq, and, or, ilike, desc, asc, count, lte } from 'drizzle-orm';
+import { eq, and, or, ilike, desc, asc, count, lte, notInArray, sql } from 'drizzle-orm';
 import * as x509 from '@peculiar/x509';
 import crypto from 'node:crypto';
 import { TOKENS } from '@/container.js';
@@ -306,6 +306,11 @@ export class CertService {
 
   async listCertificates(params: CertificateListQuery): Promise<PaginatedResponse<any>> {
     const conditions = [];
+
+    // Exclude certificates issued by the internal system CA (node mTLS certs)
+    const systemCaIds = sql`(SELECT id FROM ${certificateAuthorities} WHERE is_system = true)`;
+    conditions.push(sql`${certificates.caId} NOT IN ${systemCaIds}`);
+
     if (params.caId) conditions.push(eq(certificates.caId, params.caId));
     if (params.status) conditions.push(eq(certificates.status, params.status));
     if (params.type) conditions.push(eq(certificates.type, params.type));

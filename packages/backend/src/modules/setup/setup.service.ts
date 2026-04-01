@@ -1,9 +1,10 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import { domains } from '@/db/schema/domains.js';
+import { nodes } from '@/db/schema/nodes.js';
+import { permissionGroups } from '@/db/schema/permission-groups.js';
 import { proxyHosts } from '@/db/schema/proxy-hosts.js';
 import { sslCertificates } from '@/db/schema/ssl-certificates.js';
-import { permissionGroups } from '@/db/schema/permission-groups.js';
 import { users } from '@/db/schema/users.js';
 import { createChildLogger } from '@/lib/logger.js';
 import type { DomainsService } from '@/modules/domains/domain.service.js';
@@ -19,6 +20,16 @@ export class SetupService {
     private readonly proxyService: ProxyService,
     private readonly domainsService: DomainsService
   ) {}
+
+  private async getFirstNodeId(): Promise<string> {
+    const [node] = await this.db
+      .select({ id: nodes.id })
+      .from(nodes)
+      .where(and(eq(nodes.type, 'nginx'), eq(nodes.status, 'online')))
+      .limit(1);
+    if (!node) throw new Error('No online nginx node available');
+    return node.id;
+  }
 
   /**
    * Bootstrap management domain with ACME SSL.
@@ -118,9 +129,11 @@ export class SetupService {
     }
 
     // Create management proxy host
+    const defaultNodeId = await this.getFirstNodeId();
     const host = await this.proxyService.createProxyHost(
       {
         type: 'proxy',
+        nodeId: defaultNodeId,
         domainNames: [domain],
         forwardHost: 'app',
         forwardPort: 3000,
@@ -232,9 +245,11 @@ export class SetupService {
       };
     }
 
+    const uploadNodeId = await this.getFirstNodeId();
     const host = await this.proxyService.createProxyHost(
       {
         type: 'proxy',
+        nodeId: uploadNodeId,
         domainNames: [domain],
         forwardHost: 'app',
         forwardPort: 3000,

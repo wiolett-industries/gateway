@@ -1,0 +1,196 @@
+import { randomBytes } from 'node:crypto';
+import bcrypt from 'bcryptjs';
+import { and, count, eq, ilike, type SQL } from 'drizzle-orm';
+import type { DrizzleClient } from '@/db/client.js';
+import { certificates, nodes, proxyHosts } from '@/db/schema/index.js';
+import { createChildLogger } from '@/lib/logger.js';
+import { AppError } from '@/middleware/error-handler.js';
+import type { AuditService } from '@/modules/audit/audit.service.js';
+import type { NodeRegistryService } from '@/services/node-registry.service.js';
+import type { CreateNodeInput, NodeListQuery, UpdateNodeInput } from './nodes.schemas.js';
+
+const logger = createChildLogger('NodesService');
+
+export class NodesService {
+  constructor(
+    private db: DrizzleClient,
+    private auditService: AuditService,
+    private registry: NodeRegistryService
+  ) {}
+
+  async list(query: NodeListQuery) {
+    const conditions: SQL[] = [];
+
+    if (query.search) {
+      conditions.push(ilike(nodes.hostname, `%${query.search}%`));
+    }
+    if (query.type) {
+      conditions.push(eq(nodes.type, query.type));
+    }
+    if (query.status) {
+      conditions.push(eq(nodes.status, query.status));
+    }
+
+    const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const [totalResult] = await this.db.select({ count: count() }).from(nodes).where(where);
+    const total = totalResult?.count ?? 0;
+
+    const offset = (query.page - 1) * query.limit;
+    const rows = await this.db
+      .select()
+      .from(nodes)
+      .where(where)
+      .orderBy(nodes.createdAt)
+      .limit(query.limit)
+      .offset(offset);
+
+    // Enrich with live connection status
+    const enriched = rows.map((row) => ({
+      ...row,
+      isConnected: !!this.registry.getNode(row.id),
+    }));
+
+    return {
+      data: enriched,
+      total,
+      page: query.page,
+      limit: query.limit,
+      totalPages: Math.ceil(total / query.limit),
+    };
+  }
+
+  async get(id: string) {
+    const [node] = await this.db.select().from(nodes).where(eq(nodes.id, id)).limit(1);
+
+    if (!node) {
+      throw new AppError(404, 'NOT_FOUND', 'Node not found');
+    }
+
+    const connectedNode = this.registry.getNode(id);
+
+    return {
+      ...node,
+      isConnected: !!connectedNode,
+      liveHealthReport: connectedNode?.lastHealthReport ?? null,
+      liveStatsReport: connectedNode?.lastStatsReport ?? null,
+    };
+  }
+
+  async create(input: CreateNodeInput, userId: string) {
+    // Generate enrollment token
+    const tokenRaw = `gw_node_${randomBytes(24).toString('hex')}`;
+    const tokenHash = await bcrypt.hash(tokenRaw, 10);
+
+    const [node] = await this.db
+      .insert(nodes)
+      .values({
+        type: input.type,
+        hostname: input.hostname,
+        displayName: input.displayName,
+        enrollmentTokenHash: tokenHash,
+        status: 'pending',
+      })
+      .returning();
+
+    await this.auditService.log({
+      userId,
+      action: 'node.create',
+      resourceType: 'node',
+      resourceId: node.id,
+      details: { hostname: input.hostname, type: input.type },
+    });
+
+    logger.info('Node created', { nodeId: node.id, hostname: input.hostname });
+
+    return {
+      node,
+      enrollmentToken: tokenRaw, // Shown once only
+    };
+  }
+
+  async update(id: string, input: UpdateNodeInput, userId: string) {
+    const [existing] = await this.db.select().from(nodes).where(eq(nodes.id, id)).limit(1);
+
+    if (!existing) {
+      throw new AppError(404, 'NOT_FOUND', 'Node not found');
+    }
+
+    const [updated] = await this.db
+      .update(nodes)
+      .set({
+        displayName: input.displayName,
+        updatedAt: new Date(),
+      })
+      .where(eq(nodes.id, id))
+      .returning();
+
+    await this.auditService.log({
+      userId,
+      action: 'node.update',
+      resourceType: 'node',
+      resourceId: id,
+      details: { displayName: input.displayName },
+    });
+
+    return updated;
+  }
+
+  async remove(id: string, userId: string) {
+    const [node] = await this.db.select().from(nodes).where(eq(nodes.id, id)).limit(1);
+
+    if (!node) {
+      throw new AppError(404, 'NOT_FOUND', 'Node not found');
+    }
+
+    // Check if any proxy hosts are assigned to this node
+    const [hostCount] = await this.db.select({ count: count() }).from(proxyHosts).where(eq(proxyHosts.nodeId, id));
+
+    if (hostCount && hostCount.count > 0) {
+      throw new AppError(
+        400,
+        'NODE_HAS_HOSTS',
+        `Cannot delete node with ${hostCount.count} assigned proxy host(s). Reassign or delete them first.`
+      );
+    }
+
+    // Close gRPC stream if connected
+    const connectedNode = this.registry.getNode(id);
+    if (connectedNode) {
+      connectedNode.commandStream.end();
+      await this.registry.deregister(id);
+    }
+
+    // Revoke mTLS certificate if one was issued
+    if (node.certificateSerial) {
+      try {
+        const [cert] = await this.db
+          .select({ id: certificates.id })
+          .from(certificates)
+          .where(eq(certificates.serialNumber, node.certificateSerial))
+          .limit(1);
+        if (cert) {
+          await this.db
+            .update(certificates)
+            .set({ status: 'revoked', revokedAt: new Date(), revocationReason: 'cessationOfOperation' })
+            .where(eq(certificates.id, cert.id));
+          logger.info('Revoked node mTLS certificate', { certSerial: node.certificateSerial });
+        }
+      } catch (err) {
+        logger.warn('Failed to revoke node certificate', { error: (err as Error).message });
+      }
+    }
+
+    await this.db.delete(nodes).where(eq(nodes.id, id));
+
+    await this.auditService.log({
+      userId,
+      action: 'node.remove',
+      resourceType: 'node',
+      resourceId: id,
+      details: { hostname: node.hostname },
+    });
+
+    logger.info('Node removed', { nodeId: id, hostname: node.hostname });
+  }
+}

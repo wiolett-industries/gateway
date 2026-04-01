@@ -187,70 +187,47 @@ export class UpdateService {
   async performUpdate(targetVersion: string): Promise<void> {
     logger.info('Starting self-update', { targetVersion });
 
-    // 1. Self-inspect to discover compose context
     const selfInfo = await this.dockerService.inspectSelf();
     const labels = selfInfo.Config.Labels;
 
-    // Prefer COMPOSE_PROJECT_DIR env var (set by install script) over Docker label
     const composeDir = this.env.COMPOSE_PROJECT_DIR || labels['com.docker.compose.project.working_dir'];
     const composeProject = labels['com.docker.compose.project'];
 
-    if (!composeDir) {
-      throw new Error('Cannot determine compose project directory');
-    }
-    if (!/^\/[a-zA-Z0-9/_.-]+$/.test(composeDir)) {
-      throw new Error(`Invalid compose directory path: ${composeDir}`);
-    }
-    if (!composeProject) {
-      throw new Error('Cannot determine compose project name from container labels');
-    }
-    if (!/^[a-zA-Z0-9_-]+$/.test(composeProject)) {
-      throw new Error(`Invalid compose project name: ${composeProject}`);
-    }
+    if (!composeDir) throw new Error('Cannot determine compose project directory');
+    if (!/^\/[a-zA-Z0-9/_.-]+$/.test(composeDir)) throw new Error(`Invalid compose directory path: ${composeDir}`);
+    if (!composeProject) throw new Error('Cannot determine compose project name from container labels');
+    if (!/^[a-zA-Z0-9_-]+$/.test(composeProject)) throw new Error(`Invalid compose project name: ${composeProject}`);
 
-    // Determine the image to pull from the current container's image name
     const currentImage = selfInfo.Config.Image;
-    // The image might be "registry.gitlab.wiolett.net/wiolett/gateway:v1.0.0" or similar
-    // Extract the base image (without tag)
     const imageBase = currentImage.includes(':')
       ? currentImage.substring(0, currentImage.lastIndexOf(':'))
       : currentImage;
 
     logger.info('Update context', { composeDir, composeProject, imageBase, targetVersion });
 
-    if (!parseSemver(targetVersion)) {
-      throw new Error(`Invalid version format: ${targetVersion}`);
-    }
+    if (!parseSemver(targetVersion)) throw new Error(`Invalid version format: ${targetVersion}`);
 
-    // 2. Pull the new gateway image
     const tag = targetVersion.startsWith('v') ? targetVersion : `v${targetVersion}`;
     await this.dockerService.pullImage(imageBase, tag);
 
-    // 3. Pull docker:27-cli for the sidecar (may already be cached)
     try {
       await this.dockerService.pullImage('docker', '27-cli');
     } catch (error) {
       logger.warn('Failed to pull docker:27-cli, trying with existing cache', { error });
     }
 
-    // 4. Update .env on host via one-shot sidecar
-    const envTag = tag; // Use the full tag with 'v' prefix
+    const envTag = tag;
     logger.info('Updating .env on host', { composeDir, envTag });
     const envResult = await this.dockerService.runOneShot({
-      Image: currentImage, // Use current image (guaranteed available)
+      Image: currentImage,
       Cmd: ['sh', '-c', `sed -i 's/^GATEWAY_VERSION=.*/GATEWAY_VERSION=${envTag}/' /host/.env`],
-      HostConfig: {
-        Binds: [`${composeDir}:/host`],
-      },
+      HostConfig: { Binds: [`${composeDir}:/host`] },
     });
 
-    if (envResult.exitCode !== 0) {
-      throw new Error(`Failed to update .env: ${envResult.output}`);
-    }
+    if (envResult.exitCode !== 0) throw new Error(`Failed to update .env: ${envResult.output}`);
 
     logger.info('.env updated, launching compose sidecar');
 
-    // 5. Trigger docker compose up -d app via detached sidecar
     await this.dockerService.runDetached({
       Image: 'docker:27-cli',
       Cmd: [
@@ -258,9 +235,7 @@ export class UpdateService {
         '-c',
         `sleep 2 && docker compose --project-name ${composeProject} -f /project/docker-compose.yml up -d --force-recreate app`,
       ],
-      HostConfig: {
-        Binds: [`${composeDir}:/project`, '/var/run/docker.sock:/var/run/docker.sock'],
-      },
+      HostConfig: { Binds: [`${composeDir}:/project`, '/var/run/docker.sock:/var/run/docker.sock'] },
     });
 
     logger.info('Update sidecar launched — container will be replaced shortly');

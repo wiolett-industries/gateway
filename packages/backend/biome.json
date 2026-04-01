@@ -12,7 +12,8 @@
       "!src/modules/audit/audit.service.ts",
       "!src/modules/auth/auth.service.ts",
       "!src/modules/tokens/tokens.service.ts",
-      "!src/services/cache.service.ts"
+      "!src/services/cache.service.ts",
+      "!src/modules/groups/group.service.ts"
     ]
   },
   "linter": {

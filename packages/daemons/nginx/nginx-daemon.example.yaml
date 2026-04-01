@@ -1,0 +1,25 @@
+# nginx-daemon configuration
+# Copy this file to /etc/nginx-daemon/config.yaml and adjust values.
+
+gateway:
+  address: "gateway.example.com:9443"
+  token: ""  # Only needed for initial enrollment
+
+tls:
+  ca_cert: "/etc/nginx-daemon/certs/ca.pem"
+  client_cert: "/etc/nginx-daemon/certs/node.pem"
+  client_key: "/etc/nginx-daemon/certs/node-key.pem"
+
+nginx:
+  config_dir: "/etc/nginx/conf.d/sites"
+  certs_dir: "/etc/nginx/certs"
+  logs_dir: "/var/log/nginx"
+  global_config: "/etc/nginx/nginx.conf"
+  binary: "/usr/sbin/nginx"
+  stub_status_url: "http://127.0.0.1/nginx_status"
+  htpasswd_dir: "/etc/nginx/htpasswd"
+  acme_challenge_dir: "/var/www/acme-challenge"
+
+state_dir: "/var/lib/nginx-daemon"
+log_level: "info"   # debug, info, warn, error
+log_format: "json"  # json, text

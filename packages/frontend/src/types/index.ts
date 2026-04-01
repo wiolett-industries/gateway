@@ -35,6 +35,102 @@ export interface PermissionGroup {
   updatedAt: string;
 }
 
+// Nodes
+export type NodeType = "nginx" | "bastion";
+export type NodeStatus = "pending" | "online" | "offline" | "error";
+
+export interface NodeHealthReport {
+  nginxRunning: boolean;
+  configValid: boolean;
+  nginxUptimeSeconds: number;
+  workerCount: number;
+  nginxVersion: string;
+  cpuPercent: number;
+  memoryBytes: number;
+  diskFreeBytes: number;
+  timestamp: number;
+  // System
+  loadAverage1m: number;
+  loadAverage5m: number;
+  loadAverage15m: number;
+  systemMemoryTotalBytes: number;
+  systemMemoryUsedBytes: number;
+  systemMemoryAvailableBytes: number;
+  swapTotalBytes: number;
+  swapUsedBytes: number;
+  systemUptimeSeconds: number;
+  openFileDescriptors: number;
+  maxFileDescriptors: number;
+  // Disk
+  diskMounts: Array<{
+    mountPoint: string;
+    filesystem: string;
+    device: string;
+    totalBytes: number;
+    usedBytes: number;
+    freeBytes: number;
+    usagePercent: number;
+  }>;
+  diskReadBytes: number;
+  diskWriteBytes: number;
+  // Network
+  networkInterfaces: Array<{
+    name: string;
+    rxBytes: number;
+    txBytes: number;
+    rxPackets: number;
+    txPackets: number;
+    rxErrors: number;
+    txErrors: number;
+  }>;
+  // Nginx
+  nginxRssBytes: number;
+  errorRate4xx: number;
+  errorRate5xx: number;
+}
+
+export interface NodeStatsReport {
+  activeConnections: number;
+  accepts: number;
+  handled: number;
+  requests: number;
+  reading: number;
+  writing: number;
+  waiting: number;
+  timestamp: number;
+}
+
+export interface Node {
+  id: string;
+  type: NodeType;
+  hostname: string;
+  displayName: string | null;
+  status: NodeStatus;
+  daemonVersion: string | null;
+  osInfo: string | null;
+  configVersionHash: string | null;
+  capabilities: Record<string, unknown>;
+  lastSeenAt: string | null;
+  lastHealthReport: NodeHealthReport | null;
+  lastStatsReport: NodeStatsReport | null;
+  healthHistory: Array<{ hour: string; healthy: boolean }>;
+  metadata: Record<string, unknown>;
+  isDefault: boolean;
+  isConnected: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface NodeDetail extends Node {
+  liveHealthReport: NodeHealthReport | null;
+  liveStatsReport: NodeStatsReport | null;
+}
+
+export interface CreateNodeResponse {
+  node: Node;
+  enrollmentToken: string;
+}
+
 // CA types
 export type CAType = "root" | "intermediate";
 export type CAStatus = "active" | "revoked" | "expired";
@@ -181,35 +277,192 @@ export const AI_SCOPE = "ai:use" as const;
 
 // API Token / Group scopes
 export const TOKEN_SCOPES = [
-  { value: "ca:read", label: "View CAs", desc: "List and view certificate authority details", group: "Certificate Authorities" },
-  { value: "ca:create:root", label: "Create Root CAs", desc: "Create new root certificate authorities", group: "Certificate Authorities" },
-  { value: "ca:create:intermediate", label: "Create Intermediate CAs", desc: "Create intermediate CAs under an existing root", group: "Certificate Authorities" },
-  { value: "ca:revoke", label: "Revoke CAs", desc: "Revoke certificate authorities and their chains", group: "Certificate Authorities" },
-  { value: "cert:read", label: "View Certificates", desc: "List and view issued certificate details", group: "Certificates" },
-  { value: "cert:issue", label: "Issue Certificates", desc: "Issue new certificates from any CA", group: "Certificates" },
-  { value: "cert:revoke", label: "Revoke Certificates", desc: "Revoke issued certificates", group: "Certificates" },
-  { value: "cert:export", label: "Export Certificates", desc: "Download certificates and private keys", group: "Certificates" },
-  { value: "template:read", label: "View Templates", desc: "List and view certificate issuance templates", group: "Templates" },
-  { value: "template:manage", label: "Manage Templates", desc: "Create, edit, and delete certificate templates", group: "Templates" },
-  { value: "proxy:read", label: "View Proxy Hosts", desc: "List and view reverse proxy host configurations", group: "Proxy Hosts" },
-  { value: "proxy:manage", label: "Create & Edit Proxy Hosts", desc: "Create and modify proxy host configurations", group: "Proxy Hosts" },
-  { value: "proxy:delete", label: "Delete Proxy Hosts", desc: "Remove proxy host configurations", group: "Proxy Hosts" },
-  { value: "proxy:advanced", label: "Proxy Advanced Config", desc: "Edit raw nginx advanced configuration blocks", group: "Proxy Hosts" },
-  { value: "ssl:read", label: "View SSL Certificates", desc: "List and view SSL/TLS certificates", group: "SSL Certificates" },
-  { value: "ssl:manage", label: "Manage SSL Certificates", desc: "Upload, request, and renew SSL certificates", group: "SSL Certificates" },
-  { value: "ssl:delete", label: "Delete SSL Certificates", desc: "Remove SSL certificates", group: "SSL Certificates" },
-  { value: "access-list:read", label: "View Access Lists", desc: "List and view IP-based access lists", group: "Access Lists" },
-  { value: "access-list:manage", label: "Manage Access Lists", desc: "Create and edit access list rules", group: "Access Lists" },
-  { value: "access-list:delete", label: "Delete Access Lists", desc: "Remove access lists", group: "Access Lists" },
-  { value: "admin:users", label: "Manage Users", desc: "View, assign groups, block, and delete users", group: "Administration" },
-  { value: "admin:groups", label: "Manage Groups", desc: "Create, edit, and delete permission groups", group: "Administration" },
-  { value: "admin:audit", label: "View Audit Log", desc: "Access the full audit trail of system events", group: "Administration" },
-  { value: "admin:system", label: "System Admin", desc: "Protected flag — holders cannot be managed by non-system-admins", group: "Administration" },
-  { value: "admin:update", label: "Update Application", desc: "Check for and trigger application updates", group: "Administration" },
-  { value: "admin:housekeeping", label: "Housekeeping", desc: "Run cleanup tasks like log rotation and expired cert removal", group: "Administration" },
-  { value: "admin:alerts", label: "System Alerts", desc: "View and dismiss system alerts (expiry warnings, etc.)", group: "Administration" },
-  { value: "admin:ai-config", label: "AI Configuration", desc: "Configure AI model, API keys, and tool access", group: "Administration" },
-  { value: "ai:use", label: "Use AI Assistant", desc: "Access the AI-powered assistant for guided operations", group: "Features" },
+  {
+    value: "ca:read",
+    label: "View CAs",
+    desc: "List and view certificate authority details",
+    group: "Certificate Authorities",
+  },
+  {
+    value: "ca:create:root",
+    label: "Create Root CAs",
+    desc: "Create new root certificate authorities",
+    group: "Certificate Authorities",
+  },
+  {
+    value: "ca:create:intermediate",
+    label: "Create Intermediate CAs",
+    desc: "Create intermediate CAs under an existing root",
+    group: "Certificate Authorities",
+  },
+  {
+    value: "ca:revoke",
+    label: "Revoke CAs",
+    desc: "Revoke certificate authorities and their chains",
+    group: "Certificate Authorities",
+  },
+  {
+    value: "cert:read",
+    label: "View Certificates",
+    desc: "List and view issued certificate details",
+    group: "Certificates",
+  },
+  {
+    value: "cert:issue",
+    label: "Issue Certificates",
+    desc: "Issue new certificates from any CA",
+    group: "Certificates",
+  },
+  {
+    value: "cert:revoke",
+    label: "Revoke Certificates",
+    desc: "Revoke issued certificates",
+    group: "Certificates",
+  },
+  {
+    value: "cert:export",
+    label: "Export Certificates",
+    desc: "Download certificates and private keys",
+    group: "Certificates",
+  },
+  {
+    value: "template:read",
+    label: "View Templates",
+    desc: "List and view certificate issuance templates",
+    group: "Templates",
+  },
+  {
+    value: "template:manage",
+    label: "Manage Templates",
+    desc: "Create, edit, and delete certificate templates",
+    group: "Templates",
+  },
+  {
+    value: "proxy:read",
+    label: "View Proxy Hosts",
+    desc: "List and view reverse proxy host configurations",
+    group: "Proxy Hosts",
+  },
+  {
+    value: "proxy:manage",
+    label: "Create & Edit Proxy Hosts",
+    desc: "Create and modify proxy host configurations",
+    group: "Proxy Hosts",
+  },
+  {
+    value: "proxy:delete",
+    label: "Delete Proxy Hosts",
+    desc: "Remove proxy host configurations",
+    group: "Proxy Hosts",
+  },
+  {
+    value: "proxy:advanced",
+    label: "Proxy Advanced Config",
+    desc: "Edit raw nginx advanced configuration blocks",
+    group: "Proxy Hosts",
+  },
+  {
+    value: "ssl:read",
+    label: "View SSL Certificates",
+    desc: "List and view SSL/TLS certificates",
+    group: "SSL Certificates",
+  },
+  {
+    value: "ssl:manage",
+    label: "Manage SSL Certificates",
+    desc: "Upload, request, and renew SSL certificates",
+    group: "SSL Certificates",
+  },
+  {
+    value: "ssl:delete",
+    label: "Delete SSL Certificates",
+    desc: "Remove SSL certificates",
+    group: "SSL Certificates",
+  },
+  {
+    value: "access-list:read",
+    label: "View Access Lists",
+    desc: "List and view IP-based access lists",
+    group: "Access Lists",
+  },
+  {
+    value: "access-list:manage",
+    label: "Manage Access Lists",
+    desc: "Create and edit access list rules",
+    group: "Access Lists",
+  },
+  {
+    value: "access-list:delete",
+    label: "Delete Access Lists",
+    desc: "Remove access lists",
+    group: "Access Lists",
+  },
+  {
+    value: "admin:users",
+    label: "Manage Users",
+    desc: "View, assign groups, block, and delete users",
+    group: "Administration",
+  },
+  {
+    value: "admin:groups",
+    label: "Manage Groups",
+    desc: "Create, edit, and delete permission groups",
+    group: "Administration",
+  },
+  {
+    value: "admin:audit",
+    label: "View Audit Log",
+    desc: "Access the full audit trail of system events",
+    group: "Administration",
+  },
+  {
+    value: "admin:system",
+    label: "System Admin",
+    desc: "Protected flag — holders cannot be managed by non-system-admins",
+    group: "Administration",
+  },
+  {
+    value: "admin:update",
+    label: "Update Application",
+    desc: "Check for and trigger application updates",
+    group: "Administration",
+  },
+  {
+    value: "admin:housekeeping",
+    label: "Housekeeping",
+    desc: "Run cleanup tasks like log rotation and expired cert removal",
+    group: "Administration",
+  },
+  {
+    value: "admin:alerts",
+    label: "System Alerts",
+    desc: "View and dismiss system alerts (expiry warnings, etc.)",
+    group: "Administration",
+  },
+  {
+    value: "admin:ai-config",
+    label: "AI Configuration",
+    desc: "Configure AI model, API keys, and tool access",
+    group: "Administration",
+  },
+  {
+    value: "nodes:view",
+    label: "View Nodes",
+    desc: "List and view registered nginx daemon nodes",
+    group: "Administration",
+  },
+  {
+    value: "nodes:manage",
+    label: "Manage Nodes",
+    desc: "Add, update, and remove nginx daemon nodes",
+    group: "Administration",
+  },
+  {
+    value: "ai:use",
+    label: "Use AI Assistant",
+    desc: "Access the AI-powered assistant for guided operations",
+    group: "Features",
+  },
 ] as const;
 
 export interface ApiToken {

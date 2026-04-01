@@ -1,4 +1,4 @@
-import { readdir, rm, stat } from 'node:fs/promises';
+import { readdir, stat } from 'node:fs/promises';
 import httpModule from 'node:http';
 import { join } from 'node:path';
 import { and, count, eq, lt, min, sql } from 'drizzle-orm';
@@ -6,11 +6,10 @@ import type { Env } from '@/config/env.js';
 import type { DrizzleClient } from '@/db/client.js';
 import { alerts } from '@/db/schema/alerts.js';
 import { auditLog } from '@/db/schema/audit-log.js';
-import { certificates } from '@/db/schema/certificates.js';
 import { settings } from '@/db/schema/settings.js';
-import { sslCertificates } from '@/db/schema/ssl-certificates.js';
 import { createChildLogger } from '@/lib/logger.js';
 import type { DockerService } from './docker.service.js';
+import type { NodeDispatchService } from './node-dispatch.service.js';
 
 const logger = createChildLogger('HousekeepingService');
 
@@ -103,7 +102,8 @@ export class HousekeepingService {
   constructor(
     private readonly db: DrizzleClient,
     private readonly dockerService: DockerService,
-    private readonly env: Env
+    readonly _nodeDispatch: NodeDispatchService,
+    readonly _env: Env
   ) {}
 
   // ── Config ──────────────────────────────────────────────────────
@@ -270,30 +270,11 @@ export class HousekeepingService {
 
   // ── Category Implementations ────────────────────────────────────
 
-  private async rotateNginxLogs(retentionDays: number): Promise<{ itemsCleaned: number; spaceFreedBytes?: number }> {
-    const containerName = this.env.NGINX_CONTAINER_NAME;
-
-    // Step 1: Rename active log files with timestamp suffix
-    await this.dockerService.execInContainer(containerName, [
-      'sh',
-      '-c',
-      // biome-ignore lint/suspicious/noTemplateCurlyInString: shell syntax, not JS template
-      'cd /var/log/nginx && for f in *.log; do [ -f "$f" ] && [ -s "$f" ] && mv "$f" "${f}.$(date +%Y%m%d%H%M%S)"; done',
-    ]);
-
-    // Step 2: Tell nginx to reopen log files
-    await this.dockerService.execInContainer(containerName, ['nginx', '-s', 'reopen']);
-
-    // Step 3: Compress rotated files and delete old compressed files
-    const safeDays = Math.max(1, Math.min(365, Math.floor(Number(retentionDays))));
-    const compressResult = await this.dockerService.execInContainer(containerName, [
-      'sh',
-      '-c',
-      `cd /var/log/nginx && find . -name "*.log.*" ! -name "*.gz" -exec gzip {} \\; 2>/dev/null; DELETED=$(find . -name "*.gz" -mtime +${safeDays} -delete -print | wc -l); echo "$DELETED"`,
-    ]);
-
-    const deleted = parseInt(compressResult.output.trim(), 10) || 0;
-    return { itemsCleaned: deleted };
+  private async rotateNginxLogs(_retentionDays: number): Promise<{ itemsCleaned: number; spaceFreedBytes?: number }> {
+    // Log rotation is handled by each daemon node locally (7-day retention).
+    // Logs streamed to Gateway are stored in the database / log aggregation.
+    logger.debug('Nginx log rotation is managed by daemon nodes');
+    return { itemsCleaned: 0 };
   }
 
   private async cleanAuditLog(retentionDays: number): Promise<{ itemsCleaned: number }> {
@@ -321,60 +302,15 @@ export class HousekeepingService {
   }
 
   private async cleanOrphanedCerts(): Promise<{ itemsCleaned: number }> {
-    const certsPath = this.env.NGINX_CERTS_PATH;
-    let entries: string[];
-    try {
-      entries = await readdir(certsPath);
-    } catch {
-      return { itemsCleaned: 0 };
-    }
-
-    // Get all known cert IDs from both tables
-    const [sslRows, pkiRows] = await Promise.all([
-      this.db.select({ id: sslCertificates.id }).from(sslCertificates),
-      this.db.select({ id: certificates.id }).from(certificates),
-    ]);
-
-    const knownIds = new Set([...sslRows.map((r) => r.id), ...pkiRows.map((r) => r.id)]);
-
-    let cleaned = 0;
-    for (const entry of entries) {
-      // Only consider UUID-shaped directories
-      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(entry)) continue;
-      if (knownIds.has(entry)) continue;
-
-      try {
-        await rm(join(certsPath, entry), { recursive: true });
-        cleaned++;
-        logger.debug('Removed orphaned cert directory', { certId: entry });
-      } catch (error) {
-        logger.warn('Failed to remove orphaned cert directory', { certId: entry, error });
-      }
-    }
-
-    return { itemsCleaned: cleaned };
+    // Cert files are managed by daemon nodes. Orphan cleanup is a daemon-side concern.
+    logger.debug('Orphaned cert cleanup is managed by daemon nodes');
+    return { itemsCleaned: 0 };
   }
 
   private async cleanAcmeChallenges(): Promise<{ itemsCleaned: number }> {
-    const challengePath = this.env.ACME_CHALLENGE_PATH;
-    let entries: string[];
-    try {
-      entries = await readdir(challengePath);
-    } catch {
-      return { itemsCleaned: 0 };
-    }
-
-    let cleaned = 0;
-    for (const entry of entries) {
-      try {
-        await rm(join(challengePath, entry), { force: true });
-        cleaned++;
-      } catch {
-        // ignore
-      }
-    }
-
-    return { itemsCleaned: cleaned };
+    // ACME challenge files are managed by daemon nodes.
+    logger.debug('ACME challenge cleanup is managed by daemon nodes');
+    return { itemsCleaned: 0 };
   }
 
   private async pruneDockerImages(): Promise<{ itemsCleaned: number; spaceFreedBytes?: number }> {
@@ -455,7 +391,8 @@ export class HousekeepingService {
   // ── Stats Helpers ───────────────────────────────────────────────
 
   private async getNginxLogStats(): Promise<HousekeepingStats['nginxLogs']> {
-    const logsPath = this.env.NGINX_LOGS_PATH;
+    // Logs are managed by daemon nodes (7-day local retention) and streamed to Gateway
+    const logsPath = '/var/log/gateway-logs'; // Gateway-side log storage (future)
     try {
       const entries = await readdir(logsPath);
       let totalSize = 0;
@@ -506,52 +443,13 @@ export class HousekeepingService {
   }
 
   private async getOrphanedCertStats(): Promise<HousekeepingStats['orphanedCerts']> {
-    const certsPath = this.env.NGINX_CERTS_PATH;
-    try {
-      const entries = await readdir(certsPath);
-      const uuidEntries = entries.filter((e) =>
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(e)
-      );
-
-      if (uuidEntries.length === 0) return { count: 0, certIds: [] };
-
-      const [sslRows, pkiRows] = await Promise.all([
-        this.db.select({ id: sslCertificates.id }).from(sslCertificates),
-        this.db.select({ id: certificates.id }).from(certificates),
-      ]);
-
-      const knownIds = new Set([...sslRows.map((r) => r.id), ...pkiRows.map((r) => r.id)]);
-
-      const orphaned = uuidEntries.filter((e) => !knownIds.has(e));
-      return { count: orphaned.length, certIds: orphaned };
-    } catch {
-      return { count: 0, certIds: [] };
-    }
+    // Cert files are on daemon nodes, not accessible from Gateway
+    return { count: 0, certIds: [] };
   }
 
   private async getAcmeChallengeStats(): Promise<HousekeepingStats['acmeChallenges']> {
-    const challengePath = this.env.ACME_CHALLENGE_PATH;
-    try {
-      const entries = await readdir(challengePath);
-      let totalSize = 0;
-      let fileCount = 0;
-
-      for (const entry of entries) {
-        try {
-          const s = await stat(join(challengePath, entry));
-          if (s.isFile()) {
-            fileCount++;
-            totalSize += s.size;
-          }
-        } catch {
-          // skip
-        }
-      }
-
-      return { fileCount, totalSizeBytes: totalSize };
-    } catch {
-      return { fileCount: 0, totalSizeBytes: 0 };
-    }
+    // ACME challenge files are on daemon nodes, not accessible from Gateway
+    return { fileCount: 0, totalSizeBytes: 0 };
   }
 
   private async getDockerImageStats(): Promise<HousekeepingStats['dockerImages']> {
@@ -651,7 +549,7 @@ export class HousekeepingService {
 
       const req = httpModule.request(
         {
-          socketPath: this.env.DOCKER_SOCKET_PATH,
+          socketPath: '/var/run/docker.sock',
           method,
           path: `/v1.46${path}`,
           headers: payload ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } : {},

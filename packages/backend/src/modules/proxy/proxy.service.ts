@@ -1,4 +1,4 @@
-import { and, count, desc, eq, ilike, sql } from 'drizzle-orm';
+import { and, count, desc, eq, ilike, isNull, or, sql } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import { accessLists } from '@/db/schema/access-lists.js';
 import { certificates } from '@/db/schema/certificates.js';
@@ -9,7 +9,8 @@ import { escapeLike } from '@/lib/utils.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { CryptoService } from '@/services/crypto.service.js';
-import type { NginxService, ProxyHostConfig } from '@/services/nginx.service.js';
+import type { NginxConfigGenerator, ProxyHostConfig } from '@/services/nginx-config-generator.service.js';
+import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import type { PaginatedResponse } from '@/types.js';
 import type { NginxTemplateService } from './nginx-template.service.js';
 import type { CreateProxyHostInput, ProxyHostListQuery, UpdateProxyHostInput } from './proxy.schemas.js';
@@ -35,20 +36,49 @@ interface CertPaths {
 export class ProxyService {
   constructor(
     private readonly db: DrizzleClient,
-    private readonly nginxService: NginxService,
     private readonly nginxTemplateService: NginxTemplateService,
     private readonly auditService: AuditService,
-    private readonly cryptoService: CryptoService
+    private readonly cryptoService: CryptoService,
+    private readonly configGenerator: NginxConfigGenerator,
+    private readonly nodeDispatch: NodeDispatchService
   ) {}
+
+  private async applyConfigToNode(hostId: string, config: string, nodeId: string | null): Promise<void> {
+    const resolvedNodeId = await this.nodeDispatch.resolveNodeId(nodeId);
+    const result = await this.nodeDispatch.applyConfig(resolvedNodeId, hostId, config);
+    if (!result.success) {
+      throw new Error(result.error || 'Daemon config apply failed');
+    }
+    await this.auditService.log({
+      userId: null,
+      action: 'node.config_push',
+      resourceType: 'proxy_host',
+      resourceId: hostId,
+      details: { nodeId: resolvedNodeId },
+    });
+  }
+
+  private async removeConfigFromNode(hostId: string, nodeId: string | null): Promise<void> {
+    const resolvedNodeId = await this.nodeDispatch.resolveNodeId(nodeId);
+    const result = await this.nodeDispatch.removeConfig(resolvedNodeId, hostId);
+    if (!result.success) {
+      throw new Error(result.error || 'Daemon config remove failed');
+    }
+  }
 
   // -----------------------------------------------------------------------
   // Create
   // -----------------------------------------------------------------------
 
   async createProxyHost(input: CreateProxyHostInput, userId: string) {
-    // 0. Validate advanced config if provided
+    // 0. Require a node assignment
+    if (!input.nodeId) {
+      throw new AppError(400, 'NODE_REQUIRED', 'A node must be selected for the proxy host');
+    }
+
+    // 0b. Validate advanced config if provided
     if (input.advancedConfig) {
-      const validation = this.nginxService.validateAdvancedConfig(input.advancedConfig);
+      const validation = this.configGenerator.validateAdvancedConfig(input.advancedConfig);
       if (!validation.valid) {
         throw new AppError(
           400,
@@ -63,6 +93,7 @@ export class ProxyService {
       .insert(proxyHosts)
       .values({
         type: input.type,
+        nodeId: input.nodeId,
         domainNames: input.domainNames,
         forwardHost: input.forwardHost ?? null,
         forwardPort: input.forwardPort ?? null,
@@ -102,8 +133,8 @@ export class ProxyService {
       const accessList = await this.resolveAccessList(host.accessListId);
       const config = await this.buildNginxConfig(host, certPaths, accessList);
 
-      // 3. Apply config (writes file, tests, reloads or rolls back)
-      await this.nginxService.applyConfig(host.id, config);
+      // 3. Apply config via daemon or legacy docker
+      await this.applyConfigToNode(host.id, config, host.nodeId);
     } catch (error) {
       // 4. If nginx fails, delete the DB row and throw
       logger.error('Failed to apply nginx config for new proxy host, rolling back DB insert', {
@@ -145,7 +176,7 @@ export class ProxyService {
   async updateProxyHost(id: string, input: UpdateProxyHostInput, userId: string) {
     // 0. Validate advanced config if provided
     if (input.advancedConfig) {
-      const validation = this.nginxService.validateAdvancedConfig(input.advancedConfig);
+      const validation = this.configGenerator.validateAdvancedConfig(input.advancedConfig);
       if (!validation.valid) {
         throw new AppError(
           400,
@@ -187,14 +218,10 @@ export class ProxyService {
 
       if (updated.enabled) {
         // 4. Apply config with rollback on failure
-        await this.nginxService.applyConfig(id, config);
+        await this.applyConfigToNode(id, config, updated.nodeId);
       } else {
         // If disabled, remove config and reload
-        await this.nginxService.removeConfig(id);
-        const testResult = await this.nginxService.testConfig();
-        if (testResult.valid) {
-          await this.nginxService.reloadNginx();
-        }
+        await this.removeConfigFromNode(id, updated.nodeId);
       }
     } catch (error) {
       // Rollback DB to previous state — only restore fields that were in the input
@@ -253,17 +280,15 @@ export class ProxyService {
     if (!existing) throw new AppError(404, 'PROXY_HOST_NOT_FOUND', 'Proxy host not found');
     if (existing.isSystem) throw new AppError(403, 'SYSTEM_HOST', 'System proxy hosts cannot be deleted');
 
-    // 2. Remove nginx config
-    await this.nginxService.removeConfig(id);
-
-    // 3. Reload nginx
-    const testResult = await this.nginxService.testConfig();
-    if (testResult.valid) {
-      await this.nginxService.reloadNginx();
-    }
-
-    // 4. Delete from DB
+    // 2. Delete from DB first (safer — lingering config is less harmful than zombie DB record)
     await this.db.delete(proxyHosts).where(eq(proxyHosts.id, id));
+
+    // 3. Remove nginx config and reload (non-fatal if it fails after DB delete)
+    try {
+      await this.removeConfigFromNode(id, existing.nodeId);
+    } catch (err) {
+      logger.warn('Failed to remove nginx config after DB delete', { hostId: id, error: (err as Error).message });
+    }
 
     // 5. Audit log
     await this.auditService.log({
@@ -355,6 +380,9 @@ export class ProxyService {
       // Search across domain names (cast jsonb to text for ilike)
       conditions.push(ilike(sql`${proxyHosts.domainNames}::text`, `%${escapeLike(query.search)}%`));
     }
+    if (query.nodeId) {
+      conditions.push(eq(proxyHosts.nodeId, query.nodeId));
+    }
 
     const where = conditions.length > 0 ? and(...conditions) : undefined;
 
@@ -406,14 +434,10 @@ export class ProxyService {
         const certPaths = await this.resolveCertPaths(updated);
         const accessList = await this.resolveAccessList(updated.accessListId);
         const config = await this.buildNginxConfig(updated, certPaths, accessList);
-        await this.nginxService.applyConfig(id, config);
+        await this.applyConfigToNode(id, config, updated.nodeId);
       } else {
         // Disable: remove config and reload
-        await this.nginxService.removeConfig(id);
-        const testResult = await this.nginxService.testConfig();
-        if (testResult.valid) {
-          await this.nginxService.reloadNginx();
-        }
+        await this.removeConfigFromNode(id, updated.nodeId);
       }
     } catch (error) {
       // Rollback DB to previous enabled state
@@ -511,6 +535,43 @@ export class ProxyService {
   }
 
   // -----------------------------------------------------------------------
+  // Resync all hosts on a node (used on reconnect with hash mismatch)
+  // -----------------------------------------------------------------------
+
+  async resyncAllHostsOnNode(nodeId: string): Promise<void> {
+    // Include hosts explicitly assigned AND hosts with null nodeId if this is the default node
+    const isDefault = (await this.nodeDispatch.getDefaultNodeId()) === nodeId;
+    const nodeFilter = isDefault
+      ? or(eq(proxyHosts.nodeId, nodeId), isNull(proxyHosts.nodeId))
+      : eq(proxyHosts.nodeId, nodeId);
+
+    // Only resync enabled hosts — disabled hosts should not have active configs
+    const hosts = await this.db.query.proxyHosts.findMany({
+      where: and(nodeFilter, eq(proxyHosts.enabled, true)),
+    });
+
+    if (hosts.length === 0) {
+      logger.info('No enabled hosts to resync for node', { nodeId });
+      return;
+    }
+
+    logger.info('Resyncing all hosts on node', { nodeId, hostCount: hosts.length });
+
+    for (const host of hosts) {
+      try {
+        const certPaths = await this.resolveCertPaths(host);
+        const accessList = await this.resolveAccessList(host.accessListId);
+        const config = await this.buildNginxConfig(host, certPaths, accessList);
+        await this.applyConfigToNode(host.id, config, host.nodeId ?? nodeId);
+      } catch (err) {
+        logger.error('Failed to resync host config', { hostId: host.id, nodeId, error: (err as Error).message });
+      }
+    }
+
+    logger.info('Node resync complete', { nodeId, hostCount: hosts.length });
+  }
+
+  // -----------------------------------------------------------------------
   // Get rendered nginx config for a host
   // -----------------------------------------------------------------------
 
@@ -530,7 +591,7 @@ export class ProxyService {
   // -----------------------------------------------------------------------
 
   async validateAdvancedConfig(snippet: string) {
-    return this.nginxService.validateAdvancedConfig(snippet);
+    return this.configGenerator.validateAdvancedConfig(snippet);
   }
 
   // -----------------------------------------------------------------------
@@ -569,17 +630,29 @@ export class ProxyService {
           throw new Error('Failed to decrypt SSL certificate private key');
         }
 
-        const paths = await this.nginxService.deployCertificate(
+        // Deploy cert to the node via daemon
+        const resolvedNodeId = await this.nodeDispatch.resolveNodeId(host.nodeId);
+        await this.nodeDispatch.deployCertificate(
+          resolvedNodeId,
           sslCert.id,
-          sslCert.certificatePem,
-          keyPem,
-          sslCert.chainPem ?? undefined
+          Buffer.from(sslCert.certificatePem),
+          Buffer.from(keyPem),
+          sslCert.chainPem ? Buffer.from(sslCert.chainPem) : undefined
         );
 
+        await this.auditService.log({
+          userId: null,
+          action: 'node.cert_deploy',
+          resourceType: 'ssl_certificate',
+          resourceId: sslCert.id,
+          details: { nodeId: resolvedNodeId },
+        });
+
+        const paths = this.configGenerator.getCertPaths(sslCert.id);
         return {
           sslCertPath: paths.certPath,
           sslKeyPath: paths.keyPath,
-          sslChainPath: paths.chainPath ?? null,
+          sslChainPath: sslCert.chainPem ? paths.chainPath : null,
         };
       }
     }
@@ -597,8 +670,24 @@ export class ProxyService {
           dekIv: cert.dekIv,
         });
 
-        const paths = await this.nginxService.deployCertificate(`internal-${cert.id}`, cert.certificatePem, keyPem);
+        const certId = `internal-${cert.id}`;
+        const resolvedNodeId = await this.nodeDispatch.resolveNodeId(host.nodeId);
+        await this.nodeDispatch.deployCertificate(
+          resolvedNodeId,
+          certId,
+          Buffer.from(cert.certificatePem),
+          Buffer.from(keyPem)
+        );
 
+        await this.auditService.log({
+          userId: null,
+          action: 'node.cert_deploy',
+          resourceType: 'certificate',
+          resourceId: cert.id,
+          details: { nodeId: resolvedNodeId, internal: true },
+        });
+
+        const paths = this.configGenerator.getCertPaths(certId);
         return {
           sslCertPath: paths.certPath,
           sslKeyPath: paths.keyPath,

@@ -36,6 +36,7 @@ const RewriteRuleSchema = z.object({
 export const CreateProxyHostSchema = z
   .object({
     type: z.enum(['proxy', 'redirect', '404']).default('proxy'),
+    nodeId: z.string().uuid('A node must be selected'),
     domainNames: z.array(DomainNameSchema).min(1, 'At least one domain name is required'),
 
     // Upstream — proxy type
@@ -191,6 +192,7 @@ export const ProxyHostListQuerySchema = z.object({
   enabled: z.coerce.boolean().optional(),
   healthStatus: z.enum(['online', 'offline', 'degraded', 'unknown']).optional(),
   search: z.string().max(255).optional(),
+  nodeId: z.string().uuid().optional(),
 });
 
 // ---------------------------------------------------------------------------

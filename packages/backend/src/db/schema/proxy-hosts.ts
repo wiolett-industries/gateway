@@ -2,6 +2,7 @@ import { boolean, index, integer, jsonb, pgEnum, pgTable, text, timestamp, uuid,
 import { accessLists } from './access-lists.js';
 import { certificates } from './certificates.js';
 import { nginxTemplates } from './nginx-templates.js';
+import { nodes } from './nodes.js';
 import { proxyHostFolders } from './proxy-host-folders.js';
 import { sslCertificates } from './ssl-certificates.js';
 import { users } from './users.js';
@@ -80,6 +81,9 @@ export const proxyHosts = pgTable(
     // Access list
     accessListId: uuid('access_list_id').references(() => accessLists.id, { onDelete: 'set null' }),
 
+    // Node assignment
+    nodeId: uuid('node_id').references(() => nodes.id, { onDelete: 'set null' }),
+
     // Health check
     healthCheckEnabled: boolean('health_check_enabled').notNull().default(false),
     healthCheckUrl: varchar('health_check_url', { length: 500 }).default('/'),
@@ -104,5 +108,6 @@ export const proxyHosts = pgTable(
     typeIdx: index('proxy_host_type_idx').on(table.type),
     folderIdx: index('proxy_host_folder_idx').on(table.folderId),
     createdByIdx: index('proxy_host_created_by_idx').on(table.createdById),
+    nodeIdx: index('proxy_host_node_idx').on(table.nodeId),
   })
 );

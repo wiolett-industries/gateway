@@ -32,6 +32,7 @@ import type {
   NginxProcessInfo,
   NginxTemplate,
   PaginatedResponse,
+  PermissionGroup,
   ProxyHost,
   ProxyHostFolder,
   ProxyHostType,
@@ -45,7 +46,6 @@ import type {
   UpdateStatus,
   UploadCertRequest,
   User,
-  PermissionGroup,
 } from "@/types";
 
 const API_BASE = "/api";
@@ -534,6 +534,95 @@ class ApiClient {
     await this.request(`/admin/groups/${id}`, { method: "DELETE" });
   }
 
+  // ── Nodes ──
+
+  async listNodes(params?: {
+    search?: string;
+    type?: string;
+    status?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{
+    data: import("@/types").Node[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  }> {
+    const query = new URLSearchParams();
+    if (params?.search) query.set("search", params.search);
+    if (params?.type) query.set("type", params.type);
+    if (params?.status) query.set("status", params.status);
+    if (params?.page) query.set("page", String(params.page));
+    if (params?.limit) query.set("limit", String(params.limit));
+    const qs = query.toString();
+    return this.request(`/nodes${qs ? `?${qs}` : ""}`);
+  }
+
+  async getNode(id: string): Promise<import("@/types").NodeDetail> {
+    return this.unwrapData(this.request(`/nodes/${id}`));
+  }
+
+  async createNode(data: {
+    type?: string;
+    hostname: string;
+    displayName?: string;
+  }): Promise<import("@/types").CreateNodeResponse> {
+    return this.unwrapData(
+      this.request("/nodes", {
+        method: "POST",
+        body: JSON.stringify(data),
+      })
+    );
+  }
+
+  async updateNode(id: string, data: { displayName?: string }): Promise<import("@/types").Node> {
+    return this.unwrapData(
+      this.request(`/nodes/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      })
+    );
+  }
+
+  async deleteNode(id: string): Promise<void> {
+    await this.request(`/nodes/${id}`, { method: "DELETE" });
+  }
+
+  createNodeMonitoringStream(nodeId: string): EventSource {
+    const sessionId = useAuthStore.getState().sessionId;
+    const params = new URLSearchParams();
+    if (sessionId) params.set("token", sessionId);
+    return new EventSource(`${API_BASE}/nodes/${nodeId}/monitoring/stream?${params}`);
+  }
+
+  async getNodeNginxConfig(nodeId: string): Promise<string> {
+    const result = await this.unwrapData(
+      this.request<{ data: { content: string } }>(`/nodes/${nodeId}/config`)
+    );
+    return result.content;
+  }
+
+  async updateNodeNginxConfig(
+    nodeId: string,
+    content: string
+  ): Promise<{ valid: boolean; error?: string }> {
+    return this.unwrapData(
+      this.request<{ data: { valid: boolean; error?: string } }>(`/nodes/${nodeId}/config`, {
+        method: "PUT",
+        body: JSON.stringify({ content }),
+      })
+    );
+  }
+
+  async testNodeNginxConfig(nodeId: string): Promise<{ valid: boolean; error?: string }> {
+    return this.unwrapData(
+      this.request<{ data: { valid: boolean; error?: string } }>(`/nodes/${nodeId}/config/test`, {
+        method: "POST",
+      })
+    );
+  }
+
   // ── AI Assistant ──
 
   async getAIStatus(): Promise<{ enabled: boolean }> {
@@ -579,6 +668,7 @@ class ApiClient {
     enabled?: boolean;
     sortBy?: string;
     sortOrder?: string;
+    nodeId?: string;
   }): Promise<PaginatedResponse<ProxyHost>> {
     const searchParams = new URLSearchParams();
     if (params?.page) searchParams.set("page", params.page.toString());
@@ -589,6 +679,7 @@ class ApiClient {
     if (params?.enabled !== undefined) searchParams.set("enabled", params.enabled.toString());
     if (params?.sortBy) searchParams.set("sortBy", params.sortBy);
     if (params?.sortOrder) searchParams.set("sortOrder", params.sortOrder);
+    if (params?.nodeId) searchParams.set("nodeId", params.nodeId);
 
     const query = searchParams.toString();
     return this.request<PaginatedResponse<ProxyHost>>(`/proxy-hosts${query ? `?${query}` : ""}`);
