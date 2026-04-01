@@ -1,4 +1,5 @@
 MODULE := github.com/wiolett/gateway/nginx-daemon
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 PROTO_DIR := ../../../proto
 OUT_DIR := internal/gatewayv1
 BINARY := bin/nginx-daemon
@@ -18,7 +19,7 @@ proto:
 		gateway/v1/nginx-daemon.proto
 
 build:
-	CGO_ENABLED=0 go build -o $(BINARY) ./cmd/nginx-daemon
+	CGO_ENABLED=0 go build -ldflags "-s -w -X $(MODULE)/internal/daemon.Version=$(VERSION)" -o $(BINARY) ./cmd/nginx-daemon
 
 test:
 	go test ./...
