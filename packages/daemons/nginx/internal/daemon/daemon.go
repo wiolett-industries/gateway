@@ -17,7 +17,8 @@ import (
 	"google.golang.org/grpc"
 )
 
-const Version = "0.1.0"
+// Version is set via -ldflags at build time; falls back to "dev".
+var Version = "dev"
 
 type Daemon struct {
 	cfg         *config.Config

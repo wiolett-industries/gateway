@@ -1,5 +1,6 @@
 stages:
   - build
+  - release
 
 variables:
   IMAGE: ${CI_REGISTRY_IMAGE}
@@ -28,5 +29,55 @@ build:
     - docker push $IMAGE:${CI_COMMIT_TAG#v}
     - docker push $IMAGE:latest
     - echo "Pushed $IMAGE:$CI_COMMIT_TAG, $IMAGE:${CI_COMMIT_TAG#v}, $IMAGE:latest"
+  rules:
+    - if: $CI_COMMIT_TAG
+
+build-daemon:
+  stage: build
+  image: golang:1.24
+  script:
+    - cd packages/daemons/nginx
+    - |
+      VERSION="${CI_COMMIT_TAG}"
+      for GOARCH in amd64 arm64; do
+        echo "Building nginx-daemon ${VERSION} for linux/${GOARCH}..."
+        CGO_ENABLED=0 GOOS=linux GOARCH=${GOARCH} go build \
+          -ldflags "-s -w -X github.com/wiolett/gateway/nginx-daemon/internal/daemon.Version=${VERSION}" \
+          -o ../../../nginx-daemon-linux-${GOARCH} \
+          ./cmd/nginx-daemon
+      done
+    - cd ../../..
+    - |
+      for GOARCH in amd64 arm64; do
+        echo "Uploading nginx-daemon-linux-${GOARCH} to package registry..."
+        curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+          --upload-file "nginx-daemon-linux-${GOARCH}" \
+          "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/nginx-daemon/${CI_COMMIT_TAG}/nginx-daemon-linux-${GOARCH}"
+      done
+  rules:
+    - if: $CI_COMMIT_TAG
+
+release:
+  stage: release
+  image: registry.gitlab.com/gitlab-org/release-cli:latest
+  needs:
+    - build
+    - build-daemon
+  script:
+    - echo "Creating release ${CI_COMMIT_TAG}"
+  release:
+    tag_name: $CI_COMMIT_TAG
+    name: "Gateway ${CI_COMMIT_TAG}"
+    description: "Release ${CI_COMMIT_TAG}"
+    assets:
+      links:
+        - name: nginx-daemon-linux-amd64
+          url: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/nginx-daemon/${CI_COMMIT_TAG}/nginx-daemon-linux-amd64"
+          filepath: /nginx-daemon-linux-amd64
+          link_type: package
+        - name: nginx-daemon-linux-arm64
+          url: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/nginx-daemon/${CI_COMMIT_TAG}/nginx-daemon-linux-arm64"
+          filepath: /nginx-daemon-linux-arm64
+          link_type: package
   rules:
     - if: $CI_COMMIT_TAG
