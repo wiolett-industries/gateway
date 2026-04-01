@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hasScope, hasAnyScope, hasAllScopes, canUseAI, isScopeSubset, canManageUser } from './permissions.js';
+import { canManageUser, canUseAI, hasAllScopes, hasAnyScope, hasScope, isScopeSubset } from './permissions.js';
 
 describe('Scope-based permissions', () => {
   describe('hasScope', () => {

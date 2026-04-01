@@ -47,9 +47,11 @@ import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAIStore } from "@/stores/ai";
 import { useAuthStore } from "@/stores/auth";
-import { AI_SCOPE } from "@/types";
+import { usePinnedNodesStore } from "@/stores/pinned-nodes";
 import { useUIStore } from "@/stores/ui";
 import { useUpdateStore } from "@/stores/update";
+import type { Node } from "@/types";
+import { AI_SCOPE } from "@/types";
 
 function getInitials(name: string | null): string {
   if (!name) return "?";
@@ -99,13 +101,12 @@ const navigationGroups: NavGroup[] = [
   {
     label: "Management",
     items: [
+      { name: "Nodes", href: "/nodes", icon: Server, scope: "nodes:view" },
       { name: "Access Lists", href: "/access-lists", icon: ShieldAlert, scope: "access-list:read" },
       { name: "Settings", href: "/settings", icon: Settings },
     ],
   },
 ];
-
-const nginxNavItem: NavItem = { name: "Nginx", href: "/nginx", icon: Server, scope: "proxy:manage" };
 
 const adminNavigation: NavItem[] = [
   { name: "Audit Log", href: "/audit", icon: ScrollText, scope: "admin:audit" },
@@ -139,16 +140,23 @@ function SidebarContent({
   const { user, hasScope, logout } = useAuthStore();
   const { sidebarOpen, toggleSidebar, setCommandPaletteOpen: openPalette } = useUIStore();
 
-  const [nginxAvailable, setNginxAvailable] = useState(false);
   const updateAvailable = useUpdateStore((s) => s.status?.updateAvailable ?? false);
   const showUpdateNotifications = useUIStore((s) => s.showUpdateNotifications);
+  const sidebarPinnedIds = usePinnedNodesStore((s) => s.sidebarNodeIds);
+  const [pinnedNodes, setPinnedNodes] = useState<Node[]>([]);
 
   useEffect(() => {
-    const check = () => api.checkNginxAvailable().then(setNginxAvailable);
-    check();
-    const interval = setInterval(check, 30_000);
-    return () => clearInterval(interval);
-  }, []);
+    if (sidebarPinnedIds.length === 0) {
+      setPinnedNodes([]);
+      return;
+    }
+    api
+      .listNodes({ limit: 100 })
+      .then((r) => {
+        setPinnedNodes(r.data.filter((n) => sidebarPinnedIds.includes(n.id)));
+      })
+      .catch(() => {});
+  }, [sidebarPinnedIds]);
 
   const handleLogout = async () => {
     try {
@@ -161,18 +169,12 @@ function SidebarContent({
 
   const isExpanded = alwaysExpanded || sidebarOpen;
 
-  // Build nav groups with conditional Nginx item and scope filtering
+  // Build nav groups with scope filtering
   const effectiveGroups = navigationGroups
-    .map((group) => {
-      let items = group.items;
-      if (group.label === "Management" && nginxAvailable) {
-        items = [nginxNavItem, ...items];
-      }
-      return {
-        ...group,
-        items: items.filter((item) => !item.scope || hasScope(item.scope)),
-      };
-    })
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => !item.scope || hasScope(item.scope)),
+    }))
     .filter((group) => group.items.length > 0);
 
   const filteredAdminNav = adminNavigation.filter((item) => !item.scope || hasScope(item.scope));
@@ -390,6 +392,47 @@ function SidebarContent({
                   </nav>
                 </div>
               ))}
+
+              {/* Pinned nodes */}
+              {pinnedNodes.length > 0 && (
+                <>
+                  <Separator className="my-1" />
+                  <nav className="space-y-0.5 p-2">
+                    <p className="px-3 py-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                      Pinned Nodes
+                    </p>
+                    {pinnedNodes.map((node) => {
+                      const isActive = location.pathname === `/nodes/${node.id}`;
+                      return (
+                        <Link
+                          key={node.id}
+                          to={`/nodes/${node.id}`}
+                          onClick={onNavigate}
+                          className={cn(
+                            "flex items-center gap-3 px-3 py-2 text-sm transition-colors whitespace-nowrap overflow-hidden",
+                            isActive
+                              ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                              : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                          )}
+                        >
+                          <Server className="h-4 w-4 shrink-0" />
+                          <span className="truncate">{node.displayName || node.hostname}</span>
+                          <span
+                            className={cn(
+                              "ml-auto h-2 w-2 rounded-full shrink-0",
+                              node.status === "online"
+                                ? "bg-green-500"
+                                : node.status === "error"
+                                  ? "bg-destructive"
+                                  : "bg-muted-foreground/40"
+                            )}
+                          />
+                        </Link>
+                      );
+                    })}
+                  </nav>
+                </>
+              )}
 
               {/* Admin navigation */}
               {filteredAdminNav.length > 0 && (
@@ -623,7 +666,7 @@ export function DashboardLayout() {
           "6": "/cas",
           "7": "/certificates",
           "8": "/templates",
-          "9": "/nginx",
+          "9": "/nodes",
           "0": "/access-lists",
         };
         if (e.key in routes) {

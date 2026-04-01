@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import { getEnv } from '@/config/env.js';
 import { container } from '@/container.js';
 import { createChildLogger } from '@/lib/logger.js';
+import { NodesService } from '@/modules/nodes/nodes.service.js';
 import type { AppEnv } from '@/types.js';
 import { SetupService } from './setup.service.js';
 
@@ -58,6 +59,33 @@ setupRoutes.post('/management-ssl', async (c) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     logger.error('Management SSL bootstrap failed', { domain, error: message });
+    return c.json({ error: message }, 500);
+  }
+});
+
+/**
+ * POST /api/setup/enroll-node
+ *
+ * Create a node and return an enrollment token during initial setup.
+ * Protected by SETUP_TOKEN (not session auth).
+ * Used by install.sh to auto-enroll the local daemon.
+ */
+setupRoutes.post('/enroll-node', async (c) => {
+  if (!verifySetupToken(c.req.header('Authorization'))) {
+    return c.json({ error: 'Invalid or missing setup token' }, 401);
+  }
+
+  const body = await c.req.json<{ type?: string; hostname?: string }>();
+  const type = (body.type === 'bastion' ? 'bastion' : 'nginx') as 'nginx' | 'bastion';
+  const hostname = body.hostname || 'localhost';
+
+  try {
+    const nodesService = container.resolve(NodesService);
+    const result = await nodesService.create({ type, hostname }, 'system');
+    return c.json({ data: result });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    logger.error('Node enrollment via setup token failed', { error: message });
     return c.json({ error: message }, 500);
   }
 });

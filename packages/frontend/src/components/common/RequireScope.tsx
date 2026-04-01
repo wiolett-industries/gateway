@@ -1,7 +1,7 @@
+import { useEffect, useRef } from "react";
 import { Navigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useAuthStore } from "@/stores/auth";
-import { useEffect, useRef } from "react";
 
 interface RequireScopeProps {
   scope: string;

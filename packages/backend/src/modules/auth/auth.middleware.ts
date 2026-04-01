@@ -1,5 +1,5 @@
-import type { MiddlewareHandler } from 'hono';
 import { eq } from 'drizzle-orm';
+import type { MiddlewareHandler } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { container, TOKENS } from '@/container.js';
 import type { DrizzleClient } from '@/db/client.js';

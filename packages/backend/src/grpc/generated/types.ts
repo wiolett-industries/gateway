@@ -1,0 +1,272 @@
+/**
+ * TypeScript types matching proto/gateway/v1/nginx-daemon.proto
+ * These are used with @grpc/proto-loader for runtime loading.
+ */
+
+// ─── Enrollment ─────────────────────────────────────────────────────
+
+export interface EnrollRequest {
+  token: string;
+  hostname: string;
+  nginxVersion: string;
+  osInfo: string;
+  daemonVersion: string;
+}
+
+export interface EnrollResponse {
+  nodeId: string;
+  caCertificate: Buffer;
+  clientCertificate: Buffer;
+  clientKey: Buffer;
+  certExpiresAt: string; // int64 as string
+}
+
+export interface RenewCertRequest {
+  nodeId: string;
+}
+
+export interface RenewCertResponse {
+  clientCertificate: Buffer;
+  clientKey: Buffer;
+  certExpiresAt: string;
+}
+
+// ─── Daemon Messages (daemon → gateway) ─────────────────────────────
+
+export interface DaemonMessage {
+  register?: RegisterMessage;
+  commandResult?: CommandResult;
+  healthReport?: HealthReport;
+  statsReport?: StatsReport;
+  daemonLog?: DaemonLogEntry;
+}
+
+export interface DaemonLogEntry {
+  timestamp: string;
+  level: string;
+  message: string;
+  component: string;
+  fields: Record<string, string>;
+}
+
+export interface RegisterMessage {
+  nodeId: string;
+  hostname: string;
+  nginxVersion: string;
+  configVersionHash: string;
+  daemonVersion: string;
+  nginxUptimeSeconds: string;
+  nginxRunning: boolean;
+}
+
+export interface CommandResult {
+  commandId: string;
+  success: boolean;
+  error: string;
+  detail: string;
+}
+
+export interface HealthReport {
+  nginxRunning: boolean;
+  configValid: boolean;
+  nginxUptimeSeconds: string;
+  workerCount: number;
+  nginxVersion: string;
+  cpuPercent: number;
+  memoryBytes: string;
+  diskFreeBytes: string;
+  timestamp: string;
+  // New fields (add after timestamp)
+  loadAverage1m: number;
+  loadAverage5m: number;
+  loadAverage15m: number;
+  systemMemoryTotalBytes: string;
+  systemMemoryUsedBytes: string;
+  systemMemoryAvailableBytes: string;
+  swapTotalBytes: string;
+  swapUsedBytes: string;
+  systemUptimeSeconds: string;
+  openFileDescriptors: string;
+  maxFileDescriptors: string;
+  diskMounts: Array<{
+    mountPoint: string;
+    filesystem: string;
+    device: string;
+    totalBytes: string;
+    usedBytes: string;
+    freeBytes: string;
+    usagePercent: number;
+  }>;
+  diskReadBytes: string;
+  diskWriteBytes: string;
+  networkInterfaces: Array<{
+    name: string;
+    rxBytes: string;
+    txBytes: string;
+    rxPackets: string;
+    txPackets: string;
+    rxErrors: string;
+    txErrors: string;
+  }>;
+  nginxRssBytes: string;
+  errorRate4xx: number;
+  errorRate5xx: number;
+}
+
+export interface StatsReport {
+  activeConnections: string;
+  accepts: string;
+  handled: string;
+  requests: string;
+  reading: number;
+  writing: number;
+  waiting: number;
+  timestamp: string;
+}
+
+// ─── Gateway Commands (gateway → daemon) ────────────────────────────
+
+export interface GatewayCommand {
+  commandId: string;
+  applyConfig?: ApplyConfigCommand;
+  removeConfig?: RemoveConfigCommand;
+  deployCert?: DeployCertCommand;
+  removeCert?: RemoveCertCommand;
+  fullSync?: FullSyncCommand;
+  updateGlobalConfig?: UpdateGlobalConfigCommand;
+  deployHtpasswd?: DeployHtpasswdCommand;
+  testConfig?: TestConfigCommand;
+  requestHealth?: RequestHealthCommand;
+  requestStats?: RequestStatsCommand;
+  setDaemonLogStream?: SetDaemonLogStreamCommand;
+  removeHtpasswd?: RemoveHtpasswdCommand;
+  deployAcmeChallenge?: DeployAcmeChallengeCommand;
+  removeAcmeChallenge?: RemoveAcmeChallengeCommand;
+  readGlobalConfig?: ReadGlobalConfigCommand;
+  requestTrafficStats?: RequestTrafficStatsCommand;
+}
+
+export interface ApplyConfigCommand {
+  hostId: string;
+  configContent: string;
+  testOnly: boolean;
+}
+
+export interface RemoveConfigCommand {
+  hostId: string;
+}
+
+export interface DeployCertCommand {
+  certId: string;
+  certPem: Buffer;
+  keyPem: Buffer;
+  chainPem: Buffer;
+}
+
+export interface RemoveCertCommand {
+  certId: string;
+}
+
+export interface FullSyncCommand {
+  hosts: HostConfig[];
+  certs: CertBundle[];
+  globalConfig: string;
+  htpasswdFiles: HtpasswdFile[];
+  versionHash: string;
+}
+
+export interface HostConfig {
+  hostId: string;
+  configContent: string;
+}
+
+export interface CertBundle {
+  certId: string;
+  certPem: Buffer;
+  keyPem: Buffer;
+  chainPem: Buffer;
+}
+
+export interface HtpasswdFile {
+  accessListId: string;
+  content: string;
+}
+
+export interface UpdateGlobalConfigCommand {
+  content: string;
+  backupContent: string;
+}
+
+export interface DeployHtpasswdCommand {
+  accessListId: string;
+  content: string;
+}
+
+export interface RemoveHtpasswdCommand {
+  accessListId: string;
+}
+
+export type TestConfigCommand = {};
+export type RequestHealthCommand = {};
+export type RequestStatsCommand = {};
+export type ReadGlobalConfigCommand = {};
+
+export interface RequestTrafficStatsCommand {
+  tailLines: number;
+}
+
+export interface SetDaemonLogStreamCommand {
+  enabled: boolean;
+  minLevel: string;
+  tailLines: number;
+}
+
+export interface DeployAcmeChallengeCommand {
+  token: string;
+  content: string;
+}
+
+export interface RemoveAcmeChallengeCommand {
+  token: string;
+}
+
+// ─── Log Streaming ──────────────────────────────────────────────────
+
+export interface LogStreamMessage {
+  subscribeAck?: LogSubscribeAck;
+  entry?: LogEntry;
+}
+
+export interface LogSubscribeAck {
+  hostId: string;
+}
+
+export interface LogEntry {
+  hostId: string;
+  timestamp: string;
+  remoteAddr: string;
+  method: string;
+  path: string;
+  status: number;
+  bodyBytesSent: string;
+  referer: string;
+  userAgent: string;
+  upstreamResponseTime: string;
+  raw: string;
+  logType: string;
+  level: string;
+}
+
+export interface LogStreamControl {
+  subscribe?: LogSubscribe;
+  unsubscribe?: LogUnsubscribe;
+}
+
+export interface LogSubscribe {
+  hostId: string;
+  tailLines: number;
+}
+
+export interface LogUnsubscribe {
+  hostId: string;
+}

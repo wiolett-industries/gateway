@@ -1,6 +1,4 @@
 import crypto from 'node:crypto';
-import { promises as fs } from 'node:fs';
-import path from 'node:path';
 import * as x509 from '@peculiar/x509';
 import * as acme from 'acme-client';
 import { createChildLogger } from '@/lib/logger.js';
@@ -10,8 +8,12 @@ const logger = createChildLogger('ACMEService');
 x509.cryptoProvider.set(crypto.webcrypto as any);
 
 export class ACMEService {
+  /** Set by bootstrap to deploy challenge files to the correct nginx node via daemon.
+   *  `domains` is passed so the callback can look up which node hosts those domains. */
+  onChallengeCreate?: (token: string, content: string, domains: string[]) => Promise<void>;
+  onChallengeRemove?: (token: string, domains: string[]) => Promise<void>;
+
   constructor(
-    private readonly acmeChallengePath: string,
     private readonly acmeEmail: string | undefined,
     private readonly staging: boolean
   ) {}
@@ -76,11 +78,13 @@ export class ACMEService {
           throw new Error('Invalid ACME challenge token format');
         }
 
-        await fs.mkdir(this.acmeChallengePath, { recursive: true });
-
-        const tokenPath = path.join(this.acmeChallengePath, challenge.token);
-        await fs.writeFile(tokenPath, keyAuthorization, 'utf-8');
-        challengeCleanups.push(tokenPath);
+        // Challenge file is deployed to nginx node via the daemon
+        // The caller (SSLService) must deploy the challenge before calling this method
+        // or pass a challengeCreateFn. For now, we use a callback if provided.
+        if (this.onChallengeCreate) {
+          await this.onChallengeCreate(challenge.token, keyAuthorization, domains);
+          challengeCleanups.push(challenge.token);
+        }
 
         logger.debug('Challenge token written', { domain: authz.identifier.value, token: challenge.token });
 
@@ -116,10 +120,12 @@ export class ACMEService {
         accountKey: accountKey.toString(),
       };
     } finally {
-      // 10. Clean up challenge files
-      for (const filePath of challengeCleanups) {
+      // 10. Clean up challenge tokens via daemon
+      for (const token of challengeCleanups) {
         try {
-          await fs.unlink(filePath);
+          if (this.onChallengeRemove) {
+            await this.onChallengeRemove(token, domains);
+          }
         } catch {
           // Ignore cleanup errors
         }

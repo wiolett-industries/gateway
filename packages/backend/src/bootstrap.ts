@@ -17,10 +17,11 @@ import { AuditService } from '@/modules/audit/audit.service.js';
 import { AuthService } from '@/modules/auth/auth.service.js';
 import { detectPublicIP, initDnsResolver } from '@/modules/domains/dns.utils.js';
 import { DomainsService } from '@/modules/domains/domain.service.js';
-import { LogStreamService } from '@/modules/monitoring/log-stream.service.js';
 import { MonitoringService } from '@/modules/monitoring/monitoring.service.js';
 import { NginxConfigService } from '@/modules/monitoring/nginx-config.service.js';
 import { NginxStatsService } from '@/modules/monitoring/nginx-stats.service.js';
+import { NodeMonitoringService } from '@/modules/nodes/node-monitoring.service.js';
+import { NodesService } from '@/modules/nodes/nodes.service.js';
 import { CAService } from '@/modules/pki/ca.service.js';
 import { CertService } from '@/modules/pki/cert.service.js';
 import { CRLService } from '@/modules/pki/crl.service.js';
@@ -39,9 +40,12 @@ import { ConfigValidatorService } from '@/services/config-validator.service.js';
 import { CryptoService } from '@/services/crypto.service.js';
 import { DockerService } from '@/services/docker.service.js';
 import { HousekeepingService } from '@/services/housekeeping.service.js';
-import { NginxService } from '@/services/nginx.service.js';
+import { NginxConfigGenerator } from '@/services/nginx-config-generator.service.js';
+import { NodeDispatchService } from '@/services/node-dispatch.service.js';
+import { NodeRegistryService } from '@/services/node-registry.service.js';
 import { SchedulerService } from '@/services/scheduler.service.js';
 import { SessionService } from '@/services/session.service.js';
+import { SystemCAService } from '@/services/system-ca.service.js';
 import { UpdateService } from '@/services/update.service.js';
 
 export { container };
@@ -104,22 +108,17 @@ export async function initializeContainer(): Promise<void> {
   const alertService = new AlertService(db);
   container.registerInstance(AlertService, alertService);
 
-  // Gateway services
+  // System CA for node mTLS
+  const systemCA = new SystemCAService(db, caService, certService, cryptoService);
+  container.registerInstance(SystemCAService, systemCA);
+  await systemCA.ensureSystemCA();
+
+  // Nginx config generator (pure config generation, no I/O)
   const configValidator = new ConfigValidatorService();
   container.registerInstance(ConfigValidatorService, configValidator);
 
-  const dockerService = new DockerService(env.DOCKER_SOCKET_PATH, env.NGINX_CONTAINER_NAME);
-  container.registerInstance(DockerService, dockerService);
-
-  const nginxService = new NginxService(
-    env.NGINX_CONFIG_PATH,
-    env.NGINX_CERTS_PATH,
-    env.NGINX_LOGS_PATH,
-    env.ACME_CHALLENGE_PATH,
-    dockerService,
-    configValidator
-  );
-  container.registerInstance(NginxService, nginxService);
+  const nginxConfigGenerator = new NginxConfigGenerator(configValidator);
+  container.registerInstance(NginxConfigGenerator, nginxConfigGenerator);
 
   const folderService = new FolderService(db, auditService);
   container.registerInstance(FolderService, folderService);
@@ -127,29 +126,86 @@ export async function initializeContainer(): Promise<void> {
   const nginxTemplateService = new NginxTemplateService(db, auditService);
   container.registerInstance(NginxTemplateService, nginxTemplateService);
 
-  const proxyService = new ProxyService(db, nginxService, nginxTemplateService, auditService, cryptoService);
+  // Node management (daemon communication)
+  const nodeRegistry = new NodeRegistryService(db);
+  container.registerInstance(NodeRegistryService, nodeRegistry);
+
+  const nodeDispatch = new NodeDispatchService(nodeRegistry, db);
+  container.registerInstance(NodeDispatchService, nodeDispatch);
+
+  const nodesService = new NodesService(db, auditService, nodeRegistry);
+  container.registerInstance(NodesService, nodesService);
+
+  const nodeMonitoringService = new NodeMonitoringService(nodeRegistry, nodeDispatch);
+  container.registerInstance(NodeMonitoringService, nodeMonitoringService);
+
+  const proxyService = new ProxyService(
+    db,
+    nginxTemplateService,
+    auditService,
+    cryptoService,
+    nginxConfigGenerator,
+    nodeDispatch
+  );
   container.registerInstance(ProxyService, proxyService);
 
-  const acmeService = new ACMEService(env.ACME_CHALLENGE_PATH, env.ACME_EMAIL, env.ACME_STAGING);
+  const acmeService = new ACMEService(env.ACME_EMAIL, env.ACME_STAGING);
+  // Wire ACME HTTP-01 challenge callbacks to deploy/remove via daemon.
+  // Looks up which node(s) serve the requested domains, falling back to default node.
+  const resolveNodeIdsForDomains = async (domains: string[]): Promise<string[]> => {
+    const { sql } = await import('drizzle-orm');
+    const { proxyHosts } = await import('@/db/schema/index.js');
+    const rows = await db
+      .selectDistinct({ nodeId: proxyHosts.nodeId })
+      .from(proxyHosts)
+      .where(
+        sql`${proxyHosts.domainNames} && ARRAY[${sql.join(
+          domains.map((d) => sql`${d}`),
+          sql`, `
+        )}]::text[]`
+      );
+    const nodeIds = rows.map((r) => r.nodeId).filter(Boolean) as string[];
+    if (nodeIds.length > 0) return [...new Set(nodeIds)];
+    // Fallback to default node
+    const defaultId = await nodeDispatch.getDefaultNodeId();
+    return defaultId ? [defaultId] : [];
+  };
+
+  acmeService.onChallengeCreate = async (token: string, content: string, domains: string[]) => {
+    const nodeIds = await resolveNodeIdsForDomains(domains);
+    if (nodeIds.length === 0) throw new Error('No nginx node found for ACME challenge deployment');
+    for (const nid of nodeIds) {
+      await nodeDispatch.deployAcmeChallenge(nid, token, content);
+    }
+  };
+  acmeService.onChallengeRemove = async (token: string, domains: string[]) => {
+    const nodeIds = await resolveNodeIdsForDomains(domains);
+    for (const nid of nodeIds) {
+      await nodeDispatch.removeAcmeChallenge(nid, token);
+    }
+  };
   container.registerInstance(ACMEService, acmeService);
 
-  const accessListService = new AccessListService(db, nginxService, nginxTemplateService, auditService);
+  const accessListService = new AccessListService(
+    db,
+    nginxConfigGenerator,
+    nginxTemplateService,
+    auditService,
+    nodeDispatch
+  );
   container.registerInstance(AccessListService, accessListService);
 
-  const sslService = new SSLService(db, acmeService, nginxService, cryptoService, auditService);
+  const sslService = new SSLService(db, acmeService, nginxConfigGenerator, cryptoService, auditService, nodeDispatch);
   container.registerInstance(SSLService, sslService);
 
   // Monitoring services
-  const logStreamService = new LogStreamService(env.NGINX_LOGS_PATH);
-  container.registerInstance(LogStreamService, logStreamService);
-
   const monitoringService = new MonitoringService(db);
   container.registerInstance(MonitoringService, monitoringService);
 
-  const nginxStatsService = new NginxStatsService(dockerService, env.NGINX_CONTAINER_NAME);
+  const nginxStatsService = new NginxStatsService(nodeRegistry, nodeDispatch);
   container.registerInstance(NginxStatsService, nginxStatsService);
 
-  const nginxConfigService = new NginxConfigService(dockerService, env.NGINX_CONTAINER_NAME);
+  const nginxConfigService = new NginxConfigService(nodeDispatch);
   container.registerInstance(NginxConfigService, nginxConfigService);
 
   // AI Settings
@@ -164,12 +220,16 @@ export async function initializeContainer(): Promise<void> {
   const setupService = new SetupService(db, sslService, proxyService, domainsService);
   container.registerInstance(SetupService, setupService);
 
+  // Docker service (kept for self-update and image pruning only)
+  const dockerService = new DockerService('/var/run/docker.sock', '');
+  container.registerInstance(DockerService, dockerService);
+
   // Update service
   const updateService = new UpdateService(db, dockerService, env);
   container.registerInstance(UpdateService, updateService);
 
   // Housekeeping service
-  const housekeepingService = new HousekeepingService(db, dockerService, env);
+  const housekeepingService = new HousekeepingService(db, dockerService, nodeDispatch, env);
   container.registerInstance(HousekeepingService, housekeepingService);
 
   // AI Service (depends on many services above)
@@ -222,6 +282,9 @@ export async function initializeContainer(): Promise<void> {
   const housekeepingJob = new HousekeepingJob(housekeepingService);
   const hkConfig = await housekeepingService.getConfig();
   scheduler.register('housekeeping', hkConfig.cronExpression, () => housekeepingJob.run());
+
+  // Stale node detection (every 60 seconds)
+  scheduler.registerInterval('stale-node-check', 60000, () => nodeRegistry.markStaleNodesOffline());
 
   logger.info('Dependency injection container initialized');
 }

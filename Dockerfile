@@ -36,8 +36,6 @@ RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 
 WORKDIR /app
 
-RUN mkdir -p /etc/nginx-config /etc/nginx-certs /var/log/nginx-logs /var/www/acme-challenge
-
 # Copy backend package.json and install production deps only
 COPY --from=backend-builder /app/packages/backend/package.json ./
 RUN pnpm install --prod --no-frozen-lockfile
@@ -46,13 +44,18 @@ RUN pnpm install --prod --no-frozen-lockfile
 COPY --from=backend-builder /app/packages/backend/dist ./dist
 COPY --from=backend-builder /app/packages/backend/src/db/migrations ./src/db/migrations
 
+# Copy proto file (loaded at runtime by @grpc/proto-loader)
+COPY proto/ ./proto/
+
 # Copy frontend build into public/ for the backend to serve
 COPY --from=frontend-builder /app/packages/frontend/dist ./public
 
 ENV NODE_ENV=production
 ENV PORT=3000
+ENV GRPC_PORT=9443
 
 EXPOSE 3000
+EXPOSE 9443
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD wget -qO- http://localhost:3000/health || exit 1

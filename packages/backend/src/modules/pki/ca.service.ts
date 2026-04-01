@@ -199,6 +199,7 @@ export class CAService {
 
   async getCATree() {
     const allCAs = await this.db.query.certificateAuthorities.findMany({
+      where: (ca, { eq, not }) => not(eq(ca.isSystem, true)),
       orderBy: (ca, { asc }) => [asc(ca.createdAt)],
     });
 

@@ -2,13 +2,14 @@ import crypto from 'node:crypto';
 import * as x509 from '@peculiar/x509';
 import { and, count, desc, eq, ilike, lte, or } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
-import { certificates, sslCertificates } from '@/db/schema/index.js';
+import { certificates, proxyHosts, sslCertificates } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { escapeLike } from '@/lib/utils.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { CryptoService } from '@/services/crypto.service.js';
-import type { NginxService } from '@/services/nginx.service.js';
+import type { NginxConfigGenerator } from '@/services/nginx-config-generator.service.js';
+import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import type { PaginatedResponse } from '@/types.js';
 import type { ACMEService } from './acme.service.js';
 import type { LinkInternalCertInput, RequestACMECertInput, SSLCertListQuery, UploadCertInput } from './ssl.schemas.js';
@@ -21,9 +22,10 @@ export class SSLService {
   constructor(
     private readonly db: DrizzleClient,
     private readonly acmeService: ACMEService,
-    private readonly nginxService: NginxService,
+    private readonly configGenerator: NginxConfigGenerator,
     private readonly cryptoService: CryptoService,
-    private readonly auditService: AuditService
+    private readonly auditService: AuditService,
+    private readonly nodeDispatch: NodeDispatchService
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -73,7 +75,7 @@ export class SSLService {
 
       // Deploy cert files to nginx
       try {
-        await this.nginxService.deployCertificate(
+        await this.deployCertToDefaultNode(
           cert.id,
           result.certificatePem,
           result.privateKeyPem,
@@ -218,7 +220,7 @@ export class SSLService {
 
       // Deploy to nginx — separate try/catch since cert is already valid at this point
       try {
-        await this.nginxService.deployCertificate(
+        await this.deployCertToDefaultNode(
           certId,
           result.certificatePem,
           result.privateKeyPem,
@@ -318,7 +320,7 @@ export class SSLService {
 
     // Deploy cert files to nginx
     try {
-      await this.nginxService.deployCertificate(
+      await this.deployCertToDefaultNode(
         cert.id,
         input.certificatePem,
         input.privateKeyPem,
@@ -416,7 +418,7 @@ export class SSLService {
 
     // Deploy the PKI cert's PEM to nginx cert files
     if (privateKeyPem) {
-      await this.nginxService.deployCertificate(cert.id, pkiCert.certificatePem, privateKeyPem);
+      await this.deployCertToDefaultNode(cert.id, pkiCert.certificatePem, privateKeyPem);
     }
 
     await this.auditService.log({
@@ -499,7 +501,7 @@ export class SSLService {
       await this.db.update(sslCertificates).set(renewUpdateData).where(eq(sslCertificates.id, certId));
 
       // Redeploy to nginx
-      await this.nginxService.deployCertificate(
+      await this.deployCertToDefaultNode(
         certId,
         result.certificatePem,
         result.privateKeyPem,
@@ -565,7 +567,7 @@ export class SSLService {
     }
 
     // Remove cert files from nginx
-    await this.nginxService.removeCertificate(certId);
+    await this.removeCertFromDefaultNode(certId);
 
     // Delete from DB
     await this.db.delete(sslCertificates).where(eq(sslCertificates.id, certId));
@@ -732,5 +734,51 @@ export class SSLService {
       dekIv: undefined,
       acmeAccountKey: undefined,
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Helpers — deploy certs via daemon
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Deploy a certificate to all nodes that have proxy hosts using it.
+   * Falls back to the default node if no hosts reference the cert yet
+   * (e.g., pre-deploying a cert before assigning it to a host).
+   */
+  private async deployCertToDefaultNode(
+    certId: string,
+    certPem: string,
+    keyPem: string,
+    chainPem?: string
+  ): Promise<{ certPath: string; keyPath: string; chainPath?: string }> {
+    const nodeIds = await this.resolveNodesForCert(certId);
+    const certBuf = Buffer.from(certPem);
+    const keyBuf = Buffer.from(keyPem);
+    const chainBuf = chainPem ? Buffer.from(chainPem) : undefined;
+
+    for (const nodeId of nodeIds) {
+      await this.nodeDispatch.deployCertificate(nodeId, certId, certBuf, keyBuf, chainBuf);
+    }
+    return this.configGenerator.getCertPaths(certId);
+  }
+
+  private async removeCertFromDefaultNode(certId: string): Promise<void> {
+    const nodeIds = await this.resolveNodesForCert(certId);
+    for (const nodeId of nodeIds) {
+      await this.nodeDispatch.removeCertificate(nodeId, certId);
+    }
+  }
+
+  /** Find all distinct nodes that have proxy hosts using a given certificate. */
+  private async resolveNodesForCert(certId: string): Promise<string[]> {
+    const rows = await this.db
+      .selectDistinct({ nodeId: proxyHosts.nodeId })
+      .from(proxyHosts)
+      .where(eq(proxyHosts.sslCertificateId, certId));
+    const nodeIds = rows.map((r) => r.nodeId).filter(Boolean) as string[];
+    if (nodeIds.length > 0) return [...new Set(nodeIds)];
+    // Fallback to default node for pre-deployment
+    const defaultId = await this.nodeDispatch.getDefaultNodeId();
+    return defaultId ? [defaultId] : [];
   }
 }

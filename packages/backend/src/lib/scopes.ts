@@ -29,6 +29,9 @@ export const ALL_SCOPES = [
   'access-list:read',
   'access-list:manage',
   'access-list:delete',
+  // Nodes
+  'nodes:view',
+  'nodes:manage',
   // Administration
   'admin:users',
   'admin:groups',
@@ -49,7 +52,7 @@ export type Scope = (typeof ALL_SCOPES)[number];
 export const SYSTEM_ADMIN_SCOPES: readonly string[] = [...ALL_SCOPES];
 
 /** Admin group: all scopes EXCEPT admin:system (cannot shield themselves from system-admins) */
-export const ADMIN_SCOPES: readonly string[] = ALL_SCOPES.filter(s => s !== 'admin:system');
+export const ADMIN_SCOPES: readonly string[] = ALL_SCOPES.filter((s) => s !== 'admin:system');
 
 /** Operator group: operational + management scopes */
 export const OPERATOR_SCOPES: readonly string[] = [
@@ -66,6 +69,7 @@ export const OPERATOR_SCOPES: readonly string[] = [
   'ssl:manage',
   'access-list:read',
   'access-list:manage',
+  'nodes:view',
   'ai:use',
   'admin:alerts',
 ];
@@ -82,13 +86,21 @@ export const VIEWER_SCOPES: readonly string[] = [
 
 /** Built-in group definitions (order matters for display — most privileged first) */
 export const BUILTIN_GROUPS = [
-  { name: 'system-admin', description: 'System administrator — full access, protected from non-system-admins', scopes: SYSTEM_ADMIN_SCOPES },
+  {
+    name: 'system-admin',
+    description: 'System administrator — full access, protected from non-system-admins',
+    scopes: SYSTEM_ADMIN_SCOPES,
+  },
   { name: 'admin', description: 'Full access to all features except system protection', scopes: ADMIN_SCOPES },
-  { name: 'operator', description: 'Operational access — manage certificates, proxies, and SSL', scopes: OPERATOR_SCOPES },
+  {
+    name: 'operator',
+    description: 'Operational access — manage certificates, proxies, and SSL',
+    scopes: OPERATOR_SCOPES,
+  },
   { name: 'viewer', description: 'Read-only access to all resources', scopes: VIEWER_SCOPES },
 ] as const;
 
-export const BUILTIN_GROUP_NAMES: string[] = BUILTIN_GROUPS.map(g => g.name);
+export const BUILTIN_GROUP_NAMES: string[] = BUILTIN_GROUPS.map((g) => g.name);
 
 /** Scopes that support resource-level suffixes (e.g., cert:issue:ca-uuid) */
 export const RESOURCE_SCOPABLE: readonly string[] = [

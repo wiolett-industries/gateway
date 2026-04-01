@@ -180,10 +180,15 @@ export function CAs() {
         ) : (
           <EmptyState
             message="No certificate authorities."
-            {...(hasScope("ca:create:root") ? { actionLabel: "Create one", onAction: () => {
-              setCreateIntermediateParentId(undefined);
-              setCreateDialogOpen(true);
-            } } : {})}
+            {...(hasScope("ca:create:root")
+              ? {
+                  actionLabel: "Create one",
+                  onAction: () => {
+                    setCreateIntermediateParentId(undefined);
+                    setCreateDialogOpen(true);
+                  },
+                }
+              : {})}
             hasActiveFilters={hasActiveFilters}
             onReset={resetFilters}
           />

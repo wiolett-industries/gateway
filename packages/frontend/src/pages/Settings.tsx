@@ -17,8 +17,8 @@ import Markdown from "react-markdown";
 import { toast } from "sonner";
 import { AIToolAccessModal } from "@/components/ai/AIToolAccessModal";
 import { confirm } from "@/components/common/ConfirmDialog";
-import { ScopeList } from "@/components/common/ScopeList";
 import { PageTransition } from "@/components/common/PageTransition";
+import { ScopeList } from "@/components/common/ScopeList";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -53,7 +53,6 @@ import type {
   HousekeepingStats,
 } from "@/types";
 import { type ApiToken, TOKEN_SCOPES } from "@/types";
-
 
 export function Settings() {
   const { user, hasScope } = useAuthStore();
@@ -1278,7 +1277,10 @@ export function Settings() {
                         setResourceScopes((prev) => {
                           const current = prev[scope] || [];
                           const has = current.includes(caId);
-                          return { ...prev, [scope]: has ? current.filter((id) => id !== caId) : [...current, caId] };
+                          return {
+                            ...prev,
+                            [scope]: has ? current.filter((id) => id !== caId) : [...current, caId],
+                          };
                         });
                       }}
                       cas={cas}
@@ -1286,7 +1288,8 @@ export function Settings() {
                     />
                     <div className="border-t border-border px-3 py-2">
                       <p className="text-xs text-muted-foreground">
-                        {selectedScopes.length} scope{selectedScopes.length !== 1 ? "s" : ""} selected
+                        {selectedScopes.length} scope{selectedScopes.length !== 1 ? "s" : ""}{" "}
+                        selected
                       </p>
                     </div>
                   </div>

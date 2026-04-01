@@ -401,7 +401,9 @@ export function Templates() {
         ) : (
           <EmptyState
             message="No templates."
-            {...(hasScope("template:manage") ? { actionLabel: "Create one", onAction: () => setDialogOpen(true) } : {})}
+            {...(hasScope("template:manage")
+              ? { actionLabel: "Create one", onAction: () => setDialogOpen(true) }
+              : {})}
           />
         )}
 

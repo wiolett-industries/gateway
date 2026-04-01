@@ -24,6 +24,7 @@ import { domainRoutes } from '@/modules/domains/domain.routes.js';
 import { groupRoutes } from '@/modules/groups/group.routes.js';
 import { housekeepingRoutes } from '@/modules/housekeeping/housekeeping.routes.js';
 import { monitoringRoutes } from '@/modules/monitoring/monitoring.routes.js';
+import { nodesRoutes } from '@/modules/nodes/nodes.routes.js';
 import { caRoutes } from '@/modules/pki/ca.routes.js';
 import { certRoutes } from '@/modules/pki/cert.routes.js';
 import { publicPkiRoutes } from '@/modules/pki/public.routes.js';
@@ -104,6 +105,7 @@ export function createApp() {
   app.route('/api/tokens', tokensRoutes);
   app.route('/api/admin/groups', groupRoutes);
   app.route('/api/admin', adminRoutes);
+  app.route('/api/nodes', nodesRoutes);
   app.route('/api/proxy-hosts', proxyRoutes);
   app.route('/api/proxy-host-folders', folderRoutes);
   app.route('/api/nginx-templates', nginxTemplateRoutes);

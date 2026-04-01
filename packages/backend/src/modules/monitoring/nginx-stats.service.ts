@@ -1,5 +1,6 @@
 import { createChildLogger } from '@/lib/logger.js';
-import type { DockerContainerStats, DockerService } from '@/services/docker.service.js';
+import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
+import type { NodeRegistryService } from '@/services/node-registry.service.js';
 
 const logger = createChildLogger('NginxStatsService');
 
@@ -63,8 +64,8 @@ export class NginxStatsService {
   private backgroundInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor(
-    private readonly dockerService: DockerService,
-    private readonly nginxContainerName: string
+    private readonly nodeRegistry: NodeRegistryService,
+    private readonly nodeDispatch?: NodeDispatchService
   ) {
     this.startBackgroundPolling();
   }
@@ -149,169 +150,84 @@ export class NginxStatsService {
     return [...this.history];
   }
 
-  /**
-   * Parse nginx stub_status output:
-   *   Active connections: 1
-   *   server accepts handled requests
-   *    16 16 31
-   *   Reading: 0 Writing: 1 Waiting: 0
-   */
-  private parseStubStatus(output: string): NginxStubStatus {
-    const activeMatch = output.match(/Active connections:\s*(\d+)/);
-    const countersMatch = output.match(/\s+(\d+)\s+(\d+)\s+(\d+)/);
-    const rwwMatch = output.match(/Reading:\s*(\d+)\s+Writing:\s*(\d+)\s+Waiting:\s*(\d+)/);
-
+  async getStubStatus(): Promise<NginxStubStatus> {
+    const node = this.nodeRegistry.getNodesByType('nginx')[0];
+    const stats = node?.lastStatsReport;
     return {
-      activeConnections: activeMatch ? parseInt(activeMatch[1], 10) : 0,
-      accepts: countersMatch ? parseInt(countersMatch[1], 10) : 0,
-      handled: countersMatch ? parseInt(countersMatch[2], 10) : 0,
-      requests: countersMatch ? parseInt(countersMatch[3], 10) : 0,
-      reading: rwwMatch ? parseInt(rwwMatch[1], 10) : 0,
-      writing: rwwMatch ? parseInt(rwwMatch[2], 10) : 0,
-      waiting: rwwMatch ? parseInt(rwwMatch[3], 10) : 0,
+      activeConnections: stats?.activeConnections ?? 0,
+      accepts: stats?.accepts ?? 0,
+      handled: stats?.handled ?? 0,
+      requests: stats?.requests ?? 0,
+      reading: stats?.reading ?? 0,
+      writing: stats?.writing ?? 0,
+      waiting: stats?.waiting ?? 0,
     };
   }
 
-  async getStubStatus(): Promise<NginxStubStatus> {
-    const result = await this.dockerService.execInContainer(this.nginxContainerName, [
-      'wget',
-      '-qO-',
-      'http://127.0.0.1/nginx_status',
-    ]);
-    if (result.exitCode !== 0) {
-      throw new Error(`Failed to fetch stub_status: ${result.output}`);
-    }
-    return this.parseStubStatus(result.output);
-  }
-
   async getContainerStats(): Promise<NginxSystemStats> {
-    const raw = await this.dockerService.getContainerStats(this.nginxContainerName);
-    return this.computeSystemStats(raw);
-  }
-
-  private computeSystemStats(raw: DockerContainerStats): NginxSystemStats {
-    const cpuDelta = raw.cpu_stats.cpu_usage.total_usage - raw.precpu_stats.cpu_usage.total_usage;
-    const systemDelta = raw.cpu_stats.system_cpu_usage - raw.precpu_stats.system_cpu_usage;
-    const cpuPercent = systemDelta > 0 ? (cpuDelta / systemDelta) * (raw.cpu_stats.online_cpus || 1) * 100 : 0;
-
-    const memUsage = raw.memory_stats.usage - (raw.memory_stats.stats?.cache ?? 0);
-    const memLimit = raw.memory_stats.limit;
-    const memPercent = memLimit > 0 ? (memUsage / memLimit) * 100 : 0;
-
-    let rxBytes = 0;
-    let txBytes = 0;
-    if (raw.networks) {
-      for (const iface of Object.values(raw.networks)) {
-        rxBytes += iface.rx_bytes;
-        txBytes += iface.tx_bytes;
-      }
-    }
-
-    let readBytes = 0;
-    let writeBytes = 0;
-    if (raw.blkio_stats.io_service_bytes_recursive) {
-      for (const entry of raw.blkio_stats.io_service_bytes_recursive) {
-        if (entry.op === 'read' || entry.op === 'Read') readBytes += entry.value;
-        if (entry.op === 'write' || entry.op === 'Write') writeBytes += entry.value;
-      }
-    }
-
+    const node = this.nodeRegistry.getNodesByType('nginx')[0];
+    const health = node?.lastHealthReport;
     return {
-      cpuUsagePercent: Math.round(cpuPercent * 100) / 100,
-      memoryUsageBytes: memUsage,
-      memoryLimitBytes: memLimit,
-      memoryUsagePercent: Math.round(memPercent * 100) / 100,
-      networkRxBytes: rxBytes,
-      networkTxBytes: txBytes,
-      blockReadBytes: readBytes,
-      blockWriteBytes: writeBytes,
+      cpuUsagePercent: health?.cpuPercent ?? 0,
+      memoryUsageBytes: health?.memoryBytes ?? 0,
+      memoryLimitBytes: 0,
+      memoryUsagePercent: 0,
+      networkRxBytes: 0,
+      networkTxBytes: 0,
+      blockReadBytes: 0,
+      blockWriteBytes: 0,
     };
   }
 
   async getProcessInfo(): Promise<NginxProcessInfo> {
-    const versionResult = await this.dockerService.execInContainer(this.nginxContainerName, ['nginx', '-v']);
-    const versionMatch = versionResult.output.match(/nginx\/([\d.]+)/);
-
-    const psResult = await this.dockerService.execInContainer(this.nginxContainerName, [
-      'sh',
-      '-c',
-      'ps aux | grep "nginx: worker" | grep -v grep | wc -l',
-    ]);
-
-    const inspect = await this.dockerService.inspectContainer(this.nginxContainerName);
-    const startedAt = new Date(inspect.State.StartedAt);
-    const uptimeSeconds = Math.floor((Date.now() - startedAt.getTime()) / 1000);
-
-    const configTest = await this.dockerService.testNginxConfig();
-
+    const node = this.nodeRegistry.getNodesByType('nginx')[0];
+    const health = node?.lastHealthReport;
     return {
-      version: versionMatch ? versionMatch[1] : 'unknown',
-      workerCount: parseInt(psResult.output.trim(), 10) || 0,
-      uptime: inspect.State.StartedAt,
-      uptimeSeconds,
-      containerStatus: inspect.State.Status,
-      configValid: configTest.valid,
+      version: health?.nginxVersion ?? 'unknown',
+      workerCount: health?.workerCount ?? 0,
+      uptime: health ? new Date(Date.now() - health.nginxUptimeSeconds * 1000).toISOString() : '',
+      uptimeSeconds: health?.nginxUptimeSeconds ?? 0,
+      containerStatus: node ? 'running' : 'stopped',
+      configValid: health?.configValid ?? false,
     };
   }
 
   async getTrafficStats(): Promise<NginxTrafficStats> {
-    // Tail last 200 lines from all access logs
-    const result = await this.dockerService.execInContainer(this.nginxContainerName, [
-      'sh',
-      '-c',
-      'find /var/log/nginx -name "*.access.log" -type f 2>/dev/null | xargs tail -n 200 2>/dev/null || true',
-    ]);
-
-    const statusCodes = { s2xx: 0, s3xx: 0, s4xx: 0, s5xx: 0 };
-    const responseTimes: number[] = [];
-    let totalRequests = 0;
-
-    // Parse each line — match status code and optional upstream_response_time
-    const statusRegex = /"\s+(\d{3})\s+/;
-    const rtRegex = /"([\d.]+)"?\s*$/;
-
-    for (const line of result.output.split('\n')) {
-      if (!line || line.startsWith('==>')) continue; // skip tail headers
-      const statusMatch = line.match(statusRegex);
-      if (!statusMatch) continue;
-
-      totalRequests++;
-      const status = parseInt(statusMatch[1], 10);
-      if (status >= 200 && status < 300) statusCodes.s2xx++;
-      else if (status >= 300 && status < 400) statusCodes.s3xx++;
-      else if (status >= 400 && status < 500) statusCodes.s4xx++;
-      else if (status >= 500) statusCodes.s5xx++;
-
-      const rtMatch = line.match(rtRegex);
-      if (rtMatch && rtMatch[1] !== '-') {
-        const rt = parseFloat(rtMatch[1]);
-        if (!Number.isNaN(rt) && rt >= 0) responseTimes.push(rt);
+    if (!this.nodeDispatch) {
+      return {
+        statusCodes: { s2xx: 0, s3xx: 0, s4xx: 0, s5xx: 0 },
+        avgResponseTime: 0,
+        p95ResponseTime: 0,
+        totalRequests: 0,
+      };
+    }
+    try {
+      const nodeId = await this.nodeDispatch.getDefaultNodeId();
+      if (!nodeId) {
+        return {
+          statusCodes: { s2xx: 0, s3xx: 0, s4xx: 0, s5xx: 0 },
+          avgResponseTime: 0,
+          p95ResponseTime: 0,
+          totalRequests: 0,
+        };
       }
+      const result = await this.nodeDispatch.requestTrafficStats(nodeId, 200);
+      if (result.success && result.detail) {
+        return JSON.parse(result.detail);
+      }
+    } catch (err) {
+      logger.debug('Failed to fetch traffic stats from daemon', { error: (err as Error).message });
     }
-
-    let avgResponseTime = 0;
-    let p95ResponseTime = 0;
-    if (responseTimes.length > 0) {
-      avgResponseTime = responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length;
-      responseTimes.sort((a, b) => a - b);
-      p95ResponseTime = responseTimes[Math.floor(responseTimes.length * 0.95)] ?? 0;
-    }
-
     return {
-      statusCodes,
-      avgResponseTime: Math.round(avgResponseTime * 1000) / 1000,
-      p95ResponseTime: Math.round(p95ResponseTime * 1000) / 1000,
-      totalRequests,
+      statusCodes: { s2xx: 0, s3xx: 0, s4xx: 0, s5xx: 0 },
+      avgResponseTime: 0,
+      p95ResponseTime: 0,
+      totalRequests: 0,
     };
   }
 
   async isAvailable(): Promise<boolean> {
-    try {
-      await this.dockerService.inspectContainer(this.nginxContainerName);
-      return true;
-    } catch {
-      return false;
-    }
+    return this.nodeRegistry.getNodesByType('nginx').length > 0;
   }
 
   async getSnapshot(): Promise<NginxStatsSnapshot> {

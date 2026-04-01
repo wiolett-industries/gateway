@@ -46,10 +46,7 @@ export function isScopeSubset(requestedScopes: string[], allowedScopes: string[]
  * 2. Target's scopes must be a subset of actor's scopes
  *    (you can't touch someone who has permissions you lack)
  */
-export function canManageUser(
-  actorScopes: string[],
-  targetScopes: string[],
-): string | null {
+export function canManageUser(actorScopes: string[], targetScopes: string[]): string | null {
   // Rule 1: admin:system is a hard shield
   if (targetScopes.includes('admin:system') && !actorScopes.includes('admin:system')) {
     return 'Cannot manage a system administrator';

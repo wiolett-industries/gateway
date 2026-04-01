@@ -7,6 +7,7 @@ export * from './certificate-templates.js';
 export * from './certificates.js';
 export * from './domains.js';
 export * from './nginx-templates.js';
+export * from './nodes.js';
 export * from './permission-groups.js';
 export * from './proxy-host-folders.js';
 export * from './proxy-hosts.js';

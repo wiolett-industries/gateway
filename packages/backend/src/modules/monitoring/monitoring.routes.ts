@@ -7,7 +7,7 @@ import { streamSSE } from 'hono/streaming';
 import { container } from '@/container.js';
 import { authMiddleware, requireScope, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
-import { LogStreamService } from './log-stream.service.js';
+import { logRelay, type RelayedLogEntry } from './log-relay.service.js';
 import { MonitoringService } from './monitoring.service.js';
 import { NginxConfigService } from './nginx-config.service.js';
 import { NginxStatsService } from './nginx-stats.service.js';
@@ -32,62 +32,37 @@ monitoringRoutes.get('/health-status', async (c) => {
 });
 
 // Live log streaming via SSE for a specific proxy host
+// Logs are relayed from daemon nodes via gRPC LogStream → logRelay EventEmitter → SSE
 monitoringRoutes.get('/logs/:hostId/stream', async (c) => {
   const hostId = c.req.param('hostId');
 
-  // Validate hostId is a UUID to prevent path traversal
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(hostId)) {
     return c.json({ code: 'INVALID_ID', message: 'Invalid host ID' }, 400);
   }
 
-  const logStreamService = container.resolve(LogStreamService);
-
   return streamSSE(c, async (stream) => {
-    // Send initial connection event
     await stream.writeSSE({
       data: JSON.stringify({ connected: true, hostId }),
       event: 'connected',
     });
 
-    const cleanup = logStreamService.createStream(
-      hostId,
-      (entry) => {
-        stream
-          .writeSSE({
-            data: JSON.stringify(entry),
-            event: 'log',
-          })
-          .catch(() => {
-            // Stream likely closed, ignore write errors
-          });
-      },
-      (error) => {
-        stream
-          .writeSSE({
-            data: JSON.stringify({ error: error.message }),
-            event: 'error',
-          })
-          .catch(() => {
-            // Stream likely closed, ignore write errors
-          });
+    // Subscribe to log entries for this host
+    const onLog = (entry: RelayedLogEntry) => {
+      if (entry.hostId === hostId) {
+        stream.writeSSE({ data: JSON.stringify(entry), event: 'log' }).catch(() => {});
       }
-    );
+    };
+    logRelay.on('log', onLog);
 
-    // Keep connection alive with periodic pings
     const keepalive = setInterval(() => {
-      stream.writeSSE({ data: '', event: 'ping' }).catch(() => {
-        // Stream likely closed, clean up will handle it
-        clearInterval(keepalive);
-      });
+      stream.writeSSE({ data: '', event: 'ping' }).catch(() => clearInterval(keepalive));
     }, 30_000);
 
-    // Clean up on client disconnect
     stream.onAbort(() => {
       clearInterval(keepalive);
-      cleanup();
+      logRelay.off('log', onLog);
     });
 
-    // Keep the stream open — never resolves until client disconnects
     await new Promise(() => {});
   });
 });

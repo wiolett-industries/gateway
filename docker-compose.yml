@@ -6,6 +6,7 @@ services:
     restart: unless-stopped
     ports:
       - "3000:3000"
+      - "9443:9443"
     environment:
       - NODE_ENV=production
       - PORT=3000
@@ -31,13 +32,11 @@ services:
       - HEALTH_CHECK_INTERVAL_SECONDS=${HEALTH_CHECK_INTERVAL_SECONDS:-30}
       - ACME_RENEWAL_CRON=${ACME_RENEWAL_CRON:-0 3 * * *}
       - EXPIRY_CHECK_CRON=${EXPIRY_CHECK_CRON:-0 6 * * *}
-      - NGINX_CONTAINER_NAME=${NGINX_CONTAINER_NAME:-gateway-nginx-1}
+      - GRPC_PORT=${GRPC_PORT:-9443}
+      - GRPC_TLS_CERT=${GRPC_TLS_CERT:-}
+      - GRPC_TLS_KEY=${GRPC_TLS_KEY:-}
       - APP_VERSION=${GATEWAY_VERSION:-dev}
     volumes:
-      - nginx_config:/etc/nginx-config
-      - nginx_certs:/etc/nginx-certs
-      - nginx_logs:/var/log/nginx-logs:ro
-      - acme_challenge:/var/www/acme-challenge
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       postgres:
@@ -50,30 +49,6 @@ services:
       timeout: 5s
       retries: 5
       start_period: 15s
-
-  nginx:
-    image: nginx:1.27-alpine
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./nginx/html:/usr/share/nginx/html:ro
-      - nginx_config:/etc/nginx/conf.d/sites
-      - nginx_certs:/etc/nginx/certs
-      - nginx_logs:/var/log/nginx
-      - acme_challenge:/var/www/acme-challenge
-    depends_on:
-      app:
-        condition: service_started
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost/health || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
 
   postgres:
     image: postgres:16-alpine
@@ -105,7 +80,3 @@ services:
 volumes:
   postgres_data:
   redis_data:
-  nginx_config:
-  nginx_certs:
-  nginx_logs:
-  acme_challenge:

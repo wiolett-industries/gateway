@@ -1,7 +1,7 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
 import { authMiddleware, requireScope, sessionOnly } from '@/modules/auth/auth.middleware.js';
-import { NginxService } from '@/services/nginx.service.js';
+import { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import type { AppEnv } from '@/types.js';
 import {
   CreateNginxTemplateSchema,
@@ -115,26 +115,25 @@ nginxTemplateRoutes.post('/preview', requireScope('proxy:manage'), async (c) => 
   return c.json({ data: { rendered } });
 });
 
-// Test template — render + nginx -t
+// Test template — render + send to daemon for nginx -t (test_only mode)
 nginxTemplateRoutes.post('/test', requireScope('proxy:manage'), async (c) => {
   const service = container.resolve(NginxTemplateService);
-  const nginxService = container.resolve(NginxService);
+  const nodeDispatch = container.resolve(NodeDispatchService);
   const body = await c.req.json();
   const input = PreviewNginxTemplateSchema.parse(body);
 
   const rendered = service.previewWithSampleData(input.content);
 
-  // Write temp config and test
-  const testId = `test-${Date.now()}`;
   try {
-    await nginxService.writeConfig(testId, rendered);
-    const result = await nginxService.testConfig();
-    await nginxService.removeConfig(testId);
-    return c.json({ data: { rendered, valid: result.valid, errors: result.error ? [result.error] : [] } });
+    const nodeId = await nodeDispatch.getDefaultNodeId();
+    if (!nodeId) {
+      return c.json({ data: { rendered, valid: false, errors: ['No default nginx node configured'] } });
+    }
+    // Send rendered config to daemon for test-only validation (writes temp, tests, removes)
+    const testId = `test-${Date.now()}`;
+    const result = await nodeDispatch.applyConfig(nodeId, testId, rendered, true);
+    return c.json({ data: { rendered, valid: result.success, errors: result.error ? [result.error] : [] } });
   } catch (err) {
-    try {
-      await nginxService.removeConfig(testId);
-    } catch {}
     return c.json({
       data: {
         rendered,

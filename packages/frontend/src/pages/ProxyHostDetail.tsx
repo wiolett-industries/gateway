@@ -43,10 +43,24 @@ export function ProxyHostDetail() {
   const [isLoading, setIsLoading] = useState(!isNew);
   const [isSaving, setIsSaving] = useState(false);
   const [isSystemHost, setIsSystemHost] = useState(false);
+  const [availableNodes, setAvailableNodes] = useState<
+    Array<{ id: string; hostname: string; status: string }>
+  >([]);
+
+  // Fetch available nodes for the dropdown
+  useEffect(() => {
+    api
+      .listNodes({ status: "online", type: "nginx" })
+      .then((resp) => {
+        setAvailableNodes((resp as any).data ?? []);
+      })
+      .catch(() => {});
+  }, []);
 
   // Form state
   const [type, setType] = useState<ProxyHostType>("proxy");
   const [domainNames, setDomainNames] = useState<string[]>([""]);
+  const [nodeId, setNodeId] = useState<string | null>(null);
   const [forwardHost, setForwardHost] = useState("");
   const [forwardPort, setForwardPort] = useState(80);
   const [forwardScheme, setForwardScheme] = useState<ForwardScheme>("http");
@@ -123,6 +137,7 @@ export function ProxyHostDetail() {
         const host = await api.getProxyHost(id);
         setType(host.type);
         setDomainNames(host.domainNames.length > 0 ? host.domainNames : [""]);
+        setNodeId((host as any).nodeId || null);
         setForwardHost(host.forwardHost || "");
         setForwardPort(host.forwardPort || 80);
         setForwardScheme(host.forwardScheme || "http");
@@ -281,7 +296,8 @@ export function ProxyHostDetail() {
       healthCheckInterval,
       healthCheckExpectedStatus: healthCheckExpectedStatus ?? undefined,
       healthCheckExpectedBody: healthCheckExpectedBody || undefined,
-    };
+      nodeId: nodeId || undefined,
+    } as any;
     if (type === "proxy") {
       req.forwardHost = forwardHost;
       req.forwardPort = forwardPort;
@@ -295,6 +311,7 @@ export function ProxyHostDetail() {
   };
 
   const isFormValid = (() => {
+    if (!nodeId) return false;
     if (type === "proxy" && (forwardPort < 1 || forwardPort > 65535)) return false;
     if (cacheEnabled && cacheMaxAge < 1) return false;
     if (rateLimitEnabled && (rateLimitRPS < 1 || rateLimitBurst < 1)) return false;
@@ -375,7 +392,7 @@ export function ProxyHostDetail() {
 
   return (
     <PageTransition>
-      <div className="h-full flex flex-col p-6 gap-6 overflow-hidden">
+      <div className="h-full flex flex-col p-6 gap-4 overflow-hidden">
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-2 shrink-0">
           <div className="flex items-center gap-3">
@@ -574,6 +591,34 @@ export function ProxyHostDetail() {
                   </div>
                 );
               })()}
+
+              {/* Node Assignment */}
+              <div className="space-y-1">
+                <label className="text-sm font-medium">Node</label>
+                <p className="text-xs text-muted-foreground">
+                  Select which nginx node handles this proxy host.
+                </p>
+                <Select
+                  value={nodeId || "__none__"}
+                  onValueChange={(v) => setNodeId(v === "__none__" ? null : v)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a node" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableNodes.length === 0 && (
+                      <SelectItem value="__none__" disabled>
+                        No online nodes
+                      </SelectItem>
+                    )}
+                    {availableNodes.map((n) => (
+                      <SelectItem key={n.id} value={n.id}>
+                        {n.hostname}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
               {/* Domain Names */}
               <div className="space-y-2">

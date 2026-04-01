@@ -471,7 +471,9 @@ export function ProxyHosts() {
         ) : (
           <EmptyState
             message="No proxy hosts."
-            {...(hasScope("proxy:manage") ? { actionLabel: "Add one", actionHref: "/proxy-hosts/new" } : {})}
+            {...(hasScope("proxy:manage")
+              ? { actionLabel: "Add one", actionHref: "/proxy-hosts/new" }
+              : {})}
             hasActiveFilters={hasActiveFilters}
             onReset={() => {
               resetFilters();

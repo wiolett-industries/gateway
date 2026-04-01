@@ -169,16 +169,22 @@ export function AdminUsers() {
                       <div className="flex items-center gap-2">
                         <p className="text-sm font-medium truncate">{user.name || user.email}</p>
                         {isSelf ? (
-                          <Badge variant="secondary" className="text-[10px] shrink-0">You</Badge>
+                          <Badge variant="secondary" className="text-[10px] shrink-0">
+                            You
+                          </Badge>
                         ) : isSystemUser ? (
-                          <Badge variant="outline" className="text-[10px] shrink-0">System</Badge>
+                          <Badge variant="outline" className="text-[10px] shrink-0">
+                            System
+                          </Badge>
                         ) : user.isBlocked ? (
                           <Badge variant="destructive" className="text-[10px] shrink-0">
                             <Ban className="h-2.5 w-2.5 mr-0.5" />
                             Blocked
                           </Badge>
                         ) : (
-                          <Badge variant="secondary" className="text-[10px] shrink-0 invisible">You</Badge>
+                          <Badge variant="secondary" className="text-[10px] shrink-0 invisible">
+                            You
+                          </Badge>
                         )}
                       </div>
                       <p className="text-xs text-muted-foreground truncate">{user.email}</p>
@@ -191,21 +197,21 @@ export function AdminUsers() {
                         </Badge>
                       ) : (
                         <div className="w-44">
-                        <Select
-                          value={user.groupId}
-                          onValueChange={(v) => handleGroupChange(user.id, v)}
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {groups.map((group) => (
-                              <SelectItem key={group.id} value={group.id}>
-                                {group.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                          <Select
+                            value={user.groupId}
+                            onValueChange={(v) => handleGroupChange(user.id, v)}
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {groups.map((group) => (
+                                <SelectItem key={group.id} value={group.id}>
+                                  {group.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                         </div>
                       )}
                     </div>

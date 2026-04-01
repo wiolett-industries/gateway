@@ -254,7 +254,9 @@ export function AccessLists() {
         ) : (
           <EmptyState
             message="No access lists."
-            {...(hasScope("access-list:manage") ? { actionLabel: "Create one", onAction: openCreate } : {})}
+            {...(hasScope("access-list:manage")
+              ? { actionLabel: "Create one", onAction: openCreate }
+              : {})}
           />
         )}
 

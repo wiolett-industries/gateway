@@ -1,0 +1,48 @@
+{
+  "name": "backend",
+  "root": "packages/backend",
+  "sourceRoot": "packages/backend/src",
+  "targets": {
+    "build": {
+      "command": "pnpm --filter backend build",
+      "inputs": ["{projectRoot}/src/**/*", "{projectRoot}/tsconfig.json", "{projectRoot}/package.json"],
+      "outputs": ["{projectRoot}/dist"],
+      "cache": true
+    },
+    "dev": {
+      "command": "pnpm --filter backend dev",
+      "cache": false
+    },
+    "start": {
+      "command": "pnpm --filter backend start",
+      "cache": false
+    },
+    "test": {
+      "command": "pnpm --filter backend test",
+      "inputs": ["{projectRoot}/src/**/*", "{projectRoot}/vitest.config.*"],
+      "cache": true
+    },
+    "lint": {
+      "command": "pnpm --filter backend lint",
+      "inputs": ["{projectRoot}/src/**/*"],
+      "cache": true
+    },
+    "typecheck": {
+      "command": "pnpm --filter backend typecheck",
+      "inputs": ["{projectRoot}/src/**/*", "{projectRoot}/tsconfig.json"],
+      "cache": true
+    },
+    "db:generate": {
+      "command": "pnpm --filter backend db:generate",
+      "cache": false
+    },
+    "db:migrate": {
+      "command": "pnpm --filter backend db:migrate",
+      "cache": false
+    },
+    "db:studio": {
+      "command": "pnpm --filter backend db:studio",
+      "cache": false
+    }
+  }
+}

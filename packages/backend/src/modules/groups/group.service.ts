@@ -1,10 +1,10 @@
-import { injectable, inject } from 'tsyringe';
-import { eq, count, sql } from 'drizzle-orm';
+import { count, eq, sql } from 'drizzle-orm';
+import { inject, injectable } from 'tsyringe';
 import { TOKENS } from '@/container.js';
-import { permissionGroups, users } from '@/db/schema/index.js';
-import { AppError } from '@/middleware/error-handler.js';
-import { createChildLogger } from '@/lib/logger.js';
 import type { DrizzleClient } from '@/db/client.js';
+import { permissionGroups, users } from '@/db/schema/index.js';
+import { createChildLogger } from '@/lib/logger.js';
+import { AppError } from '@/middleware/error-handler.js';
 import type { CreateGroupInput, UpdateGroupInput } from './group.schemas.js';
 
 const logger = createChildLogger('GroupService');
@@ -26,10 +26,7 @@ export class GroupService {
         memberCount: sql<number>`(SELECT count(*) FROM users WHERE users.group_id = "permission_groups"."id")::int`,
       })
       .from(permissionGroups)
-      .orderBy(
-        sql`${permissionGroups.isBuiltin} DESC`,
-        sql`jsonb_array_length(${permissionGroups.scopes}) DESC`
-      );
+      .orderBy(sql`${permissionGroups.isBuiltin} DESC`, sql`jsonb_array_length(${permissionGroups.scopes}) DESC`);
 
     return groups.map((g) => ({
       ...g,
@@ -47,10 +44,7 @@ export class GroupService {
       throw new AppError(404, 'GROUP_NOT_FOUND', 'Permission group not found');
     }
 
-    const [{ count: memberCount }] = await this.db
-      .select({ count: count() })
-      .from(users)
-      .where(eq(users.groupId, id));
+    const [{ count: memberCount }] = await this.db.select({ count: count() }).from(users).where(eq(users.groupId, id));
 
     return {
       ...group,
@@ -145,10 +139,7 @@ export class GroupService {
       throw new AppError(403, 'BUILTIN_GROUP', 'Cannot delete a built-in group');
     }
 
-    const [{ count: memberCount }] = await this.db
-      .select({ count: count() })
-      .from(users)
-      .where(eq(users.groupId, id));
+    const [{ count: memberCount }] = await this.db.select({ count: count() }).from(users).where(eq(users.groupId, id));
 
     if (Number(memberCount) > 0) {
       throw new AppError(
@@ -163,10 +154,7 @@ export class GroupService {
   }
 
   async getMemberIds(groupId: string): Promise<string[]> {
-    const rows = await this.db
-      .select({ id: users.id })
-      .from(users)
-      .where(eq(users.groupId, groupId));
+    const rows = await this.db.select({ id: users.id }).from(users).where(eq(users.groupId, groupId));
     return rows.map((r) => r.id);
   }
 }

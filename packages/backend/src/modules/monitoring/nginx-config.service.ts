@@ -1,5 +1,5 @@
 import { createChildLogger } from '@/lib/logger.js';
-import type { DockerService } from '@/services/docker.service.js';
+import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
 
 const logger = createChildLogger('NginxConfigService');
 
@@ -8,26 +8,18 @@ const MAX_CONFIG_SIZE = 1_048_576; // 1 MB
 export class NginxConfigService {
   private updateLock = false;
 
-  constructor(
-    private readonly dockerService: DockerService,
-    private readonly nginxContainerName: string
-  ) {}
+  constructor(private readonly nodeDispatch: NodeDispatchService) {}
 
   async getGlobalConfig(): Promise<string> {
-    const result = await this.dockerService.execInContainer(this.nginxContainerName, ['cat', '/etc/nginx/nginx.conf']);
-    if (result.exitCode !== 0) {
-      throw new Error(`Failed to read nginx.conf: ${result.output}`);
+    const nodeId = await this.nodeDispatch.getDefaultNodeId();
+    if (!nodeId) {
+      return '# No default nginx node configured\n';
     }
-    return result.output;
-  }
-
-  private writeConfig(content: string): Promise<{ exitCode: number; output: string }> {
-    const b64 = Buffer.from(content).toString('base64');
-    return this.dockerService.execInContainer(this.nginxContainerName, [
-      'sh',
-      '-c',
-      `echo '${b64}' | base64 -d > /etc/nginx/nginx.conf`,
-    ]);
+    const result = await this.nodeDispatch.readGlobalConfig(nodeId);
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to read global config from daemon');
+    }
+    return result.detail;
   }
 
   async updateGlobalConfig(content: string): Promise<{ valid: boolean; error?: string }> {
@@ -41,30 +33,21 @@ export class NginxConfigService {
     this.updateLock = true;
 
     try {
-      logger.info('Updating global nginx.conf');
+      logger.info('Updating global nginx.conf via daemon');
 
-      // 1. Backup current config
-      const backup = await this.getGlobalConfig();
-
-      // 2. Write new config (base64 encoded to prevent injection)
-      const writeResult = await this.writeConfig(content);
-      if (writeResult.exitCode !== 0) {
-        throw new Error(`Failed to write nginx.conf: ${writeResult.output}`);
+      const nodeId = await this.nodeDispatch.getDefaultNodeId();
+      if (!nodeId) {
+        return { valid: false, error: 'No default nginx node configured' };
       }
 
-      // 3. Test
-      const testResult = await this.dockerService.testNginxConfig();
+      const backup = ''; // Daemon handles rollback internally
+      const result = await this.nodeDispatch.updateGlobalConfig(nodeId, content, backup);
 
-      if (!testResult.valid) {
-        logger.warn('nginx.conf test failed, rolling back', { error: testResult.error });
-        // 4. Rollback
-        await this.writeConfig(backup);
-        return { valid: false, error: testResult.error };
+      if (!result.success) {
+        return { valid: false, error: result.error };
       }
 
-      // 5. Reload
-      await this.dockerService.reloadNginx();
-      logger.info('Global nginx.conf updated and nginx reloaded');
+      logger.info('Global nginx.conf updated via daemon');
       return { valid: true };
     } finally {
       this.updateLock = false;
@@ -72,6 +55,11 @@ export class NginxConfigService {
   }
 
   async testConfig(): Promise<{ valid: boolean; error?: string }> {
-    return this.dockerService.testNginxConfig();
+    const nodeId = await this.nodeDispatch.getDefaultNodeId();
+    if (!nodeId) {
+      return { valid: false, error: 'No default nginx node configured' };
+    }
+    const result = await this.nodeDispatch.testConfig(nodeId);
+    return { valid: result.success, error: result.error || undefined };
   }
 }

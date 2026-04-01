@@ -6,7 +6,7 @@ import { proxyHosts } from '@/db/schema/proxy-hosts.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
-import type { ProxyHostConfig } from '@/services/nginx.service.js';
+import type { ProxyHostConfig } from '@/services/nginx-config-generator.service.js';
 import type { CreateNginxTemplateInput, UpdateNginxTemplateInput } from './nginx-template.schemas.js';
 
 const logger = createChildLogger('NginxTemplateService');

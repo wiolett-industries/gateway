@@ -1,4 +1,15 @@
-import { index, integer, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid, varchar } from 'drizzle-orm/pg-core';
+import {
+  boolean,
+  index,
+  integer,
+  pgEnum,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+  varchar,
+} from 'drizzle-orm/pg-core';
 import { users } from './users.js';
 
 export const caTypeEnum = pgEnum('ca_type', ['root', 'intermediate']);
@@ -48,6 +59,9 @@ export const certificateAuthorities = pgTable(
     // CRL tracking
     crlNumber: integer('crl_number').notNull().default(0),
     lastCrlAt: timestamp('last_crl_at', { withTimezone: true }),
+
+    // System flag — locked CAs cannot be deleted (e.g. node mTLS CA)
+    isSystem: boolean('is_system').notNull().default(false),
 
     // Metadata
     createdById: uuid('created_by_id')

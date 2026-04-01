@@ -71,13 +71,10 @@ const envSchema = z.object({
   // Setup token for bootstrap API (management SSL provisioning)
   SETUP_TOKEN: z.string().optional(),
 
-  // Nginx
-  NGINX_CONFIG_PATH: z.string().default('/etc/nginx-config'),
-  NGINX_CERTS_PATH: z.string().default('/etc/nginx-certs'),
-  NGINX_LOGS_PATH: z.string().default('/var/log/nginx-logs'),
-  ACME_CHALLENGE_PATH: z.string().default('/var/www/acme-challenge'),
-  DOCKER_SOCKET_PATH: z.string().default('/var/run/docker.sock'),
-  NGINX_CONTAINER_NAME: z.string().default('gateway-nginx-1'),
+  // gRPC server for daemon communication
+  GRPC_PORT: z.coerce.number().default(9443),
+  GRPC_TLS_CERT: z.string().optional(),
+  GRPC_TLS_KEY: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

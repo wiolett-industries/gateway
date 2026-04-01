@@ -1,0 +1,314 @@
+syntax = "proto3";
+package gateway.v1;
+
+option go_package = "github.com/wiolett/gateway/nginx-daemon/internal/gatewayv1";
+
+// ─── Node Enrollment ────────────────────────────────────────────────
+
+service NodeEnrollment {
+  // Initial enrollment: daemon presents PSK token, receives mTLS certs
+  rpc Enroll(EnrollRequest) returns (EnrollResponse);
+
+  // Certificate renewal: daemon presents current cert, gets new one
+  rpc RenewCertificate(RenewCertRequest) returns (RenewCertResponse);
+}
+
+message EnrollRequest {
+  string token = 1;
+  string hostname = 2;
+  string nginx_version = 3;
+  string os_info = 4;
+  string daemon_version = 5;
+}
+
+message EnrollResponse {
+  string node_id = 1;
+  bytes ca_certificate = 2;
+  bytes client_certificate = 3;
+  bytes client_key = 4;
+  int64 cert_expires_at = 5;
+}
+
+message RenewCertRequest {
+  string node_id = 1;
+}
+
+message RenewCertResponse {
+  bytes client_certificate = 1;
+  bytes client_key = 2;
+  int64 cert_expires_at = 3;
+}
+
+// ─── Main Control Channel ───────────────────────────────────────────
+
+service NodeControl {
+  // Bidirectional stream: daemon connects, Gateway pushes commands
+  rpc CommandStream(stream DaemonMessage) returns (stream GatewayCommand);
+}
+
+// Messages FROM daemon TO Gateway
+message DaemonMessage {
+  oneof payload {
+    RegisterMessage register = 1;
+    CommandResult command_result = 2;
+    HealthReport health_report = 3;
+    StatsReport stats_report = 4;
+    DaemonLogEntry daemon_log = 5;
+  }
+}
+
+// Daemon's own operational logs (startup, connections, errors, command execution)
+message DaemonLogEntry {
+  string timestamp = 1;
+  string level = 2;
+  string message = 3;
+  string component = 4;
+  map<string, string> fields = 5;
+}
+
+message RegisterMessage {
+  string node_id = 1;
+  string hostname = 2;
+  string nginx_version = 3;
+  string config_version_hash = 4;
+  string daemon_version = 5;
+  int64 nginx_uptime_seconds = 6;
+  bool nginx_running = 7;
+}
+
+message CommandResult {
+  string command_id = 1;
+  bool success = 2;
+  string error = 3;
+  string detail = 4;
+}
+
+message HealthReport {
+  bool nginx_running = 1;
+  bool config_valid = 2;
+  int64 nginx_uptime_seconds = 3;
+  int32 worker_count = 4;
+  string nginx_version = 5;
+  double cpu_percent = 6;
+  int64 memory_bytes = 7;
+  int64 disk_free_bytes = 8;
+  int64 timestamp = 9;
+  // System
+  double load_average_1m = 10;
+  double load_average_5m = 11;
+  double load_average_15m = 12;
+  int64 system_memory_total_bytes = 13;
+  int64 system_memory_used_bytes = 14;
+  int64 system_memory_available_bytes = 15;
+  int64 swap_total_bytes = 16;
+  int64 swap_used_bytes = 17;
+  int64 system_uptime_seconds = 18;
+  int64 open_file_descriptors = 19;
+  int64 max_file_descriptors = 20;
+  // Disk
+  repeated DiskMount disk_mounts = 21;
+  int64 disk_read_bytes = 22;
+  int64 disk_write_bytes = 23;
+  // Network
+  repeated NetworkInterface network_interfaces = 24;
+  // Nginx
+  int64 nginx_rss_bytes = 25;
+  double error_rate_4xx = 26;
+  double error_rate_5xx = 27;
+}
+
+message StatsReport {
+  int64 active_connections = 1;
+  int64 accepts = 2;
+  int64 handled = 3;
+  int64 requests = 4;
+  int32 reading = 5;
+  int32 writing = 6;
+  int32 waiting = 7;
+  int64 timestamp = 8;
+}
+
+message DiskMount {
+  string mount_point = 1;
+  string filesystem = 2;
+  string device = 3;
+  int64 total_bytes = 4;
+  int64 used_bytes = 5;
+  int64 free_bytes = 6;
+  double usage_percent = 7;
+}
+
+message NetworkInterface {
+  string name = 1;
+  int64 rx_bytes = 2;
+  int64 tx_bytes = 3;
+  int64 rx_packets = 4;
+  int64 tx_packets = 5;
+  int64 rx_errors = 6;
+  int64 tx_errors = 7;
+}
+
+// Messages FROM Gateway TO daemon
+message GatewayCommand {
+  string command_id = 1;
+  oneof payload {
+    ApplyConfigCommand apply_config = 2;
+    RemoveConfigCommand remove_config = 3;
+    DeployCertCommand deploy_cert = 4;
+    RemoveCertCommand remove_cert = 5;
+    FullSyncCommand full_sync = 6;
+    UpdateGlobalConfigCommand update_global_config = 7;
+    DeployHtpasswdCommand deploy_htpasswd = 8;
+    TestConfigCommand test_config = 9;
+    RequestHealthCommand request_health = 10;
+    RequestStatsCommand request_stats = 11;
+    SetDaemonLogStreamCommand set_daemon_log_stream = 12;
+    RemoveHtpasswdCommand remove_htpasswd = 13;
+    DeployAcmeChallengeCommand deploy_acme_challenge = 14;
+    RemoveAcmeChallengeCommand remove_acme_challenge = 15;
+    ReadGlobalConfigCommand read_global_config = 16;
+    RequestTrafficStatsCommand request_traffic_stats = 17;
+  }
+}
+
+message ApplyConfigCommand {
+  string host_id = 1;
+  string config_content = 2;
+  bool test_only = 3;
+}
+
+// Daemon also cleans up associated cache directory on removal
+message RemoveConfigCommand {
+  string host_id = 1;
+}
+
+// Cert deployment does NOT auto-reload nginx. Gateway sends a separate
+// ApplyConfigCommand or TestConfigCommand + reload when ready.
+message DeployCertCommand {
+  string cert_id = 1;
+  bytes cert_pem = 2;
+  bytes key_pem = 3;
+  bytes chain_pem = 4;
+}
+
+message RemoveCertCommand {
+  string cert_id = 1;
+}
+
+message FullSyncCommand {
+  repeated HostConfig hosts = 1;
+  repeated CertBundle certs = 2;
+  string global_config = 3;
+  repeated HtpasswdFile htpasswd_files = 4;
+  string version_hash = 5;
+}
+
+message HostConfig {
+  string host_id = 1;
+  string config_content = 2;
+}
+
+message CertBundle {
+  string cert_id = 1;
+  bytes cert_pem = 2;
+  bytes key_pem = 3;
+  bytes chain_pem = 4;
+}
+
+message HtpasswdFile {
+  string access_list_id = 1;
+  string content = 2;
+}
+
+message UpdateGlobalConfigCommand {
+  string content = 1;
+  string backup_content = 2;
+}
+
+message DeployHtpasswdCommand {
+  string access_list_id = 1;
+  string content = 2;
+}
+
+message RemoveHtpasswdCommand {
+  string access_list_id = 1;
+}
+
+message TestConfigCommand {}
+message RequestHealthCommand {}
+message RequestStatsCommand {}
+
+// Controls daemon log streaming over the command channel
+message SetDaemonLogStreamCommand {
+  bool enabled = 1;
+  string min_level = 2;
+  int32 tail_lines = 3;
+}
+
+// ACME HTTP-01 challenge file management
+message DeployAcmeChallengeCommand {
+  string token = 1;
+  string content = 2;
+}
+
+message RemoveAcmeChallengeCommand {
+  string token = 1;
+}
+
+// Read the current global nginx.conf — response content is in CommandResult.detail
+message ReadGlobalConfigCommand {}
+
+// Request traffic stats from daemon log parsing — response JSON is in CommandResult.detail
+message RequestTrafficStatsCommand {
+  int32 tail_lines = 1; // Number of recent log lines to analyze (default 200)
+}
+
+// ─── Log Streaming ──────────────────────────────────────────────────
+
+service LogStream {
+  // Daemon streams log entries to Gateway
+  rpc StreamLogs(stream LogStreamMessage) returns (stream LogStreamControl);
+}
+
+message LogStreamMessage {
+  oneof payload {
+    LogSubscribeAck subscribe_ack = 1;
+    LogEntry entry = 2;
+  }
+}
+
+message LogSubscribeAck {
+  string host_id = 1;
+}
+
+message LogEntry {
+  string host_id = 1;
+  string timestamp = 2;
+  string remote_addr = 3;
+  string method = 4;
+  string path = 5;
+  int32 status = 6;
+  int64 body_bytes_sent = 7;
+  string referer = 8;
+  string user_agent = 9;
+  string upstream_response_time = 10;
+  string raw = 11;
+  string log_type = 12; // "access" or "error"
+  string level = 13;    // for error logs: "error", "warn", "crit", etc.
+}
+
+message LogStreamControl {
+  oneof payload {
+    LogSubscribe subscribe = 1;
+    LogUnsubscribe unsubscribe = 2;
+  }
+}
+
+message LogSubscribe {
+  string host_id = 1;
+  int32 tail_lines = 2;
+}
+
+message LogUnsubscribe {
+  string host_id = 1;
+}

@@ -5,8 +5,8 @@ import { AuditService } from '@/modules/audit/audit.service.js';
 import { authMiddleware, requireScope } from '@/modules/auth/auth.middleware.js';
 import { SessionService } from '@/services/session.service.js';
 import type { AppEnv } from '@/types.js';
-import { GroupService } from './group.service.js';
 import { CreateGroupSchema, UpdateGroupSchema } from './group.schemas.js';
+import { GroupService } from './group.service.js';
 
 export const groupRoutes = new OpenAPIHono<AppEnv>();
 
@@ -39,12 +39,10 @@ groupRoutes.post('/', async (c) => {
   // Users cannot grant scopes they don't possess
   const userScopes = c.get('effectiveScopes') || [];
   if (!isScopeSubset(input.scopes, userScopes)) {
-    const disallowed = input.scopes.filter(
-      (s) => !userScopes.some((us) => s === us || s.startsWith(us + ':'))
-    );
+    const disallowed = input.scopes.filter((s) => !userScopes.some((us) => s === us || s.startsWith(`${us}:`)));
     return c.json(
       { code: 'SCOPE_NOT_ALLOWED', message: `Cannot grant scopes you do not possess: ${disallowed.join(', ')}` },
-      403,
+      403
     );
   }
 
@@ -76,12 +74,10 @@ groupRoutes.put('/:id', async (c) => {
   if (input.scopes) {
     const userScopes = c.get('effectiveScopes') || [];
     if (!isScopeSubset(input.scopes, userScopes)) {
-      const disallowed = input.scopes.filter(
-        (s) => !userScopes.some((us) => s === us || s.startsWith(us + ':'))
-      );
+      const disallowed = input.scopes.filter((s) => !userScopes.some((us) => s === us || s.startsWith(`${us}:`)));
       return c.json(
         { code: 'SCOPE_NOT_ALLOWED', message: `Cannot grant scopes you do not possess: ${disallowed.join(', ')}` },
-        403,
+        403
       );
     }
   }

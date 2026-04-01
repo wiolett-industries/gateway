@@ -1,0 +1,36 @@
+{
+  "name": "nginx-daemon",
+  "root": "packages/daemons/nginx",
+  "sourceRoot": "packages/daemons/nginx",
+  "targets": {
+    "proto": {
+      "command": "make -C packages/daemons/nginx proto",
+      "inputs": ["{workspaceRoot}/proto/**/*.proto"],
+      "outputs": ["{projectRoot}/internal/gatewayv1/*.pb.go"],
+      "cache": true
+    },
+    "build": {
+      "command": "make -C packages/daemons/nginx build",
+      "dependsOn": ["proto"],
+      "inputs": ["{projectRoot}/**/*.go", "{projectRoot}/go.mod", "{projectRoot}/go.sum"],
+      "outputs": ["{projectRoot}/bin/nginx-daemon"],
+      "cache": true
+    },
+    "test": {
+      "command": "cd packages/daemons/nginx && CGO_ENABLED=0 go test ./...",
+      "dependsOn": ["proto"],
+      "inputs": ["{projectRoot}/**/*.go", "{projectRoot}/**/*_test.go"],
+      "cache": true
+    },
+    "lint": {
+      "command": "cd packages/daemons/nginx && CGO_ENABLED=0 go vet ./...",
+      "dependsOn": ["proto"],
+      "inputs": ["{projectRoot}/**/*.go"],
+      "cache": true
+    },
+    "clean": {
+      "command": "make -C packages/daemons/nginx clean",
+      "cache": false
+    }
+  }
+}
