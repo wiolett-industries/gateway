@@ -4,10 +4,13 @@ import { persist } from "zustand/middleware";
 interface PinnedNodesState {
   dashboardNodeIds: string[];
   sidebarNodeIds: string[];
+  refreshTick: number;
   toggleDashboard: (nodeId: string) => void;
   toggleSidebar: (nodeId: string) => void;
   isPinnedDashboard: (nodeId: string) => boolean;
   isPinnedSidebar: (nodeId: string) => boolean;
+  /** Trigger sidebar/dashboard refetch of pinned node data */
+  invalidate: () => void;
 }
 
 export const usePinnedNodesStore = create<PinnedNodesState>()(
@@ -15,6 +18,7 @@ export const usePinnedNodesStore = create<PinnedNodesState>()(
     (set, get) => ({
       dashboardNodeIds: [],
       sidebarNodeIds: [],
+      refreshTick: 0,
 
       toggleDashboard: (nodeId) =>
         set((s) => ({
@@ -32,6 +36,7 @@ export const usePinnedNodesStore = create<PinnedNodesState>()(
 
       isPinnedDashboard: (nodeId) => get().dashboardNodeIds.includes(nodeId),
       isPinnedSidebar: (nodeId) => get().sidebarNodeIds.includes(nodeId),
+      invalidate: () => set((s) => ({ refreshTick: s.refreshTick + 1 })),
     }),
     {
       name: "gateway-pinned-nodes",

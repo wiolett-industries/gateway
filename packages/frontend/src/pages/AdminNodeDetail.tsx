@@ -86,6 +86,7 @@ export function AdminNodeDetail() {
       });
       setNode((prev) => (prev ? { ...prev, ...updated } : prev));
       setRenameOpen(false);
+      usePinnedNodesStore.getState().invalidate();
       toast.success("Node updated");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to update");

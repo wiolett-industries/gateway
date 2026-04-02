@@ -143,6 +143,7 @@ function SidebarContent({
   const updateAvailable = useUpdateStore((s) => s.status?.updateAvailable ?? false);
   const showUpdateNotifications = useUIStore((s) => s.showUpdateNotifications);
   const sidebarPinnedIds = usePinnedNodesStore((s) => s.sidebarNodeIds);
+  const pinnedRefreshTick = usePinnedNodesStore((s) => s.refreshTick);
   const [pinnedNodes, setPinnedNodes] = useState<Node[]>([]);
 
   useEffect(() => {
@@ -156,7 +157,7 @@ function SidebarContent({
         setPinnedNodes(r.data.filter((n) => sidebarPinnedIds.includes(n.id)));
       })
       .catch(() => {});
-  }, [sidebarPinnedIds]);
+  }, [sidebarPinnedIds, location.pathname, pinnedRefreshTick]);
 
   const handleLogout = async () => {
     try {
@@ -364,6 +365,47 @@ function SidebarContent({
               {effectiveGroups.map((group, groupIndex) => (
                 <div key={group.label}>
                   {groupIndex > 0 && <Separator />}
+
+                  {/* Pinned items — right after Dashboard */}
+                  {groupIndex === 1 && pinnedNodes.length > 0 && (
+                    <>
+                      <nav className="space-y-0.5 px-2 py-2">
+                        <p className="px-3 py-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                          Pinned Items
+                        </p>
+                        {pinnedNodes.map((node) => {
+                          const isActive = location.pathname === `/nodes/${node.id}`;
+                          return (
+                            <Link
+                              key={node.id}
+                              to={`/nodes/${node.id}`}
+                              onClick={onNavigate}
+                              className={cn(
+                                "flex items-center gap-3 px-3 py-2 text-sm transition-colors whitespace-nowrap overflow-hidden",
+                                isActive
+                                  ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                              )}
+                            >
+                              <Server className="h-4 w-4 shrink-0" />
+                              <span className="truncate">{node.displayName || node.hostname}</span>
+                              <span
+                                className={cn(
+                                  "ml-auto h-2 w-2 rounded-full shrink-0",
+                                  node.status === "online"
+                                    ? "bg-emerald-500"
+                                    : node.status === "error"
+                                      ? "bg-red-400"
+                                      : "bg-muted-foreground/40"
+                                )}
+                              />
+                            </Link>
+                          );
+                        })}
+                      </nav>
+                      <Separator />
+                    </>
+                  )}
                   <nav className="space-y-0.5 px-2 py-2">
                     {groupIndex > 0 && (
                       <p className="px-3 py-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
@@ -393,46 +435,6 @@ function SidebarContent({
                 </div>
               ))}
 
-              {/* Pinned nodes */}
-              {pinnedNodes.length > 0 && (
-                <>
-                  <Separator className="my-1" />
-                  <nav className="space-y-0.5 p-2">
-                    <p className="px-3 py-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                      Pinned Nodes
-                    </p>
-                    {pinnedNodes.map((node) => {
-                      const isActive = location.pathname === `/nodes/${node.id}`;
-                      return (
-                        <Link
-                          key={node.id}
-                          to={`/nodes/${node.id}`}
-                          onClick={onNavigate}
-                          className={cn(
-                            "flex items-center gap-3 px-3 py-2 text-sm transition-colors whitespace-nowrap overflow-hidden",
-                            isActive
-                              ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-                              : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                          )}
-                        >
-                          <Server className="h-4 w-4 shrink-0" />
-                          <span className="truncate">{node.displayName || node.hostname}</span>
-                          <span
-                            className={cn(
-                              "ml-auto h-2 w-2 rounded-full shrink-0",
-                              node.status === "online"
-                                ? "bg-green-500"
-                                : node.status === "error"
-                                  ? "bg-destructive"
-                                  : "bg-muted-foreground/40"
-                            )}
-                          />
-                        </Link>
-                      );
-                    })}
-                  </nav>
-                </>
-              )}
 
               {/* Admin navigation */}
               {filteredAdminNav.length > 0 && (
