@@ -55,6 +55,7 @@ message DaemonMessage {
     HealthReport health_report = 3;
     StatsReport stats_report = 4;
     DaemonLogEntry daemon_log = 5;
+    ExecOutput exec_output = 6;
   }
 }
 
@@ -122,6 +123,12 @@ message HealthReport {
   int64 nginx_rss_bytes = 25;
   double error_rate_4xx = 26;
   double error_rate_5xx = 27;
+  // Docker
+  repeated ContainerStats container_stats = 28;
+  string docker_version = 29;
+  int32 containers_running = 30;
+  int32 containers_stopped = 31;
+  int32 containers_total = 32;
 }
 
 message StatsReport {
@@ -175,6 +182,15 @@ message GatewayCommand {
     RemoveAcmeChallengeCommand remove_acme_challenge = 15;
     ReadGlobalConfigCommand read_global_config = 16;
     RequestTrafficStatsCommand request_traffic_stats = 17;
+    DockerContainerCommand docker_container = 18;
+    DockerImageCommand docker_image = 19;
+    DockerVolumeCommand docker_volume = 20;
+    DockerNetworkCommand docker_network = 21;
+    DockerExecCommand docker_exec = 22;
+    DockerFileCommand docker_file = 23;
+    DockerConfigPushCommand docker_config_push = 24;
+    DockerLogsCommand docker_logs = 25;
+    ExecInput exec_input = 26;
   }
 }
 
@@ -268,6 +284,104 @@ message ReadGlobalConfigCommand {}
 // Request traffic stats from daemon log parsing — response JSON is in CommandResult.detail
 message RequestTrafficStatsCommand {
   int32 tail_lines = 1; // Number of recent log lines to analyze (default 200)
+}
+
+// ─── Docker Commands ────────────────────────────────────────────────
+
+message DockerContainerCommand {
+  string action = 1;
+  string container_id = 2;
+  string config_json = 3;
+  int32 timeout_seconds = 4;
+  string signal = 5;
+  string new_name = 6;
+  bool force = 7;
+}
+
+message DockerImageCommand {
+  string action = 1;
+  string image_ref = 2;
+  string registry_auth_json = 3;
+  bool force = 4;
+}
+
+message DockerVolumeCommand {
+  string action = 1;
+  string name = 2;
+  string driver = 3;
+  map<string, string> labels = 4;
+  bool force = 5;
+}
+
+message DockerNetworkCommand {
+  string action = 1;
+  string network_id = 2;
+  string container_id = 3;
+  string driver = 4;
+  string subnet = 5;
+  string gateway_addr = 6;
+}
+
+message DockerExecCommand {
+  string action = 1;
+  string container_id = 2;
+  repeated string command = 3;
+  bool tty = 4;
+  bool stdin = 5;
+  int32 rows = 6;
+  int32 cols = 7;
+}
+
+message DockerFileCommand {
+  string action = 1;
+  string container_id = 2;
+  string path = 3;
+  int64 max_bytes = 4;
+}
+
+message DockerConfigPushCommand {
+  repeated RegistryConfig registries = 1;
+  repeated string allowlist = 2;
+}
+
+message RegistryConfig {
+  string url = 1;
+  string username = 2;
+  string password = 3;
+}
+
+message DockerLogsCommand {
+  string container_id = 1;
+  int32 tail_lines = 2;
+  bool follow = 3;
+  bool timestamps = 4;
+}
+
+message ExecInput {
+  string exec_id = 1;
+  bytes data = 2;
+}
+
+message ExecOutput {
+  string exec_id = 1;
+  bytes data = 2;
+  bool exited = 3;
+  int32 exit_code = 4;
+}
+
+message ContainerStats {
+  string container_id = 1;
+  string name = 2;
+  string image = 3;
+  string state = 4;
+  double cpu_percent = 5;
+  int64 memory_usage_bytes = 6;
+  int64 memory_limit_bytes = 7;
+  int64 network_rx_bytes = 8;
+  int64 network_tx_bytes = 9;
+  int64 block_read_bytes = 10;
+  int64 block_write_bytes = 11;
+  int64 pids = 12;
 }
 
 // ─── Log Streaming ──────────────────────────────────────────────────

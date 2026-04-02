@@ -40,6 +40,7 @@ export interface DaemonMessage {
   healthReport?: HealthReport;
   statsReport?: StatsReport;
   daemonLog?: DaemonLogEntry;
+  execOutput?: ExecOutput;
 }
 
 export interface DaemonLogEntry {
@@ -117,6 +118,12 @@ export interface HealthReport {
   nginxRssBytes: string;
   errorRate4xx: number;
   errorRate5xx: number;
+  // Docker
+  containerStats: ContainerStats[];
+  dockerVersion: string;
+  containersRunning: number;
+  containersStopped: number;
+  containersTotal: number;
 }
 
 export interface StatsReport {
@@ -150,6 +157,15 @@ export interface GatewayCommand {
   removeAcmeChallenge?: RemoveAcmeChallengeCommand;
   readGlobalConfig?: ReadGlobalConfigCommand;
   requestTrafficStats?: RequestTrafficStatsCommand;
+  dockerContainer?: DockerContainerCommand;
+  dockerImage?: DockerImageCommand;
+  dockerVolume?: DockerVolumeCommand;
+  dockerNetwork?: DockerNetworkCommand;
+  dockerExec?: DockerExecCommand;
+  dockerFile?: DockerFileCommand;
+  dockerConfigPush?: DockerConfigPushCommand;
+  dockerLogs?: DockerLogsCommand;
+  execInput?: ExecInput;
 }
 
 export interface ApplyConfigCommand {
@@ -234,6 +250,104 @@ export interface DeployAcmeChallengeCommand {
 
 export interface RemoveAcmeChallengeCommand {
   token: string;
+}
+
+// ─── Docker Commands ────────────────────────────────────────────────
+
+export interface DockerContainerCommand {
+  action: string;
+  containerId: string;
+  configJson: string;
+  timeoutSeconds: number;
+  signal: string;
+  newName: string;
+  force: boolean;
+}
+
+export interface DockerImageCommand {
+  action: string;
+  imageRef: string;
+  registryAuthJson: string;
+  force: boolean;
+}
+
+export interface DockerVolumeCommand {
+  action: string;
+  name: string;
+  driver: string;
+  labels: Record<string, string>;
+  force: boolean;
+}
+
+export interface DockerNetworkCommand {
+  action: string;
+  networkId: string;
+  containerId: string;
+  driver: string;
+  subnet: string;
+  gatewayAddr: string;
+}
+
+export interface DockerExecCommand {
+  action: string;
+  containerId: string;
+  command: string[];
+  tty: boolean;
+  stdin: boolean;
+  rows: number;
+  cols: number;
+}
+
+export interface DockerFileCommand {
+  action: string;
+  containerId: string;
+  path: string;
+  maxBytes: number;
+}
+
+export interface DockerConfigPushCommand {
+  registries: RegistryConfig[];
+  allowlist: string[];
+}
+
+export interface RegistryConfig {
+  url: string;
+  username: string;
+  password: string;
+}
+
+export interface DockerLogsCommand {
+  containerId: string;
+  tailLines: number;
+  follow: boolean;
+  timestamps: boolean;
+}
+
+export interface ExecInput {
+  execId: string;
+  data: Buffer;
+}
+
+export interface ExecOutput {
+  execId: string;
+  data: Buffer;
+  exited: boolean;
+  exitCode: number;
+}
+
+export interface ContainerStats {
+  containerId: string;
+  name: string;
+  image: string;
+  state: string;
+  cpuPercent: number;
+  memoryUsageBytes: number;
+  memoryLimitBytes: number;
+  networkRxBytes: number;
+  networkTxBytes: number;
+  blockReadBytes: number;
+  blockWriteBytes: number;
+  pids: number;
 }
 
 // ─── Log Streaming ──────────────────────────────────────────────────
