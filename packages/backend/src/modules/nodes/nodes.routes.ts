@@ -97,11 +97,29 @@ nodesRoutes.put('/:id/config', requireScope('proxy:manage'), async (c) => {
   return c.json({ data: { valid: true } });
 });
 
-// Test node's nginx config
+// Test node's nginx config — local syntax check on provided content, then daemon test
 nodesRoutes.post('/:id/config/test', requireScope('proxy:manage'), async (c) => {
+  const { NginxSyntaxValidatorService } = await import('@/services/nginx-syntax-validator.service.js');
   const { NodeDispatchService } = await import('@/services/node-dispatch.service.js');
   const dispatch = container.resolve(NodeDispatchService);
   const nodeId = c.req.param('id');
+
+  // Get content from request body
+  const body = await c.req.json<{ content?: string }>().catch(() => ({}) as { content?: string });
+  const content = body.content && typeof body.content === 'string' ? body.content : null;
+
+  // 1. Local syntax validation via stub nginx if content provided
+  if (content) {
+    const syntaxValidator = new NginxSyntaxValidatorService();
+    if (await syntaxValidator.isAvailable()) {
+      const syntaxResult = await syntaxValidator.validateFull(content);
+      if (!syntaxResult.valid) {
+        return c.json({ data: { valid: false, error: syntaxResult.errors.join('\n') } });
+      }
+    }
+  }
+
+  // 2. Remote test via daemon (tests the deployed config)
   const result = await dispatch.testConfig(nodeId);
   return c.json({ data: { valid: result.success, error: result.error || undefined } });
 });

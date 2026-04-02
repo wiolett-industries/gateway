@@ -15,6 +15,7 @@ import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
 import { PageTransition } from "@/components/common/PageTransition";
 import { SearchFilterBar } from "@/components/common/SearchFilterBar";
+import { CreateProxyHostDialog } from "@/components/proxy/CreateProxyHostDialog";
 import { DragOverlay } from "@/components/proxy/DragOverlay";
 import { FolderGroup } from "@/components/proxy/FolderGroup";
 import { InlineFolderEditor } from "@/components/proxy/InlineFolderEditor";
@@ -29,6 +30,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useFolderStore } from "@/stores/folders";
 import type { HealthStatus, ProxyHostType } from "@/types";
@@ -88,6 +90,7 @@ export function ProxyHosts() {
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [moveDialogHostId, setMoveDialogHostId] = useState<string | null>(null);
   const [activeDrag, setActiveDrag] = useState<DragEndEvent["active"] | null>(null);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -109,10 +112,10 @@ export function ProxyHosts() {
   const handleToggle = async (id: string, currentEnabled: boolean) => {
     setTogglingIds((prev) => new Set(prev).add(id));
     try {
-      const { api } = await import("@/services/api");
       await api.toggleProxyHost(id, !currentEnabled);
+      api.invalidateCache();
       toast.success(currentEnabled ? "Proxy host disabled" : "Proxy host enabled");
-      fetchGroupedHosts();
+      await fetchGroupedHosts();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to toggle proxy host");
     } finally {
@@ -313,7 +316,7 @@ export function ProxyHosts() {
                   <FolderPlus className="h-4 w-4" />
                   Add Folder
                 </Button>
-                <Button onClick={() => navigate("/proxy-hosts/new")}>
+                <Button onClick={() => setCreateDialogOpen(true)}>
                   <Plus className="h-4 w-4" />
                   Add Proxy Host
                 </Button>
@@ -472,7 +475,7 @@ export function ProxyHosts() {
           <EmptyState
             message="No proxy hosts."
             {...(hasScope("proxy:manage")
-              ? { actionLabel: "Add one", actionHref: "/proxy-hosts/new" }
+              ? { actionLabel: "Add one", onAction: () => setCreateDialogOpen(true) }
               : {})}
             hasActiveFilters={hasActiveFilters}
             onReset={() => {
@@ -492,6 +495,15 @@ export function ProxyHosts() {
         folders={folders}
         currentFolderId={moveDialogHostId ? findHostFolderId(moveDialogHostId) : null}
         onMove={handleMoveHost}
+      />
+
+      <CreateProxyHostDialog
+        open={createDialogOpen}
+        onOpenChange={setCreateDialogOpen}
+        onSuccess={(hostId) => {
+          fetchGroupedHosts();
+          navigate(`/proxy-hosts/${hostId}`);
+        }}
       />
     </PageTransition>
   );

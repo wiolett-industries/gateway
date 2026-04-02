@@ -32,7 +32,7 @@ FROM node:24-alpine AS production
 ARG APP_VERSION=dev
 ENV APP_VERSION=$APP_VERSION
 
-RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
+RUN apk add --no-cache nginx && corepack enable && corepack prepare pnpm@9.15.0 --activate
 
 WORKDIR /app
 

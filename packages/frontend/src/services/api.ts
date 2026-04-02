@@ -615,10 +615,11 @@ class ApiClient {
     );
   }
 
-  async testNodeNginxConfig(nodeId: string): Promise<{ valid: boolean; error?: string }> {
+  async testNodeNginxConfig(nodeId: string, content?: string): Promise<{ valid: boolean; error?: string }> {
     return this.unwrapData(
       this.request<{ data: { valid: boolean; error?: string } }>(`/nodes/${nodeId}/config/test`, {
         method: "POST",
+        body: content ? JSON.stringify({ content }) : undefined,
       })
     );
   }
@@ -726,11 +727,11 @@ class ApiClient {
     );
   }
 
-  async validateProxyConfig(snippet: string): Promise<{ valid: boolean; errors: string[] }> {
+  async validateProxyConfig(snippet: string, mode: "advanced" | "raw" = "advanced"): Promise<{ valid: boolean; errors: string[] }> {
     return this.unwrapData(
       this.request<{ data: { valid: boolean; errors: string[] } }>("/proxy-hosts/validate-config", {
         method: "POST",
-        body: JSON.stringify({ snippet }),
+        body: JSON.stringify({ snippet, mode }),
       })
     );
   }

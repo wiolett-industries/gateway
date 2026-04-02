@@ -44,7 +44,7 @@ export class ConfigValidatorService {
    * 4. No excessively long lines (> 4096 chars)
    * 5. Maximum snippet length (64 KB)
    */
-  validate(snippet: string): { valid: boolean; errors: string[] } {
+  validate(snippet: string, rawMode = false): { valid: boolean; errors: string[] } {
     const errors: string[] = [];
 
     // 1. Null byte check
@@ -52,28 +52,32 @@ export class ConfigValidatorService {
       errors.push('Config snippet contains null bytes');
     }
 
-    // 2. Maximum length check (64 KB)
-    if (snippet.length > 65536) {
-      errors.push('Config snippet exceeds maximum length of 64 KB');
+    // 2. Maximum length check (64 KB for advanced, 256 KB for raw)
+    const maxLen = rawMode ? 262144 : 65536;
+    if (snippet.length > maxLen) {
+      errors.push(`Config exceeds maximum length of ${maxLen / 1024} KB`);
     }
 
-    // 3. Forbidden directives
+    // 3. Forbidden directives (skip in raw mode — user controls the entire config)
     const lines = snippet.split('\n');
-    for (let i = 0; i < lines.length; i++) {
-      const trimmed = lines[i].trim().toLowerCase();
+    if (!rawMode) {
+      for (let i = 0; i < lines.length; i++) {
+        const trimmed = lines[i].trim().toLowerCase();
 
-      // Skip comments and empty lines
-      if (trimmed === '' || trimmed.startsWith('#')) {
-        continue;
-      }
+        if (trimmed === '' || trimmed.startsWith('#')) {
+          continue;
+        }
 
-      for (const directive of ConfigValidatorService.FORBIDDEN_DIRECTIVES) {
-        if (trimmed.startsWith(directive.toLowerCase())) {
-          errors.push(`Forbidden directive "${directive.trim()}" found on line ${i + 1}`);
+        for (const directive of ConfigValidatorService.FORBIDDEN_DIRECTIVES) {
+          if (trimmed.startsWith(directive.toLowerCase())) {
+            errors.push(`Forbidden directive "${directive.trim()}" found on line ${i + 1}`);
+          }
         }
       }
+    }
 
-      // 4. Excessively long line
+    // 4. Excessively long line
+    for (let i = 0; i < lines.length; i++) {
       if (lines[i].length > 4096) {
         errors.push(`Line ${i + 1} exceeds maximum length of 4096 characters`);
       }

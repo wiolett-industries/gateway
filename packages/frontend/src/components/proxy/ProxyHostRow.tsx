@@ -105,16 +105,17 @@ export function ProxyHostRow({
             (
               {
                 online: "success",
+                recovering: "warning",
                 offline: "destructive",
-                degraded: "warning",
+                degraded: "destructive",
                 unknown: "secondary",
-                disabled: "outline",
-              } as Record<string, "success" | "destructive" | "warning" | "secondary" | "outline">
-            )[host.healthStatus] || "secondary"
+                disabled: "secondary",
+              } as Record<string, "success" | "warning" | "destructive" | "secondary">
+            )[host.effectiveHealthStatus || host.healthStatus] || "secondary"
           }
-          className="text-xs capitalize"
+          className="text-xs"
         >
-          {host.healthStatus}
+          {({ online: "Healthy", recovering: "Recovering", offline: "Offline", degraded: "Degraded", unknown: "Unknown", disabled: "Disabled" } as Record<string, string>)[host.effectiveHealthStatus || host.healthStatus] || host.healthStatus}
         </Badge>
       </td>
       <td className="p-3" onClick={(e) => e.stopPropagation()}>

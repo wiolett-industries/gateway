@@ -17,20 +17,26 @@ export function DomainAutocompleteInput({
 }: DomainAutocompleteInputProps) {
   const [suggestions, setSuggestions] = useState<DomainSearchResult[]>([]);
   const [open, setOpen] = useState(false);
+  const isFocusedRef = useRef(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // Fetch suggestions on value change, but only open dropdown if input is focused
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (value.length < 2) {
       setSuggestions([]);
+      setOpen(false);
       return;
     }
     debounceRef.current = setTimeout(async () => {
       try {
         const results = await api.searchDomains(value);
         setSuggestions(results);
-        setOpen(results.length > 0);
+        // Only open if input is currently focused
+        if (isFocusedRef.current && results.length > 0) {
+          setOpen(true);
+        }
       } catch {
         setSuggestions([]);
       }
@@ -56,7 +62,17 @@ export function DomainAutocompleteInput({
       <Input
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        onFocus={() => suggestions.length > 0 && setOpen(true)}
+        onFocus={() => {
+          isFocusedRef.current = true;
+          if (suggestions.length > 0) setOpen(true);
+        }}
+        onBlur={() => {
+          isFocusedRef.current = false;
+          // Delay close to allow click on suggestion
+          setTimeout(() => {
+            if (!isFocusedRef.current) setOpen(false);
+          }, 200);
+        }}
         placeholder={placeholder || "example.com"}
       />
       {open && suggestions.length > 0 && (
@@ -66,6 +82,7 @@ export function DomainAutocompleteInput({
               key={s.id}
               type="button"
               className="flex items-center gap-2 w-full px-3 py-2 text-sm text-left hover:bg-accent transition-colors"
+              onMouseDown={(e) => e.preventDefault()}
               onClick={() => {
                 onChange(s.domain);
                 setOpen(false);

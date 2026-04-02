@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { PageTransition } from "@/components/common/PageTransition";
 import { Badge } from "@/components/ui/badge";
+import { HealthBars } from "@/components/ui/health-bars";
 import { StatCard as MetricCard } from "@/components/ui/stat-card";
 import { cn, daysUntil, formatDate, formatRelativeDate, formatTimeLeft } from "@/lib/utils";
 import { api } from "@/services/api";
@@ -668,7 +669,11 @@ function PinnedNodeCard({ node, liveHealth }: { node: Node; liveHealth?: NodeHea
         </div>
         <p className="text-xl font-bold truncate">{node.displayName || node.hostname}</p>
         <div className="flex items-center gap-2">
-          <MiniHealthBars history={node.healthHistory} hours={24} />
+          <HealthBars
+            hourlyHistory={node.healthHistory}
+            showLabels={false}
+            className="flex-1"
+          />
           <Badge variant={statusColor} className="text-xs capitalize">
             {node.status}
           </Badge>
@@ -711,33 +716,6 @@ function PinnedNodeCard({ node, liveHealth }: { node: Node; liveHealth?: NodeHea
         className="border-0"
         style={diskWarn.style}
       />
-    </div>
-  );
-}
-
-function MiniHealthBars({ history, hours }: { history?: Array<{ hour: string; healthy: boolean }>; hours: number }) {
-  const now = new Date();
-  const map = new Map(history?.map((h) => [h.hour, h.healthy]) ?? []);
-
-  const bars: Array<"ok" | "error" | "none"> = [];
-  for (let i = hours - 1; i >= 0; i--) {
-    const d = new Date(now.getTime() - i * 3600000);
-    const key = `${d.toISOString().slice(0, 13)}:00:00.000Z`;
-    const status = map.get(key);
-    bars.push(status === true ? "ok" : status === false ? "error" : "none");
-  }
-
-  return (
-    <div className="flex gap-[2px] flex-1">
-      {bars.map((status, i) => (
-        <div
-          key={i}
-          className={cn(
-            "flex-1 h-6",
-            status === "ok" ? "bg-emerald-500" : status === "error" ? "bg-destructive" : "bg-muted"
-          )}
-        />
-      ))}
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { PageTransition } from "@/components/common/PageTransition";
 import { Badge } from "@/components/ui/badge";
+import { HealthBars } from "@/components/ui/health-bars";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -164,6 +165,11 @@ export function AdminNodeDetail() {
             )}
           </div>
         </div>
+
+        {/* Health bars */}
+        {node.status === "online" && (
+          <HealthBars hourlyHistory={node.healthHistory} />
+        )}
 
         {/* Tabs */}
         <Tabs

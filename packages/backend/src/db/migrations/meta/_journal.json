@@ -57,6 +57,20 @@
       "when": 1775272800000,
       "tag": "0007_health_history",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1775359200000,
+      "tag": "0008_proxy_host_raw_config",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1775445600000,
+      "tag": "0009_add_raw_proxy_type",
+      "breakpoints": true
     }
   ]
 }

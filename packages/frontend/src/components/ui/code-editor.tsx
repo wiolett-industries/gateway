@@ -1,4 +1,4 @@
-import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
+import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import {
   bracketMatching,
   HighlightStyle,
@@ -6,8 +6,15 @@ import {
   syntaxHighlighting,
 } from "@codemirror/language";
 import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
-import { EditorState } from "@codemirror/state";
-import { EditorView, highlightActiveLine, keymap, lineNumbers } from "@codemirror/view";
+import { Compartment, EditorState, RangeSetBuilder } from "@codemirror/state";
+import { indentUnit } from "@codemirror/language";
+import {
+  Decoration,
+  EditorView,
+  highlightActiveLine,
+  keymap,
+  lineNumbers,
+} from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { useEffect, useRef } from "react";
 
@@ -252,6 +259,30 @@ const highlightStyles = syntaxHighlighting(
 );
 
 // ---------------------------------------------------------------------------
+// Error line highlighting
+// ---------------------------------------------------------------------------
+
+const errorLineTheme = EditorView.baseTheme({
+  ".cm-errorLine": {
+    backgroundColor: "rgba(239, 68, 68, 0.15) !important",
+  },
+});
+
+const errorLineMark = Decoration.line({ class: "cm-errorLine" });
+
+function makeErrorLineDecorations(state: EditorState, lines: number[]) {
+  const builder = new RangeSetBuilder<Decoration>();
+  const sortedLines = [...lines].sort((a, b) => a - b);
+  for (const lineNum of sortedLines) {
+    if (lineNum >= 1 && lineNum <= state.doc.lines) {
+      builder.add(state.doc.line(lineNum).from, state.doc.line(lineNum).from, errorLineMark);
+    }
+  }
+  return builder.finish();
+}
+
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -262,6 +293,8 @@ interface CodeEditorProps {
   className?: string;
   minHeight?: string;
   height?: string;
+  /** Line numbers to highlight with red background (1-based) */
+  errorLines?: number[];
 }
 
 export function CodeEditor({
@@ -271,12 +304,18 @@ export function CodeEditor({
   className = "",
   minHeight = "300px",
   height,
+  errorLines = [],
 }: CodeEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
+  const errorCompartmentRef = useRef(new Compartment());
+
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
 
   useEffect(() => {
     if (!containerRef.current) return;
+    errorCompartmentRef.current = new Compartment();
 
     const state = EditorState.create({
       doc: value,
@@ -286,7 +325,8 @@ export function CodeEditor({
         bracketMatching(),
         highlightActiveLine(),
         highlightSelectionMatches(),
-        keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
+        keymap.of([indentWithTab, ...defaultKeymap, ...historyKeymap, ...searchKeymap]),
+        indentUnit.of("    "),
         nginxHandlebarsLang,
         editorTheme,
         highlightStyles,
@@ -294,9 +334,11 @@ export function CodeEditor({
         EditorState.readOnly.of(readOnly),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
-            onChange(update.state.doc.toString());
+            onChangeRef.current(update.state.doc.toString());
           }
         }),
+        errorLineTheme,
+        errorCompartmentRef.current.of(EditorView.decorations.of(Decoration.none)),
       ],
     });
 
@@ -311,9 +353,10 @@ export function CodeEditor({
       view.destroy();
       viewRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onChange, readOnly, value]);
+    // biome-ignore lint: only recreate on readOnly change
+  }, [readOnly]);
 
+  // Sync external value
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
@@ -324,6 +367,20 @@ export function CodeEditor({
       });
     }
   }, [value]);
+
+  // Sync error lines via compartment
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    const decos = errorLines.length > 0
+      ? makeErrorLineDecorations(view.state, errorLines)
+      : Decoration.none;
+    view.dispatch({
+      effects: errorCompartmentRef.current.reconfigure(
+        EditorView.decorations.of(decos)
+      ),
+    });
+  }, [errorLines]);
 
   return (
     <div

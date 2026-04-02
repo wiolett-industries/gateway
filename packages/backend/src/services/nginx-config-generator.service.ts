@@ -15,7 +15,7 @@ const NGINX_LOGS_PREFIX = '/var/log/nginx';
 
 export interface ProxyHostConfig {
   id: string;
-  type: 'proxy' | 'redirect' | '404';
+  type: 'proxy' | 'redirect' | '404' | 'raw';
   domainNames: string[];
   enabled: boolean;
   forwardHost: string | null;
@@ -84,6 +84,8 @@ export class NginxConfigGenerator {
         return this.generateRedirectConfig(host);
       case '404':
         return this.generateDeadConfig(host);
+      default:
+        return `# Raw config type — no template generation\n`;
     }
   }
 
@@ -400,8 +402,8 @@ export class NginxConfigGenerator {
   // Advanced config validation
   // -----------------------------------------------------------------------
 
-  validateAdvancedConfig(snippet: string): { valid: boolean; errors: string[] } {
-    return this.configValidator.validate(snippet);
+  validateAdvancedConfig(snippet: string, rawMode = false): { valid: boolean; errors: string[] } {
+    return this.configValidator.validate(snippet, rawMode);
   }
 
   // -----------------------------------------------------------------------

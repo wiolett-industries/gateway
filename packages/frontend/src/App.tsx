@@ -43,10 +43,6 @@ export default function App() {
             <Route element={<DashboardLayout />}>
               <Route path="/" element={<Dashboard />} />
               <Route path="/proxy-hosts" element={scoped("proxy:read", <ProxyHosts />)} />
-              <Route
-                path="/proxy-hosts/new"
-                element={scoped("proxy:manage", <ProxyHostDetail />)}
-              />
               <Route path="/proxy-hosts/:id" element={scoped("proxy:read", <ProxyHostDetail />)} />
               <Route path="/nginx-templates" element={scoped("proxy:read", <NginxTemplates />)} />
               <Route
