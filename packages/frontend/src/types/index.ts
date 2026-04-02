@@ -29,14 +29,16 @@ export interface PermissionGroup {
   name: string;
   description: string | null;
   isBuiltin: boolean;
+  parentId: string | null;
   scopes: string[];
+  inheritedScopes?: string[];
   memberCount?: number;
   createdAt: string;
   updatedAt: string;
 }
 
 // Nodes
-export type NodeType = "nginx" | "bastion";
+export type NodeType = "nginx" | "bastion" | "monitoring";
 export type NodeStatus = "pending" | "online" | "offline" | "error";
 
 export interface NodeHealthReport {
@@ -338,15 +340,27 @@ export const TOKEN_SCOPES = [
     group: "Templates",
   },
   {
-    value: "proxy:read",
-    label: "View Proxy Hosts",
-    desc: "List and view reverse proxy host configurations",
+    value: "proxy:list",
+    label: "List Proxy Hosts",
+    desc: "View the list of proxy hosts",
     group: "Proxy Hosts",
   },
   {
-    value: "proxy:manage",
-    label: "Create & Edit Proxy Hosts",
-    desc: "Create and modify proxy host configurations",
+    value: "proxy:view",
+    label: "View Proxy Host Details",
+    desc: "View proxy host details and settings",
+    group: "Proxy Hosts",
+  },
+  {
+    value: "proxy:create",
+    label: "Create Proxy Hosts",
+    desc: "Create new proxy host configurations",
+    group: "Proxy Hosts",
+  },
+  {
+    value: "proxy:edit",
+    label: "Edit Proxy Hosts",
+    desc: "Modify proxy host configurations",
     group: "Proxy Hosts",
   },
   {
@@ -357,8 +371,26 @@ export const TOKEN_SCOPES = [
   },
   {
     value: "proxy:advanced",
-    label: "Proxy Advanced Config",
-    desc: "Edit raw nginx advanced configuration blocks",
+    label: "Advanced Config",
+    desc: "Edit nginx advanced configuration blocks",
+    group: "Proxy Hosts",
+  },
+  {
+    value: "proxy:raw-read",
+    label: "View Raw Config",
+    desc: "View rendered nginx configuration",
+    group: "Proxy Hosts",
+  },
+  {
+    value: "proxy:raw-write",
+    label: "Edit Raw Config",
+    desc: "Edit raw nginx configuration directly",
+    group: "Proxy Hosts",
+  },
+  {
+    value: "proxy:raw-toggle",
+    label: "Toggle Raw Mode",
+    desc: "Enable or disable raw config mode",
     group: "Proxy Hosts",
   },
   {
@@ -446,16 +478,52 @@ export const TOKEN_SCOPES = [
     group: "Administration",
   },
   {
-    value: "nodes:view",
-    label: "View Nodes",
-    desc: "List and view registered nginx daemon nodes",
-    group: "Administration",
+    value: "nodes:list",
+    label: "List Nodes",
+    desc: "View the list of registered nodes",
+    group: "Nodes",
   },
   {
-    value: "nodes:manage",
-    label: "Manage Nodes",
-    desc: "Add, update, and remove nginx daemon nodes",
-    group: "Administration",
+    value: "nodes:details",
+    label: "View Node Details",
+    desc: "View node details and monitoring",
+    group: "Nodes",
+  },
+  {
+    value: "nodes:config",
+    label: "View Node Config",
+    desc: "View node nginx configuration",
+    group: "Nodes",
+  },
+  {
+    value: "nodes:logs",
+    label: "View Node Logs",
+    desc: "View nginx and daemon logs",
+    group: "Nodes",
+  },
+  {
+    value: "nodes:rename",
+    label: "Rename Node",
+    desc: "Change node display name",
+    group: "Nodes",
+  },
+  {
+    value: "nodes:config-edit",
+    label: "Edit Node Config",
+    desc: "Edit nginx configuration of node",
+    group: "Nodes",
+  },
+  {
+    value: "nodes:create",
+    label: "Create Node",
+    desc: "Register new nodes",
+    group: "Nodes",
+  },
+  {
+    value: "nodes:delete",
+    label: "Delete Node",
+    desc: "Remove registered nodes",
+    group: "Nodes",
   },
   {
     value: "ai:use",

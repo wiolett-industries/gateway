@@ -1,4 +1,4 @@
-import { Check, Clock, Copy, Plus, Server, Trash2 } from "lucide-react";
+import { Check, Copy, Plus, Server, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -35,6 +35,12 @@ const NODE_TYPES = [
     value: "nginx",
     label: "Nginx",
     description: "Reverse proxy node running nginx",
+    disabled: false,
+  },
+  {
+    value: "monitoring",
+    label: "Monitoring",
+    description: "System monitoring agent — no nginx required",
     disabled: false,
   },
   {
@@ -128,7 +134,9 @@ export function AdminNodes() {
   };
 
   const gatewayAddr = `${window.location.hostname}:9443`;
-  const scriptUrl = "https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/scripts/setup-node.sh";
+  const scriptUrl = enrollType === "monitoring"
+    ? "https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/scripts/setup-monitoring-node.sh"
+    : "https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/scripts/setup-node.sh";
 
   const curlCommand = enrollToken
     ? `curl -sSL ${scriptUrl} | sudo bash -s -- \\\n  --gateway ${gatewayAddr} --token ${enrollToken}`
@@ -155,7 +163,7 @@ export function AdminNodes() {
               {total} node{total !== 1 ? "s" : ""} registered
             </p>
           </div>
-          {hasScope("nodes:manage") && (
+          {hasScope("nodes:create") && (
             <Button onClick={() => setEnrollDialogOpen(true)}>
               <Plus className="h-4 w-4 mr-1" />
               Add Node
@@ -209,16 +217,20 @@ export function AdminNodes() {
                       {node.displayName || node.hostname}
                     </p>
                     <p className="text-xs text-muted-foreground truncate">
-                      {node.displayName ? node.hostname : node.type}{" "}
+                      {node.displayName ? node.hostname : ""}{" "}
                       {node.daemonVersion ? `v${node.daemonVersion}` : ""}
                     </p>
                   </div>
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <Clock className="h-3 w-3" />
+                  <Badge variant="secondary" className="text-xs uppercase shrink-0">
+                    {node.type}
+                  </Badge>
+                  <Badge variant="outline" className="text-xs shrink-0">
                     {formatLastSeen(node.lastSeenAt)}
-                  </div>
-                  <Badge variant={STATUS_BADGE[node.status]}>{node.status}</Badge>
-                  {hasScope("nodes:manage") && (
+                  </Badge>
+                  <Badge variant={STATUS_BADGE[node.status]} className="text-xs">
+                    {node.status}
+                  </Badge>
+                  {hasScope("nodes:delete") && (
                     <Button
                       variant="ghost"
                       size="icon"
@@ -241,8 +253,8 @@ export function AdminNodes() {
         ) : (
           <EmptyState
             message="No nodes found. Add a node to start managing nginx instances remotely."
-            actionLabel={hasScope("nodes:manage") ? "Add Node" : undefined}
-            onAction={hasScope("nodes:manage") ? () => setEnrollDialogOpen(true) : undefined}
+            actionLabel={hasScope("nodes:create") ? "Add Node" : undefined}
+            onAction={hasScope("nodes:create") ? () => setEnrollDialogOpen(true) : undefined}
           />
         )}
       </div>
@@ -307,7 +319,8 @@ export function AdminNodes() {
               <div>
                 <label className="text-sm font-medium">Setup Command</label>
                 <p className="text-xs text-muted-foreground mb-2">
-                  Run on the target host as root. Installs nginx, the daemon, and enrolls with this Gateway.
+                  Run on the target host as root. Installs nginx, the daemon, and enrolls with this
+                  Gateway.
                 </p>
                 <Tabs defaultValue="curl">
                   <TabsList>

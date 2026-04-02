@@ -129,7 +129,7 @@ export function ProxyHostRow({
           </div>
         )}
       </td>
-      {hasScope("proxy:manage") && (
+      {hasScope("proxy:edit") && (
         <td className="p-3 w-10" onClick={(e) => e.stopPropagation()}>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

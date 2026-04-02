@@ -11,6 +11,7 @@ export interface EnrollRequest {
   nginxVersion: string;
   osInfo: string;
   daemonVersion: string;
+  daemonType: string;
 }
 
 export interface EnrollResponse {
@@ -57,6 +58,11 @@ export interface RegisterMessage {
   daemonVersion: string;
   nginxUptimeSeconds: string;
   nginxRunning: boolean;
+  cpuModel: string;
+  cpuCores: number;
+  architecture: string;
+  kernelVersion: string;
+  daemonType: string;
 }
 
 export interface CommandResult {

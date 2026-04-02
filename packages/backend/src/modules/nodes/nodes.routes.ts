@@ -1,7 +1,7 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { streamSSE } from 'hono/streaming';
 import { container } from '@/container.js';
-import { authMiddleware, requireScope, sessionOnly } from '@/modules/auth/auth.middleware.js';
+import { authMiddleware, requireScope, requireScopeForResource, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import {
   daemonLogRelay,
   getDaemonLogHistory,
@@ -20,7 +20,7 @@ nodesRoutes.use('*', authMiddleware);
 nodesRoutes.use('*', sessionOnly);
 
 // List nodes
-nodesRoutes.get('/', requireScope('nodes:view'), async (c) => {
+nodesRoutes.get('/', requireScope('nodes:list'), async (c) => {
   const service = container.resolve(NodesService);
   const rawQuery = c.req.query();
   const query = NodeListQuerySchema.parse(rawQuery);
@@ -29,7 +29,7 @@ nodesRoutes.get('/', requireScope('nodes:view'), async (c) => {
 });
 
 // Get node detail
-nodesRoutes.get('/:id', requireScope('nodes:view'), async (c) => {
+nodesRoutes.get('/:id', requireScopeForResource('nodes:details', 'id'), async (c) => {
   const service = container.resolve(NodesService);
   const id = c.req.param('id');
   const node = await service.get(id);
@@ -37,7 +37,7 @@ nodesRoutes.get('/:id', requireScope('nodes:view'), async (c) => {
 });
 
 // Create node (generates enrollment token)
-nodesRoutes.post('/', requireScope('nodes:manage'), async (c) => {
+nodesRoutes.post('/', requireScope('nodes:create'), async (c) => {
   const service = container.resolve(NodesService);
   const user = c.get('user')!;
   const body = await c.req.json();
@@ -47,7 +47,7 @@ nodesRoutes.post('/', requireScope('nodes:manage'), async (c) => {
 });
 
 // Update node (display name)
-nodesRoutes.patch('/:id', requireScope('nodes:manage'), async (c) => {
+nodesRoutes.patch('/:id', requireScopeForResource('nodes:rename', 'id'), async (c) => {
   const service = container.resolve(NodesService);
   const user = c.get('user')!;
   const id = c.req.param('id');
@@ -58,7 +58,7 @@ nodesRoutes.patch('/:id', requireScope('nodes:manage'), async (c) => {
 });
 
 // Delete node
-nodesRoutes.delete('/:id', requireScope('nodes:manage'), async (c) => {
+nodesRoutes.delete('/:id', requireScopeForResource('nodes:delete', 'id'), async (c) => {
   const service = container.resolve(NodesService);
   const user = c.get('user')!;
   const id = c.req.param('id');
@@ -66,8 +66,25 @@ nodesRoutes.delete('/:id', requireScope('nodes:manage'), async (c) => {
   return c.json({ success: true });
 });
 
+// Helper: check node type is nginx before nginx-specific operations
+async function requireNginxNode(c: any): Promise<boolean> {
+  const service = container.resolve(NodesService);
+  const id = c.req.param('id');
+  try {
+    const node = await service.get(id);
+    if (node.type !== 'nginx') {
+      c.json({ code: 'NOT_NGINX', message: 'This operation is only available for nginx nodes' }, 400);
+      return false;
+    }
+    return true;
+  } catch {
+    return true; // let the downstream handler produce the 404
+  }
+}
+
 // Read node's global nginx config
-nodesRoutes.get('/:id/config', requireScope('proxy:read'), async (c) => {
+nodesRoutes.get('/:id/config', requireScopeForResource('nodes:config', 'id'), async (c) => {
+  if (!(await requireNginxNode(c))) return c.body(null);
   const { NodeDispatchService } = await import('@/services/node-dispatch.service.js');
   const dispatch = container.resolve(NodeDispatchService);
   const nodeId = c.req.param('id');
@@ -79,7 +96,8 @@ nodesRoutes.get('/:id/config', requireScope('proxy:read'), async (c) => {
 });
 
 // Update node's global nginx config
-nodesRoutes.put('/:id/config', requireScope('proxy:manage'), async (c) => {
+nodesRoutes.put('/:id/config', requireScopeForResource('nodes:config-edit', 'id'), async (c) => {
+  if (!(await requireNginxNode(c))) return c.body(null);
   const { NodeDispatchService } = await import('@/services/node-dispatch.service.js');
   const dispatch = container.resolve(NodeDispatchService);
   const nodeId = c.req.param('id');
@@ -98,7 +116,8 @@ nodesRoutes.put('/:id/config', requireScope('proxy:manage'), async (c) => {
 });
 
 // Test node's nginx config — local syntax check on provided content, then daemon test
-nodesRoutes.post('/:id/config/test', requireScope('proxy:manage'), async (c) => {
+nodesRoutes.post('/:id/config/test', requireScopeForResource('nodes:config-edit', 'id'), async (c) => {
+  if (!(await requireNginxNode(c))) return c.body(null);
   const { NginxSyntaxValidatorService } = await import('@/services/nginx-syntax-validator.service.js');
   const { NodeDispatchService } = await import('@/services/node-dispatch.service.js');
   const dispatch = container.resolve(NodeDispatchService);
@@ -125,7 +144,7 @@ nodesRoutes.post('/:id/config/test', requireScope('proxy:manage'), async (c) => 
 });
 
 // Node monitoring SSE stream — real-time health + stats at 5s intervals
-nodesRoutes.get('/:id/monitoring/stream', requireScope('nodes:view'), async (c) => {
+nodesRoutes.get('/:id/monitoring/stream', requireScopeForResource('nodes:details', 'id'), async (c) => {
   const nodeId = c.req.param('id');
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(nodeId)) {
     return c.json({ code: 'INVALID_ID', message: 'Invalid node ID' }, 400);
@@ -169,7 +188,7 @@ nodesRoutes.get('/:id/monitoring/stream', requireScope('nodes:view'), async (c) 
 
 // Daemon logs SSE stream for a specific node
 // Query params: ?level=info,warn,error  &search=keyword
-nodesRoutes.get('/:id/logs', requireScope('nodes:view'), async (c) => {
+nodesRoutes.get('/:id/logs', requireScopeForResource('nodes:logs', 'id'), async (c) => {
   const nodeId = c.req.param('id');
   const levelFilter =
     c.req
@@ -228,7 +247,8 @@ nodesRoutes.get('/:id/logs', requireScope('nodes:view'), async (c) => {
 
 // Nginx access logs SSE stream for all hosts on a node
 // Query params: ?search=keyword&status=2xx,4xx,5xx
-nodesRoutes.get('/:id/nginx-logs', requireScope('nodes:view'), async (c) => {
+nodesRoutes.get('/:id/nginx-logs', requireScopeForResource('nodes:logs', 'id'), async (c) => {
+  if (!(await requireNginxNode(c))) return c.body(null);
   const nodeId = c.req.param('id');
   const searchFilter = c.req.query('search')?.toLowerCase() ?? '';
   const statusFilter =

@@ -57,7 +57,7 @@ function formatUptime(seconds: number): string {
 
 export function NginxManagement() {
   const { hasScope } = useAuthStore();
-  const canManage = hasScope("proxy:manage");
+  const canManage = hasScope("proxy:edit");
 
   // Monitoring state
   const [stats, setStats] = useState<NginxStatsSnapshot | null>(null);
@@ -243,7 +243,7 @@ export function NginxManagement() {
             <TabsTrigger value="configuration">Configuration</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="monitoring" className="space-y-4 mt-4">
+          <TabsContent value="monitoring" className="space-y-4 mt-4 pb-6">
             {unavailable && !connected ? (
               <div className="flex flex-col items-center gap-2 py-16 border border-border bg-card">
                 <Server className="h-8 w-8 text-muted-foreground" />
@@ -491,7 +491,7 @@ export function NginxManagement() {
                 <div className="flex items-center justify-end gap-2 mt-3">
                   {!canManage && (
                     <p className="text-xs text-muted-foreground">
-                      Read-only — proxy:manage permission required to edit
+                      Read-only — proxy:edit permission required to edit
                     </p>
                   )}
                   <Button variant="outline" size="sm" onClick={handleTest} disabled={isTesting}>

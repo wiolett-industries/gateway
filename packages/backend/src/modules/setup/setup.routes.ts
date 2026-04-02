@@ -76,7 +76,8 @@ setupRoutes.post('/enroll-node', async (c) => {
   }
 
   const body = await c.req.json<{ type?: string; hostname?: string }>();
-  const type = (body.type === 'bastion' ? 'bastion' : 'nginx') as 'nginx' | 'bastion';
+  const validTypes = ['nginx', 'bastion', 'monitoring'] as const;
+  const type = validTypes.includes(body.type as any) ? (body.type as typeof validTypes[number]) : 'nginx';
   const hostname = body.hostname || 'localhost';
 
   try {

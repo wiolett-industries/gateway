@@ -1,4 +1,13 @@
-import { Loader2, Pencil, Plus, Shield, ShieldCheck, Trash2, Users } from "lucide-react";
+import {
+  CornerDownRight,
+  Loader2,
+  Pencil,
+  Plus,
+  Shield,
+  ShieldCheck,
+  Trash2,
+  Users,
+} from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -16,18 +25,38 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useCAStore } from "@/stores/ca";
-import type { PermissionGroup } from "@/types";
+import type { Node, PermissionGroup, ProxyHost } from "@/types";
 import { TOKEN_SCOPES } from "@/types";
 
-/** Scopes that can be restricted to specific CAs */
-const CA_RESTRICTABLE_SCOPES = [
+/** Scopes that can be restricted to specific resources (CAs, nodes, or proxy hosts) */
+const RESTRICTABLE_SCOPES = [
   "cert:issue",
   "cert:revoke",
   "cert:export",
   "ca:create:intermediate",
+  "proxy:view",
+  "proxy:edit",
+  "proxy:delete",
+  "proxy:advanced",
+  "proxy:raw-read",
+  "proxy:raw-write",
+  "proxy:raw-toggle",
+  "nodes:details",
+  "nodes:config",
+  "nodes:logs",
+  "nodes:rename",
+  "nodes:config-edit",
+  "nodes:delete",
 ];
 
 /**
@@ -41,9 +70,9 @@ function parseScopesForForm(scopes: string[]) {
   const resources: Record<string, string[]> = {};
 
   for (const s of scopes) {
-    // Check if this scope is a resource-scoped version of a CA-restrictable scope
+    // Check if this scope is a resource-scoped version of a restrictable scope
     let matched = false;
-    for (const base of CA_RESTRICTABLE_SCOPES) {
+    for (const base of RESTRICTABLE_SCOPES) {
       if (s.startsWith(base + ":")) {
         const resourceId = s.slice(base.length + 1);
         if (!baseScopes.includes(base)) baseScopes.push(base);
@@ -83,12 +112,15 @@ export function AdminGroups() {
   const navigate = useNavigate();
   const hasScope = useAuthStore((s) => s.hasScope);
   const { cas, fetchCAs } = useCAStore();
+  const [nodesList, setNodesList] = useState<Node[]>([]);
+  const [proxyHostsList, setProxyHostsList] = useState<ProxyHost[]>([]);
   const [groups, setGroups] = useState<PermissionGroup[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingGroup, setEditingGroup] = useState<PermissionGroup | null>(null);
   const [formName, setFormName] = useState("");
   const [formDescription, setFormDescription] = useState("");
+  const [formParentId, setFormParentId] = useState<string | null>(null);
   const [formBaseScopes, setFormBaseScopes] = useState<string[]>([]);
   const [formResources, setFormResources] = useState<Record<string, string[]>>({});
   const [scopeSearch, setScopeSearch] = useState("");
@@ -115,12 +147,21 @@ export function AdminGroups() {
   useEffect(() => {
     fetchGroups();
     fetchCAs();
+    api
+      .listNodes({ limit: 100 })
+      .then((r) => setNodesList(r.data ?? []))
+      .catch(() => {});
+    api
+      .listProxyHosts({ limit: 100 })
+      .then((r) => setProxyHostsList(r.data ?? []))
+      .catch(() => {});
   }, [fetchGroups, fetchCAs]);
 
   const openCreateDialog = () => {
     setEditingGroup(null);
     setFormName("");
     setFormDescription("");
+    setFormParentId(null);
     setFormBaseScopes([]);
     setFormResources({});
     setScopeSearch("");
@@ -131,6 +172,7 @@ export function AdminGroups() {
     setEditingGroup(group);
     setFormName(group.name);
     setFormDescription(group.description ?? "");
+    setFormParentId(group.parentId);
     const { baseScopes, resources } = parseScopesForForm(group.scopes);
     setFormBaseScopes(baseScopes);
     setFormResources(resources);
@@ -151,6 +193,7 @@ export function AdminGroups() {
           name: formName.trim(),
           description: formDescription.trim() || null,
           scopes: finalScopes,
+          parentId: formParentId,
         });
         toast.success("Group updated");
       } else {
@@ -158,6 +201,7 @@ export function AdminGroups() {
           name: formName.trim(),
           description: formDescription.trim() || undefined,
           scopes: finalScopes,
+          parentId: formParentId,
         });
         toast.success("Group created");
       }
@@ -211,7 +255,14 @@ export function AdminGroups() {
     });
   };
 
-  const selectedCount = buildFinalScopes(formBaseScopes, formResources).length;
+  const ownCount = buildFinalScopes(formBaseScopes, formResources).length;
+  const inheritedCount = formParentId
+    ? new Set([
+        ...(groups.find((g) => g.id === formParentId)?.scopes ?? []),
+        ...(groups.find((g) => g.id === formParentId)?.inheritedScopes ?? []),
+      ]).size
+    : 0;
+  const selectedCount = ownCount + inheritedCount;
 
   if (isLoading) {
     return (
@@ -241,57 +292,18 @@ export function AdminGroups() {
         {groups.length > 0 ? (
           <div className="border border-border bg-card">
             <div className="divide-y divide-border">
-              {groups.map((group) => (
-                <div key={group.id} className="flex items-center gap-4 p-4">
-                  {group.isBuiltin ? (
-                    <ShieldCheck className="h-5 w-5 text-primary shrink-0" />
-                  ) : (
-                    <Shield className="h-5 w-5 text-muted-foreground shrink-0" />
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-sm">{group.name}</span>
-                      {group.isBuiltin && (
-                        <Badge variant="secondary" className="text-[10px]">
-                          Built-in
-                        </Badge>
-                      )}
-                    </div>
-                    {group.description && (
-                      <p className="text-sm text-muted-foreground truncate">{group.description}</p>
-                    )}
-                    <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-                      <span className="flex items-center gap-1">
-                        <Users className="h-3 w-3" />
-                        {group.memberCount ?? 0} member{(group.memberCount ?? 0) !== 1 ? "s" : ""}
-                      </span>
-                      <span>
-                        {group.scopes.length} scope{group.scopes.length !== 1 ? "s" : ""}
-                      </span>
-                    </div>
-                  </div>
-                  {!group.isBuiltin && (
-                    <div className="flex items-center gap-1 shrink-0">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={() => openEditDialog(group)}
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={() => handleDelete(group)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              ))}
+              {groups
+                .filter((g) => !g.parentId)
+                .map((group) => (
+                  <GroupRow
+                    key={group.id}
+                    group={group}
+                    allGroups={groups}
+                    depth={0}
+                    onEdit={openEditDialog}
+                    onDelete={handleDelete}
+                  />
+                ))}
             </div>
           </div>
         ) : (
@@ -324,6 +336,31 @@ export function AdminGroups() {
                 className="mt-1"
               />
             </div>
+            <div>
+              <label className="text-sm font-medium">Inherit From</label>
+              <Select
+                value={formParentId ?? "__none__"}
+                onValueChange={(v) => setFormParentId(v === "__none__" ? null : v)}
+              >
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="None" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">None</SelectItem>
+                  {groups
+                    .filter((g) => g.id !== editingGroup?.id)
+                    .map((g) => (
+                      <SelectItem key={g.id} value={g.id}>
+                        {g.name}
+                        {g.isBuiltin ? " (built-in)" : ""}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">
+                Inherited permissions are added automatically and shown as read-only below
+              </p>
+            </div>
             <div className="border border-border">
               <Input
                 value={scopeSearch}
@@ -339,11 +376,23 @@ export function AdminGroups() {
                 resources={formResources}
                 onToggleResource={toggleResource}
                 cas={cas}
-                restrictableScopes={CA_RESTRICTABLE_SCOPES}
+                nodes={nodesList}
+                proxyHosts={proxyHostsList}
+                restrictableScopes={RESTRICTABLE_SCOPES}
+                inheritedScopes={
+                  formParentId
+                    ? [...new Set([
+                        ...(groups.find((g) => g.id === formParentId)?.scopes ?? []),
+                        ...(groups.find((g) => g.id === formParentId)?.inheritedScopes ?? []),
+                      ])]
+                    : undefined
+                }
+                inheritedFromName={groups.find((g) => g.id === formParentId)?.name}
               />
               <div className="border-t border-border px-3 py-2">
                 <p className="text-xs text-muted-foreground">
                   {selectedCount} scope{selectedCount !== 1 ? "s" : ""} selected
+                  {inheritedCount > 0 && ` (${ownCount} own + ${inheritedCount} inherited)`}
                 </p>
               </div>
             </div>
@@ -360,5 +409,86 @@ export function AdminGroups() {
         </DialogContent>
       </Dialog>
     </PageTransition>
+  );
+}
+
+function GroupRow({
+  group,
+  allGroups,
+  depth,
+  onEdit,
+  onDelete,
+}: {
+  group: PermissionGroup;
+  allGroups: PermissionGroup[];
+  depth: number;
+  onEdit: (g: PermissionGroup) => void;
+  onDelete: (g: PermissionGroup) => void;
+}) {
+  const children = allGroups.filter((g) => g.parentId === group.id);
+
+  return (
+    <>
+      <div className="flex items-center gap-4 p-4">
+        <div className="flex items-center gap-1.5">
+          {depth > 0 && <CornerDownRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
+          {group.isBuiltin ? (
+            <ShieldCheck className="h-5 w-5 text-primary shrink-0" />
+          ) : (
+            <Shield className="h-5 w-5 text-muted-foreground shrink-0" />
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="font-medium text-sm">{group.name}</span>
+            {group.isBuiltin && (
+              <Badge variant="secondary" className="text-[10px]">
+                Built-in
+              </Badge>
+            )}
+            {group.parentId && (
+              <Badge variant="outline" className="text-[10px]">
+                Inherits
+              </Badge>
+            )}
+          </div>
+          {group.description && (
+            <p className="text-sm text-muted-foreground truncate">{group.description}</p>
+          )}
+          <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1">
+              <Users className="h-3 w-3" />
+              {group.memberCount ?? 0} member{(group.memberCount ?? 0) !== 1 ? "s" : ""}
+            </span>
+            <span>
+              {group.scopes.length} scope{group.scopes.length !== 1 ? "s" : ""}
+              {(group.inheritedScopes?.length ?? 0) > 0 && (
+                <> + {group.inheritedScopes!.length} inherited</>
+              )}
+            </span>
+          </div>
+        </div>
+        {!group.isBuiltin && (
+          <div className="flex items-center gap-1 shrink-0">
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onEdit(group)}>
+              <Pencil className="h-4 w-4" />
+            </Button>
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onDelete(group)}>
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
+      </div>
+      {children.map((child) => (
+        <GroupRow
+          key={child.id}
+          group={child}
+          allGroups={allGroups}
+          depth={depth + 1}
+          onEdit={onEdit}
+          onDelete={onDelete}
+        />
+      ))}
+    </>
   );
 }

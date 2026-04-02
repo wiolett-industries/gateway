@@ -7,13 +7,12 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"sync"
-	"sync/atomic"
 
+	pb "github.com/wiolett/gateway/daemon-shared/gatewayv1"
+	"github.com/wiolett/gateway/daemon-shared/stream"
+	sharedstate "github.com/wiolett/gateway/daemon-shared/state"
 	"github.com/wiolett/gateway/nginx-daemon/internal/config"
-	pb "github.com/wiolett/gateway/nginx-daemon/internal/gatewayv1"
 	"github.com/wiolett/gateway/nginx-daemon/internal/nginx"
-	"github.com/wiolett/gateway/nginx-daemon/internal/state"
 )
 
 // acmeTokenRegex validates ACME challenge tokens (alphanumeric + dash + underscore).
@@ -28,13 +27,13 @@ func isValidUUID(s string) bool {
 }
 
 type Handler struct {
-	cfg     *config.Config
-	mgr     *nginx.Manager
-	state   *state.State
-	logger  *slog.Logger
+	cfg    *config.Config
+	mgr    *nginx.Manager
+	state  *sharedstate.State
+	logger *slog.Logger
 }
 
-func NewHandler(cfg *config.Config, mgr *nginx.Manager, st *state.State, logger *slog.Logger) *Handler {
+func NewHandler(cfg *config.Config, mgr *nginx.Manager, st *sharedstate.State, logger *slog.Logger) *Handler {
 	return &Handler{cfg: cfg, mgr: mgr, state: st, logger: logger}
 }
 
@@ -289,8 +288,8 @@ func (h *Handler) handleFullSync(cmd *pb.FullSyncCommand, result *pb.CommandResu
 	for _, host := range cmd.Hosts {
 		hostIDs = append(hostIDs, host.HostId)
 	}
-	h.state.SetActiveHosts(hostIDs)
-	h.state.SetConfigVersion(cmd.VersionHash)
+	h.state.SetExtra("active_host_ids", hostIDs)
+	h.state.SetExtra("config_version_hash", cmd.VersionHash)
 	h.state.Save()
 
 	h.logger.Info("full sync complete", "version_hash", cmd.VersionHash)
@@ -457,37 +456,6 @@ func (h *Handler) handleRequestTrafficStats(cmd *pb.RequestTrafficStatsCommand, 
 
 func (h *Handler) handleSetDaemonLogStream(cmd *pb.SetDaemonLogStreamCommand, result *pb.CommandResult) {
 	// Enable BEFORE logging so the forwarder picks up this message
-	SetDaemonLogStreaming(cmd.Enabled, cmd.MinLevel)
+	stream.SetDaemonLogStreaming(cmd.Enabled, cmd.MinLevel)
 	h.logger.Info("daemon log stream enabled", "min_level", cmd.MinLevel)
-}
-
-// daemonLogState holds the daemon log streaming state with proper synchronization.
-var daemonLogState struct {
-	enabled  atomic.Bool
-	mu       sync.RWMutex
-	minLevel string
-}
-
-func init() {
-	daemonLogState.minLevel = "info"
-}
-
-// SetDaemonLogStreaming atomically updates the log streaming state.
-func SetDaemonLogStreaming(enabled bool, minLevel string) {
-	daemonLogState.enabled.Store(enabled)
-	daemonLogState.mu.Lock()
-	daemonLogState.minLevel = minLevel
-	daemonLogState.mu.Unlock()
-}
-
-// GetDaemonLogEnabled returns the current log streaming enabled state.
-func GetDaemonLogEnabled() bool {
-	return daemonLogState.enabled.Load()
-}
-
-// GetDaemonLogMinLevel returns the current minimum log level.
-func GetDaemonLogMinLevel() string {
-	daemonLogState.mu.RLock()
-	defer daemonLogState.mu.RUnlock()
-	return daemonLogState.minLevel
 }

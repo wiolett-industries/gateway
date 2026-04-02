@@ -42,19 +42,19 @@ export default function App() {
             <Route path="/blocked" element={<BlockedPage />} />
             <Route element={<DashboardLayout />}>
               <Route path="/" element={<Dashboard />} />
-              <Route path="/proxy-hosts" element={scoped("proxy:read", <ProxyHosts />)} />
-              <Route path="/proxy-hosts/:id" element={scoped("proxy:read", <ProxyHostDetail />)} />
-              <Route path="/nginx-templates" element={scoped("proxy:read", <NginxTemplates />)} />
+              <Route path="/proxy-hosts" element={scoped("proxy:list", <ProxyHosts />)} />
+              <Route path="/proxy-hosts/:id" element={scoped("proxy:list", <ProxyHostDetail />)} />
+              <Route path="/nginx-templates" element={scoped("proxy:list", <NginxTemplates />)} />
               <Route
                 path="/nginx-templates/new"
-                element={scoped("proxy:manage", <NginxTemplateEdit />)}
+                element={scoped("proxy:edit", <NginxTemplateEdit />)}
               />
               <Route
                 path="/nginx-templates/:id"
-                element={scoped("proxy:read", <NginxTemplateEdit />)}
+                element={scoped("proxy:list", <NginxTemplateEdit />)}
               />
               <Route path="/ssl-certificates" element={scoped("ssl:read", <SSLCertificates />)} />
-              <Route path="/domains" element={scoped("proxy:read", <Domains />)} />
+              <Route path="/domains" element={scoped("proxy:list", <Domains />)} />
               <Route path="/access-lists" element={scoped("access-list:read", <AccessLists />)} />
               <Route path="/cas" element={scoped("ca:read", <CAs />)} />
               <Route path="/cas/:id" element={scoped("ca:read", <CADetail />)} />
@@ -68,8 +68,8 @@ export default function App() {
               <Route path="/settings" element={<Settings />} />
               <Route path="/admin/users" element={scoped("admin:users", <AdminUsers />)} />
               <Route path="/admin/groups" element={scoped("admin:groups", <AdminGroups />)} />
-              <Route path="/nodes" element={scoped("nodes:view", <AdminNodes />)} />
-              <Route path="/nodes/:id" element={scoped("nodes:view", <AdminNodeDetail />)} />
+              <Route path="/nodes" element={scoped("nodes:list", <AdminNodes />)} />
+              <Route path="/nodes/:id" element={scoped("nodes:list", <AdminNodeDetail />)} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

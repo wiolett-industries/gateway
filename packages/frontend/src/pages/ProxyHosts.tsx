@@ -280,7 +280,7 @@ export function ProxyHosts() {
       <col style={{ width: "8%" }} />
       <col style={{ width: "10%" }} />
       <col style={{ width: "8%" }} />
-      {hasScope("proxy:manage") && <col style={{ width: "48px" }} />}
+      {hasScope("proxy:edit") && <col style={{ width: "48px" }} />}
     </colgroup>
   );
 
@@ -293,7 +293,7 @@ export function ProxyHosts() {
         <th className="p-3 text-xs font-medium text-muted-foreground">SSL</th>
         <th className="p-3 text-xs font-medium text-muted-foreground">Health</th>
         <th className="p-3 text-xs font-medium text-muted-foreground">Enabled</th>
-        {hasScope("proxy:manage") && (
+        {hasScope("proxy:edit") && (
           <th className="p-3 text-xs font-medium text-muted-foreground w-10"></th>
         )}
       </tr>
@@ -310,17 +310,17 @@ export function ProxyHosts() {
             <p className="text-sm text-muted-foreground">{totalHosts} proxy hosts total</p>
           </div>
           <div className="flex items-center gap-2">
-            {hasScope("proxy:manage") && (
-              <>
-                <Button variant="outline" onClick={() => setIsCreatingFolder(true)}>
-                  <FolderPlus className="h-4 w-4" />
-                  Add Folder
-                </Button>
-                <Button onClick={() => setCreateDialogOpen(true)}>
-                  <Plus className="h-4 w-4" />
-                  Add Proxy Host
-                </Button>
-              </>
+            {hasScope("proxy:edit") && (
+              <Button variant="outline" onClick={() => setIsCreatingFolder(true)}>
+                <FolderPlus className="h-4 w-4" />
+                Add Folder
+              </Button>
+            )}
+            {hasScope("proxy:create") && (
+              <Button onClick={() => setCreateDialogOpen(true)}>
+                <Plus className="h-4 w-4" />
+                Add Proxy Host
+              </Button>
             )}
           </div>
         </div>
@@ -426,7 +426,7 @@ export function ProxyHosts() {
                   onMoveHostToFolder={(hostId) => setMoveDialogHostId(hostId)}
                   expandedFolderIds={expandedFolderIds}
                   onToggleFolder={toggleFolder}
-                  canManage={hasScope("proxy:manage")}
+                  canManage={hasScope("proxy:edit")}
                   colGroup={colGroup}
                 />
               ))}
@@ -474,7 +474,7 @@ export function ProxyHosts() {
         ) : (
           <EmptyState
             message="No proxy hosts."
-            {...(hasScope("proxy:manage")
+            {...(hasScope("proxy:edit")
               ? { actionLabel: "Add one", onAction: () => setCreateDialogOpen(true) }
               : {})}
             hasActiveFilters={hasActiveFilters}

@@ -48,6 +48,7 @@ interface NodeOption {
   id: string;
   hostname: string;
   status: string;
+  type: string;
 }
 
 const STEP_ANIMATION = {
@@ -194,6 +195,7 @@ export function CreateProxyHostDialog({
             id: n.id,
             hostname: n.displayName || n.hostname,
             status: n.status,
+            type: n.type,
           }))
         );
         setSslCerts(sslRes.data || []);
@@ -372,11 +374,16 @@ export function CreateProxyHostDialog({
               {/* Type Selector */}
               <div className="space-y-2">
                 <label className="text-sm font-medium">Type</label>
-                <Select value={type} onValueChange={(v) => setType(v as ProxyHostType)} disabled={rawConfigEnabled}>
+                <Select
+                  value={rawConfigEnabled ? "raw" : type}
+                  onValueChange={(v) => setType(v as ProxyHostType)}
+                  disabled={rawConfigEnabled}
+                >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
+                    {rawConfigEnabled && <SelectItem value="raw">Raw</SelectItem>}
                     <SelectItem value="proxy">Proxy</SelectItem>
                     <SelectItem value="redirect">Redirect</SelectItem>
                     <SelectItem value="404">404</SelectItem>
@@ -402,6 +409,9 @@ export function CreateProxyHostDialog({
                       <SelectItem key={node.id} value={node.id}>
                         <div className="flex items-center justify-between w-full gap-3">
                           <span>{node.hostname}</span>
+                          <Badge variant="secondary" className="text-xs capitalize">
+                            {node.type}
+                          </Badge>
                           <Badge variant={nodeStatusVariant(node.status)}>{node.status}</Badge>
                         </div>
                       </SelectItem>
@@ -469,10 +479,7 @@ export function CreateProxyHostDialog({
                         Bypass template rendering and edit nginx config directly
                       </p>
                     </div>
-                    <Switch
-                      checked={rawConfigEnabled}
-                      onChange={setRawConfigEnabled}
-                    />
+                    <Switch checked={rawConfigEnabled} onChange={setRawConfigEnabled} />
                   </div>
                 </div>
               )}

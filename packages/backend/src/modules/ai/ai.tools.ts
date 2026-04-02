@@ -261,7 +261,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'Reverse Proxy',
-    requiredScope: 'proxy:read',
+    requiredScope: 'proxy:list',
     invalidateStores: [],
   },
   {
@@ -276,7 +276,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'Reverse Proxy',
-    requiredScope: 'proxy:read',
+    requiredScope: 'proxy:view',
     invalidateStores: [],
   },
   {
@@ -286,6 +286,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
       type: 'object',
       properties: {
         type: { type: 'string', enum: ['proxy', 'redirect', '404'], description: 'Host type (default: proxy)' },
+        nodeId: { type: 'string', description: 'Node UUID to deploy this proxy host on (required)' },
         domainNames: { type: 'array', items: { type: 'string' }, description: 'Domain names for this host' },
         forwardHost: { type: 'string', description: 'Backend host to proxy to (for proxy type)' },
         forwardPort: { type: 'number', description: 'Backend port (for proxy type)' },
@@ -337,11 +338,11 @@ export const AI_TOOLS: AIToolDefinition[] = [
         healthCheckExpectedStatus: { type: 'number', description: 'Expected HTTP status code (100-599)' },
         healthCheckExpectedBody: { type: 'string', description: 'Expected response body string' },
       },
-      required: ['domainNames'],
+      required: ['nodeId', 'domainNames'],
     },
     destructive: true,
     category: 'Reverse Proxy',
-    requiredScope: 'proxy:manage',
+    requiredScope: 'proxy:create',
     invalidateStores: ['proxy'],
   },
   {
@@ -363,7 +364,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: true,
     category: 'Reverse Proxy',
-    requiredScope: 'proxy:manage',
+    requiredScope: 'proxy:edit',
     invalidateStores: ['proxy'],
   },
   {
@@ -396,7 +397,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'Reverse Proxy',
-    requiredScope: 'proxy:manage',
+    requiredScope: 'proxy:edit',
     invalidateStores: ['proxy'],
   },
   {
@@ -412,7 +413,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'Reverse Proxy',
-    requiredScope: 'proxy:manage',
+    requiredScope: 'proxy:edit',
     invalidateStores: ['proxy'],
   },
   {
@@ -507,7 +508,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'Domains',
-    requiredScope: 'proxy:read',
+    requiredScope: 'proxy:list',
     invalidateStores: [],
   },
   {
@@ -523,7 +524,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'Domains',
-    requiredScope: 'proxy:manage',
+    requiredScope: 'proxy:edit',
     invalidateStores: ['domains'],
   },
   {
@@ -606,6 +607,138 @@ export const AI_TOOLS: AIToolDefinition[] = [
     invalidateStores: ['accessLists'],
   },
 
+  // ── Nodes ──
+  {
+    name: 'list_nodes',
+    description: 'List all daemon nodes with their type, status, and connection info.',
+    parameters: {
+      type: 'object',
+      properties: {
+        search: { type: 'string', description: 'Search by hostname' },
+        type: { type: 'string', enum: ['nginx', 'monitoring', 'docker', 'bastion'], description: 'Filter by node type' },
+        status: { type: 'string', enum: ['pending', 'online', 'offline'], description: 'Filter by status' },
+        page: { type: 'number', description: 'Page number (default: 1)' },
+        limit: { type: 'number', description: 'Items per page (default: 50)' },
+      },
+    },
+    destructive: false,
+    category: 'Nodes',
+    requiredScope: 'nodes:list',
+    invalidateStores: [],
+  },
+  {
+    name: 'get_node',
+    description: 'Get detailed information about a specific node including live health, stats, and system info.',
+    parameters: {
+      type: 'object',
+      properties: {
+        nodeId: { type: 'string', description: 'Node UUID' },
+      },
+      required: ['nodeId'],
+    },
+    destructive: false,
+    category: 'Nodes',
+    requiredScope: 'nodes:details',
+    invalidateStores: [],
+  },
+  {
+    name: 'create_node',
+    description: 'Create a new daemon node and generate an enrollment token. The token is shown once and must be used by the daemon to connect.',
+    parameters: {
+      type: 'object',
+      properties: {
+        hostname: { type: 'string', description: 'Node hostname (e.g., "proxy-01.example.com")' },
+        type: { type: 'string', enum: ['nginx', 'monitoring', 'docker', 'bastion'], description: 'Node type (default: nginx)' },
+        displayName: { type: 'string', description: 'Optional display name' },
+      },
+      required: ['hostname'],
+    },
+    destructive: true,
+    category: 'Nodes',
+    requiredScope: 'nodes:create',
+    invalidateStores: ['nodes'],
+  },
+  {
+    name: 'rename_node',
+    description: 'Update a node display name.',
+    parameters: {
+      type: 'object',
+      properties: {
+        nodeId: { type: 'string', description: 'Node UUID' },
+        displayName: { type: 'string', description: 'New display name' },
+      },
+      required: ['nodeId', 'displayName'],
+    },
+    destructive: true,
+    category: 'Nodes',
+    requiredScope: 'nodes:rename',
+    invalidateStores: ['nodes'],
+  },
+  {
+    name: 'delete_node',
+    description: 'Delete a daemon node. The node must have no assigned proxy hosts. Also revokes its mTLS certificate.',
+    parameters: {
+      type: 'object',
+      properties: {
+        nodeId: { type: 'string', description: 'Node UUID to delete' },
+      },
+      required: ['nodeId'],
+    },
+    destructive: true,
+    category: 'Nodes',
+    requiredScope: 'nodes:delete',
+    invalidateStores: ['nodes'],
+  },
+
+  // ── Raw Config ──
+  {
+    name: 'get_proxy_rendered_config',
+    description: 'Get the rendered nginx configuration for a proxy host. Shows either the template-generated or raw config.',
+    parameters: {
+      type: 'object',
+      properties: {
+        proxyHostId: { type: 'string', description: 'Proxy host UUID' },
+      },
+      required: ['proxyHostId'],
+    },
+    destructive: false,
+    category: 'Reverse Proxy',
+    requiredScope: 'proxy:raw-read',
+    invalidateStores: [],
+  },
+  {
+    name: 'update_proxy_raw_config',
+    description: 'Write raw nginx configuration for a proxy host. Raw mode must be enabled first.',
+    parameters: {
+      type: 'object',
+      properties: {
+        proxyHostId: { type: 'string', description: 'Proxy host UUID' },
+        rawConfig: { type: 'string', description: 'Raw nginx configuration content' },
+      },
+      required: ['proxyHostId', 'rawConfig'],
+    },
+    destructive: true,
+    category: 'Reverse Proxy',
+    requiredScope: 'proxy:raw-write',
+    invalidateStores: ['proxy'],
+  },
+  {
+    name: 'toggle_proxy_raw_mode',
+    description: 'Enable or disable raw config mode on a proxy host. When enabled, template rendering is bypassed and the raw config is used directly.',
+    parameters: {
+      type: 'object',
+      properties: {
+        proxyHostId: { type: 'string', description: 'Proxy host UUID' },
+        enabled: { type: 'boolean', description: 'true to enable raw mode, false to disable' },
+      },
+      required: ['proxyHostId', 'enabled'],
+    },
+    destructive: true,
+    category: 'Reverse Proxy',
+    requiredScope: 'proxy:raw-toggle',
+    invalidateStores: ['proxy'],
+  },
+
   // ── Administration ──
   {
     name: 'list_users',
@@ -651,12 +784,86 @@ export const AI_TOOLS: AIToolDefinition[] = [
   },
   {
     name: 'get_dashboard_stats',
-    description: 'Get dashboard statistics: counts of CAs, certificates, proxy hosts, SSL certs, expiring items.',
+    description: 'Get dashboard statistics: counts of CAs, certificates, proxy hosts, SSL certs, nodes, expiring items.',
     parameters: { type: 'object', properties: {} },
     destructive: false,
     category: 'Administration',
     requiredScope: 'ai:use',
     invalidateStores: [],
+  },
+
+  // ── Permission Groups ──
+  {
+    name: 'list_groups',
+    description: 'List all permission groups with their scopes, member counts, and inheritance info.',
+    parameters: { type: 'object', properties: {} },
+    destructive: false,
+    category: 'Administration',
+    requiredScope: 'admin:groups',
+    invalidateStores: [],
+  },
+  {
+    name: 'create_group',
+    description: 'Create a new permission group with specific scopes. Can optionally inherit from a parent group.',
+    parameters: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Group name (e.g., "cert-operator")' },
+        description: { type: 'string', description: 'Optional description' },
+        scopes: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Array of scope strings (e.g., ["cert:read", "cert:issue"])',
+        },
+        parentId: { type: 'string', description: 'Optional parent group UUID to inherit scopes from' },
+      },
+      required: ['name', 'scopes'],
+    },
+    destructive: true,
+    category: 'Administration',
+    requiredScope: 'admin:groups',
+    invalidateStores: ['groups'],
+  },
+  {
+    name: 'update_group',
+    description: 'Update a permission group. Built-in groups cannot be modified.',
+    parameters: {
+      type: 'object',
+      properties: {
+        groupId: { type: 'string', description: 'Group UUID' },
+        name: { type: 'string', description: 'New group name' },
+        description: { type: 'string', description: 'New description' },
+        scopes: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'New scopes array (replaces existing)',
+        },
+        parentId: {
+          type: ['string', 'null'],
+          description: 'New parent group UUID, or null to remove inheritance',
+        },
+      },
+      required: ['groupId'],
+    },
+    destructive: true,
+    category: 'Administration',
+    requiredScope: 'admin:groups',
+    invalidateStores: ['groups'],
+  },
+  {
+    name: 'delete_group',
+    description: 'Delete a permission group. Cannot delete built-in groups or groups with assigned users.',
+    parameters: {
+      type: 'object',
+      properties: {
+        groupId: { type: 'string', description: 'Group UUID to delete' },
+      },
+      required: ['groupId'],
+    },
+    destructive: true,
+    category: 'Administration',
+    requiredScope: 'admin:groups',
+    invalidateStores: ['groups'],
   },
 
   // ── Ask Question ──
@@ -698,7 +905,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
   {
     name: 'internal_documentation',
     description:
-      'Get detailed internal documentation about a specific topic in this system. Use this whenever you need deeper knowledge about how something works, what fields mean, or what the correct workflow is. Topics: pki, ssl, proxy, domains, access-lists, templates, acme, users, audit, nginx, housekeeping, permissions.',
+      'Get detailed internal documentation about a specific topic in this system. Use this whenever you need deeper knowledge about how something works, what fields mean, or what the correct workflow is. Topics: pki, ssl, proxy, domains, access-lists, templates, acme, users, audit, nginx, nodes, housekeeping, permissions.',
     parameters: {
       type: 'object',
       properties: {
@@ -715,6 +922,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
             'users',
             'audit',
             'nginx',
+            'nodes',
             'housekeeping',
             'permissions',
           ],

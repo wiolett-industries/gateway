@@ -105,25 +105,25 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
           </CommandItem>
         </CommandGroup>
 
-        {(hasScope("proxy:read") || hasScope("ssl:read")) && (
+        {(hasScope("proxy:list") || hasScope("ssl:read")) && (
           <>
             <CommandSeparator />
             <CommandGroup heading="Reverse Proxy">
-              {hasScope("proxy:read") && (
+              {hasScope("proxy:list") && (
                 <CommandItem onSelect={() => handleSelect(() => navigate("/proxy-hosts"))}>
                   <Globe className="mr-2 h-4 w-4" />
                   Proxy Hosts
                   <CommandShortcut>⌘2</CommandShortcut>
                 </CommandItem>
               )}
-              {hasScope("proxy:read") && (
+              {hasScope("proxy:list") && (
                 <CommandItem onSelect={() => handleSelect(() => navigate("/domains"))}>
                   <Globe2 className="mr-2 h-4 w-4" />
                   Domains
                   <CommandShortcut>⌘3</CommandShortcut>
                 </CommandItem>
               )}
-              {hasScope("proxy:read") && (
+              {hasScope("proxy:list") && (
                 <CommandItem onSelect={() => handleSelect(() => navigate("/nginx-templates"))}>
                   <FileCode className="mr-2 h-4 w-4" />
                   Config Templates
@@ -173,7 +173,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         <CommandSeparator />
 
         <CommandGroup heading="Management">
-          {hasScope("proxy:manage") && (
+          {hasScope("proxy:list") && (
             <CommandItem onSelect={() => handleSelect(() => navigate("/nginx"))}>
               <Server className="mr-2 h-4 w-4" />
               Nginx
@@ -221,7 +221,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
             {sidebarOpen ? "Hide sidebar" : "Show sidebar"}
             <CommandShortcut>⌘J</CommandShortcut>
           </CommandItem>
-          {hasScope("proxy:manage") && (
+          {hasScope("proxy:create") && (
             <CommandItem onSelect={() => handleSelect(() => navigate("/proxy-hosts/new"))}>
               <Plus className="mr-2 h-4 w-4" />
               New Proxy Host

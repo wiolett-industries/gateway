@@ -77,7 +77,7 @@ monitoringRoutes.get('/nginx/available', async (c) => {
 });
 
 // Nginx process info
-monitoringRoutes.get('/nginx/info', requireScope('proxy:read'), async (c) => {
+monitoringRoutes.get('/nginx/info', requireScope('proxy:list'), async (c) => {
   const nginxStatsService = container.resolve(NginxStatsService);
   try {
     const info = await nginxStatsService.getProcessInfo();
@@ -88,7 +88,7 @@ monitoringRoutes.get('/nginx/info', requireScope('proxy:read'), async (c) => {
 });
 
 // Live nginx stats SSE stream
-monitoringRoutes.get('/nginx/stats/stream', requireScope('proxy:read'), async (c) => {
+monitoringRoutes.get('/nginx/stats/stream', requireScope('proxy:list'), async (c) => {
   const nginxStatsService = container.resolve(NginxStatsService);
 
   return streamSSE(c, async (stream) => {
@@ -152,14 +152,14 @@ monitoringRoutes.get('/nginx/stats/stream', requireScope('proxy:read'), async (c
 });
 
 // Read global nginx.conf
-monitoringRoutes.get('/nginx/config', requireScope('proxy:read'), async (c) => {
+monitoringRoutes.get('/nginx/config', requireScope('proxy:list'), async (c) => {
   const nginxConfigService = container.resolve(NginxConfigService);
   const content = await nginxConfigService.getGlobalConfig();
   return c.json({ data: { content } });
 });
 
 // Update global nginx.conf
-monitoringRoutes.put('/nginx/config', requireScope('proxy:manage'), async (c) => {
+monitoringRoutes.put('/nginx/config', requireScope('proxy:edit'), async (c) => {
   const body = await c.req.json<{ content: string }>();
   if (!body.content || typeof body.content !== 'string') {
     return c.json({ code: 'INVALID_BODY', message: 'content is required' }, 400);
@@ -173,7 +173,7 @@ monitoringRoutes.put('/nginx/config', requireScope('proxy:manage'), async (c) =>
 });
 
 // Test current nginx config
-monitoringRoutes.post('/nginx/config/test', requireScope('proxy:manage'), async (c) => {
+monitoringRoutes.post('/nginx/config/test', requireScope('proxy:edit'), async (c) => {
   const nginxConfigService = container.resolve(NginxConfigService);
   const result = await nginxConfigService.testConfig();
   return c.json({ data: result });

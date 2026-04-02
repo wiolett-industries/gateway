@@ -85,7 +85,7 @@ export function NginxTemplates() {
               Nginx server block templates for proxy hosts
             </p>
           </div>
-          {hasScope("proxy:manage") && (
+          {hasScope("proxy:edit") && (
             <Button onClick={() => navigate("/nginx-templates/new")}>
               <Plus className="h-4 w-4" />
               Create Template
@@ -118,7 +118,7 @@ export function NginxTemplates() {
                           Edit
                         </DropdownMenuItem>
                       )}
-                      {hasScope("proxy:manage") && (
+                      {hasScope("proxy:edit") && (
                         <DropdownMenuItem onClick={() => handleClone(t.id)}>
                           <Copy className="h-4 w-4" />
                           Clone

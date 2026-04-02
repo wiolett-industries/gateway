@@ -15,6 +15,7 @@ export const CreateGroupSchema = z.object({
     .refine((name) => !BUILTIN_GROUP_NAMES.includes(name), 'Cannot use a built-in group name'),
   description: z.string().max(500).optional(),
   scopes: z.array(scopeString).min(1, 'At least one scope is required'),
+  parentId: z.string().uuid().nullable().optional(),
 });
 
 export const UpdateGroupSchema = z.object({
@@ -27,6 +28,7 @@ export const UpdateGroupSchema = z.object({
     .optional(),
   description: z.string().max(500).nullable().optional(),
   scopes: z.array(scopeString).min(1, 'At least one scope is required').optional(),
+  parentId: z.string().uuid().nullable().optional(),
 });
 
 export const AssignGroupSchema = z.object({

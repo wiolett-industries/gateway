@@ -2,7 +2,10 @@ module github.com/wiolett/gateway/nginx-daemon
 
 go 1.24.4
 
+replace github.com/wiolett/gateway/daemon-shared => ../shared
+
 require (
+	github.com/wiolett/gateway/daemon-shared v0.0.0
 	golang.org/x/sys v0.39.0
 	google.golang.org/grpc v1.79.3
 	google.golang.org/protobuf v1.36.11

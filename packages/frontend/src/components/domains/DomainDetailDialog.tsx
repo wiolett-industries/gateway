@@ -70,7 +70,7 @@ export function DomainDetailDialog({
   onUpdated,
 }: DomainDetailDialogProps) {
   const { hasScope } = useAuthStore();
-  const canEdit = hasScope("proxy:manage");
+  const canEdit = hasScope("proxy:edit");
   const [domain, setDomain] = useState<DomainWithUsage | null>(null);
   const [description, setDescription] = useState("");
   const [isLoading, setIsLoading] = useState(false);

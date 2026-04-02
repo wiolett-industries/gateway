@@ -21,14 +21,14 @@ folderRoutes.use('*', sessionOnly);
 // --- Static GET routes first ---
 
 // Get folder tree
-folderRoutes.get('/', requireScope('proxy:read'), async (c) => {
+folderRoutes.get('/', requireScope('proxy:list'), async (c) => {
   const folderService = container.resolve(FolderService);
   const tree = await folderService.getFolderTree();
   return c.json({ data: tree });
 });
 
 // Get grouped hosts
-folderRoutes.get('/grouped', requireScope('proxy:read'), async (c) => {
+folderRoutes.get('/grouped', requireScope('proxy:list'), async (c) => {
   const folderService = container.resolve(FolderService);
   const rawQuery = c.req.query();
   const query = GroupedHostsQuerySchema.parse(rawQuery);
@@ -39,7 +39,7 @@ folderRoutes.get('/grouped', requireScope('proxy:read'), async (c) => {
 // --- Static POST routes ---
 
 // Create folder
-folderRoutes.post('/', requireScope('proxy:manage'), async (c) => {
+folderRoutes.post('/', requireScope('proxy:edit'), async (c) => {
   const folderService = container.resolve(FolderService);
   const user = c.get('user')!;
   const body = await c.req.json();
@@ -49,7 +49,7 @@ folderRoutes.post('/', requireScope('proxy:manage'), async (c) => {
 });
 
 // Move hosts to folder
-folderRoutes.post('/move-hosts', requireScope('proxy:manage'), async (c) => {
+folderRoutes.post('/move-hosts', requireScope('proxy:edit'), async (c) => {
   const folderService = container.resolve(FolderService);
   const user = c.get('user')!;
   const body = await c.req.json();
@@ -61,7 +61,7 @@ folderRoutes.post('/move-hosts', requireScope('proxy:manage'), async (c) => {
 // --- Static PUT routes (before /:id) ---
 
 // Reorder folders
-folderRoutes.put('/reorder', requireScope('proxy:manage'), async (c) => {
+folderRoutes.put('/reorder', requireScope('proxy:edit'), async (c) => {
   const folderService = container.resolve(FolderService);
   const body = await c.req.json();
   const input = ReorderFoldersSchema.parse(body);
@@ -70,7 +70,7 @@ folderRoutes.put('/reorder', requireScope('proxy:manage'), async (c) => {
 });
 
 // Reorder hosts within a folder
-folderRoutes.put('/reorder-hosts', requireScope('proxy:manage'), async (c) => {
+folderRoutes.put('/reorder-hosts', requireScope('proxy:edit'), async (c) => {
   const folderService = container.resolve(FolderService);
   const body = await c.req.json();
   const input = ReorderHostsSchema.parse(body);
@@ -81,7 +81,7 @@ folderRoutes.put('/reorder-hosts', requireScope('proxy:manage'), async (c) => {
 // --- Parameterised routes last ---
 
 // Update folder / rename
-folderRoutes.put('/:id', requireScope('proxy:manage'), async (c) => {
+folderRoutes.put('/:id', requireScope('proxy:edit'), async (c) => {
   const folderService = container.resolve(FolderService);
   const user = c.get('user')!;
   const id = c.req.param('id');
@@ -92,7 +92,7 @@ folderRoutes.put('/:id', requireScope('proxy:manage'), async (c) => {
 });
 
 // Move folder to new parent
-folderRoutes.put('/:id/move', requireScope('proxy:manage'), async (c) => {
+folderRoutes.put('/:id/move', requireScope('proxy:edit'), async (c) => {
   const folderService = container.resolve(FolderService);
   const user = c.get('user')!;
   const id = c.req.param('id');
@@ -112,7 +112,7 @@ folderRoutes.delete('/:id', requireScope('proxy:delete'), async (c) => {
 });
 
 // Clone folder's proxy host
-folderRoutes.post('/:id/clone', requireScope('proxy:manage'), async (c) => {
+folderRoutes.post('/:id/clone', requireScope('proxy:edit'), async (c) => {
   // Placeholder for future clone functionality
   return c.json({ error: 'Not implemented' }, 501);
 });

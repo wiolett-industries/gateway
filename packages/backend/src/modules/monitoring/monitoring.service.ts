@@ -1,6 +1,6 @@
 import { and, count, eq, gt, lt, sql } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
-import { certificateAuthorities, certificates, proxyHosts, sslCertificates } from '@/db/schema/index.js';
+import { certificateAuthorities, certificates, nodes, proxyHosts, sslCertificates } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
 
 const logger = createChildLogger('MonitoringService');
@@ -28,6 +28,12 @@ export interface DashboardStats {
   cas: {
     total: number;
     active: number;
+  };
+  nodes: {
+    total: number;
+    online: number;
+    offline: number;
+    pending: number;
   };
 }
 
@@ -72,6 +78,12 @@ export class MonitoringService {
       // CA counts
       caTotal,
       caActive,
+
+      // Node counts
+      nodeTotal,
+      nodeOnline,
+      nodeOffline,
+      nodePending,
     ] = await Promise.all([
       // Proxy hosts
       this.db.select({ value: count() }).from(proxyHosts),
@@ -107,6 +119,12 @@ export class MonitoringService {
         .select({ value: count() })
         .from(certificateAuthorities)
         .where(eq(certificateAuthorities.status, 'active')),
+
+      // Nodes
+      this.db.select({ value: count() }).from(nodes),
+      this.db.select({ value: count() }).from(nodes).where(eq(nodes.status, 'online')),
+      this.db.select({ value: count() }).from(nodes).where(eq(nodes.status, 'offline')),
+      this.db.select({ value: count() }).from(nodes).where(eq(nodes.status, 'pending')),
     ]);
 
     return {
@@ -132,6 +150,12 @@ export class MonitoringService {
       cas: {
         total: Number(caTotal[0].value),
         active: Number(caActive[0].value),
+      },
+      nodes: {
+        total: Number(nodeTotal[0].value),
+        online: Number(nodeOnline[0].value),
+        offline: Number(nodeOffline[0].value),
+        pending: Number(nodePending[0].value),
       },
     };
   }

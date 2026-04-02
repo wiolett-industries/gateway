@@ -11,7 +11,7 @@ const logger = createChildLogger('NodeRegistry');
 
 export interface ConnectedNode {
   nodeId: string;
-  type: 'nginx' | 'bastion';
+  type: 'nginx' | 'bastion' | 'monitoring';
   hostname: string;
   commandStream: ServerDuplexStream<DaemonMessage, GatewayCommand>;
   logStream: ServerDuplexStream<unknown, unknown> | null;
@@ -37,7 +37,7 @@ export class NodeRegistryService {
 
   async register(
     nodeId: string,
-    type: 'nginx' | 'bastion',
+    type: 'nginx' | 'bastion' | 'monitoring',
     hostname: string,
     configVersionHash: string,
     commandStream: ServerDuplexStream<DaemonMessage, GatewayCommand>
@@ -105,7 +105,7 @@ export class NodeRegistryService {
     return Array.from(this.nodes.values());
   }
 
-  getNodesByType(type: 'nginx' | 'bastion'): ConnectedNode[] {
+  getNodesByType(type: 'nginx' | 'bastion' | 'monitoring'): ConnectedNode[] {
     return this.getAllNodes().filter((n) => n.type === type);
   }
 

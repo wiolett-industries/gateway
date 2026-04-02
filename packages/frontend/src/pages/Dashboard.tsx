@@ -10,12 +10,12 @@ import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useCAStore } from "@/stores/ca";
 import { usePinnedNodesStore } from "@/stores/pinned-nodes";
+import { usePinnedProxiesStore } from "@/stores/pinned-proxies";
 import { useUIStore } from "@/stores/ui";
 import { useUpdateStore } from "@/stores/update";
 import type {
   AuditLogEntry,
   DashboardStats,
-  HealthStatus,
   Node,
   NodeHealthReport,
   NodeStatus,
@@ -72,6 +72,8 @@ export function Dashboard() {
   const [expiringItems, setExpiringItems] = useState<ExpiringItem[]>([]);
   const [nodesList, setNodesList] = useState<Node[]>([]);
   const dashboardPinnedIds = usePinnedNodesStore((s) => s.dashboardNodeIds);
+  const dashboardPinnedProxyIds = usePinnedProxiesStore((s) => s.dashboardProxyIds);
+  const [pinnedProxyHosts, setPinnedProxyHosts] = useState<ProxyHost[]>([]);
   const updateStatus = useUpdateStore((s) => s.status);
   const showUpdateNotifications = useUIStore((s) => s.showUpdateNotifications);
 
@@ -80,7 +82,7 @@ export function Dashboard() {
       fetchCAs();
     }
 
-    if (hasScope("nodes:view")) {
+    if (hasScope("nodes:list")) {
       api
         .listNodes({ limit: 100 })
         .then((r) => setNodesList(r.data ?? []))
@@ -111,7 +113,7 @@ export function Dashboard() {
       })
       .finally(() => setStatsLoading(false));
 
-    if (hasScope("proxy:read")) {
+    if (hasScope("proxy:list")) {
       const cachedHealth = api.getCached<ProxyHost[]>("dashboard:health");
       if (cachedHealth) setHealthHosts(cachedHealth);
       api
@@ -162,6 +164,21 @@ export function Dashboard() {
     }
   }, [fetchCAs, hasScope]);
 
+  // Fetch pinned proxy hosts
+  useEffect(() => {
+    if (dashboardPinnedProxyIds.length === 0) {
+      setPinnedProxyHosts([]);
+      return;
+    }
+    if (!hasScope("proxy:list")) return;
+    api
+      .listProxyHosts({ limit: 100 })
+      .then((r) => {
+        setPinnedProxyHosts((r.data ?? []).filter((p) => dashboardPinnedProxyIds.includes(p.id)));
+      })
+      .catch(() => {});
+  }, [dashboardPinnedProxyIds, hasScope]);
+
   // IDs of nodes shown on dashboard (pinned + disk warning)
   const warningNodeIds = nodesList
     .filter((n) => {
@@ -177,7 +194,7 @@ export function Dashboard() {
   // updates node health data in real-time via snapshots.
   const [pinnedHealth, setPinnedHealth] = useState<Record<string, NodeHealthReport>>({});
   useEffect(() => {
-    if (dashboardVisibleIds.length === 0 || !hasScope("nodes:view")) return;
+    if (dashboardVisibleIds.length === 0 || !hasScope("nodes:list")) return;
     const streams: EventSource[] = [];
     for (const nodeId of dashboardVisibleIds) {
       const es = api.createNodeMonitoringStream(nodeId);
@@ -267,12 +284,12 @@ export function Dashboard() {
             )}
 
           {/* Stat cards */}
-          {(hasScope("proxy:read") ||
+          {(hasScope("proxy:list") ||
             hasScope("ssl:read") ||
             hasScope("cert:read") ||
-            hasScope("nodes:view")) && (
+            hasScope("nodes:list")) && (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {hasScope("proxy:read") && (
+              {hasScope("proxy:list") && (
                 <StatCard
                   title="Proxy Hosts"
                   value={displayStats.proxyHosts.total}
@@ -303,7 +320,7 @@ export function Dashboard() {
                   href="/certificates"
                 />
               )}
-              {hasScope("nodes:view") && (
+              {hasScope("nodes:list") && (
                 <StatCard
                   title="Nodes"
                   value={nodesList.filter((n) => n.status === "online").length}
@@ -390,7 +407,7 @@ export function Dashboard() {
           )}
 
           {/* Health Overview */}
-          {hasScope("proxy:read") && (
+          {hasScope("proxy:list") && (
             <div className="border border-border bg-card">
               <div className="flex items-center justify-between border-b border-border p-4">
                 <h2 className="font-semibold">Health Overview</h2>
@@ -424,14 +441,18 @@ export function Dashboard() {
                               online: "success",
                               offline: "destructive",
                               degraded: "warning",
+                              recovering: "warning",
                               unknown: "secondary",
                               disabled: "outline",
                             } as const
-                          )[host.healthStatus as HealthStatus] || "secondary"
+                          )[(host.effectiveHealthStatus ?? host.healthStatus) as string] ||
+                          "secondary"
                         }
-                        className="text-xs capitalize"
+                        className="text-xs uppercase"
                       >
-                        {host.healthStatus}
+                        {(host.effectiveHealthStatus ?? host.healthStatus) === "online"
+                          ? "healthy"
+                          : (host.effectiveHealthStatus ?? host.healthStatus)}
                       </Badge>
                     </Link>
                   ))}
@@ -439,7 +460,7 @@ export function Dashboard() {
               ) : (
                 <div className="p-8 text-center text-sm text-muted-foreground">
                   No proxy hosts configured.{" "}
-                  {hasScope("proxy:manage") && (
+                  {hasScope("proxy:create") && (
                     <Link to="/proxy-hosts/new" className="text-foreground hover:underline">
                       Add one
                     </Link>
@@ -450,7 +471,7 @@ export function Dashboard() {
           )}
 
           {/* Nodes Status */}
-          {hasScope("nodes:view") && nodesList.length > 0 && (
+          {hasScope("nodes:list") && nodesList.length > 0 && (
             <div className="border border-border bg-card">
               <div className="flex items-center justify-between border-b border-border p-4">
                 <h2 className="font-semibold">Nodes</h2>
@@ -468,9 +489,13 @@ export function Dashboard() {
                     <span className="text-sm font-medium truncate flex-1">
                       {node.displayName || node.hostname}
                     </span>
-                    <span className="text-xs text-muted-foreground capitalize">{node.type}</span>
+                    <Badge variant="secondary" className="text-xs uppercase">
+                      {node.type}
+                    </Badge>
                     {node.daemonVersion && (
-                      <span className="text-xs text-muted-foreground">v{node.daemonVersion}</span>
+                      <Badge variant="outline" className="text-xs uppercase">
+                        {node.daemonVersion}
+                      </Badge>
                     )}
                     <Badge
                       variant={
@@ -486,15 +511,20 @@ export function Dashboard() {
                           >
                         )[node.status] || "secondary"
                       }
-                      className="text-xs capitalize"
+                      className="text-xs uppercase"
                     >
-                      {node.status}
+                      {node.status === "online" ? "healthy" : node.status}
                     </Badge>
                   </Link>
                 ))}
               </div>
             </div>
           )}
+
+          {/* Pinned Proxy Host Cards */}
+          {pinnedProxyHosts.map((proxy) => (
+            <PinnedProxyCard key={proxy.id} proxy={proxy} />
+          ))}
 
           {/* Pinned + Warning Node Overview Cards */}
           {nodesList
@@ -663,19 +693,18 @@ function PinnedNodeCard({ node, liveHealth }: { node: Node; liveHealth?: NodeHea
         to={`/nodes/${node.id}`}
         className="border-r border-border p-4 space-y-2 overflow-hidden cursor-pointer hover:bg-accent transition-colors"
       >
-        <div className="flex items-center justify-between">
-          <p className="text-xs text-muted-foreground truncate">{node.hostname}</p>
-          <Server className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-        </div>
+        <p className="text-xs text-muted-foreground truncate">
+          {node.hostname}, {node.type}
+        </p>
         <p className="text-xl font-bold truncate">{node.displayName || node.hostname}</p>
         <div className="flex items-center gap-2">
-          <HealthBars
-            hourlyHistory={node.healthHistory}
-            showLabels={false}
-            className="flex-1"
-          />
-          <Badge variant={statusColor} className="text-xs capitalize">
-            {node.status}
+          <HealthBars hourlyHistory={node.healthHistory} showLabels={false} className="flex-1" />
+          <Badge
+            variant={statusColor}
+            className="text-xs uppercase h-6"
+            style={{ border: "1px solid rgb(16 185 129)" }}
+          >
+            {node.status === "online" ? "healthy" : node.status}
           </Badge>
         </div>
       </Link>
@@ -717,5 +746,49 @@ function PinnedNodeCard({ node, liveHealth }: { node: Node; liveHealth?: NodeHea
         style={diskWarn.style}
       />
     </div>
+  );
+}
+
+function PinnedProxyCard({ proxy }: { proxy: ProxyHost }) {
+  const eff = (proxy as any).effectiveHealthStatus ?? proxy.healthStatus;
+  const statusColor =
+    eff === "online"
+      ? "success"
+      : eff === "recovering"
+        ? "warning"
+        : eff === "offline" || eff === "degraded"
+          ? "destructive"
+          : "secondary";
+  const statusLabel = eff === "online" ? "healthy" : eff;
+
+  return (
+    <Link
+      to={`/proxy-hosts/${proxy.id}`}
+      className="flex items-center justify-between border border-border bg-card px-4 py-3 hover:bg-accent transition-colors"
+    >
+      <div className="flex items-center gap-3 min-w-0">
+        <Globe className="h-4 w-4 text-muted-foreground shrink-0" />
+        <div className="min-w-0">
+          <p className="text-sm font-medium truncate">{proxy.domainNames[0]}</p>
+          <p className="text-xs text-muted-foreground truncate">
+            {proxy.domainNames.length > 1 ? `+${proxy.domainNames.length - 1} more` : null}
+            {proxy.type === "proxy" && proxy.forwardHost
+              ? `${proxy.domainNames.length > 1 ? " · " : ""}${proxy.forwardScheme}://${proxy.forwardHost}:${proxy.forwardPort}`
+              : null}
+            {proxy.type === "redirect" && proxy.redirectUrl
+              ? `${proxy.domainNames.length > 1 ? " · " : ""}→ ${proxy.redirectUrl}`
+              : null}
+          </p>
+        </div>
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        <Badge variant="secondary" className="text-xs uppercase">
+          {proxy.type}
+        </Badge>
+        <Badge variant={statusColor} className="text-xs uppercase">
+          {statusLabel}
+        </Badge>
+      </div>
+    </Link>
   );
 }

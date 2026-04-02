@@ -51,6 +51,8 @@ import type {
   HousekeepingConfig,
   HousekeepingRunResult,
   HousekeepingStats,
+  Node,
+  ProxyHost,
 } from "@/types";
 import { type ApiToken, TOKEN_SCOPES } from "@/types";
 
@@ -58,6 +60,8 @@ export function Settings() {
   const { user, hasScope } = useAuthStore();
   const { theme, setTheme, showUpdateNotifications, setShowUpdateNotifications } = useUIStore();
   const { cas } = useCAStore();
+  const [nodesList, setNodesList] = useState<Node[]>([]);
+  const [proxyHostsList, setProxyHostsList] = useState<ProxyHost[]>([]);
   const [tokens, setTokens] = useState<ApiToken[]>([]);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [newTokenName, setNewTokenName] = useState("");
@@ -249,6 +253,8 @@ export function Settings() {
     fetchStatus();
     loadHousekeeping();
     loadAIConfig();
+    api.listNodes({ limit: 100 }).then((r) => setNodesList(r.data ?? [])).catch(() => {});
+    api.listProxyHosts({ limit: 100 }).then((r) => setProxyHostsList(r.data ?? [])).catch(() => {});
     // biome-ignore lint/correctness/useExhaustiveDependencies: load-once pattern
   }, [loadHousekeeping, loadAIConfig, fetchStatus, loadTokens]);
 
@@ -1284,7 +1290,25 @@ export function Settings() {
                         });
                       }}
                       cas={cas}
-                      restrictableScopes={["cert:issue", "ca:create:intermediate"]}
+                      nodes={nodesList}
+                      proxyHosts={proxyHostsList}
+                      restrictableScopes={[
+                        "cert:issue",
+                        "ca:create:intermediate",
+                        "proxy:view",
+                        "proxy:edit",
+                        "proxy:delete",
+                        "proxy:advanced",
+                        "proxy:raw-read",
+                        "proxy:raw-write",
+                        "proxy:raw-toggle",
+                        "nodes:details",
+                        "nodes:config",
+                        "nodes:logs",
+                        "nodes:rename",
+                        "nodes:config-edit",
+                        "nodes:delete",
+                      ]}
                     />
                     <div className="border-t border-border px-3 py-2">
                       <p className="text-xs text-muted-foreground">

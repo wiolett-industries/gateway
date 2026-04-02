@@ -19,6 +19,7 @@ message EnrollRequest {
   string nginx_version = 3;
   string os_info = 4;
   string daemon_version = 5;
+  string daemon_type = 6;     // "nginx", "monitoring", etc.
 }
 
 message EnrollResponse {
@@ -74,6 +75,12 @@ message RegisterMessage {
   string daemon_version = 5;
   int64 nginx_uptime_seconds = 6;
   bool nginx_running = 7;
+  // Static system info
+  string cpu_model = 8;
+  int32 cpu_cores = 9;
+  string architecture = 10;
+  string kernel_version = 11;
+  string daemon_type = 12;       // "nginx", "monitoring", etc.
 }
 
 message CommandResult {

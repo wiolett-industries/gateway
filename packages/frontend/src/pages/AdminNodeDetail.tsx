@@ -5,7 +5,6 @@ import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { PageTransition } from "@/components/common/PageTransition";
 import { Badge } from "@/components/ui/badge";
-import { HealthBars } from "@/components/ui/health-bars";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -14,6 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { HealthBars } from "@/components/ui/health-bars";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -136,7 +136,7 @@ export function AdminNodeDetail() {
               </div>
               <p className="text-sm text-muted-foreground">
                 {node.hostname} &middot; {node.type} &middot;{" "}
-                {node.daemonVersion ? `v${node.daemonVersion}` : "unknown version"}
+                {node.daemonVersion ?? "unknown version"}
                 {node.osInfo ? <> &middot; {node.osInfo}</> : null}
               </p>
             </div>
@@ -146,31 +146,29 @@ export function AdminNodeDetail() {
             <Button variant="outline" size="icon" onClick={() => setPinOpen(true)}>
               <Pin className="h-4 w-4" />
             </Button>
-            {hasScope("nodes:manage") && (
-              <>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setRenameName(node.displayName ?? "");
-                    setRenameOpen(true);
-                  }}
-                >
-                  <Pencil className="h-4 w-4" />
-                  Rename
-                </Button>
-                <Button variant="outline" onClick={handleDelete}>
-                  <Trash2 className="h-4 w-4" />
-                  Remove
-                </Button>
-              </>
+            {hasScope("nodes:rename") && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setRenameName(node.displayName ?? "");
+                  setRenameOpen(true);
+                }}
+              >
+                <Pencil className="h-4 w-4" />
+                Rename
+              </Button>
+            )}
+            {hasScope("nodes:delete") && (
+              <Button variant="outline" onClick={handleDelete}>
+                <Trash2 className="h-4 w-4" />
+                Remove
+              </Button>
             )}
           </div>
         </div>
 
         {/* Health bars */}
-        {node.status === "online" && (
-          <HealthBars hourlyHistory={node.healthHistory} />
-        )}
+        {node.status === "online" && <HealthBars hourlyHistory={node.healthHistory} />}
 
         {/* Tabs */}
         <Tabs
@@ -181,22 +179,30 @@ export function AdminNodeDetail() {
           <TabsList className="shrink-0">
             <TabsTrigger value="details">Details</TabsTrigger>
             <TabsTrigger value="monitoring">Monitoring</TabsTrigger>
-            <TabsTrigger value="configuration">Configuration</TabsTrigger>
-            <TabsTrigger value="nginx-logs">Nginx Logs</TabsTrigger>
+            {node.type === "nginx" && (
+              <TabsTrigger value="configuration">Configuration</TabsTrigger>
+            )}
+            {node.type === "nginx" && (
+              <TabsTrigger value="nginx-logs">Nginx Logs</TabsTrigger>
+            )}
             <TabsTrigger value="daemon-logs">Daemon Logs</TabsTrigger>
           </TabsList>
-          <TabsContent value="details">
+          <TabsContent value="details" className="pb-6">
             <NodeDetailsTab node={node} />
           </TabsContent>
-          <TabsContent value="monitoring">
-            <NodeMonitoringTab nodeId={node.id} nodeStatus={node.status} />
+          <TabsContent value="monitoring" className="pb-6">
+            <NodeMonitoringTab nodeId={node.id} nodeStatus={node.status} nodeType={node.type} />
           </TabsContent>
-          <TabsContent value="configuration" className="flex flex-col flex-1 min-h-0">
-            <NodeConfigTab nodeId={node.id} nodeStatus={node.status} />
-          </TabsContent>
-          <TabsContent value="nginx-logs" className="flex flex-col flex-1 min-h-0">
-            <NodeNginxLogsTab nodeId={node.id} nodeStatus={node.status} />
-          </TabsContent>
+          {node.type === "nginx" && (
+            <TabsContent value="configuration" className="flex flex-col flex-1 min-h-0">
+              <NodeConfigTab nodeId={node.id} nodeStatus={node.status} />
+            </TabsContent>
+          )}
+          {node.type === "nginx" && (
+            <TabsContent value="nginx-logs" className="flex flex-col flex-1 min-h-0">
+              <NodeNginxLogsTab nodeId={node.id} nodeStatus={node.status} />
+            </TabsContent>
+          )}
           <TabsContent value="daemon-logs" className="flex flex-col flex-1 min-h-0">
             <NodeLogsTab nodeId={node.id} nodeStatus={node.status} />
           </TabsContent>

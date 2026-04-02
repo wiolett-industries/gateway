@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowLeft, Minus, Pencil, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
+import { ArrowLeft, Minus, Pencil, Pin, Plus, RefreshCw, Save, Server, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -9,6 +9,7 @@ import { CreateProxyHostDialog } from "@/components/proxy/CreateProxyHostDialog"
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CodeEditor } from "@/components/ui/code-editor";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { HealthBars } from "@/components/ui/health-bars";
 import { Input } from "@/components/ui/input";
 import { NumericInput } from "@/components/ui/numeric-input";
@@ -24,10 +25,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
+import { usePinnedProxiesStore } from "@/stores/pinned-proxies";
 import type { AccessList, CustomHeader, ProxyHost, RewriteRule } from "@/types";
 
 // ── Health badge mapping ────────────────────────────────────────
-const HEALTH_BADGE: Record<string, "success" | "destructive" | "secondary" | "default" | "warning"> = {
+const HEALTH_BADGE: Record<
+  string,
+  "success" | "destructive" | "secondary" | "default" | "warning"
+> = {
   online: "success",
   recovering: "warning",
   offline: "destructive",
@@ -46,7 +51,10 @@ const HEALTH_LABEL: Record<string, string> = {
 };
 
 /** Compute effective status: if currently online but had errors in last 5 min, show "recovering" */
-function effectiveHealthStatus(host: { healthStatus: string; healthHistory?: Array<{ ts: string; status: string }> }): string {
+function effectiveHealthStatus(host: {
+  healthStatus: string;
+  healthHistory?: Array<{ ts: string; status: string }>;
+}): string {
   if (host.healthStatus !== "online" || !host.healthHistory?.length) return host.healthStatus;
   const fiveMinAgo = Date.now() - 5 * 60 * 1000;
   const recent = host.healthHistory.filter((h) => new Date(h.ts).getTime() >= fiveMinAgo);
@@ -73,6 +81,11 @@ export function ProxyHostDetail() {
 
   // Edit dialog
   const [editOpen, setEditOpen] = useState(false);
+
+  // Pin dialog
+  const [pinOpen, setPinOpen] = useState(false);
+  const { isPinnedDashboard, isPinnedSidebar, toggleDashboard, toggleSidebar } =
+    usePinnedProxiesStore();
 
   // Custom config tab state
   const [customHeaders, setCustomHeaders] = useState<CustomHeader[]>([]);
@@ -328,12 +341,7 @@ export function ProxyHostDetail() {
       healthCheckExpectedStatus !== (host.healthCheckExpectedStatus ?? null) ||
       healthCheckExpectedBody !== (host.healthCheckExpectedBody || "")
     );
-  }, [
-    host,
-    healthCheckUrl,
-    healthCheckExpectedStatus,
-    healthCheckExpectedBody,
-  ]);
+  }, [host, healthCheckUrl, healthCheckExpectedStatus, healthCheckExpectedBody]);
 
   const visibleTabs = ["details", "settings", "advanced", "raw", "logs"];
 
@@ -399,7 +407,10 @@ export function ProxyHostDetail() {
           </div>
 
           <div className="flex items-center gap-2">
-            {hasScope("proxy:manage") && (
+            <Button variant="outline" size="icon" onClick={() => setPinOpen(true)}>
+              <Pin className="h-4 w-4" />
+            </Button>
+            {hasScope("proxy:edit") && (
               <Button variant="outline" onClick={() => setEditOpen(true)}>
                 <Pencil className="h-4 w-4" />
                 Edit
@@ -494,7 +505,7 @@ export function ProxyHostDetail() {
                       toast.error(err instanceof Error ? err.message : "Failed to update")
                     );
                 }}
-                canManage={hasScope("proxy:manage")}
+                canManage={hasScope("proxy:edit")}
                 hasHeadersChanged={hasHeadersChanged}
                 hasRewritesChanged={hasRewritesChanged}
                 healthCheckUrl={healthCheckUrl}
@@ -596,6 +607,31 @@ export function ProxyHostDetail() {
           loadHost();
         }}
       />
+
+      {/* ── Pin Dialog ───────────────────────────────────────── */}
+      <Dialog open={pinOpen} onOpenChange={setPinOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Pin Proxy Host</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium">Add to dashboard</p>
+                <p className="text-xs text-muted-foreground">Show overview card on the dashboard</p>
+              </div>
+              <Switch checked={isPinnedDashboard(id!)} onChange={() => toggleDashboard(id!)} />
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium">Add to sidebar</p>
+                <p className="text-xs text-muted-foreground">Quick access link in the sidebar</p>
+              </div>
+              <Switch checked={isPinnedSidebar(id!)} onChange={() => toggleSidebar(id!)} />
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </PageTransition>
   );
 }
@@ -604,105 +640,134 @@ export function ProxyHostDetail() {
 
 // ── Details Tab Component ───────────────────────────────────────
 function DetailsTab({ host }: { host: ProxyHost }) {
+  const navigate = useNavigate();
   const nodeId = (host as any).nodeId as string | null;
-  const [nodeName, setNodeName] = useState<string | null>(null);
+  const [nodeInfo, setNodeInfo] = useState<{
+    id: string;
+    name: string;
+    status: string;
+    type: string;
+  } | null>(null);
 
   useEffect(() => {
     if (!nodeId) return;
     api
-      .listNodes({ limit: 100 })
-      .then((res) => {
-        const nodes = (res as any).data ?? [];
-        const found = nodes.find((n: any) => n.id === nodeId);
-        if (found) setNodeName(found.displayName || found.hostname);
-      })
+      .getNode(nodeId)
+      .then((n) =>
+        setNodeInfo({ id: n.id, name: n.displayName || n.hostname, status: n.status, type: n.type })
+      )
       .catch(() => {});
   }, [nodeId]);
 
   return (
     <div className="space-y-4">
-      {/* Host Info Card */}
-      <div className="border border-border bg-card">
-        <div className="border-b border-border p-4">
-          <h2 className="font-semibold">Host Information</h2>
-        </div>
-        <div className="divide-y divide-border">
-          <DetailRow
-            label="Type"
-            value={
-              <Badge variant="secondary" className="text-xs capitalize">
-                {host.type}
-              </Badge>
-            }
-          />
-          {nodeId && (
-            <DetailRow
-              label="Node"
-              value={<span className="font-mono text-xs">{nodeName || nodeId}</span>}
-            />
-          )}
-          <DetailRow
-            label="Domains"
-            value={
-              <div className="flex flex-wrap gap-1 justify-end">
-                {host.domainNames.map((d) => (
-                  <Badge key={d} variant="secondary" className="text-xs">
-                    {d}
-                  </Badge>
-                ))}
+      {/* Node Card */}
+      {nodeInfo && (
+        <div
+          className="border border-border bg-card cursor-pointer hover:bg-accent transition-colors"
+          onClick={() => navigate(`/nodes/${nodeInfo.id}`)}
+        >
+          <div className="flex items-center justify-between p-4">
+            <div className="flex items-center gap-3">
+              <Server className="h-5 w-5 text-muted-foreground" />
+              <div>
+                <p className="text-sm font-medium">{nodeInfo.name}</p>
+                <p className="text-xs text-muted-foreground">Deployed on this node</p>
               </div>
-            }
-          />
-          {host.type === "proxy" && host.forwardHost && (
-            <DetailRow
-              label="Forward Target"
-              value={`${host.forwardScheme}://${host.forwardHost}:${host.forwardPort}`}
-            />
-          )}
-          {host.type === "redirect" && host.redirectUrl && (
-            <DetailRow
-              label="Redirect URL"
-              value={`${host.redirectUrl} (${host.redirectStatusCode})`}
-            />
-          )}
-          <DetailRow label="Created" value={new Date(host.createdAt).toLocaleString()} />
-          <DetailRow label="Updated" value={new Date(host.updatedAt).toLocaleString()} />
-        </div>
-      </div>
-
-      {/* Health Check Status Card (like node health) */}
-      {host.healthCheckEnabled && (
-        <div className="border border-border bg-card">
-          <div className="border-b border-border p-4 flex items-center justify-between">
-            <h2 className="font-semibold">Health Check</h2>
-            {(() => {
-              const eff = effectiveHealthStatus(host);
-              return (
-                <Badge variant={HEALTH_BADGE[eff] ?? "secondary"} className="text-xs">
-                  {HEALTH_LABEL[eff] ?? eff}
-                </Badge>
-              );
-            })()}
-          </div>
-          <div className="divide-y divide-border">
-            <DetailRow label="URL Path" value={host.healthCheckUrl || "/"} />
-            <DetailRow label="Interval" value={`${host.healthCheckInterval || 30}s`} />
-
-            <DetailRow
-              label="Expected Status"
-              value={
-                host.healthCheckExpectedStatus ? String(host.healthCheckExpectedStatus) : "Any 2xx"
-              }
-            />
-            {host.lastHealthCheckAt && (
-              <DetailRow
-                label="Last Check"
-                value={new Date(host.lastHealthCheckAt).toLocaleString()}
-              />
-            )}
+            </div>
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary" className="text-xs uppercase">
+                {nodeInfo.type}
+              </Badge>
+              <Badge
+                variant={
+                  nodeInfo.status === "online"
+                    ? "success"
+                    : nodeInfo.status === "error"
+                      ? "destructive"
+                      : "warning"
+                }
+                className="text-xs uppercase"
+              >
+                {nodeInfo.status === "online" ? "healthy" : nodeInfo.status}
+              </Badge>
+            </div>
           </div>
         </div>
       )}
+
+      {/* Host Info + Health Check in one row */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Host Info Card */}
+        <div className="border border-border bg-card">
+          <div className="border-b border-border p-4">
+            <h2 className="font-semibold">Host Information</h2>
+          </div>
+          <div className="divide-y divide-border">
+            <DetailRow
+              label="Domains"
+              value={
+                <div className="flex flex-wrap gap-1 justify-end">
+                  {host.domainNames.map((d) => (
+                    <Badge key={d} variant="secondary" className="text-xs">
+                      {d}
+                    </Badge>
+                  ))}
+                </div>
+              }
+            />
+            {host.type === "proxy" && host.forwardHost && (
+              <DetailRow
+                label="Forward Target"
+                value={`${host.forwardScheme}://${host.forwardHost}:${host.forwardPort}`}
+              />
+            )}
+            {host.type === "redirect" && host.redirectUrl && (
+              <DetailRow
+                label="Redirect URL"
+                value={`${host.redirectUrl} (${host.redirectStatusCode})`}
+              />
+            )}
+            <DetailRow label="Created" value={new Date(host.createdAt).toLocaleString()} />
+            <DetailRow label="Updated" value={new Date(host.updatedAt).toLocaleString()} />
+          </div>
+        </div>
+
+        {/* Health Check Status Card */}
+        {host.healthCheckEnabled && (
+          <div className="border border-border bg-card">
+            <div className="border-b border-border p-4 flex items-center justify-between">
+              <h2 className="font-semibold">Health Check</h2>
+              {(() => {
+                const eff = effectiveHealthStatus(host);
+                return (
+                  <Badge variant={HEALTH_BADGE[eff] ?? "secondary"} className="text-xs">
+                    {HEALTH_LABEL[eff] ?? eff}
+                  </Badge>
+                );
+              })()}
+            </div>
+            <div className="divide-y divide-border">
+              <DetailRow label="URL Path" value={host.healthCheckUrl || "/"} />
+              <DetailRow label="Interval" value={`${host.healthCheckInterval || 30}s`} />
+              <DetailRow
+                label="Expected Status"
+                value={
+                  host.healthCheckExpectedStatus
+                    ? String(host.healthCheckExpectedStatus)
+                    : "Any 2xx"
+                }
+              />
+              {host.lastHealthCheckAt && (
+                <DetailRow
+                  label="Last Check"
+                  value={new Date(host.lastHealthCheckAt).toLocaleString()}
+                />
+              )}
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* SSL Certificate Info (when SSL enabled) */}
       {host.sslEnabled && host.sslCertificate && (

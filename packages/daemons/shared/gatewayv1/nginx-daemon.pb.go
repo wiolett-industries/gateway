@@ -28,6 +28,7 @@ type EnrollRequest struct {
 	NginxVersion  string                 `protobuf:"bytes,3,opt,name=nginx_version,json=nginxVersion,proto3" json:"nginx_version,omitempty"`
 	OsInfo        string                 `protobuf:"bytes,4,opt,name=os_info,json=osInfo,proto3" json:"os_info,omitempty"`
 	DaemonVersion string                 `protobuf:"bytes,5,opt,name=daemon_version,json=daemonVersion,proto3" json:"daemon_version,omitempty"`
+	DaemonType    string                 `protobuf:"bytes,6,opt,name=daemon_type,json=daemonType,proto3" json:"daemon_type,omitempty"` // "nginx", "monitoring", etc.
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -93,6 +94,13 @@ func (x *EnrollRequest) GetOsInfo() string {
 func (x *EnrollRequest) GetDaemonVersion() string {
 	if x != nil {
 		return x.DaemonVersion
+	}
+	return ""
+}
+
+func (x *EnrollRequest) GetDaemonType() string {
+	if x != nil {
+		return x.DaemonType
 	}
 	return ""
 }
@@ -494,8 +502,14 @@ type RegisterMessage struct {
 	DaemonVersion      string                 `protobuf:"bytes,5,opt,name=daemon_version,json=daemonVersion,proto3" json:"daemon_version,omitempty"`
 	NginxUptimeSeconds int64                  `protobuf:"varint,6,opt,name=nginx_uptime_seconds,json=nginxUptimeSeconds,proto3" json:"nginx_uptime_seconds,omitempty"`
 	NginxRunning       bool                   `protobuf:"varint,7,opt,name=nginx_running,json=nginxRunning,proto3" json:"nginx_running,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// Static system info
+	CpuModel      string `protobuf:"bytes,8,opt,name=cpu_model,json=cpuModel,proto3" json:"cpu_model,omitempty"`
+	CpuCores      int32  `protobuf:"varint,9,opt,name=cpu_cores,json=cpuCores,proto3" json:"cpu_cores,omitempty"`
+	Architecture  string `protobuf:"bytes,10,opt,name=architecture,proto3" json:"architecture,omitempty"`
+	KernelVersion string `protobuf:"bytes,11,opt,name=kernel_version,json=kernelVersion,proto3" json:"kernel_version,omitempty"`
+	DaemonType    string `protobuf:"bytes,12,opt,name=daemon_type,json=daemonType,proto3" json:"daemon_type,omitempty"` // "nginx", "monitoring", etc.
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *RegisterMessage) Reset() {
@@ -575,6 +589,41 @@ func (x *RegisterMessage) GetNginxRunning() bool {
 		return x.NginxRunning
 	}
 	return false
+}
+
+func (x *RegisterMessage) GetCpuModel() string {
+	if x != nil {
+		return x.CpuModel
+	}
+	return ""
+}
+
+func (x *RegisterMessage) GetCpuCores() int32 {
+	if x != nil {
+		return x.CpuCores
+	}
+	return 0
+}
+
+func (x *RegisterMessage) GetArchitecture() string {
+	if x != nil {
+		return x.Architecture
+	}
+	return ""
+}
+
+func (x *RegisterMessage) GetKernelVersion() string {
+	if x != nil {
+		return x.KernelVersion
+	}
+	return ""
+}
+
+func (x *RegisterMessage) GetDaemonType() string {
+	if x != nil {
+		return x.DaemonType
+	}
+	return ""
 }
 
 type CommandResult struct {
@@ -2912,13 +2961,15 @@ var File_gateway_v1_nginx_daemon_proto protoreflect.FileDescriptor
 const file_gateway_v1_nginx_daemon_proto_rawDesc = "" +
 	"\n" +
 	"\x1dgateway/v1/nginx-daemon.proto\x12\n" +
-	"gateway.v1\"\xa6\x01\n" +
+	"gateway.v1\"\xc7\x01\n" +
 	"\rEnrollRequest\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\x12\x1a\n" +
 	"\bhostname\x18\x02 \x01(\tR\bhostname\x12#\n" +
 	"\rnginx_version\x18\x03 \x01(\tR\fnginxVersion\x12\x17\n" +
 	"\aos_info\x18\x04 \x01(\tR\x06osInfo\x12%\n" +
-	"\x0edaemon_version\x18\x05 \x01(\tR\rdaemonVersion\"\xc6\x01\n" +
+	"\x0edaemon_version\x18\x05 \x01(\tR\rdaemonVersion\x12\x1f\n" +
+	"\vdaemon_type\x18\x06 \x01(\tR\n" +
+	"daemonType\"\xc6\x01\n" +
 	"\x0eEnrollResponse\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12%\n" +
 	"\x0eca_certificate\x18\x02 \x01(\fR\rcaCertificate\x12-\n" +
@@ -2949,7 +3000,7 @@ const file_gateway_v1_nginx_daemon_proto_rawDesc = "" +
 	"\x06fields\x18\x05 \x03(\v2&.gateway.v1.DaemonLogEntry.FieldsEntryR\x06fields\x1a9\n" +
 	"\vFieldsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x99\x02\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xbf\x03\n" +
 	"\x0fRegisterMessage\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1a\n" +
 	"\bhostname\x18\x02 \x01(\tR\bhostname\x12#\n" +
@@ -2957,7 +3008,14 @@ const file_gateway_v1_nginx_daemon_proto_rawDesc = "" +
 	"\x13config_version_hash\x18\x04 \x01(\tR\x11configVersionHash\x12%\n" +
 	"\x0edaemon_version\x18\x05 \x01(\tR\rdaemonVersion\x120\n" +
 	"\x14nginx_uptime_seconds\x18\x06 \x01(\x03R\x12nginxUptimeSeconds\x12#\n" +
-	"\rnginx_running\x18\a \x01(\bR\fnginxRunning\"v\n" +
+	"\rnginx_running\x18\a \x01(\bR\fnginxRunning\x12\x1b\n" +
+	"\tcpu_model\x18\b \x01(\tR\bcpuModel\x12\x1b\n" +
+	"\tcpu_cores\x18\t \x01(\x05R\bcpuCores\x12\"\n" +
+	"\farchitecture\x18\n" +
+	" \x01(\tR\farchitecture\x12%\n" +
+	"\x0ekernel_version\x18\v \x01(\tR\rkernelVersion\x12\x1f\n" +
+	"\vdaemon_type\x18\f \x01(\tR\n" +
+	"daemonType\"v\n" +
 	"\rCommandResult\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tR\tcommandId\x12\x18\n" +

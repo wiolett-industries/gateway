@@ -26,11 +26,14 @@ NC='\033[0m'
 BOLD='\033[1m'
 
 # ── Defaults ─────────────────────────────────────────────────────────
+GATEWAY_HOST="${GATEWAY_NODE_HOST:-}"
+GATEWAY_PORT="${GATEWAY_NODE_PORT:-9443}"
 GATEWAY_ADDR="${GATEWAY_NODE_ADDRESS:-}"
 ENROLL_TOKEN="${GATEWAY_NODE_TOKEN:-}"
 DAEMON_VERSION="${GATEWAY_NODE_DAEMON_VERSION:-latest}"
 SKIP_NGINX="${GATEWAY_NODE_SKIP_NGINX:-0}"
 NON_INTERACTIVE=0
+NO_LOGO=0
 
 # ── Helpers ──────────────────────────────────────────────────────────
 log()  { echo -e "${CYAN}[INFO]${NC} $*"; }
@@ -39,6 +42,64 @@ err()  { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 ok()   { echo -e "${GREEN}[OK]${NC} $*"; }
 
 die() { err "$@"; exit 1; }
+
+prompt_input() {
+    local prompt="$1"
+    local default="${2:-}"
+    local result
+    if [[ "$NON_INTERACTIVE" -eq 1 ]]; then
+        echo "$default"
+        return
+    fi
+    if [ -e /dev/tty ]; then
+        if [ -n "$default" ]; then
+            read -r -p "$(echo -e "  ${CYAN}${prompt} [${default}]: ${NC}")" result < /dev/tty
+        else
+            read -r -p "$(echo -e "  ${CYAN}${prompt}: ${NC}")" result < /dev/tty
+        fi
+    else
+        result=""
+    fi
+    echo "${result:-$default}"
+}
+
+prompt_secret() {
+    local prompt="$1"
+    local result
+    if [[ "$NON_INTERACTIVE" -eq 1 ]]; then
+        echo ""
+        return
+    fi
+    if [ -e /dev/tty ]; then
+        read -rs -p "$(echo -e "  ${CYAN}${prompt}: ${NC}")" result < /dev/tty
+        echo "" >&2
+    else
+        result=""
+    fi
+    echo "$result"
+}
+
+prompt_yes_no() {
+    local prompt="$1"
+    local default="${2:-Y}"
+    local reply
+    if [[ "$NON_INTERACTIVE" -eq 1 ]]; then
+        [[ "$default" =~ ^[yY]$ ]]
+        return
+    fi
+    if [ -e /dev/tty ]; then
+        if [[ "$default" == "Y" ]]; then
+            read -r -p "$(echo -e "  ${CYAN}${prompt} [Y/n]: ${NC}")" reply < /dev/tty
+            reply="${reply:-Y}"
+        else
+            read -r -p "$(echo -e "  ${CYAN}${prompt} [y/N]: ${NC}")" reply < /dev/tty
+            reply="${reply:-N}"
+        fi
+    else
+        reply="$default"
+    fi
+    [[ "$reply" =~ ^[yY]$ ]]
+}
 
 need_root() {
     if [[ $EUID -ne 0 ]]; then
@@ -76,23 +137,42 @@ show_help() {
 Gateway Node Setup — installs nginx + nginx-daemon and enrolls with Gateway
 
 Usage:
-  setup-node.sh --gateway <address:port> --token <enrollment-token> [options]
+  setup-node.sh [options]
 
-Required:
-  --gateway <addr>     Gateway gRPC address (e.g. gateway.example.com:9443)
-  --token <token>      Enrollment token from Gateway UI (Admin > Nodes > Add Node)
+  In interactive mode (default), the script prompts for gateway address, port,
+  and enrollment token. Use flags to pre-fill or skip prompts.
 
 Options:
+  --gateway <addr>     Gateway gRPC address as host:port (e.g. gateway.example.com:9443)
+  --host <host>        Gateway hostname or IP (e.g. gateway.example.com)
+  --port <port>        Gateway gRPC port (default: 9443)
+  --token <token>      Enrollment token from Gateway UI (Admin > Nodes > Add Node)
   --version <ver>      Daemon version to install (default: latest)
   --skip-nginx         Skip nginx installation (if already installed)
-  -y, --yes            Non-interactive mode (no prompts)
+  --no-logo            Suppress the logo banner
+  -y, --yes            Non-interactive mode (no prompts, all values required via flags)
   -h, --help           Show this help
 
 Environment variables:
-  GATEWAY_NODE_ADDRESS          Same as --gateway
+  GATEWAY_NODE_HOST             Same as --host
+  GATEWAY_NODE_PORT             Same as --port (default: 9443)
+  GATEWAY_NODE_ADDRESS          Same as --gateway (host:port combined)
   GATEWAY_NODE_TOKEN            Same as --token
   GATEWAY_NODE_DAEMON_VERSION   Same as --version
   GATEWAY_NODE_SKIP_NGINX       Set to 1 to skip nginx install
+
+Examples:
+  # Interactive (prompts for everything):
+  sudo bash setup-node.sh
+
+  # Partially interactive (pre-fill host, prompt for token):
+  sudo bash setup-node.sh --host gateway.example.com
+
+  # Fully non-interactive:
+  sudo bash setup-node.sh -y --host gateway.example.com --token gw_node_abc123
+
+  # Legacy format (host:port combined):
+  sudo bash setup-node.sh --gateway gateway.example.com:9443 --token gw_node_abc123
 HELP
     exit 0
 }
@@ -100,57 +180,117 @@ HELP
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --gateway)    GATEWAY_ADDR="$2"; shift 2 ;;
+        --host)       GATEWAY_HOST="$2"; shift 2 ;;
+        --port)       GATEWAY_PORT="$2"; shift 2 ;;
         --token)      ENROLL_TOKEN="$2"; shift 2 ;;
         --version)    DAEMON_VERSION="$2"; shift 2 ;;
         --skip-nginx) SKIP_NGINX=1; shift ;;
-        -y|--yes)     NON_INTERACTIVE=1; shift ;;
+        --no-logo)    NO_LOGO=1; shift ;;
+        -y|--yes)     NON_INTERACTIVE=1; NO_LOGO=1; shift ;;
         -h|--help)    show_help ;;
         *) die "Unknown option: $1. Use --help for usage." ;;
     esac
 done
+
+# Resolve GATEWAY_ADDR from --host/--port if --gateway not given
+if [[ -n "$GATEWAY_HOST" && -z "$GATEWAY_ADDR" ]]; then
+    GATEWAY_ADDR="${GATEWAY_HOST}:${GATEWAY_PORT}"
+fi
+# If --gateway was given, extract host/port for display
+if [[ -n "$GATEWAY_ADDR" && -z "$GATEWAY_HOST" ]]; then
+    GATEWAY_HOST="${GATEWAY_ADDR%%:*}"
+    GATEWAY_PORT="${GATEWAY_ADDR##*:}"
+    # If no port in the address, use default
+    if [[ "$GATEWAY_PORT" == "$GATEWAY_HOST" ]]; then
+        GATEWAY_PORT="9443"
+        GATEWAY_ADDR="${GATEWAY_HOST}:${GATEWAY_PORT}"
+    fi
+fi
 
 # ── Validate ─────────────────────────────────────────────────────────
 need_root
 detect_os
 detect_arch
 
-if [[ -z "$GATEWAY_ADDR" ]]; then
-    if [[ "$NON_INTERACTIVE" -eq 1 ]]; then
-        die "--gateway is required"
-    fi
+: > "$LOG_FILE"
+
+# ── Logo ─────────────────────────────────────────────────────────────
+if [[ "$NO_LOGO" -eq 0 ]]; then
     echo ""
-    echo -e "${BOLD}Gateway Node Setup${NC}"
-    echo -e "${GRAY}Installs nginx + nginx-daemon and enrolls this host with your Gateway.${NC}"
-    echo ""
-    read -rp "Gateway gRPC address (e.g. gateway.example.com:9443): " GATEWAY_ADDR
-    [[ -z "$GATEWAY_ADDR" ]] && die "Gateway address is required"
+    echo -e "${BOLD}${CYAN}"
+    echo '  ┌─────────────────────────────────────┐'
+    echo '  │     Gateway — Node Setup             │'
+    echo '  │     Nginx Daemon Installer           │'
+    echo '  └─────────────────────────────────────┘'
+    echo -e "${NC}"
 fi
 
-if [[ -z "$ENROLL_TOKEN" ]]; then
-    if [[ "$NON_INTERACTIVE" -eq 1 ]]; then
-        die "--token is required"
-    fi
-    read -rp "Enrollment token (from Admin > Nodes > Add Node): " ENROLL_TOKEN
-    [[ -z "$ENROLL_TOKEN" ]] && die "Enrollment token is required"
-fi
-
-echo ""
-echo -e "${BOLD}Gateway Node Setup${NC}"
-echo -e "${GRAY}────────────────────────────────────────${NC}"
-echo -e "  Gateway:  ${CYAN}${GATEWAY_ADDR}${NC}"
-echo -e "  Arch:     ${ARCH}"
-echo -e "  OS:       ${OS_ID}"
-echo -e "  Version:  ${DAEMON_VERSION}"
-echo -e "${GRAY}────────────────────────────────────────${NC}"
-echo ""
-
+# ── Interactive configuration ────────────────────────────────────────
 if [[ "$NON_INTERACTIVE" -eq 0 ]]; then
-    read -rp "Continue? [Y/n] " confirm
-    if [[ "${confirm,,}" == "n" ]]; then
-        echo "Aborted."
-        exit 0
+    echo -e "  ${GRAY}This script will:${NC}"
+    echo -e "  ${GRAY}  1. Install nginx (if not present)${NC}"
+    echo -e "  ${GRAY}  2. Download and install the nginx-daemon binary${NC}"
+    echo -e "  ${GRAY}  3. Enroll this node with your Gateway server${NC}"
+    echo -e "  ${GRAY}  4. Start the daemon as a systemd service${NC}"
+    echo ""
+
+    # Gateway host
+    if [[ -z "$GATEWAY_HOST" ]]; then
+        GATEWAY_HOST=$(prompt_input "Gateway hostname or IP" "")
+        [[ -z "$GATEWAY_HOST" ]] && die "Gateway hostname is required"
+    else
+        echo -e "  ${GRAY}Gateway host: ${CYAN}${GATEWAY_HOST}${NC}"
+    fi
+
+    # Gateway port
+    GATEWAY_PORT=$(prompt_input "gRPC port" "${GATEWAY_PORT}")
+    [[ -z "$GATEWAY_PORT" ]] && GATEWAY_PORT="9443"
+
+    GATEWAY_ADDR="${GATEWAY_HOST}:${GATEWAY_PORT}"
+
+    echo ""
+
+    # Enrollment token
+    if [[ -z "$ENROLL_TOKEN" ]]; then
+        ENROLL_TOKEN=$(prompt_secret "Enrollment token (from Admin > Nodes)")
+        [[ -z "$ENROLL_TOKEN" ]] && die "Enrollment token is required"
+    else
+        echo -e "  ${GRAY}Token: ${ENROLL_TOKEN:0:12}...${ENROLL_TOKEN: -4}${NC}"
+    fi
+
+    echo ""
+
+    # Daemon version
+    DAEMON_VERSION=$(prompt_input "Daemon version" "${DAEMON_VERSION}")
+
+    echo ""
+else
+    # Non-interactive: validate required fields
+    if [[ -z "$GATEWAY_ADDR" ]]; then
+        die "--gateway or --host is required in non-interactive mode"
+    fi
+    if [[ -z "$ENROLL_TOKEN" ]]; then
+        die "--token is required in non-interactive mode"
     fi
 fi
+
+# ── Confirmation ─────────────────────────────────────────────────────
+echo -e "  ${BOLD}Configuration Summary${NC}"
+echo -e "  ${GRAY}────────────────────────────────────────${NC}"
+echo -e "  Gateway:     ${CYAN}${GATEWAY_ADDR}${NC}"
+echo -e "  Token:       ${GRAY}${ENROLL_TOKEN:0:12}...${NC}"
+echo -e "  Arch:        ${ARCH}"
+echo -e "  OS:          ${OS_ID}"
+echo -e "  Daemon ver:  ${DAEMON_VERSION}"
+echo -e "  Skip nginx:  $([ "$SKIP_NGINX" -eq 1 ] && echo "yes" || echo "no")"
+echo -e "  ${GRAY}────────────────────────────────────────${NC}"
+echo ""
+
+if ! prompt_yes_no "Proceed with installation?" "Y"; then
+    echo "  Aborted."
+    exit 0
+fi
+echo ""
 
 # ── Step 1: Install nginx ────────────────────────────────────────────
 install_nginx() {
