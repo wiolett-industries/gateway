@@ -10,6 +10,7 @@ import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { CryptoService } from '@/services/crypto.service.js';
 import type { NginxConfigGenerator, ProxyHostConfig } from '@/services/nginx-config-generator.service.js';
+import { NginxSyntaxValidatorService } from '@/services/nginx-syntax-validator.service.js';
 import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import type { PaginatedResponse } from '@/types.js';
 import type { NginxTemplateService } from './nginx-template.service.js';
@@ -40,7 +41,8 @@ export class ProxyService {
     private readonly auditService: AuditService,
     private readonly cryptoService: CryptoService,
     private readonly configGenerator: NginxConfigGenerator,
-    private readonly nodeDispatch: NodeDispatchService
+    private readonly nodeDispatch: NodeDispatchService,
+    private readonly nginxSyntaxValidator: NginxSyntaxValidatorService
   ) {}
 
   private async applyConfigToNode(hostId: string, config: string, nodeId: string | null): Promise<void> {
@@ -113,6 +115,8 @@ export class ProxyService {
         rateLimitOptions: input.rateLimitOptions ?? null,
         customRewrites: input.customRewrites,
         advancedConfig: input.advancedConfig ?? null,
+        rawConfig: (input as any).rawConfig ?? null,
+        rawConfigEnabled: (input as any).rawConfigEnabled ?? false,
         accessListId: input.accessListId ?? null,
         folderId: input.folderId ?? null,
         nginxTemplateId: input.nginxTemplateId ?? null,
@@ -399,7 +403,20 @@ export class ProxyService {
     const total = Number(totalCount);
 
     return {
-      data: entries,
+      data: entries.map(({ healthHistory, rawConfig: _rc, ...rest }) => {
+        let effectiveStatus = rest.healthStatus as string;
+        if (rest.healthStatus === 'online' && Array.isArray(healthHistory) && healthHistory.length > 0) {
+          const fiveMinAgo = Date.now() - 5 * 60 * 1000;
+          const recent = (healthHistory as Array<{ ts?: string; status: string }>).filter((h) => {
+            if (!h.ts) return false;
+            return new Date(h.ts).getTime() >= fiveMinAgo;
+          });
+          if (recent.some((h) => h.status === 'offline' || h.status === 'degraded')) {
+            effectiveStatus = 'recovering';
+          }
+        }
+        return { ...rest, effectiveHealthStatus: effectiveStatus };
+      }) as any,
       pagination: {
         page: query.page,
         limit: query.limit,
@@ -590,8 +607,18 @@ export class ProxyService {
   // Validate advanced config snippet
   // -----------------------------------------------------------------------
 
-  async validateAdvancedConfig(snippet: string) {
-    return this.configGenerator.validateAdvancedConfig(snippet);
+  async validateAdvancedConfig(snippet: string, rawMode = false) {
+    // Basic static checks first
+    const staticResult = this.configGenerator.validateAdvancedConfig(snippet, rawMode);
+    if (!staticResult.valid) return staticResult;
+
+    // For raw mode, also run nginx -t syntax validation if available
+    if (rawMode) {
+      const syntaxResult = await this.nginxSyntaxValidator.validate(snippet);
+      if (!syntaxResult.valid) return syntaxResult;
+    }
+
+    return staticResult;
   }
 
   // -----------------------------------------------------------------------
@@ -728,6 +755,11 @@ export class ProxyService {
     certPaths: CertPaths,
     accessList: ProxyHostConfig['accessList']
   ): Promise<string> {
+    // Raw config mode — bypass template rendering entirely
+    if ((host as any).rawConfigEnabled && (host as any).rawConfig) {
+      return (host as any).rawConfig as string;
+    }
+
     const config: ProxyHostConfig = {
       id: host.id,
       type: host.type,

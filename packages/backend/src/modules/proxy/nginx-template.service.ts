@@ -26,6 +26,14 @@ Handlebars.registerHelper('sanitize', (value: unknown) => {
 
 Handlebars.registerHelper('eq', (a: unknown, b: unknown) => a === b);
 
+Handlebars.registerHelper('indent', (value: unknown, spaces: unknown) => {
+  if (typeof value !== 'string' || !value) return '';
+  const pad = ' '.repeat(typeof spaces === 'number' ? spaces : 4);
+  return new Handlebars.SafeString(
+    value.split('\n').map((line, i) => (i === 0 ? line : pad + line)).join('\n')
+  );
+});
+
 // ---------------------------------------------------------------------------
 // Built-in template content
 // ---------------------------------------------------------------------------
@@ -141,7 +149,7 @@ server {
     auth_basic_user_file /etc/nginx/conf.d/sites/htpasswd/access-list-{{accessList.id}};
 {{/if}}
 {{#if advancedConfig}}
-    {{{advancedConfig}}}
+    {{{indent advancedConfig 4}}}
 {{/if}}
 }
 `;
@@ -471,9 +479,9 @@ export class NginxTemplateService {
     return template(context);
   }
 
-  async getBuiltinTemplateContent(type: 'proxy' | 'redirect' | '404'): Promise<string> {
+  async getBuiltinTemplateContent(type: string): Promise<string> {
     const template = await this.db.query.nginxTemplates.findFirst({
-      where: (t, { and, eq }) => and(eq(t.type, type), eq(t.isBuiltin, true)),
+      where: (t, { and, eq }) => and(eq(t.type, type as any), eq(t.isBuiltin, true)),
     });
     if (template) return template.content;
 
@@ -485,6 +493,8 @@ export class NginxTemplateService {
         return BUILTIN_REDIRECT_TEMPLATE;
       case '404':
         return BUILTIN_DEAD_TEMPLATE;
+      default:
+        return `# No built-in template for type: ${type}\n`;
     }
   }
 

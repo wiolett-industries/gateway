@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/services/api";
-import type { NodeDetail, NodeHealthReport, ProxyHost } from "@/types";
+import type { NodeDetail, ProxyHost } from "@/types";
 
 interface NodeDetailsTabProps {
   node: NodeDetail;
@@ -28,13 +28,8 @@ export function NodeDetailsTab({ node }: NodeDetailsTabProps) {
     };
   }, [node.id]);
 
-  const health = node.liveHealthReport ?? node.lastHealthReport;
-
   return (
     <div className="space-y-4">
-      {/* Health Status — status page style */}
-      <HealthStatusCard health={health} nodeStatus={node.status} node={node} />
-
       {/* Node Details — 2 cards side by side */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Identity */}
@@ -133,85 +128,6 @@ export function NodeDetailsTab({ node }: NodeDetailsTabProps) {
   );
 }
 
-/** Status page-style uptime bar backed by real health history */
-function HealthStatusCard({
-  health,
-  nodeStatus,
-  node,
-}: {
-  health: NodeHealthReport | null;
-  nodeStatus: string;
-  node: NodeDetail;
-}) {
-  const isHealthy = nodeStatus === "online" && (health?.nginxRunning ?? false);
-
-  const now = new Date();
-  const historyMap = new Map(node.healthHistory?.map((h) => [h.hour, h.healthy]) ?? []);
-
-  function buildHours(count: number): Array<"ok" | "error" | "none"> {
-    const result: Array<"ok" | "error" | "none"> = [];
-    for (let i = count - 1; i >= 0; i--) {
-      const d = new Date(now.getTime() - i * 3600000);
-      const hourKey = `${d.toISOString().slice(0, 13)}:00:00.000Z`;
-      const status = historyMap.get(hourKey);
-      result.push(status === true ? "ok" : status === false ? "error" : "none");
-    }
-    return result;
-  }
-
-  const hours96 = buildHours(96);
-  const hours48 = buildHours(48);
-
-  const barClass = (status: "ok" | "error" | "none") =>
-    `h-8 flex-1 ${status === "ok" ? "bg-emerald-500" : status === "error" ? "bg-destructive" : "bg-muted"}`;
-
-  return (
-    <div className="border border-border bg-card">
-      <div className="border-b border-border p-4 flex items-center justify-between">
-        <h2 className="font-semibold">Node Health</h2>
-        <Badge variant={isHealthy ? "success" : "destructive"} className="text-xs">
-          {isHealthy ? "Operational" : "Unhealthy"}
-        </Badge>
-      </div>
-      <div className="p-4">
-        {/* 96h on md+, 48h on small */}
-        <div className="hidden md:flex gap-[1px]">
-          {hours96.map((status, i) => (
-            <div
-              key={i}
-              className={barClass(status)}
-              title={new Date(now.getTime() - (95 - i) * 3600000).toLocaleString(undefined, {
-                month: "short",
-                day: "numeric",
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
-            />
-          ))}
-        </div>
-        <div className="flex md:hidden gap-[1px]">
-          {hours48.map((status, i) => (
-            <div
-              key={i}
-              className={barClass(status)}
-              title={new Date(now.getTime() - (47 - i) * 3600000).toLocaleString(undefined, {
-                month: "short",
-                day: "numeric",
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
-            />
-          ))}
-        </div>
-        <div className="flex items-center justify-between text-[10px] text-muted-foreground mt-1">
-          <span className="hidden md:inline">96 hours ago</span>
-          <span className="md:hidden">48 hours ago</span>
-          <span>Now</span>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (

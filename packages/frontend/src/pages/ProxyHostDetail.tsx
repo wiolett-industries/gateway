@@ -1,13 +1,15 @@
-import { motion } from "framer-motion";
-import { ArrowLeft, Minus, Plus, Save, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { ArrowLeft, Minus, Pencil, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { PageTransition } from "@/components/common/PageTransition";
-import { DomainAutocompleteInput } from "@/components/domains/DomainAutocompleteInput";
+import { CreateProxyHostDialog } from "@/components/proxy/CreateProxyHostDialog";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CodeEditor } from "@/components/ui/code-editor";
+import { HealthBars } from "@/components/ui/health-bars";
 import { Input } from "@/components/ui/input";
 import { NumericInput } from "@/components/ui/numeric-input";
 import {
@@ -22,60 +24,57 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
-import type {
-  AccessList,
-  CreateProxyHostRequest,
-  CustomHeader,
-  ForwardScheme,
-  NginxTemplate,
-  ProxyHostFolder,
-  ProxyHostType,
-  RewriteRule,
-  SSLCertificate,
-} from "@/types";
+import type { AccessList, CustomHeader, ProxyHost, RewriteRule } from "@/types";
 
+// ── Health badge mapping ────────────────────────────────────────
+const HEALTH_BADGE: Record<string, "success" | "destructive" | "secondary" | "default" | "warning"> = {
+  online: "success",
+  recovering: "warning",
+  offline: "destructive",
+  degraded: "destructive",
+  unknown: "secondary",
+  disabled: "secondary",
+};
+
+const HEALTH_LABEL: Record<string, string> = {
+  online: "Healthy",
+  recovering: "Recovering",
+  offline: "Offline",
+  degraded: "Degraded",
+  unknown: "Unknown",
+  disabled: "Disabled",
+};
+
+/** Compute effective status: if currently online but had errors in last 5 min, show "recovering" */
+function effectiveHealthStatus(host: { healthStatus: string; healthHistory?: Array<{ ts: string; status: string }> }): string {
+  if (host.healthStatus !== "online" || !host.healthHistory?.length) return host.healthStatus;
+  const fiveMinAgo = Date.now() - 5 * 60 * 1000;
+  const recent = host.healthHistory.filter((h) => new Date(h.ts).getTime() >= fiveMinAgo);
+  if (recent.some((h) => h.status === "offline" || h.status === "degraded")) return "recovering";
+  return "online";
+}
+
+const TYPE_BADGE: Record<string, "default" | "secondary" | "destructive"> = {
+  proxy: "default",
+  redirect: "secondary",
+  "404": "secondary",
+  raw: "destructive",
+};
+
+// ── Main Component ──────────────────────────────────────────────
 export function ProxyHostDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { hasScope } = useAuthStore();
-  const isNew = !id;
 
-  const [isLoading, setIsLoading] = useState(!isNew);
-  const [isSaving, setIsSaving] = useState(false);
-  const [isSystemHost, setIsSystemHost] = useState(false);
-  const [availableNodes, setAvailableNodes] = useState<
-    Array<{ id: string; hostname: string; status: string }>
-  >([]);
+  const [host, setHost] = useState<ProxyHost | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState("details");
 
-  // Fetch available nodes for the dropdown
-  useEffect(() => {
-    api
-      .listNodes({ status: "online", type: "nginx" })
-      .then((resp) => {
-        setAvailableNodes((resp as any).data ?? []);
-      })
-      .catch(() => {});
-  }, []);
+  // Edit dialog
+  const [editOpen, setEditOpen] = useState(false);
 
-  // Form state
-  const [type, setType] = useState<ProxyHostType>("proxy");
-  const [domainNames, setDomainNames] = useState<string[]>([""]);
-  const [nodeId, setNodeId] = useState<string | null>(null);
-  const [forwardHost, setForwardHost] = useState("");
-  const [forwardPort, setForwardPort] = useState(80);
-  const [forwardScheme, setForwardScheme] = useState<ForwardScheme>("http");
-  const [websocketSupport, setWebsocketSupport] = useState(false);
-  const [redirectUrl, setRedirectUrl] = useState("");
-  const [redirectStatusCode, setRedirectStatusCode] = useState(301);
-
-  // SSL
-  const [sslEnabled, setSslEnabled] = useState(false);
-  const [sslForced, setSslForced] = useState(false);
-  const [http2Support, setHttp2Support] = useState(false);
-  const [sslCertificateId, setSslCertificateId] = useState<string>("");
-  const [internalCertificateId, setInternalCertificateId] = useState<string>("");
-
-  // Custom config
+  // Custom config tab state
   const [customHeaders, setCustomHeaders] = useState<CustomHeader[]>([]);
   const [cacheEnabled, setCacheEnabled] = useState(false);
   const [cacheMaxAge, setCacheMaxAge] = useState(3600);
@@ -83,276 +82,216 @@ export function ProxyHostDetail() {
   const [rateLimitRPS, setRateLimitRPS] = useState(100);
   const [rateLimitBurst, setRateLimitBurst] = useState(200);
   const [customRewrites, setCustomRewrites] = useState<RewriteRule[]>([]);
+  const [isSavingCustom, setIsSavingCustom] = useState(false);
+  const [editorErrorLines, setEditorErrorLines] = useState<number[]>([]);
 
-  // Advanced
-  const [advancedConfig, setAdvancedConfig] = useState("");
-  const [validationResult, setValidationResult] = useState<{
-    valid: boolean;
-    errors?: string[];
-  } | null>(null);
-
-  // Folder
-  const [folderId, setFolderId] = useState<string>("");
-
-  // Nginx config template
-  const [nginxTemplateId, setNginxTemplateId] = useState<string>("");
-  const [templateVariables, setTemplateVariables] = useState<
-    Record<string, string | number | boolean>
-  >({});
-
-  // Access list
-  const [accessListId, setAccessListId] = useState<string>("");
-
-  // Health check
-  const [healthCheckEnabled, setHealthCheckEnabled] = useState(false);
+  // Health check settings state
   const [healthCheckUrl, setHealthCheckUrl] = useState("/");
-  const [healthCheckInterval, setHealthCheckInterval] = useState(30);
   const [healthCheckExpectedStatus, setHealthCheckExpectedStatus] = useState<number | null>(null);
   const [healthCheckExpectedBody, setHealthCheckExpectedBody] = useState("");
-
-  // Raw config
-  const [rawConfig, setRawConfig] = useState("");
-  const [rawConfigLoaded, setRawConfigLoaded] = useState(false);
-  const [isLoadingRaw, setIsLoadingRaw] = useState(false);
-
-  // Log viewer
-  const [logLines, setLogLines] = useState<string[]>([]);
-  const logRef = useRef<HTMLPreElement>(null);
-  const eventSourceRef = useRef<EventSource | null>(null);
-
-  // Related data
-  const [sslCerts, setSslCerts] = useState<SSLCertificate[]>([]);
+  // Access list tab state
+  const [accessListId, setAccessListId] = useState<string>("");
   const [accessLists, setAccessLists] = useState<AccessList[]>([]);
-  const [pkiCerts, setPkiCerts] = useState<{ id: string; commonName: string }[]>([]);
-  const [folderList, setFolderList] = useState<ProxyHostFolder[]>([]);
-  const [nginxTemplateList, setNginxTemplateList] = useState<NginxTemplate[]>([]);
 
-  // Load existing proxy host
-  useEffect(() => {
-    if (isNew) return;
-    if (!id) return;
-    const load = async () => {
-      setIsLoading(true);
+  // Advanced tab state
+  const [advancedConfig, setAdvancedConfig] = useState("");
+  const [isSavingAdvanced, setIsSavingAdvanced] = useState(false);
+
+  // Raw config tab state
+  const [renderedConfig, setRenderedConfig] = useState("");
+  const [rawConfig, setRawConfig] = useState("");
+  const [isLoadingRaw, setIsLoadingRaw] = useState(false);
+  const [isSavingRaw, setIsSavingRaw] = useState(false);
+
+  // ── Load host ─────────────────────────────────────────────────
+  const loadHost = useCallback(
+    async (silent = false) => {
+      if (!id) return;
+      if (!silent) setIsLoading(true);
       try {
-        const host = await api.getProxyHost(id);
-        setType(host.type);
-        setDomainNames(host.domainNames.length > 0 ? host.domainNames : [""]);
-        setNodeId((host as any).nodeId || null);
-        setForwardHost(host.forwardHost || "");
-        setForwardPort(host.forwardPort || 80);
-        setForwardScheme(host.forwardScheme || "http");
-        setWebsocketSupport(host.websocketSupport);
-        setRedirectUrl(host.redirectUrl || "");
-        setRedirectStatusCode(host.redirectStatusCode || 301);
-        setSslEnabled(host.sslEnabled);
-        setSslForced(host.sslForced);
-        setHttp2Support(host.http2Support);
-        setSslCertificateId(host.sslCertificateId || "");
-        setInternalCertificateId(host.internalCertificateId || "");
-        setCustomHeaders(host.customHeaders || []);
-        setCacheEnabled(host.cacheEnabled);
-        setCacheMaxAge(host.cacheOptions?.maxAge || 3600);
-        setRateLimitEnabled(host.rateLimitEnabled);
-        setRateLimitRPS(host.rateLimitOptions?.requestsPerSecond || 100);
-        setRateLimitBurst(host.rateLimitOptions?.burst || 200);
-        setCustomRewrites(host.customRewrites || []);
-        setAdvancedConfig(host.advancedConfig || "");
-        setAccessListId(host.accessListId || "");
-        setFolderId(host.folderId || "");
-        setNginxTemplateId(host.nginxTemplateId || "");
-        setTemplateVariables(host.templateVariables || {});
-        setIsSystemHost(!!host.isSystem);
-        setHealthCheckEnabled(host.healthCheckEnabled);
-        setHealthCheckUrl(host.healthCheckUrl || "/");
-        setHealthCheckInterval(host.healthCheckInterval || 30);
-        setHealthCheckExpectedStatus(host.healthCheckExpectedStatus ?? null);
-        setHealthCheckExpectedBody(host.healthCheckExpectedBody || "");
+        const data = await api.getProxyHost(id);
+        setHost(data);
+        // Sync local state from host
+        setCustomHeaders(data.customHeaders || []);
+        setCacheEnabled(data.cacheEnabled);
+        setCacheMaxAge(data.cacheOptions?.maxAge || 3600);
+        setRateLimitEnabled(data.rateLimitEnabled);
+        setRateLimitRPS(data.rateLimitOptions?.requestsPerSecond || 100);
+        setRateLimitBurst(data.rateLimitOptions?.burst || 200);
+        setCustomRewrites(data.customRewrites || []);
+        setAccessListId(data.accessListId || "");
+        setHealthCheckUrl(data.healthCheckUrl || "/");
+
+        setHealthCheckExpectedStatus(data.healthCheckExpectedStatus ?? null);
+        setHealthCheckExpectedBody(data.healthCheckExpectedBody || "");
+        setAdvancedConfig(data.advancedConfig || "");
+        setRawConfig(data.rawConfig || "");
       } catch {
-        toast.error("Failed to load proxy host");
-        navigate("/proxy-hosts");
+        if (!silent) {
+          toast.error("Failed to load proxy host");
+          navigate("/proxy-hosts");
+        }
       } finally {
-        setIsLoading(false);
+        if (!silent) setIsLoading(false);
       }
-    };
-    load();
-  }, [id, isNew, navigate]);
+    },
+    [id, navigate]
+  );
 
-  // Load related data
   useEffect(() => {
-    const loadRelated = async () => {
-      try {
-        const [sslRes, alRes, folderRes] = await Promise.all([
-          api.listSSLCertificates({ limit: 100 }),
-          api.listAccessLists({ limit: 100 }),
-          api.listFolders(),
-        ]);
-        setSslCerts(sslRes.data || []);
-        setAccessLists(alRes.data || []);
-        // Flatten folder tree for select dropdown
-        const flat: ProxyHostFolder[] = [];
-        const flatten = (nodes: typeof folderRes, depth = 0) => {
-          for (const node of nodes) {
-            flat.push({ ...node, depth });
-            if (node.children) flatten(node.children, depth + 1);
-          }
-        };
-        flatten(folderRes);
-        setFolderList(flat);
-        // Load nginx templates
-        api
-          .listNginxTemplates()
-          .then((t) => setNginxTemplateList(t || []))
-          .catch(() => {});
-      } catch {
-        // non-critical
-      }
-      try {
-        const certRes = await api.listCertificates({
-          limit: 100,
-          status: "active",
-          type: "tls-server",
-        });
-        setPkiCerts((certRes.data || []).map((c) => ({ id: c.id, commonName: c.commonName })));
-      } catch {
-        // non-critical
-      }
-    };
-    loadRelated();
+    loadHost();
+  }, [loadHost]);
+
+  // ── Load access lists ─────────────────────────────────────────
+  useEffect(() => {
+    api
+      .listAccessLists({ limit: 100 })
+      .then((res) => setAccessLists(res.data || []))
+      .catch(() => {});
   }, []);
 
-  // Load raw rendered config for this host
-  const loadRawConfig = useCallback(async () => {
-    if (!id || isNew) return;
+  // ── Load rendered config ──────────────────────────────────────
+  const loadRenderedConfig = useCallback(async () => {
+    if (!id) return;
     setIsLoadingRaw(true);
     try {
       const result = await api.getRenderedProxyConfig(id);
-      setRawConfig(result.rendered);
-      setRawConfigLoaded(true);
+      setRenderedConfig(result.rendered);
     } catch {
-      setRawConfig("# Could not load rendered config. Save the host first.");
-      setRawConfigLoaded(true);
+      setRenderedConfig("# Could not load rendered config.");
     } finally {
       setIsLoadingRaw(false);
     }
-  }, [id, isNew]);
+  }, [id]);
 
-  // SSE log stream
-  const startLogStream = useCallback(() => {
-    if (!id || isNew) return;
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-    }
-    const es = api.createLogStream(id);
-    es.onmessage = (event) => {
-      setLogLines((prev) => {
-        const next = [...prev, event.data];
-        if (next.length > 500) return next.slice(-500);
-        return next;
-      });
-      if (logRef.current) {
-        logRef.current.scrollTop = logRef.current.scrollHeight;
+  // ── Toggle switch handler (immediate save) ────────────────────
+  const handleToggle = useCallback(
+    async (field: string, value: boolean) => {
+      if (!id || !host) return;
+      try {
+        const updated = await api.updateProxyHost(id, { [field]: value } as any);
+        setHost(updated);
+        toast.success(
+          `${field.replace(/([A-Z])/g, " $1").replace(/^./, (s) => s.toUpperCase())} updated`
+        );
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to update");
       }
-    };
-    es.onerror = () => {
-      // Will auto-reconnect
-    };
-    eventSourceRef.current = es;
-  }, [id, isNew]);
+    },
+    [id, host]
+  );
 
-  useEffect(() => {
-    return () => {
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-      }
-    };
-  }, []);
-
-  const buildRequest = (): CreateProxyHostRequest => {
-    const domains = domainNames.filter((d) => d.trim() !== "");
-    const req: CreateProxyHostRequest = {
-      type,
-      domainNames: domains,
-      websocketSupport,
-      sslEnabled,
-      sslForced,
-      http2Support,
-      sslCertificateId: sslCertificateId || undefined,
-      internalCertificateId: internalCertificateId || undefined,
-      customHeaders: customHeaders.filter((h) => h.name.trim() !== ""),
-      cacheEnabled,
-      cacheOptions: cacheEnabled ? { maxAge: cacheMaxAge } : undefined,
-      rateLimitEnabled,
-      rateLimitOptions: rateLimitEnabled
-        ? { requestsPerSecond: rateLimitRPS, burst: rateLimitBurst }
-        : undefined,
-      customRewrites: customRewrites.filter((r) => r.source.trim() !== ""),
-      advancedConfig: advancedConfig || undefined,
-      accessListId: accessListId || undefined,
-      folderId: folderId || undefined,
-      nginxTemplateId: nginxTemplateId || undefined,
-      templateVariables: Object.keys(templateVariables).length > 0 ? templateVariables : undefined,
-      healthCheckEnabled,
-      healthCheckUrl,
-      healthCheckInterval,
-      healthCheckExpectedStatus: healthCheckExpectedStatus ?? undefined,
-      healthCheckExpectedBody: healthCheckExpectedBody || undefined,
-      nodeId: nodeId || undefined,
-    } as any;
-    if (type === "proxy") {
-      req.forwardHost = forwardHost;
-      req.forwardPort = forwardPort;
-      req.forwardScheme = forwardScheme;
-    }
-    if (type === "redirect") {
-      req.redirectUrl = redirectUrl;
-      req.redirectStatusCode = redirectStatusCode;
-    }
-    return req;
-  };
-
-  const isFormValid = (() => {
-    if (!nodeId) return false;
-    if (type === "proxy" && (forwardPort < 1 || forwardPort > 65535)) return false;
-    if (cacheEnabled && cacheMaxAge < 1) return false;
-    if (rateLimitEnabled && (rateLimitRPS < 1 || rateLimitBurst < 1)) return false;
-    if (healthCheckEnabled && (healthCheckInterval < 5 || healthCheckInterval > 3600)) return false;
-    return true;
-  })();
-
-  const handleSave = async () => {
-    const domains = domainNames.filter((d) => d.trim() !== "");
-    if (domains.length === 0) {
-      toast.error("At least one domain name is required");
-      return;
-    }
-    if (type === "proxy" && !forwardHost.trim()) {
-      toast.error("Upstream host is required for proxy type");
-      return;
-    }
-    if (type === "redirect" && !redirectUrl.trim()) {
-      toast.error("Redirect URL is required");
-      return;
-    }
-
-    setIsSaving(true);
+  // ── Save custom config ────────────────────────────────────────
+  const handleSaveCustom = async () => {
+    if (!id) return;
+    setIsSavingCustom(true);
     try {
-      const data = buildRequest();
-      if (isNew) {
-        await api.createProxyHost(data);
-        toast.success("Proxy host created");
-      } else {
-        await api.updateProxyHost(id!, data);
-        toast.success("Proxy host updated");
-      }
-      navigate("/proxy-hosts");
+      const updated = await api.updateProxyHost(id, {
+        customHeaders: customHeaders.filter((h) => h.name.trim() !== ""),
+        cacheEnabled,
+        cacheOptions: cacheEnabled ? { maxAge: cacheMaxAge } : undefined,
+        rateLimitEnabled,
+        rateLimitOptions: rateLimitEnabled
+          ? { requestsPerSecond: rateLimitRPS, burst: rateLimitBurst }
+          : undefined,
+        customRewrites: customRewrites.filter((r) => r.source.trim() !== ""),
+      });
+      setHost(updated);
+      toast.success("Custom config saved");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to save proxy host");
+      toast.error(err instanceof Error ? err.message : "Failed to save custom config");
     } finally {
-      setIsSaving(false);
+      setIsSavingCustom(false);
     }
   };
 
+  // ── Save advanced config ──────────────────────────────────────
+  const handleSaveAdvanced = async () => {
+    if (!id) return;
+    if (advancedConfig) {
+      const valid = await handleValidate();
+      if (!valid) return;
+    }
+    setIsSavingAdvanced(true);
+    try {
+      const updated = await api.updateProxyHost(id, {
+        advancedConfig: advancedConfig || undefined,
+      });
+      setHost(updated);
+      toast.success("Advanced config saved");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save advanced config");
+    } finally {
+      setIsSavingAdvanced(false);
+    }
+  };
+
+  // ── Auto-save health check settings on change (debounced) ─────
+  useEffect(() => {
+    if (!id || !host || !hasHealthCheckChanged) return;
+    const timer = setTimeout(() => {
+      api
+        .updateProxyHost(id, {
+          healthCheckUrl,
+          healthCheckExpectedStatus: healthCheckExpectedStatus ?? undefined,
+          healthCheckExpectedBody: healthCheckExpectedBody || undefined,
+        })
+        .then((updated) => setHost(updated))
+        .catch(() => {});
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [healthCheckUrl, healthCheckExpectedStatus, healthCheckExpectedBody]);
+
+  // ── Validate config — returns true if valid ──────────────────
+  const handleValidate = async (): Promise<boolean> => {
+    try {
+      const configToValidate = isRawMode ? rawConfig : advancedConfig;
+      const result = await api.validateProxyConfig(
+        configToValidate,
+        isRawMode ? "raw" : "advanced"
+      );
+
+      if (result.valid) {
+        setEditorErrorLines([]);
+        toast.success("Configuration is valid");
+        return true;
+      }
+
+      // Parse line numbers from error messages and show individual toasts
+      const lineNums: number[] = [];
+      for (const err of result.errors ?? []) {
+        toast.error(err);
+        const match = err.match(/line (\d+)/i);
+        if (match) lineNums.push(Number(match[1]));
+      }
+      setEditorErrorLines(lineNums);
+      return false;
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Validation failed");
+      return false;
+    }
+  };
+
+  // ── Save raw config ───────────────────────────────────────────
+  const handleSaveRaw = async () => {
+    if (!id) return;
+    const valid = await handleValidate();
+    if (!valid) return;
+    setIsSavingRaw(true);
+    try {
+      const updated = await api.updateProxyHost(id, { rawConfig });
+      setHost(updated);
+      toast.success("Raw config saved");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save raw config");
+    } finally {
+      setIsSavingRaw(false);
+    }
+  };
+
+  // ── Delete host ───────────────────────────────────────────────
   const handleDelete = async () => {
+    if (!host) return;
     const ok = await confirm({
       title: "Delete Proxy Host",
       description: "Are you sure you want to delete this proxy host? This action cannot be undone.",
@@ -360,7 +299,8 @@ export function ProxyHostDetail() {
     });
     if (!ok) return;
     try {
-      await api.deleteProxyHost(id!);
+      await api.deleteProxyHost(host.id);
+      api.invalidateCache();
       toast.success("Proxy host deleted");
       navigate("/proxy-hosts");
     } catch (err) {
@@ -368,21 +308,44 @@ export function ProxyHostDetail() {
     }
   };
 
-  const handleValidate = async () => {
-    try {
-      const result = await api.validateProxyConfig(advancedConfig);
-      setValidationResult(result);
-      if (result.valid) {
-        toast.success("Configuration is valid");
-      } else {
-        toast.error("Configuration has errors");
-      }
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Validation failed");
-    }
-  };
+  // ── Derived values ────────────────────────────────────────────
+  const isRawMode = host?.rawConfigEnabled ?? false;
+  const isSystemHost = host?.isSystem ?? false;
 
-  if (isLoading) {
+  // Track changes per section
+  const hasHeadersChanged = useMemo(
+    () => !!host && JSON.stringify(customHeaders) !== JSON.stringify(host.customHeaders || []),
+    [host, customHeaders]
+  );
+  const hasRewritesChanged = useMemo(
+    () => !!host && JSON.stringify(customRewrites) !== JSON.stringify(host.customRewrites || []),
+    [host, customRewrites]
+  );
+  const hasHealthCheckChanged = useMemo(() => {
+    if (!host) return false;
+    return (
+      healthCheckUrl !== (host.healthCheckUrl || "/") ||
+      healthCheckExpectedStatus !== (host.healthCheckExpectedStatus ?? null) ||
+      healthCheckExpectedBody !== (host.healthCheckExpectedBody || "")
+    );
+  }, [
+    host,
+    healthCheckUrl,
+    healthCheckExpectedStatus,
+    healthCheckExpectedBody,
+  ]);
+
+  const visibleTabs = ["details", "settings", "advanced", "raw", "logs"];
+
+  // Navigate away from disabled tabs when raw mode changes
+  useEffect(() => {
+    if (isRawMode && (activeTab === "settings" || activeTab === "advanced")) {
+      setActiveTab("details");
+    }
+  }, [isRawMode, activeTab]);
+
+  // ── Loading state ─────────────────────────────────────────────
+  if (isLoading || !host) {
     return (
       <div className="flex items-center justify-center py-16">
         <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
@@ -392,8 +355,15 @@ export function ProxyHostDetail() {
 
   return (
     <PageTransition>
-      <div className="h-full flex flex-col p-6 gap-4 overflow-hidden">
-        {/* Header */}
+      <div
+        className={cn(
+          "h-full flex flex-col p-6 gap-4",
+          activeTab === "raw" || activeTab === "advanced" || activeTab === "logs"
+            ? "overflow-hidden"
+            : "overflow-y-auto"
+        )}
+      >
+        {/* ── Header ─────────────────────────────────────────── */}
         <div className="flex flex-wrap items-center justify-between gap-2 shrink-0">
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="icon" onClick={() => navigate("/proxy-hosts")}>
@@ -401,560 +371,718 @@ export function ProxyHostDetail() {
             </Button>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-2xl font-bold">
-                  {isNew ? "New Proxy Host" : domainNames[0] || "Proxy Host"}
-                </h1>
+                <h1 className="text-2xl font-bold">{host.domainNames[0] || "Proxy Host"}</h1>
+                <Badge variant={TYPE_BADGE[host.type] ?? "default"} className="capitalize">
+                  {host.type}
+                </Badge>
+                {(() => {
+                  const eff = effectiveHealthStatus(host);
+                  return (
+                    <Badge variant={HEALTH_BADGE[eff] ?? "secondary"}>
+                      {HEALTH_LABEL[eff] ?? eff}
+                    </Badge>
+                  );
+                })()}
               </div>
               <p className="text-sm text-muted-foreground">
-                {isNew ? "Configure a new proxy host" : "Edit proxy host settings"}
+                {host.domainNames.length > 1
+                  ? `+${host.domainNames.length - 1} more domain${host.domainNames.length > 2 ? "s" : ""}`
+                  : null}
+                {host.type === "proxy" && host.forwardHost
+                  ? ` \u2192 ${host.forwardScheme}://${host.forwardHost}:${host.forwardPort}`
+                  : null}
+                {host.type === "redirect" && host.redirectUrl
+                  ? ` \u2192 ${host.redirectUrl}`
+                  : null}
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            {!isNew && hasScope("proxy:delete") && !isSystemHost && (
+            {hasScope("proxy:manage") && (
+              <Button variant="outline" onClick={() => setEditOpen(true)}>
+                <Pencil className="h-4 w-4" />
+                Edit
+              </Button>
+            )}
+            {!isSystemHost && hasScope("proxy:delete") && (
               <Button variant="outline" onClick={handleDelete}>
                 <Trash2 className="h-4 w-4" />
                 Delete
               </Button>
             )}
-            {hasScope("proxy:manage") && (
-              <Button onClick={handleSave} disabled={isSaving || !isFormValid}>
-                <Save className="h-4 w-4" />
-                {isSaving ? "Saving..." : "Save"}
-              </Button>
-            )}
           </div>
         </div>
 
-        {/* Tabs */}
-        <Tabs defaultValue="details" className="flex flex-col flex-1 min-h-0">
+        {/* ── Health bars (only when healthCheckEnabled) ──────── */}
+        {host.healthCheckEnabled && (
+          <HealthBars history={host.healthHistory} currentStatus={host.healthStatus} />
+        )}
+
+        {/* ── Raw mode warning banner ────────────────────────── */}
+        {isRawMode && (
+          <div
+            className="border bg-yellow-500/10 p-3 text-sm text-yellow-700 dark:text-yellow-400"
+            style={{ borderColor: "#eab308" }}
+          >
+            Raw mode active — template rendering is bypassed. Config is sent directly to the daemon.
+          </div>
+        )}
+
+        {/* ── Tabs ───────────────────────────────────────────── */}
+        <Tabs
+          value={activeTab}
+          onValueChange={(v) => {
+            setActiveTab(v);
+            if (v === "raw" && !isRawMode) loadRenderedConfig();
+          }}
+          className="flex flex-col flex-1 min-h-0"
+        >
           <TabsList className="shrink-0">
-            <TabsTrigger value="details">Details</TabsTrigger>
-            <TabsTrigger value="ssl">SSL</TabsTrigger>
-            <TabsTrigger value="custom">Custom Config</TabsTrigger>
-            <TabsTrigger value="advanced">Advanced</TabsTrigger>
-            <TabsTrigger value="access">Access List</TabsTrigger>
-            <TabsTrigger value="health">Health Check</TabsTrigger>
-            {!isNew && (
-              <TabsTrigger
-                value="raw"
-                onClick={() => {
-                  if (!rawConfigLoaded) loadRawConfig();
-                }}
-              >
-                Raw Config
-              </TabsTrigger>
-            )}
-            {!isNew && (
-              <TabsTrigger value="logs" onClick={() => startLogStream()}>
-                Logs
-              </TabsTrigger>
-            )}
+            {visibleTabs.includes("details") && <TabsTrigger value="details">Details</TabsTrigger>}
+            <TabsTrigger value="settings" disabled={isRawMode}>
+              Settings
+            </TabsTrigger>
+            <TabsTrigger value="advanced" disabled={isRawMode}>
+              Advanced
+            </TabsTrigger>
+            <TabsTrigger value="raw">Raw Config</TabsTrigger>
+            <TabsTrigger value="logs">Logs</TabsTrigger>
           </TabsList>
 
-          {/* Details Tab */}
-          <TabsContent value="details" className="overflow-y-auto flex-1 min-h-0">
-            <div className="border border-border bg-card p-6 space-y-6">
-              {/* Type */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Type</label>
-                <Select value={type} onValueChange={(v) => setType(v as ProxyHostType)}>
-                  <SelectTrigger className="w-48">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="proxy">Proxy</SelectItem>
-                    <SelectItem value="redirect">Redirect</SelectItem>
-                    <SelectItem value="404">404 (Block)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+          {/* ── Details Tab ────────────────────────────────────── */}
+          {visibleTabs.includes("details") && (
+            <TabsContent value="details" className="pb-6">
+              <DetailsTab host={host} />
+            </TabsContent>
+          )}
 
-              {/* Folder */}
-              {folderList.length > 0 && (
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Folder</label>
-                  <Select
-                    value={folderId || "__none__"}
-                    onValueChange={(v) => setFolderId(v === "__none__" ? "" : v)}
-                  >
-                    <SelectTrigger className="w-64">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">None (ungrouped)</SelectItem>
-                      {folderList.map((f) => (
-                        <SelectItem key={f.id} value={f.id}>
-                          {"  ".repeat(f.depth)}
-                          {f.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
+          {/* ── Settings Tab ────────────────────────────────────── */}
+          {visibleTabs.includes("settings") && (
+            <TabsContent value="settings" className="pb-6">
+              <SettingsTab
+                host={host}
+                onToggle={handleToggle}
+                customHeaders={customHeaders}
+                setCustomHeaders={setCustomHeaders}
+                cacheEnabled={cacheEnabled}
+                setCacheEnabled={setCacheEnabled}
+                cacheMaxAge={cacheMaxAge}
+                setCacheMaxAge={setCacheMaxAge}
+                rateLimitEnabled={rateLimitEnabled}
+                setRateLimitEnabled={setRateLimitEnabled}
+                rateLimitRPS={rateLimitRPS}
+                setRateLimitRPS={setRateLimitRPS}
+                rateLimitBurst={rateLimitBurst}
+                setRateLimitBurst={setRateLimitBurst}
+                customRewrites={customRewrites}
+                setCustomRewrites={setCustomRewrites}
+                onSaveCustom={handleSaveCustom}
+                isSavingCustom={isSavingCustom}
+                accessListId={accessListId}
+                accessLists={accessLists}
+                onAccessListChange={(v) => {
+                  setAccessListId(v);
+                  if (!id) return;
+                  api
+                    .updateProxyHost(id, { accessListId: v || undefined })
+                    .then((updated) => {
+                      setHost(updated);
+                      toast.success("Access list updated");
+                    })
+                    .catch((err) =>
+                      toast.error(err instanceof Error ? err.message : "Failed to update")
+                    );
+                }}
+                canManage={hasScope("proxy:manage")}
+                hasHeadersChanged={hasHeadersChanged}
+                hasRewritesChanged={hasRewritesChanged}
+                healthCheckUrl={healthCheckUrl}
+                setHealthCheckUrl={setHealthCheckUrl}
+                healthCheckExpectedStatus={healthCheckExpectedStatus}
+                setHealthCheckExpectedStatus={setHealthCheckExpectedStatus}
+                healthCheckExpectedBody={healthCheckExpectedBody}
+                setHealthCheckExpectedBody={setHealthCheckExpectedBody}
+              />
+            </TabsContent>
+          )}
 
-              {/* Config Template */}
-              {nginxTemplateList.length > 0 && (
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Config Template</label>
-                  <Select
-                    value={nginxTemplateId || "__none__"}
-                    onValueChange={(v) => {
-                      setNginxTemplateId(v === "__none__" ? "" : v);
-                      // Pre-fill defaults from template variables
-                      if (v !== "__none__") {
-                        const tmpl = nginxTemplateList.find((t) => t.id === v);
-                        if (tmpl?.variables?.length) {
-                          const defaults: Record<string, string | number | boolean> = {};
-                          for (const vd of tmpl.variables) {
-                            if (vd.default !== undefined) defaults[vd.name] = vd.default;
-                          }
-                          setTemplateVariables((prev) => ({ ...defaults, ...prev }));
-                        }
-                      }
-                    }}
-                  >
-                    <SelectTrigger className="w-64">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">Default</SelectItem>
-                      {nginxTemplateList
-                        .filter((t) => t.type === type)
-                        .map((t) => (
-                          <SelectItem key={t.id} value={t.id}>
-                            {t.name}
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-
-              {/* Template Variables (auto-generated from template schema) */}
-              {(() => {
-                const selectedTemplate = nginxTemplateList.find((t) => t.id === nginxTemplateId);
-                const vars = selectedTemplate?.variables;
-                if (!vars?.length) return null;
-                return (
-                  <div className="space-y-3 border border-border p-4">
-                    <h3 className="text-sm font-semibold">Template Variables</h3>
-                    {vars.map((v) => (
-                      <div key={v.name} className="space-y-1">
-                        <label className="text-xs font-medium">{v.name}</label>
-                        {v.description && (
-                          <p className="text-xs text-muted-foreground">{v.description}</p>
-                        )}
-                        {v.type === "boolean" ? (
-                          <div className="flex items-center gap-2">
-                            <Switch
-                              checked={
-                                templateVariables[v.name] === true ||
-                                templateVariables[v.name] === "true"
-                              }
-                              onChange={(checked) =>
-                                setTemplateVariables({ ...templateVariables, [v.name]: checked })
-                              }
-                            />
-                          </div>
-                        ) : v.type === "number" ? (
-                          <Input
-                            type="number"
-                            value={String(templateVariables[v.name] ?? v.default ?? "")}
-                            onChange={(e) => {
-                              const raw = e.target.value;
-                              const next = { ...templateVariables };
-                              if (raw) {
-                                next[v.name] = Number(raw);
-                              } else {
-                                delete next[v.name];
-                              }
-                              setTemplateVariables(next);
-                            }}
-                            className="w-48"
-                          />
-                        ) : (
-                          <Input
-                            value={String(templateVariables[v.name] ?? v.default ?? "")}
-                            onChange={(e) =>
-                              setTemplateVariables({
-                                ...templateVariables,
-                                [v.name]: e.target.value,
-                              })
-                            }
-                          />
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                );
-              })()}
-
-              {/* Node Assignment */}
-              <div className="space-y-1">
-                <label className="text-sm font-medium">Node</label>
-                <p className="text-xs text-muted-foreground">
-                  Select which nginx node handles this proxy host.
-                </p>
-                <Select
-                  value={nodeId || "__none__"}
-                  onValueChange={(v) => setNodeId(v === "__none__" ? null : v)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a node" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {availableNodes.length === 0 && (
-                      <SelectItem value="__none__" disabled>
-                        No online nodes
-                      </SelectItem>
-                    )}
-                    {availableNodes.map((n) => (
-                      <SelectItem key={n.id} value={n.id}>
-                        {n.hostname}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Domain Names */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Domain Names</label>
-                <div className="space-y-2">
-                  {domainNames.map((domain, i) => (
-                    <div key={i} className="flex gap-2">
-                      <DomainAutocompleteInput
-                        value={domain}
-                        onChange={(val) => {
-                          const next = [...domainNames];
-                          next[i] = val;
-                          setDomainNames(next);
-                        }}
-                        placeholder="example.com"
-                      />
-                      {domainNames.length > 1 && (
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          onClick={() => setDomainNames(domainNames.filter((_, j) => j !== i))}
-                        >
-                          <Minus className="h-4 w-4" />
-                        </Button>
-                      )}
-                    </div>
-                  ))}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setDomainNames([...domainNames, ""])}
-                  >
-                    <Plus className="h-4 w-4" />
-                    Add Domain
-                  </Button>
-                </div>
-              </div>
-
-              {/* Proxy-specific fields */}
-              {type === "proxy" && (
-                <>
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Scheme</label>
-                      <Select
-                        value={forwardScheme}
-                        onValueChange={(v) => setForwardScheme(v as ForwardScheme)}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="http">HTTP</SelectItem>
-                          <SelectItem value="https">HTTPS</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Forward Host</label>
-                      <Input
-                        value={forwardHost}
-                        onChange={(e) => setForwardHost(e.target.value)}
-                        placeholder="192.168.1.100"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Forward Port</label>
-                      <NumericInput
-                        value={forwardPort}
-                        onChange={(v) => setForwardPort(v)}
-                        min={1}
-                        max={65535}
-                      />
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <Switch checked={websocketSupport} onChange={setWebsocketSupport} />
-                    <span className="text-sm">WebSocket Support</span>
-                  </div>
-                </>
-              )}
-
-              {/* Redirect-specific fields */}
-              {type === "redirect" && (
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Redirect URL</label>
-                    <Input
-                      value={redirectUrl}
-                      onChange={(e) => setRedirectUrl(e.target.value)}
-                      placeholder="https://example.com"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Status Code</label>
-                    <Select
-                      value={String(redirectStatusCode)}
-                      onValueChange={(v) => setRedirectStatusCode(parseInt(v, 10))}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="301">301 - Permanent</SelectItem>
-                        <SelectItem value="302">302 - Temporary</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              )}
-            </div>
-          </TabsContent>
-
-          {/* SSL Tab */}
-          <TabsContent value="ssl" className="overflow-y-auto flex-1 min-h-0">
-            <div className="border border-border bg-card p-6 space-y-6">
-              <div className="flex items-center gap-3">
-                <Switch checked={sslEnabled} onChange={setSslEnabled} />
-                <span className="text-sm font-medium">SSL Enabled</span>
-              </div>
-
-              {sslEnabled && (
-                <motion.div
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
-                  className="space-y-6"
-                >
-                  <div className="flex items-center gap-3">
-                    <Switch checked={sslForced} onChange={setSslForced} />
-                    <span className="text-sm">Force HTTPS</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <Switch checked={http2Support} onChange={setHttp2Support} />
-                    <span className="text-sm">HTTP/2 Support</span>
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">SSL Certificate</label>
-                    <Select
-                      value={sslCertificateId || "__none__"}
-                      onValueChange={(v) => setSslCertificateId(v === "__none__" ? "" : v)}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select certificate..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__none__">None</SelectItem>
-                        {sslCerts.map((cert) => (
-                          <SelectItem key={cert.id} value={cert.id}>
-                            {cert.name} ({cert.type})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">
-                      Internal PKI Certificate (alternative)
-                    </label>
-                    <Select
-                      value={internalCertificateId || "__none__"}
-                      onValueChange={(v) => setInternalCertificateId(v === "__none__" ? "" : v)}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select internal cert..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__none__">None</SelectItem>
-                        {pkiCerts.map((cert) => (
-                          <SelectItem key={cert.id} value={cert.id}>
-                            {cert.commonName}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </motion.div>
-              )}
-            </div>
-          </TabsContent>
-
-          {/* Custom Config Tab */}
-          <TabsContent value="custom" className="overflow-y-auto flex-1 min-h-0">
-            <div className="border border-border bg-card p-6 space-y-6">
-              {/* Custom Headers */}
-              <div className="space-y-3">
-                <h3 className="text-sm font-semibold">Custom Headers</h3>
-                {customHeaders.map((header, i) => (
-                  <div key={i} className="flex gap-2">
-                    <Input
-                      placeholder="Header name"
-                      value={header.name}
-                      onChange={(e) => {
-                        const next = [...customHeaders];
-                        next[i] = { ...next[i], name: e.target.value };
-                        setCustomHeaders(next);
-                      }}
-                    />
-                    <Input
-                      placeholder="Value"
-                      value={header.value}
-                      onChange={(e) => {
-                        const next = [...customHeaders];
-                        next[i] = { ...next[i], value: e.target.value };
-                        setCustomHeaders(next);
-                      }}
-                    />
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={() => setCustomHeaders(customHeaders.filter((_, j) => j !== i))}
-                    >
-                      <Minus className="h-4 w-4" />
+          {/* ── Advanced Tab ───────────────────────────────────── */}
+          {visibleTabs.includes("advanced") && (
+            <TabsContent value="advanced" className="flex flex-col flex-1 min-h-0">
+              <div className="flex-1 min-h-0 flex flex-col relative">
+                <CodeEditor
+                  value={advancedConfig}
+                  onChange={(val) => {
+                    setAdvancedConfig(val);
+                    setEditorErrorLines([]);
+                  }}
+                  errorLines={editorErrorLines}
+                />
+                {hasScope("proxy:advanced") && (
+                  <div className="absolute right-2.5 bottom-2.5 z-10 flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={handleValidate}>
+                      Validate
+                    </Button>
+                    <Button size="sm" onClick={handleSaveAdvanced} disabled={isSavingAdvanced}>
+                      <Save className="h-4 w-4" />
+                      Save
                     </Button>
                   </div>
-                ))}
+                )}
+              </div>
+            </TabsContent>
+          )}
+
+          {/* ── Raw Config Tab ─────────────────────────────────── */}
+          <TabsContent value="raw" className="flex flex-col flex-1 min-h-0">
+            {isRawMode ? (
+              <div className="flex-1 min-h-0 flex flex-col relative">
+                <CodeEditor
+                  value={rawConfig}
+                  onChange={(val) => {
+                    setRawConfig(val);
+                    setEditorErrorLines([]);
+                  }}
+                  errorLines={editorErrorLines}
+                />
+                {hasScope("proxy:advanced") && (
+                  <div className="absolute right-2.5 bottom-2.5 z-10 flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={handleValidate}>
+                      Validate
+                    </Button>
+                    <Button size="sm" onClick={handleSaveRaw} disabled={isSavingRaw}>
+                      <Save className="h-4 w-4" />
+                      Save
+                    </Button>
+                  </div>
+                )}
+              </div>
+            ) : isLoadingRaw ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+              </div>
+            ) : (
+              <div className="flex-1 min-h-0 flex flex-col relative">
+                <CodeEditor value={renderedConfig} onChange={() => {}} readOnly />
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setCustomHeaders([...customHeaders, { name: "", value: "" }])}
+                  className="absolute right-2.5 bottom-2.5 z-10"
+                  onClick={loadRenderedConfig}
+                  disabled={isLoadingRaw}
                 >
-                  <Plus className="h-4 w-4" />
-                  Add Header
+                  <RefreshCw className={cn("h-4 w-4", isLoadingRaw && "animate-spin")} />
+                  Refresh
                 </Button>
               </div>
+            )}
+          </TabsContent>
 
-              {/* Cache */}
-              <div className="space-y-3">
-                <div className="flex items-center gap-3">
-                  <Switch checked={cacheEnabled} onChange={setCacheEnabled} />
-                  <span className="text-sm font-semibold">Cache</span>
-                </div>
-                {cacheEnabled && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
-                    className="space-y-2"
-                  >
-                    <label className="text-sm">Max Age (seconds)</label>
-                    <NumericInput
-                      value={cacheMaxAge}
-                      onChange={(v) => setCacheMaxAge(v)}
-                      min={1}
-                      className="w-40"
-                    />
-                  </motion.div>
-                )}
-              </div>
+          {/* ── Logs Tab ───────────────────────────────────────── */}
+          <TabsContent value="logs" className="flex flex-col flex-1 min-h-0">
+            <ProxyHostLogsTab hostId={id!} />
+          </TabsContent>
+        </Tabs>
+      </div>
 
-              {/* Rate Limit */}
-              <div className="space-y-3">
-                <div className="flex items-center gap-3">
-                  <Switch checked={rateLimitEnabled} onChange={setRateLimitEnabled} />
-                  <span className="text-sm font-semibold">Rate Limiting</span>
-                </div>
-                {rateLimitEnabled && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
-                    className="grid grid-cols-2 gap-4"
-                  >
-                    <div className="space-y-2">
-                      <label className="text-sm">Requests Per Second</label>
-                      <NumericInput
-                        value={rateLimitRPS}
-                        onChange={(v) => setRateLimitRPS(v)}
-                        min={1}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm">Burst</label>
-                      <NumericInput
-                        value={rateLimitBurst}
-                        onChange={(v) => setRateLimitBurst(v)}
-                        min={1}
-                      />
-                    </div>
-                  </motion.div>
-                )}
-              </div>
+      {/* ── Edit Dialog ──────────────────────────────────────── */}
+      <CreateProxyHostDialog
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        existingHost={host}
+        onSuccess={() => {
+          setEditOpen(false);
+          loadHost();
+        }}
+      />
+    </PageTransition>
+  );
+}
 
-              {/* URL Rewrites */}
-              <div className="space-y-3">
-                <h3 className="text-sm font-semibold">URL Rewrites</h3>
-                {customRewrites.map((rule, i) => (
-                  <div key={i} className="flex gap-2">
-                    <Input
-                      placeholder="Source path"
-                      value={rule.source}
-                      onChange={(e) => {
-                        const next = [...customRewrites];
-                        next[i] = { ...next[i], source: e.target.value };
-                        setCustomRewrites(next);
-                      }}
-                    />
-                    <Input
-                      placeholder="Destination"
-                      value={rule.destination}
-                      onChange={(e) => {
-                        const next = [...customRewrites];
-                        next[i] = { ...next[i], destination: e.target.value };
-                        setCustomRewrites(next);
-                      }}
-                    />
-                    <Select
-                      value={rule.type}
-                      onValueChange={(v) => {
-                        const next = [...customRewrites];
-                        next[i] = { ...next[i], type: v as "permanent" | "temporary" };
-                        setCustomRewrites(next);
-                      }}
-                    >
-                      <SelectTrigger className="w-36">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="permanent">Permanent</SelectItem>
-                        <SelectItem value="temporary">Temporary</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={() => setCustomRewrites(customRewrites.filter((_, j) => j !== i))}
-                    >
-                      <Minus className="h-4 w-4" />
-                    </Button>
-                  </div>
+// ── Health Bars Component ───────────────────────────────────────
+
+// ── Details Tab Component ───────────────────────────────────────
+function DetailsTab({ host }: { host: ProxyHost }) {
+  const nodeId = (host as any).nodeId as string | null;
+  const [nodeName, setNodeName] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!nodeId) return;
+    api
+      .listNodes({ limit: 100 })
+      .then((res) => {
+        const nodes = (res as any).data ?? [];
+        const found = nodes.find((n: any) => n.id === nodeId);
+        if (found) setNodeName(found.displayName || found.hostname);
+      })
+      .catch(() => {});
+  }, [nodeId]);
+
+  return (
+    <div className="space-y-4">
+      {/* Host Info Card */}
+      <div className="border border-border bg-card">
+        <div className="border-b border-border p-4">
+          <h2 className="font-semibold">Host Information</h2>
+        </div>
+        <div className="divide-y divide-border">
+          <DetailRow
+            label="Type"
+            value={
+              <Badge variant="secondary" className="text-xs capitalize">
+                {host.type}
+              </Badge>
+            }
+          />
+          {nodeId && (
+            <DetailRow
+              label="Node"
+              value={<span className="font-mono text-xs">{nodeName || nodeId}</span>}
+            />
+          )}
+          <DetailRow
+            label="Domains"
+            value={
+              <div className="flex flex-wrap gap-1 justify-end">
+                {host.domainNames.map((d) => (
+                  <Badge key={d} variant="secondary" className="text-xs">
+                    {d}
+                  </Badge>
                 ))}
+              </div>
+            }
+          />
+          {host.type === "proxy" && host.forwardHost && (
+            <DetailRow
+              label="Forward Target"
+              value={`${host.forwardScheme}://${host.forwardHost}:${host.forwardPort}`}
+            />
+          )}
+          {host.type === "redirect" && host.redirectUrl && (
+            <DetailRow
+              label="Redirect URL"
+              value={`${host.redirectUrl} (${host.redirectStatusCode})`}
+            />
+          )}
+          <DetailRow label="Created" value={new Date(host.createdAt).toLocaleString()} />
+          <DetailRow label="Updated" value={new Date(host.updatedAt).toLocaleString()} />
+        </div>
+      </div>
+
+      {/* Health Check Status Card (like node health) */}
+      {host.healthCheckEnabled && (
+        <div className="border border-border bg-card">
+          <div className="border-b border-border p-4 flex items-center justify-between">
+            <h2 className="font-semibold">Health Check</h2>
+            {(() => {
+              const eff = effectiveHealthStatus(host);
+              return (
+                <Badge variant={HEALTH_BADGE[eff] ?? "secondary"} className="text-xs">
+                  {HEALTH_LABEL[eff] ?? eff}
+                </Badge>
+              );
+            })()}
+          </div>
+          <div className="divide-y divide-border">
+            <DetailRow label="URL Path" value={host.healthCheckUrl || "/"} />
+            <DetailRow label="Interval" value={`${host.healthCheckInterval || 30}s`} />
+
+            <DetailRow
+              label="Expected Status"
+              value={
+                host.healthCheckExpectedStatus ? String(host.healthCheckExpectedStatus) : "Any 2xx"
+              }
+            />
+            {host.lastHealthCheckAt && (
+              <DetailRow
+                label="Last Check"
+                value={new Date(host.lastHealthCheckAt).toLocaleString()}
+              />
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* SSL Certificate Info (when SSL enabled) */}
+      {host.sslEnabled && host.sslCertificate && (
+        <div className="border border-border bg-card">
+          <div className="border-b border-border p-4">
+            <h2 className="font-semibold">SSL Certificate</h2>
+          </div>
+          <div className="divide-y divide-border">
+            <DetailRow label="Name" value={host.sslCertificate.name} />
+            <DetailRow
+              label="Type"
+              value={
+                <Badge variant="secondary" className="text-xs">
+                  {host.sslCertificate.type}
+                </Badge>
+              }
+            />
+            <DetailRow
+              label="Status"
+              value={
+                <Badge
+                  variant={host.sslCertificate.status === "active" ? "success" : "destructive"}
+                  className="text-xs"
+                >
+                  {host.sslCertificate.status}
+                </Badge>
+              }
+            />
+            {host.sslCertificate.notAfter && (
+              <DetailRow
+                label="Expires"
+                value={new Date(host.sslCertificate.notAfter).toLocaleString()}
+              />
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Settings Tab Component ──────────────────────────────────────
+function SettingsTab({
+  host,
+  onToggle,
+  customHeaders,
+  setCustomHeaders,
+  cacheEnabled,
+  setCacheEnabled,
+  cacheMaxAge,
+  setCacheMaxAge,
+  rateLimitEnabled,
+  setRateLimitEnabled,
+  rateLimitRPS,
+  setRateLimitRPS,
+  rateLimitBurst,
+  setRateLimitBurst,
+  customRewrites,
+  setCustomRewrites,
+  onSaveCustom,
+  isSavingCustom,
+  accessListId,
+  accessLists,
+  onAccessListChange,
+  canManage,
+  hasHeadersChanged,
+  hasRewritesChanged,
+  healthCheckUrl,
+  setHealthCheckUrl,
+  healthCheckExpectedStatus,
+  setHealthCheckExpectedStatus,
+  healthCheckExpectedBody,
+  setHealthCheckExpectedBody,
+}: {
+  host: ProxyHost;
+  onToggle: (field: string, value: boolean) => void;
+  customHeaders: CustomHeader[];
+  setCustomHeaders: (v: CustomHeader[]) => void;
+  cacheEnabled: boolean;
+  setCacheEnabled: (v: boolean) => void;
+  cacheMaxAge: number;
+  setCacheMaxAge: (v: number) => void;
+  rateLimitEnabled: boolean;
+  setRateLimitEnabled: (v: boolean) => void;
+  rateLimitRPS: number;
+  setRateLimitRPS: (v: number) => void;
+  rateLimitBurst: number;
+  setRateLimitBurst: (v: number) => void;
+  customRewrites: RewriteRule[];
+  setCustomRewrites: (v: RewriteRule[]) => void;
+  onSaveCustom: () => void;
+  isSavingCustom: boolean;
+  accessListId: string;
+  accessLists: AccessList[];
+  onAccessListChange: (v: string) => void;
+  canManage: boolean;
+  hasHeadersChanged: boolean;
+  hasRewritesChanged: boolean;
+  healthCheckUrl: string;
+  setHealthCheckUrl: (v: string) => void;
+  healthCheckExpectedStatus: number | null;
+  setHealthCheckExpectedStatus: (v: number | null) => void;
+  healthCheckExpectedBody: string;
+  setHealthCheckExpectedBody: (v: string) => void;
+}) {
+  return (
+    <div className="space-y-4">
+      {/* WebSocket + Access List — side by side */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {host.type === "proxy" && (
+          <div className="border border-border bg-card">
+            <ToggleRow
+              label="WebSocket Support"
+              description="Enable WebSocket proxying"
+              checked={host.websocketSupport}
+              onChange={(v) => onToggle("websocketSupport", v)}
+            />
+          </div>
+        )}
+        <div
+          className={cn("border border-border bg-card", host.type !== "proxy" && "md:col-span-2")}
+        >
+          <div className="flex items-center justify-between p-4">
+            <div>
+              <h2 className="font-semibold text-sm">Access List</h2>
+              <p className="text-xs text-muted-foreground">
+                Restrict access via IP rules or basic authentication
+              </p>
+            </div>
+            <Select
+              value={accessListId || "__none__"}
+              onValueChange={(v) => onAccessListChange(v === "__none__" ? "" : v)}
+            >
+              <SelectTrigger className="w-48 shrink-0">
+                <SelectValue placeholder="None" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">None</SelectItem>
+                {accessLists.map((al) => (
+                  <SelectItem key={al.id} value={al.id}>
+                    {al.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      </div>
+
+      {/* SSL */}
+      <div className="border border-border bg-card">
+        <ToggleRow
+          label="SSL Enabled"
+          description="Serve this host over HTTPS"
+          checked={host.sslEnabled}
+          onChange={(v) => onToggle("sslEnabled", v)}
+        />
+        <div className="border-t border-border grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-border">
+          <ToggleRow
+            label="Force HTTPS"
+            description="Redirect HTTP to HTTPS"
+            checked={host.sslForced}
+            onChange={(v) => onToggle("sslForced", v)}
+            disabled={!host.sslEnabled}
+          />
+          <ToggleRow
+            label="HTTP/2"
+            description="Enable HTTP/2 protocol support"
+            checked={host.http2Support}
+            onChange={(v) => onToggle("http2Support", v)}
+            disabled={!host.sslEnabled}
+          />
+        </div>
+      </div>
+
+      {/* Cache & Rate Limit — side by side */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="border border-border bg-card">
+          <div className="divide-y divide-border">
+            <ToggleRow
+              label="Cache"
+              description="Enable response caching"
+              checked={cacheEnabled}
+              onChange={setCacheEnabled}
+            />
+            <div className="px-4 py-3">
+              <label className="text-xs font-medium text-muted-foreground">Max Age (seconds)</label>
+              <NumericInput
+                value={cacheMaxAge}
+                onChange={(v) => setCacheMaxAge(v)}
+                min={1}
+                className="mt-1"
+                disabled={!cacheEnabled}
+              />
+            </div>
+          </div>
+        </div>
+        <div className="border border-border bg-card">
+          <div className="divide-y divide-border">
+            <ToggleRow
+              label="Rate Limit"
+              description="Enable request rate limiting"
+              checked={rateLimitEnabled}
+              onChange={setRateLimitEnabled}
+            />
+            <div className="px-4 py-3 grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">Requests/sec</label>
+                <NumericInput
+                  value={rateLimitRPS}
+                  onChange={setRateLimitRPS}
+                  min={1}
+                  disabled={!rateLimitEnabled}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">Burst</label>
+                <NumericInput
+                  value={rateLimitBurst}
+                  onChange={setRateLimitBurst}
+                  min={1}
+                  disabled={!rateLimitEnabled}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Health Check */}
+      {host.type !== "404" && (
+        <div className="border border-border bg-card">
+          <ToggleRow
+            label="Health Check"
+            description="Enable periodic health monitoring"
+            checked={host.healthCheckEnabled}
+            onChange={(v) => onToggle("healthCheckEnabled", v)}
+          />
+          <div className="border-t border-border px-4 py-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">URL Path</label>
+              <Input
+                value={healthCheckUrl}
+                onChange={(e) => setHealthCheckUrl(e.target.value)}
+                placeholder="/"
+                disabled={!host.healthCheckEnabled}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Expected Status</label>
+              <Input
+                type="number"
+                value={healthCheckExpectedStatus ?? ""}
+                onChange={(e) =>
+                  setHealthCheckExpectedStatus(e.target.value ? Number(e.target.value) : null)
+                }
+                placeholder="Any 2xx"
+                disabled={!host.healthCheckEnabled}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Expected Body</label>
+              <Input
+                value={healthCheckExpectedBody}
+                onChange={(e) => setHealthCheckExpectedBody(e.target.value)}
+                placeholder="Optional"
+                disabled={!host.healthCheckEnabled}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Headers */}
+      <div className="border border-border bg-card">
+        <div
+          className={cn(
+            "flex items-center justify-between p-4",
+            customHeaders.length > 0 && "border-b border-border"
+          )}
+        >
+          <div>
+            <h2 className="font-semibold text-sm">Custom Headers</h2>
+            <p className="text-xs text-muted-foreground">
+              Add custom HTTP headers to proxied requests
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {canManage && (
+              <>
                 <Button
                   variant="outline"
                   size="sm"
+                  className="h-7 text-xs px-2.5"
+                  onClick={() => setCustomHeaders([...customHeaders, { name: "", value: "" }])}
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Add
+                </Button>
+                <Button
+                  size="sm"
+                  className="h-7 text-xs px-2.5"
+                  onClick={onSaveCustom}
+                  disabled={!hasHeadersChanged || isSavingCustom}
+                >
+                  <Save className="h-3.5 w-3.5" />
+                  Save
+                </Button>
+              </>
+            )}
+          </div>
+        </div>
+        <motion.div
+          animate={{ height: customHeaders.length > 0 ? "auto" : 0 }}
+          initial={false}
+          transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
+          className="overflow-hidden"
+        >
+          <div className="p-4 space-y-3">
+            <AnimatePresence initial={false}>
+              {customHeaders.map((header, i) => (
+                <motion.div
+                  key={`header-${i}`}
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
+                  className="flex gap-2"
+                >
+                  <Input
+                    placeholder="Header name"
+                    value={header.name}
+                    onChange={(e) => {
+                      const next = [...customHeaders];
+                      next[i] = { ...next[i], name: e.target.value };
+                      setCustomHeaders(next);
+                    }}
+                  />
+                  <Input
+                    placeholder="Value"
+                    value={header.value}
+                    onChange={(e) => {
+                      const next = [...customHeaders];
+                      next[i] = { ...next[i], value: e.target.value };
+                      setCustomHeaders(next);
+                    }}
+                  />
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => setCustomHeaders(customHeaders.filter((_, j) => j !== i))}
+                  >
+                    <Minus className="h-4 w-4" />
+                  </Button>
+                </motion.div>
+              ))}
+            </AnimatePresence>
+          </div>
+        </motion.div>
+      </div>
+
+      {/* URL Rewrites */}
+      <div className="border border-border bg-card">
+        <div
+          className={cn(
+            "flex items-center justify-between p-4",
+            customRewrites.length > 0 && "border-b border-border"
+          )}
+        >
+          <div>
+            <h2 className="font-semibold text-sm">URL Rewrites</h2>
+            <p className="text-xs text-muted-foreground">Rewrite request paths before proxying</p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {canManage && (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs px-2.5"
                   onClick={() =>
                     setCustomRewrites([
                       ...customRewrites,
@@ -962,207 +1090,335 @@ export function ProxyHostDetail() {
                     ])
                   }
                 >
-                  <Plus className="h-4 w-4" />
-                  Add Rewrite
+                  <Plus className="h-3.5 w-3.5" />
+                  Add
                 </Button>
-              </div>
-            </div>
-          </TabsContent>
-
-          {/* Advanced Tab */}
-          <TabsContent value="advanced" className="overflow-y-auto flex-1 min-h-0">
-            <div className="border border-border bg-card p-6 space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold">Custom Nginx Configuration</h3>
-                <Button variant="outline" size="sm" onClick={handleValidate}>
-                  Validate
+                <Button
+                  size="sm"
+                  className="h-7 text-xs px-2.5"
+                  onClick={onSaveCustom}
+                  disabled={!hasRewritesChanged || isSavingCustom}
+                >
+                  <Save className="h-3.5 w-3.5" />
+                  Save
                 </Button>
-              </div>
-              <textarea
-                className="w-full h-64 bg-background border border-input p-3 font-mono text-sm focus:outline-none focus:ring-1 focus:ring-ring"
-                value={advancedConfig}
-                onChange={(e) => {
-                  setAdvancedConfig(e.target.value);
-                  setValidationResult(null);
-                }}
-                placeholder="# Custom Nginx directives..."
-              />
-              {validationResult && (
-                <div
-                  className={cn(
-                    "p-3 text-sm border",
-                    validationResult.valid
-                      ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400"
-                      : "bg-red-500/10 border-red-500/30 text-red-600 dark:text-red-400"
-                  )}
-                >
-                  {validationResult.valid ? (
-                    "Configuration is valid"
-                  ) : (
-                    <div className="space-y-1">
-                      <p className="font-medium">Validation errors:</p>
-                      {validationResult.errors?.map((err, i) => (
-                        <p key={i}>{err}</p>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </TabsContent>
-
-          {/* Access List Tab */}
-          <TabsContent value="access" className="overflow-y-auto flex-1 min-h-0">
-            <div className="border border-border bg-card p-6 space-y-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Access List</label>
-                <Select
-                  value={accessListId || "__none__"}
-                  onValueChange={(v) => setAccessListId(v === "__none__" ? "" : v)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="None" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">None</SelectItem>
-                    {accessLists.map((al) => (
-                      <SelectItem key={al.id} value={al.id}>
-                        {al.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  Assign an access list to restrict access via IP rules or basic authentication.
-                </p>
-              </div>
-            </div>
-          </TabsContent>
-
-          {/* Health Check Tab */}
-          <TabsContent value="health" className="overflow-y-auto flex-1 min-h-0">
-            <div className="border border-border bg-card p-6 space-y-6">
-              <div className="flex items-center gap-3">
-                <Switch checked={healthCheckEnabled} onChange={setHealthCheckEnabled} />
-                <span className="text-sm font-medium">Enable Health Checks</span>
-              </div>
-
-              {healthCheckEnabled && (
+              </>
+            )}
+          </div>
+        </div>
+        <motion.div
+          animate={{ height: customRewrites.length > 0 ? "auto" : 0 }}
+          initial={false}
+          transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
+          className="overflow-hidden"
+        >
+          <div className="p-4 space-y-3">
+            <AnimatePresence initial={false}>
+              {customRewrites.map((rule, i) => (
                 <motion.div
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
+                  key={`rewrite-${i}`}
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
                   transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
-                  className="space-y-4"
+                  className="flex gap-2"
                 >
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Check URL Path</label>
-                    <Input
-                      value={healthCheckUrl}
-                      onChange={(e) => setHealthCheckUrl(e.target.value)}
-                      placeholder="/"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Interval (seconds)</label>
-                    <NumericInput
-                      value={healthCheckInterval}
-                      onChange={(v) => setHealthCheckInterval(v)}
-                      min={5}
-                      max={3600}
-                      className="w-40"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Expected Status Code</label>
-                    <Input
-                      type="number"
-                      value={healthCheckExpectedStatus ?? ""}
-                      onChange={(e) =>
-                        setHealthCheckExpectedStatus(e.target.value ? Number(e.target.value) : null)
-                      }
-                      placeholder="Any 2xx"
-                      className="w-40"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Leave empty to accept any 2xx status code.
-                    </p>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Expected Response Body</label>
-                    <Input
-                      value={healthCheckExpectedBody}
-                      onChange={(e) => setHealthCheckExpectedBody(e.target.value)}
-                      placeholder="String to match in response"
-                      maxLength={500}
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      If set, the response body must contain this string to be considered healthy.
-                    </p>
-                  </div>
-                </motion.div>
-              )}
-            </div>
-          </TabsContent>
-
-          {/* Raw Config Tab */}
-          {!isNew && (
-            <TabsContent value="raw" className="flex flex-col flex-1 min-h-0">
-              <div className="border border-border bg-card p-4 flex flex-col flex-1 min-h-0 gap-3">
-                <div className="flex items-center justify-between shrink-0">
-                  <div>
-                    <h3 className="text-sm font-semibold">Rendered Nginx Config</h3>
-                    <p className="text-xs text-muted-foreground">
-                      The actual nginx server block generated from the template and this host's
-                      settings.
-                    </p>
-                  </div>
+                  <Input
+                    placeholder="Source path"
+                    value={rule.source}
+                    onChange={(e) => {
+                      const next = [...customRewrites];
+                      next[i] = { ...next[i], source: e.target.value };
+                      setCustomRewrites(next);
+                    }}
+                  />
+                  <Input
+                    placeholder="Destination"
+                    value={rule.destination}
+                    onChange={(e) => {
+                      const next = [...customRewrites];
+                      next[i] = { ...next[i], destination: e.target.value };
+                      setCustomRewrites(next);
+                    }}
+                  />
+                  <Select
+                    value={rule.type}
+                    onValueChange={(v) => {
+                      const next = [...customRewrites];
+                      next[i] = { ...next[i], type: v as "permanent" | "temporary" };
+                      setCustomRewrites(next);
+                    }}
+                  >
+                    <SelectTrigger className="w-36">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="permanent">Permanent</SelectItem>
+                      <SelectItem value="temporary">Temporary</SelectItem>
+                    </SelectContent>
+                  </Select>
                   <Button
                     variant="outline"
-                    size="sm"
-                    onClick={loadRawConfig}
-                    disabled={isLoadingRaw}
+                    size="icon"
+                    onClick={() => setCustomRewrites(customRewrites.filter((_, j) => j !== i))}
                   >
-                    {isLoadingRaw ? "Loading..." : "Refresh"}
+                    <Minus className="h-4 w-4" />
                   </Button>
-                </div>
-                {isLoadingRaw && !rawConfigLoaded ? (
-                  <div className="flex items-center justify-center py-8">
-                    <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-                  </div>
-                ) : (
-                  <div className="flex-1 min-h-0 flex flex-col">
-                    <CodeEditor value={rawConfig} onChange={setRawConfig} readOnly />
-                  </div>
-                )}
-              </div>
-            </TabsContent>
-          )}
-
-          {/* Logs Tab */}
-          {!isNew && (
-            <TabsContent value="logs" className="flex flex-col flex-1 min-h-0">
-              <div className="border border-border bg-card p-4 flex flex-col flex-1 min-h-0 gap-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-semibold">Live Logs</h3>
-                  <Button variant="outline" size="sm" onClick={() => setLogLines([])}>
-                    Clear
-                  </Button>
-                </div>
-                <pre
-                  ref={logRef}
-                  className="h-96 overflow-auto bg-background border border-input p-3 font-mono text-xs leading-relaxed"
-                >
-                  {logLines.length === 0 ? (
-                    <span className="text-muted-foreground">Waiting for log events...</span>
-                  ) : (
-                    logLines.map((line, i) => <div key={i}>{line}</div>)
-                  )}
-                </pre>
-              </div>
-            </TabsContent>
-          )}
-        </Tabs>
+                </motion.div>
+              ))}
+            </AnimatePresence>
+          </div>
+        </motion.div>
       </div>
-    </PageTransition>
+    </div>
+  );
+}
+
+// ── Shared Components ───────────────────────────────────────────
+function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between px-4 py-3">
+      <span className="text-sm text-muted-foreground">{label}</span>
+      <span className="text-sm">{value}</span>
+    </div>
+  );
+}
+
+function ToggleRow({
+  label,
+  description,
+  checked,
+  onChange,
+  disabled,
+}: {
+  label: string;
+  description: string;
+  checked: boolean;
+  onChange: (value: boolean) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between px-4 py-3">
+      <div className={cn(disabled && "opacity-50")}>
+        <span className="text-sm font-medium">{label}</span>
+        <p className="text-xs text-muted-foreground">{description}</p>
+      </div>
+      <Switch checked={checked} onChange={onChange} disabled={disabled} />
+    </div>
+  );
+}
+
+// ── Proxy Host Logs Tab ─────────────────────────────────────────
+
+interface NginxLogEntry {
+  hostId: string;
+  timestamp: string;
+  remoteAddr: string;
+  method: string;
+  path: string;
+  status: number;
+  bodyBytesSent: string;
+  raw: string;
+  logType: string;
+  level: string;
+}
+
+const STATUS_VARIANT: Record<
+  string,
+  "default" | "secondary" | "destructive" | "success" | "warning"
+> = {
+  "2": "success",
+  "3": "default",
+  "4": "warning",
+  "5": "destructive",
+};
+
+function ProxyHostLogsTab({ hostId }: { hostId: string }) {
+  const [logs, setLogs] = useState<NginxLogEntry[]>([]);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const esRef = useRef<EventSource | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const userScrolled = useRef(false);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+      userScrolled.current = !atBottom;
+    };
+    el.addEventListener("scroll", onScroll);
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: auto-scroll on new logs
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el && !userScrolled.current) el.scrollTop = el.scrollHeight;
+  }, [logs]);
+
+  useEffect(() => {
+    if (esRef.current) esRef.current.close();
+
+    const sessionId = useAuthStore.getState().sessionId;
+    const params = new URLSearchParams();
+    if (sessionId) params.set("token", sessionId);
+
+    const es = new EventSource(`/api/monitoring/logs/${hostId}/stream?${params}`);
+    esRef.current = es;
+
+    es.addEventListener("connected", () => setLogs([]));
+    es.addEventListener("log", (e) => {
+      try {
+        const entry = JSON.parse(e.data) as NginxLogEntry;
+        // Client-side filtering
+        if (statusFilter !== "all") {
+          const prefix = statusFilter.replace("xx", "");
+          if (entry.logType === "error") {
+            if (statusFilter !== "error") return;
+          } else if (!String(entry.status).startsWith(prefix)) {
+            return;
+          }
+        }
+        if (debouncedSearch) {
+          const q = debouncedSearch.toLowerCase();
+          if (
+            !entry.path?.toLowerCase().includes(q) &&
+            !entry.remoteAddr?.toLowerCase().includes(q) &&
+            !entry.raw?.toLowerCase().includes(q)
+          ) {
+            return;
+          }
+        }
+        setLogs((prev) => {
+          const next = [...prev, entry];
+          return next.length > 300 ? next.slice(-300) : next;
+        });
+      } catch {}
+    });
+    es.onerror = () => {
+      if (es.readyState === EventSource.CLOSED) es.close();
+    };
+
+    return () => es.close();
+  }, [hostId, statusFilter, debouncedSearch]);
+
+  const colgroup = (
+    <colgroup>
+      <col style={{ width: "160px" }} />
+      <col style={{ width: "60px" }} />
+      <col style={{ width: "120px" }} />
+      <col style={{ width: "60px" }} />
+      <col />
+      <col style={{ width: "60px" }} />
+      <col style={{ width: "70px" }} />
+    </colgroup>
+  );
+
+  return (
+    <div className="flex flex-col flex-1 min-h-0 gap-2">
+      <div className="flex gap-3 shrink-0">
+        <Input
+          className="flex-1"
+          placeholder="Search by path or IP..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-40">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All status</SelectItem>
+            <SelectItem value="2xx">2xx Success</SelectItem>
+            <SelectItem value="3xx">3xx Redirect</SelectItem>
+            <SelectItem value="4xx">4xx Client Err</SelectItem>
+            <SelectItem value="5xx">5xx Server Err</SelectItem>
+            <SelectItem value="error">Error Log</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="flex-1 min-h-0 flex flex-col border border-border bg-card">
+        <table className="w-full shrink-0" style={{ tableLayout: "fixed" }}>
+          {colgroup}
+          <thead>
+            <tr className="text-left border-b border-border">
+              <th className="p-3 text-xs font-medium text-muted-foreground">Time</th>
+              <th className="p-3 text-xs font-medium text-muted-foreground">Type</th>
+              <th className="p-3 text-xs font-medium text-muted-foreground">Remote Addr</th>
+              <th className="p-3 text-xs font-medium text-muted-foreground">Method</th>
+              <th className="p-3 text-xs font-medium text-muted-foreground">Path / Message</th>
+              <th className="p-3 text-xs font-medium text-muted-foreground">Status</th>
+              <th className="p-3 text-xs font-medium text-muted-foreground">Size</th>
+            </tr>
+          </thead>
+        </table>
+        <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto">
+          <table className="w-full" style={{ tableLayout: "fixed" }}>
+            {colgroup}
+            <tbody className="divide-y divide-border">
+              {logs.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="text-center py-16 text-sm text-muted-foreground">
+                    Waiting for log events...
+                  </td>
+                </tr>
+              ) : (
+                logs.map((entry, i) => {
+                  const isError = entry.logType === "error";
+                  return (
+                    <tr key={i}>
+                      <td className="p-3 text-sm text-muted-foreground whitespace-nowrap">
+                        {entry.timestamp}
+                      </td>
+                      <td className="p-3 text-sm">
+                        <Badge
+                          variant={isError ? "destructive" : "secondary"}
+                          className="text-[10px]"
+                        >
+                          {isError ? "err" : "acc"}
+                        </Badge>
+                      </td>
+                      <td className="p-3 text-sm text-muted-foreground">
+                        {isError ? "—" : entry.remoteAddr}
+                      </td>
+                      <td className="p-3 text-sm">{isError ? "—" : entry.method}</td>
+                      <td className="p-3 text-sm truncate" title={isError ? entry.raw : entry.path}>
+                        {isError ? entry.raw : entry.path}
+                      </td>
+                      <td className="p-3 text-sm">
+                        {isError ? (
+                          <Badge variant="destructive" className="text-[10px]">
+                            {entry.level || "err"}
+                          </Badge>
+                        ) : (
+                          <Badge
+                            variant={STATUS_VARIANT[String(entry.status)[0]] ?? "secondary"}
+                            className="text-xs"
+                          >
+                            {entry.status}
+                          </Badge>
+                        )}
+                      </td>
+                      <td className="p-3 text-sm text-muted-foreground">
+                        {isError ? "—" : entry.bodyBytesSent}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   );
 }

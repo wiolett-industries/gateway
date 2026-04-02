@@ -1,14 +1,32 @@
-import { FlaskConical, Save } from "lucide-react";
-import { useEffect, useState } from "react";
+import { RefreshCw, Save } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { CodeEditor } from "@/components/ui/code-editor";
+import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 
 interface NodeConfigTabProps {
   nodeId: string;
   nodeStatus: string;
+}
+
+/** Parse line numbers from nginx error output */
+function parseErrorLines(error: string): number[] {
+  const lines: number[] = [];
+  for (const match of error.matchAll(/on line (\d+)/gi)) {
+    lines.push(Number(match[1]));
+  }
+  return lines;
+}
+
+/** Split nginx error into individual messages */
+function splitErrors(error: string): string[] {
+  return error
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
 }
 
 export function NodeConfigTab({ nodeId, nodeStatus }: NodeConfigTabProps) {
@@ -20,6 +38,7 @@ export function NodeConfigTab({ nodeId, nodeStatus }: NodeConfigTabProps) {
   const [loading, setLoading] = useState(true);
   const [isTesting, setIsTesting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [errorLines, setErrorLines] = useState<number[]>([]);
 
   useEffect(() => {
     if (nodeStatus !== "online") return;
@@ -38,38 +57,52 @@ export function NodeConfigTab({ nodeId, nodeStatus }: NodeConfigTabProps) {
     load();
   }, [nodeId, nodeStatus]);
 
-  const handleTest = async () => {
+  const handleTest = useCallback(async (): Promise<boolean> => {
     setIsTesting(true);
     try {
-      const result = await api.testNodeNginxConfig(nodeId);
+      const result = await api.testNodeNginxConfig(nodeId, configContent);
       if (result.valid) {
+        setErrorLines([]);
         toast.success("Configuration test passed");
-      } else {
-        toast.error(result.error || "Configuration test failed");
+        return true;
       }
+      const err = result.error || "Configuration test failed";
+      const msgs = splitErrors(err);
+      for (const msg of msgs) toast.error(msg);
+      setErrorLines(parseErrorLines(err));
+      return false;
     } catch {
       toast.error("Failed to test config");
+      return false;
     } finally {
       setIsTesting(false);
     }
-  };
+  }, [nodeId, configContent]);
 
-  const handleSave = async () => {
+  const handleSave = useCallback(async () => {
+    // Validate first via test
+    const valid = await handleTest();
+    if (!valid) return;
+
     setIsSaving(true);
     try {
       const result = await api.updateNodeNginxConfig(nodeId, configContent);
       if (result.valid) {
         toast.success("Config saved and nginx reloaded");
         setOriginalConfig(configContent);
+        setErrorLines([]);
       } else {
-        toast.error(result.error || "Config test failed, changes rolled back");
+        const err = result.error || "Config test failed, changes rolled back";
+        const msgs = splitErrors(err);
+        for (const msg of msgs) toast.error(msg);
+        setErrorLines(parseErrorLines(err));
       }
     } catch {
       toast.error("Failed to save config");
     } finally {
       setIsSaving(false);
     }
-  };
+  }, [nodeId, configContent, handleTest]);
 
   if (nodeStatus !== "online") {
     return (
@@ -90,29 +123,29 @@ export function NodeConfigTab({ nodeId, nodeStatus }: NodeConfigTabProps) {
   const hasChanges = configContent !== originalConfig;
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 gap-3">
-      <div className="flex-1 min-h-0 flex flex-col">
-        <CodeEditor
-          value={configContent}
-          onChange={canManage ? setConfigContent : () => {}}
-          readOnly={!canManage}
-        />
-      </div>
-
-      <div className="flex items-center justify-end gap-2 mt-3">
-        {!canManage && (
-          <p className="text-xs text-muted-foreground">
-            Read-only — proxy:manage permission required to edit
-          </p>
-        )}
+    <div className="flex flex-col flex-1 min-h-0 relative">
+      <CodeEditor
+        value={configContent}
+        onChange={
+          canManage
+            ? (val) => {
+                setConfigContent(val);
+                setErrorLines([]);
+              }
+            : () => {}
+        }
+        readOnly={!canManage}
+        errorLines={errorLines}
+      />
+      <div className="absolute right-2.5 bottom-2.5 z-10 flex items-center gap-2">
         <Button variant="outline" size="sm" onClick={handleTest} disabled={isTesting}>
-          <FlaskConical className="h-4 w-4" />
-          {isTesting ? "Testing..." : "Test"}
+          <RefreshCw className={cn("h-4 w-4", isTesting && "animate-spin")} />
+          Validate
         </Button>
         {canManage && (
           <Button size="sm" onClick={handleSave} disabled={isSaving || !hasChanges}>
             <Save className="h-4 w-4" />
-            {isSaving ? "Saving..." : "Save & Reload"}
+            Save
           </Button>
         )}
       </div>

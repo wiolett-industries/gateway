@@ -7,7 +7,7 @@ import { proxyHostFolders } from './proxy-host-folders.js';
 import { sslCertificates } from './ssl-certificates.js';
 import { users } from './users.js';
 
-export const proxyHostTypeEnum = pgEnum('proxy_host_type', ['proxy', 'redirect', '404']);
+export const proxyHostTypeEnum = pgEnum('proxy_host_type', ['proxy', 'redirect', '404', 'raw']);
 export const forwardSchemeEnum = pgEnum('forward_scheme', ['http', 'https']);
 export const healthStatusEnum = pgEnum('health_status', ['online', 'offline', 'degraded', 'unknown', 'disabled']);
 
@@ -70,6 +70,10 @@ export const proxyHosts = pgTable(
     // Custom config — raw nginx
     advancedConfig: text('advanced_config'),
 
+    // Raw config override — bypasses template rendering entirely
+    rawConfig: text('raw_config'),
+    rawConfigEnabled: boolean('raw_config_enabled').notNull().default(false),
+
     // Folder / organization
     folderId: uuid('folder_id').references(() => proxyHostFolders.id, { onDelete: 'set null' }),
     sortOrder: integer('sort_order').notNull().default(0),
@@ -92,6 +96,7 @@ export const proxyHosts = pgTable(
     healthCheckExpectedBody: varchar('health_check_expected_body', { length: 500 }), // null = don't check body
     healthStatus: healthStatusEnum('health_status').default('unknown'),
     lastHealthCheckAt: timestamp('last_health_check_at', { withTimezone: true }),
+    healthHistory: jsonb('health_history').$type<Array<{ ts: string; status: string }>>().default([]),
 
     // System flag — locked hosts cannot be deleted (e.g. management proxy)
     isSystem: boolean('is_system').notNull().default(false),

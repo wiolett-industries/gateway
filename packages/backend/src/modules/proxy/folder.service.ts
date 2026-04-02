@@ -26,6 +26,27 @@ const MAX_DEPTH = 2; // 0, 1, 2 = three levels
 type FolderRow = typeof proxyHostFolders.$inferSelect;
 type ProxyHostRow = typeof proxyHosts.$inferSelect;
 
+/** Compute effective health status and return a plain object (Drizzle rows are class instances) */
+function toPlainHost(host: ProxyHostRow): Record<string, unknown> {
+  const plain: Record<string, unknown> = {};
+  for (const key of Object.keys(proxyHosts) as Array<keyof typeof proxyHosts>) {
+    if (key in host) plain[key] = (host as any)[key];
+  }
+
+  let effectiveStatus = host.healthStatus as string;
+  if (host.healthStatus === 'online' && Array.isArray(host.healthHistory) && host.healthHistory.length > 0) {
+    const fiveMinAgo = Date.now() - 5 * 60 * 1000;
+    const recent = (host.healthHistory as Array<{ ts?: string; status: string }>).filter(
+      (h) => h.ts && new Date(h.ts).getTime() >= fiveMinAgo
+    );
+    if (recent.some((h) => h.status === 'offline' || h.status === 'degraded')) {
+      effectiveStatus = 'recovering';
+    }
+  }
+  plain.effectiveHealthStatus = effectiveStatus;
+  return plain;
+}
+
 export interface FolderTreeNode extends FolderRow {
   children: FolderTreeNode[];
   hosts: ProxyHostRow[];
@@ -332,9 +353,17 @@ export class FolderService {
     // 5. Ungrouped hosts (folderId = null)
     const ungroupedHosts = hostsByFolder.get(null) ?? [];
 
+    // 6. Convert to plain objects with effectiveHealthStatus
+    const mapTree = (nodes: FolderTreeNode[]): any[] =>
+      nodes.map((n) => ({
+        ...n,
+        hosts: n.hosts.map(toPlainHost),
+        children: mapTree(n.children),
+      }));
+
     return {
-      folders: tree,
-      ungroupedHosts,
+      folders: mapTree(tree),
+      ungroupedHosts: ungroupedHosts.map(toPlainHost) as any,
       totalHosts: allHosts.length,
     };
   }

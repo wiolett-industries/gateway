@@ -96,7 +96,7 @@ proxyRoutes.get('/:id/rendered-config', requireScope('proxy:read'), async (c) =>
 proxyRoutes.post('/validate-config', requireScope('proxy:manage'), async (c) => {
   const proxyService = container.resolve(ProxyService);
   const body = await c.req.json();
-  const { snippet } = ValidateAdvancedConfigSchema.parse(body);
-  const result = await proxyService.validateAdvancedConfig(snippet);
+  const { snippet, mode } = ValidateAdvancedConfigSchema.parse(body);
+  const result = await proxyService.validateAdvancedConfig(snippet, mode === 'raw');
   return c.json({ data: result });
 });

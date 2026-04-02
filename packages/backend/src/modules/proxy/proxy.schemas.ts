@@ -35,7 +35,7 @@ const RewriteRuleSchema = z.object({
 
 export const CreateProxyHostSchema = z
   .object({
-    type: z.enum(['proxy', 'redirect', '404']).default('proxy'),
+    type: z.enum(['proxy', 'redirect', '404', 'raw']).default('proxy'),
     nodeId: z.string().uuid('A node must be selected'),
     domainNames: z.array(DomainNameSchema).min(1, 'At least one domain name is required'),
 
@@ -77,6 +77,10 @@ export const CreateProxyHostSchema = z
 
     // Advanced nginx config
     advancedConfig: z.string().max(10000).optional(),
+
+    // Raw config override — bypasses template rendering
+    rawConfig: z.string().max(100000).optional(),
+    rawConfigEnabled: z.boolean().optional(),
 
     // Access list
     accessListId: z.string().uuid().optional(),
@@ -122,6 +126,14 @@ export const CreateProxyHostSchema = z
         });
       }
     }
+
+    if (data.type === '404' && data.healthCheckEnabled) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Health checks are not available for 404 hosts (no upstream)',
+        path: ['healthCheckEnabled'],
+      });
+    }
   });
 
 // ---------------------------------------------------------------------------
@@ -129,7 +141,7 @@ export const CreateProxyHostSchema = z
 // ---------------------------------------------------------------------------
 
 export const UpdateProxyHostSchema = z.object({
-  type: z.enum(['proxy', 'redirect', '404']).optional(),
+  type: z.enum(['proxy', 'redirect', '404', 'raw']).optional(),
   domainNames: z.array(DomainNameSchema).min(1, 'At least one domain name is required').optional(),
 
   forwardHost: z
@@ -164,6 +176,9 @@ export const UpdateProxyHostSchema = z.object({
 
   advancedConfig: z.string().max(10000).optional().nullable(),
 
+  rawConfig: z.string().max(100000).optional().nullable(),
+  rawConfigEnabled: z.boolean().optional(),
+
   accessListId: z.string().uuid().optional().nullable(),
 
   folderId: z.string().uuid().optional().nullable(),
@@ -188,7 +203,7 @@ export const UpdateProxyHostSchema = z.object({
 export const ProxyHostListQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
-  type: z.enum(['proxy', 'redirect', '404']).optional(),
+  type: z.enum(['proxy', 'redirect', '404', 'raw']).optional(),
   enabled: z.coerce.boolean().optional(),
   healthStatus: z.enum(['online', 'offline', 'degraded', 'unknown']).optional(),
   search: z.string().max(255).optional(),
@@ -208,7 +223,8 @@ export const ToggleProxyHostSchema = z.object({
 // ---------------------------------------------------------------------------
 
 export const ValidateAdvancedConfigSchema = z.object({
-  snippet: z.string().min(1).max(10000),
+  snippet: z.string().min(1).max(100000),
+  mode: z.enum(['advanced', 'raw']).optional().default('advanced'),
 });
 
 // ---------------------------------------------------------------------------

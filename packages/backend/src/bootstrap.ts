@@ -41,6 +41,7 @@ import { CryptoService } from '@/services/crypto.service.js';
 import { DockerService } from '@/services/docker.service.js';
 import { HousekeepingService } from '@/services/housekeeping.service.js';
 import { NginxConfigGenerator } from '@/services/nginx-config-generator.service.js';
+import { NginxSyntaxValidatorService } from '@/services/nginx-syntax-validator.service.js';
 import { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import { NodeRegistryService } from '@/services/node-registry.service.js';
 import { SchedulerService } from '@/services/scheduler.service.js';
@@ -139,13 +140,15 @@ export async function initializeContainer(): Promise<void> {
   const nodeMonitoringService = new NodeMonitoringService(nodeRegistry, nodeDispatch);
   container.registerInstance(NodeMonitoringService, nodeMonitoringService);
 
+  const nginxSyntaxValidator = new NginxSyntaxValidatorService();
   const proxyService = new ProxyService(
     db,
     nginxTemplateService,
     auditService,
     cryptoService,
     nginxConfigGenerator,
-    nodeDispatch
+    nodeDispatch,
+    nginxSyntaxValidator
   );
   container.registerInstance(ProxyService, proxyService);
 

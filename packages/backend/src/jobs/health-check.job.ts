@@ -6,6 +6,7 @@ import { createChildLogger } from '@/lib/logger.js';
 const logger = createChildLogger('HealthCheckJob');
 
 const HEALTH_CHECK_TIMEOUT_MS = 10_000;
+const MAX_HISTORY_AGE_MS = 90 * 24 * 3600 * 1000; // 90 days
 
 type HealthStatus = 'online' | 'offline' | 'degraded' | 'unknown';
 
@@ -19,10 +20,11 @@ export class HealthCheckJob {
     });
 
     if (hosts.length === 0) {
+      logger.debug('No hosts with health checks enabled');
       return;
     }
 
-    logger.debug(`Running health checks for ${hosts.length} host(s)`);
+    logger.info(`Running health checks for ${hosts.length} host(s)`);
 
     // Run all health checks in parallel
     const results = await Promise.allSettled(
@@ -30,14 +32,24 @@ export class HealthCheckJob {
         const previousStatus = host.healthStatus as HealthStatus;
         const newStatus = await this.checkHost(host);
 
-        // Update status in DB
-        await this.db
-          .update(proxyHosts)
-          .set({
-            healthStatus: newStatus,
-            lastHealthCheckAt: new Date(),
-          })
-          .where(eq(proxyHosts.id, host.id));
+        // Build update payload
+        const updatePayload: Record<string, unknown> = {
+          healthStatus: newStatus,
+          lastHealthCheckAt: new Date(),
+        };
+
+        // Record every health check result, prune entries older than 90 days
+        const now = Date.now();
+        const cutoff = new Date(now - MAX_HISTORY_AGE_MS).toISOString();
+        const history: Array<{ ts: string; status: string }> = (
+          (host.healthHistory as Array<{ ts: string; status: string }>) ?? []
+        ).filter((h) => h.ts > cutoff);
+
+        history.push({ ts: new Date(now).toISOString(), status: newStatus });
+        updatePayload.healthHistory = history;
+
+        // Write to DB
+        await this.db.update(proxyHosts).set(updatePayload).where(eq(proxyHosts.id, host.id));
 
         // Log status transitions
         if (previousStatus !== newStatus) {

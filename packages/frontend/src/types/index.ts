@@ -530,7 +530,7 @@ export interface IssueCertFromCSRRequest {
 }
 
 // Proxy Host Types
-export type ProxyHostType = "proxy" | "redirect" | "404";
+export type ProxyHostType = "proxy" | "redirect" | "404" | "raw";
 export type ForwardScheme = "http" | "https";
 export type HealthStatus = "online" | "offline" | "degraded" | "unknown" | "disabled";
 
@@ -578,6 +578,8 @@ export interface ProxyHost {
   rateLimitOptions: RateLimitOptions | null;
   customRewrites: RewriteRule[];
   advancedConfig: string | null;
+  rawConfig: string | null;
+  rawConfigEnabled: boolean;
   accessListId: string | null;
   folderId: string | null;
   sortOrder: number;
@@ -589,7 +591,9 @@ export interface ProxyHost {
   healthCheckExpectedStatus: number | null;
   healthCheckExpectedBody: string | null;
   healthStatus: HealthStatus;
+  effectiveHealthStatus?: string;
   lastHealthCheckAt: string | null;
+  healthHistory?: Array<{ ts: string; status: string }>;
   isSystem?: boolean;
   createdById: string;
   createdAt: string;
@@ -694,6 +698,8 @@ export interface CreateProxyHostRequest {
   rateLimitOptions?: RateLimitOptions;
   customRewrites?: RewriteRule[];
   advancedConfig?: string;
+  rawConfig?: string;
+  rawConfigEnabled?: boolean;
   accessListId?: string;
   folderId?: string;
   nginxTemplateId?: string;
