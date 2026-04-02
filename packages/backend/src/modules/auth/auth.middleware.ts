@@ -77,13 +77,27 @@ export const authMiddleware: MiddlewareHandler<AppEnv> = async (c, next) => {
     }
 
     // Always resolve scopes from the live group definition (not session cache)
-    // so group scope changes take effect without re-login
+    // so group scope changes take effect without re-login.
+    // Walk the parent chain to include inherited scopes.
     const db = container.resolve<DrizzleClient>(TOKENS.DrizzleClient);
-    const group = await db.query.permissionGroups.findFirst({
-      where: eq(permissionGroups.id, user.groupId),
-      columns: { scopes: true, name: true },
+    const allGroups = await db.query.permissionGroups.findMany({
+      columns: { id: true, parentId: true, scopes: true, name: true },
     });
-    const liveScopes = (group?.scopes as string[]) ?? [];
+    const groupMap = new Map(allGroups.map((g) => [g.id, g]));
+    const group = groupMap.get(user.groupId);
+    const scopeSet = new Set<string>();
+    if (group) {
+      for (const s of (group.scopes as string[]) ?? []) scopeSet.add(s);
+      // Walk parent chain for inherited scopes
+      const visited = new Set<string>([group.id]);
+      let parent = group.parentId ? groupMap.get(group.parentId) : undefined;
+      while (parent && !visited.has(parent.id)) {
+        visited.add(parent.id);
+        for (const s of (parent.scopes as string[]) ?? []) scopeSet.add(s);
+        parent = parent.parentId ? groupMap.get(parent.parentId) : undefined;
+      }
+    }
+    const liveScopes = [...scopeSet];
 
     c.set('user', { ...user, scopes: liveScopes, groupName: group?.name ?? user.groupName });
     c.set('sessionId', credential.value);

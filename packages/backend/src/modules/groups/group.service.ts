@@ -20,6 +20,7 @@ export class GroupService {
         name: permissionGroups.name,
         description: permissionGroups.description,
         isBuiltin: permissionGroups.isBuiltin,
+        parentId: permissionGroups.parentId,
         scopes: permissionGroups.scopes,
         createdAt: permissionGroups.createdAt,
         updatedAt: permissionGroups.updatedAt,
@@ -28,8 +29,12 @@ export class GroupService {
       .from(permissionGroups)
       .orderBy(sql`${permissionGroups.isBuiltin} DESC`, sql`jsonb_array_length(${permissionGroups.scopes}) DESC`);
 
+    // Build a map for inherited scope computation
+    const groupMap = new Map(groups.map((g) => [g.id, g]));
+
     return groups.map((g) => ({
       ...g,
+      inheritedScopes: this.computeInheritedScopes(g.id, groupMap),
       createdAt: g.createdAt.toISOString(),
       updatedAt: g.updatedAt.toISOString(),
     }));
@@ -46,9 +51,14 @@ export class GroupService {
 
     const [{ count: memberCount }] = await this.db.select({ count: count() }).from(users).where(eq(users.groupId, id));
 
+    // Fetch all groups for inherited scope computation
+    const allGroups = await this.db.select().from(permissionGroups);
+    const groupMap = new Map(allGroups.map((g) => [g.id, g]));
+
     return {
       ...group,
       memberCount: Number(memberCount),
+      inheritedScopes: this.computeInheritedScopes(group.id, groupMap),
       createdAt: group.createdAt.toISOString(),
       updatedAt: group.updatedAt.toISOString(),
     };
@@ -66,20 +76,31 @@ export class GroupService {
       throw new AppError(409, 'GROUP_EXISTS', `Group "${input.name}" already exists`);
     }
 
+    if (input.parentId) {
+      const parent = await this.db.query.permissionGroups.findFirst({
+        where: eq(permissionGroups.id, input.parentId),
+      });
+      if (!parent) {
+        throw new AppError(404, 'PARENT_NOT_FOUND', 'Parent group not found');
+      }
+    }
+
     const [group] = await this.db
       .insert(permissionGroups)
       .values({
         name: input.name,
         description: input.description ?? null,
         isBuiltin: false,
+        parentId: input.parentId ?? null,
         scopes: input.scopes,
       })
       .returning();
 
-    logger.info('Created permission group', { groupId: group.id, name: group.name });
+    logger.info('Created permission group', { groupId: group.id, name: group.name, parentId: group.parentId });
 
     return {
       ...group,
+      inheritedScopes: [] as string[],
       memberCount: 0,
       createdAt: group.createdAt.toISOString(),
       updatedAt: group.updatedAt.toISOString(),
@@ -106,12 +127,34 @@ export class GroupService {
       }
     }
 
+    // Validate parentId doesn't create a cycle
+    if (input.parentId !== undefined) {
+      if (input.parentId === id) {
+        throw new AppError(400, 'CYCLE_DETECTED', 'A group cannot be its own parent');
+      }
+      if (input.parentId) {
+        const allGroups = await this.db.select().from(permissionGroups);
+        const groupMap = new Map(allGroups.map((g) => [g.id, g]));
+        // Walk up from proposed parent to check for cycles
+        let current: string | null = input.parentId;
+        const visited = new Set<string>([id]);
+        while (current) {
+          if (visited.has(current)) {
+            throw new AppError(400, 'CYCLE_DETECTED', 'This parent assignment would create a cycle');
+          }
+          visited.add(current);
+          current = groupMap.get(current)?.parentId ?? null;
+        }
+      }
+    }
+
     const [updated] = await this.db
       .update(permissionGroups)
       .set({
         ...(input.name !== undefined && { name: input.name }),
         ...(input.description !== undefined && { description: input.description }),
         ...(input.scopes !== undefined && { scopes: input.scopes }),
+        ...(input.parentId !== undefined && { parentId: input.parentId }),
         updatedAt: new Date(),
       })
       .where(eq(permissionGroups.id, id))
@@ -149,6 +192,9 @@ export class GroupService {
       );
     }
 
+    // Unparent child groups before deleting
+    await this.db.update(permissionGroups).set({ parentId: null }).where(eq(permissionGroups.parentId, id));
+
     await this.db.delete(permissionGroups).where(eq(permissionGroups.id, id));
     logger.info('Deleted permission group', { groupId: id, name: group.name });
   }
@@ -156,5 +202,29 @@ export class GroupService {
   async getMemberIds(groupId: string): Promise<string[]> {
     const rows = await this.db.select({ id: users.id }).from(users).where(eq(users.groupId, groupId));
     return rows.map((r) => r.id);
+  }
+
+  /**
+   * Compute inherited scopes by walking the parent chain.
+   * Returns scopes from all ancestors (deduped), NOT including the group's own scopes.
+   */
+  private computeInheritedScopes(
+    groupId: string,
+    groupMap: Map<string, { id: string; parentId: string | null; scopes: unknown }>
+  ): string[] {
+    const inherited = new Set<string>();
+    const group = groupMap.get(groupId);
+    if (!group) return [];
+
+    let current = group.parentId ? groupMap.get(group.parentId) : null;
+    const visited = new Set<string>([groupId]);
+    while (current && !visited.has(current.id)) {
+      visited.add(current.id);
+      const parentScopes = (current.scopes as string[]) ?? [];
+      for (const s of parentScopes) inherited.add(s);
+      current = current.parentId ? groupMap.get(current.parentId) : null;
+    }
+
+    return [...inherited];
   }
 }

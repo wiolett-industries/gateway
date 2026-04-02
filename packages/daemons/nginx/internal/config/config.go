@@ -8,12 +8,12 @@ import (
 )
 
 type Config struct {
-	Gateway  GatewayConfig  `yaml:"gateway"`
-	TLS      TLSConfig      `yaml:"tls"`
-	Nginx    NginxConfig    `yaml:"nginx"`
-	StateDir string         `yaml:"state_dir"`
-	LogLevel string         `yaml:"log_level"`
-	LogFormat string        `yaml:"log_format"`
+	Gateway  GatewayConfig `yaml:"gateway"`
+	TLS      TLSConfig     `yaml:"tls"`
+	Nginx    NginxConfig   `yaml:"nginx"`
+	StateDir string        `yaml:"state_dir"`
+	LogLevel string        `yaml:"log_level"`
+	LogFormat string       `yaml:"log_format"`
 }
 
 type GatewayConfig struct {
@@ -83,43 +83,4 @@ func (c *Config) validate() error {
 		return fmt.Errorf("nginx.certs_dir is required")
 	}
 	return nil
-}
-
-// ClearTokenFromFile re-reads the config file, removes the token, and writes it back.
-func (c *Config) ClearTokenFromFile(path string) error {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-
-	// Parse into a generic map so we don't lose any fields
-	var raw map[string]interface{}
-	if err := yaml.Unmarshal(data, &raw); err != nil {
-		return err
-	}
-
-	// Clear the token in the gateway section
-	if gw, ok := raw["gateway"].(map[string]interface{}); ok {
-		delete(gw, "token")
-	}
-
-	out, err := yaml.Marshal(raw)
-	if err != nil {
-		return err
-	}
-
-	return os.WriteFile(path, out, 0600)
-}
-
-func (c *Config) IsEnrolled() bool {
-	if c.TLS.CACert == "" || c.TLS.ClientCert == "" || c.TLS.ClientKey == "" {
-		return false
-	}
-	// Check that cert files actually exist on disk
-	for _, path := range []string{c.TLS.CACert, c.TLS.ClientCert, c.TLS.ClientKey} {
-		if _, err := os.Stat(path); err != nil {
-			return false
-		}
-	}
-	return true
 }

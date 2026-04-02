@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/services/api";
-import type { NodeDetail, ProxyHost } from "@/types";
+import type { NodeDetail, NodeHealthReport, ProxyHost } from "@/types";
 
 interface NodeDetailsTabProps {
   node: NodeDetail;
@@ -11,6 +11,19 @@ interface NodeDetailsTabProps {
 export function NodeDetailsTab({ node }: NodeDetailsTabProps) {
   const navigate = useNavigate();
   const [proxyHosts, setProxyHosts] = useState<ProxyHost[]>([]);
+  const h: NodeHealthReport | null = node.liveHealthReport ?? node.lastHealthReport;
+  const caps = (node.capabilities ?? {}) as Record<string, unknown>;
+  const resourcesRef = useRef<HTMLDivElement>(null);
+  const [resourcesHeight, setResourcesHeight] = useState(0);
+
+  useEffect(() => {
+    if (!resourcesRef.current) return;
+    const ro = new ResizeObserver(([entry]) => {
+      setResourcesHeight(entry.contentRect.height + 2); // +2 for border
+    });
+    ro.observe(resourcesRef.current);
+    return () => ro.disconnect();
+  }, [h]);
 
   useEffect(() => {
     let cancelled = false;
@@ -38,12 +51,15 @@ export function NodeDetailsTab({ node }: NodeDetailsTabProps) {
             <h2 className="font-semibold">Identity</h2>
           </div>
           <div className="divide-y divide-border">
-            <DetailRow label="Node ID" value={<span className="font-mono">{node.id}</span>} />
+            <DetailRow
+              label="Node ID"
+              value={<span className="font-mono text-xs">{node.id}</span>}
+            />
             <DetailRow label="Hostname" value={node.hostname} />
             <DetailRow
               label="Type"
               value={
-                <Badge variant="secondary" className="text-xs capitalize">
+                <Badge variant="secondary" className="text-xs uppercase">
                   {node.type}
                 </Badge>
               }
@@ -57,17 +73,22 @@ export function NodeDetailsTab({ node }: NodeDetailsTabProps) {
           <div className="border-b border-border p-4">
             <h2 className="font-semibold">Runtime</h2>
           </div>
-          <div className="divide-y divide-border">
+          <div className="divide-y divide-border [&>*:last-child]:border-b [&>*:last-child]:border-border">
             <DetailRow
               label="Daemon Version"
-              value={node.daemonVersion ? `v${node.daemonVersion}` : "Unknown"}
+              value={
+                node.daemonVersion ? (
+                  <Badge variant="secondary" className="text-xs uppercase">
+                    {node.daemonVersion}
+                  </Badge>
+                ) : (
+                  "Unknown"
+                )
+              }
             />
-            <DetailRow
-              label="Nginx Version"
-              value={String(
-                (node.capabilities as Record<string, unknown>)?.nginxVersion ?? "Unknown"
-              )}
-            />
+            {node.type === "nginx" && (
+              <DetailRow label="Nginx Version" value={String(caps.nginxVersion ?? "Unknown")} />
+            )}
             <DetailRow label="Created" value={new Date(node.createdAt).toLocaleString()} />
             <DetailRow
               label="Last Seen"
@@ -77,8 +98,83 @@ export function NodeDetailsTab({ node }: NodeDetailsTabProps) {
         </div>
       </div>
 
-      {/* Assigned Proxy Hosts — same pattern as CA issued certificates */}
-      <div className="border border-border bg-card">
+      {/* System Stats */}
+      {h && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:items-start">
+          {/* Resources */}
+          <div
+            className="border border-border bg-card"
+            ref={(el) => {
+              if (el) resourcesRef.current = el;
+            }}
+          >
+            <div className="border-b border-border p-4">
+              <h2 className="font-semibold">System Information</h2>
+            </div>
+            <div className="divide-y divide-border">
+              {"cpuModel" in caps && <DetailRow label="CPU" value={String(caps.cpuModel)} />}
+              {"cpuCores" in caps && <DetailRow label="CPU Cores" value={String(caps.cpuCores)} />}
+              {"architecture" in caps && (
+                <DetailRow label="Architecture" value={String(caps.architecture)} />
+              )}
+              {"kernelVersion" in caps && (
+                <DetailRow label="Kernel" value={String(caps.kernelVersion)} />
+              )}
+              <DetailRow label="Uptime" value={formatUptime(h.systemUptimeSeconds)} />
+              <DetailRow
+                label="File Descriptors"
+                value={`${h.openFileDescriptors.toLocaleString()} / ${h.maxFileDescriptors.toLocaleString()}`}
+              />
+            </div>
+          </div>
+
+          {/* Disk Mounts */}
+          <div
+            className="border border-border bg-card flex flex-col"
+            style={{ height: resourcesHeight > 0 ? resourcesHeight : undefined }}
+          >
+            <div className="border-b border-border p-4">
+              <h2 className="font-semibold">Disk Mounts</h2>
+            </div>
+            {h.diskMounts && h.diskMounts.length > 0 ? (
+              <div className="overflow-y-auto flex-1 min-h-0 -mb-px">
+                {h.diskMounts.map((m) => (
+                  <div key={m.mountPoint} className="px-4 py-3 space-y-1 border-b border-border">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-mono">{m.mountPoint}</span>
+                        {m.mountPoint === "/" && (
+                          <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                            ROOT DISK
+                          </Badge>
+                        )}
+                      </div>
+                      <span className="text-sm text-muted-foreground">
+                        {Math.round(m.usagePercent)}%
+                      </span>
+                    </div>
+                    <div className="h-1.5 w-full bg-muted overflow-hidden">
+                      <div
+                        className={`h-full ${m.usagePercent >= 90 ? "bg-red-400" : m.usagePercent >= 80 ? "bg-yellow-500" : "bg-foreground"}`}
+                        style={{ width: `${Math.min(m.usagePercent, 100)}%` }}
+                      />
+                    </div>
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>{formatBytes(m.usedBytes)} used</span>
+                      <span>{formatBytes(m.totalBytes)} total</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="py-6 text-center text-sm text-muted-foreground">No disk data</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Assigned Proxy Hosts — nginx nodes only */}
+      {node.type === "nginx" && <div className="border border-border bg-card">
         <div className="flex items-center justify-between border-b border-border p-4">
           <h2 className="font-semibold">Assigned Proxy Hosts</h2>
           <Badge variant="secondary">{proxyHosts.length}</Badge>
@@ -123,11 +219,10 @@ export function NodeDetailsTab({ node }: NodeDetailsTabProps) {
             No proxy hosts assigned yet
           </p>
         )}
-      </div>
+      </div>}
     </div>
   );
 }
-
 
 function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -136,4 +231,21 @@ function DetailRow({ label, value }: { label: string; value: React.ReactNode }) 
       <span className="text-sm">{value}</span>
     </div>
   );
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${(bytes / k ** i).toFixed(1)} ${sizes[i]}`;
+}
+
+function formatUptime(seconds: number): string {
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  if (days > 0) return `${days}d ${hours}h ${mins}m`;
+  if (hours > 0) return `${hours}h ${mins}m`;
+  return `${mins}m`;
 }

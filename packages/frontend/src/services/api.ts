@@ -513,6 +513,7 @@ class ApiClient {
     name: string;
     description?: string;
     scopes: string[];
+    parentId?: string | null;
   }): Promise<PermissionGroup> {
     return this.request<PermissionGroup>("/admin/groups", {
       method: "POST",
@@ -522,7 +523,7 @@ class ApiClient {
 
   async updateGroup(
     id: string,
-    data: { name?: string; description?: string | null; scopes?: string[] }
+    data: { name?: string; description?: string | null; scopes?: string[]; parentId?: string | null }
   ): Promise<PermissionGroup> {
     return this.request<PermissionGroup>(`/admin/groups/${id}`, {
       method: "PUT",

@@ -10,9 +10,9 @@ import (
 
 // TLSManager manages mTLS credentials with hot-swap support.
 type TLSManager struct {
-	caCertPath     string
-	clientCertPath string
-	clientKeyPath  string
+	CACertPath     string
+	ClientCertPath string
+	ClientKeyPath  string
 
 	mu   sync.RWMutex
 	cert *tls.Certificate
@@ -20,15 +20,15 @@ type TLSManager struct {
 
 func NewTLSManager(caCertPath, clientCertPath, clientKeyPath string) *TLSManager {
 	return &TLSManager{
-		caCertPath:     caCertPath,
-		clientCertPath: clientCertPath,
-		clientKeyPath:  clientKeyPath,
+		CACertPath:     caCertPath,
+		ClientCertPath: clientCertPath,
+		ClientKeyPath:  clientKeyPath,
 	}
 }
 
 // LoadCredentials loads the client certificate and key from disk.
 func (t *TLSManager) LoadCredentials() error {
-	cert, err := tls.LoadX509KeyPair(t.clientCertPath, t.clientKeyPath)
+	cert, err := tls.LoadX509KeyPair(t.ClientCertPath, t.ClientKeyPath)
 	if err != nil {
 		return fmt.Errorf("load client cert: %w", err)
 	}
@@ -51,7 +51,7 @@ func (t *TLSManager) GetClientCertificate(*tls.CertificateRequestInfo) (*tls.Cer
 
 // ClientTLSConfig builds a tls.Config for mTLS connections.
 func (t *TLSManager) ClientTLSConfig() (*tls.Config, error) {
-	caCert, err := os.ReadFile(t.caCertPath)
+	caCert, err := os.ReadFile(t.CACertPath)
 	if err != nil {
 		return nil, fmt.Errorf("read CA cert: %w", err)
 	}

@@ -57,9 +57,10 @@ function formatUptime(seconds: number): string {
 interface NodeMonitoringTabProps {
   nodeId: string;
   nodeStatus: string;
+  nodeType?: string;
 }
 
-export function NodeMonitoringTab({ nodeId, nodeStatus }: NodeMonitoringTabProps) {
+export function NodeMonitoringTab({ nodeId, nodeStatus, nodeType }: NodeMonitoringTabProps) {
   const [connected, setConnected] = useState(false);
   const [history, setHistory] = useState<Snapshot[]>([]);
   const [latest, setLatest] = useState<Snapshot | null>(null);
@@ -133,8 +134,8 @@ export function NodeMonitoringTab({ nodeId, nodeStatus }: NodeMonitoringTabProps
 
   return (
     <div className="space-y-4">
-      {/* Nginx Process Info Bar */}
-      {health && (
+      {/* Nginx Process Info Bar — nginx nodes only */}
+      {nodeType === "nginx" && health && (
         <div className="flex flex-wrap items-center gap-3 p-3 border border-border bg-card text-sm">
           <span className="font-medium">nginx/{health.nginxVersion || "unknown"}</span>
           <Badge variant={health.nginxRunning ? "success" : "destructive"} className="text-xs">
@@ -220,8 +221,8 @@ export function NodeMonitoringTab({ nodeId, nodeStatus }: NodeMonitoringTabProps
         </div>
       </div>
 
-      {/* Traffic — Status Codes & Response Times */}
-      {latest?.traffic && (
+      {/* Traffic — Status Codes & Response Times (nginx only) */}
+      {nodeType === "nginx" && latest?.traffic && (
         <div>
           <h3 className="text-sm font-semibold mb-2 text-muted-foreground">Traffic</h3>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
@@ -271,38 +272,47 @@ export function NodeMonitoringTab({ nodeId, nodeStatus }: NodeMonitoringTabProps
         </div>
       )}
 
-      {/* Connections */}
+      {/* Connections (nginx only) */}
+      {nodeType === "nginx" && (
+        <div>
+          <h3 className="text-sm font-semibold mb-2 text-muted-foreground">Connections</h3>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+            <StatCard
+              label="Active"
+              value={String(stats?.activeConnections ?? 0)}
+              icon={Activity}
+              history={activeConnHist}
+              color="#3b82f6"
+            />
+            <StatCard
+              label="Reading"
+              value={String(stats?.reading ?? 0)}
+              icon={ArrowDownToLine}
+              history={readingHist}
+              color="#22c55e"
+            />
+            <StatCard
+              label="Writing"
+              value={String(stats?.writing ?? 0)}
+              icon={ArrowUpFromLine}
+              history={writingHist}
+              color="#f59e0b"
+            />
+            <StatCard
+              label="Waiting"
+              value={String(stats?.waiting ?? 0)}
+              icon={Server}
+              history={waitingHist}
+              color="#6b7280"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* I/O (all node types) */}
       <div>
-        <h3 className="text-sm font-semibold mb-2 text-muted-foreground">Connections</h3>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-          <StatCard
-            label="Active"
-            value={String(stats?.activeConnections ?? 0)}
-            icon={Activity}
-            history={activeConnHist}
-            color="#3b82f6"
-          />
-          <StatCard
-            label="Reading"
-            value={String(stats?.reading ?? 0)}
-            icon={ArrowDownToLine}
-            history={readingHist}
-            color="#22c55e"
-          />
-          <StatCard
-            label="Writing"
-            value={String(stats?.writing ?? 0)}
-            icon={ArrowUpFromLine}
-            history={writingHist}
-            color="#f59e0b"
-          />
-          <StatCard
-            label="Waiting"
-            value={String(stats?.waiting ?? 0)}
-            icon={Server}
-            history={waitingHist}
-            color="#6b7280"
-          />
+        <h3 className="text-sm font-semibold mb-2 text-muted-foreground">I/O</h3>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
           <StatCard
             label="Disk I/O"
             value={`${formatBytes(health?.diskReadBytes ?? 0)} / ${formatBytes(health?.diskWriteBytes ?? 0)}`}
@@ -326,8 +336,8 @@ export function NodeMonitoringTab({ nodeId, nodeStatus }: NodeMonitoringTabProps
         </div>
       </div>
 
-      {/* Totals */}
-      {stats && (
+      {/* Totals (nginx only) */}
+      {nodeType === "nginx" && stats && (
         <div>
           <h3 className="text-sm font-semibold mb-2 text-muted-foreground">Totals</h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">

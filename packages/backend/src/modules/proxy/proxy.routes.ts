@@ -2,7 +2,7 @@ import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
 import { hasScope } from '@/lib/permissions.js';
 import { AppError } from '@/middleware/error-handler.js';
-import { authMiddleware, requireScope, sessionOnly } from '@/modules/auth/auth.middleware.js';
+import { authMiddleware, requireScope, requireScopeForResource, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import {
   CreateProxyHostSchema,
@@ -19,7 +19,7 @@ proxyRoutes.use('*', authMiddleware);
 proxyRoutes.use('*', sessionOnly);
 
 // List proxy hosts
-proxyRoutes.get('/', requireScope('proxy:read'), async (c) => {
+proxyRoutes.get('/', requireScope('proxy:list'), async (c) => {
   const proxyService = container.resolve(ProxyService);
   const rawQuery = c.req.query();
   const query = ProxyHostListQuerySchema.parse(rawQuery);
@@ -28,7 +28,7 @@ proxyRoutes.get('/', requireScope('proxy:read'), async (c) => {
 });
 
 // Get proxy host detail
-proxyRoutes.get('/:id', requireScope('proxy:read'), async (c) => {
+proxyRoutes.get('/:id', requireScopeForResource('proxy:view', 'id'), async (c) => {
   const proxyService = container.resolve(ProxyService);
   const id = c.req.param('id');
   const host = await proxyService.getProxyHost(id);
@@ -36,7 +36,7 @@ proxyRoutes.get('/:id', requireScope('proxy:read'), async (c) => {
 });
 
 // Create proxy host
-proxyRoutes.post('/', requireScope('proxy:manage'), async (c) => {
+proxyRoutes.post('/', requireScope('proxy:create'), async (c) => {
   const proxyService = container.resolve(ProxyService);
   const user = c.get('user')!;
   const body = await c.req.json();
@@ -45,12 +45,15 @@ proxyRoutes.post('/', requireScope('proxy:manage'), async (c) => {
   if (input.advancedConfig && !hasScope(scopes, 'proxy:advanced')) {
     throw new AppError(403, 'FORBIDDEN', 'Advanced config requires proxy:advanced scope');
   }
+  if (input.rawConfigEnabled && !hasScope(scopes, 'proxy:raw-toggle')) {
+    throw new AppError(403, 'FORBIDDEN', 'Enabling raw mode requires proxy:raw-toggle scope');
+  }
   const host = await proxyService.createProxyHost(input, user.id);
   return c.json({ data: host }, 201);
 });
 
 // Update proxy host
-proxyRoutes.put('/:id', requireScope('proxy:manage'), async (c) => {
+proxyRoutes.put('/:id', requireScopeForResource('proxy:edit', 'id'), async (c) => {
   const proxyService = container.resolve(ProxyService);
   const user = c.get('user')!;
   const id = c.req.param('id');
@@ -60,12 +63,22 @@ proxyRoutes.put('/:id', requireScope('proxy:manage'), async (c) => {
   if (input.advancedConfig && !hasScope(scopes, 'proxy:advanced')) {
     throw new AppError(403, 'FORBIDDEN', 'Advanced config requires proxy:advanced scope');
   }
+  if (input.rawConfigEnabled !== undefined) {
+    if (!hasScope(scopes, `proxy:raw-toggle:${id}`) && !hasScope(scopes, 'proxy:raw-toggle')) {
+      throw new AppError(403, 'FORBIDDEN', 'Toggling raw mode requires proxy:raw-toggle scope');
+    }
+  }
+  if (input.rawConfig !== undefined) {
+    if (!hasScope(scopes, `proxy:raw-write:${id}`) && !hasScope(scopes, 'proxy:raw-write')) {
+      throw new AppError(403, 'FORBIDDEN', 'Writing raw config requires proxy:raw-write scope');
+    }
+  }
   const host = await proxyService.updateProxyHost(id, input, user.id);
   return c.json({ data: host });
 });
 
 // Delete proxy host
-proxyRoutes.delete('/:id', requireScope('proxy:delete'), async (c) => {
+proxyRoutes.delete('/:id', requireScopeForResource('proxy:delete', 'id'), async (c) => {
   const proxyService = container.resolve(ProxyService);
   const user = c.get('user')!;
   const id = c.req.param('id');
@@ -74,7 +87,7 @@ proxyRoutes.delete('/:id', requireScope('proxy:delete'), async (c) => {
 });
 
 // Toggle proxy host enabled/disabled
-proxyRoutes.post('/:id/toggle', requireScope('proxy:manage'), async (c) => {
+proxyRoutes.post('/:id/toggle', requireScopeForResource('proxy:edit', 'id'), async (c) => {
   const proxyService = container.resolve(ProxyService);
   const user = c.get('user')!;
   const id = c.req.param('id');
@@ -85,7 +98,7 @@ proxyRoutes.post('/:id/toggle', requireScope('proxy:manage'), async (c) => {
 });
 
 // Get rendered nginx config for a host
-proxyRoutes.get('/:id/rendered-config', requireScope('proxy:read'), async (c) => {
+proxyRoutes.get('/:id/rendered-config', requireScopeForResource('proxy:raw-read', 'id'), async (c) => {
   const proxyService = container.resolve(ProxyService);
   const id = c.req.param('id');
   const rendered = await proxyService.getRenderedConfig(id);
@@ -93,7 +106,7 @@ proxyRoutes.get('/:id/rendered-config', requireScope('proxy:read'), async (c) =>
 });
 
 // Validate advanced config snippet
-proxyRoutes.post('/validate-config', requireScope('proxy:manage'), async (c) => {
+proxyRoutes.post('/validate-config', requireScope('proxy:advanced'), async (c) => {
   const proxyService = container.resolve(ProxyService);
   const body = await c.req.json();
   const { snippet, mode } = ValidateAdvancedConfigSchema.parse(body);

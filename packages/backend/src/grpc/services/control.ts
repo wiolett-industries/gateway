@@ -57,7 +57,7 @@ export function createControlHandlers(deps: GrpcServerDeps) {
               return;
             }
 
-            const nodeType = node.type as 'nginx' | 'bastion';
+            const nodeType = node.type as 'nginx' | 'bastion' | 'monitoring';
             const gatewayHash = node.configVersionHash;
 
             await deps.registry.register(
@@ -75,7 +75,14 @@ export function createControlHandlers(deps: GrpcServerDeps) {
               .set({
                 hostname: msg.register.hostname,
                 daemonVersion: msg.register.daemonVersion,
-                capabilities: { nginxVersion: msg.register.nginxVersion },
+                capabilities: {
+                  ...(msg.register.nginxVersion ? { nginxVersion: msg.register.nginxVersion } : {}),
+                  ...(msg.register.daemonType ? { daemonType: msg.register.daemonType } : {}),
+                  cpuModel: msg.register.cpuModel || undefined,
+                  cpuCores: msg.register.cpuCores || undefined,
+                  architecture: msg.register.architecture || undefined,
+                  kernelVersion: msg.register.kernelVersion || undefined,
+                },
                 lastSeenAt: new Date(),
                 updatedAt: new Date(),
               })
@@ -100,8 +107,8 @@ export function createControlHandlers(deps: GrpcServerDeps) {
               // stream may not be ready yet
             }
 
-            // Compare config hash and trigger full resync if different
-            if (gatewayHash && gatewayHash !== msg.register.configVersionHash) {
+            // Compare config hash and trigger full resync if different (nginx nodes only)
+            if (nodeType === 'nginx' && gatewayHash && gatewayHash !== msg.register.configVersionHash) {
               logger.info('Config hash mismatch, triggering full resync', {
                 nodeId,
                 daemonHash: msg.register.configVersionHash,
@@ -189,7 +196,10 @@ export function createControlHandlers(deps: GrpcServerDeps) {
             const currentHour = new Date().toISOString().slice(0, 13); // e.g. "2026-04-01T12"
             const previousHour = lastRecordedHour.get(nodeId);
             if (previousHour !== currentHour) {
-              const isHealthy = healthData.nginxRunning && healthData.configValid;
+              const connectedNode = deps.registry.getNode(nodeId);
+              const isHealthy = connectedNode?.type === 'nginx'
+                ? (healthData.nginxRunning && healthData.configValid)
+                : true; // non-nginx nodes are healthy when connected + reporting
               const hourKey = `${currentHour}:00:00.000Z`;
 
               try {

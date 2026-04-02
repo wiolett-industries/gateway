@@ -8,12 +8,13 @@ import (
 	"sync"
 )
 
+// State holds persistent daemon state with thread-safe access.
+// Daemon-specific fields are stored in the Extras map.
 type State struct {
-	NodeID            string   `json:"node_id"`
-	ConfigVersionHash string   `json:"config_version_hash"`
-	ActiveHostIDs     []string `json:"active_host_ids"`
-	Enrolled          bool     `json:"enrolled"`
-	CertExpiresAt     int64    `json:"cert_expires_at"` // Unix timestamp
+	NodeID        string         `json:"node_id"`
+	Enrolled      bool           `json:"enrolled"`
+	CertExpiresAt int64          `json:"cert_expires_at"` // Unix timestamp
+	Extras        map[string]any `json:"extras,omitempty"`
 
 	mu   sync.RWMutex
 	path string
@@ -25,7 +26,7 @@ func Load(stateDir string) (*State, error) {
 	}
 
 	path := filepath.Join(stateDir, "state.json")
-	s := &State{path: path}
+	s := &State{path: path, Extras: make(map[string]any)}
 
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
@@ -37,6 +38,10 @@ func Load(stateDir string) (*State, error) {
 
 	if err := json.Unmarshal(data, s); err != nil {
 		return nil, fmt.Errorf("parse state: %w", err)
+	}
+
+	if s.Extras == nil {
+		s.Extras = make(map[string]any)
 	}
 
 	return s, nil
@@ -62,24 +67,6 @@ func (s *State) Save() error {
 	return nil
 }
 
-func (s *State) SetConfigVersion(hash string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.ConfigVersionHash = hash
-}
-
-func (s *State) GetConfigVersion() string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.ConfigVersionHash
-}
-
-func (s *State) SetActiveHosts(ids []string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.ActiveHostIDs = ids
-}
-
 func (s *State) SetEnrolled(nodeID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -97,4 +84,31 @@ func (s *State) GetCertExpiry() int64 {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.CertExpiresAt
+}
+
+// SetExtra stores a daemon-specific key-value pair.
+func (s *State) SetExtra(key string, value any) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.Extras[key] = value
+}
+
+// GetExtra retrieves a daemon-specific value by key.
+func (s *State) GetExtra(key string) (any, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	v, ok := s.Extras[key]
+	return v, ok
+}
+
+// GetExtraString retrieves a daemon-specific string value by key.
+func (s *State) GetExtraString(key string) string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if v, ok := s.Extras[key]; ok {
+		if str, ok := v.(string); ok {
+			return str
+		}
+	}
+	return ""
 }

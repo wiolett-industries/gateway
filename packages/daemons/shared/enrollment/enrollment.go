@@ -1,4 +1,4 @@
-package auth
+package enrollment
 
 import (
 	"context"
@@ -6,14 +6,14 @@ import (
 	"fmt"
 	"time"
 
-	pb "github.com/wiolett/gateway/nginx-daemon/internal/gatewayv1"
+	pb "github.com/wiolett/gateway/daemon-shared/gatewayv1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 )
 
 // Enroll performs the initial enrollment with a PSK token.
 // Uses TOFU (trust on first use) for the server certificate.
-func Enroll(address, token, hostname, nginxVersion, osInfo, daemonVersion string) (*pb.EnrollResponse, error) {
+func Enroll(address, token, hostname, nginxVersion, osInfo, daemonVersion, daemonType string) (*pb.EnrollResponse, error) {
 	// TOFU: accept any server cert during enrollment
 	tlsCfg := &tls.Config{
 		InsecureSkipVerify: true,
@@ -38,6 +38,7 @@ func Enroll(address, token, hostname, nginxVersion, osInfo, daemonVersion string
 		NginxVersion:  nginxVersion,
 		OsInfo:        osInfo,
 		DaemonVersion: daemonVersion,
+		DaemonType:    daemonType,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("enrollment failed: %w", err)

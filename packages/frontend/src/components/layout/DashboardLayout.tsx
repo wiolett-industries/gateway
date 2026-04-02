@@ -48,9 +48,10 @@ import { api } from "@/services/api";
 import { useAIStore } from "@/stores/ai";
 import { useAuthStore } from "@/stores/auth";
 import { usePinnedNodesStore } from "@/stores/pinned-nodes";
+import { usePinnedProxiesStore } from "@/stores/pinned-proxies";
 import { useUIStore } from "@/stores/ui";
 import { useUpdateStore } from "@/stores/update";
-import type { Node } from "@/types";
+import type { Node, ProxyHost } from "@/types";
 import { AI_SCOPE } from "@/types";
 
 function getInitials(name: string | null): string {
@@ -84,9 +85,9 @@ const navigationGroups: NavGroup[] = [
   {
     label: "Reverse Proxy",
     items: [
-      { name: "Proxy Hosts", href: "/proxy-hosts", icon: Globe, scope: "proxy:read" },
-      { name: "Domains", href: "/domains", icon: Globe2, scope: "proxy:read" },
-      { name: "Config Templates", href: "/nginx-templates", icon: FileCode, scope: "proxy:read" },
+      { name: "Proxy Hosts", href: "/proxy-hosts", icon: Globe, scope: "proxy:list" },
+      { name: "Domains", href: "/domains", icon: Globe2, scope: "proxy:list" },
+      { name: "Config Templates", href: "/nginx-templates", icon: FileCode, scope: "proxy:list" },
       { name: "SSL Certificates", href: "/ssl-certificates", icon: Lock, scope: "ssl:read" },
     ],
   },
@@ -101,7 +102,7 @@ const navigationGroups: NavGroup[] = [
   {
     label: "Management",
     items: [
-      { name: "Nodes", href: "/nodes", icon: Server, scope: "nodes:view" },
+      { name: "Nodes", href: "/nodes", icon: Server, scope: "nodes:list" },
       { name: "Access Lists", href: "/access-lists", icon: ShieldAlert, scope: "access-list:read" },
       { name: "Settings", href: "/settings", icon: Settings },
     ],
@@ -146,6 +147,10 @@ function SidebarContent({
   const pinnedRefreshTick = usePinnedNodesStore((s) => s.refreshTick);
   const [pinnedNodes, setPinnedNodes] = useState<Node[]>([]);
 
+  const sidebarPinnedProxyIds = usePinnedProxiesStore((s) => s.sidebarProxyIds);
+  const pinnedProxyRefreshTick = usePinnedProxiesStore((s) => s.refreshTick);
+  const [pinnedProxies, setPinnedProxies] = useState<ProxyHost[]>([]);
+
   useEffect(() => {
     if (sidebarPinnedIds.length === 0) {
       setPinnedNodes([]);
@@ -158,6 +163,19 @@ function SidebarContent({
       })
       .catch(() => {});
   }, [sidebarPinnedIds, location.pathname, pinnedRefreshTick]);
+
+  useEffect(() => {
+    if (sidebarPinnedProxyIds.length === 0) {
+      setPinnedProxies([]);
+      return;
+    }
+    api
+      .listProxyHosts({ limit: 100 })
+      .then((r) => {
+        setPinnedProxies((r.data ?? []).filter((p) => sidebarPinnedProxyIds.includes(p.id)));
+      })
+      .catch(() => {});
+  }, [sidebarPinnedProxyIds, location.pathname, pinnedProxyRefreshTick]);
 
   const handleLogout = async () => {
     try {
@@ -367,12 +385,42 @@ function SidebarContent({
                   {groupIndex > 0 && <Separator />}
 
                   {/* Pinned items — right after Dashboard */}
-                  {groupIndex === 1 && pinnedNodes.length > 0 && (
+                  {groupIndex === 1 && (pinnedNodes.length > 0 || pinnedProxies.length > 0) && (
                     <>
                       <nav className="space-y-0.5 px-2 py-2">
                         <p className="px-3 py-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
                           Pinned Items
                         </p>
+                        {pinnedProxies.map((proxy) => {
+                          const isActive = location.pathname === `/proxy-hosts/${proxy.id}`;
+                          const hs = (proxy as any).effectiveHealthStatus ?? proxy.healthStatus;
+                          return (
+                            <Link
+                              key={proxy.id}
+                              to={`/proxy-hosts/${proxy.id}`}
+                              onClick={onNavigate}
+                              className={cn(
+                                "flex items-center gap-3 px-3 py-2 text-sm transition-colors whitespace-nowrap overflow-hidden",
+                                isActive
+                                  ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                              )}
+                            >
+                              <Globe className="h-4 w-4 shrink-0" />
+                              <span className="truncate">{proxy.domainNames[0]}</span>
+                              <span
+                                className={cn(
+                                  "ml-auto h-2 w-2 rounded-full shrink-0",
+                                  hs === "online"
+                                    ? "bg-emerald-500"
+                                    : hs === "offline" || hs === "degraded"
+                                      ? "bg-red-400"
+                                      : "bg-muted-foreground/40"
+                                )}
+                              />
+                            </Link>
+                          );
+                        })}
                         {pinnedNodes.map((node) => {
                           const isActive = location.pathname === `/nodes/${node.id}`;
                           return (
@@ -434,7 +482,6 @@ function SidebarContent({
                   </nav>
                 </div>
               ))}
-
 
               {/* Admin navigation */}
               {filteredAdminNav.length > 0 && (

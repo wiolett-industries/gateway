@@ -221,6 +221,22 @@ export class AuthService {
       });
     }
 
+    // Compute effective scopes including parent chain
+    const scopeSet = new Set<string>((group?.scopes as string[]) ?? []);
+    if (group?.parentId) {
+      const allGroups = await this.db.query.permissionGroups.findMany({
+        columns: { id: true, parentId: true, scopes: true },
+      });
+      const groupMap = new Map(allGroups.map((g) => [g.id, g]));
+      const visited = new Set<string>([group.id]);
+      let parent = groupMap.get(group.parentId);
+      while (parent && !visited.has(parent.id)) {
+        visited.add(parent.id);
+        for (const s of (parent.scopes as string[]) ?? []) scopeSet.add(s);
+        parent = parent.parentId ? groupMap.get(parent.parentId) : undefined;
+      }
+    }
+
     return {
       id: dbUser.id,
       oidcSubject: dbUser.oidcSubject,
@@ -229,7 +245,7 @@ export class AuthService {
       avatarUrl: dbUser.avatarUrl,
       groupId: dbUser.groupId,
       groupName: group?.name ?? 'unknown',
-      scopes: (group?.scopes as string[]) ?? [],
+      scopes: [...scopeSet],
       isBlocked: dbUser.isBlocked,
     };
   }

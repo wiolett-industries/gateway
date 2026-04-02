@@ -16,7 +16,9 @@ export class NodeMonitoringService extends EventEmitter {
   private history = new Map<string, MonitoringSnapshot[]>();
   private clientCounts = new Map<string, number>();
   private pollIntervals = new Map<string, ReturnType<typeof setInterval>>();
+  private backgroundInterval: ReturnType<typeof setInterval> | null = null;
   private readonly MAX_HISTORY = 60;
+  private readonly BACKGROUND_POLL_INTERVAL = 10_000; // 10s background, 5s when client connected
 
   constructor(
     private registry: NodeRegistryService,
@@ -24,6 +26,27 @@ export class NodeMonitoringService extends EventEmitter {
   ) {
     super();
     this.setMaxListeners(100);
+    this.startBackgroundPolling();
+  }
+
+  /**
+   * Background polling: collect health/stats for ALL connected nodes every 10s.
+   * This ensures history is pre-populated before a user opens the monitoring page.
+   * When a client connects, their node switches to 5s polling via registerClient.
+   */
+  private startBackgroundPolling(): void {
+    // Delay start to let nodes connect first
+    setTimeout(() => {
+      this.backgroundInterval = setInterval(() => {
+        const connectedNodes = this.registry.getConnectedNodeIds();
+        for (const nodeId of connectedNodes) {
+          // Skip nodes that already have active client polling (5s)
+          if (this.pollIntervals.has(nodeId)) continue;
+          this.pollOnce(nodeId);
+        }
+      }, this.BACKGROUND_POLL_INTERVAL);
+      logger.info('Background monitoring started for all connected nodes');
+    }, 5000);
   }
 
   getHistory(nodeId: string): MonitoringSnapshot[] {
@@ -59,37 +82,30 @@ export class NodeMonitoringService extends EventEmitter {
     if (count === 0) this.stopPolling(nodeId);
   }
 
-  private startPolling(nodeId: string): void {
-    if (this.pollIntervals.has(nodeId)) return;
-    logger.debug('Starting 5s polling for node', { nodeId });
+  private async pollOnce(nodeId: string): Promise<void> {
+    try {
+      const node = this.registry.getNode(nodeId);
+      if (!node) return;
 
-    const poll = async () => {
       try {
-        const node = this.registry.getNode(nodeId);
-        if (!node) return;
+        node.commandStream.write({ commandId: '', requestHealth: {} }, (err: any) => {
+          if (err) logger.debug('Health poll write failed', { nodeId, error: err.message });
+        });
+        node.commandStream.write({ commandId: '', requestStats: {} }, (err: any) => {
+          if (err) logger.debug('Stats poll write failed', { nodeId, error: err.message });
+        });
+      } catch {
+        // Stream may be closed
+      }
 
-        // RequestHealth and RequestStats are handled inline by the daemon —
-        // they return HealthReport/StatsReport messages (not CommandResult).
-        // Fire-and-forget via the stream, wait, then read from registry.
-        try {
-          node.commandStream.write({ commandId: '', requestHealth: {} }, (err: any) => {
-            if (err) logger.debug('Health poll write failed', { nodeId, error: err.message });
-          });
-          node.commandStream.write({ commandId: '', requestStats: {} }, (err: any) => {
-            if (err) logger.debug('Stats poll write failed', { nodeId, error: err.message });
-          });
-        } catch {
-          // Stream may be closed
-        }
+      // Wait for daemon to respond and control.ts to update the registry
+      await new Promise((r) => setTimeout(r, 1000));
 
-        // Wait for daemon to respond and control.ts to update the registry
-        await new Promise((r) => setTimeout(r, 1000));
-
-        const health = node.lastHealthReport;
-        const stats = node.lastStatsReport;
-        if (health) {
-          // Request traffic stats via fire-and-forget (result arrives as CommandResult
-          // and is stored in node.lastTrafficStats by control.ts)
+      const health = node.lastHealthReport;
+      const stats = node.lastStatsReport;
+      if (health) {
+        // Traffic stats: nginx nodes only
+        if (node.type === 'nginx') {
           try {
             node.commandStream.write(
               { commandId: `traffic-${Date.now()}`, requestTrafficStats: { tailLines: 200 } },
@@ -100,17 +116,21 @@ export class NodeMonitoringService extends EventEmitter {
           } catch {
             // Stream may be closed
           }
-          const traffic = node.lastTrafficStats ?? null;
-          this.pushSnapshot(nodeId, health, stats, traffic);
         }
-      } catch (err) {
-        logger.debug('Polling error', { nodeId, error: (err as Error).message });
+        const traffic = node.type === 'nginx' ? (node.lastTrafficStats ?? null) : null;
+        this.pushSnapshot(nodeId, health, stats, traffic);
       }
-    };
+    } catch (err) {
+      logger.debug('Polling error', { nodeId, error: (err as Error).message });
+    }
+  }
 
-    // First poll immediately
-    poll();
-    this.pollIntervals.set(nodeId, setInterval(poll, 5000));
+  private startPolling(nodeId: string): void {
+    if (this.pollIntervals.has(nodeId)) return;
+    logger.debug('Starting 5s polling for node', { nodeId });
+
+    this.pollOnce(nodeId);
+    this.pollIntervals.set(nodeId, setInterval(() => this.pollOnce(nodeId), 5000));
   }
 
   private stopPolling(nodeId: string): void {
@@ -123,6 +143,10 @@ export class NodeMonitoringService extends EventEmitter {
   }
 
   destroy(): void {
+    if (this.backgroundInterval) {
+      clearInterval(this.backgroundInterval);
+      this.backgroundInterval = null;
+    }
     for (const interval of this.pollIntervals.values()) {
       clearInterval(interval);
     }

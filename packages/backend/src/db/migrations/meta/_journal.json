@@ -71,6 +71,20 @@
       "when": 1775445600000,
       "tag": "0009_add_raw_proxy_type",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1775532000000,
+      "tag": "0010_nested_groups",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1775618400000,
+      "tag": "0011_add_monitoring_node_type",
+      "breakpoints": true
     }
   ]
 }

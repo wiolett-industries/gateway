@@ -46,7 +46,10 @@ export function createEnrollmentHandlers(deps: GrpcServerDeps) {
             hostname: req.hostname,
             daemonVersion: req.daemonVersion,
             osInfo: req.osInfo,
-            capabilities: { nginxVersion: req.nginxVersion },
+            capabilities: {
+              ...(req.nginxVersion ? { nginxVersion: req.nginxVersion } : {}),
+              ...(req.daemonType ? { daemonType: req.daemonType } : {}),
+            },
             lastSeenAt: new Date(),
             enrollmentTokenHash: null,
             certificateSerial: certResult.serial,

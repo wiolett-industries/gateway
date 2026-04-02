@@ -41,7 +41,7 @@ import type { DnsStatus, Domain } from "@/types";
 
 export function Domains() {
   const { hasScope } = useAuthStore();
-  const canEdit = hasScope("proxy:manage");
+  const canEdit = hasScope("proxy:edit");
   const isAdmin = hasScope("proxy:delete");
 
   const cachedDomains = api.getCached<{ data: Domain[]; pagination: { totalPages: number } }>(

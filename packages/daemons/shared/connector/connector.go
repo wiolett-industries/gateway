@@ -1,4 +1,4 @@
-package daemon
+package connector
 
 import (
 	"context"
@@ -7,40 +7,40 @@ import (
 	"math/rand/v2"
 	"time"
 
-	"github.com/wiolett/gateway/nginx-daemon/internal/auth"
-	pb "github.com/wiolett/gateway/nginx-daemon/internal/gatewayv1"
+	"github.com/wiolett/gateway/daemon-shared/auth"
+	pb "github.com/wiolett/gateway/daemon-shared/gatewayv1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
 )
 
 const (
-	maxBackoff     = 60 * time.Second
-	initialBackoff = 1 * time.Second
+	MaxBackoff     = 60 * time.Second
+	InitialBackoff = 1 * time.Second
 )
 
 type Connector struct {
-	address    string
-	tlsMgr     *auth.TLSManager
-	logger     *slog.Logger
+	Address string
+	TLSMgr  *auth.TLSManager
+	Logger  *slog.Logger
 }
 
 func NewConnector(address string, tlsMgr *auth.TLSManager, logger *slog.Logger) *Connector {
 	return &Connector{
-		address: address,
-		tlsMgr:  tlsMgr,
-		logger:  logger,
+		Address: address,
+		TLSMgr:  tlsMgr,
+		Logger:  logger,
 	}
 }
 
 // Connect establishes a gRPC connection with mTLS. Blocks until connected or ctx cancelled.
 func (c *Connector) Connect(ctx context.Context) (*grpc.ClientConn, error) {
-	tlsCfg, err := c.tlsMgr.ClientTLSConfig()
+	tlsCfg, err := c.TLSMgr.ClientTLSConfig()
 	if err != nil {
 		return nil, err
 	}
 
-	conn, err := grpc.NewClient(c.address,
+	conn, err := grpc.NewClient(c.Address,
 		grpc.WithTransportCredentials(credentials.NewTLS(tlsCfg)),
 		grpc.WithKeepaliveParams(keepalive.ClientParameters{
 			Time:                30 * time.Second,
@@ -56,14 +56,14 @@ func (c *Connector) Connect(ctx context.Context) (*grpc.ClientConn, error) {
 
 // ConnectWithRetry retries connection with exponential backoff + jitter.
 func (c *Connector) ConnectWithRetry(ctx context.Context) (*grpc.ClientConn, error) {
-	backoff := initialBackoff
+	backoff := InitialBackoff
 	for {
 		conn, err := c.Connect(ctx)
 		if err == nil {
 			return conn, nil
 		}
 
-		c.logger.Warn("connection failed, retrying",
+		c.Logger.Warn("connection failed, retrying",
 			"error", err,
 			"backoff", backoff,
 		)
@@ -76,7 +76,7 @@ func (c *Connector) ConnectWithRetry(ctx context.Context) (*grpc.ClientConn, err
 		case <-time.After(jitter):
 		}
 
-		backoff = time.Duration(math.Min(float64(backoff)*2, float64(maxBackoff)))
+		backoff = time.Duration(math.Min(float64(backoff)*2, float64(MaxBackoff)))
 	}
 }
 

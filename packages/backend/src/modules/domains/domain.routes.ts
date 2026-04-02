@@ -12,7 +12,7 @@ domainRoutes.use('*', authMiddleware);
 domainRoutes.use('*', sessionOnly);
 
 // List domains (paginated)
-domainRoutes.get('/', requireScope('proxy:read'), async (c) => {
+domainRoutes.get('/', requireScope('proxy:list'), async (c) => {
   const domainsService = container.resolve(DomainsService);
   const query = DomainListQuerySchema.parse({
     page: c.req.query('page'),
@@ -25,7 +25,7 @@ domainRoutes.get('/', requireScope('proxy:read'), async (c) => {
 });
 
 // Autocomplete search (must be before /:id)
-domainRoutes.get('/search', requireScope('proxy:read'), async (c) => {
+domainRoutes.get('/search', requireScope('proxy:list'), async (c) => {
   const domainsService = container.resolve(DomainsService);
   const q = c.req.query('q') || '';
   if (q.length < 1) return c.json({ data: [] });
@@ -34,7 +34,7 @@ domainRoutes.get('/search', requireScope('proxy:read'), async (c) => {
 });
 
 // Get domain detail with usage
-domainRoutes.get('/:id', requireScope('proxy:read'), async (c) => {
+domainRoutes.get('/:id', requireScope('proxy:list'), async (c) => {
   const domainsService = container.resolve(DomainsService);
   try {
     const domain = await domainsService.getDomain(c.req.param('id'));
@@ -45,7 +45,7 @@ domainRoutes.get('/:id', requireScope('proxy:read'), async (c) => {
 });
 
 // Create domain
-domainRoutes.post('/', requireScope('proxy:manage'), async (c) => {
+domainRoutes.post('/', requireScope('proxy:edit'), async (c) => {
   const user = c.get('user')!;
   const body = await c.req.json();
   const input = CreateDomainSchema.parse(body);
@@ -63,7 +63,7 @@ domainRoutes.post('/', requireScope('proxy:manage'), async (c) => {
 });
 
 // Update domain
-domainRoutes.put('/:id', requireScope('proxy:manage'), async (c) => {
+domainRoutes.put('/:id', requireScope('proxy:edit'), async (c) => {
   const user = c.get('user')!;
   const body = await c.req.json();
   const input = UpdateDomainSchema.parse(body);
@@ -89,7 +89,7 @@ domainRoutes.delete('/:id', requireScope('proxy:delete'), async (c) => {
 });
 
 // Manual DNS check
-domainRoutes.post('/:id/check-dns', requireScope('proxy:manage'), async (c) => {
+domainRoutes.post('/:id/check-dns', requireScope('proxy:edit'), async (c) => {
   const domainsService = container.resolve(DomainsService);
   try {
     const domain = await domainsService.checkDns(c.req.param('id'));
@@ -100,7 +100,7 @@ domainRoutes.post('/:id/check-dns', requireScope('proxy:manage'), async (c) => {
 });
 
 // Issue ACME cert for domain
-domainRoutes.post('/:id/issue-cert', requireScope('proxy:manage'), async (c) => {
+domainRoutes.post('/:id/issue-cert', requireScope('proxy:edit'), async (c) => {
   const user = c.get('user')!;
   const domainsService = container.resolve(DomainsService);
   const sslService = container.resolve(SSLService);

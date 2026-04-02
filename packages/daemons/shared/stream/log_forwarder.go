@@ -1,13 +1,14 @@
-package daemon
+package stream
 
 import (
 	"context"
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
-	pb "github.com/wiolett/gateway/nginx-daemon/internal/gatewayv1"
+	pb "github.com/wiolett/gateway/daemon-shared/gatewayv1"
 )
 
 // logForwarder captures slog records and sends them as DaemonLogEntry
@@ -48,26 +49,28 @@ func (lf *logForwarder) forward(level, component, message string, fields map[str
 	})
 }
 
-// grpcLogHandler is an slog.Handler that forwards logs to the gRPC stream.
-type grpcLogHandler struct {
+// GrpcLogHandler is an slog.Handler that forwards logs to the gRPC stream.
+type GrpcLogHandler struct {
 	forwarder *logForwarder
 	inner     slog.Handler
 	component string
 	attrs     []slog.Attr
 }
 
-func newGrpcLogHandler(forwarder *logForwarder, inner slog.Handler) *grpcLogHandler {
-	return &grpcLogHandler{
-		forwarder: forwarder,
+// NewGrpcLogHandler creates a new GrpcLogHandler that forwards log records
+// to the gRPC stream and delegates to the inner handler for local logging.
+func NewGrpcLogHandler(stream pb.NodeControl_CommandStreamClient, inner slog.Handler) *GrpcLogHandler {
+	return &GrpcLogHandler{
+		forwarder: newLogForwarder(stream),
 		inner:     inner,
 	}
 }
 
-func (h *grpcLogHandler) Enabled(ctx context.Context, level slog.Level) bool {
+func (h *GrpcLogHandler) Enabled(ctx context.Context, level slog.Level) bool {
 	return h.inner.Enabled(ctx, level)
 }
 
-func (h *grpcLogHandler) Handle(ctx context.Context, r slog.Record) error {
+func (h *GrpcLogHandler) Handle(ctx context.Context, r slog.Record) error {
 	// Forward to gRPC stream
 	level := strings.ToLower(r.Level.String())
 	component := h.component
@@ -98,11 +101,11 @@ func (h *grpcLogHandler) Handle(ctx context.Context, r slog.Record) error {
 	return h.inner.Handle(ctx, r)
 }
 
-func (h *grpcLogHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+func (h *GrpcLogHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	newAttrs := make([]slog.Attr, len(h.attrs)+len(attrs))
 	copy(newAttrs, h.attrs)
 	copy(newAttrs[len(h.attrs):], attrs)
-	return &grpcLogHandler{
+	return &GrpcLogHandler{
 		forwarder: h.forwarder,
 		inner:     h.inner.WithAttrs(attrs),
 		component: h.component,
@@ -110,8 +113,8 @@ func (h *grpcLogHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	}
 }
 
-func (h *grpcLogHandler) WithGroup(name string) slog.Handler {
-	return &grpcLogHandler{
+func (h *GrpcLogHandler) WithGroup(name string) slog.Handler {
+	return &GrpcLogHandler{
 		forwarder: h.forwarder,
 		inner:     h.inner.WithGroup(name),
 		component: h.component,
@@ -132,4 +135,35 @@ func meetsMinLevel(level, minLevel string) bool {
 		return true // forward unknown levels
 	}
 	return l >= m
+}
+
+// daemonLogState holds the daemon log streaming state with proper synchronization.
+var daemonLogState struct {
+	enabled  atomic.Bool
+	mu       sync.RWMutex
+	minLevel string
+}
+
+func init() {
+	daemonLogState.minLevel = "info"
+}
+
+// SetDaemonLogStreaming atomically updates the log streaming state.
+func SetDaemonLogStreaming(enabled bool, minLevel string) {
+	daemonLogState.enabled.Store(enabled)
+	daemonLogState.mu.Lock()
+	daemonLogState.minLevel = minLevel
+	daemonLogState.mu.Unlock()
+}
+
+// GetDaemonLogEnabled returns the current log streaming enabled state.
+func GetDaemonLogEnabled() bool {
+	return daemonLogState.enabled.Load()
+}
+
+// GetDaemonLogMinLevel returns the current minimum log level.
+func GetDaemonLogMinLevel() string {
+	daemonLogState.mu.RLock()
+	defer daemonLogState.mu.RUnlock()
+	return daemonLogState.minLevel
 }

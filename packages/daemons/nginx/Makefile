@@ -1,7 +1,8 @@
 MODULE := github.com/wiolett/gateway/nginx-daemon
+SHARED_MODULE := github.com/wiolett/gateway/daemon-shared
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 PROTO_DIR := ../../../proto
-OUT_DIR := internal/gatewayv1
+SHARED_OUT_DIR := ../shared/gatewayv1
 BINARY := bin/nginx-daemon
 
 .PHONY: all build test lint clean proto
@@ -9,13 +10,13 @@ BINARY := bin/nginx-daemon
 all: proto build
 
 proto:
-	@mkdir -p $(OUT_DIR)
+	@mkdir -p $(SHARED_OUT_DIR)
 	protoc \
 		--proto_path=$(PROTO_DIR) \
-		--go_out=. \
-		--go_opt=module=$(MODULE) \
-		--go-grpc_out=. \
-		--go-grpc_opt=module=$(MODULE) \
+		--go_out=$(SHARED_OUT_DIR) \
+		--go_opt=module=$(MODULE)/internal/gatewayv1 \
+		--go-grpc_out=$(SHARED_OUT_DIR) \
+		--go-grpc_opt=module=$(MODULE)/internal/gatewayv1 \
 		gateway/v1/nginx-daemon.proto
 
 build:

@@ -21,6 +21,7 @@ import { MonitoringService } from '@/modules/monitoring/monitoring.service.js';
 import { NginxConfigService } from '@/modules/monitoring/nginx-config.service.js';
 import { NginxStatsService } from '@/modules/monitoring/nginx-stats.service.js';
 import { NodeMonitoringService } from '@/modules/nodes/node-monitoring.service.js';
+import { GroupService } from '@/modules/groups/group.service.js';
 import { NodesService } from '@/modules/nodes/nodes.service.js';
 import { CAService } from '@/modules/pki/ca.service.js';
 import { CertService } from '@/modules/pki/cert.service.js';
@@ -235,6 +236,9 @@ export async function initializeContainer(): Promise<void> {
   const housekeepingService = new HousekeepingService(db, dockerService, nodeDispatch, env);
   container.registerInstance(HousekeepingService, housekeepingService);
 
+  // Group service (injectable — resolve from container)
+  const groupService = container.resolve(GroupService);
+
   // AI Service (depends on many services above)
   const aiService = new AIService(
     aiSettingsService,
@@ -248,7 +252,9 @@ export async function initializeContainer(): Promise<void> {
     accessListService,
     authService,
     auditService,
-    monitoringService
+    monitoringService,
+    nodesService,
+    groupService
   );
   container.registerInstance(AIService, aiService);
 
@@ -263,6 +269,16 @@ export async function initializeContainer(): Promise<void> {
   // Seed built-in templates
   await templatesService.seedBuiltinTemplates();
   await nginxTemplateService.seedBuiltinTemplates();
+
+  // Sync built-in group scopes (ensures scope renames/additions propagate)
+  {
+    const { BUILTIN_GROUPS } = await import('@/lib/scopes.js');
+    const { permissionGroups } = await import('@/db/schema/index.js');
+    const { eq } = await import('drizzle-orm');
+    for (const bg of BUILTIN_GROUPS) {
+      await db.update(permissionGroups).set({ scopes: [...bg.scopes] }).where(eq(permissionGroups.name, bg.name));
+    }
+  }
 
   // Background jobs
   const scheduler = new SchedulerService();

@@ -16,14 +16,14 @@ nginxTemplateRoutes.use('*', authMiddleware);
 nginxTemplateRoutes.use('*', sessionOnly);
 
 // List all nginx templates
-nginxTemplateRoutes.get('/', requireScope('proxy:read'), async (c) => {
+nginxTemplateRoutes.get('/', requireScope('proxy:list'), async (c) => {
   const service = container.resolve(NginxTemplateService);
   const templates = await service.listTemplates();
   return c.json({ data: templates });
 });
 
 // Get single template
-nginxTemplateRoutes.get('/:id', requireScope('proxy:read'), async (c) => {
+nginxTemplateRoutes.get('/:id', requireScope('proxy:list'), async (c) => {
   const service = container.resolve(NginxTemplateService);
   const id = c.req.param('id');
   const template = await service.getTemplate(id);
@@ -31,7 +31,7 @@ nginxTemplateRoutes.get('/:id', requireScope('proxy:read'), async (c) => {
 });
 
 // Create template
-nginxTemplateRoutes.post('/', requireScope('proxy:manage'), async (c) => {
+nginxTemplateRoutes.post('/', requireScope('proxy:edit'), async (c) => {
   const service = container.resolve(NginxTemplateService);
   const user = c.get('user')!;
   const body = await c.req.json();
@@ -41,7 +41,7 @@ nginxTemplateRoutes.post('/', requireScope('proxy:manage'), async (c) => {
 });
 
 // Update template
-nginxTemplateRoutes.put('/:id', requireScope('proxy:manage'), async (c) => {
+nginxTemplateRoutes.put('/:id', requireScope('proxy:edit'), async (c) => {
   const service = container.resolve(NginxTemplateService);
   const user = c.get('user')!;
   const id = c.req.param('id');
@@ -61,7 +61,7 @@ nginxTemplateRoutes.delete('/:id', requireScope('proxy:delete'), async (c) => {
 });
 
 // Clone template
-nginxTemplateRoutes.post('/:id/clone', requireScope('proxy:manage'), async (c) => {
+nginxTemplateRoutes.post('/:id/clone', requireScope('proxy:edit'), async (c) => {
   const service = container.resolve(NginxTemplateService);
   const user = c.get('user')!;
   const id = c.req.param('id');
@@ -70,7 +70,7 @@ nginxTemplateRoutes.post('/:id/clone', requireScope('proxy:manage'), async (c) =
 });
 
 // Preview template with sample or real host data
-nginxTemplateRoutes.post('/preview', requireScope('proxy:manage'), async (c) => {
+nginxTemplateRoutes.post('/preview', requireScope('proxy:edit'), async (c) => {
   const service = container.resolve(NginxTemplateService);
   const body = await c.req.json();
   const input = PreviewNginxTemplateSchema.parse(body);
@@ -116,7 +116,7 @@ nginxTemplateRoutes.post('/preview', requireScope('proxy:manage'), async (c) => 
 });
 
 // Test template — render + send to daemon for nginx -t (test_only mode)
-nginxTemplateRoutes.post('/test', requireScope('proxy:manage'), async (c) => {
+nginxTemplateRoutes.post('/test', requireScope('proxy:edit'), async (c) => {
   const service = container.resolve(NginxTemplateService);
   const nodeDispatch = container.resolve(NodeDispatchService);
   const body = await c.req.json();
