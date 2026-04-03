@@ -71,13 +71,16 @@ const TYPE_BADGE: Record<string, "default" | "secondary" | "destructive"> = {
 
 // ── Main Component ──────────────────────────────────────────────
 export function ProxyHostDetail() {
-  const { id } = useParams<{ id: string }>();
+  const { id, tab: tabParam } = useParams<{ id: string; tab?: string }>();
   const navigate = useNavigate();
   const { hasScope } = useAuthStore();
 
   const [host, setHost] = useState<ProxyHost | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState("details");
+
+  const VALID_TABS = ["details", "settings", "advanced", "raw", "logs"];
+  const activeTab = tabParam && VALID_TABS.includes(tabParam) ? tabParam : "details";
+  const setActiveTab = (tab: string) => navigate(`/proxy-hosts/${id}/${tab}`, { replace: true });
 
   // Edit dialog
   const [editOpen, setEditOpen] = useState(false);

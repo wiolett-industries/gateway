@@ -1,12 +1,14 @@
-import { Download, HardDrive, Search, Trash2 } from "lucide-react";
+import { Download, HardDrive, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
 import { PageTransition } from "@/components/common/PageTransition";
+import { SearchFilterBar } from "@/components/common/SearchFilterBar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 import { RefreshButton } from "@/components/ui/refresh-button";
 import {
   Dialog,
@@ -47,7 +49,7 @@ function formatCreated(ts: number): string {
   return d.toLocaleDateString();
 }
 
-export function DockerImages() {
+export function DockerImages({ embedded, onPullRef, fixedNodeId }: { embedded?: boolean; onPullRef?: (fn: () => void) => void; fixedNodeId?: string } = {}) {
   const navigate = useNavigate();
   const { hasScope } = useAuthStore();
   const {
@@ -59,7 +61,6 @@ export function DockerImages() {
   } = useDockerStore();
 
   const [dockerNodes, setDockerNodes] = useState<Node[]>([]);
-  const [nodesLoading, setNodesLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filterUsage, setFilterUsage] = useState("all");
   const [pruning, setPruning] = useState(false);
@@ -70,13 +71,14 @@ export function DockerImages() {
   const [usageContainers, setUsageContainers] = useState<Array<{ id: string; name: string; state: string }>>([]);
   const [usageLoading, setUsageLoading] = useState(false);
 
-  const showUsage = async (imageTag: string) => {
-    if (!selectedNodeId) return;
+  const showUsage = async (imageTag: string, nodeId?: string) => {
+    const nid = nodeId || selectedNodeId;
+    if (!nid) return;
     setUsageImage(imageTag);
     setUsageOpen(true);
     setUsageLoading(true);
     try {
-      const containers = await api.listDockerContainers(selectedNodeId);
+      const containers = await api.listDockerContainers(nid);
       const list = (Array.isArray(containers) ? containers : [])
         .map((c: any) => ({ id: c.id ?? c.Id ?? "", name: c.name ?? c.Name ?? "", state: c.state ?? c.State ?? "", image: c.image ?? c.Image ?? "" }))
         .filter((c: any) => c.image === imageTag || c.image.split(":")[0] === imageTag.split(":")[0]);
@@ -90,6 +92,9 @@ export function DockerImages() {
 
   // Pull dialog
   const [pullOpen, setPullOpen] = useState(false);
+  const [pullNodeId, setPullNodeId] = useState<string>("");
+  const openPull = () => { setPullNodeId(selectedNodeId || ""); setPullOpen(true); };
+  useEffect(() => { onPullRef?.(() => openPull()); }, [onPullRef]);
   const [pullRef, setPullRef] = useState("");
   const [pullRegistryId, setPullRegistryId] = useState<string>("");
   const [pulling, setPulling] = useState(false);
@@ -97,17 +102,17 @@ export function DockerImages() {
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only
   useEffect(() => {
-    setNodesLoading(true);
+    if (embedded && !fixedNodeId) { return; }
+    if (fixedNodeId) { setSelectedNode(fixedNodeId); return; }
+    
     api
       .listNodes({ type: "docker", limit: 100 })
       .then((r) => {
         setDockerNodes(r.data);
-        if (!selectedNodeId && r.data.length > 0) {
-          setSelectedNode(r.data[0].id);
-        }
+        useDockerStore.getState().setDockerNodes(r.data);
       })
       .catch(() => toast.error("Failed to load Docker nodes"))
-      .finally(() => setNodesLoading(false));
+      ;
 
     api.listDockerRegistries().then(setRegistries).catch(() => {});
   }, []);
@@ -142,7 +147,9 @@ export function DockerImages() {
     return result;
   }, [images, search, filterUsage]);
 
-  const handleRemove = async (imageId: string, tag: string) => {
+  const handleRemove = async (imageId: string, tag: string, nodeId?: string) => {
+    const nid = nodeId || selectedNodeId;
+    if (!nid) return;
     const ok = await confirm({
       title: "Remove Image",
       description: `Remove "${tag}"? This may affect running containers that use this image.`,
@@ -150,7 +157,7 @@ export function DockerImages() {
     });
     if (!ok) return;
     try {
-      await api.removeImage(selectedNodeId!, imageId);
+      await api.removeImage(nid, imageId);
       toast.success("Image removed");
       fetchImages();
     } catch (err) {
@@ -167,7 +174,8 @@ export function DockerImages() {
     if (!ok) return;
     setPruning(true);
     try {
-      const result = await api.pruneImages(selectedNodeId!);
+      if (!selectedNodeId) { toast.error("Select a node to prune images"); return; }
+      const result = await api.pruneImages(selectedNodeId);
       const freed = (result as Record<string, unknown>).spaceReclaimed;
       toast.success(
         freed
@@ -183,10 +191,10 @@ export function DockerImages() {
   };
 
   const handlePull = async () => {
-    if (!selectedNodeId || !pullRef.trim()) return;
+    if (!pullNodeId || !pullRef.trim()) return;
     setPulling(true);
     try {
-      await api.pullImage(selectedNodeId, pullRef.trim(), pullRegistryId || undefined);
+      await api.pullImage(pullNodeId, pullRef.trim(), pullRegistryId || undefined);
       toast.success(`Pulling "${pullRef.trim()}" started`);
       closePull();
       fetchImages();
@@ -205,10 +213,130 @@ export function DockerImages() {
 
   const selectedNode = dockerNodes.find((n) => n.id === selectedNodeId);
 
-  return (
-    <PageTransition>
-      <div className="h-full overflow-y-auto p-6 space-y-4">
-        {/* Header */}
+  // biome-ignore lint/suspicious/noExplicitAny: Docker API shape varies
+  const allImageColumns: DataTableColumn<any>[] = useMemo(
+    () => [
+      {
+        key: "tag",
+        header: "Repository:Tag",
+        render: (img: any) => {
+          const tags = img.repoTags ?? img.RepoTags ?? [];
+          const tag = tags.length > 0 ? tags[0] : "<none>:<none>";
+          return (
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-muted shrink-0">
+                <HardDrive className="h-4 w-4 text-muted-foreground" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-medium truncate">{tag}</p>
+                {tags.length > 1 && (
+                  <p className="text-xs text-muted-foreground truncate">
+                    +{tags.length - 1} more tag{tags.length > 2 ? "s" : ""}
+                  </p>
+                )}
+              </div>
+            </div>
+          );
+        },
+      },
+      {
+        key: "id",
+        header: "Image ID",
+        render: (img: any) => {
+          const id = img.id ?? img.Id ?? "";
+          return (
+            <span className="text-xs font-mono text-muted-foreground truncate">
+              {id.replace("sha256:", "").slice(0, 12)}
+            </span>
+          );
+        },
+      },
+      {
+        key: "node",
+        header: "Node",
+        width: "140px",
+        truncate: true,
+        render: (img: any) => <Badge variant="secondary" className="text-xs font-normal">{(img as any)._nodeName || "-"}</Badge>,
+      },
+      {
+        key: "usage",
+        header: "Usage",
+        render: (img: any) => {
+          const tags = img.repoTags ?? img.RepoTags ?? [];
+          const tag = tags.length > 0 ? tags[0] : "<none>:<none>";
+          const containerCount = img.containers ?? img.Containers ?? 0;
+          const isUsed = containerCount > 0;
+          return isUsed ? (
+            <Badge
+              variant="success"
+              className="text-xs w-fit cursor-pointer hover:opacity-80"
+              onClick={(e: React.MouseEvent) => {
+                e.stopPropagation();
+                showUsage(tag, (img as any)._nodeId);
+              }}
+            >
+              In use
+            </Badge>
+          ) : (
+            <Badge variant="secondary" className="text-xs w-fit">
+              Unused
+            </Badge>
+          );
+        },
+      },
+      {
+        key: "size",
+        header: "Size",
+        render: (img: any) => {
+          const size = img.size ?? img.Size ?? 0;
+          return <span className="text-sm text-muted-foreground">{formatSize(size)}</span>;
+        },
+      },
+      {
+        key: "created",
+        header: "Created",
+        align: "right" as const,
+        render: (img: any) => {
+          const created = img.created ?? img.Created ?? 0;
+          return <span className="text-sm text-muted-foreground">{formatCreated(created)}</span>;
+        },
+      },
+      {
+        key: "actions",
+        header: "Actions",
+        align: "right" as const,
+        render: (img: any) => {
+          const tags = img.repoTags ?? img.RepoTags ?? [];
+          const tag = tags.length > 0 ? tags[0] : "<none>:<none>";
+          const id = img.id ?? img.Id ?? "";
+          const containerCount = img.containers ?? img.Containers ?? 0;
+          const isUsed = containerCount > 0;
+          return (
+            <div className="flex items-center justify-end" onClick={(e) => e.stopPropagation()}>
+              {hasScope("docker:images:delete") && !isUsed && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={() => handleRemove(id, tag, img._nodeId)}
+                  title="Remove"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              )}
+            </div>
+          );
+        },
+      },
+    ],
+    [hasScope, handleRemove, showUsage]
+  );
+  const imageColumns = fixedNodeId ? allImageColumns.filter((c) => c.key !== "node") : allImageColumns;
+
+  const content = (
+    <>
+      {/* Header — hidden in embedded mode */}
+      {!embedded && (
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <div className="flex items-center gap-2">
@@ -232,7 +360,7 @@ export function DockerImages() {
                   </Button>
                 )}
                 {hasScope("docker:images:pull") && (
-                  <Button onClick={() => setPullOpen(true)}>
+                  <Button onClick={() => openPull()}>
                     <Download className="h-4 w-4 mr-1" />
                     Pull Image
                   </Button>
@@ -241,155 +369,65 @@ export function DockerImages() {
             )}
           </div>
         </div>
+      )}
 
-        {/* Inline: [Node selector] [Search input] [Usage filter] */}
-        <div className="flex gap-2">
-          <Select
-            value={selectedNodeId ?? ""}
-            onValueChange={(v) => setSelectedNode(v || null)}
-            disabled={nodesLoading}
-          >
-            <SelectTrigger className="w-48 shrink-0">
-              <SelectValue placeholder={nodesLoading ? "Loading..." : "Select node"} />
-            </SelectTrigger>
-            <SelectContent>
-              {dockerNodes.map((n) => (
-                <SelectItem key={n.id} value={n.id}>
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`h-2 w-2 rounded-full shrink-0 ${
-                        n.status === "online"
-                          ? "bg-emerald-500"
-                          : n.status === "error"
-                            ? "bg-red-400"
-                            : "bg-muted-foreground/40"
-                      }`}
-                    />
+      {/* Filters */}
+      <SearchFilterBar
+        search={search}
+        onSearchChange={setSearch}
+        placeholder="Search images by repository or tag..."
+        hasActiveFilters={search !== "" || filterUsage !== "all" || !!selectedNodeId}
+        onReset={() => { setSearch(""); setFilterUsage("all"); setSelectedNode(null); }}
+        filters={
+          <div className="flex items-center gap-3">
+            <Select
+              value={selectedNodeId ?? "__all__"}
+              onValueChange={(v) => setSelectedNode(v === "__all__" ? null : v)}
+            >
+              <SelectTrigger className="w-48">
+                <SelectValue placeholder="All nodes" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">All nodes</SelectItem>
+                {(embedded ? useDockerStore.getState().dockerNodes : dockerNodes).map((n) => (
+                  <SelectItem key={n.id} value={n.id}>
                     {n.displayName || n.hostname}
-                  </div>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-            <Input
-              placeholder="Search images by name or tag..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9"
-            />
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={filterUsage} onValueChange={setFilterUsage}>
+              <SelectTrigger className="w-36">
+                <SelectValue placeholder="Usage" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All images</SelectItem>
+                <SelectItem value="used">In use</SelectItem>
+                <SelectItem value="unused">Unused</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
-          <Select value={filterUsage} onValueChange={setFilterUsage}>
-            <SelectTrigger className="w-36 shrink-0">
-              <SelectValue placeholder="Usage" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All images</SelectItem>
-              <SelectItem value="used">In use</SelectItem>
-              <SelectItem value="unused">Unused</SelectItem>
-            </SelectContent>
-          </Select>
+        }
+      />
+
+      {filteredImages.length > 0 ? (
+        <DataTable
+          columns={imageColumns}
+          data={filteredImages}
+          keyFn={(img: any) => (img.id ?? img.Id ?? "")}
+          emptyMessage="No images found."
+        />
+      ) : isLoading ? (
+        <div className="flex items-center justify-center py-16 text-muted-foreground">
+          Loading images...
         </div>
-
-        {!selectedNodeId && !nodesLoading && dockerNodes.length === 0 && (
-          <EmptyState message="No Docker nodes registered. Add a Docker node from the Nodes page." />
-        )}
-
-        {!selectedNodeId && !nodesLoading && dockerNodes.length > 0 && (
-          <EmptyState message="Select a node to view its images." />
-        )}
-
-        {selectedNodeId && (
-          <>
-
-            {filteredImages.length > 0 ? (
-              <div className="border border-border rounded-lg bg-card">
-                <div className="hidden md:grid md:grid-cols-[1fr_200px_80px_100px_140px_80px] gap-4 px-4 py-2 border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  <span>Repository:Tag</span>
-                  <span>Image ID</span>
-                  <span>Usage</span>
-                  <span>Size</span>
-                  <span>Created</span>
-                  <span className="text-right">Actions</span>
-                </div>
-                <div className="divide-y divide-border">
-                  {filteredImages.map((img) => {
-                    const tags = (img as any).repoTags ?? (img as any).RepoTags ?? [];
-                    const tag = tags.length > 0 ? tags[0] : "<none>:<none>";
-                    const id = (img as any).id ?? (img as any).Id ?? "";
-                    const size = (img as any).size ?? (img as any).Size ?? 0;
-                    const created = (img as any).created ?? (img as any).Created ?? 0;
-                    const containerCount = (img as any).containers ?? (img as any).Containers ?? 0;
-                    const isUsed = containerCount > 0;
-                    return (
-                      <div
-                        key={id}
-                        className="flex flex-col md:grid md:grid-cols-[1fr_200px_80px_100px_140px_80px] gap-2 md:gap-4 p-4 items-start md:items-center"
-                      >
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-muted shrink-0">
-                            <HardDrive className="h-4 w-4 text-muted-foreground" />
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium truncate">{tag}</p>
-                            {tags.length > 1 && (
-                              <p className="text-xs text-muted-foreground truncate">
-                                +{tags.length - 1} more tag{tags.length > 2 ? "s" : ""}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                        <span className="text-xs font-mono text-muted-foreground truncate">
-                          {id.replace("sha256:", "").slice(0, 12)}
-                        </span>
-                        {isUsed ? (
-                          <Badge
-                            variant="success"
-                            className="text-xs w-fit cursor-pointer hover:opacity-80"
-                            onClick={() => showUsage(tag)}
-                          >
-                            In use
-                          </Badge>
-                        ) : (
-                          <Badge variant="secondary" className="text-xs w-fit">
-                            Unused
-                          </Badge>
-                        )}
-                        <span className="text-sm text-muted-foreground">{formatSize(size)}</span>
-                        <span className="text-sm text-muted-foreground">{formatCreated(created)}</span>
-                        <div className="flex items-center md:justify-end">
-                          {hasScope("docker:images:delete") && !isUsed && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7"
-                              onClick={() => handleRemove(id, tag)}
-                              title="Remove"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : isLoading ? (
-              <div className="flex items-center justify-center py-16 text-muted-foreground">
-                Loading images...
-              </div>
-            ) : (
-              <EmptyState
-                message="No images found on this node."
-                hasActiveFilters={search !== ""}
-                onReset={() => setSearch("")}
-              />
-            )}
-          </>
-        )}
-      </div>
+      ) : (
+        <EmptyState
+          message="No images found."
+          hasActiveFilters={search !== ""}
+          onReset={() => setSearch("")}
+        />
+      )}
 
       {/* Pull Image Dialog */}
       <Dialog open={pullOpen} onOpenChange={closePull}>
@@ -401,6 +439,17 @@ export function DockerImages() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
+            <div>
+              <label className="text-sm font-medium">Node <span className="text-destructive">*</span></label>
+              <Select value={pullNodeId} onValueChange={setPullNodeId}>
+                <SelectTrigger className="mt-1"><SelectValue placeholder="Select a node" /></SelectTrigger>
+                <SelectContent>
+                  {(useDockerStore.getState().dockerNodes.length > 0 ? useDockerStore.getState().dockerNodes : dockerNodes).map((n) => (
+                    <SelectItem key={n.id} value={n.id}>{n.displayName || n.hostname}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div>
               <label className="text-sm font-medium">
                 Image Reference <span className="text-destructive">*</span>
@@ -436,7 +485,7 @@ export function DockerImages() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={closePull}>Cancel</Button>
-            <Button onClick={handlePull} disabled={pulling || !pullRef.trim()}>
+            <Button onClick={handlePull} disabled={pulling || !pullRef.trim() || !pullNodeId}>
               {pulling ? "Pulling..." : "Pull"}
             </Button>
           </DialogFooter>
@@ -482,6 +531,14 @@ export function DockerImages() {
           )}
         </DialogContent>
       </Dialog>
+    </>
+  );
+
+  if (embedded) return <div className="flex flex-col flex-1 min-h-0 space-y-4">{content}</div>;
+
+  return (
+    <PageTransition>
+      <div className="h-full overflow-y-auto p-6 space-y-4">{content}</div>
     </PageTransition>
   );
 }

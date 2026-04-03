@@ -22,6 +22,10 @@ import { useAuthStore } from "@/stores/auth";
 import { usePinnedNodesStore } from "@/stores/pinned-nodes";
 import type { NodeDetail, NodeStatus } from "@/types";
 import { NodeConfigTab } from "./node-detail/NodeConfigTab";
+import { DockerContainers } from "./DockerContainers";
+import { DockerImages } from "./DockerImages";
+import { DockerNetworks } from "./DockerNetworks";
+import { DockerVolumes } from "./DockerVolumes";
 import { NodeDetailsTab } from "./node-detail/NodeDetailsTab";
 import { NodeLogsTab } from "./node-detail/NodeLogsTab";
 import { NodeMonitoringTab } from "./node-detail/NodeMonitoringTab";
@@ -38,13 +42,16 @@ const STATUS_BADGE: Record<
 };
 
 export function AdminNodeDetail() {
-  const { id } = useParams<{ id: string }>();
+  const { id, tab: tabParam } = useParams<{ id: string; tab?: string }>();
   const navigate = useNavigate();
   const { hasScope } = useAuthStore();
 
   const [node, setNode] = useState<NodeDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState("details");
+
+  const VALID_TABS = ["details", "monitoring", "configuration", "nginx-logs", "containers", "images", "volumes", "networks", "daemon-logs"];
+  const activeTab = tabParam && VALID_TABS.includes(tabParam) ? tabParam : "details";
+  const setActiveTab = (tab: string) => navigate(`/nodes/${id}/${tab}`, { replace: true });
 
   // Rename dialog
   const [renameOpen, setRenameOpen] = useState(false);
@@ -185,6 +192,14 @@ export function AdminNodeDetail() {
             {node.type === "nginx" && (
               <TabsTrigger value="nginx-logs">Nginx Logs</TabsTrigger>
             )}
+            {node.type === "docker" && (
+              <>
+                <TabsTrigger value="containers">Containers</TabsTrigger>
+                <TabsTrigger value="images">Images</TabsTrigger>
+                <TabsTrigger value="volumes">Volumes</TabsTrigger>
+                <TabsTrigger value="networks">Networks</TabsTrigger>
+              </>
+            )}
             <TabsTrigger value="daemon-logs">Daemon Logs</TabsTrigger>
           </TabsList>
           <TabsContent value="details" className="pb-6">
@@ -202,6 +217,22 @@ export function AdminNodeDetail() {
             <TabsContent value="nginx-logs" className="flex flex-col flex-1 min-h-0">
               <NodeNginxLogsTab nodeId={node.id} nodeStatus={node.status} />
             </TabsContent>
+          )}
+          {node.type === "docker" && (
+            <>
+              <TabsContent value="containers" className="flex flex-col flex-1 min-h-0">
+                <DockerContainers embedded fixedNodeId={node.id} />
+              </TabsContent>
+              <TabsContent value="images" className="flex flex-col flex-1 min-h-0">
+                <DockerImages embedded fixedNodeId={node.id} />
+              </TabsContent>
+              <TabsContent value="volumes" className="flex flex-col flex-1 min-h-0">
+                <DockerVolumes embedded fixedNodeId={node.id} />
+              </TabsContent>
+              <TabsContent value="networks" className="flex flex-col flex-1 min-h-0">
+                <DockerNetworks embedded fixedNodeId={node.id} />
+              </TabsContent>
+            </>
           )}
           <TabsContent value="daemon-logs" className="flex flex-col flex-1 min-h-0">
             <NodeLogsTab nodeId={node.id} nodeStatus={node.status} />

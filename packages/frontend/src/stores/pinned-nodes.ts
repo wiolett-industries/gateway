@@ -9,6 +9,8 @@ interface PinnedNodesState {
   toggleSidebar: (nodeId: string) => void;
   isPinnedDashboard: (nodeId: string) => boolean;
   isPinnedSidebar: (nodeId: string) => boolean;
+  /** Remove IDs that no longer exist */
+  removeOrphans: (validIds: string[]) => void;
   /** Trigger sidebar/dashboard refetch of pinned node data */
   invalidate: () => void;
 }
@@ -36,6 +38,16 @@ export const usePinnedNodesStore = create<PinnedNodesState>()(
 
       isPinnedDashboard: (nodeId) => get().dashboardNodeIds.includes(nodeId),
       isPinnedSidebar: (nodeId) => get().sidebarNodeIds.includes(nodeId),
+
+      removeOrphans: (validIds) =>
+        set((s) => {
+          const validSet = new Set(validIds);
+          const newDash = s.dashboardNodeIds.filter((id) => validSet.has(id));
+          const newSide = s.sidebarNodeIds.filter((id) => validSet.has(id));
+          if (newDash.length === s.dashboardNodeIds.length && newSide.length === s.sidebarNodeIds.length) return s;
+          return { dashboardNodeIds: newDash, sidebarNodeIds: newSide };
+        }),
+
       invalidate: () => set((s) => ({ refreshTick: s.refreshTick + 1 })),
     }),
     {

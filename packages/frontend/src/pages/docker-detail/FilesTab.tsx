@@ -156,7 +156,7 @@ export function FilesTab({ nodeId, containerId }: { nodeId: string; containerId:
   return (
     <div className="pb-6">
       <div className="border border-border bg-card">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto -mb-px">
           <table className="w-full">
             <thead>
               <tr className="border-b border-border text-left">

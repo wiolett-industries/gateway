@@ -197,7 +197,7 @@ export function Domains() {
         {/* Table */}
         {domains.length > 0 ? (
           <div className="border border-border bg-card">
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto -mb-px">
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-border text-left">

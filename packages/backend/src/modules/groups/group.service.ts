@@ -83,6 +83,9 @@ export class GroupService {
       if (!parent) {
         throw new AppError(404, 'PARENT_NOT_FOUND', 'Parent group not found');
       }
+      if (parent.parentId) {
+        throw new AppError(400, 'NESTING_TOO_DEEP', 'Groups can only be nested one level deep — the parent group is already a child of another group');
+      }
     }
 
     const [group] = await this.db
@@ -127,7 +130,7 @@ export class GroupService {
       }
     }
 
-    // Validate parentId doesn't create a cycle
+    // Validate parentId doesn't create a cycle or exceed nesting depth
     if (input.parentId !== undefined) {
       if (input.parentId === id) {
         throw new AppError(400, 'CYCLE_DETECTED', 'A group cannot be its own parent');
@@ -135,6 +138,19 @@ export class GroupService {
       if (input.parentId) {
         const allGroups = await this.db.select().from(permissionGroups);
         const groupMap = new Map(allGroups.map((g) => [g.id, g]));
+
+        // Only allow nesting under top-level groups
+        const parent = groupMap.get(input.parentId);
+        if (parent?.parentId) {
+          throw new AppError(400, 'NESTING_TOO_DEEP', 'Groups can only be nested one level deep — the parent group is already a child of another group');
+        }
+
+        // A group with children cannot become a child itself
+        const hasChildren = allGroups.some((g) => g.parentId === id);
+        if (hasChildren) {
+          throw new AppError(400, 'NESTING_TOO_DEEP', 'This group has child groups — it cannot be nested under another group');
+        }
+
         // Walk up from proposed parent to check for cycles
         let current: string | null = input.parentId;
         const visited = new Set<string>([id]);

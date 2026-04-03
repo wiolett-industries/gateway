@@ -1,11 +1,13 @@
-import { Box, Minus, Play, Plus, RefreshCw, Search, Square } from "lucide-react";
+import { Box, Play, Plus, RefreshCw, Square } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/common/EmptyState";
 import { PageTransition } from "@/components/common/PageTransition";
+import { SearchFilterBar } from "@/components/common/SearchFilterBar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 import { RefreshButton } from "@/components/ui/refresh-button";
 import {
   Dialog,
@@ -19,7 +21,9 @@ import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -60,17 +64,8 @@ function containerDisplayName(name: string): string {
   return name.startsWith("/") ? name.slice(1) : name;
 }
 
-interface PortMapping {
-  hostPort: string;
-  containerPort: string;
-}
 
-interface EnvEntry {
-  key: string;
-  value: string;
-}
-
-export function DockerContainers() {
+export function DockerContainers({ embedded, onDeployRef, fixedNodeId }: { embedded?: boolean; onDeployRef?: (fn: () => void) => void; fixedNodeId?: string } = {}) {
   const navigate = useNavigate();
   const { hasScope } = useAuthStore();
   const containers = useDockerStore((s) => s.containers);
@@ -91,25 +86,80 @@ export function DockerContainers() {
 
   // Deploy dialog state
   const [deployOpen, setDeployOpen] = useState(false);
+  const [deployNodeId, setDeployNodeId] = useState<string>("");
   const [deployImage, setDeployImage] = useState("");
+  const [deployLocalImages, setDeployLocalImages] = useState<string[]>([]);
+  const [deployPullableImages, setDeployPullableImages] = useState<string[]>([]);
   const [deployName, setDeployName] = useState("");
   const [deployRestart, setDeployRestart] = useState("no");
-  const [deployPorts, setDeployPorts] = useState<PortMapping[]>([]);
-  const [deployEnv, setDeployEnv] = useState<EnvEntry[]>([]);
   const [deploying, setDeploying] = useState(false);
+  const openDeploy = () => { setDeployNodeId(selectedNodeId || ""); setDeployImage(""); setDeployOpen(true); };
+
+  // Expose deploy dialog opener to parent
+  useEffect(() => {
+    onDeployRef?.(openDeploy);
+  }, [onDeployRef]);
+
+  // Fetch local images + pullable images from other nodes when deploy node changes
+  useEffect(() => {
+    if (!deployNodeId) { setDeployLocalImages([]); setDeployPullableImages([]); return; }
+
+    const extractTags = (data: unknown): string[] => {
+      const tags: string[] = [];
+      for (const img of (Array.isArray(data) ? data : [])) {
+        for (const t of ((img as any).repoTags ?? (img as any).RepoTags ?? [])) {
+          if (t && t !== "<none>:<none>") tags.push(t);
+        }
+      }
+      return tags;
+    };
+
+    // Fetch local images
+    api.listDockerImages(deployNodeId)
+      .then((data) => setDeployLocalImages(extractTags(data).sort()))
+      .catch(() => setDeployLocalImages([]));
+
+    // Fetch images from other nodes (pullable) — only if user can pull
+    if (!hasScope("docker:images:pull")) { setDeployPullableImages([]); return; }
+    const otherNodes = useDockerStore.getState().dockerNodes.filter((n) => n.id !== deployNodeId);
+    if (otherNodes.length > 0) {
+      Promise.all(otherNodes.map((n) => api.listDockerImages(n.id).then(extractTags).catch(() => [] as string[])))
+        .then((results) => {
+          const localSet = new Set<string>();
+          api.listDockerImages(deployNodeId).then((d) => {
+            for (const t of extractTags(d)) localSet.add(t);
+            const pullable = new Set<string>();
+            for (const tags of results) {
+              for (const t of tags) {
+                if (!localSet.has(t)) pullable.add(t);
+              }
+            }
+            setDeployPullableImages(Array.from(pullable).sort());
+          }).catch(() => {});
+        });
+    } else {
+      setDeployPullableImages([]);
+    }
+  }, [deployNodeId]);
+
+  // When fixedNodeId is set (e.g. from node detail page), use it directly
+  useEffect(() => {
+    if (fixedNodeId) {
+      setSelectedNode(fixedNodeId);
+    }
+  }, [fixedNodeId, setSelectedNode]);
 
   // Fetch docker nodes on mount — intentionally runs once
   // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only effect
   useEffect(() => {
+    if (embedded) { setNodesLoading(false); return; }
     setNodesLoading(true);
     api
       .listNodes({ type: "docker", limit: 100 })
       .then((r) => {
         setDockerNodes(r.data);
-        // Auto-select first node if none selected
-        if (!selectedNodeId && r.data.length > 0) {
-          setSelectedNode(r.data[0].id);
-        }
+        // Also set in store for multi-node fetching
+        useDockerStore.getState().setDockerNodes(r.data);
       })
       .catch(() => {
         toast.error("Failed to load Docker nodes");
@@ -118,14 +168,13 @@ export function DockerContainers() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Fetch containers on mount and auto-refresh every 30s
+  // Fetch containers and auto-refresh every 30s
   useEffect(() => {
-    if (!selectedNodeId) return;
-    // Always fetch fresh on mount/re-render of this effect
+    if (embedded) return; // Parent handles fetch in embedded mode
     fetchContainers();
     const interval = setInterval(() => fetchContainers(), 30_000);
     return () => clearInterval(interval);
-  }, [selectedNodeId, fetchContainers]);
+  }, [selectedNodeId, fetchContainers, embedded]);
 
   // Sync search input with store filter
   const handleSearch = useCallback(() => {
@@ -174,44 +223,39 @@ export function DockerContainers() {
     }
   };
 
+  const nodeOf = (c: DockerContainer) => (c as any)._nodeId || selectedNodeId!;
+
   const handleStart = (c: DockerContainer) =>
-    doAction(c.id, "start", () => api.startContainer(selectedNodeId!, c.id));
+    doAction(c.id, "start", () => api.startContainer(nodeOf(c), c.id));
 
   const handleStop = (c: DockerContainer) =>
-    doAction(c.id, "stop", () => api.stopContainer(selectedNodeId!, c.id));
+    doAction(c.id, "stop", () => api.stopContainer(nodeOf(c), c.id));
 
   const handleRestart = (c: DockerContainer) =>
-    doAction(c.id, "restart", () => api.restartContainer(selectedNodeId!, c.id));
+    doAction(c.id, "restart", () => api.restartContainer(nodeOf(c), c.id));
 
   // Deploy container
   const handleDeploy = async () => {
-    if (!selectedNodeId || !deployImage.trim()) return;
+    if (!deployNodeId || !deployImage.trim()) return;
     setDeploying(true);
     try {
+      // Auto-pull if image not available locally
+      const isLocal = deployLocalImages.includes(deployImage.trim());
+      if (!isLocal) {
+        toast.info(`Pulling "${deployImage.trim()}"...`);
+        await api.pullImage(deployNodeId, deployImage.trim());
+      }
       const config: ContainerCreateConfig = {
         image: deployImage.trim(),
         restartPolicy: deployRestart,
       };
       if (deployName.trim()) config.name = deployName.trim();
-      if (deployPorts.length > 0) {
-        config.ports = deployPorts
-          .filter((p) => p.hostPort && p.containerPort)
-          .map((p) => ({
-            hostPort: Number.parseInt(p.hostPort, 10),
-            containerPort: Number.parseInt(p.containerPort, 10),
-          }));
-      }
-      if (deployEnv.length > 0) {
-        const env: Record<string, string> = {};
-        for (const e of deployEnv) {
-          if (e.key.trim()) env[e.key.trim()] = e.value;
-        }
-        if (Object.keys(env).length > 0) config.env = env;
-      }
-      await api.createContainer(selectedNodeId, config);
+      const result = await api.createContainer(deployNodeId, config);
       toast.success("Container deployed");
       closeDeploy();
       fetchContainers();
+      const newId = (result as any)?.id ?? (result as any)?.Id;
+      if (newId) navigate(`/docker/containers/${deployNodeId}/${newId}`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to deploy container");
     } finally {
@@ -224,203 +268,213 @@ export function DockerContainers() {
     setDeployImage("");
     setDeployName("");
     setDeployRestart("no");
-    setDeployPorts([]);
-    setDeployEnv([]);
   };
 
-  const selectedNode = dockerNodes.find((n) => n.id === selectedNodeId);
 
-  return (
-    <PageTransition>
-      <div className="h-full overflow-y-auto p-6 space-y-4">
-        {/* Header */}
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold">Docker Containers</h1>
-              {!isLoading && selectedNodeId && (
-                <Badge variant="secondary">{containers.length}</Badge>
+  const allContainerColumns: DataTableColumn<DockerContainer>[] = useMemo(
+    () => [
+      {
+        key: "name",
+        header: "Name",
+        truncate: true,
+        render: (c) => (
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-muted shrink-0">
+              <Box className="h-4 w-4 text-muted-foreground" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-medium truncate">
+                {containerDisplayName(c.name)}
+              </p>
+              <p className="text-xs text-muted-foreground font-mono truncate">
+                {c.id.slice(0, 12)}
+              </p>
+            </div>
+          </div>
+        ),
+      },
+      {
+        key: "image",
+        header: "Image",
+        truncate: true,
+        render: (c) => (
+          <span className="text-muted-foreground">{c.image}</span>
+        ),
+      },
+      {
+        key: "node",
+        header: "Node",
+        width: "140px",
+        truncate: true,
+        render: (c) => <Badge variant="secondary" className="text-xs font-normal">{(c as any)._nodeName || "-"}</Badge>,
+      },
+      {
+        key: "status",
+        header: "Status",
+        width: "110px",
+        render: (c) => (
+          <Badge
+            variant={STATUS_BADGE[(c as any)._transition ?? c.state] ?? "secondary"}
+            className="text-xs w-fit"
+          >
+            {(c as any)._transition ?? c.state}
+          </Badge>
+        ),
+      },
+      {
+        key: "created",
+        header: "Created",
+        width: "120px",
+        render: (c) => (
+          <span className="text-muted-foreground whitespace-nowrap">
+            {formatCreated(c.created)}
+          </span>
+        ),
+      },
+      {
+        key: "actions",
+        header: "Actions",
+        width: "100px",
+        align: "right" as const,
+        render: (c) => {
+          const loadingAction = actionLoading[c.id];
+          return (
+            <div
+              className="flex items-center gap-0.5 justify-end"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {c.state === "running" ? (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    disabled={!!loadingAction || !!(c as any)._transition}
+                    onClick={() => handleStop(c)}
+                    title="Stop"
+                  >
+                    <Square className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    disabled={!!loadingAction || !!(c as any)._transition}
+                    onClick={() => handleRestart(c)}
+                    title="Restart"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5" />
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  disabled={!!loadingAction || !!(c as any)._transition}
+                  onClick={() => handleStart(c)}
+                  title="Start"
+                >
+                  <Play className="h-3.5 w-3.5" />
+                </Button>
               )}
             </div>
-            <p className="text-sm text-muted-foreground">
-              Manage containers across your Docker nodes
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            {selectedNodeId && (
-              <RefreshButton onClick={() => fetchContainers()} disabled={isLoading} />
-            )}
-            {hasScope("docker:containers:create") && selectedNodeId && (
-              <Button onClick={() => setDeployOpen(true)}>
-                <Plus className="h-4 w-4 mr-1" />
-                Deploy Container
-              </Button>
-            )}
-          </div>
-        </div>
+          );
+        },
+      },
+    ],
+    [actionLoading, handleStop, handleRestart, handleStart]
+  );
+  const containerColumns = fixedNodeId ? allContainerColumns.filter((c) => c.key !== "node") : allContainerColumns;
 
-        {/* Inline: [Node selector] [Search input] [Status filter] */}
-        <div className="flex gap-2">
-          <Select
-            value={selectedNodeId ?? ""}
-            onValueChange={(v) => setSelectedNode(v || null)}
-            disabled={nodesLoading}
-          >
-            <SelectTrigger className="w-48 shrink-0">
-              <SelectValue placeholder={nodesLoading ? "Loading..." : "Select node"} />
-            </SelectTrigger>
-            <SelectContent>
-              {dockerNodes.map((n) => (
-                <SelectItem key={n.id} value={n.id}>
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`h-2 w-2 rounded-full shrink-0 ${
-                        n.status === "online"
-                          ? "bg-emerald-500"
-                          : n.status === "error"
-                            ? "bg-red-400"
-                            : "bg-muted-foreground/40"
-                      }`}
-                    />
+  const content = (
+    <>
+      {/* Header — hidden in embedded mode */}
+      {!embedded && (
+        <>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-2xl font-bold">Docker Containers</h1>
+                {!isLoading && selectedNodeId && (
+                  <Badge variant="secondary">{containers.length}</Badge>
+                )}
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Manage containers across your Docker nodes
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {selectedNodeId && (
+                <RefreshButton onClick={() => fetchContainers()} disabled={isLoading} />
+              )}
+              {hasScope("docker:containers:create") && selectedNodeId && (
+                <Button onClick={() => openDeploy()}>
+                  <Plus className="h-4 w-4 mr-1" />
+                  Deploy Container
+                </Button>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Filters */}
+      <SearchFilterBar
+        search={searchInput}
+        onSearchChange={(v) => { setSearchInput(v); setFilters({ search: v }); }}
+        onSearchSubmit={handleSearch}
+        placeholder="Search containers by name or image..."
+        hasActiveFilters={searchInput !== "" || filters.status !== "all" || !!selectedNodeId}
+        onReset={() => { setSearchInput(""); resetFilters(); setSelectedNode(null); }}
+        filters={
+          <div className="flex items-center gap-3">
+            <Select
+              value={selectedNodeId ?? "__all__"}
+              onValueChange={(v) => setSelectedNode(v === "__all__" ? null : v)}
+            >
+              <SelectTrigger className="w-48">
+                <SelectValue placeholder="All nodes" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">All nodes</SelectItem>
+                {(embedded ? useDockerStore.getState().dockerNodes : dockerNodes).map((n) => (
+                  <SelectItem key={n.id} value={n.id}>
                     {n.displayName || n.hostname}
-                  </div>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-            <Input
-              placeholder="Search containers by name or image..."
-              value={searchInput}
-              onChange={(e) => {
-                setSearchInput(e.target.value);
-                setFilters({ search: e.target.value });
-              }}
-              onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-              className="pl-9"
-            />
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={filters.status} onValueChange={(v) => setFilters({ status: v })}>
+              <SelectTrigger className="w-36">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All statuses</SelectItem>
+                <SelectItem value="running">Running</SelectItem>
+                <SelectItem value="stopped">Stopped</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
-          <Select value={filters.status} onValueChange={(v) => setFilters({ status: v })}>
-            <SelectTrigger className="w-36 shrink-0">
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All statuses</SelectItem>
-              <SelectItem value="running">Running</SelectItem>
-              <SelectItem value="stopped">Stopped</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        }
+      />
 
-        {!selectedNodeId && !nodesLoading && dockerNodes.length === 0 && (
+        {!nodesLoading && !embedded && dockerNodes.length === 0 && useDockerStore.getState().dockerNodes.length === 0 && (
           <EmptyState message="No Docker nodes registered. Add a Docker node from the Nodes page to get started." />
         )}
 
-        {!selectedNodeId && !nodesLoading && dockerNodes.length > 0 && (
-          <EmptyState message="Select a node to view its containers." />
-        )}
-
-        {selectedNodeId && (
+        {(selectedNodeId || useDockerStore.getState().dockerNodes.length > 0 || embedded) && (
           <>
 
             {/* Container list */}
             {filteredContainers.length > 0 ? (
-              <div className="border border-border rounded-lg bg-card">
-                {/* Table header */}
-                <div className="hidden md:grid md:grid-cols-[1fr_1fr_120px_140px_100px] gap-4 px-4 py-2 border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  <span>Name</span>
-                  <span>Image</span>
-                  <span>Status</span>
-                  <span>Created</span>
-                  <span className="text-right">Actions</span>
-                </div>
-                <div className="divide-y divide-border">
-                  {filteredContainers.map((c) => {
-                    const loadingAction = actionLoading[c.id];
-                    return (
-                      <div
-                        key={c.id}
-                        className="flex flex-col md:grid md:grid-cols-[1fr_1fr_120px_140px_100px] gap-2 md:gap-4 p-4 cursor-pointer hover:bg-muted/50 transition-colors items-start md:items-center"
-                        onClick={() => navigate(`/docker/containers/${selectedNodeId}/${c.id}`)}
-                      >
-                        {/* Name */}
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-muted shrink-0">
-                            <Box className="h-4 w-4 text-muted-foreground" />
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium truncate">
-                              {containerDisplayName(c.name)}
-                            </p>
-                            <p className="text-xs text-muted-foreground font-mono truncate">
-                              {c.id.slice(0, 12)}
-                            </p>
-                          </div>
-                        </div>
-
-                        {/* Image */}
-                        <p className="text-sm text-muted-foreground truncate">{c.image}</p>
-
-                        {/* Status */}
-                        <Badge
-                          variant={STATUS_BADGE[(c as any)._transition ?? c.state] ?? "secondary"}
-                          className="text-xs w-fit"
-                        >
-                          {(c as any)._transition ?? c.state}
-                        </Badge>
-
-                        {/* Created */}
-                        <span className="text-sm text-muted-foreground">
-                          {formatCreated(c.created)}
-                        </span>
-
-                        {/* Actions */}
-                        <div
-                          className="flex items-center gap-0.5 md:justify-end"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          {c.state === "running" ? (
-                            <>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-7 w-7"
-                                disabled={!!loadingAction || !!(c as any)._transition}
-                                onClick={() => handleStop(c)}
-                                title="Stop"
-                              >
-                                <Square className="h-3.5 w-3.5" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-7 w-7"
-                                disabled={!!loadingAction || !!(c as any)._transition}
-                                onClick={() => handleRestart(c)}
-                                title="Restart"
-                              >
-                                <RefreshCw className="h-3.5 w-3.5" />
-                              </Button>
-                            </>
-                          ) : (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7"
-                              disabled={!!loadingAction || !!(c as any)._transition}
-                              onClick={() => handleStart(c)}
-                              title="Start"
-                            >
-                              <Play className="h-3.5 w-3.5" />
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
+              <DataTable
+                columns={containerColumns}
+                data={filteredContainers}
+                keyFn={(c) => c.id}
+                onRowClick={(c) => navigate(`/docker/containers/${(c as any)._nodeId || selectedNodeId}/${c.id}`)}
+                emptyMessage="No containers found."
+              />
             ) : isLoading ? (
               <div className="flex items-center justify-center py-16 text-muted-foreground">
                 Loading containers...
@@ -434,12 +488,11 @@ export function DockerContainers() {
                   resetFilters();
                 }}
                 actionLabel={hasScope("docker:containers:create") ? "Deploy a container" : undefined}
-                onAction={hasScope("docker:containers:create") ? () => setDeployOpen(true) : undefined}
+                onAction={hasScope("docker:containers:create") ? () => openDeploy() : undefined}
               />
             )}
           </>
         )}
-      </div>
 
       {/* Deploy Container Dialog */}
       <Dialog open={deployOpen} onOpenChange={closeDeploy}>
@@ -447,23 +500,70 @@ export function DockerContainers() {
           <DialogHeader>
             <DialogTitle>Deploy Container</DialogTitle>
             <DialogDescription>
-              Create and start a new container on{" "}
-              {selectedNode?.displayName || selectedNode?.hostname || "the selected node"}.
+              Create and start a new container.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
+            {/* Node */}
+            <div>
+              <label className="text-sm font-medium">
+                Node <span className="text-destructive">*</span>
+              </label>
+              <Select value={deployNodeId} onValueChange={(v) => { setDeployNodeId(v); setDeployImage(""); }}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Select a node" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(useDockerStore.getState().dockerNodes.length > 0 ? useDockerStore.getState().dockerNodes : dockerNodes).map((n) => (
+                    <SelectItem key={n.id} value={n.id}>
+                      {n.displayName || n.hostname}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             {/* Image */}
             <div>
               <label className="text-sm font-medium">
                 Image <span className="text-destructive">*</span>
               </label>
-              <Input
-                className="mt-1"
-                value={deployImage}
-                onChange={(e) => setDeployImage(e.target.value)}
-                placeholder="nginx:latest"
-              />
+              <Select value={deployImage} onValueChange={setDeployImage} disabled={!deployNodeId}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder={!deployNodeId ? "Select a node first" : "Select an image"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {deployLocalImages.length > 0 && (
+                    <SelectGroup>
+                      <SelectLabel>On this node</SelectLabel>
+                      {deployLocalImages.map((tag) => (
+                        <SelectItem key={tag} value={tag}>
+                          {tag}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  )}
+                  {deployPullableImages.length > 0 && (
+                    <SelectGroup>
+                      <SelectLabel>Available to pull</SelectLabel>
+                      {deployPullableImages.map((tag) => (
+                        <SelectItem key={`pull:${tag}`} value={tag}>
+                          {tag}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  )}
+                  {deployLocalImages.length === 0 && deployPullableImages.length === 0 && (
+                    <SelectItem value="__none__" disabled>No images available</SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+              {deployImage && !deployLocalImages.includes(deployImage) && deployNodeId && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Will be pulled to this node on deploy
+                </p>
+              )}
             </div>
 
             {/* Container name */}
@@ -494,120 +594,26 @@ export function DockerContainers() {
                 </SelectContent>
               </Select>
             </div>
-
-            {/* Port mappings */}
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-sm font-medium">Port Mappings</label>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() =>
-                    setDeployPorts((prev) => [...prev, { hostPort: "", containerPort: "" }])
-                  }
-                >
-                  <Plus className="h-3.5 w-3.5 mr-1" />
-                  Add
-                </Button>
-              </div>
-              {deployPorts.map((port, idx) => (
-                <div key={idx} className="flex items-center gap-2 mt-1">
-                  <Input
-                    placeholder="Host port"
-                    value={port.hostPort}
-                    onChange={(e) => {
-                      const updated = [...deployPorts];
-                      updated[idx] = { ...updated[idx], hostPort: e.target.value };
-                      setDeployPorts(updated);
-                    }}
-                    className="w-28"
-                  />
-                  <span className="text-muted-foreground text-sm">:</span>
-                  <Input
-                    placeholder="Container port"
-                    value={port.containerPort}
-                    onChange={(e) => {
-                      const updated = [...deployPorts];
-                      updated[idx] = { ...updated[idx], containerPort: e.target.value };
-                      setDeployPorts(updated);
-                    }}
-                    className="w-28"
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 shrink-0"
-                    onClick={() => setDeployPorts((prev) => prev.filter((_, i) => i !== idx))}
-                  >
-                    <Minus className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              ))}
-            </div>
-
-            {/* Environment variables */}
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-sm font-medium">Environment Variables</label>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setDeployEnv((prev) => [...prev, { key: "", value: "" }])}
-                >
-                  <Plus className="h-3.5 w-3.5 mr-1" />
-                  Add
-                </Button>
-              </div>
-              {deployEnv.map((env, idx) => (
-                <div key={idx} className="flex items-center gap-2 mt-1">
-                  <Input
-                    placeholder="KEY"
-                    value={env.key}
-                    onChange={(e) => {
-                      const updated = [...deployEnv];
-                      updated[idx] = { ...updated[idx], key: e.target.value };
-                      setDeployEnv(updated);
-                    }}
-                    className="w-36"
-                  />
-                  <span className="text-muted-foreground text-sm">=</span>
-                  <Input
-                    placeholder="value"
-                    value={env.value}
-                    onChange={(e) => {
-                      const updated = [...deployEnv];
-                      updated[idx] = { ...updated[idx], value: e.target.value };
-                      setDeployEnv(updated);
-                    }}
-                    className="flex-1"
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 shrink-0"
-                    onClick={() => setDeployEnv((prev) => prev.filter((_, i) => i !== idx))}
-                  >
-                    <Minus className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              ))}
-            </div>
           </div>
 
           <DialogFooter>
             <Button variant="outline" onClick={closeDeploy}>
               Cancel
             </Button>
-            <Button onClick={handleDeploy} disabled={deploying || !deployImage.trim()}>
+            <Button onClick={handleDeploy} disabled={deploying || !deployImage.trim() || !deployNodeId}>
               {deploying ? "Deploying..." : "Deploy"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </>
+  );
+
+  if (embedded) return <div className="flex flex-col flex-1 min-h-0 space-y-4">{content}</div>;
+
+  return (
+    <PageTransition>
+      <div className="h-full overflow-y-auto p-6 space-y-4">{content}</div>
     </PageTransition>
   );
 }

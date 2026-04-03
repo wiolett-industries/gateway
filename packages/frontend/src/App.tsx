@@ -20,21 +20,15 @@ import { DockerConsolePopout } from "@/pages/DockerConsolePopout";
 import { DockerContainerDetail } from "@/pages/DockerContainerDetail";
 import { DockerFilePopout } from "@/pages/DockerFilePopout";
 import { DockerLogsPopout } from "@/pages/DockerLogsPopout";
-import { DockerContainers } from "@/pages/DockerContainers";
-import { DockerImages } from "@/pages/DockerImages";
-import { DockerNetworks } from "@/pages/DockerNetworks";
-import { DockerTasks } from "@/pages/DockerTasks";
-import { DockerTemplatesPage } from "@/pages/DockerTemplates";
-import { DockerVolumes } from "@/pages/DockerVolumes";
+import { Docker } from "@/pages/Docker";
 import { Domains } from "@/pages/Domains";
 import { LoginPage } from "@/pages/Login";
 import { NginxTemplateEdit } from "@/pages/NginxTemplateEdit";
-import { NginxTemplates } from "@/pages/NginxTemplates";
+import { TemplatesPage } from "@/pages/TemplatesPage";
 import { ProxyHostDetail } from "@/pages/ProxyHostDetail";
 import { ProxyHosts } from "@/pages/ProxyHosts";
 import { Settings } from "@/pages/Settings";
 import { SSLCertificates } from "@/pages/SSLCertificates";
-import { Templates } from "@/pages/Templates";
 
 /** Helper to wrap a page element with a scope guard */
 function scoped(scope: string, element: React.ReactElement) {
@@ -66,7 +60,7 @@ export default function App() {
               <Route path="/" element={<Dashboard />} />
               <Route path="/proxy-hosts" element={scoped("proxy:list", <ProxyHosts />)} />
               <Route path="/proxy-hosts/:id" element={scoped("proxy:list", <ProxyHostDetail />)} />
-              <Route path="/nginx-templates" element={scoped("proxy:list", <NginxTemplates />)} />
+              <Route path="/proxy-hosts/:id/:tab" element={scoped("proxy:list", <ProxyHostDetail />)} />
               <Route
                 path="/nginx-templates/new"
                 element={scoped("proxy:edit", <NginxTemplateEdit />)}
@@ -85,32 +79,25 @@ export default function App() {
                 path="/certificates/:id"
                 element={scoped("pki:cert:list", <CertificateDetail />)}
               />
-              <Route path="/templates" element={scoped("pki:templates:list", <Templates />)} />
+              <Route path="/templates" element={<TemplatesPage />} />
+              <Route path="/templates/:tab" element={<TemplatesPage />} />
               <Route path="/audit" element={scoped("admin:audit", <AuditLog />)} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/admin/users" element={scoped("admin:users", <AdminUsers />)} />
               <Route path="/admin/groups" element={scoped("admin:groups", <AdminGroups />)} />
               <Route path="/nodes" element={scoped("nodes:list", <AdminNodes />)} />
               <Route path="/nodes/:id" element={scoped("nodes:list", <AdminNodeDetail />)} />
-              <Route
-                path="/docker/containers"
-                element={scoped("docker:containers:list", <DockerContainers />)}
-              />
+              <Route path="/nodes/:id/:tab" element={scoped("nodes:list", <AdminNodeDetail />)} />
+              <Route path="/docker" element={scoped("docker:containers:list", <Docker />)} />
+              <Route path="/docker/:tab" element={scoped("docker:containers:list", <Docker />)} />
               <Route
                 path="/docker/containers/:nodeId/:containerId"
                 element={scoped("docker:containers:view", <DockerContainerDetail />)}
               />
-              <Route path="/docker/images" element={scoped("docker:images:list", <DockerImages />)} />
-              <Route path="/docker/volumes" element={scoped("docker:volumes:list", <DockerVolumes />)} />
               <Route
-                path="/docker/networks"
-                element={scoped("docker:networks:list", <DockerNetworks />)}
+                path="/docker/containers/:nodeId/:containerId/:tab"
+                element={scoped("docker:containers:view", <DockerContainerDetail />)}
               />
-              <Route
-                path="/docker/templates"
-                element={scoped("docker:templates:list", <DockerTemplatesPage />)}
-              />
-              <Route path="/docker/tasks" element={scoped("docker:tasks", <DockerTasks />)} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

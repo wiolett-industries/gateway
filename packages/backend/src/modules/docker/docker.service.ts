@@ -106,6 +106,66 @@ export class DockerManagementService {
     }, 2000);
   }
 
+  /**
+   * Poll by container NAME to detect when a recreate completes.
+   * Waits for a container with the given name to appear with a DIFFERENT ID
+   * and reach the expected state.
+   */
+  private watchRecreateByName(
+    nodeId: string,
+    containerName: string,
+    oldContainerId: string,
+    taskId: string | undefined,
+    progress: string,
+    timeoutMs = 60000
+  ) {
+    const start = Date.now();
+    const poll = setInterval(async () => {
+      try {
+        const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'list');
+        const containers = this.parseResult(result);
+        if (!Array.isArray(containers)) return;
+
+        const match = containers.find((c: any) => {
+          const cName = (c.name ?? c.Name ?? '').replace(/^\//, '');
+          return cName === containerName;
+        });
+
+        if (match) {
+          const newId = match.id ?? match.Id;
+          const state = match.state ?? match.State ?? '';
+
+          if (newId !== oldContainerId && state === 'running') {
+            // Recreation complete — new container is running
+            clearInterval(poll);
+            this.clearTransition(oldContainerId);
+            this.clearTransition(newId);
+            if (taskId && this.taskService) {
+              await this.taskService.update(taskId, { status: 'succeeded', progress, completedAt: new Date() }).catch(() => {});
+            }
+            return;
+          }
+        }
+
+        if (Date.now() - start > timeoutMs) {
+          clearInterval(poll);
+          this.clearTransition(oldContainerId);
+          if (taskId && this.taskService) {
+            await this.taskService.update(taskId, { status: 'failed', error: 'Timed out', completedAt: new Date() }).catch(() => {});
+          }
+        }
+      } catch {
+        if (Date.now() - start > timeoutMs) {
+          clearInterval(poll);
+          this.clearTransition(oldContainerId);
+          if (taskId && this.taskService) {
+            await this.taskService.update(taskId, { status: 'failed', error: 'Timed out', completedAt: new Date() }).catch(() => {});
+          }
+        }
+      }
+    }, 2000);
+  }
+
   private async validateDockerNode(nodeId: string) {
     const [node] = await this.db.select().from(nodes).where(eq(nodes.id, nodeId)).limit(1);
     if (!node) throw new AppError(404, 'NOT_FOUND', 'Node not found');
@@ -309,7 +369,7 @@ export class DockerManagementService {
       120000 // 2min timeout for pull+redeploy
     );
     const data = this.parseResult(result);
-    this.watchTransition(nodeId, containerId, task?.id, 'running', 'Container updated');
+    this.watchRecreateByName(nodeId, name, containerId, task?.id, 'Container updated');
     await this.auditService.log({
       action: 'docker.container.update',
       userId,
@@ -401,9 +461,7 @@ export class DockerManagementService {
         details: { nodeId },
       });
 
-      // Note: containerId changes after recreate, but watchTransition will time out
-      // and clear the old transition. The frontend handles navigation to new ID.
-      this.watchTransition(nodeId, containerId, task?.id, 'running', 'Container recreated');
+      this.watchRecreateByName(nodeId, name, containerId, task?.id, 'Container recreated');
       return data;
     } catch (err) {
       this.clearTransition(containerId);

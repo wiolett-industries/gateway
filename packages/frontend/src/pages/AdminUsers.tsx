@@ -148,7 +148,7 @@ export function AdminUsers() {
 
         {users.length > 0 ? (
           <div className="border border-border bg-card">
-            <div className="divide-y divide-border">
+            <div className="divide-y divide-border -mb-px [&>*:last-child]:border-b [&>*:last-child]:border-border">
               {users.map((user) => {
                 const isSelf = currentUser?.id === user.id;
                 const isSystemUser = user.oidcSubject?.startsWith("system:");

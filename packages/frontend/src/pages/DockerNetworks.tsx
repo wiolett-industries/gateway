@@ -1,12 +1,14 @@
-import { Network, Plus, Search, Trash2 } from "lucide-react";
+import { Network, Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
 import { PageTransition } from "@/components/common/PageTransition";
+import { SearchFilterBar } from "@/components/common/SearchFilterBar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 import { RefreshButton } from "@/components/ui/refresh-button";
 import {
   Dialog,
@@ -29,7 +31,7 @@ import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
 import type { DockerNetwork, Node } from "@/types";
 
-export function DockerNetworks() {
+export function DockerNetworks({ embedded, onCreateRef, fixedNodeId }: { embedded?: boolean; onCreateRef?: (fn: () => void) => void; fixedNodeId?: string } = {}) {
   const navigate = useNavigate();
   const { hasScope } = useAuthStore();
   const {
@@ -41,11 +43,13 @@ export function DockerNetworks() {
   } = useDockerStore();
 
   const [dockerNodes, setDockerNodes] = useState<Node[]>([]);
-  const [nodesLoading, setNodesLoading] = useState(true);
   const [search, setSearch] = useState("");
 
   // Create dialog
   const [createOpen, setCreateOpen] = useState(false);
+  const [createNodeId, setCreateNodeId] = useState<string>("");
+  const openCreate = () => { setCreateNodeId(selectedNodeId || ""); setCreateOpen(true); };
+  useEffect(() => { onCreateRef?.(() => openCreate()); }, [onCreateRef]);
   const [createName, setCreateName] = useState("");
   const [createDriver, setCreateDriver] = useState("bridge");
   const [createSubnet, setCreateSubnet] = useState("");
@@ -59,13 +63,15 @@ export function DockerNetworks() {
   const [usageLoading, setUsageLoading] = useState(false);
 
   const showUsage = async (net: DockerNetwork) => {
+    const nid = (net as any)._nodeId || selectedNodeId;
+    if (!nid) return;
     setUsageNetwork(net.name);
     setUsageOpen(true);
     setUsageLoading(true);
     try {
       const c = (net as any).containers ?? (net as any).Containers ?? {};
       const containerIds = Object.keys(c);
-      const containers = await api.listDockerContainers(selectedNodeId!);
+      const containers = await api.listDockerContainers(nid);
       const matched = (containers ?? [])
         .filter((ct: any) => containerIds.includes(ct.id))
         .map((ct: any) => ({ id: ct.id, name: (ct.name ?? "").replace(/^\//, ""), state: ct.state }));
@@ -78,17 +84,17 @@ export function DockerNetworks() {
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only
   useEffect(() => {
-    setNodesLoading(true);
+    if (embedded && !fixedNodeId) { return; }
+    if (fixedNodeId) { setSelectedNode(fixedNodeId); return; }
+    
     api
       .listNodes({ type: "docker", limit: 100 })
       .then((r) => {
         setDockerNodes(r.data);
-        if (!selectedNodeId && r.data.length > 0) {
-          setSelectedNode(r.data[0].id);
-        }
+        useDockerStore.getState().setDockerNodes(r.data);
       })
       .catch(() => toast.error("Failed to load Docker nodes"))
-      .finally(() => setNodesLoading(false));
+      ;
   }, []);
 
   const location = useLocation();
@@ -125,7 +131,7 @@ export function DockerNetworks() {
     };
   };
 
-  const handleRemove = async (net: DockerNetwork) => {
+  const handleRemove = async (net: DockerNetwork & { _nodeId?: string }) => {
     const count = containerCount(net);
     const extra = count > 0 ? ` ${count} container${count > 1 ? "s are" : " is"} currently connected.` : "";
     const ok = await confirm({
@@ -135,7 +141,9 @@ export function DockerNetworks() {
     });
     if (!ok) return;
     try {
-      await api.removeNetwork(selectedNodeId!, net.id);
+      const nid = net._nodeId || selectedNodeId;
+      if (!nid) return;
+      await api.removeNetwork(nid, net.id);
       toast.success("Network removed");
       fetchNetworks();
     } catch (err) {
@@ -144,10 +152,10 @@ export function DockerNetworks() {
   };
 
   const handleCreate = async () => {
-    if (!selectedNodeId || !createName.trim()) return;
+    if (!createNodeId || !createName.trim()) return;
     setCreating(true);
     try {
-      await api.createNetwork(selectedNodeId, {
+      await api.createNetwork(createNodeId, {
         name: createName.trim(),
         driver: createDriver,
         subnet: createSubnet.trim() || undefined,
@@ -173,10 +181,106 @@ export function DockerNetworks() {
 
   const selectedNode = dockerNodes.find((n) => n.id === selectedNodeId);
 
-  return (
-    <PageTransition>
-      <div className="h-full overflow-y-auto p-6 space-y-4">
-        {/* Header */}
+  const allNetworkColumns: DataTableColumn<DockerNetwork>[] = useMemo(
+    () => [
+      {
+        key: "name",
+        header: "Name",
+        render: (net) => (
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-muted shrink-0">
+              <Network className="h-4 w-4 text-muted-foreground" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-medium truncate">{net.name}</p>
+              <p className="text-xs text-muted-foreground font-mono truncate">
+                {net.id.slice(0, 12)}
+              </p>
+            </div>
+          </div>
+        ),
+      },
+      {
+        key: "driver",
+        header: "Driver",
+        render: (net) => (
+          <span className="text-sm text-muted-foreground">{net.driver}</span>
+        ),
+      },
+      {
+        key: "subnet",
+        header: "Subnet",
+        render: (net) => {
+          const ipam = getIPAM(net);
+          return ipam.subnet !== "-" ? (
+            <Badge variant="secondary" className="text-xs font-mono w-fit">{ipam.subnet}</Badge>
+          ) : (
+            <span className="text-xs text-muted-foreground">-</span>
+          );
+        },
+      },
+      {
+        key: "node",
+        header: "Node",
+        width: "140px",
+        truncate: true,
+        render: (n) => <Badge variant="secondary" className="text-xs font-normal">{(n as any)._nodeName || "-"}</Badge>,
+      },
+      {
+        key: "usage",
+        header: "Usage",
+        render: (net) => {
+          const count = containerCount(net);
+          return count > 0 ? (
+            <Badge
+              variant="success"
+              className="text-xs w-fit cursor-pointer hover:opacity-80"
+              onClick={(e: React.MouseEvent) => {
+                e.stopPropagation();
+                showUsage(net);
+              }}
+            >
+              In use
+            </Badge>
+          ) : (
+            <Badge variant="secondary" className="text-xs w-fit">
+              Unused
+            </Badge>
+          );
+        },
+      },
+      {
+        key: "actions",
+        header: "Actions",
+        align: "right" as const,
+        render: (net) => {
+          const count = containerCount(net);
+          return (
+            <div className="flex items-center justify-end" onClick={(e) => e.stopPropagation()}>
+              {hasScope("docker:networks:delete") && count === 0 && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={() => handleRemove(net)}
+                  title="Remove"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              )}
+            </div>
+          );
+        },
+      },
+    ],
+    [hasScope, handleRemove, showUsage, containerCount, getIPAM]
+  );
+  const networkColumns = fixedNodeId ? allNetworkColumns.filter((c) => c.key !== "node") : allNetworkColumns;
+
+  const content = (
+    <>
+      {/* Header — hidden in embedded mode */}
+      {!embedded && (
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <div className="flex items-center gap-2">
@@ -194,7 +298,7 @@ export function DockerNetworks() {
               <>
                 <RefreshButton onClick={() => fetchNetworks()} disabled={isLoading} />
                 {hasScope("docker:networks:create") && (
-                  <Button onClick={() => setCreateOpen(true)}>
+                  <Button onClick={() => openCreate()}>
                     <Plus className="h-4 w-4 mr-1" />
                     Create Network
                   </Button>
@@ -203,145 +307,55 @@ export function DockerNetworks() {
             )}
           </div>
         </div>
+      )}
 
-        {/* Inline: [Node selector] [Search input] */}
-        <div className="flex gap-2">
+      {/* Filters */}
+      <SearchFilterBar
+        search={search}
+        onSearchChange={setSearch}
+        placeholder="Search networks by name or driver..."
+        hasActiveFilters={search !== "" || !!selectedNodeId}
+        onReset={() => { setSearch(""); setSelectedNode(null); }}
+        filters={
           <Select
-            value={selectedNodeId ?? ""}
-            onValueChange={(v) => setSelectedNode(v || null)}
-            disabled={nodesLoading}
+            value={selectedNodeId ?? "__all__"}
+            onValueChange={(v) => setSelectedNode(v === "__all__" ? null : v)}
           >
-            <SelectTrigger className="w-48 shrink-0">
-              <SelectValue placeholder={nodesLoading ? "Loading..." : "Select node"} />
+            <SelectTrigger className="w-48">
+              <SelectValue placeholder="All nodes" />
             </SelectTrigger>
             <SelectContent>
-              {dockerNodes.map((n) => (
+              <SelectItem value="__all__">All nodes</SelectItem>
+              {(embedded ? useDockerStore.getState().dockerNodes : dockerNodes).map((n) => (
                 <SelectItem key={n.id} value={n.id}>
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`h-2 w-2 rounded-full shrink-0 ${
-                        n.status === "online"
-                          ? "bg-emerald-500"
-                          : n.status === "error"
-                            ? "bg-red-400"
-                            : "bg-muted-foreground/40"
-                      }`}
-                    />
-                    {n.displayName || n.hostname}
-                  </div>
+                  {n.displayName || n.hostname}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-            <Input
-              placeholder="Search networks by name or driver..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9"
-            />
-          </div>
+        }
+      />
+
+      {filteredNetworks.length > 0 ? (
+        <DataTable
+          columns={networkColumns}
+          data={filteredNetworks}
+          keyFn={(net) => net.id}
+          emptyMessage="No networks found."
+        />
+      ) : isLoading ? (
+        <div className="flex items-center justify-center py-16 text-muted-foreground">
+          Loading networks...
         </div>
-
-        {!selectedNodeId && !nodesLoading && dockerNodes.length === 0 && (
-          <EmptyState message="No Docker nodes registered. Add a Docker node from the Nodes page." />
-        )}
-        {!selectedNodeId && !nodesLoading && dockerNodes.length > 0 && (
-          <EmptyState message="Select a node to view its networks." />
-        )}
-
-        {selectedNodeId && (
-          <>
-
-            {filteredNetworks.length > 0 ? (
-              <div className="border border-border rounded-lg bg-card">
-                <div className="hidden md:grid md:grid-cols-[1fr_100px_80px_160px_160px_80px_80px] gap-4 px-4 py-2 border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  <span>Name</span>
-                  <span>Driver</span>
-                  <span>Scope</span>
-                  <span>Subnet</span>
-                  <span>Gateway</span>
-                  <span>Usage</span>
-                  <span className="text-right">Actions</span>
-                </div>
-                <div className="divide-y divide-border">
-                  {filteredNetworks.map((net) => {
-                    const count = containerCount(net);
-                    const ipam = getIPAM(net);
-                    return (
-                      <div
-                        key={net.id}
-                        className="flex flex-col md:grid md:grid-cols-[1fr_100px_80px_160px_160px_80px_80px] gap-2 md:gap-4 p-4 items-start md:items-center"
-                      >
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-muted shrink-0">
-                            <Network className="h-4 w-4 text-muted-foreground" />
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium truncate">{net.name}</p>
-                            <p className="text-xs text-muted-foreground font-mono truncate">
-                              {net.id.slice(0, 12)}
-                            </p>
-                          </div>
-                        </div>
-                        <Badge variant="secondary" className="text-xs w-fit">
-                          {net.driver}
-                        </Badge>
-                        <Badge variant="secondary" className="text-xs uppercase w-fit">{net.scope}</Badge>
-                        {ipam.subnet !== "-" ? (
-                          <Badge variant="secondary" className="text-xs font-mono w-fit">{ipam.subnet}</Badge>
-                        ) : <span className="text-xs text-muted-foreground">-</span>}
-                        {ipam.gateway !== "-" ? (
-                          <Badge variant="secondary" className="text-xs font-mono w-fit">{ipam.gateway}</Badge>
-                        ) : <span className="text-xs text-muted-foreground">-</span>}
-                        {count > 0 ? (
-                          <Badge
-                            variant="success"
-                            className="text-xs w-fit cursor-pointer hover:opacity-80"
-                            onClick={() => showUsage(net)}
-                          >
-                            In use
-                          </Badge>
-                        ) : (
-                          <Badge variant="secondary" className="text-xs w-fit">
-                            Unused
-                          </Badge>
-                        )}
-                        <div className="flex items-center md:justify-end">
-                          {hasScope("docker:networks:delete") && count === 0 && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7"
-                              onClick={() => handleRemove(net)}
-                              title="Remove"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : isLoading ? (
-              <div className="flex items-center justify-center py-16 text-muted-foreground">
-                Loading networks...
-              </div>
-            ) : (
-              <EmptyState
-                message="No networks found on this node."
-                hasActiveFilters={search !== ""}
-                onReset={() => setSearch("")}
-                actionLabel={hasScope("docker:networks:create") ? "Create a network" : undefined}
-                onAction={hasScope("docker:networks:create") ? () => setCreateOpen(true) : undefined}
-              />
-            )}
-          </>
-        )}
-      </div>
+      ) : (
+        <EmptyState
+          message="No networks found."
+          hasActiveFilters={search !== ""}
+          onReset={() => setSearch("")}
+          actionLabel={hasScope("docker:networks:create") ? "Create a network" : undefined}
+          onAction={hasScope("docker:networks:create") ? () => openCreate() : undefined}
+        />
+      )}
 
       {/* Create Network Dialog */}
       <Dialog open={createOpen} onOpenChange={closeCreate}>
@@ -353,6 +367,17 @@ export function DockerNetworks() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
+            <div>
+              <label className="text-sm font-medium">Node <span className="text-destructive">*</span></label>
+              <Select value={createNodeId} onValueChange={setCreateNodeId}>
+                <SelectTrigger className="mt-1"><SelectValue placeholder="Select a node" /></SelectTrigger>
+                <SelectContent>
+                  {(useDockerStore.getState().dockerNodes.length > 0 ? useDockerStore.getState().dockerNodes : dockerNodes).map((n) => (
+                    <SelectItem key={n.id} value={n.id}>{n.displayName || n.hostname}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div>
               <label className="text-sm font-medium">
                 Name <span className="text-destructive">*</span>
@@ -403,7 +428,7 @@ export function DockerNetworks() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={closeCreate}>Cancel</Button>
-            <Button onClick={handleCreate} disabled={creating || !createName.trim()}>
+            <Button onClick={handleCreate} disabled={creating || !createName.trim() || !createNodeId}>
               {creating ? "Creating..." : "Create"}
             </Button>
           </DialogFooter>
@@ -448,6 +473,14 @@ export function DockerNetworks() {
           )}
         </DialogContent>
       </Dialog>
+    </>
+  );
+
+  if (embedded) return <div className="flex flex-col flex-1 min-h-0 space-y-4">{content}</div>;
+
+  return (
+    <PageTransition>
+      <div className="h-full overflow-y-auto p-6 space-y-4">{content}</div>
     </PageTransition>
   );
 }

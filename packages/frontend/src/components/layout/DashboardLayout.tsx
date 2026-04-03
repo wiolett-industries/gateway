@@ -3,19 +3,13 @@ import {
   ArrowUpCircle,
   Award,
   Box,
-  FileCode,
-  FileCode2,
   FileText,
   Globe,
   Globe2,
-  HardDrive,
-  Layers,
   LayoutDashboard,
-  ListTodo,
   Lock,
   LogOut,
   Menu,
-  Network,
   PanelLeft,
   PanelLeftClose,
   ScrollText,
@@ -77,6 +71,8 @@ interface NavItem {
   href: string;
   icon: React.ElementType;
   scope?: string; // if set, item only shows when user has this scope
+  /** When true, also highlight for child tab routes (one level deep) */
+  matchTabs?: boolean;
 }
 
 interface NavGroup {
@@ -94,7 +90,6 @@ const navigationGroups: NavGroup[] = [
     items: [
       { name: "Proxy Hosts", href: "/proxy-hosts", icon: Globe, scope: "proxy:list" },
       { name: "Domains", href: "/domains", icon: Globe2, scope: "proxy:list" },
-      { name: "Config Templates", href: "/nginx-templates", icon: FileCode, scope: "proxy:list" },
       { name: "SSL Certificates", href: "/ssl-certificates", icon: Lock, scope: "ssl:cert:list" },
     ],
   },
@@ -103,23 +98,13 @@ const navigationGroups: NavGroup[] = [
     items: [
       { name: "Authorities", href: "/cas", icon: ShieldCheck, scope: "pki:ca:list:root" },
       { name: "Certificates", href: "/certificates", icon: FileText, scope: "pki:cert:list" },
-      { name: "Templates", href: "/templates", icon: Award, scope: "pki:templates:list" },
-    ],
-  },
-  {
-    label: "Docker",
-    items: [
-      { name: "Containers", href: "/docker/containers", icon: Box, scope: "docker:containers:list" },
-      { name: "Images", href: "/docker/images", icon: Layers, scope: "docker:images:list" },
-      { name: "Volumes", href: "/docker/volumes", icon: HardDrive, scope: "docker:volumes:list" },
-      { name: "Networks", href: "/docker/networks", icon: Network, scope: "docker:networks:list" },
-      { name: "Templates", href: "/docker/templates", icon: FileCode2, scope: "docker:templates:list" },
-      { name: "Tasks", href: "/docker/tasks", icon: ListTodo, scope: "docker:tasks" },
     ],
   },
   {
     label: "Management",
     items: [
+      { name: "Docker", href: "/docker", icon: Box, scope: "docker:containers:list", matchTabs: true },
+      { name: "Templates", href: "/templates", icon: Award, matchTabs: true },
       { name: "Nodes", href: "/nodes", icon: Server, scope: "nodes:list" },
       { name: "Access Lists", href: "/access-lists", icon: ShieldAlert, scope: "acl:list" },
       { name: "Settings", href: "/settings", icon: Settings },
@@ -180,7 +165,9 @@ function SidebarContent({
     api
       .listNodes({ limit: 100 })
       .then((r) => {
+        const allIds = r.data.map((n) => n.id);
         setPinnedNodes(r.data.filter((n) => sidebarPinnedIds.includes(n.id)));
+        usePinnedNodesStore.getState().removeOrphans(allIds);
       })
       .catch(() => {});
   }, [sidebarPinnedIds, location.pathname, pinnedRefreshTick]);
@@ -193,10 +180,32 @@ function SidebarContent({
     api
       .listProxyHosts({ limit: 100 })
       .then((r) => {
+        const allIds = (r.data ?? []).map((p) => p.id);
         setPinnedProxies((r.data ?? []).filter((p) => sidebarPinnedProxyIds.includes(p.id)));
+        usePinnedProxiesStore.getState().removeOrphans(allIds);
       })
       .catch(() => {});
   }, [sidebarPinnedProxyIds, location.pathname, pinnedProxyRefreshTick]);
+
+  // Clean up orphaned pinned containers
+  useEffect(() => {
+    if (sidebarPinnedContainerIds.length === 0) return;
+    // Group pinned containers by nodeId and validate each
+    const metaEntries = sidebarPinnedContainerIds
+      .map((cid) => ({ cid, meta: pinnedContainerMeta[cid] }))
+      .filter((e) => e.meta);
+    const nodeIds = [...new Set(metaEntries.map((e) => e.meta!.nodeId))];
+    if (nodeIds.length === 0) return;
+
+    Promise.all(nodeIds.map((nid) => api.listDockerContainers(nid).catch(() => [])))
+      .then((results) => {
+        const validIds = results.flat().map((c) => c.id);
+        usePinnedContainersStore.getState().removeOrphans(validIds);
+      })
+      .catch(() => {});
+    // Only run once on mount, not on every meta change
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleLogout = async () => {
     try {
@@ -413,7 +422,7 @@ function SidebarContent({
                           Pinned Items
                         </p>
                         {pinnedProxies.map((proxy) => {
-                          const isActive = location.pathname === `/proxy-hosts/${proxy.id}`;
+                          const isActive = location.pathname === `/proxy-hosts/${proxy.id}` || location.pathname.startsWith(`/proxy-hosts/${proxy.id}/`);
                           const hs = (proxy as any).effectiveHealthStatus ?? proxy.healthStatus;
                           return (
                             <Link
@@ -443,7 +452,7 @@ function SidebarContent({
                           );
                         })}
                         {pinnedNodes.map((node) => {
-                          const isActive = location.pathname === `/nodes/${node.id}`;
+                          const isActive = location.pathname === `/nodes/${node.id}` || location.pathname.startsWith(`/nodes/${node.id}/`);
                           return (
                             <Link
                               key={node.id}
@@ -474,7 +483,8 @@ function SidebarContent({
                         {sidebarPinnedContainerIds.map((cid) => {
                           const meta = pinnedContainerMeta[cid];
                           if (!meta) return null;
-                          const isActive = location.pathname === `/docker/containers/${meta.nodeId}/${cid}`;
+                          const containerPath = `/docker/containers/${meta.nodeId}/${cid}`;
+                          const isActive = location.pathname === containerPath || location.pathname.startsWith(containerPath + "/");
                           return (
                             <Link
                               key={cid}
@@ -513,7 +523,7 @@ function SidebarContent({
                       </p>
                     )}
                     {group.items.map((item) => {
-                      const isActive = location.pathname === item.href;
+                      const isActive = location.pathname === item.href || (item.matchTabs && location.pathname.startsWith(item.href + "/") && !location.pathname.slice(item.href.length + 1).includes("/"));
                       return (
                         <Link
                           key={item.href}

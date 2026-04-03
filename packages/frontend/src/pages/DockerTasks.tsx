@@ -1,5 +1,5 @@
-import { AlertCircle, ChevronDown, ChevronRight, RefreshCw, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { AlertCircle, RefreshCw, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/common/EmptyState";
 import { PageTransition } from "@/components/common/PageTransition";
@@ -7,15 +7,22 @@ import { SearchFilterBar } from "@/components/common/SearchFilterBar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 import { api } from "@/services/api";
 import { useDockerStore } from "@/stores/docker";
-import type { Node } from "@/types";
+import type { DockerTask, Node } from "@/types";
 
 const STATUS_BADGE: Record<
   string,
@@ -46,7 +53,7 @@ function formatTime(dateStr: string): string {
   return d.toLocaleDateString();
 }
 
-export function DockerTasks() {
+export function DockerTasks({ embedded }: { embedded?: boolean } = {}) {
   const { tasks, fetchTasks } = useDockerStore();
 
   const [dockerNodes, setDockerNodes] = useState<Node[]>([]);
@@ -55,7 +62,7 @@ export function DockerTasks() {
   const [filterNode, setFilterNode] = useState("all");
   const [filterType, setFilterType] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [selectedTask, setSelectedTask] = useState<DockerTask | null>(null);
 
   const loadTasks = useCallback(async () => {
     await fetchTasks();
@@ -111,17 +118,45 @@ export function DockerTasks() {
     return [...result].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [tasks, filterNode, filterType, filterStatus, search]);
 
+  const PAGE_SIZE = 20;
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Reset visible count when filters change
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset on filter change
+  useEffect(() => { setVisibleCount(PAGE_SIZE); }, [filterNode, filterType, filterStatus, search]);
+
+  const visibleTasks = filteredTasks.slice(0, visibleCount);
+  const hasMore = visibleCount < filteredTasks.length;
+
+  // IntersectionObserver for infinite scroll
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore) {
+          setVisibleCount((prev) => Math.min(prev + PAGE_SIZE, filteredTasks.length));
+        }
+      },
+      { root: scrollRef.current, threshold: 0.1 }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMore, filteredTasks.length]);
+
+  const taskColumns: DataTableColumn<DockerTask>[] = useMemo(() => [
+    { key: "type", header: "Type", render: (t) => <span className="font-medium whitespace-nowrap">{t.type}</span> },
+    { key: "container", header: "Container", render: (t) => <span className="text-muted-foreground truncate">{t.containerName || t.containerId?.slice(0, 12) || "-"}</span>, className: "max-w-[200px]" },
+    { key: "node", header: "Node", render: (t) => <span className="text-muted-foreground truncate">{nodeMap.get(t.nodeId) ?? t.nodeId.slice(0, 8)}</span>, className: "max-w-[200px]" },
+    { key: "status", header: "Status", render: (t) => <Badge variant={STATUS_BADGE[t.status] ?? "secondary"} className={`text-xs ${t.status === "running" ? "animate-pulse" : ""}`}>{t.status}</Badge> },
+    { key: "started", header: "Started", align: "right", render: (t) => <span className="text-muted-foreground whitespace-nowrap">{formatTime(t.createdAt)}</span> },
+    { key: "duration", header: "Duration", align: "right", render: (t) => <span className="text-muted-foreground whitespace-nowrap">{formatDuration(t.createdAt, t.completedAt)}</span> },
+  ], [nodeMap]);
+
   const hasActiveFilters =
     search !== "" || filterNode !== "all" || filterType !== "all" || filterStatus !== "all";
-
-  const toggleExpand = (id: string) => {
-    setExpandedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
 
   const handleClearCompleted = async () => {
     // Filter out completed/failed tasks visually
@@ -129,10 +164,10 @@ export function DockerTasks() {
     toast.success("Showing active tasks only");
   };
 
-  return (
-    <PageTransition>
-      <div className="h-full overflow-y-auto p-6 space-y-4">
-        {/* Header */}
+  const content = (
+    <>
+      {/* Header — hidden in embedded mode */}
+      {!embedded && (
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <div className="flex items-center gap-2">
@@ -160,13 +195,83 @@ export function DockerTasks() {
             )}
           </div>
         </div>
+      )}
 
-        {/* Filters */}
-        <SearchFilterBar
-          search={search}
-          onSearchChange={setSearch}
-          onSearchSubmit={() => {}}
-          placeholder="Search tasks..."
+      {/* Filters */}
+      <SearchFilterBar
+        search={search}
+        onSearchChange={setSearch}
+        onSearchSubmit={() => {}}
+        placeholder="Search tasks..."
+        hasActiveFilters={hasActiveFilters}
+        onReset={() => {
+          setSearch("");
+          setFilterNode("all");
+          setFilterType("all");
+          setFilterStatus("all");
+        }}
+        filters={
+          <div className="flex items-center gap-2">
+            <Select value={filterNode} onValueChange={setFilterNode}>
+              <SelectTrigger className="w-40">
+                <SelectValue placeholder="Node" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All nodes</SelectItem>
+                {dockerNodes.map((n) => (
+                  <SelectItem key={n.id} value={n.id}>
+                    {n.displayName || n.hostname}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={filterType} onValueChange={setFilterType}>
+              <SelectTrigger className="w-36">
+                <SelectValue placeholder="Type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All types</SelectItem>
+                {taskTypes.map((t) => (
+                  <SelectItem key={t} value={t}>{t}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={filterStatus} onValueChange={setFilterStatus}>
+              <SelectTrigger className="w-36">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All statuses</SelectItem>
+                <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="running">Running</SelectItem>
+                <SelectItem value="succeeded">Succeeded</SelectItem>
+                <SelectItem value="failed">Failed</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        }
+      />
+
+      {filteredTasks.length > 0 ? (
+        <DataTable<DockerTask>
+          columns={taskColumns}
+          data={visibleTasks}
+          keyFn={(t) => t.id}
+          onRowClick={setSelectedTask}
+          scrollRef={scrollRef}
+          footer={hasMore ? (
+            <div ref={sentinelRef} className="flex items-center justify-center py-3 text-xs text-muted-foreground">
+              Loading more...
+            </div>
+          ) : undefined}
+        />
+      ) : isLoading ? (
+        <div className="flex items-center justify-center py-16 text-muted-foreground">
+          Loading tasks...
+        </div>
+      ) : (
+        <EmptyState
+          message="No tasks found."
           hasActiveFilters={hasActiveFilters}
           onReset={() => {
             setSearch("");
@@ -174,137 +279,81 @@ export function DockerTasks() {
             setFilterType("all");
             setFilterStatus("all");
           }}
-          filters={
-            <div className="flex items-center gap-2">
-              <Select value={filterNode} onValueChange={setFilterNode}>
-                <SelectTrigger className="w-40">
-                  <SelectValue placeholder="Node" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All nodes</SelectItem>
-                  {dockerNodes.map((n) => (
-                    <SelectItem key={n.id} value={n.id}>
-                      {n.displayName || n.hostname}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={filterType} onValueChange={setFilterType}>
-                <SelectTrigger className="w-36">
-                  <SelectValue placeholder="Type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All types</SelectItem>
-                  {taskTypes.map((t) => (
-                    <SelectItem key={t} value={t}>{t}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={filterStatus} onValueChange={setFilterStatus}>
-                <SelectTrigger className="w-36">
-                  <SelectValue placeholder="Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All statuses</SelectItem>
-                  <SelectItem value="pending">Pending</SelectItem>
-                  <SelectItem value="running">Running</SelectItem>
-                  <SelectItem value="succeeded">Succeeded</SelectItem>
-                  <SelectItem value="failed">Failed</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          }
         />
+      )}
 
-        {filteredTasks.length > 0 ? (
-          <div className="border border-border rounded-lg bg-card">
-            <div className="hidden md:grid md:grid-cols-[28px_120px_1fr_140px_100px_80px_100px_80px] gap-4 px-4 py-2 border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wider">
-              <span />
-              <span>Type</span>
-              <span>Container</span>
-              <span>Node</span>
-              <span>Status</span>
-              <span>Progress</span>
-              <span>Started</span>
-              <span>Duration</span>
-            </div>
-            <div className="divide-y divide-border">
-              {filteredTasks.map((task) => {
-                const isExpanded = expandedIds.has(task.id);
-                return (
-                  <div key={task.id}>
-                    <div
-                      className="flex flex-col md:grid md:grid-cols-[28px_120px_1fr_140px_100px_80px_100px_80px] gap-2 md:gap-4 p-4 items-start md:items-center cursor-pointer hover:bg-muted/50 transition-colors"
-                      onClick={() => task.error && toggleExpand(task.id)}
-                    >
-                      <div className="flex items-center">
-                        {task.error ? (
-                          isExpanded ? (
-                            <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                          ) : (
-                            <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                          )
-                        ) : (
-                          <span className="w-4" />
-                        )}
-                      </div>
-                      <span className="text-sm font-medium">{task.type}</span>
-                      <div className="min-w-0">
-                        <p className="text-sm text-muted-foreground truncate">
-                          {task.containerName || task.containerId?.slice(0, 12) || "-"}
-                        </p>
-                      </div>
-                      <span className="text-sm text-muted-foreground truncate">
-                        {nodeMap.get(task.nodeId) ?? task.nodeId.slice(0, 8)}
-                      </span>
-                      <Badge
-                        variant={STATUS_BADGE[task.status] ?? "secondary"}
-                        className={`text-xs w-fit ${task.status === "running" ? "animate-pulse" : ""}`}
-                      >
-                        {task.status}
-                      </Badge>
-                      <span className="text-xs text-muted-foreground">
-                        {task.progress ?? "-"}
-                      </span>
-                      <span className="text-sm text-muted-foreground">
-                        {formatTime(task.createdAt)}
-                      </span>
-                      <span className="text-sm text-muted-foreground">
-                        {formatDuration(task.createdAt, task.completedAt)}
-                      </span>
-                    </div>
-                    {isExpanded && task.error && (
-                      <div className="px-4 pb-4">
-                        <div className="bg-destructive/10 border border-destructive/20 p-3 flex items-start gap-2">
-                          <AlertCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
-                          <pre className="text-xs text-destructive whitespace-pre-wrap break-all font-mono">
-                            {task.error}
-                          </pre>
-                        </div>
-                      </div>
-                    )}
+      {/* Task Detail Dialog */}
+      <Dialog open={!!selectedTask} onOpenChange={(open) => !open && setSelectedTask(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Task Details</DialogTitle>
+          </DialogHeader>
+          {selectedTask && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Type</span>
+                <span className="text-sm font-medium">{selectedTask.type}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Container</span>
+                <span className="text-sm">{selectedTask.containerName || selectedTask.containerId?.slice(0, 12) || "-"}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Node</span>
+                <span className="text-sm">{nodeMap.get(selectedTask.nodeId) ?? selectedTask.nodeId.slice(0, 8)}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Status</span>
+                <Badge
+                  variant={STATUS_BADGE[selectedTask.status] ?? "secondary"}
+                  className={`text-xs ${selectedTask.status === "running" ? "animate-pulse" : ""}`}
+                >
+                  {selectedTask.status}
+                </Badge>
+              </div>
+              {selectedTask.progress && (
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Progress</span>
+                  <span className="text-sm">{selectedTask.progress}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Started</span>
+                <span className="text-sm">{new Date(selectedTask.createdAt).toLocaleString()}</span>
+              </div>
+              {selectedTask.completedAt && (
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Finished</span>
+                  <span className="text-sm">{new Date(selectedTask.completedAt).toLocaleString()}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Duration</span>
+                <span className="text-sm">{formatDuration(selectedTask.createdAt, selectedTask.completedAt)}</span>
+              </div>
+              {selectedTask.error && (
+                <div className="mt-2">
+                  <span className="text-sm text-muted-foreground">Error</span>
+                  <div className="mt-1 bg-destructive/10 border border-destructive/20 p-3 flex items-start gap-2">
+                    <AlertCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+                    <pre className="text-xs text-destructive whitespace-pre-wrap break-all font-mono">
+                      {selectedTask.error}
+                    </pre>
                   </div>
-                );
-              })}
+                </div>
+              )}
             </div>
-          </div>
-        ) : isLoading ? (
-          <div className="flex items-center justify-center py-16 text-muted-foreground">
-            Loading tasks...
-          </div>
-        ) : (
-          <EmptyState
-            message="No tasks found."
-            hasActiveFilters={hasActiveFilters}
-            onReset={() => {
-              setSearch("");
-              setFilterNode("all");
-              setFilterType("all");
-              setFilterStatus("all");
-            }}
-          />
-        )}
-      </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+
+  if (embedded) return <div className="flex flex-col flex-1 min-h-0 space-y-4">{content}</div>;
+
+  return (
+    <PageTransition>
+      <div className="h-full overflow-y-auto p-6 space-y-4">{content}</div>
     </PageTransition>
   );
 }

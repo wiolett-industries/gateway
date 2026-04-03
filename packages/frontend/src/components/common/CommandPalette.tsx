@@ -1,8 +1,6 @@
 import {
   Award,
   Box,
-  FileCode,
-  FileCode2,
   FileText,
   Globe,
   Globe2,
@@ -129,25 +127,18 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                   <CommandShortcut>⌘3</CommandShortcut>
                 </CommandItem>
               )}
-              {hasScope("proxy:list") && (
-                <CommandItem onSelect={() => handleSelect(() => navigate("/nginx-templates"))}>
-                  <FileCode className="mr-2 h-4 w-4" />
-                  Config Templates
-                  <CommandShortcut>⌘4</CommandShortcut>
-                </CommandItem>
-              )}
               {hasScope("ssl:cert:list") && (
                 <CommandItem onSelect={() => handleSelect(() => navigate("/ssl-certificates"))}>
                   <Lock className="mr-2 h-4 w-4" />
                   SSL Certificates
-                  <CommandShortcut>⌘5</CommandShortcut>
+                  <CommandShortcut>⌘4</CommandShortcut>
                 </CommandItem>
               )}
             </CommandGroup>
           </>
         )}
 
-        {(hasScope("pki:ca:list:root") || hasScope("pki:cert:list") || hasScope("pki:templates:list")) && (
+        {(hasScope("pki:ca:list:root") || hasScope("pki:cert:list")) && (
           <>
             <CommandSeparator />
             <CommandGroup heading="PKI">
@@ -155,23 +146,29 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                 <CommandItem onSelect={() => handleSelect(() => navigate("/cas"))}>
                   <ShieldCheck className="mr-2 h-4 w-4" />
                   Authorities
-                  <CommandShortcut>⌘6</CommandShortcut>
+                  <CommandShortcut>⌘5</CommandShortcut>
                 </CommandItem>
               )}
               {hasScope("pki:cert:list") && (
                 <CommandItem onSelect={() => handleSelect(() => navigate("/certificates"))}>
                   <FileText className="mr-2 h-4 w-4" />
                   Certificates
-                  <CommandShortcut>⌘7</CommandShortcut>
+                  <CommandShortcut>⌘6</CommandShortcut>
                 </CommandItem>
               )}
-              {hasScope("pki:templates:list") && (
-                <CommandItem onSelect={() => handleSelect(() => navigate("/templates"))}>
-                  <Award className="mr-2 h-4 w-4" />
-                  Templates
-                  <CommandShortcut>⌘8</CommandShortcut>
-                </CommandItem>
-              )}
+            </CommandGroup>
+          </>
+        )}
+
+        {(hasScope("pki:templates:list") || hasScope("proxy:list")) && (
+          <>
+            <CommandSeparator />
+            <CommandGroup heading="Management">
+              <CommandItem onSelect={() => handleSelect(() => navigate("/templates/pki"))}>
+                <Award className="mr-2 h-4 w-4" />
+                Templates
+                <CommandShortcut>⌘7</CommandShortcut>
+              </CommandItem>
             </CommandGroup>
           </>
         )}
@@ -200,12 +197,6 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                 <CommandItem onSelect={() => handleSelect(() => navigate("/docker/networks"))}>
                   <Network className="mr-2 h-4 w-4" />
                   Networks
-                </CommandItem>
-              )}
-              {hasScope("docker:templates:list") && (
-                <CommandItem onSelect={() => handleSelect(() => navigate("/docker/templates"))}>
-                  <FileCode2 className="mr-2 h-4 w-4" />
-                  Templates
                 </CommandItem>
               )}
               {hasScope("docker:tasks") && (
