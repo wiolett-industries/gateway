@@ -337,6 +337,7 @@ message DockerFileCommand {
   string container_id = 2;
   string path = 3;
   int64 max_bytes = 4;
+  bytes content = 5;
 }
 
 message DockerConfigPushCommand {
@@ -355,6 +356,8 @@ message DockerLogsCommand {
   int32 tail_lines = 2;
   bool follow = 3;
   bool timestamps = 4;
+  string since = 5;    // RFC3339 timestamp
+  string until = 6;    // RFC3339 timestamp
 }
 
 message ExecInput {

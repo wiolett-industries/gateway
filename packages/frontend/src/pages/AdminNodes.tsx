@@ -38,6 +38,12 @@ const NODE_TYPES = [
     disabled: false,
   },
   {
+    value: "docker",
+    label: "Docker",
+    description: "Docker container management agent",
+    disabled: false,
+  },
+  {
     value: "monitoring",
     label: "Monitoring",
     description: "System monitoring agent — no nginx required",
@@ -134,9 +140,12 @@ export function AdminNodes() {
   };
 
   const gatewayAddr = `${window.location.hostname}:9443`;
-  const scriptUrl = enrollType === "monitoring"
-    ? "https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/scripts/setup-monitoring-node.sh"
-    : "https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/scripts/setup-node.sh";
+  const scriptUrl =
+    enrollType === "monitoring"
+      ? "https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/scripts/setup-monitoring-node.sh"
+      : enrollType === "docker"
+        ? "https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/scripts/setup-docker-node.sh"
+        : "https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/scripts/setup-node.sh";
 
   const curlCommand = enrollToken
     ? `curl -sSL ${scriptUrl} | sudo bash -s -- \\\n  --gateway ${gatewayAddr} --token ${enrollToken}`
@@ -319,8 +328,12 @@ export function AdminNodes() {
               <div>
                 <label className="text-sm font-medium">Setup Command</label>
                 <p className="text-xs text-muted-foreground mb-2">
-                  Run on the target host as root. Installs nginx, the daemon, and enrolls with this
-                  Gateway.
+                  Run on the target host as root.{" "}
+                  {enrollType === "docker"
+                    ? "Installs the Docker management daemon and enrolls with this Gateway."
+                    : enrollType === "monitoring"
+                      ? "Installs the monitoring agent and enrolls with this Gateway."
+                      : "Installs nginx, the daemon, and enrolls with this Gateway."}
                 </p>
                 <Tabs defaultValue="curl">
                   <TabsList>

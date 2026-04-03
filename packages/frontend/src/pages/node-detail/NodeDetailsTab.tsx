@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/services/api";
-import type { NodeDetail, NodeHealthReport, ProxyHost } from "@/types";
+import type { DockerContainer, NodeDetail, NodeHealthReport, ProxyHost } from "@/types";
 
 interface NodeDetailsTabProps {
   node: NodeDetail;
@@ -11,6 +11,7 @@ interface NodeDetailsTabProps {
 export function NodeDetailsTab({ node }: NodeDetailsTabProps) {
   const navigate = useNavigate();
   const [proxyHosts, setProxyHosts] = useState<ProxyHost[]>([]);
+  const [dockerContainers, setDockerContainers] = useState<DockerContainer[]>([]);
   const h: NodeHealthReport | null = node.liveHealthReport ?? node.lastHealthReport;
   const caps = (node.capabilities ?? {}) as Record<string, unknown>;
   const resourcesRef = useRef<HTMLDivElement>(null);
@@ -28,18 +29,28 @@ export function NodeDetailsTab({ node }: NodeDetailsTabProps) {
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      try {
-        const resp = await api.listProxyHosts({ nodeId: node.id, limit: 100 });
-        if (!cancelled) setProxyHosts(resp.data ?? []);
-      } catch {
-        // optional
+      if (node.type === "nginx") {
+        try {
+          const resp = await api.listProxyHosts({ nodeId: node.id, limit: 100 });
+          if (!cancelled) setProxyHosts(resp.data ?? []);
+        } catch {
+          // optional
+        }
+      }
+      if (node.type === "docker") {
+        try {
+          const data = await api.listDockerContainers(node.id);
+          if (!cancelled) setDockerContainers(data ?? []);
+        } catch {
+          // optional
+        }
       }
     };
     load();
     return () => {
       cancelled = true;
     };
-  }, [node.id]);
+  }, [node.id, node.type]);
 
   return (
     <div className="space-y-4">
@@ -88,6 +99,9 @@ export function NodeDetailsTab({ node }: NodeDetailsTabProps) {
             />
             {node.type === "nginx" && (
               <DetailRow label="Nginx Version" value={String(caps.nginxVersion ?? "Unknown")} />
+            )}
+            {node.type === "docker" && (
+              <DetailRow label="Docker Version" value={String(caps.dockerVersion ?? "Unknown")} />
             )}
             <DetailRow label="Created" value={new Date(node.createdAt).toLocaleString()} />
             <DetailRow
@@ -220,6 +234,48 @@ export function NodeDetailsTab({ node }: NodeDetailsTabProps) {
           </p>
         )}
       </div>}
+
+      {/* Docker Container Overview — docker nodes only */}
+      {node.type === "docker" && (
+        <div className="border border-border bg-card">
+          <div className="flex items-center justify-between border-b border-border p-4">
+            <h2 className="font-semibold">Container Overview</h2>
+            <Badge variant="secondary">{dockerContainers.length}</Badge>
+          </div>
+          {dockerContainers.length > 0 ? (
+            <div className="divide-y divide-border">
+              <div className="grid grid-cols-4 gap-4 p-4">
+                <div className="text-center">
+                  <p className="text-2xl font-bold">
+                    {dockerContainers.filter((c) => c.state === "running").length}
+                  </p>
+                  <p className="text-xs text-muted-foreground">Running</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-2xl font-bold">
+                    {dockerContainers.filter((c) => c.state === "exited" || c.state === "stopped").length}
+                  </p>
+                  <p className="text-xs text-muted-foreground">Stopped</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-2xl font-bold">
+                    {dockerContainers.filter((c) => c.state === "paused").length}
+                  </p>
+                  <p className="text-xs text-muted-foreground">Paused</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-2xl font-bold">{dockerContainers.length}</p>
+                  <p className="text-xs text-muted-foreground">Total</p>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              No containers on this node
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

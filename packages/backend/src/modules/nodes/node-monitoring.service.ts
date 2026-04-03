@@ -1,9 +1,13 @@
 import { EventEmitter } from 'node:events';
 import { createChildLogger } from '@/lib/logger.js';
+import type { CacheService } from '@/services/cache.service.js';
 import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import type { NodeRegistryService } from '@/services/node-registry.service.js';
 
 const logger = createChildLogger('NodeMonitoring');
+const CONTAINER_STATS_KEY_PREFIX = 'container-stats:';
+const CONTAINER_STATS_MAX = 30;
+const CONTAINER_STATS_TTL = 600; // 10 minutes
 
 interface MonitoringSnapshot {
   timestamp: string;
@@ -22,7 +26,8 @@ export class NodeMonitoringService extends EventEmitter {
 
   constructor(
     private registry: NodeRegistryService,
-    private dispatch: NodeDispatchService
+    private dispatch: NodeDispatchService,
+    private cache?: CacheService
   ) {
     super();
     this.setMaxListeners(100);
@@ -68,6 +73,30 @@ export class NodeMonitoringService extends EventEmitter {
     buf.push(snapshot);
     if (buf.length > this.MAX_HISTORY) buf.splice(0, buf.length - this.MAX_HISTORY);
     this.emit('snapshot', { nodeId, snapshot });
+
+    // Store per-container stats in Redis for sparkline history
+    if (this.cache && health?.containerStats) {
+      for (const stat of health.containerStats as any[]) {
+        const cid = stat.containerId ?? stat.container_id;
+        if (!cid) continue;
+        const key = CONTAINER_STATS_KEY_PREFIX + cid;
+        const entry = JSON.stringify({ ...stat, timestamp: Date.now() });
+        this.cache.getClient().lpush(key, entry).then(() => {
+          this.cache!.getClient().ltrim(key, 0, CONTAINER_STATS_MAX - 1);
+          this.cache!.getClient().expire(key, CONTAINER_STATS_TTL);
+        }).catch(() => { /* ignore redis errors */ });
+      }
+    }
+  }
+
+  async getContainerStatsHistory(containerId: string): Promise<Record<string, unknown>[]> {
+    if (!this.cache) return [];
+    try {
+      const raw = await this.cache.getClient().lrange(CONTAINER_STATS_KEY_PREFIX + containerId, 0, -1);
+      return raw.map((s) => JSON.parse(s)).reverse(); // oldest first
+    } catch {
+      return [];
+    }
   }
 
   registerClient(nodeId: string): void {

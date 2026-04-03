@@ -1,0 +1,377 @@
+import type { WSContext } from 'hono/ws';
+import { container } from '@/container.js';
+import { createChildLogger } from '@/lib/logger.js';
+import { hasScope } from '@/lib/permissions.js';
+import { NodeDispatchService } from '@/services/node-dispatch.service.js';
+import { NodeRegistryService } from '@/services/node-registry.service.js';
+import { SessionService } from '@/services/session.service.js';
+import type { User } from '@/types.js';
+
+const logger = createChildLogger('DockerLogStream');
+
+/**
+ * Authenticate a session token and return the user if valid.
+ */
+async function authenticateFromToken(token: string): Promise<User | null> {
+  if (token.startsWith('gw_')) return null; // API tokens not allowed for streaming
+  const sessionService = container.resolve(SessionService);
+  const session = await sessionService.getSession(token);
+  if (!session?.user) return null;
+
+  const { AuthService } = await import('@/modules/auth/auth.service.js');
+  const authService = container.resolve(AuthService);
+  return authService.getUserById(session.user.id);
+}
+
+function send(ws: WSContext, msg: Record<string, unknown>): void {
+  try {
+    ws.send(JSON.stringify(msg));
+  } catch {
+    // Connection may already be closed
+  }
+}
+
+/** Docker timestamp regex: e.g. 2026-04-02T17:05:07.123456789Z */
+const DOCKER_TS_RE = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)\s/;
+
+/**
+ * Subtract 1 nanosecond from a Docker timestamp to make until exclusive.
+ * Docker's until is inclusive on the exact nanosecond.
+ */
+function decrementTimestamp(ts: string): string {
+  // Format: 2026-04-02T10:13:20.595432459Z
+  const match = ts.match(/^(.+\.)(\d+)Z$/);
+  if (!match) return ts;
+  const prefix = match[1];
+  let nanos = match[2].padEnd(9, '0');
+  let n = BigInt(nanos) - 1n;
+  if (n < 0n) return ts; // edge case — don't wrap
+  nanos = n.toString().padStart(9, '0');
+  return `${prefix}${nanos}Z`;
+}
+
+/**
+ * Extract the Docker timestamp from the first line of a batch (oldest).
+ * Returns the raw Docker timestamp string or undefined.
+ */
+function extractOldestTimestamp(lines: string[]): string | undefined {
+  if (lines.length === 0) return undefined;
+  const match = lines[0].match(DOCKER_TS_RE);
+  return match ? match[1] : undefined;
+}
+
+/**
+ * Extract the Docker timestamp from the last line of a batch (newest).
+ * Returns the raw Docker timestamp string or undefined.
+ */
+function extractNewestTimestamp(lines: string[]): string | undefined {
+  if (lines.length === 0) return undefined;
+  const match = lines[lines.length - 1].match(DOCKER_TS_RE);
+  return match ? match[1] : undefined;
+}
+
+interface LogStreamWSState {
+  user: User | null;
+  authenticated: boolean;
+  streaming: boolean;
+  handlerKey: string | null;
+  keepaliveInterval: ReturnType<typeof setInterval> | null;
+  /** Oldest timestamp seen (for load_more pagination) */
+  oldestTimestamp: string | undefined;
+  /** Whether a load_more request is in-flight */
+  loadingMore: boolean;
+}
+
+const wsStates = new WeakMap<WSContext, LogStreamWSState>();
+
+/**
+ * Create WebSocket handlers for Docker container log streaming.
+ *
+ * New unified flow:
+ * 1. Client connects with ?token=<session>&tail=200
+ * 2. onOpen authenticates, fetches initial logs (non-follow), sends them as { type: "initial" }
+ * 3. Then starts follow stream — new lines arrive as { type: "new" }
+ * 4. Client sends { type: "load_more" } — backend fetches 200 older lines with until=<oldest_ts>,
+ *    sends { type: "history" }
+ * 5. On WS close, everything is cleaned up
+ */
+export function createDockerLogStreamWSHandlers(
+  nodeId: string,
+  containerId: string,
+  tail: number,
+  token: string
+) {
+  const dispatch = container.resolve(NodeDispatchService);
+  const registry = container.resolve(NodeRegistryService);
+
+  return {
+    onOpen(_event: Event, ws: WSContext) {
+      const state: LogStreamWSState = {
+        user: null,
+        authenticated: false,
+        streaming: false,
+        handlerKey: null,
+        keepaliveInterval: null,
+        oldestTimestamp: undefined,
+        loadingMore: false,
+      };
+      wsStates.set(ws, state);
+
+      state.keepaliveInterval = setInterval(() => {
+        try {
+          ws.send(JSON.stringify({ type: 'pong' }));
+        } catch {
+          if (state.keepaliveInterval) clearInterval(state.keepaliveInterval);
+        }
+      }, 30_000);
+
+      // Authenticate, fetch initial logs, then start follow stream
+      authenticateAndStartStream(ws, state, token, nodeId, containerId, tail, dispatch, registry).catch(
+        (err) => {
+          logger.error('Auth/stream start failed', {
+            error: err instanceof Error ? err.message : String(err),
+          });
+          try {
+            ws.close();
+          } catch {
+            /* ignore */
+          }
+        }
+      );
+    },
+
+    onMessage(event: MessageEvent, ws: WSContext) {
+      const state = wsStates.get(ws);
+      if (!state) return;
+
+      const raw = typeof event.data === 'string' ? event.data : String(event.data);
+
+      try {
+        const msg = JSON.parse(raw);
+        if (msg?.type === 'ping') {
+          send(ws, { type: 'pong' });
+        }
+        if (msg?.type === 'load_more') {
+          if (!state.authenticated || state.loadingMore) return;
+          if (!state.oldestTimestamp) {
+            send(ws, { type: 'history', lines: [], hasMore: false });
+            return;
+          }
+          state.loadingMore = true;
+          handleLoadMore(ws, state, nodeId, containerId, dispatch).catch((err) => {
+            state.loadingMore = false;
+            logger.error('load_more failed', {
+              error: err instanceof Error ? err.message : String(err),
+            });
+            send(ws, { type: 'error', message: 'Failed to load more logs' });
+          });
+        }
+        if (msg?.type === 'stop') {
+          // Client requested stop — clean up follow stream handler
+          if (state.streaming) {
+            if (state.handlerKey) {
+              registry.removeLogStreamHandler(state.handlerKey);
+            }
+            state.streaming = false;
+            send(ws, { type: 'stopped' });
+          }
+        }
+      } catch {
+        // ignore invalid JSON
+      }
+    },
+
+    onClose(_event: unknown, ws: WSContext) {
+      cleanup(ws);
+      logger.info('Docker log stream WS closed', { nodeId, containerId });
+    },
+
+    onError(_error: Event, ws: WSContext) {
+      cleanup(ws);
+      logger.error('Docker log stream WS error', { nodeId, containerId });
+    },
+  };
+
+  function cleanup(ws: WSContext) {
+    const state = wsStates.get(ws);
+    if (state) {
+      if (state.handlerKey) {
+        registry.removeLogStreamHandler(state.handlerKey);
+      }
+      if (state.keepaliveInterval) clearInterval(state.keepaliveInterval);
+      wsStates.delete(ws);
+    }
+  }
+}
+
+/**
+ * Authenticate via session token, fetch initial logs, then start follow stream.
+ */
+async function authenticateAndStartStream(
+  ws: WSContext,
+  state: LogStreamWSState,
+  token: string,
+  nodeId: string,
+  containerId: string,
+  tail: number,
+  dispatch: NodeDispatchService,
+  registry: NodeRegistryService
+): Promise<void> {
+  // Validate session token
+  const user = await authenticateFromToken(token);
+  if (!user) {
+    send(ws, { type: 'auth_error', message: 'Invalid or expired token' });
+    ws.close(1008, 'Authentication failed');
+    return;
+  }
+
+  // Check docker:view scope
+  if (!hasScope(user.scopes, 'docker:view')) {
+    send(ws, { type: 'auth_error', message: 'Missing required scope: docker:view' });
+    ws.close(1008, 'Insufficient permissions');
+    return;
+  }
+
+  // Check user is not blocked
+  if (user.isBlocked) {
+    send(ws, { type: 'auth_error', message: 'Account is blocked' });
+    ws.close(1008, 'Account blocked');
+    return;
+  }
+
+  state.user = user;
+  state.authenticated = true;
+
+  logger.info('Docker log stream authenticated', { nodeId, containerId, userId: user.id });
+
+  // Verify the node is connected
+  const node = registry.getNode(nodeId);
+  if (!node) {
+    send(ws, { type: 'error', message: `Node ${nodeId} is not connected` });
+    ws.close(1011, 'Node not connected');
+    return;
+  }
+
+  // ── Step 1: Fetch initial logs (non-follow) ──
+  let initialLines: string[] = [];
+  try {
+    const result = await dispatch.sendDockerLogsCommand(nodeId, containerId, {
+      tailLines: tail,
+      follow: false,
+      timestamps: true,
+    });
+
+    if (result.success && result.detail) {
+      try {
+        initialLines = JSON.parse(result.detail);
+        if (!Array.isArray(initialLines)) initialLines = [];
+      } catch {
+        initialLines = [];
+      }
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to fetch initial logs';
+    send(ws, { type: 'error', message });
+    ws.close(1011, 'Initial fetch failed');
+    return;
+  }
+
+  // Track oldest timestamp from the first line for pagination
+  if (initialLines.length > 0) {
+    state.oldestTimestamp = extractOldestTimestamp(initialLines);
+  }
+
+  const hasMore = initialLines.length >= tail;
+  send(ws, { type: 'initial', lines: initialLines, hasMore });
+
+  // ── Step 2: Start follow stream ──
+  const handlerKey = `${nodeId}:${containerId}`;
+  state.handlerKey = handlerKey;
+
+  registry.registerLogStreamHandler(handlerKey, (lines: string[], ended?: boolean) => {
+    if (ended) {
+      send(ws, { type: 'logs_ended' });
+      return;
+    }
+    if (lines.length > 0) {
+      send(ws, { type: 'new', lines });
+    }
+  });
+
+  // Start follow stream from newest timestamp to avoid duplicates
+  // Use since with a tiny offset to skip the last line we already sent
+  const newestTs = extractNewestTimestamp(initialLines);
+  let result: import('@/grpc/generated/types.js').CommandResult;
+  try {
+    result = await dispatch.sendDockerLogsCommand(nodeId, containerId, {
+      tailLines: 0,
+      follow: true,
+      timestamps: true,
+      since: newestTs,
+    });
+  } catch (err) {
+    registry.removeLogStreamHandler(handlerKey);
+    state.handlerKey = null;
+    const message = err instanceof Error ? err.message : 'Failed to start log stream';
+    send(ws, { type: 'error', message });
+    ws.close(1011, 'Stream start failed');
+    return;
+  }
+
+  if (!result.success) {
+    registry.removeLogStreamHandler(handlerKey);
+    state.handlerKey = null;
+    send(ws, { type: 'error', message: result.error || 'Failed to start log stream' });
+    ws.close(1011, 'Stream start failed');
+    return;
+  }
+
+  state.streaming = true;
+  send(ws, { type: 'connected', streaming: true });
+}
+
+/**
+ * Handle a "load_more" request — fetch 200 older lines using until=<oldest_timestamp>.
+ */
+async function handleLoadMore(
+  ws: WSContext,
+  state: LogStreamWSState,
+  nodeId: string,
+  containerId: string,
+  dispatch: NodeDispatchService
+): Promise<void> {
+  const BATCH_SIZE = 200;
+
+  try {
+    const exclusiveUntil = state.oldestTimestamp ? decrementTimestamp(state.oldestTimestamp) : undefined;
+    const result = await dispatch.sendDockerLogsCommand(nodeId, containerId, {
+      tailLines: BATCH_SIZE,
+      follow: false,
+      timestamps: true,
+      until: exclusiveUntil,
+    });
+
+    let lines: string[] = [];
+    if (result.success && result.detail) {
+      try {
+        lines = JSON.parse(result.detail);
+        if (!Array.isArray(lines)) lines = [];
+      } catch {
+        lines = [];
+      }
+    }
+
+    // Update oldest timestamp from the first line of this batch
+    if (lines.length > 0) {
+      const ts = extractOldestTimestamp(lines);
+      if (ts) {
+        state.oldestTimestamp = ts;
+      }
+    }
+
+    const hasMore = lines.length >= BATCH_SIZE;
+    send(ws, { type: 'history', lines, hasMore });
+  } finally {
+    state.loadingMore = false;
+  }
+}

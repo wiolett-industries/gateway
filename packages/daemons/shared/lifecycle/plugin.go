@@ -5,7 +5,17 @@ import (
 	"log/slog"
 
 	pb "github.com/wiolett/gateway/daemon-shared/gatewayv1"
+	"github.com/wiolett/gateway/daemon-shared/stream"
 )
+
+// FatalError is returned when the daemon must exit and NOT retry.
+type FatalError struct {
+	Message string
+}
+
+func (e *FatalError) Error() string {
+	return e.Message
+}
 
 // DaemonPlugin defines the interface that daemon-specific logic must implement.
 // The lifecycle manager calls these methods at appropriate points in the
@@ -33,9 +43,13 @@ type DaemonPlugin interface {
 
 	// OnSessionStart is called when a new gRPC session is established.
 	// Plugins can use this to start background tasks tied to the session.
-	OnSessionStart(ctx context.Context) error
+	// The writer allows plugins to send asynchronous messages (e.g. exec output).
+	OnSessionStart(ctx context.Context, writer *stream.Writer) error
 
 	// OnSessionEnd is called when a gRPC session ends (before reconnect).
 	// Plugins should clean up session-specific resources.
 	OnSessionEnd()
+
+	// SetLogger replaces the plugin's logger (called when session logger is created).
+	SetLogger(logger *slog.Logger)
 }

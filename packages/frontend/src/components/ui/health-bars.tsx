@@ -91,16 +91,7 @@ export function HealthBars({
       });
 
       if (inBucket.length === 0) {
-        if (
-          i === 0 &&
-          currentStatus &&
-          currentStatus !== "unknown" &&
-          currentStatus !== "disabled"
-        ) {
-          result.push(currentStatus === "online" ? "ok" : "error");
-        } else {
-          result.push("none");
-        }
+        result.push("none");
       } else {
         const last = inBucket[inBucket.length - 1];
         const lastOk = last.status === "online";
@@ -108,6 +99,16 @@ export function HealthBars({
         result.push(lastOk ? (hadErrors ? "warn" : "ok") : "error");
       }
     }
+
+    // Fill trailing empty bars with current status color
+    if (currentStatus && currentStatus !== "unknown" && currentStatus !== "disabled") {
+      const fill: BarStatus = currentStatus === "online" ? "ok" : "error";
+      for (let j = result.length - 1; j >= 0; j--) {
+        if (result[j] !== "none") break;
+        result[j] = fill;
+      }
+    }
+
     return result;
   }, [history, hourlyHistory, barCount, now, currentStatus, bucketMs]);
 

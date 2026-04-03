@@ -55,6 +55,20 @@ export const ALL_SCOPES = [
   // Features
   'ai:use',
   'proxy:advanced',
+  // Docker
+  'docker:list',
+  'docker:view',
+  'docker:create',
+  'docker:edit',
+  'docker:delete',
+  'docker:exec',
+  'docker:files',
+  'docker:images',
+  'docker:volumes',
+  'docker:networks',
+  'docker:registries',
+  'docker:templates',
+  'docker:tasks',
 ] as const;
 
 export type Scope = (typeof ALL_SCOPES)[number];
@@ -89,6 +103,11 @@ export const OPERATOR_SCOPES: readonly string[] = [
   'nodes:rename',
   'ai:use',
   'admin:alerts',
+  'docker:list',
+  'docker:view',
+  'docker:edit',
+  'docker:tasks',
+  'docker:templates',
 ];
 
 /** Viewer group: read-only scopes */
@@ -100,6 +119,8 @@ export const VIEWER_SCOPES: readonly string[] = [
   'proxy:view',
   'ssl:read',
   'access-list:read',
+  'docker:list',
+  'docker:view',
 ];
 
 /** Built-in group definitions (order matters for display — most privileged first) */
@@ -142,6 +163,11 @@ export const RESOURCE_SCOPABLE: readonly string[] = [
   'nodes:rename',
   'nodes:config-edit',
   'nodes:delete',
+  'docker:view',
+  'docker:edit',
+  'docker:exec',
+  'docker:files',
+  'docker:delete',
 ];
 
 const ALL_SCOPES_SET = new Set<string>(ALL_SCOPES);

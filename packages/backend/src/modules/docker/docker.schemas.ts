@@ -1,0 +1,167 @@
+import { z } from 'zod';
+
+// Container create
+export const ContainerCreateSchema = z.object({
+  image: z.string().min(1),
+  name: z.string().optional(),
+  ports: z
+    .array(
+      z.object({
+        hostPort: z.number(),
+        containerPort: z.number(),
+        protocol: z.enum(['tcp', 'udp']).default('tcp'),
+      })
+    )
+    .optional(),
+  volumes: z
+    .array(
+      z.object({
+        hostPath: z.string().optional(),
+        containerPath: z.string(),
+        name: z.string().optional(),
+        readOnly: z.boolean().default(false),
+      })
+    )
+    .optional(),
+  env: z.record(z.string()).optional(),
+  networks: z.array(z.string()).optional(),
+  restartPolicy: z.enum(['no', 'always', 'unless-stopped', 'on-failure']).default('no'),
+  labels: z.record(z.string()).optional(),
+  command: z.array(z.string()).optional(),
+});
+
+// Container update (pull + redeploy)
+export const ContainerUpdateSchema = z.object({
+  tag: z.string().optional(),
+  env: z.record(z.string()).optional(),
+  removeEnv: z.array(z.string()).optional(),
+});
+
+// Container live update (no recreation — restart policy + resource limits)
+export const ContainerLiveUpdateSchema = z.object({
+  restartPolicy: z.enum(['no', 'always', 'unless-stopped', 'on-failure']).optional(),
+  maxRetries: z.number().int().min(0).optional(),
+  memoryLimit: z.number().int().min(0).optional(),  // bytes
+  memorySwap: z.number().int().optional(),            // bytes, -1 = unlimited
+  nanoCPUs: z.number().int().min(0).optional(),       // 1e9 = 1 CPU
+  cpuShares: z.number().int().min(0).optional(),
+  pidsLimit: z.number().int().min(0).optional(),
+});
+
+// Container recreate with new config (requires container recreation)
+export const ContainerRecreateSchema = z.object({
+  ports: z.array(z.object({
+    hostPort: z.number().int().min(0).max(65535),
+    containerPort: z.number().int().min(1).max(65535),
+    protocol: z.enum(['tcp', 'udp']).default('tcp'),
+  })).optional(),
+  mounts: z.array(z.object({
+    hostPath: z.string().optional(),
+    containerPath: z.string().min(1),
+    name: z.string().optional(),
+    readOnly: z.boolean().default(false),
+  })).optional(),
+  entrypoint: z.array(z.string()).optional(),
+  command: z.array(z.string()).optional(),
+  workingDir: z.string().optional(),
+  user: z.string().optional(),
+  hostname: z.string().optional(),
+  labels: z.record(z.string()).optional(),
+});
+
+// Container action params
+export const ContainerStopSchema = z.object({ timeout: z.number().default(30) });
+export const ContainerKillSchema = z.object({ signal: z.string().default('SIGKILL') });
+export const ContainerRenameSchema = z.object({ name: z.string().min(1) });
+export const ContainerDuplicateSchema = z.object({ name: z.string().min(1) });
+
+// Image pull
+export const ImagePullSchema = z.object({
+  imageRef: z.string().min(1),
+  registryId: z.string().uuid().optional(),
+});
+
+// Volume create
+export const VolumeCreateSchema = z.object({
+  name: z.string().min(1),
+  driver: z.string().default('local'),
+  labels: z.record(z.string()).optional(),
+});
+
+// Network create
+export const NetworkCreateSchema = z.object({
+  name: z.string().min(1),
+  driver: z.string().default('bridge'),
+  subnet: z.string().optional(),
+  gateway: z.string().optional(),
+});
+
+// Network connect/disconnect
+export const NetworkConnectSchema = z.object({
+  containerId: z.string().min(1),
+});
+
+// Log query
+export const LogQuerySchema = z.object({
+  tail: z.coerce.number().default(100),
+  timestamps: z.coerce.boolean().default(false),
+});
+
+// File browse
+export const FileBrowseSchema = z.object({
+  path: z.string().default('/'),
+});
+
+// File write
+export const FileWriteSchema = z.object({
+  path: z.string().min(1),
+  content: z.string(), // base64-encoded content
+});
+
+// Env update
+export const EnvUpdateSchema = z.object({
+  env: z.record(z.string()).optional(),
+  removeEnv: z.array(z.string()).optional(),
+});
+
+// ─── Registry schemas ─────────────────────────────────────────────────
+
+export const RegistryCreateSchema = z.object({
+  name: z.string().min(1),
+  url: z.string().min(1),
+  username: z.string().optional(),
+  password: z.string().optional(),
+  scope: z.enum(['global', 'node']).default('global'),
+  nodeId: z.string().uuid().optional(),
+});
+
+export const RegistryUpdateSchema = RegistryCreateSchema.partial();
+
+// ─── Template schemas ─────────────────────────────────────────────────
+
+export const TemplateCreateSchema = z.object({
+  name: z.string().min(1),
+  description: z.string().optional(),
+  config: z.object({}).passthrough(),
+});
+
+export const TemplateUpdateSchema = TemplateCreateSchema.partial();
+
+export const TemplateDeploySchema = z.object({
+  nodeId: z.string().uuid(),
+  overrides: z.object({}).passthrough().optional(),
+});
+
+// ─── Type exports ─────────────────────────────────────────────────────
+
+export type ContainerCreateInput = z.infer<typeof ContainerCreateSchema>;
+export type ContainerUpdateInput = z.infer<typeof ContainerUpdateSchema>;
+export type ContainerLiveUpdateInput = z.infer<typeof ContainerLiveUpdateSchema>;
+export type ContainerRecreateInput = z.infer<typeof ContainerRecreateSchema>;
+export type VolumeCreateInput = z.infer<typeof VolumeCreateSchema>;
+export type NetworkCreateInput = z.infer<typeof NetworkCreateSchema>;
+export type RegistryCreateInput = z.infer<typeof RegistryCreateSchema>;
+export type RegistryUpdateInput = z.infer<typeof RegistryUpdateSchema>;
+export type TemplateCreateInput = z.infer<typeof TemplateCreateSchema>;
+export type TemplateUpdateInput = z.infer<typeof TemplateUpdateSchema>;
+export type TemplateDeployInput = z.infer<typeof TemplateDeploySchema>;

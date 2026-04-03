@@ -11,7 +11,7 @@ const logger = createChildLogger('NodeRegistry');
 
 export interface ConnectedNode {
   nodeId: string;
-  type: 'nginx' | 'bastion' | 'monitoring';
+  type: 'nginx' | 'bastion' | 'monitoring' | 'docker';
   hostname: string;
   commandStream: ServerDuplexStream<DaemonMessage, GatewayCommand>;
   logStream: ServerDuplexStream<unknown, unknown> | null;
@@ -32,25 +32,68 @@ export interface ConnectedNode {
 
 export class NodeRegistryService {
   private nodes = new Map<string, ConnectedNode>();
+  private execOutputHandlers = new Map<string, Set<(data: { execId: string; data: Buffer; exited: boolean; exitCode: number }) => void>>();
+  private logStreamHandlers = new Map<string, (lines: string[], ended?: boolean) => void>();
 
   constructor(private db: DrizzleClient) {}
 
+  registerExecHandler(execId: string, handler: (data: any) => void) {
+    let handlers = this.execOutputHandlers.get(execId);
+    if (!handlers) {
+      handlers = new Set();
+      this.execOutputHandlers.set(execId, handlers);
+    }
+    handlers.add(handler);
+  }
+
+  removeExecHandler(execId: string, handler?: (data: any) => void) {
+    if (handler) {
+      const handlers = this.execOutputHandlers.get(execId);
+      if (handlers) {
+        handlers.delete(handler);
+        if (handlers.size === 0) this.execOutputHandlers.delete(execId);
+      }
+    } else {
+      this.execOutputHandlers.delete(execId);
+    }
+  }
+
+  getExecHandlerCount(execId: string): number {
+    return this.execOutputHandlers.get(execId)?.size ?? 0;
+  }
+
+  handleExecOutput(execId: string, data: any) {
+    const handlers = this.execOutputHandlers.get(execId);
+    if (handlers) {
+      for (const handler of handlers) handler(data);
+    }
+  }
+
+  registerLogStreamHandler(key: string, handler: (lines: string[], ended?: boolean) => void) {
+    this.logStreamHandlers.set(key, handler);
+  }
+
+  removeLogStreamHandler(key: string) {
+    this.logStreamHandlers.delete(key);
+  }
+
+  handleLogStream(key: string, lines: string[], ended?: boolean) {
+    const handler = this.logStreamHandlers.get(key);
+    if (handler) handler(lines, ended);
+  }
+
   async register(
     nodeId: string,
-    type: 'nginx' | 'bastion' | 'monitoring',
+    type: 'nginx' | 'bastion' | 'monitoring' | 'docker',
     hostname: string,
     configVersionHash: string,
     commandStream: ServerDuplexStream<DaemonMessage, GatewayCommand>
   ): Promise<void> {
-    // Close existing connection if any
+    // Reject duplicate connection — only one daemon per node ID allowed
     const existing = this.nodes.get(nodeId);
     if (existing) {
-      logger.warn('Node reconnected, closing old stream', { nodeId });
-      this.cleanupPendingCommands(existing);
-      this.nodes.delete(nodeId); // Remove BEFORE closing so end handler finds nothing
-      try {
-        existing.commandStream.end();
-      } catch {}
+      logger.warn('Duplicate daemon connection rejected — another instance already connected', { nodeId, hostname });
+      throw new Error(`Node ${nodeId} is already connected. Only one daemon instance per node is allowed.`);
     }
 
     this.nodes.set(nodeId, {
@@ -105,7 +148,7 @@ export class NodeRegistryService {
     return Array.from(this.nodes.values());
   }
 
-  getNodesByType(type: 'nginx' | 'bastion' | 'monitoring'): ConnectedNode[] {
+  getNodesByType(type: 'nginx' | 'bastion' | 'monitoring' | 'docker'): ConnectedNode[] {
     return this.getAllNodes().filter((n) => n.type === type);
   }
 
@@ -140,6 +183,25 @@ export class NodeRegistryService {
           reject(new Error(`Failed to send command: ${err.message}`));
         }
       });
+    });
+  }
+
+  /** Fire-and-forget: write a command to the stream without awaiting a response */
+  sendCommandNoWait(nodeId: string, command: Partial<GatewayCommand>): void {
+    const node = this.nodes.get(nodeId);
+    if (!node) {
+      throw new Error(`Node ${nodeId} is not connected`);
+    }
+
+    const fullCommand: GatewayCommand = {
+      commandId: '',
+      ...command,
+    };
+
+    node.commandStream.write(fullCommand, (err: Error | null | undefined) => {
+      if (err) {
+        logger.debug('Fire-and-forget write failed', { nodeId, error: err.message });
+      }
     });
   }
 

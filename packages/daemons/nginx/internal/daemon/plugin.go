@@ -42,6 +42,16 @@ func (p *NginxPlugin) Type() string {
 	return "nginx"
 }
 
+func (p *NginxPlugin) SetLogger(logger *slog.Logger) {
+	p.logger = logger
+	if p.handler != nil {
+		p.handler.logger = logger
+	}
+	if p.reporter != nil {
+		p.reporter.logger = logger
+	}
+}
+
 func (p *NginxPlugin) Init(baseCfg *lifecycle.BaseConfig, logger *slog.Logger) error {
 	p.baseCfg = baseCfg
 	p.logger = logger
@@ -115,7 +125,7 @@ func (p *NginxPlugin) CollectStats() *pb.StatsReport {
 	return p.reporter.CollectStats()
 }
 
-func (p *NginxPlugin) OnSessionStart(ctx context.Context) error {
+func (p *NginxPlugin) OnSessionStart(ctx context.Context, _ *stream.Writer) error {
 	sessionCtx, cancel := context.WithCancel(ctx)
 	p.sessionCancel = cancel
 

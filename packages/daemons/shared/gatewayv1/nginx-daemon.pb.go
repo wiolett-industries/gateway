@@ -3131,6 +3131,7 @@ type DockerFileCommand struct {
 	ContainerId   string                 `protobuf:"bytes,2,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
 	Path          string                 `protobuf:"bytes,3,opt,name=path,proto3" json:"path,omitempty"`
 	MaxBytes      int64                  `protobuf:"varint,4,opt,name=max_bytes,json=maxBytes,proto3" json:"max_bytes,omitempty"`
+	Content       []byte                 `protobuf:"bytes,5,opt,name=content,proto3" json:"content,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3191,6 +3192,13 @@ func (x *DockerFileCommand) GetMaxBytes() int64 {
 		return x.MaxBytes
 	}
 	return 0
+}
+
+func (x *DockerFileCommand) GetContent() []byte {
+	if x != nil {
+		return x.Content
+	}
+	return nil
 }
 
 type DockerConfigPushCommand struct {
@@ -3311,6 +3319,8 @@ type DockerLogsCommand struct {
 	TailLines     int32                  `protobuf:"varint,2,opt,name=tail_lines,json=tailLines,proto3" json:"tail_lines,omitempty"`
 	Follow        bool                   `protobuf:"varint,3,opt,name=follow,proto3" json:"follow,omitempty"`
 	Timestamps    bool                   `protobuf:"varint,4,opt,name=timestamps,proto3" json:"timestamps,omitempty"`
+	Since         string                 `protobuf:"bytes,5,opt,name=since,proto3" json:"since,omitempty"` // RFC3339 timestamp
+	Until         string                 `protobuf:"bytes,6,opt,name=until,proto3" json:"until,omitempty"` // RFC3339 timestamp
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3371,6 +3381,20 @@ func (x *DockerLogsCommand) GetTimestamps() bool {
 		return x.Timestamps
 	}
 	return false
+}
+
+func (x *DockerLogsCommand) GetSince() string {
+	if x != nil {
+		return x.Since
+	}
+	return ""
+}
+
+func (x *DockerLogsCommand) GetUntil() string {
+	if x != nil {
+		return x.Until
+	}
+	return ""
 }
 
 type ExecInput struct {
@@ -4338,12 +4362,13 @@ const file_gateway_v1_nginx_daemon_proto_rawDesc = "" +
 	"\x03tty\x18\x04 \x01(\bR\x03tty\x12\x14\n" +
 	"\x05stdin\x18\x05 \x01(\bR\x05stdin\x12\x12\n" +
 	"\x04rows\x18\x06 \x01(\x05R\x04rows\x12\x12\n" +
-	"\x04cols\x18\a \x01(\x05R\x04cols\"\x7f\n" +
+	"\x04cols\x18\a \x01(\x05R\x04cols\"\x99\x01\n" +
 	"\x11DockerFileCommand\x12\x16\n" +
 	"\x06action\x18\x01 \x01(\tR\x06action\x12!\n" +
 	"\fcontainer_id\x18\x02 \x01(\tR\vcontainerId\x12\x12\n" +
 	"\x04path\x18\x03 \x01(\tR\x04path\x12\x1b\n" +
-	"\tmax_bytes\x18\x04 \x01(\x03R\bmaxBytes\"s\n" +
+	"\tmax_bytes\x18\x04 \x01(\x03R\bmaxBytes\x12\x18\n" +
+	"\acontent\x18\x05 \x01(\fR\acontent\"s\n" +
 	"\x17DockerConfigPushCommand\x12:\n" +
 	"\n" +
 	"registries\x18\x01 \x03(\v2\x1a.gateway.v1.RegistryConfigR\n" +
@@ -4352,7 +4377,7 @@ const file_gateway_v1_nginx_daemon_proto_rawDesc = "" +
 	"\x0eRegistryConfig\x12\x10\n" +
 	"\x03url\x18\x01 \x01(\tR\x03url\x12\x1a\n" +
 	"\busername\x18\x02 \x01(\tR\busername\x12\x1a\n" +
-	"\bpassword\x18\x03 \x01(\tR\bpassword\"\x8d\x01\n" +
+	"\bpassword\x18\x03 \x01(\tR\bpassword\"\xb9\x01\n" +
 	"\x11DockerLogsCommand\x12!\n" +
 	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\x12\x1d\n" +
 	"\n" +
@@ -4360,7 +4385,9 @@ const file_gateway_v1_nginx_daemon_proto_rawDesc = "" +
 	"\x06follow\x18\x03 \x01(\bR\x06follow\x12\x1e\n" +
 	"\n" +
 	"timestamps\x18\x04 \x01(\bR\n" +
-	"timestamps\"8\n" +
+	"timestamps\x12\x14\n" +
+	"\x05since\x18\x05 \x01(\tR\x05since\x12\x14\n" +
+	"\x05until\x18\x06 \x01(\tR\x05until\"8\n" +
 	"\tExecInput\x12\x17\n" +
 	"\aexec_id\x18\x01 \x01(\tR\x06execId\x12\x12\n" +
 	"\x04data\x18\x02 \x01(\fR\x04data\"n\n" +

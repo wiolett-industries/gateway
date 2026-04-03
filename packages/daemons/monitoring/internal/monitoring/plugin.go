@@ -26,6 +26,10 @@ func (p *MonitoringPlugin) Type() string {
 	return "monitoring"
 }
 
+func (p *MonitoringPlugin) SetLogger(logger *slog.Logger) {
+	p.logger = logger
+}
+
 func (p *MonitoringPlugin) Init(cfg *lifecycle.BaseConfig, logger *slog.Logger) error {
 	p.logger = logger
 	return nil
@@ -74,7 +78,7 @@ func (p *MonitoringPlugin) CollectStats() *pb.StatsReport {
 	return nil
 }
 
-func (p *MonitoringPlugin) OnSessionStart(ctx context.Context) error {
+func (p *MonitoringPlugin) OnSessionStart(ctx context.Context, _ *stream.Writer) error {
 	return nil
 }
 
