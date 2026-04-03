@@ -180,7 +180,7 @@ export function DockerVolumes() {
             {selectedNodeId && (
               <>
                 <RefreshButton onClick={() => fetchVolumes()} disabled={isLoading} />
-                {hasScope("docker:create") && (
+                {hasScope("docker:volumes:create") && (
                   <Button onClick={() => setCreateOpen(true)}>
                     <Plus className="h-4 w-4 mr-1" />
                     Create Volume
@@ -285,7 +285,7 @@ export function DockerVolumes() {
                           </Badge>
                         )}
                         <div className="flex items-center md:justify-end">
-                          {hasScope("docker:delete") && !isUsed && (
+                          {hasScope("docker:volumes:delete") && !isUsed && (
                             <Button
                               variant="ghost"
                               size="icon"
@@ -311,8 +311,8 @@ export function DockerVolumes() {
                 message="No volumes found on this node."
                 hasActiveFilters={search !== ""}
                 onReset={() => setSearch("")}
-                actionLabel={hasScope("docker:create") ? "Create a volume" : undefined}
-                onAction={hasScope("docker:create") ? () => setCreateOpen(true) : undefined}
+                actionLabel={hasScope("docker:volumes:create") ? "Create a volume" : undefined}
+                onAction={hasScope("docker:volumes:create") ? () => setCreateOpen(true) : undefined}
               />
             )}
           </>

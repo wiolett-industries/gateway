@@ -186,6 +186,20 @@ export function requireScope(scope: string): MiddlewareHandler<AppEnv> {
 }
 
 /**
+ * Require ANY of the listed scopes (OR logic).
+ * Useful when a route should be accessible to users with different scope hierarchies.
+ */
+export function requireAnyScope(...requiredScopes: string[]): MiddlewareHandler<AppEnv> {
+  return async (c, next) => {
+    const scopes = c.get('effectiveScopes');
+    if (!scopes || !requiredScopes.some((s) => TokensService.hasScope(scopes, s))) {
+      throw new HTTPException(403, { message: `Missing required scope: one of ${requiredScopes.join(', ')}` });
+    }
+    await next();
+  };
+}
+
+/**
  * Resource-scoped permission check.
  * Builds scopeBase:resourceId from a URL param and checks against effective scopes.
  */

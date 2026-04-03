@@ -4,6 +4,7 @@ import { nodes } from '@/db/schema/index.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { DockerTaskService } from './docker-task.service.js';
+import type { DockerSecretService } from './docker-secret.service.js';
 import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import type { NodeRegistryService } from '@/services/node-registry.service.js';
 
@@ -14,6 +15,7 @@ export class DockerManagementService {
   private containerTransitions = new Map<string, ContainerTransition>();
 
   private taskService?: DockerTaskService;
+  private secretService?: DockerSecretService;
 
   constructor(
     private db: DrizzleClient,
@@ -24,6 +26,10 @@ export class DockerManagementService {
 
   setTaskService(taskService: DockerTaskService) {
     this.taskService = taskService;
+  }
+
+  setSecretService(secretService: DockerSecretService) {
+    this.secretService = secretService;
   }
 
   private requireNoTransition(containerId: string) {
@@ -158,6 +164,8 @@ export class DockerManagementService {
       resourceType: 'docker-container',
       details: { nodeId, name: config.name, image: config.image },
     });
+    // If container was created and there are secrets targeting it, inject them
+    // (secrets are typically added after creation, so this is a no-op for new containers)
     return data;
   }
 
@@ -271,6 +279,13 @@ export class DockerManagementService {
       newName: name,
     });
     const data = this.parseResult(result);
+
+    // Copy secrets from source container to the new one (keyed by name)
+    if (this.secretService) {
+      const sourceName = await this.resolveContainerName(nodeId, containerId);
+      await this.secretService.copySecrets(nodeId, sourceName, name, userId);
+    }
+
     await this.auditService.log({
       action: 'docker.container.duplicate',
       userId,
@@ -318,7 +333,22 @@ export class DockerManagementService {
     await this.validateDockerNode(nodeId);
     const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'inspect', { containerId });
     const inspect = this.parseResult(result);
-    return inspect?.Config?.Env || [];
+    const allEnv: string[] = inspect?.Config?.Env || [];
+
+    // Strip secret keys from the env array so they only appear in the secrets section
+    if (this.secretService) {
+      const name = (inspect?.Name ?? '').replace(/^\//, '');
+      if (name) {
+        const secretKeys = await this.secretService.getSecretKeys(nodeId, name);
+        if (secretKeys.size > 0) {
+          return allEnv.filter((entry) => {
+            const key = entry.split('=')[0];
+            return !secretKeys.has(key);
+          });
+        }
+      }
+    }
+    return allEnv;
   }
 
   async liveUpdateContainer(nodeId: string, containerId: string, config: Record<string, unknown>, userId: string) {
@@ -346,6 +376,15 @@ export class DockerManagementService {
     const name = await this.resolveContainerName(nodeId, containerId);
     const task = await this.createTask(nodeId, containerId, name, 'recreate');
 
+    // Inject decrypted secrets into the recreate config's env (keyed by container name)
+    if (this.secretService) {
+      const secrets = await this.secretService.getDecryptedMap(nodeId, name);
+      if (Object.keys(secrets).length > 0) {
+        const existingEnv = (config.env as Record<string, string> | undefined) || {};
+        config.env = { ...existingEnv, ...secrets };
+      }
+    }
+
     try {
       const result = await this.nodeDispatch.sendDockerContainerCommand(
         nodeId,
@@ -361,6 +400,7 @@ export class DockerManagementService {
         resourceId: containerId,
         details: { nodeId },
       });
+
       // Note: containerId changes after recreate, but watchTransition will time out
       // and clear the old transition. The frontend handles navigation to new ID.
       this.watchTransition(nodeId, containerId, task?.id, 'running', 'Container recreated');
@@ -387,10 +427,26 @@ export class DockerManagementService {
   ) {
     await this.validateDockerNode(nodeId);
     this.requireNoTransition(containerId);
+
+    // Merge decrypted secrets into the env update so secrets persist across recreate
+    let mergedEnv = env;
+    if (this.secretService) {
+      const name = await this.resolveContainerName(nodeId, containerId);
+      const secrets = await this.secretService.getDecryptedMap(nodeId, name);
+      if (Object.keys(secrets).length > 0) {
+        mergedEnv = { ...(env || {}), ...secrets };
+        // Never allow removing a secret key via removeEnv
+        if (removeEnv) {
+          const secretKeys = new Set(Object.keys(secrets));
+          removeEnv = removeEnv.filter((k) => !secretKeys.has(k));
+        }
+      }
+    }
+
     const result = await this.nodeDispatch.sendDockerContainerCommand(
       nodeId,
       'update',
-      { containerId, configJson: JSON.stringify({ env, removeEnv }) },
+      { containerId, configJson: JSON.stringify({ env: mergedEnv, removeEnv }) },
       60000
     );
     const data = this.parseResult(result);
@@ -401,6 +457,7 @@ export class DockerManagementService {
       resourceId: containerId,
       details: { nodeId },
     });
+
     return data;
   }
 

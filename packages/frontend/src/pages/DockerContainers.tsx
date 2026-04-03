@@ -250,7 +250,7 @@ export function DockerContainers() {
             {selectedNodeId && (
               <RefreshButton onClick={() => fetchContainers()} disabled={isLoading} />
             )}
-            {hasScope("docker:create") && selectedNodeId && (
+            {hasScope("docker:containers:create") && selectedNodeId && (
               <Button onClick={() => setDeployOpen(true)}>
                 <Plus className="h-4 w-4 mr-1" />
                 Deploy Container
@@ -433,8 +433,8 @@ export function DockerContainers() {
                   setSearchInput("");
                   resetFilters();
                 }}
-                actionLabel={hasScope("docker:create") ? "Deploy a container" : undefined}
-                onAction={hasScope("docker:create") ? () => setDeployOpen(true) : undefined}
+                actionLabel={hasScope("docker:containers:create") ? "Deploy a container" : undefined}
+                onAction={hasScope("docker:containers:create") ? () => setDeployOpen(true) : undefined}
               />
             )}
           </>

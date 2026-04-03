@@ -275,7 +275,7 @@ export function ConsoleTab({ nodeId, containerId }: { nodeId: string; containerI
     }
   }, [isPopout, connect]);
 
-  if (!hasScope("docker:exec")) {
+  if (!hasScope("docker:containers:console")) {
     return (
       <div className="py-12 text-center text-muted-foreground">
         You don't have permission to access the console.

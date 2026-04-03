@@ -1,49 +1,66 @@
 /**
  * Unified scope definitions for the group-based permissions system.
  * Both session users (via group membership) and API tokens use these scopes.
+ *
+ * Naming convention: domain:resource:action[:qualifier]
+ * Resource-scopable scopes support suffixes: e.g. docker:containers:view:node-uuid
  */
 
 export const ALL_SCOPES = [
-  // Certificate Authorities
-  'ca:read',
-  'ca:create:root',
-  'ca:create:intermediate',
-  'ca:revoke',
-  // Certificates
-  'cert:read',
-  'cert:issue',
-  'cert:revoke',
-  'cert:export',
-  // Templates
-  'template:read',
-  'template:manage',
-  // Proxy Hosts
+  // ── PKI: Certificate Authorities ─────────────────────────────────
+  'pki:ca:list:root',
+  'pki:ca:list:intermediate',
+  'pki:ca:view:root',
+  'pki:ca:view:intermediate',
+  'pki:ca:create:root',
+  'pki:ca:create:intermediate',
+  'pki:ca:revoke:root',
+  'pki:ca:revoke:intermediate',
+  // ── PKI: Certificates ────────────────────────────────────────────
+  'pki:cert:list',
+  'pki:cert:view',
+  'pki:cert:issue',
+  'pki:cert:revoke',
+  'pki:cert:export',
+  // ── PKI: Certificate Templates ───────────────────────────────────
+  'pki:templates:list',
+  'pki:templates:view',
+  'pki:templates:create',
+  'pki:templates:edit',
+  'pki:templates:delete',
+  // ── Proxy Hosts ──────────────────────────────────────────────────
   'proxy:list',
   'proxy:view',
   'proxy:create',
   'proxy:edit',
   'proxy:delete',
-  'proxy:raw-read',
-  'proxy:raw-write',
-  'proxy:raw-toggle',
-  // SSL Certificates
-  'ssl:read',
-  'ssl:manage',
-  'ssl:delete',
-  // Access Lists
-  'access-list:read',
-  'access-list:manage',
-  'access-list:delete',
-  // Nodes
+  'proxy:raw:read',
+  'proxy:raw:write',
+  'proxy:raw:toggle',
+  'proxy:advanced',
+  // ── SSL Certificates ─────────────────────────────────────────────
+  'ssl:cert:list',
+  'ssl:cert:view',
+  'ssl:cert:issue',
+  'ssl:cert:delete',
+  'ssl:cert:revoke',
+  'ssl:cert:export',
+  // ── Access Control Lists ─────────────────────────────────────────
+  'acl:list',
+  'acl:view',
+  'acl:create',
+  'acl:edit',
+  'acl:delete',
+  // ── Nodes ────────────────────────────────────────────────────────
   'nodes:list',
   'nodes:details',
-  'nodes:config',
-  'nodes:logs',
-  'nodes:rename',
-  'nodes:config-edit',
   'nodes:create',
+  'nodes:rename',
   'nodes:delete',
-  // Administration
+  'nodes:config:view',
+  'nodes:config:edit',
+  'nodes:logs',
+  // ── Administration ───────────────────────────────────────────────
   'admin:users',
   'admin:groups',
   'admin:audit',
@@ -51,23 +68,45 @@ export const ALL_SCOPES = [
   'admin:update',
   'admin:housekeeping',
   'admin:alerts',
-  'admin:ai-config',
-  // Features
-  'ai:use',
-  'proxy:advanced',
-  // Docker
-  'docker:list',
-  'docker:view',
-  'docker:create',
-  'docker:edit',
-  'docker:delete',
-  'docker:exec',
-  'docker:files',
-  'docker:images',
-  'docker:volumes',
-  'docker:networks',
-  'docker:registries',
-  'docker:templates',
+  // ── Features ─────────────────────────────────────────────────────
+  'feat:ai:use',
+  'feat:ai:configure',
+  // ── Docker: Containers ───────────────────────────────────────────
+  'docker:containers:list',
+  'docker:containers:view',
+  'docker:containers:create',
+  'docker:containers:edit',
+  'docker:containers:manage',
+  'docker:containers:environment',
+  'docker:containers:delete',
+  'docker:containers:console',
+  'docker:containers:files',
+  'docker:containers:secrets',
+  // ── Docker: Images ───────────────────────────────────────────────
+  'docker:images:list',
+  'docker:images:pull',
+  'docker:images:delete',
+  // ── Docker: Volumes ──────────────────────────────────────────────
+  'docker:volumes:list',
+  'docker:volumes:create',
+  'docker:volumes:delete',
+  // ── Docker: Networks ─────────────────────────────────────────────
+  'docker:networks:list',
+  'docker:networks:create',
+  'docker:networks:edit',
+  'docker:networks:delete',
+  // ── Docker: Registries ───────────────────────────────────────────
+  'docker:registries:list',
+  'docker:registries:create',
+  'docker:registries:edit',
+  'docker:registries:delete',
+  // ── Docker: Templates ────────────────────────────────────────────
+  'docker:templates:list',
+  'docker:templates:view',
+  'docker:templates:create',
+  'docker:templates:edit',
+  'docker:templates:delete',
+  // ── Docker: Tasks ────────────────────────────────────────────────
   'docker:tasks',
 ] as const;
 
@@ -81,46 +120,72 @@ export const ADMIN_SCOPES: readonly string[] = ALL_SCOPES.filter((s) => s !== 'a
 
 /** Operator group: operational + management scopes */
 export const OPERATOR_SCOPES: readonly string[] = [
-  'ca:read',
-  'cert:read',
-  'cert:issue',
-  'cert:revoke',
-  'cert:export',
-  'template:read',
-  'template:manage',
+  // PKI
+  'pki:ca:list:root',
+  'pki:ca:list:intermediate',
+  'pki:ca:view:root',
+  'pki:ca:view:intermediate',
+  'pki:cert:list',
+  'pki:cert:view',
+  'pki:cert:issue',
+  'pki:cert:revoke',
+  'pki:cert:export',
+  'pki:templates:list',
+  'pki:templates:view',
+  'pki:templates:create',
+  'pki:templates:edit',
+  'pki:templates:delete',
+  // Proxy
   'proxy:list',
   'proxy:view',
   'proxy:create',
   'proxy:edit',
-  'ssl:read',
-  'ssl:manage',
-  'access-list:read',
-  'access-list:manage',
+  // SSL
+  'ssl:cert:list',
+  'ssl:cert:view',
+  'ssl:cert:issue',
+  // ACL
+  'acl:list',
+  'acl:view',
+  'acl:create',
+  'acl:edit',
+  // Nodes
   'nodes:list',
   'nodes:details',
-  'nodes:config',
+  'nodes:config:view',
   'nodes:logs',
   'nodes:rename',
-  'ai:use',
+  // Features
+  'feat:ai:use',
+  // Admin (alerts only)
   'admin:alerts',
-  'docker:list',
-  'docker:view',
-  'docker:edit',
+  // Docker
+  'docker:containers:list',
+  'docker:containers:view',
+  'docker:containers:edit',
+  'docker:containers:manage',
+  'docker:containers:environment',
   'docker:tasks',
-  'docker:templates',
 ];
 
 /** Viewer group: read-only scopes */
 export const VIEWER_SCOPES: readonly string[] = [
-  'ca:read',
-  'cert:read',
-  'template:read',
+  'pki:ca:list:root',
+  'pki:ca:list:intermediate',
+  'pki:ca:view:root',
+  'pki:ca:view:intermediate',
+  'pki:cert:list',
+  'pki:cert:view',
+  'pki:templates:list',
+  'pki:templates:view',
   'proxy:list',
   'proxy:view',
-  'ssl:read',
-  'access-list:read',
-  'docker:list',
-  'docker:view',
+  'ssl:cert:list',
+  'ssl:cert:view',
+  'acl:list',
+  'acl:view',
+  'docker:containers:list',
+  'docker:containers:view',
 ];
 
 /** Built-in group definitions (order matters for display — most privileged first) */
@@ -141,33 +206,47 @@ export const BUILTIN_GROUPS = [
 
 export const BUILTIN_GROUP_NAMES: string[] = BUILTIN_GROUPS.map((g) => g.name);
 
-/** Scopes that support resource-level suffixes (e.g., cert:issue:ca-uuid) */
+/** Scopes that support resource-level suffixes (e.g., pki:cert:issue:ca-uuid) */
 export const RESOURCE_SCOPABLE: readonly string[] = [
-  'cert:issue',
-  'ca:create:intermediate',
+  // PKI
+  'pki:ca:create:intermediate',
+  'pki:cert:issue',
+  'pki:cert:revoke',
+  'pki:cert:export',
+  // Proxy
   'proxy:view',
   'proxy:create',
   'proxy:edit',
   'proxy:delete',
   'proxy:advanced',
-  'proxy:raw-read',
-  'proxy:raw-write',
-  'proxy:raw-toggle',
-  'ssl:manage',
-  'ssl:delete',
-  'access-list:manage',
-  'access-list:delete',
+  'proxy:raw:read',
+  'proxy:raw:write',
+  'proxy:raw:toggle',
+  // SSL
+  'ssl:cert:view',
+  'ssl:cert:delete',
+  'ssl:cert:revoke',
+  'ssl:cert:export',
+  // ACL
+  'acl:view',
+  'acl:edit',
+  'acl:delete',
+  // Nodes
   'nodes:details',
-  'nodes:config',
+  'nodes:config:view',
+  'nodes:config:edit',
   'nodes:logs',
   'nodes:rename',
-  'nodes:config-edit',
   'nodes:delete',
-  'docker:view',
-  'docker:edit',
-  'docker:exec',
-  'docker:files',
-  'docker:delete',
+  // Docker containers
+  'docker:containers:view',
+  'docker:containers:edit',
+  'docker:containers:manage',
+  'docker:containers:environment',
+  'docker:containers:delete',
+  'docker:containers:console',
+  'docker:containers:files',
+  'docker:containers:secrets',
 ];
 
 const ALL_SCOPES_SET = new Set<string>(ALL_SCOPES);

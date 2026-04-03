@@ -171,7 +171,7 @@ export function CertificateDetail() {
                     Copy PEM
                   </DropdownMenuItem>
                 )}
-                {hasScope("cert:revoke") && cert.status === "active" && (
+                {hasScope("pki:cert:revoke") && cert.status === "active" && (
                   <>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem

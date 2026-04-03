@@ -2,7 +2,7 @@ import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
 import { sanitizeFilename } from '@/lib/utils.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
-import { authMiddleware, requireScope } from '@/modules/auth/auth.middleware.js';
+import { authMiddleware, requireAnyScope, requireScope } from '@/modules/auth/auth.middleware.js';
 import { CryptoService } from '@/services/crypto.service.js';
 import type { AppEnv } from '@/types.js';
 import {
@@ -21,14 +21,14 @@ export const caRoutes = new OpenAPIHono<AppEnv>();
 caRoutes.use('*', authMiddleware);
 
 // List CAs (tree)
-caRoutes.get('/', requireScope('ca:read'), async (c) => {
+caRoutes.get('/', requireAnyScope('pki:ca:list:root', 'pki:ca:list:intermediate'), async (c) => {
   const caService = container.resolve(CAService);
   const tree = await caService.getCATree();
   return c.json(tree);
 });
 
 // Get CA detail
-caRoutes.get('/:id', requireScope('ca:read'), async (c) => {
+caRoutes.get('/:id', requireAnyScope('pki:ca:view:root', 'pki:ca:view:intermediate'), async (c) => {
   const caService = container.resolve(CAService);
   const id = c.req.param('id');
   const ca = await caService.getCA(id);
@@ -36,7 +36,7 @@ caRoutes.get('/:id', requireScope('ca:read'), async (c) => {
 });
 
 // Create root CA (admin only)
-caRoutes.post('/', requireScope('ca:create:root'), async (c) => {
+caRoutes.post('/', requireScope('pki:ca:create:root'), async (c) => {
   const caService = container.resolve(CAService);
   const user = c.get('user')!;
   const body = await c.req.json();
@@ -46,7 +46,7 @@ caRoutes.post('/', requireScope('ca:create:root'), async (c) => {
 });
 
 // Create intermediate CA (admin only)
-caRoutes.post('/:id/intermediate', requireScope('ca:create:intermediate'), async (c) => {
+caRoutes.post('/:id/intermediate', requireScope('pki:ca:create:intermediate'), async (c) => {
   const caService = container.resolve(CAService);
   const user = c.get('user')!;
   const parentId = c.req.param('id');
@@ -57,7 +57,7 @@ caRoutes.post('/:id/intermediate', requireScope('ca:create:intermediate'), async
 });
 
 // Update CA settings (admin only)
-caRoutes.put('/:id', requireScope('ca:create:root'), async (c) => {
+caRoutes.put('/:id', requireScope('pki:ca:create:root'), async (c) => {
   const caService = container.resolve(CAService);
   const user = c.get('user')!;
   const id = c.req.param('id');
@@ -68,7 +68,7 @@ caRoutes.put('/:id', requireScope('ca:create:root'), async (c) => {
 });
 
 // Revoke CA (admin only)
-caRoutes.post('/:id/revoke', requireScope('ca:revoke'), async (c) => {
+caRoutes.post('/:id/revoke', requireAnyScope('pki:ca:revoke:root', 'pki:ca:revoke:intermediate'), async (c) => {
   const caService = container.resolve(CAService);
   const user = c.get('user')!;
   const id = c.req.param('id');
@@ -79,7 +79,7 @@ caRoutes.post('/:id/revoke', requireScope('ca:revoke'), async (c) => {
 });
 
 // Delete CA (admin only)
-caRoutes.delete('/:id', requireScope('ca:revoke'), async (c) => {
+caRoutes.delete('/:id', requireAnyScope('pki:ca:revoke:root', 'pki:ca:revoke:intermediate'), async (c) => {
   const caService = container.resolve(CAService);
   const user = c.get('user')!;
   const id = c.req.param('id');
@@ -88,7 +88,7 @@ caRoutes.delete('/:id', requireScope('ca:revoke'), async (c) => {
 });
 
 // Export CA private key (admin only)
-caRoutes.post('/:id/export-key', requireScope('ca:create:root'), async (c) => {
+caRoutes.post('/:id/export-key', requireScope('pki:ca:create:root'), async (c) => {
   const caService = container.resolve(CAService);
   const _cryptoService = container.resolve(CryptoService);
   const exportService = container.resolve(ExportService);
@@ -119,7 +119,7 @@ caRoutes.post('/:id/export-key', requireScope('ca:create:root'), async (c) => {
 });
 
 // Generate OCSP responder cert (admin only)
-caRoutes.post('/:id/ocsp-responder', requireScope('ca:create:root'), async (c) => {
+caRoutes.post('/:id/ocsp-responder', requireScope('pki:ca:create:root'), async (c) => {
   const ocspService = container.resolve(OCSPService);
   const id = c.req.param('id');
   await ocspService.generateOCSPResponderCert(id);

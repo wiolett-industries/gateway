@@ -10,14 +10,14 @@ export const templateRoutes = new OpenAPIHono<AppEnv>();
 templateRoutes.use('*', authMiddleware);
 
 // List templates
-templateRoutes.get('/', requireScope('template:read'), async (c) => {
+templateRoutes.get('/', requireScope('pki:templates:list'), async (c) => {
   const templatesService = container.resolve(TemplatesService);
   const templates = await templatesService.listTemplates();
   return c.json(templates);
 });
 
 // Get template detail
-templateRoutes.get('/:id', requireScope('template:read'), async (c) => {
+templateRoutes.get('/:id', requireScope('pki:templates:view'), async (c) => {
   const templatesService = container.resolve(TemplatesService);
   const id = c.req.param('id');
   const template = await templatesService.getTemplate(id);
@@ -28,7 +28,7 @@ templateRoutes.get('/:id', requireScope('template:read'), async (c) => {
 });
 
 // Create template (admin only)
-templateRoutes.post('/', requireScope('template:manage'), async (c) => {
+templateRoutes.post('/', requireScope('pki:templates:create'), async (c) => {
   const templatesService = container.resolve(TemplatesService);
   const user = c.get('user')!;
   const body = await c.req.json();
@@ -38,7 +38,7 @@ templateRoutes.post('/', requireScope('template:manage'), async (c) => {
 });
 
 // Update template (admin only)
-templateRoutes.patch('/:id', requireScope('template:manage'), async (c) => {
+templateRoutes.patch('/:id', requireScope('pki:templates:edit'), async (c) => {
   const templatesService = container.resolve(TemplatesService);
   const id = c.req.param('id');
   const body = await c.req.json();
@@ -48,7 +48,7 @@ templateRoutes.patch('/:id', requireScope('template:manage'), async (c) => {
 });
 
 // Delete template (admin only)
-templateRoutes.delete('/:id', requireScope('template:manage'), async (c) => {
+templateRoutes.delete('/:id', requireScope('pki:templates:delete'), async (c) => {
   const templatesService = container.resolve(TemplatesService);
   const id = c.req.param('id');
   await templatesService.deleteTemplate(id);

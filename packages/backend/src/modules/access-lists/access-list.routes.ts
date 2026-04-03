@@ -11,7 +11,7 @@ accessListRoutes.use('*', authMiddleware);
 accessListRoutes.use('*', sessionOnly);
 
 // List access lists
-accessListRoutes.get('/', requireScope('access-list:read'), async (c) => {
+accessListRoutes.get('/', requireScope('acl:list'), async (c) => {
   const accessListService = container.resolve(AccessListService);
   const rawQuery = c.req.query();
   const query = AccessListQuerySchema.parse(rawQuery);
@@ -20,7 +20,7 @@ accessListRoutes.get('/', requireScope('access-list:read'), async (c) => {
 });
 
 // Get access list detail
-accessListRoutes.get('/:id', requireScope('access-list:read'), async (c) => {
+accessListRoutes.get('/:id', requireScope('acl:view'), async (c) => {
   const accessListService = container.resolve(AccessListService);
   const id = c.req.param('id');
   const accessList = await accessListService.get(id);
@@ -28,7 +28,7 @@ accessListRoutes.get('/:id', requireScope('access-list:read'), async (c) => {
 });
 
 // Create access list
-accessListRoutes.post('/', requireScope('access-list:manage'), async (c) => {
+accessListRoutes.post('/', requireScope('acl:create'), async (c) => {
   const accessListService = container.resolve(AccessListService);
   const user = c.get('user')!;
   const body = await c.req.json();
@@ -38,7 +38,7 @@ accessListRoutes.post('/', requireScope('access-list:manage'), async (c) => {
 });
 
 // Update access list
-accessListRoutes.put('/:id', requireScope('access-list:manage'), async (c) => {
+accessListRoutes.put('/:id', requireScope('acl:edit'), async (c) => {
   const accessListService = container.resolve(AccessListService);
   const user = c.get('user')!;
   const id = c.req.param('id');
@@ -49,7 +49,7 @@ accessListRoutes.put('/:id', requireScope('access-list:manage'), async (c) => {
 });
 
 // Delete access list
-accessListRoutes.delete('/:id', requireScope('access-list:delete'), async (c) => {
+accessListRoutes.delete('/:id', requireScope('acl:delete'), async (c) => {
   const accessListService = container.resolve(AccessListService);
   const user = c.get('user')!;
   const id = c.req.param('id');

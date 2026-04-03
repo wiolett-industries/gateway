@@ -75,17 +75,17 @@ export default function App() {
                 path="/nginx-templates/:id"
                 element={scoped("proxy:list", <NginxTemplateEdit />)}
               />
-              <Route path="/ssl-certificates" element={scoped("ssl:read", <SSLCertificates />)} />
+              <Route path="/ssl-certificates" element={scoped("ssl:cert:list", <SSLCertificates />)} />
               <Route path="/domains" element={scoped("proxy:list", <Domains />)} />
-              <Route path="/access-lists" element={scoped("access-list:read", <AccessLists />)} />
-              <Route path="/cas" element={scoped("ca:read", <CAs />)} />
-              <Route path="/cas/:id" element={scoped("ca:read", <CADetail />)} />
-              <Route path="/certificates" element={scoped("cert:read", <Certificates />)} />
+              <Route path="/access-lists" element={scoped("acl:list", <AccessLists />)} />
+              <Route path="/cas" element={scoped("pki:ca:list:root", <CAs />)} />
+              <Route path="/cas/:id" element={scoped("pki:ca:list:root", <CADetail />)} />
+              <Route path="/certificates" element={scoped("pki:cert:list", <Certificates />)} />
               <Route
                 path="/certificates/:id"
-                element={scoped("cert:read", <CertificateDetail />)}
+                element={scoped("pki:cert:list", <CertificateDetail />)}
               />
-              <Route path="/templates" element={scoped("template:read", <Templates />)} />
+              <Route path="/templates" element={scoped("pki:templates:list", <Templates />)} />
               <Route path="/audit" element={scoped("admin:audit", <AuditLog />)} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/admin/users" element={scoped("admin:users", <AdminUsers />)} />
@@ -94,21 +94,21 @@ export default function App() {
               <Route path="/nodes/:id" element={scoped("nodes:list", <AdminNodeDetail />)} />
               <Route
                 path="/docker/containers"
-                element={scoped("docker:list", <DockerContainers />)}
+                element={scoped("docker:containers:list", <DockerContainers />)}
               />
               <Route
                 path="/docker/containers/:nodeId/:containerId"
-                element={scoped("docker:view", <DockerContainerDetail />)}
+                element={scoped("docker:containers:view", <DockerContainerDetail />)}
               />
-              <Route path="/docker/images" element={scoped("docker:images", <DockerImages />)} />
-              <Route path="/docker/volumes" element={scoped("docker:volumes", <DockerVolumes />)} />
+              <Route path="/docker/images" element={scoped("docker:images:list", <DockerImages />)} />
+              <Route path="/docker/volumes" element={scoped("docker:volumes:list", <DockerVolumes />)} />
               <Route
                 path="/docker/networks"
-                element={scoped("docker:networks", <DockerNetworks />)}
+                element={scoped("docker:networks:list", <DockerNetworks />)}
               />
               <Route
                 path="/docker/templates"
-                element={scoped("docker:templates", <DockerTemplatesPage />)}
+                element={scoped("docker:templates:list", <DockerTemplatesPage />)}
               />
               <Route path="/docker/tasks" element={scoped("docker:tasks", <DockerTasks />)} />
             </Route>

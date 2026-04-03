@@ -251,7 +251,7 @@ export function DockerTemplatesPage() {
               <Upload className="h-4 w-4 mr-1" />
               Import
             </Button>
-            {hasScope("docker:create") && (
+            {hasScope("docker:templates:create") && (
               <Button onClick={openCreate}>
                 <Plus className="h-4 w-4 mr-1" />
                 Create Template
@@ -304,7 +304,7 @@ export function DockerTemplatesPage() {
                     {formatDate(t.createdAt)}
                   </span>
                   <div className="flex items-center gap-0.5 md:justify-end">
-                    {hasScope("docker:create") && dockerNodes.length > 0 && (
+                    {hasScope("docker:templates:create") && dockerNodes.length > 0 && (
                       <Button
                         variant="ghost"
                         size="icon"
@@ -315,7 +315,7 @@ export function DockerTemplatesPage() {
                         <Play className="h-3.5 w-3.5" />
                       </Button>
                     )}
-                    {hasScope("docker:create") && (
+                    {hasScope("docker:templates:create") && (
                       <Button
                         variant="ghost"
                         size="icon"
@@ -335,7 +335,7 @@ export function DockerTemplatesPage() {
                     >
                       <Download className="h-3.5 w-3.5" />
                     </Button>
-                    {hasScope("docker:delete") && (
+                    {hasScope("docker:templates:delete") && (
                       <Button
                         variant="ghost"
                         size="icon"
@@ -360,8 +360,8 @@ export function DockerTemplatesPage() {
             message="No templates created yet."
             hasActiveFilters={search !== ""}
             onReset={() => setSearch("")}
-            actionLabel={hasScope("docker:create") ? "Create a template" : undefined}
-            onAction={hasScope("docker:create") ? openCreate : undefined}
+            actionLabel={hasScope("docker:templates:create") ? "Create a template" : undefined}
+            onAction={hasScope("docker:templates:create") ? openCreate : undefined}
           />
         )}
       </div>

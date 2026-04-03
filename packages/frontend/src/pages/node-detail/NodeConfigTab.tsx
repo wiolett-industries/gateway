@@ -31,7 +31,7 @@ function splitErrors(error: string): string[] {
 
 export function NodeConfigTab({ nodeId, nodeStatus }: NodeConfigTabProps) {
   const { hasScope } = useAuthStore();
-  const canManage = hasScope("nodes:config-edit");
+  const canManage = hasScope("nodes:config:edit");
 
   const [configContent, setConfigContent] = useState("");
   const [originalConfig, setOriginalConfig] = useState("");

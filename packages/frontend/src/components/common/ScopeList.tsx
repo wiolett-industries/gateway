@@ -50,6 +50,9 @@ function getResourceOptions(
   if (scope.startsWith("proxy:")) {
     return (proxyHosts ?? []).map((p) => ({ id: p.id, label: p.domainNames[0] || p.id }));
   }
+  if (scope.startsWith("pki:cert:") || scope.startsWith("pki:ca:")) {
+    return (cas ?? []).map((ca) => ({ id: ca.id, label: ca.commonName }));
+  }
   return (cas ?? []).map((ca) => ({ id: ca.id, label: ca.commonName }));
 }
 

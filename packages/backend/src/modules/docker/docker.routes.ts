@@ -20,6 +20,8 @@ import {
   NetworkCreateSchema,
   RegistryCreateSchema,
   RegistryUpdateSchema,
+  SecretCreateSchema,
+  SecretUpdateSchema,
   TemplateCreateSchema,
   TemplateDeploySchema,
   TemplateUpdateSchema,
@@ -27,8 +29,10 @@ import {
 } from './docker.schemas.js';
 import { DockerManagementService } from './docker.service.js';
 import { DockerRegistryService } from './docker-registry.service.js';
+import { DockerSecretService } from './docker-secret.service.js';
 import { DockerTaskService } from './docker-task.service.js';
 import { DockerTemplateService } from './docker-template.service.js';
+import { TokensService } from '@/modules/tokens/tokens.service.js';
 
 export const dockerRoutes = new OpenAPIHono<AppEnv>();
 
@@ -38,7 +42,7 @@ dockerRoutes.use('*', sessionOnly);
 // ─── Container routes ────────────────────────────────────────────────
 
 // List containers
-dockerRoutes.get('/nodes/:nodeId/containers', requireScope('docker:list'), async (c) => {
+dockerRoutes.get('/nodes/:nodeId/containers', requireScope('docker:containers:list'), async (c) => {
   const service = container.resolve(DockerManagementService);
   const nodeId = c.req.param('nodeId');
   const data = await service.listContainers(nodeId);
@@ -46,7 +50,7 @@ dockerRoutes.get('/nodes/:nodeId/containers', requireScope('docker:list'), async
 });
 
 // Create container
-dockerRoutes.post('/nodes/:nodeId/containers', requireScope('docker:create'), async (c) => {
+dockerRoutes.post('/nodes/:nodeId/containers', requireScope('docker:containers:create'), async (c) => {
   const service = container.resolve(DockerManagementService);
   const nodeId = c.req.param('nodeId');
   const user = c.get('user')!;
@@ -57,7 +61,7 @@ dockerRoutes.post('/nodes/:nodeId/containers', requireScope('docker:create'), as
 });
 
 // Inspect container
-dockerRoutes.get('/nodes/:nodeId/containers/:containerId', requireScope('docker:view'), async (c) => {
+dockerRoutes.get('/nodes/:nodeId/containers/:containerId', requireScope('docker:containers:view'), async (c) => {
   const service = container.resolve(DockerManagementService);
   const nodeId = c.req.param('nodeId');
   const containerId = c.req.param('containerId');
@@ -66,7 +70,7 @@ dockerRoutes.get('/nodes/:nodeId/containers/:containerId', requireScope('docker:
 });
 
 // Start container
-dockerRoutes.post('/nodes/:nodeId/containers/:containerId/start', requireScope('docker:edit'), async (c) => {
+dockerRoutes.post('/nodes/:nodeId/containers/:containerId/start', requireScope('docker:containers:manage'), async (c) => {
   const service = container.resolve(DockerManagementService);
   const nodeId = c.req.param('nodeId');
   const containerId = c.req.param('containerId');
@@ -76,7 +80,7 @@ dockerRoutes.post('/nodes/:nodeId/containers/:containerId/start', requireScope('
 });
 
 // Stop container
-dockerRoutes.post('/nodes/:nodeId/containers/:containerId/stop', requireScope('docker:edit'), async (c) => {
+dockerRoutes.post('/nodes/:nodeId/containers/:containerId/stop', requireScope('docker:containers:manage'), async (c) => {
   const service = container.resolve(DockerManagementService);
   const nodeId = c.req.param('nodeId');
   const containerId = c.req.param('containerId');
@@ -88,7 +92,7 @@ dockerRoutes.post('/nodes/:nodeId/containers/:containerId/stop', requireScope('d
 });
 
 // Restart container
-dockerRoutes.post('/nodes/:nodeId/containers/:containerId/restart', requireScope('docker:edit'), async (c) => {
+dockerRoutes.post('/nodes/:nodeId/containers/:containerId/restart', requireScope('docker:containers:manage'), async (c) => {
   const service = container.resolve(DockerManagementService);
   const nodeId = c.req.param('nodeId');
   const containerId = c.req.param('containerId');
@@ -100,7 +104,7 @@ dockerRoutes.post('/nodes/:nodeId/containers/:containerId/restart', requireScope
 });
 
 // Kill container
-dockerRoutes.post('/nodes/:nodeId/containers/:containerId/kill', requireScope('docker:edit'), async (c) => {
+dockerRoutes.post('/nodes/:nodeId/containers/:containerId/kill', requireScope('docker:containers:manage'), async (c) => {
   const service = container.resolve(DockerManagementService);
   const nodeId = c.req.param('nodeId');
   const containerId = c.req.param('containerId');
@@ -112,7 +116,7 @@ dockerRoutes.post('/nodes/:nodeId/containers/:containerId/kill', requireScope('d
 });
 
 // Remove container
-dockerRoutes.delete('/nodes/:nodeId/containers/:containerId', requireScope('docker:delete'), async (c) => {
+dockerRoutes.delete('/nodes/:nodeId/containers/:containerId', requireScope('docker:containers:delete'), async (c) => {
   const service = container.resolve(DockerManagementService);
   const nodeId = c.req.param('nodeId');
   const containerId = c.req.param('containerId');
@@ -123,7 +127,7 @@ dockerRoutes.delete('/nodes/:nodeId/containers/:containerId', requireScope('dock
 });
 
 // Rename container
-dockerRoutes.post('/nodes/:nodeId/containers/:containerId/rename', requireScope('docker:edit'), async (c) => {
+dockerRoutes.post('/nodes/:nodeId/containers/:containerId/rename', requireScope('docker:containers:edit'), async (c) => {
   const service = container.resolve(DockerManagementService);
   const nodeId = c.req.param('nodeId');
   const containerId = c.req.param('containerId');
@@ -135,7 +139,7 @@ dockerRoutes.post('/nodes/:nodeId/containers/:containerId/rename', requireScope(
 });
 
 // Duplicate container
-dockerRoutes.post('/nodes/:nodeId/containers/:containerId/duplicate', requireScope('docker:create'), async (c) => {
+dockerRoutes.post('/nodes/:nodeId/containers/:containerId/duplicate', requireScope('docker:containers:create'), async (c) => {
   const service = container.resolve(DockerManagementService);
   const nodeId = c.req.param('nodeId');
   const containerId = c.req.param('containerId');
@@ -147,7 +151,7 @@ dockerRoutes.post('/nodes/:nodeId/containers/:containerId/duplicate', requireSco
 });
 
 // Update container (pull + redeploy)
-dockerRoutes.post('/nodes/:nodeId/containers/:containerId/update', requireScope('docker:edit'), async (c) => {
+dockerRoutes.post('/nodes/:nodeId/containers/:containerId/update', requireScope('docker:containers:edit'), async (c) => {
   const service = container.resolve(DockerManagementService);
   const nodeId = c.req.param('nodeId');
   const containerId = c.req.param('containerId');
@@ -159,7 +163,7 @@ dockerRoutes.post('/nodes/:nodeId/containers/:containerId/update', requireScope(
 });
 
 // Live update container (no recreation — resource limits + restart policy)
-dockerRoutes.post('/nodes/:nodeId/containers/:containerId/live-update', requireScope('docker:edit'), async (c) => {
+dockerRoutes.post('/nodes/:nodeId/containers/:containerId/live-update', requireScope('docker:containers:edit'), async (c) => {
   const service = container.resolve(DockerManagementService);
   const nodeId = c.req.param('nodeId');
   const containerId = c.req.param('containerId');
@@ -171,7 +175,7 @@ dockerRoutes.post('/nodes/:nodeId/containers/:containerId/live-update', requireS
 });
 
 // Recreate container with new config (ports, mounts, entrypoint, etc.)
-dockerRoutes.post('/nodes/:nodeId/containers/:containerId/recreate', requireScope('docker:edit'), async (c) => {
+dockerRoutes.post('/nodes/:nodeId/containers/:containerId/recreate', requireScope('docker:containers:manage'), async (c) => {
   const service = container.resolve(DockerManagementService);
   const nodeId = c.req.param('nodeId');
   const containerId = c.req.param('containerId');
@@ -183,7 +187,7 @@ dockerRoutes.post('/nodes/:nodeId/containers/:containerId/recreate', requireScop
 });
 
 // Container logs
-dockerRoutes.get('/nodes/:nodeId/containers/:containerId/logs', requireScope('docker:view'), async (c) => {
+dockerRoutes.get('/nodes/:nodeId/containers/:containerId/logs', requireScope('docker:containers:view'), async (c) => {
   const service = container.resolve(DockerManagementService);
   const nodeId = c.req.param('nodeId');
   const containerId = c.req.param('containerId');
@@ -194,7 +198,7 @@ dockerRoutes.get('/nodes/:nodeId/containers/:containerId/logs', requireScope('do
 });
 
 // Container stats (live one-shot)
-dockerRoutes.get('/nodes/:nodeId/containers/:containerId/stats', requireScope('docker:view'), async (c) => {
+dockerRoutes.get('/nodes/:nodeId/containers/:containerId/stats', requireScope('docker:containers:view'), async (c) => {
   const service = container.resolve(DockerManagementService);
   const nodeId = c.req.param('nodeId');
   const containerId = c.req.param('containerId');
@@ -203,7 +207,7 @@ dockerRoutes.get('/nodes/:nodeId/containers/:containerId/stats', requireScope('d
 });
 
 // Container stats history (for sparklines)
-dockerRoutes.get('/nodes/:nodeId/containers/:containerId/stats/history', requireScope('docker:view'), async (c) => {
+dockerRoutes.get('/nodes/:nodeId/containers/:containerId/stats/history', requireScope('docker:containers:view'), async (c) => {
   const { NodeMonitoringService } = await import('@/modules/nodes/node-monitoring.service.js');
   const monitoring = container.resolve(NodeMonitoringService);
   const containerId = c.req.param('containerId');
@@ -212,7 +216,7 @@ dockerRoutes.get('/nodes/:nodeId/containers/:containerId/stats/history', require
 });
 
 // Container top (process list)
-dockerRoutes.get('/nodes/:nodeId/containers/:containerId/top', requireScope('docker:view'), async (c) => {
+dockerRoutes.get('/nodes/:nodeId/containers/:containerId/top', requireScope('docker:containers:view'), async (c) => {
   const service = container.resolve(DockerManagementService);
   const nodeId = c.req.param('nodeId');
   const containerId = c.req.param('containerId');
@@ -221,7 +225,7 @@ dockerRoutes.get('/nodes/:nodeId/containers/:containerId/top', requireScope('doc
 });
 
 // Get container env
-dockerRoutes.get('/nodes/:nodeId/containers/:containerId/env', requireScope('docker:view'), async (c) => {
+dockerRoutes.get('/nodes/:nodeId/containers/:containerId/env', requireScope('docker:containers:view'), async (c) => {
   const service = container.resolve(DockerManagementService);
   const nodeId = c.req.param('nodeId');
   const containerId = c.req.param('containerId');
@@ -230,7 +234,7 @@ dockerRoutes.get('/nodes/:nodeId/containers/:containerId/env', requireScope('doc
 });
 
 // Update container env
-dockerRoutes.put('/nodes/:nodeId/containers/:containerId/env', requireScope('docker:edit'), async (c) => {
+dockerRoutes.put('/nodes/:nodeId/containers/:containerId/env', requireScope('docker:containers:environment'), async (c) => {
   const service = container.resolve(DockerManagementService);
   const nodeId = c.req.param('nodeId');
   const containerId = c.req.param('containerId');
@@ -241,10 +245,66 @@ dockerRoutes.put('/nodes/:nodeId/containers/:containerId/env', requireScope('doc
   return c.json({ data });
 });
 
+// ─── Secret routes ────────────────────────────────────────────────────
+
+/** Resolve container name from container ID via inspect */
+async function resolveContainerName(nodeId: string, containerId: string): Promise<string> {
+  const dockerService = container.resolve(DockerManagementService);
+  const inspect = await dockerService.inspectContainer(nodeId, containerId);
+  const name = (inspect?.Name ?? '').replace(/^\//, '');
+  if (!name) throw new Error('Could not resolve container name');
+  return name;
+}
+
+// List secrets (values masked unless user has docker:containers:secrets scope)
+dockerRoutes.get('/nodes/:nodeId/containers/:containerId/secrets', requireScope('docker:containers:view'), async (c) => {
+  const service = container.resolve(DockerSecretService);
+  const nodeId = c.req.param('nodeId');
+  const containerId = c.req.param('containerId');
+  const containerName = await resolveContainerName(nodeId, containerId);
+  const scopes = c.get('effectiveScopes') || [];
+  const canReveal = TokensService.hasScope(scopes, 'docker:containers:secrets');
+  const data = await service.list(nodeId, containerName, canReveal);
+  return c.json({ data });
+});
+
+// Create secret
+dockerRoutes.post('/nodes/:nodeId/containers/:containerId/secrets', requireScope('docker:containers:secrets'), async (c) => {
+  const service = container.resolve(DockerSecretService);
+  const nodeId = c.req.param('nodeId');
+  const containerId = c.req.param('containerId');
+  const containerName = await resolveContainerName(nodeId, containerId);
+  const user = c.get('user')!;
+  const body = await c.req.json();
+  const { key, value } = SecretCreateSchema.parse(body);
+  const data = await service.create(nodeId, containerName, key, value, user.id);
+  return c.json({ data }, 201);
+});
+
+// Update secret
+dockerRoutes.put('/nodes/:nodeId/containers/:containerId/secrets/:secretId', requireScope('docker:containers:secrets'), async (c) => {
+  const service = container.resolve(DockerSecretService);
+  const secretId = c.req.param('secretId');
+  const user = c.get('user')!;
+  const body = await c.req.json();
+  const { value } = SecretUpdateSchema.parse(body);
+  const data = await service.update(secretId, value, user.id);
+  return c.json({ data });
+});
+
+// Delete secret
+dockerRoutes.delete('/nodes/:nodeId/containers/:containerId/secrets/:secretId', requireScope('docker:containers:secrets'), async (c) => {
+  const service = container.resolve(DockerSecretService);
+  const secretId = c.req.param('secretId');
+  const user = c.get('user')!;
+  await service.delete(secretId, user.id);
+  return c.json({ success: true });
+});
+
 // ─── File browser routes ─────────────────────────────────────────────
 
 // List directory
-dockerRoutes.get('/nodes/:nodeId/containers/:containerId/files', requireScope('docker:files'), async (c) => {
+dockerRoutes.get('/nodes/:nodeId/containers/:containerId/files', requireScope('docker:containers:files'), async (c) => {
   const service = container.resolve(DockerManagementService);
   const nodeId = c.req.param('nodeId');
   const containerId = c.req.param('containerId');
@@ -255,7 +315,7 @@ dockerRoutes.get('/nodes/:nodeId/containers/:containerId/files', requireScope('d
 });
 
 // Read file
-dockerRoutes.get('/nodes/:nodeId/containers/:containerId/files/read', requireScope('docker:files'), async (c) => {
+dockerRoutes.get('/nodes/:nodeId/containers/:containerId/files/read', requireScope('docker:containers:files'), async (c) => {
   const service = container.resolve(DockerManagementService);
   const nodeId = c.req.param('nodeId');
   const containerId = c.req.param('containerId');
@@ -266,7 +326,7 @@ dockerRoutes.get('/nodes/:nodeId/containers/:containerId/files/read', requireSco
 });
 
 // Write file
-dockerRoutes.put('/nodes/:nodeId/containers/:containerId/files/write', requireScope('docker:files'), async (c) => {
+dockerRoutes.put('/nodes/:nodeId/containers/:containerId/files/write', requireScope('docker:containers:files'), async (c) => {
   const service = container.resolve(DockerManagementService);
   const nodeId = c.req.param('nodeId');
   const containerId = c.req.param('containerId');
@@ -280,7 +340,7 @@ dockerRoutes.put('/nodes/:nodeId/containers/:containerId/files/write', requireSc
 // ─── Image routes ────────────────────────────────────────────────────
 
 // List images
-dockerRoutes.get('/nodes/:nodeId/images', requireScope('docker:images'), async (c) => {
+dockerRoutes.get('/nodes/:nodeId/images', requireScope('docker:images:list'), async (c) => {
   const service = container.resolve(DockerManagementService);
   const nodeId = c.req.param('nodeId');
   const data = await service.listImages(nodeId);
@@ -288,7 +348,7 @@ dockerRoutes.get('/nodes/:nodeId/images', requireScope('docker:images'), async (
 });
 
 // Pull image
-dockerRoutes.post('/nodes/:nodeId/images/pull', requireScope('docker:images'), async (c) => {
+dockerRoutes.post('/nodes/:nodeId/images/pull', requireScope('docker:images:pull'), async (c) => {
   const service = container.resolve(DockerManagementService);
   const nodeId = c.req.param('nodeId');
   const user = c.get('user')!;
@@ -299,7 +359,7 @@ dockerRoutes.post('/nodes/:nodeId/images/pull', requireScope('docker:images'), a
 });
 
 // Remove image
-dockerRoutes.delete('/nodes/:nodeId/images/:imageId', requireScope('docker:images'), async (c) => {
+dockerRoutes.delete('/nodes/:nodeId/images/:imageId', requireScope('docker:images:delete'), async (c) => {
   const service = container.resolve(DockerManagementService);
   const nodeId = c.req.param('nodeId');
   const imageId = c.req.param('imageId');
@@ -310,7 +370,7 @@ dockerRoutes.delete('/nodes/:nodeId/images/:imageId', requireScope('docker:image
 });
 
 // Prune images
-dockerRoutes.post('/nodes/:nodeId/images/prune', requireScope('docker:images'), async (c) => {
+dockerRoutes.post('/nodes/:nodeId/images/prune', requireScope('docker:images:delete'), async (c) => {
   const service = container.resolve(DockerManagementService);
   const nodeId = c.req.param('nodeId');
   const user = c.get('user')!;
@@ -321,7 +381,7 @@ dockerRoutes.post('/nodes/:nodeId/images/prune', requireScope('docker:images'), 
 // ─── Volume routes ───────────────────────────────────────────────────
 
 // List volumes
-dockerRoutes.get('/nodes/:nodeId/volumes', requireScope('docker:volumes'), async (c) => {
+dockerRoutes.get('/nodes/:nodeId/volumes', requireScope('docker:volumes:list'), async (c) => {
   const service = container.resolve(DockerManagementService);
   const nodeId = c.req.param('nodeId');
   const data = await service.listVolumes(nodeId);
@@ -329,7 +389,7 @@ dockerRoutes.get('/nodes/:nodeId/volumes', requireScope('docker:volumes'), async
 });
 
 // Create volume
-dockerRoutes.post('/nodes/:nodeId/volumes', requireScope('docker:volumes'), async (c) => {
+dockerRoutes.post('/nodes/:nodeId/volumes', requireScope('docker:volumes:create'), async (c) => {
   const service = container.resolve(DockerManagementService);
   const nodeId = c.req.param('nodeId');
   const user = c.get('user')!;
@@ -340,7 +400,7 @@ dockerRoutes.post('/nodes/:nodeId/volumes', requireScope('docker:volumes'), asyn
 });
 
 // Remove volume
-dockerRoutes.delete('/nodes/:nodeId/volumes/:name', requireScope('docker:volumes'), async (c) => {
+dockerRoutes.delete('/nodes/:nodeId/volumes/:name', requireScope('docker:volumes:delete'), async (c) => {
   const service = container.resolve(DockerManagementService);
   const nodeId = c.req.param('nodeId');
   const name = c.req.param('name');
@@ -353,7 +413,7 @@ dockerRoutes.delete('/nodes/:nodeId/volumes/:name', requireScope('docker:volumes
 // ─── Network routes ──────────────────────────────────────────────────
 
 // List networks
-dockerRoutes.get('/nodes/:nodeId/networks', requireScope('docker:networks'), async (c) => {
+dockerRoutes.get('/nodes/:nodeId/networks', requireScope('docker:networks:list'), async (c) => {
   const service = container.resolve(DockerManagementService);
   const nodeId = c.req.param('nodeId');
   const data = await service.listNetworks(nodeId);
@@ -361,7 +421,7 @@ dockerRoutes.get('/nodes/:nodeId/networks', requireScope('docker:networks'), asy
 });
 
 // Create network
-dockerRoutes.post('/nodes/:nodeId/networks', requireScope('docker:networks'), async (c) => {
+dockerRoutes.post('/nodes/:nodeId/networks', requireScope('docker:networks:create'), async (c) => {
   const service = container.resolve(DockerManagementService);
   const nodeId = c.req.param('nodeId');
   const user = c.get('user')!;
@@ -372,7 +432,7 @@ dockerRoutes.post('/nodes/:nodeId/networks', requireScope('docker:networks'), as
 });
 
 // Remove network
-dockerRoutes.delete('/nodes/:nodeId/networks/:networkId', requireScope('docker:networks'), async (c) => {
+dockerRoutes.delete('/nodes/:nodeId/networks/:networkId', requireScope('docker:networks:delete'), async (c) => {
   const service = container.resolve(DockerManagementService);
   const nodeId = c.req.param('nodeId');
   const networkId = c.req.param('networkId');
@@ -382,7 +442,7 @@ dockerRoutes.delete('/nodes/:nodeId/networks/:networkId', requireScope('docker:n
 });
 
 // Connect container to network
-dockerRoutes.post('/nodes/:nodeId/networks/:networkId/connect', requireScope('docker:networks'), async (c) => {
+dockerRoutes.post('/nodes/:nodeId/networks/:networkId/connect', requireScope('docker:networks:edit'), async (c) => {
   const service = container.resolve(DockerManagementService);
   const nodeId = c.req.param('nodeId');
   const networkId = c.req.param('networkId');
@@ -394,7 +454,7 @@ dockerRoutes.post('/nodes/:nodeId/networks/:networkId/connect', requireScope('do
 });
 
 // Disconnect container from network
-dockerRoutes.post('/nodes/:nodeId/networks/:networkId/disconnect', requireScope('docker:networks'), async (c) => {
+dockerRoutes.post('/nodes/:nodeId/networks/:networkId/disconnect', requireScope('docker:networks:edit'), async (c) => {
   const service = container.resolve(DockerManagementService);
   const nodeId = c.req.param('nodeId');
   const networkId = c.req.param('networkId');
@@ -408,7 +468,7 @@ dockerRoutes.post('/nodes/:nodeId/networks/:networkId/disconnect', requireScope(
 // ─── Registry routes ──────────────────────────────────────────────────
 
 // List registries
-dockerRoutes.get('/registries', requireScope('docker:registries'), async (c) => {
+dockerRoutes.get('/registries', requireScope('docker:registries:list'), async (c) => {
   const service = container.resolve(DockerRegistryService);
   const nodeId = c.req.query('nodeId');
   const data = await service.list(nodeId);
@@ -416,7 +476,7 @@ dockerRoutes.get('/registries', requireScope('docker:registries'), async (c) => 
 });
 
 // Create registry
-dockerRoutes.post('/registries', requireScope('docker:registries'), async (c) => {
+dockerRoutes.post('/registries', requireScope('docker:registries:create'), async (c) => {
   const service = container.resolve(DockerRegistryService);
   const user = c.get('user')!;
   const body = await c.req.json();
@@ -426,7 +486,7 @@ dockerRoutes.post('/registries', requireScope('docker:registries'), async (c) =>
 });
 
 // Update registry
-dockerRoutes.put('/registries/:id', requireScope('docker:registries'), async (c) => {
+dockerRoutes.put('/registries/:id', requireScope('docker:registries:edit'), async (c) => {
   const service = container.resolve(DockerRegistryService);
   const id = c.req.param('id');
   const user = c.get('user')!;
@@ -437,7 +497,7 @@ dockerRoutes.put('/registries/:id', requireScope('docker:registries'), async (c)
 });
 
 // Delete registry
-dockerRoutes.delete('/registries/:id', requireScope('docker:registries'), async (c) => {
+dockerRoutes.delete('/registries/:id', requireScope('docker:registries:delete'), async (c) => {
   const service = container.resolve(DockerRegistryService);
   const id = c.req.param('id');
   const user = c.get('user')!;
@@ -446,7 +506,7 @@ dockerRoutes.delete('/registries/:id', requireScope('docker:registries'), async 
 });
 
 // Test registry connection
-dockerRoutes.post('/registries/:id/test', requireScope('docker:registries'), async (c) => {
+dockerRoutes.post('/registries/:id/test', requireScope('docker:registries:edit'), async (c) => {
   const service = container.resolve(DockerRegistryService);
   const id = c.req.param('id');
   const data = await service.testConnection(id);
@@ -456,14 +516,14 @@ dockerRoutes.post('/registries/:id/test', requireScope('docker:registries'), asy
 // ─── Template routes ──────────────────────────────────────────────────
 
 // List templates
-dockerRoutes.get('/templates', requireScope('docker:templates'), async (c) => {
+dockerRoutes.get('/templates', requireScope('docker:templates:list'), async (c) => {
   const service = container.resolve(DockerTemplateService);
   const data = await service.list();
   return c.json({ data });
 });
 
 // Create template
-dockerRoutes.post('/templates', requireScope('docker:templates'), async (c) => {
+dockerRoutes.post('/templates', requireScope('docker:templates:create'), async (c) => {
   const service = container.resolve(DockerTemplateService);
   const user = c.get('user')!;
   const body = await c.req.json();
@@ -473,7 +533,7 @@ dockerRoutes.post('/templates', requireScope('docker:templates'), async (c) => {
 });
 
 // Update template
-dockerRoutes.put('/templates/:id', requireScope('docker:templates'), async (c) => {
+dockerRoutes.put('/templates/:id', requireScope('docker:templates:edit'), async (c) => {
   const service = container.resolve(DockerTemplateService);
   const id = c.req.param('id');
   const user = c.get('user')!;
@@ -484,7 +544,7 @@ dockerRoutes.put('/templates/:id', requireScope('docker:templates'), async (c) =
 });
 
 // Delete template
-dockerRoutes.delete('/templates/:id', requireScope('docker:templates'), async (c) => {
+dockerRoutes.delete('/templates/:id', requireScope('docker:templates:delete'), async (c) => {
   const service = container.resolve(DockerTemplateService);
   const id = c.req.param('id');
   const user = c.get('user')!;
@@ -493,7 +553,7 @@ dockerRoutes.delete('/templates/:id', requireScope('docker:templates'), async (c
 });
 
 // Deploy from template
-dockerRoutes.post('/templates/:id/deploy', requireScope('docker:create'), async (c) => {
+dockerRoutes.post('/templates/:id/deploy', requireScope('docker:containers:create'), async (c) => {
   const templateService = container.resolve(DockerTemplateService);
   const dockerService = container.resolve(DockerManagementService);
   const id = c.req.param('id');

@@ -17,6 +17,7 @@ import { AuditService } from '@/modules/audit/audit.service.js';
 import { AuthService } from '@/modules/auth/auth.service.js';
 import { DockerManagementService } from '@/modules/docker/docker.service.js';
 import { DockerRegistryService } from '@/modules/docker/docker-registry.service.js';
+import { DockerSecretService } from '@/modules/docker/docker-secret.service.js';
 import { DockerTaskService } from '@/modules/docker/docker-task.service.js';
 import { DockerTemplateService } from '@/modules/docker/docker-template.service.js';
 import { detectPublicIP, initDnsResolver } from '@/modules/domains/dns.utils.js';
@@ -154,9 +155,13 @@ export async function initializeContainer(): Promise<void> {
   const dockerTemplateService = new DockerTemplateService(db, auditService);
   container.registerInstance(DockerTemplateService, dockerTemplateService);
 
+  const dockerSecretService = new DockerSecretService(db, auditService, cryptoService);
+  container.registerInstance(DockerSecretService, dockerSecretService);
+
   const dockerTaskService = new DockerTaskService(db);
   container.registerInstance(DockerTaskService, dockerTaskService);
   dockerManagementService.setTaskService(dockerTaskService);
+  dockerManagementService.setSecretService(dockerSecretService);
 
   const nginxSyntaxValidator = new NginxSyntaxValidatorService();
   const proxyService = new ProxyService(
@@ -271,7 +276,8 @@ export async function initializeContainer(): Promise<void> {
     auditService,
     monitoringService,
     nodesService,
-    groupService
+    groupService,
+    dockerManagementService
   );
   container.registerInstance(AIService, aiService);
 

@@ -10,7 +10,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     parameters: { type: 'object', properties: {} },
     destructive: false,
     category: 'PKI - Certificate Authorities',
-    requiredScope: 'ca:read',
+    requiredScope: 'pki:ca:list:root',
     invalidateStores: [],
   },
   {
@@ -25,7 +25,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'PKI - Certificate Authorities',
-    requiredScope: 'ca:read',
+    requiredScope: 'pki:ca:list:root',
     invalidateStores: [],
   },
   {
@@ -52,7 +52,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: true,
     category: 'PKI - Certificate Authorities',
-    requiredScope: 'ca:create:root',
+    requiredScope: 'pki:ca:create:root',
     invalidateStores: ['ca'],
   },
   {
@@ -80,7 +80,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: true,
     category: 'PKI - Certificate Authorities',
-    requiredScope: 'ca:create:intermediate',
+    requiredScope: 'pki:ca:create:intermediate',
     invalidateStores: ['ca'],
   },
   {
@@ -95,7 +95,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: true,
     category: 'PKI - Certificate Authorities',
-    requiredScope: 'ca:revoke',
+    requiredScope: 'pki:ca:revoke:root',
     invalidateStores: ['ca'],
   },
 
@@ -116,7 +116,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'PKI - Certificates',
-    requiredScope: 'cert:read',
+    requiredScope: 'pki:cert:list',
     invalidateStores: [],
   },
   {
@@ -131,7 +131,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'PKI - Certificates',
-    requiredScope: 'cert:read',
+    requiredScope: 'pki:cert:list',
     invalidateStores: [],
   },
   {
@@ -177,7 +177,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: true,
     category: 'PKI - Certificates',
-    requiredScope: 'cert:issue',
+    requiredScope: 'pki:cert:issue',
     invalidateStores: ['certificates', 'ca'],
   },
   {
@@ -193,7 +193,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: true,
     category: 'PKI - Certificates',
-    requiredScope: 'cert:revoke',
+    requiredScope: 'pki:cert:revoke',
     invalidateStores: ['certificates', 'ca'],
   },
 
@@ -204,7 +204,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     parameters: { type: 'object', properties: {} },
     destructive: false,
     category: 'PKI - Templates',
-    requiredScope: 'template:read',
+    requiredScope: 'pki:templates:list',
     invalidateStores: [],
   },
   {
@@ -228,7 +228,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: true,
     category: 'PKI - Templates',
-    requiredScope: 'template:manage',
+    requiredScope: 'pki:templates:edit',
     invalidateStores: ['templates'],
   },
   {
@@ -243,7 +243,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: true,
     category: 'PKI - Templates',
-    requiredScope: 'template:manage',
+    requiredScope: 'pki:templates:edit',
     invalidateStores: ['templates'],
   },
 
@@ -446,7 +446,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'SSL Certificates',
-    requiredScope: 'ssl:read',
+    requiredScope: 'ssl:cert:list',
     invalidateStores: [],
   },
   {
@@ -472,7 +472,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: true,
     category: 'SSL Certificates',
-    requiredScope: 'ssl:manage',
+    requiredScope: 'ssl:cert:issue',
     invalidateStores: ['ssl'],
   },
 
@@ -490,7 +490,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'SSL Certificates',
-    requiredScope: 'ssl:manage',
+    requiredScope: 'ssl:cert:issue',
     invalidateStores: ['ssl'],
   },
 
@@ -557,7 +557,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'Access Lists',
-    requiredScope: 'access-list:read',
+    requiredScope: 'acl:list',
     invalidateStores: [],
   },
   {
@@ -588,7 +588,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: true,
     category: 'Access Lists',
-    requiredScope: 'access-list:manage',
+    requiredScope: 'acl:edit',
     invalidateStores: ['accessLists'],
   },
   {
@@ -603,7 +603,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: true,
     category: 'Access Lists',
-    requiredScope: 'access-list:delete',
+    requiredScope: 'acl:delete',
     invalidateStores: ['accessLists'],
   },
 
@@ -703,7 +703,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'Reverse Proxy',
-    requiredScope: 'proxy:raw-read',
+    requiredScope: 'proxy:raw:read',
     invalidateStores: [],
   },
   {
@@ -719,7 +719,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: true,
     category: 'Reverse Proxy',
-    requiredScope: 'proxy:raw-write',
+    requiredScope: 'proxy:raw:write',
     invalidateStores: ['proxy'],
   },
   {
@@ -735,7 +735,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: true,
     category: 'Reverse Proxy',
-    requiredScope: 'proxy:raw-toggle',
+    requiredScope: 'proxy:raw:toggle',
     invalidateStores: ['proxy'],
   },
 
@@ -788,7 +788,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     parameters: { type: 'object', properties: {} },
     destructive: false,
     category: 'Administration',
-    requiredScope: 'ai:use',
+    requiredScope: 'feat:ai:use',
     invalidateStores: [],
   },
 
@@ -897,7 +897,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'Interaction',
-    requiredScope: 'ai:use',
+    requiredScope: 'feat:ai:use',
     invalidateStores: [],
   },
 
@@ -923,6 +923,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
             'audit',
             'nginx',
             'nodes',
+            'docker',
             'housekeeping',
             'permissions',
           ],
@@ -933,7 +934,190 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'Documentation',
-    requiredScope: 'ai:use',
+    requiredScope: 'feat:ai:use',
+    invalidateStores: [],
+  },
+
+  // ── Docker: Containers ──
+  {
+    name: 'list_docker_containers',
+    description: 'List Docker containers on a specific node with their status, image, ports, and resource usage.',
+    parameters: {
+      type: 'object',
+      properties: {
+        nodeId: { type: 'string', description: 'Docker node ID (required)' },
+      },
+      required: ['nodeId'],
+    },
+    destructive: false,
+    category: 'Docker',
+    requiredScope: 'docker:containers:list',
+    invalidateStores: [],
+  },
+  {
+    name: 'get_docker_container',
+    description: 'Get detailed information about a specific Docker container including config, state, mounts, and network settings.',
+    parameters: {
+      type: 'object',
+      properties: {
+        nodeId: { type: 'string', description: 'Docker node ID' },
+        containerId: { type: 'string', description: 'Container ID' },
+      },
+      required: ['nodeId', 'containerId'],
+    },
+    destructive: false,
+    category: 'Docker',
+    requiredScope: 'docker:containers:view',
+    invalidateStores: [],
+  },
+  {
+    name: 'start_docker_container',
+    description: 'Start a stopped Docker container.',
+    parameters: {
+      type: 'object',
+      properties: {
+        nodeId: { type: 'string', description: 'Docker node ID' },
+        containerId: { type: 'string', description: 'Container ID' },
+      },
+      required: ['nodeId', 'containerId'],
+    },
+    destructive: true,
+    category: 'Docker',
+    requiredScope: 'docker:containers:manage',
+    invalidateStores: ['containers'],
+  },
+  {
+    name: 'stop_docker_container',
+    description: 'Stop a running Docker container.',
+    parameters: {
+      type: 'object',
+      properties: {
+        nodeId: { type: 'string', description: 'Docker node ID' },
+        containerId: { type: 'string', description: 'Container ID' },
+        timeout: { type: 'number', description: 'Seconds to wait before killing (default 30)' },
+      },
+      required: ['nodeId', 'containerId'],
+    },
+    destructive: true,
+    category: 'Docker',
+    requiredScope: 'docker:containers:manage',
+    invalidateStores: ['containers'],
+  },
+  {
+    name: 'restart_docker_container',
+    description: 'Restart a Docker container.',
+    parameters: {
+      type: 'object',
+      properties: {
+        nodeId: { type: 'string', description: 'Docker node ID' },
+        containerId: { type: 'string', description: 'Container ID' },
+        timeout: { type: 'number', description: 'Seconds to wait before killing (default 30)' },
+      },
+      required: ['nodeId', 'containerId'],
+    },
+    destructive: true,
+    category: 'Docker',
+    requiredScope: 'docker:containers:manage',
+    invalidateStores: ['containers'],
+  },
+  {
+    name: 'remove_docker_container',
+    description: 'Remove a Docker container. The container must be stopped first unless force is true.',
+    parameters: {
+      type: 'object',
+      properties: {
+        nodeId: { type: 'string', description: 'Docker node ID' },
+        containerId: { type: 'string', description: 'Container ID' },
+        force: { type: 'boolean', description: 'Force remove even if running (default false)' },
+      },
+      required: ['nodeId', 'containerId'],
+    },
+    destructive: true,
+    category: 'Docker',
+    requiredScope: 'docker:containers:delete',
+    invalidateStores: ['containers'],
+  },
+  {
+    name: 'get_docker_container_logs',
+    description: 'Get recent log output from a Docker container.',
+    parameters: {
+      type: 'object',
+      properties: {
+        nodeId: { type: 'string', description: 'Docker node ID' },
+        containerId: { type: 'string', description: 'Container ID' },
+        tail: { type: 'number', description: 'Number of lines from the end (default 100)' },
+        timestamps: { type: 'boolean', description: 'Include timestamps (default false)' },
+      },
+      required: ['nodeId', 'containerId'],
+    },
+    destructive: false,
+    category: 'Docker',
+    requiredScope: 'docker:containers:view',
+    invalidateStores: [],
+  },
+
+  // ── Docker: Images ──
+  {
+    name: 'list_docker_images',
+    description: 'List Docker images on a specific node with their tags, size, and creation date.',
+    parameters: {
+      type: 'object',
+      properties: {
+        nodeId: { type: 'string', description: 'Docker node ID (required)' },
+      },
+      required: ['nodeId'],
+    },
+    destructive: false,
+    category: 'Docker',
+    requiredScope: 'docker:images:list',
+    invalidateStores: [],
+  },
+  {
+    name: 'pull_docker_image',
+    description: 'Pull a Docker image from a registry onto a node.',
+    parameters: {
+      type: 'object',
+      properties: {
+        nodeId: { type: 'string', description: 'Docker node ID' },
+        imageRef: { type: 'string', description: 'Image reference (e.g. nginx:latest, ghcr.io/org/app:v2)' },
+      },
+      required: ['nodeId', 'imageRef'],
+    },
+    destructive: true,
+    category: 'Docker',
+    requiredScope: 'docker:images:pull',
+    invalidateStores: ['images'],
+  },
+
+  // ── Docker: Volumes & Networks ──
+  {
+    name: 'list_docker_volumes',
+    description: 'List Docker volumes on a specific node.',
+    parameters: {
+      type: 'object',
+      properties: {
+        nodeId: { type: 'string', description: 'Docker node ID (required)' },
+      },
+      required: ['nodeId'],
+    },
+    destructive: false,
+    category: 'Docker',
+    requiredScope: 'docker:volumes:list',
+    invalidateStores: [],
+  },
+  {
+    name: 'list_docker_networks',
+    description: 'List Docker networks on a specific node.',
+    parameters: {
+      type: 'object',
+      properties: {
+        nodeId: { type: 'string', description: 'Docker node ID (required)' },
+      },
+      required: ['nodeId'],
+    },
+    destructive: false,
+    category: 'Docker',
+    requiredScope: 'docker:networks:list',
     invalidateStores: [],
   },
 
@@ -952,7 +1136,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'Web Search',
-    requiredScope: 'ai:use',
+    requiredScope: 'feat:ai:use',
     invalidateStores: [],
   },
 ];

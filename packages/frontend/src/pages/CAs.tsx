@@ -91,7 +91,7 @@ export function CAs() {
               {totalCerts !== 1 ? "s" : ""} issued
             </p>
           </div>
-          {hasScope("ca:create:root") && (
+          {hasScope("pki:ca:create:root") && (
             <div className="flex items-center gap-2">
               <Button
                 variant="outline"
@@ -180,7 +180,7 @@ export function CAs() {
         ) : (
           <EmptyState
             message="No certificate authorities."
-            {...(hasScope("ca:create:root")
+            {...(hasScope("pki:ca:create:root")
               ? {
                   actionLabel: "Create one",
                   onAction: () => {

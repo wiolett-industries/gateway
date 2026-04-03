@@ -190,7 +190,7 @@ async function authenticateAndCreateExec(
   }
 
   // Check docker:exec scope
-  if (!hasScope(user.scopes, 'docker:exec')) {
+  if (!hasScope(user.scopes, 'docker:containers:console')) {
     send(ws, { type: 'auth_error', message: 'Missing required scope: docker:exec' });
     ws.close(1008, 'Insufficient permissions');
     return;

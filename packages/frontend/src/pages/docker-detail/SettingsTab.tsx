@@ -52,7 +52,7 @@ export function SettingsTab({
   const { hasScope } = useAuthStore();
   const navigate = useNavigate();
   const invalidate = useDockerStore((s) => s.invalidate);
-  const canEdit = hasScope("docker:edit");
+  const canEdit = hasScope("docker:containers:edit");
   const containerName = (data.Name ?? "").replace(/^\//, "");
 
   // ── Live settings state (no recreation) ──

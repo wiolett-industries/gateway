@@ -19,14 +19,14 @@ aiRoutes.get('/status', async (c) => {
 });
 
 // GET /api/ai/config — full config for admin display (admin only)
-aiRoutes.get('/config', requireScope('admin:ai-config'), async (c) => {
+aiRoutes.get('/config', requireScope('feat:ai:configure'), async (c) => {
   const settingsService = container.resolve(AISettingsService);
   const config = await settingsService.getConfigForAdmin();
   return c.json({ data: config });
 });
 
 // PUT /api/ai/config — update config (admin only)
-aiRoutes.put('/config', requireScope('admin:ai-config'), async (c) => {
+aiRoutes.put('/config', requireScope('feat:ai:configure'), async (c) => {
   const body = AIConfigUpdateSchema.safeParse(await c.req.json());
   if (!body.success) {
     return c.json({ code: 'VALIDATION_ERROR', message: body.error.message }, 400);
@@ -38,7 +38,7 @@ aiRoutes.put('/config', requireScope('admin:ai-config'), async (c) => {
 });
 
 // GET /api/ai/tools — list all tool definitions grouped by category (admin only)
-aiRoutes.get('/tools', requireScope('admin:ai-config'), async (c) => {
+aiRoutes.get('/tools', requireScope('feat:ai:configure'), async (c) => {
   const grouped: Record<
     string,
     Array<{ name: string; description: string; destructive: boolean; requiredScope: string }>

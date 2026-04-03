@@ -166,7 +166,7 @@ export function AccessLists() {
               Manage IP rules and basic authentication
             </p>
           </div>
-          {hasScope("access-list:manage") && (
+          {hasScope("acl:edit") && (
             <Button onClick={openCreate}>
               <Plus className="h-4 w-4" />
               Add Access List
@@ -220,7 +220,7 @@ export function AccessLists() {
                         </span>
                       </td>
                       <td className="p-3">
-                        {hasScope("access-list:manage") && (
+                        {hasScope("acl:edit") && (
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -232,7 +232,7 @@ export function AccessLists() {
                                 <Pencil className="h-4 w-4" />
                                 Edit
                               </DropdownMenuItem>
-                              {hasScope("access-list:delete") && (
+                              {hasScope("acl:delete") && (
                                 <DropdownMenuItem
                                   onClick={() => handleDelete(al)}
                                   className="text-destructive"
@@ -254,7 +254,7 @@ export function AccessLists() {
         ) : (
           <EmptyState
             message="No access lists."
-            {...(hasScope("access-list:manage")
+            {...(hasScope("acl:edit")
               ? { actionLabel: "Create one", onAction: openCreate }
               : {})}
           />
