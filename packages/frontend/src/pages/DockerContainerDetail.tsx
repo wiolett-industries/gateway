@@ -28,7 +28,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
@@ -51,7 +52,7 @@ import { SettingsTab } from "./docker-detail/SettingsTab";
 // ── Main Page ────────────────────────────────────────────────────
 
 export function DockerContainerDetail() {
-  const { nodeId, containerId } = useParams<{ nodeId: string; containerId: string }>();
+  const { nodeId, containerId, tab: tabParam } = useParams<{ nodeId: string; containerId: string; tab?: string }>();
   const navigate = useNavigate();
   const { hasScope } = useAuthStore();
   const invalidate = useDockerStore((s) => s.invalidate);
@@ -65,10 +66,15 @@ export function DockerContainerDetail() {
     }
   }, [nodeId, storeNodeId, setSelectedNode]);
   const [container, setContainer] = useState<InspectData | null>(null);
-  const [activeTab, setActiveTab] = useState("overview");
+
+  const VALID_TABS = ["overview", "logs", "console", "files", "stats", "environment", "settings", "config"];
+  const activeTab = tabParam && VALID_TABS.includes(tabParam) ? tabParam : "overview";
+  const setActiveTab = (tab: string) => navigate(`/docker/containers/${nodeId}/${containerId}/${tab}`, { replace: true });
   const [isLoading, setIsLoading] = useState(true);
   const [localRecreating, setLocalRecreating] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameValue, setRenameValue] = useState("");
 
   // Pin
   const [pinOpen, setPinOpen] = useState(false);
@@ -90,7 +96,7 @@ export function DockerContainerDetail() {
       } catch {
         if (!silent) {
           toast.error("Failed to load container");
-          navigate("/docker/containers");
+          navigate("/docker");
         }
       } finally {
         if (!silent) setIsLoading(false);
@@ -116,7 +122,8 @@ export function DockerContainerDetail() {
   // Auto-navigate to overview and close popouts when container stops or enters transition
   const currentBaseState = container?.State?.Status ?? (container?.State?.Running ? "running" : "stopped");
   useEffect(() => {
-    const needsRunning = new Set(["logs", "console", "files", "stats"]);
+    if (!container) return; // Don't reset tabs while data is loading
+    const needsRunning = new Set(["console", "files", "stats"]);
     const shouldDisable = currentBaseState !== "running" || !!currentTransition;
     if (!shouldDisable) return;
 
@@ -172,7 +179,7 @@ export function DockerContainerDetail() {
       await api.removeContainer(nodeId!, containerId!, true);
       toast.success("Container removed");
       invalidate("containers", "tasks");
-      navigate("/docker/containers");
+      navigate("/docker");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to remove");
       setActionLoading(false);
@@ -197,13 +204,18 @@ export function DockerContainerDetail() {
     }
   };
 
+  const openRename = () => {
+    setRenameValue(containerDisplayName(container.Name ?? ""));
+    setRenameOpen(true);
+  };
+
   const handleRename = async () => {
-    const newName = prompt("New container name:");
-    if (!newName?.trim()) return;
+    if (!renameValue.trim()) return;
     setActionLoading(true);
     try {
-      await api.renameContainer(nodeId!, containerId!, newName.trim());
+      await api.renameContainer(nodeId!, containerId!, renameValue.trim());
       toast.success("Container renamed");
+      setRenameOpen(false);
       invalidate("containers");
       fetchContainer();
     } catch (err) {
@@ -222,7 +234,7 @@ export function DockerContainerDetail() {
   const isTerminalTab = activeTab === "console" || activeTab === "logs";
   const isStopped = baseState !== "running";
   const isTabDisabled = (tab: string) => {
-    const needsRunning = new Set(["logs", "console", "files", "stats"]);
+    const needsRunning = new Set(["console", "files", "stats"]);
     return needsRunning.has(tab) && (!!transition || isStopped);
   };
 
@@ -236,7 +248,7 @@ export function DockerContainerDetail() {
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-2 shrink-0">
           <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" onClick={() => navigate("/docker/containers")}>
+            <Button variant="ghost" size="icon" onClick={() => navigate("/docker")}>
               <ArrowLeft className="h-4 w-4" />
             </Button>
             <div>
@@ -295,7 +307,7 @@ export function DockerContainerDetail() {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 {hasScope("docker:containers:edit") && (
-                  <DropdownMenuItem onClick={handleRename}>
+                  <DropdownMenuItem onClick={openRename}>
                     <Type className="h-3.5 w-3.5 mr-2" />
                     Rename
                   </DropdownMenuItem>
@@ -377,7 +389,7 @@ export function DockerContainerDetail() {
             <StatsTab nodeId={nodeId!} containerId={containerId!} data={container} />
           </TabsContent>
           <TabsContent value="environment" className="flex flex-col flex-1 min-h-0 pb-0">
-            <EnvironmentTab nodeId={nodeId!} containerId={containerId!} disabled={!!transition} onRecreating={setLocalRecreating} />
+            <EnvironmentTab nodeId={nodeId!} containerId={containerId!} containerName={(container.Name ?? "").replace(/^\//, "")} disabled={!!transition} onRecreating={setLocalRecreating} />
           </TabsContent>
           <TabsContent value="settings" className="pb-0">
             <SettingsTab
@@ -415,6 +427,27 @@ export function DockerContainerDetail() {
               />
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+      {/* Rename Dialog */}
+      <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Rename Container</DialogTitle>
+          </DialogHeader>
+          <Input
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            placeholder="New container name"
+            onKeyDown={(e) => { if (e.key === "Enter") handleRename(); }}
+            autoFocus
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRenameOpen(false)}>Cancel</Button>
+            <Button onClick={handleRename} disabled={actionLoading || !renameValue.trim()}>
+              Rename
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </PageTransition>

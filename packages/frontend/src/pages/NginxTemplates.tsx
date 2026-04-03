@@ -1,5 +1,5 @@
 import { Copy, FileCode, MoreVertical, Pencil, Plus, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
@@ -18,7 +18,7 @@ import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import type { NginxTemplate } from "@/types";
 
-export function NginxTemplates() {
+export function NginxTemplates({ embedded, onCreateRef }: { embedded?: boolean; onCreateRef?: (fn: () => void) => void }) {
   const navigate = useNavigate();
   const { hasScope } = useAuthStore();
   const cachedTemplates = api.getCached<NginxTemplate[]>("nginx-templates:list");
@@ -40,6 +40,13 @@ export function NginxTemplates() {
     load();
     // biome-ignore lint/correctness/useExhaustiveDependencies: load-once pattern
   }, [load]);
+
+  // Expose create action to parent
+  const createRefSet = useRef(false);
+  if (onCreateRef && !createRefSet.current) {
+    onCreateRef(() => navigate("/nginx-templates/new"));
+    createRefSet.current = true;
+  }
 
   const handleClone = async (id: string) => {
     try {
@@ -75,23 +82,25 @@ export function NginxTemplates() {
     );
   }
 
-  return (
-    <PageTransition>
-      <div className="h-full overflow-y-auto p-6 space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h1 className="text-2xl font-bold">Config Templates</h1>
-            <p className="text-sm text-muted-foreground">
-              Nginx server block templates for proxy hosts
-            </p>
+  const content = (
+    <>
+      <div className={embedded ? "space-y-4" : "h-full overflow-y-auto p-6 space-y-4"}>
+        {!embedded && (
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h1 className="text-2xl font-bold">Config Templates</h1>
+              <p className="text-sm text-muted-foreground">
+                Nginx server block templates for proxy hosts
+              </p>
+            </div>
+            {hasScope("proxy:edit") && (
+              <Button onClick={() => navigate("/nginx-templates/new")}>
+                <Plus className="h-4 w-4" />
+                Create Template
+              </Button>
+            )}
           </div>
-          {hasScope("proxy:edit") && (
-            <Button onClick={() => navigate("/nginx-templates/new")}>
-              <Plus className="h-4 w-4" />
-              Create Template
-            </Button>
-          )}
-        </div>
+        )}
 
         {templates.length > 0 ? (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -159,6 +168,9 @@ export function NginxTemplates() {
           />
         )}
       </div>
-    </PageTransition>
+    </>
   );
+
+  if (embedded) return content;
+  return <PageTransition>{content}</PageTransition>;
 }

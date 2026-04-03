@@ -1,12 +1,14 @@
-import { Database, Minus, Plus, Search, Trash2 } from "lucide-react";
+import { Database, Minus, Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
 import { PageTransition } from "@/components/common/PageTransition";
+import { SearchFilterBar } from "@/components/common/SearchFilterBar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 import { RefreshButton } from "@/components/ui/refresh-button";
 import {
   Dialog,
@@ -27,14 +29,14 @@ import {
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
-import type { Node } from "@/types";
+import type { DockerVolume, Node } from "@/types";
 
 interface LabelEntry {
   key: string;
   value: string;
 }
 
-export function DockerVolumes() {
+export function DockerVolumes({ embedded, onCreateRef, fixedNodeId }: { embedded?: boolean; onCreateRef?: (fn: () => void) => void; fixedNodeId?: string } = {}) {
   const navigate = useNavigate();
   const { hasScope } = useAuthStore();
   const {
@@ -46,11 +48,13 @@ export function DockerVolumes() {
   } = useDockerStore();
 
   const [dockerNodes, setDockerNodes] = useState<Node[]>([]);
-  const [nodesLoading, setNodesLoading] = useState(true);
   const [search, setSearch] = useState("");
 
   // Create dialog
   const [createOpen, setCreateOpen] = useState(false);
+  const [createNodeId, setCreateNodeId] = useState<string>("");
+  const openCreate = () => { setCreateNodeId(selectedNodeId || ""); setCreateOpen(true); };
+  useEffect(() => { onCreateRef?.(() => openCreate()); }, [onCreateRef]);
   const [createName, setCreateName] = useState("");
   const [createDriver, setCreateDriver] = useState("local");
   const [createLabels, setCreateLabels] = useState<LabelEntry[]>([]);
@@ -62,12 +66,14 @@ export function DockerVolumes() {
   const [usageContainers, setUsageContainers] = useState<Array<{ id: string; name: string; state: string }>>([]);
   const [usageLoading, setUsageLoading] = useState(false);
 
-  const showUsage = async (volumeName: string, containerNames: string[]) => {
+  const showUsage = async (volumeName: string, containerNames: string[], nodeId?: string) => {
+    const nid = nodeId || selectedNodeId;
+    if (!nid) return;
     setUsageVolume(volumeName);
     setUsageOpen(true);
     setUsageLoading(true);
     try {
-      const containers = await api.listDockerContainers(selectedNodeId!);
+      const containers = await api.listDockerContainers(nid);
       const matched = (containers ?? [])
         .filter((c: any) => containerNames.includes((c.name ?? "").replace(/^\//, "")))
         .map((c: any) => ({ id: c.id, name: (c.name ?? "").replace(/^\//, ""), state: c.state }));
@@ -80,17 +86,17 @@ export function DockerVolumes() {
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only
   useEffect(() => {
-    setNodesLoading(true);
+    if (embedded && !fixedNodeId) { return; }
+    if (fixedNodeId) { setSelectedNode(fixedNodeId); return; }
+    
     api
       .listNodes({ type: "docker", limit: 100 })
       .then((r) => {
         setDockerNodes(r.data);
-        if (!selectedNodeId && r.data.length > 0) {
-          setSelectedNode(r.data[0].id);
-        }
+        useDockerStore.getState().setDockerNodes(r.data);
       })
       .catch(() => toast.error("Failed to load Docker nodes"))
-      .finally(() => setNodesLoading(false));
+      ;
   }, []);
 
   const location = useLocation();
@@ -112,7 +118,9 @@ export function DockerVolumes() {
     );
   }, [volumes, search]);
 
-  const handleRemove = async (name: string) => {
+  const handleRemove = async (name: string, nodeId?: string) => {
+    const nid = nodeId || selectedNodeId;
+    if (!nid) return;
     const ok = await confirm({
       title: "Remove Volume",
       description: `Remove volume "${name}"? Any data stored in this volume will be permanently lost.`,
@@ -120,7 +128,7 @@ export function DockerVolumes() {
     });
     if (!ok) return;
     try {
-      await api.removeVolume(selectedNodeId!, name);
+      await api.removeVolume(nid, name);
       toast.success("Volume removed");
       fetchVolumes();
     } catch (err) {
@@ -129,14 +137,14 @@ export function DockerVolumes() {
   };
 
   const handleCreate = async () => {
-    if (!selectedNodeId || !createName.trim()) return;
+    if (!createNodeId || !createName.trim()) return;
     setCreating(true);
     try {
       const labels: Record<string, string> = {};
       for (const l of createLabels) {
         if (l.key.trim()) labels[l.key.trim()] = l.value;
       }
-      await api.createVolume(selectedNodeId, {
+      await api.createVolume(createNodeId, {
         name: createName.trim(),
         driver: createDriver,
         labels: Object.keys(labels).length > 0 ? labels : undefined,
@@ -160,10 +168,101 @@ export function DockerVolumes() {
 
   const selectedNode = dockerNodes.find((n) => n.id === selectedNodeId);
 
-  return (
-    <PageTransition>
-      <div className="h-full overflow-y-auto p-6 space-y-4">
-        {/* Header */}
+  const allVolumeColumns: DataTableColumn<DockerVolume>[] = useMemo(
+    () => [
+      {
+        key: "name",
+        header: "Name",
+        render: (v) => (
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-muted shrink-0">
+              <Database className="h-4 w-4 text-muted-foreground" />
+            </div>
+            <p className="text-sm font-medium truncate">{v.name}</p>
+          </div>
+        ),
+      },
+      {
+        key: "driver",
+        header: "Driver",
+        render: (v) => (
+          <span className="text-sm text-muted-foreground">{v.driver}</span>
+        ),
+      },
+      {
+        key: "node",
+        header: "Node",
+        width: "140px",
+        truncate: true,
+        render: (v) => <Badge variant="secondary" className="text-xs font-normal">{(v as any)._nodeName || "-"}</Badge>,
+      },
+      {
+        key: "usage",
+        header: "Usage",
+        render: (v) => {
+          const usedBy: string[] = (v as any).usedBy ?? (v as any).UsedBy ?? [];
+          const isUsed = usedBy.length > 0;
+          return isUsed ? (
+            <Badge
+              variant="success"
+              className="text-xs w-fit cursor-pointer hover:opacity-80"
+              onClick={(e: React.MouseEvent) => {
+                e.stopPropagation();
+                showUsage(v.name, usedBy, (v as any)._nodeId);
+              }}
+            >
+              In use
+            </Badge>
+          ) : (
+            <Badge variant="secondary" className="text-xs w-fit">
+              Unused
+            </Badge>
+          );
+        },
+      },
+      {
+        key: "created",
+        header: "Created",
+        align: "right" as const,
+        render: (v) => (
+          <span className="text-sm text-muted-foreground">
+            {v.createdAt ? new Date(v.createdAt).toLocaleDateString() : "-"}
+          </span>
+        ),
+      },
+      {
+        key: "actions",
+        header: "Actions",
+        align: "right" as const,
+        render: (v) => {
+          const usedBy: string[] = (v as any).usedBy ?? (v as any).UsedBy ?? [];
+          const isUsed = usedBy.length > 0;
+          return (
+            <div className="flex items-center justify-end" onClick={(e) => e.stopPropagation()}>
+              {hasScope("docker:volumes:delete") && !isUsed && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={() => handleRemove(v.name, (v as any)._nodeId)}
+                  title="Remove"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              )}
+            </div>
+          );
+        },
+      },
+    ],
+    [hasScope, handleRemove, showUsage]
+  );
+  const volumeColumns = fixedNodeId ? allVolumeColumns.filter((c) => c.key !== "node") : allVolumeColumns;
+
+  const content = (
+    <>
+      {/* Header — hidden in embedded mode */}
+      {!embedded && (
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <div className="flex items-center gap-2">
@@ -181,7 +280,7 @@ export function DockerVolumes() {
               <>
                 <RefreshButton onClick={() => fetchVolumes()} disabled={isLoading} />
                 {hasScope("docker:volumes:create") && (
-                  <Button onClick={() => setCreateOpen(true)}>
+                  <Button onClick={() => openCreate()}>
                     <Plus className="h-4 w-4 mr-1" />
                     Create Volume
                   </Button>
@@ -190,134 +289,55 @@ export function DockerVolumes() {
             )}
           </div>
         </div>
+      )}
 
-        {/* Inline: [Node selector] [Search input] */}
-        <div className="flex gap-2">
+      {/* Filters */}
+      <SearchFilterBar
+        search={search}
+        onSearchChange={setSearch}
+        placeholder="Search volumes by name..."
+        hasActiveFilters={search !== "" || !!selectedNodeId}
+        onReset={() => { setSearch(""); setSelectedNode(null); }}
+        filters={
           <Select
-            value={selectedNodeId ?? ""}
-            onValueChange={(v) => setSelectedNode(v || null)}
-            disabled={nodesLoading}
+            value={selectedNodeId ?? "__all__"}
+            onValueChange={(v) => setSelectedNode(v === "__all__" ? null : v)}
           >
-            <SelectTrigger className="w-48 shrink-0">
-              <SelectValue placeholder={nodesLoading ? "Loading..." : "Select node"} />
+            <SelectTrigger className="w-48">
+              <SelectValue placeholder="All nodes" />
             </SelectTrigger>
             <SelectContent>
-              {dockerNodes.map((n) => (
+              <SelectItem value="__all__">All nodes</SelectItem>
+              {(embedded ? useDockerStore.getState().dockerNodes : dockerNodes).map((n) => (
                 <SelectItem key={n.id} value={n.id}>
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`h-2 w-2 rounded-full shrink-0 ${
-                        n.status === "online"
-                          ? "bg-emerald-500"
-                          : n.status === "error"
-                            ? "bg-red-400"
-                            : "bg-muted-foreground/40"
-                      }`}
-                    />
-                    {n.displayName || n.hostname}
-                  </div>
+                  {n.displayName || n.hostname}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-            <Input
-              placeholder="Search volumes by name..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9"
-            />
-          </div>
+        }
+      />
+
+      {filteredVolumes.length > 0 ? (
+        <DataTable
+          columns={volumeColumns}
+          data={filteredVolumes}
+          keyFn={(v) => v.name}
+          emptyMessage="No volumes found."
+        />
+      ) : isLoading ? (
+        <div className="flex items-center justify-center py-16 text-muted-foreground">
+          Loading volumes...
         </div>
-
-        {!selectedNodeId && !nodesLoading && dockerNodes.length === 0 && (
-          <EmptyState message="No Docker nodes registered. Add a Docker node from the Nodes page." />
-        )}
-        {!selectedNodeId && !nodesLoading && dockerNodes.length > 0 && (
-          <EmptyState message="Select a node to view its volumes." />
-        )}
-
-        {selectedNodeId && (
-          <>
-
-            {filteredVolumes.length > 0 ? (
-              <div className="border border-border rounded-lg bg-card">
-                <div className="hidden md:grid md:grid-cols-[1fr_100px_1fr_80px_80px] gap-4 px-4 py-2 border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  <span>Name</span>
-                  <span>Driver</span>
-                  <span>Mountpoint</span>
-                  <span>Usage</span>
-                  <span className="text-right">Actions</span>
-                </div>
-                <div className="divide-y divide-border">
-                  {filteredVolumes.map((v) => {
-                    const usedBy: string[] = (v as any).usedBy ?? (v as any).UsedBy ?? [];
-                    const isUsed = usedBy.length > 0;
-                    return (
-                      <div
-                        key={v.name}
-                        className="flex flex-col md:grid md:grid-cols-[1fr_100px_1fr_80px_80px] gap-2 md:gap-4 p-4 items-start md:items-center"
-                      >
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-muted shrink-0">
-                            <Database className="h-4 w-4 text-muted-foreground" />
-                          </div>
-                          <p className="text-sm font-medium truncate">{v.name}</p>
-                        </div>
-                        <Badge variant="secondary" className="text-xs w-fit">
-                          {v.driver}
-                        </Badge>
-                        <p className="text-xs font-mono text-muted-foreground truncate">
-                          {v.mountpoint}
-                        </p>
-                        {isUsed ? (
-                          <Badge
-                            variant="success"
-                            className="text-xs w-fit cursor-pointer hover:opacity-80"
-                            onClick={() => showUsage(v.name, usedBy)}
-                          >
-                            In use
-                          </Badge>
-                        ) : (
-                          <Badge variant="secondary" className="text-xs w-fit">
-                            Unused
-                          </Badge>
-                        )}
-                        <div className="flex items-center md:justify-end">
-                          {hasScope("docker:volumes:delete") && !isUsed && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7"
-                              onClick={() => handleRemove(v.name)}
-                              title="Remove"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : isLoading ? (
-              <div className="flex items-center justify-center py-16 text-muted-foreground">
-                Loading volumes...
-              </div>
-            ) : (
-              <EmptyState
-                message="No volumes found on this node."
-                hasActiveFilters={search !== ""}
-                onReset={() => setSearch("")}
-                actionLabel={hasScope("docker:volumes:create") ? "Create a volume" : undefined}
-                onAction={hasScope("docker:volumes:create") ? () => setCreateOpen(true) : undefined}
-              />
-            )}
-          </>
-        )}
-      </div>
+      ) : (
+        <EmptyState
+          message="No volumes found."
+          hasActiveFilters={search !== ""}
+          onReset={() => setSearch("")}
+          actionLabel={hasScope("docker:volumes:create") ? "Create a volume" : undefined}
+          onAction={hasScope("docker:volumes:create") ? () => openCreate() : undefined}
+        />
+      )}
 
       {/* Create Volume Dialog */}
       <Dialog open={createOpen} onOpenChange={closeCreate}>
@@ -329,6 +349,17 @@ export function DockerVolumes() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
+            <div>
+              <label className="text-sm font-medium">Node <span className="text-destructive">*</span></label>
+              <Select value={createNodeId} onValueChange={setCreateNodeId}>
+                <SelectTrigger className="mt-1"><SelectValue placeholder="Select a node" /></SelectTrigger>
+                <SelectContent>
+                  {(useDockerStore.getState().dockerNodes.length > 0 ? useDockerStore.getState().dockerNodes : dockerNodes).map((n) => (
+                    <SelectItem key={n.id} value={n.id}>{n.displayName || n.hostname}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div>
               <label className="text-sm font-medium">
                 Name <span className="text-destructive">*</span>
@@ -400,7 +431,7 @@ export function DockerVolumes() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={closeCreate}>Cancel</Button>
-            <Button onClick={handleCreate} disabled={creating || !createName.trim()}>
+            <Button onClick={handleCreate} disabled={creating || !createName.trim() || !createNodeId}>
               {creating ? "Creating..." : "Create"}
             </Button>
           </DialogFooter>
@@ -445,6 +476,14 @@ export function DockerVolumes() {
           )}
         </DialogContent>
       </Dialog>
+    </>
+  );
+
+  if (embedded) return <div className="flex flex-col flex-1 min-h-0 space-y-4">{content}</div>;
+
+  return (
+    <PageTransition>
+      <div className="h-full overflow-y-auto p-6 space-y-4">{content}</div>
     </PageTransition>
   );
 }

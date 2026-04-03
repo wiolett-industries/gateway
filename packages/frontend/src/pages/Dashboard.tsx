@@ -361,7 +361,7 @@ export function Dashboard() {
                   }
                 </Badge>
               </div>
-              <div className="divide-y divide-border">
+              <div className="divide-y divide-border -mb-px [&>*:last-child]:border-b [&>*:last-child]:border-border">
                 {[...expiringItems]
                   .filter((i) =>
                     i.type === "ssl"
@@ -419,7 +419,7 @@ export function Dashboard() {
                 </Link>
               </div>
               {healthHosts.length > 0 ? (
-                <div className="divide-y divide-border">
+                <div className="divide-y divide-border -mb-px [&>*:last-child]:border-b [&>*:last-child]:border-border">
                   {healthHosts.slice(0, 6).map((host) => (
                     <Link
                       key={host.id}
@@ -479,7 +479,7 @@ export function Dashboard() {
                   View all
                 </Link>
               </div>
-              <div className="divide-y divide-border">
+              <div className="divide-y divide-border -mb-px [&>*:last-child]:border-b [&>*:last-child]:border-border">
                 {nodesList.slice(0, 8).map((node) => (
                   <Link
                     key={node.id}
@@ -548,7 +548,7 @@ export function Dashboard() {
                 </Link>
               </div>
               {(cas || []).length > 0 ? (
-                <div className="divide-y divide-border">
+                <div className="divide-y divide-border -mb-px [&>*:last-child]:border-b [&>*:last-child]:border-border">
                   {(cas || [])
                     .filter((ca) => ca.status === "active")
                     .slice(0, 6)
@@ -593,7 +593,7 @@ export function Dashboard() {
               )}
             </div>
             {activity.length > 0 ? (
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto -mb-px">
                 <table className="w-full">
                   <thead>
                     <tr className="border-b border-border text-left">

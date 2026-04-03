@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { Filter, Search, X } from "lucide-react";
+import { Filter, Search } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,8 +26,8 @@ export function SearchFilterBar({
   search,
   onSearchChange,
   onSearchSubmit,
-  hasActiveFilters,
-  onReset,
+  hasActiveFilters: _hasActiveFilters,
+  onReset: _onReset,
   filters,
 }: SearchFilterBarProps) {
   const [showFilters, setShowFilters] = useState(false);
@@ -49,12 +49,6 @@ export function SearchFilterBar({
           <Button variant="outline" onClick={() => setShowFilters(!showFilters)}>
             <Filter className="h-4 w-4" />
             Filters
-          </Button>
-        )}
-        {hasActiveFilters && (
-          <Button variant="ghost" size="sm" onClick={onReset}>
-            <X className="h-4 w-4" />
-            Clear
           </Button>
         )}
       </div>

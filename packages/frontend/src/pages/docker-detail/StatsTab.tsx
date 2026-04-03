@@ -275,7 +275,7 @@ export function StatsTab({
                 <div className="max-h-[calc(2rem*9+2.25rem+4px)] overflow-auto">
                   <table className="w-full">
                     <thead className="sticky top-0 bg-card z-10">
-                      <tr className="text-left shadow-[inset_0_-1px_0_var(--color-border)]">
+                      <tr className="text-left border-b border-border">
                         {filteredTitles.map((title) => (
                           <th key={title} className="p-2 px-4 text-xs font-medium text-muted-foreground uppercase">
                             {title}

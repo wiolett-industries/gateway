@@ -338,28 +338,39 @@ export function AdminGroups() {
             </div>
             <div>
               <label className="text-sm font-medium">Inherit From</label>
-              <Select
-                value={formParentId ?? "__none__"}
-                onValueChange={(v) => setFormParentId(v === "__none__" ? null : v)}
-              >
-                <SelectTrigger className="mt-1">
-                  <SelectValue placeholder="None" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">None</SelectItem>
-                  {groups
-                    .filter((g) => g.id !== editingGroup?.id)
-                    .map((g) => (
-                      <SelectItem key={g.id} value={g.id}>
-                        {g.name}
-                        {g.isBuiltin ? " (built-in)" : ""}
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground mt-1">
-                Inherited permissions are added automatically and shown as read-only below
-              </p>
+              {editingGroup && groups.some((g) => g.parentId === editingGroup.id) ? (
+                <>
+                  <Input value="None" disabled className="mt-1" />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    This group has child groups — it cannot be nested under another group
+                  </p>
+                </>
+              ) : (
+                <>
+                  <Select
+                    value={formParentId ?? "__none__"}
+                    onValueChange={(v) => setFormParentId(v === "__none__" ? null : v)}
+                  >
+                    <SelectTrigger className="mt-1">
+                      <SelectValue placeholder="None" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">None</SelectItem>
+                      {groups
+                        .filter((g) => g.id !== editingGroup?.id && !g.parentId)
+                        .map((g) => (
+                          <SelectItem key={g.id} value={g.id}>
+                            {g.name}
+                            {g.isBuiltin ? " (built-in)" : ""}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Inherited permissions are added automatically and shown as read-only below
+                  </p>
+                </>
+              )}
             </div>
             <div className="border border-border">
               <Input

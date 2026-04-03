@@ -15,6 +15,7 @@ import {
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
+import { usePinnedContainersStore } from "@/stores/pinned-containers";
 import type { InspectData } from "./helpers";
 
 // ── Types ────────────────────────────────────────────────────────
@@ -287,6 +288,7 @@ export function SettingsTab({
               toast.success("Container recreated successfully");
               invalidate("containers", "tasks");
               if (newId !== containerId) {
+                usePinnedContainersStore.getState().migrateId(containerId, newId);
                 navigate(`/docker/containers/${nodeId}/${newId}`, { replace: true });
               } else {
                 onAction();
@@ -487,14 +489,15 @@ export function SettingsTab({
         </div>
         {ports.length > 0 ? (
           <>
-            <div className={`grid ${canEdit ? "grid-cols-[1fr_1fr_100px_36px]" : "grid-cols-[1fr_1fr_100px]"} shadow-[inset_0_-1px_0_var(--color-border)] text-xs font-medium text-muted-foreground uppercase tracking-wider`}>
+            <div className={`grid ${canEdit ? "grid-cols-[1fr_1fr_100px_36px]" : "grid-cols-[1fr_1fr_100px]"} border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wider`}>
               <div className="px-3 py-2">Host Port</div>
               <div className="px-3 py-2 border-l border-border">Container Port</div>
               <div className="px-3 py-2 border-l border-border">Protocol</div>
               {canEdit && <div />}
             </div>
+            <div className="-mb-px">
             {ports.map((p, i) => (
-              <div key={i} className={`grid ${canEdit ? "grid-cols-[1fr_1fr_100px_36px]" : "grid-cols-[1fr_1fr_100px]"} shadow-[inset_0_-1px_0_var(--color-border)] last:shadow-none`}>
+              <div key={i} className={`grid ${canEdit ? "grid-cols-[1fr_1fr_100px_36px]" : "grid-cols-[1fr_1fr_100px]"} border-b border-border last:border-b-0`}>
                 <Input
                   type="number"
                   className={inputCell}
@@ -531,6 +534,7 @@ export function SettingsTab({
                 )}
               </div>
             ))}
+            </div>
           </>
         ) : (
           <div className="py-8 text-center text-muted-foreground text-sm">No port mappings</div>
@@ -553,14 +557,15 @@ export function SettingsTab({
         </div>
         {mounts.length > 0 ? (
           <>
-            <div className={`grid ${canEdit ? "grid-cols-[1fr_1fr_100px_36px]" : "grid-cols-[1fr_1fr_100px]"} shadow-[inset_0_-1px_0_var(--color-border)] text-xs font-medium text-muted-foreground uppercase tracking-wider`}>
+            <div className={`grid ${canEdit ? "grid-cols-[1fr_1fr_100px_36px]" : "grid-cols-[1fr_1fr_100px]"} border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wider`}>
               <div className="px-3 py-2">Source</div>
               <div className="px-3 py-2 border-l border-border">Container Path</div>
               <div className="px-3 py-2 border-l border-border">Mode</div>
               {canEdit && <div />}
             </div>
+            <div className="-mb-px">
             {mounts.map((m, i) => (
-              <div key={i} className={`grid ${canEdit ? "grid-cols-[1fr_1fr_100px_36px]" : "grid-cols-[1fr_1fr_100px]"} shadow-[inset_0_-1px_0_var(--color-border)] last:shadow-none`}>
+              <div key={i} className={`grid ${canEdit ? "grid-cols-[1fr_1fr_100px_36px]" : "grid-cols-[1fr_1fr_100px]"} border-b border-border last:border-b-0`}>
                 <Input
                   className={inputCell}
                   value={m.hostPath || m.name}
@@ -604,6 +609,7 @@ export function SettingsTab({
                 )}
               </div>
             ))}
+            </div>
           </>
         ) : (
           <div className="py-8 text-center text-muted-foreground text-sm">No volume mounts</div>
@@ -626,12 +632,13 @@ export function SettingsTab({
         </div>
         {labels.length > 0 ? (
           <>
-            <div className="grid grid-cols-[1fr_1fr] shadow-[inset_0_-1px_0_var(--color-border)] text-xs font-medium text-muted-foreground uppercase tracking-wider">
+            <div className="grid grid-cols-[1fr_1fr] border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wider">
               <div className="px-3 py-2">Key</div>
               <div className="px-3 py-2 border-l border-border">Value</div>
             </div>
+            <div className="-mb-px">
             {labels.map((l, i) => (
-              <div key={i} className="grid grid-cols-[1fr_1fr] shadow-[inset_0_-1px_0_var(--color-border)] last:shadow-none">
+              <div key={i} className="grid grid-cols-[1fr_1fr] border-b border-border last:border-b-0">
                 <Input
                   className={inputCell}
                   value={l.key}
@@ -655,6 +662,7 @@ export function SettingsTab({
                 </div>
               </div>
             ))}
+            </div>
           </>
         ) : (
           <div className="py-8 text-center text-muted-foreground text-sm">No labels</div>

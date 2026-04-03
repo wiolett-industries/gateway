@@ -211,7 +211,7 @@ export function AdminNodes() {
 
         {nodes.length > 0 ? (
           <div className="border border-border rounded-lg bg-card">
-            <div className="divide-y divide-border">
+            <div className="divide-y divide-border -mb-px [&>*:last-child]:border-b [&>*:last-child]:border-border">
               {nodes.map((node) => (
                 <div
                   key={node.id}

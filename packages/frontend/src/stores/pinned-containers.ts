@@ -13,6 +13,10 @@ interface PinnedContainersState {
   isPinnedSidebar: (containerId: string) => boolean;
   /** Update display name / state (e.g. after rename or status change) */
   updateMeta: (containerId: string, meta: { nodeId: string; name: string; state?: string }) => void;
+  /** Migrate a pin from an old container ID to a new one (e.g. after recreation) */
+  migrateId: (oldId: string, newId: string) => void;
+  /** Remove IDs that no longer exist */
+  removeOrphans: (validIds: string[]) => void;
   invalidate: () => void;
 }
 
@@ -55,6 +59,36 @@ export const usePinnedContainersStore = create<PinnedContainersState>()(
         set((s) => ({
           containerMeta: { ...s.containerMeta, [containerId]: meta },
         })),
+
+      migrateId: (oldId, newId) =>
+        set((s) => {
+          if (oldId === newId) return s;
+          const replaceId = (ids: string[]) =>
+            ids.includes(oldId) ? ids.map((id) => (id === oldId ? newId : id)) : ids;
+          const newMeta = { ...s.containerMeta };
+          if (newMeta[oldId]) {
+            newMeta[newId] = newMeta[oldId];
+            delete newMeta[oldId];
+          }
+          return {
+            dashboardContainerIds: replaceId(s.dashboardContainerIds),
+            sidebarContainerIds: replaceId(s.sidebarContainerIds),
+            containerMeta: newMeta,
+          };
+        }),
+
+      removeOrphans: (validIds) =>
+        set((s) => {
+          const validSet = new Set(validIds);
+          const newDash = s.dashboardContainerIds.filter((id) => validSet.has(id));
+          const newSide = s.sidebarContainerIds.filter((id) => validSet.has(id));
+          const newMeta = { ...s.containerMeta };
+          for (const id of Object.keys(newMeta)) {
+            if (!validSet.has(id)) delete newMeta[id];
+          }
+          if (newDash.length === s.dashboardContainerIds.length && newSide.length === s.sidebarContainerIds.length) return s;
+          return { dashboardContainerIds: newDash, sidebarContainerIds: newSide, containerMeta: newMeta };
+        }),
 
       invalidate: () => set((s) => ({ refreshTick: s.refreshTick + 1 })),
     }),

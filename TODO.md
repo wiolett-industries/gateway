@@ -23,23 +23,23 @@
 - [x] Add secrets in containers
 - [x] Add ability to pin containers too
 - [x] Update command palette, AI tools/docs and scopes (after all changes finished)
+- [x] Check that group nesting works only for top level groups
+- [x] Change input to combobox in container creation image selector
 
 ## Open
 
+- [ ] Add docker container templates
 - [ ] Write manual testcases and do full check on two external servers
 - [ ] Create bastion daemon and integration here in app
 - [ ] Separate daemon deploy tags from gateway deploy tags (not sure how to)
 - [ ] Deduplicate whole frontend
 - [ ] Verify all pages have data live update (polling or streaming)
 - [ ] Webhook notifications on events
-- [ ] Show docker section in sidebar only when at least one docker node connected (may be disabled but should exist)
 - [ ] Add console support to the shared library to be able to open console on node directly (separate scope)
-- [ ] Docker template creation modal is no-op
+- [ ] Make tabs in route for other pages too (not only templates and nginx)
 
 ## Up next
-- [ ] Check that group nesting works only for top level groups
 - [ ] Remake image pull modal
-- [ ] Change input to combobox in container creation image selector
 - [ ] Fix RO design of secrets
 
 ## Scopes

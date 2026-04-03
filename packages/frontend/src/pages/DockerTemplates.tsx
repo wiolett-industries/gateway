@@ -7,6 +7,7 @@ import { PageTransition } from "@/components/common/PageTransition";
 import { SearchFilterBar } from "@/components/common/SearchFilterBar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 import {
   Dialog,
   DialogContent,
@@ -32,7 +33,7 @@ function formatDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString();
 }
 
-export function DockerTemplatesPage() {
+export function DockerTemplatesPage({ embedded, onCreateRef }: { embedded?: boolean; onCreateRef?: (fn: () => void) => void } = {}) {
   const { hasScope } = useAuthStore();
   const { templates, fetchTemplates } = useDockerStore();
 
@@ -42,6 +43,7 @@ export function DockerTemplatesPage() {
 
   // Create/Edit dialog
   const [dialogOpen, setDialogOpen] = useState(false);
+  useEffect(() => { onCreateRef?.(() => setDialogOpen(true)); }, [onCreateRef]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formName, setFormName] = useState("");
   const [formDescription, setFormDescription] = useState("");
@@ -225,10 +227,103 @@ export function DockerTemplatesPage() {
     return "-";
   };
 
-  return (
-    <PageTransition>
-      <div className="h-full overflow-y-auto p-6 space-y-4">
-        {/* Header */}
+  const templateColumns: DataTableColumn<DockerTemplate>[] = useMemo(
+    () => [
+      {
+        key: "name",
+        header: "Name",
+        render: (t) => (
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-muted shrink-0">
+              <FileJson className="h-4 w-4 text-muted-foreground" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-medium truncate">{t.name}</p>
+              {t.description && (
+                <p className="text-xs text-muted-foreground truncate">{t.description}</p>
+              )}
+            </div>
+          </div>
+        ),
+      },
+      {
+        key: "image",
+        header: "Image",
+        render: (t) => (
+          <span className="text-xs font-mono text-muted-foreground truncate">
+            {extractImage(t.config)}
+          </span>
+        ),
+      },
+      {
+        key: "created",
+        header: "Created",
+        align: "right" as const,
+        render: (t) => (
+          <span className="text-sm text-muted-foreground">
+            {formatDate(t.createdAt)}
+          </span>
+        ),
+      },
+      {
+        key: "actions",
+        header: "Actions",
+        align: "right" as const,
+        render: (t) => (
+          <div className="flex items-center gap-0.5 justify-end" onClick={(e) => e.stopPropagation()}>
+            {hasScope("docker:templates:create") && dockerNodes.length > 0 && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => openDeploy(t)}
+                title="Deploy"
+              >
+                <Play className="h-3.5 w-3.5" />
+              </Button>
+            )}
+            {hasScope("docker:templates:create") && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => openEdit(t)}
+                title="Edit"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={() => handleExport(t)}
+              title="Export JSON"
+            >
+              <Download className="h-3.5 w-3.5" />
+            </Button>
+            {hasScope("docker:templates:delete") && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => handleDelete(t)}
+                title="Delete"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            )}
+          </div>
+        ),
+      },
+    ],
+    [hasScope, dockerNodes.length, openDeploy, openEdit, handleExport, handleDelete, extractImage]
+  );
+
+  const content = (
+    <>
+      {/* Header — hidden in embedded mode */}
+      {!embedded && (
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <div className="flex items-center gap-2">
@@ -259,112 +354,37 @@ export function DockerTemplatesPage() {
             )}
           </div>
         </div>
+      )}
 
-        <SearchFilterBar
-          search={search}
-          onSearchChange={setSearch}
-          onSearchSubmit={() => {}}
-          placeholder="Search templates..."
+      <SearchFilterBar
+        search={search}
+        onSearchChange={setSearch}
+        onSearchSubmit={() => {}}
+        placeholder="Search templates..."
+        hasActiveFilters={search !== ""}
+        onReset={() => setSearch("")}
+      />
+
+      {filteredTemplates.length > 0 ? (
+        <DataTable
+          columns={templateColumns}
+          data={filteredTemplates}
+          keyFn={(t) => t.id}
+          emptyMessage="No templates found."
+        />
+      ) : isLoading ? (
+        <div className="flex items-center justify-center py-16 text-muted-foreground">
+          Loading templates...
+        </div>
+      ) : (
+        <EmptyState
+          message="No templates created yet."
           hasActiveFilters={search !== ""}
           onReset={() => setSearch("")}
+          actionLabel={hasScope("docker:templates:create") ? "Create a template" : undefined}
+          onAction={hasScope("docker:templates:create") ? openCreate : undefined}
         />
-
-        {filteredTemplates.length > 0 ? (
-          <div className="border border-border rounded-lg bg-card">
-            <div className="hidden md:grid md:grid-cols-[1fr_1fr_160px_120px_120px_140px] gap-4 px-4 py-2 border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wider">
-              <span>Name</span>
-              <span>Description</span>
-              <span>Image</span>
-              <span>Created By</span>
-              <span>Date</span>
-              <span className="text-right">Actions</span>
-            </div>
-            <div className="divide-y divide-border">
-              {filteredTemplates.map((t) => (
-                <div
-                  key={t.id}
-                  className="flex flex-col md:grid md:grid-cols-[1fr_1fr_160px_120px_120px_140px] gap-2 md:gap-4 p-4 items-start md:items-center"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-muted shrink-0">
-                      <FileJson className="h-4 w-4 text-muted-foreground" />
-                    </div>
-                    <p className="text-sm font-medium truncate">{t.name}</p>
-                  </div>
-                  <p className="text-sm text-muted-foreground truncate">
-                    {t.description || "-"}
-                  </p>
-                  <span className="text-xs font-mono text-muted-foreground truncate">
-                    {extractImage(t.config)}
-                  </span>
-                  <span className="text-sm text-muted-foreground truncate">
-                    {t.createdBy ?? "-"}
-                  </span>
-                  <span className="text-sm text-muted-foreground">
-                    {formatDate(t.createdAt)}
-                  </span>
-                  <div className="flex items-center gap-0.5 md:justify-end">
-                    {hasScope("docker:templates:create") && dockerNodes.length > 0 && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7"
-                        onClick={() => openDeploy(t)}
-                        title="Deploy"
-                      >
-                        <Play className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
-                    {hasScope("docker:templates:create") && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7"
-                        onClick={() => openEdit(t)}
-                        title="Edit"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      onClick={() => handleExport(t)}
-                      title="Export JSON"
-                    >
-                      <Download className="h-3.5 w-3.5" />
-                    </Button>
-                    {hasScope("docker:templates:delete") && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7"
-                        onClick={() => handleDelete(t)}
-                        title="Delete"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : isLoading ? (
-          <div className="flex items-center justify-center py-16 text-muted-foreground">
-            Loading templates...
-          </div>
-        ) : (
-          <EmptyState
-            message="No templates created yet."
-            hasActiveFilters={search !== ""}
-            onReset={() => setSearch("")}
-            actionLabel={hasScope("docker:templates:create") ? "Create a template" : undefined}
-            onAction={hasScope("docker:templates:create") ? openCreate : undefined}
-          />
-        )}
-      </div>
+      )}
 
       {/* Create/Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={closeDialog}>
@@ -476,6 +496,14 @@ export function DockerTemplatesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </>
+  );
+
+  if (embedded) return <div className="flex flex-col flex-1 min-h-0 space-y-4">{content}</div>;
+
+  return (
+    <PageTransition>
+      <div className="h-full overflow-y-auto p-6 space-y-4">{content}</div>
     </PageTransition>
   );
 }

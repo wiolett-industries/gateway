@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Code2, Eye, EyeOff, Lock, Minus, Plus, RotateCcw, Table2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { Button } from "@/components/ui/button";
@@ -9,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
+import { usePinnedContainersStore } from "@/stores/pinned-containers";
 import type { DockerSecret } from "@/types";
 
 interface SecretRow {
@@ -20,7 +22,8 @@ interface SecretRow {
   dirty: boolean;
 }
 
-export function EnvironmentTab({ nodeId, containerId, disabled, onRecreating }: { nodeId: string; containerId: string; disabled?: boolean; onRecreating?: (v: boolean) => void }) {
+export function EnvironmentTab({ nodeId, containerId, containerName, disabled, onRecreating }: { nodeId: string; containerId: string; containerName: string; disabled?: boolean; onRecreating?: (v: boolean) => void }) {
+  const navigate = useNavigate();
   const { hasScope } = useAuthStore();
   const invalidate = useDockerStore((s) => s.invalidate);
   const [envVars, setEnvVars] = useState<Array<{ key: string; value: string }>>([]);
@@ -214,18 +217,46 @@ export function EnvironmentTab({ nodeId, containerId, disabled, onRecreating }: 
       await api.updateContainerEnv(nodeId, containerId, newEnv, removeEnv.length > 0 ? removeEnv : undefined);
       toast.info("Recreating container...");
 
+      // Two-phase poll: wait for old container to disappear, then for new one to be running
       const pollStart = Date.now();
+      let oldGone = false;
       const poll = setInterval(async () => {
         try {
-          const inspect = await api.inspectContainer(nodeId, containerId) as any;
-          const status = inspect?.State?.Status;
-          if (status === "running" || Date.now() - pollStart > 30000) {
+          const containers = await api.listDockerContainers(nodeId) as any[];
+          const match = containers?.find((c: any) =>
+            (c.name ?? "").replace(/^\//, "") === containerName ||
+            (c.names ?? []).some((n: string) => n.replace(/^\//, "") === containerName)
+          );
+
+          if (!oldGone) {
+            if (!match || (match.id ?? match.Id) !== containerId) {
+              oldGone = true;
+            }
+          }
+
+          if (oldGone && match) {
+            const newId = match.id ?? match.Id;
+            const status = match.state ?? match.State ?? "";
+            if (status === "running" || Date.now() - pollStart > 30000) {
+              clearInterval(poll);
+              setIsSaving(false);
+              onRecreating?.(false);
+              toast.success("Environment updated — container recreated");
+              invalidate("containers", "tasks");
+              if (newId !== containerId) {
+                usePinnedContainersStore.getState().migrateId(containerId, newId);
+                navigate(`/docker/containers/${nodeId}/${newId}`, { replace: true });
+              } else {
+                fetchEnv();
+              }
+            }
+          }
+
+          if (Date.now() - pollStart > 60000) {
             clearInterval(poll);
             setIsSaving(false);
             onRecreating?.(false);
-            toast.success("Environment updated — container recreated");
-            invalidate("containers", "tasks");
-            fetchEnv();
+            toast.error("Recreation timed out");
           }
         } catch {
           if (Date.now() - pollStart > 60000) {
@@ -313,7 +344,7 @@ export function EnvironmentTab({ nodeId, containerId, disabled, onRecreating }: 
 
   return (
     <div className={`${rawMode ? "flex flex-col flex-1 min-h-0" : "pb-6 space-y-4"} ${disabled ? "pointer-events-none opacity-60" : ""}`}>
-      <div className={`overflow-hidden flex flex-col ${rawMode ? "flex-1 min-h-0" : "border border-border bg-card"}`}>
+      <div className={`flex flex-col ${rawMode ? "flex-1 min-h-0" : "border border-border bg-card"}`}>
         {/* Header */}
         <div className={`flex items-center justify-between px-4 py-3 shrink-0 ${rawMode ? "bg-card border border-border border-b-0" : "border-b border-border"}`}>
           <div>
@@ -378,13 +409,14 @@ export function EnvironmentTab({ nodeId, containerId, disabled, onRecreating }: 
               transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
             >
               {envVars.length > 0 && (
-                <div className="grid grid-cols-[1fr_1fr] shadow-[inset_0_-1px_0_var(--color-border)] text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                <div className="grid grid-cols-[1fr_1fr] border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wider">
                   <div className="px-3 py-2">Key</div>
                   <div className="px-3 py-2 border-l border-border">Value</div>
                 </div>
               )}
+              <div className="-mb-px">
               {envVars.map((env, idx) => (
-                <div key={idx} className="grid grid-cols-[1fr_1fr] shadow-[inset_0_-1px_0_var(--color-border)] last:shadow-none">
+                <div key={idx} className="grid grid-cols-[1fr_1fr] border-b border-border last:border-b-0">
                   {canEdit ? (
                     <>
                       <Input
@@ -420,6 +452,7 @@ export function EnvironmentTab({ nodeId, containerId, disabled, onRecreating }: 
                   )}
                 </div>
               ))}
+              </div>
               {envVars.length === 0 && (
                 <div className="flex items-center justify-center py-8">
                   <p className="text-sm text-muted-foreground">
@@ -436,7 +469,7 @@ export function EnvironmentTab({ nodeId, containerId, disabled, onRecreating }: 
 
       {/* Secrets section — only in table mode */}
       {!rawMode && (
-        <div className="overflow-hidden border border-border bg-card">
+        <div className="border border-border bg-card">
           <div className="flex items-center justify-between px-4 py-3 border-b border-border">
             <div className="flex items-center gap-2">
               <Lock className="h-3.5 w-3.5 text-muted-foreground" />
@@ -455,12 +488,13 @@ export function EnvironmentTab({ nodeId, containerId, disabled, onRecreating }: 
           </div>
 
           {secretRows.length > 0 && (
-            <div className="grid grid-cols-[1fr_1fr] shadow-[inset_0_-1px_0_var(--color-border)] text-xs font-medium text-muted-foreground uppercase tracking-wider">
+            <div className="grid grid-cols-[1fr_1fr] border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wider">
               <div className="px-3 py-2">Key</div>
               <div className="px-3 py-2 border-l border-border">Value</div>
             </div>
           )}
 
+          <div className="-mb-px">
           {secretRows.map((row, idx) => {
             const isNew = !row.id;
             const isMasked = row.value === "••••••••";
@@ -468,7 +502,7 @@ export function EnvironmentTab({ nodeId, containerId, disabled, onRecreating }: 
             const hasKeyError = duplicateSecretIndices.has(idx) || (row.key.trim() && !invalidKeyPattern.test(row.key.trim()));
 
             return (
-              <div key={row.id ?? `new-${idx}`} className="grid grid-cols-[1fr_1fr] shadow-[inset_0_-1px_0_var(--color-border)] last:shadow-none">
+              <div key={row.id ?? `new-${idx}`} className="grid grid-cols-[1fr_1fr] border-b border-border last:border-b-0">
                 {canManageSecrets ? (
                   <>
                     <Input
@@ -520,6 +554,7 @@ export function EnvironmentTab({ nodeId, containerId, disabled, onRecreating }: 
               </div>
             );
           })}
+          </div>
 
           {secretRows.length === 0 && (
             <div className="flex items-center justify-center py-8">

@@ -1,5 +1,5 @@
 import { FileText, Minus, MoreVertical, Pencil, Plus, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
@@ -131,7 +131,7 @@ function toggleInArray(arr: string[], value: string): string[] {
 // Main Component
 // ---------------------------------------------------------------------------
 
-export function Templates() {
+export function Templates({ embedded, onCreateRef }: { embedded?: boolean; onCreateRef?: (fn: () => void) => void }) {
   const { hasScope } = useAuthStore();
   const cachedTemplates = api.getCached<Template[]>("templates:list");
   const [templates, setTemplates] = useState<Template[]>(cachedTemplates ?? []);
@@ -207,6 +207,13 @@ export function Templates() {
     resetForm();
     setDialogOpen(true);
   };
+
+  // Expose create action to parent
+  const createRefSet = useRef(false);
+  if (onCreateRef && !createRefSet.current) {
+    onCreateRef(openCreate);
+    createRefSet.current = true;
+  }
 
   const openEdit = (t: Template) => {
     setEditing(t);
@@ -311,21 +318,23 @@ export function Templates() {
     );
   }
 
-  return (
-    <PageTransition>
-      <div className="h-full overflow-y-auto p-6 space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h1 className="text-2xl font-bold">Templates</h1>
-            <p className="text-sm text-muted-foreground">Certificate issuance templates</p>
+  const content = (
+    <>
+      <div className={embedded ? "space-y-4" : "h-full overflow-y-auto p-6 space-y-4"}>
+        {!embedded && (
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h1 className="text-2xl font-bold">Templates</h1>
+              <p className="text-sm text-muted-foreground">Certificate issuance templates</p>
+            </div>
+            {hasScope("pki:templates:edit") && (
+              <Button onClick={openCreate}>
+                <Plus className="h-4 w-4" />
+                Create Template
+              </Button>
+            )}
           </div>
-          {hasScope("pki:templates:edit") && (
-            <Button onClick={openCreate}>
-              <Plus className="h-4 w-4" />
-              Create Template
-            </Button>
-          )}
-        </div>
+        )}
 
         {/* Template grid */}
         {templates.length > 0 ? (
@@ -527,8 +536,11 @@ export function Templates() {
           </DialogContent>
         </Dialog>
       </div>
-    </PageTransition>
+    </>
   );
+
+  if (embedded) return content;
+  return <PageTransition>{content}</PageTransition>;
 }
 
 // ---------------------------------------------------------------------------
