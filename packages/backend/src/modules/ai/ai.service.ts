@@ -331,6 +331,7 @@ Gateway uses a group-based permission system with nested group inheritance. Each
 | nodes:details | View node details, health, stats, system info (resource-scopable) |
 | nodes:config | View node global nginx config (resource-scopable) |
 | nodes:logs | View node daemon and nginx logs (resource-scopable) |
+| nodes:console | Open interactive shell on nodes (resource-scopable) |
 | nodes:rename | Rename a node display name (resource-scopable) |
 | nodes:config-edit | Edit node global nginx configuration (resource-scopable) |
 | nodes:create | Create/enroll new nodes |

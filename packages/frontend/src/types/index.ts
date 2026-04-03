@@ -332,6 +332,7 @@ export const TOKEN_SCOPES = [
   { value: "nodes:config:view", label: "View Node Config", desc: "View node nginx configuration", group: "Nodes" },
   { value: "nodes:config:edit", label: "Edit Node Config", desc: "Edit node nginx configuration", group: "Nodes" },
   { value: "nodes:logs", label: "View Node Logs", desc: "View node daemon and nginx logs", group: "Nodes" },
+  { value: "nodes:console", label: "Node Console", desc: "Open interactive shell on nodes", group: "Nodes" },
   // Administration
   { value: "admin:users", label: "Manage Users", desc: "Create, edit, and delete users", group: "Administration" },
   { value: "admin:groups", label: "Manage Groups", desc: "Create, edit, and delete permission groups", group: "Administration" },

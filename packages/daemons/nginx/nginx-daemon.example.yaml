@@ -20,6 +20,9 @@ nginx:
   htpasswd_dir: "/etc/nginx/htpasswd"
   acme_challenge_dir: "/var/www/acme-challenge"
 
+console:
+  user: ""  # OS user for host console sessions; empty = daemon's user
+
 state_dir: "/var/lib/nginx-daemon"
 log_level: "info"   # debug, info, warn, error
 log_format: "json"  # json, text

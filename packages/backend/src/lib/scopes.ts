@@ -60,6 +60,7 @@ export const ALL_SCOPES = [
   'nodes:config:view',
   'nodes:config:edit',
   'nodes:logs',
+  'nodes:console',
   // ── Administration ───────────────────────────────────────────────
   'admin:users',
   'admin:groups',
@@ -154,6 +155,7 @@ export const OPERATOR_SCOPES: readonly string[] = [
   'nodes:details',
   'nodes:config:view',
   'nodes:logs',
+  'nodes:console',
   'nodes:rename',
   // Features
   'feat:ai:use',

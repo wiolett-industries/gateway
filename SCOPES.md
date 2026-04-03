@@ -95,6 +95,7 @@ Scopes marked **Yes** in the "Restrictable" column can be limited to a specific 
 | `nodes:config:view` | View node nginx configuration | Yes |
 | `nodes:config:edit` | Edit node nginx configuration | Yes |
 | `nodes:logs` | View node daemon and nginx logs | Yes |
+| `nodes:console` | Open interactive shell on nodes | Yes |
 
 ## Administration
 

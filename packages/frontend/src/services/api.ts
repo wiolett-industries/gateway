@@ -1702,6 +1702,15 @@ class ApiClient {
     return new WebSocket(url);
   }
 
+  // ── Node Console WebSocket ─────────────────────────────────────
+
+  createNodeExecWebSocket(nodeId: string, shell = "auto"): WebSocket {
+    const sessionId = useAuthStore.getState().sessionId;
+    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const url = `${proto}//${window.location.host}/api/nodes/${nodeId}/exec?token=${sessionId}&shell=${encodeURIComponent(shell)}`;
+    return new WebSocket(url);
+  }
+
   // ── Docker Log Stream WebSocket ─────────────────────────────────
 
   createLogStreamWebSocket(

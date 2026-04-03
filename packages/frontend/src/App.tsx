@@ -28,6 +28,7 @@ import { TemplatesPage } from "@/pages/TemplatesPage";
 import { ProxyHostDetail } from "@/pages/ProxyHostDetail";
 import { ProxyHosts } from "@/pages/ProxyHosts";
 import { Settings } from "@/pages/Settings";
+import { NodeConsolePopout } from "@/pages/NodeConsolePopout";
 import { SSLCertificates } from "@/pages/SSLCertificates";
 
 /** Helper to wrap a page element with a scope guard */
@@ -55,6 +56,10 @@ export default function App() {
             <Route
               path="/docker/file/:nodeId/:containerId"
               element={<DockerFilePopout />}
+            />
+            <Route
+              path="/nodes/console/:nodeId"
+              element={<NodeConsolePopout />}
             />
             <Route element={<DashboardLayout />}>
               <Route path="/" element={<Dashboard />} />

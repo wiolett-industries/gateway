@@ -10,6 +10,8 @@ require (
 )
 
 require (
+	github.com/creack/pty v1.1.24 // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	golang.org/x/net v0.48.0 // indirect
 	golang.org/x/text v0.32.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20251202230838-ff82c1b0f217 // indirect

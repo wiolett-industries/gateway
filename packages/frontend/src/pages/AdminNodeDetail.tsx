@@ -29,6 +29,7 @@ import { DockerVolumes } from "./DockerVolumes";
 import { NodeDetailsTab } from "./node-detail/NodeDetailsTab";
 import { NodeLogsTab } from "./node-detail/NodeLogsTab";
 import { NodeMonitoringTab } from "./node-detail/NodeMonitoringTab";
+import { NodeConsoleTab } from "./node-detail/NodeConsoleTab";
 import { NodeNginxLogsTab } from "./node-detail/NodeNginxLogsTab";
 
 const STATUS_BADGE: Record<
@@ -49,7 +50,7 @@ export function AdminNodeDetail() {
   const [node, setNode] = useState<NodeDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const VALID_TABS = ["details", "monitoring", "configuration", "nginx-logs", "containers", "images", "volumes", "networks", "daemon-logs"];
+  const VALID_TABS = ["details", "monitoring", "console", "configuration", "nginx-logs", "containers", "images", "volumes", "networks", "daemon-logs"];
   const activeTab = tabParam && VALID_TABS.includes(tabParam) ? tabParam : "details";
   const setActiveTab = (tab: string) => navigate(`/nodes/${id}/${tab}`, { replace: true });
 
@@ -128,7 +129,7 @@ export function AdminNodeDetail() {
   return (
     <PageTransition>
       <div
-        className={`h-full p-6 flex flex-col gap-4 ${activeTab === "configuration" || activeTab === "daemon-logs" || activeTab === "nginx-logs" ? "overflow-hidden" : "overflow-y-auto"}`}
+        className={`h-full p-6 flex flex-col gap-4 ${activeTab === "configuration" || activeTab === "daemon-logs" || activeTab === "nginx-logs" || activeTab === "console" ? "overflow-hidden" : "overflow-y-auto"}`}
       >
         {/* Header — matches ProxyHostDetail pattern */}
         <div className="flex flex-wrap items-center justify-between gap-2 shrink-0">
@@ -200,6 +201,9 @@ export function AdminNodeDetail() {
                 <TabsTrigger value="networks">Networks</TabsTrigger>
               </>
             )}
+            {node.status === "online" && hasScope("nodes:console") && (
+              <TabsTrigger value="console">Console</TabsTrigger>
+            )}
             <TabsTrigger value="daemon-logs">Daemon Logs</TabsTrigger>
           </TabsList>
           <TabsContent value="details" className="pb-6">
@@ -233,6 +237,11 @@ export function AdminNodeDetail() {
                 <DockerNetworks embedded fixedNodeId={node.id} />
               </TabsContent>
             </>
+          )}
+          {node.status === "online" && hasScope("nodes:console") && (
+            <TabsContent value="console" className="flex flex-col flex-1 min-h-0">
+              <NodeConsoleTab nodeId={node.id} />
+            </TabsContent>
           )}
           <TabsContent value="daemon-logs" className="flex flex-col flex-1 min-h-0">
             <NodeLogsTab nodeId={node.id} nodeStatus={node.status} />
