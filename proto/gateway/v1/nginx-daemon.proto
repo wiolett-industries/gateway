@@ -1,7 +1,7 @@
 syntax = "proto3";
 package gateway.v1;
 
-option go_package = "github.com/wiolett/gateway/nginx-daemon/internal/gatewayv1";
+option go_package = "github.com/wiolett/gateway/daemon-shared/gatewayv1";
 
 // ─── Node Enrollment ────────────────────────────────────────────────
 
@@ -191,7 +191,16 @@ message GatewayCommand {
     DockerConfigPushCommand docker_config_push = 24;
     DockerLogsCommand docker_logs = 25;
     ExecInput exec_input = 26;
+    NodeExecCommand node_exec = 27;
   }
+}
+
+message NodeExecCommand {
+  string action = 1;          // "create", "resize"
+  repeated string command = 2; // shell override (default: auto-detect)
+  bool tty = 3;
+  int32 rows = 4;
+  int32 cols = 5;
 }
 
 message ApplyConfigCommand {

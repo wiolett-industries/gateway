@@ -2,11 +2,13 @@ package lifecycle
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"time"
 
 	"github.com/wiolett/gateway/daemon-shared/connector"
+	"github.com/wiolett/gateway/daemon-shared/exec"
 	pb "github.com/wiolett/gateway/daemon-shared/gatewayv1"
 	"github.com/wiolett/gateway/daemon-shared/stream"
 	"github.com/wiolett/gateway/daemon-shared/sysmetrics"
@@ -45,6 +47,10 @@ func runSession(ctx context.Context, conn *grpc.ClientConn, d *DaemonBase) error
 	// Notify plugin of session start
 	sessionCtx, sessionCancel := context.WithCancel(ctx)
 	defer sessionCancel()
+
+	// Create shared node-level exec manager for host console
+	nodeExecMgr := exec.NewManager(d.logger, writer)
+	defer nodeExecMgr.CloseAll()
 
 	if err := d.plugin.OnSessionStart(sessionCtx, writer); err != nil {
 		d.logger.Warn("plugin session start failed", "error", err)
@@ -89,8 +95,21 @@ func runSession(ctx context.Context, conn *grpc.ClientConn, d *DaemonBase) error
 			}
 			continue
 		case *pb.GatewayCommand_ExecInput:
-			// Fire-and-forget: route exec input to the plugin without sending a CommandResult
-			d.plugin.HandleCommand(cmd)
+			// Fire-and-forget: try shared node exec manager first, then fall through to plugin
+			if input := cmd.GetExecInput(); input != nil && nodeExecMgr.HasSession(input.ExecId) {
+				nodeExecMgr.HandleInput(input.ExecId, input.Data)
+			} else {
+				d.plugin.HandleCommand(cmd)
+			}
+			continue
+		case *pb.GatewayCommand_NodeExec:
+			// Handle node-level console exec (create/resize)
+			result := handleNodeExec(sessionCtx, nodeExecMgr, cmd, d.cfg.Console.User)
+			if err := writer.Send(&pb.DaemonMessage{
+				Payload: &pb.DaemonMessage_CommandResult{CommandResult: result},
+			}); err != nil {
+				return err
+			}
 			continue
 		}
 
@@ -192,6 +211,53 @@ func runCertRenewal(ctx context.Context, d *DaemonBase) {
 			check()
 		}
 	}
+}
+
+// handleNodeExec handles node-level console create/resize commands.
+func handleNodeExec(ctx context.Context, mgr *exec.Manager, cmd *pb.GatewayCommand, consoleUser string) *pb.CommandResult {
+	nodeExec := cmd.GetNodeExec()
+	result := &pb.CommandResult{CommandId: cmd.CommandId, Success: true}
+
+	switch nodeExec.GetAction() {
+	case "create":
+		shell := ""
+		if cmds := nodeExec.GetCommand(); len(cmds) > 0 {
+			shell = cmds[0]
+		}
+		execID, isNew, err := mgr.CreatePTYSession(ctx, "node-console", shell, int(nodeExec.GetRows()), int(nodeExec.GetCols()), consoleUser)
+		if err != nil {
+			result.Success = false
+			result.Error = err.Error()
+			return result
+		}
+
+		// Build detail JSON with exec_id, is_new, and buffered output
+		detail := map[string]interface{}{
+			"exec_id": execID,
+			"is_new":  isNew,
+		}
+		if !isNew {
+			detail["buffer"] = mgr.GetBufferBase64("node-console")
+		}
+		detailJSON, _ := json.Marshal(detail)
+		result.Detail = string(detailJSON)
+
+	case "resize":
+		// Find the session and resize
+		session := mgr.GetSessionByKey("node-console")
+		if session != nil {
+			if err := mgr.Resize(session.ID, int(nodeExec.GetRows()), int(nodeExec.GetCols())); err != nil {
+				result.Success = false
+				result.Error = err.Error()
+			}
+		}
+
+	default:
+		result.Success = false
+		result.Error = "unknown node exec action: " + nodeExec.GetAction()
+	}
+
+	return result
 }
 
 // newSystemReporter creates a new system metrics reporter.

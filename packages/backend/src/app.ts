@@ -23,6 +23,7 @@ import { authRoutes } from '@/modules/auth/auth.routes.js';
 import { dockerRoutes } from '@/modules/docker/docker.routes.js';
 import { createDockerExecWSHandlers } from '@/modules/docker/docker-exec.ws.js';
 import { createDockerLogStreamWSHandlers } from '@/modules/docker/docker-logs.ws.js';
+import { createNodeExecWSHandlers } from '@/modules/nodes/node-exec.ws.js';
 import { domainRoutes } from '@/modules/domains/domain.routes.js';
 import { groupRoutes } from '@/modules/groups/group.routes.js';
 import { housekeepingRoutes } from '@/modules/housekeeping/housekeeping.routes.js';
@@ -156,6 +157,17 @@ export function createApp() {
       const shell = c.req.query('shell') || '/bin/sh';
       const token = c.req.query('token') || '';
       return createDockerExecWSHandlers(nodeId, containerId, shell, token);
+    })
+  );
+
+  // Node-level console WebSocket endpoint
+  app.get(
+    '/api/nodes/:nodeId/exec',
+    upgradeWebSocket((c) => {
+      const nodeId = c.req.param('nodeId') ?? '';
+      const shell = c.req.query('shell') || 'auto';
+      const token = c.req.query('token') || '';
+      return createNodeExecWSHandlers(nodeId, shell, token);
     })
   );
 

@@ -20,10 +20,16 @@ type TLSConfig struct {
 	ClientKey  string `yaml:"client_key"`
 }
 
+// ConsoleConfig holds host-level interactive console settings.
+type ConsoleConfig struct {
+	User string `yaml:"user"` // OS user for console sessions; empty = daemon's own user
+}
+
 // BaseConfig holds the configuration common to all daemons.
 type BaseConfig struct {
 	Gateway   GatewayConfig `yaml:"gateway"`
 	TLS       TLSConfig     `yaml:"tls"`
+	Console   ConsoleConfig `yaml:"console"`
 	StateDir  string        `yaml:"state_dir"`
 	LogLevel  string        `yaml:"log_level"`
 	LogFormat string        `yaml:"log_format"`

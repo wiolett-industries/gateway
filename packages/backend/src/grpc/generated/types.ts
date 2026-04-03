@@ -166,6 +166,7 @@ export interface GatewayCommand {
   dockerConfigPush?: DockerConfigPushCommand;
   dockerLogs?: DockerLogsCommand;
   execInput?: ExecInput;
+  nodeExec?: NodeExecCommand;
 }
 
 export interface ApplyConfigCommand {
@@ -324,6 +325,14 @@ export interface DockerLogsCommand {
   timestamps: boolean;
   since?: string;
   until?: string;
+}
+
+export interface NodeExecCommand {
+  action: string;
+  command: string[];
+  tty: boolean;
+  rows: number;
+  cols: number;
 }
 
 export interface ExecInput {

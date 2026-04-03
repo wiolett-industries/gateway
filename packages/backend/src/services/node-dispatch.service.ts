@@ -248,6 +248,21 @@ export class NodeDispatchService {
     });
   }
 
+  async sendNodeExecCommand(
+    nodeId: string,
+    action: string,
+    options: {
+      command?: string[];
+      tty?: boolean;
+      rows?: number;
+      cols?: number;
+    } = {}
+  ): Promise<CommandResult> {
+    return this.registry.sendCommand(nodeId, {
+      nodeExec: { action, ...options } as any,
+    });
+  }
+
   async sendDockerFileCommand(
     nodeId: string,
     action: string,
