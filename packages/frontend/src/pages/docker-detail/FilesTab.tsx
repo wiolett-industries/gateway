@@ -145,7 +145,7 @@ export function FilesTab({ nodeId, containerId }: { nodeId: string; containerId:
     window.open(url, `file-${containerId}-${fileName}`, "width=900,height=600,menubar=no,toolbar=no");
   }, [nodeId, containerId]);
 
-  if (!hasScope("docker:files")) {
+  if (!hasScope("docker:containers:files")) {
     return (
       <div className="py-12 text-center text-muted-foreground">
         You don't have permission to browse files.

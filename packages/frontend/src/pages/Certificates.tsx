@@ -77,7 +77,7 @@ export function Certificates() {
             <h1 className="text-2xl font-bold">Certificates</h1>
             <p className="text-sm text-muted-foreground">{total} certificates total</p>
           </div>
-          {hasScope("cert:issue") && (
+          {hasScope("pki:cert:issue") && (
             <Button onClick={() => setIssueDialogOpen(true)}>
               <Plus className="h-4 w-4" />
               Issue Certificate
@@ -244,7 +244,7 @@ export function Certificates() {
         ) : (
           <EmptyState
             message="No certificates."
-            {...(hasScope("cert:issue")
+            {...(hasScope("pki:cert:issue")
               ? { actionLabel: "Issue one", onAction: () => setIssueDialogOpen(true) }
               : {})}
             hasActiveFilters={hasActiveFilters}

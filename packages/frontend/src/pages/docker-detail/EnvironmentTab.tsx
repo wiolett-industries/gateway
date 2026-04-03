@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { Code2, Minus, Plus, RotateCcw, Table2 } from "lucide-react";
+import { Code2, Eye, EyeOff, Lock, Minus, Plus, RotateCcw, Table2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
@@ -9,6 +9,16 @@ import { Input } from "@/components/ui/input";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
+import type { DockerSecret } from "@/types";
+
+interface SecretRow {
+  /** DB id — undefined for newly added secrets */
+  id?: string;
+  key: string;
+  value: string;
+  /** true when the value has been changed from its original */
+  dirty: boolean;
+}
 
 export function EnvironmentTab({ nodeId, containerId, disabled, onRecreating }: { nodeId: string; containerId: string; disabled?: boolean; onRecreating?: (v: boolean) => void }) {
   const { hasScope } = useAuthStore();
@@ -21,11 +31,22 @@ export function EnvironmentTab({ nodeId, containerId, disabled, onRecreating }: 
   const [rawText, setRawText] = useState("");
   const [errorLines, setErrorLines] = useState<number[]>([]);
 
+  // Secrets state — edited locally, flushed to DB on recreate
+  const [secretRows, setSecretRows] = useState<SecretRow[]>([]);
+  const [revealedSecrets, setRevealedSecrets] = useState<Set<number>>(new Set());
+  const [deletedSecretIds, setDeletedSecretIds] = useState<Set<string>>(new Set());
+
+  const canEdit = hasScope("docker:containers:environment");
+  const canManageSecrets = hasScope("docker:containers:secrets");
+
   const fetchEnv = useCallback(async () => {
     setIsLoading(true);
     try {
-      const data = await api.getContainerEnv(nodeId, containerId);
-      const parsed = (data ?? []).map((entry) => {
+      const [data, secretsData] = await Promise.all([
+        api.getContainerEnv(nodeId, containerId),
+        api.listDockerSecrets(nodeId, containerId),
+      ]);
+      const parsed = (data ?? []).map((entry: string) => {
         const idx = entry.indexOf("=");
         return idx >= 0
           ? { key: entry.slice(0, idx), value: entry.slice(idx + 1) }
@@ -34,6 +55,16 @@ export function EnvironmentTab({ nodeId, containerId, disabled, onRecreating }: 
       setEnvVars(parsed);
       setOriginalEnv(data ?? []);
       setRawText((data ?? []).join("\n"));
+
+      const rows: SecretRow[] = (secretsData ?? []).map((s: DockerSecret) => ({
+        id: s.id,
+        key: s.key,
+        value: s.value,
+        dirty: false,
+      }));
+      setSecretRows(rows);
+      setDeletedSecretIds(new Set());
+      setRevealedSecrets(new Set());
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to fetch environment");
     } finally {
@@ -45,20 +76,18 @@ export function EnvironmentTab({ nodeId, containerId, disabled, onRecreating }: 
     fetchEnv();
   }, [fetchEnv]);
 
-  // Validate raw text — returns 1-based line numbers of invalid lines
+  // ── Env handlers ─────────────────────────────────────────────────
+
   const validateRaw = (text: string): number[] => {
     const errors = new Set<number>();
     const lines = text.split("\n");
-    const keyLines = new Map<string, number[]>(); // key → line numbers (1-based)
+    const keyLines = new Map<string, number[]>();
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
       if (!line || line.startsWith("#")) continue;
       const stripped = line.startsWith("export ") ? line.slice(7).trim() : line;
       const eqIdx = stripped.indexOf("=");
-      if (eqIdx < 1) {
-        errors.add(i + 1);
-        continue;
-      }
+      if (eqIdx < 1) { errors.add(i + 1); continue; }
       const key = stripped.slice(0, eqIdx);
       if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
         errors.add(i + 1);
@@ -68,16 +97,12 @@ export function EnvironmentTab({ nodeId, containerId, disabled, onRecreating }: 
         keyLines.set(key, existing);
       }
     }
-    // Mark all lines with duplicate keys
     for (const lineNums of keyLines.values()) {
-      if (lineNums.length > 1) {
-        for (const ln of lineNums) errors.add(ln);
-      }
+      if (lineNums.length > 1) for (const ln of lineNums) errors.add(ln);
     }
     return Array.from(errors).sort((a, b) => a - b);
   };
 
-  // Sync between table and raw modes
   const switchToRaw = () => {
     const text = envVars.map((e) => `${e.key}=${e.value}`).join("\n");
     setRawText(text);
@@ -99,17 +124,52 @@ export function EnvironmentTab({ nodeId, containerId, disabled, onRecreating }: 
     setRawMode(false);
   };
 
+  const updateVar = (idx: number, field: "key" | "value", val: string) => {
+    setEnvVars((prev) => {
+      const updated = [...prev];
+      updated[idx] = { ...updated[idx], [field]: val };
+      return updated;
+    });
+  };
+
+  const addVar = () => setEnvVars((prev) => [...prev, { key: "", value: "" }]);
+  const removeVar = (idx: number) => setEnvVars((prev) => prev.filter((_, i) => i !== idx));
+
+  // ── Secret handlers ──────────────────────────────────────────────
+
+  const addSecretRow = () => setSecretRows((prev) => [...prev, { key: "", value: "", dirty: true }]);
+
+  const updateSecretRow = (idx: number, field: "key" | "value", val: string) => {
+    setSecretRows((prev) => {
+      const updated = [...prev];
+      updated[idx] = { ...updated[idx], [field]: val, dirty: true };
+      return updated;
+    });
+  };
+
+  const removeSecretRow = (idx: number) => {
+    const row = secretRows[idx];
+    if (row.id) setDeletedSecretIds((prev) => new Set(prev).add(row.id!));
+    setSecretRows((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const toggleReveal = (idx: number) => {
+    setRevealedSecrets((prev) => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      return next;
+    });
+  };
+
+  // ── Save handler ─────────────────────────────────────────────────
+
   const handleSave = async () => {
     const vars = rawMode
-      ? rawText
-          .split("\n")
-          .filter((l) => l.trim())
-          .map((line) => {
-            const idx = line.indexOf("=");
-            return idx >= 0
-              ? { key: line.slice(0, idx), value: line.slice(idx + 1) }
-              : { key: line, value: "" };
-          })
+      ? rawText.split("\n").filter((l) => l.trim()).map((line) => {
+          const idx = line.indexOf("=");
+          return idx >= 0 ? { key: line.slice(0, idx), value: line.slice(idx + 1) } : { key: line, value: "" };
+        })
       : envVars;
 
     const ok = await confirm({
@@ -122,6 +182,26 @@ export function EnvironmentTab({ nodeId, containerId, disabled, onRecreating }: 
     setIsSaving(true);
     onRecreating?.(true);
     try {
+      // 1. Flush secret changes to DB
+      if (hasSecretsChanges) {
+        // Delete removed secrets
+        for (const id of deletedSecretIds) {
+          await api.deleteDockerSecret(nodeId, containerId, id);
+        }
+        // Create/update secrets
+        for (const row of secretRows) {
+          if (!row.key.trim() || !row.dirty) continue;
+          if (row.id) {
+            // Existing secret with new value
+            await api.updateDockerSecret(nodeId, containerId, row.id, row.value);
+          } else {
+            // New secret
+            await api.createDockerSecret(nodeId, containerId, row.key.trim(), row.value);
+          }
+        }
+      }
+
+      // 2. Save env vars (triggers recreate — backend merges secrets into env)
       const newEnv: Record<string, string> = {};
       for (const e of vars) {
         if (e.key.trim()) newEnv[e.key.trim()] = e.value;
@@ -131,14 +211,9 @@ export function EnvironmentTab({ nodeId, containerId, disabled, onRecreating }: 
         .map((entry) => entry.split("=")[0])
         .filter((k) => !newKeys.has(k));
 
-      await api.updateContainerEnv(
-        nodeId,
-        containerId,
-        newEnv,
-        removeEnv.length > 0 ? removeEnv : undefined
-      );
+      await api.updateContainerEnv(nodeId, containerId, newEnv, removeEnv.length > 0 ? removeEnv : undefined);
       toast.info("Recreating container...");
-      // Poll until container is back — env update triggers a full recreate
+
       const pollStart = Date.now();
       const poll = setInterval(async () => {
         try {
@@ -169,59 +244,75 @@ export function EnvironmentTab({ nodeId, containerId, disabled, onRecreating }: 
     }
   };
 
-  const updateVar = (idx: number, field: "key" | "value", val: string) => {
-    setEnvVars((prev) => {
-      const updated = [...prev];
-      updated[idx] = { ...updated[idx], [field]: val };
-      return updated;
-    });
-  };
-
-  const addVar = () => {
-    setEnvVars((prev) => [...prev, { key: "", value: "" }]);
-  };
-
-  const removeVar = (idx: number) => {
-    setEnvVars((prev) => prev.filter((_, i) => i !== idx));
-  };
+  // ── Derived state ────────────────────────────────────────────────
 
   if (isLoading) {
     return <div className="py-12 text-center text-muted-foreground">Loading environment...</div>;
   }
 
-  const canEdit = hasScope("docker:edit");
   const isLast = (idx: number) => idx === envVars.length - 1;
+  const isLastSecret = (idx: number) => idx === secretRows.length - 1;
 
-  // Detect duplicate and invalid keys in table mode
-  const duplicateKeyIndices = new Set<number>();
+  // Build a unified key map across both sections for cross-section duplicate detection
+  const allKeyLocations = new Map<string, { envIndices: number[]; secretIndices: number[] }>();
   if (!rawMode) {
-    const seen = new Map<string, number>();
     envVars.forEach((e, i) => {
       const k = e.key.trim();
       if (!k) return;
-      if (seen.has(k)) {
-        duplicateKeyIndices.add(seen.get(k)!);
-        duplicateKeyIndices.add(i);
-      } else {
-        seen.set(k, i);
-      }
+      const entry = allKeyLocations.get(k) ?? { envIndices: [], secretIndices: [] };
+      entry.envIndices.push(i);
+      allKeyLocations.set(k, entry);
+    });
+    secretRows.forEach((r, i) => {
+      const k = r.key.trim();
+      if (!k) return;
+      const entry = allKeyLocations.get(k) ?? { envIndices: [], secretIndices: [] };
+      entry.secretIndices.push(i);
+      allKeyLocations.set(k, entry);
     });
   }
-  const hasTableErrors = !rawMode && (
-    envVars.some((e) => !e.key.trim() || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(e.key.trim())) ||
+
+  // Env error indices: duplicate within envs OR cross-duplicate with secrets
+  const duplicateKeyIndices = new Set<number>();
+  // Secret error indices: duplicate within secrets, cross-duplicate with envs, or invalid key name
+  const duplicateSecretIndices = new Set<number>();
+  const invalidKeyPattern = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+  for (const [, loc] of allKeyLocations) {
+    const totalOccurrences = loc.envIndices.length + loc.secretIndices.length;
+    if (totalOccurrences > 1) {
+      for (const i of loc.envIndices) duplicateKeyIndices.add(i);
+      for (const i of loc.secretIndices) duplicateSecretIndices.add(i);
+    }
+  }
+
+  // Secret-specific: invalid key names
+  secretRows.forEach((r, i) => {
+    const k = r.key.trim();
+    if (k && !invalidKeyPattern.test(k)) duplicateSecretIndices.add(i);
+  });
+
+  const hasEnvTableErrors = !rawMode && (
+    envVars.some((e) => !e.key.trim() || !invalidKeyPattern.test(e.key.trim())) ||
     duplicateKeyIndices.size > 0
   );
-  const hasErrors = rawMode ? errorLines.length > 0 : hasTableErrors;
+  const hasSecretErrors = !rawMode && (
+    secretRows.some((r) => !r.key.trim() || !invalidKeyPattern.test(r.key.trim())) ||
+    duplicateSecretIndices.size > 0
+  );
+  const hasErrors = rawMode ? errorLines.length > 0 : (hasEnvTableErrors || hasSecretErrors);
 
-  // Compute hasChanges by comparing current state against original
-  const currentEnvStr = rawMode
-    ? rawText
-    : envVars.map((e) => `${e.key}=${e.value}`).join("\n");
+  // Env changes
+  const currentEnvStr = rawMode ? rawText : envVars.map((e) => `${e.key}=${e.value}`).join("\n");
   const originalEnvStr = originalEnv.join("\n");
-  const hasChanges = currentEnvStr !== originalEnvStr;
+  const hasEnvChanges = currentEnvStr !== originalEnvStr;
+
+  // Secret changes
+  const hasSecretsChanges = deletedSecretIds.size > 0 || secretRows.some((r) => r.dirty);
+  const hasChanges = hasEnvChanges || hasSecretsChanges;
 
   return (
-    <div className={`${rawMode ? "flex flex-col flex-1 min-h-0" : "pb-6"} ${disabled ? "pointer-events-none opacity-60" : ""}`}>
+    <div className={`${rawMode ? "flex flex-col flex-1 min-h-0" : "pb-6 space-y-4"} ${disabled ? "pointer-events-none opacity-60" : ""}`}>
       <div className={`overflow-hidden flex flex-col ${rawMode ? "flex-1 min-h-0" : "border border-border bg-card"}`}>
         {/* Header */}
         <div className={`flex items-center justify-between px-4 py-3 shrink-0 ${rawMode ? "bg-card border border-border border-b-0" : "border-b border-border"}`}>
@@ -230,6 +321,11 @@ export function EnvironmentTab({ nodeId, containerId, disabled, onRecreating }: 
             <p className="text-xs text-muted-foreground">Changes will recreate the container</p>
           </div>
           <div className="flex items-center gap-2">
+            {canEdit && !rawMode && (
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={addVar} title="Add variable">
+                <Plus className="h-3.5 w-3.5" />
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="icon"
@@ -267,10 +363,7 @@ export function EnvironmentTab({ nodeId, containerId, disabled, onRecreating }: 
             >
               <CodeEditor
                 value={rawText}
-                onChange={(val) => {
-                  setRawText(val);
-                  setErrorLines(validateRaw(val));
-                              }}
+                onChange={(val) => { setRawText(val); setErrorLines(validateRaw(val)); }}
                 readOnly={!canEdit}
                 language="env"
                 errorLines={errorLines}
@@ -284,15 +377,14 @@ export function EnvironmentTab({ nodeId, containerId, disabled, onRecreating }: 
               exit={{ opacity: 0 }}
               transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
             >
-              <div className="grid grid-cols-[1fr_1fr] shadow-[inset_0_-1px_0_var(--color-border)] text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                <div className="px-3 py-2">Key</div>
-                <div className="px-3 py-2 border-l border-border">Value</div>
-              </div>
+              {envVars.length > 0 && (
+                <div className="grid grid-cols-[1fr_1fr] shadow-[inset_0_-1px_0_var(--color-border)] text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  <div className="px-3 py-2">Key</div>
+                  <div className="px-3 py-2 border-l border-border">Value</div>
+                </div>
+              )}
               {envVars.map((env, idx) => (
-                <div
-                  key={idx}
-                  className="grid grid-cols-[1fr_1fr] shadow-[inset_0_-1px_0_var(--color-border)] last:shadow-none"
-                >
+                <div key={idx} className="grid grid-cols-[1fr_1fr] shadow-[inset_0_-1px_0_var(--color-border)] last:shadow-none">
                   {canEdit ? (
                     <>
                       <Input
@@ -310,21 +402,11 @@ export function EnvironmentTab({ nodeId, containerId, disabled, onRecreating }: 
                           className="h-9 text-xs font-mono border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring flex-1 min-w-0"
                           placeholder="value"
                         />
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-9 w-9 shrink-0 rounded-none border-l border-border"
-                          onClick={() => removeVar(idx)}
-                        >
+                        <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0 rounded-none border-l border-border" onClick={() => removeVar(idx)}>
                           <Minus className="h-3.5 w-3.5" />
                         </Button>
                         {isLast(idx) && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-9 w-9 shrink-0 rounded-none border-l border-border"
-                            onClick={addVar}
-                          >
+                          <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0 rounded-none border-l border-border" onClick={addVar}>
                             <Plus className="h-3.5 w-3.5" />
                           </Button>
                         )}
@@ -333,30 +415,123 @@ export function EnvironmentTab({ nodeId, containerId, disabled, onRecreating }: 
                   ) : (
                     <>
                       <span className="px-3 py-2 text-xs font-mono truncate">{env.key}</span>
-                      <span className="px-3 py-2 text-xs font-mono text-muted-foreground truncate border-l border-border">
-                        {env.value}
-                      </span>
+                      <span className="px-3 py-2 text-xs font-mono text-muted-foreground truncate border-l border-border">{env.value}</span>
                     </>
                   )}
                 </div>
               ))}
-              {envVars.length === 0 && canEdit && (
-                <div className="flex items-center justify-center py-6">
-                  <Button variant="ghost" size="sm" onClick={addVar}>
-                    <Plus className="h-3.5 w-3.5 mr-1" />
-                    Add variable
-                  </Button>
-                </div>
-              )}
-              {envVars.length === 0 && !canEdit && (
-                <div className="py-8 text-center text-muted-foreground text-sm">
-                  No environment variables
+              {envVars.length === 0 && (
+                <div className="flex items-center justify-center py-8">
+                  <p className="text-sm text-muted-foreground">
+                    No environment variables.{canEdit && (
+                      <>{" "}<button onClick={addVar} className="text-foreground hover:underline">Add one</button></>
+                    )}
+                  </p>
                 </div>
               )}
             </motion.div>
           )}
         </AnimatePresence>
       </div>
+
+      {/* Secrets section — only in table mode */}
+      {!rawMode && (
+        <div className="overflow-hidden border border-border bg-card">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+            <div className="flex items-center gap-2">
+              <Lock className="h-3.5 w-3.5 text-muted-foreground" />
+              <div>
+                <h3 className="text-sm font-semibold">Secrets</h3>
+                <p className="text-xs text-muted-foreground">
+                  Encrypted at rest — injected as env vars on container start
+                </p>
+              </div>
+            </div>
+            {canManageSecrets && (
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={addSecretRow} title="Add secret">
+                <Plus className="h-3.5 w-3.5" />
+              </Button>
+            )}
+          </div>
+
+          {secretRows.length > 0 && (
+            <div className="grid grid-cols-[1fr_1fr] shadow-[inset_0_-1px_0_var(--color-border)] text-xs font-medium text-muted-foreground uppercase tracking-wider">
+              <div className="px-3 py-2">Key</div>
+              <div className="px-3 py-2 border-l border-border">Value</div>
+            </div>
+          )}
+
+          {secretRows.map((row, idx) => {
+            const isNew = !row.id;
+            const isMasked = row.value === "••••••••";
+            const isRevealed = revealedSecrets.has(idx);
+            const hasKeyError = duplicateSecretIndices.has(idx) || (row.key.trim() && !invalidKeyPattern.test(row.key.trim()));
+
+            return (
+              <div key={row.id ?? `new-${idx}`} className="grid grid-cols-[1fr_1fr] shadow-[inset_0_-1px_0_var(--color-border)] last:shadow-none">
+                {canManageSecrets ? (
+                  <>
+                    <Input
+                      value={row.key}
+                      onChange={(e) => isNew && updateSecretRow(idx, "key", e.target.value)}
+                      readOnly={!isNew}
+                      className={`h-9 text-xs font-mono border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring ${
+                        hasKeyError ? "bg-red-500/15 text-red-400" : ""
+                      }`}
+                      placeholder="SECRET_KEY"
+                    />
+                    <div className="flex items-center border-l border-border">
+                      <Input
+                        type={isNew || isRevealed ? "text" : "password"}
+                        value={isMasked && !row.dirty ? "" : row.value}
+                        onChange={(e) => updateSecretRow(idx, "value", e.target.value)}
+                        className="h-9 text-xs font-mono border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring flex-1 min-w-0"
+                        placeholder={isMasked && !row.dirty ? "••••••••" : "secret value"}
+                      />
+                      {!isNew && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-9 w-9 shrink-0 rounded-none border-l border-border"
+                          onClick={() => toggleReveal(idx)}
+                          title={isRevealed ? "Hide" : "Show"}
+                        >
+                          {isRevealed ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                        </Button>
+                      )}
+                      <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0 rounded-none border-l border-border" onClick={() => removeSecretRow(idx)}>
+                        <Minus className="h-3.5 w-3.5" />
+                      </Button>
+                      {isLastSecret(idx) && (
+                        <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0 rounded-none border-l border-border" onClick={addSecretRow}>
+                          <Plus className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <span className="px-3 py-2 text-xs font-mono truncate">{row.key}</span>
+                    <span className="px-3 py-2 text-xs font-mono text-muted-foreground truncate border-l border-border">
+                      ••••••••
+                    </span>
+                  </>
+                )}
+              </div>
+            );
+          })}
+
+          {secretRows.length === 0 && (
+            <div className="flex items-center justify-center py-8">
+              <p className="text-sm text-muted-foreground">
+                No secrets configured.{canManageSecrets && (
+                  <>{" "}<button onClick={addSecretRow} className="text-foreground hover:underline">Add one</button></>
+                )}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

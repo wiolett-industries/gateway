@@ -16,7 +16,7 @@ sslRoutes.use('*', authMiddleware);
 sslRoutes.use('*', sessionOnly);
 
 // List SSL certificates (paginated, filterable)
-sslRoutes.get('/', requireScope('ssl:read'), async (c) => {
+sslRoutes.get('/', requireScope('ssl:cert:list'), async (c) => {
   const sslService = container.resolve(SSLService);
   const query = SSLCertListQuerySchema.parse({
     page: c.req.query('page'),
@@ -30,7 +30,7 @@ sslRoutes.get('/', requireScope('ssl:read'), async (c) => {
 });
 
 // Get SSL certificate detail
-sslRoutes.get('/:id', requireScope('ssl:read'), async (c) => {
+sslRoutes.get('/:id', requireScope('ssl:cert:view'), async (c) => {
   const sslService = container.resolve(SSLService);
   const id = c.req.param('id');
   const cert = await sslService.getCert(id);
@@ -38,7 +38,7 @@ sslRoutes.get('/:id', requireScope('ssl:read'), async (c) => {
 });
 
 // Request ACME certificate
-sslRoutes.post('/acme', requireScope('ssl:manage'), async (c) => {
+sslRoutes.post('/acme', requireScope('ssl:cert:issue'), async (c) => {
   const sslService = container.resolve(SSLService);
   const user = c.get('user')!;
   const body = await c.req.json();
@@ -48,7 +48,7 @@ sslRoutes.post('/acme', requireScope('ssl:manage'), async (c) => {
 });
 
 // Upload certificate
-sslRoutes.post('/upload', requireScope('ssl:manage'), async (c) => {
+sslRoutes.post('/upload', requireScope('ssl:cert:issue'), async (c) => {
   const sslService = container.resolve(SSLService);
   const user = c.get('user')!;
   const body = await c.req.json();
@@ -58,7 +58,7 @@ sslRoutes.post('/upload', requireScope('ssl:manage'), async (c) => {
 });
 
 // Link internal CA certificate
-sslRoutes.post('/internal', requireScope('ssl:manage'), async (c) => {
+sslRoutes.post('/internal', requireScope('ssl:cert:issue'), async (c) => {
   const sslService = container.resolve(SSLService);
   const user = c.get('user')!;
   const body = await c.req.json();
@@ -68,7 +68,7 @@ sslRoutes.post('/internal', requireScope('ssl:manage'), async (c) => {
 });
 
 // Manual renew
-sslRoutes.post('/:id/renew', requireScope('ssl:manage'), async (c) => {
+sslRoutes.post('/:id/renew', requireScope('ssl:cert:issue'), async (c) => {
   const sslService = container.resolve(SSLService);
   const user = c.get('user')!;
   const id = c.req.param('id');
@@ -77,7 +77,7 @@ sslRoutes.post('/:id/renew', requireScope('ssl:manage'), async (c) => {
 });
 
 // Complete DNS-01 verification
-sslRoutes.post('/:id/dns-verify', requireScope('ssl:manage'), async (c) => {
+sslRoutes.post('/:id/dns-verify', requireScope('ssl:cert:issue'), async (c) => {
   const sslService = container.resolve(SSLService);
   const user = c.get('user')!;
   const id = c.req.param('id');
@@ -86,7 +86,7 @@ sslRoutes.post('/:id/dns-verify', requireScope('ssl:manage'), async (c) => {
 });
 
 // Delete SSL certificate
-sslRoutes.delete('/:id', requireScope('ssl:delete'), async (c) => {
+sslRoutes.delete('/:id', requireScope('ssl:cert:delete'), async (c) => {
   const sslService = container.resolve(SSLService);
   const user = c.get('user')!;
   const id = c.req.param('id');

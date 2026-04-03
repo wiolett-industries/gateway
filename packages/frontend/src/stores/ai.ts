@@ -13,6 +13,7 @@ import { useCertificatesStore } from "@/stores/certificates";
 import { useFolderStore } from "@/stores/folders";
 import { useProxyStore } from "@/stores/proxy";
 import { useSSLStore } from "@/stores/ssl";
+import { useDockerStore } from "@/stores/docker";
 import { useUIStore } from "@/stores/ui";
 import type {
   AIMessage,
@@ -31,8 +32,15 @@ function getToolActionType(toolName: string): ToolActionType {
     toolName === "link_internal_cert"
   )
     return "create";
-  if (toolName.startsWith("update_") || toolName.startsWith("revoke_")) return "edit";
-  if (toolName.startsWith("delete_")) return "delete";
+  if (
+    toolName.startsWith("update_") ||
+    toolName.startsWith("revoke_") ||
+    toolName.startsWith("start_") ||
+    toolName.startsWith("stop_") ||
+    toolName.startsWith("restart_")
+  )
+    return "edit";
+  if (toolName.startsWith("delete_") || toolName.startsWith("remove_")) return "delete";
   return "other";
 }
 
@@ -82,6 +90,18 @@ function invalidateStore(storeName: string): void {
       break;
     case "users":
       api.invalidateCache("admin");
+      break;
+    case "containers":
+      useDockerStore.getState().invalidate("containers");
+      break;
+    case "images":
+      useDockerStore.getState().invalidate("images");
+      break;
+    case "volumes":
+      useDockerStore.getState().invalidate("volumes");
+      break;
+    case "networks":
+      useDockerStore.getState().invalidate("networks");
       break;
   }
 }

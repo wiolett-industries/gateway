@@ -40,22 +40,22 @@ import { TOKEN_SCOPES } from "@/types";
 
 /** Scopes that can be restricted to specific resources (CAs, nodes, or proxy hosts) */
 const RESTRICTABLE_SCOPES = [
-  "cert:issue",
-  "cert:revoke",
-  "cert:export",
-  "ca:create:intermediate",
+  "pki:cert:issue",
+  "pki:cert:revoke",
+  "pki:cert:export",
+  "pki:ca:create:intermediate",
   "proxy:view",
   "proxy:edit",
   "proxy:delete",
   "proxy:advanced",
-  "proxy:raw-read",
-  "proxy:raw-write",
-  "proxy:raw-toggle",
+  "proxy:raw:read",
+  "proxy:raw:write",
+  "proxy:raw:toggle",
   "nodes:details",
-  "nodes:config",
+  "nodes:config:view",
+  "nodes:config:edit",
   "nodes:logs",
   "nodes:rename",
-  "nodes:config-edit",
   "nodes:delete",
 ];
 

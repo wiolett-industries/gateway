@@ -1,14 +1,20 @@
 import {
   Award,
+  Box,
   FileCode,
+  FileCode2,
   FileText,
   Globe,
   Globe2,
+  HardDrive,
+  Layers,
   LayoutDashboard,
+  ListTodo,
   Lock,
   LogOut,
   Monitor,
   Moon,
+  Network,
   PanelLeft,
   Plus,
   ScrollText,
@@ -78,7 +84,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         <CommandEmpty>No results found.</CommandEmpty>
 
         {/* CAs */}
-        {hasScope("ca:read") && (cas || []).length > 0 && (
+        {hasScope("pki:ca:list:root") && (cas || []).length > 0 && (
           <>
             <CommandGroup heading="Certificate Authorities">
               {(cas || []).slice(0, 5).map((ca) => (
@@ -105,7 +111,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
           </CommandItem>
         </CommandGroup>
 
-        {(hasScope("proxy:list") || hasScope("ssl:read")) && (
+        {(hasScope("proxy:list") || hasScope("ssl:cert:list")) && (
           <>
             <CommandSeparator />
             <CommandGroup heading="Reverse Proxy">
@@ -130,7 +136,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                   <CommandShortcut>⌘4</CommandShortcut>
                 </CommandItem>
               )}
-              {hasScope("ssl:read") && (
+              {hasScope("ssl:cert:list") && (
                 <CommandItem onSelect={() => handleSelect(() => navigate("/ssl-certificates"))}>
                   <Lock className="mr-2 h-4 w-4" />
                   SSL Certificates
@@ -141,25 +147,25 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
           </>
         )}
 
-        {(hasScope("ca:read") || hasScope("cert:read") || hasScope("template:read")) && (
+        {(hasScope("pki:ca:list:root") || hasScope("pki:cert:list") || hasScope("pki:templates:list")) && (
           <>
             <CommandSeparator />
             <CommandGroup heading="PKI">
-              {hasScope("ca:read") && (
+              {hasScope("pki:ca:list:root") && (
                 <CommandItem onSelect={() => handleSelect(() => navigate("/cas"))}>
                   <ShieldCheck className="mr-2 h-4 w-4" />
                   Authorities
                   <CommandShortcut>⌘6</CommandShortcut>
                 </CommandItem>
               )}
-              {hasScope("cert:read") && (
+              {hasScope("pki:cert:list") && (
                 <CommandItem onSelect={() => handleSelect(() => navigate("/certificates"))}>
                   <FileText className="mr-2 h-4 w-4" />
                   Certificates
                   <CommandShortcut>⌘7</CommandShortcut>
                 </CommandItem>
               )}
-              {hasScope("template:read") && (
+              {hasScope("pki:templates:list") && (
                 <CommandItem onSelect={() => handleSelect(() => navigate("/templates"))}>
                   <Award className="mr-2 h-4 w-4" />
                   Templates
@@ -170,17 +176,59 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
           </>
         )}
 
+        {hasScope("docker:containers:list") && (
+          <>
+            <CommandSeparator />
+            <CommandGroup heading="Docker">
+              <CommandItem onSelect={() => handleSelect(() => navigate("/docker/containers"))}>
+                <Box className="mr-2 h-4 w-4" />
+                Containers
+              </CommandItem>
+              {hasScope("docker:images:list") && (
+                <CommandItem onSelect={() => handleSelect(() => navigate("/docker/images"))}>
+                  <Layers className="mr-2 h-4 w-4" />
+                  Images
+                </CommandItem>
+              )}
+              {hasScope("docker:volumes:list") && (
+                <CommandItem onSelect={() => handleSelect(() => navigate("/docker/volumes"))}>
+                  <HardDrive className="mr-2 h-4 w-4" />
+                  Volumes
+                </CommandItem>
+              )}
+              {hasScope("docker:networks:list") && (
+                <CommandItem onSelect={() => handleSelect(() => navigate("/docker/networks"))}>
+                  <Network className="mr-2 h-4 w-4" />
+                  Networks
+                </CommandItem>
+              )}
+              {hasScope("docker:templates:list") && (
+                <CommandItem onSelect={() => handleSelect(() => navigate("/docker/templates"))}>
+                  <FileCode2 className="mr-2 h-4 w-4" />
+                  Templates
+                </CommandItem>
+              )}
+              {hasScope("docker:tasks") && (
+                <CommandItem onSelect={() => handleSelect(() => navigate("/docker/tasks"))}>
+                  <ListTodo className="mr-2 h-4 w-4" />
+                  Tasks
+                </CommandItem>
+              )}
+            </CommandGroup>
+          </>
+        )}
+
         <CommandSeparator />
 
         <CommandGroup heading="Management">
-          {hasScope("proxy:list") && (
-            <CommandItem onSelect={() => handleSelect(() => navigate("/nginx"))}>
+          {hasScope("nodes:list") && (
+            <CommandItem onSelect={() => handleSelect(() => navigate("/nodes"))}>
               <Server className="mr-2 h-4 w-4" />
-              Nginx
+              Nodes
               <CommandShortcut>⌘9</CommandShortcut>
             </CommandItem>
           )}
-          {hasScope("access-list:read") && (
+          {hasScope("acl:list") && (
             <CommandItem onSelect={() => handleSelect(() => navigate("/access-lists"))}>
               <ShieldAlert className="mr-2 h-4 w-4" />
               Access Lists
@@ -228,7 +276,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
               <CommandShortcut>⌃H</CommandShortcut>
             </CommandItem>
           )}
-          {hasScope("ssl:manage") && (
+          {hasScope("ssl:cert:issue") && (
             <CommandItem
               onSelect={() =>
                 handleSelect(() => {
@@ -242,7 +290,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
               <CommandShortcut>⌃S</CommandShortcut>
             </CommandItem>
           )}
-          {hasScope("ca:create:root") && (
+          {hasScope("pki:ca:create:root") && (
             <CommandItem
               onSelect={() =>
                 handleSelect(() => {

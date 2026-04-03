@@ -22,6 +22,7 @@ import type {
   DockerImage,
   DockerNetwork,
   DockerRegistry,
+  DockerSecret,
   DockerTask,
   DockerTemplate,
   DockerVolume,
@@ -1412,6 +1413,38 @@ class ApiClient {
       `/docker/nodes/${nodeId}/containers/${containerId}/recreate`,
       { method: "POST", body: JSON.stringify(config) }
     ));
+  }
+
+  // ── Docker Secrets ────────────────────────────────────────────────
+
+  async listDockerSecrets(nodeId: string, containerId: string): Promise<DockerSecret[]> {
+    return this.unwrapData(
+      this.request<{ data: DockerSecret[] }>(`/docker/nodes/${nodeId}/containers/${containerId}/secrets`)
+    );
+  }
+
+  async createDockerSecret(nodeId: string, containerId: string, key: string, value: string): Promise<DockerSecret> {
+    return this.unwrapData(
+      this.request<{ data: DockerSecret }>(`/docker/nodes/${nodeId}/containers/${containerId}/secrets`, {
+        method: "POST",
+        body: JSON.stringify({ key, value }),
+      })
+    );
+  }
+
+  async updateDockerSecret(nodeId: string, containerId: string, secretId: string, value: string): Promise<DockerSecret> {
+    return this.unwrapData(
+      this.request<{ data: DockerSecret }>(`/docker/nodes/${nodeId}/containers/${containerId}/secrets/${secretId}`, {
+        method: "PUT",
+        body: JSON.stringify({ value }),
+      })
+    );
+  }
+
+  async deleteDockerSecret(nodeId: string, containerId: string, secretId: string): Promise<void> {
+    await this.request(`/docker/nodes/${nodeId}/containers/${containerId}/secrets/${secretId}`, {
+      method: "DELETE",
+    });
   }
 
   // ── Docker Images ─────────────────────────────────────────────────

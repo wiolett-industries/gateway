@@ -152,6 +152,17 @@ export const TemplateDeploySchema = z.object({
   overrides: z.object({}).passthrough().optional(),
 });
 
+// ─── Secret schemas ──────────────────────────────────────────────────
+
+export const SecretCreateSchema = z.object({
+  key: z.string().min(1).regex(/^[A-Za-z_][A-Za-z0-9_]*$/, 'Invalid environment variable name'),
+  value: z.string(),
+});
+
+export const SecretUpdateSchema = z.object({
+  value: z.string(),
+});
+
 // ─── Type exports ─────────────────────────────────────────────────────
 
 export type ContainerCreateInput = z.infer<typeof ContainerCreateSchema>;

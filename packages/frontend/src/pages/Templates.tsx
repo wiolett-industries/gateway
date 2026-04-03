@@ -319,7 +319,7 @@ export function Templates() {
             <h1 className="text-2xl font-bold">Templates</h1>
             <p className="text-sm text-muted-foreground">Certificate issuance templates</p>
           </div>
-          {hasScope("template:manage") && (
+          {hasScope("pki:templates:edit") && (
             <Button onClick={openCreate}>
               <Plus className="h-4 w-4" />
               Create Template
@@ -337,7 +337,7 @@ export function Templates() {
                     <FileText className="h-4 w-4 text-muted-foreground" />
                     <h3 className="font-semibold text-sm">{template.name}</h3>
                   </div>
-                  {hasScope("template:manage") && !template.isBuiltin && (
+                  {hasScope("pki:templates:edit") && !template.isBuiltin && (
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -401,7 +401,7 @@ export function Templates() {
         ) : (
           <EmptyState
             message="No templates."
-            {...(hasScope("template:manage")
+            {...(hasScope("pki:templates:edit")
               ? { actionLabel: "Create one", onAction: () => setDialogOpen(true) }
               : {})}
           />

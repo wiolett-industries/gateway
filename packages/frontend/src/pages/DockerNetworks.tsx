@@ -193,7 +193,7 @@ export function DockerNetworks() {
             {selectedNodeId && (
               <>
                 <RefreshButton onClick={() => fetchNetworks()} disabled={isLoading} />
-                {hasScope("docker:create") && (
+                {hasScope("docker:networks:create") && (
                   <Button onClick={() => setCreateOpen(true)}>
                     <Plus className="h-4 w-4 mr-1" />
                     Create Network
@@ -309,7 +309,7 @@ export function DockerNetworks() {
                           </Badge>
                         )}
                         <div className="flex items-center md:justify-end">
-                          {hasScope("docker:delete") && count === 0 && (
+                          {hasScope("docker:networks:delete") && count === 0 && (
                             <Button
                               variant="ghost"
                               size="icon"
@@ -335,8 +335,8 @@ export function DockerNetworks() {
                 message="No networks found on this node."
                 hasActiveFilters={search !== ""}
                 onReset={() => setSearch("")}
-                actionLabel={hasScope("docker:create") ? "Create a network" : undefined}
-                onAction={hasScope("docker:create") ? () => setCreateOpen(true) : undefined}
+                actionLabel={hasScope("docker:networks:create") ? "Create a network" : undefined}
+                onAction={hasScope("docker:networks:create") ? () => setCreateOpen(true) : undefined}
               />
             )}
           </>

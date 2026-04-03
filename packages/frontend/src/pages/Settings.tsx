@@ -87,10 +87,10 @@ export function Settings() {
   const [releaseNotesList, setReleaseNotesList] = useState<string[] | null>(null);
   const [releaseVersions, setReleaseVersions] = useState<string[] | null>(null);
   const canUpdate = hasScope("admin:update");
-  const canUseAI = hasScope("ai:use");
+  const canUseAI = hasScope("feat:ai:use");
   const canHousekeep = hasScope("admin:housekeeping");
-  const canConfigAI = hasScope("admin:ai-config");
-  const canManageRegistries = hasScope("docker:registries");
+  const canConfigAI = hasScope("feat:ai:configure");
+  const canManageRegistries = hasScope("docker:registries:list");
 
   // Docker Registries state
   const [registries, setRegistries] = useState<DockerRegistry[]>([]);
@@ -1588,20 +1588,22 @@ export function Settings() {
                       nodes={nodesList}
                       proxyHosts={proxyHostsList}
                       restrictableScopes={[
-                        "cert:issue",
-                        "ca:create:intermediate",
+                        "pki:cert:issue",
+                        "pki:cert:revoke",
+                        "pki:cert:export",
+                        "pki:ca:create:intermediate",
                         "proxy:view",
                         "proxy:edit",
                         "proxy:delete",
                         "proxy:advanced",
-                        "proxy:raw-read",
-                        "proxy:raw-write",
-                        "proxy:raw-toggle",
+                        "proxy:raw:read",
+                        "proxy:raw:write",
+                        "proxy:raw:toggle",
                         "nodes:details",
-                        "nodes:config",
+                        "nodes:config:view",
+                        "nodes:config:edit",
                         "nodes:logs",
                         "nodes:rename",
-                        "nodes:config-edit",
                         "nodes:delete",
                       ]}
                     />

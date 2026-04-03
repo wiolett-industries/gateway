@@ -53,6 +53,7 @@ import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAIStore } from "@/stores/ai";
 import { useAuthStore } from "@/stores/auth";
+import { usePinnedContainersStore } from "@/stores/pinned-containers";
 import { usePinnedNodesStore } from "@/stores/pinned-nodes";
 import { usePinnedProxiesStore } from "@/stores/pinned-proxies";
 import { useUIStore } from "@/stores/ui";
@@ -94,25 +95,25 @@ const navigationGroups: NavGroup[] = [
       { name: "Proxy Hosts", href: "/proxy-hosts", icon: Globe, scope: "proxy:list" },
       { name: "Domains", href: "/domains", icon: Globe2, scope: "proxy:list" },
       { name: "Config Templates", href: "/nginx-templates", icon: FileCode, scope: "proxy:list" },
-      { name: "SSL Certificates", href: "/ssl-certificates", icon: Lock, scope: "ssl:read" },
+      { name: "SSL Certificates", href: "/ssl-certificates", icon: Lock, scope: "ssl:cert:list" },
     ],
   },
   {
     label: "PKI",
     items: [
-      { name: "Authorities", href: "/cas", icon: ShieldCheck, scope: "ca:read" },
-      { name: "Certificates", href: "/certificates", icon: FileText, scope: "cert:read" },
-      { name: "Templates", href: "/templates", icon: Award, scope: "template:read" },
+      { name: "Authorities", href: "/cas", icon: ShieldCheck, scope: "pki:ca:list:root" },
+      { name: "Certificates", href: "/certificates", icon: FileText, scope: "pki:cert:list" },
+      { name: "Templates", href: "/templates", icon: Award, scope: "pki:templates:list" },
     ],
   },
   {
     label: "Docker",
     items: [
-      { name: "Containers", href: "/docker/containers", icon: Box, scope: "docker:list" },
-      { name: "Images", href: "/docker/images", icon: Layers, scope: "docker:images" },
-      { name: "Volumes", href: "/docker/volumes", icon: HardDrive, scope: "docker:volumes" },
-      { name: "Networks", href: "/docker/networks", icon: Network, scope: "docker:networks" },
-      { name: "Templates", href: "/docker/templates", icon: FileCode2, scope: "docker:templates" },
+      { name: "Containers", href: "/docker/containers", icon: Box, scope: "docker:containers:list" },
+      { name: "Images", href: "/docker/images", icon: Layers, scope: "docker:images:list" },
+      { name: "Volumes", href: "/docker/volumes", icon: HardDrive, scope: "docker:volumes:list" },
+      { name: "Networks", href: "/docker/networks", icon: Network, scope: "docker:networks:list" },
+      { name: "Templates", href: "/docker/templates", icon: FileCode2, scope: "docker:templates:list" },
       { name: "Tasks", href: "/docker/tasks", icon: ListTodo, scope: "docker:tasks" },
     ],
   },
@@ -120,7 +121,7 @@ const navigationGroups: NavGroup[] = [
     label: "Management",
     items: [
       { name: "Nodes", href: "/nodes", icon: Server, scope: "nodes:list" },
-      { name: "Access Lists", href: "/access-lists", icon: ShieldAlert, scope: "access-list:read" },
+      { name: "Access Lists", href: "/access-lists", icon: ShieldAlert, scope: "acl:list" },
       { name: "Settings", href: "/settings", icon: Settings },
     ],
   },
@@ -167,6 +168,9 @@ function SidebarContent({
   const sidebarPinnedProxyIds = usePinnedProxiesStore((s) => s.sidebarProxyIds);
   const pinnedProxyRefreshTick = usePinnedProxiesStore((s) => s.refreshTick);
   const [pinnedProxies, setPinnedProxies] = useState<ProxyHost[]>([]);
+
+  const sidebarPinnedContainerIds = usePinnedContainersStore((s) => s.sidebarContainerIds);
+  const pinnedContainerMeta = usePinnedContainersStore((s) => s.containerMeta);
 
   useEffect(() => {
     if (sidebarPinnedIds.length === 0) {
@@ -402,7 +406,7 @@ function SidebarContent({
                   {groupIndex > 0 && <Separator />}
 
                   {/* Pinned items — right after Dashboard */}
-                  {groupIndex === 1 && (pinnedNodes.length > 0 || pinnedProxies.length > 0) && (
+                  {groupIndex === 1 && (pinnedNodes.length > 0 || pinnedProxies.length > 0 || sidebarPinnedContainerIds.length > 0) && (
                     <>
                       <nav className="space-y-0.5 px-2 py-2">
                         <p className="px-3 py-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
@@ -460,6 +464,37 @@ function SidebarContent({
                                   node.status === "online"
                                     ? "bg-emerald-500"
                                     : node.status === "error"
+                                      ? "bg-red-400"
+                                      : "bg-muted-foreground/40"
+                                )}
+                              />
+                            </Link>
+                          );
+                        })}
+                        {sidebarPinnedContainerIds.map((cid) => {
+                          const meta = pinnedContainerMeta[cid];
+                          if (!meta) return null;
+                          const isActive = location.pathname === `/docker/containers/${meta.nodeId}/${cid}`;
+                          return (
+                            <Link
+                              key={cid}
+                              to={`/docker/containers/${meta.nodeId}/${cid}`}
+                              onClick={onNavigate}
+                              className={cn(
+                                "flex items-center gap-3 px-3 py-2 text-sm transition-colors whitespace-nowrap overflow-hidden",
+                                isActive
+                                  ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                              )}
+                            >
+                              <Box className="h-4 w-4 shrink-0" />
+                              <span className="truncate">{meta.name}</span>
+                              <span
+                                className={cn(
+                                  "ml-auto h-2 w-2 rounded-full shrink-0",
+                                  meta.state === "running"
+                                    ? "bg-emerald-500"
+                                    : meta.state === "exited" || meta.state === "dead"
                                       ? "bg-red-400"
                                       : "bg-muted-foreground/40"
                                 )}

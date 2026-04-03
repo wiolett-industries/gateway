@@ -78,7 +78,7 @@ export function Dashboard() {
   const showUpdateNotifications = useUIStore((s) => s.showUpdateNotifications);
 
   useEffect(() => {
-    if (hasScope("ca:read")) {
+    if (hasScope("pki:ca:list:root")) {
       fetchCAs();
     }
 
@@ -126,7 +126,7 @@ export function Dashboard() {
     }
 
     // Fetch expiring SSL certs
-    if (hasScope("ssl:read")) {
+    if (hasScope("ssl:cert:list")) {
       api
         .listSSLCertificates({ status: "active", limit: 100 })
         .then((res) => {
@@ -145,7 +145,7 @@ export function Dashboard() {
     }
 
     // Fetch expiring PKI certs
-    if (hasScope("cert:read")) {
+    if (hasScope("pki:cert:list")) {
       api
         .listCertificates({ status: "active", limit: 100 })
         .then((res) => {
@@ -285,8 +285,8 @@ export function Dashboard() {
 
           {/* Stat cards */}
           {(hasScope("proxy:list") ||
-            hasScope("ssl:read") ||
-            hasScope("cert:read") ||
+            hasScope("ssl:cert:list") ||
+            hasScope("pki:cert:list") ||
             hasScope("nodes:list")) && (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {hasScope("proxy:list") && (
@@ -298,7 +298,7 @@ export function Dashboard() {
                   href="/proxy-hosts"
                 />
               )}
-              {hasScope("ssl:read") && (
+              {hasScope("ssl:cert:list") && (
                 <StatCard
                   title="SSL Certificates"
                   value={displayStats.sslCertificates.total}
@@ -311,7 +311,7 @@ export function Dashboard() {
                   href="/ssl-certificates"
                 />
               )}
-              {hasScope("cert:read") && (
+              {hasScope("pki:cert:list") && (
                 <StatCard
                   title="PKI Certificates"
                   value={displayStats.pkiCertificates.active}
@@ -335,10 +335,10 @@ export function Dashboard() {
           {/* Expiring Soon */}
           {expiringItems.filter((i) =>
             i.type === "ssl"
-              ? hasScope("ssl:read")
+              ? hasScope("ssl:cert:list")
               : i.type === "pki"
-                ? hasScope("cert:read")
-                : hasScope("ca:read")
+                ? hasScope("pki:cert:list")
+                : hasScope("pki:ca:list:root")
           ).length > 0 && (
             <div className="border bg-card" style={{ borderColor: "rgb(234 179 8 / 0.6)" }}>
               <div className="flex items-center gap-2 border-b border-border p-4">
@@ -353,10 +353,10 @@ export function Dashboard() {
                   {
                     expiringItems.filter((i) =>
                       i.type === "ssl"
-                        ? hasScope("ssl:read")
+                        ? hasScope("ssl:cert:list")
                         : i.type === "pki"
-                          ? hasScope("cert:read")
-                          : hasScope("ca:read")
+                          ? hasScope("pki:cert:list")
+                          : hasScope("pki:ca:list:root")
                     ).length
                   }
                 </Badge>
@@ -365,10 +365,10 @@ export function Dashboard() {
                 {[...expiringItems]
                   .filter((i) =>
                     i.type === "ssl"
-                      ? hasScope("ssl:read")
+                      ? hasScope("ssl:cert:list")
                       : i.type === "pki"
-                        ? hasScope("cert:read")
-                        : hasScope("ca:read")
+                        ? hasScope("pki:cert:list")
+                        : hasScope("pki:ca:list:root")
                   )
                   .sort((a, b) => a.daysLeft - b.daysLeft)
                   .map((item) => (
@@ -539,7 +539,7 @@ export function Dashboard() {
             ))}
 
           {/* Certificate Authorities */}
-          {hasScope("ca:read") && (
+          {hasScope("pki:ca:list:root") && (
             <div className="border border-border bg-card">
               <div className="flex items-center justify-between border-b border-border p-4">
                 <h2 className="font-semibold">Certificate Authorities</h2>
@@ -572,7 +572,7 @@ export function Dashboard() {
               ) : (
                 <div className="p-8 text-center text-sm text-muted-foreground">
                   No certificate authorities configured.{" "}
-                  {hasScope("ca:create:root") && (
+                  {hasScope("pki:ca:create:root") && (
                     <Link to="/cas" className="text-foreground hover:underline">
                       Create one
                     </Link>

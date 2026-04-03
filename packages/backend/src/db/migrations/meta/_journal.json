@@ -92,6 +92,13 @@
       "when": 1775704800000,
       "tag": "0012_add_docker_support",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1775791200000,
+      "tag": "0013_add_docker_secrets",
+      "breakpoints": true
     }
   ]
 }

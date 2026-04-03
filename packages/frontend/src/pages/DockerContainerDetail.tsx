@@ -3,6 +3,7 @@ import {
   Code2,
   Copy,
   EllipsisVertical,
+  Pin,
   Play,
   RotateCcw,
   Settings,
@@ -27,9 +28,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Switch } from "@/components/ui/switch";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
+import { usePinnedContainersStore } from "@/stores/pinned-containers";
 import {
   STATUS_BADGE,
   containerDisplayName,
@@ -66,6 +70,10 @@ export function DockerContainerDetail() {
   const [localRecreating, setLocalRecreating] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
 
+  // Pin
+  const [pinOpen, setPinOpen] = useState(false);
+  const { isPinnedSidebar, toggleSidebar, updateMeta } = usePinnedContainersStore();
+
   const fetchContainer = useCallback(
     async (silent = false) => {
       if (!nodeId || !containerId) return;
@@ -73,6 +81,12 @@ export function DockerContainerDetail() {
       try {
         const data = await api.inspectContainer(nodeId, containerId);
         setContainer(data);
+        // Keep pinned meta in sync
+        if (usePinnedContainersStore.getState().isPinnedSidebar(containerId)) {
+          const cName = String((data as any)?.Name ?? "").replace(/^\//, "") || containerId.slice(0, 12);
+          const cState = (data as any)?.State?.Status ?? "unknown";
+          updateMeta(containerId, { nodeId, name: cName, state: cState });
+        }
       } catch {
         if (!silent) {
           toast.error("Failed to load container");
@@ -237,10 +251,13 @@ export function DockerContainerDetail() {
           </div>
 
           <div className="flex items-center gap-2">
-            {baseState !== "running" && hasScope("docker:edit") && (
+            <Button variant="outline" size="icon" onClick={() => setPinOpen(true)}>
+              <Pin className="h-4 w-4" />
+            </Button>
+            {baseState !== "running" && hasScope("docker:containers:manage") && (
               <Button
                 variant="outline"
-                size="sm"
+                size="default"
                 disabled={actionLoading || !!transition}
                 onClick={() => doAction(() => api.startContainer(nodeId!, containerId!), "Container started")}
               >
@@ -248,11 +265,11 @@ export function DockerContainerDetail() {
                 Start
               </Button>
             )}
-            {baseState === "running" && hasScope("docker:edit") && (
+            {baseState === "running" && hasScope("docker:containers:manage") && (
               <>
                 <Button
                   variant="outline"
-                  size="sm"
+                  size="default"
                   disabled={actionLoading || !!transition}
                   onClick={() => doAction(() => api.stopContainer(nodeId!, containerId!), "Container stopping")}
                 >
@@ -261,7 +278,7 @@ export function DockerContainerDetail() {
                 </Button>
                 <Button
                   variant="outline"
-                  size="sm"
+                  size="default"
                   disabled={actionLoading || !!transition}
                   onClick={() => doAction(() => api.restartContainer(nodeId!, containerId!), "Container restarting")}
                 >
@@ -277,19 +294,19 @@ export function DockerContainerDetail() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                {hasScope("docker:edit") && (
+                {hasScope("docker:containers:edit") && (
                   <DropdownMenuItem onClick={handleRename}>
                     <Type className="h-3.5 w-3.5 mr-2" />
                     Rename
                   </DropdownMenuItem>
                 )}
-                {hasScope("docker:create") && (
+                {hasScope("docker:containers:create") && (
                   <DropdownMenuItem onClick={handleDuplicate}>
                     <Copy className="h-3.5 w-3.5 mr-2" />
                     Duplicate
                   </DropdownMenuItem>
                 )}
-                {baseState === "running" && hasScope("docker:edit") && (
+                {baseState === "running" && hasScope("docker:containers:manage") && (
                   <>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
@@ -301,7 +318,7 @@ export function DockerContainerDetail() {
                     </DropdownMenuItem>
                   </>
                 )}
-                {hasScope("docker:delete") && (
+                {hasScope("docker:containers:delete") && (
                   <>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={handleRemove} className="text-destructive">
@@ -377,6 +394,29 @@ export function DockerContainerDetail() {
           </TabsContent>
         </Tabs>
       </div>
+      {/* Pin Dialog */}
+      <Dialog open={pinOpen} onOpenChange={setPinOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Pin Container</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium">Add to sidebar</p>
+                <p className="text-xs text-muted-foreground">Quick access link in the sidebar</p>
+              </div>
+              <Switch
+                checked={isPinnedSidebar(containerId!)}
+                onChange={() => {
+                  toggleSidebar(containerId!, { nodeId: nodeId!, name, state: baseState });
+                  usePinnedContainersStore.getState().invalidate();
+                }}
+              />
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </PageTransition>
   );
 }

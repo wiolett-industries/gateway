@@ -166,13 +166,13 @@ export function CADetail() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {hasScope("ca:create:intermediate") && ca.status === "active" && (
+            {hasScope("pki:ca:create:intermediate") && ca.status === "active" && (
               <Button variant="outline" onClick={() => setCreateIntermediateOpen(true)}>
                 <Shield className="h-4 w-4" />
                 Create Intermediate
               </Button>
             )}
-            {hasScope("cert:issue") && ca.status === "active" && (
+            {hasScope("pki:cert:issue") && ca.status === "active" && (
               <Button onClick={() => setIssueDialogOpen(true)}>
                 <Plus className="h-4 w-4" />
                 Issue Certificate
@@ -244,7 +244,7 @@ export function CADetail() {
                   <Copy className="h-4 w-4" />
                   Copy Serial
                 </DropdownMenuItem>
-                {hasScope("ca:revoke") && ca.status === "active" && (
+                {hasScope("pki:ca:revoke:root") && ca.status === "active" && (
                   <>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={handleRevoke} className="text-destructive">
@@ -289,7 +289,7 @@ export function CADetail() {
             <div className="border border-border bg-card">
               <div className="flex items-center justify-between border-b border-border p-4">
                 <h2 className="font-semibold">Distribution Endpoints</h2>
-                {hasScope("ca:create:root") && (
+                {hasScope("pki:ca:create:root") && (
                   <Button
                     variant="ghost"
                     size="icon"

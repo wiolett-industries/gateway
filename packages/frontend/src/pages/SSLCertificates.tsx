@@ -152,7 +152,7 @@ export function SSLCertificates() {
             <h1 className="text-2xl font-bold">SSL Certificates</h1>
             <p className="text-sm text-muted-foreground">{total} certificates total</p>
           </div>
-          {hasScope("ssl:manage") && (
+          {hasScope("ssl:cert:issue") && (
             <Button onClick={() => setCreateDialogOpen(true)}>
               <Plus className="h-4 w-4" />
               Add Certificate
@@ -304,7 +304,7 @@ export function SSLCertificates() {
                           )}
                         </td>
                         <td className="p-3">
-                          {hasScope("ssl:manage") && (
+                          {hasScope("ssl:cert:issue") && (
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
                                 <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -318,7 +318,7 @@ export function SSLCertificates() {
                                     Renew
                                   </DropdownMenuItem>
                                 )}
-                                {!cert.isSystem && hasScope("ssl:delete") && (
+                                {!cert.isSystem && hasScope("ssl:cert:delete") && (
                                   <DropdownMenuItem
                                     onClick={() => handleDelete(cert.id, cert.name)}
                                     className="text-destructive"
@@ -370,7 +370,7 @@ export function SSLCertificates() {
         ) : (
           <EmptyState
             message="No SSL certificates."
-            {...(hasScope("ssl:manage")
+            {...(hasScope("ssl:cert:issue")
               ? { actionLabel: "Add one", onAction: () => setCreateDialogOpen(true) }
               : {})}
             hasActiveFilters={hasActiveFilters}

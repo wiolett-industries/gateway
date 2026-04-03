@@ -9,6 +9,7 @@ import type { AuthService } from '@/modules/auth/auth.service.js';
 import type { DomainsService } from '@/modules/domains/domain.service.js';
 import type { GroupService } from '@/modules/groups/group.service.js';
 import type { MonitoringService } from '@/modules/monitoring/monitoring.service.js';
+import type { DockerManagementService } from '@/modules/docker/docker.service.js';
 import type { NodesService } from '@/modules/nodes/nodes.service.js';
 import { CreateIntermediateCASchema, CreateRootCASchema } from '@/modules/pki/ca.schemas.js';
 import type { CAService } from '@/modules/pki/ca.service.js';
@@ -388,23 +389,65 @@ Having "ca:create" grants both "ca:create:root" and "ca:create:intermediate".
 
 ## Scope Containment Rule
 A user can only manage another user whose scopes are a subset of their own.`,
+
+  docker: `# Docker Container Management
+
+## Overview
+Gateway provides Portainer-like Docker container management through a daemon running on Docker hosts. All Docker operations are node-scoped — you must specify which Docker node to target.
+
+## Container Lifecycle
+- **Create**: Deploy from image with ports, volumes, env, networks, restart policy
+- **Start/Stop/Restart/Kill**: Lifecycle management (transitions tracked as tasks)
+- **Recreate**: Stop + remove + create with new config (preserves name, secrets auto-injected)
+- **Duplicate**: Clone a container with a new name (secrets are copied too)
+- **Remove**: Delete container (must be stopped unless force=true)
+
+## Environment Variables & Secrets
+- Regular env vars: stored in container config, visible to all users with view access
+- Secrets: encrypted at rest in Gateway DB, injected as env vars on container start/recreate. Only users with docker:containers:secrets scope can view decrypted values. Secrets are keyed by container name so they survive recreates.
+
+## Settings
+- **Runtime (live-update)**: restart policy, memory limit, CPU shares, PID limit — applied without recreation
+- **Requires recreate**: port mappings, volume mounts, entrypoint, command, working dir, hostname, labels
+
+## Images, Volumes, Networks
+- Images: list, pull from registries, remove, prune unused
+- Volumes: list, create, remove (shows which containers use each volume)
+- Networks: list, create, remove, connect/disconnect containers
+
+## Registries & Templates
+- Registries: add private Docker registries with encrypted credentials. Global or node-specific scope.
+- Templates: save container configurations as reusable templates for quick deployment
+
+## Tasks
+Long-running operations (stop, restart, kill, recreate, update) create tasks visible on the Tasks page. Tasks track progress and completion status.
+
+## Console & Files
+- Console: interactive terminal (exec) into running containers via xterm.js WebSocket
+- File browser: navigate filesystem, view/edit files inside containers
+
+## Key Notes
+- All Docker tools require a nodeId parameter — use list_nodes with type="docker" to find Docker nodes
+- Container IDs change after recreate/update — the frontend handles navigation to new IDs
+- Transition states (stopping, restarting, recreating, etc.) block concurrent operations on the same container`,
 };
 
 /** Map doc topics to the scope required to read them */
 const DOC_TOPIC_SCOPES: Record<string, string> = {
-  pki: 'ca:read',
-  ssl: 'ssl:read',
+  pki: 'pki:ca:list:root',
+  ssl: 'ssl:cert:list',
   proxy: 'proxy:list',
   domains: 'proxy:list',
-  'access-lists': 'access-list:read',
-  templates: 'template:read',
-  acme: 'ssl:read',
+  'access-lists': 'acl:list',
+  templates: 'pki:templates:list',
+  acme: 'ssl:cert:list',
   users: 'admin:users',
   audit: 'admin:audit',
   nginx: 'proxy:edit',
   nodes: 'nodes:list',
+  docker: 'docker:containers:list',
   housekeeping: 'admin:housekeeping',
-  permissions: 'ai:use',
+  permissions: 'feat:ai:use',
 };
 
 function getInternalDocumentation(topic: string, userScopes: string[]): { topic: string; content: string } {
@@ -441,7 +484,8 @@ export class AIService {
     private readonly auditService: AuditService,
     private readonly monitoringService: MonitoringService,
     private readonly nodesService: NodesService,
-    private readonly groupService: GroupService
+    private readonly groupService: GroupService,
+    private readonly dockerService: DockerManagementService
   ) {}
 
   async buildSystemPrompt(user: User, pageContext?: PageContext): Promise<string> {
@@ -515,12 +559,12 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
 
 ## Key Facts (use internal_documentation for details)`);
 
-    if (hasScope(user.scopes, 'cert:read') || hasScope(user.scopes, 'ssl:read')) {
+    if (hasScope(user.scopes, 'pki:cert:list') || hasScope(user.scopes, 'ssl:cert:list')) {
       parts.push(
         `- PKI Certificates and SSL Certificates are SEPARATE stores. To use a PKI cert with a proxy host: issue_certificate → link_internal_cert → use the returned SSL cert ID.`
       );
     }
-    if (hasScope(user.scopes, 'cert:read')) {
+    if (hasScope(user.scopes, 'pki:cert:list')) {
       parts.push(`- Certificate types: tls-server, tls-client, code-signing, email. Use "tls-server" for web/SSL.
 - SANs are PLAIN values: "example.com", "10.0.0.1". NEVER prefix with "DNS:" or "IP:".
 - Never pass a PKI certificate ID as sslCertificateId on a proxy host.`);
@@ -530,9 +574,9 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
     try {
       const stats = await this.monitoringService.getDashboardStats();
       const inv: string[] = [];
-      if (hasScope(user.scopes, 'ca:read'))
+      if (hasScope(user.scopes, 'pki:ca:list:root'))
         inv.push(`- Certificate Authorities: ${stats.cas.total} total (${stats.cas.active} active)`);
-      if (hasScope(user.scopes, 'cert:read'))
+      if (hasScope(user.scopes, 'pki:cert:list'))
         inv.push(
           `- PKI Certificates: ${stats.pkiCertificates.total} total (${stats.pkiCertificates.active} active, ${stats.pkiCertificates.revoked} revoked, ${stats.pkiCertificates.expired} expired)`
         );
@@ -540,7 +584,7 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
         inv.push(
           `- Proxy Hosts: ${stats.proxyHosts.total} total (${stats.proxyHosts.enabled} enabled, ${stats.proxyHosts.online} online)`
         );
-      if (hasScope(user.scopes, 'ssl:read'))
+      if (hasScope(user.scopes, 'ssl:cert:list'))
         inv.push(
           `- SSL Certificates: ${stats.sslCertificates.total} total (${stats.sslCertificates.active} active, ${stats.sslCertificates.expiringSoon} expiring soon)`
         );
@@ -555,7 +599,7 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
 
     // CA names summary — only if user can read CAs
     try {
-      if (!hasScope(user.scopes, 'ca:read')) throw new Error('skip');
+      if (!hasScope(user.scopes, 'pki:ca:list:root')) throw new Error('skip');
       const cas = await this.caService.getCATree();
       if (cas.length > 0) {
         const caList = cas
@@ -904,9 +948,9 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
         // Filter stats by user's read scopes — don't leak data they can't access
         const filtered: Record<string, unknown> = {};
         if (hasScope(user.scopes, 'proxy:list')) filtered.proxyHosts = stats.proxyHosts;
-        if (hasScope(user.scopes, 'ssl:read')) filtered.sslCertificates = stats.sslCertificates;
-        if (hasScope(user.scopes, 'cert:read')) filtered.pkiCertificates = stats.pkiCertificates;
-        if (hasScope(user.scopes, 'ca:read')) filtered.cas = stats.cas;
+        if (hasScope(user.scopes, 'ssl:cert:list')) filtered.sslCertificates = stats.sslCertificates;
+        if (hasScope(user.scopes, 'pki:cert:list')) filtered.pkiCertificates = stats.pkiCertificates;
+        if (hasScope(user.scopes, 'pki:ca:list:root')) filtered.cas = stats.cas;
         if (hasScope(user.scopes, 'nodes:list')) filtered.nodes = stats.nodes;
         if (Object.keys(filtered).length === 0) {
           return {
@@ -916,6 +960,34 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
         }
         return filtered;
       }
+
+      // ── Docker ──
+      case 'list_docker_containers':
+        return this.dockerService.listContainers(a.nodeId);
+      case 'get_docker_container':
+        return this.dockerService.inspectContainer(a.nodeId, a.containerId);
+      case 'start_docker_container':
+        await this.dockerService.startContainer(a.nodeId, a.containerId, user.id);
+        return { success: true };
+      case 'stop_docker_container':
+        await this.dockerService.stopContainer(a.nodeId, a.containerId, a.timeout || 30, user.id);
+        return { success: true, message: 'Container stopping' };
+      case 'restart_docker_container':
+        await this.dockerService.restartContainer(a.nodeId, a.containerId, a.timeout || 30, user.id);
+        return { success: true, message: 'Container restarting' };
+      case 'remove_docker_container':
+        await this.dockerService.removeContainer(a.nodeId, a.containerId, a.force ?? false, user.id);
+        return { success: true };
+      case 'get_docker_container_logs':
+        return this.dockerService.getContainerLogs(a.nodeId, a.containerId, a.tail || 100, a.timestamps ?? false);
+      case 'list_docker_images':
+        return this.dockerService.listImages(a.nodeId);
+      case 'pull_docker_image':
+        return this.dockerService.pullImage(a.nodeId, a.imageRef, undefined, user.id);
+      case 'list_docker_volumes':
+        return this.dockerService.listVolumes(a.nodeId);
+      case 'list_docker_networks':
+        return this.dockerService.listNetworks(a.nodeId);
 
       // ── Ask Question (handled client-side, backend just passes through) ──
       case 'ask_question':

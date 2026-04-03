@@ -225,13 +225,13 @@ export function DockerImages() {
             {selectedNodeId && (
               <>
                 <RefreshButton onClick={() => fetchImages()} disabled={isLoading} />
-                {hasScope("docker:delete") && (
+                {hasScope("docker:images:delete") && (
                   <Button variant="outline" onClick={handlePrune} disabled={pruning}>
                     <Trash2 className="h-4 w-4 mr-1" />
                     {pruning ? "Pruning..." : "Prune Unused"}
                   </Button>
                 )}
-                {hasScope("docker:create") && (
+                {hasScope("docker:images:pull") && (
                   <Button onClick={() => setPullOpen(true)}>
                     <Download className="h-4 w-4 mr-1" />
                     Pull Image
@@ -359,7 +359,7 @@ export function DockerImages() {
                         <span className="text-sm text-muted-foreground">{formatSize(size)}</span>
                         <span className="text-sm text-muted-foreground">{formatCreated(created)}</span>
                         <div className="flex items-center md:justify-end">
-                          {hasScope("docker:delete") && !isUsed && (
+                          {hasScope("docker:images:delete") && !isUsed && (
                             <Button
                               variant="ghost"
                               size="icon"

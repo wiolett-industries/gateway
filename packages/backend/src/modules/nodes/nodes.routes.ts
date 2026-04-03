@@ -83,7 +83,7 @@ async function requireNginxNode(c: any): Promise<boolean> {
 }
 
 // Read node's global nginx config
-nodesRoutes.get('/:id/config', requireScopeForResource('nodes:config', 'id'), async (c) => {
+nodesRoutes.get('/:id/config', requireScopeForResource('nodes:config:view', 'id'), async (c) => {
   if (!(await requireNginxNode(c))) return c.body(null);
   const { NodeDispatchService } = await import('@/services/node-dispatch.service.js');
   const dispatch = container.resolve(NodeDispatchService);
@@ -96,7 +96,7 @@ nodesRoutes.get('/:id/config', requireScopeForResource('nodes:config', 'id'), as
 });
 
 // Update node's global nginx config
-nodesRoutes.put('/:id/config', requireScopeForResource('nodes:config-edit', 'id'), async (c) => {
+nodesRoutes.put('/:id/config', requireScopeForResource('nodes:config:edit', 'id'), async (c) => {
   if (!(await requireNginxNode(c))) return c.body(null);
   const { NodeDispatchService } = await import('@/services/node-dispatch.service.js');
   const dispatch = container.resolve(NodeDispatchService);
@@ -116,7 +116,7 @@ nodesRoutes.put('/:id/config', requireScopeForResource('nodes:config-edit', 'id'
 });
 
 // Test node's nginx config — local syntax check on provided content, then daemon test
-nodesRoutes.post('/:id/config/test', requireScopeForResource('nodes:config-edit', 'id'), async (c) => {
+nodesRoutes.post('/:id/config/test', requireScopeForResource('nodes:config:edit', 'id'), async (c) => {
   if (!(await requireNginxNode(c))) return c.body(null);
   const { NginxSyntaxValidatorService } = await import('@/services/nginx-syntax-validator.service.js');
   const { NodeDispatchService } = await import('@/services/node-dispatch.service.js');
