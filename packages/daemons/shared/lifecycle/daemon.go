@@ -11,6 +11,7 @@ import (
 	"github.com/wiolett/gateway/daemon-shared/connector"
 	"github.com/wiolett/gateway/daemon-shared/enrollment"
 	"github.com/wiolett/gateway/daemon-shared/state"
+	"github.com/wiolett/gateway/daemon-shared/stream"
 	"github.com/wiolett/gateway/daemon-shared/sysmetrics"
 )
 
@@ -33,8 +34,9 @@ type DaemonBase struct {
 
 // NewDaemonBase creates a new DaemonBase with the given plugin.
 func NewDaemonBase(cfg *BaseConfig, cfgPath string, plugin DaemonPlugin, logger *slog.Logger) (*DaemonBase, error) {
-	// Initialize plugin
-	if err := plugin.Init(cfg, logger); err != nil {
+	// Wrap logger with startup buffer so pre-session logs can be replayed
+	startupLogger := slog.New(stream.NewStartupLogHandler(logger.Handler()))
+	if err := plugin.Init(cfg, startupLogger); err != nil {
 		return nil, fmt.Errorf("plugin init: %w", err)
 	}
 
@@ -50,8 +52,8 @@ func NewDaemonBase(cfg *BaseConfig, cfgPath string, plugin DaemonPlugin, logger 
 		state:       st,
 		plugin:      plugin,
 		sysReporter: newSystemReporter(),
-		logger:      logger,
-		baseHandler: logger.Handler(),
+		logger:      startupLogger,
+		baseHandler: logger.Handler(), // original handler without startup buffer
 	}, nil
 }
 
@@ -77,6 +79,11 @@ func (d *DaemonBase) Run(ctx context.Context) error {
 		if ctx.Err() != nil {
 			d.logger.Info("shutting down")
 			return nil
+		}
+		// Fatal errors: do NOT reconnect, exit immediately
+		if fatal, ok := err.(*FatalError); ok {
+			d.logger.Error("fatal: "+fatal.Message, "action", "exiting")
+			return fmt.Errorf("fatal: %s", fatal.Message)
 		}
 		d.logger.Warn("session ended, reconnecting", "error", err)
 	}

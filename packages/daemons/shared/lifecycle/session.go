@@ -15,8 +15,8 @@ import (
 
 // runSession connects to the gateway, registers, and runs the command loop.
 func runSession(ctx context.Context, conn *grpc.ClientConn, d *DaemonBase) error {
-	// Reset log streaming state from any previous session
-	stream.SetDaemonLogStreaming(false, "info")
+	// Enable log streaming by default — backend can disable via SetDaemonLogStream command
+	stream.SetDaemonLogStreaming(true, "info")
 
 	cmdStream, err := connector.OpenCommandStream(ctx, conn)
 	if err != nil {
@@ -37,14 +37,16 @@ func runSession(ctx context.Context, conn *grpc.ClientConn, d *DaemonBase) error
 	d.logger.Info("connected to gateway", "node_id", d.state.NodeID)
 
 	// Install gRPC log forwarder so daemon logs are streamed to the gateway
-	sessionLogger := slog.New(stream.NewGrpcLogHandler(cmdStream, d.baseHandler))
+	sessionLogger := slog.New(stream.NewGrpcLogHandlerWithWriter(writer, d.baseHandler))
 	d.logger = sessionLogger
+	// Update plugin's logger so its logs also forward to gRPC
+	d.plugin.SetLogger(sessionLogger)
 
 	// Notify plugin of session start
 	sessionCtx, sessionCancel := context.WithCancel(ctx)
 	defer sessionCancel()
 
-	if err := d.plugin.OnSessionStart(sessionCtx); err != nil {
+	if err := d.plugin.OnSessionStart(sessionCtx, writer); err != nil {
 		d.logger.Warn("plugin session start failed", "error", err)
 	}
 	defer d.plugin.OnSessionEnd()
@@ -62,6 +64,14 @@ func runSession(ctx context.Context, conn *grpc.ClientConn, d *DaemonBase) error
 			return err
 		}
 
+		// Check for registration rejection (fatal — daemon must exit)
+		if cmd.CommandId == "__registration_rejected__" {
+			if ac, ok := cmd.Payload.(*pb.GatewayCommand_ApplyConfig); ok && ac.ApplyConfig != nil {
+				return &FatalError{Message: ac.ApplyConfig.ConfigContent}
+			}
+			return &FatalError{Message: "registration rejected by gateway"}
+		}
+
 		// Handle RequestHealth and RequestStats inline
 		switch cmd.Payload.(type) {
 		case *pb.GatewayCommand_RequestHealth:
@@ -77,6 +87,10 @@ func runSession(ctx context.Context, conn *grpc.ClientConn, d *DaemonBase) error
 					Payload: &pb.DaemonMessage_StatsReport{StatsReport: report},
 				})
 			}
+			continue
+		case *pb.GatewayCommand_ExecInput:
+			// Fire-and-forget: route exec input to the plugin without sending a CommandResult
+			d.plugin.HandleCommand(cmd)
 			continue
 		}
 

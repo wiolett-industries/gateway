@@ -16,6 +16,16 @@ import { CAs } from "@/pages/CAs";
 import { CertificateDetail } from "@/pages/CertificateDetail";
 import { Certificates } from "@/pages/Certificates";
 import { Dashboard } from "@/pages/Dashboard";
+import { DockerConsolePopout } from "@/pages/DockerConsolePopout";
+import { DockerContainerDetail } from "@/pages/DockerContainerDetail";
+import { DockerFilePopout } from "@/pages/DockerFilePopout";
+import { DockerLogsPopout } from "@/pages/DockerLogsPopout";
+import { DockerContainers } from "@/pages/DockerContainers";
+import { DockerImages } from "@/pages/DockerImages";
+import { DockerNetworks } from "@/pages/DockerNetworks";
+import { DockerTasks } from "@/pages/DockerTasks";
+import { DockerTemplatesPage } from "@/pages/DockerTemplates";
+import { DockerVolumes } from "@/pages/DockerVolumes";
 import { Domains } from "@/pages/Domains";
 import { LoginPage } from "@/pages/Login";
 import { NginxTemplateEdit } from "@/pages/NginxTemplateEdit";
@@ -40,6 +50,18 @@ export default function App() {
             <Route path="/login" element={<LoginPage />} />
             <Route path="/callback" element={<AuthCallback />} />
             <Route path="/blocked" element={<BlockedPage />} />
+            <Route
+              path="/docker/console/:nodeId/:containerId"
+              element={<DockerConsolePopout />}
+            />
+            <Route
+              path="/docker/logs/:nodeId/:containerId"
+              element={<DockerLogsPopout />}
+            />
+            <Route
+              path="/docker/file/:nodeId/:containerId"
+              element={<DockerFilePopout />}
+            />
             <Route element={<DashboardLayout />}>
               <Route path="/" element={<Dashboard />} />
               <Route path="/proxy-hosts" element={scoped("proxy:list", <ProxyHosts />)} />
@@ -70,6 +92,25 @@ export default function App() {
               <Route path="/admin/groups" element={scoped("admin:groups", <AdminGroups />)} />
               <Route path="/nodes" element={scoped("nodes:list", <AdminNodes />)} />
               <Route path="/nodes/:id" element={scoped("nodes:list", <AdminNodeDetail />)} />
+              <Route
+                path="/docker/containers"
+                element={scoped("docker:list", <DockerContainers />)}
+              />
+              <Route
+                path="/docker/containers/:nodeId/:containerId"
+                element={scoped("docker:view", <DockerContainerDetail />)}
+              />
+              <Route path="/docker/images" element={scoped("docker:images", <DockerImages />)} />
+              <Route path="/docker/volumes" element={scoped("docker:volumes", <DockerVolumes />)} />
+              <Route
+                path="/docker/networks"
+                element={scoped("docker:networks", <DockerNetworks />)}
+              />
+              <Route
+                path="/docker/templates"
+                element={scoped("docker:templates", <DockerTemplatesPage />)}
+              />
+              <Route path="/docker/tasks" element={scoped("docker:tasks", <DockerTasks />)} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

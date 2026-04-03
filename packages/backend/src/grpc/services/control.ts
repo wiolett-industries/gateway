@@ -57,16 +57,30 @@ export function createControlHandlers(deps: GrpcServerDeps) {
               return;
             }
 
-            const nodeType = node.type as 'nginx' | 'bastion' | 'monitoring';
+            const nodeType = node.type as 'nginx' | 'bastion' | 'monitoring' | 'docker';
             const gatewayHash = node.configVersionHash;
 
-            await deps.registry.register(
-              nodeId,
-              nodeType,
-              msg.register.hostname,
-              msg.register.configVersionHash,
-              stream as any
-            );
+            try {
+              await deps.registry.register(
+                nodeId,
+                nodeType,
+                msg.register.hostname,
+                msg.register.configVersionHash,
+                stream as any
+              );
+            } catch (err) {
+              const reason = (err as Error).message;
+              logger.error('Registration rejected', { nodeId, error: reason });
+              // Send rejection reason as a command so daemon can detect it and exit
+              try {
+                stream.write({
+                  commandId: '__registration_rejected__',
+                  applyConfig: { hostId: '', configContent: reason, testOnly: false },
+                });
+              } catch { /* stream may already be dead */ }
+              stream.end();
+              return;
+            }
 
             // Update DB with latest info — do NOT overwrite configVersionHash
             // (the gateway's stored hash is authoritative, set by FullSync)
@@ -78,6 +92,7 @@ export function createControlHandlers(deps: GrpcServerDeps) {
                 capabilities: {
                   ...(msg.register.nginxVersion ? { nginxVersion: msg.register.nginxVersion } : {}),
                   ...(msg.register.daemonType ? { daemonType: msg.register.daemonType } : {}),
+                  ...((msg.register as any).dockerVersion ? { dockerVersion: (msg.register as any).dockerVersion } : {}),
                   cpuModel: msg.register.cpuModel || undefined,
                   cpuCores: msg.register.cpuCores || undefined,
                   architecture: msg.register.architecture || undefined,
@@ -131,6 +146,15 @@ export function createControlHandlers(deps: GrpcServerDeps) {
                 const node = deps.registry.getNode(nodeId);
                 if (node) node.lastTrafficStats = JSON.parse(msg.commandResult.detail);
               } catch { /* ignore parse errors */ }
+            } else if (msg.commandResult.commandId?.startsWith('log_stream:') && msg.commandResult.success && msg.commandResult.detail) {
+              // Route log stream chunks to registered WebSocket handlers
+              try {
+                const parsed = JSON.parse(msg.commandResult.detail);
+                if (parsed.type === 'log_stream' && parsed.containerId) {
+                  const key = `${nodeId}:${parsed.containerId}`;
+                  deps.registry.handleLogStream(key, parsed.lines ?? [], !!parsed.ended);
+                }
+              } catch { /* ignore parse errors */ }
             } else {
               deps.registry.handleCommandResult(nodeId, msg.commandResult);
             }
@@ -179,6 +203,27 @@ export function createControlHandlers(deps: GrpcServerDeps) {
               nginxRssBytes: Number(msg.healthReport.nginxRssBytes ?? 0),
               errorRate4xx: (msg.healthReport as any).errorRate_4xx ?? msg.healthReport.errorRate4xx ?? 0,
               errorRate5xx: (msg.healthReport as any).errorRate_5xx ?? msg.healthReport.errorRate5xx ?? 0,
+              // Docker-specific fields
+              ...(msg.healthReport.dockerVersion ? { dockerVersion: msg.healthReport.dockerVersion } : {}),
+              ...(msg.healthReport.containersRunning != null ? { containersRunning: msg.healthReport.containersRunning } : {}),
+              ...(msg.healthReport.containersStopped != null ? { containersStopped: msg.healthReport.containersStopped } : {}),
+              ...(msg.healthReport.containersTotal != null ? { containersTotal: msg.healthReport.containersTotal } : {}),
+              ...(msg.healthReport.containerStats?.length ? {
+                containerStats: msg.healthReport.containerStats.map((c: any) => ({
+                  containerId: c.containerId,
+                  name: c.name,
+                  image: c.image,
+                  state: c.state,
+                  cpuPercent: c.cpuPercent ?? 0,
+                  memoryUsageBytes: Number(c.memoryUsageBytes ?? 0),
+                  memoryLimitBytes: Number(c.memoryLimitBytes ?? 0),
+                  networkRxBytes: Number(c.networkRxBytes ?? 0),
+                  networkTxBytes: Number(c.networkTxBytes ?? 0),
+                  blockReadBytes: Number(c.blockReadBytes ?? 0),
+                  blockWriteBytes: Number(c.blockWriteBytes ?? 0),
+                  pids: c.pids ?? 0,
+                })),
+              } : {}),
             };
 
             deps.registry.updateHealthReport(nodeId, healthData);
@@ -277,6 +322,9 @@ export function createControlHandlers(deps: GrpcServerDeps) {
               component: msg.daemonLog.component,
               message: msg.daemonLog.message,
             });
+          } else if (msg.execOutput && nodeId) {
+            // Route exec output to registered WebSocket handler
+            deps.registry.handleExecOutput(msg.execOutput.execId, msg.execOutput);
           }
         } catch (err) {
           logger.error('Error processing daemon message', { nodeId, error: (err as Error).message });

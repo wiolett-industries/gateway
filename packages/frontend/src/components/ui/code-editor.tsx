@@ -1,10 +1,13 @@
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import {
   bracketMatching,
+  foldGutter,
+  foldKeymap,
   HighlightStyle,
   StreamLanguage,
   syntaxHighlighting,
 } from "@codemirror/language";
+import { json } from "@codemirror/lang-json";
 import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
 import { Compartment, EditorState, RangeSetBuilder } from "@codemirror/state";
 import { indentUnit } from "@codemirror/language";
@@ -197,6 +200,55 @@ const nginxHandlebarsLang = StreamLanguage.define<ParserState>({
 });
 
 // ---------------------------------------------------------------------------
+// .env stream parser
+// ---------------------------------------------------------------------------
+
+const envLang = StreamLanguage.define<{ inValue: boolean }>({
+  startState: () => ({ inValue: false }),
+  token(stream, state) {
+    // Comment
+    if (stream.sol() && stream.match(/\s*#/)) {
+      stream.skipToEnd();
+      return "comment";
+    }
+
+    // Blank line
+    if (stream.sol() && stream.match(/\s*$/)) {
+      return null;
+    }
+
+    // Start of line: KEY part
+    if (stream.sol()) {
+      state.inValue = false;
+      if (stream.match(/export\s+/)) return "keyword";
+      if (stream.match(/[A-Za-z_][A-Za-z0-9_]*/)) return "variableName";
+    }
+
+    // Equals separator
+    if (!state.inValue && stream.match("=")) {
+      state.inValue = true;
+      return "operator";
+    }
+
+    // Value part
+    if (state.inValue) {
+      // Quoted string
+      if (stream.match(/"[^"]*"/) || stream.match(/'[^']*'/)) return "string";
+      // Variable reference
+      if (stream.match(/\$\{[^}]*\}/) || stream.match(/\$[A-Za-z_][A-Za-z0-9_]*/)) return "variableName";
+      // Number
+      if (stream.match(/^\d+$/)) return "number";
+      // Rest of value
+      stream.skipToEnd();
+      return "string";
+    }
+
+    stream.next();
+    return null;
+  },
+});
+
+// ---------------------------------------------------------------------------
 // Theme + highlighting
 // ---------------------------------------------------------------------------
 
@@ -295,6 +347,8 @@ interface CodeEditorProps {
   height?: string;
   /** Line numbers to highlight with red background (1-based) */
   errorLines?: number[];
+  /** Syntax highlighting language (default: "nginx") */
+  language?: "nginx" | "env" | "json";
 }
 
 export function CodeEditor({
@@ -305,6 +359,7 @@ export function CodeEditor({
   minHeight = "300px",
   height,
   errorLines = [],
+  language = "nginx",
 }: CodeEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -327,7 +382,8 @@ export function CodeEditor({
         highlightSelectionMatches(),
         keymap.of([indentWithTab, ...defaultKeymap, ...historyKeymap, ...searchKeymap]),
         indentUnit.of("    "),
-        nginxHandlebarsLang,
+        language === "json" ? json() : language === "env" ? envLang : nginxHandlebarsLang,
+        ...(language === "json" ? [foldGutter(), keymap.of(foldKeymap)] : []),
         editorTheme,
         highlightStyles,
         EditorView.lineWrapping,
@@ -353,8 +409,8 @@ export function CodeEditor({
       view.destroy();
       viewRef.current = null;
     };
-    // biome-ignore lint: only recreate on readOnly change
-  }, [readOnly]);
+    // biome-ignore lint: only recreate on readOnly/language change
+  }, [readOnly, language]);
 
   // Sync external value
   useEffect(() => {

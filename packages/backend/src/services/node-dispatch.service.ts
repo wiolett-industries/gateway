@@ -147,6 +147,165 @@ export class NodeDispatchService {
     );
   }
 
+  // ─── Docker Commands ──────────────────────────────────────────────
+
+  async sendDockerContainerCommand(
+    nodeId: string,
+    action: string,
+    options: {
+      containerId?: string;
+      configJson?: string;
+      timeoutSeconds?: number;
+      signal?: string;
+      newName?: string;
+      force?: boolean;
+    } = {},
+    timeoutMs?: number
+  ): Promise<CommandResult> {
+    return this.registry.sendCommand(
+      nodeId,
+      {
+        dockerContainer: { action, ...options } as any,
+      },
+      timeoutMs
+    );
+  }
+
+  async sendDockerImageCommand(
+    nodeId: string,
+    action: string,
+    options: {
+      imageRef?: string;
+      registryAuthJson?: string;
+      force?: boolean;
+    } = {},
+    timeoutMs?: number
+  ): Promise<CommandResult> {
+    return this.registry.sendCommand(
+      nodeId,
+      {
+        dockerImage: { action, ...options } as any,
+      },
+      timeoutMs
+    );
+  }
+
+  async sendDockerVolumeCommand(
+    nodeId: string,
+    action: string,
+    options: {
+      name?: string;
+      driver?: string;
+      labels?: Record<string, string>;
+      force?: boolean;
+    } = {},
+    timeoutMs?: number
+  ): Promise<CommandResult> {
+    return this.registry.sendCommand(
+      nodeId,
+      {
+        dockerVolume: { action, ...options } as any,
+      },
+      timeoutMs
+    );
+  }
+
+  async sendDockerNetworkCommand(
+    nodeId: string,
+    action: string,
+    options: {
+      networkId?: string;
+      containerId?: string;
+      driver?: string;
+      subnet?: string;
+      gatewayAddr?: string;
+    } = {},
+    timeoutMs?: number
+  ): Promise<CommandResult> {
+    return this.registry.sendCommand(
+      nodeId,
+      {
+        dockerNetwork: { action, ...options } as any,
+      },
+      timeoutMs
+    );
+  }
+
+  async sendDockerExecCommand(
+    nodeId: string,
+    action: string,
+    options: {
+      containerId?: string;
+      command?: string[];
+      tty?: boolean;
+      stdin?: boolean;
+      rows?: number;
+      cols?: number;
+    } = {}
+  ): Promise<CommandResult> {
+    return this.registry.sendCommand(nodeId, {
+      dockerExec: { action, ...options } as any,
+    });
+  }
+
+  async sendDockerFileCommand(
+    nodeId: string,
+    action: string,
+    options: {
+      containerId?: string;
+      path?: string;
+      maxBytes?: number;
+      content?: string;
+    } = {}
+  ): Promise<CommandResult> {
+    const { content, ...rest } = options;
+    const payload: Record<string, unknown> = { action, ...rest };
+    if (content != null) {
+      // Content arrives as base64 from the frontend — decode to raw bytes for the proto bytes field
+      payload.content = Buffer.from(content, 'base64');
+    }
+    return this.registry.sendCommand(nodeId, {
+      dockerFile: payload as any,
+    });
+  }
+
+  async sendDockerLogsCommand(
+    nodeId: string,
+    containerId: string,
+    options: {
+      tailLines?: number;
+      follow?: boolean;
+      timestamps?: boolean;
+      since?: string;
+      until?: string;
+    } = {}
+  ): Promise<CommandResult> {
+    return this.registry.sendCommand(nodeId, {
+      dockerLogs: { containerId, ...options } as any,
+    });
+  }
+
+  async sendDockerConfigPush(
+    nodeId: string,
+    registries: Array<{ url: string; username: string; password: string }>,
+    allowlist: string[]
+  ): Promise<CommandResult> {
+    return this.registry.sendCommand(nodeId, {
+      dockerConfigPush: { registries, allowlist },
+    });
+  }
+
+  /** Fire-and-forget exec input (no response expected) */
+  sendExecInput(nodeId: string, execId: string, data: Buffer): void {
+    try {
+      this.registry.sendCommandNoWait(nodeId, {
+        execInput: { execId, data },
+      });
+    } catch {
+      /* ignore */
+    }
+  }
+
   /** Get the default nginx node ID, or null if none configured */
   async getDefaultNodeId(): Promise<string | null> {
     const [defaultNode] = await this.db

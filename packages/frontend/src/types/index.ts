@@ -38,7 +38,7 @@ export interface PermissionGroup {
 }
 
 // Nodes
-export type NodeType = "nginx" | "bastion" | "monitoring";
+export type NodeType = "nginx" | "bastion" | "monitoring" | "docker";
 export type NodeStatus = "pending" | "online" | "offline" | "error";
 
 export interface NodeHealthReport {
@@ -1011,4 +1011,125 @@ export interface HousekeepingStats {
   dockerImages: { oldImageCount: number; reclaimableBytes: number };
   lastRun: HousekeepingRunResult | null;
   isRunning: boolean;
+}
+
+// ── Docker Types ──────────────────────────────────────────────────
+
+export interface DockerPort {
+  privatePort: number;
+  publicPort?: number;
+  type: string;
+  ip?: string;
+}
+
+export interface DockerMount {
+  hostPath?: string;
+  containerPath: string;
+  name?: string;
+  readOnly: boolean;
+}
+
+export interface DockerContainer {
+  id: string;
+  name: string;
+  image: string;
+  state: string;
+  status: string;
+  created: number;
+  ports: DockerPort[];
+  labels?: Record<string, string>;
+  // Stats (from health report, optional)
+  cpuPercent?: number;
+  memoryUsage?: number;
+  memoryLimit?: number;
+  networkRx?: number;
+  networkTx?: number;
+}
+
+export interface DockerImage {
+  id: string;
+  repoTags: string[];
+  size: number;
+  created: number;
+}
+
+export interface DockerVolume {
+  name: string;
+  driver: string;
+  mountpoint: string;
+  labels: Record<string, string>;
+  scope: string;
+  createdAt?: string;
+}
+
+export interface DockerNetwork {
+  id: string;
+  name: string;
+  driver: string;
+  scope: string;
+  ipam?: { subnet?: string; gateway?: string };
+  containers?: Record<string, { name: string }>;
+}
+
+export interface DockerTemplate {
+  id: string;
+  name: string;
+  description?: string;
+  config: Record<string, unknown>;
+  createdBy?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DockerTask {
+  id: string;
+  nodeId: string;
+  containerId?: string;
+  containerName?: string;
+  type: string;
+  status: "pending" | "running" | "succeeded" | "failed";
+  progress?: string;
+  error?: string;
+  createdAt: string;
+  completedAt?: string;
+}
+
+export interface DockerRegistry {
+  id: string;
+  name: string;
+  url: string;
+  username?: string;
+  scope: "global" | "node";
+  nodeId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FileEntry {
+  name: string;
+  size: number;
+  permissions: string;
+  isDir: boolean;
+  modified: string;
+  isSymlink?: boolean;
+  linkTarget?: string;
+  isSpecial?: boolean;
+  isWritable?: boolean;
+}
+
+export interface ContainerCreateConfig {
+  image: string;
+  name?: string;
+  ports?: Array<{ hostPort: number; containerPort: number; protocol?: string }>;
+  volumes?: Array<{
+    hostPath?: string;
+    containerPath: string;
+    name?: string;
+    readOnly?: boolean;
+  }>;
+  env?: Record<string, string>;
+  networks?: string[];
+  restartPolicy?: string;
+  labels?: Record<string, string>;
+  command?: string[];
 }

@@ -303,6 +303,7 @@ export interface DockerFileCommand {
   containerId: string;
   path: string;
   maxBytes: number;
+  content?: Buffer;
 }
 
 export interface DockerConfigPushCommand {
@@ -321,6 +322,8 @@ export interface DockerLogsCommand {
   tailLines: number;
   follow: boolean;
   timestamps: boolean;
+  since?: string;
+  until?: string;
 }
 
 export interface ExecInput {

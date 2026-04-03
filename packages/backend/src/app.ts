@@ -20,6 +20,9 @@ import { alertRoutes } from '@/modules/audit/alert.routes.js';
 import { auditRoutes } from '@/modules/audit/audit.routes.js';
 import { requireActiveUser } from '@/modules/auth/auth.middleware.js';
 import { authRoutes } from '@/modules/auth/auth.routes.js';
+import { dockerRoutes } from '@/modules/docker/docker.routes.js';
+import { createDockerExecWSHandlers } from '@/modules/docker/docker-exec.ws.js';
+import { createDockerLogStreamWSHandlers } from '@/modules/docker/docker-logs.ws.js';
 import { domainRoutes } from '@/modules/domains/domain.routes.js';
 import { groupRoutes } from '@/modules/groups/group.routes.js';
 import { housekeepingRoutes } from '@/modules/housekeeping/housekeeping.routes.js';
@@ -105,6 +108,7 @@ export function createApp() {
   app.route('/api/tokens', tokensRoutes);
   app.route('/api/admin/groups', groupRoutes);
   app.route('/api/admin', adminRoutes);
+  app.route('/api/docker', dockerRoutes);
   app.route('/api/nodes', nodesRoutes);
   app.route('/api/proxy-hosts', proxyRoutes);
   app.route('/api/proxy-host-folders', folderRoutes);
@@ -140,6 +144,30 @@ export function createApp() {
         onClose: wsHandlers.onClose,
         onError: wsHandlers.onError,
       };
+    })
+  );
+
+  // Docker exec WebSocket endpoint
+  app.get(
+    '/api/docker/nodes/:nodeId/containers/:containerId/exec',
+    upgradeWebSocket((c) => {
+      const nodeId = c.req.param('nodeId') ?? '';
+      const containerId = c.req.param('containerId') ?? '';
+      const shell = c.req.query('shell') || '/bin/sh';
+      const token = c.req.query('token') || '';
+      return createDockerExecWSHandlers(nodeId, containerId, shell, token);
+    })
+  );
+
+  // Docker log stream WebSocket endpoint
+  app.get(
+    '/api/docker/nodes/:nodeId/containers/:containerId/logs/stream',
+    upgradeWebSocket((c) => {
+      const nodeId = c.req.param('nodeId') ?? '';
+      const containerId = c.req.param('containerId') ?? '';
+      const tail = Number(c.req.query('tail')) || 100;
+      const token = c.req.query('token') || '';
+      return createDockerLogStreamWSHandlers(nodeId, containerId, tail, token);
     })
   );
 

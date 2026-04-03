@@ -14,12 +14,11 @@ import (
 // logForwarder captures slog records and sends them as DaemonLogEntry
 // messages on the gRPC command stream when log streaming is enabled.
 type logForwarder struct {
-	stream pb.NodeControl_CommandStreamClient
-	mu     sync.Mutex
+	writer *Writer
 }
 
-func newLogForwarder(stream pb.NodeControl_CommandStreamClient) *logForwarder {
-	return &logForwarder{stream: stream}
+func newLogForwarder(writer *Writer) *logForwarder {
+	return &logForwarder{writer: writer}
 }
 
 // forward sends a log entry if daemon log streaming is enabled and the
@@ -41,12 +40,46 @@ func (lf *logForwarder) forward(level, component, message string, fields map[str
 		Fields:    fields,
 	}
 
-	lf.mu.Lock()
-	defer lf.mu.Unlock()
-
-	lf.stream.Send(&pb.DaemonMessage{
+	lf.writer.Send(&pb.DaemonMessage{
 		Payload: &pb.DaemonMessage_DaemonLog{DaemonLog: entry},
 	})
+}
+
+// StartupLogHandler is an slog.Handler that buffers logs before the gRPC session.
+type StartupLogHandler struct {
+	inner slog.Handler
+}
+
+func NewStartupLogHandler(inner slog.Handler) *StartupLogHandler {
+	return &StartupLogHandler{inner: inner}
+}
+
+func (h *StartupLogHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	return h.inner.Enabled(ctx, level)
+}
+
+func (h *StartupLogHandler) Handle(ctx context.Context, r slog.Record) error {
+	level := strings.ToLower(r.Level.String())
+	fields := make(map[string]string)
+	var component string
+	r.Attrs(func(a slog.Attr) bool {
+		if a.Key == "component" {
+			component = a.Value.String()
+		} else {
+			fields[a.Key] = a.Value.String()
+		}
+		return true
+	})
+	BufferStartupLog(level, component, r.Message, fields)
+	return h.inner.Handle(ctx, r)
+}
+
+func (h *StartupLogHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return &StartupLogHandler{inner: h.inner.WithAttrs(attrs)}
+}
+
+func (h *StartupLogHandler) WithGroup(name string) slog.Handler {
+	return &StartupLogHandler{inner: h.inner.WithGroup(name)}
 }
 
 // GrpcLogHandler is an slog.Handler that forwards logs to the gRPC stream.
@@ -59,9 +92,20 @@ type GrpcLogHandler struct {
 
 // NewGrpcLogHandler creates a new GrpcLogHandler that forwards log records
 // to the gRPC stream and delegates to the inner handler for local logging.
+// Deprecated: use NewGrpcLogHandlerWithWriter for thread-safe sends.
 func NewGrpcLogHandler(stream pb.NodeControl_CommandStreamClient, inner slog.Handler) *GrpcLogHandler {
 	return &GrpcLogHandler{
-		forwarder: newLogForwarder(stream),
+		forwarder: newLogForwarder(NewWriter(stream)),
+		inner:     inner,
+	}
+}
+
+// NewGrpcLogHandlerWithWriter creates a GrpcLogHandler using a thread-safe Writer.
+// It also flushes any buffered startup logs.
+func NewGrpcLogHandlerWithWriter(writer *Writer, inner slog.Handler) *GrpcLogHandler {
+	flushStartupBuffer(writer)
+	return &GrpcLogHandler{
+		forwarder: newLogForwarder(writer),
 		inner:     inner,
 	}
 }
@@ -146,6 +190,53 @@ var daemonLogState struct {
 
 func init() {
 	daemonLogState.minLevel = "info"
+}
+
+// startupBuffer holds log entries generated before the gRPC handler is installed.
+var startupBuffer struct {
+	mu      sync.Mutex
+	entries []*pb.DaemonLogEntry
+	flushed bool
+}
+
+// BufferStartupLog stores a log entry for later replay once the gRPC handler is ready.
+func BufferStartupLog(level, component, message string, fields map[string]string) {
+	startupBuffer.mu.Lock()
+	defer startupBuffer.mu.Unlock()
+	if startupBuffer.flushed {
+		return
+	}
+	startupBuffer.entries = append(startupBuffer.entries, &pb.DaemonLogEntry{
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		Level:     level,
+		Message:   message,
+		Component: component,
+		Fields:    fields,
+	})
+}
+
+// flushStartupBuffer sends all buffered startup logs through the writer.
+func flushStartupBuffer(writer *Writer) {
+	startupBuffer.mu.Lock()
+	defer startupBuffer.mu.Unlock()
+	if startupBuffer.flushed {
+		return
+	}
+	startupBuffer.flushed = true
+	for _, entry := range startupBuffer.entries {
+		writer.Send(&pb.DaemonMessage{
+			Payload: &pb.DaemonMessage_DaemonLog{DaemonLog: entry},
+		})
+	}
+	startupBuffer.entries = nil
+}
+
+// ResetStartupBuffer clears the buffer for a new session.
+func ResetStartupBuffer() {
+	startupBuffer.mu.Lock()
+	defer startupBuffer.mu.Unlock()
+	startupBuffer.entries = nil
+	startupBuffer.flushed = false
 }
 
 // SetDaemonLogStreaming atomically updates the log streaming state.

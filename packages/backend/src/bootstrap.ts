@@ -15,13 +15,17 @@ import { AISettingsService } from '@/modules/ai/ai.settings.service.js';
 import { AlertService } from '@/modules/audit/alert.service.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
 import { AuthService } from '@/modules/auth/auth.service.js';
+import { DockerManagementService } from '@/modules/docker/docker.service.js';
+import { DockerRegistryService } from '@/modules/docker/docker-registry.service.js';
+import { DockerTaskService } from '@/modules/docker/docker-task.service.js';
+import { DockerTemplateService } from '@/modules/docker/docker-template.service.js';
 import { detectPublicIP, initDnsResolver } from '@/modules/domains/dns.utils.js';
 import { DomainsService } from '@/modules/domains/domain.service.js';
+import { GroupService } from '@/modules/groups/group.service.js';
 import { MonitoringService } from '@/modules/monitoring/monitoring.service.js';
 import { NginxConfigService } from '@/modules/monitoring/nginx-config.service.js';
 import { NginxStatsService } from '@/modules/monitoring/nginx-stats.service.js';
 import { NodeMonitoringService } from '@/modules/nodes/node-monitoring.service.js';
-import { GroupService } from '@/modules/groups/group.service.js';
 import { NodesService } from '@/modules/nodes/nodes.service.js';
 import { CAService } from '@/modules/pki/ca.service.js';
 import { CertService } from '@/modules/pki/cert.service.js';
@@ -138,8 +142,21 @@ export async function initializeContainer(): Promise<void> {
   const nodesService = new NodesService(db, auditService, nodeRegistry);
   container.registerInstance(NodesService, nodesService);
 
-  const nodeMonitoringService = new NodeMonitoringService(nodeRegistry, nodeDispatch);
+  const nodeMonitoringService = new NodeMonitoringService(nodeRegistry, nodeDispatch, cacheService);
   container.registerInstance(NodeMonitoringService, nodeMonitoringService);
+
+  const dockerManagementService = new DockerManagementService(db, auditService, nodeDispatch, nodeRegistry);
+  container.registerInstance(DockerManagementService, dockerManagementService);
+
+  const dockerRegistryService = new DockerRegistryService(db, auditService, cryptoService, nodeDispatch);
+  container.registerInstance(DockerRegistryService, dockerRegistryService);
+
+  const dockerTemplateService = new DockerTemplateService(db, auditService);
+  container.registerInstance(DockerTemplateService, dockerTemplateService);
+
+  const dockerTaskService = new DockerTaskService(db);
+  container.registerInstance(DockerTaskService, dockerTaskService);
+  dockerManagementService.setTaskService(dockerTaskService);
 
   const nginxSyntaxValidator = new NginxSyntaxValidatorService();
   const proxyService = new ProxyService(
@@ -276,7 +293,10 @@ export async function initializeContainer(): Promise<void> {
     const { permissionGroups } = await import('@/db/schema/index.js');
     const { eq } = await import('drizzle-orm');
     for (const bg of BUILTIN_GROUPS) {
-      await db.update(permissionGroups).set({ scopes: [...bg.scopes] }).where(eq(permissionGroups.name, bg.name));
+      await db
+        .update(permissionGroups)
+        .set({ scopes: [...bg.scopes] })
+        .where(eq(permissionGroups.name, bg.name));
     }
   }
 
