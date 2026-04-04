@@ -193,8 +193,7 @@ export function DockerVolumes({ embedded, onCreateRef, fixedNodeId }: { embedded
         key: "node",
         header: "Node",
         width: "140px",
-        truncate: true,
-        render: (v) => <Badge variant="secondary" className="text-xs font-normal">{(v as any)._nodeName || "-"}</Badge>,
+        render: (v) => <Badge variant="secondary" className="text-xs w-fit">{(v as any)._nodeName || "-"}</Badge>,
       },
       {
         key: "usage",

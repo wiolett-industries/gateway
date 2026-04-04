@@ -147,25 +147,52 @@ export class DockerRegistryService {
     if (!row) throw new AppError(404, 'NOT_FOUND', 'Docker registry not found');
 
     try {
-      // Build URL for registry v2 API check
       const baseUrl = row.url.replace(/\/+$/, '');
-      const url = `${baseUrl}/v2/`;
-
-      const headers: Record<string, string> = {};
-      if (row.username && row.encryptedPassword) {
-        const password = this.decryptPassword(row.encryptedPassword);
-        headers.Authorization = `Basic ${Buffer.from(`${row.username}:${password}`).toString('base64')}`;
-      }
+      const v2Url = `${baseUrl}/v2/`;
+      const basicAuth = row.username && row.encryptedPassword
+        ? `Basic ${Buffer.from(`${row.username}:${this.decryptPassword(row.encryptedPassword)}`).toString('base64')}`
+        : '';
 
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 10000);
       try {
-        const response = await fetch(url, { headers, signal: controller.signal });
-        return {
-          success: response.ok || response.status === 401, // 401 means the registry exists, just auth might differ
-          status: response.status,
-          statusText: response.statusText,
-        };
+        // Step 1: Hit /v2/ to check if registry is reachable
+        const headers: Record<string, string> = {};
+        if (basicAuth) headers.Authorization = basicAuth;
+        const response = await fetch(v2Url, { headers, signal: controller.signal });
+
+        if (response.ok) {
+          return { success: true, status: response.status, statusText: 'OK' };
+        }
+
+        // Step 2: If 401 with Bearer challenge, do Docker token exchange
+        if (response.status === 401 && basicAuth) {
+          const wwwAuth = response.headers.get('www-authenticate') || '';
+          const realmMatch = wwwAuth.match(/realm="([^"]+)"/);
+          const serviceMatch = wwwAuth.match(/service="([^"]+)"/);
+
+          if (realmMatch) {
+            const tokenUrl = new URL(realmMatch[1]);
+            if (serviceMatch) tokenUrl.searchParams.set('service', serviceMatch[1]);
+            const tokenResp = await fetch(tokenUrl.toString(), {
+              headers: { Authorization: basicAuth },
+              signal: controller.signal,
+            });
+            if (tokenResp.ok) {
+              return { success: true, status: 200, statusText: 'Authenticated (token exchange)' };
+            }
+            return {
+              success: false,
+              status: tokenResp.status,
+              statusText: `Authentication failed: ${tokenResp.statusText}`,
+            };
+          }
+
+          // No Bearer challenge — plain 401
+          return { success: false, status: 401, statusText: 'Authentication failed' };
+        }
+
+        return { success: false, status: response.status, statusText: response.statusText };
       } finally {
         clearTimeout(timeout);
       }
@@ -174,6 +201,54 @@ export class DockerRegistryService {
         success: false,
         error: error instanceof Error ? error.message : 'Connection failed',
       };
+    }
+  }
+
+  async testConnectionDirect(url: string, username?: string, password?: string) {
+    try {
+      const baseUrl = url.replace(/\/+$/, '');
+      const v2Url = `${baseUrl}/v2/`;
+      const basicAuth = username && password
+        ? `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`
+        : '';
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+      try {
+        const headers: Record<string, string> = {};
+        if (basicAuth) headers.Authorization = basicAuth;
+        const response = await fetch(v2Url, { headers, signal: controller.signal });
+
+        if (response.ok) {
+          return { success: true, status: response.status, statusText: 'OK' };
+        }
+
+        if (response.status === 401 && basicAuth) {
+          const wwwAuth = response.headers.get('www-authenticate') || '';
+          const realmMatch = wwwAuth.match(/realm="([^"]+)"/);
+          const serviceMatch = wwwAuth.match(/service="([^"]+)"/);
+
+          if (realmMatch) {
+            const tokenUrl = new URL(realmMatch[1]);
+            if (serviceMatch) tokenUrl.searchParams.set('service', serviceMatch[1]);
+            const tokenResp = await fetch(tokenUrl.toString(), {
+              headers: { Authorization: basicAuth },
+              signal: controller.signal,
+            });
+            if (tokenResp.ok) {
+              return { success: true, status: 200, statusText: 'Authenticated (token exchange)' };
+            }
+            return { success: false, status: tokenResp.status, statusText: 'Authentication failed' };
+          }
+          return { success: false, status: 401, statusText: 'Authentication failed' };
+        }
+
+        return { success: false, status: response.status, statusText: response.statusText };
+      } finally {
+        clearTimeout(timeout);
+      }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Connection failed' };
     }
   }
 
@@ -205,6 +280,22 @@ export class DockerRegistryService {
     } catch (error) {
       logger.error('Failed to sync registries to node', { nodeId, error });
     }
+  }
+
+  /**
+   * Get base64-encoded Docker auth JSON for a registry (for image pull).
+   * Returns the registry URL and auth string, or null if not found.
+   */
+  async getAuthForPull(registryId: string): Promise<{ url: string; authJson: string } | null> {
+    const [row] = await this.db.select().from(dockerRegistries).where(eq(dockerRegistries.id, registryId)).limit(1);
+    if (!row || !row.username || !row.encryptedPassword) return null;
+    const password = this.decryptPassword(row.encryptedPassword);
+    const authJson = Buffer.from(JSON.stringify({
+      username: row.username,
+      password,
+      serveraddress: row.url,
+    })).toString('base64');
+    return { url: row.url.replace(/^https?:\/\//, '').replace(/\/+$/, ''), authJson };
   }
 
   private decryptPassword(encryptedJson: string): string {

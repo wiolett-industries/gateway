@@ -5,10 +5,10 @@ import {
   Key,
   Loader2,
   Moon,
-  Pencil,
   Play,
   Plus,
   RefreshCw,
+  Server,
   Sun,
   Trash2,
   X,
@@ -73,6 +73,7 @@ export function Settings() {
   const [createdSecret, setCreatedSecret] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [tokenScopeSearch, setTokenScopeSearch] = useState("");
+  const [editingToken, setEditingToken] = useState<ApiToken | null>(null);
 
   // Update state (global store)
   const {
@@ -310,7 +311,7 @@ export function Settings() {
 
   const closeRegDialog = () => {
     setRegDialogOpen(false);
-    setRegEditId(null);
+    setTimeout(() => setRegEditId(null), 200);
   };
 
   const handleRegSave = async () => {
@@ -329,6 +330,17 @@ export function Settings() {
         await api.updateRegistry(regEditId, payload);
         toast.success("Registry updated");
       } else {
+        // Test connection before creating
+        const testResult = await api.testRegistryDirect({
+          url: regUrl.trim(),
+          username: regUsername.trim() || undefined,
+          password: regPassword || undefined,
+        });
+        if (!testResult.ok) {
+          toast.error(`Connection test failed: ${testResult.error || "could not connect to registry"}`);
+          setRegSaving(false);
+          return;
+        }
         await api.createRegistry(payload);
         toast.success("Registry added");
       }
@@ -394,6 +406,62 @@ export function Settings() {
     triggerUpdate(updateStatus.latestVersion);
   };
 
+  const openTokenEdit = (token: ApiToken) => {
+    setEditingToken(token);
+    setNewTokenName(token.name);
+    // Parse scopes: extract base scopes and resource scopes
+    const base: string[] = [];
+    const res: Record<string, string[]> = {};
+    for (const s of token.scopes || []) {
+      const restrictable = [
+        "pki:cert:issue", "pki:cert:revoke", "pki:cert:export", "pki:ca:create:intermediate",
+        "proxy:view", "proxy:edit", "proxy:delete", "proxy:advanced",
+        "proxy:raw:read", "proxy:raw:write", "proxy:raw:toggle",
+        "nodes:details", "nodes:config:view", "nodes:config:edit", "nodes:logs", "nodes:rename", "nodes:delete",
+      ];
+      let matched = false;
+      for (const b of restrictable) {
+        if (s.startsWith(b + ":")) {
+          if (!base.includes(b)) base.push(b);
+          if (!res[b]) res[b] = [];
+          res[b].push(s.slice(b.length + 1));
+          matched = true;
+          break;
+        }
+      }
+      if (!matched) base.push(s);
+    }
+    setSelectedScopes(base);
+    setResourceScopes(res);
+    setCreatedSecret(null);
+    setTokenScopeSearch("");
+    setCreateDialogOpen(true);
+  };
+
+  const handleTokenRename = async () => {
+    if (!editingToken || !newTokenName.trim()) return;
+    try {
+      await api.renameToken(editingToken.id, newTokenName.trim());
+      toast.success("Token renamed");
+      setCreateDialogOpen(false);
+      loadTokens();
+      // Delay state reset until close animation finishes
+      setTimeout(() => setEditingToken(null), 200);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to rename token");
+    }
+  };
+
+  const openTokenCreate = () => {
+    setEditingToken(null);
+    setNewTokenName("");
+    setSelectedScopes([]);
+    setResourceScopes({});
+    setCreatedSecret(null);
+    setTokenScopeSearch("");
+    setCreateDialogOpen(true);
+  };
+
   const toggleScope = (scope: string) => {
     setSelectedScopes((prev) =>
       prev.includes(scope) ? prev.filter((s) => s !== scope) : [...prev, scope]
@@ -454,14 +522,7 @@ export function Settings() {
     }
   };
 
-  const openCreateDialog = () => {
-    setNewTokenName("");
-    setSelectedScopes([]);
-    setResourceScopes({});
-    setTokenScopeSearch("");
-    setCreatedSecret(null);
-    setCreateDialogOpen(true);
-  };
+  const openCreateDialog = openTokenCreate;
 
   return (
     <PageTransition>
@@ -575,37 +636,34 @@ export function Settings() {
               Create Token
             </Button>
           </div>
-          <div className="p-4">
+          <div>
             {tokens.length > 0 ? (
               <div className="divide-y divide-border">
                 {tokens.map((token) => (
-                  <div key={token.id} className="flex items-center justify-between py-3 gap-4">
+                  <div
+                    key={token.id}
+                    className="flex items-center justify-between p-4 gap-4 cursor-pointer hover:bg-accent/50 transition-colors"
+                    onClick={() => openTokenEdit(token)}
+                  >
                     <div className="flex items-center gap-3 min-w-0">
                       <Key className="h-4 w-4 text-muted-foreground shrink-0" />
                       <div className="min-w-0">
-                        <p className="text-sm font-medium">{token.name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {token.tokenPrefix}... &middot; {formatDate(token.createdAt)}
-                          {token.lastUsedAt && ` · Used ${formatDate(token.lastUsedAt)}`}
-                        </p>
-                        <div className="flex flex-wrap gap-1 mt-1">
-                          {(token.scopes || []).map((scope) => (
-                            <Badge
-                              key={scope}
-                              variant="secondary"
-                              className="text-[10px] px-1.5 py-0 font-mono"
-                            >
-                              {scope}
-                            </Badge>
-                          ))}
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-medium">{token.name}</p>
+                          <Badge variant="secondary" className="text-[10px] py-0.5">
+                            {(token.scopes || []).length} {(token.scopes || []).length === 1 ? "SCOPE" : "SCOPES"}
+                          </Badge>
                         </div>
+                        <p className="text-xs text-muted-foreground">
+                          {token.tokenPrefix}... &middot; Created {formatDate(token.createdAt)}
+                          {token.lastUsedAt ? ` · Last used ${formatRelativeDate(token.lastUsedAt)}` : " · Never used"}
+                        </p>
                       </div>
                     </div>
                     <Button
-                      variant="ghost"
+                      variant="outline"
                       size="icon"
-                      className="h-8 w-8 text-destructive shrink-0"
-                      onClick={() => handleRevokeToken(token)}
+                      onClick={(e) => { e.stopPropagation(); handleRevokeToken(token); }}
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
@@ -966,54 +1024,54 @@ export function Settings() {
                 Add Registry
               </Button>
             </div>
-            <div className="p-4">
+            <div>
               {registries.length > 0 ? (
                 <div className="divide-y divide-border">
                   {registries.map((r) => (
-                    <div key={r.id} className="flex items-center justify-between py-3 gap-4">
+                    <div
+                      key={r.id}
+                      className="flex items-center justify-between p-4 gap-4 cursor-pointer hover:bg-accent/50 transition-colors"
+                      onClick={() => openRegEdit(r)}
+                    >
                       <div className="flex items-center gap-3 min-w-0">
-                        <Globe className="h-4 w-4 text-muted-foreground shrink-0" />
+                        {r.scope === "global" ? (
+                          <Globe className="h-4 w-4 text-muted-foreground shrink-0" />
+                        ) : (
+                          <Server className="h-4 w-4 text-muted-foreground shrink-0" />
+                        )}
                         <div className="min-w-0">
-                          <p className="text-sm font-medium">{r.name}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-medium">{r.name}</p>
+                            <Badge variant={r.scope === "global" ? "default" : "secondary"} className="text-[10px] py-0.5">
+                              {r.scope === "global" ? "Global" : nodesList.find((n) => n.id === r.nodeId)?.displayName || nodesList.find((n) => n.id === r.nodeId)?.hostname || "Node"}
+                            </Badge>
+                          </div>
                           <p className="text-xs text-muted-foreground">
                             {r.url}
                             {r.username && ` (${r.username})`}
                           </p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <Badge variant={r.scope === "global" ? "default" : "secondary"} className="text-xs">
-                          {r.scope === "global" ? "Global" : nodesList.find((n) => n.id === r.nodeId)?.displayName || nodesList.find((n) => n.id === r.nodeId)?.hostname || "Node"}
-                        </Badge>
+                      <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
                         <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 text-xs"
+                          variant="outline"
+                          size="default"
                           disabled={regTesting === r.id}
                           onClick={() => handleRegTest(r)}
                         >
                           {regTesting === r.id ? (
-                            <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
+                            <RefreshCw className="h-3.5 w-3.5 mr-1 animate-spin" />
                           ) : (
-                            <Play className="h-3 w-3 mr-1" />
+                            <Play className="h-3.5 w-3.5 mr-1" />
                           )}
                           Test
                         </Button>
                         <Button
-                          variant="ghost"
+                          variant="outline"
                           size="icon"
-                          className="h-7 w-7"
-                          onClick={() => openRegEdit(r)}
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-destructive hover:text-destructive"
                           onClick={() => handleRegDelete(r)}
                         >
-                          <Trash2 className="h-3.5 w-3.5" />
+                          <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
                     </div>
@@ -1087,35 +1145,33 @@ export function Settings() {
               </div>
               <div>
                 <label className="text-sm font-medium">Scope</label>
-                <Select value={regScope} onValueChange={(v) => setRegScope(v as "global" | "node")}>
+                <Select
+                  value={regScope === "node" && regNodeId ? `node:${regNodeId}` : "global"}
+                  onValueChange={(v) => {
+                    if (v === "global") {
+                      setRegScope("global");
+                      setRegNodeId("");
+                    } else if (v.startsWith("node:")) {
+                      setRegScope("node");
+                      setRegNodeId(v.slice(5));
+                    }
+                  }}
+                >
                   <SelectTrigger className="mt-1">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="global">Global (all nodes)</SelectItem>
-                    <SelectItem value="node">Specific Node</SelectItem>
+                    {nodesList
+                      .filter((n) => n.type === "docker")
+                      .map((n) => (
+                        <SelectItem key={n.id} value={`node:${n.id}`}>
+                          {n.displayName || n.hostname}
+                        </SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
               </div>
-              {regScope === "node" && (
-                <div>
-                  <label className="text-sm font-medium">Node</label>
-                  <Select value={regNodeId} onValueChange={setRegNodeId}>
-                    <SelectTrigger className="mt-1">
-                      <SelectValue placeholder="Select a node" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {nodesList
-                        .filter((n) => n.type === "docker")
-                        .map((n) => (
-                          <SelectItem key={n.id} value={n.id}>
-                            {n.displayName || n.hostname}
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={closeRegDialog}>
@@ -1511,12 +1567,12 @@ export function Settings() {
           </DialogContent>
         </Dialog>
 
-        {/* Create Token Dialog */}
-        <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+        {/* Create/View Token Dialog */}
+        <Dialog open={createDialogOpen} onOpenChange={(open) => { setCreateDialogOpen(open); if (!open) setTimeout(() => setEditingToken(null), 200); }}>
           <DialogContent className="sm:max-w-2xl">
             <DialogHeader>
-              <DialogTitle>Create API Token</DialogTitle>
-              <DialogDescription>Select granular permissions for this token</DialogDescription>
+              <DialogTitle>{editingToken ? "API Token" : "Create API Token"}</DialogTitle>
+              <DialogDescription>{editingToken ? "View token scopes or rename" : "Select granular permissions for this token"}</DialogDescription>
             </DialogHeader>
 
             {createdSecret ? (
@@ -1566,13 +1622,17 @@ export function Settings() {
                       className="border-0 border-b border-border rounded-none h-9 text-sm focus-visible:ring-0"
                     />
                     <ScopeList
-                      scopes={TOKEN_SCOPES.filter((s) => {
-                        const userScopes = user?.scopes ?? [];
-                        return userScopes.some((us) => us === s.value || us.startsWith(s.value));
-                      })}
+                      scopes={editingToken
+                        ? TOKEN_SCOPES.filter((s) => selectedScopes.includes(s.value))
+                        : TOKEN_SCOPES.filter((s) => {
+                            const userScopes = user?.scopes ?? [];
+                            return userScopes.some((us) => us === s.value || us.startsWith(s.value));
+                          })
+                      }
                       search={tokenScopeSearch}
                       selected={selectedScopes}
                       onToggle={toggleScope}
+                      readOnly={!!editingToken}
                       resources={resourceScopes}
                       onToggleResource={(scope, caId) => {
                         setResourceScopes((prev) => {
@@ -1609,22 +1669,30 @@ export function Settings() {
                     />
                     <div className="border-t border-border px-3 py-2">
                       <p className="text-xs text-muted-foreground">
-                        {selectedScopes.length} scope{selectedScopes.length !== 1 ? "s" : ""}{" "}
-                        selected
+                        {selectedScopes.length} scope{selectedScopes.length !== 1 ? "s" : ""}
                       </p>
                     </div>
                   </div>
                 </div>
                 <DialogFooter>
                   <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>
-                    Cancel
+                    {editingToken ? "Close" : "Cancel"}
                   </Button>
-                  <Button
-                    onClick={handleCreateToken}
-                    disabled={isCreating || selectedScopes.length === 0}
-                  >
-                    {isCreating ? "Creating..." : "Create Token"}
-                  </Button>
+                  {editingToken ? (
+                    <Button
+                      onClick={handleTokenRename}
+                      disabled={!newTokenName.trim() || newTokenName.trim() === editingToken.name}
+                    >
+                      Save
+                    </Button>
+                  ) : (
+                    <Button
+                      onClick={handleCreateToken}
+                      disabled={isCreating || selectedScopes.length === 0}
+                    >
+                      {isCreating ? "Creating..." : "Create Token"}
+                    </Button>
+                  )}
                 </DialogFooter>
               </>
             )}

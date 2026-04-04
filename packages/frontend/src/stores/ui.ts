@@ -49,6 +49,10 @@ interface UIState {
   setAIPanelOpen: (open: boolean) => void;
   toggleAIPanel: () => void;
 
+  // Recent pages
+  recentPages: Array<{ path: string; label: string; icon?: string }>;
+  addRecentPage: (path: string, label: string, icon?: string) => void;
+
   // Modal
   modal: ModalState;
   openModal: (type: string, props?: Record<string, unknown>) => void;
@@ -102,6 +106,14 @@ export const useUIStore = create<UIState>()(
       setAIPanelOpen: (aiPanelOpen) => set({ aiPanelOpen }),
       toggleAIPanel: () => set((state) => ({ aiPanelOpen: !state.aiPanelOpen })),
 
+      // Recent pages
+      recentPages: [],
+      addRecentPage: (path, label, icon) =>
+        set((s) => {
+          const filtered = s.recentPages.filter((p) => p.path !== path);
+          return { recentPages: [{ path, label, icon }, ...filtered].slice(0, 8) };
+        }),
+
       // Modal
       modal: { type: null },
       openModal: (type, props) => set({ modal: { type, props } }),
@@ -118,6 +130,7 @@ export const useUIStore = create<UIState>()(
         aiBypassCreateApprovals: state.aiBypassCreateApprovals,
         aiBypassEditApprovals: state.aiBypassEditApprovals,
         aiBypassDeleteApprovals: state.aiBypassDeleteApprovals,
+        recentPages: state.recentPages,
       }),
     }
   )

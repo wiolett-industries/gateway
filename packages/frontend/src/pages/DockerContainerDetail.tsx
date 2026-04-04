@@ -68,8 +68,11 @@ export function DockerContainerDetail() {
   const [container, setContainer] = useState<InspectData | null>(null);
 
   const VALID_TABS = ["overview", "logs", "console", "files", "stats", "environment", "settings", "config"];
-  const activeTab = tabParam && VALID_TABS.includes(tabParam) ? tabParam : "overview";
-  const setActiveTab = (tab: string) => navigate(`/docker/containers/${nodeId}/${containerId}/${tab}`, { replace: true });
+  const [activeTab, setActiveTabState] = useState(() => tabParam && VALID_TABS.includes(tabParam) ? tabParam : "overview");
+  const setActiveTab = (tab: string) => {
+    setActiveTabState(tab);
+    window.history.replaceState(null, "", `/docker/containers/${nodeId}/${containerId}/${tab}`);
+  };
   const [isLoading, setIsLoading] = useState(true);
   const [localRecreating, setLocalRecreating] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
@@ -90,7 +93,7 @@ export function DockerContainerDetail() {
         // Keep pinned meta in sync
         if (usePinnedContainersStore.getState().isPinnedSidebar(containerId)) {
           const cName = String((data as any)?.Name ?? "").replace(/^\//, "") || containerId.slice(0, 12);
-          const cState = (data as any)?.State?.Status ?? "unknown";
+          const cState = (data as any)?._transition ?? (data as any)?.State?.Status ?? "unknown";
           updateMeta(containerId, { nodeId, name: cName, state: cState });
         }
       } catch {

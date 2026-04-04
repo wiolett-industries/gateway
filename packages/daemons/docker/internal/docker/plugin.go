@@ -462,7 +462,6 @@ func (p *DockerPlugin) handleImageCommand(cmd *pb.DockerImageCommand, result *pb
 		result.Detail = string(data)
 
 	case "pull":
-		// Image pull is async via task manager.
 		imageRef := cmd.ImageRef
 		if imageRef == "" {
 			result.Success = false
@@ -478,17 +477,13 @@ func (p *DockerPlugin) handleImageCommand(cmd *pb.DockerImageCommand, result *pb
 			p.registryMu.RUnlock()
 		}
 
-		task, err := p.taskMgr.Submit(imageRef, "image_pull", 10*time.Minute, func(taskCtx context.Context) error {
-			return p.client.PullImage(taskCtx, imageRef, registryAuth)
-		})
-		if err != nil {
+		// Pull synchronously — backend wraps in its own task system
+		if err := p.client.PullImage(ctx, imageRef, registryAuth); err != nil {
 			result.Success = false
 			result.Error = err.Error()
 			return
 		}
-
-		data, _ := json.Marshal(task)
-		result.Detail = string(data)
+		result.Detail = imageRef
 
 	case "remove":
 		if cmd.ImageRef == "" {

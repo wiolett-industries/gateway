@@ -51,8 +51,11 @@ export function AdminNodeDetail() {
   const [isLoading, setIsLoading] = useState(true);
 
   const VALID_TABS = ["details", "monitoring", "console", "configuration", "nginx-logs", "containers", "images", "volumes", "networks", "daemon-logs"];
-  const activeTab = tabParam && VALID_TABS.includes(tabParam) ? tabParam : "details";
-  const setActiveTab = (tab: string) => navigate(`/nodes/${id}/${tab}`, { replace: true });
+  const [activeTab, setActiveTabState] = useState(() => tabParam && VALID_TABS.includes(tabParam) ? tabParam : "details");
+  const setActiveTab = (tab: string) => {
+    setActiveTabState(tab);
+    window.history.replaceState(null, "", `/nodes/${id}/${tab}`);
+  };
 
   // Rename dialog
   const [renameOpen, setRenameOpen] = useState(false);
@@ -194,12 +197,12 @@ export function AdminNodeDetail() {
               <TabsTrigger value="nginx-logs">Nginx Logs</TabsTrigger>
             )}
             {node.type === "docker" && (
-              <>
+              <PageTransition>
                 <TabsTrigger value="containers">Containers</TabsTrigger>
                 <TabsTrigger value="images">Images</TabsTrigger>
                 <TabsTrigger value="volumes">Volumes</TabsTrigger>
                 <TabsTrigger value="networks">Networks</TabsTrigger>
-              </>
+              </PageTransition>
             )}
             {node.status === "online" && hasScope("nodes:console") && (
               <TabsTrigger value="console">Console</TabsTrigger>
@@ -223,7 +226,7 @@ export function AdminNodeDetail() {
             </TabsContent>
           )}
           {node.type === "docker" && (
-            <>
+            <PageTransition>
               <TabsContent value="containers" className="flex flex-col flex-1 min-h-0">
                 <DockerContainers embedded fixedNodeId={node.id} />
               </TabsContent>
@@ -236,7 +239,7 @@ export function AdminNodeDetail() {
               <TabsContent value="networks" className="flex flex-col flex-1 min-h-0">
                 <DockerNetworks embedded fixedNodeId={node.id} />
               </TabsContent>
-            </>
+            </PageTransition>
           )}
           {node.status === "online" && hasScope("nodes:console") && (
             <TabsContent value="console" className="flex flex-col flex-1 min-h-0">

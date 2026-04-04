@@ -60,6 +60,14 @@ export class TokensService {
     }));
   }
 
+  async renameToken(userId: string, tokenId: string, name: string): Promise<void> {
+    const token = await this.db.query.apiTokens.findFirst({
+      where: and(eq(apiTokens.id, tokenId), eq(apiTokens.userId, userId)),
+    });
+    if (!token) throw new AppError(404, 'TOKEN_NOT_FOUND', 'Token not found');
+    await this.db.update(apiTokens).set({ name }).where(eq(apiTokens.id, tokenId));
+  }
+
   async revokeToken(userId: string, tokenId: string): Promise<void> {
     const token = await this.db.query.apiTokens.findFirst({
       where: and(eq(apiTokens.id, tokenId), eq(apiTokens.userId, userId)),

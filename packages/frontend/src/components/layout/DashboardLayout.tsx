@@ -47,6 +47,8 @@ import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAIStore } from "@/stores/ai";
 import { useAuthStore } from "@/stores/auth";
+import { useCAStore } from "@/stores/ca";
+import { useDockerStore } from "@/stores/docker";
 import { usePinnedContainersStore } from "@/stores/pinned-containers";
 import { usePinnedNodesStore } from "@/stores/pinned-nodes";
 import { usePinnedProxiesStore } from "@/stores/pinned-proxies";
@@ -187,14 +189,14 @@ function SidebarContent({
       .catch(() => {});
   }, [sidebarPinnedProxyIds, location.pathname, pinnedProxyRefreshTick]);
 
-  // Clean up orphaned pinned containers
+  // Clean up orphaned pinned containers on mount
   useEffect(() => {
     if (sidebarPinnedContainerIds.length === 0) return;
-    // Group pinned containers by nodeId and validate each
-    const metaEntries = sidebarPinnedContainerIds
-      .map((cid) => ({ cid, meta: pinnedContainerMeta[cid] }))
+    const meta = usePinnedContainersStore.getState().containerMeta;
+    const entries = sidebarPinnedContainerIds
+      .map((cid) => ({ cid, meta: meta[cid] }))
       .filter((e) => e.meta);
-    const nodeIds = [...new Set(metaEntries.map((e) => e.meta!.nodeId))];
+    const nodeIds = [...new Set(entries.map((e) => e.meta!.nodeId))];
     if (nodeIds.length === 0) return;
 
     Promise.all(nodeIds.map((nid) => api.listDockerContainers(nid).catch(() => [])))
@@ -203,7 +205,6 @@ function SidebarContent({
         usePinnedContainersStore.getState().removeOrphans(validIds);
       })
       .catch(() => {});
-    // Only run once on mount, not on every meta change
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -506,7 +507,9 @@ function SidebarContent({
                                     ? "bg-emerald-500"
                                     : meta.state === "exited" || meta.state === "dead"
                                       ? "bg-red-400"
-                                      : "bg-muted-foreground/40"
+                                      : meta.state === "stopping" || meta.state === "restarting" || meta.state === "recreating" || meta.state === "killing" || meta.state === "updating"
+                                        ? "bg-amber-400 animate-pulse"
+                                        : "bg-muted-foreground/40"
                                 )}
                               />
                             </Link>
@@ -691,6 +694,13 @@ export function DashboardLayout() {
         // Prefetch data for all pages in background
         const hasAdminScopes = user.scopes?.some((s: string) => s.startsWith("admin:")) ?? false;
         api.prefetchAll(hasAdminScopes);
+        // Preload Docker containers for command palette
+        if (user.scopes?.some((s: string) => s.startsWith("docker:"))) {
+          api.listNodes({ type: "docker", limit: 100 }).then((r) => {
+            useDockerStore.getState().setDockerNodes(r.data);
+            if (r.data.length > 0) useDockerStore.getState().fetchContainers();
+          }).catch(() => {});
+        }
         // Fetch update status into global store
         if (user.scopes?.includes("admin:update")) useUpdateStore.getState().fetchStatus();
         // Check AI availability
@@ -722,8 +732,83 @@ export function DashboardLayout() {
     return () => window.removeEventListener("resize", checkMobile);
   }, [setIsMobile]);
 
+  // Track recent pages for command palette
+  const location = useLocation();
+  useEffect(() => {
+    const path = location.pathname;
+    if (path === "/" || path === "/login" || path === "/callback" || path === "/blocked") return;
+
+    // Build a human-readable label, resolving entity IDs to names
+    const label = (() => {
+      // Node detail: /nodes/:id or /nodes/:id/:tab
+      const nodeMatch = path.match(/^\/nodes\/([0-9a-f-]{36})/);
+      if (nodeMatch) {
+        // Resolve name asynchronously, update label after fetch
+        api.getNode(nodeMatch[1]).then((n) => {
+          const resolvedName = n.displayName || n.hostname;
+          const tab2 = path.split("/")[3];
+          const resolvedLabel = tab2 ? `Node: ${resolvedName} / ${tab2.charAt(0).toUpperCase() + tab2.slice(1).replace(/-/g, " ")}` : `Node: ${resolvedName}`;
+          useUIStore.getState().addRecentPage(path, resolvedLabel);
+        }).catch(() => {});
+        const name = nodeMatch[1].slice(0, 8);
+        const tab = path.split("/")[3];
+        return tab ? `Node: ${name} / ${tab.charAt(0).toUpperCase() + tab.slice(1).replace(/-/g, " ")}` : `Node: ${name}`;
+      }
+      // Container detail: /docker/containers/:nodeId/:containerId
+      const containerMatch = path.match(/^\/docker\/containers\/[^/]+\/([0-9a-f]+)/);
+      if (containerMatch) {
+        const c = useDockerStore.getState().containers.find((ct) => ct.id === containerMatch[1]);
+        const name = c?.name || containerMatch[1].slice(0, 12);
+        const tab = path.split("/")[5];
+        return tab ? `Container: ${name} / ${tab.charAt(0).toUpperCase() + tab.slice(1)}` : `Container: ${name}`;
+      }
+      // Proxy host detail: /proxy-hosts/:id
+      const proxyMatch = path.match(/^\/proxy-hosts\/([0-9a-f-]{36})/);
+      if (proxyMatch) {
+        api.getProxyHost(proxyMatch[1]).then((p) => {
+          const resolvedName = p.domainNames?.[0] || proxyMatch![1].slice(0, 8);
+          const tab2 = path.split("/")[3];
+          const resolvedLabel = tab2 ? `Proxy: ${resolvedName} / ${tab2.charAt(0).toUpperCase() + tab2.slice(1)}` : `Proxy: ${resolvedName}`;
+          useUIStore.getState().addRecentPage(path, resolvedLabel);
+        }).catch(() => {});
+        const name = proxyMatch[1].slice(0, 8);
+        const tab = path.split("/")[3];
+        return tab ? `Proxy: ${name} / ${tab.charAt(0).toUpperCase() + tab.slice(1)}` : `Proxy: ${name}`;
+      }
+      // CA detail: /cas/:id
+      const caMatch = path.match(/^\/cas\/([0-9a-f-]{36})/);
+      if (caMatch) {
+        const ca = useCAStore.getState().cas?.find((c) => c.id === caMatch[1]);
+        return ca ? `CA: ${ca.commonName}` : `CA: ${caMatch[1].slice(0, 8)}`;
+      }
+      // Generic: prettify path segments
+      const segments = path.split("/").filter(Boolean);
+      return segments
+        .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
+        .join(" / ")
+        .replace(/-/g, " ");
+    })();
+
+    useUIStore.getState().addRecentPage(path, label);
+  }, [location.pathname]);
+
   // Keyboard shortcuts
   useEffect(() => {
+    // Double-Shift detection
+    let lastShiftUp = 0;
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === "Shift" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        const now = Date.now();
+        if (now - lastShiftUp < 400) {
+          lastShiftUp = 0;
+          setCommandPaletteOpen(true);
+        } else {
+          lastShiftUp = now;
+        }
+      }
+    };
+    window.addEventListener("keyup", handleKeyUp);
+
     const handleKeyDown = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
 
@@ -787,7 +872,10 @@ export function DashboardLayout() {
       }
     };
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+    };
   }, [commandPaletteOpen, setCommandPaletteOpen, navigate]);
 
   if (isLoading) {

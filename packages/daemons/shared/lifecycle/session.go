@@ -111,6 +111,15 @@ func runSession(ctx context.Context, conn *grpc.ClientConn, d *DaemonBase) error
 				return err
 			}
 			continue
+		case *pb.GatewayCommand_DockerImage:
+			// Image commands (especially pull) can take minutes — run async
+			go func(c *pb.GatewayCommand) {
+				result := d.plugin.HandleCommand(c)
+				writer.Send(&pb.DaemonMessage{
+					Payload: &pb.DaemonMessage_CommandResult{CommandResult: result},
+				})
+			}(cmd)
+			continue
 		}
 
 		// Process command and send result

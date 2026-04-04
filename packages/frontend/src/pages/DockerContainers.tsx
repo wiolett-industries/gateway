@@ -1,5 +1,5 @@
-import { Box, Play, Plus, RefreshCw, Square } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Box, CornerDownRight, Layers, Play, Plus, RefreshCw, ScrollText, Square } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/common/EmptyState";
@@ -76,6 +76,29 @@ export function DockerContainers({ embedded, onDeployRef, fixedNodeId }: { embed
   const setFilters = useDockerStore((s) => s.setFilters);
   const resetFilters = useDockerStore((s) => s.resetFilters);
   const fetchContainers = useDockerStore((s) => s.fetchContainers);
+  const forceFetchContainers = useDockerStore((s) => s.forceFetchContainers);
+
+  // Fast-poll while any container has a transition state (same pattern as container detail page)
+  const hasTransitions = containers.some((c) => (c as any)._transition);
+  const transitionPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => {
+    if (hasTransitions) {
+      if (!transitionPollRef.current) {
+        transitionPollRef.current = setInterval(() => forceFetchContainers(), 2000);
+      }
+    } else {
+      if (transitionPollRef.current) {
+        clearInterval(transitionPollRef.current);
+        transitionPollRef.current = null;
+      }
+    }
+    return () => {
+      if (transitionPollRef.current) {
+        clearInterval(transitionPollRef.current);
+        transitionPollRef.current = null;
+      }
+    };
+  }, [hasTransitions, forceFetchContainers]);
 
   const [searchInput, setSearchInput] = useState(filters.search);
   const [dockerNodes, setDockerNodes] = useState<Node[]>([]);
@@ -200,8 +223,34 @@ export function DockerContainers({ embedded, onDeployRef, fixedNodeId }: { embed
           c.id.toLowerCase().includes(q)
       );
     }
+    // Sort: compose groups together (alphabetically), then standalone
+    result.sort((a, b) => {
+      const pa = (a.labels?.["com.docker.compose.project"]) ?? "";
+      const pb = (b.labels?.["com.docker.compose.project"]) ?? "";
+      if (pa && !pb) return -1;
+      if (!pa && pb) return 1;
+      if (pa !== pb) return pa.localeCompare(pb);
+      // Within same compose project, sort by service name
+      const sa = (a.labels?.["com.docker.compose.service"]) ?? a.name;
+      const sb = (b.labels?.["com.docker.compose.service"]) ?? b.name;
+      return sa.localeCompare(sb);
+    });
     return result;
   }, [containers, filters]);
+
+  // Compose group metrics
+  const composeGroups = useMemo(() => {
+    const groups = new Map<string, { total: number; running: number; nodeId: string }>();
+    for (const c of filteredContainers) {
+      const project = c.labels?.["com.docker.compose.project"];
+      if (!project) continue;
+      const g = groups.get(project) ?? { total: 0, running: 0, nodeId: (c as any)._nodeId || "" };
+      g.total++;
+      if (c.state === "running") g.running++;
+      groups.set(project, g);
+    }
+    return groups;
+  }, [filteredContainers]);
 
   const hasActiveFilters = filters.search !== "" || filters.status !== "all";
 
@@ -211,7 +260,8 @@ export function DockerContainers({ embedded, onDeployRef, fixedNodeId }: { embed
     try {
       await fn();
       toast.success(`Container ${action} successful`);
-      fetchContainers();
+      // Force-fetch bypasses SWR cache; transition polling handles the rest
+      forceFetchContainers();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : `Failed to ${action} container`);
     } finally {
@@ -277,21 +327,25 @@ export function DockerContainers({ embedded, onDeployRef, fixedNodeId }: { embed
         key: "name",
         header: "Name",
         truncate: true,
-        render: (c) => (
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-muted shrink-0">
-              <Box className="h-4 w-4 text-muted-foreground" />
+        render: (c) => {
+          const isCompose = !!c.labels?.["com.docker.compose.project"];
+          return (
+            <div className="flex items-center gap-3 min-w-0">
+              {isCompose && <CornerDownRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
+              <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-muted shrink-0">
+                <Box className="h-4 w-4 text-muted-foreground" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-medium truncate">
+                  {containerDisplayName(c.name)}
+                </p>
+                <p className="text-xs text-muted-foreground font-mono truncate">
+                  {c.id.slice(0, 12)}
+                </p>
+              </div>
             </div>
-            <div className="min-w-0">
-              <p className="text-sm font-medium truncate">
-                {containerDisplayName(c.name)}
-              </p>
-              <p className="text-xs text-muted-foreground font-mono truncate">
-                {c.id.slice(0, 12)}
-              </p>
-            </div>
-          </div>
-        ),
+          );
+        },
       },
       {
         key: "image",
@@ -305,13 +359,12 @@ export function DockerContainers({ embedded, onDeployRef, fixedNodeId }: { embed
         key: "node",
         header: "Node",
         width: "140px",
-        truncate: true,
-        render: (c) => <Badge variant="secondary" className="text-xs font-normal">{(c as any)._nodeName || "-"}</Badge>,
+        render: (c) => <Badge variant="secondary" className="text-xs w-fit">{(c as any)._nodeName || "-"}</Badge>,
       },
       {
         key: "status",
         header: "Status",
-        width: "110px",
+        width: "131px",
         render: (c) => (
           <Badge
             variant={STATUS_BADGE[(c as any)._transition ?? c.state] ?? "secondary"}
@@ -474,6 +527,39 @@ export function DockerContainers({ embedded, onDeployRef, fixedNodeId }: { embed
                 keyFn={(c) => c.id}
                 onRowClick={(c) => navigate(`/docker/containers/${(c as any)._nodeId || selectedNodeId}/${c.id}`)}
                 emptyMessage="No containers found."
+                groupBy={(c) => {
+                  const project = c.labels?.["com.docker.compose.project"];
+                  if (!project) return null;
+                  const g = composeGroups.get(project);
+                  return {
+                    key: project,
+                    label: (
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Layers className="h-3.5 w-3.5 text-muted-foreground" />
+                          <span className="text-xs font-medium uppercase tracking-wider">{project}</span>
+                        </div>
+                        {g && (
+                          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                            <span>{g.running}/{g.total} running</span>
+                            <ScrollText className="h-3.5 w-3.5 cursor-pointer hover:text-foreground" />
+                          </div>
+                        )}
+                      </div>
+                    ),
+                  };
+                }}
+                onGroupClick={(group) => {
+                  // Open compose logs popout
+                  const g = composeGroups.get(group.key);
+                  if (g?.nodeId) {
+                    window.open(
+                      `/docker/compose-logs/${g.nodeId}/${encodeURIComponent(group.key)}`,
+                      `compose-logs-${group.key}`,
+                      "width=900,height=600"
+                    );
+                  }
+                }}
               />
             ) : isLoading ? (
               <div className="flex items-center justify-center py-16 text-muted-foreground">

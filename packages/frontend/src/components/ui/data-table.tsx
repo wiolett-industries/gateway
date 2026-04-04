@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 
 export interface DataTableColumn<T> {
   key: string;
@@ -12,6 +12,11 @@ export interface DataTableColumn<T> {
   className?: string;
 }
 
+interface DataTableGroup {
+  key: string;
+  label: ReactNode;
+}
+
 interface DataTableProps<T> {
   columns: DataTableColumn<T>[];
   data: T[];
@@ -22,6 +27,10 @@ interface DataTableProps<T> {
   scrollRef?: React.RefObject<HTMLDivElement | null>;
   /** Extra content at the bottom of the scroll area (e.g. sentinel) */
   footer?: ReactNode;
+  /** Group rows by a key. Returns group info or null for ungrouped rows. */
+  groupBy?: (row: T) => DataTableGroup | null;
+  /** Called when a group header is clicked */
+  onGroupClick?: (group: DataTableGroup) => void;
 }
 
 export function DataTable<T>({
@@ -32,6 +41,8 @@ export function DataTable<T>({
   emptyMessage = "No data.",
   scrollRef,
   footer,
+  groupBy,
+  onGroupClick,
 }: DataTableProps<T>) {
   if (data.length === 0) {
     return (
@@ -63,24 +74,41 @@ export function DataTable<T>({
             </tr>
           </thead>
           <tbody>
-            {data.map((row) => (
-              <tr
-                key={keyFn(row)}
-                className={`border-b border-border transition-colors ${
-                  onRowClick ? "cursor-pointer hover:bg-muted/50" : ""
-                }`}
-                onClick={onRowClick ? () => onRowClick(row) : undefined}
-              >
-                {columns.map((col) => (
-                  <td
-                    key={col.key}
-                    className={`px-4 py-3 ${col.align === "right" ? "text-right" : ""} ${col.truncate ? "overflow-hidden text-ellipsis whitespace-nowrap max-w-0" : ""} ${col.className ?? ""}`}
+            {data.map((row, i) => {
+              const group = groupBy?.(row) ?? null;
+              const prevGroup = i > 0 ? groupBy?.(data[i - 1]) ?? null : null;
+              const showHeader = group && group.key !== prevGroup?.key;
+
+              return (
+                <Fragment key={keyFn(row)}>
+                  {showHeader && (
+                    <tr
+                      className={`bg-muted/50 border-b border-border ${onGroupClick ? "cursor-pointer hover:bg-muted transition-colors" : ""}`}
+                      onClick={onGroupClick ? () => onGroupClick(group) : undefined}
+                    >
+                      <td colSpan={columns.length} className="px-4 py-2">
+                        {group.label}
+                      </td>
+                    </tr>
+                  )}
+                  <tr
+                    className={`border-b border-border transition-colors ${
+                      onRowClick ? "cursor-pointer hover:bg-muted/50" : ""
+                    }`}
+                    onClick={onRowClick ? () => onRowClick(row) : undefined}
                   >
-                    {col.render(row)}
-                  </td>
-                ))}
-              </tr>
-            ))}
+                    {columns.map((col) => (
+                      <td
+                        key={col.key}
+                        className={`px-4 py-3 ${col.align === "right" ? "text-right" : ""} ${col.truncate ? "overflow-hidden text-ellipsis whitespace-nowrap max-w-0" : ""} ${col.className ?? ""}`}
+                      >
+                        {col.render(row)}
+                      </td>
+                    ))}
+                  </tr>
+                </Fragment>
+              );
+            })}
           </tbody>
         </table>
         {footer}

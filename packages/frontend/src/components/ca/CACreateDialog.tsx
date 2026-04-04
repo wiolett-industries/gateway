@@ -72,13 +72,14 @@ export function CACreateDialog({ open, onOpenChange, parentId }: CACreateDialogP
 
       toast.success(`${isIntermediate ? "Intermediate" : "Root"} CA created`);
       onOpenChange(false);
-      await fetchCAs();
-
-      setCommonName("");
-      setSelectedParentId("");
-      setValidityYears(10);
-      setPathLengthConstraint(undefined);
-      setMaxValidityDays(365);
+      fetchCAs();
+      setTimeout(() => {
+        setCommonName("");
+        setSelectedParentId("");
+        setValidityYears(10);
+        setPathLengthConstraint(undefined);
+        setMaxValidityDays(365);
+      }, 200);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to create CA");
     } finally {

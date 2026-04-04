@@ -28,13 +28,14 @@ type Client struct {
 
 // ContainerInfo holds summary information about a container.
 type ContainerInfo struct {
-	ID      string     `json:"id"`
-	Name    string     `json:"name"`
-	Image   string     `json:"image"`
-	State   string     `json:"state"`
-	Status  string     `json:"status"`
-	Created int64      `json:"created"`
-	Ports   []PortInfo `json:"ports"`
+	ID      string            `json:"id"`
+	Name    string            `json:"name"`
+	Image   string            `json:"image"`
+	State   string            `json:"state"`
+	Status  string            `json:"status"`
+	Created int64             `json:"created"`
+	Ports   []PortInfo        `json:"ports"`
+	Labels  map[string]string `json:"labels,omitempty"`
 }
 
 // PortInfo describes a port mapping on a container.
@@ -132,6 +133,7 @@ func (c *Client) ListContainers(ctx context.Context) ([]ContainerInfo, error) {
 			Status:  ctr.Status,
 			Created: ctr.Created,
 			Ports:   ports,
+			Labels:  ctr.Labels,
 		})
 	}
 	return containers, nil
@@ -853,9 +855,29 @@ func (c *Client) PullImage(ctx context.Context, imageRef string, registryAuth st
 	if err != nil {
 		return fmt.Errorf("image pull: %w", err)
 	}
-	// Drain the response to complete the pull
-	_, _ = io.Copy(io.Discard, resp)
-	resp.Close()
+	defer resp.Close()
+
+	// Docker streams JSON progress; errors are embedded in the stream.
+	// Read and check each message for error fields.
+	decoder := json.NewDecoder(resp)
+	var lastErr string
+	for {
+		var msg struct {
+			Error       string `json:"error"`
+			ErrorDetail struct {
+				Message string `json:"message"`
+			} `json:"errorDetail"`
+		}
+		if err := decoder.Decode(&msg); err != nil {
+			break // EOF or parse error — done reading
+		}
+		if msg.Error != "" {
+			lastErr = msg.Error
+		}
+	}
+	if lastErr != "" {
+		return fmt.Errorf("image pull: %s", lastErr)
+	}
 	return nil
 }
 
@@ -961,6 +983,27 @@ func (c *Client) ListNetworks(ctx context.Context) (json.RawMessage, error) {
 		network.Summary
 		Containers map[string]network.EndpointResource `json:"Containers"`
 	}
+	// Build map of network ID/name → containers (including stopped) from container configs
+	networkUsers := make(map[string]map[string]network.EndpointResource)
+	ctrResult, err := c.cli.ContainerList(ctx, client.ContainerListOptions{All: true})
+	if err == nil {
+		for _, ctr := range ctrResult.Items {
+			ctrName := ""
+			if len(ctr.Names) > 0 {
+				ctrName = strings.TrimPrefix(ctr.Names[0], "/")
+			}
+			for netName, netSettings := range ctr.NetworkSettings.Networks {
+				if networkUsers[netName] == nil {
+					networkUsers[netName] = make(map[string]network.EndpointResource)
+				}
+				networkUsers[netName][ctr.ID] = network.EndpointResource{
+					Name: ctrName,
+				}
+				_ = netSettings
+			}
+		}
+	}
+
 	// Skip Docker built-in default networks
 	hiddenNetworks := map[string]bool{"host": true, "none": true, "bridge": true}
 	enriched := make([]netWithContainers, 0, len(result.Items))
@@ -969,9 +1012,20 @@ func (c *Client) ListNetworks(ctx context.Context) (json.RawMessage, error) {
 			continue
 		}
 		nwc := netWithContainers{Summary: n}
-		inspected, err := c.cli.NetworkInspect(ctx, n.ID, client.NetworkInspectOptions{})
-		if err == nil {
+		// Merge: running containers from inspect + stopped containers from list
+		inspected, inspErr := c.cli.NetworkInspect(ctx, n.ID, client.NetworkInspectOptions{})
+		if inspErr == nil {
 			nwc.Containers = inspected.Network.Containers
+		} else {
+			nwc.Containers = make(map[string]network.EndpointResource)
+		}
+		// Add stopped containers that aren't in the inspect result
+		if users, ok := networkUsers[n.Name]; ok {
+			for cid, ep := range users {
+				if _, exists := nwc.Containers[cid]; !exists {
+					nwc.Containers[cid] = ep
+				}
+			}
 		}
 		enriched = append(enriched, nwc)
 	}

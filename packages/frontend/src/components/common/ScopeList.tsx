@@ -27,6 +27,8 @@ interface ScopeListProps {
   /** Inherited scopes from parent group — shown as read-only checked at bottom */
   inheritedScopes?: string[];
   inheritedFromName?: string;
+  /** When true, all scopes are shown as non-interactive (view only) */
+  readOnly?: boolean;
 }
 
 function matchesQuery(scope: ScopeItem, q: string): boolean {
@@ -75,6 +77,7 @@ export function ScopeList({
   restrictableScopes,
   inheritedScopes,
   inheritedFromName,
+  readOnly,
 }: ScopeListProps) {
   const q = search.toLowerCase().trim();
 
@@ -127,6 +130,7 @@ export function ScopeList({
             isSelected={selected.includes(scope.value)}
             onToggle={onToggle}
             muted={false}
+            disabled={readOnly}
             resources={resources}
             onToggleResource={onToggleResource}
             cas={cas}
@@ -143,6 +147,7 @@ export function ScopeList({
             isSelected={selected.includes(scope.value)}
             onToggle={onToggle}
             muted
+            disabled={readOnly}
             resources={resources}
             onToggleResource={onToggleResource}
             cas={cas}
@@ -176,6 +181,7 @@ export function ScopeList({
                 isSelected={selected.includes(scope.value)}
                 onToggle={onToggle}
                 muted={false}
+                disabled={readOnly}
                 resources={resources}
                 onToggleResource={onToggleResource}
                 cas={cas}

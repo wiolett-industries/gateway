@@ -350,11 +350,28 @@ dockerRoutes.get('/nodes/:nodeId/images', requireScope('docker:images:list'), as
 // Pull image
 dockerRoutes.post('/nodes/:nodeId/images/pull', requireScope('docker:images:pull'), async (c) => {
   const service = container.resolve(DockerManagementService);
+  const registryService = container.resolve(DockerRegistryService);
   const nodeId = c.req.param('nodeId');
   const user = c.get('user')!;
   const body = await c.req.json();
-  const { imageRef } = ImagePullSchema.parse(body);
-  const data = await service.pullImage(nodeId, imageRef, undefined, user.id);
+  const { imageRef, registryId } = body;
+  ImagePullSchema.parse({ imageRef });
+
+  // Resolve registry credentials and prefix image ref if using private registry
+  let finalImageRef = imageRef;
+  let registryAuth: string | undefined;
+  if (registryId) {
+    const auth = await registryService.getAuthForPull(registryId);
+    if (auth) {
+      registryAuth = auth.authJson;
+      // Prefix image ref with registry URL if not already prefixed
+      if (!imageRef.includes('/') || !imageRef.split('/')[0].includes('.')) {
+        finalImageRef = `${auth.url}/${imageRef}`;
+      }
+    }
+  }
+
+  const data = await service.pullImage(nodeId, finalImageRef, registryAuth, user.id);
   return c.json({ data });
 });
 
@@ -505,7 +522,15 @@ dockerRoutes.delete('/registries/:id', requireScope('docker:registries:delete'),
   return c.json({ success: true });
 });
 
-// Test registry connection
+// Test registry connection (by credentials, before saving)
+dockerRoutes.post('/registries/test', requireScope('docker:registries:edit'), async (c) => {
+  const service = container.resolve(DockerRegistryService);
+  const body = await c.req.json();
+  const data = await service.testConnectionDirect(body.url, body.username, body.password);
+  return c.json({ data });
+});
+
+// Test registry connection (by ID)
 dockerRoutes.post('/registries/:id/test', requireScope('docker:registries:edit'), async (c) => {
   const service = container.resolve(DockerRegistryService);
   const id = c.req.param('id');

@@ -1,4 +1,4 @@
-import { AlertCircle, RefreshCw, Trash2 } from "lucide-react";
+import { RefreshCw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/common/EmptyState";
@@ -148,11 +148,11 @@ export function DockerTasks({ embedded }: { embedded?: boolean } = {}) {
 
   const taskColumns: DataTableColumn<DockerTask>[] = useMemo(() => [
     { key: "type", header: "Type", render: (t) => <span className="font-medium whitespace-nowrap">{t.type}</span> },
-    { key: "container", header: "Container", render: (t) => <span className="text-muted-foreground truncate">{t.containerName || t.containerId?.slice(0, 12) || "-"}</span>, className: "max-w-[200px]" },
-    { key: "node", header: "Node", render: (t) => <span className="text-muted-foreground truncate">{nodeMap.get(t.nodeId) ?? t.nodeId.slice(0, 8)}</span>, className: "max-w-[200px]" },
-    { key: "status", header: "Status", render: (t) => <Badge variant={STATUS_BADGE[t.status] ?? "secondary"} className={`text-xs ${t.status === "running" ? "animate-pulse" : ""}`}>{t.status}</Badge> },
-    { key: "started", header: "Started", align: "right", render: (t) => <span className="text-muted-foreground whitespace-nowrap">{formatTime(t.createdAt)}</span> },
-    { key: "duration", header: "Duration", align: "right", render: (t) => <span className="text-muted-foreground whitespace-nowrap">{formatDuration(t.createdAt, t.completedAt)}</span> },
+    { key: "container", header: "Container", truncate: true, render: (t) => <span className="text-muted-foreground">{t.containerName || t.containerId?.slice(0, 12) || "-"}</span> },
+    { key: "node", header: "Node", truncate: true, render: (t) => <span className="text-muted-foreground">{nodeMap.get(t.nodeId) ?? t.nodeId.slice(0, 8)}</span> },
+    { key: "status", header: "Status", width: "130px", render: (t) => <Badge variant={STATUS_BADGE[t.status] ?? "secondary"} className={t.status === "running" ? "animate-pulse" : ""}>{t.status}</Badge> },
+    { key: "started", header: "Started", width: "110px", align: "right", render: (t) => <span className="text-muted-foreground whitespace-nowrap">{formatTime(t.createdAt)}</span> },
+    { key: "duration", header: "Duration", width: "100px", align: "right", render: (t) => <span className="text-muted-foreground whitespace-nowrap">{formatDuration(t.createdAt, t.completedAt)}</span> },
   ], [nodeMap]);
 
   const hasActiveFilters =
@@ -284,62 +284,60 @@ export function DockerTasks({ embedded }: { embedded?: boolean } = {}) {
 
       {/* Task Detail Dialog */}
       <Dialog open={!!selectedTask} onOpenChange={(open) => !open && setSelectedTask(null)}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md overflow-hidden">
           <DialogHeader>
             <DialogTitle>Task Details</DialogTitle>
           </DialogHeader>
           {selectedTask && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Type</span>
-                <span className="text-sm font-medium">{selectedTask.type}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Container</span>
-                <span className="text-sm">{selectedTask.containerName || selectedTask.containerId?.slice(0, 12) || "-"}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Node</span>
-                <span className="text-sm">{nodeMap.get(selectedTask.nodeId) ?? selectedTask.nodeId.slice(0, 8)}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Status</span>
-                <Badge
-                  variant={STATUS_BADGE[selectedTask.status] ?? "secondary"}
-                  className={`text-xs ${selectedTask.status === "running" ? "animate-pulse" : ""}`}
-                >
-                  {selectedTask.status}
-                </Badge>
-              </div>
-              {selectedTask.progress && (
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Progress</span>
-                  <span className="text-sm">{selectedTask.progress}</span>
+            <div className="min-w-0">
+              <div className="border border-border bg-card divide-y divide-border overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-3 min-w-0">
+                  <span className="text-sm text-muted-foreground shrink-0">Type</span>
+                  <span className="text-sm font-medium truncate ml-4 min-w-0">{selectedTask.type}</span>
                 </div>
-              )}
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Started</span>
-                <span className="text-sm">{new Date(selectedTask.createdAt).toLocaleString()}</span>
-              </div>
-              {selectedTask.completedAt && (
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Finished</span>
-                  <span className="text-sm">{new Date(selectedTask.completedAt).toLocaleString()}</span>
+                <div className="flex items-center justify-between px-4 py-3 min-w-0">
+                  <span className="text-sm text-muted-foreground shrink-0">Container</span>
+                  <span className="text-sm truncate ml-4 min-w-0">{selectedTask.containerName || selectedTask.containerId?.slice(0, 12) || "-"}</span>
                 </div>
-              )}
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Duration</span>
-                <span className="text-sm">{formatDuration(selectedTask.createdAt, selectedTask.completedAt)}</span>
+                <div className="flex items-center justify-between px-4 py-3 min-w-0">
+                  <span className="text-sm text-muted-foreground shrink-0">Node</span>
+                  <span className="text-sm truncate ml-4 min-w-0">{nodeMap.get(selectedTask.nodeId) ?? selectedTask.nodeId.slice(0, 8)}</span>
+                </div>
+                <div className="flex items-center justify-between px-4 py-3 min-w-0">
+                  <span className="text-sm text-muted-foreground shrink-0">Status</span>
+                  <Badge
+                    variant={STATUS_BADGE[selectedTask.status] ?? "secondary"}
+                    className={selectedTask.status === "running" ? "animate-pulse" : ""}
+                  >
+                    {selectedTask.status}
+                  </Badge>
+                </div>
+                {selectedTask.progress && (
+                  <div className="flex items-center justify-between px-4 py-3 min-w-0">
+                    <span className="text-sm text-muted-foreground shrink-0">Progress</span>
+                    <span className="text-sm truncate ml-4 min-w-0">{selectedTask.progress}</span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between px-4 py-3 min-w-0">
+                  <span className="text-sm text-muted-foreground shrink-0">Started</span>
+                  <span className="text-sm truncate ml-4 min-w-0">{new Date(selectedTask.createdAt).toLocaleString()}</span>
+                </div>
+                {selectedTask.completedAt && (
+                  <div className="flex items-center justify-between px-4 py-3 min-w-0">
+                    <span className="text-sm text-muted-foreground shrink-0">Finished</span>
+                    <span className="text-sm truncate ml-4 min-w-0">{new Date(selectedTask.completedAt).toLocaleString()}</span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between px-4 py-3 min-w-0">
+                  <span className="text-sm text-muted-foreground shrink-0">Duration</span>
+                  <span className="text-sm truncate ml-4 min-w-0">{formatDuration(selectedTask.createdAt, selectedTask.completedAt)}</span>
+                </div>
               </div>
               {selectedTask.error && (
-                <div className="mt-2">
-                  <span className="text-sm text-muted-foreground">Error</span>
-                  <div className="mt-1 bg-destructive/10 border border-destructive/20 p-3 flex items-start gap-2">
-                    <AlertCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
-                    <pre className="text-xs text-destructive whitespace-pre-wrap break-all font-mono">
-                      {selectedTask.error}
-                    </pre>
-                  </div>
+                <div className="mt-3 bg-red-500/10 !border !border-red-500/50 p-3">
+                  <pre className="text-xs text-destructive whitespace-pre-wrap break-all font-mono">
+                    {selectedTask.error}
+                  </pre>
                 </div>
               )}
             </div>

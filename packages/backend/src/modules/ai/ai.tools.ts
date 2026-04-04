@@ -643,7 +643,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
   },
   {
     name: 'create_node',
-    description: 'Create a new daemon node and generate an enrollment token. The token is shown once and must be used by the daemon to connect.',
+    description: 'Create a new daemon node and generate an enrollment token. IMPORTANT: The response contains enrollmentToken — you MUST display it to the user along with the setup commands (curl/wget). The token is one-time-use and cannot be retrieved again.',
     parameters: {
       type: 'object',
       properties: {
@@ -905,7 +905,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
   {
     name: 'internal_documentation',
     description:
-      'Get detailed internal documentation about a specific topic in this system. Use this whenever you need deeper knowledge about how something works, what fields mean, or what the correct workflow is. Topics: pki, ssl, proxy, domains, access-lists, templates, acme, users, audit, nginx, nodes, housekeeping, permissions.',
+      'Get detailed internal documentation about a specific topic in this system. Use this whenever you need deeper knowledge about how something works, what fields mean, or what the correct workflow is. Topics: pki, ssl, proxy, domains, access-lists, templates, acme, users, audit, nginx, nodes, docker, housekeeping, permissions, api.',
     parameters: {
       type: 'object',
       properties: {
@@ -926,6 +926,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
             'docker',
             'housekeeping',
             'permissions',
+            'api',
           ],
           description: 'The topic to get documentation about',
         },
