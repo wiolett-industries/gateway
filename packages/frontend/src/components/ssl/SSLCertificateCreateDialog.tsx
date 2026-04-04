@@ -116,9 +116,9 @@ export function SSLCertificateCreateDialog({
         toast.success("DNS challenge records created. Please add them to your DNS.");
       } else {
         toast.success("Certificate requested successfully");
-        resetForm();
         onOpenChange(false);
         onCreated();
+        setTimeout(() => resetForm(), 200);
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to request certificate");
@@ -136,9 +136,9 @@ export function SSLCertificateCreateDialog({
     try {
       await api.completeDNSVerify(pendingCertId);
       toast.success("DNS verification complete. Certificate issued.");
-      resetForm();
       onOpenChange(false);
       onCreated();
+      setTimeout(() => resetForm(), 200);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "DNS verification failed");
     } finally {
@@ -168,9 +168,9 @@ export function SSLCertificateCreateDialog({
         chainPem: chainPem || undefined,
       });
       toast.success("Certificate uploaded successfully");
-      resetForm();
       onOpenChange(false);
       onCreated();
+      setTimeout(() => resetForm(), 200);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to upload certificate");
     } finally {
@@ -190,9 +190,9 @@ export function SSLCertificateCreateDialog({
         name: internalName || undefined,
       });
       toast.success("Internal certificate linked");
-      resetForm();
       onOpenChange(false);
       onCreated();
+      setTimeout(() => resetForm(), 200);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to link certificate");
     } finally {

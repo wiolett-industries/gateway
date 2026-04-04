@@ -102,19 +102,18 @@ export function DockerImages({ embedded, onPullRef, fixedNodeId }: { embedded?: 
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only
   useEffect(() => {
+    api.listDockerRegistries().then(setRegistries).catch(() => {});
+
     if (embedded && !fixedNodeId) { return; }
     if (fixedNodeId) { setSelectedNode(fixedNodeId); return; }
-    
+
     api
       .listNodes({ type: "docker", limit: 100 })
       .then((r) => {
         setDockerNodes(r.data);
         useDockerStore.getState().setDockerNodes(r.data);
       })
-      .catch(() => toast.error("Failed to load Docker nodes"))
-      ;
-
-    api.listDockerRegistries().then(setRegistries).catch(() => {});
+      .catch(() => toast.error("Failed to load Docker nodes"));
   }, []);
 
   const location = useLocation();
@@ -195,9 +194,13 @@ export function DockerImages({ embedded, onPullRef, fixedNodeId }: { embedded?: 
     setPulling(true);
     try {
       await api.pullImage(pullNodeId, pullRef.trim(), pullRegistryId || undefined);
-      toast.success(`Pulling "${pullRef.trim()}" started`);
+      toast.success(`Pulling "${pullRef.trim()}" — check Tasks tab for progress`);
       closePull();
-      fetchImages();
+      useDockerStore.getState().invalidate("tasks");
+      // Poll images to detect when pull completes
+      setTimeout(() => fetchImages(), 5000);
+      setTimeout(() => fetchImages(), 15000);
+      setTimeout(() => fetchImages(), 30000);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to pull image");
     } finally {
@@ -211,7 +214,6 @@ export function DockerImages({ embedded, onPullRef, fixedNodeId }: { embedded?: 
     setPullRegistryId("");
   };
 
-  const selectedNode = dockerNodes.find((n) => n.id === selectedNodeId);
 
   // biome-ignore lint/suspicious/noExplicitAny: Docker API shape varies
   const allImageColumns: DataTableColumn<any>[] = useMemo(
@@ -255,8 +257,7 @@ export function DockerImages({ embedded, onPullRef, fixedNodeId }: { embedded?: 
         key: "node",
         header: "Node",
         width: "140px",
-        truncate: true,
-        render: (img: any) => <Badge variant="secondary" className="text-xs font-normal">{(img as any)._nodeName || "-"}</Badge>,
+        render: (img: any) => <Badge variant="secondary" className="text-xs w-fit">{(img as any)._nodeName || "-"}</Badge>,
       },
       {
         key: "usage",
@@ -435,14 +436,19 @@ export function DockerImages({ embedded, onPullRef, fixedNodeId }: { embedded?: 
           <DialogHeader>
             <DialogTitle>Pull Image</DialogTitle>
             <DialogDescription>
-              Pull a Docker image to {selectedNode?.displayName || selectedNode?.hostname || "the selected node"}.
+              Pull a Docker image from a registry.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
+            {/* Node */}
             <div>
-              <label className="text-sm font-medium">Node <span className="text-destructive">*</span></label>
-              <Select value={pullNodeId} onValueChange={setPullNodeId}>
-                <SelectTrigger className="mt-1"><SelectValue placeholder="Select a node" /></SelectTrigger>
+              <label className="text-sm font-medium">
+                Node <span className="text-destructive">*</span>
+              </label>
+              <Select value={pullNodeId} onValueChange={(v) => { setPullNodeId(v); setPullRegistryId(""); }}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Select a node" />
+                </SelectTrigger>
                 <SelectContent>
                   {(useDockerStore.getState().dockerNodes.length > 0 ? useDockerStore.getState().dockerNodes : dockerNodes).map((n) => (
                     <SelectItem key={n.id} value={n.id}>{n.displayName || n.hostname}</SelectItem>
@@ -450,9 +456,31 @@ export function DockerImages({ embedded, onPullRef, fixedNodeId }: { embedded?: 
                 </SelectContent>
               </Select>
             </div>
+
+            {/* Registry */}
+            <div>
+              <label className="text-sm font-medium">Registry</label>
+              <Select value={pullRegistryId || "__default__"} onValueChange={(v) => setPullRegistryId(v === "__default__" ? "" : v)} disabled={!pullNodeId}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder={pullNodeId ? "Docker Hub" : "Select a node first"} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__default__">Docker Hub</SelectItem>
+                  {registries
+                    .filter((r) => r.scope === "global" || r.nodeId === pullNodeId)
+                    .map((r) => (
+                      <SelectItem key={r.id} value={r.id}>
+                        {r.name} ({r.url}){r.scope === "node" ? " · this node" : ""}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Image */}
             <div>
               <label className="text-sm font-medium">
-                Image Reference <span className="text-destructive">*</span>
+                Image <span className="text-destructive">*</span>
               </label>
               <Input
                 className="mt-1"
@@ -462,26 +490,6 @@ export function DockerImages({ embedded, onPullRef, fixedNodeId }: { embedded?: 
                 onKeyDown={(e) => { if (e.key === "Enter") handlePull(); }}
               />
             </div>
-            {registries.length > 0 && (
-              <div>
-                <label className="text-sm font-medium">
-                  Registry <span className="text-muted-foreground font-normal">(optional)</span>
-                </label>
-                <Select value={pullRegistryId} onValueChange={setPullRegistryId}>
-                  <SelectTrigger className="mt-1">
-                    <SelectValue placeholder="Docker Hub (default)" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="">Docker Hub (default)</SelectItem>
-                    {registries.map((r) => (
-                      <SelectItem key={r.id} value={r.id}>
-                        {r.name} ({r.url})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={closePull}>Cancel</Button>

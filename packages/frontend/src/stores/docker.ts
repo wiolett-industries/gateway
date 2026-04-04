@@ -61,6 +61,8 @@ interface DockerState {
   resetFilters: () => void;
 
   fetchContainers: () => Promise<void>;
+  /** Fetch containers bypassing API cache — use during transitions */
+  forceFetchContainers: () => Promise<void>;
   fetchImages: () => Promise<void>;
   fetchVolumes: () => Promise<void>;
   fetchNetworks: () => Promise<void>;
@@ -144,6 +146,25 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
     } catch {
       set({ isLoading: false });
     }
+  },
+
+  forceFetchContainers: async () => {
+    const { selectedNodeId, dockerNodes } = get();
+    try {
+      if (selectedNodeId) {
+        const data = await api.listDockerContainers(selectedNodeId, true);
+        const node = dockerNodes.find((n) => n.id === selectedNodeId);
+        const items = tagWithNode(normList<DockerContainer>(data), selectedNodeId, node?.displayName || node?.hostname || "");
+        set({ containers: items });
+      } else {
+        await fetchAllNodes(
+          dockerNodes,
+          (nid) => api.listDockerContainers(nid, true),
+          normList<DockerContainer>,
+          (merged) => set({ containers: merged }),
+        );
+      }
+    } catch { /* silent */ }
   },
 
   fetchImages: async () => {

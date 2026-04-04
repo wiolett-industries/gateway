@@ -14,6 +14,7 @@ import { useFolderStore } from "@/stores/folders";
 import { useProxyStore } from "@/stores/proxy";
 import { useSSLStore } from "@/stores/ssl";
 import { useDockerStore } from "@/stores/docker";
+import { useNodesStore } from "@/stores/nodes";
 import { useUIStore } from "@/stores/ui";
 import type {
   AIMessage,
@@ -87,6 +88,14 @@ function invalidateStore(storeName: string): void {
       break;
     case "accessLists":
       api.invalidateCache("access");
+      break;
+    case "nodes":
+      api.invalidateCache("nodes");
+      api.invalidateCache("dashboard");
+      useNodesStore.getState().fetchNodes();
+      break;
+    case "groups":
+      api.invalidateCache("admin");
       break;
     case "users":
       api.invalidateCache("admin");

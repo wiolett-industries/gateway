@@ -38,6 +38,16 @@ tokensRoutes.post('/', async (c) => {
   return c.json(result, 201);
 });
 
+tokensRoutes.patch('/:id', async (c) => {
+  const tokensService = container.resolve(TokensService);
+  const user = c.get('user')!;
+  const id = c.req.param('id');
+  const { name } = await c.req.json();
+  if (!name?.trim()) return c.json({ code: 'INVALID', message: 'Name is required' }, 400);
+  await tokensService.renameToken(user.id, id, name.trim());
+  return c.json({ success: true });
+});
+
 tokensRoutes.delete('/:id', async (c) => {
   const tokensService = container.resolve(TokensService);
   const user = c.get('user')!;

@@ -529,22 +529,41 @@ export class DockerManagementService {
 
   async pullImage(nodeId: string, imageRef: string, registryAuth?: string, userId?: string) {
     await this.validateDockerNode(nodeId);
-    const result = await this.nodeDispatch.sendDockerImageCommand(
-      nodeId,
-      'pull',
-      { imageRef, registryAuthJson: registryAuth },
-      300000
-    );
-    const data = this.parseResult(result);
+
+    // Create a task and pull in background (non-blocking)
+    const task = await this.createTask(nodeId, '', imageRef, 'pull');
     if (userId) {
-      await this.auditService.log({
+      this.auditService.log({
         action: 'docker.image.pull',
         userId,
         resourceType: 'docker-image',
         details: { nodeId, imageRef },
-      });
+      }).catch(() => {});
     }
-    return data;
+
+    // Fire pull in background
+    this.nodeDispatch.sendDockerImageCommand(
+      nodeId,
+      'pull',
+      { imageRef, registryAuthJson: registryAuth },
+      300000
+    ).then((result) => {
+      try { this.parseResult(result); } catch (err) {
+        if (task?.id && this.taskService) {
+          this.taskService.update(task.id, { status: 'failed', error: err instanceof Error ? err.message : 'Pull failed', completedAt: new Date() }).catch(() => {});
+        }
+        return;
+      }
+      if (task?.id && this.taskService) {
+        this.taskService.update(task.id, { status: 'succeeded', progress: `Pulled ${imageRef}`, completedAt: new Date() }).catch(() => {});
+      }
+    }).catch((err) => {
+      if (task?.id && this.taskService) {
+        this.taskService.update(task.id, { status: 'failed', error: err instanceof Error ? err.message : 'Pull failed', completedAt: new Date() }).catch(() => {});
+      }
+    });
+
+    return { taskId: task?.id, message: `Pulling ${imageRef}...` };
   }
 
   async removeImage(nodeId: string, imageId: string, force: boolean, userId: string) {

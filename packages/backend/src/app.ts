@@ -22,6 +22,7 @@ import { requireActiveUser } from '@/modules/auth/auth.middleware.js';
 import { authRoutes } from '@/modules/auth/auth.routes.js';
 import { dockerRoutes } from '@/modules/docker/docker.routes.js';
 import { createDockerExecWSHandlers } from '@/modules/docker/docker-exec.ws.js';
+import { createComposeLogsWSHandlers } from '@/modules/docker/docker-compose-logs.ws.js';
 import { createDockerLogStreamWSHandlers } from '@/modules/docker/docker-logs.ws.js';
 import { createNodeExecWSHandlers } from '@/modules/nodes/node-exec.ws.js';
 import { domainRoutes } from '@/modules/domains/domain.routes.js';
@@ -180,6 +181,17 @@ export function createApp() {
       const tail = Number(c.req.query('tail')) || 100;
       const token = c.req.query('token') || '';
       return createDockerLogStreamWSHandlers(nodeId, containerId, tail, token);
+    })
+  );
+
+  // Docker compose logs WebSocket endpoint
+  app.get(
+    '/api/docker/nodes/:nodeId/compose/:project/logs/stream',
+    upgradeWebSocket((c) => {
+      const nodeId = c.req.param('nodeId') ?? '';
+      const project = decodeURIComponent(c.req.param('project') ?? '');
+      const token = c.req.query('token') || '';
+      return createComposeLogsWSHandlers(nodeId, project, token);
     })
   );
 

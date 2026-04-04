@@ -79,8 +79,11 @@ export function ProxyHostDetail() {
   const [isLoading, setIsLoading] = useState(true);
 
   const VALID_TABS = ["details", "settings", "advanced", "raw", "logs"];
-  const activeTab = tabParam && VALID_TABS.includes(tabParam) ? tabParam : "details";
-  const setActiveTab = (tab: string) => navigate(`/proxy-hosts/${id}/${tab}`, { replace: true });
+  const [activeTab, setActiveTabState] = useState(() => tabParam && VALID_TABS.includes(tabParam) ? tabParam : "details");
+  const setActiveTab = (tab: string) => {
+    setActiveTabState(tab);
+    window.history.replaceState(null, "", `/proxy-hosts/${id}/${tab}`);
+  };
 
   // Edit dialog
   const [editOpen, setEditOpen] = useState(false);

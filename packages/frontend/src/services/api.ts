@@ -481,6 +481,14 @@ class ApiClient {
     });
   }
 
+  async renameToken(id: string, name: string): Promise<void> {
+    return this.request<void>(`/tokens/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+  }
+
   async revokeToken(id: string): Promise<void> {
     return this.request<void>(`/tokens/${id}`, { method: "DELETE" });
   }
@@ -1224,8 +1232,11 @@ class ApiClient {
 
   // ── Docker Containers ─────────────────────────────────────────────
 
-  async listDockerContainers(nodeId: string): Promise<DockerContainer[]> {
-    return this.unwrapData(this.request<{ data: DockerContainer[] }>(`/docker/nodes/${nodeId}/containers`));
+  async listDockerContainers(nodeId: string, noCache = false): Promise<DockerContainer[]> {
+    const url = noCache
+      ? `/docker/nodes/${nodeId}/containers?_t=${Date.now()}`
+      : `/docker/nodes/${nodeId}/containers`;
+    return this.unwrapData(this.request<{ data: DockerContainer[] }>(url));
   }
 
   async inspectContainer(
@@ -1621,10 +1632,21 @@ class ApiClient {
   async testRegistry(
     id: string
   ): Promise<{ ok: boolean; error?: string }> {
-    return this.unwrapData(this.request<{ data: { ok: boolean; error?: string } }>(
+    const result = await this.unwrapData(this.request<{ data: { success?: boolean; ok?: boolean; error?: string; statusText?: string } }>(
       `/docker/registries/${id}/test`,
       { method: "POST" }
     ));
+    return { ok: result.success ?? result.ok ?? false, error: result.error || result.statusText };
+  }
+
+  async testRegistryDirect(
+    creds: { url: string; username?: string; password?: string }
+  ): Promise<{ ok: boolean; error?: string }> {
+    const result = await this.unwrapData(this.request<{ data: { success?: boolean; error?: string; statusText?: string } }>(
+      `/docker/registries/test`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(creds) }
+    ));
+    return { ok: result.success ?? false, error: result.error || result.statusText };
   }
 
   // ── Docker Templates ──────────────────────────────────────────────

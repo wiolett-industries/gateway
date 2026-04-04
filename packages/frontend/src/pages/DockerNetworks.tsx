@@ -223,8 +223,7 @@ export function DockerNetworks({ embedded, onCreateRef, fixedNodeId }: { embedde
         key: "node",
         header: "Node",
         width: "140px",
-        truncate: true,
-        render: (n) => <Badge variant="secondary" className="text-xs font-normal">{(n as any)._nodeName || "-"}</Badge>,
+        render: (n) => <Badge variant="secondary" className="text-xs w-fit">{(n as any)._nodeName || "-"}</Badge>,
       },
       {
         key: "usage",
