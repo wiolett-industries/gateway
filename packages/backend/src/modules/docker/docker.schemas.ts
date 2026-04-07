@@ -1,9 +1,16 @@
 import { z } from 'zod';
 
+// Docker's container name rule: [a-zA-Z0-9][a-zA-Z0-9_.-]+
+const ContainerNameSchema = z
+  .string()
+  .min(2)
+  .max(255)
+  .regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]+$/, 'Invalid container name (must start with alphanumeric, then alphanumerics, _, ., or -)');
+
 // Container create
 export const ContainerCreateSchema = z.object({
   image: z.string().min(1),
-  name: z.string().optional(),
+  name: ContainerNameSchema.optional(),
   ports: z
     .array(
       z.object({
@@ -72,8 +79,8 @@ export const ContainerRecreateSchema = z.object({
 // Container action params
 export const ContainerStopSchema = z.object({ timeout: z.number().default(30) });
 export const ContainerKillSchema = z.object({ signal: z.string().default('SIGKILL') });
-export const ContainerRenameSchema = z.object({ name: z.string().min(1) });
-export const ContainerDuplicateSchema = z.object({ name: z.string().min(1) });
+export const ContainerRenameSchema = z.object({ name: ContainerNameSchema });
+export const ContainerDuplicateSchema = z.object({ name: ContainerNameSchema });
 
 // Image pull
 export const ImagePullSchema = z.object({

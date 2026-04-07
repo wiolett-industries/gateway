@@ -1,5 +1,5 @@
 import { Box, CornerDownRight, Layers, Play, Plus, RefreshCw, ScrollText, Square } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/common/EmptyState";
@@ -27,6 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useRealtime } from "@/hooks/use-realtime";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
@@ -78,27 +79,14 @@ export function DockerContainers({ embedded, onDeployRef, fixedNodeId }: { embed
   const fetchContainers = useDockerStore((s) => s.fetchContainers);
   const forceFetchContainers = useDockerStore((s) => s.forceFetchContainers);
 
-  // Fast-poll while any container has a transition state (same pattern as container detail page)
-  const hasTransitions = containers.some((c) => (c as any)._transition);
-  const transitionPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  useEffect(() => {
-    if (hasTransitions) {
-      if (!transitionPollRef.current) {
-        transitionPollRef.current = setInterval(() => forceFetchContainers(), 2000);
-      }
-    } else {
-      if (transitionPollRef.current) {
-        clearInterval(transitionPollRef.current);
-        transitionPollRef.current = null;
-      }
-    }
-    return () => {
-      if (transitionPollRef.current) {
-        clearInterval(transitionPollRef.current);
-        transitionPollRef.current = null;
-      }
-    };
-  }, [hasTransitions, forceFetchContainers]);
+  // Realtime: refetch the list whenever any container on the visible node(s) changes.
+  useRealtime("docker.container.changed", (payload) => {
+    const ev = payload as { nodeId?: string };
+    if (!ev) return;
+    // If we're scoped to a single node, ignore events from other nodes
+    if (selectedNodeId && ev.nodeId && ev.nodeId !== selectedNodeId) return;
+    forceFetchContainers();
+  });
 
   const [searchInput, setSearchInput] = useState(filters.search);
   const [dockerNodes, setDockerNodes] = useState<Node[]>([]);

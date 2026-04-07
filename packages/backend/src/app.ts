@@ -16,6 +16,7 @@ import { accessListRoutes } from '@/modules/access-lists/access-list.routes.js';
 import { adminRoutes } from '@/modules/admin/admin.routes.js';
 import { aiRoutes } from '@/modules/ai/ai.routes.js';
 import { authenticateWSConnection, createWSHandlers } from '@/modules/ai/ai.ws.js';
+import { authenticateEventsConnection, createEventsWSHandlers } from '@/ws/events.ws.js';
 import { alertRoutes } from '@/modules/audit/alert.routes.js';
 import { auditRoutes } from '@/modules/audit/audit.routes.js';
 import { requireActiveUser } from '@/modules/auth/auth.middleware.js';
@@ -181,6 +182,30 @@ export function createApp() {
       const tail = Number(c.req.query('tail')) || 100;
       const token = c.req.query('token') || '';
       return createDockerLogStreamWSHandlers(nodeId, containerId, tail, token);
+    })
+  );
+
+  // Realtime events WebSocket — single channel for all push notifications
+  const eventsHandlers = createEventsWSHandlers();
+  app.get(
+    '/api/events',
+    upgradeWebSocket((c) => {
+      const token = c.req.query('token') || '';
+      return {
+        onOpen(event, ws) {
+          eventsHandlers.onOpen(event, ws);
+          authenticateEventsConnection(ws, token).catch(() => {
+            try {
+              ws.close();
+            } catch {
+              /* ignore */
+            }
+          });
+        },
+        onMessage: eventsHandlers.onMessage,
+        onClose: eventsHandlers.onClose,
+        onError: eventsHandlers.onError,
+      };
     })
   );
 

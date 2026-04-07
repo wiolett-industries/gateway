@@ -1,6 +1,5 @@
 import { Minus, Plus, RotateCcw, Save } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { Button } from "@/components/ui/button";
@@ -15,7 +14,6 @@ import {
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
-import { usePinnedContainersStore } from "@/stores/pinned-containers";
 import type { InspectData } from "./helpers";
 
 // ── Types ────────────────────────────────────────────────────────
@@ -47,14 +45,12 @@ export function SettingsTab({
   containerId: string;
   data: InspectData;
   onAction: () => void;
-  onRecreating?: (v: boolean) => void;
+  onRecreating?: () => void;
   transition?: string;
 }) {
   const { hasScope } = useAuthStore();
-  const navigate = useNavigate();
   const invalidate = useDockerStore((s) => s.invalidate);
   const canEdit = hasScope("docker:containers:edit");
-  const containerName = (data.Name ?? "").replace(/^\//, "");
 
   // ── Live settings state (no recreation) ──
   const hostConfig = data.HostConfig ?? {};
@@ -219,7 +215,6 @@ export function SettingsTab({
     if (!ok) return;
 
     setRecreateLoading(true);
-    onRecreating?.(true);
     try {
       const payload: Record<string, unknown> = {};
       // Only send fields that changed
@@ -258,61 +253,16 @@ export function SettingsTab({
       }
 
       await api.recreateWithConfig(nodeId, containerId, payload);
-      toast.info("Recreating container...");
-      // Poll until container is back up or timeout
-      // Poll: wait for old container to disappear, then for the new one to appear running
-      const pollStart = Date.now();
-      let oldGone = false;
-      const poll = setInterval(async () => {
-        try {
-          const containers = await api.listDockerContainers(nodeId) as any[];
-          const match = containers?.find((c: any) =>
-            (c.name ?? "").replace(/^\//, "") === containerName ||
-            (c.names ?? []).some((n: string) => n.replace(/^\//, "") === containerName)
-          );
-
-          if (!oldGone) {
-            // Phase 1: wait for old container to disappear or get a new ID
-            if (!match || (match.id ?? match.Id) !== containerId) {
-              oldGone = true;
-            }
-          }
-
-          if (oldGone && match) {
-            // Phase 2: new container exists — check if it's running
-            const newId = match.id ?? match.Id;
-            const status = match.state ?? match.State ?? "";
-            if (status === "running" || Date.now() - pollStart > 30000) {
-              clearInterval(poll);
-              setRecreateLoading(false); onRecreating?.(false);
-              toast.success("Container recreated successfully");
-              invalidate("containers", "tasks");
-              if (newId !== containerId) {
-                usePinnedContainersStore.getState().migrateId(containerId, newId);
-                navigate(`/docker/containers/${nodeId}/${newId}`, { replace: true });
-              } else {
-                onAction();
-              }
-            }
-          }
-
-          if (Date.now() - pollStart > 60000) {
-            clearInterval(poll);
-            setRecreateLoading(false); onRecreating?.(false);
-            toast.error("Recreation timed out");
-          }
-        } catch {
-          if (Date.now() - pollStart > 60000) {
-            clearInterval(poll);
-            setRecreateLoading(false); onRecreating?.(false);
-            toast.error("Recreation timed out");
-          }
-        }
-      }, 2000);
-      return; // Don't setRecreateLoading(false) here — poll handles it
+      toast.success("Recreating container...");
+      // Trigger an immediate parent refresh; the realtime channel will deliver
+      // the recreate event (with new id) to every open tab, including this one,
+      // and the parent navigates accordingly.
+      onRecreating?.();
+      invalidate("containers", "tasks");
+      setRecreateLoading(false);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to recreate container");
-      setRecreateLoading(false); onRecreating?.(false);
+      setRecreateLoading(false);
     }
   }, [nodeId, containerId, ports, mounts, entrypoint, command, workingDir, user, hostname, labels, onAction]);
 

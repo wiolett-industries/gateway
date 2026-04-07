@@ -83,7 +83,7 @@ async function main() {
     let grpcCertPath = env.GRPC_TLS_CERT;
     let grpcKeyPath = env.GRPC_TLS_KEY;
     if (!grpcCertPath || !grpcKeyPath) {
-      const autoDir = '/var/lib/gateway/tls';
+      const autoDir = process.env.GRPC_TLS_AUTO_DIR || '/var/lib/gateway/tls';
       const autoCert = await systemCA.ensureGrpcServerCert(`${autoDir}/grpc-server.crt`, `${autoDir}/grpc-server.key`);
       grpcCertPath = autoCert.certPath;
       grpcKeyPath = autoCert.keyPath;

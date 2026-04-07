@@ -13,6 +13,23 @@ const logger = createChildLogger('GroupService');
 export class GroupService {
   constructor(@inject(TOKENS.DrizzleClient) private readonly db: DrizzleClient) {}
 
+  private eventBus?: import('@/services/event-bus.service.js').EventBusService;
+  setEventBus(bus: import('@/services/event-bus.service.js').EventBusService) { this.eventBus = bus; }
+  private emitGroup(id: string, action: 'created' | 'updated' | 'deleted') {
+    this.eventBus?.publish('group.changed', { id, action });
+  }
+  /** Cascade a permissions change to every user in the affected group. */
+  private async cascadePermissions(groupId: string, scopes: string[] | null) {
+    if (!this.eventBus) return;
+    const affected = await this.db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.groupId, groupId));
+    for (const u of affected) {
+      this.eventBus.publish(`permissions.changed.${u.id}`, { scopes: scopes ?? [], groupId });
+    }
+  }
+
   async listGroups() {
     const groups = await this.db
       .select({
@@ -100,6 +117,7 @@ export class GroupService {
       .returning();
 
     logger.info('Created permission group', { groupId: group.id, name: group.name, parentId: group.parentId });
+    this.emitGroup(group.id, 'created');
 
     return {
       ...group,
@@ -177,6 +195,10 @@ export class GroupService {
       .returning();
 
     logger.info('Updated permission group', { groupId: id, name: updated.name });
+    this.emitGroup(id, 'updated');
+    if (input.scopes !== undefined) {
+      await this.cascadePermissions(id, updated.scopes as string[]);
+    }
 
     return {
       ...updated,
@@ -213,6 +235,7 @@ export class GroupService {
 
     await this.db.delete(permissionGroups).where(eq(permissionGroups.id, id));
     logger.info('Deleted permission group', { groupId: id, name: group.name });
+    this.emitGroup(id, 'deleted');
   }
 
   async getMemberIds(groupId: string): Promise<string[]> {

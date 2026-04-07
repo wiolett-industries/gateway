@@ -31,6 +31,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { useRealtime } from "@/hooks/use-realtime";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
@@ -74,7 +75,6 @@ export function DockerContainerDetail() {
     window.history.replaceState(null, "", `/docker/containers/${nodeId}/${containerId}/${tab}`);
   };
   const [isLoading, setIsLoading] = useState(true);
-  const [localRecreating, setLocalRecreating] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState("");
@@ -110,17 +110,43 @@ export function DockerContainerDetail() {
 
   useEffect(() => {
     fetchContainer();
+    // Safety-net poll — realtime channel handles fast updates, this just
+    // catches anything that slipped through (e.g. between reconnects).
     const interval = setInterval(() => fetchContainer(true), 30000);
     return () => clearInterval(interval);
   }, [fetchContainer]);
 
-  // Fast poll during transitions to update badge in real-time
-  const currentTransition = localRecreating ? "recreating" : (container?._transition as string | undefined);
-  useEffect(() => {
-    if (!currentTransition) return;
-    const fast = setInterval(() => fetchContainer(true), 2000);
-    return () => clearInterval(fast);
-  }, [currentTransition, fetchContainer]);
+  // Realtime: refetch on any container.changed event for this container's name.
+  // Also handle the recreate ID migration for every open tab.
+  const containerName = ((container?.Name ?? "") as string).replace(/^\//, "");
+  useRealtime("docker.container.changed", (payload) => {
+    const ev = payload as { nodeId?: string; name?: string; id?: string; oldId?: string; action?: string };
+    if (!ev || ev.nodeId !== nodeId) return;
+    const matchesName = containerName && ev.name === containerName;
+    const matchesId = ev.id === containerId || ev.oldId === containerId;
+    if (!matchesName && !matchesId) return;
+
+    if (ev.action === "recreated" && ev.id && ev.oldId && ev.id !== containerId) {
+      // Migrate any pinned references and rewrite the URL so this tab now
+      // points at the new container ID.
+      try {
+        usePinnedContainersStore.getState().migrateId(ev.oldId, ev.id);
+      } catch {
+        /* ignore */
+      }
+      navigate(`/docker/containers/${nodeId}/${ev.id}/${activeTab}`, { replace: true });
+      return;
+    }
+    if (ev.action === "removed" && (ev.id === containerId || ev.name === containerName)) {
+      // Container was deleted by someone else — bounce back to the list
+      toast.info("Container was removed");
+      navigate("/docker");
+      return;
+    }
+    fetchContainer(true);
+  });
+
+  const currentTransition = container?._transition as string | undefined;
 
   // Auto-navigate to overview and close popouts when container stops or enters transition
   const currentBaseState = container?.State?.Status ?? (container?.State?.Running ? "running" : "stopped");
@@ -229,7 +255,7 @@ export function DockerContainerDetail() {
   };
 
   const name = containerDisplayName(container.Name ?? "");
-  const transition = localRecreating ? "recreating" : (container._transition as string | undefined);
+  const transition = container._transition as string | undefined;
   const baseState = container.State?.Status ?? (container.State?.Running ? "running" : "stopped");
   const state = transition ?? baseState;
   const image = container.Config?.Image ?? "";
@@ -392,7 +418,7 @@ export function DockerContainerDetail() {
             <StatsTab nodeId={nodeId!} containerId={containerId!} data={container} />
           </TabsContent>
           <TabsContent value="environment" className="flex flex-col flex-1 min-h-0 pb-0">
-            <EnvironmentTab nodeId={nodeId!} containerId={containerId!} containerName={(container.Name ?? "").replace(/^\//, "")} disabled={!!transition} onRecreating={setLocalRecreating} />
+            <EnvironmentTab nodeId={nodeId!} containerId={containerId!} containerName={(container.Name ?? "").replace(/^\//, "")} disabled={!!transition} onRecreating={() => fetchContainer(true)} />
           </TabsContent>
           <TabsContent value="settings" className="pb-0">
             <SettingsTab
@@ -400,7 +426,7 @@ export function DockerContainerDetail() {
               containerId={containerId!}
               data={container}
               onAction={() => fetchContainer()}
-              onRecreating={setLocalRecreating}
+              onRecreating={() => fetchContainer(true)}
               transition={transition}
             />
           </TabsContent>
