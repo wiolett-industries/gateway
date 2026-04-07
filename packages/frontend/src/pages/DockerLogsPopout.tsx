@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
+import { VirtualLogList } from "@/components/ui/virtual-log-list";
 import { api } from "@/services/api";
 
 const CHANNEL_PREFIX = "docker-logs:";
@@ -15,22 +16,10 @@ export function DockerLogsPopout() {
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [isConnecting, setIsConnecting] = useState(true);
-  const scrollRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
-  const userScrolled = useRef(false);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
   const channelRef = useRef<BroadcastChannel | null>(null);
-  const pendingScrollFix = useRef<{ el: HTMLDivElement | null; prevScrollHeight: number; prevScrollTop: number } | null>(null);
-
-  useLayoutEffect(() => {
-    const fix = pendingScrollFix.current;
-    if (fix?.el) {
-      const delta = fix.el.scrollHeight - fix.prevScrollHeight;
-      fix.el.scrollTop = fix.prevScrollTop + delta;
-    }
-    pendingScrollFix.current = null;
-  }, [lines]);
 
   // BroadcastChannel
   useEffect(() => {
@@ -109,16 +98,7 @@ export function DockerLogsPopout() {
           setLines(processLogs(msg.lines ?? []));
           setHasMore(msg.hasMore ?? false);
           setIsConnecting(false);
-          requestAnimationFrame(() => {
-            const el = scrollRef.current;
-            if (el) el.scrollTop = el.scrollHeight;
-          });
         } else if (msg.type === "history") {
-          pendingScrollFix.current = {
-            el: scrollRef.current,
-            prevScrollHeight: scrollRef.current?.scrollHeight ?? 0,
-            prevScrollTop: scrollRef.current?.scrollTop ?? 0,
-          };
           setLines((prev) => [...processLogs(msg.lines ?? []), ...prev]);
           setHasMore(msg.hasMore ?? false);
           setLoadingMore(false);
@@ -127,12 +107,6 @@ export function DockerLogsPopout() {
             const updated = [...prev, ...processLogs(msg.lines ?? [])];
             return updated.length > 10000 ? updated.slice(-10000) : updated;
           });
-          if (!userScrolled.current) {
-            requestAnimationFrame(() => {
-              const el = scrollRef.current;
-              if (el) el.scrollTop = el.scrollHeight;
-            });
-          }
         }
       } catch { /* */ }
     };
@@ -164,49 +138,37 @@ export function DockerLogsPopout() {
     };
   }, []);
 
-  // Scroll: load more on scroll to top
   const loadingMoreRef = useRef(false);
   const hasMoreRef = useRef(true);
   useEffect(() => { loadingMoreRef.current = loadingMore; }, [loadingMore]);
   useEffect(() => { hasMoreRef.current = hasMore; }, [hasMore]);
 
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const onScroll = () => {
-      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-      userScrolled.current = !atBottom;
-      if (el.scrollTop < 200 && hasMoreRef.current && !loadingMoreRef.current && wsRef.current?.readyState === WebSocket.OPEN) {
-        loadingMoreRef.current = true;
-        setLoadingMore(true);
-        wsRef.current.send(JSON.stringify({ type: "load_more" }));
-      }
-    };
-    el.addEventListener("scroll", onScroll);
-    return () => el.removeEventListener("scroll", onScroll);
+  const requestMoreLines = useCallback(() => {
+    if (!hasMoreRef.current || loadingMoreRef.current) return;
+    if (wsRef.current?.readyState !== WebSocket.OPEN) return;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    wsRef.current.send(JSON.stringify({ type: "load_more" }));
   }, []);
 
   return (
-    <div
-      ref={scrollRef}
-      className="fixed inset-0 overflow-auto bg-[#0e0e0e] p-4 font-mono text-xs text-gray-300"
-    >
-      {!hasMore && lines.length > 0 && (
-        <div className="flex items-center justify-center py-2 text-gray-600 text-[10px]">
-          Beginning of logs
+    <VirtualLogList
+      lines={lines}
+      keyFn={(_, i) => i}
+      renderLine={(line) => (
+        <div className="whitespace-pre-wrap break-all leading-5 px-4 font-mono text-xs text-gray-300">
+          {line as string}
         </div>
       )}
-      {lines.length === 0 && isConnecting && (
-        <span className="text-gray-600">Connecting to log stream...</span>
-      )}
-      {lines.length === 0 && !isConnecting && (
-        <span className="text-gray-600">No logs available</span>
-      )}
-      {lines.map((line, i) => (
-        <div key={i} className="whitespace-pre-wrap break-all leading-5">
-          {line}
+      onLoadMore={requestMoreLines}
+      hasMore={hasMore}
+      loadingMore={loadingMore}
+      className="fixed inset-0 overflow-auto bg-[#0e0e0e] py-4"
+      emptyState={
+        <div className="fixed inset-0 bg-[#0e0e0e] p-4 font-mono text-xs text-gray-600">
+          {isConnecting ? "Connecting to log stream..." : "No logs available"}
         </div>
-      ))}
-    </div>
+      }
+    />
   );
 }

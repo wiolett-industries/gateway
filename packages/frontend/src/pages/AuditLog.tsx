@@ -1,7 +1,6 @@
-import { ChevronLeft, ChevronRight } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { PageTransition } from "@/components/common/PageTransition";
-import { Button } from "@/components/ui/button";
+import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 import {
   Select,
   SelectContent,
@@ -13,44 +12,129 @@ import { formatRelativeDate } from "@/lib/utils";
 import { api } from "@/services/api";
 import type { AuditLogEntry } from "@/types";
 
+const PAGE_SIZE = 200;
+
+const columns: DataTableColumn<AuditLogEntry>[] = [
+  {
+    key: "user",
+    header: "User",
+    width: "200px",
+    truncate: true,
+    render: (entry) => entry.userName || entry.userEmail || "System",
+  },
+  {
+    key: "action",
+    header: "Action",
+    width: "240px",
+    render: (entry) => (
+      <span className="font-mono text-xs bg-muted px-1.5 py-0.5">{entry.action}</span>
+    ),
+  },
+  {
+    key: "resource",
+    header: "Resource",
+    truncate: true,
+    render: (entry) => (
+      <span className="text-muted-foreground">
+        {entry.resourceType}
+        {entry.resourceId ? ` / ${entry.resourceId.slice(0, 8)}…` : ""}
+      </span>
+    ),
+  },
+  {
+    key: "ip",
+    header: "IP Address",
+    width: "140px",
+    render: (entry) => (
+      <span className="font-mono text-xs text-muted-foreground">{entry.ipAddress || "—"}</span>
+    ),
+  },
+  {
+    key: "time",
+    header: "Time",
+    width: "180px",
+    render: (entry) => (
+      <span className="text-muted-foreground">{formatRelativeDate(entry.createdAt)}</span>
+    ),
+  },
+];
+
 export function AuditLog() {
-  const cachedAudit = api.getCached<{
-    data: AuditLogEntry[];
-    pagination: { totalPages: number; total: number };
-  }>("audit:list");
-  const [entries, setEntries] = useState<AuditLogEntry[]>(cachedAudit?.data ?? []);
-  const [isLoading, setIsLoading] = useState(!cachedAudit);
-  const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
+  const [entries, setEntries] = useState<AuditLogEntry[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [total, setTotal] = useState(0);
   const [actionFilter, setActionFilter] = useState("all");
   const [resourceFilter, setResourceFilter] = useState("all");
 
-  useEffect(() => {
-    const load = async () => {
-      if (entries.length === 0) setIsLoading(true);
+  const pageRef = useRef(0);
+  const requestIdRef = useRef(0);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
+  const fetchPage = useCallback(
+    async (resetTo: AuditLogEntry[] | null) => {
+      const nextPage = resetTo ? 1 : pageRef.current + 1;
+      const requestId = ++requestIdRef.current;
+      if (resetTo) {
+        setIsLoading(true);
+        setHasMore(true);
+      } else {
+        setLoadingMore(true);
+      }
       try {
         const result = await api.getAuditLog({
-          page,
-          limit: 25,
+          page: nextPage,
+          limit: PAGE_SIZE,
           action: actionFilter !== "all" ? actionFilter : undefined,
           resourceType: resourceFilter !== "all" ? resourceFilter : undefined,
         });
-        setEntries(result.data || []);
-        setTotalPages(result.pagination?.totalPages ?? 1);
+        if (requestId !== requestIdRef.current) return; // stale (filters changed mid-flight)
+        const fetched: AuditLogEntry[] = result.data || [];
+        const totalPages = result.pagination?.totalPages ?? 1;
         setTotal(result.pagination?.total ?? 0);
+        pageRef.current = nextPage;
+        setEntries((prev) => (resetTo ? fetched : [...prev, ...fetched]));
+        setHasMore(nextPage < totalPages);
       } catch {
         /* ignore */
       } finally {
-        setIsLoading(false);
+        if (requestId === requestIdRef.current) {
+          setIsLoading(false);
+          setLoadingMore(false);
+        }
       }
-    };
-    load();
-  }, [page, actionFilter, resourceFilter, entries.length]);
+    },
+    [actionFilter, resourceFilter]
+  );
+
+  // Initial load + reset on filter change
+  useEffect(() => {
+    pageRef.current = 0;
+    fetchPage([]);
+  }, [fetchPage]);
+
+  // Infinite scroll sentinel
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    const root = scrollRef.current;
+    if (!sentinel || !root) return;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && hasMore && !loadingMore && !isLoading) {
+          fetchPage(null);
+        }
+      },
+      { root, rootMargin: "400px" }
+    );
+    obs.observe(sentinel);
+    return () => obs.disconnect();
+  }, [fetchPage, hasMore, loadingMore, isLoading]);
 
   return (
     <PageTransition>
-      <div className="h-full overflow-y-auto p-6 space-y-4">
+      <div className="h-full p-6 space-y-4 flex flex-col min-h-0">
         <div>
           <h1 className="text-2xl font-bold">Audit Log</h1>
           <p className="text-sm text-muted-foreground">{total} entries</p>
@@ -59,13 +143,7 @@ export function AuditLog() {
         {/* Filters */}
         <div className="flex gap-3">
           <div className="w-48">
-            <Select
-              value={actionFilter}
-              onValueChange={(v) => {
-                setActionFilter(v);
-                setPage(1);
-              }}
-            >
+            <Select value={actionFilter} onValueChange={setActionFilter}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
@@ -81,13 +159,7 @@ export function AuditLog() {
             </Select>
           </div>
           <div className="w-48">
-            <Select
-              value={resourceFilter}
-              onValueChange={(v) => {
-                setResourceFilter(v);
-                setPage(1);
-              }}
-            >
+            <Select value={resourceFilter} onValueChange={setResourceFilter}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
@@ -102,82 +174,24 @@ export function AuditLog() {
           </div>
         </div>
 
-        {/* Table */}
-        {isLoading ? (
+        {isLoading && entries.length === 0 ? (
           <div className="flex items-center justify-center py-16">
             <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
           </div>
-        ) : entries.length > 0 ? (
-          <div className="border border-border bg-card">
-            <div className="overflow-x-auto -mb-px">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-border text-left">
-                    <th className="p-3 text-xs font-medium text-muted-foreground">User</th>
-                    <th className="p-3 text-xs font-medium text-muted-foreground">Action</th>
-                    <th className="p-3 text-xs font-medium text-muted-foreground">Resource</th>
-                    <th className="p-3 text-xs font-medium text-muted-foreground">IP Address</th>
-                    <th className="p-3 text-xs font-medium text-muted-foreground">Time</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {entries.map((entry) => (
-                    <tr key={entry.id}>
-                      <td className="p-3 text-sm">
-                        {entry.userName || entry.userEmail || "System"}
-                      </td>
-                      <td className="p-3 text-sm">
-                        <span className="font-mono text-xs bg-muted px-1.5 py-0.5">
-                          {entry.action}
-                        </span>
-                      </td>
-                      <td className="p-3 text-sm text-muted-foreground">
-                        {entry.resourceType}
-                        {entry.resourceId ? ` / ${entry.resourceId.slice(0, 8)}...` : ""}
-                      </td>
-                      <td className="p-3 text-sm text-muted-foreground font-mono text-xs">
-                        {entry.ipAddress || "—"}
-                      </td>
-                      <td className="p-3 text-sm text-muted-foreground">
-                        {formatRelativeDate(entry.createdAt)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {totalPages > 1 && (
-              <div className="flex items-center justify-between border-t border-border px-4 py-3">
-                <p className="text-sm text-muted-foreground">
-                  Page {page} of {totalPages}
-                </p>
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={page <= 1}
-                    onClick={() => setPage(page - 1)}
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                    Previous
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={page >= totalPages}
-                    onClick={() => setPage(page + 1)}
-                  >
-                    Next
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            )}
-          </div>
         ) : (
-          <div className="border border-border bg-card p-8 text-center text-sm text-muted-foreground">
-            No audit log entries found
+          <div className="flex-1 min-h-0">
+            <DataTable
+              columns={columns}
+              data={entries}
+              keyFn={(e) => e.id}
+              scrollRef={scrollRef}
+              emptyMessage="No audit log entries found"
+              footer={
+                <div ref={sentinelRef} className="py-4 text-center text-xs text-muted-foreground">
+                  {loadingMore ? "Loading more…" : !hasMore && entries.length > 0 ? "End of log" : ""}
+                </div>
+              }
+            />
           </div>
         )}
       </div>
