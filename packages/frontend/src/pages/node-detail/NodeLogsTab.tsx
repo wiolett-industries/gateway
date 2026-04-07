@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { VirtualLogList } from "@/components/ui/virtual-log-list";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
@@ -48,32 +49,11 @@ export function NodeLogsTab({ nodeId, nodeStatus }: NodeLogsTabProps) {
   const [levelFilter, setLevelFilter] = useState("all");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const esRef = useRef<EventSource | null>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 300);
     return () => clearTimeout(t);
   }, [search]);
-
-  // Auto-scroll to bottom only if user hasn't scrolled up
-  const userScrolled = useRef(false);
-
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const onScroll = () => {
-      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-      userScrolled.current = !atBottom;
-    };
-    el.addEventListener("scroll", onScroll);
-    return () => el.removeEventListener("scroll", onScroll);
-  }, []);
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally re-run on logs change, refs are stable
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (el && !userScrolled.current) el.scrollTop = el.scrollHeight;
-  }, [logs]);
 
   const connect = useCallback(() => {
     if (nodeStatus !== "online") return;
@@ -158,65 +138,40 @@ export function NodeLogsTab({ nodeId, nodeStatus }: NodeLogsTabProps) {
         </div>
       </div>
 
-      {/* Table — same pattern as AuditLog */}
+      {/* Table */}
       <div className="flex-1 min-h-0 flex flex-col border border-border bg-card">
         {/* Fixed header */}
-        <table className="w-full shrink-0" style={{ tableLayout: "fixed" }}>
-          <colgroup>
-            <col style={{ width: "180px" }} />
-            <col style={{ width: "80px" }} />
-            <col style={{ width: "120px" }} />
-            <col />
-          </colgroup>
-          <thead>
-            <tr className="text-left border-b border-border">
-              <th className="p-3 text-xs font-medium text-muted-foreground">Time</th>
-              <th className="p-3 text-xs font-medium text-muted-foreground">Level</th>
-              <th className="p-3 text-xs font-medium text-muted-foreground">Component</th>
-              <th className="p-3 text-xs font-medium text-muted-foreground">Message</th>
-            </tr>
-          </thead>
-        </table>
-        {/* Scrollable body */}
-        <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto">
-          <table className="w-full" style={{ tableLayout: "fixed" }}>
-            <colgroup>
-              <col style={{ width: "180px" }} />
-              <col style={{ width: "80px" }} />
-              <col style={{ width: "120px" }} />
-              <col />
-            </colgroup>
-            <tbody className="divide-y divide-border">
-              {logs.length === 0 ? (
-                <tr>
-                  <td colSpan={4} className="text-center py-16 text-sm text-muted-foreground">
-                    Waiting for logs...
-                  </td>
-                </tr>
-              ) : (
-                logs.map((entry, i) => (
-                  <tr key={i}>
-                    <td className="p-3 text-sm text-muted-foreground whitespace-nowrap">
-                      {entry.timestamp}
-                    </td>
-                    <td className="p-3 text-sm">
-                      <Badge
-                        variant={LEVEL_VARIANT[entry.level] ?? "secondary"}
-                        className="text-xs uppercase"
-                      >
-                        {entry.level}
-                      </Badge>
-                    </td>
-                    <td className="p-3 text-sm text-muted-foreground">
-                      {entry.component || "daemon"}
-                    </td>
-                    <td className="p-3 text-sm">{formatMessage(entry)}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+        <div className="grid border-b border-border text-left text-xs font-medium text-muted-foreground shrink-0" style={{ gridTemplateColumns: "180px 80px 120px 1fr" }}>
+          <div className="p-3">Time</div>
+          <div className="p-3">Level</div>
+          <div className="p-3">Component</div>
+          <div className="p-3">Message</div>
         </div>
+        {/* Scrollable body */}
+        <VirtualLogList
+          lines={logs}
+          keyFn={(_, i) => i}
+          estimateLineHeight={44}
+          renderLine={(line) => {
+            const entry = line as LogEntry;
+            return (
+              <div className="grid border-b border-border" style={{ gridTemplateColumns: "180px 80px 120px 1fr" }}>
+                <div className="p-3 text-sm text-muted-foreground whitespace-nowrap">{entry.timestamp}</div>
+                <div className="p-3 text-sm">
+                  <Badge variant={LEVEL_VARIANT[entry.level] ?? "secondary"} className="text-xs uppercase">
+                    {entry.level}
+                  </Badge>
+                </div>
+                <div className="p-3 text-sm text-muted-foreground">{entry.component || "daemon"}</div>
+                <div className="p-3 text-sm">{formatMessage(entry)}</div>
+              </div>
+            );
+          }}
+          className="flex-1 min-h-0 overflow-y-auto"
+          emptyState={
+            <div className="text-center py-16 text-sm text-muted-foreground">Waiting for logs...</div>
+          }
+        />
       </div>
     </div>
   );

@@ -1,7 +1,8 @@
 import { Download, ExternalLink, ScrollText } from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { VirtualLogList } from "@/components/ui/virtual-log-list";
 import { api } from "@/services/api";
 
 const CHANNEL_PREFIX = "docker-logs:";
@@ -17,12 +18,9 @@ export function LogsTab({ nodeId, containerId, containerState, inspectData }: { 
   const [loadingMore, setLoadingMore] = useState(false);
   const [, setWsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(true);
-  const scrollRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
-  const userScrolled = useRef(false);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
-  const pendingScrollFix = useRef<{ el: HTMLDivElement | null; prevScrollHeight: number; prevScrollTop: number } | null>(null);
 
   // ── Popout tracking via BroadcastChannel ──
   const [isPopout, setIsPopout] = useState(false);
@@ -87,16 +85,6 @@ export function LogsTab({ nodeId, containerId, containerState, inspectData }: { 
     if (popoutAliveTimer.current) clearTimeout(popoutAliveTimer.current);
   }, []);
 
-  // Runs synchronously after DOM update, before browser paint — prevents visual glitch
-  useLayoutEffect(() => {
-    const fix = pendingScrollFix.current;
-    if (fix?.el) {
-      const delta = fix.el.scrollHeight - fix.prevScrollHeight;
-      fix.el.scrollTop = fix.prevScrollTop + delta;
-    }
-    pendingScrollFix.current = null;
-  }, [lines]);
-
   const processLine = useCallback((line: string): string => {
     const dockerTsMatch = line.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)\s(.*)$/);
     if (dockerTsMatch) {
@@ -141,18 +129,7 @@ export function LogsTab({ nodeId, containerId, containerState, inspectData }: { 
           setLines(processLogs(msg.lines ?? []));
           setHasMore(msg.hasMore ?? false);
           setIsConnecting(false);
-          // Scroll to bottom after initial load
-          requestAnimationFrame(() => {
-            const el = scrollRef.current;
-            if (el) el.scrollTop = el.scrollHeight;
-          });
         } else if (msg.type === "history") {
-          // Store scroll measurement before React re-renders
-          pendingScrollFix.current = {
-            el: scrollRef.current,
-            prevScrollHeight: scrollRef.current?.scrollHeight ?? 0,
-            prevScrollTop: scrollRef.current?.scrollTop ?? 0,
-          };
           setLines((prev) => [...processLogs(msg.lines ?? []), ...prev]);
           setHasMore(msg.hasMore ?? false);
           setLoadingMore(false);
@@ -162,13 +139,6 @@ export function LogsTab({ nodeId, containerId, containerState, inspectData }: { 
             // Cap at 10000 lines
             return updated.length > 10000 ? updated.slice(-10000) : updated;
           });
-          // Auto-scroll if user hasn't scrolled up
-          if (!userScrolled.current) {
-            requestAnimationFrame(() => {
-              const el = scrollRef.current;
-              if (el) el.scrollTop = el.scrollHeight;
-            });
-          }
         } else if (msg.type === "connected") {
           setWsConnected(true);
         } else if (msg.type === "logs_ended") {
@@ -211,10 +181,6 @@ export function LogsTab({ nodeId, containerId, containerState, inspectData }: { 
       const data = await api.getContainerLogs(nodeId, containerId, { tail: 500, timestamps: true });
       setLines(processLogs(data ?? []));
       setHasMore(false);
-      requestAnimationFrame(() => {
-        const el = scrollRef.current;
-        if (el) el.scrollTop = el.scrollHeight;
-      });
     } catch { /* */ }
     setIsConnecting(false);
   }, [nodeId, containerId, processLogs]);
@@ -273,21 +239,12 @@ export function LogsTab({ nodeId, containerId, containerState, inspectData }: { 
   useEffect(() => { loadingMoreRef.current = loadingMore; }, [loadingMore]);
   useEffect(() => { hasMoreRef.current = hasMore; }, [hasMore]);
 
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const onScroll = () => {
-      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-      userScrolled.current = !atBottom;
-      // Load more when scrolled near top (200px threshold) — use refs to avoid stale closure
-      if (el.scrollTop < 200 && hasMoreRef.current && !loadingMoreRef.current && wsRef.current?.readyState === WebSocket.OPEN) {
-        loadingMoreRef.current = true;
-        setLoadingMore(true);
-        wsRef.current.send(JSON.stringify({ type: "load_more" }));
-      }
-    };
-    el.addEventListener("scroll", onScroll);
-    return () => el.removeEventListener("scroll", onScroll);
+  const requestMoreLines = useCallback(() => {
+    if (!hasMoreRef.current || loadingMoreRef.current) return;
+    if (wsRef.current?.readyState !== WebSocket.OPEN) return;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    wsRef.current.send(JSON.stringify({ type: "load_more" }));
   }, []);
 
   const downloadLogs = () => {
@@ -346,41 +303,44 @@ export function LogsTab({ nodeId, containerId, containerState, inspectData }: { 
       </div>
 
       {/* Log Output */}
-      <div ref={scrollRef} className="flex-1 min-h-0 overflow-auto p-4 bg-[#0e0e0e] font-mono text-xs text-foreground/80">
-        {/* Loading more indicator at top */}
-        {!hasMore && lines.length > 0 && (
-          <div className="flex items-center justify-center py-2 text-muted-foreground text-[10px]">
-            Beginning of logs
+      <VirtualLogList
+        lines={lines}
+        keyFn={(_, i) => i}
+        renderLine={(line) => (
+          <div className="whitespace-pre-wrap break-all leading-5 px-4 font-mono text-xs text-foreground/80">
+            {line as string}
           </div>
         )}
-        {lines.length === 0 && !isConnecting && (
-          <div className="text-muted-foreground space-y-2">
-            <div>No logs available</div>
-            {!isRunning && inspectData?.State && (
-              <div className="space-y-1 mt-4 text-xs">
-                <div>Exit Code: <span className={inspectData.State.ExitCode === 0 ? "text-foreground" : "text-red-400"}>{inspectData.State.ExitCode ?? "unknown"}</span></div>
-                {inspectData.State.Error && <div>Error: <span className="text-red-400">{inspectData.State.Error}</span></div>}
-                {inspectData.State.OOMKilled && <div className="text-red-400">Container was killed by OOM (out of memory)</div>}
-                {inspectData.State.FinishedAt && <div>Finished: {new Date(inspectData.State.FinishedAt).toLocaleString()}</div>}
-                {inspectData.Config?.Cmd && (
-                  <div>CMD: <span className="text-foreground/70">{JSON.stringify(inspectData.Config.Cmd)}</span></div>
-                )}
-                {inspectData.Config?.Entrypoint && (
-                  <div>Entrypoint: <span className="text-foreground/70">{JSON.stringify(inspectData.Config.Entrypoint)}</span></div>
+        onLoadMore={requestMoreLines}
+        hasMore={hasMore}
+        loadingMore={loadingMore}
+        className="flex-1 min-h-0 overflow-auto bg-[#0e0e0e] py-4"
+        emptyState={
+          <div className="p-4 font-mono text-xs text-foreground/80 bg-[#0e0e0e] h-full">
+            {isConnecting ? (
+              <span className="text-muted-foreground">Connecting to log stream...</span>
+            ) : (
+              <div className="text-muted-foreground space-y-2">
+                <div>No logs available</div>
+                {!isRunning && inspectData?.State && (
+                  <div className="space-y-1 mt-4 text-xs">
+                    <div>Exit Code: <span className={inspectData.State.ExitCode === 0 ? "text-foreground" : "text-red-400"}>{inspectData.State.ExitCode ?? "unknown"}</span></div>
+                    {inspectData.State.Error && <div>Error: <span className="text-red-400">{inspectData.State.Error}</span></div>}
+                    {inspectData.State.OOMKilled && <div className="text-red-400">Container was killed by OOM (out of memory)</div>}
+                    {inspectData.State.FinishedAt && <div>Finished: {new Date(inspectData.State.FinishedAt).toLocaleString()}</div>}
+                    {inspectData.Config?.Cmd && (
+                      <div>CMD: <span className="text-foreground/70">{JSON.stringify(inspectData.Config.Cmd)}</span></div>
+                    )}
+                    {inspectData.Config?.Entrypoint && (
+                      <div>Entrypoint: <span className="text-foreground/70">{JSON.stringify(inspectData.Config.Entrypoint)}</span></div>
+                    )}
+                  </div>
                 )}
               </div>
             )}
           </div>
-        )}
-        {lines.length === 0 && isConnecting && (
-          <span className="text-muted-foreground">Connecting to log stream...</span>
-        )}
-        {lines.map((line, i) => (
-          <div key={i} className="whitespace-pre-wrap break-all leading-5">
-            {line}
-          </div>
-        ))}
-      </div>
+        }
+      />
     </div>
   );
 }
