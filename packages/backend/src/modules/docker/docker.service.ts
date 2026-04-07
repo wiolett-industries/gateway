@@ -5,17 +5,35 @@ import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { DockerTaskService } from './docker-task.service.js';
 import type { DockerSecretService } from './docker-secret.service.js';
+import type { EventBusService } from '@/services/event-bus.service.js';
 import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import type { NodeRegistryService } from '@/services/node-registry.service.js';
 
-type ContainerTransition = 'stopping' | 'restarting' | 'killing' | 'recreating' | 'updating';
+type ContainerTransition = 'creating' | 'stopping' | 'restarting' | 'killing' | 'recreating' | 'updating';
+
+type ContainerAction =
+  | 'created'
+  | 'started'
+  | 'stopped'
+  | 'restarted'
+  | 'killed'
+  | 'removed'
+  | 'renamed'
+  | 'updated'
+  | 'recreated'
+  | 'duplicated';
 
 export class DockerManagementService {
-  /** Container ID → current transition state */
+  /**
+   * `${nodeId}:${containerName}` → current transition state.
+   * Keyed by name (not ID) so the badge survives recreate/update, which
+   * destroy the old container and create a new one with a different ID.
+   */
   private containerTransitions = new Map<string, ContainerTransition>();
 
   private taskService?: DockerTaskService;
   private secretService?: DockerSecretService;
+  private eventBus?: EventBusService;
 
   constructor(
     private db: DrizzleClient,
@@ -32,23 +50,92 @@ export class DockerManagementService {
     this.secretService = secretService;
   }
 
-  private requireNoTransition(containerId: string) {
-    const current = this.containerTransitions.get(containerId);
+  setEventBus(eventBus: EventBusService) {
+    this.eventBus = eventBus;
+  }
+
+  private emitContainer(nodeId: string, name: string, id: string, action: ContainerAction, extra?: Record<string, unknown>) {
+    this.eventBus?.publish('docker.container.changed', { nodeId, name, id, action, ...(extra || {}) });
+  }
+
+  private emitTransition(nodeId: string, name: string, id: string, transition: ContainerTransition) {
+    this.eventBus?.publish('docker.container.changed', { nodeId, name, id, action: 'transitioning', transition });
+  }
+
+  private emitImage(nodeId: string, ref: string, action: 'pulled' | 'removed' | 'pruned') {
+    this.eventBus?.publish('docker.image.changed', { nodeId, ref, action });
+  }
+
+  private emitVolume(nodeId: string, name: string, action: 'created' | 'removed' | 'pruned') {
+    this.eventBus?.publish('docker.volume.changed', { nodeId, name, action });
+  }
+
+  private emitNetwork(nodeId: string, name: string, action: 'created' | 'removed' | 'pruned') {
+    this.eventBus?.publish('docker.network.changed', { nodeId, name, action });
+  }
+
+  /**
+   * Verify the target name is not already taken on this node.
+   * Two-layer guard: (1) blocks if a name-keyed transition is in flight,
+   * (2) lists containers and rejects if the name already exists.
+   * Should be called BEFORE dispatching create/rename/duplicate to the daemon.
+   */
+  private async assertNameAvailable(nodeId: string, name: string) {
+    if (this.getTransition(nodeId, name)) {
+      throw new AppError(409, 'NAME_IN_USE', `A container named "${name}" is currently being modified on this node`);
+    }
+    try {
+      const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'list');
+      const containers = this.parseResult(result);
+      if (Array.isArray(containers)) {
+        const collision = containers.some((c: any) => {
+          const cName = ((c.name ?? c.Name ?? '') as string).replace(/^\//, '');
+          return cName === name;
+        });
+        if (collision) {
+          throw new AppError(409, 'NAME_IN_USE', `A container named "${name}" already exists on this node`);
+        }
+      }
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      // If listing fails for any other reason, fall through and let the daemon
+      // surface the conflict. The daemon error translator will tag it.
+    }
+  }
+
+  /**
+   * Translate a Docker name-conflict error from the daemon into a friendly
+   * AppError. Pass any caught error through this on create/rename/duplicate.
+   */
+  private translateNameConflict(err: unknown, name: string): never {
+    const message = err instanceof Error ? err.message : String(err);
+    if (/already in use|name.*conflict|409/i.test(message)) {
+      throw new AppError(409, 'NAME_IN_USE', `A container named "${name}" already exists on this node`);
+    }
+    throw err;
+  }
+
+  private transitionKey(nodeId: string, name: string) {
+    return `${nodeId}:${name}`;
+  }
+
+  private requireNoTransition(nodeId: string, name: string) {
+    const current = this.containerTransitions.get(this.transitionKey(nodeId, name));
     if (current) {
       throw new AppError(409, 'CONTAINER_BUSY', `Container is currently ${current}`);
     }
   }
 
-  private setTransition(containerId: string, state: ContainerTransition) {
-    this.containerTransitions.set(containerId, state);
+  private setTransition(nodeId: string, name: string, state: ContainerTransition) {
+    this.containerTransitions.set(this.transitionKey(nodeId, name), state);
   }
 
-  private clearTransition(containerId: string) {
-    this.containerTransitions.delete(containerId);
+  private clearTransition(nodeId: string, name: string) {
+    this.containerTransitions.delete(this.transitionKey(nodeId, name));
   }
 
-  getContainerTransition(containerId: string): ContainerTransition | undefined {
-    return this.containerTransitions.get(containerId);
+  private getTransition(nodeId: string, name: string): ContainerTransition | undefined {
+    return this.containerTransitions.get(this.transitionKey(nodeId, name));
   }
 
   private async resolveContainerName(nodeId: string, containerId: string): Promise<string> {
@@ -75,9 +162,11 @@ export class DockerManagementService {
   private watchTransition(
     nodeId: string,
     containerId: string,
+    name: string,
     taskId: string | undefined,
     expectedState: string,
     progress: string,
+    completedAction: ContainerAction,
     timeoutMs = 60000
   ) {
     const start = Date.now();
@@ -88,16 +177,17 @@ export class DockerManagementService {
         const state = data?.State?.Status;
         if (state === expectedState || Date.now() - start > timeoutMs) {
           clearInterval(poll);
-          this.clearTransition(containerId);
+          this.clearTransition(nodeId, name);
           if (taskId && this.taskService) {
             await this.taskService.update(taskId, { status: 'succeeded', progress, completedAt: new Date() }).catch(() => {});
           }
+          this.emitContainer(nodeId, name, containerId, completedAction);
         }
       } catch {
         // Container might not exist during recreate — keep polling
         if (Date.now() - start > timeoutMs) {
           clearInterval(poll);
-          this.clearTransition(containerId);
+          this.clearTransition(nodeId, name);
           if (taskId && this.taskService) {
             await this.taskService.update(taskId, { status: 'failed', error: 'Timed out', completedAt: new Date() }).catch(() => {});
           }
@@ -138,18 +228,18 @@ export class DockerManagementService {
           if (newId !== oldContainerId && state === 'running') {
             // Recreation complete — new container is running
             clearInterval(poll);
-            this.clearTransition(oldContainerId);
-            this.clearTransition(newId);
+            this.clearTransition(nodeId, containerName);
             if (taskId && this.taskService) {
               await this.taskService.update(taskId, { status: 'succeeded', progress, completedAt: new Date() }).catch(() => {});
             }
+            this.emitContainer(nodeId, containerName, newId, 'recreated', { oldId: oldContainerId });
             return;
           }
         }
 
         if (Date.now() - start > timeoutMs) {
           clearInterval(poll);
-          this.clearTransition(oldContainerId);
+          this.clearTransition(nodeId, containerName);
           if (taskId && this.taskService) {
             await this.taskService.update(taskId, { status: 'failed', error: 'Timed out', completedAt: new Date() }).catch(() => {});
           }
@@ -157,7 +247,7 @@ export class DockerManagementService {
       } catch {
         if (Date.now() - start > timeoutMs) {
           clearInterval(poll);
-          this.clearTransition(oldContainerId);
+          this.clearTransition(nodeId, containerName);
           if (taskId && this.taskService) {
             await this.taskService.update(taskId, { status: 'failed', error: 'Timed out', completedAt: new Date() }).catch(() => {});
           }
@@ -191,10 +281,13 @@ export class DockerManagementService {
     await this.validateDockerNode(nodeId);
     const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'list');
     const containers = this.parseResult(result);
-    // Inject transition states into the list
+    // Inject transition states into the list (looked up by name, not ID,
+    // so the badge survives recreate/update which assigns a new ID).
     if (Array.isArray(containers) && this.containerTransitions.size > 0) {
       for (const c of containers) {
-        const transition = this.containerTransitions.get(c.id);
+        const cName = ((c.name ?? c.Name ?? '') as string).replace(/^\//, '');
+        if (!cName) continue;
+        const transition = this.getTransition(nodeId, cName);
         if (transition) c._transition = transition;
       }
     }
@@ -205,33 +298,50 @@ export class DockerManagementService {
     await this.validateDockerNode(nodeId);
     const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'inspect', { containerId });
     const data = this.parseResult(result);
-    const transition = this.containerTransitions.get(containerId);
-    if (data && transition) {
-      data._transition = transition;
+    if (data) {
+      const cName = ((data.Name ?? '') as string).replace(/^\//, '');
+      const transition = cName ? this.getTransition(nodeId, cName) : undefined;
+      if (transition) data._transition = transition;
     }
     return data;
   }
 
   async createContainer(nodeId: string, config: Record<string, unknown>, userId: string) {
     await this.validateDockerNode(nodeId);
-    const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'create', {
-      configJson: JSON.stringify(config),
-    });
-    const data = this.parseResult(result);
+    const requestedName = (config.name as string | undefined)?.trim();
+    if (requestedName) {
+      await this.assertNameAvailable(nodeId, requestedName);
+      this.setTransition(nodeId, requestedName, 'creating');
+    }
+    let data: any;
+    try {
+      const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'create', {
+        configJson: JSON.stringify(config),
+      });
+      data = this.parseResult(result);
+    } catch (err) {
+      if (requestedName) this.clearTransition(nodeId, requestedName);
+      this.translateNameConflict(err, requestedName || '');
+    } finally {
+      if (requestedName) this.clearTransition(nodeId, requestedName);
+    }
     await this.auditService.log({
       action: 'docker.container.create',
       userId,
       resourceType: 'docker-container',
       details: { nodeId, name: config.name, image: config.image },
     });
-    // If container was created and there are secrets targeting it, inject them
-    // (secrets are typically added after creation, so this is a no-op for new containers)
+    const newId = (data?.Id ?? data?.id ?? '') as string;
+    if (requestedName && newId) {
+      this.emitContainer(nodeId, requestedName, newId, 'created');
+    }
     return data;
   }
 
   async startContainer(nodeId: string, containerId: string, userId: string) {
     await this.validateDockerNode(nodeId);
-    this.requireNoTransition(containerId);
+    const name = await this.resolveContainerName(nodeId, containerId);
+    this.requireNoTransition(nodeId, name);
     const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'start', { containerId });
     this.parseResult(result);
     await this.auditService.log({
@@ -241,20 +351,22 @@ export class DockerManagementService {
       resourceId: containerId,
       details: { nodeId },
     });
+    this.emitContainer(nodeId, name, containerId, 'started');
   }
 
   async stopContainer(nodeId: string, containerId: string, timeout: number, userId: string) {
     await this.validateDockerNode(nodeId);
-    this.requireNoTransition(containerId);
-    this.setTransition(containerId, 'stopping');
     const name = await this.resolveContainerName(nodeId, containerId);
+    this.requireNoTransition(nodeId, name);
+    this.setTransition(nodeId, name, 'stopping');
+    this.emitTransition(nodeId, name, containerId, 'stopping');
     const task = await this.createTask(nodeId, containerId, name, 'stop');
     const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'stop', {
       containerId,
       timeoutSeconds: timeout,
     });
     this.parseResult(result);
-    this.watchTransition(nodeId, containerId, task?.id, 'exited', 'Container stopped');
+    this.watchTransition(nodeId, containerId, name, task?.id, 'exited', 'Container stopped', 'stopped');
     await this.auditService.log({
       action: 'docker.container.stop',
       userId,
@@ -266,16 +378,17 @@ export class DockerManagementService {
 
   async restartContainer(nodeId: string, containerId: string, timeout: number, userId: string) {
     await this.validateDockerNode(nodeId);
-    this.requireNoTransition(containerId);
-    this.setTransition(containerId, 'restarting');
     const name = await this.resolveContainerName(nodeId, containerId);
+    this.requireNoTransition(nodeId, name);
+    this.setTransition(nodeId, name, 'restarting');
+    this.emitTransition(nodeId, name, containerId, 'restarting');
     const task = await this.createTask(nodeId, containerId, name, 'restart');
     const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'restart', {
       containerId,
       timeoutSeconds: timeout,
     });
     this.parseResult(result);
-    this.watchTransition(nodeId, containerId, task?.id, 'running', 'Container restarted');
+    this.watchTransition(nodeId, containerId, name, task?.id, 'running', 'Container restarted', 'restarted');
     await this.auditService.log({
       action: 'docker.container.restart',
       userId,
@@ -287,13 +400,14 @@ export class DockerManagementService {
 
   async killContainer(nodeId: string, containerId: string, signal: string, userId: string) {
     await this.validateDockerNode(nodeId);
-    this.requireNoTransition(containerId);
-    this.setTransition(containerId, 'killing');
     const name = await this.resolveContainerName(nodeId, containerId);
+    this.requireNoTransition(nodeId, name);
+    this.setTransition(nodeId, name, 'killing');
+    this.emitTransition(nodeId, name, containerId, 'killing');
     const task = await this.createTask(nodeId, containerId, name, 'kill');
     const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'kill', { containerId, signal });
     this.parseResult(result);
-    this.watchTransition(nodeId, containerId, task?.id, 'exited', `Container killed (${signal})`);
+    this.watchTransition(nodeId, containerId, name, task?.id, 'exited', `Container killed (${signal})`, 'killed');
     await this.auditService.log({
       action: 'docker.container.kill',
       userId,
@@ -305,7 +419,8 @@ export class DockerManagementService {
 
   async removeContainer(nodeId: string, containerId: string, force: boolean, userId: string) {
     await this.validateDockerNode(nodeId);
-    this.requireNoTransition(containerId);
+    const name = await this.resolveContainerName(nodeId, containerId);
+    this.requireNoTransition(nodeId, name);
     const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'remove', { containerId, force });
     this.parseResult(result);
     await this.auditService.log({
@@ -315,34 +430,54 @@ export class DockerManagementService {
       resourceId: containerId,
       details: { nodeId, force },
     });
+    this.emitContainer(nodeId, name, containerId, 'removed');
   }
 
-  async renameContainer(nodeId: string, containerId: string, name: string, userId: string) {
+  async renameContainer(nodeId: string, containerId: string, newName: string, userId: string) {
     await this.validateDockerNode(nodeId);
-    this.requireNoTransition(containerId);
-    const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'rename', { containerId, newName: name });
-    this.parseResult(result);
+    const oldName = await this.resolveContainerName(nodeId, containerId);
+    this.requireNoTransition(nodeId, oldName);
+    await this.assertNameAvailable(nodeId, newName);
+    this.setTransition(nodeId, newName, 'creating');
+    try {
+      const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'rename', { containerId, newName });
+      this.parseResult(result);
+    } catch (err) {
+      this.translateNameConflict(err, newName);
+    } finally {
+      this.clearTransition(nodeId, newName);
+    }
     await this.auditService.log({
       action: 'docker.container.rename',
       userId,
       resourceType: 'docker-container',
       resourceId: containerId,
-      details: { nodeId, name },
+      details: { nodeId, name: newName },
     });
+    this.emitContainer(nodeId, newName, containerId, 'renamed', { oldName });
   }
 
   async duplicateContainer(nodeId: string, containerId: string, name: string, userId: string) {
     await this.validateDockerNode(nodeId);
-    this.requireNoTransition(containerId);
-    const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'duplicate', {
-      containerId,
-      newName: name,
-    });
-    const data = this.parseResult(result);
+    const sourceName = await this.resolveContainerName(nodeId, containerId);
+    this.requireNoTransition(nodeId, sourceName);
+    await this.assertNameAvailable(nodeId, name);
+    this.setTransition(nodeId, name, 'creating');
+    let data: any;
+    try {
+      const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'duplicate', {
+        containerId,
+        newName: name,
+      });
+      data = this.parseResult(result);
+    } catch (err) {
+      this.translateNameConflict(err, name);
+    } finally {
+      this.clearTransition(nodeId, name);
+    }
 
     // Copy secrets from source container to the new one (keyed by name)
     if (this.secretService) {
-      const sourceName = await this.resolveContainerName(nodeId, containerId);
       await this.secretService.copySecrets(nodeId, sourceName, name, userId);
     }
 
@@ -353,14 +488,17 @@ export class DockerManagementService {
       resourceId: containerId,
       details: { nodeId, name },
     });
+    const newId = (data?.Id ?? data?.id ?? '') as string;
+    if (newId) this.emitContainer(nodeId, name, newId, 'duplicated', { sourceName });
     return data;
   }
 
   async updateContainer(nodeId: string, containerId: string, config: Record<string, unknown>, userId: string) {
     await this.validateDockerNode(nodeId);
-    this.requireNoTransition(containerId);
-    this.setTransition(containerId, 'updating');
     const name = await this.resolveContainerName(nodeId, containerId);
+    this.requireNoTransition(nodeId, name);
+    this.setTransition(nodeId, name, 'updating');
+    this.emitTransition(nodeId, name, containerId, 'updating');
     const task = await this.createTask(nodeId, containerId, name, 'update');
     const result = await this.nodeDispatch.sendDockerContainerCommand(
       nodeId,
@@ -413,7 +551,8 @@ export class DockerManagementService {
 
   async liveUpdateContainer(nodeId: string, containerId: string, config: Record<string, unknown>, userId: string) {
     await this.validateDockerNode(nodeId);
-    this.requireNoTransition(containerId);
+    const name = await this.resolveContainerName(nodeId, containerId);
+    this.requireNoTransition(nodeId, name);
     const result = await this.nodeDispatch.sendDockerContainerCommand(
       nodeId,
       'live_update',
@@ -431,9 +570,10 @@ export class DockerManagementService {
 
   async recreateWithConfig(nodeId: string, containerId: string, config: Record<string, unknown>, userId: string) {
     await this.validateDockerNode(nodeId);
-    this.requireNoTransition(containerId);
-    this.setTransition(containerId, 'recreating');
     const name = await this.resolveContainerName(nodeId, containerId);
+    this.requireNoTransition(nodeId, name);
+    this.setTransition(nodeId, name, 'recreating');
+    this.emitTransition(nodeId, name, containerId, 'recreating');
     const task = await this.createTask(nodeId, containerId, name, 'recreate');
 
     // Inject decrypted secrets into the recreate config's env (keyed by container name)
@@ -464,7 +604,7 @@ export class DockerManagementService {
       this.watchRecreateByName(nodeId, name, containerId, task?.id, 'Container recreated');
       return data;
     } catch (err) {
-      this.clearTransition(containerId);
+      this.clearTransition(nodeId, name);
       if (task && this.taskService) {
         await this.taskService.update(task.id, {
           status: 'failed',
@@ -484,12 +624,12 @@ export class DockerManagementService {
     userId: string
   ) {
     await this.validateDockerNode(nodeId);
-    this.requireNoTransition(containerId);
+    const name = await this.resolveContainerName(nodeId, containerId);
+    this.requireNoTransition(nodeId, name);
 
     // Merge decrypted secrets into the env update so secrets persist across recreate
     let mergedEnv = env;
     if (this.secretService) {
-      const name = await this.resolveContainerName(nodeId, containerId);
       const secrets = await this.secretService.getDecryptedMap(nodeId, name);
       if (Object.keys(secrets).length > 0) {
         mergedEnv = { ...(env || {}), ...secrets };
@@ -501,13 +641,26 @@ export class DockerManagementService {
       }
     }
 
-    const result = await this.nodeDispatch.sendDockerContainerCommand(
-      nodeId,
-      'update',
-      { containerId, configJson: JSON.stringify({ env: mergedEnv, removeEnv }) },
-      60000
-    );
-    const data = this.parseResult(result);
+    this.setTransition(nodeId, name, 'updating');
+    this.emitTransition(nodeId, name, containerId, 'updating');
+    const task = await this.createTask(nodeId, containerId, name, 'update');
+    let data: any;
+    try {
+      const result = await this.nodeDispatch.sendDockerContainerCommand(
+        nodeId,
+        'update',
+        { containerId, configJson: JSON.stringify({ env: mergedEnv, removeEnv }) },
+        60000
+      );
+      data = this.parseResult(result);
+    } catch (err) {
+      this.clearTransition(nodeId, name);
+      if (task && this.taskService) {
+        await this.taskService.update(task.id, { status: 'failed', error: err instanceof Error ? err.message : 'Unknown error', completedAt: new Date() }).catch(() => {});
+      }
+      throw err;
+    }
+    this.watchRecreateByName(nodeId, name, containerId, task?.id, 'Container env updated');
     await this.auditService.log({
       action: 'docker.container.env.update',
       userId,
@@ -557,6 +710,7 @@ export class DockerManagementService {
       if (task?.id && this.taskService) {
         this.taskService.update(task.id, { status: 'succeeded', progress: `Pulled ${imageRef}`, completedAt: new Date() }).catch(() => {});
       }
+      this.emitImage(nodeId, imageRef, 'pulled');
     }).catch((err) => {
       if (task?.id && this.taskService) {
         this.taskService.update(task.id, { status: 'failed', error: err instanceof Error ? err.message : 'Pull failed', completedAt: new Date() }).catch(() => {});
@@ -577,6 +731,7 @@ export class DockerManagementService {
       resourceId: imageId,
       details: { nodeId },
     });
+    this.emitImage(nodeId, imageId, 'removed');
   }
 
   async pruneImages(nodeId: string, userId: string) {
@@ -589,6 +744,7 @@ export class DockerManagementService {
       resourceType: 'docker-image',
       details: { nodeId },
     });
+    this.emitImage(nodeId, '*', 'pruned');
     return data;
   }
 
@@ -614,6 +770,7 @@ export class DockerManagementService {
       resourceType: 'docker-volume',
       details: { nodeId, name: config.name },
     });
+    this.emitVolume(nodeId, config.name, 'created');
     return data;
   }
 
@@ -628,6 +785,7 @@ export class DockerManagementService {
       resourceId: name,
       details: { nodeId },
     });
+    this.emitVolume(nodeId, name, 'removed');
   }
 
   // ─── Network operations ────────────────────────────────────────────
@@ -657,6 +815,7 @@ export class DockerManagementService {
       resourceType: 'docker-network',
       details: { nodeId, name: config.name },
     });
+    this.emitNetwork(nodeId, config.name, 'created');
     return data;
   }
 
@@ -671,6 +830,7 @@ export class DockerManagementService {
       resourceId: networkId,
       details: { nodeId },
     });
+    this.emitNetwork(nodeId, networkId, 'removed');
   }
 
   async connectContainerToNetwork(nodeId: string, networkId: string, containerId: string, userId: string) {

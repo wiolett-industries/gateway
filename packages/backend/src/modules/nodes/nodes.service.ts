@@ -6,6 +6,7 @@ import { certificates, nodes, proxyHosts } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
+import type { EventBusService } from '@/services/event-bus.service.js';
 import type { NodeRegistryService } from '@/services/node-registry.service.js';
 import type { CreateNodeInput, NodeListQuery, UpdateNodeInput } from './nodes.schemas.js';
 
@@ -17,6 +18,12 @@ export class NodesService {
     private auditService: AuditService,
     private registry: NodeRegistryService
   ) {}
+
+  private eventBus?: EventBusService;
+  setEventBus(bus: EventBusService) { this.eventBus = bus; }
+  private emitNode(id: string, action: 'created' | 'updated' | 'deleted') {
+    this.eventBus?.publish('node.changed', { id, action });
+  }
 
   async list(query: NodeListQuery) {
     const conditions: SQL[] = [];
@@ -102,6 +109,7 @@ export class NodesService {
     });
 
     logger.info('Node created', { nodeId: node.id, hostname: input.hostname });
+    this.emitNode(node.id, 'created');
 
     return {
       node,
@@ -132,6 +140,7 @@ export class NodesService {
       resourceId: id,
       details: { displayName: input.displayName },
     });
+    this.emitNode(id, 'updated');
 
     return updated;
   }
@@ -192,5 +201,6 @@ export class NodesService {
     });
 
     logger.info('Node removed', { nodeId: id, hostname: node.hostname });
+    this.emitNode(id, 'deleted');
   }
 }

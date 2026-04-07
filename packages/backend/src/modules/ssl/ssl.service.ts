@@ -8,6 +8,7 @@ import { escapeLike } from '@/lib/utils.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { CryptoService } from '@/services/crypto.service.js';
+import type { EventBusService } from '@/services/event-bus.service.js';
 import type { NginxConfigGenerator } from '@/services/nginx-config-generator.service.js';
 import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import type { PaginatedResponse } from '@/types.js';
@@ -27,6 +28,12 @@ export class SSLService {
     private readonly auditService: AuditService,
     private readonly nodeDispatch: NodeDispatchService
   ) {}
+
+  private eventBus?: EventBusService;
+  setEventBus(bus: EventBusService) { this.eventBus = bus; }
+  private emitCert(id: string, action: 'created' | 'renewed' | 'deleted' | 'updated') {
+    this.eventBus?.publish('ssl.cert.changed', { id, action });
+  }
 
   // ---------------------------------------------------------------------------
   // ACME certificate request
@@ -107,6 +114,7 @@ export class SSLService {
       });
 
       logger.info('ACME certificate issued via HTTP-01', { certId: cert.id, domains: input.domains });
+      this.emitCert(cert.id, 'created');
 
       return {
         certificate: this.sanitizeCert(cert),
@@ -348,6 +356,7 @@ export class SSLService {
     });
 
     logger.info('Certificate uploaded', { certId: cert.id, name: input.name, domains });
+    this.emitCert(cert.id, 'created');
 
     return this.sanitizeCert(cert);
   }
@@ -430,6 +439,7 @@ export class SSLService {
     });
 
     logger.info('Internal certificate linked', { certId: cert.id, internalCertId: input.internalCertId });
+    this.emitCert(cert.id, 'created');
 
     return this.sanitizeCert(cert);
   }
@@ -517,6 +527,7 @@ export class SSLService {
       });
 
       logger.info('Certificate renewed', { certId, domains: cert.domainNames });
+      this.emitCert(certId, 'renewed');
 
       const updated = await this.db.query.sslCertificates.findFirst({
         where: eq(sslCertificates.id, certId),
@@ -581,6 +592,7 @@ export class SSLService {
     });
 
     logger.info('Certificate deleted', { certId, name: cert.name });
+    this.emitCert(certId, 'deleted');
   }
 
   // ---------------------------------------------------------------------------

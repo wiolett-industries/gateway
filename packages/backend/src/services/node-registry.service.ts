@@ -6,6 +6,7 @@ import { nodes } from '@/db/schema/index.js';
 import type { NodeHealthReport, NodeStatsReport } from '@/db/schema/nodes.js';
 import type { CommandResult, DaemonMessage, GatewayCommand } from '@/grpc/generated/types.js';
 import { createChildLogger } from '@/lib/logger.js';
+import type { EventBusService } from '@/services/event-bus.service.js';
 
 const logger = createChildLogger('NodeRegistry');
 
@@ -36,6 +37,9 @@ export class NodeRegistryService {
   private logStreamHandlers = new Map<string, (lines: string[], ended?: boolean) => void>();
 
   constructor(private db: DrizzleClient) {}
+
+  private eventBus?: EventBusService;
+  setEventBus(bus: EventBusService) { this.eventBus = bus; }
 
   registerExecHandler(execId: string, handler: (data: any) => void) {
     let handlers = this.execOutputHandlers.get(execId);
@@ -120,6 +124,7 @@ export class NodeRegistryService {
       .where(eq(nodes.id, nodeId));
 
     logger.info('Node registered', { nodeId, type, hostname });
+    this.eventBus?.publish('node.changed', { id: nodeId, action: 'updated', status: 'online' });
   }
 
   async deregister(nodeId: string): Promise<void> {
@@ -138,6 +143,7 @@ export class NodeRegistryService {
       .where(eq(nodes.id, nodeId));
 
     logger.info('Node deregistered', { nodeId });
+    this.eventBus?.publish('node.changed', { id: nodeId, action: 'updated', status: 'offline' });
   }
 
   getNode(nodeId: string): ConnectedNode | undefined {

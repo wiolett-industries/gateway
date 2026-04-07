@@ -3,11 +3,24 @@ import type { DrizzleClient } from '@/db/client.js';
 import { dockerTasks } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { AppError } from '@/middleware/error-handler.js';
+import type { EventBusService } from '@/services/event-bus.service.js';
 
 const logger = createChildLogger('DockerTaskService');
 
 export class DockerTaskService {
   constructor(private db: DrizzleClient) {}
+
+  private eventBus?: EventBusService;
+  setEventBus(bus: EventBusService) { this.eventBus = bus; }
+  private emit(task: { id: string; nodeId: string; status: string; progress?: string | null; error?: string | null }) {
+    this.eventBus?.publish('docker.task.changed', {
+      taskId: task.id,
+      nodeId: task.nodeId,
+      status: task.status,
+      progress: task.progress ?? null,
+      error: task.error ?? null,
+    });
+  }
 
   async list(filters?: { nodeId?: string; status?: string; type?: string }) {
     const conditions = [];
@@ -40,6 +53,7 @@ export class DockerTaskService {
       })
       .returning();
 
+    this.emit(row);
     return row;
   }
 
@@ -61,6 +75,7 @@ export class DockerTaskService {
     const [row] = await this.db.update(dockerTasks).set(values).where(eq(dockerTasks.id, id)).returning();
 
     if (!row) throw new AppError(404, 'NOT_FOUND', 'Docker task not found');
+    this.emit(row);
     return row;
   }
 

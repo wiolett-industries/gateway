@@ -10,6 +10,7 @@ import { AppError } from '@/middleware/error-handler.js';
 import { getEnv } from '@/config/env.js';
 import { createChildLogger } from '@/lib/logger.js';
 import type { DrizzleClient } from '@/db/client.js';
+import type { EventBusService } from '@/services/event-bus.service.js';
 import type { CreateRootCAInput, CreateIntermediateCAInput } from './ca.schemas.js';
 
 const logger = createChildLogger('CAService');
@@ -24,6 +25,12 @@ export class CAService {
     private readonly cryptoService: CryptoService,
     private readonly auditService: AuditService,
   ) {}
+
+  private eventBus?: EventBusService;
+  setEventBus(bus: EventBusService) { this.eventBus = bus; }
+  private emitCa(id: string, action: 'created' | 'updated' | 'revoked' | 'deleted') {
+    this.eventBus?.publish('ca.changed', { id, action });
+  }
 
   async createRootCA(input: CreateRootCAInput, userId: string) {
     const env = getEnv();
@@ -95,6 +102,7 @@ export class CAService {
     });
 
     logger.info('Created root CA', { caId: ca.id, cn: input.commonName });
+    this.emitCa(ca.id, 'created');
     return ca;
   }
 
@@ -194,6 +202,7 @@ export class CAService {
     });
 
     logger.info('Created intermediate CA', { caId: ca.id, parentId, cn: input.commonName });
+    this.emitCa(ca.id, 'created');
     return ca;
   }
 
@@ -268,6 +277,7 @@ export class CAService {
       details: { changes: Object.keys(input) },
     });
 
+    this.emitCa(id, 'updated');
     return this.getCA(id);
   }
 
@@ -310,6 +320,7 @@ export class CAService {
     });
 
     logger.info('Revoked CA', { caId: id, reason });
+    this.emitCa(id, 'revoked');
   }
 
   async deleteCA(id: string, userId: string) {
@@ -344,6 +355,7 @@ export class CAService {
       resourceType: 'ca',
       resourceId: id,
     });
+    this.emitCa(id, 'deleted');
   }
 
   /**

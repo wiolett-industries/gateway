@@ -1,7 +1,6 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Code2, Eye, EyeOff, Lock, Minus, Plus, RotateCcw, Table2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { Button } from "@/components/ui/button";
@@ -10,7 +9,6 @@ import { Input } from "@/components/ui/input";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
-import { usePinnedContainersStore } from "@/stores/pinned-containers";
 import type { DockerSecret } from "@/types";
 
 interface SecretRow {
@@ -22,8 +20,7 @@ interface SecretRow {
   dirty: boolean;
 }
 
-export function EnvironmentTab({ nodeId, containerId, containerName, disabled, onRecreating }: { nodeId: string; containerId: string; containerName: string; disabled?: boolean; onRecreating?: (v: boolean) => void }) {
-  const navigate = useNavigate();
+export function EnvironmentTab({ nodeId, containerId, disabled, onRecreating }: { nodeId: string; containerId: string; containerName: string; disabled?: boolean; onRecreating?: () => void }) {
   const { hasScope } = useAuthStore();
   const invalidate = useDockerStore((s) => s.invalidate);
   const [envVars, setEnvVars] = useState<Array<{ key: string; value: string }>>([]);
@@ -183,7 +180,7 @@ export function EnvironmentTab({ nodeId, containerId, containerName, disabled, o
     if (!ok) return;
 
     setIsSaving(true);
-    onRecreating?.(true);
+    onRecreating?.();
     try {
       // 1. Flush secret changes to DB
       if (hasSecretsChanges) {
@@ -215,63 +212,13 @@ export function EnvironmentTab({ nodeId, containerId, containerName, disabled, o
         .filter((k) => !newKeys.has(k));
 
       await api.updateContainerEnv(nodeId, containerId, newEnv, removeEnv.length > 0 ? removeEnv : undefined);
-      toast.info("Recreating container...");
-
-      // Two-phase poll: wait for old container to disappear, then for new one to be running
-      const pollStart = Date.now();
-      let oldGone = false;
-      const poll = setInterval(async () => {
-        try {
-          const containers = await api.listDockerContainers(nodeId) as any[];
-          const match = containers?.find((c: any) =>
-            (c.name ?? "").replace(/^\//, "") === containerName ||
-            (c.names ?? []).some((n: string) => n.replace(/^\//, "") === containerName)
-          );
-
-          if (!oldGone) {
-            if (!match || (match.id ?? match.Id) !== containerId) {
-              oldGone = true;
-            }
-          }
-
-          if (oldGone && match) {
-            const newId = match.id ?? match.Id;
-            const status = match.state ?? match.State ?? "";
-            if (status === "running" || Date.now() - pollStart > 30000) {
-              clearInterval(poll);
-              setIsSaving(false);
-              onRecreating?.(false);
-              toast.success("Environment updated — container recreated");
-              invalidate("containers", "tasks");
-              if (newId !== containerId) {
-                usePinnedContainersStore.getState().migrateId(containerId, newId);
-                navigate(`/docker/containers/${nodeId}/${newId}`, { replace: true });
-              } else {
-                fetchEnv();
-              }
-            }
-          }
-
-          if (Date.now() - pollStart > 60000) {
-            clearInterval(poll);
-            setIsSaving(false);
-            onRecreating?.(false);
-            toast.error("Recreation timed out");
-          }
-        } catch {
-          if (Date.now() - pollStart > 60000) {
-            clearInterval(poll);
-            setIsSaving(false);
-            onRecreating?.(false);
-            toast.error("Recreation timed out");
-          }
-        }
-      }, 2000);
-      return;
+      toast.success("Environment updated — recreating container");
+      invalidate("containers", "tasks");
+      // Realtime channel will deliver the recreate event to every open tab.
+      setIsSaving(false);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to update environment");
       setIsSaving(false);
-      onRecreating?.(false);
     }
   };
 
@@ -446,8 +393,8 @@ export function EnvironmentTab({ nodeId, containerId, containerName, disabled, o
                     </>
                   ) : (
                     <>
-                      <span className="px-3 py-2 text-xs font-mono truncate">{env.key}</span>
-                      <span className="px-3 py-2 text-xs font-mono text-muted-foreground truncate border-l border-border">{env.value}</span>
+                      <span className="px-3 py-2 text-xs md:text-sm font-mono truncate">{env.key}</span>
+                      <span className="px-3 py-2 text-xs md:text-sm font-mono text-muted-foreground truncate border-l border-border">{env.value}</span>
                     </>
                   )}
                 </div>
@@ -545,8 +492,8 @@ export function EnvironmentTab({ nodeId, containerId, containerName, disabled, o
                   </>
                 ) : (
                   <>
-                    <span className="px-3 py-2 text-xs font-mono truncate">{row.key}</span>
-                    <span className="px-3 py-2 text-xs font-mono text-muted-foreground truncate border-l border-border">
+                    <span className="px-3 py-2 text-xs md:text-sm font-mono truncate">{row.key}</span>
+                    <span className="px-3 py-2 text-xs md:text-sm font-mono text-muted-foreground truncate border-l border-border">
                       ••••••••
                     </span>
                   </>

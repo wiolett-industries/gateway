@@ -111,7 +111,7 @@ export class SystemCAService {
         caId,
         type: 'tls-server',
         commonName: 'gateway-grpc',
-        sans: ['localhost', host, '127.0.0.1'],
+        sans: ['localhost', host, '127.0.0.1', ...(process.env.GRPC_TLS_EXTRA_SANS?.split(',').map((s) => s.trim()).filter(Boolean) ?? [])],
         keyAlgorithm: 'ecdsa-p256',
         validityDays: 365,
       },

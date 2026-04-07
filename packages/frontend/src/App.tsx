@@ -1,5 +1,8 @@
+import { useEffect } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
+import { eventStream } from "@/services/event-stream";
+import { useAuthStore } from "@/stores/auth";
 import { RequireScope } from "@/components/common/RequireScope";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { ThemeProvider } from "@/components/layout/ThemeProvider";
@@ -37,10 +40,43 @@ function scoped(scope: string, element: React.ReactElement) {
   return <RequireScope scope={scope}>{element}</RequireScope>;
 }
 
+function RealtimeBridge() {
+  const sessionId = useAuthStore((s) => s.sessionId);
+  const user = useAuthStore((s) => s.user);
+  const setUser = useAuthStore((s) => s.setUser);
+
+  useEffect(() => {
+    if (sessionId) {
+      eventStream.start();
+      return () => eventStream.stop();
+    }
+    return;
+  }, [sessionId]);
+
+  // Live permission updates: refresh the local user (and thus scopes) whenever
+  // the server says this user's permissions changed.
+  useEffect(() => {
+    if (!user?.id) return;
+    return eventStream.subscribe(`permissions.changed.${user.id}`, async (payload) => {
+      const ev = payload as { scopes?: string[]; groupId?: string | null };
+      // Trust the pushed scopes — these come from the same source the server uses
+      if (Array.isArray(ev?.scopes)) {
+        const current = useAuthStore.getState().user;
+        if (current) {
+          setUser({ ...current, scopes: ev.scopes, groupId: ev.groupId ?? current.groupId } as typeof current);
+        }
+      }
+    });
+  }, [user?.id, setUser]);
+
+  return null;
+}
+
 export default function App() {
   return (
     <ErrorBoundary>
       <ThemeProvider>
+        <RealtimeBridge />
         <BrowserRouter>
           <Routes>
             <Route path="/login" element={<LoginPage />} />

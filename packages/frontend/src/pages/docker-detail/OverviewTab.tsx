@@ -1,6 +1,7 @@
 import { ClipboardCopy } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import { useRealtime } from "@/hooks/use-realtime";
 import { api } from "@/services/api";
 import {
   STATUS_BADGE,
@@ -68,17 +69,33 @@ export function OverviewTab({
   // Networks
   const networkEntries = Object.entries(data.NetworkSettings?.Networks ?? {}) as Array<[string, any]>;
 
-  // Recent tasks — refresh whenever data (inspect) refreshes since they share the same cycle
+  // Recent tasks — refresh on inspect cycle and whenever a docker.task event arrives
   const containerName = (data.Name ?? "").replace(/^\//, "");
   const [recentTasks, setRecentTasks] = useState<any[]>([]);
-  useEffect(() => {
+  const refreshTasks = useCallback(() => {
     api.listDockerTasks({ nodeId }).then((tasks) => {
       const filtered = (tasks ?? [])
         .filter((t) => t.containerId === containerId || t.containerName === containerName)
         .slice(0, 3);
       setRecentTasks(filtered);
     }).catch(() => {});
-  }, [nodeId, containerId, containerName, data]);
+  }, [nodeId, containerId, containerName]);
+  useEffect(() => {
+    refreshTasks();
+  }, [refreshTasks, data]);
+  useRealtime("docker.task.changed", (payload) => {
+    const ev = payload as { nodeId?: string };
+    if (!ev || ev.nodeId !== nodeId) return;
+    refreshTasks();
+  });
+  // Container state changes (start/stop/recreate) also produce tasks worth showing
+  useRealtime("docker.container.changed", (payload) => {
+    const ev = payload as { nodeId?: string; name?: string; id?: string; oldId?: string };
+    if (!ev || ev.nodeId !== nodeId) return;
+    if (ev.id === containerId || ev.oldId === containerId || ev.name === containerName) {
+      refreshTasks();
+    }
+  });
 
   return (
     <div className="space-y-4 pb-6">

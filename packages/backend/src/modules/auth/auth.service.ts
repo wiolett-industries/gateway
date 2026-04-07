@@ -31,6 +31,15 @@ export class AuthService {
     private readonly cacheService: CacheService
   ) {}
 
+  private eventBus?: import('@/services/event-bus.service.js').EventBusService;
+  setEventBus(bus: import('@/services/event-bus.service.js').EventBusService) { this.eventBus = bus; }
+  private emitUser(id: string, action: 'created' | 'updated' | 'deleted') {
+    this.eventBus?.publish('user.changed', { id, action });
+  }
+  private emitPermissions(userId: string, scopes: string[], groupId: string | null) {
+    this.eventBus?.publish(`permissions.changed.${userId}`, { scopes, groupId });
+  }
+
   private async getOIDCConfig(): Promise<client.Configuration> {
     if (this.oidcConfig) {
       return this.oidcConfig;
@@ -322,7 +331,10 @@ export class AuthService {
       throw new Error('User not found');
     }
 
-    return this.mapDbUserToUser(updatedUser, group);
+    const mapped = await this.mapDbUserToUser(updatedUser, group);
+    this.emitUser(userId, 'updated');
+    this.emitPermissions(userId, mapped.scopes, groupId);
+    return mapped;
   }
 
   async blockUser(userId: string): Promise<User> {
@@ -339,6 +351,8 @@ export class AuthService {
     // Destroy all sessions immediately
     await this.sessionService.destroyAllUserSessions(userId);
 
+    this.emitUser(userId, 'updated');
+    this.emitPermissions(userId, [], null);
     return this.mapDbUserToUser(updatedUser);
   }
 
@@ -353,7 +367,10 @@ export class AuthService {
       throw new Error('User not found');
     }
 
-    return this.mapDbUserToUser(updatedUser);
+    const mapped = await this.mapDbUserToUser(updatedUser);
+    this.emitUser(userId, 'updated');
+    this.emitPermissions(userId, mapped.scopes, mapped.groupId ?? null);
+    return mapped;
   }
 
   async deleteUser(userId: string): Promise<void> {
@@ -370,6 +387,8 @@ export class AuthService {
     }
 
     logger.info('User deleted', { userId });
+    this.emitUser(userId, 'deleted');
+    this.emitPermissions(userId, [], null);
   }
 
   async validateSession(sessionId: string): Promise<User | null> {

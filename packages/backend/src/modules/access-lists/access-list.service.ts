@@ -10,6 +10,7 @@ import { createChildLogger } from '@/lib/logger.js';
 import { escapeLike } from '@/lib/utils.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
+import type { EventBusService } from '@/services/event-bus.service.js';
 import type { NginxTemplateService } from '@/modules/proxy/nginx-template.service.js';
 import type { NginxConfigGenerator, ProxyHostConfig } from '@/services/nginx-config-generator.service.js';
 import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
@@ -36,6 +37,12 @@ export class AccessListService {
     private readonly auditService: AuditService,
     private readonly nodeDispatch: NodeDispatchService
   ) {}
+
+  private eventBus?: EventBusService;
+  setEventBus(bus: EventBusService) { this.eventBus = bus; }
+  private emitAcl(id: string, action: 'created' | 'updated' | 'deleted') {
+    this.eventBus?.publish('access-list.changed', { id, action });
+  }
 
   // -----------------------------------------------------------------------
   // Create
@@ -73,6 +80,7 @@ export class AccessListService {
     });
 
     logger.info('Created access list', { id: accessList.id, name: accessList.name });
+    this.emitAcl(accessList.id, 'created');
 
     return accessList;
   }
@@ -183,6 +191,7 @@ export class AccessListService {
     });
 
     logger.info('Updated access list', { id });
+    this.emitAcl(id, 'updated');
 
     return updated;
   }
@@ -229,6 +238,7 @@ export class AccessListService {
     });
 
     logger.info('Deleted access list', { id, name: existing.name });
+    this.emitAcl(id, 'deleted');
   }
 
   // -----------------------------------------------------------------------

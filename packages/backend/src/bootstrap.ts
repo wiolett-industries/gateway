@@ -42,6 +42,7 @@ import { ACMEService } from '@/modules/ssl/acme.service.js';
 import { SSLService } from '@/modules/ssl/ssl.service.js';
 import { TokensService } from '@/modules/tokens/tokens.service.js';
 import { CacheService, createRedisClient } from '@/services/cache.service.js';
+import { EventBusService } from '@/services/event-bus.service.js';
 import { ConfigValidatorService } from '@/services/config-validator.service.js';
 import { CryptoService } from '@/services/crypto.service.js';
 import { DockerService } from '@/services/docker.service.js';
@@ -78,6 +79,10 @@ export async function initializeContainer(): Promise<void> {
   // Register services with explicit factories
   const cacheService = new CacheService(redis);
   container.registerInstance(CacheService, cacheService);
+
+  // Realtime event bus (in-process; swappable to Redis pub/sub later)
+  const eventBus = new EventBusService();
+  container.registerInstance(EventBusService, eventBus);
 
   const sessionService = new SessionService(cacheService);
   container.registerInstance(SessionService, sessionService);
@@ -162,6 +167,12 @@ export async function initializeContainer(): Promise<void> {
   container.registerInstance(DockerTaskService, dockerTaskService);
   dockerManagementService.setTaskService(dockerTaskService);
   dockerManagementService.setSecretService(dockerSecretService);
+  dockerManagementService.setEventBus(eventBus);
+  dockerTaskService.setEventBus(eventBus);
+  authService.setEventBus(eventBus);
+  caService.setEventBus(eventBus);
+  nodesService.setEventBus(eventBus);
+  nodeRegistry.setEventBus(eventBus);
 
   const nginxSyntaxValidator = new NginxSyntaxValidatorService();
   const proxyService = new ProxyService(
@@ -173,6 +184,7 @@ export async function initializeContainer(): Promise<void> {
     nodeDispatch,
     nginxSyntaxValidator
   );
+  proxyService.setEventBus(eventBus);
   container.registerInstance(ProxyService, proxyService);
 
   const acmeService = new ACMEService(env.ACME_EMAIL, env.ACME_STAGING);
@@ -219,9 +231,11 @@ export async function initializeContainer(): Promise<void> {
     auditService,
     nodeDispatch
   );
+  accessListService.setEventBus(eventBus);
   container.registerInstance(AccessListService, accessListService);
 
   const sslService = new SSLService(db, acmeService, nginxConfigGenerator, cryptoService, auditService, nodeDispatch);
+  sslService.setEventBus(eventBus);
   container.registerInstance(SSLService, sslService);
 
   // Monitoring services
@@ -260,6 +274,7 @@ export async function initializeContainer(): Promise<void> {
 
   // Group service (injectable — resolve from container)
   const groupService = container.resolve(GroupService);
+  groupService.setEventBus(eventBus);
 
   // AI Service (depends on many services above)
   const aiService = new AIService(
