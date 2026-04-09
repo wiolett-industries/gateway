@@ -1,5 +1,5 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Fragment, useEffect, useMemo, useRef, type ReactNode } from "react";
+import { Fragment, type ReactNode, useEffect, useMemo, useRef } from "react";
 
 export interface DataTableColumn<T> {
   key: string;
@@ -169,7 +169,9 @@ export function DataTable<T>({
                     <div
                       key={col.key}
                       className={`px-4 py-3 text-sm ${col.align === "right" ? "text-right" : ""} ${
-                        col.truncate ? "overflow-hidden text-ellipsis whitespace-nowrap min-w-0" : "min-w-0"
+                        col.truncate
+                          ? "overflow-hidden text-ellipsis whitespace-nowrap min-w-0"
+                          : "min-w-0"
                       } ${col.className ?? ""}`}
                     >
                       {col.render(item.row)}

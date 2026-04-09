@@ -149,9 +149,10 @@ export class DockerRegistryService {
     try {
       const baseUrl = row.url.replace(/\/+$/, '');
       const v2Url = `${baseUrl}/v2/`;
-      const basicAuth = row.username && row.encryptedPassword
-        ? `Basic ${Buffer.from(`${row.username}:${this.decryptPassword(row.encryptedPassword)}`).toString('base64')}`
-        : '';
+      const basicAuth =
+        row.username && row.encryptedPassword
+          ? `Basic ${Buffer.from(`${row.username}:${this.decryptPassword(row.encryptedPassword)}`).toString('base64')}`
+          : '';
 
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 10000);
@@ -208,9 +209,8 @@ export class DockerRegistryService {
     try {
       const baseUrl = url.replace(/\/+$/, '');
       const v2Url = `${baseUrl}/v2/`;
-      const basicAuth = username && password
-        ? `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`
-        : '';
+      const basicAuth =
+        username && password ? `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}` : '';
 
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 10000);
@@ -290,11 +290,13 @@ export class DockerRegistryService {
     const [row] = await this.db.select().from(dockerRegistries).where(eq(dockerRegistries.id, registryId)).limit(1);
     if (!row || !row.username || !row.encryptedPassword) return null;
     const password = this.decryptPassword(row.encryptedPassword);
-    const authJson = Buffer.from(JSON.stringify({
-      username: row.username,
-      password,
-      serveraddress: row.url,
-    })).toString('base64');
+    const authJson = Buffer.from(
+      JSON.stringify({
+        username: row.username,
+        password,
+        serveraddress: row.url,
+      })
+    ).toString('base64');
     return { url: row.url.replace(/^https?:\/\//, '').replace(/\/+$/, ''), authJson };
   }
 

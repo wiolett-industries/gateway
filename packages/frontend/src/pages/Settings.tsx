@@ -282,8 +282,14 @@ export function Settings() {
     loadHousekeeping();
     loadAIConfig();
     loadRegistries();
-    api.listNodes({ limit: 100 }).then((r) => setNodesList(r.data ?? [])).catch(() => {});
-    api.listProxyHosts({ limit: 100 }).then((r) => setProxyHostsList(r.data ?? [])).catch(() => {});
+    api
+      .listNodes({ limit: 100 })
+      .then((r) => setNodesList(r.data ?? []))
+      .catch(() => {});
+    api
+      .listProxyHosts({ limit: 100 })
+      .then((r) => setProxyHostsList(r.data ?? []))
+      .catch(() => {});
     // biome-ignore lint/correctness/useExhaustiveDependencies: load-once pattern
   }, [loadHousekeeping, loadAIConfig, fetchStatus, loadTokens, loadRegistries]);
 
@@ -337,7 +343,9 @@ export function Settings() {
           password: regPassword || undefined,
         });
         if (!testResult.ok) {
-          toast.error(`Connection test failed: ${testResult.error || "could not connect to registry"}`);
+          toast.error(
+            `Connection test failed: ${testResult.error || "could not connect to registry"}`
+          );
           setRegSaving(false);
           return;
         }
@@ -414,10 +422,23 @@ export function Settings() {
     const res: Record<string, string[]> = {};
     for (const s of token.scopes || []) {
       const restrictable = [
-        "pki:cert:issue", "pki:cert:revoke", "pki:cert:export", "pki:ca:create:intermediate",
-        "proxy:view", "proxy:edit", "proxy:delete", "proxy:advanced",
-        "proxy:raw:read", "proxy:raw:write", "proxy:raw:toggle",
-        "nodes:details", "nodes:config:view", "nodes:config:edit", "nodes:logs", "nodes:rename", "nodes:delete",
+        "pki:cert:issue",
+        "pki:cert:revoke",
+        "pki:cert:export",
+        "pki:ca:create:intermediate",
+        "proxy:view",
+        "proxy:edit",
+        "proxy:delete",
+        "proxy:advanced",
+        "proxy:raw:read",
+        "proxy:raw:write",
+        "proxy:raw:toggle",
+        "nodes:details",
+        "nodes:config:view",
+        "nodes:config:edit",
+        "nodes:logs",
+        "nodes:rename",
+        "nodes:delete",
       ];
       let matched = false;
       for (const b of restrictable) {
@@ -651,19 +672,25 @@ export function Settings() {
                         <div className="flex items-center gap-2">
                           <p className="text-sm font-medium">{token.name}</p>
                           <Badge variant="secondary" className="text-[10px] py-0.5">
-                            {(token.scopes || []).length} {(token.scopes || []).length === 1 ? "SCOPE" : "SCOPES"}
+                            {(token.scopes || []).length}{" "}
+                            {(token.scopes || []).length === 1 ? "SCOPE" : "SCOPES"}
                           </Badge>
                         </div>
                         <p className="text-xs text-muted-foreground">
                           {token.tokenPrefix}... &middot; Created {formatDate(token.createdAt)}
-                          {token.lastUsedAt ? ` · Last used ${formatRelativeDate(token.lastUsedAt)}` : " · Never used"}
+                          {token.lastUsedAt
+                            ? ` · Last used ${formatRelativeDate(token.lastUsedAt)}`
+                            : " · Never used"}
                         </p>
                       </div>
                     </div>
                     <Button
                       variant="outline"
                       size="icon"
-                      onClick={(e) => { e.stopPropagation(); handleRevokeToken(token); }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRevokeToken(token);
+                      }}
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
@@ -1042,8 +1069,15 @@ export function Settings() {
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
                             <p className="text-sm font-medium">{r.name}</p>
-                            <Badge variant={r.scope === "global" ? "default" : "secondary"} className="text-[10px] py-0.5">
-                              {r.scope === "global" ? "Global" : nodesList.find((n) => n.id === r.nodeId)?.displayName || nodesList.find((n) => n.id === r.nodeId)?.hostname || "Node"}
+                            <Badge
+                              variant={r.scope === "global" ? "default" : "secondary"}
+                              className="text-[10px] py-0.5"
+                            >
+                              {r.scope === "global"
+                                ? "Global"
+                                : nodesList.find((n) => n.id === r.nodeId)?.displayName ||
+                                  nodesList.find((n) => n.id === r.nodeId)?.hostname ||
+                                  "Node"}
                             </Badge>
                           </div>
                           <p className="text-xs text-muted-foreground">
@@ -1052,7 +1086,10 @@ export function Settings() {
                           </p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+                      <div
+                        className="flex items-center gap-2 shrink-0"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <Button
                           variant="outline"
                           size="default"
@@ -1066,11 +1103,7 @@ export function Settings() {
                           )}
                           Test
                         </Button>
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          onClick={() => handleRegDelete(r)}
-                        >
+                        <Button variant="outline" size="icon" onClick={() => handleRegDelete(r)}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
@@ -1568,11 +1601,21 @@ export function Settings() {
         </Dialog>
 
         {/* Create/View Token Dialog */}
-        <Dialog open={createDialogOpen} onOpenChange={(open) => { setCreateDialogOpen(open); if (!open) setTimeout(() => setEditingToken(null), 200); }}>
+        <Dialog
+          open={createDialogOpen}
+          onOpenChange={(open) => {
+            setCreateDialogOpen(open);
+            if (!open) setTimeout(() => setEditingToken(null), 200);
+          }}
+        >
           <DialogContent className="sm:max-w-2xl">
             <DialogHeader>
               <DialogTitle>{editingToken ? "API Token" : "Create API Token"}</DialogTitle>
-              <DialogDescription>{editingToken ? "View token scopes or rename" : "Select granular permissions for this token"}</DialogDescription>
+              <DialogDescription>
+                {editingToken
+                  ? "View token scopes or rename"
+                  : "Select granular permissions for this token"}
+              </DialogDescription>
             </DialogHeader>
 
             {createdSecret ? (
@@ -1622,12 +1665,15 @@ export function Settings() {
                       className="border-0 border-b border-border rounded-none h-9 text-sm focus-visible:ring-0"
                     />
                     <ScopeList
-                      scopes={editingToken
-                        ? TOKEN_SCOPES.filter((s) => selectedScopes.includes(s.value))
-                        : TOKEN_SCOPES.filter((s) => {
-                            const userScopes = user?.scopes ?? [];
-                            return userScopes.some((us) => us === s.value || us.startsWith(s.value));
-                          })
+                      scopes={
+                        editingToken
+                          ? TOKEN_SCOPES.filter((s) => selectedScopes.includes(s.value))
+                          : TOKEN_SCOPES.filter((s) => {
+                              const userScopes = user?.scopes ?? [];
+                              return userScopes.some(
+                                (us) => us === s.value || us.startsWith(s.value)
+                              );
+                            })
                       }
                       search={tokenScopeSearch}
                       selected={selectedScopes}

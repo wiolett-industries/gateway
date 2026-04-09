@@ -42,7 +42,11 @@ export const usePinnedProxiesStore = create<PinnedProxiesState>()(
           const validSet = new Set(validIds);
           const newDash = s.dashboardProxyIds.filter((id) => validSet.has(id));
           const newSide = s.sidebarProxyIds.filter((id) => validSet.has(id));
-          if (newDash.length === s.dashboardProxyIds.length && newSide.length === s.sidebarProxyIds.length) return s;
+          if (
+            newDash.length === s.dashboardProxyIds.length &&
+            newSide.length === s.sidebarProxyIds.length
+          )
+            return s;
           return { dashboardProxyIds: newDash, sidebarProxyIds: newSide };
         }),
 

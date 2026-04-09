@@ -134,7 +134,7 @@ export function HealthBars({
                   ? "bg-yellow-500"
                   : status === "error"
                     ? "bg-red-400"
-                    : "bg-muted",
+                    : "bg-muted"
             )}
             title={new Date(now - (barCount - 1 - i) * bucketMs).toLocaleString(undefined, {
               hour: "2-digit",

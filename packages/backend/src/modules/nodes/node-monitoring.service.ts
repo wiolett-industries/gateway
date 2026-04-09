@@ -81,10 +81,16 @@ export class NodeMonitoringService extends EventEmitter {
         if (!cid) continue;
         const key = CONTAINER_STATS_KEY_PREFIX + cid;
         const entry = JSON.stringify({ ...stat, timestamp: Date.now() });
-        this.cache.getClient().lpush(key, entry).then(() => {
-          this.cache!.getClient().ltrim(key, 0, CONTAINER_STATS_MAX - 1);
-          this.cache!.getClient().expire(key, CONTAINER_STATS_TTL);
-        }).catch(() => { /* ignore redis errors */ });
+        this.cache
+          .getClient()
+          .lpush(key, entry)
+          .then(() => {
+            this.cache!.getClient().ltrim(key, 0, CONTAINER_STATS_MAX - 1);
+            this.cache!.getClient().expire(key, CONTAINER_STATS_TTL);
+          })
+          .catch(() => {
+            /* ignore redis errors */
+          });
       }
     }
   }
@@ -159,7 +165,10 @@ export class NodeMonitoringService extends EventEmitter {
     logger.debug('Starting 5s polling for node', { nodeId });
 
     this.pollOnce(nodeId);
-    this.pollIntervals.set(nodeId, setInterval(() => this.pollOnce(nodeId), 5000));
+    this.pollIntervals.set(
+      nodeId,
+      setInterval(() => this.pollOnce(nodeId), 5000)
+    );
   }
 
   private stopPolling(nodeId: string): void {

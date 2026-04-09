@@ -44,7 +44,7 @@ function getResourceOptions(
   scope: string,
   cas?: CA[],
   nodes?: Node[],
-  proxyHosts?: ProxyHost[],
+  proxyHosts?: ProxyHost[]
 ): ResourceOption[] {
   if (scope.startsWith("nodes:")) {
     return (nodes ?? []).map((n) => ({ id: n.id, label: n.displayName || n.hostname }));
@@ -60,7 +60,8 @@ function getResourceOptions(
 
 function getResourceLabel(scope: string): string {
   if (scope.startsWith("nodes:")) return "Restrict to specific nodes (leave unchecked for all):";
-  if (scope.startsWith("proxy:")) return "Restrict to specific proxy hosts (leave unchecked for all):";
+  if (scope.startsWith("proxy:"))
+    return "Restrict to specific proxy hosts (leave unchecked for all):";
   return "Restrict to specific CAs (leave unchecked for all):";
 }
 
@@ -83,38 +84,39 @@ export function ScopeList({
 
   // Build inherited scope items that reuse the same ScopeItem shape
   const inheritedSet = new Set(inheritedScopes ?? []);
-  const inheritedItems: ScopeItem[] = inheritedSet.size > 0
-    ? scopes.filter((s) => inheritedSet.has(s.value))
-    : [];
+  const inheritedItems: ScopeItem[] =
+    inheritedSet.size > 0 ? scopes.filter((s) => inheritedSet.has(s.value)) : [];
 
   // Filter out inherited scopes from the regular list
-  const ownScopes = inheritedSet.size > 0 ? scopes.filter((s) => !inheritedSet.has(s.value)) : scopes;
+  const ownScopes =
+    inheritedSet.size > 0 ? scopes.filter((s) => !inheritedSet.has(s.value)) : scopes;
   const categories = [...new Set(ownScopes.map((s) => s.group))];
 
-  const inheritedSection = inheritedItems.length > 0 ? (
-    <div>
-      <div className="px-3 py-1.5 bg-muted sticky top-0 z-10 border-b border-border border-t">
-        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-          Inherited{inheritedFromName ? ` from ${inheritedFromName}` : ""}
-        </p>
+  const inheritedSection =
+    inheritedItems.length > 0 ? (
+      <div>
+        <div className="px-3 py-1.5 bg-muted sticky top-0 z-10 border-b border-border border-t">
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+            Inherited{inheritedFromName ? ` from ${inheritedFromName}` : ""}
+          </p>
+        </div>
+        {inheritedItems.map((scope) => (
+          <ScopeRow
+            key={`inherited-${scope.value}`}
+            scope={scope}
+            isSelected
+            onToggle={() => {}}
+            muted
+            disabled
+            resources={resources}
+            cas={cas}
+            nodes={nodes}
+            proxyHosts={proxyHosts}
+            restrictableScopes={restrictableScopes}
+          />
+        ))}
       </div>
-      {inheritedItems.map((scope) => (
-        <ScopeRow
-          key={`inherited-${scope.value}`}
-          scope={scope}
-          isSelected
-          onToggle={() => {}}
-          muted
-          disabled
-          resources={resources}
-          cas={cas}
-          nodes={nodes}
-          proxyHosts={proxyHosts}
-          restrictableScopes={restrictableScopes}
-        />
-      ))}
-    </div>
-  ) : null;
+    ) : null;
 
   // When searching: split into matches (top) and rest (muted below)
   if (q) {
@@ -225,11 +227,15 @@ function ScopeRow({
 }) {
   const canRestrict = !disabled && (restrictableScopes?.includes(scope.value) ?? false);
   const selectedIds = resources?.[scope.value] || [];
-  const resourceOptions = canRestrict ? getResourceOptions(scope.value, cas, nodes, proxyHosts) : [];
+  const resourceOptions = canRestrict
+    ? getResourceOptions(scope.value, cas, nodes, proxyHosts)
+    : [];
 
   return (
     <div className={muted ? "opacity-40" : undefined}>
-      <label className={`flex items-center gap-3 px-3 py-2 ${disabled ? "cursor-default" : "hover:bg-accent transition-colors cursor-pointer"}`}>
+      <label
+        className={`flex items-center gap-3 px-3 py-2 ${disabled ? "cursor-default" : "hover:bg-accent transition-colors cursor-pointer"}`}
+      >
         <input
           type="checkbox"
           checked={isSelected}

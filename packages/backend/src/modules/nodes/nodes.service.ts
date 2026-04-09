@@ -20,7 +20,9 @@ export class NodesService {
   ) {}
 
   private eventBus?: EventBusService;
-  setEventBus(bus: EventBusService) { this.eventBus = bus; }
+  setEventBus(bus: EventBusService) {
+    this.eventBus = bus;
+  }
   private emitNode(id: string, action: 'created' | 'updated' | 'deleted') {
     this.eventBus?.publish('node.changed', { id, action });
   }

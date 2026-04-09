@@ -1,8 +1,6 @@
 import { useEffect } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
-import { eventStream } from "@/services/event-stream";
-import { useAuthStore } from "@/stores/auth";
 import { RequireScope } from "@/components/common/RequireScope";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { ThemeProvider } from "@/components/layout/ThemeProvider";
@@ -19,21 +17,23 @@ import { CAs } from "@/pages/CAs";
 import { CertificateDetail } from "@/pages/CertificateDetail";
 import { Certificates } from "@/pages/Certificates";
 import { Dashboard } from "@/pages/Dashboard";
+import { Docker } from "@/pages/Docker";
 import { DockerComposeLogsPopout } from "@/pages/DockerComposeLogsPopout";
 import { DockerConsolePopout } from "@/pages/DockerConsolePopout";
 import { DockerContainerDetail } from "@/pages/DockerContainerDetail";
 import { DockerFilePopout } from "@/pages/DockerFilePopout";
 import { DockerLogsPopout } from "@/pages/DockerLogsPopout";
-import { Docker } from "@/pages/Docker";
 import { Domains } from "@/pages/Domains";
 import { LoginPage } from "@/pages/Login";
 import { NginxTemplateEdit } from "@/pages/NginxTemplateEdit";
-import { TemplatesPage } from "@/pages/TemplatesPage";
+import { NodeConsolePopout } from "@/pages/NodeConsolePopout";
 import { ProxyHostDetail } from "@/pages/ProxyHostDetail";
 import { ProxyHosts } from "@/pages/ProxyHosts";
 import { Settings } from "@/pages/Settings";
-import { NodeConsolePopout } from "@/pages/NodeConsolePopout";
 import { SSLCertificates } from "@/pages/SSLCertificates";
+import { TemplatesPage } from "@/pages/TemplatesPage";
+import { eventStream } from "@/services/event-stream";
+import { useAuthStore } from "@/stores/auth";
 
 /** Helper to wrap a page element with a scope guard */
 function scoped(scope: string, element: React.ReactElement) {
@@ -63,7 +63,11 @@ function RealtimeBridge() {
       if (Array.isArray(ev?.scopes)) {
         const current = useAuthStore.getState().user;
         if (current) {
-          setUser({ ...current, scopes: ev.scopes, groupId: ev.groupId ?? current.groupId } as typeof current);
+          setUser({
+            ...current,
+            scopes: ev.scopes,
+            groupId: ev.groupId ?? current.groupId,
+          } as typeof current);
         }
       }
     });
@@ -82,30 +86,21 @@ export default function App() {
             <Route path="/login" element={<LoginPage />} />
             <Route path="/callback" element={<AuthCallback />} />
             <Route path="/blocked" element={<BlockedPage />} />
-            <Route
-              path="/docker/console/:nodeId/:containerId"
-              element={<DockerConsolePopout />}
-            />
-            <Route
-              path="/docker/logs/:nodeId/:containerId"
-              element={<DockerLogsPopout />}
-            />
-            <Route
-              path="/docker/file/:nodeId/:containerId"
-              element={<DockerFilePopout />}
-            />
+            <Route path="/docker/console/:nodeId/:containerId" element={<DockerConsolePopout />} />
+            <Route path="/docker/logs/:nodeId/:containerId" element={<DockerLogsPopout />} />
+            <Route path="/docker/file/:nodeId/:containerId" element={<DockerFilePopout />} />
             <Route
               path="/docker/compose-logs/:nodeId/:project"
               element={<DockerComposeLogsPopout />}
             />
-            <Route
-              path="/nodes/console/:nodeId"
-              element={<NodeConsolePopout />}
-            />
+            <Route path="/nodes/console/:nodeId" element={<NodeConsolePopout />} />
             <Route element={<DashboardLayout />}>
               <Route path="/" element={<Dashboard />} />
               <Route path="/proxy-hosts" element={scoped("proxy:list", <ProxyHosts />)} />
-              <Route path="/proxy-hosts/:id/:tab?" element={scoped("proxy:list", <ProxyHostDetail />)} />
+              <Route
+                path="/proxy-hosts/:id/:tab?"
+                element={scoped("proxy:list", <ProxyHostDetail />)}
+              />
               <Route
                 path="/nginx-templates/new"
                 element={scoped("proxy:edit", <NginxTemplateEdit />)}
@@ -114,7 +109,10 @@ export default function App() {
                 path="/nginx-templates/:id"
                 element={scoped("proxy:list", <NginxTemplateEdit />)}
               />
-              <Route path="/ssl-certificates" element={scoped("ssl:cert:list", <SSLCertificates />)} />
+              <Route
+                path="/ssl-certificates"
+                element={scoped("ssl:cert:list", <SSLCertificates />)}
+              />
               <Route path="/domains" element={scoped("proxy:list", <Domains />)} />
               <Route path="/access-lists" element={scoped("acl:list", <AccessLists />)} />
               <Route path="/cas" element={scoped("pki:ca:list:root", <CAs />)} />

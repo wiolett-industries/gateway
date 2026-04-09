@@ -1,7 +1,7 @@
-import { useAuthStore } from "@/stores/auth";
-import { api } from "@/services/api";
-import { TerminalConsole } from "@/components/terminal/TerminalConsole";
 import { useCallback } from "react";
+import { TerminalConsole } from "@/components/terminal/TerminalConsole";
+import { api } from "@/services/api";
+import { useAuthStore } from "@/stores/auth";
 
 export function ConsoleTab({ nodeId, containerId }: { nodeId: string; containerId: string }) {
   const { hasScope } = useAuthStore();

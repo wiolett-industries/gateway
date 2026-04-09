@@ -9,7 +9,6 @@ import { SearchFilterBar } from "@/components/common/SearchFilterBar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
-import { RefreshButton } from "@/components/ui/refresh-button";
 import {
   Dialog,
   DialogContent,
@@ -19,6 +18,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { RefreshButton } from "@/components/ui/refresh-button";
 import {
   Select,
   SelectContent,
@@ -36,16 +36,18 @@ interface LabelEntry {
   value: string;
 }
 
-export function DockerVolumes({ embedded, onCreateRef, fixedNodeId }: { embedded?: boolean; onCreateRef?: (fn: () => void) => void; fixedNodeId?: string } = {}) {
+export function DockerVolumes({
+  embedded,
+  onCreateRef,
+  fixedNodeId,
+}: {
+  embedded?: boolean;
+  onCreateRef?: (fn: () => void) => void;
+  fixedNodeId?: string;
+} = {}) {
   const navigate = useNavigate();
   const { hasScope } = useAuthStore();
-  const {
-    volumes,
-    selectedNodeId,
-    isLoading,
-    setSelectedNode,
-    fetchVolumes,
-  } = useDockerStore();
+  const { volumes, selectedNodeId, isLoading, setSelectedNode, fetchVolumes } = useDockerStore();
 
   const [dockerNodes, setDockerNodes] = useState<Node[]>([]);
   const [search, setSearch] = useState("");
@@ -53,8 +55,13 @@ export function DockerVolumes({ embedded, onCreateRef, fixedNodeId }: { embedded
   // Create dialog
   const [createOpen, setCreateOpen] = useState(false);
   const [createNodeId, setCreateNodeId] = useState<string>("");
-  const openCreate = () => { setCreateNodeId(selectedNodeId || ""); setCreateOpen(true); };
-  useEffect(() => { onCreateRef?.(() => openCreate()); }, [onCreateRef]);
+  const openCreate = () => {
+    setCreateNodeId(selectedNodeId || "");
+    setCreateOpen(true);
+  };
+  useEffect(() => {
+    onCreateRef?.(() => openCreate());
+  }, [onCreateRef]);
   const [createName, setCreateName] = useState("");
   const [createDriver, setCreateDriver] = useState("local");
   const [createLabels, setCreateLabels] = useState<LabelEntry[]>([]);
@@ -63,7 +70,9 @@ export function DockerVolumes({ embedded, onCreateRef, fixedNodeId }: { embedded
   // Usage dialog
   const [usageOpen, setUsageOpen] = useState(false);
   const [usageVolume, setUsageVolume] = useState("");
-  const [usageContainers, setUsageContainers] = useState<Array<{ id: string; name: string; state: string }>>([]);
+  const [usageContainers, setUsageContainers] = useState<
+    Array<{ id: string; name: string; state: string }>
+  >([]);
   const [usageLoading, setUsageLoading] = useState(false);
 
   const showUsage = async (volumeName: string, containerNames: string[], nodeId?: string) => {
@@ -86,17 +95,21 @@ export function DockerVolumes({ embedded, onCreateRef, fixedNodeId }: { embedded
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only
   useEffect(() => {
-    if (embedded && !fixedNodeId) { return; }
-    if (fixedNodeId) { setSelectedNode(fixedNodeId); return; }
-    
+    if (embedded && !fixedNodeId) {
+      return;
+    }
+    if (fixedNodeId) {
+      setSelectedNode(fixedNodeId);
+      return;
+    }
+
     api
       .listNodes({ type: "docker", limit: 100 })
       .then((r) => {
         setDockerNodes(r.data);
         useDockerStore.getState().setDockerNodes(r.data);
       })
-      .catch(() => toast.error("Failed to load Docker nodes"))
-      ;
+      .catch(() => toast.error("Failed to load Docker nodes"));
   }, []);
 
   const location = useLocation();
@@ -112,9 +125,7 @@ export function DockerVolumes({ embedded, onCreateRef, fixedNodeId }: { embedded
     if (!search) return sorted;
     const q = search.toLowerCase();
     return sorted.filter(
-      (v) =>
-        v.name.toLowerCase().includes(q) ||
-        v.driver.toLowerCase().includes(q)
+      (v) => v.name.toLowerCase().includes(q) || v.driver.toLowerCase().includes(q)
     );
   }, [volumes, search]);
 
@@ -185,15 +196,17 @@ export function DockerVolumes({ embedded, onCreateRef, fixedNodeId }: { embedded
       {
         key: "driver",
         header: "Driver",
-        render: (v) => (
-          <span className="text-sm text-muted-foreground">{v.driver}</span>
-        ),
+        render: (v) => <span className="text-sm text-muted-foreground">{v.driver}</span>,
       },
       {
         key: "node",
         header: "Node",
         width: "140px",
-        render: (v) => <Badge variant="secondary" className="text-xs w-fit">{(v as any)._nodeName || "-"}</Badge>,
+        render: (v) => (
+          <Badge variant="secondary" className="text-xs w-fit">
+            {(v as any)._nodeName || "-"}
+          </Badge>
+        ),
       },
       {
         key: "usage",
@@ -256,7 +269,9 @@ export function DockerVolumes({ embedded, onCreateRef, fixedNodeId }: { embedded
     ],
     [hasScope, handleRemove, showUsage]
   );
-  const volumeColumns = fixedNodeId ? allVolumeColumns.filter((c) => c.key !== "node") : allVolumeColumns;
+  const volumeColumns = fixedNodeId
+    ? allVolumeColumns.filter((c) => c.key !== "node")
+    : allVolumeColumns;
 
   const content = (
     <>
@@ -266,13 +281,9 @@ export function DockerVolumes({ embedded, onCreateRef, fixedNodeId }: { embedded
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-2xl font-bold">Docker Volumes</h1>
-              {!isLoading && selectedNodeId && (
-                <Badge variant="secondary">{volumes.length}</Badge>
-              )}
+              {!isLoading && selectedNodeId && <Badge variant="secondary">{volumes.length}</Badge>}
             </div>
-            <p className="text-sm text-muted-foreground">
-              Manage Docker volumes across your nodes
-            </p>
+            <p className="text-sm text-muted-foreground">Manage Docker volumes across your nodes</p>
           </div>
           <div className="flex items-center gap-2">
             {selectedNodeId && (
@@ -296,7 +307,10 @@ export function DockerVolumes({ embedded, onCreateRef, fixedNodeId }: { embedded
         onSearchChange={setSearch}
         placeholder="Search volumes by name..."
         hasActiveFilters={search !== "" || !!selectedNodeId}
-        onReset={() => { setSearch(""); setSelectedNode(null); }}
+        onReset={() => {
+          setSearch("");
+          setSelectedNode(null);
+        }}
         filters={
           <Select
             value={selectedNodeId ?? "__all__"}
@@ -344,17 +358,27 @@ export function DockerVolumes({ embedded, onCreateRef, fixedNodeId }: { embedded
           <DialogHeader>
             <DialogTitle>Create Volume</DialogTitle>
             <DialogDescription>
-              Create a new volume on {selectedNode?.displayName || selectedNode?.hostname || "the selected node"}.
+              Create a new volume on{" "}
+              {selectedNode?.displayName || selectedNode?.hostname || "the selected node"}.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <label className="text-sm font-medium">Node <span className="text-destructive">*</span></label>
+              <label className="text-sm font-medium">
+                Node <span className="text-destructive">*</span>
+              </label>
               <Select value={createNodeId} onValueChange={setCreateNodeId}>
-                <SelectTrigger className="mt-1"><SelectValue placeholder="Select a node" /></SelectTrigger>
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Select a node" />
+                </SelectTrigger>
                 <SelectContent>
-                  {(useDockerStore.getState().dockerNodes.length > 0 ? useDockerStore.getState().dockerNodes : dockerNodes).map((n) => (
-                    <SelectItem key={n.id} value={n.id}>{n.displayName || n.hostname}</SelectItem>
+                  {(useDockerStore.getState().dockerNodes.length > 0
+                    ? useDockerStore.getState().dockerNodes
+                    : dockerNodes
+                  ).map((n) => (
+                    <SelectItem key={n.id} value={n.id}>
+                      {n.displayName || n.hostname}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -429,8 +453,13 @@ export function DockerVolumes({ embedded, onCreateRef, fixedNodeId }: { embedded
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={closeCreate}>Cancel</Button>
-            <Button onClick={handleCreate} disabled={creating || !createName.trim() || !createNodeId}>
+            <Button variant="outline" onClick={closeCreate}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCreate}
+              disabled={creating || !createName.trim() || !createNodeId}
+            >
               {creating ? "Creating..." : "Create"}
             </Button>
           </DialogFooter>
@@ -462,7 +491,10 @@ export function DockerVolumes({ embedded, onCreateRef, fixedNodeId }: { embedded
                     <p className="text-sm font-medium truncate">{c.name}</p>
                     <p className="text-xs font-mono text-muted-foreground">{c.id.slice(0, 12)}</p>
                   </div>
-                  <Badge variant={c.state === "running" ? "success" : "secondary"} className="text-xs shrink-0">
+                  <Badge
+                    variant={c.state === "running" ? "success" : "secondary"}
+                    className="text-xs shrink-0"
+                  >
                     {c.state}
                   </Badge>
                 </div>

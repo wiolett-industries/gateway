@@ -105,7 +105,13 @@ const navigationGroups: NavGroup[] = [
   {
     label: "Management",
     items: [
-      { name: "Docker", href: "/docker", icon: Box, scope: "docker:containers:list", matchTabs: true },
+      {
+        name: "Docker",
+        href: "/docker",
+        icon: Box,
+        scope: "docker:containers:list",
+        matchTabs: true,
+      },
       { name: "Templates", href: "/templates", icon: Award, matchTabs: true },
       { name: "Nodes", href: "/nodes", icon: Server, scope: "nodes:list" },
       { name: "Access Lists", href: "/access-lists", icon: ShieldAlert, scope: "acl:list" },
@@ -416,109 +422,124 @@ function SidebarContent({
                   {groupIndex > 0 && <Separator />}
 
                   {/* Pinned items — right after Dashboard */}
-                  {groupIndex === 1 && (pinnedNodes.length > 0 || pinnedProxies.length > 0 || sidebarPinnedContainerIds.length > 0) && (
-                    <>
-                      <nav className="space-y-0.5 px-2 py-2">
-                        <p className="px-3 py-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                          Pinned Items
-                        </p>
-                        {pinnedProxies.map((proxy) => {
-                          const isActive = location.pathname === `/proxy-hosts/${proxy.id}` || location.pathname.startsWith(`/proxy-hosts/${proxy.id}/`);
-                          const hs = (proxy as any).effectiveHealthStatus ?? proxy.healthStatus;
-                          return (
-                            <Link
-                              key={proxy.id}
-                              to={`/proxy-hosts/${proxy.id}`}
-                              onClick={onNavigate}
-                              className={cn(
-                                "flex items-center gap-3 px-3 py-2 text-sm transition-colors whitespace-nowrap overflow-hidden",
-                                isActive
-                                  ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-                                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                              )}
-                            >
-                              <Globe className="h-4 w-4 shrink-0" />
-                              <span className="truncate">{proxy.domainNames[0]}</span>
-                              <span
+                  {groupIndex === 1 &&
+                    (pinnedNodes.length > 0 ||
+                      pinnedProxies.length > 0 ||
+                      sidebarPinnedContainerIds.length > 0) && (
+                      <>
+                        <nav className="space-y-0.5 px-2 py-2">
+                          <p className="px-3 py-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                            Pinned Items
+                          </p>
+                          {pinnedProxies.map((proxy) => {
+                            const isActive =
+                              location.pathname === `/proxy-hosts/${proxy.id}` ||
+                              location.pathname.startsWith(`/proxy-hosts/${proxy.id}/`);
+                            const hs = (proxy as any).effectiveHealthStatus ?? proxy.healthStatus;
+                            return (
+                              <Link
+                                key={proxy.id}
+                                to={`/proxy-hosts/${proxy.id}`}
+                                onClick={onNavigate}
                                 className={cn(
-                                  "ml-auto h-2 w-2 rounded-full shrink-0",
-                                  hs === "online"
-                                    ? "bg-emerald-500"
-                                    : hs === "offline" || hs === "degraded"
-                                      ? "bg-red-400"
-                                      : "bg-muted-foreground/40"
+                                  "flex items-center gap-3 px-3 py-2 text-sm transition-colors whitespace-nowrap overflow-hidden",
+                                  isActive
+                                    ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                                 )}
-                              />
-                            </Link>
-                          );
-                        })}
-                        {pinnedNodes.map((node) => {
-                          const isActive = location.pathname === `/nodes/${node.id}` || location.pathname.startsWith(`/nodes/${node.id}/`);
-                          return (
-                            <Link
-                              key={node.id}
-                              to={`/nodes/${node.id}`}
-                              onClick={onNavigate}
-                              className={cn(
-                                "flex items-center gap-3 px-3 py-2 text-sm transition-colors whitespace-nowrap overflow-hidden",
-                                isActive
-                                  ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-                                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                              )}
-                            >
-                              <Server className="h-4 w-4 shrink-0" />
-                              <span className="truncate">{node.displayName || node.hostname}</span>
-                              <span
-                                className={cn(
-                                  "ml-auto h-2 w-2 rounded-full shrink-0",
-                                  node.status === "online"
-                                    ? "bg-emerald-500"
-                                    : node.status === "error"
-                                      ? "bg-red-400"
-                                      : "bg-muted-foreground/40"
-                                )}
-                              />
-                            </Link>
-                          );
-                        })}
-                        {sidebarPinnedContainerIds.map((cid) => {
-                          const meta = pinnedContainerMeta[cid];
-                          if (!meta) return null;
-                          const containerPath = `/docker/containers/${meta.nodeId}/${cid}`;
-                          const isActive = location.pathname === containerPath || location.pathname.startsWith(containerPath + "/");
-                          return (
-                            <Link
-                              key={cid}
-                              to={`/docker/containers/${meta.nodeId}/${cid}`}
-                              onClick={onNavigate}
-                              className={cn(
-                                "flex items-center gap-3 px-3 py-2 text-sm transition-colors whitespace-nowrap overflow-hidden",
-                                isActive
-                                  ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-                                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                              )}
-                            >
-                              <Box className="h-4 w-4 shrink-0" />
-                              <span className="truncate">{meta.name}</span>
-                              <span
-                                className={cn(
-                                  "ml-auto h-2 w-2 rounded-full shrink-0",
-                                  meta.state === "running"
-                                    ? "bg-emerald-500"
-                                    : meta.state === "exited" || meta.state === "dead"
-                                      ? "bg-red-400"
-                                      : meta.state === "stopping" || meta.state === "restarting" || meta.state === "recreating" || meta.state === "killing" || meta.state === "updating"
-                                        ? "bg-amber-400 animate-pulse"
+                              >
+                                <Globe className="h-4 w-4 shrink-0" />
+                                <span className="truncate">{proxy.domainNames[0]}</span>
+                                <span
+                                  className={cn(
+                                    "ml-auto h-2 w-2 rounded-full shrink-0",
+                                    hs === "online"
+                                      ? "bg-emerald-500"
+                                      : hs === "offline" || hs === "degraded"
+                                        ? "bg-red-400"
                                         : "bg-muted-foreground/40"
+                                  )}
+                                />
+                              </Link>
+                            );
+                          })}
+                          {pinnedNodes.map((node) => {
+                            const isActive =
+                              location.pathname === `/nodes/${node.id}` ||
+                              location.pathname.startsWith(`/nodes/${node.id}/`);
+                            return (
+                              <Link
+                                key={node.id}
+                                to={`/nodes/${node.id}`}
+                                onClick={onNavigate}
+                                className={cn(
+                                  "flex items-center gap-3 px-3 py-2 text-sm transition-colors whitespace-nowrap overflow-hidden",
+                                  isActive
+                                    ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                                 )}
-                              />
-                            </Link>
-                          );
-                        })}
-                      </nav>
-                      <Separator />
-                    </>
-                  )}
+                              >
+                                <Server className="h-4 w-4 shrink-0" />
+                                <span className="truncate">
+                                  {node.displayName || node.hostname}
+                                </span>
+                                <span
+                                  className={cn(
+                                    "ml-auto h-2 w-2 rounded-full shrink-0",
+                                    node.status === "online"
+                                      ? "bg-emerald-500"
+                                      : node.status === "error"
+                                        ? "bg-red-400"
+                                        : "bg-muted-foreground/40"
+                                  )}
+                                />
+                              </Link>
+                            );
+                          })}
+                          {sidebarPinnedContainerIds.map((cid) => {
+                            const meta = pinnedContainerMeta[cid];
+                            if (!meta) return null;
+                            const containerPath = `/docker/containers/${meta.nodeId}/${cid}`;
+                            const isActive =
+                              location.pathname === containerPath ||
+                              location.pathname.startsWith(containerPath + "/");
+                            return (
+                              <Link
+                                key={cid}
+                                to={`/docker/containers/${meta.nodeId}/${cid}`}
+                                onClick={onNavigate}
+                                className={cn(
+                                  "flex items-center gap-3 px-3 py-2 text-sm transition-colors whitespace-nowrap overflow-hidden",
+                                  isActive
+                                    ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                                )}
+                              >
+                                <Box className="h-4 w-4 shrink-0" />
+                                <span className="truncate">{meta.name}</span>
+                                <span
+                                  className={cn(
+                                    "ml-auto h-2 w-2 rounded-full shrink-0",
+                                    meta.state === "running"
+                                      ? "bg-emerald-500"
+                                      : meta.state === "exited" || meta.state === "dead"
+                                        ? "bg-red-400"
+                                        : meta.state === "stopping" ||
+                                            meta.state === "restarting" ||
+                                            meta.state === "recreating" ||
+                                            meta.state === "killing" ||
+                                            meta.state === "updating"
+                                          ? "bg-amber-400 animate-pulse"
+                                          : "bg-muted-foreground/40"
+                                  )}
+                                />
+                              </Link>
+                            );
+                          })}
+                        </nav>
+                        <Separator />
+                      </>
+                    )}
                   <nav className="space-y-0.5 px-2 py-2">
                     {groupIndex > 0 && (
                       <p className="px-3 py-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
@@ -526,7 +547,11 @@ function SidebarContent({
                       </p>
                     )}
                     {group.items.map((item) => {
-                      const isActive = location.pathname === item.href || (item.matchTabs && location.pathname.startsWith(item.href + "/") && !location.pathname.slice(item.href.length + 1).includes("/"));
+                      const isActive =
+                        location.pathname === item.href ||
+                        (item.matchTabs &&
+                          location.pathname.startsWith(item.href + "/") &&
+                          !location.pathname.slice(item.href.length + 1).includes("/"));
                       return (
                         <Link
                           key={item.href}
@@ -696,10 +721,13 @@ export function DashboardLayout() {
         api.prefetchAll(hasAdminScopes);
         // Preload Docker containers for command palette
         if (user.scopes?.some((s: string) => s.startsWith("docker:"))) {
-          api.listNodes({ type: "docker", limit: 100 }).then((r) => {
-            useDockerStore.getState().setDockerNodes(r.data);
-            if (r.data.length > 0) useDockerStore.getState().fetchContainers();
-          }).catch(() => {});
+          api
+            .listNodes({ type: "docker", limit: 100 })
+            .then((r) => {
+              useDockerStore.getState().setDockerNodes(r.data);
+              if (r.data.length > 0) useDockerStore.getState().fetchContainers();
+            })
+            .catch(() => {});
         }
         // Fetch update status into global store
         if (user.scopes?.includes("admin:update")) useUpdateStore.getState().fetchStatus();
@@ -744,15 +772,22 @@ export function DashboardLayout() {
       const nodeMatch = path.match(/^\/nodes\/([0-9a-f-]{36})/);
       if (nodeMatch) {
         // Resolve name asynchronously, update label after fetch
-        api.getNode(nodeMatch[1]).then((n) => {
-          const resolvedName = n.displayName || n.hostname;
-          const tab2 = path.split("/")[3];
-          const resolvedLabel = tab2 ? `Node: ${resolvedName} / ${tab2.charAt(0).toUpperCase() + tab2.slice(1).replace(/-/g, " ")}` : `Node: ${resolvedName}`;
-          useUIStore.getState().addRecentPage(path, resolvedLabel);
-        }).catch(() => {});
+        api
+          .getNode(nodeMatch[1])
+          .then((n) => {
+            const resolvedName = n.displayName || n.hostname;
+            const tab2 = path.split("/")[3];
+            const resolvedLabel = tab2
+              ? `Node: ${resolvedName} / ${tab2.charAt(0).toUpperCase() + tab2.slice(1).replace(/-/g, " ")}`
+              : `Node: ${resolvedName}`;
+            useUIStore.getState().addRecentPage(path, resolvedLabel);
+          })
+          .catch(() => {});
         const name = nodeMatch[1].slice(0, 8);
         const tab = path.split("/")[3];
-        return tab ? `Node: ${name} / ${tab.charAt(0).toUpperCase() + tab.slice(1).replace(/-/g, " ")}` : `Node: ${name}`;
+        return tab
+          ? `Node: ${name} / ${tab.charAt(0).toUpperCase() + tab.slice(1).replace(/-/g, " ")}`
+          : `Node: ${name}`;
       }
       // Container detail: /docker/containers/:nodeId/:containerId
       const containerMatch = path.match(/^\/docker\/containers\/[^/]+\/([0-9a-f]+)/);
@@ -760,20 +795,29 @@ export function DashboardLayout() {
         const c = useDockerStore.getState().containers.find((ct) => ct.id === containerMatch[1]);
         const name = c?.name || containerMatch[1].slice(0, 12);
         const tab = path.split("/")[5];
-        return tab ? `Container: ${name} / ${tab.charAt(0).toUpperCase() + tab.slice(1)}` : `Container: ${name}`;
+        return tab
+          ? `Container: ${name} / ${tab.charAt(0).toUpperCase() + tab.slice(1)}`
+          : `Container: ${name}`;
       }
       // Proxy host detail: /proxy-hosts/:id
       const proxyMatch = path.match(/^\/proxy-hosts\/([0-9a-f-]{36})/);
       if (proxyMatch) {
-        api.getProxyHost(proxyMatch[1]).then((p) => {
-          const resolvedName = p.domainNames?.[0] || proxyMatch![1].slice(0, 8);
-          const tab2 = path.split("/")[3];
-          const resolvedLabel = tab2 ? `Proxy: ${resolvedName} / ${tab2.charAt(0).toUpperCase() + tab2.slice(1)}` : `Proxy: ${resolvedName}`;
-          useUIStore.getState().addRecentPage(path, resolvedLabel);
-        }).catch(() => {});
+        api
+          .getProxyHost(proxyMatch[1])
+          .then((p) => {
+            const resolvedName = p.domainNames?.[0] || proxyMatch![1].slice(0, 8);
+            const tab2 = path.split("/")[3];
+            const resolvedLabel = tab2
+              ? `Proxy: ${resolvedName} / ${tab2.charAt(0).toUpperCase() + tab2.slice(1)}`
+              : `Proxy: ${resolvedName}`;
+            useUIStore.getState().addRecentPage(path, resolvedLabel);
+          })
+          .catch(() => {});
         const name = proxyMatch[1].slice(0, 8);
         const tab = path.split("/")[3];
-        return tab ? `Proxy: ${name} / ${tab.charAt(0).toUpperCase() + tab.slice(1)}` : `Proxy: ${name}`;
+        return tab
+          ? `Proxy: ${name} / ${tab.charAt(0).toUpperCase() + tab.slice(1)}`
+          : `Proxy: ${name}`;
       }
       // CA detail: /cas/:id
       const caMatch = path.match(/^\/cas\/([0-9a-f-]{36})/);

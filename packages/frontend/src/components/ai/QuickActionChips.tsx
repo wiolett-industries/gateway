@@ -48,15 +48,9 @@ const QUICK_ACTIONS: Record<string, QuickAction[]> = {
     { label: "List containers", prompt: "List all Docker containers across all nodes" },
     { label: "Container status", prompt: "Show a summary of running and stopped containers" },
   ],
-  "/docker/images": [
-    { label: "List images", prompt: "List all Docker images" },
-  ],
-  "/docker/volumes": [
-    { label: "List volumes", prompt: "List all Docker volumes" },
-  ],
-  "/docker/networks": [
-    { label: "List networks", prompt: "List all Docker networks" },
-  ],
+  "/docker/images": [{ label: "List images", prompt: "List all Docker images" }],
+  "/docker/volumes": [{ label: "List volumes", prompt: "List all Docker volumes" }],
+  "/docker/networks": [{ label: "List networks", prompt: "List all Docker networks" }],
 };
 
 const DEFAULT_ACTIONS: QuickAction[] = [

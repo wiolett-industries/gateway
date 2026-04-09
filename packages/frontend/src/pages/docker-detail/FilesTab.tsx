@@ -54,96 +54,112 @@ export function FilesTab({ nodeId, containerId }: { nodeId: string; containerId:
   useEffect(() => {
     let cancelled = false;
     setIsLoading(true);
-    fetchDir("/").then((nodes) => {
-      if (!cancelled) {
-        setRoots(nodes);
-        setIsLoading(false);
-      }
-    }).catch(() => {
-      if (!cancelled) setIsLoading(false);
-    });
-    return () => { cancelled = true; };
+    fetchDir("/")
+      .then((nodes) => {
+        if (!cancelled) {
+          setRoots(nodes);
+          setIsLoading(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setIsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [fetchDir]);
 
   // Toggle a directory open/closed
-  const toggleDir = useCallback(async (path: string) => {
-    const updateNodes = (nodes: TreeNode[]): TreeNode[] =>
-      nodes.map((node) => {
-        if (node.path === path) {
-          if (node.expanded) {
-            // Collapse
-            return { ...node, expanded: false };
+  const toggleDir = useCallback(
+    async (path: string) => {
+      const updateNodes = (nodes: TreeNode[]): TreeNode[] =>
+        nodes.map((node) => {
+          if (node.path === path) {
+            if (node.expanded) {
+              // Collapse
+              return { ...node, expanded: false };
+            }
+            // Expand — load children if needed
+            if (node.children === null) {
+              return { ...node, loading: true, expanded: true };
+            }
+            return { ...node, expanded: true };
           }
-          // Expand — load children if needed
-          if (node.children === null) {
-            return { ...node, loading: true, expanded: true };
+          if (node.children && node.expanded) {
+            return { ...node, children: updateNodes(node.children) };
           }
-          return { ...node, expanded: true };
-        }
-        if (node.children && node.expanded) {
-          return { ...node, children: updateNodes(node.children) };
-        }
-        return node;
-      });
-
-    setRoots((prev) => updateNodes(prev));
-
-    // Find the node to check if it needs loading
-    const findNode = (nodes: TreeNode[]): TreeNode | null => {
-      for (const n of nodes) {
-        if (n.path === path) return n;
-        if (n.children && n.expanded) {
-          const found = findNode(n.children);
-          if (found) return found;
-        }
-      }
-      return null;
-    };
-
-    // We need to check current state — use a callback pattern
-    setRoots((prev) => {
-      const node = findNode(prev);
-      if (node && node.loading) {
-        // Fetch in background, then update
-        fetchDir(path).then((children) => {
-          const setChildren = (nodes: TreeNode[]): TreeNode[] =>
-            nodes.map((n) => {
-              if (n.path === path) {
-                return { ...n, children, loading: false };
-              }
-              if (n.children && n.expanded) {
-                return { ...n, children: setChildren(n.children) };
-              }
-              return n;
-            });
-          setRoots((curr) => setChildren(curr));
-        }).catch(() => {
-          const setError = (nodes: TreeNode[]): TreeNode[] =>
-            nodes.map((n) => {
-              if (n.path === path) {
-                return { ...n, children: [], loading: false, expanded: false };
-              }
-              if (n.children && n.expanded) {
-                return { ...n, children: setError(n.children) };
-              }
-              return n;
-            });
-          setRoots((curr) => setError(curr));
-          toast.error("Failed to list directory");
+          return node;
         });
-      }
-      return prev; // no mutation here, async handles it
-    });
-  }, [fetchDir]);
+
+      setRoots((prev) => updateNodes(prev));
+
+      // Find the node to check if it needs loading
+      const findNode = (nodes: TreeNode[]): TreeNode | null => {
+        for (const n of nodes) {
+          if (n.path === path) return n;
+          if (n.children && n.expanded) {
+            const found = findNode(n.children);
+            if (found) return found;
+          }
+        }
+        return null;
+      };
+
+      // We need to check current state — use a callback pattern
+      setRoots((prev) => {
+        const node = findNode(prev);
+        if (node && node.loading) {
+          // Fetch in background, then update
+          fetchDir(path)
+            .then((children) => {
+              const setChildren = (nodes: TreeNode[]): TreeNode[] =>
+                nodes.map((n) => {
+                  if (n.path === path) {
+                    return { ...n, children, loading: false };
+                  }
+                  if (n.children && n.expanded) {
+                    return { ...n, children: setChildren(n.children) };
+                  }
+                  return n;
+                });
+              setRoots((curr) => setChildren(curr));
+            })
+            .catch(() => {
+              const setError = (nodes: TreeNode[]): TreeNode[] =>
+                nodes.map((n) => {
+                  if (n.path === path) {
+                    return { ...n, children: [], loading: false, expanded: false };
+                  }
+                  if (n.children && n.expanded) {
+                    return { ...n, children: setError(n.children) };
+                  }
+                  return n;
+                });
+              setRoots((curr) => setError(curr));
+              toast.error("Failed to list directory");
+            });
+        }
+        return prev; // no mutation here, async handles it
+      });
+    },
+    [fetchDir]
+  );
 
   // Open file in a separate window
-  const openFile = useCallback((filePath: string, writable?: boolean) => {
-    const params = new URLSearchParams({ path: filePath });
-    if (writable) params.set("writable", "1");
-    const url = `/docker/file/${nodeId}/${containerId}?${params}`;
-    const fileName = filePath.split("/").pop() || "file";
-    window.open(url, `file-${containerId}-${fileName}`, "width=900,height=600,menubar=no,toolbar=no");
-  }, [nodeId, containerId]);
+  const openFile = useCallback(
+    (filePath: string, writable?: boolean) => {
+      const params = new URLSearchParams({ path: filePath });
+      if (writable) params.set("writable", "1");
+      const url = `/docker/file/${nodeId}/${containerId}?${params}`;
+      const fileName = filePath.split("/").pop() || "file";
+      window.open(
+        url,
+        `file-${containerId}-${fileName}`,
+        "width=900,height=600,menubar=no,toolbar=no"
+      );
+    },
+    [nodeId, containerId]
+  );
 
   if (!hasScope("docker:containers:files")) {
     return (
@@ -161,8 +177,12 @@ export function FilesTab({ nodeId, containerId }: { nodeId: string; containerId:
             <thead>
               <tr className="border-b border-border text-left">
                 <th className="p-3 text-xs font-medium text-muted-foreground">Name</th>
-                <th className="p-3 text-xs font-medium text-muted-foreground w-24 text-right">Size</th>
-                <th className="p-3 text-xs font-medium text-muted-foreground w-44">Last Modified</th>
+                <th className="p-3 text-xs font-medium text-muted-foreground w-24 text-right">
+                  Size
+                </th>
+                <th className="p-3 text-xs font-medium text-muted-foreground w-44">
+                  Last Modified
+                </th>
                 <th className="p-3 text-xs font-medium text-muted-foreground w-28">Mode</th>
               </tr>
             </thead>
@@ -182,20 +202,20 @@ export function FilesTab({ nodeId, containerId }: { nodeId: string; containerId:
                   </td>
                 </tr>
               )}
-              {!isLoading && roots.map((node) => (
-                <TreeRow
-                  key={node.path}
-                  node={node}
-                  depth={0}
-                  onToggle={toggleDir}
-                  onOpenFile={openFile}
-                />
-              ))}
+              {!isLoading &&
+                roots.map((node) => (
+                  <TreeRow
+                    key={node.path}
+                    node={node}
+                    depth={0}
+                    onToggle={toggleDir}
+                    onOpenFile={openFile}
+                  />
+                ))}
             </tbody>
           </table>
         </div>
       </div>
-
     </div>
   );
 }
@@ -234,9 +254,10 @@ function TreeRow({
   return (
     <>
       <tr
-        className={!isOpenable && !node.isDir
-          ? "transition-colors"
-          : "hover:bg-accent transition-colors cursor-pointer"
+        className={
+          !isOpenable && !node.isDir
+            ? "transition-colors"
+            : "hover:bg-accent transition-colors cursor-pointer"
         }
         onClick={handleClick}
       >
@@ -267,35 +288,30 @@ function TreeRow({
                 )}
               </>
             )}
-            <span className="truncate">
-              {node.name}
-            </span>
+            <span className="truncate">{node.name}</span>
             {node.linkTarget && (
-              <span className="text-muted-foreground truncate">
-                &rarr; {node.linkTarget}
-              </span>
+              <span className="text-muted-foreground truncate">&rarr; {node.linkTarget}</span>
             )}
           </div>
         </td>
         <td className="p-3 text-sm text-muted-foreground text-right font-mono">
           {node.isDir ? "-" : formatBytes(node.size)}
         </td>
-        <td className="p-3 text-sm text-muted-foreground">
-          {node.modified || "-"}
-        </td>
-        <td className="p-3 text-sm text-muted-foreground font-mono">
-          {node.permissions || "-"}
-        </td>
+        <td className="p-3 text-sm text-muted-foreground">{node.modified || "-"}</td>
+        <td className="p-3 text-sm text-muted-foreground font-mono">{node.permissions || "-"}</td>
       </tr>
-      {node.isDir && node.expanded && node.children && node.children.map((child) => (
-        <TreeRow
-          key={child.path}
-          node={child}
-          depth={depth + 1}
-          onToggle={onToggle}
-          onOpenFile={onOpenFile}
-        />
-      ))}
+      {node.isDir &&
+        node.expanded &&
+        node.children &&
+        node.children.map((child) => (
+          <TreeRow
+            key={child.path}
+            node={child}
+            depth={depth + 1}
+            onToggle={onToggle}
+            onOpenFile={onOpenFile}
+          />
+        ))}
     </>
   );
 }

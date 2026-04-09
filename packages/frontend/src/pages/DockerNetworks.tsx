@@ -9,7 +9,6 @@ import { SearchFilterBar } from "@/components/common/SearchFilterBar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
-import { RefreshButton } from "@/components/ui/refresh-button";
 import {
   Dialog,
   DialogContent,
@@ -19,6 +18,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { RefreshButton } from "@/components/ui/refresh-button";
 import {
   Select,
   SelectContent,
@@ -31,16 +31,18 @@ import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
 import type { DockerNetwork, Node } from "@/types";
 
-export function DockerNetworks({ embedded, onCreateRef, fixedNodeId }: { embedded?: boolean; onCreateRef?: (fn: () => void) => void; fixedNodeId?: string } = {}) {
+export function DockerNetworks({
+  embedded,
+  onCreateRef,
+  fixedNodeId,
+}: {
+  embedded?: boolean;
+  onCreateRef?: (fn: () => void) => void;
+  fixedNodeId?: string;
+} = {}) {
   const navigate = useNavigate();
   const { hasScope } = useAuthStore();
-  const {
-    networks,
-    selectedNodeId,
-    isLoading,
-    setSelectedNode,
-    fetchNetworks,
-  } = useDockerStore();
+  const { networks, selectedNodeId, isLoading, setSelectedNode, fetchNetworks } = useDockerStore();
 
   const [dockerNodes, setDockerNodes] = useState<Node[]>([]);
   const [search, setSearch] = useState("");
@@ -48,8 +50,13 @@ export function DockerNetworks({ embedded, onCreateRef, fixedNodeId }: { embedde
   // Create dialog
   const [createOpen, setCreateOpen] = useState(false);
   const [createNodeId, setCreateNodeId] = useState<string>("");
-  const openCreate = () => { setCreateNodeId(selectedNodeId || ""); setCreateOpen(true); };
-  useEffect(() => { onCreateRef?.(() => openCreate()); }, [onCreateRef]);
+  const openCreate = () => {
+    setCreateNodeId(selectedNodeId || "");
+    setCreateOpen(true);
+  };
+  useEffect(() => {
+    onCreateRef?.(() => openCreate());
+  }, [onCreateRef]);
   const [createName, setCreateName] = useState("");
   const [createDriver, setCreateDriver] = useState("bridge");
   const [createSubnet, setCreateSubnet] = useState("");
@@ -59,7 +66,9 @@ export function DockerNetworks({ embedded, onCreateRef, fixedNodeId }: { embedde
   // Usage dialog
   const [usageOpen, setUsageOpen] = useState(false);
   const [usageNetwork, setUsageNetwork] = useState("");
-  const [usageContainers, setUsageContainers] = useState<Array<{ id: string; name: string; state: string }>>([]);
+  const [usageContainers, setUsageContainers] = useState<
+    Array<{ id: string; name: string; state: string }>
+  >([]);
   const [usageLoading, setUsageLoading] = useState(false);
 
   const showUsage = async (net: DockerNetwork) => {
@@ -74,7 +83,11 @@ export function DockerNetworks({ embedded, onCreateRef, fixedNodeId }: { embedde
       const containers = await api.listDockerContainers(nid);
       const matched = (containers ?? [])
         .filter((ct: any) => containerIds.includes(ct.id))
-        .map((ct: any) => ({ id: ct.id, name: (ct.name ?? "").replace(/^\//, ""), state: ct.state }));
+        .map((ct: any) => ({
+          id: ct.id,
+          name: (ct.name ?? "").replace(/^\//, ""),
+          state: ct.state,
+        }));
       setUsageContainers(matched);
     } catch {
       setUsageContainers([]);
@@ -84,17 +97,21 @@ export function DockerNetworks({ embedded, onCreateRef, fixedNodeId }: { embedde
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only
   useEffect(() => {
-    if (embedded && !fixedNodeId) { return; }
-    if (fixedNodeId) { setSelectedNode(fixedNodeId); return; }
-    
+    if (embedded && !fixedNodeId) {
+      return;
+    }
+    if (fixedNodeId) {
+      setSelectedNode(fixedNodeId);
+      return;
+    }
+
     api
       .listNodes({ type: "docker", limit: 100 })
       .then((r) => {
         setDockerNodes(r.data);
         useDockerStore.getState().setDockerNodes(r.data);
       })
-      .catch(() => toast.error("Failed to load Docker nodes"))
-      ;
+      .catch(() => toast.error("Failed to load Docker nodes"));
   }, []);
 
   const location = useLocation();
@@ -133,7 +150,8 @@ export function DockerNetworks({ embedded, onCreateRef, fixedNodeId }: { embedde
 
   const handleRemove = async (net: DockerNetwork & { _nodeId?: string }) => {
     const count = containerCount(net);
-    const extra = count > 0 ? ` ${count} container${count > 1 ? "s are" : " is"} currently connected.` : "";
+    const extra =
+      count > 0 ? ` ${count} container${count > 1 ? "s are" : " is"} currently connected.` : "";
     const ok = await confirm({
       title: "Remove Network",
       description: `Remove network "${net.name}"?${extra} This cannot be undone.`,
@@ -203,9 +221,7 @@ export function DockerNetworks({ embedded, onCreateRef, fixedNodeId }: { embedde
       {
         key: "driver",
         header: "Driver",
-        render: (net) => (
-          <span className="text-sm text-muted-foreground">{net.driver}</span>
-        ),
+        render: (net) => <span className="text-sm text-muted-foreground">{net.driver}</span>,
       },
       {
         key: "subnet",
@@ -213,7 +229,9 @@ export function DockerNetworks({ embedded, onCreateRef, fixedNodeId }: { embedde
         render: (net) => {
           const ipam = getIPAM(net);
           return ipam.subnet !== "-" ? (
-            <Badge variant="secondary" className="text-xs font-mono w-fit">{ipam.subnet}</Badge>
+            <Badge variant="secondary" className="text-xs font-mono w-fit">
+              {ipam.subnet}
+            </Badge>
           ) : (
             <span className="text-xs text-muted-foreground">-</span>
           );
@@ -223,7 +241,11 @@ export function DockerNetworks({ embedded, onCreateRef, fixedNodeId }: { embedde
         key: "node",
         header: "Node",
         width: "140px",
-        render: (n) => <Badge variant="secondary" className="text-xs w-fit">{(n as any)._nodeName || "-"}</Badge>,
+        render: (n) => (
+          <Badge variant="secondary" className="text-xs w-fit">
+            {(n as any)._nodeName || "-"}
+          </Badge>
+        ),
       },
       {
         key: "usage",
@@ -274,7 +296,9 @@ export function DockerNetworks({ embedded, onCreateRef, fixedNodeId }: { embedde
     ],
     [hasScope, handleRemove, showUsage, containerCount, getIPAM]
   );
-  const networkColumns = fixedNodeId ? allNetworkColumns.filter((c) => c.key !== "node") : allNetworkColumns;
+  const networkColumns = fixedNodeId
+    ? allNetworkColumns.filter((c) => c.key !== "node")
+    : allNetworkColumns;
 
   const content = (
     <>
@@ -284,9 +308,7 @@ export function DockerNetworks({ embedded, onCreateRef, fixedNodeId }: { embedde
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-2xl font-bold">Docker Networks</h1>
-              {!isLoading && selectedNodeId && (
-                <Badge variant="secondary">{networks.length}</Badge>
-              )}
+              {!isLoading && selectedNodeId && <Badge variant="secondary">{networks.length}</Badge>}
             </div>
             <p className="text-sm text-muted-foreground">
               Manage Docker networks across your nodes
@@ -314,7 +336,10 @@ export function DockerNetworks({ embedded, onCreateRef, fixedNodeId }: { embedde
         onSearchChange={setSearch}
         placeholder="Search networks by name or driver..."
         hasActiveFilters={search !== "" || !!selectedNodeId}
-        onReset={() => { setSearch(""); setSelectedNode(null); }}
+        onReset={() => {
+          setSearch("");
+          setSelectedNode(null);
+        }}
         filters={
           <Select
             value={selectedNodeId ?? "__all__"}
@@ -362,17 +387,27 @@ export function DockerNetworks({ embedded, onCreateRef, fixedNodeId }: { embedde
           <DialogHeader>
             <DialogTitle>Create Network</DialogTitle>
             <DialogDescription>
-              Create a new network on {selectedNode?.displayName || selectedNode?.hostname || "the selected node"}.
+              Create a new network on{" "}
+              {selectedNode?.displayName || selectedNode?.hostname || "the selected node"}.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <label className="text-sm font-medium">Node <span className="text-destructive">*</span></label>
+              <label className="text-sm font-medium">
+                Node <span className="text-destructive">*</span>
+              </label>
               <Select value={createNodeId} onValueChange={setCreateNodeId}>
-                <SelectTrigger className="mt-1"><SelectValue placeholder="Select a node" /></SelectTrigger>
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Select a node" />
+                </SelectTrigger>
                 <SelectContent>
-                  {(useDockerStore.getState().dockerNodes.length > 0 ? useDockerStore.getState().dockerNodes : dockerNodes).map((n) => (
-                    <SelectItem key={n.id} value={n.id}>{n.displayName || n.hostname}</SelectItem>
+                  {(useDockerStore.getState().dockerNodes.length > 0
+                    ? useDockerStore.getState().dockerNodes
+                    : dockerNodes
+                  ).map((n) => (
+                    <SelectItem key={n.id} value={n.id}>
+                      {n.displayName || n.hostname}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -426,8 +461,13 @@ export function DockerNetworks({ embedded, onCreateRef, fixedNodeId }: { embedde
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={closeCreate}>Cancel</Button>
-            <Button onClick={handleCreate} disabled={creating || !createName.trim() || !createNodeId}>
+            <Button variant="outline" onClick={closeCreate}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCreate}
+              disabled={creating || !createName.trim() || !createNodeId}
+            >
               {creating ? "Creating..." : "Create"}
             </Button>
           </DialogFooter>
@@ -459,7 +499,10 @@ export function DockerNetworks({ embedded, onCreateRef, fixedNodeId }: { embedde
                     <p className="text-sm font-medium truncate">{c.name}</p>
                     <p className="text-xs font-mono text-muted-foreground">{c.id.slice(0, 12)}</p>
                   </div>
-                  <Badge variant={c.state === "running" ? "success" : "secondary"} className="text-xs shrink-0">
+                  <Badge
+                    variant={c.state === "running" ? "success" : "secondary"}
+                    className="text-xs shrink-0"
+                  >
                     {c.state}
                   </Badge>
                 </div>

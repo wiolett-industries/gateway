@@ -32,14 +32,17 @@ export function DockerFilePopout() {
     didFetch.current = true;
 
     setIsLoading(true);
-    api.readContainerFile(nodeId, containerId, filePath)
+    api
+      .readContainerFile(nodeId, containerId, filePath)
       .then((data) => {
         let text = typeof data === "string" ? data : JSON.stringify(data, null, 2);
         try {
           // Daemon uses URL-safe base64 — convert to standard before decoding
           const std = text.replace(/-/g, "+").replace(/_/g, "/");
           text = decodeURIComponent(escape(atob(std)));
-        } catch { /* not base64 */ }
+        } catch {
+          /* not base64 */
+        }
         setContent(text);
         setSavedContent(text);
       })
@@ -101,19 +104,31 @@ export function DockerFilePopout() {
         </div>
         {content !== null && (
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleCopy} title="Copy">
-              <Check className={`h-3.5 w-3.5 absolute transition-all duration-200 ${copied ? "scale-100 opacity-100" : "scale-0 opacity-0"}`} />
-              <ClipboardCopy className={`h-3.5 w-3.5 transition-all duration-200 ${copied ? "scale-0 opacity-0" : "scale-100 opacity-100"}`} />
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={handleCopy}
+              title="Copy"
+            >
+              <Check
+                className={`h-3.5 w-3.5 absolute transition-all duration-200 ${copied ? "scale-100 opacity-100" : "scale-0 opacity-0"}`}
+              />
+              <ClipboardCopy
+                className={`h-3.5 w-3.5 transition-all duration-200 ${copied ? "scale-0 opacity-0" : "scale-100 opacity-100"}`}
+              />
             </Button>
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleDownload} title="Download">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={handleDownload}
+              title="Download"
+            >
               <Download className="h-3.5 w-3.5" />
             </Button>
             {isWritable && (
-              <Button
-                size="sm"
-                onClick={handleSave}
-                disabled={isSaving || !hasChanges}
-              >
+              <Button size="sm" onClick={handleSave} disabled={isSaving || !hasChanges}>
                 <Save className="h-3.5 w-3.5" />
                 Save
               </Button>

@@ -67,7 +67,11 @@ export function createNodeExecWSHandlers(nodeId: string, shell: string, token: s
 
       authenticateAndCreateExec(ws, state, token, nodeId, shell, dispatch, registry).catch((err) => {
         logger.error('Auth/exec creation failed', { error: err instanceof Error ? err.message : String(err) });
-        try { ws.close(); } catch { /* */ }
+        try {
+          ws.close();
+        } catch {
+          /* */
+        }
       });
     },
 
@@ -229,7 +233,11 @@ async function authenticateAndCreateExec(
     }
     if (output.exited) {
       send(ws, { type: 'exit', exitCode: output.exitCode ?? 0 });
-      try { ws.close(1000, 'Process exited'); } catch { /* */ }
+      try {
+        ws.close(1000, 'Process exited');
+      } catch {
+        /* */
+      }
     }
   };
   state.outputHandler = outputHandler;

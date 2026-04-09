@@ -13,7 +13,9 @@ interface AIMessageProps {
 export function AIMessage({ message, onApprove, onReject, onAnswer }: AIMessageProps) {
   if (message.role === "user") {
     // Strip hidden system instructions (e.g. from command palette "Ask AI")
-    const displayContent = message.content.replace(/<system-instruction>[\s\S]*?<\/system-instruction>\s*/g, "").trim();
+    const displayContent = message.content
+      .replace(/<system-instruction>[\s\S]*?<\/system-instruction>\s*/g, "")
+      .trim();
     return (
       <div className="flex justify-end">
         <div className="max-w-[85%] bg-primary px-3 py-2 text-sm text-primary-foreground break-words">

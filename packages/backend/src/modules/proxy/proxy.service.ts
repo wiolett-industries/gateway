@@ -11,7 +11,7 @@ import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { CryptoService } from '@/services/crypto.service.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
 import type { NginxConfigGenerator, ProxyHostConfig } from '@/services/nginx-config-generator.service.js';
-import { NginxSyntaxValidatorService } from '@/services/nginx-syntax-validator.service.js';
+import type { NginxSyntaxValidatorService } from '@/services/nginx-syntax-validator.service.js';
 import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import type { PaginatedResponse } from '@/types.js';
 import type { NginxTemplateService } from './nginx-template.service.js';
@@ -47,7 +47,9 @@ export class ProxyService {
   ) {}
 
   private eventBus?: EventBusService;
-  setEventBus(bus: EventBusService) { this.eventBus = bus; }
+  setEventBus(bus: EventBusService) {
+    this.eventBus = bus;
+  }
   private emitHost(id: string, action: 'created' | 'updated' | 'deleted') {
     this.eventBus?.publish('proxy.host.changed', { id, action });
   }

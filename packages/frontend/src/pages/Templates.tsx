@@ -131,7 +131,13 @@ function toggleInArray(arr: string[], value: string): string[] {
 // Main Component
 // ---------------------------------------------------------------------------
 
-export function Templates({ embedded, onCreateRef }: { embedded?: boolean; onCreateRef?: (fn: () => void) => void }) {
+export function Templates({
+  embedded,
+  onCreateRef,
+}: {
+  embedded?: boolean;
+  onCreateRef?: (fn: () => void) => void;
+}) {
   const { hasScope } = useAuthStore();
   const cachedTemplates = api.getCached<Template[]>("templates:list");
   const [templates, setTemplates] = useState<Template[]>(cachedTemplates ?? []);

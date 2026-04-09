@@ -64,7 +64,12 @@ export function DockerLogsPopout() {
       const rest = dockerTsMatch[2];
       if (hasTimestamp(rest)) return rest;
       const ts = new Date(dockerTsMatch[1]);
-      const time = ts.toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      const time = ts.toLocaleTimeString([], {
+        hour12: false,
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      });
       return `${time}  ${rest}`;
     }
     return line;
@@ -108,7 +113,9 @@ export function DockerLogsPopout() {
             return updated.length > 10000 ? updated.slice(-10000) : updated;
           });
         }
-      } catch { /* */ }
+      } catch {
+        /* */
+      }
     };
 
     ws.onclose = () => {
@@ -129,19 +136,28 @@ export function DockerLogsPopout() {
   // biome-ignore lint/correctness/useExhaustiveDependencies: connect once on mount
   useEffect(() => {
     mountedRef.current = true;
-    const t = setTimeout(() => { if (mountedRef.current) connectWs(); }, 50);
+    const t = setTimeout(() => {
+      if (mountedRef.current) connectWs();
+    }, 50);
     return () => {
       mountedRef.current = false;
       clearTimeout(t);
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
-      if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
     };
   }, []);
 
   const loadingMoreRef = useRef(false);
   const hasMoreRef = useRef(true);
-  useEffect(() => { loadingMoreRef.current = loadingMore; }, [loadingMore]);
-  useEffect(() => { hasMoreRef.current = hasMore; }, [hasMore]);
+  useEffect(() => {
+    loadingMoreRef.current = loadingMore;
+  }, [loadingMore]);
+  useEffect(() => {
+    hasMoreRef.current = hasMore;
+  }, [hasMore]);
 
   const requestMoreLines = useCallback(() => {
     if (!hasMoreRef.current || loadingMoreRef.current) return;

@@ -37,7 +37,10 @@ export function AddDomainDialog({ open, onOpenChange, onCreated }: AddDomainDial
       toast.success("Domain added");
       onOpenChange(false);
       onCreated();
-      setTimeout(() => { setDomain(""); setDescription(""); }, 200);
+      setTimeout(() => {
+        setDomain("");
+        setDescription("");
+      }, 200);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to add domain");
     } finally {

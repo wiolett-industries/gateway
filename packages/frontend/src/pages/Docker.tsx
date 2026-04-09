@@ -11,9 +11,9 @@ import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
 import { DockerContainers } from "./DockerContainers";
 import { DockerImages } from "./DockerImages";
-import { DockerVolumes } from "./DockerVolumes";
 import { DockerNetworks } from "./DockerNetworks";
 import { DockerTasks } from "./DockerTasks";
+import { DockerVolumes } from "./DockerVolumes";
 
 const TABS = [
   { value: "containers", label: "Containers", icon: Box, scope: "docker:containers:list" },
@@ -40,7 +40,10 @@ export function Docker() {
   const createNetworkRef = useRef<(() => void) | null>(null);
 
   const visibleTabs = TABS.filter((t) => hasScope(t.scope));
-  const activeTab = (tabParam && visibleTabs.some((t) => t.value === tabParam)) ? tabParam : visibleTabs[0]?.value || "containers";
+  const activeTab =
+    tabParam && visibleTabs.some((t) => t.value === tabParam)
+      ? tabParam
+      : visibleTabs[0]?.value || "containers";
 
   // Fetch docker nodes on mount, store in zustand for multi-node fetching
   useEffect(() => {
@@ -65,10 +68,14 @@ export function Docker() {
 
   const handleRefresh = async () => {
     switch (activeTab) {
-      case "containers": return fetchContainers();
-      case "images": return fetchImages();
-      case "volumes": return fetchVolumes();
-      case "networks": return fetchNetworks();
+      case "containers":
+        return fetchContainers();
+      case "images":
+        return fetchImages();
+      case "volumes":
+        return fetchVolumes();
+      case "networks":
+        return fetchNetworks();
     }
   };
 
@@ -125,7 +132,11 @@ export function Docker() {
         </div>
 
         {/* Tabs */}
-        <Tabs value={activeTab} onValueChange={handleTabChange} className="flex flex-col flex-1 min-h-0">
+        <Tabs
+          value={activeTab}
+          onValueChange={handleTabChange}
+          className="flex flex-col flex-1 min-h-0"
+        >
           <TabsList className="shrink-0">
             {visibleTabs.map((tab) => (
               <TabsTrigger key={tab.value} value={tab.value} className="gap-1.5">
@@ -136,16 +147,36 @@ export function Docker() {
           </TabsList>
 
           <TabsContent value="containers" className="flex flex-col flex-1 min-h-0">
-            <DockerContainers embedded onDeployRef={(fn) => { deployContainerRef.current = fn; }} />
+            <DockerContainers
+              embedded
+              onDeployRef={(fn) => {
+                deployContainerRef.current = fn;
+              }}
+            />
           </TabsContent>
           <TabsContent value="images" className="flex flex-col flex-1 min-h-0">
-            <DockerImages embedded onPullRef={(fn) => { pullImageRef.current = fn; }} />
+            <DockerImages
+              embedded
+              onPullRef={(fn) => {
+                pullImageRef.current = fn;
+              }}
+            />
           </TabsContent>
           <TabsContent value="volumes" className="flex flex-col flex-1 min-h-0">
-            <DockerVolumes embedded onCreateRef={(fn) => { createVolumeRef.current = fn; }} />
+            <DockerVolumes
+              embedded
+              onCreateRef={(fn) => {
+                createVolumeRef.current = fn;
+              }}
+            />
           </TabsContent>
           <TabsContent value="networks" className="flex flex-col flex-1 min-h-0">
-            <DockerNetworks embedded onCreateRef={(fn) => { createNetworkRef.current = fn; }} />
+            <DockerNetworks
+              embedded
+              onCreateRef={(fn) => {
+                createNetworkRef.current = fn;
+              }}
+            />
           </TabsContent>
           <TabsContent value="tasks" className="flex flex-col flex-1 min-h-0">
             <DockerTasks embedded />

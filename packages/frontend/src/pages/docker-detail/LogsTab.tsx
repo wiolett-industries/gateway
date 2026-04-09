@@ -12,7 +12,17 @@ function hasTimestamp(line: string): boolean {
   return /^\d{4}-\d{2}-\d{2}[T ]/.test(line) || /^\d{2}:\d{2}:\d{2}/.test(line);
 }
 
-export function LogsTab({ nodeId, containerId, containerState, inspectData }: { nodeId: string; containerId: string; containerState?: string; inspectData?: Record<string, any> }) {
+export function LogsTab({
+  nodeId,
+  containerId,
+  containerState,
+  inspectData,
+}: {
+  nodeId: string;
+  containerId: string;
+  containerState?: string;
+  inspectData?: Record<string, any>;
+}) {
   const [lines, setLines] = useState<string[]>([]);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -91,7 +101,12 @@ export function LogsTab({ nodeId, containerId, containerState, inspectData }: { 
       const rest = dockerTsMatch[2];
       if (hasTimestamp(rest)) return rest;
       const ts = new Date(dockerTsMatch[1]);
-      const time = ts.toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      const time = ts.toLocaleTimeString([], {
+        hour12: false,
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      });
       return `${time}  ${rest}`;
     }
     return line;
@@ -181,7 +196,9 @@ export function LogsTab({ nodeId, containerId, containerState, inspectData }: { 
       const data = await api.getContainerLogs(nodeId, containerId, { tail: 500, timestamps: true });
       setLines(processLogs(data ?? []));
       setHasMore(false);
-    } catch { /* */ }
+    } catch {
+      /* */
+    }
     setIsConnecting(false);
   }, [nodeId, containerId, processLogs]);
 
@@ -236,8 +253,12 @@ export function LogsTab({ nodeId, containerId, containerState, inspectData }: { 
   const loadingMoreRef = useRef(false);
   const hasMoreRef = useRef(true);
   // Keep refs in sync with state
-  useEffect(() => { loadingMoreRef.current = loadingMore; }, [loadingMore]);
-  useEffect(() => { hasMoreRef.current = hasMore; }, [hasMore]);
+  useEffect(() => {
+    loadingMoreRef.current = loadingMore;
+  }, [loadingMore]);
+  useEffect(() => {
+    hasMoreRef.current = hasMore;
+  }, [hasMore]);
 
   const requestMoreLines = useCallback(() => {
     if (!hasMoreRef.current || loadingMoreRef.current) return;
@@ -263,9 +284,7 @@ export function LogsTab({ nodeId, containerId, containerState, inspectData }: { 
       <div className="flex flex-col flex-1 min-h-0 border border-border bg-card">
         <div className="flex-1 bg-[#0e0e0e] flex flex-col items-center justify-center gap-4">
           <ScrollText className="h-10 w-10 text-muted-foreground/40" />
-          <p className="text-sm text-muted-foreground">
-            Logs are open in a separate window
-          </p>
+          <p className="text-sm text-muted-foreground">Logs are open in a separate window</p>
           <Button variant="outline" size="sm" onClick={bringBack}>
             Bring back here
           </Button>
@@ -281,12 +300,20 @@ export function LogsTab({ nodeId, containerId, containerState, inspectData }: { 
         <div>
           <h3 className="text-sm font-semibold">Container Logs</h3>
           <p className="text-xs text-muted-foreground">
-            {isRunning ? "stdout and stderr output from the container" : `Container is ${containerState ?? "stopped"} — showing last logs`}
+            {isRunning
+              ? "stdout and stderr output from the container"
+              : `Container is ${containerState ?? "stopped"} — showing last logs`}
           </p>
         </div>
         <div className="flex items-center gap-2">
           {lines.length > 0 && (
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={downloadLogs} title="Download">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={downloadLogs}
+              title="Download"
+            >
               <Download className="h-3.5 w-3.5" />
             </Button>
           )}
@@ -324,15 +351,44 @@ export function LogsTab({ nodeId, containerId, containerState, inspectData }: { 
                 <div>No logs available</div>
                 {!isRunning && inspectData?.State && (
                   <div className="space-y-1 mt-4 text-xs">
-                    <div>Exit Code: <span className={inspectData.State.ExitCode === 0 ? "text-foreground" : "text-red-400"}>{inspectData.State.ExitCode ?? "unknown"}</span></div>
-                    {inspectData.State.Error && <div>Error: <span className="text-red-400">{inspectData.State.Error}</span></div>}
-                    {inspectData.State.OOMKilled && <div className="text-red-400">Container was killed by OOM (out of memory)</div>}
-                    {inspectData.State.FinishedAt && <div>Finished: {new Date(inspectData.State.FinishedAt).toLocaleString()}</div>}
+                    <div>
+                      Exit Code:{" "}
+                      <span
+                        className={
+                          inspectData.State.ExitCode === 0 ? "text-foreground" : "text-red-400"
+                        }
+                      >
+                        {inspectData.State.ExitCode ?? "unknown"}
+                      </span>
+                    </div>
+                    {inspectData.State.Error && (
+                      <div>
+                        Error: <span className="text-red-400">{inspectData.State.Error}</span>
+                      </div>
+                    )}
+                    {inspectData.State.OOMKilled && (
+                      <div className="text-red-400">
+                        Container was killed by OOM (out of memory)
+                      </div>
+                    )}
+                    {inspectData.State.FinishedAt && (
+                      <div>Finished: {new Date(inspectData.State.FinishedAt).toLocaleString()}</div>
+                    )}
                     {inspectData.Config?.Cmd && (
-                      <div>CMD: <span className="text-foreground/70">{JSON.stringify(inspectData.Config.Cmd)}</span></div>
+                      <div>
+                        CMD:{" "}
+                        <span className="text-foreground/70">
+                          {JSON.stringify(inspectData.Config.Cmd)}
+                        </span>
+                      </div>
                     )}
                     {inspectData.Config?.Entrypoint && (
-                      <div>Entrypoint: <span className="text-foreground/70">{JSON.stringify(inspectData.Config.Entrypoint)}</span></div>
+                      <div>
+                        Entrypoint:{" "}
+                        <span className="text-foreground/70">
+                          {JSON.stringify(inspectData.Config.Entrypoint)}
+                        </span>
+                      </div>
                     )}
                   </div>
                 )}

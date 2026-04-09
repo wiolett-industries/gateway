@@ -63,8 +63,14 @@ export function SettingsTab({
   const currentPidsLimit = hostConfig.PidsLimit ?? 0;
 
   const initMem = currentMemory > 0 ? String(Math.round(currentMemory / 1048576)) : "";
-  const currentSwap = currentMemSwap === -1 ? -1 : currentMemSwap > 0 ? Math.max(0, currentMemSwap - currentMemory) : 0;
-  const initSwap = currentSwap === -1 ? "-1" : currentSwap > 0 ? String(Math.round(currentSwap / 1048576)) : "";
+  const currentSwap =
+    currentMemSwap === -1
+      ? -1
+      : currentMemSwap > 0
+        ? Math.max(0, currentMemSwap - currentMemory)
+        : 0;
+  const initSwap =
+    currentSwap === -1 ? "-1" : currentSwap > 0 ? String(Math.round(currentSwap / 1048576)) : "";
   const initCpu = currentNanoCPUs > 0 ? String(currentNanoCPUs / 1e9) : "";
   const initShares = currentCpuShares > 0 ? String(currentCpuShares) : "";
   const initPids = currentPidsLimit > 0 ? String(currentPidsLimit) : "";
@@ -108,13 +114,15 @@ export function SettingsTab({
     }
   }
 
-  const initialMounts: MountEntry[] = ((data.Mounts ?? []) as Array<{
-    Type: string;
-    Source: string;
-    Destination: string;
-    Name?: string;
-    RW: boolean;
-  }>).map((m) => ({
+  const initialMounts: MountEntry[] = (
+    (data.Mounts ?? []) as Array<{
+      Type: string;
+      Source: string;
+      Destination: string;
+      Name?: string;
+      RW: boolean;
+    }>
+  ).map((m) => ({
     hostPath: m.Type === "bind" ? m.Source : "",
     containerPath: m.Destination,
     name: m.Type === "volume" ? (m.Name ?? m.Source) : "",
@@ -143,17 +151,19 @@ export function SettingsTab({
 
   // Snapshot initial recreate values (frozen per container, not re-derived on every render)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const recreateBaseline = useMemo(() => ({
-    ports: JSON.stringify(initialPorts),
-    mounts: JSON.stringify(initialMounts),
-    entrypoint: initialEntrypoint.join(" "),
-    command: initialCmd.join(" "),
-    workingDir: initialWorkdir,
-    user: initialUser,
-    hostname: initialHostname,
-    labels: JSON.stringify(Object.entries(initialLabels).map(([k, v]) => ({ key: k, value: v }))),
-  }), [containerId]);
-
+  const recreateBaseline = useMemo(
+    () => ({
+      ports: JSON.stringify(initialPorts),
+      mounts: JSON.stringify(initialMounts),
+      entrypoint: initialEntrypoint.join(" "),
+      command: initialCmd.join(" "),
+      workingDir: initialWorkdir,
+      user: initialUser,
+      hostname: initialHostname,
+      labels: JSON.stringify(Object.entries(initialLabels).map(([k, v]) => ({ key: k, value: v }))),
+    }),
+    [containerId]
+  );
 
   // ── Live update handler ──
   const handleLiveUpdate = useCallback(async () => {
@@ -168,7 +178,8 @@ export function SettingsTab({
       const swapOnly = memSwapMB === "-1" ? -1 : memSwapMB ? Number(memSwapMB) * 1048576 : 0;
       // Docker requires memorySwap >= memory, so always send both together
       // Empty swap = double memory (Docker's default), -1 = unlimited, 0 = no swap
-      const combinedSwap = swapOnly === -1 ? -1 : swapOnly > 0 ? memBytes + swapOnly : memBytes > 0 ? memBytes * 2 : 0;
+      const combinedSwap =
+        swapOnly === -1 ? -1 : swapOnly > 0 ? memBytes + swapOnly : memBytes > 0 ? memBytes * 2 : 0;
       if (memBytes !== currentMemory || combinedSwap !== currentMemSwap) {
         payload.memoryLimit = memBytes;
         payload.memorySwap = combinedSwap;
@@ -190,8 +201,13 @@ export function SettingsTab({
       toast.success("Settings applied (no restart needed)");
       // Update baseline so hasRuntimeChanges becomes false immediately
       baselineRef.current = {
-        restartPolicy, maxRetries, memoryMB, memSwapMB,
-        cpuCount, cpuShares, pidsLimit,
+        restartPolicy,
+        maxRetries,
+        memoryMB,
+        memSwapMB,
+        cpuCount,
+        cpuShares,
+        pidsLimit,
       };
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to apply settings");
@@ -199,17 +215,31 @@ export function SettingsTab({
       setLiveLoading(false);
     }
   }, [
-    nodeId, containerId, restartPolicy, maxRetries, memoryMB, memSwapMB,
-    cpuCount, cpuShares, pidsLimit, currentRestartPolicy, currentMaxRetries,
-    currentMemory, currentMemSwap, currentNanoCPUs, currentCpuShares,
-    currentPidsLimit, onAction,
+    nodeId,
+    containerId,
+    restartPolicy,
+    maxRetries,
+    memoryMB,
+    memSwapMB,
+    cpuCount,
+    cpuShares,
+    pidsLimit,
+    currentRestartPolicy,
+    currentMaxRetries,
+    currentMemory,
+    currentMemSwap,
+    currentNanoCPUs,
+    currentCpuShares,
+    currentPidsLimit,
+    onAction,
   ]);
 
   // ── Recreate handler ──
   const handleRecreate = useCallback(async () => {
     const ok = await confirm({
       title: "Recreate Container",
-      description: "This will stop and recreate the container with the new configuration. The container will experience downtime. Continue?",
+      description:
+        "This will stop and recreate the container with the new configuration. The container will experience downtime. Continue?",
       confirmLabel: "Recreate",
     });
     if (!ok) return;
@@ -219,19 +249,23 @@ export function SettingsTab({
       const payload: Record<string, unknown> = {};
       // Only send fields that changed
       if (portsChanged) {
-        payload.ports = ports.filter((p) => p.containerPort).map((p) => ({
-          hostPort: Number(p.hostPort) || 0,
-          containerPort: Number(p.containerPort),
-          protocol: p.protocol,
-        }));
+        payload.ports = ports
+          .filter((p) => p.containerPort)
+          .map((p) => ({
+            hostPort: Number(p.hostPort) || 0,
+            containerPort: Number(p.containerPort),
+            protocol: p.protocol,
+          }));
       }
       if (mountsChanged) {
-        payload.mounts = mounts.filter((m) => m.containerPath).map((m) => ({
-          hostPath: m.hostPath,
-          containerPath: m.containerPath,
-          name: m.name,
-          readOnly: m.readOnly,
-        }));
+        payload.mounts = mounts
+          .filter((m) => m.containerPath)
+          .map((m) => ({
+            hostPath: m.hostPath,
+            containerPath: m.containerPath,
+            name: m.name,
+            readOnly: m.readOnly,
+          }));
       }
       if (entrypoint !== recreateBaseline.entrypoint) {
         const ep = entrypoint.trim();
@@ -264,16 +298,30 @@ export function SettingsTab({
       toast.error(err instanceof Error ? err.message : "Failed to recreate container");
       setRecreateLoading(false);
     }
-  }, [nodeId, containerId, ports, mounts, entrypoint, command, workingDir, user, hostname, labels, onAction]);
+  }, [
+    nodeId,
+    containerId,
+    ports,
+    mounts,
+    entrypoint,
+    command,
+    workingDir,
+    user,
+    hostname,
+    labels,
+    onAction,
+  ]);
 
   // ── Port helpers ──
-  const addPort = () => setPorts((p) => [...p, { hostPort: "", containerPort: "", protocol: "tcp" }]);
+  const addPort = () =>
+    setPorts((p) => [...p, { hostPort: "", containerPort: "", protocol: "tcp" }]);
   const removePort = (i: number) => setPorts((p) => p.filter((_, idx) => idx !== i));
   const updatePort = (i: number, field: keyof PortMapping, val: string) =>
     setPorts((p) => p.map((entry, idx) => (idx === i ? { ...entry, [field]: val } : entry)));
 
   // ── Mount helpers ──
-  const addMount = () => setMounts((m) => [...m, { hostPath: "", containerPath: "", name: "", readOnly: false }]);
+  const addMount = () =>
+    setMounts((m) => [...m, { hostPath: "", containerPath: "", name: "", readOnly: false }]);
   const removeMount = (i: number) => setMounts((m) => m.filter((_, idx) => idx !== i));
   const updateMount = (i: number, field: keyof MountEntry, val: string | boolean) =>
     setMounts((m) => m.map((entry, idx) => (idx === i ? { ...entry, [field]: val } : entry)));
@@ -308,10 +356,13 @@ export function SettingsTab({
   const hasRecreateChanges = portsChanged || mountsChanged || execChanged || labelsChanged;
 
   // ── Shared input styles ──
-  const inputCell = "h-9 text-xs font-mono border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring";
+  const inputCell =
+    "h-9 text-xs font-mono border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring";
 
   return (
-    <div className={`space-y-6 pb-6 ${recreateLoading || !!transition ? "pointer-events-none opacity-60" : ""}`}>
+    <div
+      className={`space-y-6 pb-6 ${recreateLoading || !!transition ? "pointer-events-none opacity-60" : ""}`}
+    >
       {/* ─── Runtime Settings + Execution (side by side) ────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="border border-border bg-card overflow-hidden">
@@ -321,7 +372,11 @@ export function SettingsTab({
               <p className="text-xs text-muted-foreground">Applied instantly without restart</p>
             </div>
             {canEdit && (
-              <Button size="sm" onClick={handleLiveUpdate} disabled={liveLoading || !hasRuntimeChanges}>
+              <Button
+                size="sm"
+                onClick={handleLiveUpdate}
+                disabled={liveLoading || !hasRuntimeChanges}
+              >
                 <Save className="h-3.5 w-3.5" />
                 Apply
               </Button>
@@ -344,51 +399,122 @@ export function SettingsTab({
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">{restartPolicy === "on-failure" ? "Max Retries" : "PIDs Limit"}</label>
+                <label className="text-xs font-medium text-muted-foreground">
+                  {restartPolicy === "on-failure" ? "Max Retries" : "PIDs Limit"}
+                </label>
                 {restartPolicy === "on-failure" ? (
-                  <Input type="number" className="h-8 text-xs" value={maxRetries} onChange={(e) => setMaxRetries(e.target.value)} placeholder="0" disabled={!canEdit} min={0} />
+                  <Input
+                    type="number"
+                    className="h-8 text-xs"
+                    value={maxRetries}
+                    onChange={(e) => setMaxRetries(e.target.value)}
+                    placeholder="0"
+                    disabled={!canEdit}
+                    min={0}
+                  />
                 ) : (
-                  <Input type="number" className="h-8 text-xs" value={pidsLimit} onChange={(e) => setPidsLimit(e.target.value)} placeholder="Unlimited" disabled={!canEdit} min={0} />
+                  <Input
+                    type="number"
+                    className="h-8 text-xs"
+                    value={pidsLimit}
+                    onChange={(e) => setPidsLimit(e.target.value)}
+                    placeholder="Unlimited"
+                    disabled={!canEdit}
+                    min={0}
+                  />
                 )}
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Memory Limit (MB)</label>
-                <Input type="number" className="h-8 text-xs" value={memoryMB} onChange={(e) => setMemoryMB(e.target.value)} placeholder="Unlimited" disabled={!canEdit} min={0} />
+                <label className="text-xs font-medium text-muted-foreground">
+                  Memory Limit (MB)
+                </label>
+                <Input
+                  type="number"
+                  className="h-8 text-xs"
+                  value={memoryMB}
+                  onChange={(e) => setMemoryMB(e.target.value)}
+                  placeholder="Unlimited"
+                  disabled={!canEdit}
+                  min={0}
+                />
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-muted-foreground">Swap (MB)</label>
-                <Input type="number" className="h-8 text-xs" value={memSwapMB} onChange={(e) => setMemSwapMB(e.target.value)} placeholder="-1 = unlimited, 0 = disabled" disabled={!canEdit} />
+                <Input
+                  type="number"
+                  className="h-8 text-xs"
+                  value={memSwapMB}
+                  onChange={(e) => setMemSwapMB(e.target.value)}
+                  placeholder="-1 = unlimited, 0 = disabled"
+                  disabled={!canEdit}
+                />
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">CPU Limit (cores)</label>
-                <Input type="number" className="h-8 text-xs" value={cpuCount} onChange={(e) => setCpuCount(e.target.value)} placeholder="Unlimited" disabled={!canEdit} min={0} step={0.1} />
+                <label className="text-xs font-medium text-muted-foreground">
+                  CPU Limit (cores)
+                </label>
+                <Input
+                  type="number"
+                  className="h-8 text-xs"
+                  value={cpuCount}
+                  onChange={(e) => setCpuCount(e.target.value)}
+                  placeholder="Unlimited"
+                  disabled={!canEdit}
+                  min={0}
+                  step={0.1}
+                />
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-muted-foreground">CPU Shares</label>
-                <Input type="number" className="h-8 text-xs" value={cpuShares} onChange={(e) => setCpuShares(e.target.value)} placeholder="Default: 1024" disabled={!canEdit} min={0} />
+                <Input
+                  type="number"
+                  className="h-8 text-xs"
+                  value={cpuShares}
+                  onChange={(e) => setCpuShares(e.target.value)}
+                  placeholder="Default: 1024"
+                  disabled={!canEdit}
+                  min={0}
+                />
               </div>
             </div>
             {restartPolicy === "on-failure" && (
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-muted-foreground">PIDs Limit</label>
-                <Input type="number" className="h-8 text-xs" value={pidsLimit} onChange={(e) => setPidsLimit(e.target.value)} placeholder="Unlimited" disabled={!canEdit} min={0} />
+                <Input
+                  type="number"
+                  className="h-8 text-xs"
+                  value={pidsLimit}
+                  onChange={(e) => setPidsLimit(e.target.value)}
+                  placeholder="Unlimited"
+                  disabled={!canEdit}
+                  min={0}
+                />
               </div>
             )}
           </div>
         </div>
 
-        <div className="border bg-card overflow-hidden" style={execChanged ? { borderColor: "rgb(234 179 8)" } : undefined}>
+        <div
+          className="border bg-card overflow-hidden"
+          style={execChanged ? { borderColor: "rgb(234 179 8)" } : undefined}
+        >
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <div>
               <h3 className="text-sm font-semibold">Execution</h3>
               <p className="text-xs text-muted-foreground">Requires container recreation</p>
             </div>
             {canEdit && (
-              <Button size="sm" style={{ backgroundColor: "rgb(234 179 8)", color: "#111" }} className="hover:opacity-90 disabled:opacity-50" onClick={handleRecreate} disabled={recreateLoading || !hasRecreateChanges}>
+              <Button
+                size="sm"
+                style={{ backgroundColor: "rgb(234 179 8)", color: "#111" }}
+                className="hover:opacity-90 disabled:opacity-50"
+                onClick={handleRecreate}
+                disabled={recreateLoading || !hasRecreateChanges}
+              >
                 <RotateCcw className="h-3.5 w-3.5" />
                 Recreate
               </Button>
@@ -398,33 +524,68 @@ export function SettingsTab({
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-muted-foreground">Entrypoint</label>
-                <Input className="h-8 text-xs font-mono" value={entrypoint} onChange={(e) => setEntrypoint(e.target.value)} placeholder="/docker-entrypoint.sh" disabled={!canEdit} />
+                <Input
+                  className="h-8 text-xs font-mono"
+                  value={entrypoint}
+                  onChange={(e) => setEntrypoint(e.target.value)}
+                  placeholder="/docker-entrypoint.sh"
+                  disabled={!canEdit}
+                />
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Working Directory</label>
-                <Input className="h-8 text-xs font-mono" value={workingDir} onChange={(e) => setWorkingDir(e.target.value)} placeholder="/app" disabled={!canEdit} />
+                <label className="text-xs font-medium text-muted-foreground">
+                  Working Directory
+                </label>
+                <Input
+                  className="h-8 text-xs font-mono"
+                  value={workingDir}
+                  onChange={(e) => setWorkingDir(e.target.value)}
+                  placeholder="/app"
+                  disabled={!canEdit}
+                />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-muted-foreground">User</label>
-                <Input className="h-8 text-xs font-mono" value={user} onChange={(e) => setUser(e.target.value)} placeholder="root" disabled={!canEdit} />
+                <Input
+                  className="h-8 text-xs font-mono"
+                  value={user}
+                  onChange={(e) => setUser(e.target.value)}
+                  placeholder="root"
+                  disabled={!canEdit}
+                />
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-muted-foreground">Hostname</label>
-                <Input className="h-8 text-xs font-mono" value={hostname} onChange={(e) => setHostname(e.target.value)} placeholder="container-hostname" disabled={!canEdit} />
+                <Input
+                  className="h-8 text-xs font-mono"
+                  value={hostname}
+                  onChange={(e) => setHostname(e.target.value)}
+                  placeholder="container-hostname"
+                  disabled={!canEdit}
+                />
               </div>
             </div>
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-muted-foreground">Command</label>
-              <Input className="h-8 text-xs font-mono" value={command} onChange={(e) => setCommand(e.target.value)} placeholder="nginx -g daemon off;" disabled={!canEdit} />
+              <Input
+                className="h-8 text-xs font-mono"
+                value={command}
+                onChange={(e) => setCommand(e.target.value)}
+                placeholder="nginx -g daemon off;"
+                disabled={!canEdit}
+              />
             </div>
           </div>
         </div>
       </div>
 
       {/* ─── Port Mappings ────────────────────────────────────────── */}
-      <div className="border bg-card overflow-hidden" style={portsChanged ? { borderColor: "rgb(234 179 8)" } : undefined}>
+      <div
+        className="border bg-card overflow-hidden"
+        style={portsChanged ? { borderColor: "rgb(234 179 8)" } : undefined}
+      >
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <div>
             <h3 className="text-sm font-semibold">Port Mappings</h3>
@@ -439,51 +600,65 @@ export function SettingsTab({
         </div>
         {ports.length > 0 ? (
           <>
-            <div className={`grid ${canEdit ? "grid-cols-[1fr_1fr_100px_36px]" : "grid-cols-[1fr_1fr_100px]"} border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wider`}>
+            <div
+              className={`grid ${canEdit ? "grid-cols-[1fr_1fr_100px_36px]" : "grid-cols-[1fr_1fr_100px]"} border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wider`}
+            >
               <div className="px-3 py-2">Host Port</div>
               <div className="px-3 py-2 border-l border-border">Container Port</div>
               <div className="px-3 py-2 border-l border-border">Protocol</div>
               {canEdit && <div />}
             </div>
             <div className="-mb-px">
-            {ports.map((p, i) => (
-              <div key={i} className={`grid ${canEdit ? "grid-cols-[1fr_1fr_100px_36px]" : "grid-cols-[1fr_1fr_100px]"} border-b border-border last:border-b-0`}>
-                <Input
-                  type="number"
-                  className={inputCell}
-                  value={p.hostPort}
-                  onChange={(e) => updatePort(i, "hostPort", e.target.value)}
-                  placeholder="8080"
-                  disabled={!canEdit}
-                />
-                <div className="border-l border-border">
+              {ports.map((p, i) => (
+                <div
+                  key={i}
+                  className={`grid ${canEdit ? "grid-cols-[1fr_1fr_100px_36px]" : "grid-cols-[1fr_1fr_100px]"} border-b border-border last:border-b-0`}
+                >
                   <Input
                     type="number"
                     className={inputCell}
-                    value={p.containerPort}
-                    onChange={(e) => updatePort(i, "containerPort", e.target.value)}
-                    placeholder="80"
+                    value={p.hostPort}
+                    onChange={(e) => updatePort(i, "hostPort", e.target.value)}
+                    placeholder="8080"
                     disabled={!canEdit}
                   />
+                  <div className="border-l border-border">
+                    <Input
+                      type="number"
+                      className={inputCell}
+                      value={p.containerPort}
+                      onChange={(e) => updatePort(i, "containerPort", e.target.value)}
+                      placeholder="80"
+                      disabled={!canEdit}
+                    />
+                  </div>
+                  <div className="border-l border-border">
+                    <Select
+                      value={p.protocol}
+                      onValueChange={(v) => updatePort(i, "protocol", v)}
+                      disabled={!canEdit}
+                    >
+                      <SelectTrigger className="h-9 text-xs border-0 rounded-none shadow-none focus:ring-1 focus:ring-inset focus:ring-ring">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="tcp">TCP</SelectItem>
+                        <SelectItem value="udp">UDP</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {canEdit && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-9 shrink-0 rounded-none border-l border-border"
+                      onClick={() => removePort(i)}
+                    >
+                      <Minus className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
                 </div>
-                <div className="border-l border-border">
-                  <Select value={p.protocol} onValueChange={(v) => updatePort(i, "protocol", v)} disabled={!canEdit}>
-                    <SelectTrigger className="h-9 text-xs border-0 rounded-none shadow-none focus:ring-1 focus:ring-inset focus:ring-ring">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="tcp">TCP</SelectItem>
-                      <SelectItem value="udp">UDP</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                {canEdit && (
-                  <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0 rounded-none border-l border-border" onClick={() => removePort(i)}>
-                    <Minus className="h-3.5 w-3.5" />
-                  </Button>
-                )}
-              </div>
-            ))}
+              ))}
             </div>
           </>
         ) : (
@@ -492,7 +667,10 @@ export function SettingsTab({
       </div>
 
       {/* ─── Volume Mounts ────────────────────────────────────────── */}
-      <div className="border bg-card overflow-hidden" style={mountsChanged ? { borderColor: "rgb(234 179 8)" } : undefined}>
+      <div
+        className="border bg-card overflow-hidden"
+        style={mountsChanged ? { borderColor: "rgb(234 179 8)" } : undefined}
+      >
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <div>
             <h3 className="text-sm font-semibold">Volume Mounts</h3>
@@ -507,58 +685,72 @@ export function SettingsTab({
         </div>
         {mounts.length > 0 ? (
           <>
-            <div className={`grid ${canEdit ? "grid-cols-[1fr_1fr_100px_36px]" : "grid-cols-[1fr_1fr_100px]"} border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wider`}>
+            <div
+              className={`grid ${canEdit ? "grid-cols-[1fr_1fr_100px_36px]" : "grid-cols-[1fr_1fr_100px]"} border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wider`}
+            >
               <div className="px-3 py-2">Source</div>
               <div className="px-3 py-2 border-l border-border">Container Path</div>
               <div className="px-3 py-2 border-l border-border">Mode</div>
               {canEdit && <div />}
             </div>
             <div className="-mb-px">
-            {mounts.map((m, i) => (
-              <div key={i} className={`grid ${canEdit ? "grid-cols-[1fr_1fr_100px_36px]" : "grid-cols-[1fr_1fr_100px]"} border-b border-border last:border-b-0`}>
-                <Input
-                  className={inputCell}
-                  value={m.hostPath || m.name}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    if (val.startsWith("/")) {
-                      updateMount(i, "hostPath", val);
-                      updateMount(i, "name", "");
-                    } else {
-                      updateMount(i, "name", val);
-                      updateMount(i, "hostPath", "");
-                    }
-                  }}
-                  placeholder="/host/path or volume-name"
-                  disabled={!canEdit}
-                />
-                <div className="border-l border-border">
+              {mounts.map((m, i) => (
+                <div
+                  key={i}
+                  className={`grid ${canEdit ? "grid-cols-[1fr_1fr_100px_36px]" : "grid-cols-[1fr_1fr_100px]"} border-b border-border last:border-b-0`}
+                >
                   <Input
                     className={inputCell}
-                    value={m.containerPath}
-                    onChange={(e) => updateMount(i, "containerPath", e.target.value)}
-                    placeholder="/container/path"
+                    value={m.hostPath || m.name}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val.startsWith("/")) {
+                        updateMount(i, "hostPath", val);
+                        updateMount(i, "name", "");
+                      } else {
+                        updateMount(i, "name", val);
+                        updateMount(i, "hostPath", "");
+                      }
+                    }}
+                    placeholder="/host/path or volume-name"
                     disabled={!canEdit}
                   />
+                  <div className="border-l border-border">
+                    <Input
+                      className={inputCell}
+                      value={m.containerPath}
+                      onChange={(e) => updateMount(i, "containerPath", e.target.value)}
+                      placeholder="/container/path"
+                      disabled={!canEdit}
+                    />
+                  </div>
+                  <div className="border-l border-border">
+                    <Select
+                      value={m.readOnly ? "ro" : "rw"}
+                      onValueChange={(v) => updateMount(i, "readOnly", v === "ro")}
+                      disabled={!canEdit}
+                    >
+                      <SelectTrigger className="h-9 text-xs border-0 rounded-none shadow-none focus:ring-1 focus:ring-inset focus:ring-ring">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="rw">RW</SelectItem>
+                        <SelectItem value="ro">RO</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {canEdit && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-9 shrink-0 rounded-none border-l border-border"
+                      onClick={() => removeMount(i)}
+                    >
+                      <Minus className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
                 </div>
-                <div className="border-l border-border">
-                  <Select value={m.readOnly ? "ro" : "rw"} onValueChange={(v) => updateMount(i, "readOnly", v === "ro")} disabled={!canEdit}>
-                    <SelectTrigger className="h-9 text-xs border-0 rounded-none shadow-none focus:ring-1 focus:ring-inset focus:ring-ring">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="rw">RW</SelectItem>
-                      <SelectItem value="ro">RO</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                {canEdit && (
-                  <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0 rounded-none border-l border-border" onClick={() => removeMount(i)}>
-                    <Minus className="h-3.5 w-3.5" />
-                  </Button>
-                )}
-              </div>
-            ))}
+              ))}
             </div>
           </>
         ) : (
@@ -567,7 +759,10 @@ export function SettingsTab({
       </div>
 
       {/* ─── Labels ───────────────────────────────────────────────── */}
-      <div className="border bg-card overflow-hidden" style={labelsChanged ? { borderColor: "rgb(234 179 8)" } : undefined}>
+      <div
+        className="border bg-card overflow-hidden"
+        style={labelsChanged ? { borderColor: "rgb(234 179 8)" } : undefined}
+      >
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <div>
             <h3 className="text-sm font-semibold">Labels</h3>
@@ -587,38 +782,45 @@ export function SettingsTab({
               <div className="px-3 py-2 border-l border-border">Value</div>
             </div>
             <div className="-mb-px">
-            {labels.map((l, i) => (
-              <div key={i} className="grid grid-cols-[1fr_1fr] border-b border-border last:border-b-0">
-                <Input
-                  className={inputCell}
-                  value={l.key}
-                  onChange={(e) => updateLabel(i, "key", e.target.value)}
-                  placeholder="com.example.key"
-                  disabled={!canEdit}
-                />
-                <div className="flex items-center border-l border-border">
+              {labels.map((l, i) => (
+                <div
+                  key={i}
+                  className="grid grid-cols-[1fr_1fr] border-b border-border last:border-b-0"
+                >
                   <Input
-                    className={`${inputCell} flex-1 min-w-0`}
-                    value={l.value}
-                    onChange={(e) => updateLabel(i, "value", e.target.value)}
-                    placeholder="value"
+                    className={inputCell}
+                    value={l.key}
+                    onChange={(e) => updateLabel(i, "key", e.target.value)}
+                    placeholder="com.example.key"
                     disabled={!canEdit}
                   />
-                  {canEdit && (
-                    <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0 rounded-none border-l border-border" onClick={() => removeLabel(i)}>
-                      <Minus className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
+                  <div className="flex items-center border-l border-border">
+                    <Input
+                      className={`${inputCell} flex-1 min-w-0`}
+                      value={l.value}
+                      onChange={(e) => updateLabel(i, "value", e.target.value)}
+                      placeholder="value"
+                      disabled={!canEdit}
+                    />
+                    {canEdit && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9 shrink-0 rounded-none border-l border-border"
+                        onClick={() => removeLabel(i)}
+                      >
+                        <Minus className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
             </div>
           </>
         ) : (
           <div className="py-8 text-center text-muted-foreground text-sm">No labels</div>
         )}
       </div>
-
     </div>
   );
 }

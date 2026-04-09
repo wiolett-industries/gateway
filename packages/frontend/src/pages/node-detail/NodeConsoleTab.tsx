@@ -6,10 +6,7 @@ import { useAuthStore } from "@/stores/auth";
 export function NodeConsoleTab({ nodeId }: { nodeId: string }) {
   const { hasScope } = useAuthStore();
 
-  const wsFactory = useCallback(
-    () => api.createNodeExecWebSocket(nodeId, "auto"),
-    [nodeId]
-  );
+  const wsFactory = useCallback(() => api.createNodeExecWebSocket(nodeId, "auto"), [nodeId]);
 
   if (!hasScope("nodes:console")) {
     return (

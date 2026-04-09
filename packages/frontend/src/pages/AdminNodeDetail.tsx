@@ -21,15 +21,15 @@ import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { usePinnedNodesStore } from "@/stores/pinned-nodes";
 import type { NodeDetail, NodeStatus } from "@/types";
-import { NodeConfigTab } from "./node-detail/NodeConfigTab";
 import { DockerContainers } from "./DockerContainers";
 import { DockerImages } from "./DockerImages";
 import { DockerNetworks } from "./DockerNetworks";
 import { DockerVolumes } from "./DockerVolumes";
+import { NodeConfigTab } from "./node-detail/NodeConfigTab";
+import { NodeConsoleTab } from "./node-detail/NodeConsoleTab";
 import { NodeDetailsTab } from "./node-detail/NodeDetailsTab";
 import { NodeLogsTab } from "./node-detail/NodeLogsTab";
 import { NodeMonitoringTab } from "./node-detail/NodeMonitoringTab";
-import { NodeConsoleTab } from "./node-detail/NodeConsoleTab";
 import { NodeNginxLogsTab } from "./node-detail/NodeNginxLogsTab";
 
 const STATUS_BADGE: Record<
@@ -50,8 +50,21 @@ export function AdminNodeDetail() {
   const [node, setNode] = useState<NodeDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const VALID_TABS = ["details", "monitoring", "console", "configuration", "nginx-logs", "containers", "images", "volumes", "networks", "daemon-logs"];
-  const [activeTab, setActiveTabState] = useState(() => tabParam && VALID_TABS.includes(tabParam) ? tabParam : "details");
+  const VALID_TABS = [
+    "details",
+    "monitoring",
+    "console",
+    "configuration",
+    "nginx-logs",
+    "containers",
+    "images",
+    "volumes",
+    "networks",
+    "daemon-logs",
+  ];
+  const [activeTab, setActiveTabState] = useState(() =>
+    tabParam && VALID_TABS.includes(tabParam) ? tabParam : "details"
+  );
   const setActiveTab = (tab: string) => {
     setActiveTabState(tab);
     window.history.replaceState(null, "", `/nodes/${id}/${tab}`);
@@ -193,9 +206,7 @@ export function AdminNodeDetail() {
             {node.type === "nginx" && (
               <TabsTrigger value="configuration">Configuration</TabsTrigger>
             )}
-            {node.type === "nginx" && (
-              <TabsTrigger value="nginx-logs">Nginx Logs</TabsTrigger>
-            )}
+            {node.type === "nginx" && <TabsTrigger value="nginx-logs">Nginx Logs</TabsTrigger>}
             {node.type === "docker" && (
               <PageTransition>
                 <TabsTrigger value="containers">Containers</TabsTrigger>

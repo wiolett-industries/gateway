@@ -77,7 +77,9 @@ export function createControlHandlers(deps: GrpcServerDeps) {
                   commandId: '__registration_rejected__',
                   applyConfig: { hostId: '', configContent: reason, testOnly: false },
                 });
-              } catch { /* stream may already be dead */ }
+              } catch {
+                /* stream may already be dead */
+              }
               stream.end();
               return;
             }
@@ -92,7 +94,9 @@ export function createControlHandlers(deps: GrpcServerDeps) {
                 capabilities: {
                   ...(msg.register.nginxVersion ? { nginxVersion: msg.register.nginxVersion } : {}),
                   ...(msg.register.daemonType ? { daemonType: msg.register.daemonType } : {}),
-                  ...((msg.register as any).dockerVersion ? { dockerVersion: (msg.register as any).dockerVersion } : {}),
+                  ...((msg.register as any).dockerVersion
+                    ? { dockerVersion: (msg.register as any).dockerVersion }
+                    : {}),
                   cpuModel: msg.register.cpuModel || undefined,
                   cpuCores: msg.register.cpuCores || undefined,
                   architecture: msg.register.architecture || undefined,
@@ -141,12 +145,22 @@ export function createControlHandlers(deps: GrpcServerDeps) {
             }
           } else if (msg.commandResult && nodeId) {
             // Intercept traffic stats results (fire-and-forget, not correlated)
-            if (msg.commandResult.commandId?.startsWith('traffic-') && msg.commandResult.success && msg.commandResult.detail) {
+            if (
+              msg.commandResult.commandId?.startsWith('traffic-') &&
+              msg.commandResult.success &&
+              msg.commandResult.detail
+            ) {
               try {
                 const node = deps.registry.getNode(nodeId);
                 if (node) node.lastTrafficStats = JSON.parse(msg.commandResult.detail);
-              } catch { /* ignore parse errors */ }
-            } else if (msg.commandResult.commandId?.startsWith('log_stream:') && msg.commandResult.success && msg.commandResult.detail) {
+              } catch {
+                /* ignore parse errors */
+              }
+            } else if (
+              msg.commandResult.commandId?.startsWith('log_stream:') &&
+              msg.commandResult.success &&
+              msg.commandResult.detail
+            ) {
               // Route log stream chunks to registered WebSocket handlers
               try {
                 const parsed = JSON.parse(msg.commandResult.detail);
@@ -154,7 +168,9 @@ export function createControlHandlers(deps: GrpcServerDeps) {
                   const key = `${nodeId}:${parsed.containerId}`;
                   deps.registry.handleLogStream(key, parsed.lines ?? [], !!parsed.ended);
                 }
-              } catch { /* ignore parse errors */ }
+              } catch {
+                /* ignore parse errors */
+              }
             } else {
               deps.registry.handleCommandResult(nodeId, msg.commandResult);
             }
@@ -205,25 +221,33 @@ export function createControlHandlers(deps: GrpcServerDeps) {
               errorRate5xx: (msg.healthReport as any).errorRate_5xx ?? msg.healthReport.errorRate5xx ?? 0,
               // Docker-specific fields
               ...(msg.healthReport.dockerVersion ? { dockerVersion: msg.healthReport.dockerVersion } : {}),
-              ...(msg.healthReport.containersRunning != null ? { containersRunning: msg.healthReport.containersRunning } : {}),
-              ...(msg.healthReport.containersStopped != null ? { containersStopped: msg.healthReport.containersStopped } : {}),
-              ...(msg.healthReport.containersTotal != null ? { containersTotal: msg.healthReport.containersTotal } : {}),
-              ...(msg.healthReport.containerStats?.length ? {
-                containerStats: msg.healthReport.containerStats.map((c: any) => ({
-                  containerId: c.containerId,
-                  name: c.name,
-                  image: c.image,
-                  state: c.state,
-                  cpuPercent: c.cpuPercent ?? 0,
-                  memoryUsageBytes: Number(c.memoryUsageBytes ?? 0),
-                  memoryLimitBytes: Number(c.memoryLimitBytes ?? 0),
-                  networkRxBytes: Number(c.networkRxBytes ?? 0),
-                  networkTxBytes: Number(c.networkTxBytes ?? 0),
-                  blockReadBytes: Number(c.blockReadBytes ?? 0),
-                  blockWriteBytes: Number(c.blockWriteBytes ?? 0),
-                  pids: c.pids ?? 0,
-                })),
-              } : {}),
+              ...(msg.healthReport.containersRunning != null
+                ? { containersRunning: msg.healthReport.containersRunning }
+                : {}),
+              ...(msg.healthReport.containersStopped != null
+                ? { containersStopped: msg.healthReport.containersStopped }
+                : {}),
+              ...(msg.healthReport.containersTotal != null
+                ? { containersTotal: msg.healthReport.containersTotal }
+                : {}),
+              ...(msg.healthReport.containerStats?.length
+                ? {
+                    containerStats: msg.healthReport.containerStats.map((c: any) => ({
+                      containerId: c.containerId,
+                      name: c.name,
+                      image: c.image,
+                      state: c.state,
+                      cpuPercent: c.cpuPercent ?? 0,
+                      memoryUsageBytes: Number(c.memoryUsageBytes ?? 0),
+                      memoryLimitBytes: Number(c.memoryLimitBytes ?? 0),
+                      networkRxBytes: Number(c.networkRxBytes ?? 0),
+                      networkTxBytes: Number(c.networkTxBytes ?? 0),
+                      blockReadBytes: Number(c.blockReadBytes ?? 0),
+                      blockWriteBytes: Number(c.blockWriteBytes ?? 0),
+                      pids: c.pids ?? 0,
+                    })),
+                  }
+                : {}),
             };
 
             deps.registry.updateHealthReport(nodeId, healthData);
@@ -242,9 +266,8 @@ export function createControlHandlers(deps: GrpcServerDeps) {
             const previousHour = lastRecordedHour.get(nodeId);
             if (previousHour !== currentHour) {
               const connectedNode = deps.registry.getNode(nodeId);
-              const isHealthy = connectedNode?.type === 'nginx'
-                ? (healthData.nginxRunning && healthData.configValid)
-                : true; // non-nginx nodes are healthy when connected + reporting
+              const isHealthy =
+                connectedNode?.type === 'nginx' ? healthData.nginxRunning && healthData.configValid : true; // non-nginx nodes are healthy when connected + reporting
               const hourKey = `${currentHour}:00:00.000Z`;
 
               try {

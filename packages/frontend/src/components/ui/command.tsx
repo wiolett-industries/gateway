@@ -20,7 +20,11 @@ const Command = React.forwardRef<
 ));
 Command.displayName = CommandPrimitive.displayName;
 
-const CommandDialog = ({ children, shouldFilter, ...props }: React.ComponentProps<typeof Dialog> & { shouldFilter?: boolean }) => {
+const CommandDialog = ({
+  children,
+  shouldFilter,
+  ...props
+}: React.ComponentProps<typeof Dialog> & { shouldFilter?: boolean }) => {
   return (
     <Dialog {...props}>
       <DialogContent
@@ -29,7 +33,10 @@ const CommandDialog = ({ children, shouldFilter, ...props }: React.ComponentProp
         aria-describedby={undefined}
       >
         <DialogPrimitive.Title className="sr-only">Command Palette</DialogPrimitive.Title>
-        <Command shouldFilter={shouldFilter} className="[&_[cmdk-input-wrapper]_svg]:h-4 [&_[cmdk-input-wrapper]_svg]:w-4 [&_[cmdk-input]]:h-11 [&_[cmdk-item]_svg]:h-4 [&_[cmdk-item]_svg]:w-4">
+        <Command
+          shouldFilter={shouldFilter}
+          className="[&_[cmdk-input-wrapper]_svg]:h-4 [&_[cmdk-input-wrapper]_svg]:w-4 [&_[cmdk-input]]:h-11 [&_[cmdk-item]_svg]:h-4 [&_[cmdk-item]_svg]:w-4"
+        >
           {children}
         </Command>
       </DialogContent>

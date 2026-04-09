@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, unique, uuid, index } from 'drizzle-orm/pg-core';
+import { index, pgTable, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
 import { nodes } from './nodes.js';
 
 export const dockerSecrets = pgTable(
@@ -17,5 +17,5 @@ export const dockerSecrets = pgTable(
   (table) => [
     unique('docker_secret_unique').on(table.nodeId, table.containerName, table.key),
     index('docker_secret_container_idx').on(table.nodeId, table.containerName),
-  ],
+  ]
 );

@@ -9,7 +9,10 @@ interface PinnedContainersState {
   containerMeta: Record<string, { nodeId: string; name: string; state?: string }>;
   refreshTick: number;
   toggleDashboard: (containerId: string) => void;
-  toggleSidebar: (containerId: string, meta?: { nodeId: string; name: string; state?: string }) => void;
+  toggleSidebar: (
+    containerId: string,
+    meta?: { nodeId: string; name: string; state?: string }
+  ) => void;
   isPinnedDashboard: (containerId: string) => boolean;
   isPinnedSidebar: (containerId: string) => boolean;
   /** Update display name / state (e.g. after rename or status change) */
@@ -87,8 +90,16 @@ export const usePinnedContainersStore = create<PinnedContainersState>()(
           for (const id of Object.keys(newMeta)) {
             if (!validSet.has(id)) delete newMeta[id];
           }
-          if (newDash.length === s.dashboardContainerIds.length && newSide.length === s.sidebarContainerIds.length) return s;
-          return { dashboardContainerIds: newDash, sidebarContainerIds: newSide, containerMeta: newMeta };
+          if (
+            newDash.length === s.dashboardContainerIds.length &&
+            newSide.length === s.sidebarContainerIds.length
+          )
+            return s;
+          return {
+            dashboardContainerIds: newDash,
+            sidebarContainerIds: newSide,
+            containerMeta: newMeta,
+          };
         }),
 
       invalidate: () => set((s) => ({ refreshTick: s.refreshTick + 1 })),

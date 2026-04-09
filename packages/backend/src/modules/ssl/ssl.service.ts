@@ -30,7 +30,9 @@ export class SSLService {
   ) {}
 
   private eventBus?: EventBusService;
-  setEventBus(bus: EventBusService) { this.eventBus = bus; }
+  setEventBus(bus: EventBusService) {
+    this.eventBus = bus;
+  }
   private emitCert(id: string, action: 'created' | 'renewed' | 'deleted' | 'updated') {
     this.eventBus?.publish('ssl.cert.changed', { id, action });
   }

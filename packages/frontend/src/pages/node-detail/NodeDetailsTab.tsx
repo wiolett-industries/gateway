@@ -188,52 +188,54 @@ export function NodeDetailsTab({ node }: NodeDetailsTabProps) {
       )}
 
       {/* Assigned Proxy Hosts — nginx nodes only */}
-      {node.type === "nginx" && <div className="border border-border bg-card">
-        <div className="flex items-center justify-between border-b border-border p-4">
-          <h2 className="font-semibold">Assigned Proxy Hosts</h2>
-          <Badge variant="secondary">{proxyHosts.length}</Badge>
-        </div>
-        {proxyHosts.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-border text-left">
-                  <th className="p-3 text-xs font-medium text-muted-foreground">Domain</th>
-                  <th className="p-3 text-xs font-medium text-muted-foreground">Type</th>
-                  <th className="p-3 text-xs font-medium text-muted-foreground">Target</th>
-                  <th className="p-3 text-xs font-medium text-muted-foreground">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {proxyHosts.map((host) => (
-                  <tr
-                    key={host.id}
-                    className="hover:bg-accent transition-colors cursor-pointer"
-                    onClick={() => navigate(`/proxy-hosts/${host.id}`)}
-                  >
-                    <td className="p-3 text-sm font-medium">{host.domainNames.join(", ")}</td>
-                    <td className="p-3 text-sm text-muted-foreground capitalize">{host.type}</td>
-                    <td className="p-3 text-sm text-muted-foreground">
-                      {host.forwardHost
-                        ? `${host.forwardScheme}://${host.forwardHost}:${host.forwardPort}`
-                        : "—"}
-                    </td>
-                    <td className="p-3 align-middle">
-                      <Badge variant={host.enabled ? "success" : "secondary"} className="text-xs">
-                        {host.enabled ? "active" : "disabled"}
-                      </Badge>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {node.type === "nginx" && (
+        <div className="border border-border bg-card">
+          <div className="flex items-center justify-between border-b border-border p-4">
+            <h2 className="font-semibold">Assigned Proxy Hosts</h2>
+            <Badge variant="secondary">{proxyHosts.length}</Badge>
           </div>
-        ) : (
-          <p className="py-8 text-center text-sm text-muted-foreground">
-            No proxy hosts assigned yet
-          </p>
-        )}
-      </div>}
+          {proxyHosts.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-border text-left">
+                    <th className="p-3 text-xs font-medium text-muted-foreground">Domain</th>
+                    <th className="p-3 text-xs font-medium text-muted-foreground">Type</th>
+                    <th className="p-3 text-xs font-medium text-muted-foreground">Target</th>
+                    <th className="p-3 text-xs font-medium text-muted-foreground">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {proxyHosts.map((host) => (
+                    <tr
+                      key={host.id}
+                      className="hover:bg-accent transition-colors cursor-pointer"
+                      onClick={() => navigate(`/proxy-hosts/${host.id}`)}
+                    >
+                      <td className="p-3 text-sm font-medium">{host.domainNames.join(", ")}</td>
+                      <td className="p-3 text-sm text-muted-foreground capitalize">{host.type}</td>
+                      <td className="p-3 text-sm text-muted-foreground">
+                        {host.forwardHost
+                          ? `${host.forwardScheme}://${host.forwardHost}:${host.forwardPort}`
+                          : "—"}
+                      </td>
+                      <td className="p-3 align-middle">
+                        <Badge variant={host.enabled ? "success" : "secondary"} className="text-xs">
+                          {host.enabled ? "active" : "disabled"}
+                        </Badge>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              No proxy hosts assigned yet
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Docker Container Overview — docker nodes only */}
       {node.type === "docker" && (
@@ -253,7 +255,10 @@ export function NodeDetailsTab({ node }: NodeDetailsTabProps) {
                 </div>
                 <div className="text-center">
                   <p className="text-2xl font-bold">
-                    {dockerContainers.filter((c) => c.state === "exited" || c.state === "stopped").length}
+                    {
+                      dockerContainers.filter((c) => c.state === "exited" || c.state === "stopped")
+                        .length
+                    }
                   </p>
                   <p className="text-xs text-muted-foreground">Stopped</p>
                 </div>

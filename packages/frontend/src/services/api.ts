@@ -541,7 +541,12 @@ class ApiClient {
 
   async updateGroup(
     id: string,
-    data: { name?: string; description?: string | null; scopes?: string[]; parentId?: string | null }
+    data: {
+      name?: string;
+      description?: string | null;
+      scopes?: string[];
+      parentId?: string | null;
+    }
   ): Promise<PermissionGroup> {
     return this.request<PermissionGroup>(`/admin/groups/${id}`, {
       method: "PUT",
@@ -634,7 +639,10 @@ class ApiClient {
     );
   }
 
-  async testNodeNginxConfig(nodeId: string, content?: string): Promise<{ valid: boolean; error?: string }> {
+  async testNodeNginxConfig(
+    nodeId: string,
+    content?: string
+  ): Promise<{ valid: boolean; error?: string }> {
     return this.unwrapData(
       this.request<{ data: { valid: boolean; error?: string } }>(`/nodes/${nodeId}/config/test`, {
         method: "POST",
@@ -746,7 +754,10 @@ class ApiClient {
     );
   }
 
-  async validateProxyConfig(snippet: string, mode: "advanced" | "raw" = "advanced"): Promise<{ valid: boolean; errors: string[] }> {
+  async validateProxyConfig(
+    snippet: string,
+    mode: "advanced" | "raw" = "advanced"
+  ): Promise<{ valid: boolean; errors: string[] }> {
     return this.unwrapData(
       this.request<{ data: { valid: boolean; errors: string[] } }>("/proxy-hosts/validate-config", {
         method: "POST",
@@ -1239,85 +1250,65 @@ class ApiClient {
     return this.unwrapData(this.request<{ data: DockerContainer[] }>(url));
   }
 
-  async inspectContainer(
-    nodeId: string,
-    containerId: string
-  ): Promise<Record<string, unknown>> {
-    return this.unwrapData(this.request<{ data: Record<string, unknown> }>(
-      `/docker/nodes/${nodeId}/containers/${containerId}`
-    ));
+  async inspectContainer(nodeId: string, containerId: string): Promise<Record<string, unknown>> {
+    return this.unwrapData(
+      this.request<{ data: Record<string, unknown> }>(
+        `/docker/nodes/${nodeId}/containers/${containerId}`
+      )
+    );
   }
 
   async createContainer(
     nodeId: string,
     config: ContainerCreateConfig
   ): Promise<Record<string, unknown>> {
-    return this.unwrapData(this.request<{ data: Record<string, unknown> }>(
-      `/docker/nodes/${nodeId}/containers`,
-      { method: "POST", body: JSON.stringify(config) }
-    ));
+    return this.unwrapData(
+      this.request<{ data: Record<string, unknown> }>(`/docker/nodes/${nodeId}/containers`, {
+        method: "POST",
+        body: JSON.stringify(config),
+      })
+    );
   }
 
   async startContainer(nodeId: string, containerId: string): Promise<void> {
-    await this.request<void>(
-      `/docker/nodes/${nodeId}/containers/${containerId}/start`,
-      { method: "POST" }
-    );
+    await this.request<void>(`/docker/nodes/${nodeId}/containers/${containerId}/start`, {
+      method: "POST",
+    });
   }
 
-  async stopContainer(
-    nodeId: string,
-    containerId: string,
-    timeout = 30
-  ): Promise<void> {
-    await this.request<void>(
-      `/docker/nodes/${nodeId}/containers/${containerId}/stop`,
-      { method: "POST", body: JSON.stringify({ timeout }) }
-    );
+  async stopContainer(nodeId: string, containerId: string, timeout = 30): Promise<void> {
+    await this.request<void>(`/docker/nodes/${nodeId}/containers/${containerId}/stop`, {
+      method: "POST",
+      body: JSON.stringify({ timeout }),
+    });
   }
 
-  async restartContainer(
-    nodeId: string,
-    containerId: string,
-    timeout = 30
-  ): Promise<void> {
-    await this.request<void>(
-      `/docker/nodes/${nodeId}/containers/${containerId}/restart`,
-      { method: "POST", body: JSON.stringify({ timeout }) }
-    );
+  async restartContainer(nodeId: string, containerId: string, timeout = 30): Promise<void> {
+    await this.request<void>(`/docker/nodes/${nodeId}/containers/${containerId}/restart`, {
+      method: "POST",
+      body: JSON.stringify({ timeout }),
+    });
   }
 
-  async killContainer(
-    nodeId: string,
-    containerId: string,
-    signal = "SIGKILL"
-  ): Promise<void> {
-    await this.request<void>(
-      `/docker/nodes/${nodeId}/containers/${containerId}/kill`,
-      { method: "POST", body: JSON.stringify({ signal }) }
-    );
+  async killContainer(nodeId: string, containerId: string, signal = "SIGKILL"): Promise<void> {
+    await this.request<void>(`/docker/nodes/${nodeId}/containers/${containerId}/kill`, {
+      method: "POST",
+      body: JSON.stringify({ signal }),
+    });
   }
 
-  async removeContainer(
-    nodeId: string,
-    containerId: string,
-    force = false
-  ): Promise<void> {
-    await this.request<void>(
-      `/docker/nodes/${nodeId}/containers/${containerId}`,
-      { method: "DELETE", body: JSON.stringify({ force }) }
-    );
+  async removeContainer(nodeId: string, containerId: string, force = false): Promise<void> {
+    await this.request<void>(`/docker/nodes/${nodeId}/containers/${containerId}`, {
+      method: "DELETE",
+      body: JSON.stringify({ force }),
+    });
   }
 
-  async renameContainer(
-    nodeId: string,
-    containerId: string,
-    name: string
-  ): Promise<void> {
-    await this.request<void>(
-      `/docker/nodes/${nodeId}/containers/${containerId}/rename`,
-      { method: "POST", body: JSON.stringify({ name }) }
-    );
+  async renameContainer(nodeId: string, containerId: string, name: string): Promise<void> {
+    await this.request<void>(`/docker/nodes/${nodeId}/containers/${containerId}/rename`, {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    });
   }
 
   async duplicateContainer(
@@ -1325,10 +1316,12 @@ class ApiClient {
     containerId: string,
     name: string
   ): Promise<Record<string, unknown>> {
-    return this.unwrapData(this.request<{ data: Record<string, unknown> }>(
-      `/docker/nodes/${nodeId}/containers/${containerId}/duplicate`,
-      { method: "POST", body: JSON.stringify({ name }) }
-    ));
+    return this.unwrapData(
+      this.request<{ data: Record<string, unknown> }>(
+        `/docker/nodes/${nodeId}/containers/${containerId}/duplicate`,
+        { method: "POST", body: JSON.stringify({ name }) }
+      )
+    );
   }
 
   async updateContainer(
@@ -1336,10 +1329,12 @@ class ApiClient {
     containerId: string,
     config: { tag?: string; env?: Record<string, string>; removeEnv?: string[] }
   ): Promise<Record<string, unknown>> {
-    return this.unwrapData(this.request<{ data: Record<string, unknown> }>(
-      `/docker/nodes/${nodeId}/containers/${containerId}/update`,
-      { method: "POST", body: JSON.stringify(config) }
-    ));
+    return this.unwrapData(
+      this.request<{ data: Record<string, unknown> }>(
+        `/docker/nodes/${nodeId}/containers/${containerId}/update`,
+        { method: "POST", body: JSON.stringify(config) }
+      )
+    );
   }
 
   async getContainerLogs(
@@ -1351,45 +1346,47 @@ class ApiClient {
     if (params?.tail) qs.set("tail", String(params.tail));
     if (params?.timestamps) qs.set("timestamps", "true");
     const query = qs.toString();
-    return this.unwrapData(this.request<{ data: string[] }>(
-      `/docker/nodes/${nodeId}/containers/${containerId}/logs${query ? `?${query}` : ""}`
-    ));
+    return this.unwrapData(
+      this.request<{ data: string[] }>(
+        `/docker/nodes/${nodeId}/containers/${containerId}/logs${query ? `?${query}` : ""}`
+      )
+    );
   }
 
-  async getContainerStats(
-    nodeId: string,
-    containerId: string
-  ): Promise<Record<string, unknown>> {
-    return this.unwrapData(this.request<{ data: Record<string, unknown> }>(
-      `/docker/nodes/${nodeId}/containers/${containerId}/stats`
-    ));
+  async getContainerStats(nodeId: string, containerId: string): Promise<Record<string, unknown>> {
+    return this.unwrapData(
+      this.request<{ data: Record<string, unknown> }>(
+        `/docker/nodes/${nodeId}/containers/${containerId}/stats`
+      )
+    );
   }
 
   async getContainerTop(
     nodeId: string,
     containerId: string
   ): Promise<{ Titles: string[]; Processes: string[][] }> {
-    return this.unwrapData(this.request<{ data: { Titles: string[]; Processes: string[][] } }>(
-      `/docker/nodes/${nodeId}/containers/${containerId}/top`
-    ));
+    return this.unwrapData(
+      this.request<{ data: { Titles: string[]; Processes: string[][] } }>(
+        `/docker/nodes/${nodeId}/containers/${containerId}/top`
+      )
+    );
   }
 
   async getContainerStatsHistory(
     nodeId: string,
     containerId: string
   ): Promise<Record<string, unknown>[]> {
-    return this.unwrapData(this.request<{ data: Record<string, unknown>[] }>(
-      `/docker/nodes/${nodeId}/containers/${containerId}/stats/history`
-    ));
+    return this.unwrapData(
+      this.request<{ data: Record<string, unknown>[] }>(
+        `/docker/nodes/${nodeId}/containers/${containerId}/stats/history`
+      )
+    );
   }
 
-  async getContainerEnv(
-    nodeId: string,
-    containerId: string
-  ): Promise<string[]> {
-    return this.unwrapData(this.request<{ data: string[] }>(
-      `/docker/nodes/${nodeId}/containers/${containerId}/env`
-    ));
+  async getContainerEnv(nodeId: string, containerId: string): Promise<string[]> {
+    return this.unwrapData(
+      this.request<{ data: string[] }>(`/docker/nodes/${nodeId}/containers/${containerId}/env`)
+    );
   }
 
   async updateContainerEnv(
@@ -1398,10 +1395,12 @@ class ApiClient {
     env: Record<string, string>,
     removeEnv?: string[]
   ): Promise<Record<string, unknown>> {
-    return this.unwrapData(this.request<{ data: Record<string, unknown> }>(
-      `/docker/nodes/${nodeId}/containers/${containerId}/env`,
-      { method: "PUT", body: JSON.stringify({ env, removeEnv }) }
-    ));
+    return this.unwrapData(
+      this.request<{ data: Record<string, unknown> }>(
+        `/docker/nodes/${nodeId}/containers/${containerId}/env`,
+        { method: "PUT", body: JSON.stringify({ env, removeEnv }) }
+      )
+    );
   }
 
   async liveUpdateContainer(
@@ -1409,10 +1408,12 @@ class ApiClient {
     containerId: string,
     config: Record<string, unknown>
   ): Promise<Record<string, unknown>> {
-    return this.unwrapData(this.request<{ data: Record<string, unknown> }>(
-      `/docker/nodes/${nodeId}/containers/${containerId}/live-update`,
-      { method: "POST", body: JSON.stringify(config) }
-    ));
+    return this.unwrapData(
+      this.request<{ data: Record<string, unknown> }>(
+        `/docker/nodes/${nodeId}/containers/${containerId}/live-update`,
+        { method: "POST", body: JSON.stringify(config) }
+      )
+    );
   }
 
   async recreateWithConfig(
@@ -1420,35 +1421,55 @@ class ApiClient {
     containerId: string,
     config: Record<string, unknown>
   ): Promise<Record<string, unknown>> {
-    return this.unwrapData(this.request<{ data: Record<string, unknown> }>(
-      `/docker/nodes/${nodeId}/containers/${containerId}/recreate`,
-      { method: "POST", body: JSON.stringify(config) }
-    ));
+    return this.unwrapData(
+      this.request<{ data: Record<string, unknown> }>(
+        `/docker/nodes/${nodeId}/containers/${containerId}/recreate`,
+        { method: "POST", body: JSON.stringify(config) }
+      )
+    );
   }
 
   // ── Docker Secrets ────────────────────────────────────────────────
 
   async listDockerSecrets(nodeId: string, containerId: string): Promise<DockerSecret[]> {
     return this.unwrapData(
-      this.request<{ data: DockerSecret[] }>(`/docker/nodes/${nodeId}/containers/${containerId}/secrets`)
+      this.request<{ data: DockerSecret[] }>(
+        `/docker/nodes/${nodeId}/containers/${containerId}/secrets`
+      )
     );
   }
 
-  async createDockerSecret(nodeId: string, containerId: string, key: string, value: string): Promise<DockerSecret> {
+  async createDockerSecret(
+    nodeId: string,
+    containerId: string,
+    key: string,
+    value: string
+  ): Promise<DockerSecret> {
     return this.unwrapData(
-      this.request<{ data: DockerSecret }>(`/docker/nodes/${nodeId}/containers/${containerId}/secrets`, {
-        method: "POST",
-        body: JSON.stringify({ key, value }),
-      })
+      this.request<{ data: DockerSecret }>(
+        `/docker/nodes/${nodeId}/containers/${containerId}/secrets`,
+        {
+          method: "POST",
+          body: JSON.stringify({ key, value }),
+        }
+      )
     );
   }
 
-  async updateDockerSecret(nodeId: string, containerId: string, secretId: string, value: string): Promise<DockerSecret> {
+  async updateDockerSecret(
+    nodeId: string,
+    containerId: string,
+    secretId: string,
+    value: string
+  ): Promise<DockerSecret> {
     return this.unwrapData(
-      this.request<{ data: DockerSecret }>(`/docker/nodes/${nodeId}/containers/${containerId}/secrets/${secretId}`, {
-        method: "PUT",
-        body: JSON.stringify({ value }),
-      })
+      this.request<{ data: DockerSecret }>(
+        `/docker/nodes/${nodeId}/containers/${containerId}/secrets/${secretId}`,
+        {
+          method: "PUT",
+          body: JSON.stringify({ value }),
+        }
+      )
     );
   }
 
@@ -1469,70 +1490,76 @@ class ApiClient {
     imageRef: string,
     registryId?: string
   ): Promise<Record<string, unknown>> {
-    return this.unwrapData(this.request<{ data: Record<string, unknown> }>(
-      `/docker/nodes/${nodeId}/images/pull`,
-      { method: "POST", body: JSON.stringify({ imageRef, registryId }) }
-    ));
-  }
-
-  async removeImage(nodeId: string, imageId: string): Promise<void> {
-    await this.request<void>(
-      `/docker/nodes/${nodeId}/images/${encodeURIComponent(imageId)}`,
-      { method: "DELETE" }
+    return this.unwrapData(
+      this.request<{ data: Record<string, unknown> }>(`/docker/nodes/${nodeId}/images/pull`, {
+        method: "POST",
+        body: JSON.stringify({ imageRef, registryId }),
+      })
     );
   }
 
+  async removeImage(nodeId: string, imageId: string): Promise<void> {
+    await this.request<void>(`/docker/nodes/${nodeId}/images/${encodeURIComponent(imageId)}`, {
+      method: "DELETE",
+    });
+  }
+
   async pruneImages(nodeId: string): Promise<Record<string, unknown>> {
-    return this.unwrapData(this.request<{ data: Record<string, unknown> }>(
-      `/docker/nodes/${nodeId}/images/prune`,
-      { method: "POST" }
-    ));
+    return this.unwrapData(
+      this.request<{ data: Record<string, unknown> }>(`/docker/nodes/${nodeId}/images/prune`, {
+        method: "POST",
+      })
+    );
   }
 
   // ── Docker Volumes ────────────────────────────────────────────────
 
   async listDockerVolumes(nodeId: string): Promise<DockerVolume[]> {
-    return this.unwrapData(this.request<{ data: DockerVolume[] }>(`/docker/nodes/${nodeId}/volumes`));
+    return this.unwrapData(
+      this.request<{ data: DockerVolume[] }>(`/docker/nodes/${nodeId}/volumes`)
+    );
   }
 
   async createVolume(
     nodeId: string,
     config: { name: string; driver?: string; labels?: Record<string, string> }
   ): Promise<Record<string, unknown>> {
-    return this.unwrapData(this.request<{ data: Record<string, unknown> }>(
-      `/docker/nodes/${nodeId}/volumes`,
-      { method: "POST", body: JSON.stringify(config) }
-    ));
+    return this.unwrapData(
+      this.request<{ data: Record<string, unknown> }>(`/docker/nodes/${nodeId}/volumes`, {
+        method: "POST",
+        body: JSON.stringify(config),
+      })
+    );
   }
 
   async removeVolume(nodeId: string, name: string): Promise<void> {
-    await this.request<void>(
-      `/docker/nodes/${nodeId}/volumes/${encodeURIComponent(name)}`,
-      { method: "DELETE" }
-    );
+    await this.request<void>(`/docker/nodes/${nodeId}/volumes/${encodeURIComponent(name)}`, {
+      method: "DELETE",
+    });
   }
 
   // ── Docker Networks ───────────────────────────────────────────────
 
   async listDockerNetworks(nodeId: string): Promise<DockerNetwork[]> {
-    return this.unwrapData(this.request<{ data: DockerNetwork[] }>(`/docker/nodes/${nodeId}/networks`));
+    return this.unwrapData(
+      this.request<{ data: DockerNetwork[] }>(`/docker/nodes/${nodeId}/networks`)
+    );
   }
 
   async createNetwork(
     nodeId: string,
     config: { name: string; driver?: string; subnet?: string; gateway?: string }
   ): Promise<Record<string, unknown>> {
-    return this.unwrapData(this.request<{ data: Record<string, unknown> }>(
-      `/docker/nodes/${nodeId}/networks`,
-      { method: "POST", body: JSON.stringify(config) }
-    ));
+    return this.unwrapData(
+      this.request<{ data: Record<string, unknown> }>(`/docker/nodes/${nodeId}/networks`, {
+        method: "POST",
+        body: JSON.stringify(config),
+      })
+    );
   }
 
   async removeNetwork(nodeId: string, networkId: string): Promise<void> {
-    await this.request<void>(
-      `/docker/nodes/${nodeId}/networks/${networkId}`,
-      { method: "DELETE" }
-    );
+    await this.request<void>(`/docker/nodes/${nodeId}/networks/${networkId}`, { method: "DELETE" });
   }
 
   async connectContainerToNetwork(
@@ -1540,10 +1567,10 @@ class ApiClient {
     networkId: string,
     containerId: string
   ): Promise<void> {
-    await this.request<void>(
-      `/docker/nodes/${nodeId}/networks/${networkId}/connect`,
-      { method: "POST", body: JSON.stringify({ containerId }) }
-    );
+    await this.request<void>(`/docker/nodes/${nodeId}/networks/${networkId}/connect`, {
+      method: "POST",
+      body: JSON.stringify({ containerId }),
+    });
   }
 
   async disconnectContainerFromNetwork(
@@ -1551,32 +1578,28 @@ class ApiClient {
     networkId: string,
     containerId: string
   ): Promise<void> {
-    await this.request<void>(
-      `/docker/nodes/${nodeId}/networks/${networkId}/disconnect`,
-      { method: "POST", body: JSON.stringify({ containerId }) }
-    );
+    await this.request<void>(`/docker/nodes/${nodeId}/networks/${networkId}/disconnect`, {
+      method: "POST",
+      body: JSON.stringify({ containerId }),
+    });
   }
 
   // ── Docker File Browser ───────────────────────────────────────────
 
-  async listContainerDir(
-    nodeId: string,
-    containerId: string,
-    path: string
-  ): Promise<FileEntry[]> {
-    return this.unwrapData(this.request<{ data: FileEntry[] }>(
-      `/docker/nodes/${nodeId}/containers/${containerId}/files?path=${encodeURIComponent(path)}`
-    ));
+  async listContainerDir(nodeId: string, containerId: string, path: string): Promise<FileEntry[]> {
+    return this.unwrapData(
+      this.request<{ data: FileEntry[] }>(
+        `/docker/nodes/${nodeId}/containers/${containerId}/files?path=${encodeURIComponent(path)}`
+      )
+    );
   }
 
-  async readContainerFile(
-    nodeId: string,
-    containerId: string,
-    path: string
-  ): Promise<string> {
-    return this.unwrapData(this.request<{ data: string }>(
-      `/docker/nodes/${nodeId}/containers/${containerId}/files/read?path=${encodeURIComponent(path)}`
-    ));
+  async readContainerFile(nodeId: string, containerId: string, path: string): Promise<string> {
+    return this.unwrapData(
+      this.request<{ data: string }>(
+        `/docker/nodes/${nodeId}/containers/${containerId}/files/read?path=${encodeURIComponent(path)}`
+      )
+    );
   }
 
   async writeContainerFile(nodeId: string, containerId: string, path: string, content: string) {
@@ -1602,10 +1625,12 @@ class ApiClient {
     scope?: string;
     nodeId?: string;
   }): Promise<DockerRegistry> {
-    return this.unwrapData(this.request<{ data: DockerRegistry }>("/docker/registries", {
-      method: "POST",
-      body: JSON.stringify(config),
-    }));
+    return this.unwrapData(
+      this.request<{ data: DockerRegistry }>("/docker/registries", {
+        method: "POST",
+        body: JSON.stringify(config),
+      })
+    );
   }
 
   async updateRegistry(
@@ -1619,33 +1644,42 @@ class ApiClient {
       nodeId?: string;
     }>
   ): Promise<DockerRegistry> {
-    return this.unwrapData(this.request<{ data: DockerRegistry }>(`/docker/registries/${id}`, {
-      method: "PUT",
-      body: JSON.stringify(config),
-    }));
+    return this.unwrapData(
+      this.request<{ data: DockerRegistry }>(`/docker/registries/${id}`, {
+        method: "PUT",
+        body: JSON.stringify(config),
+      })
+    );
   }
 
   async deleteRegistry(id: string): Promise<void> {
     await this.request<void>(`/docker/registries/${id}`, { method: "DELETE" });
   }
 
-  async testRegistry(
-    id: string
-  ): Promise<{ ok: boolean; error?: string }> {
-    const result = await this.unwrapData(this.request<{ data: { success?: boolean; ok?: boolean; error?: string; statusText?: string } }>(
-      `/docker/registries/${id}/test`,
-      { method: "POST" }
-    ));
+  async testRegistry(id: string): Promise<{ ok: boolean; error?: string }> {
+    const result = await this.unwrapData(
+      this.request<{
+        data: { success?: boolean; ok?: boolean; error?: string; statusText?: string };
+      }>(`/docker/registries/${id}/test`, { method: "POST" })
+    );
     return { ok: result.success ?? result.ok ?? false, error: result.error || result.statusText };
   }
 
-  async testRegistryDirect(
-    creds: { url: string; username?: string; password?: string }
-  ): Promise<{ ok: boolean; error?: string }> {
-    const result = await this.unwrapData(this.request<{ data: { success?: boolean; error?: string; statusText?: string } }>(
-      `/docker/registries/test`,
-      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(creds) }
-    ));
+  async testRegistryDirect(creds: {
+    url: string;
+    username?: string;
+    password?: string;
+  }): Promise<{ ok: boolean; error?: string }> {
+    const result = await this.unwrapData(
+      this.request<{ data: { success?: boolean; error?: string; statusText?: string } }>(
+        `/docker/registries/test`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(creds),
+        }
+      )
+    );
     return { ok: result.success ?? false, error: result.error || result.statusText };
   }
 
@@ -1660,20 +1694,24 @@ class ApiClient {
     description?: string;
     config: object;
   }): Promise<DockerTemplate> {
-    return this.unwrapData(this.request<{ data: DockerTemplate }>("/docker/templates", {
-      method: "POST",
-      body: JSON.stringify(config),
-    }));
+    return this.unwrapData(
+      this.request<{ data: DockerTemplate }>("/docker/templates", {
+        method: "POST",
+        body: JSON.stringify(config),
+      })
+    );
   }
 
   async updateDockerTemplate(
     id: string,
     config: Partial<{ name: string; description?: string; config: object }>
   ): Promise<DockerTemplate> {
-    return this.unwrapData(this.request<{ data: DockerTemplate }>(`/docker/templates/${id}`, {
-      method: "PUT",
-      body: JSON.stringify(config),
-    }));
+    return this.unwrapData(
+      this.request<{ data: DockerTemplate }>(`/docker/templates/${id}`, {
+        method: "PUT",
+        body: JSON.stringify(config),
+      })
+    );
   }
 
   async deleteDockerTemplate(id: string): Promise<void> {
@@ -1684,10 +1722,12 @@ class ApiClient {
     id: string,
     config: { nodeId: string; overrides?: object }
   ): Promise<Record<string, unknown>> {
-    return this.unwrapData(this.request<{ data: Record<string, unknown> }>(
-      `/docker/templates/${id}/deploy`,
-      { method: "POST", body: JSON.stringify(config) }
-    ));
+    return this.unwrapData(
+      this.request<{ data: Record<string, unknown> }>(`/docker/templates/${id}/deploy`, {
+        method: "POST",
+        body: JSON.stringify(config),
+      })
+    );
   }
 
   // ── Docker Tasks ──────────────────────────────────────────────────
@@ -1702,9 +1742,9 @@ class ApiClient {
     if (params?.status) qs.set("status", params.status);
     if (params?.type) qs.set("type", params.type);
     const query = qs.toString();
-    return this.unwrapData(this.request<{ data: DockerTask[] }>(
-      `/docker/tasks${query ? `?${query}` : ""}`
-    ));
+    return this.unwrapData(
+      this.request<{ data: DockerTask[] }>(`/docker/tasks${query ? `?${query}` : ""}`)
+    );
   }
 
   async getDockerTask(id: string): Promise<DockerTask> {
@@ -1713,11 +1753,7 @@ class ApiClient {
 
   // ── Docker Exec WebSocket ─────────────────────────────────────────
 
-  createExecWebSocket(
-    nodeId: string,
-    containerId: string,
-    shell = "/bin/sh"
-  ): WebSocket {
+  createExecWebSocket(nodeId: string, containerId: string, shell = "/bin/sh"): WebSocket {
     const sessionId = useAuthStore.getState().sessionId;
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
     const url = `${proto}//${window.location.host}/api/docker/nodes/${nodeId}/containers/${containerId}/exec?token=${sessionId}&shell=${encodeURIComponent(shell)}`;
@@ -1735,11 +1771,7 @@ class ApiClient {
 
   // ── Docker Log Stream WebSocket ─────────────────────────────────
 
-  createLogStreamWebSocket(
-    nodeId: string,
-    containerId: string,
-    tail = 100
-  ): WebSocket {
+  createLogStreamWebSocket(nodeId: string, containerId: string, tail = 100): WebSocket {
     const sessionId = useAuthStore.getState().sessionId;
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
     const url = `${proto}//${window.location.host}/api/docker/nodes/${nodeId}/containers/${containerId}/logs/stream?token=${sessionId}&tail=${tail}`;

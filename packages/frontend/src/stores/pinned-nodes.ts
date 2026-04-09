@@ -44,7 +44,11 @@ export const usePinnedNodesStore = create<PinnedNodesState>()(
           const validSet = new Set(validIds);
           const newDash = s.dashboardNodeIds.filter((id) => validSet.has(id));
           const newSide = s.sidebarNodeIds.filter((id) => validSet.has(id));
-          if (newDash.length === s.dashboardNodeIds.length && newSide.length === s.sidebarNodeIds.length) return s;
+          if (
+            newDash.length === s.dashboardNodeIds.length &&
+            newSide.length === s.sidebarNodeIds.length
+          )
+            return s;
           return { dashboardNodeIds: newDash, sidebarNodeIds: newSide };
         }),
 

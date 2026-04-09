@@ -42,7 +42,7 @@ export class NginxSyntaxValidatorService {
    * The config is wrapped in a minimal http {} skeleton.
    */
   async validate(config: string): Promise<ValidationResult> {
-    if (!await this.isAvailable()) {
+    if (!(await this.isAvailable())) {
       // Fallback: can't validate syntax without nginx binary
       return { valid: true, errors: [] };
     }
@@ -72,7 +72,7 @@ export class NginxSyntaxValidatorService {
    * Validate a full nginx.conf (no wrapper needed).
    */
   async validateFull(config: string): Promise<ValidationResult> {
-    if (!await this.isAvailable()) {
+    if (!(await this.isAvailable())) {
       return { valid: true, errors: [] };
     }
 
@@ -96,15 +96,10 @@ export class NginxSyntaxValidatorService {
 
   private async runNginxTest(confPath: string): Promise<{ exitCode: number; stderr: string }> {
     return new Promise((resolve) => {
-      execFile(
-        this.nginxBin!,
-        ['-t', '-c', confPath],
-        { timeout: 5000 },
-        (error, _stdout, stderr) => {
-          const exitCode = error && 'code' in error ? (error as any).code ?? 1 : error ? 1 : 0;
-          resolve({ exitCode, stderr: stderr || '' });
-        }
-      );
+      execFile(this.nginxBin!, ['-t', '-c', confPath], { timeout: 5000 }, (error, _stdout, stderr) => {
+        const exitCode = error && 'code' in error ? ((error as any).code ?? 1) : error ? 1 : 0;
+        resolve({ exitCode, stderr: stderr || '' });
+      });
     });
   }
 
@@ -114,7 +109,7 @@ export class NginxSyntaxValidatorService {
    * so we adjust them to be relative to the user's config.
    */
   private parseErrors(stderr: string, _userConfig: string, lineOffset?: number): string[] {
-    const wrapperLinesBefore = lineOffset ?? (CONFIG_WRAPPER.split('%CONFIG%')[0].split('\n').length - 1);
+    const wrapperLinesBefore = lineOffset ?? CONFIG_WRAPPER.split('%CONFIG%')[0].split('\n').length - 1;
     logger.debug('nginx -t stderr', { stderr, wrapperLinesBefore });
 
     const errors: string[] = [];

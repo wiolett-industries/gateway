@@ -615,7 +615,11 @@ export const AI_TOOLS: AIToolDefinition[] = [
       type: 'object',
       properties: {
         search: { type: 'string', description: 'Search by hostname' },
-        type: { type: 'string', enum: ['nginx', 'monitoring', 'docker', 'bastion'], description: 'Filter by node type' },
+        type: {
+          type: 'string',
+          enum: ['nginx', 'monitoring', 'docker', 'bastion'],
+          description: 'Filter by node type',
+        },
         status: { type: 'string', enum: ['pending', 'online', 'offline'], description: 'Filter by status' },
         page: { type: 'number', description: 'Page number (default: 1)' },
         limit: { type: 'number', description: 'Items per page (default: 50)' },
@@ -643,12 +647,17 @@ export const AI_TOOLS: AIToolDefinition[] = [
   },
   {
     name: 'create_node',
-    description: 'Create a new daemon node and generate an enrollment token. IMPORTANT: The response contains enrollmentToken — you MUST display it to the user along with the setup commands (curl/wget). The token is one-time-use and cannot be retrieved again.',
+    description:
+      'Create a new daemon node and generate an enrollment token. IMPORTANT: The response contains enrollmentToken — you MUST display it to the user along with the setup commands (curl/wget). The token is one-time-use and cannot be retrieved again.',
     parameters: {
       type: 'object',
       properties: {
         hostname: { type: 'string', description: 'Node hostname (e.g., "proxy-01.example.com")' },
-        type: { type: 'string', enum: ['nginx', 'monitoring', 'docker', 'bastion'], description: 'Node type (default: nginx)' },
+        type: {
+          type: 'string',
+          enum: ['nginx', 'monitoring', 'docker', 'bastion'],
+          description: 'Node type (default: nginx)',
+        },
         displayName: { type: 'string', description: 'Optional display name' },
       },
       required: ['hostname'],
@@ -693,7 +702,8 @@ export const AI_TOOLS: AIToolDefinition[] = [
   // ── Raw Config ──
   {
     name: 'get_proxy_rendered_config',
-    description: 'Get the rendered nginx configuration for a proxy host. Shows either the template-generated or raw config.',
+    description:
+      'Get the rendered nginx configuration for a proxy host. Shows either the template-generated or raw config.',
     parameters: {
       type: 'object',
       properties: {
@@ -724,7 +734,8 @@ export const AI_TOOLS: AIToolDefinition[] = [
   },
   {
     name: 'toggle_proxy_raw_mode',
-    description: 'Enable or disable raw config mode on a proxy host. When enabled, template rendering is bypassed and the raw config is used directly.',
+    description:
+      'Enable or disable raw config mode on a proxy host. When enabled, template rendering is bypassed and the raw config is used directly.',
     parameters: {
       type: 'object',
       properties: {
@@ -784,7 +795,8 @@ export const AI_TOOLS: AIToolDefinition[] = [
   },
   {
     name: 'get_dashboard_stats',
-    description: 'Get dashboard statistics: counts of CAs, certificates, proxy hosts, SSL certs, nodes, expiring items.',
+    description:
+      'Get dashboard statistics: counts of CAs, certificates, proxy hosts, SSL certs, nodes, expiring items.',
     parameters: { type: 'object', properties: {} },
     destructive: false,
     category: 'Administration',
@@ -957,7 +969,8 @@ export const AI_TOOLS: AIToolDefinition[] = [
   },
   {
     name: 'get_docker_container',
-    description: 'Get detailed information about a specific Docker container including config, state, mounts, and network settings.',
+    description:
+      'Get detailed information about a specific Docker container including config, state, mounts, and network settings.',
     parameters: {
       type: 'object',
       properties: {

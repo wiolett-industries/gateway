@@ -48,7 +48,9 @@ export function StatsTab({
   data: InspectData;
 }) {
   const [current, setCurrent] = useState<ContainerStats | null>(null);
-  const [processes, setProcesses] = useState<{ Titles: string[]; Processes: string[][] } | null>(null);
+  const [processes, setProcesses] = useState<{ Titles: string[]; Processes: string[][] } | null>(
+    null
+  );
 
   const [cpuHist, setCpuHist] = useState<number[]>([]);
   const [memHist, setMemHist] = useState<number[]>([]);
@@ -57,7 +59,12 @@ export function StatsTab({
   const [diskReadHist, setDiskReadHist] = useState<number[]>([]);
   const [diskWriteHist, setDiskWriteHist] = useState<number[]>([]);
   const [pidsHist, setPidsHist] = useState<number[]>([]);
-  const prevCountersRef = useRef<{ netRx: number; netTx: number; diskR: number; diskW: number } | null>(null);
+  const prevCountersRef = useRef<{
+    netRx: number;
+    netTx: number;
+    diskR: number;
+    diskW: number;
+  } | null>(null);
 
   const pushStats = (s: ContainerStats) => {
     setCurrent(s);
@@ -67,45 +74,79 @@ export function StatsTab({
 
     const pc = prevCountersRef.current;
     if (pc) {
-      setNetRxHist((h) => [...h.slice(-(MAX_HISTORY - 1)), Math.max(0, s.networkRxBytes - pc.netRx)]);
-      setNetTxHist((h) => [...h.slice(-(MAX_HISTORY - 1)), Math.max(0, s.networkTxBytes - pc.netTx)]);
-      setDiskReadHist((h) => [...h.slice(-(MAX_HISTORY - 1)), Math.max(0, s.blockReadBytes - pc.diskR)]);
-      setDiskWriteHist((h) => [...h.slice(-(MAX_HISTORY - 1)), Math.max(0, s.blockWriteBytes - pc.diskW)]);
+      setNetRxHist((h) => [
+        ...h.slice(-(MAX_HISTORY - 1)),
+        Math.max(0, s.networkRxBytes - pc.netRx),
+      ]);
+      setNetTxHist((h) => [
+        ...h.slice(-(MAX_HISTORY - 1)),
+        Math.max(0, s.networkTxBytes - pc.netTx),
+      ]);
+      setDiskReadHist((h) => [
+        ...h.slice(-(MAX_HISTORY - 1)),
+        Math.max(0, s.blockReadBytes - pc.diskR),
+      ]);
+      setDiskWriteHist((h) => [
+        ...h.slice(-(MAX_HISTORY - 1)),
+        Math.max(0, s.blockWriteBytes - pc.diskW),
+      ]);
     }
     prevCountersRef.current = {
-      netRx: s.networkRxBytes, netTx: s.networkTxBytes,
-      diskR: s.blockReadBytes, diskW: s.blockWriteBytes,
+      netRx: s.networkRxBytes,
+      netTx: s.networkTxBytes,
+      diskR: s.blockReadBytes,
+      diskW: s.blockWriteBytes,
     };
   };
 
   // Load history from Redis on mount, then connect to SSE
   useEffect(() => {
     // 1. Load saved history
-    api.getContainerStatsHistory(nodeId, containerId).then((history) => {
-      if (!history || history.length === 0) return;
-      const cpus: number[] = [], mems: number[] = [], pidsList: number[] = [];
-      const rxD: number[] = [], txD: number[] = [], drD: number[] = [], dwD: number[] = [];
-      let pRx = 0, pTx = 0, pDR = 0, pDW = 0;
-      for (let i = 0; i < history.length; i++) {
-        const s = normalizeStats(history[i] as any);
-        cpus.push(s.cpuPercent);
-        mems.push(s.memoryUsageBytes);
-        pidsList.push(s.pids);
-        if (i > 0) {
-          rxD.push(Math.max(0, s.networkRxBytes - pRx));
-          txD.push(Math.max(0, s.networkTxBytes - pTx));
-          drD.push(Math.max(0, s.blockReadBytes - pDR));
-          dwD.push(Math.max(0, s.blockWriteBytes - pDW));
+    api
+      .getContainerStatsHistory(nodeId, containerId)
+      .then((history) => {
+        if (!history || history.length === 0) return;
+        const cpus: number[] = [],
+          mems: number[] = [],
+          pidsList: number[] = [];
+        const rxD: number[] = [],
+          txD: number[] = [],
+          drD: number[] = [],
+          dwD: number[] = [];
+        let pRx = 0,
+          pTx = 0,
+          pDR = 0,
+          pDW = 0;
+        for (let i = 0; i < history.length; i++) {
+          const s = normalizeStats(history[i] as any);
+          cpus.push(s.cpuPercent);
+          mems.push(s.memoryUsageBytes);
+          pidsList.push(s.pids);
+          if (i > 0) {
+            rxD.push(Math.max(0, s.networkRxBytes - pRx));
+            txD.push(Math.max(0, s.networkTxBytes - pTx));
+            drD.push(Math.max(0, s.blockReadBytes - pDR));
+            dwD.push(Math.max(0, s.blockWriteBytes - pDW));
+          }
+          pRx = s.networkRxBytes;
+          pTx = s.networkTxBytes;
+          pDR = s.blockReadBytes;
+          pDW = s.blockWriteBytes;
         }
-        pRx = s.networkRxBytes; pTx = s.networkTxBytes;
-        pDR = s.blockReadBytes; pDW = s.blockWriteBytes;
-      }
-      setCpuHist(cpus); setMemHist(mems); setPidsHist(pidsList);
-      setNetRxHist(rxD); setNetTxHist(txD); setDiskReadHist(drD); setDiskWriteHist(dwD);
-      prevCountersRef.current = { netRx: pRx, netTx: pTx, diskR: pDR, diskW: pDW };
-      const last = normalizeStats(history[history.length - 1] as any);
-      setCurrent(last);
-    }).catch(() => { /* ignore */ });
+        setCpuHist(cpus);
+        setMemHist(mems);
+        setPidsHist(pidsList);
+        setNetRxHist(rxD);
+        setNetTxHist(txD);
+        setDiskReadHist(drD);
+        setDiskWriteHist(dwD);
+        prevCountersRef.current = { netRx: pRx, netTx: pTx, diskR: pDR, diskW: pDW };
+        const last = normalizeStats(history[history.length - 1] as any);
+        setCurrent(last);
+      })
+      .catch(() => {
+        /* ignore */
+      });
 
     // 2. Connect to node monitoring SSE (reuse existing stream)
     const es = api.createNodeMonitoringStream(nodeId);
@@ -143,7 +184,9 @@ export function StatsTab({
       try {
         const p = await api.getContainerTop(nodeId, containerId);
         setProcesses(p as any);
-      } catch { /* */ }
+      } catch {
+        /* */
+      }
     };
     fetchTop();
     const interval = setInterval(fetchTop, 10000);
@@ -189,7 +232,8 @@ export function StatsTab({
   // Filter out TTY column from process list
   const ttIdx = processes?.Titles?.findIndex((t) => t === "TTY" || t === "TT") ?? -1;
   const filteredTitles = processes?.Titles?.filter((_, i) => i !== ttIdx) ?? [];
-  const filteredProcesses = processes?.Processes?.map((row) => row.filter((_, i) => i !== ttIdx)) ?? [];
+  const filteredProcesses =
+    processes?.Processes?.map((row) => row.filter((_, i) => i !== ttIdx)) ?? [];
 
   return (
     <div className="space-y-6 pb-6">
@@ -257,12 +301,7 @@ export function StatsTab({
               history={pidsHist}
               color="#64748b"
             />
-            <StatCard
-              label="Uptime"
-              value={uptime}
-              icon={Clock}
-              color="#a855f7"
-            />
+            <StatCard label="Uptime" value={uptime} icon={Clock} color="#a855f7" />
           </div>
 
           {/* Process List */}
@@ -277,7 +316,10 @@ export function StatsTab({
                     <thead className="sticky top-0 bg-card z-10">
                       <tr className="text-left border-b border-border">
                         {filteredTitles.map((title) => (
-                          <th key={title} className="p-2 px-4 text-xs font-medium text-muted-foreground uppercase">
+                          <th
+                            key={title}
+                            className="p-2 px-4 text-xs font-medium text-muted-foreground uppercase"
+                          >
                             {title}
                           </th>
                         ))}
