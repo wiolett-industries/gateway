@@ -156,7 +156,7 @@ export function DataTable<T>({
                 <div
                   ref={virtualizer.measureElement}
                   data-index={vi.index}
-                  className={`absolute left-0 right-0 grid border-b border-border transition-colors ${
+                  className={`absolute left-0 right-0 grid items-center border-b border-border transition-colors ${
                     onRowClick ? "cursor-pointer hover:bg-muted/50" : ""
                   }`}
                   style={{
