@@ -1401,3 +1401,15 @@ export interface ContainerCreateConfig {
   labels?: Record<string, string>;
   command?: string[];
 }
+
+export interface DockerWebhook {
+  id: string;
+  nodeId: string;
+  containerName: string;
+  token: string;
+  enabled: boolean;
+  cleanupEnabled: boolean;
+  retentionCount: number;
+  createdAt: string;
+  updatedAt: string;
+}

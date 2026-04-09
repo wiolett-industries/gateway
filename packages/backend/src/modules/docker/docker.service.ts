@@ -9,7 +9,7 @@ import type { NodeRegistryService } from '@/services/node-registry.service.js';
 import type { DockerSecretService } from './docker-secret.service.js';
 import type { DockerTaskService } from './docker-task.service.js';
 
-type ContainerTransition = 'creating' | 'stopping' | 'restarting' | 'killing' | 'recreating' | 'updating';
+export type ContainerTransition = 'creating' | 'stopping' | 'restarting' | 'killing' | 'recreating' | 'updating';
 
 type ContainerAction =
   | 'created'
@@ -125,18 +125,18 @@ export class DockerManagementService {
     return `${nodeId}:${name}`;
   }
 
-  private requireNoTransition(nodeId: string, name: string) {
+  requireNoTransition(nodeId: string, name: string) {
     const current = this.containerTransitions.get(this.transitionKey(nodeId, name));
     if (current) {
       throw new AppError(409, 'CONTAINER_BUSY', `Container is currently ${current}`);
     }
   }
 
-  private setTransition(nodeId: string, name: string, state: ContainerTransition) {
+  setTransition(nodeId: string, name: string, state: ContainerTransition) {
     this.containerTransitions.set(this.transitionKey(nodeId, name), state);
   }
 
-  private clearTransition(nodeId: string, name: string) {
+  clearTransition(nodeId: string, name: string) {
     this.containerTransitions.delete(this.transitionKey(nodeId, name));
   }
 

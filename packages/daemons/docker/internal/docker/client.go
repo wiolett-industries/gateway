@@ -615,6 +615,7 @@ func (c *Client) LiveUpdateContainer(ctx context.Context, id string, configJSON 
 // overrides for ports, mounts, entrypoint, command, working directory, user, hostname, and labels.
 func (c *Client) RecreateWithConfig(ctx context.Context, id string, configJSON string) error {
 	var params struct {
+		Image string `json:"image"`
 		Ports []struct {
 			HostPort      uint16 `json:"hostPort"`
 			ContainerPort uint16 `json:"containerPort"`
@@ -719,7 +720,10 @@ func (c *Client) RecreateWithConfig(ctx context.Context, id string, configJSON s
 		insp.Config.Labels = params.Labels
 	}
 
-	imageRef := insp.Config.Image
+	imageRef := params.Image
+	if imageRef == "" {
+		imageRef = insp.Config.Image
+	}
 	if imageRef == "" {
 		imageRef = insp.Image
 	}

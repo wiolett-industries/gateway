@@ -23,6 +23,7 @@ import type {
   DockerNetwork,
   DockerRegistry,
   DockerSecret,
+  DockerWebhook,
   DockerTask,
   DockerTemplate,
   DockerVolume,
@@ -1767,6 +1768,66 @@ class ApiClient {
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
     const url = `${proto}//${window.location.host}/api/nodes/${nodeId}/exec?token=${sessionId}&shell=${encodeURIComponent(shell)}`;
     return new WebSocket(url);
+  }
+
+  // ── Docker Webhooks ────────────────────────────────────────────
+
+  async getContainerWebhook(
+    nodeId: string,
+    containerName: string,
+  ): Promise<DockerWebhook | null> {
+    const result = await this.request<{ data: DockerWebhook | null }>(
+      `/docker/nodes/${nodeId}/containers/${encodeURIComponent(containerName)}/webhook`,
+    );
+    return result.data;
+  }
+
+  async upsertContainerWebhook(
+    nodeId: string,
+    containerName: string,
+    input: { cleanupEnabled?: boolean; retentionCount?: number },
+  ): Promise<DockerWebhook> {
+    return this.unwrapData(
+      this.request<{ data: DockerWebhook }>(
+        `/docker/nodes/${nodeId}/containers/${encodeURIComponent(containerName)}/webhook`,
+        { method: "PUT", body: JSON.stringify(input) },
+      ),
+    );
+  }
+
+  async deleteContainerWebhook(
+    nodeId: string,
+    containerName: string,
+  ): Promise<void> {
+    await this.request<void>(
+      `/docker/nodes/${nodeId}/containers/${encodeURIComponent(containerName)}/webhook`,
+      { method: "DELETE" },
+    );
+  }
+
+  async regenerateWebhookToken(
+    nodeId: string,
+    containerName: string,
+  ): Promise<DockerWebhook> {
+    return this.unwrapData(
+      this.request<{ data: DockerWebhook }>(
+        `/docker/nodes/${nodeId}/containers/${encodeURIComponent(containerName)}/webhook/regenerate`,
+        { method: "POST" },
+      ),
+    );
+  }
+
+  async pullImageSync(
+    nodeId: string,
+    imageRef: string,
+    registryId?: string,
+  ): Promise<{ success: boolean; imageRef: string }> {
+    return this.unwrapData(
+      this.request<{ data: { success: boolean; imageRef: string } }>(
+        `/docker/nodes/${nodeId}/images/pull-sync`,
+        { method: "POST", body: JSON.stringify({ imageRef, registryId }) },
+      ),
+    );
   }
 
   // ── Docker Log Stream WebSocket ─────────────────────────────────

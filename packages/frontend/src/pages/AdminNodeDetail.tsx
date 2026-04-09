@@ -237,7 +237,7 @@ export function AdminNodeDetail() {
             </TabsContent>
           )}
           {node.type === "docker" && (
-            <PageTransition>
+            <>
               <TabsContent value="containers" className="flex flex-col flex-1 min-h-0">
                 <DockerContainers embedded fixedNodeId={node.id} />
               </TabsContent>
@@ -250,7 +250,7 @@ export function AdminNodeDetail() {
               <TabsContent value="networks" className="flex flex-col flex-1 min-h-0">
                 <DockerNetworks embedded fixedNodeId={node.id} />
               </TabsContent>
-            </PageTransition>
+            </>
           )}
           {node.status === "online" && hasScope("nodes:console") && (
             <TabsContent value="console" className="flex flex-col flex-1 min-h-0">

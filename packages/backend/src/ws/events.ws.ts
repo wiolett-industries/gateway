@@ -54,6 +54,7 @@ function requiredScopeFor(channel: string): string | null {
   if (channel.startsWith('docker.volume')) return 'docker:volumes:list';
   if (channel.startsWith('docker.network')) return 'docker:networks:list';
   if (channel.startsWith('docker.task')) return 'docker:containers:list';
+  if (channel.startsWith('docker.webhook')) return 'docker:containers:webhooks';
   if (channel.startsWith('docker.')) return 'docker:containers:list';
   if (channel.startsWith('proxy.host')) return 'proxy:list';
   if (channel.startsWith('ssl.cert')) return 'ssl:cert:list';

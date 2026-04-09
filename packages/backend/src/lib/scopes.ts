@@ -83,6 +83,7 @@ export const ALL_SCOPES = [
   'docker:containers:console',
   'docker:containers:files',
   'docker:containers:secrets',
+  'docker:containers:webhooks',
   // ── Docker: Images ───────────────────────────────────────────────
   'docker:images:list',
   'docker:images:pull',
@@ -167,6 +168,7 @@ export const OPERATOR_SCOPES: readonly string[] = [
   'docker:containers:edit',
   'docker:containers:manage',
   'docker:containers:environment',
+  'docker:containers:webhooks',
   'docker:tasks',
 ];
 

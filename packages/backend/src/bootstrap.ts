@@ -20,6 +20,7 @@ import { DockerRegistryService } from '@/modules/docker/docker-registry.service.
 import { DockerSecretService } from '@/modules/docker/docker-secret.service.js';
 import { DockerTaskService } from '@/modules/docker/docker-task.service.js';
 import { DockerTemplateService } from '@/modules/docker/docker-template.service.js';
+import { DockerWebhookService } from '@/modules/docker/docker-webhook.service.js';
 import { detectPublicIP, initDnsResolver } from '@/modules/domains/dns.utils.js';
 import { DomainsService } from '@/modules/domains/domain.service.js';
 import { GroupService } from '@/modules/groups/group.service.js';
@@ -165,10 +166,21 @@ export async function initializeContainer(): Promise<void> {
 
   const dockerTaskService = new DockerTaskService(db);
   container.registerInstance(DockerTaskService, dockerTaskService);
+  const dockerWebhookService = new DockerWebhookService(
+    db,
+    dockerManagementService,
+    dockerTaskService,
+    dockerRegistryService,
+    auditService,
+    nodeDispatch
+  );
+  container.registerInstance(DockerWebhookService, dockerWebhookService);
+
   dockerManagementService.setTaskService(dockerTaskService);
   dockerManagementService.setSecretService(dockerSecretService);
   dockerManagementService.setEventBus(eventBus);
   dockerTaskService.setEventBus(eventBus);
+  dockerWebhookService.setEventBus(eventBus);
   authService.setEventBus(eventBus);
   caService.setEventBus(eventBus);
   nodesService.setEventBus(eventBus);

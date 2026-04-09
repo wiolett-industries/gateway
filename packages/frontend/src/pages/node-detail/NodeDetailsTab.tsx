@@ -54,6 +54,25 @@ export function NodeDetailsTab({ node }: NodeDetailsTabProps) {
 
   return (
     <div className="space-y-4">
+      {/* Docker Container Overview — docker nodes only */}
+      {node.type === "docker" && dockerContainers.length > 0 && (
+        <div className="border border-border bg-card">
+          <div className="grid grid-cols-4 divide-x divide-border">
+            {[
+              { label: "Running", count: dockerContainers.filter((c) => c.state === "running").length },
+              { label: "Stopped", count: dockerContainers.filter((c) => c.state === "exited" || c.state === "stopped").length },
+              { label: "Paused", count: dockerContainers.filter((c) => c.state === "paused").length },
+              { label: "Total", count: dockerContainers.length },
+            ].map((s) => (
+              <div key={s.label} className="p-4 text-center">
+                <p className="text-2xl font-bold">{s.count}</p>
+                <p className="text-xs text-muted-foreground mt-1">{s.label}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Node Details — 2 cards side by side */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Identity */}
@@ -237,50 +256,6 @@ export function NodeDetailsTab({ node }: NodeDetailsTabProps) {
         </div>
       )}
 
-      {/* Docker Container Overview — docker nodes only */}
-      {node.type === "docker" && (
-        <div className="border border-border bg-card">
-          <div className="flex items-center justify-between border-b border-border p-4">
-            <h2 className="font-semibold">Container Overview</h2>
-            <Badge variant="secondary">{dockerContainers.length}</Badge>
-          </div>
-          {dockerContainers.length > 0 ? (
-            <div className="divide-y divide-border">
-              <div className="grid grid-cols-4 gap-4 p-4">
-                <div className="text-center">
-                  <p className="text-2xl font-bold">
-                    {dockerContainers.filter((c) => c.state === "running").length}
-                  </p>
-                  <p className="text-xs text-muted-foreground">Running</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-2xl font-bold">
-                    {
-                      dockerContainers.filter((c) => c.state === "exited" || c.state === "stopped")
-                        .length
-                    }
-                  </p>
-                  <p className="text-xs text-muted-foreground">Stopped</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-2xl font-bold">
-                    {dockerContainers.filter((c) => c.state === "paused").length}
-                  </p>
-                  <p className="text-xs text-muted-foreground">Paused</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-2xl font-bold">{dockerContainers.length}</p>
-                  <p className="text-xs text-muted-foreground">Total</p>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <p className="py-8 text-center text-sm text-muted-foreground">
-              No containers on this node
-            </p>
-          )}
-        </div>
-      )}
     </div>
   );
 }

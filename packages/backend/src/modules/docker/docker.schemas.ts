@@ -60,6 +60,7 @@ export const ContainerLiveUpdateSchema = z.object({
 
 // Container recreate with new config (requires container recreation)
 export const ContainerRecreateSchema = z.object({
+  image: z.string().min(1).optional(),
   ports: z
     .array(
       z.object({
