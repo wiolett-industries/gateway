@@ -7,6 +7,7 @@ export * from './certificate-templates.js';
 export * from './certificates.js';
 export * from './docker-registries.js';
 export * from './docker-secrets.js';
+export * from './docker-webhooks.js';
 export * from './docker-tasks.js';
 export * from './docker-templates.js';
 export * from './domains.js';

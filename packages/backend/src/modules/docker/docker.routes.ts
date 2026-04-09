@@ -33,11 +33,15 @@ import { DockerRegistryService } from './docker-registry.service.js';
 import { DockerSecretService } from './docker-secret.service.js';
 import { DockerTaskService } from './docker-task.service.js';
 import { DockerTemplateService } from './docker-template.service.js';
+import { registerWebhookConfigRoutes } from './docker-webhook.routes.js';
 
 export const dockerRoutes = new OpenAPIHono<AppEnv>();
 
 dockerRoutes.use('*', authMiddleware);
 dockerRoutes.use('*', sessionOnly);
+
+// Register webhook config routes (session-only, scoped)
+registerWebhookConfigRoutes(dockerRoutes);
 
 // ─── Container routes ────────────────────────────────────────────────
 
@@ -441,6 +445,40 @@ dockerRoutes.post('/nodes/:nodeId/images/pull', requireScope('docker:images:pull
 
   const data = await service.pullImage(nodeId, finalImageRef, registryAuth, user.id);
   return c.json({ data });
+});
+
+// Pull image (synchronous — waits for completion, validates image exists)
+dockerRoutes.post('/nodes/:nodeId/images/pull-sync', requireScope('docker:images:pull'), async (c) => {
+  const registryService = container.resolve(DockerRegistryService);
+  const nodeId = c.req.param('nodeId');
+  const body = await c.req.json();
+  const { imageRef, registryId } = body;
+  ImagePullSchema.parse({ imageRef });
+
+  let finalImageRef = imageRef;
+  let registryAuth: string | undefined;
+  if (registryId) {
+    const auth = await registryService.getAuthForPull(registryId);
+    if (auth) {
+      registryAuth = auth.authJson;
+      if (!imageRef.includes('/') || !imageRef.split('/')[0].includes('.')) {
+        finalImageRef = `${auth.url}/${imageRef}`;
+      }
+    }
+  }
+
+  const { NodeDispatchService } = await import('@/services/node-dispatch.service.js');
+  const dispatch = container.resolve(NodeDispatchService);
+  const result = await dispatch.sendDockerImageCommand(
+    nodeId,
+    'pull',
+    { imageRef: finalImageRef, registryAuthJson: registryAuth },
+    300000
+  );
+  if (!result.success) {
+    return c.json({ error: result.error || `Failed to pull ${finalImageRef}` }, 400);
+  }
+  return c.json({ data: { success: true, imageRef: finalImageRef } });
 });
 
 // Remove image

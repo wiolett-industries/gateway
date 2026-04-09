@@ -1,5 +1,5 @@
-import { Minus, Plus, RotateCcw, Save } from "lucide-react";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { Check, Copy, Minus, Plus, RefreshCw, RotateCcw, Save } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { Button } from "@/components/ui/button";
@@ -11,9 +11,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { useRealtime } from "@/hooks/use-realtime";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
+import type { DockerWebhook } from "@/types";
 import type { InspectData } from "./helpers";
 
 // ── Types ────────────────────────────────────────────────────────
@@ -130,6 +133,24 @@ export function SettingsTab({
   }));
 
   const config = data.Config ?? {};
+  const containerName = useMemo(
+    () => ((data.Name ?? "") as string).replace(/^\//, ""),
+    [data.Name],
+  );
+  const currentImage = (config.Image ?? "") as string;
+  const { imageName: parsedImageName, tag: parsedTag } = useMemo(() => {
+    const lastColon = currentImage.lastIndexOf(":");
+    const lastSlash = currentImage.lastIndexOf("/");
+    if (lastColon === -1 || lastSlash > lastColon) {
+      return { imageName: currentImage, tag: "latest" };
+    }
+    return { imageName: currentImage.slice(0, lastColon), tag: currentImage.slice(lastColon + 1) };
+  }, [currentImage]);
+
+  const [imageTag, setImageTag] = useState(parsedTag);
+  useEffect(() => setImageTag(parsedTag), [parsedTag]);
+  const imageTagChanged = imageTag !== parsedTag;
+
   const initialEntrypoint = (config.Entrypoint ?? []) as string[];
   const initialCmd = (config.Cmd ?? []) as string[];
   const initialWorkdir = (config.WorkingDir ?? "") as string;
@@ -246,7 +267,25 @@ export function SettingsTab({
 
     setRecreateLoading(true);
     try {
+      // If the image tag changed, pull the new image first to validate it exists
+      if (imageTagChanged) {
+        const newRef = `${parsedImageName}:${imageTag}`;
+        try {
+          await api.pullImageSync(nodeId, newRef);
+        } catch {
+          toast.error(`Failed to pull image ${newRef} — check the tag is valid`);
+          setRecreateLoading(false);
+          return;
+        }
+      }
+
       const payload: Record<string, unknown> = {};
+
+      // Include new image if tag changed
+      if (imageTagChanged) {
+        payload.image = `${parsedImageName}:${imageTag}`;
+      }
+
       // Only send fields that changed
       if (portsChanged) {
         payload.ports = ports
@@ -309,6 +348,9 @@ export function SettingsTab({
     user,
     hostname,
     labels,
+    imageTag,
+    imageTagChanged,
+    parsedImageName,
     onAction,
   ]);
 
@@ -353,7 +395,7 @@ export function SettingsTab({
     user !== recreateBaseline.user ||
     hostname !== recreateBaseline.hostname;
   const labelsChanged = JSON.stringify(labels) !== recreateBaseline.labels;
-  const hasRecreateChanges = portsChanged || mountsChanged || execChanged || labelsChanged;
+  const hasRecreateChanges = portsChanged || mountsChanged || execChanged || labelsChanged || imageTagChanged;
 
   // ── Shared input styles ──
   const inputCell =
@@ -500,7 +542,7 @@ export function SettingsTab({
 
         <div
           className="border bg-card overflow-hidden"
-          style={execChanged ? { borderColor: "rgb(234 179 8)" } : undefined}
+          style={execChanged || imageTagChanged ? { borderColor: "rgb(234 179 8)" } : undefined}
         >
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <div>
@@ -521,6 +563,27 @@ export function SettingsTab({
             )}
           </div>
           <div className="p-4 space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Image</label>
+                <Input
+                  className="h-8 text-xs font-mono bg-muted/50"
+                  value={parsedImageName}
+                  disabled
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Tag</label>
+                <Input
+                  className="h-8 text-xs font-mono"
+                  value={imageTag}
+                  onChange={(e) => setImageTag(e.target.value)}
+                  placeholder="latest"
+                  disabled={!canEdit}
+                  style={imageTagChanged ? { borderColor: "rgb(234 179 8)" } : undefined}
+                />
+              </div>
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-muted-foreground">Entrypoint</label>
@@ -821,6 +884,263 @@ export function SettingsTab({
           <div className="py-8 text-center text-muted-foreground text-sm">No labels</div>
         )}
       </div>
+
+      {/* ─── Webhook ─────────────────────────────────────────────── */}
+      {hasScope("docker:containers:webhooks") && (
+        <WebhookSection nodeId={nodeId} containerName={containerName} />
+      )}
+    </div>
+  );
+}
+
+// ── Webhook Section ──────────────────────────────────────────────
+
+function WebhookSection({ nodeId, containerName }: { nodeId: string; containerName: string }) {
+  const [webhook, setWebhook] = useState<DockerWebhook | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [copied, setCopied] = useState(false);
+  const [copiedCurl, setCopiedCurl] = useState(false);
+
+  // Cleanup config local state
+  const [cleanupEnabled, setCleanupEnabled] = useState(false);
+  const [retentionCount, setRetentionCount] = useState("2");
+
+  const fetchWebhook = useCallback(async () => {
+    try {
+      const data = await api.getContainerWebhook(nodeId, containerName);
+      setWebhook(data);
+      if (data) {
+        setCleanupEnabled(data.cleanupEnabled);
+        setRetentionCount(String(data.retentionCount));
+      }
+    } catch {
+      // Ignore — not configured
+    } finally {
+      setLoading(false);
+    }
+  }, [nodeId, containerName]);
+
+  useEffect(() => {
+    fetchWebhook();
+  }, [fetchWebhook]);
+
+  useRealtime("docker.webhook.changed", (payload: unknown) => {
+    const p = payload as Record<string, unknown>;
+    if (p.nodeId === nodeId && p.containerName === containerName) {
+      fetchWebhook();
+    }
+  });
+
+  const webhookUrl = webhook
+    ? `${window.location.origin}/api/webhooks/docker/${webhook.token}`
+    : "";
+  const curlExample = webhook
+    ? `curl -X POST ${webhookUrl} \\\n  -H "Content-Type: application/json" \\\n  -d '{"tag":"v1.0.0"}'`
+    : "";
+
+  const handleEnable = async () => {
+    try {
+      const data = await api.upsertContainerWebhook(nodeId, containerName, {});
+      setWebhook(data);
+      setCleanupEnabled(data.cleanupEnabled);
+      setRetentionCount(String(data.retentionCount));
+      toast.success("Webhook enabled");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to enable webhook");
+    }
+  };
+
+  const autoSave = useCallback(
+    async (patch: { cleanupEnabled?: boolean; retentionCount?: number }) => {
+      try {
+        const data = await api.upsertContainerWebhook(nodeId, containerName, patch);
+        setWebhook(data);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to save");
+      }
+    },
+    [nodeId, containerName],
+  );
+
+  const handleCleanupToggle = useCallback(
+    (v: boolean) => {
+      setCleanupEnabled(v);
+      autoSave({ cleanupEnabled: v });
+    },
+    [autoSave],
+  );
+
+  const handleRetentionBlur = useCallback(() => {
+    const v = Math.max(1, Math.min(50, Number(retentionCount) || 2));
+    setRetentionCount(String(v));
+    if (webhook && v !== webhook.retentionCount) {
+      autoSave({ retentionCount: v });
+    }
+  }, [retentionCount, webhook, autoSave]);
+
+  const handleRegenerate = async () => {
+    const ok = await confirm({
+      title: "Regenerate Webhook URL",
+      description:
+        "This will invalidate the current webhook URL. Any CI pipelines using the old URL will stop working. Continue?",
+      confirmLabel: "Regenerate",
+      variant: "destructive",
+    });
+    if (!ok) return;
+    try {
+      const data = await api.regenerateWebhookToken(nodeId, containerName);
+      setWebhook(data);
+      toast.success("Webhook URL regenerated");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to regenerate");
+    }
+  };
+
+  const handleDisable = async () => {
+    const ok = await confirm({
+      title: "Disable Webhook",
+      description:
+        "This will delete the webhook configuration and URL. CI pipelines using this URL will stop working. Continue?",
+      confirmLabel: "Disable",
+      variant: "destructive",
+    });
+    if (!ok) return;
+    try {
+      await api.deleteContainerWebhook(nodeId, containerName);
+      setWebhook(null);
+      toast.success("Webhook disabled");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to disable");
+    }
+  };
+
+  const copyToClipboard = (text: string, type: "url" | "curl") => {
+    navigator.clipboard.writeText(text);
+    if (type === "url") {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } else {
+      setCopiedCurl(true);
+      setTimeout(() => setCopiedCurl(false), 2000);
+    }
+  };
+
+  if (loading) return null;
+
+  const handleToggle = async (enabled: boolean) => {
+    if (enabled) {
+      await handleEnable();
+    } else {
+      await handleDisable();
+    }
+  };
+
+  return (
+    <div className="border border-border bg-card overflow-hidden">
+      <div className={`flex items-center justify-between px-4 py-3 ${webhook ? "border-b border-border" : ""}`}>
+        <div>
+          <h3 className="text-sm font-semibold">Webhook</h3>
+          <p className="text-xs text-muted-foreground">
+            Trigger container updates from CI pipelines
+          </p>
+        </div>
+        <Switch checked={!!webhook} onChange={handleToggle} />
+      </div>
+
+      {webhook && (
+        <div className="divide-y divide-border">
+          {/* Webhook URL */}
+          <div className="flex items-center justify-between gap-4 px-4 py-3">
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium">Webhook URL</p>
+              <div className="flex gap-1.5 mt-1.5">
+                <Input
+                  className="h-8 text-xs font-mono flex-1"
+                  value={webhookUrl}
+                  readOnly
+                  onClick={(e) => (e.target as HTMLInputElement).select()}
+                />
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8 shrink-0"
+                  onClick={() => copyToClipboard(webhookUrl, "url")}
+                >
+                  {copied ? (
+                    <Check className="h-3.5 w-3.5" />
+                  ) : (
+                    <Copy className="h-3.5 w-3.5" />
+                  )}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8 shrink-0"
+                  onClick={handleRegenerate}
+                  title="Regenerate URL"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          {/* curl example */}
+          <div className="px-4 py-3">
+            <p className="text-sm font-medium">Example</p>
+            <div className="relative mt-1.5">
+              <pre className="bg-muted/50 border border-border rounded-md p-3 text-xs font-mono overflow-x-auto whitespace-pre">
+                {curlExample}
+              </pre>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="absolute top-1.5 right-1.5 h-6 w-6"
+                onClick={() => copyToClipboard(curlExample, "curl")}
+              >
+                {copiedCurl ? (
+                  <Check className="h-3 w-3" />
+                ) : (
+                  <Copy className="h-3 w-3" />
+                )}
+              </Button>
+            </div>
+          </div>
+
+          {/* Auto-cleanup toggle */}
+          <div className="flex items-center justify-between gap-4 px-4 py-3">
+            <div>
+              <p className="text-sm font-medium">Auto-cleanup old images</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Remove old image versions after updates
+              </p>
+            </div>
+            <Switch checked={cleanupEnabled} onChange={handleCleanupToggle} />
+          </div>
+
+          {/* Retention count */}
+          <div className="flex items-center justify-between gap-4 px-4 py-3">
+            <div>
+              <p className={`text-sm font-medium ${!cleanupEnabled ? "text-muted-foreground" : ""}`}>
+                Keep last N versions
+              </p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Number of old image versions to retain
+              </p>
+            </div>
+            <Input
+              type="number"
+              className="h-8 text-xs w-20 shrink-0"
+              value={retentionCount}
+              onChange={(e) => setRetentionCount(e.target.value)}
+              disabled={!cleanupEnabled}
+              min={1}
+              max={50}
+              onBlur={handleRetentionBlur}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
