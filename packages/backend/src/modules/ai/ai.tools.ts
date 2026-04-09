@@ -1052,6 +1052,24 @@ export const AI_TOOLS: AIToolDefinition[] = [
     invalidateStores: ['containers'],
   },
   {
+    name: 'update_docker_container_image',
+    description:
+      'Update a Docker container to a different image tag. Pulls the new image, then recreates the container with the new image while preserving all other settings (ports, volumes, env, etc.). Use this to upgrade/downgrade container versions.',
+    parameters: {
+      type: 'object',
+      properties: {
+        nodeId: { type: 'string', description: 'Docker node ID' },
+        containerId: { type: 'string', description: 'Container ID' },
+        imageTag: { type: 'string', description: 'New image tag (e.g. "1.25", "latest", "v2.0.0")' },
+      },
+      required: ['nodeId', 'containerId', 'imageTag'],
+    },
+    destructive: true,
+    category: 'Docker',
+    requiredScope: 'docker:containers:manage',
+    invalidateStores: ['containers', 'tasks'],
+  },
+  {
     name: 'get_docker_container_logs',
     description: 'Get recent log output from a Docker container.',
     parameters: {

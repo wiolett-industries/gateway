@@ -64,7 +64,7 @@ export class DockerManagementService {
     this.eventBus?.publish('docker.container.changed', { nodeId, name, id, action, ...(extra || {}) });
   }
 
-  private emitTransition(nodeId: string, name: string, id: string, transition: ContainerTransition) {
+  emitTransition(nodeId: string, name: string, id: string, transition: ContainerTransition) {
     this.eventBus?.publish('docker.container.changed', { nodeId, name, id, action: 'transitioning', transition });
   }
 
