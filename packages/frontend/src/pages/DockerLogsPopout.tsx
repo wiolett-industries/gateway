@@ -181,7 +181,7 @@ export function DockerLogsPopout() {
       loadingMore={loadingMore}
       className="fixed inset-0 overflow-auto bg-[#0e0e0e] py-4"
       emptyState={
-        <div className="fixed inset-0 bg-[#0e0e0e] p-4 font-mono text-xs text-gray-600">
+        <div className="px-4 font-mono text-xs text-gray-600">
           {isConnecting ? "Connecting to log stream..." : "No logs available"}
         </div>
       }
