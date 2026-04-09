@@ -136,6 +136,7 @@ interface SidebarContentProps {
   isResizing?: boolean;
   onResizeStart?: () => void;
   onResizeEnd?: () => void;
+  hasNginxNodes?: boolean;
 }
 
 function SidebarContent({
@@ -146,6 +147,7 @@ function SidebarContent({
   isResizing = false,
   onResizeStart,
   onResizeEnd,
+  hasNginxNodes = true,
 }: SidebarContentProps) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -225,12 +227,24 @@ function SidebarContent({
 
   const isExpanded = alwaysExpanded || sidebarOpen;
 
-  // Build nav groups with scope filtering
+  const dockerNodes = useDockerStore((s) => s.dockerNodes);
+  const hasDockerNodes = dockerNodes.length > 0;
+
+  // Build nav groups with scope + context filtering
   const effectiveGroups = navigationGroups
-    .map((group) => ({
-      ...group,
-      items: group.items.filter((item) => !item.scope || hasScope(item.scope)),
-    }))
+    .map((group) => {
+      // Hide entire Reverse Proxy group when no nginx nodes
+      if (group.label === "Reverse Proxy" && !hasNginxNodes) return { ...group, items: [] };
+      return {
+        ...group,
+        items: group.items.filter((item) => {
+          if (item.scope && !hasScope(item.scope)) return false;
+          // Hide Docker section when no docker nodes exist
+          if (item.href === "/docker" && !hasDockerNodes) return false;
+          return true;
+        }),
+      };
+    })
     .filter((group) => group.items.length > 0);
 
   const filteredAdminNav = adminNavigation.filter((item) => !item.scope || hasScope(item.scope));
@@ -684,6 +698,7 @@ export function DashboardLayout() {
 
   const [sidebarWidth, setSidebarWidth] = useState(readSidebarWidth);
   const [isResizing, setIsResizing] = useState(false);
+  const [hasNginxNodes, setHasNginxNodes] = useState(true); // default true to avoid flash
 
   const handleSidebarResize = useCallback((width: number) => {
     setSidebarWidth(width);
@@ -719,13 +734,16 @@ export function DashboardLayout() {
         // Prefetch data for all pages in background
         const hasAdminScopes = user.scopes?.some((s: string) => s.startsWith("admin:")) ?? false;
         api.prefetchAll(hasAdminScopes);
-        // Preload Docker containers for command palette
-        if (user.scopes?.some((s: string) => s.startsWith("docker:"))) {
+        // Preload node types for sidebar visibility + Docker command palette
+        if (user.scopes?.some((s: string) => s.startsWith("nodes:") || s.startsWith("docker:") || s.startsWith("proxy:"))) {
           api
-            .listNodes({ type: "docker", limit: 100 })
+            .listNodes({ limit: 100 })
             .then((r) => {
-              useDockerStore.getState().setDockerNodes(r.data);
-              if (r.data.length > 0) useDockerStore.getState().fetchContainers();
+              const dockerNds = r.data.filter((n) => n.type === "docker");
+              const nginxNds = r.data.filter((n) => n.type === "nginx");
+              useDockerStore.getState().setDockerNodes(dockerNds);
+              if (dockerNds.length > 0) useDockerStore.getState().fetchContainers();
+              setHasNginxNodes(nginxNds.length > 0);
             })
             .catch(() => {});
         }
@@ -968,7 +986,7 @@ export function DashboardLayout() {
               <SheetHeader className="sr-only">
                 <SheetTitle>Navigation</SheetTitle>
               </SheetHeader>
-              <SidebarContent onNavigate={() => setMobileMenuOpen(false)} alwaysExpanded />
+              <SidebarContent onNavigate={() => setMobileMenuOpen(false)} alwaysExpanded hasNginxNodes={hasNginxNodes} />
             </SheetContent>
           </Sheet>
 
@@ -989,6 +1007,7 @@ export function DashboardLayout() {
           isResizing={isResizing}
           onResizeStart={handleResizeStart}
           onResizeEnd={handleResizeEnd}
+          hasNginxNodes={hasNginxNodes}
         />
         <main className="h-full flex-1 overflow-hidden">
           <Outlet />
