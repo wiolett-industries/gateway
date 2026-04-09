@@ -18,6 +18,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { PageTransition } from "@/components/common/PageTransition";
+import { useUrlTab } from "@/hooks/use-url-tab";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -55,11 +56,7 @@ import { StatsTab } from "./docker-detail/StatsTab";
 // ── Main Page ────────────────────────────────────────────────────
 
 export function DockerContainerDetail() {
-  const {
-    nodeId,
-    containerId,
-    tab: tabParam,
-  } = useParams<{ nodeId: string; containerId: string; tab?: string }>();
+  const { nodeId, containerId } = useParams<{ nodeId: string; containerId: string; tab?: string }>();
   const navigate = useNavigate();
   const { hasScope } = useAuthStore();
   const invalidate = useDockerStore((s) => s.invalidate);
@@ -74,23 +71,11 @@ export function DockerContainerDetail() {
   }, [nodeId, storeNodeId, setSelectedNode]);
   const [container, setContainer] = useState<InspectData | null>(null);
 
-  const VALID_TABS = [
+  const [activeTab, setActiveTab] = useUrlTab(
+    ["overview", "logs", "console", "files", "stats", "environment", "settings", "config"],
     "overview",
-    "logs",
-    "console",
-    "files",
-    "stats",
-    "environment",
-    "settings",
-    "config",
-  ];
-  const [activeTab, setActiveTabState] = useState(() =>
-    tabParam && VALID_TABS.includes(tabParam) ? tabParam : "overview"
+    (tab) => `/docker/containers/${nodeId}/${containerId}/${tab}`,
   );
-  const setActiveTab = (tab: string) => {
-    setActiveTabState(tab);
-    window.history.replaceState(null, "", `/docker/containers/${nodeId}/${containerId}/${tab}`);
-  };
   const [isLoading, setIsLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);

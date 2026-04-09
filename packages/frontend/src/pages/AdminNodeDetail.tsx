@@ -4,6 +4,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { PageTransition } from "@/components/common/PageTransition";
+import { useUrlTab } from "@/hooks/use-url-tab";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -43,32 +44,18 @@ const STATUS_BADGE: Record<
 };
 
 export function AdminNodeDetail() {
-  const { id, tab: tabParam } = useParams<{ id: string; tab?: string }>();
+  const { id } = useParams<{ id: string; tab?: string }>();
   const navigate = useNavigate();
   const { hasScope } = useAuthStore();
 
   const [node, setNode] = useState<NodeDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const VALID_TABS = [
+  const [activeTab, setActiveTab] = useUrlTab(
+    ["details", "monitoring", "console", "configuration", "nginx-logs", "containers", "images", "volumes", "networks", "daemon-logs"],
     "details",
-    "monitoring",
-    "console",
-    "configuration",
-    "nginx-logs",
-    "containers",
-    "images",
-    "volumes",
-    "networks",
-    "daemon-logs",
-  ];
-  const [activeTab, setActiveTabState] = useState(() =>
-    tabParam && VALID_TABS.includes(tabParam) ? tabParam : "details"
+    (tab) => `/nodes/${id}/${tab}`,
   );
-  const setActiveTab = (tab: string) => {
-    setActiveTabState(tab);
-    window.history.replaceState(null, "", `/nodes/${id}/${tab}`);
-  };
 
   // Rename dialog
   const [renameOpen, setRenameOpen] = useState(false);
