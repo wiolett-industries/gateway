@@ -953,6 +953,56 @@ export const AI_TOOLS: AIToolDefinition[] = [
 
   // ── Docker: Containers ──
   {
+    name: 'create_docker_container',
+    description:
+      'Create and start a new Docker container on a node. Specify image, ports, volumes, env vars, networks, restart policy, and labels.',
+    parameters: {
+      type: 'object',
+      properties: {
+        nodeId: { type: 'string', description: 'Docker node ID' },
+        image: { type: 'string', description: 'Image reference (e.g. nginx:latest, ubuntu:24.04)' },
+        name: { type: 'string', description: 'Container name (optional, auto-generated if omitted)' },
+        ports: {
+          type: 'array',
+          description: 'Port mappings',
+          items: {
+            type: 'object',
+            properties: {
+              hostPort: { type: 'number' },
+              containerPort: { type: 'number' },
+              protocol: { type: 'string', enum: ['tcp', 'udp'], description: 'Default: tcp' },
+            },
+            required: ['hostPort', 'containerPort'],
+          },
+        },
+        volumes: {
+          type: 'array',
+          description: 'Volume mounts',
+          items: {
+            type: 'object',
+            properties: {
+              hostPath: { type: 'string', description: 'Host path (for bind mounts)' },
+              containerPath: { type: 'string' },
+              name: { type: 'string', description: 'Volume name (for named volumes)' },
+              readOnly: { type: 'boolean' },
+            },
+            required: ['containerPath'],
+          },
+        },
+        env: { type: 'object', description: 'Environment variables as key-value pairs' },
+        networks: { type: 'array', items: { type: 'string' }, description: 'Network names to connect to' },
+        restartPolicy: { type: 'string', enum: ['no', 'always', 'unless-stopped', 'on-failure'], description: 'Default: no' },
+        labels: { type: 'object', description: 'Container labels as key-value pairs' },
+        command: { type: 'array', items: { type: 'string' }, description: 'Override container command' },
+      },
+      required: ['nodeId', 'image'],
+    },
+    destructive: true,
+    category: 'Docker',
+    requiredScope: 'docker:containers:create',
+    invalidateStores: ['containers'],
+  },
+  {
     name: 'list_docker_containers',
     description: 'List Docker containers on a specific node with their status, image, ports, and resource usage.',
     parameters: {
@@ -1070,6 +1120,56 @@ export const AI_TOOLS: AIToolDefinition[] = [
     invalidateStores: ['containers', 'tasks'],
   },
   {
+    name: 'rename_docker_container',
+    description: 'Rename a Docker container.',
+    parameters: {
+      type: 'object',
+      properties: {
+        nodeId: { type: 'string', description: 'Docker node ID' },
+        containerId: { type: 'string', description: 'Container ID' },
+        name: { type: 'string', description: 'New container name' },
+      },
+      required: ['nodeId', 'containerId', 'name'],
+    },
+    destructive: true,
+    category: 'Docker',
+    requiredScope: 'docker:containers:edit',
+    invalidateStores: ['containers'],
+  },
+  {
+    name: 'duplicate_docker_container',
+    description: 'Clone a Docker container with a new name. Copies config, ports, volumes, env, and secrets.',
+    parameters: {
+      type: 'object',
+      properties: {
+        nodeId: { type: 'string', description: 'Docker node ID' },
+        containerId: { type: 'string', description: 'Container ID to clone' },
+        name: { type: 'string', description: 'Name for the new container' },
+      },
+      required: ['nodeId', 'containerId', 'name'],
+    },
+    destructive: true,
+    category: 'Docker',
+    requiredScope: 'docker:containers:create',
+    invalidateStores: ['containers'],
+  },
+  {
+    name: 'get_docker_container_stats',
+    description: 'Get live resource usage stats for a Docker container (CPU%, memory, network I/O, PIDs).',
+    parameters: {
+      type: 'object',
+      properties: {
+        nodeId: { type: 'string', description: 'Docker node ID' },
+        containerId: { type: 'string', description: 'Container ID' },
+      },
+      required: ['nodeId', 'containerId'],
+    },
+    destructive: false,
+    category: 'Docker',
+    requiredScope: 'docker:containers:view',
+    invalidateStores: [],
+  },
+  {
     name: 'get_docker_container_logs',
     description: 'Get recent log output from a Docker container.',
     parameters: {
@@ -1118,6 +1218,39 @@ export const AI_TOOLS: AIToolDefinition[] = [
     destructive: true,
     category: 'Docker',
     requiredScope: 'docker:images:pull',
+    invalidateStores: ['images'],
+  },
+
+  {
+    name: 'remove_docker_image',
+    description: 'Remove a Docker image from a node.',
+    parameters: {
+      type: 'object',
+      properties: {
+        nodeId: { type: 'string', description: 'Docker node ID' },
+        imageId: { type: 'string', description: 'Image ID or reference (e.g. sha256:abc... or nginx:1.25)' },
+        force: { type: 'boolean', description: 'Force remove even if in use (default false)' },
+      },
+      required: ['nodeId', 'imageId'],
+    },
+    destructive: true,
+    category: 'Docker',
+    requiredScope: 'docker:images:delete',
+    invalidateStores: ['images'],
+  },
+  {
+    name: 'prune_docker_images',
+    description: 'Remove all unused Docker images from a node to free disk space. Returns reclaimed space.',
+    parameters: {
+      type: 'object',
+      properties: {
+        nodeId: { type: 'string', description: 'Docker node ID' },
+      },
+      required: ['nodeId'],
+    },
+    destructive: true,
+    category: 'Docker',
+    requiredScope: 'docker:images:delete',
     invalidateStores: ['images'],
   },
 
