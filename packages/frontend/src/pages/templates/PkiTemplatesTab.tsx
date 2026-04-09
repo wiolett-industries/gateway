@@ -1,0 +1,456 @@
+import { FileText, MoreVertical, Pencil, Plus, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
+import { confirm } from "@/components/common/ConfirmDialog";
+import { EmptyState } from "@/components/common/EmptyState";
+import { LoadingSpinner } from "@/components/common/LoadingSpinner";
+import { PageTransition } from "@/components/common/PageTransition";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { api } from "@/services/api";
+import { useAuthStore } from "@/stores/auth";
+import type {
+  CertificatePolicy,
+  CertificateType,
+  CustomExtension,
+  KeyAlgorithm,
+  Template,
+} from "@/types";
+import {
+  StepGeneral,
+  StepKeyUsage,
+  StepExtKeyUsage,
+  StepSAN,
+  StepSubjectDN,
+  StepDistribution,
+  StepPolicies,
+  StepCustomExtensions,
+  WIZARD_STEPS,
+} from "./PkiTemplateWizardSteps";
+
+export function PkiTemplatesTab({
+  embedded,
+  onCreateRef,
+}: {
+  embedded?: boolean;
+  onCreateRef?: (fn: () => void) => void;
+}) {
+  const { hasScope } = useAuthStore();
+  const cachedTemplates = api.getCached<Template[]>("templates:list");
+  const [templates, setTemplates] = useState<Template[]>(cachedTemplates ?? []);
+  const [isLoading, setIsLoading] = useState(!cachedTemplates);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editing, setEditing] = useState<Template | null>(null);
+  const [step, setStep] = useState(0);
+
+  // Form state
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [certType, setCertType] = useState<CertificateType>("tls-server");
+  const [keyAlgorithm, setKeyAlgorithm] = useState<KeyAlgorithm>("ecdsa-p256");
+  const [validityDays, setValidityDays] = useState(365);
+  const [keyUsage, setKeyUsage] = useState<string[]>([]);
+  const [extKeyUsage, setExtKeyUsage] = useState<string[]>([]);
+  const [customEkuOid, setCustomEkuOid] = useState("");
+  const [requireSans, setRequireSans] = useState(true);
+  const [sanTypes, setSanTypes] = useState<string[]>(["dns", "ip"]);
+  const [dnO, setDnO] = useState("");
+  const [dnOu, setDnOu] = useState("");
+  const [dnL, setDnL] = useState("");
+  const [dnSt, setDnSt] = useState("");
+  const [dnC, setDnC] = useState("");
+  const [crlDistributionPoints, setCrlDistributionPoints] = useState<string[]>([]);
+  const [ocspUrl, setOcspUrl] = useState("");
+  const [caIssuersUrl, setCaIssuersUrl] = useState("");
+  const [certificatePolicies, setCertificatePolicies] = useState<CertificatePolicy[]>([]);
+  const [customExtensions, setCustomExtensions] = useState<CustomExtension[]>([]);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const loadTemplates = useCallback(async () => {
+    try {
+      const data = await api.listTemplates();
+      setTemplates(data || []);
+    } catch {
+      toast.error("Failed to load templates");
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadTemplates();
+  }, [loadTemplates]);
+
+  const resetForm = () => {
+    setName("");
+    setDescription("");
+    setCertType("tls-server");
+    setKeyAlgorithm("ecdsa-p256");
+    setValidityDays(365);
+    setKeyUsage([]);
+    setExtKeyUsage([]);
+    setCustomEkuOid("");
+    setRequireSans(true);
+    setSanTypes(["dns", "ip"]);
+    setDnO("");
+    setDnOu("");
+    setDnL("");
+    setDnSt("");
+    setDnC("");
+    setCrlDistributionPoints([]);
+    setOcspUrl("");
+    setCaIssuersUrl("");
+    setCertificatePolicies([]);
+    setCustomExtensions([]);
+    setStep(0);
+  };
+
+  const openCreate = () => {
+    setEditing(null);
+    resetForm();
+    setDialogOpen(true);
+  };
+
+  // Expose create action to parent
+  const createRefSet = useRef(false);
+  if (onCreateRef && !createRefSet.current) {
+    onCreateRef(openCreate);
+    createRefSet.current = true;
+  }
+
+  const openEdit = (t: Template) => {
+    setEditing(t);
+    setName(t.name);
+    setDescription(t.description || "");
+    setCertType(t.certType);
+    setKeyAlgorithm(t.keyAlgorithm);
+    setValidityDays(t.validityDays);
+    setKeyUsage(t.keyUsage || []);
+    setExtKeyUsage(t.extKeyUsage || []);
+    setRequireSans(t.requireSans);
+    setSanTypes(t.sanTypes || []);
+    setDnO(t.subjectDnFields?.o || "");
+    setDnOu(t.subjectDnFields?.ou || "");
+    setDnL(t.subjectDnFields?.l || "");
+    setDnSt(t.subjectDnFields?.st || "");
+    setDnC(t.subjectDnFields?.c || "");
+    setCrlDistributionPoints(t.crlDistributionPoints || []);
+    setOcspUrl(t.authorityInfoAccess?.ocspUrl || "");
+    setCaIssuersUrl(t.authorityInfoAccess?.caIssuersUrl || "");
+    setCertificatePolicies(t.certificatePolicies || []);
+    setCustomExtensions(t.customExtensions || []);
+    setStep(0);
+    setDialogOpen(true);
+  };
+
+  const buildPayload = () => ({
+    name,
+    description: description || undefined,
+    certType,
+    keyAlgorithm,
+    validityDays,
+    keyUsage,
+    extKeyUsage,
+    requireSans,
+    sanTypes,
+    subjectDnFields: {
+      ...(dnO ? { o: dnO } : {}),
+      ...(dnOu ? { ou: dnOu } : {}),
+      ...(dnL ? { l: dnL } : {}),
+      ...(dnSt ? { st: dnSt } : {}),
+      ...(dnC ? { c: dnC } : {}),
+    },
+    crlDistributionPoints: crlDistributionPoints.filter((u) => u.trim()),
+    authorityInfoAccess: {
+      ...(ocspUrl ? { ocspUrl } : {}),
+      ...(caIssuersUrl ? { caIssuersUrl } : {}),
+    },
+    certificatePolicies: certificatePolicies.filter((p) => p.oid.trim()),
+    customExtensions: customExtensions.filter((e) => e.oid.trim() && e.value.trim()),
+  });
+
+  const handleSave = async () => {
+    if (!name.trim()) {
+      toast.error("Name is required");
+      return;
+    }
+    setIsSaving(true);
+    try {
+      const payload = buildPayload();
+      if (editing) {
+        await api.updateTemplate(editing.id, payload);
+        toast.success("Template updated");
+      } else {
+        await api.createTemplate(payload);
+        toast.success("Template created");
+      }
+      setDialogOpen(false);
+      loadTemplates();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save template");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDelete = async (template: Template) => {
+    const ok = await confirm({
+      title: "Delete Template",
+      description: `Delete "${template.name}"? This cannot be undone.`,
+      confirmLabel: "Delete",
+    });
+    if (!ok) return;
+    try {
+      await api.deleteTemplate(template.id);
+      toast.success("Template deleted");
+      loadTemplates();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to delete template");
+    }
+  };
+
+  const isLastStep = step === WIZARD_STEPS.length - 1;
+  const canProceed =
+    step === 0 ? name.trim() !== "" && validityDays >= 1 && validityDays <= 3650 : true;
+
+  if (isLoading) {
+    return <LoadingSpinner />;
+  }
+
+  const content = (
+    <>
+      <div className={embedded ? "space-y-4" : "h-full overflow-y-auto p-6 space-y-4"}>
+        {!embedded && (
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h1 className="text-2xl font-bold">Templates</h1>
+              <p className="text-sm text-muted-foreground">Certificate issuance templates</p>
+            </div>
+            {hasScope("pki:templates:edit") && (
+              <Button onClick={openCreate}>
+                <Plus className="h-4 w-4" />
+                Create Template
+              </Button>
+            )}
+          </div>
+        )}
+
+        {/* Template grid */}
+        {templates.length > 0 ? (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {templates.map((template) => (
+              <div key={template.id} className="border border-border bg-card p-4 space-y-3">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-2">
+                    <FileText className="h-4 w-4 text-muted-foreground" />
+                    <h3 className="font-semibold text-sm">{template.name}</h3>
+                  </div>
+                  {hasScope("pki:templates:edit") && !template.isBuiltin && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-8 w-8">
+                          <MoreVertical className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => openEdit(template)}>
+                          <Pencil className="h-4 w-4" />
+                          Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => handleDelete(template)}
+                          className="text-destructive"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
+                </div>
+                <p className="text-sm text-muted-foreground line-clamp-2">
+                  {template.description || "No description"}
+                </p>
+                <div className="flex flex-wrap gap-1">
+                  <Badge variant="secondary" className="text-xs capitalize">
+                    {template.certType}
+                  </Badge>
+                  <Badge variant="secondary" className="text-xs">
+                    {template.keyAlgorithm}
+                  </Badge>
+                  <Badge variant="secondary" className="text-xs">
+                    {template.validityDays}d
+                  </Badge>
+                  {template.isBuiltin && <Badge className="text-xs">Built-in</Badge>}
+                  {(template.keyUsage?.length ?? 0) > 0 && (
+                    <Badge variant="secondary" className="text-xs">
+                      {template.keyUsage.length} KU
+                    </Badge>
+                  )}
+                  {(template.extKeyUsage?.length ?? 0) > 0 && (
+                    <Badge variant="secondary" className="text-xs">
+                      {template.extKeyUsage.length} EKU
+                    </Badge>
+                  )}
+                  {(template.crlDistributionPoints?.length ?? 0) > 0 && (
+                    <Badge variant="secondary" className="text-xs">
+                      CRL
+                    </Badge>
+                  )}
+                  {(template.customExtensions?.length ?? 0) > 0 && (
+                    <Badge variant="secondary" className="text-xs">
+                      {template.customExtensions.length} ext
+                    </Badge>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <EmptyState
+            message="No templates."
+            {...(hasScope("pki:templates:edit")
+              ? { actionLabel: "Create one", onAction: () => setDialogOpen(true) }
+              : {})}
+          />
+        )}
+
+        {/* Wizard Dialog */}
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <DialogContent className="sm:max-w-2xl max-h-[85vh] flex flex-col">
+            <DialogHeader>
+              <DialogTitle>{editing ? "Edit Template" : "Create Template"}</DialogTitle>
+            </DialogHeader>
+
+            {/* Step indicator */}
+            <div className="flex gap-1 px-1">
+              {WIZARD_STEPS.map((s, i) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  className={`flex-1 h-1 transition-colors ${i <= step ? "bg-primary" : "bg-muted"}`}
+                  onClick={() => setStep(i)}
+                />
+              ))}
+            </div>
+            <div className="mb-2">
+              <p className="text-sm font-medium">{WIZARD_STEPS[step].title}</p>
+              <p className="text-xs text-muted-foreground">{WIZARD_STEPS[step].subtitle}</p>
+            </div>
+
+            {/* Step content */}
+            <div className="flex-1 overflow-y-auto min-h-0 space-y-4 px-1 -mx-1 pb-1">
+              {step === 0 && (
+                <StepGeneral
+                  name={name}
+                  setName={setName}
+                  description={description}
+                  setDescription={setDescription}
+                  certType={certType}
+                  setCertType={setCertType}
+                  keyAlgorithm={keyAlgorithm}
+                  setKeyAlgorithm={setKeyAlgorithm}
+                  validityDays={validityDays}
+                  setValidityDays={setValidityDays}
+                />
+              )}
+              {step === 1 && <StepKeyUsage keyUsage={keyUsage} setKeyUsage={setKeyUsage} />}
+              {step === 2 && (
+                <StepExtKeyUsage
+                  extKeyUsage={extKeyUsage}
+                  setExtKeyUsage={setExtKeyUsage}
+                  customEkuOid={customEkuOid}
+                  setCustomEkuOid={setCustomEkuOid}
+                />
+              )}
+              {step === 3 && (
+                <StepSAN
+                  requireSans={requireSans}
+                  setRequireSans={setRequireSans}
+                  sanTypes={sanTypes}
+                  setSanTypes={setSanTypes}
+                />
+              )}
+              {step === 4 && (
+                <StepSubjectDN
+                  dnO={dnO}
+                  setDnO={setDnO}
+                  dnOu={dnOu}
+                  setDnOu={setDnOu}
+                  dnL={dnL}
+                  setDnL={setDnL}
+                  dnSt={dnSt}
+                  setDnSt={setDnSt}
+                  dnC={dnC}
+                  setDnC={setDnC}
+                />
+              )}
+              {step === 5 && (
+                <StepDistribution
+                  crlDistributionPoints={crlDistributionPoints}
+                  setCrlDistributionPoints={setCrlDistributionPoints}
+                  ocspUrl={ocspUrl}
+                  setOcspUrl={setOcspUrl}
+                  caIssuersUrl={caIssuersUrl}
+                  setCaIssuersUrl={setCaIssuersUrl}
+                />
+              )}
+              {step === 6 && (
+                <StepPolicies
+                  certificatePolicies={certificatePolicies}
+                  setCertificatePolicies={setCertificatePolicies}
+                />
+              )}
+              {step === 7 && (
+                <StepCustomExtensions
+                  customExtensions={customExtensions}
+                  setCustomExtensions={setCustomExtensions}
+                />
+              )}
+            </div>
+
+            <DialogFooter className="flex items-center justify-between sm:justify-between">
+              <div>
+                {step > 0 && (
+                  <Button variant="outline" onClick={() => setStep(step - 1)}>
+                    Back
+                  </Button>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => setDialogOpen(false)}>
+                  Cancel
+                </Button>
+                {isLastStep ? (
+                  <Button onClick={handleSave} disabled={isSaving || !canProceed}>
+                    {isSaving ? "Saving..." : editing ? "Update" : "Create"}
+                  </Button>
+                ) : (
+                  <Button onClick={() => setStep(step + 1)} disabled={!canProceed}>
+                    Next
+                  </Button>
+                )}
+              </div>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </>
+  );
+
+  if (embedded) return content;
+  return <PageTransition>{content}</PageTransition>;
+}

@@ -2,7 +2,6 @@ import { useAuthStore } from "@/stores/auth";
 import type {
   AccessList,
   Alert,
-  ApiError,
   ApiToken,
   AuditLogEntry,
   CA,
@@ -58,67 +57,11 @@ import type {
   UploadCertRequest,
   User,
 } from "@/types";
+import { ApiClientBase, API_BASE } from "./api-base";
 
-const API_BASE = "/api";
 const AUTH_BASE = "/auth";
 
-interface CacheEntry<T = unknown> {
-  data: T;
-  timestamp: number;
-}
-
-const DEFAULT_CACHE_TTL = 60_000; // 1 minute
-
-class ApiClient {
-  private cache = new Map<string, CacheEntry>();
-
-  /** Get cached data if fresh enough. */
-  getCached<T>(key: string, ttl = DEFAULT_CACHE_TTL): T | undefined {
-    const entry = this.cache.get(key);
-    if (!entry) return undefined;
-    if (Date.now() - entry.timestamp > ttl) {
-      this.cache.delete(key);
-      return undefined;
-    }
-    return entry.data as T;
-  }
-
-  /** Store data in cache. */
-  setCache<T>(key: string, data: T): void {
-    this.cache.set(key, { data, timestamp: Date.now() });
-  }
-
-  /** Invalidate a specific cache key or prefix. */
-  invalidateCache(prefix?: string): void {
-    if (!prefix) {
-      this.cache.clear();
-      return;
-    }
-    for (const key of this.cache.keys()) {
-      if (key.startsWith(prefix)) this.cache.delete(key);
-    }
-  }
-
-  /**
-   * Fetch with cache: returns cached data if available, fetches in background to update.
-   * Returns [data, isFromCache].
-   */
-  async cachedRequest<T>(
-    key: string,
-    fetcher: () => Promise<T>,
-    ttl = DEFAULT_CACHE_TTL
-  ): Promise<T> {
-    const cached = this.getCached<T>(key, ttl);
-    // Always fetch fresh data
-    const fresh = fetcher().then((data) => {
-      this.setCache(key, data);
-      return data;
-    });
-    // If we have cache, return it immediately (fresh fetch still updates cache in background)
-    if (cached !== undefined) return cached;
-    return fresh;
-  }
-
+class ApiClient extends ApiClientBase {
   /**
    * Prefetch key data for all pages in background.
    * Called once after auth to prime the cache.
@@ -161,101 +104,6 @@ class ApiClient {
       quiet(this.getAuditLog({ limit: 25 }).then((d) => this.setCache("audit:list", d)));
       quiet(this.listUsers().then((d) => this.setCache("admin:users", d)));
     }
-  }
-
-  private getHeaders(): HeadersInit {
-    const headers: HeadersInit = {
-      "Content-Type": "application/json",
-    };
-
-    const sessionId = useAuthStore.getState().sessionId;
-    if (sessionId) {
-      headers.Authorization = `Bearer ${sessionId}`;
-    }
-
-    return headers;
-  }
-
-  private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-    const url = endpoint.startsWith("/auth") ? endpoint : `${API_BASE}${endpoint}`;
-    const method = (options.method || "GET").toUpperCase();
-
-    // For GET requests: return cached data if fresh, refresh in background
-    if (method === "GET") {
-      const cacheKey = `req:${url}`;
-      const cached = this.getCached<T>(cacheKey);
-      if (cached !== undefined) {
-        // Refresh in background
-        this.fetchRaw<T>(url, options)
-          .then((data) => this.setCache(cacheKey, data))
-          .catch(() => {});
-        return cached;
-      }
-      // No cache — fetch and cache
-      const data = await this.fetchRaw<T>(url, options);
-      this.setCache(cacheKey, data);
-      return data;
-    }
-
-    // Non-GET: invalidate cached GET requests for this endpoint path
-    const basePath = url.split("?")[0];
-    for (const key of this.cache.keys()) {
-      if (key.startsWith("req:") && key.includes(basePath.replace(/\/[^/]+$/, ""))) {
-        this.cache.delete(key);
-      }
-    }
-    return this.fetchRaw<T>(url, options);
-  }
-
-  private async fetchRaw<T>(url: string, options: RequestInit = {}): Promise<T> {
-    const response = await fetch(url, {
-      ...options,
-      headers: {
-        ...this.getHeaders(),
-        ...options.headers,
-      },
-    });
-
-    if (!response.ok) {
-      if (response.status >= 500) {
-        throw new Error("Service unavailable");
-      }
-
-      if (response.status === 401) {
-        useAuthStore.getState().logout();
-        window.location.href = "/login";
-        throw new Error("Session expired");
-      }
-
-      if (response.status === 403) {
-        const body = await response.json().catch(() => ({ message: "" }));
-        if (body.message === "Account is blocked") {
-          window.location.href = "/blocked";
-          throw new Error("Account is blocked");
-        }
-        throw new Error("Insufficient permissions");
-      }
-
-      const error: ApiError = await response.json().catch(() => ({
-        code: "UNKNOWN_ERROR",
-        message: "An unknown error occurred",
-      }));
-
-      throw new Error(error.message);
-    }
-
-    if (response.status === 204) {
-      return undefined as T;
-    }
-
-    return response.json();
-  }
-
-  /**
-   * Unwrap a single-resource response wrapped in `{ data: ... }` by the backend.
-   */
-  private unwrapData<T>(promise: Promise<{ data: T }>): Promise<T> {
-    return promise.then((r) => r.data);
   }
 
   // ── Auth ──────────────────────────────────────────────────────────
@@ -1175,7 +1023,7 @@ class ApiClient {
     return new EventSource(`${API_BASE}/monitoring/nginx/stats/stream?${params}`);
   }
 
-  // ── System / Updates ──────────────────────────────────��───────────
+  // ── System / Updates ──────────────────────────────────────────────
 
   async getVersionInfo(): Promise<UpdateStatus> {
     return this.unwrapData(this.request<{ data: UpdateStatus }>("/system/version"));
