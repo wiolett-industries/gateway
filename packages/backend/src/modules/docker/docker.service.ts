@@ -3,11 +3,11 @@ import type { DrizzleClient } from '@/db/client.js';
 import { nodes } from '@/db/schema/index.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
-import type { DockerTaskService } from './docker-task.service.js';
-import type { DockerSecretService } from './docker-secret.service.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
 import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import type { NodeRegistryService } from '@/services/node-registry.service.js';
+import type { DockerSecretService } from './docker-secret.service.js';
+import type { DockerTaskService } from './docker-task.service.js';
 
 type ContainerTransition = 'creating' | 'stopping' | 'restarting' | 'killing' | 'recreating' | 'updating';
 
@@ -54,7 +54,13 @@ export class DockerManagementService {
     this.eventBus = eventBus;
   }
 
-  private emitContainer(nodeId: string, name: string, id: string, action: ContainerAction, extra?: Record<string, unknown>) {
+  private emitContainer(
+    nodeId: string,
+    name: string,
+    id: string,
+    action: ContainerAction,
+    extra?: Record<string, unknown>
+  ) {
     this.eventBus?.publish('docker.container.changed', { nodeId, name, id, action, ...(extra || {}) });
   }
 
@@ -179,7 +185,9 @@ export class DockerManagementService {
           clearInterval(poll);
           this.clearTransition(nodeId, name);
           if (taskId && this.taskService) {
-            await this.taskService.update(taskId, { status: 'succeeded', progress, completedAt: new Date() }).catch(() => {});
+            await this.taskService
+              .update(taskId, { status: 'succeeded', progress, completedAt: new Date() })
+              .catch(() => {});
           }
           this.emitContainer(nodeId, name, containerId, completedAction);
         }
@@ -189,7 +197,9 @@ export class DockerManagementService {
           clearInterval(poll);
           this.clearTransition(nodeId, name);
           if (taskId && this.taskService) {
-            await this.taskService.update(taskId, { status: 'failed', error: 'Timed out', completedAt: new Date() }).catch(() => {});
+            await this.taskService
+              .update(taskId, { status: 'failed', error: 'Timed out', completedAt: new Date() })
+              .catch(() => {});
           }
         }
       }
@@ -230,7 +240,9 @@ export class DockerManagementService {
             clearInterval(poll);
             this.clearTransition(nodeId, containerName);
             if (taskId && this.taskService) {
-              await this.taskService.update(taskId, { status: 'succeeded', progress, completedAt: new Date() }).catch(() => {});
+              await this.taskService
+                .update(taskId, { status: 'succeeded', progress, completedAt: new Date() })
+                .catch(() => {});
             }
             this.emitContainer(nodeId, containerName, newId, 'recreated', { oldId: oldContainerId });
             return;
@@ -241,7 +253,9 @@ export class DockerManagementService {
           clearInterval(poll);
           this.clearTransition(nodeId, containerName);
           if (taskId && this.taskService) {
-            await this.taskService.update(taskId, { status: 'failed', error: 'Timed out', completedAt: new Date() }).catch(() => {});
+            await this.taskService
+              .update(taskId, { status: 'failed', error: 'Timed out', completedAt: new Date() })
+              .catch(() => {});
           }
         }
       } catch {
@@ -249,7 +263,9 @@ export class DockerManagementService {
           clearInterval(poll);
           this.clearTransition(nodeId, containerName);
           if (taskId && this.taskService) {
-            await this.taskService.update(taskId, { status: 'failed', error: 'Timed out', completedAt: new Date() }).catch(() => {});
+            await this.taskService
+              .update(taskId, { status: 'failed', error: 'Timed out', completedAt: new Date() })
+              .catch(() => {});
           }
         }
       }
@@ -553,11 +569,10 @@ export class DockerManagementService {
     await this.validateDockerNode(nodeId);
     const name = await this.resolveContainerName(nodeId, containerId);
     this.requireNoTransition(nodeId, name);
-    const result = await this.nodeDispatch.sendDockerContainerCommand(
-      nodeId,
-      'live_update',
-      { containerId, configJson: JSON.stringify(config) }
-    );
+    const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'live_update', {
+      containerId,
+      configJson: JSON.stringify(config),
+    });
     this.parseResult(result);
     await this.auditService.log({
       action: 'docker.container.live_update',
@@ -606,11 +621,13 @@ export class DockerManagementService {
     } catch (err) {
       this.clearTransition(nodeId, name);
       if (task && this.taskService) {
-        await this.taskService.update(task.id, {
-          status: 'failed',
-          error: err instanceof Error ? err.message : 'Unknown error',
-          completedAt: new Date(),
-        }).catch(() => {});
+        await this.taskService
+          .update(task.id, {
+            status: 'failed',
+            error: err instanceof Error ? err.message : 'Unknown error',
+            completedAt: new Date(),
+          })
+          .catch(() => {});
       }
       throw err;
     }
@@ -656,7 +673,13 @@ export class DockerManagementService {
     } catch (err) {
       this.clearTransition(nodeId, name);
       if (task && this.taskService) {
-        await this.taskService.update(task.id, { status: 'failed', error: err instanceof Error ? err.message : 'Unknown error', completedAt: new Date() }).catch(() => {});
+        await this.taskService
+          .update(task.id, {
+            status: 'failed',
+            error: err instanceof Error ? err.message : 'Unknown error',
+            completedAt: new Date(),
+          })
+          .catch(() => {});
       }
       throw err;
     }
@@ -686,36 +709,52 @@ export class DockerManagementService {
     // Create a task and pull in background (non-blocking)
     const task = await this.createTask(nodeId, '', imageRef, 'pull');
     if (userId) {
-      this.auditService.log({
-        action: 'docker.image.pull',
-        userId,
-        resourceType: 'docker-image',
-        details: { nodeId, imageRef },
-      }).catch(() => {});
+      this.auditService
+        .log({
+          action: 'docker.image.pull',
+          userId,
+          resourceType: 'docker-image',
+          details: { nodeId, imageRef },
+        })
+        .catch(() => {});
     }
 
     // Fire pull in background
-    this.nodeDispatch.sendDockerImageCommand(
-      nodeId,
-      'pull',
-      { imageRef, registryAuthJson: registryAuth },
-      300000
-    ).then((result) => {
-      try { this.parseResult(result); } catch (err) {
-        if (task?.id && this.taskService) {
-          this.taskService.update(task.id, { status: 'failed', error: err instanceof Error ? err.message : 'Pull failed', completedAt: new Date() }).catch(() => {});
+    this.nodeDispatch
+      .sendDockerImageCommand(nodeId, 'pull', { imageRef, registryAuthJson: registryAuth }, 300000)
+      .then((result) => {
+        try {
+          this.parseResult(result);
+        } catch (err) {
+          if (task?.id && this.taskService) {
+            this.taskService
+              .update(task.id, {
+                status: 'failed',
+                error: err instanceof Error ? err.message : 'Pull failed',
+                completedAt: new Date(),
+              })
+              .catch(() => {});
+          }
+          return;
         }
-        return;
-      }
-      if (task?.id && this.taskService) {
-        this.taskService.update(task.id, { status: 'succeeded', progress: `Pulled ${imageRef}`, completedAt: new Date() }).catch(() => {});
-      }
-      this.emitImage(nodeId, imageRef, 'pulled');
-    }).catch((err) => {
-      if (task?.id && this.taskService) {
-        this.taskService.update(task.id, { status: 'failed', error: err instanceof Error ? err.message : 'Pull failed', completedAt: new Date() }).catch(() => {});
-      }
-    });
+        if (task?.id && this.taskService) {
+          this.taskService
+            .update(task.id, { status: 'succeeded', progress: `Pulled ${imageRef}`, completedAt: new Date() })
+            .catch(() => {});
+        }
+        this.emitImage(nodeId, imageRef, 'pulled');
+      })
+      .catch((err) => {
+        if (task?.id && this.taskService) {
+          this.taskService
+            .update(task.id, {
+              status: 'failed',
+              error: err instanceof Error ? err.message : 'Pull failed',
+              completedAt: new Date(),
+            })
+            .catch(() => {});
+        }
+      });
 
     return { taskId: task?.id, message: `Pulling ${imageRef}...` };
   }

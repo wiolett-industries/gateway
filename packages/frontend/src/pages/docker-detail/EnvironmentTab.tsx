@@ -20,7 +20,18 @@ interface SecretRow {
   dirty: boolean;
 }
 
-export function EnvironmentTab({ nodeId, containerId, disabled, onRecreating }: { nodeId: string; containerId: string; containerName: string; disabled?: boolean; onRecreating?: () => void }) {
+export function EnvironmentTab({
+  nodeId,
+  containerId,
+  disabled,
+  onRecreating,
+}: {
+  nodeId: string;
+  containerId: string;
+  containerName: string;
+  disabled?: boolean;
+  onRecreating?: () => void;
+}) {
   const { hasScope } = useAuthStore();
   const invalidate = useDockerStore((s) => s.invalidate);
   const [envVars, setEnvVars] = useState<Array<{ key: string; value: string }>>([]);
@@ -87,7 +98,10 @@ export function EnvironmentTab({ nodeId, containerId, disabled, onRecreating }: 
       if (!line || line.startsWith("#")) continue;
       const stripped = line.startsWith("export ") ? line.slice(7).trim() : line;
       const eqIdx = stripped.indexOf("=");
-      if (eqIdx < 1) { errors.add(i + 1); continue; }
+      if (eqIdx < 1) {
+        errors.add(i + 1);
+        continue;
+      }
       const key = stripped.slice(0, eqIdx);
       if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
         errors.add(i + 1);
@@ -137,7 +151,8 @@ export function EnvironmentTab({ nodeId, containerId, disabled, onRecreating }: 
 
   // ── Secret handlers ──────────────────────────────────────────────
 
-  const addSecretRow = () => setSecretRows((prev) => [...prev, { key: "", value: "", dirty: true }]);
+  const addSecretRow = () =>
+    setSecretRows((prev) => [...prev, { key: "", value: "", dirty: true }]);
 
   const updateSecretRow = (idx: number, field: "key" | "value", val: string) => {
     setSecretRows((prev) => {
@@ -166,15 +181,21 @@ export function EnvironmentTab({ nodeId, containerId, disabled, onRecreating }: 
 
   const handleSave = async () => {
     const vars = rawMode
-      ? rawText.split("\n").filter((l) => l.trim()).map((line) => {
-          const idx = line.indexOf("=");
-          return idx >= 0 ? { key: line.slice(0, idx), value: line.slice(idx + 1) } : { key: line, value: "" };
-        })
+      ? rawText
+          .split("\n")
+          .filter((l) => l.trim())
+          .map((line) => {
+            const idx = line.indexOf("=");
+            return idx >= 0
+              ? { key: line.slice(0, idx), value: line.slice(idx + 1) }
+              : { key: line, value: "" };
+          })
       : envVars;
 
     const ok = await confirm({
       title: "Save & Recreate",
-      description: "Updating environment variables will recreate the container. The container will experience brief downtime. Continue?",
+      description:
+        "Updating environment variables will recreate the container. The container will experience brief downtime. Continue?",
       confirmLabel: "Recreate",
     });
     if (!ok) return;
@@ -211,7 +232,12 @@ export function EnvironmentTab({ nodeId, containerId, disabled, onRecreating }: 
         .map((entry) => entry.split("=")[0])
         .filter((k) => !newKeys.has(k));
 
-      await api.updateContainerEnv(nodeId, containerId, newEnv, removeEnv.length > 0 ? removeEnv : undefined);
+      await api.updateContainerEnv(
+        nodeId,
+        containerId,
+        newEnv,
+        removeEnv.length > 0 ? removeEnv : undefined
+      );
       toast.success("Environment updated — recreating container");
       invalidate("containers", "tasks");
       // Realtime channel will deliver the recreate event to every open tab.
@@ -270,15 +296,15 @@ export function EnvironmentTab({ nodeId, containerId, disabled, onRecreating }: 
     if (k && !invalidKeyPattern.test(k)) duplicateSecretIndices.add(i);
   });
 
-  const hasEnvTableErrors = !rawMode && (
-    envVars.some((e) => !e.key.trim() || !invalidKeyPattern.test(e.key.trim())) ||
-    duplicateKeyIndices.size > 0
-  );
-  const hasSecretErrors = !rawMode && (
-    secretRows.some((r) => !r.key.trim() || !invalidKeyPattern.test(r.key.trim())) ||
-    duplicateSecretIndices.size > 0
-  );
-  const hasErrors = rawMode ? errorLines.length > 0 : (hasEnvTableErrors || hasSecretErrors);
+  const hasEnvTableErrors =
+    !rawMode &&
+    (envVars.some((e) => !e.key.trim() || !invalidKeyPattern.test(e.key.trim())) ||
+      duplicateKeyIndices.size > 0);
+  const hasSecretErrors =
+    !rawMode &&
+    (secretRows.some((r) => !r.key.trim() || !invalidKeyPattern.test(r.key.trim())) ||
+      duplicateSecretIndices.size > 0);
+  const hasErrors = rawMode ? errorLines.length > 0 : hasEnvTableErrors || hasSecretErrors;
 
   // Env changes
   const currentEnvStr = rawMode ? rawText : envVars.map((e) => `${e.key}=${e.value}`).join("\n");
@@ -290,17 +316,29 @@ export function EnvironmentTab({ nodeId, containerId, disabled, onRecreating }: 
   const hasChanges = hasEnvChanges || hasSecretsChanges;
 
   return (
-    <div className={`${rawMode ? "flex flex-col flex-1 min-h-0" : "pb-6 space-y-4"} ${disabled ? "pointer-events-none opacity-60" : ""}`}>
-      <div className={`flex flex-col ${rawMode ? "flex-1 min-h-0" : "border border-border bg-card"}`}>
+    <div
+      className={`${rawMode ? "flex flex-col flex-1 min-h-0" : "pb-6 space-y-4"} ${disabled ? "pointer-events-none opacity-60" : ""}`}
+    >
+      <div
+        className={`flex flex-col ${rawMode ? "flex-1 min-h-0" : "border border-border bg-card"}`}
+      >
         {/* Header */}
-        <div className={`flex items-center justify-between px-4 py-3 shrink-0 ${rawMode ? "bg-card border border-border border-b-0" : "border-b border-border"}`}>
+        <div
+          className={`flex items-center justify-between px-4 py-3 shrink-0 ${rawMode ? "bg-card border border-border border-b-0" : "border-b border-border"}`}
+        >
           <div>
             <h3 className="text-sm font-semibold">Environment Variables</h3>
             <p className="text-xs text-muted-foreground">Changes will recreate the container</p>
           </div>
           <div className="flex items-center gap-2">
             {canEdit && !rawMode && (
-              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={addVar} title="Add variable">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={addVar}
+                title="Add variable"
+              >
                 <Plus className="h-3.5 w-3.5" />
               </Button>
             )}
@@ -341,7 +379,10 @@ export function EnvironmentTab({ nodeId, containerId, disabled, onRecreating }: 
             >
               <CodeEditor
                 value={rawText}
-                onChange={(val) => { setRawText(val); setErrorLines(validateRaw(val)); }}
+                onChange={(val) => {
+                  setRawText(val);
+                  setErrorLines(validateRaw(val));
+                }}
                 readOnly={!canEdit}
                 language="env"
                 errorLines={errorLines}
@@ -362,49 +403,75 @@ export function EnvironmentTab({ nodeId, containerId, disabled, onRecreating }: 
                 </div>
               )}
               <div className="-mb-px">
-              {envVars.map((env, idx) => (
-                <div key={idx} className="grid grid-cols-[1fr_1fr] border-b border-border last:border-b-0">
-                  {canEdit ? (
-                    <>
-                      <Input
-                        value={env.key}
-                        onChange={(e) => updateVar(idx, "key", e.target.value)}
-                        className={`h-9 text-xs font-mono border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring ${
-                          duplicateKeyIndices.has(idx) || (env.key.trim() && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(env.key.trim())) ? "bg-red-500/15 text-red-400" : ""
-                        }`}
-                        placeholder="KEY"
-                      />
-                      <div className="flex items-center border-l border-border">
+                {envVars.map((env, idx) => (
+                  <div
+                    key={idx}
+                    className="grid grid-cols-[1fr_1fr] border-b border-border last:border-b-0"
+                  >
+                    {canEdit ? (
+                      <>
                         <Input
-                          value={env.value}
-                          onChange={(e) => updateVar(idx, "value", e.target.value)}
-                          className="h-9 text-xs font-mono border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring flex-1 min-w-0"
-                          placeholder="value"
+                          value={env.key}
+                          onChange={(e) => updateVar(idx, "key", e.target.value)}
+                          className={`h-9 text-xs font-mono border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring ${
+                            duplicateKeyIndices.has(idx) ||
+                            (env.key.trim() && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(env.key.trim()))
+                              ? "bg-red-500/15 text-red-400"
+                              : ""
+                          }`}
+                          placeholder="KEY"
                         />
-                        <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0 rounded-none border-l border-border" onClick={() => removeVar(idx)}>
-                          <Minus className="h-3.5 w-3.5" />
-                        </Button>
-                        {isLast(idx) && (
-                          <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0 rounded-none border-l border-border" onClick={addVar}>
-                            <Plus className="h-3.5 w-3.5" />
+                        <div className="flex items-center border-l border-border">
+                          <Input
+                            value={env.value}
+                            onChange={(e) => updateVar(idx, "value", e.target.value)}
+                            className="h-9 text-xs font-mono border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring flex-1 min-w-0"
+                            placeholder="value"
+                          />
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-9 w-9 shrink-0 rounded-none border-l border-border"
+                            onClick={() => removeVar(idx)}
+                          >
+                            <Minus className="h-3.5 w-3.5" />
                           </Button>
-                        )}
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <span className="px-3 py-2 text-xs md:text-sm font-mono truncate">{env.key}</span>
-                      <span className="px-3 py-2 text-xs md:text-sm font-mono text-muted-foreground truncate border-l border-border">{env.value}</span>
-                    </>
-                  )}
-                </div>
-              ))}
+                          {isLast(idx) && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-9 w-9 shrink-0 rounded-none border-l border-border"
+                              onClick={addVar}
+                            >
+                              <Plus className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <span className="px-3 py-2 text-xs md:text-sm font-mono truncate">
+                          {env.key}
+                        </span>
+                        <span className="px-3 py-2 text-xs md:text-sm font-mono text-muted-foreground truncate border-l border-border">
+                          {env.value}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                ))}
               </div>
               {envVars.length === 0 && (
                 <div className="flex items-center justify-center py-8">
                   <p className="text-sm text-muted-foreground">
-                    No environment variables.{canEdit && (
-                      <>{" "}<button onClick={addVar} className="text-foreground hover:underline">Add one</button></>
+                    No environment variables.
+                    {canEdit && (
+                      <>
+                        {" "}
+                        <button onClick={addVar} className="text-foreground hover:underline">
+                          Add one
+                        </button>
+                      </>
                     )}
                   </p>
                 </div>
@@ -428,7 +495,13 @@ export function EnvironmentTab({ nodeId, containerId, disabled, onRecreating }: 
               </div>
             </div>
             {canManageSecrets && (
-              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={addSecretRow} title="Add secret">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={addSecretRow}
+                title="Add secret"
+              >
                 <Plus className="h-3.5 w-3.5" />
               </Button>
             )}
@@ -442,72 +515,99 @@ export function EnvironmentTab({ nodeId, containerId, disabled, onRecreating }: 
           )}
 
           <div className="-mb-px">
-          {secretRows.map((row, idx) => {
-            const isNew = !row.id;
-            const isMasked = row.value === "••••••••";
-            const isRevealed = revealedSecrets.has(idx);
-            const hasKeyError = duplicateSecretIndices.has(idx) || (row.key.trim() && !invalidKeyPattern.test(row.key.trim()));
+            {secretRows.map((row, idx) => {
+              const isNew = !row.id;
+              const isMasked = row.value === "••••••••";
+              const isRevealed = revealedSecrets.has(idx);
+              const hasKeyError =
+                duplicateSecretIndices.has(idx) ||
+                (row.key.trim() && !invalidKeyPattern.test(row.key.trim()));
 
-            return (
-              <div key={row.id ?? `new-${idx}`} className="grid grid-cols-[1fr_1fr] border-b border-border last:border-b-0">
-                {canManageSecrets ? (
-                  <>
-                    <Input
-                      value={row.key}
-                      onChange={(e) => isNew && updateSecretRow(idx, "key", e.target.value)}
-                      readOnly={!isNew}
-                      className={`h-9 text-xs font-mono border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring ${
-                        hasKeyError ? "bg-red-500/15 text-red-400" : ""
-                      }`}
-                      placeholder="SECRET_KEY"
-                    />
-                    <div className="flex items-center border-l border-border">
+              return (
+                <div
+                  key={row.id ?? `new-${idx}`}
+                  className="grid grid-cols-[1fr_1fr] border-b border-border last:border-b-0"
+                >
+                  {canManageSecrets ? (
+                    <>
                       <Input
-                        type={isNew || isRevealed ? "text" : "password"}
-                        value={isMasked && !row.dirty ? "" : row.value}
-                        onChange={(e) => updateSecretRow(idx, "value", e.target.value)}
-                        className="h-9 text-xs font-mono border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring flex-1 min-w-0"
-                        placeholder={isMasked && !row.dirty ? "••••••••" : "secret value"}
+                        value={row.key}
+                        onChange={(e) => isNew && updateSecretRow(idx, "key", e.target.value)}
+                        readOnly={!isNew}
+                        className={`h-9 text-xs font-mono border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring ${
+                          hasKeyError ? "bg-red-500/15 text-red-400" : ""
+                        }`}
+                        placeholder="SECRET_KEY"
                       />
-                      {!isNew && (
+                      <div className="flex items-center border-l border-border">
+                        <Input
+                          type={isNew || isRevealed ? "text" : "password"}
+                          value={isMasked && !row.dirty ? "" : row.value}
+                          onChange={(e) => updateSecretRow(idx, "value", e.target.value)}
+                          className="h-9 text-xs font-mono border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring flex-1 min-w-0"
+                          placeholder={isMasked && !row.dirty ? "••••••••" : "secret value"}
+                        />
+                        {!isNew && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-9 w-9 shrink-0 rounded-none border-l border-border"
+                            onClick={() => toggleReveal(idx)}
+                            title={isRevealed ? "Hide" : "Show"}
+                          >
+                            {isRevealed ? (
+                              <EyeOff className="h-3.5 w-3.5" />
+                            ) : (
+                              <Eye className="h-3.5 w-3.5" />
+                            )}
+                          </Button>
+                        )}
                         <Button
                           variant="ghost"
                           size="icon"
                           className="h-9 w-9 shrink-0 rounded-none border-l border-border"
-                          onClick={() => toggleReveal(idx)}
-                          title={isRevealed ? "Hide" : "Show"}
+                          onClick={() => removeSecretRow(idx)}
                         >
-                          {isRevealed ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                          <Minus className="h-3.5 w-3.5" />
                         </Button>
-                      )}
-                      <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0 rounded-none border-l border-border" onClick={() => removeSecretRow(idx)}>
-                        <Minus className="h-3.5 w-3.5" />
-                      </Button>
-                      {isLastSecret(idx) && (
-                        <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0 rounded-none border-l border-border" onClick={addSecretRow}>
-                          <Plus className="h-3.5 w-3.5" />
-                        </Button>
-                      )}
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <span className="px-3 py-2 text-xs md:text-sm font-mono truncate">{row.key}</span>
-                    <span className="px-3 py-2 text-xs md:text-sm font-mono text-muted-foreground truncate border-l border-border">
-                      ••••••••
-                    </span>
-                  </>
-                )}
-              </div>
-            );
-          })}
+                        {isLastSecret(idx) && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-9 w-9 shrink-0 rounded-none border-l border-border"
+                            onClick={addSecretRow}
+                          >
+                            <Plus className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <span className="px-3 py-2 text-xs md:text-sm font-mono truncate">
+                        {row.key}
+                      </span>
+                      <span className="px-3 py-2 text-xs md:text-sm font-mono text-muted-foreground truncate border-l border-border">
+                        ••••••••
+                      </span>
+                    </>
+                  )}
+                </div>
+              );
+            })}
           </div>
 
           {secretRows.length === 0 && (
             <div className="flex items-center justify-center py-8">
               <p className="text-sm text-muted-foreground">
-                No secrets configured.{canManageSecrets && (
-                  <>{" "}<button onClick={addSecretRow} className="text-foreground hover:underline">Add one</button></>
+                No secrets configured.
+                {canManageSecrets && (
+                  <>
+                    {" "}
+                    <button onClick={addSecretRow} className="text-foreground hover:underline">
+                      Add one
+                    </button>
+                  </>
                 )}
               </p>
             </div>

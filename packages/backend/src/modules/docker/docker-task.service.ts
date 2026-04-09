@@ -11,7 +11,9 @@ export class DockerTaskService {
   constructor(private db: DrizzleClient) {}
 
   private eventBus?: EventBusService;
-  setEventBus(bus: EventBusService) { this.eventBus = bus; }
+  setEventBus(bus: EventBusService) {
+    this.eventBus = bus;
+  }
   private emit(task: { id: string; nodeId: string; status: string; progress?: string | null; error?: string | null }) {
     this.eventBus?.publish('docker.task.changed', {
       taskId: task.id,

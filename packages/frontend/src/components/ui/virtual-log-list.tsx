@@ -1,5 +1,5 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
+import { type ReactNode, useEffect, useLayoutEffect, useRef } from "react";
 
 interface VirtualLogListProps<T> {
   lines: T[];
@@ -38,7 +38,9 @@ export function VirtualLogList<T>({
    * Snapshot taken before lines change so we can preserve the user's
    * apparent scroll position when older history is prepended.
    */
-  const prependFix = useRef<{ prevHeight: number; prevTop: number; prevCount: number } | null>(null);
+  const prependFix = useRef<{ prevHeight: number; prevTop: number; prevCount: number } | null>(
+    null
+  );
 
   const virtualizer = useVirtualizer({
     count: lines.length,

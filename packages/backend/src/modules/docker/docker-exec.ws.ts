@@ -228,8 +228,15 @@ async function authenticateAndCreateExec(
       if (fileResult.success && fileResult.detail) {
         // Daemon returns file content as base64
         let content = typeof fileResult.detail === 'string' ? fileResult.detail : '';
-        try { content = Buffer.from(content, 'base64').toString('utf-8'); } catch { /* not base64, use as-is */ }
-        const lines = content.split('\n').map((l: string) => l.trim()).filter((l: string) => l && !l.startsWith('#'));
+        try {
+          content = Buffer.from(content, 'base64').toString('utf-8');
+        } catch {
+          /* not base64, use as-is */
+        }
+        const lines = content
+          .split('\n')
+          .map((l: string) => l.trim())
+          .filter((l: string) => l && !l.startsWith('#'));
         const preferred = ['/bin/bash', '/usr/bin/bash', '/bin/zsh', '/usr/bin/zsh', '/bin/ash', '/bin/sh'];
         for (const s of preferred) {
           if (lines.includes(s)) {
@@ -301,7 +308,11 @@ async function authenticateAndCreateExec(
     }
     if (output.exited) {
       send(ws, { type: 'exit', exitCode: output.exitCode ?? 0 });
-      try { ws.close(1000, 'Process exited'); } catch { /* */ }
+      try {
+        ws.close(1000, 'Process exited');
+      } catch {
+        /* */
+      }
     }
   };
   state.outputHandler = outputHandler;

@@ -392,10 +392,12 @@ export function AdminGroups() {
                 restrictableScopes={RESTRICTABLE_SCOPES}
                 inheritedScopes={
                   formParentId
-                    ? [...new Set([
-                        ...(groups.find((g) => g.id === formParentId)?.scopes ?? []),
-                        ...(groups.find((g) => g.id === formParentId)?.inheritedScopes ?? []),
-                      ])]
+                    ? [
+                        ...new Set([
+                          ...(groups.find((g) => g.id === formParentId)?.scopes ?? []),
+                          ...(groups.find((g) => g.id === formParentId)?.inheritedScopes ?? []),
+                        ]),
+                      ]
                     : undefined
                 }
                 inheritedFromName={groups.find((g) => g.id === formParentId)?.name}

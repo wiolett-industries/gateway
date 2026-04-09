@@ -11,18 +11,20 @@ export function DockerComposeLogsPopout() {
   const mountedRef = useRef(true);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const [, setContainers] = useState<Array<{ id: string; name: string; service: string; state: string }>>([]);
+  const [, setContainers] = useState<
+    Array<{ id: string; name: string; service: string; state: string }>
+  >([]);
 
   // Color palette for compose services
   const colors = [
-    "\x1b[36m",  // cyan
-    "\x1b[33m",  // yellow
-    "\x1b[32m",  // green
-    "\x1b[35m",  // magenta
-    "\x1b[34m",  // blue
-    "\x1b[91m",  // bright red
-    "\x1b[92m",  // bright green
-    "\x1b[93m",  // bright yellow
+    "\x1b[36m", // cyan
+    "\x1b[33m", // yellow
+    "\x1b[32m", // green
+    "\x1b[35m", // magenta
+    "\x1b[34m", // blue
+    "\x1b[91m", // bright red
+    "\x1b[92m", // bright green
+    "\x1b[93m", // bright yellow
   ];
   const serviceColorMap = useRef(new Map<string, string>());
   const getServiceColor = (service: string) => {
@@ -38,7 +40,10 @@ export function DockerComposeLogsPopout() {
 
   const connect = useCallback(async () => {
     if (!nodeId || !project) return;
-    if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
     if (!mountedRef.current) return;
 
     const [{ Terminal }, { FitAddon }] = await Promise.all([
@@ -72,7 +77,11 @@ export function DockerComposeLogsPopout() {
       terminalRef.current = terminal;
 
       const resizeObserver = new ResizeObserver(() => {
-        try { fitAddon.fit(); } catch { /* */ }
+        try {
+          fitAddon.fit();
+        } catch {
+          /* */
+        }
       });
       resizeObserver.observe(termRef.current);
 
@@ -99,7 +108,9 @@ export function DockerComposeLogsPopout() {
         const msg = JSON.parse(evt.data);
         if (msg.type === "connected") {
           setContainers(msg.containers ?? []);
-          terminal.write(`\x1b[90m${msg.containers?.length ?? 0} containers in project\x1b[0m\r\n\r\n`);
+          terminal.write(
+            `\x1b[90m${msg.containers?.length ?? 0} containers in project\x1b[0m\r\n\r\n`
+          );
         } else if (msg.type === "initial" || msg.type === "new") {
           const lines: string[] = msg.lines ?? [];
           for (const line of lines) {
@@ -119,13 +130,17 @@ export function DockerComposeLogsPopout() {
         } else if (msg.type === "error") {
           terminal.write(`\x1b[31mError: ${msg.message}\x1b[0m\r\n`);
         }
-      } catch { /* */ }
+      } catch {
+        /* */
+      }
     };
 
     ws.onclose = () => {
       if (!mountedRef.current) return;
       terminal.write(`\r\n\x1b[90mConnection lost. Reconnecting...\x1b[0m\r\n`);
-      reconnectTimer.current = setTimeout(() => { if (mountedRef.current) connect(); }, 3000);
+      reconnectTimer.current = setTimeout(() => {
+        if (mountedRef.current) connect();
+      }, 3000);
     };
 
     ws.onerror = () => {
@@ -137,15 +152,19 @@ export function DockerComposeLogsPopout() {
   const didConnect = useRef(false);
   useEffect(() => {
     mountedRef.current = true;
-    if (!didConnect.current) { didConnect.current = true; connect(); }
+    if (!didConnect.current) {
+      didConnect.current = true;
+      connect();
+    }
     return () => {
       mountedRef.current = false;
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
-      if (cleanupRef.current) { cleanupRef.current(); cleanupRef.current = null; }
+      if (cleanupRef.current) {
+        cleanupRef.current();
+        cleanupRef.current = null;
+      }
     };
   }, [connect]);
 
-  return (
-    <div ref={termRef} className="fixed inset-0 bg-[#0e0e0e]" style={{ padding: 4 }} />
-  );
+  return <div ref={termRef} className="fixed inset-0 bg-[#0e0e0e]" style={{ padding: 4 }} />;
 }

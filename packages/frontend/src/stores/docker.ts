@@ -70,14 +70,18 @@ interface DockerState {
   fetchTasks: () => Promise<void>;
   fetchRegistries: () => Promise<void>;
 
-  invalidate: (...resources: Array<"containers" | "images" | "volumes" | "networks" | "tasks" | "templates" | "registries">) => Promise<void>;
+  invalidate: (
+    ...resources: Array<
+      "containers" | "images" | "volumes" | "networks" | "tasks" | "templates" | "registries"
+    >
+  ) => Promise<void>;
 }
 
 async function fetchAllNodes<T>(
   nodes: Node[],
   fetcher: (nodeId: string) => Promise<unknown>,
   normalizer: (data: unknown) => T[],
-  setter: (merged: T[]) => void,
+  setter: (merged: T[]) => void
 ): Promise<void> {
   const all: T[] = [];
   for (const node of nodes) {
@@ -131,7 +135,11 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
       if (selectedNodeId) {
         const data = await api.listDockerContainers(selectedNodeId);
         const node = dockerNodes.find((n) => n.id === selectedNodeId);
-        const items = tagWithNode(normList<DockerContainer>(data), selectedNodeId, node?.displayName || node?.hostname || "");
+        const items = tagWithNode(
+          normList<DockerContainer>(data),
+          selectedNodeId,
+          node?.displayName || node?.hostname || ""
+        );
         set({ containers: items, isLoading: false });
       } else {
         set({ containers: [] });
@@ -139,7 +147,7 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
           dockerNodes,
           (nid) => api.listDockerContainers(nid),
           normList<DockerContainer>,
-          (merged) => set({ containers: merged }),
+          (merged) => set({ containers: merged })
         );
         set({ isLoading: false });
       }
@@ -154,17 +162,23 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
       if (selectedNodeId) {
         const data = await api.listDockerContainers(selectedNodeId, true);
         const node = dockerNodes.find((n) => n.id === selectedNodeId);
-        const items = tagWithNode(normList<DockerContainer>(data), selectedNodeId, node?.displayName || node?.hostname || "");
+        const items = tagWithNode(
+          normList<DockerContainer>(data),
+          selectedNodeId,
+          node?.displayName || node?.hostname || ""
+        );
         set({ containers: items });
       } else {
         await fetchAllNodes(
           dockerNodes,
           (nid) => api.listDockerContainers(nid, true),
           normList<DockerContainer>,
-          (merged) => set({ containers: merged }),
+          (merged) => set({ containers: merged })
         );
       }
-    } catch { /* silent */ }
+    } catch {
+      /* silent */
+    }
   },
 
   fetchImages: async () => {
@@ -173,17 +187,25 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
       if (selectedNodeId) {
         const data = await api.listDockerImages(selectedNodeId);
         const node = dockerNodes.find((n) => n.id === selectedNodeId);
-        set({ images: tagWithNode(normList<DockerImage>(data), selectedNodeId, node?.displayName || node?.hostname || "") });
+        set({
+          images: tagWithNode(
+            normList<DockerImage>(data),
+            selectedNodeId,
+            node?.displayName || node?.hostname || ""
+          ),
+        });
       } else {
         set({ images: [] });
         await fetchAllNodes(
           dockerNodes,
           (nid) => api.listDockerImages(nid),
           normList<DockerImage>,
-          (merged) => set({ images: merged }),
+          (merged) => set({ images: merged })
         );
       }
-    } catch { /* swallow */ }
+    } catch {
+      /* swallow */
+    }
   },
 
   fetchVolumes: async () => {
@@ -192,17 +214,25 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
       if (selectedNodeId) {
         const data = await api.listDockerVolumes(selectedNodeId);
         const node = dockerNodes.find((n) => n.id === selectedNodeId);
-        set({ volumes: tagWithNode(normList<DockerVolume>(data), selectedNodeId, node?.displayName || node?.hostname || "") });
+        set({
+          volumes: tagWithNode(
+            normList<DockerVolume>(data),
+            selectedNodeId,
+            node?.displayName || node?.hostname || ""
+          ),
+        });
       } else {
         set({ volumes: [] });
         await fetchAllNodes(
           dockerNodes,
           (nid) => api.listDockerVolumes(nid),
           normList<DockerVolume>,
-          (merged) => set({ volumes: merged }),
+          (merged) => set({ volumes: merged })
         );
       }
-    } catch { /* swallow */ }
+    } catch {
+      /* swallow */
+    }
   },
 
   fetchNetworks: async () => {
@@ -211,24 +241,34 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
       if (selectedNodeId) {
         const data = await api.listDockerNetworks(selectedNodeId);
         const node = dockerNodes.find((n) => n.id === selectedNodeId);
-        set({ networks: tagWithNode(normList<DockerNetwork>(data), selectedNodeId, node?.displayName || node?.hostname || "") });
+        set({
+          networks: tagWithNode(
+            normList<DockerNetwork>(data),
+            selectedNodeId,
+            node?.displayName || node?.hostname || ""
+          ),
+        });
       } else {
         set({ networks: [] });
         await fetchAllNodes(
           dockerNodes,
           (nid) => api.listDockerNetworks(nid),
           normList<DockerNetwork>,
-          (merged) => set({ networks: merged }),
+          (merged) => set({ networks: merged })
         );
       }
-    } catch { /* swallow */ }
+    } catch {
+      /* swallow */
+    }
   },
 
   fetchTemplates: async () => {
     try {
       const data = await api.listDockerTemplates();
       set({ templates: data ?? [] });
-    } catch { /* swallow */ }
+    } catch {
+      /* swallow */
+    }
   },
 
   fetchTasks: async () => {
@@ -238,14 +278,18 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
         selectedNodeId ? { nodeId: selectedNodeId } : undefined
       );
       set({ tasks: data ?? [] });
-    } catch { /* swallow */ }
+    } catch {
+      /* swallow */
+    }
   },
 
   fetchRegistries: async () => {
     try {
       const data = await api.listDockerRegistries();
       set({ registries: data ?? [] });
-    } catch { /* swallow */ }
+    } catch {
+      /* swallow */
+    }
   },
 
   invalidate: async (...resources) => {

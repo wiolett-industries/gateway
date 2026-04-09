@@ -16,20 +16,19 @@ import { accessListRoutes } from '@/modules/access-lists/access-list.routes.js';
 import { adminRoutes } from '@/modules/admin/admin.routes.js';
 import { aiRoutes } from '@/modules/ai/ai.routes.js';
 import { authenticateWSConnection, createWSHandlers } from '@/modules/ai/ai.ws.js';
-import { authenticateEventsConnection, createEventsWSHandlers } from '@/ws/events.ws.js';
 import { alertRoutes } from '@/modules/audit/alert.routes.js';
 import { auditRoutes } from '@/modules/audit/audit.routes.js';
 import { requireActiveUser } from '@/modules/auth/auth.middleware.js';
 import { authRoutes } from '@/modules/auth/auth.routes.js';
 import { dockerRoutes } from '@/modules/docker/docker.routes.js';
-import { createDockerExecWSHandlers } from '@/modules/docker/docker-exec.ws.js';
 import { createComposeLogsWSHandlers } from '@/modules/docker/docker-compose-logs.ws.js';
+import { createDockerExecWSHandlers } from '@/modules/docker/docker-exec.ws.js';
 import { createDockerLogStreamWSHandlers } from '@/modules/docker/docker-logs.ws.js';
-import { createNodeExecWSHandlers } from '@/modules/nodes/node-exec.ws.js';
 import { domainRoutes } from '@/modules/domains/domain.routes.js';
 import { groupRoutes } from '@/modules/groups/group.routes.js';
 import { housekeepingRoutes } from '@/modules/housekeeping/housekeeping.routes.js';
 import { monitoringRoutes } from '@/modules/monitoring/monitoring.routes.js';
+import { createNodeExecWSHandlers } from '@/modules/nodes/node-exec.ws.js';
 import { nodesRoutes } from '@/modules/nodes/nodes.routes.js';
 import { caRoutes } from '@/modules/pki/ca.routes.js';
 import { certRoutes } from '@/modules/pki/cert.routes.js';
@@ -42,8 +41,8 @@ import { setupRoutes } from '@/modules/setup/setup.routes.js';
 import { sslRoutes } from '@/modules/ssl/ssl.routes.js';
 import { systemRoutes } from '@/modules/system/system.routes.js';
 import { tokensRoutes } from '@/modules/tokens/tokens.routes.js';
-
 import type { AppEnv } from '@/types.js';
+import { authenticateEventsConnection, createEventsWSHandlers } from '@/ws/events.ws.js';
 
 export function createApp() {
   const app = new OpenAPIHono<AppEnv>();

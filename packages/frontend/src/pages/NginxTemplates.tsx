@@ -18,7 +18,13 @@ import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import type { NginxTemplate } from "@/types";
 
-export function NginxTemplates({ embedded, onCreateRef }: { embedded?: boolean; onCreateRef?: (fn: () => void) => void }) {
+export function NginxTemplates({
+  embedded,
+  onCreateRef,
+}: {
+  embedded?: boolean;
+  onCreateRef?: (fn: () => void) => void;
+}) {
   const navigate = useNavigate();
   const { hasScope } = useAuthStore();
   const cachedTemplates = api.getCached<NginxTemplate[]>("nginx-templates:list");

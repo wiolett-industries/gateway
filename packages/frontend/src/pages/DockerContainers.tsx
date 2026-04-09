@@ -1,4 +1,13 @@
-import { Box, CornerDownRight, Layers, Play, Plus, RefreshCw, ScrollText, Square } from "lucide-react";
+import {
+  Box,
+  CornerDownRight,
+  Layers,
+  Play,
+  Plus,
+  RefreshCw,
+  ScrollText,
+  Square,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -8,7 +17,6 @@ import { SearchFilterBar } from "@/components/common/SearchFilterBar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
-import { RefreshButton } from "@/components/ui/refresh-button";
 import {
   Dialog,
   DialogContent,
@@ -18,6 +26,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { RefreshButton } from "@/components/ui/refresh-button";
 import {
   Select,
   SelectContent,
@@ -65,8 +74,15 @@ function containerDisplayName(name: string): string {
   return name.startsWith("/") ? name.slice(1) : name;
 }
 
-
-export function DockerContainers({ embedded, onDeployRef, fixedNodeId }: { embedded?: boolean; onDeployRef?: (fn: () => void) => void; fixedNodeId?: string } = {}) {
+export function DockerContainers({
+  embedded,
+  onDeployRef,
+  fixedNodeId,
+}: {
+  embedded?: boolean;
+  onDeployRef?: (fn: () => void) => void;
+  fixedNodeId?: string;
+} = {}) {
   const navigate = useNavigate();
   const { hasScope } = useAuthStore();
   const containers = useDockerStore((s) => s.containers);
@@ -104,7 +120,11 @@ export function DockerContainers({ embedded, onDeployRef, fixedNodeId }: { embed
   const [deployName, setDeployName] = useState("");
   const [deployRestart, setDeployRestart] = useState("no");
   const [deploying, setDeploying] = useState(false);
-  const openDeploy = () => { setDeployNodeId(selectedNodeId || ""); setDeployImage(""); setDeployOpen(true); };
+  const openDeploy = () => {
+    setDeployNodeId(selectedNodeId || "");
+    setDeployImage("");
+    setDeployOpen(true);
+  };
 
   // Expose deploy dialog opener to parent
   useEffect(() => {
@@ -113,12 +133,16 @@ export function DockerContainers({ embedded, onDeployRef, fixedNodeId }: { embed
 
   // Fetch local images + pullable images from other nodes when deploy node changes
   useEffect(() => {
-    if (!deployNodeId) { setDeployLocalImages([]); setDeployPullableImages([]); return; }
+    if (!deployNodeId) {
+      setDeployLocalImages([]);
+      setDeployPullableImages([]);
+      return;
+    }
 
     const extractTags = (data: unknown): string[] => {
       const tags: string[] = [];
-      for (const img of (Array.isArray(data) ? data : [])) {
-        for (const t of ((img as any).repoTags ?? (img as any).RepoTags ?? [])) {
+      for (const img of Array.isArray(data) ? data : []) {
+        for (const t of (img as any).repoTags ?? (img as any).RepoTags ?? []) {
           if (t && t !== "<none>:<none>") tags.push(t);
         }
       }
@@ -126,18 +150,30 @@ export function DockerContainers({ embedded, onDeployRef, fixedNodeId }: { embed
     };
 
     // Fetch local images
-    api.listDockerImages(deployNodeId)
+    api
+      .listDockerImages(deployNodeId)
       .then((data) => setDeployLocalImages(extractTags(data).sort()))
       .catch(() => setDeployLocalImages([]));
 
     // Fetch images from other nodes (pullable) — only if user can pull
-    if (!hasScope("docker:images:pull")) { setDeployPullableImages([]); return; }
+    if (!hasScope("docker:images:pull")) {
+      setDeployPullableImages([]);
+      return;
+    }
     const otherNodes = useDockerStore.getState().dockerNodes.filter((n) => n.id !== deployNodeId);
     if (otherNodes.length > 0) {
-      Promise.all(otherNodes.map((n) => api.listDockerImages(n.id).then(extractTags).catch(() => [] as string[])))
-        .then((results) => {
-          const localSet = new Set<string>();
-          api.listDockerImages(deployNodeId).then((d) => {
+      Promise.all(
+        otherNodes.map((n) =>
+          api
+            .listDockerImages(n.id)
+            .then(extractTags)
+            .catch(() => [] as string[])
+        )
+      ).then((results) => {
+        const localSet = new Set<string>();
+        api
+          .listDockerImages(deployNodeId)
+          .then((d) => {
             for (const t of extractTags(d)) localSet.add(t);
             const pullable = new Set<string>();
             for (const tags of results) {
@@ -146,8 +182,9 @@ export function DockerContainers({ embedded, onDeployRef, fixedNodeId }: { embed
               }
             }
             setDeployPullableImages(Array.from(pullable).sort());
-          }).catch(() => {});
-        });
+          })
+          .catch(() => {});
+      });
     } else {
       setDeployPullableImages([]);
     }
@@ -163,7 +200,10 @@ export function DockerContainers({ embedded, onDeployRef, fixedNodeId }: { embed
   // Fetch docker nodes on mount — intentionally runs once
   // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only effect
   useEffect(() => {
-    if (embedded) { setNodesLoading(false); return; }
+    if (embedded) {
+      setNodesLoading(false);
+      return;
+    }
     setNodesLoading(true);
     api
       .listNodes({ type: "docker", limit: 100 })
@@ -213,14 +253,14 @@ export function DockerContainers({ embedded, onDeployRef, fixedNodeId }: { embed
     }
     // Sort: compose groups together (alphabetically), then standalone
     result.sort((a, b) => {
-      const pa = (a.labels?.["com.docker.compose.project"]) ?? "";
-      const pb = (b.labels?.["com.docker.compose.project"]) ?? "";
+      const pa = a.labels?.["com.docker.compose.project"] ?? "";
+      const pb = b.labels?.["com.docker.compose.project"] ?? "";
       if (pa && !pb) return -1;
       if (!pa && pb) return 1;
       if (pa !== pb) return pa.localeCompare(pb);
       // Within same compose project, sort by service name
-      const sa = (a.labels?.["com.docker.compose.service"]) ?? a.name;
-      const sb = (b.labels?.["com.docker.compose.service"]) ?? b.name;
+      const sa = a.labels?.["com.docker.compose.service"] ?? a.name;
+      const sb = b.labels?.["com.docker.compose.service"] ?? b.name;
       return sa.localeCompare(sb);
     });
     return result;
@@ -308,7 +348,6 @@ export function DockerContainers({ embedded, onDeployRef, fixedNodeId }: { embed
     setDeployRestart("no");
   };
 
-
   const allContainerColumns: DataTableColumn<DockerContainer>[] = useMemo(
     () => [
       {
@@ -319,14 +358,14 @@ export function DockerContainers({ embedded, onDeployRef, fixedNodeId }: { embed
           const isCompose = !!c.labels?.["com.docker.compose.project"];
           return (
             <div className="flex items-center gap-3 min-w-0">
-              {isCompose && <CornerDownRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
+              {isCompose && (
+                <CornerDownRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              )}
               <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-muted shrink-0">
                 <Box className="h-4 w-4 text-muted-foreground" />
               </div>
               <div className="min-w-0">
-                <p className="text-sm font-medium truncate">
-                  {containerDisplayName(c.name)}
-                </p>
+                <p className="text-sm font-medium truncate">{containerDisplayName(c.name)}</p>
                 <p className="text-xs text-muted-foreground font-mono truncate">
                   {c.id.slice(0, 12)}
                 </p>
@@ -339,15 +378,17 @@ export function DockerContainers({ embedded, onDeployRef, fixedNodeId }: { embed
         key: "image",
         header: "Image",
         truncate: true,
-        render: (c) => (
-          <span className="text-muted-foreground">{c.image}</span>
-        ),
+        render: (c) => <span className="text-muted-foreground">{c.image}</span>,
       },
       {
         key: "node",
         header: "Node",
         width: "140px",
-        render: (c) => <Badge variant="secondary" className="text-xs w-fit">{(c as any)._nodeName || "-"}</Badge>,
+        render: (c) => (
+          <Badge variant="secondary" className="text-xs w-fit">
+            {(c as any)._nodeName || "-"}
+          </Badge>
+        ),
       },
       {
         key: "status",
@@ -426,7 +467,9 @@ export function DockerContainers({ embedded, onDeployRef, fixedNodeId }: { embed
     ],
     [actionLoading, handleStop, handleRestart, handleStart]
   );
-  const containerColumns = fixedNodeId ? allContainerColumns.filter((c) => c.key !== "node") : allContainerColumns;
+  const containerColumns = fixedNodeId
+    ? allContainerColumns.filter((c) => c.key !== "node")
+    : allContainerColumns;
 
   const content = (
     <>
@@ -463,11 +506,18 @@ export function DockerContainers({ embedded, onDeployRef, fixedNodeId }: { embed
       {/* Filters */}
       <SearchFilterBar
         search={searchInput}
-        onSearchChange={(v) => { setSearchInput(v); setFilters({ search: v }); }}
+        onSearchChange={(v) => {
+          setSearchInput(v);
+          setFilters({ search: v });
+        }}
         onSearchSubmit={handleSearch}
         placeholder="Search containers by name or image..."
         hasActiveFilters={searchInput !== "" || filters.status !== "all" || !!selectedNodeId}
-        onReset={() => { setSearchInput(""); resetFilters(); setSelectedNode(null); }}
+        onReset={() => {
+          setSearchInput("");
+          resetFilters();
+          setSelectedNode(null);
+        }}
         filters={
           <div className="flex items-center gap-3">
             <Select
@@ -500,82 +550,88 @@ export function DockerContainers({ embedded, onDeployRef, fixedNodeId }: { embed
         }
       />
 
-        {!nodesLoading && !embedded && dockerNodes.length === 0 && useDockerStore.getState().dockerNodes.length === 0 && (
+      {!nodesLoading &&
+        !embedded &&
+        dockerNodes.length === 0 &&
+        useDockerStore.getState().dockerNodes.length === 0 && (
           <EmptyState message="No Docker nodes registered. Add a Docker node from the Nodes page to get started." />
         )}
 
-        {(selectedNodeId || useDockerStore.getState().dockerNodes.length > 0 || embedded) && (
-          <>
-
-            {/* Container list */}
-            {filteredContainers.length > 0 ? (
-              <DataTable
-                columns={containerColumns}
-                data={filteredContainers}
-                keyFn={(c) => c.id}
-                onRowClick={(c) => navigate(`/docker/containers/${(c as any)._nodeId || selectedNodeId}/${c.id}`)}
-                emptyMessage="No containers found."
-                groupBy={(c) => {
-                  const project = c.labels?.["com.docker.compose.project"];
-                  if (!project) return null;
-                  const g = composeGroups.get(project);
-                  return {
-                    key: project,
-                    label: (
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Layers className="h-3.5 w-3.5 text-muted-foreground" />
-                          <span className="text-xs font-medium uppercase tracking-wider">{project}</span>
-                        </div>
-                        {g && (
-                          <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                            <span>{g.running}/{g.total} running</span>
-                            <ScrollText className="h-3.5 w-3.5 cursor-pointer hover:text-foreground" />
-                          </div>
-                        )}
+      {(selectedNodeId || useDockerStore.getState().dockerNodes.length > 0 || embedded) && (
+        <>
+          {/* Container list */}
+          {filteredContainers.length > 0 ? (
+            <DataTable
+              columns={containerColumns}
+              data={filteredContainers}
+              keyFn={(c) => c.id}
+              onRowClick={(c) =>
+                navigate(`/docker/containers/${(c as any)._nodeId || selectedNodeId}/${c.id}`)
+              }
+              emptyMessage="No containers found."
+              groupBy={(c) => {
+                const project = c.labels?.["com.docker.compose.project"];
+                if (!project) return null;
+                const g = composeGroups.get(project);
+                return {
+                  key: project,
+                  label: (
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Layers className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span className="text-xs font-medium uppercase tracking-wider">
+                          {project}
+                        </span>
                       </div>
-                    ),
-                  };
-                }}
-                onGroupClick={(group) => {
-                  // Open compose logs popout
-                  const g = composeGroups.get(group.key);
-                  if (g?.nodeId) {
-                    window.open(
-                      `/docker/compose-logs/${g.nodeId}/${encodeURIComponent(group.key)}`,
-                      `compose-logs-${group.key}`,
-                      "width=900,height=600"
-                    );
-                  }
-                }}
-              />
-            ) : isLoading ? (
-              <div className="flex items-center justify-center py-16 text-muted-foreground">
-                Loading containers...
-              </div>
-            ) : (
-              <EmptyState
-                message="No containers found on this node."
-                hasActiveFilters={hasActiveFilters}
-                onReset={() => {
-                  setSearchInput("");
-                  resetFilters();
-                }}
-                actionLabel={hasScope("docker:containers:create") ? "Deploy a container" : undefined}
-                onAction={hasScope("docker:containers:create") ? () => openDeploy() : undefined}
-              />
-            )}
-          </>
-        )}
+                      {g && (
+                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                          <span>
+                            {g.running}/{g.total} running
+                          </span>
+                          <ScrollText className="h-3.5 w-3.5 cursor-pointer hover:text-foreground" />
+                        </div>
+                      )}
+                    </div>
+                  ),
+                };
+              }}
+              onGroupClick={(group) => {
+                // Open compose logs popout
+                const g = composeGroups.get(group.key);
+                if (g?.nodeId) {
+                  window.open(
+                    `/docker/compose-logs/${g.nodeId}/${encodeURIComponent(group.key)}`,
+                    `compose-logs-${group.key}`,
+                    "width=900,height=600"
+                  );
+                }
+              }}
+            />
+          ) : isLoading ? (
+            <div className="flex items-center justify-center py-16 text-muted-foreground">
+              Loading containers...
+            </div>
+          ) : (
+            <EmptyState
+              message="No containers found on this node."
+              hasActiveFilters={hasActiveFilters}
+              onReset={() => {
+                setSearchInput("");
+                resetFilters();
+              }}
+              actionLabel={hasScope("docker:containers:create") ? "Deploy a container" : undefined}
+              onAction={hasScope("docker:containers:create") ? () => openDeploy() : undefined}
+            />
+          )}
+        </>
+      )}
 
       {/* Deploy Container Dialog */}
       <Dialog open={deployOpen} onOpenChange={closeDeploy}>
         <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Deploy Container</DialogTitle>
-            <DialogDescription>
-              Create and start a new container.
-            </DialogDescription>
+            <DialogDescription>Create and start a new container.</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
@@ -584,12 +640,21 @@ export function DockerContainers({ embedded, onDeployRef, fixedNodeId }: { embed
               <label className="text-sm font-medium">
                 Node <span className="text-destructive">*</span>
               </label>
-              <Select value={deployNodeId} onValueChange={(v) => { setDeployNodeId(v); setDeployImage(""); }}>
+              <Select
+                value={deployNodeId}
+                onValueChange={(v) => {
+                  setDeployNodeId(v);
+                  setDeployImage("");
+                }}
+              >
                 <SelectTrigger className="mt-1">
                   <SelectValue placeholder="Select a node" />
                 </SelectTrigger>
                 <SelectContent>
-                  {(useDockerStore.getState().dockerNodes.length > 0 ? useDockerStore.getState().dockerNodes : dockerNodes).map((n) => (
+                  {(useDockerStore.getState().dockerNodes.length > 0
+                    ? useDockerStore.getState().dockerNodes
+                    : dockerNodes
+                  ).map((n) => (
                     <SelectItem key={n.id} value={n.id}>
                       {n.displayName || n.hostname}
                     </SelectItem>
@@ -605,7 +670,9 @@ export function DockerContainers({ embedded, onDeployRef, fixedNodeId }: { embed
               </label>
               <Select value={deployImage} onValueChange={setDeployImage} disabled={!deployNodeId}>
                 <SelectTrigger className="mt-1">
-                  <SelectValue placeholder={!deployNodeId ? "Select a node first" : "Select an image"} />
+                  <SelectValue
+                    placeholder={!deployNodeId ? "Select a node first" : "Select an image"}
+                  />
                 </SelectTrigger>
                 <SelectContent>
                   {deployLocalImages.length > 0 && (
@@ -629,7 +696,9 @@ export function DockerContainers({ embedded, onDeployRef, fixedNodeId }: { embed
                     </SelectGroup>
                   )}
                   {deployLocalImages.length === 0 && deployPullableImages.length === 0 && (
-                    <SelectItem value="__none__" disabled>No images available</SelectItem>
+                    <SelectItem value="__none__" disabled>
+                      No images available
+                    </SelectItem>
                   )}
                 </SelectContent>
               </Select>
@@ -674,7 +743,10 @@ export function DockerContainers({ embedded, onDeployRef, fixedNodeId }: { embed
             <Button variant="outline" onClick={closeDeploy}>
               Cancel
             </Button>
-            <Button onClick={handleDeploy} disabled={deploying || !deployImage.trim() || !deployNodeId}>
+            <Button
+              onClick={handleDeploy}
+              disabled={deploying || !deployImage.trim() || !deployNodeId}
+            >
               {deploying ? "Deploying..." : "Deploy"}
             </Button>
           </DialogFooter>

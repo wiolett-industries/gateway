@@ -13,7 +13,12 @@ interface TerminalConsoleProps {
   connectLabel?: string;
 }
 
-export function TerminalConsole({ wsFactory, channelKey, popoutUrl, connectLabel }: TerminalConsoleProps) {
+export function TerminalConsole({
+  wsFactory,
+  channelKey,
+  popoutUrl,
+  connectLabel,
+}: TerminalConsoleProps) {
   const termRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<any>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -119,14 +124,23 @@ export function TerminalConsole({ wsFactory, channelKey, popoutUrl, connectLabel
       const fitAddon = new FitAddon();
       terminal.loadAddon(fitAddon);
       terminal.open(termRef.current);
-      setTimeout(() => { fitAddon.fit(); terminal.focus(); }, 50);
+      setTimeout(() => {
+        fitAddon.fit();
+        terminal.focus();
+      }, 50);
       terminalRef.current = terminal;
       fitRef.current = fitAddon;
 
       const resizeObserver = new ResizeObserver(() => {
-        try { fitAddon.fit(); } catch { /* */ }
+        try {
+          fitAddon.fit();
+        } catch {
+          /* */
+        }
         if (wsRef.current?.readyState === WebSocket.OPEN) {
-          wsRef.current.send(JSON.stringify({ type: "resize", rows: terminal.rows, cols: terminal.cols }));
+          wsRef.current.send(
+            JSON.stringify({ type: "resize", rows: terminal.rows, cols: terminal.cols })
+          );
         }
       });
       resizeObserver.observe(termRef.current);
@@ -196,7 +210,9 @@ export function TerminalConsole({ wsFactory, channelKey, popoutUrl, connectLabel
         } else if (msg.type === "error") {
           terminal.write(`\r\nError: ${msg.message}\r\n`);
         }
-      } catch { /* */ }
+      } catch {
+        /* */
+      }
     };
 
     ws.onclose = () => {
@@ -266,9 +282,7 @@ export function TerminalConsole({ wsFactory, channelKey, popoutUrl, connectLabel
       <div className="relative flex-1 min-h-0">
         <div className="absolute inset-0 bg-[#0e0e0e] rounded-md border border-border flex flex-col items-center justify-center gap-4">
           <Terminal className="h-10 w-10 text-muted-foreground/40" />
-          <p className="text-sm text-muted-foreground">
-            Console is open in a separate window
-          </p>
+          <p className="text-sm text-muted-foreground">Console is open in a separate window</p>
           <Button variant="outline" size="sm" onClick={bringBack}>
             Bring back here
           </Button>

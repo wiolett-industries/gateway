@@ -21,7 +21,11 @@ async function authenticateFromToken(token: string): Promise<User | null> {
 }
 
 function send(ws: WSContext, msg: Record<string, unknown>): void {
-  try { ws.send(JSON.stringify(msg)); } catch { /* */ }
+  try {
+    ws.send(JSON.stringify(msg));
+  } catch {
+    /* */
+  }
 }
 
 interface ComposeLogState {
@@ -48,14 +52,20 @@ export function createComposeLogsWSHandlers(nodeId: string, project: string, tok
       wsStates.set(ws, state);
 
       state.keepaliveInterval = setInterval(() => {
-        try { ws.send(JSON.stringify({ type: 'pong' })); } catch {
+        try {
+          ws.send(JSON.stringify({ type: 'pong' }));
+        } catch {
           if (state.keepaliveInterval) clearInterval(state.keepaliveInterval);
         }
       }, 30_000);
 
       startComposeStream(ws, state, token, nodeId, project, dispatch, registry, dockerService).catch((err) => {
         logger.error('Compose log stream failed', { error: err instanceof Error ? err.message : String(err) });
-        try { ws.close(); } catch { /* */ }
+        try {
+          ws.close();
+        } catch {
+          /* */
+        }
       });
     },
 
@@ -64,7 +74,9 @@ export function createComposeLogsWSHandlers(nodeId: string, project: string, tok
       try {
         const msg = JSON.parse(raw);
         if (msg.type === 'ping') send(ws, { type: 'pong' });
-      } catch { /* */ }
+      } catch {
+        /* */
+      }
     },
 
     onClose(_event: unknown, ws: WSContext) {
@@ -99,13 +111,29 @@ async function startComposeStream(
   dockerService: DockerManagementService
 ): Promise<void> {
   const user = await authenticateFromToken(token);
-  if (!user) { send(ws, { type: 'auth_error', message: 'Invalid token' }); ws.close(1008, 'Auth failed'); return; }
-  if (!hasScope(user.scopes, 'docker:containers:view')) { send(ws, { type: 'auth_error', message: 'Missing scope' }); ws.close(1008, 'Insufficient permissions'); return; }
-  if (user.isBlocked) { send(ws, { type: 'auth_error', message: 'Blocked' }); ws.close(1008, 'Blocked'); return; }
+  if (!user) {
+    send(ws, { type: 'auth_error', message: 'Invalid token' });
+    ws.close(1008, 'Auth failed');
+    return;
+  }
+  if (!hasScope(user.scopes, 'docker:containers:view')) {
+    send(ws, { type: 'auth_error', message: 'Missing scope' });
+    ws.close(1008, 'Insufficient permissions');
+    return;
+  }
+  if (user.isBlocked) {
+    send(ws, { type: 'auth_error', message: 'Blocked' });
+    ws.close(1008, 'Blocked');
+    return;
+  }
   state.authenticated = true;
 
   const node = registry.getNode(nodeId);
-  if (!node) { send(ws, { type: 'error', message: 'Node not connected' }); ws.close(1011, 'Node offline'); return; }
+  if (!node) {
+    send(ws, { type: 'error', message: 'Node not connected' });
+    ws.close(1011, 'Node offline');
+    return;
+  }
 
   // Find all containers in this compose project
   let allContainers: any[];
@@ -161,7 +189,9 @@ async function startComposeStream(
           allLines.push({ ts, line: `${service} | ${line}` });
         }
       }
-    } catch { /* skip container */ }
+    } catch {
+      /* skip container */
+    }
   }
 
   // Sort by timestamp
@@ -187,12 +217,14 @@ async function startComposeStream(
     state.handlerKeys.push(handlerKey);
 
     // Start follow
-    dispatch.sendDockerLogsCommand(nodeId, cid, {
-      tailLines: 0,
-      follow: true,
-      timestamps: true,
-      since: newestTs,
-    }).catch(() => {});
+    dispatch
+      .sendDockerLogsCommand(nodeId, cid, {
+        tailLines: 0,
+        follow: true,
+        timestamps: true,
+        since: newestTs,
+      })
+      .catch(() => {});
   }
 
   logger.info('Compose log stream started', { nodeId, project, containers: composeContainers.length });

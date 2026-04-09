@@ -30,7 +30,10 @@ Handlebars.registerHelper('indent', (value: unknown, spaces: unknown) => {
   if (typeof value !== 'string' || !value) return '';
   const pad = ' '.repeat(typeof spaces === 'number' ? spaces : 4);
   return new Handlebars.SafeString(
-    value.split('\n').map((line, i) => (i === 0 ? line : pad + line)).join('\n')
+    value
+      .split('\n')
+      .map((line, i) => (i === 0 ? line : pad + line))
+      .join('\n')
   );
 });
 

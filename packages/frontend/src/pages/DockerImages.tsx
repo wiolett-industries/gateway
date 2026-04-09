@@ -9,7 +9,6 @@ import { SearchFilterBar } from "@/components/common/SearchFilterBar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
-import { RefreshButton } from "@/components/ui/refresh-button";
 import {
   Dialog,
   DialogContent,
@@ -19,6 +18,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { RefreshButton } from "@/components/ui/refresh-button";
 import {
   Select,
   SelectContent,
@@ -49,16 +49,18 @@ function formatCreated(ts: number): string {
   return d.toLocaleDateString();
 }
 
-export function DockerImages({ embedded, onPullRef, fixedNodeId }: { embedded?: boolean; onPullRef?: (fn: () => void) => void; fixedNodeId?: string } = {}) {
+export function DockerImages({
+  embedded,
+  onPullRef,
+  fixedNodeId,
+}: {
+  embedded?: boolean;
+  onPullRef?: (fn: () => void) => void;
+  fixedNodeId?: string;
+} = {}) {
   const navigate = useNavigate();
   const { hasScope } = useAuthStore();
-  const {
-    images,
-    selectedNodeId,
-    isLoading,
-    setSelectedNode,
-    fetchImages,
-  } = useDockerStore();
+  const { images, selectedNodeId, isLoading, setSelectedNode, fetchImages } = useDockerStore();
 
   const [dockerNodes, setDockerNodes] = useState<Node[]>([]);
   const [search, setSearch] = useState("");
@@ -68,7 +70,9 @@ export function DockerImages({ embedded, onPullRef, fixedNodeId }: { embedded?: 
   // Usage dialog
   const [usageOpen, setUsageOpen] = useState(false);
   const [usageImage, setUsageImage] = useState("");
-  const [usageContainers, setUsageContainers] = useState<Array<{ id: string; name: string; state: string }>>([]);
+  const [usageContainers, setUsageContainers] = useState<
+    Array<{ id: string; name: string; state: string }>
+  >([]);
   const [usageLoading, setUsageLoading] = useState(false);
 
   const showUsage = async (imageTag: string, nodeId?: string) => {
@@ -80,8 +84,15 @@ export function DockerImages({ embedded, onPullRef, fixedNodeId }: { embedded?: 
     try {
       const containers = await api.listDockerContainers(nid);
       const list = (Array.isArray(containers) ? containers : [])
-        .map((c: any) => ({ id: c.id ?? c.Id ?? "", name: c.name ?? c.Name ?? "", state: c.state ?? c.State ?? "", image: c.image ?? c.Image ?? "" }))
-        .filter((c: any) => c.image === imageTag || c.image.split(":")[0] === imageTag.split(":")[0]);
+        .map((c: any) => ({
+          id: c.id ?? c.Id ?? "",
+          name: c.name ?? c.Name ?? "",
+          state: c.state ?? c.State ?? "",
+          image: c.image ?? c.Image ?? "",
+        }))
+        .filter(
+          (c: any) => c.image === imageTag || c.image.split(":")[0] === imageTag.split(":")[0]
+        );
       setUsageContainers(list);
     } catch {
       setUsageContainers([]);
@@ -93,8 +104,13 @@ export function DockerImages({ embedded, onPullRef, fixedNodeId }: { embedded?: 
   // Pull dialog
   const [pullOpen, setPullOpen] = useState(false);
   const [pullNodeId, setPullNodeId] = useState<string>("");
-  const openPull = () => { setPullNodeId(selectedNodeId || ""); setPullOpen(true); };
-  useEffect(() => { onPullRef?.(() => openPull()); }, [onPullRef]);
+  const openPull = () => {
+    setPullNodeId(selectedNodeId || "");
+    setPullOpen(true);
+  };
+  useEffect(() => {
+    onPullRef?.(() => openPull());
+  }, [onPullRef]);
   const [pullRef, setPullRef] = useState("");
   const [pullRegistryId, setPullRegistryId] = useState<string>("");
   const [pulling, setPulling] = useState(false);
@@ -102,10 +118,18 @@ export function DockerImages({ embedded, onPullRef, fixedNodeId }: { embedded?: 
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only
   useEffect(() => {
-    api.listDockerRegistries().then(setRegistries).catch(() => {});
+    api
+      .listDockerRegistries()
+      .then(setRegistries)
+      .catch(() => {});
 
-    if (embedded && !fixedNodeId) { return; }
-    if (fixedNodeId) { setSelectedNode(fixedNodeId); return; }
+    if (embedded && !fixedNodeId) {
+      return;
+    }
+    if (fixedNodeId) {
+      setSelectedNode(fixedNodeId);
+      return;
+    }
 
     api
       .listNodes({ type: "docker", limit: 100 })
@@ -131,16 +155,22 @@ export function DockerImages({ embedded, onPullRef, fixedNodeId }: { embedded?: 
       return tags.length > 0 && !tags.every((t: string) => t === "<none>:<none>");
     });
     if (filterUsage === "used") {
-      result = result.filter((img) => ((img as any).containers ?? (img as any).Containers ?? 0) > 0);
+      result = result.filter(
+        (img) => ((img as any).containers ?? (img as any).Containers ?? 0) > 0
+      );
     } else if (filterUsage === "unused") {
-      result = result.filter((img) => ((img as any).containers ?? (img as any).Containers ?? 0) === 0);
+      result = result.filter(
+        (img) => ((img as any).containers ?? (img as any).Containers ?? 0) === 0
+      );
     }
     if (search) {
       const q = search.toLowerCase();
       result = result.filter((img) => {
         const tags = (img as any).repoTags ?? (img as any).RepoTags ?? [];
         const id = (img as any).id ?? (img as any).Id ?? "";
-        return id.toLowerCase().includes(q) || tags.some((t: string) => t.toLowerCase().includes(q));
+        return (
+          id.toLowerCase().includes(q) || tags.some((t: string) => t.toLowerCase().includes(q))
+        );
       });
     }
     return result;
@@ -173,13 +203,14 @@ export function DockerImages({ embedded, onPullRef, fixedNodeId }: { embedded?: 
     if (!ok) return;
     setPruning(true);
     try {
-      if (!selectedNodeId) { toast.error("Select a node to prune images"); return; }
+      if (!selectedNodeId) {
+        toast.error("Select a node to prune images");
+        return;
+      }
       const result = await api.pruneImages(selectedNodeId);
       const freed = (result as Record<string, unknown>).spaceReclaimed;
       toast.success(
-        freed
-          ? `Pruned images, freed ${formatSize(Number(freed))}`
-          : "Pruned unused images"
+        freed ? `Pruned images, freed ${formatSize(Number(freed))}` : "Pruned unused images"
       );
       fetchImages();
     } catch (err) {
@@ -213,7 +244,6 @@ export function DockerImages({ embedded, onPullRef, fixedNodeId }: { embedded?: 
     setPullRef("");
     setPullRegistryId("");
   };
-
 
   // biome-ignore lint/suspicious/noExplicitAny: Docker API shape varies
   const allImageColumns: DataTableColumn<any>[] = useMemo(
@@ -257,7 +287,11 @@ export function DockerImages({ embedded, onPullRef, fixedNodeId }: { embedded?: 
         key: "node",
         header: "Node",
         width: "140px",
-        render: (img: any) => <Badge variant="secondary" className="text-xs w-fit">{(img as any)._nodeName || "-"}</Badge>,
+        render: (img: any) => (
+          <Badge variant="secondary" className="text-xs w-fit">
+            {(img as any)._nodeName || "-"}
+          </Badge>
+        ),
       },
       {
         key: "usage",
@@ -332,7 +366,9 @@ export function DockerImages({ embedded, onPullRef, fixedNodeId }: { embedded?: 
     ],
     [hasScope, handleRemove, showUsage]
   );
-  const imageColumns = fixedNodeId ? allImageColumns.filter((c) => c.key !== "node") : allImageColumns;
+  const imageColumns = fixedNodeId
+    ? allImageColumns.filter((c) => c.key !== "node")
+    : allImageColumns;
 
   const content = (
     <>
@@ -342,13 +378,9 @@ export function DockerImages({ embedded, onPullRef, fixedNodeId }: { embedded?: 
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-2xl font-bold">Docker Images</h1>
-              {!isLoading && selectedNodeId && (
-                <Badge variant="secondary">{images.length}</Badge>
-              )}
+              {!isLoading && selectedNodeId && <Badge variant="secondary">{images.length}</Badge>}
             </div>
-            <p className="text-sm text-muted-foreground">
-              Manage Docker images across your nodes
-            </p>
+            <p className="text-sm text-muted-foreground">Manage Docker images across your nodes</p>
           </div>
           <div className="flex items-center gap-2">
             {selectedNodeId && (
@@ -378,7 +410,11 @@ export function DockerImages({ embedded, onPullRef, fixedNodeId }: { embedded?: 
         onSearchChange={setSearch}
         placeholder="Search images by repository or tag..."
         hasActiveFilters={search !== "" || filterUsage !== "all" || !!selectedNodeId}
-        onReset={() => { setSearch(""); setFilterUsage("all"); setSelectedNode(null); }}
+        onReset={() => {
+          setSearch("");
+          setFilterUsage("all");
+          setSelectedNode(null);
+        }}
         filters={
           <div className="flex items-center gap-3">
             <Select
@@ -415,7 +451,7 @@ export function DockerImages({ embedded, onPullRef, fixedNodeId }: { embedded?: 
         <DataTable
           columns={imageColumns}
           data={filteredImages}
-          keyFn={(img: any) => (img.id ?? img.Id ?? "")}
+          keyFn={(img: any) => img.id ?? img.Id ?? ""}
           emptyMessage="No images found."
         />
       ) : isLoading ? (
@@ -435,9 +471,7 @@ export function DockerImages({ embedded, onPullRef, fixedNodeId }: { embedded?: 
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Pull Image</DialogTitle>
-            <DialogDescription>
-              Pull a Docker image from a registry.
-            </DialogDescription>
+            <DialogDescription>Pull a Docker image from a registry.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             {/* Node */}
@@ -445,13 +479,24 @@ export function DockerImages({ embedded, onPullRef, fixedNodeId }: { embedded?: 
               <label className="text-sm font-medium">
                 Node <span className="text-destructive">*</span>
               </label>
-              <Select value={pullNodeId} onValueChange={(v) => { setPullNodeId(v); setPullRegistryId(""); }}>
+              <Select
+                value={pullNodeId}
+                onValueChange={(v) => {
+                  setPullNodeId(v);
+                  setPullRegistryId("");
+                }}
+              >
                 <SelectTrigger className="mt-1">
                   <SelectValue placeholder="Select a node" />
                 </SelectTrigger>
                 <SelectContent>
-                  {(useDockerStore.getState().dockerNodes.length > 0 ? useDockerStore.getState().dockerNodes : dockerNodes).map((n) => (
-                    <SelectItem key={n.id} value={n.id}>{n.displayName || n.hostname}</SelectItem>
+                  {(useDockerStore.getState().dockerNodes.length > 0
+                    ? useDockerStore.getState().dockerNodes
+                    : dockerNodes
+                  ).map((n) => (
+                    <SelectItem key={n.id} value={n.id}>
+                      {n.displayName || n.hostname}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -460,7 +505,11 @@ export function DockerImages({ embedded, onPullRef, fixedNodeId }: { embedded?: 
             {/* Registry */}
             <div>
               <label className="text-sm font-medium">Registry</label>
-              <Select value={pullRegistryId || "__default__"} onValueChange={(v) => setPullRegistryId(v === "__default__" ? "" : v)} disabled={!pullNodeId}>
+              <Select
+                value={pullRegistryId || "__default__"}
+                onValueChange={(v) => setPullRegistryId(v === "__default__" ? "" : v)}
+                disabled={!pullNodeId}
+              >
                 <SelectTrigger className="mt-1">
                   <SelectValue placeholder={pullNodeId ? "Docker Hub" : "Select a node first"} />
                 </SelectTrigger>
@@ -487,12 +536,16 @@ export function DockerImages({ embedded, onPullRef, fixedNodeId }: { embedded?: 
                 value={pullRef}
                 onChange={(e) => setPullRef(e.target.value)}
                 placeholder="nginx:latest"
-                onKeyDown={(e) => { if (e.key === "Enter") handlePull(); }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handlePull();
+                }}
               />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={closePull}>Cancel</Button>
+            <Button variant="outline" onClick={closePull}>
+              Cancel
+            </Button>
             <Button onClick={handlePull} disabled={pulling || !pullRef.trim() || !pullNodeId}>
               {pulling ? "Pulling..." : "Pull"}
             </Button>
@@ -526,7 +579,10 @@ export function DockerImages({ embedded, onPullRef, fixedNodeId }: { embedded?: 
                     <p className="text-sm font-medium truncate">{c.name.replace(/^\//, "")}</p>
                     <p className="text-xs font-mono text-muted-foreground">{c.id.slice(0, 12)}</p>
                   </div>
-                  <Badge variant={c.state === "running" ? "success" : "secondary"} className="text-xs shrink-0">
+                  <Badge
+                    variant={c.state === "running" ? "success" : "secondary"}
+                    className="text-xs shrink-0"
+                  >
                     {c.state}
                   </Badge>
                 </div>

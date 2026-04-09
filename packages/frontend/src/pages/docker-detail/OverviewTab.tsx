@@ -3,12 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { useRealtime } from "@/hooks/use-realtime";
 import { api } from "@/services/api";
-import {
-  STATUS_BADGE,
-  copyToClipboard,
-  formatDate,
-  type InspectData,
-} from "./helpers";
+import { copyToClipboard, formatDate, type InspectData, STATUS_BADGE } from "./helpers";
 
 function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -29,7 +24,7 @@ export function OverviewTab({
   data: InspectData;
 }) {
   const transition = data._transition as string | undefined;
-  const state = transition ?? (data.State?.Status ?? (data.State?.Running ? "running" : "stopped"));
+  const state = transition ?? data.State?.Status ?? (data.State?.Running ? "running" : "stopped");
   const id = data.Id ?? containerId;
   const image = data.Config?.Image ?? "";
   const created = data.Created ?? "";
@@ -67,18 +62,23 @@ export function OverviewTab({
   }>;
 
   // Networks
-  const networkEntries = Object.entries(data.NetworkSettings?.Networks ?? {}) as Array<[string, any]>;
+  const networkEntries = Object.entries(data.NetworkSettings?.Networks ?? {}) as Array<
+    [string, any]
+  >;
 
   // Recent tasks — refresh on inspect cycle and whenever a docker.task event arrives
   const containerName = (data.Name ?? "").replace(/^\//, "");
   const [recentTasks, setRecentTasks] = useState<any[]>([]);
   const refreshTasks = useCallback(() => {
-    api.listDockerTasks({ nodeId }).then((tasks) => {
-      const filtered = (tasks ?? [])
-        .filter((t) => t.containerId === containerId || t.containerName === containerName)
-        .slice(0, 3);
-      setRecentTasks(filtered);
-    }).catch(() => {});
+    api
+      .listDockerTasks({ nodeId })
+      .then((tasks) => {
+        const filtered = (tasks ?? [])
+          .filter((t) => t.containerId === containerId || t.containerName === containerName)
+          .slice(0, 3);
+        setRecentTasks(filtered);
+      })
+      .catch(() => {});
   }, [nodeId, containerId, containerName]);
   useEffect(() => {
     refreshTasks();
@@ -106,7 +106,10 @@ export function OverviewTab({
             <h2 className="font-semibold">General</h2>
           </div>
           <div className="divide-y divide-border -mb-px [&>*:last-child]:border-b [&>*:last-child]:border-border">
-            <DetailRow label="Status" value={<Badge variant={STATUS_BADGE[state] ?? "secondary"}>{state}</Badge>} />
+            <DetailRow
+              label="Status"
+              value={<Badge variant={STATUS_BADGE[state] ?? "secondary"}>{state}</Badge>}
+            />
             <DetailRow
               label="Container ID"
               value={
@@ -133,11 +136,27 @@ export function OverviewTab({
             <h2 className="font-semibold">Execution</h2>
           </div>
           <div className="divide-y divide-border -mb-px [&>*:last-child]:border-b [&>*:last-child]:border-border">
-            <DetailRow label="Entrypoint" value={<span className="font-mono">{entrypoint.length > 0 ? entrypoint.join(" ") : "-"}</span>} />
-            <DetailRow label="Command" value={<span className="font-mono">{cmd.length > 0 ? cmd.join(" ") : "-"}</span>} />
-            <DetailRow label="Working Dir" value={<span className="font-mono">{workingDir || "-"}</span>} />
+            <DetailRow
+              label="Entrypoint"
+              value={
+                <span className="font-mono">
+                  {entrypoint.length > 0 ? entrypoint.join(" ") : "-"}
+                </span>
+              }
+            />
+            <DetailRow
+              label="Command"
+              value={<span className="font-mono">{cmd.length > 0 ? cmd.join(" ") : "-"}</span>}
+            />
+            <DetailRow
+              label="Working Dir"
+              value={<span className="font-mono">{workingDir || "-"}</span>}
+            />
             <DetailRow label="User" value={<span className="font-mono">{user || "-"}</span>} />
-            <DetailRow label="Hostname" value={<span className="font-mono">{hostname || "-"}</span>} />
+            <DetailRow
+              label="Hostname"
+              value={<span className="font-mono">{hostname || "-"}</span>}
+            />
           </div>
         </div>
       </div>
@@ -152,7 +171,11 @@ export function OverviewTab({
           {ports.length > 0 ? (
             <div className="divide-y divide-border -mb-px [&>*:last-child]:border-b [&>*:last-child]:border-border max-h-[calc(2.75rem*3+1px)] overflow-auto">
               {ports.map((p, i) => (
-                <DetailRow key={i} label={p.host} value={<span className="font-mono">{p.container}</span>} />
+                <DetailRow
+                  key={i}
+                  label={p.host}
+                  value={<span className="font-mono">{p.container}</span>}
+                />
               ))}
             </div>
           ) : (
@@ -164,12 +187,18 @@ export function OverviewTab({
         <div className="border border-border bg-card">
           <div className="flex items-center justify-between border-b border-border p-4">
             <h2 className="font-semibold">Networks</h2>
-            {networkEntries.length > 0 && <Badge variant="secondary">{networkEntries.length}</Badge>}
+            {networkEntries.length > 0 && (
+              <Badge variant="secondary">{networkEntries.length}</Badge>
+            )}
           </div>
           {networkEntries.length > 0 ? (
             <div className="divide-y divide-border -mb-px [&>*:last-child]:border-b [&>*:last-child]:border-border max-h-[calc(2.75rem*3+1px)] overflow-auto">
               {networkEntries.map(([name, cfg]) => (
-                <DetailRow key={name} label={name} value={<span className="font-mono">{cfg?.IPAddress || "-"}</span>} />
+                <DetailRow
+                  key={name}
+                  label={name}
+                  value={<span className="font-mono">{cfg?.IPAddress || "-"}</span>}
+                />
               ))}
             </div>
           ) : (
@@ -217,10 +246,13 @@ export function OverviewTab({
                 <div className="flex items-center gap-2">
                   <Badge
                     variant={
-                      task.status === "succeeded" ? "success"
-                        : task.status === "failed" ? "destructive"
-                        : task.status === "running" ? "warning"
-                        : "secondary"
+                      task.status === "succeeded"
+                        ? "success"
+                        : task.status === "failed"
+                          ? "destructive"
+                          : task.status === "running"
+                            ? "warning"
+                            : "secondary"
                     }
                   >
                     {task.status}

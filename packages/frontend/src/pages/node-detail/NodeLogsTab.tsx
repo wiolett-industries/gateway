@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { VirtualLogList } from "@/components/ui/virtual-log-list";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
@@ -9,6 +8,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { VirtualLogList } from "@/components/ui/virtual-log-list";
 import { useAuthStore } from "@/stores/auth";
 
 interface LogEntry {
@@ -141,7 +141,10 @@ export function NodeLogsTab({ nodeId, nodeStatus }: NodeLogsTabProps) {
       {/* Table */}
       <div className="flex-1 min-h-0 flex flex-col border border-border bg-card">
         {/* Fixed header */}
-        <div className="grid border-b border-border text-left text-xs font-medium text-muted-foreground shrink-0" style={{ gridTemplateColumns: "180px 80px 120px 1fr" }}>
+        <div
+          className="grid border-b border-border text-left text-xs font-medium text-muted-foreground shrink-0"
+          style={{ gridTemplateColumns: "180px 80px 120px 1fr" }}
+        >
           <div className="p-3">Time</div>
           <div className="p-3">Level</div>
           <div className="p-3">Component</div>
@@ -155,21 +158,33 @@ export function NodeLogsTab({ nodeId, nodeStatus }: NodeLogsTabProps) {
           renderLine={(line) => {
             const entry = line as LogEntry;
             return (
-              <div className="grid border-b border-border" style={{ gridTemplateColumns: "180px 80px 120px 1fr" }}>
-                <div className="p-3 text-sm text-muted-foreground whitespace-nowrap">{entry.timestamp}</div>
+              <div
+                className="grid border-b border-border"
+                style={{ gridTemplateColumns: "180px 80px 120px 1fr" }}
+              >
+                <div className="p-3 text-sm text-muted-foreground whitespace-nowrap">
+                  {entry.timestamp}
+                </div>
                 <div className="p-3 text-sm">
-                  <Badge variant={LEVEL_VARIANT[entry.level] ?? "secondary"} className="text-xs uppercase">
+                  <Badge
+                    variant={LEVEL_VARIANT[entry.level] ?? "secondary"}
+                    className="text-xs uppercase"
+                  >
                     {entry.level}
                   </Badge>
                 </div>
-                <div className="p-3 text-sm text-muted-foreground">{entry.component || "daemon"}</div>
+                <div className="p-3 text-sm text-muted-foreground">
+                  {entry.component || "daemon"}
+                </div>
                 <div className="p-3 text-sm">{formatMessage(entry)}</div>
               </div>
             );
           }}
           className="flex-1 min-h-0 overflow-y-auto"
           emptyState={
-            <div className="text-center py-16 text-sm text-muted-foreground">Waiting for logs...</div>
+            <div className="text-center py-16 text-sm text-muted-foreground">
+              Waiting for logs...
+            </div>
           }
         />
       </div>

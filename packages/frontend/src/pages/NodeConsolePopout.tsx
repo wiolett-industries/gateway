@@ -6,10 +6,7 @@ import { api } from "@/services/api";
 export function NodeConsolePopout() {
   const { nodeId } = useParams<{ nodeId: string }>();
 
-  const wsFactory = useCallback(
-    () => api.createNodeExecWebSocket(nodeId!, "auto"),
-    [nodeId]
-  );
+  const wsFactory = useCallback(() => api.createNodeExecWebSocket(nodeId!, "auto"), [nodeId]);
 
   if (!nodeId) return null;
 

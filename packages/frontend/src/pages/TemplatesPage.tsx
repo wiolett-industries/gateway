@@ -5,12 +5,24 @@ import { PageTransition } from "@/components/common/PageTransition";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuthStore } from "@/stores/auth";
-import { Templates } from "./Templates";
 import { NginxTemplates } from "./NginxTemplates";
+import { Templates } from "./Templates";
 
 const TABS = [
-  { value: "pki", label: "PKI Certificates", icon: Award, scope: "pki:templates:list", createScope: "pki:templates:edit" },
-  { value: "nginx", label: "Nginx Config", icon: FileCode, scope: "proxy:list", createScope: "proxy:edit" },
+  {
+    value: "pki",
+    label: "PKI Certificates",
+    icon: Award,
+    scope: "pki:templates:list",
+    createScope: "pki:templates:edit",
+  },
+  {
+    value: "nginx",
+    label: "Nginx Config",
+    icon: FileCode,
+    scope: "proxy:list",
+    createScope: "proxy:edit",
+  },
 ] as const;
 
 export function TemplatesPage() {
@@ -22,7 +34,10 @@ export function TemplatesPage() {
   const nginxCreateRef = useRef<(() => void) | null>(null);
 
   const visibleTabs = TABS.filter((t) => hasScope(t.scope));
-  const activeTab = (tabParam && visibleTabs.some((t) => t.value === tabParam)) ? tabParam : visibleTabs[0]?.value || "pki";
+  const activeTab =
+    tabParam && visibleTabs.some((t) => t.value === tabParam)
+      ? tabParam
+      : visibleTabs[0]?.value || "pki";
 
   const handleTabChange = (value: string) => {
     navigate(`/templates/${value}`, { replace: true });
@@ -62,12 +77,14 @@ export function TemplatesPage() {
               Certificate and nginx configuration templates
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            {renderActions()}
-          </div>
+          <div className="flex items-center gap-2">{renderActions()}</div>
         </div>
 
-        <Tabs value={activeTab} onValueChange={handleTabChange} className="flex flex-col flex-1 min-h-0">
+        <Tabs
+          value={activeTab}
+          onValueChange={handleTabChange}
+          className="flex flex-col flex-1 min-h-0"
+        >
           <TabsList className="shrink-0">
             {visibleTabs.map((tab) => (
               <TabsTrigger key={tab.value} value={tab.value} className="gap-1.5">
@@ -78,10 +95,20 @@ export function TemplatesPage() {
           </TabsList>
 
           <TabsContent value="pki" className="flex flex-col flex-1 min-h-0">
-            <Templates embedded onCreateRef={(fn) => { pkiCreateRef.current = fn; }} />
+            <Templates
+              embedded
+              onCreateRef={(fn) => {
+                pkiCreateRef.current = fn;
+              }}
+            />
           </TabsContent>
           <TabsContent value="nginx" className="flex flex-col flex-1 min-h-0">
-            <NginxTemplates embedded onCreateRef={(fn) => { nginxCreateRef.current = fn; }} />
+            <NginxTemplates
+              embedded
+              onCreateRef={(fn) => {
+                nginxCreateRef.current = fn;
+              }}
+            />
           </TabsContent>
         </Tabs>
       </div>

@@ -6,10 +6,10 @@ import { isPrivateUrl } from '@/lib/utils.js';
 import type { AccessListService } from '@/modules/access-lists/access-list.service.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { AuthService } from '@/modules/auth/auth.service.js';
+import type { DockerManagementService } from '@/modules/docker/docker.service.js';
 import type { DomainsService } from '@/modules/domains/domain.service.js';
 import type { GroupService } from '@/modules/groups/group.service.js';
 import type { MonitoringService } from '@/modules/monitoring/monitoring.service.js';
-import type { DockerManagementService } from '@/modules/docker/docker.service.js';
 import type { NodesService } from '@/modules/nodes/nodes.service.js';
 import { CreateIntermediateCASchema, CreateRootCASchema } from '@/modules/pki/ca.schemas.js';
 import type { CAService } from '@/modules/pki/ca.service.js';
@@ -1192,11 +1192,7 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
         return this.proxyService.updateProxyHost(a.proxyHostId, { rawConfig: a.rawConfig } as any, user.id);
       }
       case 'toggle_proxy_raw_mode':
-        return this.proxyService.updateProxyHost(
-          a.proxyHostId,
-          { rawConfigEnabled: a.enabled } as any,
-          user.id
-        );
+        return this.proxyService.updateProxyHost(a.proxyHostId, { rawConfigEnabled: a.enabled } as any, user.id);
 
       // ── Permission Groups ──
       case 'list_groups':

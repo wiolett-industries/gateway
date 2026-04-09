@@ -47,7 +47,10 @@ class EventStream {
     this.openTimer = setTimeout(() => {
       this.openTimer = null;
       if (this.refCount === 0) return;
-      if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+      if (
+        this.ws &&
+        (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)
+      ) {
         return;
       }
       this.openSocket();

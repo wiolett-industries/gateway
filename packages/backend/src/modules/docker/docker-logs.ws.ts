@@ -44,7 +44,7 @@ function decrementTimestamp(ts: string): string {
   if (!match) return ts;
   const prefix = match[1];
   let nanos = match[2].padEnd(9, '0');
-  let n = BigInt(nanos) - 1n;
+  const n = BigInt(nanos) - 1n;
   if (n < 0n) return ts; // edge case — don't wrap
   nanos = n.toString().padStart(9, '0');
   return `${prefix}${nanos}Z`;
@@ -95,12 +95,7 @@ const wsStates = new WeakMap<WSContext, LogStreamWSState>();
  *    sends { type: "history" }
  * 5. On WS close, everything is cleaned up
  */
-export function createDockerLogStreamWSHandlers(
-  nodeId: string,
-  containerId: string,
-  tail: number,
-  token: string
-) {
+export function createDockerLogStreamWSHandlers(nodeId: string, containerId: string, tail: number, token: string) {
   const dispatch = container.resolve(NodeDispatchService);
   const registry = container.resolve(NodeRegistryService);
 
@@ -126,18 +121,16 @@ export function createDockerLogStreamWSHandlers(
       }, 30_000);
 
       // Authenticate, fetch initial logs, then start follow stream
-      authenticateAndStartStream(ws, state, token, nodeId, containerId, tail, dispatch, registry).catch(
-        (err) => {
-          logger.error('Auth/stream start failed', {
-            error: err instanceof Error ? err.message : String(err),
-          });
-          try {
-            ws.close();
-          } catch {
-            /* ignore */
-          }
+      authenticateAndStartStream(ws, state, token, nodeId, containerId, tail, dispatch, registry).catch((err) => {
+        logger.error('Auth/stream start failed', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+        try {
+          ws.close();
+        } catch {
+          /* ignore */
         }
-      );
+      });
     },
 
     onMessage(event: MessageEvent, ws: WSContext) {

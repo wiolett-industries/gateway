@@ -188,7 +188,11 @@ export function AuditLog() {
               emptyMessage="No audit log entries found"
               footer={
                 <div ref={sentinelRef} className="py-4 text-center text-xs text-muted-foreground">
-                  {loadingMore ? "Loading more…" : !hasMore && entries.length > 0 ? "End of log" : ""}
+                  {loadingMore
+                    ? "Loading more…"
+                    : !hasMore && entries.length > 0
+                      ? "End of log"
+                      : ""}
                 </div>
               }
             />

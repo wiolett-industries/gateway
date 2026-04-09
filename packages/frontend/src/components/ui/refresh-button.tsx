@@ -2,7 +2,13 @@ import { RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { Button } from "./button";
 
-export function RefreshButton({ onClick, disabled }: { onClick: () => void | Promise<void>; disabled?: boolean }) {
+export function RefreshButton({
+  onClick,
+  disabled,
+}: {
+  onClick: () => void | Promise<void>;
+  disabled?: boolean;
+}) {
   const [spinning, setSpinning] = useState(false);
 
   const handleClick = async () => {
@@ -17,17 +23,16 @@ export function RefreshButton({ onClick, disabled }: { onClick: () => void | Pro
   };
 
   return (
-    <Button
-      variant="outline"
-      size="icon"
-      onClick={handleClick}
-      disabled={spinning || disabled}
-    >
+    <Button variant="outline" size="icon" onClick={handleClick} disabled={spinning || disabled}>
       <RefreshCw
         className="h-4 w-4"
-        style={spinning ? {
-          animation: "refresh-spin 3s linear infinite",
-        } : undefined}
+        style={
+          spinning
+            ? {
+                animation: "refresh-spin 3s linear infinite",
+              }
+            : undefined
+        }
       />
       <style>{`
         @keyframes refresh-spin {

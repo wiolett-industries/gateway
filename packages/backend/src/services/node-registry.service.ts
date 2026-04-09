@@ -33,13 +33,18 @@ export interface ConnectedNode {
 
 export class NodeRegistryService {
   private nodes = new Map<string, ConnectedNode>();
-  private execOutputHandlers = new Map<string, Set<(data: { execId: string; data: Buffer; exited: boolean; exitCode: number }) => void>>();
+  private execOutputHandlers = new Map<
+    string,
+    Set<(data: { execId: string; data: Buffer; exited: boolean; exitCode: number }) => void>
+  >();
   private logStreamHandlers = new Map<string, (lines: string[], ended?: boolean) => void>();
 
   constructor(private db: DrizzleClient) {}
 
   private eventBus?: EventBusService;
-  setEventBus(bus: EventBusService) { this.eventBus = bus; }
+  setEventBus(bus: EventBusService) {
+    this.eventBus = bus;
+  }
 
   registerExecHandler(execId: string, handler: (data: any) => void) {
     let handlers = this.execOutputHandlers.get(execId);

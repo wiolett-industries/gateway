@@ -5,7 +5,10 @@ const ContainerNameSchema = z
   .string()
   .min(2)
   .max(255)
-  .regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]+$/, 'Invalid container name (must start with alphanumeric, then alphanumerics, _, ., or -)');
+  .regex(
+    /^[a-zA-Z0-9][a-zA-Z0-9_.-]+$/,
+    'Invalid container name (must start with alphanumeric, then alphanumerics, _, ., or -)'
+  );
 
 // Container create
 export const ContainerCreateSchema = z.object({
@@ -48,26 +51,34 @@ export const ContainerUpdateSchema = z.object({
 export const ContainerLiveUpdateSchema = z.object({
   restartPolicy: z.enum(['no', 'always', 'unless-stopped', 'on-failure']).optional(),
   maxRetries: z.number().int().min(0).optional(),
-  memoryLimit: z.number().int().min(0).optional(),  // bytes
-  memorySwap: z.number().int().optional(),            // bytes, -1 = unlimited
-  nanoCPUs: z.number().int().min(0).optional(),       // 1e9 = 1 CPU
+  memoryLimit: z.number().int().min(0).optional(), // bytes
+  memorySwap: z.number().int().optional(), // bytes, -1 = unlimited
+  nanoCPUs: z.number().int().min(0).optional(), // 1e9 = 1 CPU
   cpuShares: z.number().int().min(0).optional(),
   pidsLimit: z.number().int().min(0).optional(),
 });
 
 // Container recreate with new config (requires container recreation)
 export const ContainerRecreateSchema = z.object({
-  ports: z.array(z.object({
-    hostPort: z.number().int().min(0).max(65535),
-    containerPort: z.number().int().min(1).max(65535),
-    protocol: z.enum(['tcp', 'udp']).default('tcp'),
-  })).optional(),
-  mounts: z.array(z.object({
-    hostPath: z.string().optional(),
-    containerPath: z.string().min(1),
-    name: z.string().optional(),
-    readOnly: z.boolean().default(false),
-  })).optional(),
+  ports: z
+    .array(
+      z.object({
+        hostPort: z.number().int().min(0).max(65535),
+        containerPort: z.number().int().min(1).max(65535),
+        protocol: z.enum(['tcp', 'udp']).default('tcp'),
+      })
+    )
+    .optional(),
+  mounts: z
+    .array(
+      z.object({
+        hostPath: z.string().optional(),
+        containerPath: z.string().min(1),
+        name: z.string().optional(),
+        readOnly: z.boolean().default(false),
+      })
+    )
+    .optional(),
   entrypoint: z.array(z.string()).optional(),
   command: z.array(z.string()).optional(),
   workingDir: z.string().optional(),
@@ -162,7 +173,10 @@ export const TemplateDeploySchema = z.object({
 // ─── Secret schemas ──────────────────────────────────────────────────
 
 export const SecretCreateSchema = z.object({
-  key: z.string().min(1).regex(/^[A-Za-z_][A-Za-z0-9_]*$/, 'Invalid environment variable name'),
+  key: z
+    .string()
+    .min(1)
+    .regex(/^[A-Za-z_][A-Za-z0-9_]*$/, 'Invalid environment variable name'),
   value: z.string(),
 });
 

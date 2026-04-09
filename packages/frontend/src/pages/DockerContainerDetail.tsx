@@ -21,39 +21,45 @@ import { PageTransition } from "@/components/common/PageTransition";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useRealtime } from "@/hooks/use-realtime";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
 import { usePinnedContainersStore } from "@/stores/pinned-containers";
-import {
-  STATUS_BADGE,
-  containerDisplayName,
-  type InspectData,
-} from "./docker-detail/helpers";
-import { OverviewTab } from "./docker-detail/OverviewTab";
-import { LogsTab } from "./docker-detail/LogsTab";
-import { ConsoleTab } from "./docker-detail/ConsoleTab";
-import { FilesTab } from "./docker-detail/FilesTab";
-import { StatsTab } from "./docker-detail/StatsTab";
-import { EnvironmentTab } from "./docker-detail/EnvironmentTab";
 import { ConfigTab } from "./docker-detail/ConfigTab";
+import { ConsoleTab } from "./docker-detail/ConsoleTab";
+import { EnvironmentTab } from "./docker-detail/EnvironmentTab";
+import { FilesTab } from "./docker-detail/FilesTab";
+import { containerDisplayName, type InspectData, STATUS_BADGE } from "./docker-detail/helpers";
+import { LogsTab } from "./docker-detail/LogsTab";
+import { OverviewTab } from "./docker-detail/OverviewTab";
 import { SettingsTab } from "./docker-detail/SettingsTab";
+import { StatsTab } from "./docker-detail/StatsTab";
 
 // ── Main Page ────────────────────────────────────────────────────
 
 export function DockerContainerDetail() {
-  const { nodeId, containerId, tab: tabParam } = useParams<{ nodeId: string; containerId: string; tab?: string }>();
+  const {
+    nodeId,
+    containerId,
+    tab: tabParam,
+  } = useParams<{ nodeId: string; containerId: string; tab?: string }>();
   const navigate = useNavigate();
   const { hasScope } = useAuthStore();
   const invalidate = useDockerStore((s) => s.invalidate);
@@ -68,8 +74,19 @@ export function DockerContainerDetail() {
   }, [nodeId, storeNodeId, setSelectedNode]);
   const [container, setContainer] = useState<InspectData | null>(null);
 
-  const VALID_TABS = ["overview", "logs", "console", "files", "stats", "environment", "settings", "config"];
-  const [activeTab, setActiveTabState] = useState(() => tabParam && VALID_TABS.includes(tabParam) ? tabParam : "overview");
+  const VALID_TABS = [
+    "overview",
+    "logs",
+    "console",
+    "files",
+    "stats",
+    "environment",
+    "settings",
+    "config",
+  ];
+  const [activeTab, setActiveTabState] = useState(() =>
+    tabParam && VALID_TABS.includes(tabParam) ? tabParam : "overview"
+  );
   const setActiveTab = (tab: string) => {
     setActiveTabState(tab);
     window.history.replaceState(null, "", `/docker/containers/${nodeId}/${containerId}/${tab}`);
@@ -92,7 +109,8 @@ export function DockerContainerDetail() {
         setContainer(data);
         // Keep pinned meta in sync
         if (usePinnedContainersStore.getState().isPinnedSidebar(containerId)) {
-          const cName = String((data as any)?.Name ?? "").replace(/^\//, "") || containerId.slice(0, 12);
+          const cName =
+            String((data as any)?.Name ?? "").replace(/^\//, "") || containerId.slice(0, 12);
           const cState = (data as any)?._transition ?? (data as any)?.State?.Status ?? "unknown";
           updateMeta(containerId, { nodeId, name: cName, state: cState });
         }
@@ -120,7 +138,13 @@ export function DockerContainerDetail() {
   // Also handle the recreate ID migration for every open tab.
   const containerName = ((container?.Name ?? "") as string).replace(/^\//, "");
   useRealtime("docker.container.changed", (payload) => {
-    const ev = payload as { nodeId?: string; name?: string; id?: string; oldId?: string; action?: string };
+    const ev = payload as {
+      nodeId?: string;
+      name?: string;
+      id?: string;
+      oldId?: string;
+      action?: string;
+    };
     if (!ev || ev.nodeId !== nodeId) return;
     const matchesName = containerName && ev.name === containerName;
     const matchesId = ev.id === containerId || ev.oldId === containerId;
@@ -149,7 +173,8 @@ export function DockerContainerDetail() {
   const currentTransition = container?._transition as string | undefined;
 
   // Auto-navigate to overview and close popouts when container stops or enters transition
-  const currentBaseState = container?.State?.Status ?? (container?.State?.Running ? "running" : "stopped");
+  const currentBaseState =
+    container?.State?.Status ?? (container?.State?.Running ? "running" : "stopped");
   useEffect(() => {
     if (!container) return; // Don't reset tabs while data is loading
     const needsRunning = new Set(["console", "files", "stats"]);
@@ -166,12 +191,16 @@ export function DockerContainerDetail() {
         const consoleChannel = new BroadcastChannel(`docker-console:${containerId}`);
         consoleChannel.postMessage({ type: "request-close" });
         consoleChannel.close();
-      } catch { /* */ }
+      } catch {
+        /* */
+      }
       try {
         const logsChannel = new BroadcastChannel(`docker-logs:${containerId}`);
         logsChannel.postMessage({ type: "request-close" });
         logsChannel.close();
-      } catch { /* */ }
+      } catch {
+        /* */
+      }
     }
   }, [currentBaseState, currentTransition, activeTab, containerId]);
 
@@ -300,7 +329,9 @@ export function DockerContainerDetail() {
                 variant="outline"
                 size="default"
                 disabled={actionLoading || !!transition}
-                onClick={() => doAction(() => api.startContainer(nodeId!, containerId!), "Container started")}
+                onClick={() =>
+                  doAction(() => api.startContainer(nodeId!, containerId!), "Container started")
+                }
               >
                 <Play className="h-3.5 w-3.5" />
                 Start
@@ -312,7 +343,9 @@ export function DockerContainerDetail() {
                   variant="outline"
                   size="default"
                   disabled={actionLoading || !!transition}
-                  onClick={() => doAction(() => api.stopContainer(nodeId!, containerId!), "Container stopping")}
+                  onClick={() =>
+                    doAction(() => api.stopContainer(nodeId!, containerId!), "Container stopping")
+                  }
                 >
                   <Square className="h-3.5 w-3.5" />
                   Stop
@@ -321,7 +354,12 @@ export function DockerContainerDetail() {
                   variant="outline"
                   size="default"
                   disabled={actionLoading || !!transition}
-                  onClick={() => doAction(() => api.restartContainer(nodeId!, containerId!), "Container restarting")}
+                  onClick={() =>
+                    doAction(
+                      () => api.restartContainer(nodeId!, containerId!),
+                      "Container restarting"
+                    )
+                  }
                 >
                   <RotateCcw className="h-3.5 w-3.5" />
                   Restart
@@ -351,7 +389,9 @@ export function DockerContainerDetail() {
                   <>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
-                      onClick={() => doAction(() => api.killContainer(nodeId!, containerId!), "Container killed")}
+                      onClick={() =>
+                        doAction(() => api.killContainer(nodeId!, containerId!), "Container killed")
+                      }
                       className="text-destructive"
                     >
                       <Skull className="h-3.5 w-3.5 mr-2" />
@@ -381,13 +421,19 @@ export function DockerContainerDetail() {
         >
           <TabsList className="shrink-0">
             <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="logs" disabled={isTabDisabled("logs")}>Logs</TabsTrigger>
+            <TabsTrigger value="logs" disabled={isTabDisabled("logs")}>
+              Logs
+            </TabsTrigger>
             <TabsTrigger value="console" disabled={isTabDisabled("console")}>
               <TerminalIcon className="h-3.5 w-3.5 mr-1" />
               Console
             </TabsTrigger>
-            <TabsTrigger value="files" disabled={isTabDisabled("files")}>Files</TabsTrigger>
-            <TabsTrigger value="stats" disabled={isTabDisabled("stats")}>Monitoring</TabsTrigger>
+            <TabsTrigger value="files" disabled={isTabDisabled("files")}>
+              Files
+            </TabsTrigger>
+            <TabsTrigger value="stats" disabled={isTabDisabled("stats")}>
+              Monitoring
+            </TabsTrigger>
             <TabsTrigger value="environment">Environment</TabsTrigger>
             <TabsTrigger value="settings">
               <Settings className="h-3.5 w-3.5 mr-1" />
@@ -399,14 +445,15 @@ export function DockerContainerDetail() {
             </TabsTrigger>
           </TabsList>
           <TabsContent value="overview" className="pb-0">
-            <OverviewTab
-              nodeId={nodeId!}
-              containerId={containerId!}
-              data={container}
-            />
+            <OverviewTab nodeId={nodeId!} containerId={containerId!} data={container} />
           </TabsContent>
           <TabsContent value="logs" className="flex flex-col flex-1 min-h-0 pb-0">
-            <LogsTab nodeId={nodeId!} containerId={containerId!} containerState={state} inspectData={container} />
+            <LogsTab
+              nodeId={nodeId!}
+              containerId={containerId!}
+              containerState={state}
+              inspectData={container}
+            />
           </TabsContent>
           <TabsContent value="console" className="flex flex-col flex-1 min-h-0">
             <ConsoleTab nodeId={nodeId!} containerId={containerId!} />
@@ -418,7 +465,13 @@ export function DockerContainerDetail() {
             <StatsTab nodeId={nodeId!} containerId={containerId!} data={container} />
           </TabsContent>
           <TabsContent value="environment" className="flex flex-col flex-1 min-h-0 pb-0">
-            <EnvironmentTab nodeId={nodeId!} containerId={containerId!} containerName={(container.Name ?? "").replace(/^\//, "")} disabled={!!transition} onRecreating={() => fetchContainer(true)} />
+            <EnvironmentTab
+              nodeId={nodeId!}
+              containerId={containerId!}
+              containerName={(container.Name ?? "").replace(/^\//, "")}
+              disabled={!!transition}
+              onRecreating={() => fetchContainer(true)}
+            />
           </TabsContent>
           <TabsContent value="settings" className="pb-0">
             <SettingsTab
@@ -468,11 +521,15 @@ export function DockerContainerDetail() {
             value={renameValue}
             onChange={(e) => setRenameValue(e.target.value)}
             placeholder="New container name"
-            onKeyDown={(e) => { if (e.key === "Enter") handleRename(); }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleRename();
+            }}
             autoFocus
           />
           <DialogFooter>
-            <Button variant="outline" onClick={() => setRenameOpen(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setRenameOpen(false)}>
+              Cancel
+            </Button>
             <Button onClick={handleRename} disabled={actionLoading || !renameValue.trim()}>
               Rename
             </Button>

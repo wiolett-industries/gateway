@@ -72,8 +72,14 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       return;
     }
     // Fetch entities on palette open
-    api.listNodes({ limit: 100 }).then((r) => setNodes(r.data ?? [])).catch(() => {});
-    api.listProxyHosts({ limit: 100 }).then((r) => setProxyHosts(r.data ?? [])).catch(() => {});
+    api
+      .listNodes({ limit: 100 })
+      .then((r) => setNodes(r.data ?? []))
+      .catch(() => {});
+    api
+      .listProxyHosts({ limit: 100 })
+      .then((r) => setProxyHosts(r.data ?? []))
+      .catch(() => {});
     // Containers are preloaded on app startup via DashboardLayout
   }, [open]);
 
@@ -83,7 +89,11 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   };
 
   const handleLogout = async () => {
-    try { await api.logout(); } catch { logout(); }
+    try {
+      await api.logout();
+    } catch {
+      logout();
+    }
     navigate("/login");
   };
 
@@ -117,7 +127,10 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     for (const word of words) {
       const idx = lower.indexOf(word);
       if (idx === -1) return 0;
-      score += idx === 0 || lower[idx - 1] === " " || lower[idx - 1] === "-" || lower[idx - 1] === "/" ? 2 : 1;
+      score +=
+        idx === 0 || lower[idx - 1] === " " || lower[idx - 1] === "-" || lower[idx - 1] === "/"
+          ? 2
+          : 1;
     }
     return score;
   };
@@ -145,7 +158,12 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
           label: `console ${c.name}`,
           detail: `Open console in ${c.name}`,
           icon: Terminal,
-          action: () => window.open(`/docker/console/${nodeId}/${c.id}?shell=auto`, `console-${c.id}`, "width=900,height=600"),
+          action: () =>
+            window.open(
+              `/docker/console/${nodeId}/${c.id}?shell=auto`,
+              `console-${c.id}`,
+              "width=900,height=600"
+            ),
         });
       }
       if (hasScope("docker:containers:view")) {
@@ -153,7 +171,8 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
           label: `logs ${c.name}`,
           detail: `Open logs for ${c.name}`,
           icon: ScrollText,
-          action: () => window.open(`/docker/logs/${nodeId}/${c.id}`, `logs-${c.id}`, "width=900,height=600"),
+          action: () =>
+            window.open(`/docker/logs/${nodeId}/${c.id}`, `logs-${c.id}`, "width=900,height=600"),
         });
       }
     }
@@ -167,7 +186,12 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
           label: `console ${name}`,
           detail: `Open console on node ${name}`,
           icon: Terminal,
-          action: () => window.open(`/nodes/console/${n.id}?shell=auto`, `node-console-${n.id}`, "width=900,height=600"),
+          action: () =>
+            window.open(
+              `/nodes/console/${n.id}?shell=auto`,
+              `node-console-${n.id}`,
+              "width=900,height=600"
+            ),
         });
       }
     }
@@ -193,14 +217,24 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         items.push({
           label: "Open console",
           icon: Terminal,
-          action: () => window.open(`/docker/console/${nodeId}/${containerId}?shell=auto`, `console-${containerId}`, "width=900,height=600"),
+          action: () =>
+            window.open(
+              `/docker/console/${nodeId}/${containerId}?shell=auto`,
+              `console-${containerId}`,
+              "width=900,height=600"
+            ),
         });
       }
       if (hasScope("docker:containers:view")) {
         items.push({
           label: "Open logs",
           icon: ScrollText,
-          action: () => window.open(`/docker/logs/${nodeId}/${containerId}`, `logs-${containerId}`, "width=900,height=600"),
+          action: () =>
+            window.open(
+              `/docker/logs/${nodeId}/${containerId}`,
+              `logs-${containerId}`,
+              "width=900,height=600"
+            ),
         });
       }
     }
@@ -213,7 +247,12 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         items.push({
           label: "Open node console",
           icon: Terminal,
-          action: () => window.open(`/nodes/console/${nodeId}?shell=auto`, `node-console-${nodeId}`, "width=900,height=600"),
+          action: () =>
+            window.open(
+              `/nodes/console/${nodeId}?shell=auto`,
+              `node-console-${nodeId}`,
+              "width=900,height=600"
+            ),
         });
       }
     }
@@ -222,63 +261,205 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   }, [location.pathname, hasScope]);
 
   // Build flat nav/action items and filter through fuzzyMatch
-  type NavEntry = { label: string; icon: React.ElementType; shortcut?: string; action: () => void; scope?: string };
+  type NavEntry = {
+    label: string;
+    icon: React.ElementType;
+    shortcut?: string;
+    action: () => void;
+    scope?: string;
+  };
   const allNavItems: NavEntry[] = [
     { label: "Dashboard", icon: LayoutDashboard, shortcut: "⌘1", action: () => navigate("/") },
-    { label: "Proxy Hosts", icon: Globe, shortcut: "⌘2", action: () => navigate("/proxy-hosts"), scope: "proxy:list" },
-    { label: "Domains", icon: Globe2, shortcut: "⌘3", action: () => navigate("/domains"), scope: "proxy:list" },
-    { label: "SSL Certificates", icon: Lock, shortcut: "⌘4", action: () => navigate("/ssl-certificates"), scope: "ssl:cert:list" },
-    { label: "Authorities", icon: ShieldCheck, shortcut: "⌘5", action: () => navigate("/cas"), scope: "pki:ca:list:root" },
-    { label: "Certificates", icon: FileText, shortcut: "⌘6", action: () => navigate("/certificates"), scope: "pki:cert:list" },
-    { label: "Templates", icon: Award, shortcut: "⌘7", action: () => navigate("/templates/pki"), scope: "pki:templates:list" },
-    { label: "Docker Containers", icon: Box, action: () => navigate("/docker/containers"), scope: "docker:containers:list" },
-    { label: "Docker Images", icon: Layers, action: () => navigate("/docker/images"), scope: "docker:images:list" },
-    { label: "Docker Volumes", icon: HardDrive, action: () => navigate("/docker/volumes"), scope: "docker:volumes:list" },
-    { label: "Docker Networks", icon: Network, action: () => navigate("/docker/networks"), scope: "docker:networks:list" },
-    { label: "Docker Tasks", icon: ListTodo, action: () => navigate("/docker/tasks"), scope: "docker:tasks" },
-    { label: "Nodes", icon: Server, shortcut: "⌘9", action: () => navigate("/nodes"), scope: "nodes:list" },
-    { label: "Access Lists", icon: ShieldAlert, shortcut: "⌘0", action: () => navigate("/access-lists"), scope: "acl:list" },
-    { label: "Audit Log", icon: ScrollText, action: () => navigate("/audit"), scope: "admin:audit" },
+    {
+      label: "Proxy Hosts",
+      icon: Globe,
+      shortcut: "⌘2",
+      action: () => navigate("/proxy-hosts"),
+      scope: "proxy:list",
+    },
+    {
+      label: "Domains",
+      icon: Globe2,
+      shortcut: "⌘3",
+      action: () => navigate("/domains"),
+      scope: "proxy:list",
+    },
+    {
+      label: "SSL Certificates",
+      icon: Lock,
+      shortcut: "⌘4",
+      action: () => navigate("/ssl-certificates"),
+      scope: "ssl:cert:list",
+    },
+    {
+      label: "Authorities",
+      icon: ShieldCheck,
+      shortcut: "⌘5",
+      action: () => navigate("/cas"),
+      scope: "pki:ca:list:root",
+    },
+    {
+      label: "Certificates",
+      icon: FileText,
+      shortcut: "⌘6",
+      action: () => navigate("/certificates"),
+      scope: "pki:cert:list",
+    },
+    {
+      label: "Templates",
+      icon: Award,
+      shortcut: "⌘7",
+      action: () => navigate("/templates/pki"),
+      scope: "pki:templates:list",
+    },
+    {
+      label: "Docker Containers",
+      icon: Box,
+      action: () => navigate("/docker/containers"),
+      scope: "docker:containers:list",
+    },
+    {
+      label: "Docker Images",
+      icon: Layers,
+      action: () => navigate("/docker/images"),
+      scope: "docker:images:list",
+    },
+    {
+      label: "Docker Volumes",
+      icon: HardDrive,
+      action: () => navigate("/docker/volumes"),
+      scope: "docker:volumes:list",
+    },
+    {
+      label: "Docker Networks",
+      icon: Network,
+      action: () => navigate("/docker/networks"),
+      scope: "docker:networks:list",
+    },
+    {
+      label: "Docker Tasks",
+      icon: ListTodo,
+      action: () => navigate("/docker/tasks"),
+      scope: "docker:tasks",
+    },
+    {
+      label: "Nodes",
+      icon: Server,
+      shortcut: "⌘9",
+      action: () => navigate("/nodes"),
+      scope: "nodes:list",
+    },
+    {
+      label: "Access Lists",
+      icon: ShieldAlert,
+      shortcut: "⌘0",
+      action: () => navigate("/access-lists"),
+      scope: "acl:list",
+    },
+    {
+      label: "Audit Log",
+      icon: ScrollText,
+      action: () => navigate("/audit"),
+      scope: "admin:audit",
+    },
     { label: "Users", icon: Users, action: () => navigate("/admin/users"), scope: "admin:users" },
-    { label: "Groups", icon: Shield, action: () => navigate("/admin/groups"), scope: "admin:groups" },
+    {
+      label: "Groups",
+      icon: Shield,
+      action: () => navigate("/admin/groups"),
+      scope: "admin:groups",
+    },
     { label: "Settings", icon: Settings, shortcut: "⌘,", action: () => navigate("/settings") },
   ];
-  const filteredNav = allNavItems.filter((i) => (!i.scope || hasScope(i.scope)) && matches(i.label));
+  const filteredNav = allNavItems.filter(
+    (i) => (!i.scope || hasScope(i.scope)) && matches(i.label)
+  );
 
   const allActionItems: NavEntry[] = [
     { label: "Toggle sidebar", icon: PanelLeft, shortcut: "⌘J", action: () => toggleSidebar() },
-    { label: "New Proxy Host", icon: Plus, shortcut: "⌃H", action: () => navigate("/proxy-hosts/new"), scope: "proxy:create" },
-    { label: "New SSL Certificate", icon: Plus, shortcut: "⌃S", action: () => { navigate("/ssl-certificates"); useUIStore.getState().openModal("createSSLCert"); }, scope: "ssl:cert:issue" },
-    { label: "Create Root CA", icon: Plus, shortcut: "⌃R", action: () => { navigate("/cas"); useUIStore.getState().openModal("createCA"); }, scope: "pki:ca:create:root" },
+    {
+      label: "New Proxy Host",
+      icon: Plus,
+      shortcut: "⌃H",
+      action: () => navigate("/proxy-hosts/new"),
+      scope: "proxy:create",
+    },
+    {
+      label: "New SSL Certificate",
+      icon: Plus,
+      shortcut: "⌃S",
+      action: () => {
+        navigate("/ssl-certificates");
+        useUIStore.getState().openModal("createSSLCert");
+      },
+      scope: "ssl:cert:issue",
+    },
+    {
+      label: "Create Root CA",
+      icon: Plus,
+      shortcut: "⌃R",
+      action: () => {
+        navigate("/cas");
+        useUIStore.getState().openModal("createCA");
+      },
+      scope: "pki:ca:create:root",
+    },
   ];
-  const filteredActions = allActionItems.filter((i) => (!i.scope || hasScope(i.scope)) && matches(i.label));
+  const filteredActions = allActionItems.filter(
+    (i) => (!i.scope || hasScope(i.scope)) && matches(i.label)
+  );
 
   const themeItems = [
     { label: "Light theme", icon: Sun, action: () => setTheme("light"), active: theme === "light" },
     { label: "Dark theme", icon: Moon, action: () => setTheme("dark"), active: theme === "dark" },
-    { label: "System theme", icon: Monitor, action: () => setTheme("system"), active: theme === "system" },
+    {
+      label: "System theme",
+      icon: Monitor,
+      action: () => setTheme("system"),
+      active: theme === "system",
+    },
   ].filter((i) => matches(i.label));
 
   const showLogout = matches("log out");
 
   // Filtered entities for search mode
-  const filteredContainers = searchQuery && hasScope("docker:containers:list")
-    ? containers.filter((c) => fuzzyMatch(`${c.name} ${c.image}`, searchQuery) > 0).slice(0, 5) : [];
-  const filteredProxies = searchQuery && hasScope("proxy:list")
-    ? proxyHosts.filter((p) => fuzzyMatch(p.domainNames.join(" "), searchQuery) > 0).slice(0, 5) : [];
-  const filteredNodes = searchQuery && hasScope("nodes:list")
-    ? nodes.filter((n) => fuzzyMatch(`${n.displayName || ""} ${n.hostname}`, searchQuery) > 0).slice(0, 5) : [];
-  const filteredCAs = searchQuery && hasScope("pki:ca:list:root")
-    ? (cas || []).filter((ca) => fuzzyMatch(ca.commonName, searchQuery) > 0).slice(0, 5) : [];
+  const filteredContainers =
+    searchQuery && hasScope("docker:containers:list")
+      ? containers.filter((c) => fuzzyMatch(`${c.name} ${c.image}`, searchQuery) > 0).slice(0, 5)
+      : [];
+  const filteredProxies =
+    searchQuery && hasScope("proxy:list")
+      ? proxyHosts.filter((p) => fuzzyMatch(p.domainNames.join(" "), searchQuery) > 0).slice(0, 5)
+      : [];
+  const filteredNodes =
+    searchQuery && hasScope("nodes:list")
+      ? nodes
+          .filter((n) => fuzzyMatch(`${n.displayName || ""} ${n.hostname}`, searchQuery) > 0)
+          .slice(0, 5)
+      : [];
+  const filteredCAs =
+    searchQuery && hasScope("pki:ca:list:root")
+      ? (cas || []).filter((ca) => fuzzyMatch(ca.commonName, searchQuery) > 0).slice(0, 5)
+      : [];
 
   // Check if anything would render for "Ask AI" fallback
-  const hasAnyResults = filteredContainers.length > 0 || filteredProxies.length > 0 || filteredNodes.length > 0 || filteredCAs.length > 0 || filteredNav.length > 0 || filteredActions.length > 0 || themeItems.length > 0 || showLogout;
+  const hasAnyResults =
+    filteredContainers.length > 0 ||
+    filteredProxies.length > 0 ||
+    filteredNodes.length > 0 ||
+    filteredCAs.length > 0 ||
+    filteredNav.length > 0 ||
+    filteredActions.length > 0 ||
+    themeItems.length > 0 ||
+    showLogout;
   const askAIFallback = searchQuery && !hasAnyResults && aiEnabled !== false && aiScopeOk;
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange} shouldFilter={false}>
       <CommandInput
-        placeholder={isCommandMode ? "Type a command... (console, logs)" : "Search or type > for commands..."}
+        placeholder={
+          isCommandMode ? "Type a command... (console, logs)" : "Search or type > for commands..."
+        }
         value={search}
         onValueChange={setSearch}
       />
@@ -289,7 +470,11 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
             {commandItems.length > 0 ? (
               <CommandGroup heading="Commands">
                 {commandItems.map((item, i) => (
-                  <CommandItem key={i} value={item.label} onSelect={() => handleSelect(item.action)}>
+                  <CommandItem
+                    key={i}
+                    value={item.label}
+                    onSelect={() => handleSelect(item.action)}
+                  >
                     <item.icon className="mr-2 h-4 w-4" />
                     {item.detail}
                   </CommandItem>
@@ -323,7 +508,11 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
               <>
                 <CommandGroup heading="Current Page">
                   {contextActions.map((item, i) => (
-                    <CommandItem key={i} value={item.label} onSelect={() => handleSelect(item.action)}>
+                    <CommandItem
+                      key={i}
+                      value={item.label}
+                      onSelect={() => handleSelect(item.action)}
+                    >
                       <item.icon className="mr-2 h-4 w-4" />
                       {item.label}
                     </CommandItem>
@@ -338,7 +527,11 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
               <>
                 <CommandGroup heading="Recent">
                   {recentPages.slice(0, 5).map((page) => (
-                    <CommandItem key={page.path} value={page.label} onSelect={() => handleSelect(() => navigate(page.path))}>
+                    <CommandItem
+                      key={page.path}
+                      value={page.label}
+                      onSelect={() => handleSelect(() => navigate(page.path))}
+                    >
                       <Clock className="mr-2 h-4 w-4 text-muted-foreground" />
                       <span className="truncate">{page.label}</span>
                     </CommandItem>
@@ -353,7 +546,15 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
               <>
                 <CommandGroup heading="Containers">
                   {filteredContainers.map((c) => (
-                    <CommandItem key={c.id} value={`container ${c.name}`} onSelect={() => handleSelect(() => navigate(`/docker/containers/${(c as any)._nodeId}/${c.id}`))}>
+                    <CommandItem
+                      key={c.id}
+                      value={`container ${c.name}`}
+                      onSelect={() =>
+                        handleSelect(() =>
+                          navigate(`/docker/containers/${(c as any)._nodeId}/${c.id}`)
+                        )
+                      }
+                    >
                       <Box className="mr-2 h-4 w-4" />
                       <span className="truncate">{c.name}</span>
                       <span className="ml-auto text-xs text-muted-foreground">{c.state}</span>
@@ -367,7 +568,11 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
               <>
                 <CommandGroup heading="Proxy Hosts">
                   {filteredProxies.map((p) => (
-                    <CommandItem key={p.id} value={`proxy ${p.domainNames[0]}`} onSelect={() => handleSelect(() => navigate(`/proxy-hosts/${p.id}`))}>
+                    <CommandItem
+                      key={p.id}
+                      value={`proxy ${p.domainNames[0]}`}
+                      onSelect={() => handleSelect(() => navigate(`/proxy-hosts/${p.id}`))}
+                    >
                       <Globe className="mr-2 h-4 w-4" />
                       <span className="truncate">{p.domainNames[0]}</span>
                     </CommandItem>
@@ -380,7 +585,11 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
               <>
                 <CommandGroup heading="Nodes">
                   {filteredNodes.map((n) => (
-                    <CommandItem key={n.id} value={`node ${n.displayName || n.hostname}`} onSelect={() => handleSelect(() => navigate(`/nodes/${n.id}`))}>
+                    <CommandItem
+                      key={n.id}
+                      value={`node ${n.displayName || n.hostname}`}
+                      onSelect={() => handleSelect(() => navigate(`/nodes/${n.id}`))}
+                    >
                       <Server className="mr-2 h-4 w-4" />
                       <span className="truncate">{n.displayName || n.hostname}</span>
                       <span className="ml-auto text-xs text-muted-foreground">{n.status}</span>
@@ -394,7 +603,11 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
               <>
                 <CommandGroup heading="Certificate Authorities">
                   {filteredCAs.map((ca) => (
-                    <CommandItem key={ca.id} value={`ca ${ca.commonName}`} onSelect={() => handleSelect(() => navigate(`/cas/${ca.id}`))}>
+                    <CommandItem
+                      key={ca.id}
+                      value={`ca ${ca.commonName}`}
+                      onSelect={() => handleSelect(() => navigate(`/cas/${ca.id}`))}
+                    >
                       <Shield className="mr-2 h-4 w-4" />
                       <span className="truncate">{ca.commonName}</span>
                     </CommandItem>
@@ -409,7 +622,11 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
               <>
                 <CommandGroup heading="Certificate Authorities">
                   {(cas || []).slice(0, 5).map((ca) => (
-                    <CommandItem key={ca.id} value={`ca ${ca.commonName}`} onSelect={() => handleSelect(() => navigate(`/cas/${ca.id}`))}>
+                    <CommandItem
+                      key={ca.id}
+                      value={`ca ${ca.commonName}`}
+                      onSelect={() => handleSelect(() => navigate(`/cas/${ca.id}`))}
+                    >
                       <Shield className="mr-2 h-4 w-4" />
                       <span className="truncate">{ca.commonName}</span>
                     </CommandItem>
@@ -423,7 +640,11 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
             {filteredNav.length > 0 && (
               <CommandGroup heading="Navigation">
                 {filteredNav.map((item) => (
-                  <CommandItem key={item.label} value={item.label} onSelect={() => handleSelect(item.action)}>
+                  <CommandItem
+                    key={item.label}
+                    value={item.label}
+                    onSelect={() => handleSelect(item.action)}
+                  >
                     <item.icon className="mr-2 h-4 w-4" />
                     {item.label}
                     {item.shortcut && <CommandShortcut>{item.shortcut}</CommandShortcut>}
@@ -436,7 +657,11 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
             {filteredActions.length > 0 && (
               <CommandGroup heading="Actions">
                 {filteredActions.map((item) => (
-                  <CommandItem key={item.label} value={item.label} onSelect={() => handleSelect(item.action)}>
+                  <CommandItem
+                    key={item.label}
+                    value={item.label}
+                    onSelect={() => handleSelect(item.action)}
+                  >
                     <item.icon className="mr-2 h-4 w-4" />
                     {item.label}
                     {item.shortcut && <CommandShortcut>{item.shortcut}</CommandShortcut>}
@@ -449,7 +674,11 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
             {themeItems.length > 0 && (
               <CommandGroup heading="Theme">
                 {themeItems.map((item) => (
-                  <CommandItem key={item.label} value={item.label} onSelect={() => handleSelect(item.action)}>
+                  <CommandItem
+                    key={item.label}
+                    value={item.label}
+                    onSelect={() => handleSelect(item.action)}
+                  >
                     <item.icon className="mr-2 h-4 w-4" />
                     {item.label.replace(" theme", "")}
                     {item.active && <CommandShortcut>✓</CommandShortcut>}
@@ -471,10 +700,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
             {/* Ask AI fallback */}
             {askAIFallback && (
               <CommandGroup heading="No results">
-                <CommandItem
-                  value="ask-ai"
-                  onSelect={() => handleSelect(() => askAI(searchQuery))}
-                >
+                <CommandItem value="ask-ai" onSelect={() => handleSelect(() => askAI(searchQuery))}>
                   <Sparkles className="mr-2 h-4 w-4" />
                   Ask AI: "{searchQuery}"
                 </CommandItem>

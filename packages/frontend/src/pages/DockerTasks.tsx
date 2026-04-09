@@ -6,12 +6,8 @@ import { PageTransition } from "@/components/common/PageTransition";
 import { SearchFilterBar } from "@/components/common/SearchFilterBar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -19,7 +15,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 import { api } from "@/services/api";
 import { useDockerStore } from "@/stores/docker";
 import type { DockerTask, Node } from "@/types";
@@ -40,7 +35,8 @@ function formatDuration(start: string, end?: string): string {
   const diff = Math.max(0, e - s);
   if (diff < 1000) return "<1s";
   if (diff < 60_000) return `${Math.floor(diff / 1000)}s`;
-  if (diff < 3600_000) return `${Math.floor(diff / 60_000)}m ${Math.floor((diff % 60_000) / 1000)}s`;
+  if (diff < 3600_000)
+    return `${Math.floor(diff / 60_000)}m ${Math.floor((diff % 60_000) / 1000)}s`;
   return `${Math.floor(diff / 3600_000)}h ${Math.floor((diff % 3600_000) / 60_000)}m`;
 }
 
@@ -72,7 +68,10 @@ export function DockerTasks({ embedded }: { embedded?: boolean } = {}) {
   // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only
   useEffect(() => {
     loadTasks();
-    api.listNodes({ type: "docker", limit: 100 }).then((r) => setDockerNodes(r.data)).catch(() => {});
+    api
+      .listNodes({ type: "docker", limit: 100 })
+      .then((r) => setDockerNodes(r.data))
+      .catch(() => {});
   }, []);
 
   // Auto-refresh every 5s
@@ -115,7 +114,9 @@ export function DockerTasks({ embedded }: { embedded?: boolean } = {}) {
       );
     }
     // Sort by createdAt descending
-    return [...result].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return [...result].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
   }, [tasks, filterNode, filterType, filterStatus, search]);
 
   const PAGE_SIZE = 20;
@@ -125,7 +126,9 @@ export function DockerTasks({ embedded }: { embedded?: boolean } = {}) {
 
   // Reset visible count when filters change
   // biome-ignore lint/correctness/useExhaustiveDependencies: reset on filter change
-  useEffect(() => { setVisibleCount(PAGE_SIZE); }, [filterNode, filterType, filterStatus, search]);
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [filterNode, filterType, filterStatus, search]);
 
   const visibleTasks = filteredTasks.slice(0, visibleCount);
   const hasMore = visibleCount < filteredTasks.length;
@@ -146,14 +149,69 @@ export function DockerTasks({ embedded }: { embedded?: boolean } = {}) {
     return () => observer.disconnect();
   }, [hasMore, filteredTasks.length]);
 
-  const taskColumns: DataTableColumn<DockerTask>[] = useMemo(() => [
-    { key: "type", header: "Type", render: (t) => <span className="font-medium whitespace-nowrap">{t.type}</span> },
-    { key: "container", header: "Container", truncate: true, render: (t) => <span className="text-muted-foreground">{t.containerName || t.containerId?.slice(0, 12) || "-"}</span> },
-    { key: "node", header: "Node", truncate: true, render: (t) => <span className="text-muted-foreground">{nodeMap.get(t.nodeId) ?? t.nodeId.slice(0, 8)}</span> },
-    { key: "status", header: "Status", width: "130px", render: (t) => <Badge variant={STATUS_BADGE[t.status] ?? "secondary"} className={t.status === "running" ? "animate-pulse" : ""}>{t.status}</Badge> },
-    { key: "started", header: "Started", width: "110px", align: "right", render: (t) => <span className="text-muted-foreground whitespace-nowrap">{formatTime(t.createdAt)}</span> },
-    { key: "duration", header: "Duration", width: "100px", align: "right", render: (t) => <span className="text-muted-foreground whitespace-nowrap">{formatDuration(t.createdAt, t.completedAt)}</span> },
-  ], [nodeMap]);
+  const taskColumns: DataTableColumn<DockerTask>[] = useMemo(
+    () => [
+      {
+        key: "type",
+        header: "Type",
+        render: (t) => <span className="font-medium whitespace-nowrap">{t.type}</span>,
+      },
+      {
+        key: "container",
+        header: "Container",
+        truncate: true,
+        render: (t) => (
+          <span className="text-muted-foreground">
+            {t.containerName || t.containerId?.slice(0, 12) || "-"}
+          </span>
+        ),
+      },
+      {
+        key: "node",
+        header: "Node",
+        truncate: true,
+        render: (t) => (
+          <span className="text-muted-foreground">
+            {nodeMap.get(t.nodeId) ?? t.nodeId.slice(0, 8)}
+          </span>
+        ),
+      },
+      {
+        key: "status",
+        header: "Status",
+        width: "130px",
+        render: (t) => (
+          <Badge
+            variant={STATUS_BADGE[t.status] ?? "secondary"}
+            className={t.status === "running" ? "animate-pulse" : ""}
+          >
+            {t.status}
+          </Badge>
+        ),
+      },
+      {
+        key: "started",
+        header: "Started",
+        width: "110px",
+        align: "right",
+        render: (t) => (
+          <span className="text-muted-foreground whitespace-nowrap">{formatTime(t.createdAt)}</span>
+        ),
+      },
+      {
+        key: "duration",
+        header: "Duration",
+        width: "100px",
+        align: "right",
+        render: (t) => (
+          <span className="text-muted-foreground whitespace-nowrap">
+            {formatDuration(t.createdAt, t.completedAt)}
+          </span>
+        ),
+      },
+    ],
+    [nodeMap]
+  );
 
   const hasActiveFilters =
     search !== "" || filterNode !== "all" || filterType !== "all" || filterStatus !== "all";
@@ -179,12 +237,7 @@ export function DockerTasks({ embedded }: { embedded?: boolean } = {}) {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={loadTasks}
-              disabled={isLoading}
-            >
+            <Button variant="outline" size="icon" onClick={loadTasks} disabled={isLoading}>
               <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
             </Button>
             {tasks.some((t) => t.status === "succeeded" || t.status === "failed") && (
@@ -232,7 +285,9 @@ export function DockerTasks({ embedded }: { embedded?: boolean } = {}) {
               <SelectContent>
                 <SelectItem value="all">All types</SelectItem>
                 {taskTypes.map((t) => (
-                  <SelectItem key={t} value={t}>{t}</SelectItem>
+                  <SelectItem key={t} value={t}>
+                    {t}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -259,11 +314,16 @@ export function DockerTasks({ embedded }: { embedded?: boolean } = {}) {
           keyFn={(t) => t.id}
           onRowClick={setSelectedTask}
           scrollRef={scrollRef}
-          footer={hasMore ? (
-            <div ref={sentinelRef} className="flex items-center justify-center py-3 text-xs text-muted-foreground">
-              Loading more...
-            </div>
-          ) : undefined}
+          footer={
+            hasMore ? (
+              <div
+                ref={sentinelRef}
+                className="flex items-center justify-center py-3 text-xs text-muted-foreground"
+              >
+                Loading more...
+              </div>
+            ) : undefined
+          }
         />
       ) : isLoading ? (
         <div className="flex items-center justify-center py-16 text-muted-foreground">
@@ -293,15 +353,21 @@ export function DockerTasks({ embedded }: { embedded?: boolean } = {}) {
               <div className="border border-border bg-card divide-y divide-border overflow-hidden">
                 <div className="flex items-center justify-between px-4 py-3 min-w-0">
                   <span className="text-sm text-muted-foreground shrink-0">Type</span>
-                  <span className="text-sm font-medium truncate ml-4 min-w-0">{selectedTask.type}</span>
+                  <span className="text-sm font-medium truncate ml-4 min-w-0">
+                    {selectedTask.type}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between px-4 py-3 min-w-0">
                   <span className="text-sm text-muted-foreground shrink-0">Container</span>
-                  <span className="text-sm truncate ml-4 min-w-0">{selectedTask.containerName || selectedTask.containerId?.slice(0, 12) || "-"}</span>
+                  <span className="text-sm truncate ml-4 min-w-0">
+                    {selectedTask.containerName || selectedTask.containerId?.slice(0, 12) || "-"}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between px-4 py-3 min-w-0">
                   <span className="text-sm text-muted-foreground shrink-0">Node</span>
-                  <span className="text-sm truncate ml-4 min-w-0">{nodeMap.get(selectedTask.nodeId) ?? selectedTask.nodeId.slice(0, 8)}</span>
+                  <span className="text-sm truncate ml-4 min-w-0">
+                    {nodeMap.get(selectedTask.nodeId) ?? selectedTask.nodeId.slice(0, 8)}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between px-4 py-3 min-w-0">
                   <span className="text-sm text-muted-foreground shrink-0">Status</span>
@@ -320,17 +386,23 @@ export function DockerTasks({ embedded }: { embedded?: boolean } = {}) {
                 )}
                 <div className="flex items-center justify-between px-4 py-3 min-w-0">
                   <span className="text-sm text-muted-foreground shrink-0">Started</span>
-                  <span className="text-sm truncate ml-4 min-w-0">{new Date(selectedTask.createdAt).toLocaleString()}</span>
+                  <span className="text-sm truncate ml-4 min-w-0">
+                    {new Date(selectedTask.createdAt).toLocaleString()}
+                  </span>
                 </div>
                 {selectedTask.completedAt && (
                   <div className="flex items-center justify-between px-4 py-3 min-w-0">
                     <span className="text-sm text-muted-foreground shrink-0">Finished</span>
-                    <span className="text-sm truncate ml-4 min-w-0">{new Date(selectedTask.completedAt).toLocaleString()}</span>
+                    <span className="text-sm truncate ml-4 min-w-0">
+                      {new Date(selectedTask.completedAt).toLocaleString()}
+                    </span>
                   </div>
                 )}
                 <div className="flex items-center justify-between px-4 py-3 min-w-0">
                   <span className="text-sm text-muted-foreground shrink-0">Duration</span>
-                  <span className="text-sm truncate ml-4 min-w-0">{formatDuration(selectedTask.createdAt, selectedTask.completedAt)}</span>
+                  <span className="text-sm truncate ml-4 min-w-0">
+                    {formatDuration(selectedTask.createdAt, selectedTask.completedAt)}
+                  </span>
                 </div>
               </div>
               {selectedTask.error && (

@@ -33,7 +33,13 @@ function formatDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString();
 }
 
-export function DockerTemplatesPage({ embedded, onCreateRef }: { embedded?: boolean; onCreateRef?: (fn: () => void) => void } = {}) {
+export function DockerTemplatesPage({
+  embedded,
+  onCreateRef,
+}: {
+  embedded?: boolean;
+  onCreateRef?: (fn: () => void) => void;
+} = {}) {
   const { hasScope } = useAuthStore();
   const { templates, fetchTemplates } = useDockerStore();
 
@@ -43,7 +49,9 @@ export function DockerTemplatesPage({ embedded, onCreateRef }: { embedded?: bool
 
   // Create/Edit dialog
   const [dialogOpen, setDialogOpen] = useState(false);
-  useEffect(() => { onCreateRef?.(() => setDialogOpen(true)); }, [onCreateRef]);
+  useEffect(() => {
+    onCreateRef?.(() => setDialogOpen(true));
+  }, [onCreateRef]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formName, setFormName] = useState("");
   const [formDescription, setFormDescription] = useState("");
@@ -61,16 +69,17 @@ export function DockerTemplatesPage({ embedded, onCreateRef }: { embedded?: bool
   // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only
   useEffect(() => {
     fetchTemplates().finally(() => setIsLoading(false));
-    api.listNodes({ type: "docker", limit: 100 }).then((r) => setDockerNodes(r.data)).catch(() => {});
+    api
+      .listNodes({ type: "docker", limit: 100 })
+      .then((r) => setDockerNodes(r.data))
+      .catch(() => {});
   }, []);
 
   const filteredTemplates = useMemo(() => {
     if (!search) return templates;
     const q = search.toLowerCase();
     return templates.filter(
-      (t) =>
-        t.name.toLowerCase().includes(q) ||
-        (t.description ?? "").toLowerCase().includes(q)
+      (t) => t.name.toLowerCase().includes(q) || (t.description ?? "").toLowerCase().includes(q)
     );
   }, [templates, search]);
 
@@ -260,9 +269,7 @@ export function DockerTemplatesPage({ embedded, onCreateRef }: { embedded?: bool
         header: "Created",
         align: "right" as const,
         render: (t) => (
-          <span className="text-sm text-muted-foreground">
-            {formatDate(t.createdAt)}
-          </span>
+          <span className="text-sm text-muted-foreground">{formatDate(t.createdAt)}</span>
         ),
       },
       {
@@ -270,7 +277,10 @@ export function DockerTemplatesPage({ embedded, onCreateRef }: { embedded?: bool
         header: "Actions",
         align: "right" as const,
         render: (t) => (
-          <div className="flex items-center gap-0.5 justify-end" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="flex items-center gap-0.5 justify-end"
+            onClick={(e) => e.stopPropagation()}
+          >
             {hasScope("docker:templates:create") && dockerNodes.length > 0 && (
               <Button
                 variant="ghost"
@@ -434,7 +444,9 @@ export function DockerTemplatesPage({ embedded, onCreateRef }: { embedded?: bool
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={closeDialog}>Cancel</Button>
+            <Button variant="outline" onClick={closeDialog}>
+              Cancel
+            </Button>
             <Button onClick={handleSave} disabled={saving || !formName.trim()}>
               {saving ? "Saving..." : editingId ? "Update" : "Create"}
             </Button>
@@ -447,9 +459,7 @@ export function DockerTemplatesPage({ embedded, onCreateRef }: { embedded?: bool
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Deploy Template</DialogTitle>
-            <DialogDescription>
-              Deploy this template to a Docker node.
-            </DialogDescription>
+            <DialogDescription>Deploy this template to a Docker node.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
@@ -478,7 +488,8 @@ export function DockerTemplatesPage({ embedded, onCreateRef }: { embedded?: bool
             </div>
             <div>
               <label className="text-sm font-medium">
-                Overrides (JSON) <span className="text-muted-foreground font-normal">(optional)</span>
+                Overrides (JSON){" "}
+                <span className="text-muted-foreground font-normal">(optional)</span>
               </label>
               <textarea
                 className="mt-1 w-full border border-border bg-muted p-3 font-mono text-xs min-h-[100px] resize-y focus:outline-none focus:ring-1 focus:ring-ring"
@@ -489,7 +500,9 @@ export function DockerTemplatesPage({ embedded, onCreateRef }: { embedded?: bool
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeployOpen(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setDeployOpen(false)}>
+              Cancel
+            </Button>
             <Button onClick={handleDeploy} disabled={deploying || !deployNodeId}>
               {deploying ? "Deploying..." : "Deploy"}
             </Button>

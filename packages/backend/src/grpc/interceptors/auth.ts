@@ -18,7 +18,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * Control and LogStream services MUST verify the cert CN matches the claimed nodeId.
  */
 export function extractNodeIdFromCert(
-  call: ServerDuplexStream<unknown, unknown> | ServerUnaryCall<unknown, unknown>,
+  call: ServerDuplexStream<unknown, unknown> | ServerUnaryCall<unknown, unknown>
 ): string | null {
   try {
     // @grpc/grpc-js exposes the TLS socket via internal handler chain.

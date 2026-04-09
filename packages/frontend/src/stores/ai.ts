@@ -10,11 +10,11 @@ import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useCAStore } from "@/stores/ca";
 import { useCertificatesStore } from "@/stores/certificates";
+import { useDockerStore } from "@/stores/docker";
 import { useFolderStore } from "@/stores/folders";
+import { useNodesStore } from "@/stores/nodes";
 import { useProxyStore } from "@/stores/proxy";
 import { useSSLStore } from "@/stores/ssl";
-import { useDockerStore } from "@/stores/docker";
-import { useNodesStore } from "@/stores/nodes";
 import { useUIStore } from "@/stores/ui";
 import type {
   AIMessage,

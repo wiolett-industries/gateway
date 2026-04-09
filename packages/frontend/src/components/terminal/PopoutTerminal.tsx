@@ -85,13 +85,22 @@ export function PopoutTerminal({ wsFactory, channelKey, title }: PopoutTerminalP
       const fitAddon = new FitAddon();
       terminal.loadAddon(fitAddon);
       terminal.open(termRef.current);
-      setTimeout(() => { fitAddon.fit(); terminal.focus(); }, 50);
+      setTimeout(() => {
+        fitAddon.fit();
+        terminal.focus();
+      }, 50);
       terminalRef.current = terminal;
 
       const resizeObserver = new ResizeObserver(() => {
-        try { fitAddon.fit(); } catch { /* */ }
+        try {
+          fitAddon.fit();
+        } catch {
+          /* */
+        }
         if (wsRef.current?.readyState === WebSocket.OPEN) {
-          wsRef.current.send(JSON.stringify({ type: "resize", rows: terminal.rows, cols: terminal.cols }));
+          wsRef.current.send(
+            JSON.stringify({ type: "resize", rows: terminal.rows, cols: terminal.cols })
+          );
         }
       });
       resizeObserver.observe(termRef.current);
@@ -160,7 +169,9 @@ export function PopoutTerminal({ wsFactory, channelKey, title }: PopoutTerminalP
         } else if (msg.type === "error") {
           terminal.write(`\r\nError: ${msg.message}\r\n`);
         }
-      } catch { /* */ }
+      } catch {
+        /* */
+      }
     };
 
     ws.onclose = () => {
@@ -204,11 +215,5 @@ export function PopoutTerminal({ wsFactory, channelKey, title }: PopoutTerminalP
     };
   }, []);
 
-  return (
-    <div
-      ref={termRef}
-      className="fixed inset-0 bg-[#0e0e0e]"
-      style={{ padding: 4 }}
-    />
-  );
+  return <div ref={termRef} className="fixed inset-0 bg-[#0e0e0e]" style={{ padding: 4 }} />;
 }

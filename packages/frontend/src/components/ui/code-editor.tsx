@@ -1,23 +1,17 @@
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
+import { json } from "@codemirror/lang-json";
 import {
   bracketMatching,
   foldGutter,
   foldKeymap,
   HighlightStyle,
+  indentUnit,
   StreamLanguage,
   syntaxHighlighting,
 } from "@codemirror/language";
-import { json } from "@codemirror/lang-json";
 import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
 import { Compartment, EditorState, RangeSetBuilder } from "@codemirror/state";
-import { indentUnit } from "@codemirror/language";
-import {
-  Decoration,
-  EditorView,
-  highlightActiveLine,
-  keymap,
-  lineNumbers,
-} from "@codemirror/view";
+import { Decoration, EditorView, highlightActiveLine, keymap, lineNumbers } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { useEffect, useRef } from "react";
 
@@ -235,7 +229,8 @@ const envLang = StreamLanguage.define<{ inValue: boolean }>({
       // Quoted string
       if (stream.match(/"[^"]*"/) || stream.match(/'[^']*'/)) return "string";
       // Variable reference
-      if (stream.match(/\$\{[^}]*\}/) || stream.match(/\$[A-Za-z_][A-Za-z0-9_]*/)) return "variableName";
+      if (stream.match(/\$\{[^}]*\}/) || stream.match(/\$[A-Za-z_][A-Za-z0-9_]*/))
+        return "variableName";
       // Number
       if (stream.match(/^\d+$/)) return "number";
       // Rest of value
@@ -333,7 +328,6 @@ function makeErrorLineDecorations(state: EditorState, lines: number[]) {
   return builder.finish();
 }
 
-
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -428,13 +422,10 @@ export function CodeEditor({
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
-    const decos = errorLines.length > 0
-      ? makeErrorLineDecorations(view.state, errorLines)
-      : Decoration.none;
+    const decos =
+      errorLines.length > 0 ? makeErrorLineDecorations(view.state, errorLines) : Decoration.none;
     view.dispatch({
-      effects: errorCompartmentRef.current.reconfigure(
-        EditorView.decorations.of(decos)
-      ),
+      effects: errorCompartmentRef.current.reconfigure(EditorView.decorations.of(decos)),
     });
   }, [errorLines]);
 
