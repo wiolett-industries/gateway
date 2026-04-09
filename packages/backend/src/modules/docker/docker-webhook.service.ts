@@ -160,8 +160,9 @@ export class DockerWebhookService {
     });
     await this.tasks.update(task.id, { status: 'running', progress: `Pulling ${targetRef}...` });
 
-    // Set transition
+    // Set transition and broadcast to frontend
     this.docker.setTransition(nodeId, containerName, 'updating');
+    this.docker.emitTransition(nodeId, containerName, containerId, 'updating');
 
     try {
       // Synchronous pull — validates the image exists
@@ -193,7 +194,7 @@ export class DockerWebhookService {
     const config = buildRecreateConfig(inspectData as Record<string, unknown>, targetRef);
 
     try {
-      await this.docker.recreateWithConfig(nodeId, containerId, config, userId ?? 'webhook');
+      await this.docker.recreateWithConfig(nodeId, containerId, config, userId ?? (null as any));
     } catch (err) {
       await this.tasks
         .update(task.id, {

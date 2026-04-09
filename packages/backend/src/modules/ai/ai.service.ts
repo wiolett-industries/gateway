@@ -607,9 +607,15 @@ Gateway provides Portainer-like Docker container management through a daemon run
 - Regular env vars: stored in container config, visible to all users with view access
 - Secrets: encrypted at rest in Gateway DB, injected as env vars on container start/recreate. Only users with docker:containers:secrets scope can view decrypted values. Secrets are keyed by container name so they survive recreates.
 
+## Image Updates & Webhooks
+- **Manual image tag change**: in container Settings, the Image Tag field allows changing the version. Changing the tag and clicking Recreate will pull the new image and recreate the container.
+- **Webhook updates**: each container can have a webhook URL enabled (Settings → Webhook section). CI pipelines POST to the webhook URL to trigger automatic pull + recreate. URL format: \`POST /api/webhooks/docker/<token>\` with optional body \`{"tag":"v1.2.3"}\`. No auth header needed — the token in the URL is the auth.
+- **Auto-cleanup**: webhook config supports automatic cleanup of old image versions after updates, with configurable retention count.
+- Use \`update_docker_container_image\` tool to change a container's image tag programmatically (pulls + recreates).
+
 ## Settings
 - **Runtime (live-update)**: restart policy, memory limit, CPU shares, PID limit — applied without recreation
-- **Requires recreate**: port mappings, volume mounts, entrypoint, command, working dir, hostname, labels
+- **Requires recreate**: port mappings, volume mounts, entrypoint, command, working dir, hostname, labels, image tag
 
 ## Images, Volumes, Networks
 - Images: list, pull from registries, remove, prune unused
@@ -696,6 +702,14 @@ All endpoints are under \`/api/\`. Example: \`https://gateway.example.com/api/ca
 - \`POST /api/docker/nodes/:nodeId/containers/:id/start\` — start container
 - \`POST /api/docker/nodes/:nodeId/containers/:id/stop\` — stop container
 - \`POST /api/docker/nodes/:nodeId/containers/:id/restart\` — restart container
+- \`POST /api/docker/nodes/:nodeId/containers/:id/recreate\` — recreate with new config (supports \`image\` field for tag change)
+- \`POST /api/docker/nodes/:nodeId/images/pull-sync\` — pull image synchronously (validates image exists)
+
+### Docker Webhooks
+- \`GET /api/docker/nodes/:nodeId/containers/:name/webhook\` — get webhook config
+- \`PUT /api/docker/nodes/:nodeId/containers/:name/webhook\` — enable/update webhook
+- \`DELETE /api/docker/nodes/:nodeId/containers/:name/webhook\` — disable webhook
+- \`POST /api/webhooks/docker/:token\` — trigger webhook update (no auth header needed, token is in URL)
 
 ### Access Lists
 - \`GET /api/access-lists\` — list access lists
@@ -1273,6 +1287,24 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
       case 'remove_docker_container':
         await this.dockerService.removeContainer(a.nodeId, a.containerId, a.force ?? false, user.id);
         return { success: true };
+      case 'update_docker_container_image': {
+        // Inspect container to get current image and config
+        const inspectData = await this.dockerService.inspectContainer(a.nodeId, a.containerId);
+        const currentImage: string = (inspectData as any)?.Config?.Image ?? '';
+        if (!currentImage) return { error: 'Cannot determine current container image' };
+        const lastColon = currentImage.lastIndexOf(':');
+        const lastSlash = currentImage.lastIndexOf('/');
+        const imageName = lastColon > lastSlash ? currentImage.slice(0, lastColon) : currentImage;
+        const targetRef = `${imageName}:${a.imageTag}`;
+        // Pull the new image first (sync)
+        const { NodeDispatchService: NDS } = await import('@/services/node-dispatch.service.js');
+        const dispatch = container.resolve(NDS);
+        const pullResult = await dispatch.sendDockerImageCommand(a.nodeId, 'pull', { imageRef: targetRef }, 300000);
+        if (!pullResult.success) return { error: `Failed to pull ${targetRef}: ${pullResult.error}` };
+        // Recreate with new image
+        await this.dockerService.recreateWithConfig(a.nodeId, a.containerId, { image: targetRef }, user.id);
+        return { success: true, message: `Container updating to ${targetRef}` };
+      }
       case 'get_docker_container_logs':
         return this.dockerService.getContainerLogs(a.nodeId, a.containerId, a.tail || 100, a.timestamps ?? false);
       case 'list_docker_images':
