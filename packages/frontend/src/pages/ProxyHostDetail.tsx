@@ -4,7 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
+import { DetailRow } from "@/components/common/DetailRow";
+import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
+import { useUrlTab } from "@/hooks/use-url-tab";
 import { CreateProxyHostDialog } from "@/components/proxy/CreateProxyHostDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -71,21 +74,18 @@ const TYPE_BADGE: Record<string, "default" | "secondary" | "destructive"> = {
 
 // ── Main Component ──────────────────────────────────────────────
 export function ProxyHostDetail() {
-  const { id, tab: tabParam } = useParams<{ id: string; tab?: string }>();
+  const { id } = useParams<{ id: string; tab?: string }>();
   const navigate = useNavigate();
   const { hasScope } = useAuthStore();
 
   const [host, setHost] = useState<ProxyHost | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const VALID_TABS = ["details", "settings", "advanced", "raw", "logs"];
-  const [activeTab, setActiveTabState] = useState(() =>
-    tabParam && VALID_TABS.includes(tabParam) ? tabParam : "details"
+  const [activeTab, setActiveTab] = useUrlTab(
+    ["details", "settings", "advanced", "raw", "logs"],
+    "details",
+    (tab) => `/proxy-hosts/${id}/${tab}`,
   );
-  const setActiveTab = (tab: string) => {
-    setActiveTabState(tab);
-    window.history.replaceState(null, "", `/proxy-hosts/${id}/${tab}`);
-  };
 
   // Edit dialog
   const [editOpen, setEditOpen] = useState(false);
@@ -363,9 +363,7 @@ export function ProxyHostDetail() {
   // ── Loading state ─────────────────────────────────────────────
   if (isLoading || !host) {
     return (
-      <div className="flex items-center justify-center py-16">
-        <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-      </div>
+      <LoadingSpinner />
     );
   }
 
@@ -578,9 +576,7 @@ export function ProxyHostDetail() {
                 )}
               </div>
             ) : isLoadingRaw ? (
-              <div className="flex items-center justify-center py-8">
-                <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-              </div>
+              <LoadingSpinner className="py-8" />
             ) : (
               <div className="flex-1 min-h-0 flex flex-col relative">
                 <CodeEditor value={renderedConfig} onChange={() => {}} readOnly />
@@ -1247,15 +1243,6 @@ function SettingsTab({
   );
 }
 
-// ── Shared Components ───────────────────────────────────────────
-function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="flex items-center justify-between px-4 py-3">
-      <span className="text-sm text-muted-foreground">{label}</span>
-      <span className="text-sm">{value}</span>
-    </div>
-  );
-}
 
 function ToggleRow({
   label,

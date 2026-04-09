@@ -1,6 +1,7 @@
 import { ArrowRight, Award, Cpu, Globe, HardDrive, Lock, MemoryStick, Server } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
 import { Badge } from "@/components/ui/badge";
 import { HealthBars } from "@/components/ui/health-bars";
@@ -243,9 +244,7 @@ export function Dashboard() {
 
   if (casLoading && statsLoading) {
     return (
-      <div className="flex items-center justify-center py-16">
-        <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-      </div>
+      <LoadingSpinner />
     );
   }
 

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 
@@ -61,7 +62,7 @@ export function AuthCallback() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background">
       <div className="flex flex-col items-center gap-4">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+        <LoadingSpinner className="" />
         <p className="text-sm text-muted-foreground">Authenticating...</p>
       </div>
     </div>

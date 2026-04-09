@@ -11,6 +11,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/ui/stat-card";
 import { api } from "@/services/api";
@@ -84,7 +85,7 @@ export function NodeMonitoringTab({ nodeId, nodeStatus, nodeType }: NodeMonitori
   if (!connected || !latest) {
     return (
       <div className="flex flex-col items-center gap-2 py-16">
-        <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+        <LoadingSpinner className="" />
         <p className="text-sm text-muted-foreground">Connecting to monitoring stream...</p>
       </div>
     );

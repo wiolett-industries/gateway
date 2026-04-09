@@ -1,18 +1,10 @@
 import { ClipboardCopy } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { DetailRow } from "@/components/common/DetailRow";
 import { Badge } from "@/components/ui/badge";
 import { useRealtime } from "@/hooks/use-realtime";
 import { api } from "@/services/api";
 import { copyToClipboard, formatDate, type InspectData, STATUS_BADGE } from "./helpers";
-
-function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="flex items-center justify-between px-4 py-3">
-      <span className="text-sm text-muted-foreground">{label}</span>
-      <span className="text-sm">{value}</span>
-    </div>
-  );
-}
 
 export function OverviewTab({
   nodeId,

@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -458,9 +459,7 @@ export function NginxManagement() {
 
           <TabsContent value="configuration" className="flex flex-col flex-1 min-h-0 mt-4 gap-3">
             {configLoading ? (
-              <div className="flex items-center justify-center py-16">
-                <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-              </div>
+              <LoadingSpinner />
             ) : (
               <>
                 <div className="flex-1 min-h-0 flex flex-col">

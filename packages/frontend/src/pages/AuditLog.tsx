@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
 import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 import {
@@ -175,9 +176,7 @@ export function AuditLog() {
         </div>
 
         {isLoading && entries.length === 0 ? (
-          <div className="flex items-center justify-center py-16">
-            <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-          </div>
+          <LoadingSpinner />
         ) : (
           <div className="flex-1 min-h-0">
             <DataTable

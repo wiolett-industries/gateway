@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { DetailRow } from "@/components/common/DetailRow";
 import { Badge } from "@/components/ui/badge";
-import { api } from "@/services/api";
 import { formatBytes, formatUptime } from "@/lib/utils";
+import { api } from "@/services/api";
 import type { DockerContainer, NodeDetail, NodeHealthReport, ProxyHost } from "@/types";
 
 interface NodeDetailsTabProps {
@@ -261,12 +262,4 @@ export function NodeDetailsTab({ node }: NodeDetailsTabProps) {
   );
 }
 
-function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="flex items-center justify-between px-4 py-3">
-      <span className="text-sm text-muted-foreground">{label}</span>
-      <span className="text-sm">{value}</span>
-    </div>
-  );
-}
 
