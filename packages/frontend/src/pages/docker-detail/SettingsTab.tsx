@@ -1,16 +1,9 @@
-import { Check, Copy, Minus, Plus, RefreshCw, RotateCcw, Save } from "lucide-react";
+import { Check, Copy, RefreshCw, RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { useRealtime } from "@/hooks/use-realtime";
 import { api } from "@/services/api";
@@ -18,21 +11,10 @@ import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
 import type { DockerWebhook } from "@/types";
 import type { InspectData } from "./helpers";
-
-// ── Types ────────────────────────────────────────────────────────
-
-interface PortMapping {
-  hostPort: string;
-  containerPort: string;
-  protocol: "tcp" | "udp";
-}
-
-interface MountEntry {
-  hostPath: string;
-  containerPath: string;
-  name: string;
-  readOnly: boolean;
-}
+import { LabelsSection } from "./LabelsSection";
+import { PortMappingsSection, type PortMapping } from "./PortMappingsSection";
+import { RuntimeSection } from "./RuntimeSection";
+import { VolumeMountsSection, type MountEntry } from "./VolumeMountsSection";
 
 // ── Component ────────────────────────────────────────────────────
 
@@ -354,26 +336,6 @@ export function SettingsTab({
     onAction,
   ]);
 
-  // ── Port helpers ──
-  const addPort = () =>
-    setPorts((p) => [...p, { hostPort: "", containerPort: "", protocol: "tcp" }]);
-  const removePort = (i: number) => setPorts((p) => p.filter((_, idx) => idx !== i));
-  const updatePort = (i: number, field: keyof PortMapping, val: string) =>
-    setPorts((p) => p.map((entry, idx) => (idx === i ? { ...entry, [field]: val } : entry)));
-
-  // ── Mount helpers ──
-  const addMount = () =>
-    setMounts((m) => [...m, { hostPath: "", containerPath: "", name: "", readOnly: false }]);
-  const removeMount = (i: number) => setMounts((m) => m.filter((_, idx) => idx !== i));
-  const updateMount = (i: number, field: keyof MountEntry, val: string | boolean) =>
-    setMounts((m) => m.map((entry, idx) => (idx === i ? { ...entry, [field]: val } : entry)));
-
-  // ── Label helpers ──
-  const addLabel = () => setLabels((l) => [...l, { key: "", value: "" }]);
-  const removeLabel = (i: number) => setLabels((l) => l.filter((_, idx) => idx !== i));
-  const updateLabel = (i: number, field: "key" | "value", val: string) =>
-    setLabels((l) => l.map((entry, idx) => (idx === i ? { ...entry, [field]: val } : entry)));
-
   // ── Track runtime changes against baseline ──
   const b = baselineRef.current;
   const hasRuntimeChanges =
@@ -407,138 +369,26 @@ export function SettingsTab({
     >
       {/* ─── Runtime Settings + Execution (side by side) ────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="border border-border bg-card overflow-hidden">
-          <div className="flex items-center justify-between border-b border-border px-4 py-3">
-            <div>
-              <h3 className="text-sm font-semibold">Runtime Settings</h3>
-              <p className="text-xs text-muted-foreground">Applied instantly without restart</p>
-            </div>
-            {canEdit && (
-              <Button
-                size="sm"
-                onClick={handleLiveUpdate}
-                disabled={liveLoading || !hasRuntimeChanges}
-              >
-                <Save className="h-3.5 w-3.5" />
-                Apply
-              </Button>
-            )}
-          </div>
-          <div className="p-4 space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Restart Policy</label>
-                <Select value={restartPolicy} onValueChange={setRestartPolicy} disabled={!canEdit}>
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="no">No</SelectItem>
-                    <SelectItem value="always">Always</SelectItem>
-                    <SelectItem value="unless-stopped">Unless Stopped</SelectItem>
-                    <SelectItem value="on-failure">On Failure</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">
-                  {restartPolicy === "on-failure" ? "Max Retries" : "PIDs Limit"}
-                </label>
-                {restartPolicy === "on-failure" ? (
-                  <Input
-                    type="number"
-                    className="h-8 text-xs"
-                    value={maxRetries}
-                    onChange={(e) => setMaxRetries(e.target.value)}
-                    placeholder="0"
-                    disabled={!canEdit}
-                    min={0}
-                  />
-                ) : (
-                  <Input
-                    type="number"
-                    className="h-8 text-xs"
-                    value={pidsLimit}
-                    onChange={(e) => setPidsLimit(e.target.value)}
-                    placeholder="Unlimited"
-                    disabled={!canEdit}
-                    min={0}
-                  />
-                )}
-              </div>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">
-                  Memory Limit (MB)
-                </label>
-                <Input
-                  type="number"
-                  className="h-8 text-xs"
-                  value={memoryMB}
-                  onChange={(e) => setMemoryMB(e.target.value)}
-                  placeholder="Unlimited"
-                  disabled={!canEdit}
-                  min={0}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Swap (MB)</label>
-                <Input
-                  type="number"
-                  className="h-8 text-xs"
-                  value={memSwapMB}
-                  onChange={(e) => setMemSwapMB(e.target.value)}
-                  placeholder="-1 = unlimited, 0 = disabled"
-                  disabled={!canEdit}
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">
-                  CPU Limit (cores)
-                </label>
-                <Input
-                  type="number"
-                  className="h-8 text-xs"
-                  value={cpuCount}
-                  onChange={(e) => setCpuCount(e.target.value)}
-                  placeholder="Unlimited"
-                  disabled={!canEdit}
-                  min={0}
-                  step={0.1}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">CPU Shares</label>
-                <Input
-                  type="number"
-                  className="h-8 text-xs"
-                  value={cpuShares}
-                  onChange={(e) => setCpuShares(e.target.value)}
-                  placeholder="Default: 1024"
-                  disabled={!canEdit}
-                  min={0}
-                />
-              </div>
-            </div>
-            {restartPolicy === "on-failure" && (
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">PIDs Limit</label>
-                <Input
-                  type="number"
-                  className="h-8 text-xs"
-                  value={pidsLimit}
-                  onChange={(e) => setPidsLimit(e.target.value)}
-                  placeholder="Unlimited"
-                  disabled={!canEdit}
-                  min={0}
-                />
-              </div>
-            )}
-          </div>
-        </div>
+        <RuntimeSection
+          canEdit={canEdit}
+          restartPolicy={restartPolicy}
+          setRestartPolicy={setRestartPolicy}
+          maxRetries={maxRetries}
+          setMaxRetries={setMaxRetries}
+          memoryMB={memoryMB}
+          setMemoryMB={setMemoryMB}
+          memSwapMB={memSwapMB}
+          setMemSwapMB={setMemSwapMB}
+          cpuCount={cpuCount}
+          setCpuCount={setCpuCount}
+          cpuShares={cpuShares}
+          setCpuShares={setCpuShares}
+          pidsLimit={pidsLimit}
+          setPidsLimit={setPidsLimit}
+          hasRuntimeChanges={hasRuntimeChanges}
+          liveLoading={liveLoading}
+          onApply={handleLiveUpdate}
+        />
 
         <div
           className="border bg-card overflow-hidden"
@@ -645,245 +495,31 @@ export function SettingsTab({
       </div>
 
       {/* ─── Port Mappings ────────────────────────────────────────── */}
-      <div
-        className="border bg-card overflow-hidden"
-        style={portsChanged ? { borderColor: "rgb(234 179 8)" } : undefined}
-      >
-        <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <div>
-            <h3 className="text-sm font-semibold">Port Mappings</h3>
-            <p className="text-xs text-muted-foreground">Requires container recreation</p>
-          </div>
-          {canEdit && (
-            <Button size="sm" onClick={addPort}>
-              <Plus className="h-3.5 w-3.5" />
-              Add
-            </Button>
-          )}
-        </div>
-        {ports.length > 0 ? (
-          <>
-            <div
-              className={`grid ${canEdit ? "grid-cols-[1fr_1fr_100px_36px]" : "grid-cols-[1fr_1fr_100px]"} border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wider`}
-            >
-              <div className="px-3 py-2">Host Port</div>
-              <div className="px-3 py-2 border-l border-border">Container Port</div>
-              <div className="px-3 py-2 border-l border-border">Protocol</div>
-              {canEdit && <div />}
-            </div>
-            <div className="-mb-px">
-              {ports.map((p, i) => (
-                <div
-                  key={i}
-                  className={`grid ${canEdit ? "grid-cols-[1fr_1fr_100px_36px]" : "grid-cols-[1fr_1fr_100px]"} border-b border-border last:border-b-0`}
-                >
-                  <Input
-                    type="number"
-                    className={inputCell}
-                    value={p.hostPort}
-                    onChange={(e) => updatePort(i, "hostPort", e.target.value)}
-                    placeholder="8080"
-                    disabled={!canEdit}
-                  />
-                  <div className="border-l border-border">
-                    <Input
-                      type="number"
-                      className={inputCell}
-                      value={p.containerPort}
-                      onChange={(e) => updatePort(i, "containerPort", e.target.value)}
-                      placeholder="80"
-                      disabled={!canEdit}
-                    />
-                  </div>
-                  <div className="border-l border-border">
-                    <Select
-                      value={p.protocol}
-                      onValueChange={(v) => updatePort(i, "protocol", v)}
-                      disabled={!canEdit}
-                    >
-                      <SelectTrigger className="h-9 text-xs border-0 rounded-none shadow-none focus:ring-1 focus:ring-inset focus:ring-ring">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="tcp">TCP</SelectItem>
-                        <SelectItem value="udp">UDP</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  {canEdit && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-9 w-9 shrink-0 rounded-none border-l border-border"
-                      onClick={() => removePort(i)}
-                    >
-                      <Minus className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
-                </div>
-              ))}
-            </div>
-          </>
-        ) : (
-          <div className="py-8 text-center text-muted-foreground text-sm">No port mappings</div>
-        )}
-      </div>
+      <PortMappingsSection
+        canEdit={canEdit}
+        ports={ports}
+        setPorts={setPorts}
+        portsChanged={portsChanged}
+        inputCell={inputCell}
+      />
 
       {/* ─── Volume Mounts ────────────────────────────────────────── */}
-      <div
-        className="border bg-card overflow-hidden"
-        style={mountsChanged ? { borderColor: "rgb(234 179 8)" } : undefined}
-      >
-        <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <div>
-            <h3 className="text-sm font-semibold">Volume Mounts</h3>
-            <p className="text-xs text-muted-foreground">Requires container recreation</p>
-          </div>
-          {canEdit && (
-            <Button size="sm" onClick={addMount}>
-              <Plus className="h-3.5 w-3.5" />
-              Add
-            </Button>
-          )}
-        </div>
-        {mounts.length > 0 ? (
-          <>
-            <div
-              className={`grid ${canEdit ? "grid-cols-[1fr_1fr_100px_36px]" : "grid-cols-[1fr_1fr_100px]"} border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wider`}
-            >
-              <div className="px-3 py-2">Source</div>
-              <div className="px-3 py-2 border-l border-border">Container Path</div>
-              <div className="px-3 py-2 border-l border-border">Mode</div>
-              {canEdit && <div />}
-            </div>
-            <div className="-mb-px">
-              {mounts.map((m, i) => (
-                <div
-                  key={i}
-                  className={`grid ${canEdit ? "grid-cols-[1fr_1fr_100px_36px]" : "grid-cols-[1fr_1fr_100px]"} border-b border-border last:border-b-0`}
-                >
-                  <Input
-                    className={inputCell}
-                    value={m.hostPath || m.name}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (val.startsWith("/")) {
-                        updateMount(i, "hostPath", val);
-                        updateMount(i, "name", "");
-                      } else {
-                        updateMount(i, "name", val);
-                        updateMount(i, "hostPath", "");
-                      }
-                    }}
-                    placeholder="/host/path or volume-name"
-                    disabled={!canEdit}
-                  />
-                  <div className="border-l border-border">
-                    <Input
-                      className={inputCell}
-                      value={m.containerPath}
-                      onChange={(e) => updateMount(i, "containerPath", e.target.value)}
-                      placeholder="/container/path"
-                      disabled={!canEdit}
-                    />
-                  </div>
-                  <div className="border-l border-border">
-                    <Select
-                      value={m.readOnly ? "ro" : "rw"}
-                      onValueChange={(v) => updateMount(i, "readOnly", v === "ro")}
-                      disabled={!canEdit}
-                    >
-                      <SelectTrigger className="h-9 text-xs border-0 rounded-none shadow-none focus:ring-1 focus:ring-inset focus:ring-ring">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="rw">RW</SelectItem>
-                        <SelectItem value="ro">RO</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  {canEdit && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-9 w-9 shrink-0 rounded-none border-l border-border"
-                      onClick={() => removeMount(i)}
-                    >
-                      <Minus className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
-                </div>
-              ))}
-            </div>
-          </>
-        ) : (
-          <div className="py-8 text-center text-muted-foreground text-sm">No volume mounts</div>
-        )}
-      </div>
+      <VolumeMountsSection
+        canEdit={canEdit}
+        mounts={mounts}
+        setMounts={setMounts}
+        mountsChanged={mountsChanged}
+        inputCell={inputCell}
+      />
 
       {/* ─── Labels ───────────────────────────────────────────────── */}
-      <div
-        className="border bg-card overflow-hidden"
-        style={labelsChanged ? { borderColor: "rgb(234 179 8)" } : undefined}
-      >
-        <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <div>
-            <h3 className="text-sm font-semibold">Labels</h3>
-            <p className="text-xs text-muted-foreground">Requires container recreation</p>
-          </div>
-          {canEdit && (
-            <Button size="sm" onClick={addLabel}>
-              <Plus className="h-3.5 w-3.5" />
-              Add
-            </Button>
-          )}
-        </div>
-        {labels.length > 0 ? (
-          <>
-            <div className="grid grid-cols-[1fr_1fr] border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wider">
-              <div className="px-3 py-2">Key</div>
-              <div className="px-3 py-2 border-l border-border">Value</div>
-            </div>
-            <div className="-mb-px">
-              {labels.map((l, i) => (
-                <div
-                  key={i}
-                  className="grid grid-cols-[1fr_1fr] border-b border-border last:border-b-0"
-                >
-                  <Input
-                    className={inputCell}
-                    value={l.key}
-                    onChange={(e) => updateLabel(i, "key", e.target.value)}
-                    placeholder="com.example.key"
-                    disabled={!canEdit}
-                  />
-                  <div className="flex items-center border-l border-border">
-                    <Input
-                      className={`${inputCell} flex-1 min-w-0`}
-                      value={l.value}
-                      onChange={(e) => updateLabel(i, "value", e.target.value)}
-                      placeholder="value"
-                      disabled={!canEdit}
-                    />
-                    {canEdit && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-9 w-9 shrink-0 rounded-none border-l border-border"
-                        onClick={() => removeLabel(i)}
-                      >
-                        <Minus className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </>
-        ) : (
-          <div className="py-8 text-center text-muted-foreground text-sm">No labels</div>
-        )}
-      </div>
+      <LabelsSection
+        canEdit={canEdit}
+        labels={labels}
+        setLabels={setLabels}
+        labelsChanged={labelsChanged}
+        inputCell={inputCell}
+      />
 
       {/* ─── Webhook ─────────────────────────────────────────────── */}
       {hasScope("docker:containers:webhooks") && (

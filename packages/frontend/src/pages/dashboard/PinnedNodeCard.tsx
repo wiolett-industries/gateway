@@ -1,0 +1,113 @@
+import { Cpu, HardDrive, MemoryStick } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Badge } from "@/components/ui/badge";
+import { HealthBars } from "@/components/ui/health-bars";
+import { StatCard as MetricCard } from "@/components/ui/stat-card";
+import { formatBytes } from "@/lib/utils";
+import type { Node, NodeHealthReport } from "@/types";
+
+export const WARN_THRESHOLD = 80;
+const WARN_COLOR = "rgb(234 179 8)";
+const WARN_BORDER = "rgb(234 179 8 / 0.6)";
+
+function warnStyle(pct: number): {
+  style?: React.CSSProperties;
+  valueColor?: string;
+  progressColor?: string;
+} {
+  if (pct < WARN_THRESHOLD) return {};
+  return {
+    style: {
+      border: `1px solid ${WARN_BORDER}`,
+      margin: "-1px",
+      position: "relative" as const,
+      zIndex: 1 as number,
+    },
+    progressColor: WARN_COLOR,
+  };
+}
+
+interface PinnedNodeCardProps {
+  node: Node;
+  liveHealth?: NodeHealthReport;
+}
+
+export function PinnedNodeCard({ node, liveHealth }: PinnedNodeCardProps) {
+  const h = liveHealth ?? node.lastHealthReport;
+  const statusColor =
+    node.status === "online" ? "success" : node.status === "error" ? "destructive" : "warning";
+
+  const memPercent =
+    h && h.systemMemoryTotalBytes > 0
+      ? Math.round((h.systemMemoryUsedBytes / h.systemMemoryTotalBytes) * 100)
+      : 0;
+  const rootDisk = h?.diskMounts?.find((d) => d.mountPoint === "/");
+  const diskPercent = rootDisk ? Math.round(rootDisk.usagePercent) : 0;
+  const cpuPercent = h ? Math.min(Math.round(h.cpuPercent), 100) : 0;
+
+  const cpuWarn = warnStyle(cpuPercent);
+  const memWarn = warnStyle(memPercent);
+  const diskWarn = warnStyle(diskPercent);
+
+  return (
+    <div className="grid grid-cols-4 border border-border bg-card overflow-visible">
+      {/* Node info — clickable, navigates to node detail */}
+      <Link
+        to={`/nodes/${node.id}`}
+        className="border-r border-border p-4 space-y-2 overflow-hidden cursor-pointer hover:bg-accent transition-colors"
+      >
+        <p className="text-xs text-muted-foreground truncate">
+          {node.hostname}, {node.type}
+        </p>
+        <p className="text-xl font-bold truncate">{node.displayName || node.hostname}</p>
+        <div className="flex items-center gap-2">
+          <HealthBars hourlyHistory={node.healthHistory} showLabels={false} className="flex-1" />
+          <Badge
+            variant={statusColor}
+            className="text-xs uppercase h-6"
+            style={{ border: "1px solid rgb(16 185 129)" }}
+          >
+            {node.status === "online" ? "healthy" : node.status}
+          </Badge>
+        </div>
+      </Link>
+      <MetricCard
+        label="CPU"
+        value={h ? `${h.cpuPercent.toFixed(1)}%` : "—"}
+        icon={Cpu}
+        progress={h ? { percent: cpuPercent, color: cpuWarn.progressColor } : undefined}
+        valueColor={cpuWarn.valueColor}
+        className="border-0 border-r border-border"
+        style={cpuWarn.style}
+      />
+      <MetricCard
+        label="Memory"
+        value={h ? `${memPercent}%` : "—"}
+        icon={MemoryStick}
+        progress={h ? { percent: memPercent, color: memWarn.progressColor } : undefined}
+        subtitle={
+          h
+            ? `${formatBytes(h.systemMemoryUsedBytes)} / ${formatBytes(h.systemMemoryTotalBytes)}`
+            : undefined
+        }
+        valueColor={memWarn.valueColor}
+        className="border-0 border-r border-border"
+        style={memWarn.style}
+      />
+      <MetricCard
+        label="Disk"
+        value={rootDisk ? `${diskPercent}%` : "—"}
+        icon={HardDrive}
+        progress={rootDisk ? { percent: diskPercent, color: diskWarn.progressColor } : undefined}
+        subtitle={
+          rootDisk
+            ? `${formatBytes(rootDisk.usedBytes)} / ${formatBytes(rootDisk.totalBytes)}`
+            : undefined
+        }
+        valueColor={diskWarn.valueColor}
+        className="border-0"
+        style={diskWarn.style}
+      />
+    </div>
+  );
+}
