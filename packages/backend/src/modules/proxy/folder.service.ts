@@ -1,8 +1,9 @@
-import { and, asc, desc, eq, ilike, inArray, isNull, sql } from 'drizzle-orm';
+import { asc, desc, eq, ilike, inArray, isNull, sql } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import { proxyHostFolders } from '@/db/schema/proxy-host-folders.js';
 import { proxyHosts } from '@/db/schema/proxy-hosts.js';
 import { createChildLogger } from '@/lib/logger.js';
+import { buildWhere } from '@/lib/utils.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import type {
@@ -331,7 +332,7 @@ export class FolderService {
       conditions.push(ilike(sql`${proxyHosts.domainNames}::text`, `%${query.search}%`));
     }
 
-    const where = conditions.length > 0 ? and(...conditions) : undefined;
+    const where = buildWhere(conditions);
 
     const allHosts = await this.db
       .select()

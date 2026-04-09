@@ -1,9 +1,10 @@
-import { and, count, desc, eq, ilike, sql } from 'drizzle-orm';
+import { count, desc, eq, ilike, sql } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import { domains } from '@/db/schema/domains.js';
 import { proxyHosts } from '@/db/schema/proxy-hosts.js';
 import { sslCertificates } from '@/db/schema/ssl-certificates.js';
 import { createChildLogger } from '@/lib/logger.js';
+import { buildWhere } from '@/lib/utils.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import { computeDnsStatus, resolveDnsRecords } from './dns.utils.js';
 import type { CreateDomainInput, DomainListQuery, UpdateDomainInput } from './domain.schemas.js';
@@ -29,7 +30,7 @@ export class DomainsService {
     if (params.dnsStatus) {
       conditions.push(eq(domains.dnsStatus, params.dnsStatus));
     }
-    const where = conditions.length > 0 ? and(...conditions) : undefined;
+    const where = buildWhere(conditions);
 
     const [rows, [{ total }]] = await Promise.all([
       this.db

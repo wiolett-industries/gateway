@@ -161,6 +161,15 @@ export class DockerManagementService {
     return task;
   }
 
+  private async failTask(taskId: string | undefined, error: string, nodeId?: string, containerName?: string) {
+    if (nodeId && containerName) this.clearTransition(nodeId, containerName);
+    if (taskId && this.taskService) {
+      await this.taskService
+        .update(taskId, { status: 'failed', error, completedAt: new Date() })
+        .catch(() => {});
+    }
+  }
+
   /**
    * Poll container state to detect when an async operation completes,
    * then mark the task as succeeded and clear the transition.
@@ -195,12 +204,7 @@ export class DockerManagementService {
         // Container might not exist during recreate — keep polling
         if (Date.now() - start > timeoutMs) {
           clearInterval(poll);
-          this.clearTransition(nodeId, name);
-          if (taskId && this.taskService) {
-            await this.taskService
-              .update(taskId, { status: 'failed', error: 'Timed out', completedAt: new Date() })
-              .catch(() => {});
-          }
+          await this.failTask(taskId, 'Timed out', nodeId, name);
         }
       }
     }, 2000);
@@ -251,22 +255,12 @@ export class DockerManagementService {
 
         if (Date.now() - start > timeoutMs) {
           clearInterval(poll);
-          this.clearTransition(nodeId, containerName);
-          if (taskId && this.taskService) {
-            await this.taskService
-              .update(taskId, { status: 'failed', error: 'Timed out', completedAt: new Date() })
-              .catch(() => {});
-          }
+          await this.failTask(taskId, 'Timed out', nodeId, containerName);
         }
       } catch {
         if (Date.now() - start > timeoutMs) {
           clearInterval(poll);
-          this.clearTransition(nodeId, containerName);
-          if (taskId && this.taskService) {
-            await this.taskService
-              .update(taskId, { status: 'failed', error: 'Timed out', completedAt: new Date() })
-              .catch(() => {});
-          }
+          await this.failTask(taskId, 'Timed out', nodeId, containerName);
         }
       }
     }, 2000);

@@ -1,10 +1,10 @@
 import crypto from 'node:crypto';
-import * as x509 from '@peculiar/x509';
+import { x509 } from '@/lib/x509.js';
 import { and, count, desc, eq, ilike, lte, or } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import { certificates, proxyHosts, sslCertificates } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
-import { escapeLike } from '@/lib/utils.js';
+import { buildWhere, escapeLike } from '@/lib/utils.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { CryptoService } from '@/services/crypto.service.js';
@@ -16,8 +16,6 @@ import type { ACMEService } from './acme.service.js';
 import type { LinkInternalCertInput, RequestACMECertInput, SSLCertListQuery, UploadCertInput } from './ssl.schemas.js';
 
 const logger = createChildLogger('SSLService');
-
-x509.cryptoProvider.set(crypto.webcrypto as any);
 
 export class SSLService {
   constructor(
@@ -610,7 +608,7 @@ export class SSLService {
       conditions.push(or(ilike(sslCertificates.name, `%${escapeLike(params.search)}%`))!);
     }
 
-    const where = conditions.length > 0 ? and(...conditions) : undefined;
+    const where = buildWhere(conditions);
 
     const [entries, [{ count: totalCount }]] = await Promise.all([
       this.db.query.sslCertificates.findMany({

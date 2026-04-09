@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { CodeEditor } from "@/components/ui/code-editor";
 import { StatCard } from "@/components/ui/stat-card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { formatBytes, formatUptime } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import type { NginxProcessInfo, NginxStatsSnapshot } from "@/types";
@@ -36,23 +37,6 @@ function toRollingDelta(raw: number[]): number[] {
     const prev = raw[Math.max(0, lookback)];
     return Math.max(0, val - prev);
   });
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${(bytes / k ** i).toFixed(1)} ${sizes[i]}`;
-}
-
-function formatUptime(seconds: number): string {
-  const days = Math.floor(seconds / 86400);
-  const hours = Math.floor((seconds % 86400) / 3600);
-  const mins = Math.floor((seconds % 3600) / 60);
-  if (days > 0) return `${days}d ${hours}h ${mins}m`;
-  if (hours > 0) return `${hours}h ${mins}m`;
-  return `${mins}m`;
 }
 
 export function NginxManagement() {
