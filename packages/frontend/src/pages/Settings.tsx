@@ -41,7 +41,7 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
-import { formatDate, formatRelativeDate } from "@/lib/utils";
+import { formatBytes, formatDate, formatRelativeDate } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAIStore } from "@/stores/ai";
 import { useAuthStore } from "@/stores/auth";
@@ -1883,10 +1883,3 @@ function AIBypassRow({
   );
 }
 
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(1024));
-  const value = bytes / 1024 ** i;
-  return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[i]}`;
-}

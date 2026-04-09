@@ -2,6 +2,7 @@ import { and, desc, eq, lt } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import { dockerTasks } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
+import { buildWhere } from '@/lib/utils.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
 
@@ -33,7 +34,7 @@ export class DockerTaskService {
     return this.db
       .select()
       .from(dockerTasks)
-      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .where(buildWhere(conditions))
       .orderBy(desc(dockerTasks.createdAt));
   }
 

@@ -26,12 +26,7 @@ export function formatDate(ts: number | string): string {
   return d.toLocaleString();
 }
 
-export function formatBytes(bytes: number | undefined | null): string {
-  if (bytes == null || bytes === 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(1024));
-  return `${(bytes / 1024 ** i).toFixed(1)} ${units[i]}`;
-}
+export { formatBytes } from "@/lib/utils";
 
 export function copyToClipboard(text: string) {
   navigator.clipboard.writeText(text).then(

@@ -26,28 +26,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { formatBytes, formatCreated } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
 import type { DockerRegistry, Node } from "@/types";
-
-function formatSize(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${(bytes / k ** i).toFixed(1)} ${sizes[i]}`;
-}
-
-function formatCreated(ts: number): string {
-  const d = new Date(ts * 1000);
-  const diff = Date.now() - d.getTime();
-  if (diff < 60_000) return "Just now";
-  if (diff < 3600_000) return `${Math.floor(diff / 60_000)}m ago`;
-  if (diff < 86400_000) return `${Math.floor(diff / 3600_000)}h ago`;
-  if (diff < 604800_000) return `${Math.floor(diff / 86400_000)}d ago`;
-  return d.toLocaleDateString();
-}
 
 export function DockerImages({
   embedded,
@@ -210,7 +193,7 @@ export function DockerImages({
       const result = await api.pruneImages(selectedNodeId);
       const freed = (result as Record<string, unknown>).spaceReclaimed;
       toast.success(
-        freed ? `Pruned images, freed ${formatSize(Number(freed))}` : "Pruned unused images"
+        freed ? `Pruned images, freed ${formatBytes(Number(freed))}` : "Pruned unused images"
       );
       fetchImages();
     } catch (err) {
@@ -324,7 +307,7 @@ export function DockerImages({
         header: "Size",
         render: (img: any) => {
           const size = img.size ?? img.Size ?? 0;
-          return <span className="text-sm text-muted-foreground">{formatSize(size)}</span>;
+          return <span className="text-sm text-muted-foreground">{formatBytes(size)}</span>;
         },
       },
       {

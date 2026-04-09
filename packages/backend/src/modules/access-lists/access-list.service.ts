@@ -1,5 +1,5 @@
 import bcrypt from 'bcryptjs';
-import { and, count, desc, eq, ilike } from 'drizzle-orm';
+import { count, desc, eq, ilike } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import type { BasicAuthUser } from '@/db/schema/access-lists.js';
 import { certificates } from '@/db/schema/certificates.js';
@@ -7,7 +7,7 @@ import { accessLists } from '@/db/schema/index.js';
 import { proxyHosts } from '@/db/schema/proxy-hosts.js';
 import { sslCertificates } from '@/db/schema/ssl-certificates.js';
 import { createChildLogger } from '@/lib/logger.js';
-import { escapeLike } from '@/lib/utils.js';
+import { buildWhere, escapeLike } from '@/lib/utils.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { NginxTemplateService } from '@/modules/proxy/nginx-template.service.js';
@@ -278,7 +278,7 @@ export class AccessListService {
       conditions.push(ilike(accessLists.name, `%${escapeLike(query.search)}%`));
     }
 
-    const where = conditions.length > 0 ? and(...conditions) : undefined;
+    const where = buildWhere(conditions);
 
     const [entries, [{ count: totalCount }]] = await Promise.all([
       this.db.query.accessLists.findMany({

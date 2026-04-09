@@ -14,6 +14,7 @@ import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/ui/stat-card";
 import { api } from "@/services/api";
+import { formatBytes, formatUptime } from "@/lib/utils";
 import type { NodeHealthReport, NodeStatsReport } from "@/types";
 
 interface TrafficStats {
@@ -36,23 +37,6 @@ function toRollingDelta(values: number[]): number[] {
 }
 
 const MAX_HISTORY = 60;
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${(bytes / k ** i).toFixed(1)} ${sizes[i]}`;
-}
-
-function formatUptime(seconds: number): string {
-  const d = Math.floor(seconds / 86400);
-  const h = Math.floor((seconds % 86400) / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  if (d > 0) return `${d}d ${h}h`;
-  if (h > 0) return `${h}h ${m}m`;
-  return `${m}m`;
-}
 
 interface NodeMonitoringTabProps {
   nodeId: string;

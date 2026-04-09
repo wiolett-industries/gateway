@@ -1,6 +1,6 @@
 import { injectable, inject } from 'tsyringe';
 import { eq, and, or, ilike, desc, asc, count, lte, notInArray, sql } from 'drizzle-orm';
-import * as x509 from '@peculiar/x509';
+import { x509 } from '@/lib/x509.js';
 import crypto from 'node:crypto';
 import { TOKENS } from '@/container.js';
 import { certificates, certificateAuthorities, certificateTemplates } from '@/db/schema/index.js';
@@ -9,14 +9,12 @@ import { CAService } from './ca.service.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
 import { AppError } from '@/middleware/error-handler.js';
 import { createChildLogger } from '@/lib/logger.js';
-import { escapeLike } from '@/lib/utils.js';
+import { buildWhere, escapeLike } from '@/lib/utils.js';
 import type { DrizzleClient } from '@/db/client.js';
 import type { IssueCertificateInput, IssueCertFromCSRInput, CertificateListQuery } from './cert.schemas.js';
 import type { PaginatedResponse } from '@/types.js';
 
 const logger = createChildLogger('CertService');
-
-x509.cryptoProvider.set(crypto.webcrypto as any);
 
 // Map string key usage to @peculiar/x509 flags
 const KEY_USAGE_MAP: Record<string, number> = {
@@ -323,7 +321,7 @@ export class CertService {
       );
     }
 
-    const where = conditions.length > 0 ? and(...conditions) : undefined;
+    const where = buildWhere(conditions);
 
     const orderColumn = {
       commonName: certificates.commonName,

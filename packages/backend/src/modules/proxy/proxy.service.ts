@@ -5,7 +5,7 @@ import { certificates } from '@/db/schema/certificates.js';
 import { proxyHosts } from '@/db/schema/index.js';
 import { sslCertificates } from '@/db/schema/ssl-certificates.js';
 import { createChildLogger } from '@/lib/logger.js';
-import { escapeLike } from '@/lib/utils.js';
+import { buildWhere, escapeLike } from '@/lib/utils.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { CryptoService } from '@/services/crypto.service.js';
@@ -400,7 +400,7 @@ export class ProxyService {
       conditions.push(eq(proxyHosts.nodeId, query.nodeId));
     }
 
-    const where = conditions.length > 0 ? and(...conditions) : undefined;
+    const where = buildWhere(conditions);
 
     const [entries, [{ count: totalCount }]] = await Promise.all([
       this.db.query.proxyHosts.findMany({

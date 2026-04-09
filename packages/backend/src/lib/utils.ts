@@ -1,3 +1,4 @@
+import { and, type SQL } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 
 export function generateId(length = 21): string {
@@ -10,6 +11,12 @@ export function sleep(ms: number): Promise<void> {
 
 export function removeUndefined<T extends Record<string, unknown>>(obj: T): Partial<T> {
   return Object.fromEntries(Object.entries(obj).filter(([_, value]) => value !== undefined)) as Partial<T>;
+}
+
+/** Combine an array of optional SQL conditions into a single AND clause. */
+export function buildWhere(conditions: (SQL | undefined)[]): SQL | undefined {
+  const active = conditions.filter(Boolean) as SQL[];
+  return active.length > 0 ? and(...active) : undefined;
 }
 
 export function escapeLike(input: string): string {

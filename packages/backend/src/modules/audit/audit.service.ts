@@ -1,8 +1,9 @@
 import { injectable, inject } from 'tsyringe';
-import { desc, eq, and, gte, lte, count as countFn } from 'drizzle-orm';
+import { desc, eq, gte, lte, count as countFn } from 'drizzle-orm';
 import { TOKENS } from '@/container.js';
 import { auditLog, users } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
+import { buildWhere } from '@/lib/utils.js';
 import type { DrizzleClient } from '@/db/client.js';
 import type { PaginatedResponse } from '@/types.js';
 
@@ -54,7 +55,7 @@ export class AuditService {
     if (params.from) conditions.push(gte(auditLog.createdAt, params.from));
     if (params.to) conditions.push(lte(auditLog.createdAt, params.to));
 
-    const where = conditions.length > 0 ? and(...conditions) : undefined;
+    const where = buildWhere(conditions);
 
     const [entries, [{ count: totalCount }]] = await Promise.all([
       this.db

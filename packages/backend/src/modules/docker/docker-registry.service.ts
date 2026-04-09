@@ -1,7 +1,8 @@
-import { and, desc, eq, or } from 'drizzle-orm';
+import { desc, eq, or } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import { dockerRegistries } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
+import { buildWhere } from '@/lib/utils.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { CryptoService } from '@/services/crypto.service.js';
@@ -26,7 +27,7 @@ export class DockerRegistryService {
     const rows = await this.db
       .select()
       .from(dockerRegistries)
-      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .where(buildWhere(conditions))
       .orderBy(desc(dockerRegistries.createdAt));
 
     // Strip encrypted passwords from list responses

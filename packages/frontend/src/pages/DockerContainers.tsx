@@ -37,42 +37,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useRealtime } from "@/hooks/use-realtime";
+import { formatCreated } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
 import type { ContainerCreateConfig, DockerContainer, Node } from "@/types";
-
-const STATUS_BADGE: Record<
-  string,
-  "default" | "secondary" | "destructive" | "success" | "warning"
-> = {
-  running: "success",
-  exited: "secondary",
-  stopped: "secondary",
-  paused: "warning",
-  dead: "destructive",
-  restarting: "warning",
-  stopping: "warning",
-  recreating: "warning",
-  updating: "warning",
-  killing: "warning",
-  created: "secondary",
-};
-
-function formatCreated(ts: number): string {
-  const d = new Date(ts * 1000);
-  const diff = Date.now() - d.getTime();
-  if (diff < 60_000) return "Just now";
-  if (diff < 3600_000) return `${Math.floor(diff / 60_000)}m ago`;
-  if (diff < 86400_000) return `${Math.floor(diff / 3600_000)}h ago`;
-  if (diff < 604800_000) return `${Math.floor(diff / 86400_000)}d ago`;
-  return d.toLocaleDateString();
-}
-
-function containerDisplayName(name: string): string {
-  // Docker container names often start with "/"
-  return name.startsWith("/") ? name.slice(1) : name;
-}
+import { containerDisplayName, STATUS_BADGE } from "./docker-detail/helpers";
 
 export function DockerContainers({
   embedded,

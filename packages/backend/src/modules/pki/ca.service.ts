@@ -1,6 +1,6 @@
 import { injectable, inject } from 'tsyringe';
 import { eq, and, count, isNull } from 'drizzle-orm';
-import * as x509 from '@peculiar/x509';
+import { x509 } from '@/lib/x509.js';
 import crypto from 'node:crypto';
 import { TOKENS } from '@/container.js';
 import { certificateAuthorities, certificates } from '@/db/schema/index.js';
@@ -14,9 +14,6 @@ import type { EventBusService } from '@/services/event-bus.service.js';
 import type { CreateRootCAInput, CreateIntermediateCAInput } from './ca.schemas.js';
 
 const logger = createChildLogger('CAService');
-
-// Register @peculiar/x509 crypto engine
-x509.cryptoProvider.set(crypto.webcrypto as any);
 
 @injectable()
 export class CAService {

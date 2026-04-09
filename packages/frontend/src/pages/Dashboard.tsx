@@ -5,7 +5,7 @@ import { PageTransition } from "@/components/common/PageTransition";
 import { Badge } from "@/components/ui/badge";
 import { HealthBars } from "@/components/ui/health-bars";
 import { StatCard as MetricCard } from "@/components/ui/stat-card";
-import { cn, daysUntil, formatDate, formatRelativeDate, formatTimeLeft } from "@/lib/utils";
+import { cn, daysUntil, formatBytes, formatDate, formatRelativeDate, formatTimeLeft } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useCAStore } from "@/stores/ca";
@@ -638,14 +638,6 @@ export function Dashboard() {
       </div>
     </PageTransition>
   );
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${(bytes / k ** i).toFixed(1)} ${sizes[i]}`;
 }
 
 const WARN_THRESHOLD = 80;

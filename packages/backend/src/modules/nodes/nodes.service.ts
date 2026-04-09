@@ -1,9 +1,10 @@
 import { randomBytes } from 'node:crypto';
 import bcrypt from 'bcryptjs';
-import { and, count, eq, ilike, type SQL } from 'drizzle-orm';
+import { count, eq, ilike, type SQL } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import { certificates, nodes, proxyHosts } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
+import { buildWhere } from '@/lib/utils.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
@@ -40,7 +41,7 @@ export class NodesService {
       conditions.push(eq(nodes.status, query.status));
     }
 
-    const where = conditions.length > 0 ? and(...conditions) : undefined;
+    const where = buildWhere(conditions);
 
     const [totalResult] = await this.db.select({ count: count() }).from(nodes).where(where);
     const total = totalResult?.count ?? 0;

@@ -1,7 +1,6 @@
 import { injectable, inject } from 'tsyringe';
 import { eq, and } from 'drizzle-orm';
-import * as x509 from '@peculiar/x509';
-import crypto from 'node:crypto';
+import { x509 } from '@/lib/x509.js';
 import { TOKENS } from '@/container.js';
 import { certificates, certificateAuthorities } from '@/db/schema/index.js';
 import { CryptoService } from '@/services/crypto.service.js';
@@ -12,8 +11,6 @@ import { createChildLogger } from '@/lib/logger.js';
 import type { DrizzleClient } from '@/db/client.js';
 
 const logger = createChildLogger('CRLService');
-
-x509.cryptoProvider.set(crypto.webcrypto as any);
 
 const CRL_CACHE_PREFIX = 'crl:';
 
