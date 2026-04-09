@@ -239,8 +239,10 @@ function SidebarContent({
         ...group,
         items: group.items.filter((item) => {
           if (item.scope && !hasScope(item.scope)) return false;
-          // Hide Docker section when no docker nodes exist
+          // Hide Docker when no docker nodes exist
           if (item.href === "/docker" && !hasDockerNodes) return false;
+          // Templates: need at least one template scope
+          if (item.href === "/templates" && !hasScope("pki:templates:list") && !hasScope("docker:templates:list")) return false;
           return true;
         }),
       };
