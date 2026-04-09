@@ -343,7 +343,7 @@ export function LogsTab({
         loadingMore={loadingMore}
         className="flex-1 min-h-0 overflow-auto bg-[#0e0e0e] py-4"
         emptyState={
-          <div className="p-4 font-mono text-xs text-foreground/80 bg-[#0e0e0e] h-full">
+          <div className="px-4 font-mono text-xs text-foreground/80">
             {isConnecting ? (
               <span className="text-muted-foreground">Connecting to log stream...</span>
             ) : (
