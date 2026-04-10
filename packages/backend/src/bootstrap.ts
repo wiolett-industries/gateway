@@ -325,16 +325,23 @@ export async function initializeContainer(): Promise<void> {
   await templatesService.seedBuiltinTemplates();
   await nginxTemplateService.seedBuiltinTemplates();
 
-  // Sync built-in group scopes (ensures scope renames/additions propagate)
+  // Upsert built-in groups (creates on fresh install, syncs scopes on upgrade)
   {
     const { BUILTIN_GROUPS } = await import('@/lib/scopes.js');
     const { permissionGroups } = await import('@/db/schema/index.js');
-    const { eq } = await import('drizzle-orm');
     for (const bg of BUILTIN_GROUPS) {
       await db
-        .update(permissionGroups)
-        .set({ scopes: [...bg.scopes] })
-        .where(eq(permissionGroups.name, bg.name));
+        .insert(permissionGroups)
+        .values({
+          name: bg.name,
+          description: bg.description,
+          isBuiltin: true,
+          scopes: [...bg.scopes],
+        })
+        .onConflictDoUpdate({
+          target: permissionGroups.name,
+          set: { scopes: [...bg.scopes], description: bg.description },
+        });
     }
   }
 
