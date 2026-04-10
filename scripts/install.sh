@@ -4,7 +4,9 @@ IFS=$'\n\t'
 
 # ── Defaults ──────────────────────────────────────────────────────────
 DEFAULT_IMAGE="registry.gitlab.wiolett.net/wiolett/gateway"
-GITLAB_API="https://gitlab.wiolett.net/api/v4/projects/wiolett%2Fgateway"
+GITLAB_API_URL="${GITLAB_API_URL:-https://gitlab.wiolett.net}"
+GITLAB_PROJECT_PATH="${GITLAB_PROJECT_PATH:-wiolett/gateway}"
+GITLAB_API="${GITLAB_API_URL}/api/v4/projects/$(echo "$GITLAB_PROJECT_PATH" | sed 's|/|%2F|g')"
 VERSION=""
 LOG_FILE="/tmp/gateway_install.log"
 NO_LOGO=0
@@ -23,8 +25,27 @@ OPT_SSL_KEY="${GATEWAY_SSL_KEY:-}"
 OPT_SSL_CHAIN="${GATEWAY_SSL_CHAIN:-}"
 OPT_WITH_DOMAIN="${GATEWAY_WITH_DOMAIN:-}"
 
+# Resource profile: small, medium, large, custom (default: medium)
+OPT_RESOURCE_PROFILE="${GATEWAY_RESOURCE_PROFILE:-medium}"
+
+# Logging driver config
+OPT_LOG_ROTATION="${GATEWAY_LOG_ROTATION:-Y}"
+OPT_LOG_MAX_SIZE="${GATEWAY_LOG_MAX_SIZE:-50m}"
+OPT_LOG_MAX_FILE="${GATEWAY_LOG_MAX_FILE:-3}"
+
+# .env permissions
+OPT_RESTRICT_ENV="${GATEWAY_RESTRICT_ENV:-Y}"
+
+# Nginx version: system, stable, custom
+OPT_NGINX_VERSION="${GATEWAY_NGINX_VERSION:-system}"
+
 # Resolved during install
 SETUP_WITH_DOMAIN=0
+
+# Resource limits (set by profile)
+APP_MEM_LIMIT=""
+PG_MEM_LIMIT=""
+REDIS_MEM_LIMIT=""
 
 # ── Colors & Tags ─────────────────────────────────────────────────────
 CYAN='\033[0;36m'
@@ -137,6 +158,45 @@ check_health() {
     fi
 }
 
+# ── Backup helper ─────────────────────────────────────────────────────
+backup_if_exists() {
+    local file="$1"
+    if [ -f "$file" ]; then
+        local backup="${file}.backup.$(date +%Y%m%d_%H%M%S)"
+        cp "$file" "$backup"
+        info "Backed up ${file} -> ${backup}"
+    fi
+}
+
+# ── Resource profile helper ──────────────────────────────────────────
+apply_resource_profile() {
+    local profile="$1"
+    case "$profile" in
+        small)
+            APP_MEM_LIMIT="1g"
+            PG_MEM_LIMIT="512m"
+            REDIS_MEM_LIMIT="256m"
+            ;;
+        medium)
+            APP_MEM_LIMIT="2g"
+            PG_MEM_LIMIT="1g"
+            REDIS_MEM_LIMIT="512m"
+            ;;
+        large)
+            APP_MEM_LIMIT="4g"
+            PG_MEM_LIMIT="2g"
+            REDIS_MEM_LIMIT="1g"
+            ;;
+        custom)
+            # Caller must set APP_MEM_LIMIT, PG_MEM_LIMIT, REDIS_MEM_LIMIT
+            ;;
+        *)
+            warn "Unknown resource profile '${profile}', defaulting to medium."
+            apply_resource_profile "medium"
+            ;;
+    esac
+}
+
 # ── Prerequisites ─────────────────────────────────────────────────────
 check_prerequisites() {
     title "Prerequisites"
@@ -208,15 +268,19 @@ gather_config() {
         OIDC_CLIENT_SECRET="${OPT_OIDC_CLIENT_SECRET:-}"
         OIDC_REDIRECT_URI="${APP_URL}/auth/callback"
 
-        info "Mode: $([ "$SETUP_WITH_DOMAIN" -eq 1 ] && echo "domain + daemon" || echo "direct access")"
+        # Resource profile from env/flag
+        apply_resource_profile "$OPT_RESOURCE_PROFILE"
+
+        info "Mode: $([ "$SETUP_WITH_DOMAIN" -eq 1 ] && echo "domain + nginx" || echo "direct access")"
         [ "$SETUP_WITH_DOMAIN" -eq 1 ] && info "Domain: ${DOMAIN}"
         [ -n "$OIDC_ISSUER" ] && info "OIDC issuer: ${OIDC_ISSUER}" || warn "OIDC not configured. Set OIDC_* variables in .env before starting."
+        info "Resource profile: ${OPT_RESOURCE_PROFILE} (app=${APP_MEM_LIMIT}, pg=${PG_MEM_LIMIT}, redis=${REDIS_MEM_LIMIT})"
         return
     fi
 
     # Interactive: ask about domain setup
     echo -e "  ${CYAN}Deployment mode:${NC}"
-    echo -e "  ${GRAY}  1) Set up with domain — installs nginx + daemon on this host,${NC}"
+    echo -e "  ${GRAY}  1) Set up with domain — installs nginx on this host,${NC}"
     echo -e "  ${GRAY}     serves the management UI via HTTPS on your domain${NC}"
     echo -e "  ${GRAY}  2) Direct access — no domain, access the management UI${NC}"
     echo -e "  ${GRAY}     directly on port 3000 (you can add a domain later)${NC}"
@@ -272,6 +336,51 @@ gather_config() {
     fi
 
     OIDC_REDIRECT_URI="${APP_URL}/auth/callback"
+
+    echo ""
+
+    # Resource profile
+    echo -e "  ${CYAN}Resource profile:${NC}"
+    echo -e "  ${GRAY}  1) Small  — App: 1GB, Postgres: 512MB, Redis: 256MB${NC}"
+    echo -e "  ${GRAY}  2) Medium — App: 2GB, Postgres: 1GB,   Redis: 512MB  [default]${NC}"
+    echo -e "  ${GRAY}  3) Large  — App: 4GB, Postgres: 2GB,   Redis: 1GB${NC}"
+    echo -e "  ${GRAY}  4) Custom — Enter limits manually${NC}"
+    echo ""
+    local profile_choice
+    profile_choice=$(prompt_input "Choose" "2")
+
+    case "$profile_choice" in
+        1) apply_resource_profile "small" ;;
+        3) apply_resource_profile "large" ;;
+        4)
+            APP_MEM_LIMIT=$(prompt_input "App memory limit (e.g. 2g, 512m)" "2g")
+            PG_MEM_LIMIT=$(prompt_input "Postgres memory limit" "1g")
+            REDIS_MEM_LIMIT=$(prompt_input "Redis memory limit" "512m")
+            ;;
+        *) apply_resource_profile "medium" ;;
+    esac
+
+    info "Resources: app=${APP_MEM_LIMIT}, postgres=${PG_MEM_LIMIT}, redis=${REDIS_MEM_LIMIT}"
+
+    echo ""
+
+    # Log rotation
+    if prompt_yes_no "Configure log rotation?" "Y"; then
+        OPT_LOG_ROTATION="Y"
+        OPT_LOG_MAX_SIZE=$(prompt_input "Max log file size" "50m")
+        OPT_LOG_MAX_FILE=$(prompt_input "Max number of log files" "3")
+    else
+        OPT_LOG_ROTATION="N"
+    fi
+
+    echo ""
+
+    # .env permissions
+    if prompt_yes_no "Restrict .env permissions to owner-only?" "Y"; then
+        OPT_RESTRICT_ENV="Y"
+    else
+        OPT_RESTRICT_ENV="N"
+    fi
 }
 
 # ── Generate Secrets ──────────────────────────────────────────────────
@@ -291,6 +400,8 @@ generate_secrets() {
 
 # ── Write .env ────────────────────────────────────────────────────────
 write_env() {
+    backup_if_exists ".env"
+
     cat > .env << ENVEOF
 # Gateway Configuration
 # Generated $(date -u +"%Y-%m-%d %H:%M:%S UTC")
@@ -364,22 +475,52 @@ APP_VERSION=\${GATEWAY_VERSION}
 # PUBLIC_IPV6=
 ENVEOF
 
-    info ".env"
+    if [[ "$OPT_RESTRICT_ENV" =~ ^[yY]$ ]]; then
+        chmod 600 .env
+        info ".env (permissions: 600)"
+    else
+        info ".env"
+    fi
+}
+
+# ── Compose logging block helper ─────────────────────────────────────
+_compose_logging() {
+    if [[ "$OPT_LOG_ROTATION" =~ ^[yY]$ ]]; then
+        cat << LOGEOF
+    logging:
+      driver: json-file
+      options:
+        max-size: "${OPT_LOG_MAX_SIZE}"
+        max-file: "${OPT_LOG_MAX_FILE}"
+LOGEOF
+    fi
 }
 
 # ── Write docker-compose.yml ─────────────────────────────────────────
 write_compose() {
+    backup_if_exists "docker-compose.yml"
+
+    local logging_block=""
+    if [[ "$OPT_LOG_ROTATION" =~ ^[yY]$ ]]; then
+        logging_block="    logging:
+      driver: json-file
+      options:
+        max-size: \"${OPT_LOG_MAX_SIZE}\"
+        max-file: \"${OPT_LOG_MAX_FILE}\""
+    fi
+
     if [ "$SETUP_WITH_DOMAIN" -eq 1 ]; then
         # With domain: do NOT expose :3000 externally, expose gRPC
-        cat > docker-compose.yml << 'COMPOSEEOF'
+        cat > docker-compose.yml << COMPOSEEOF
 services:
   app:
-    image: ${GATEWAY_IMAGE}:${GATEWAY_VERSION}
+    image: \${GATEWAY_IMAGE}:\${GATEWAY_VERSION}
     restart: unless-stopped
     ports:
       - "127.0.0.1:3000:3000"
-      - "${BIND_HOST:-0.0.0.0}:9443:9443"
+      - "\${BIND_HOST:-0.0.0.0}:9443:9443"
     env_file: .env
+    mem_limit: ${APP_MEM_LIMIT}
     depends_on:
       postgres:
         condition: service_healthy
@@ -391,6 +532,7 @@ services:
       timeout: 5s
       retries: 10
       start_period: 30s
+${logging_block}
 
   postgres:
     image: postgres:16-alpine
@@ -398,14 +540,16 @@ services:
     environment:
       POSTGRES_DB: gateway
       POSTGRES_USER: gateway
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_PASSWORD: \${DB_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    mem_limit: ${PG_MEM_LIMIT}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U gateway -d gateway"]
       interval: 5s
       timeout: 5s
       retries: 5
+${logging_block}
 
   redis:
     image: redis:7-alpine
@@ -413,11 +557,13 @@ services:
     command: redis-server --appendonly yes
     volumes:
       - redis_data:/data
+    mem_limit: ${REDIS_MEM_LIMIT}
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 5s
       retries: 5
+${logging_block}
 
 volumes:
   postgres_data:
@@ -425,15 +571,16 @@ volumes:
 COMPOSEEOF
     else
         # Without domain: expose :3000 externally + gRPC
-        cat > docker-compose.yml << 'COMPOSEEOF'
+        cat > docker-compose.yml << COMPOSEEOF
 services:
   app:
-    image: ${GATEWAY_IMAGE}:${GATEWAY_VERSION}
+    image: \${GATEWAY_IMAGE}:\${GATEWAY_VERSION}
     restart: unless-stopped
     ports:
-      - "${BIND_HOST:-0.0.0.0}:3000:3000"
-      - "${BIND_HOST:-0.0.0.0}:9443:9443"
+      - "\${BIND_HOST:-0.0.0.0}:3000:3000"
+      - "\${BIND_HOST:-0.0.0.0}:9443:9443"
     env_file: .env
+    mem_limit: ${APP_MEM_LIMIT}
     depends_on:
       postgres:
         condition: service_healthy
@@ -445,6 +592,7 @@ services:
       timeout: 5s
       retries: 10
       start_period: 30s
+${logging_block}
 
   postgres:
     image: postgres:16-alpine
@@ -452,14 +600,16 @@ services:
     environment:
       POSTGRES_DB: gateway
       POSTGRES_USER: gateway
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_PASSWORD: \${DB_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    mem_limit: ${PG_MEM_LIMIT}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U gateway -d gateway"]
       interval: 5s
       timeout: 5s
       retries: 5
+${logging_block}
 
   redis:
     image: redis:7-alpine
@@ -467,11 +617,13 @@ services:
     command: redis-server --appendonly yes
     volumes:
       - redis_data:/data
+    mem_limit: ${REDIS_MEM_LIMIT}
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 5s
       retries: 5
+${logging_block}
 
 volumes:
   postgres_data:
@@ -517,31 +669,106 @@ start_services() {
     success "All services are healthy!"
 }
 
-# ── Install Nginx + Daemon on Host ───────────────────────────────────
-install_nginx_daemon() {
-    title "Installing Nginx & Daemon"
+# ── Add official nginx.org repository ────────────────────────────────
+add_nginx_stable_repo() {
+    if command -v apt-get &>/dev/null; then
+        # Debian/Ubuntu
+        run_quiet apt-get install -y curl gnupg2 ca-certificates lsb-release
+        local distro
+        distro=$(. /etc/os-release && echo "$ID")
+        local codename
+        codename=$(lsb_release -cs 2>/dev/null || . /etc/os-release && echo "${VERSION_CODENAME:-}")
+        curl -fsSL "https://nginx.org/keys/nginx_signing.key" | gpg --dearmor -o /usr/share/keyrings/nginx-archive-keyring.gpg 2>>"$LOG_FILE"
+        echo "deb [signed-by=/usr/share/keyrings/nginx-archive-keyring.gpg] http://nginx.org/packages/${distro} ${codename} nginx" \
+            > /etc/apt/sources.list.d/nginx.list
+        # Pin nginx.org packages higher
+        cat > /etc/apt/preferences.d/99nginx << 'PINEOF'
+Package: *
+Pin: origin nginx.org
+Pin-Priority: 900
+PINEOF
+        run_quiet apt-get update
+    elif command -v yum &>/dev/null || command -v dnf &>/dev/null; then
+        # RHEL/CentOS/Fedora
+        cat > /etc/yum.repos.d/nginx.repo << 'YUMEOF'
+[nginx-stable]
+name=nginx stable repo
+baseurl=http://nginx.org/packages/centos/$releasever/$basearch/
+gpgcheck=1
+enabled=1
+gpgkey=https://nginx.org/keys/nginx_signing.key
+module_hotfixes=true
+YUMEOF
+    else
+        warn "Could not add nginx.org repo for this distro. Falling back to system package."
+    fi
+}
 
-    # 1. Install nginx
+# ── Install Nginx on Host ────────────────────────────────────────────
+install_nginx() {
+    title "Installing Nginx"
+
+    local nginx_version_choice="system"
+
     if command -v nginx &>/dev/null; then
         info "Nginx already installed: $(nginx -v 2>&1 | grep -o 'nginx/[0-9.]*')"
     else
-        info "Installing nginx..."
-        if command -v apt-get &>/dev/null; then
-            run_quiet apt-get update
-            run_quiet apt-get install -y nginx
-        elif command -v yum &>/dev/null; then
-            run_quiet yum install -y nginx
-        elif command -v dnf &>/dev/null; then
-            run_quiet dnf install -y nginx
-        elif command -v apk &>/dev/null; then
-            run_quiet apk add nginx
+        if [[ "$NON_INTERACTIVE" -eq 1 ]]; then
+            nginx_version_choice="$OPT_NGINX_VERSION"
         else
-            error "Could not detect package manager. Install nginx manually and re-run."
+            echo -e "  ${CYAN}Nginx version:${NC}"
+            echo -e "  ${GRAY}  1) System default  [default]${NC}"
+            echo -e "  ${GRAY}  2) Stable (nginx.org repo)${NC}"
+            echo -e "  ${GRAY}  3) Custom version${NC}"
+            echo ""
+            local nv_choice
+            nv_choice=$(prompt_input "Choose" "1")
+            case "$nv_choice" in
+                2) nginx_version_choice="stable" ;;
+                3) nginx_version_choice="custom" ;;
+                *) nginx_version_choice="system" ;;
+            esac
         fi
+
+        if [ "$nginx_version_choice" = "stable" ]; then
+            info "Adding official nginx.org repository..."
+            add_nginx_stable_repo
+        fi
+
+        if [ "$nginx_version_choice" = "custom" ]; then
+            local custom_pkg
+            custom_pkg=$(prompt_input "Nginx package name or version (e.g. nginx=1.26.0-1~jammy)" "nginx")
+            info "Installing ${custom_pkg}..."
+            if command -v apt-get &>/dev/null; then
+                run_quiet apt-get update
+                run_quiet apt-get install -y "$custom_pkg"
+            elif command -v yum &>/dev/null; then
+                run_quiet yum install -y "$custom_pkg"
+            elif command -v dnf &>/dev/null; then
+                run_quiet dnf install -y "$custom_pkg"
+            else
+                error "Could not detect package manager. Install nginx manually and re-run."
+            fi
+        else
+            info "Installing nginx..."
+            if command -v apt-get &>/dev/null; then
+                run_quiet apt-get update
+                run_quiet apt-get install -y nginx
+            elif command -v yum &>/dev/null; then
+                run_quiet yum install -y nginx
+            elif command -v dnf &>/dev/null; then
+                run_quiet dnf install -y nginx
+            elif command -v apk &>/dev/null; then
+                run_quiet apk add nginx
+            else
+                error "Could not detect package manager. Install nginx manually and re-run."
+            fi
+        fi
+
         success "Nginx installed"
     fi
 
-    # 2. Write base nginx configs
+    # Write base nginx configs
     info "Writing nginx configuration..."
 
     mkdir -p /etc/nginx/conf.d/sites
@@ -632,79 +859,9 @@ DEFAULTEOF
     systemctl restart nginx >>"$LOG_FILE" 2>&1 || nginx -s reload >>"$LOG_FILE" 2>&1 || true
     success "Nginx configured and running"
 
-    # 3. Install nginx-daemon binary
-    info "Installing nginx-daemon..."
-
-    local daemon_url="${GATEWAY_IMAGE:-$DEFAULT_IMAGE}"
-    local daemon_bin="/usr/local/bin/nginx-daemon"
-
-    # TODO: Download daemon binary from release artifacts
-    # For now, check if it's already available or skip
-    if [ -f "$daemon_bin" ]; then
-        info "nginx-daemon binary found at ${daemon_bin}"
-    else
-        warn "nginx-daemon binary not found at ${daemon_bin}."
-        warn "Download it from the Gateway releases and place it at ${daemon_bin}."
-        warn "Then run: nginx-daemon install --gateway localhost:9443 --token <TOKEN>"
-        return
-    fi
-
-    chmod +x "$daemon_bin"
-
-    # 4. Generate enrollment token via API
-    info "Generating node enrollment token..."
-    local token_response
-    token_response=$(curl -s -X POST "http://localhost:3000/api/setup/enroll-node" \
-        -H "Authorization: Bearer ${SETUP_TOKEN}" \
-        -H "Content-Type: application/json" \
-        -d "{\"type\":\"nginx\",\"hostname\":\"$(hostname)\"}" \
-        --max-time 10 2>>"$LOG_FILE") || {
-        warn "Failed to generate enrollment token. You can enroll the daemon manually from the UI."
-        return
-    }
-
-    local enrollment_token
-    # Try jq first for robust parsing, fall back to grep
-    if command -v jq &>/dev/null; then
-        enrollment_token=$(echo "$token_response" | jq -r '.data.enrollmentToken // empty' 2>/dev/null)
-    else
-        enrollment_token=$(echo "$token_response" | grep -o '"enrollmentToken":"[^"]*"' | cut -d'"' -f4)
-    fi
-
-    if [ -z "$enrollment_token" ]; then
-        warn "Empty enrollment token. Check the API response."
-        return
-    fi
-
-    # 5. Configure and start daemon
-    info "Configuring nginx-daemon..."
-    "$daemon_bin" install --gateway "localhost:9443" --token "$enrollment_token" >>"$LOG_FILE" 2>&1
-
-    # 6. Create systemd service
-    cat > /etc/systemd/system/nginx-daemon.service << 'SYSTEMDEOF'
-[Unit]
-Description=Gateway Nginx Daemon
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-ExecStart=/usr/local/bin/nginx-daemon run
-Restart=always
-RestartSec=5
-Environment=NGINX_DAEMON_CONFIG=/etc/nginx-daemon/config.yaml
-
-[Install]
-WantedBy=multi-user.target
-SYSTEMDEOF
-
-    systemctl daemon-reload >>"$LOG_FILE" 2>&1
-    systemctl enable nginx-daemon >>"$LOG_FILE" 2>&1
-    systemctl start nginx-daemon >>"$LOG_FILE" 2>&1 || {
-        warn "Failed to start nginx-daemon service. Check: journalctl -u nginx-daemon"
-    }
-
-    success "nginx-daemon installed and started"
+    echo ""
+    info "The nginx daemon should be installed separately using setup-daemon.sh."
+    info "Run: bash setup-daemon.sh --gateway localhost:9443 --token <TOKEN>"
 }
 
 # ── Bootstrap Management SSL ──────────────────────────────────────────
@@ -852,9 +1009,8 @@ show_summary() {
 
     if [ "$SETUP_WITH_DOMAIN" -eq 1 ]; then
         echo ""
-        echo -e "  ${GRAY}Daemon commands:${NC}"
-        echo -e "  ${GRAY}  systemctl status nginx-daemon    Daemon status${NC}"
-        echo -e "  ${GRAY}  journalctl -u nginx-daemon -f    Daemon logs${NC}"
+        echo -e "  ${GRAY}Nginx daemon (install separately):${NC}"
+        echo -e "  ${GRAY}  bash setup-daemon.sh             Install the nginx daemon${NC}"
         echo -e "  ${GRAY}  systemctl status nginx            Nginx status${NC}"
     fi
 
@@ -878,6 +1034,16 @@ main() {
                 ;;
             --image)
                 GATEWAY_IMAGE="$2"
+                shift 2
+                ;;
+            --gitlab-url)
+                GITLAB_API_URL="$2"
+                GITLAB_API="${GITLAB_API_URL}/api/v4/projects/$(echo "$GITLAB_PROJECT_PATH" | sed 's|/|%2F|g')"
+                shift 2
+                ;;
+            --gitlab-project)
+                GITLAB_PROJECT_PATH="$2"
+                GITLAB_API="${GITLAB_API_URL}/api/v4/projects/$(echo "$GITLAB_PROJECT_PATH" | sed 's|/|%2F|g')"
                 shift 2
                 ;;
             --domain)
@@ -916,6 +1082,30 @@ main() {
                 OPT_SSL_CHAIN="$2"
                 shift 2
                 ;;
+            --resource-profile)
+                OPT_RESOURCE_PROFILE="$2"
+                shift 2
+                ;;
+            --log-max-size)
+                OPT_LOG_MAX_SIZE="$2"
+                shift 2
+                ;;
+            --log-max-file)
+                OPT_LOG_MAX_FILE="$2"
+                shift 2
+                ;;
+            --no-log-rotation)
+                OPT_LOG_ROTATION="N"
+                shift
+                ;;
+            --no-restrict-env)
+                OPT_RESTRICT_ENV="N"
+                shift
+                ;;
+            --nginx-version)
+                OPT_NGINX_VERSION="$2"
+                shift 2
+                ;;
             --skip-start)
                 OPT_SKIP_START=1
                 shift
@@ -935,12 +1125,14 @@ main() {
                 echo "Options:"
                 echo "  --version, -v <tag>     Image version to install (default: auto-detect latest)"
                 echo "  --image <image>         Custom image reference"
+                echo "  --gitlab-url <url>      GitLab instance URL (default: https://gitlab.wiolett.net)"
+                echo "  --gitlab-project <path> GitLab project path (default: wiolett/gateway)"
                 echo "  --no-logo               Suppress the logo banner"
                 echo "  -h, --help              Show this help"
                 echo ""
                 echo "Non-interactive mode:"
                 echo "  -y, --non-interactive   Skip all prompts, use flags/env vars for config"
-                echo "  --domain <domain>       Management domain — enables domain+daemon mode"
+                echo "  --domain <domain>       Management domain — enables domain+nginx mode"
                 echo "                          (omit for direct access on :3000)"
                 echo "  --acme-email <email>    Let's Encrypt email (default: admin@example.com)"
                 echo "  --oidc-issuer <url>     OIDC issuer URL"
@@ -950,7 +1142,23 @@ main() {
                 echo "  --ssl-cert <path>       Custom SSL certificate PEM file (BYO cert)"
                 echo "  --ssl-key <path>        Custom SSL private key PEM file"
                 echo "  --ssl-chain <path>      Custom SSL chain PEM file (optional)"
+                echo "  --resource-profile <p>  Resource profile: small, medium, large, custom"
+                echo "  --log-max-size <size>   Max log file size (default: 50m)"
+                echo "  --log-max-file <n>      Max number of log files (default: 3)"
+                echo "  --no-log-rotation       Disable Docker log rotation"
+                echo "  --no-restrict-env       Don't restrict .env to owner-only permissions"
+                echo "  --nginx-version <v>     Nginx version: system, stable, custom"
                 echo "  --skip-start            Generate files only, don't start services"
+                echo ""
+                echo "Environment variables:"
+                echo "  GITLAB_API_URL          GitLab instance URL"
+                echo "  GITLAB_PROJECT_PATH     GitLab project path"
+                echo "  GATEWAY_RESOURCE_PROFILE  Resource profile (small/medium/large/custom)"
+                echo "  GATEWAY_LOG_ROTATION    Enable log rotation (Y/N, default: Y)"
+                echo "  GATEWAY_LOG_MAX_SIZE    Max log size (default: 50m)"
+                echo "  GATEWAY_LOG_MAX_FILE    Max log files (default: 3)"
+                echo "  GATEWAY_RESTRICT_ENV    Restrict .env permissions (Y/N, default: Y)"
+                echo "  GATEWAY_NGINX_VERSION   Nginx version (system/stable/custom)"
                 echo ""
                 echo "Examples:"
                 echo "  # With domain + Let's Encrypt:"
@@ -964,6 +1172,10 @@ main() {
                 echo "  # Direct access (no domain):"
                 echo "  bash install.sh -y \\"
                 echo "    --oidc-issuer https://id.example.com --oidc-client-secret s3cret"
+                echo ""
+                echo "  # Custom GitLab + resource profile:"
+                echo "  bash install.sh -y --gitlab-url https://git.example.com \\"
+                echo "    --gitlab-project myorg/gateway --resource-profile large"
                 exit 0
                 ;;
             *)
@@ -989,6 +1201,10 @@ main() {
             info "Non-interactive mode: overwriting existing .env."
         elif ! prompt_yes_no "Overwrite configuration?" "N"; then
             info "Keeping existing .env. Updating compose file only."
+            # Still need resource profile for compose
+            if [ -z "$APP_MEM_LIMIT" ]; then
+                apply_resource_profile "medium"
+            fi
             title "Writing Files"
             write_compose
             if [[ "$OPT_SKIP_START" -eq 0 ]]; then
@@ -1029,7 +1245,7 @@ main() {
         start_services
 
         if [ "$SETUP_WITH_DOMAIN" -eq 1 ]; then
-            install_nginx_daemon
+            install_nginx
             bootstrap_ssl "$DOMAIN"
         fi
     else

@@ -32,6 +32,11 @@ build:
     - docker push $IMAGE:${CI_COMMIT_TAG#v}
     - docker push $IMAGE:latest
     - echo "Pushed $IMAGE:$CI_COMMIT_TAG, $IMAGE:${CI_COMMIT_TAG#v}, $IMAGE:latest"
+    # Upload install script as release asset
+    - |
+      curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+        --upload-file "scripts/install.sh" \
+        "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/gateway/${CI_COMMIT_TAG}/install.sh"
   rules:
     - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
 
@@ -84,6 +89,14 @@ release:
       curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
         --upload-file checksums.txt \
         "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/${DAEMON_NAME}/${CI_COMMIT_TAG}/checksums.txt"
+    # Upload setup scripts as release assets
+    - |
+      curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+        --upload-file "scripts/setup-daemon.sh" \
+        "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/${DAEMON_NAME}/${CI_COMMIT_TAG}/setup-daemon.sh"
+      curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+        --upload-file "scripts/${SETUP_SCRIPT}" \
+        "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/${DAEMON_NAME}/${CI_COMMIT_TAG}/${SETUP_SCRIPT}"
   artifacts:
     paths:
       - checksums.txt
@@ -122,6 +135,7 @@ build-nginx-daemon:
     DAEMON_NAME: nginx-daemon
     DAEMON_SUFFIX: nginx
     LDFLAGS_VERSION_PKG: github.com/wiolett/gateway/nginx-daemon/internal/daemon
+    SETUP_SCRIPT: setup-node.sh
   rules:
     - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+-nginx$/
 
@@ -144,6 +158,7 @@ build-docker-daemon:
     DAEMON_NAME: docker-daemon
     DAEMON_SUFFIX: docker
     LDFLAGS_VERSION_PKG: main
+    SETUP_SCRIPT: setup-docker-node.sh
   rules:
     - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+-docker$/
 
@@ -166,6 +181,7 @@ build-monitoring-daemon:
     DAEMON_NAME: monitoring-daemon
     DAEMON_SUFFIX: monitoring
     LDFLAGS_VERSION_PKG: main
+    SETUP_SCRIPT: setup-monitoring-node.sh
   rules:
     - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+-monitoring$/
 
