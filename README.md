@@ -39,6 +39,14 @@ Gateway combines a full PKI (Certificate Authority) infrastructure with a revers
 - Access lists (IP rules, basic auth)
 - Real-time Nginx logs and stats monitoring
 
+**Docker Container Management**
+- Manage Docker containers across multiple hosts from the Gateway UI
+- Deploy, start, stop, restart, recreate, and remove containers
+- Edit environment variables, ports, mounts, labels, and restart policy
+- Container log streaming with search and follow
+- Webhook URLs for CI/CD — trigger container image pull and recreate from pipelines
+- Auto-cleanup of old images with configurable retention
+
 **PKI / Certificate Authority**
 - Create root and intermediate CAs (RSA-2048/4096, ECDSA P-256/P-384)
 - Issue TLS server, TLS client, code-signing, and email certificates
@@ -58,16 +66,19 @@ Gateway combines a full PKI (Certificate Authority) infrastructure with a revers
 - Domain usage tracking across proxy hosts and SSL certificates
 
 **Node Management**
-- Register and manage multiple proxy nodes from a central dashboard
-- Go daemon runs on each host alongside native nginx
-- gRPC communication with mTLS authentication (certs from internal CA)
+- Three daemon types: **nginx** (reverse proxy), **docker** (container management), **monitoring** (system metrics)
+- Register and manage nodes from a central dashboard
+- Go daemons on each host, communicating over gRPC with mTLS
 - Enrollment via pre-shared token with trust-on-first-use
 - Automatic reconnection with exponential backoff
+- Daemon self-update from the Gateway UI (SHA256-verified binary download, atomic replace, auto-restart)
+- Version compatibility checks — incompatible nodes flagged in the UI
 - Nodes keep serving traffic when Gateway is offline
 - Per-node health monitoring, stats, and log streaming
+- Real-time WebSocket event stream for live UI updates
 
 **AI Assistant** *(optional, disabled by default)*
-- Natural language interface for all system operations — manage CAs, issue certificates, configure proxy hosts, and more through conversation
+- Natural language interface for all system operations — manage CAs, issue certificates, configure proxy hosts, Docker containers, and more through conversation
 - Works with any OpenAI-compatible provider (OpenAI, Anthropic, local models, etc.)
 - 30+ tools with destructive action approval flow and per-tool access control
 - Asks clarifying questions with structured options before acting
@@ -82,7 +93,7 @@ Gateway combines a full PKI (Certificate Authority) infrastructure with a revers
 - API tokens with per-scope and per-resource access control
 - Full audit log (AI-initiated actions flagged separately)
 - Expiry alerts and notifications
-- In-app updates with one-click self-update
+- In-app gateway self-update and per-daemon remote updates
 
 ## Quick Start
 
@@ -100,10 +111,17 @@ curl -sSLO https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/scripts/install
 bash install.sh
 ```
 
-The installer offers two deployment modes:
+The interactive installer guides you through:
 
-1. **With domain** — installs nginx + daemon on the host, serves the management UI via HTTPS on your domain. Recommended for production.
-2. **Direct access** — exposes the management UI on port 3000. Good for testing or when you'll add a domain later.
+1. **Deployment mode** — with domain (nginx + HTTPS) or direct access (port 3000)
+2. **OIDC configuration** — issuer, client ID, client secret
+3. **SSL setup** — Let's Encrypt (ACME) or custom certificate (when using a domain)
+4. **Resource limits** — small, medium (default), large, or custom memory/CPU profiles
+5. **Docker log rotation** — configurable max-size and max-file (default: 50m / 3 files)
+6. **Nginx version** — system default, official stable repo, or custom (when using a domain)
+7. **.env permissions** — restrict to owner-only (600) for security
+
+The installer backs up existing `.env` and `docker-compose.yml` before overwriting on re-runs.
 
 ### Non-interactive install
 
@@ -139,17 +157,25 @@ bash install.sh -y \
   --oidc-client-secret your-secret
 ```
 
-All flags have environment variable alternatives (`GATEWAY_DOMAIN`, `GATEWAY_OIDC_ISSUER`, etc.). Run `bash install.sh --help` for the full list.
+All flags have environment variable alternatives (`GATEWAY_DOMAIN`, `GATEWAY_OIDC_ISSUER`, etc.). Resource limits and logging can be set via `--resource-profile`, `--log-max-size`, `--log-max-file`. Run `bash install.sh --help` for the full list.
 
 ### Install a specific version
 
 ```bash
-bash install.sh --version v1.6.0
+bash install.sh --version v2.0.0
+```
+
+### Custom GitLab instance
+
+If you host your own fork, pass `--gitlab-url` and `--gitlab-project`:
+
+```bash
+bash install.sh --gitlab-url https://git.example.com --gitlab-project myorg/gateway
 ```
 
 ## Architecture
 
-Gateway runs as three Docker containers plus an optional Go daemon on each proxy node:
+Gateway runs as three Docker containers plus Go daemons on managed hosts:
 
 | Service | Image / Binary | Purpose |
 |---------|---------------|---------|
@@ -157,6 +183,8 @@ Gateway runs as three Docker containers plus an optional Go daemon on each proxy
 | **postgres** | `postgres:16-alpine` | Database |
 | **redis** | `redis:7-alpine` | Session cache, rate limiting |
 | **nginx-daemon** | Go binary on host | Manages host-native nginx via gRPC |
+| **docker-daemon** | Go binary on host | Manages Docker containers via gRPC |
+| **monitoring-daemon** | Go binary on host | Reports system metrics via gRPC |
 
 ```
                   ┌──────────────────────────┐
@@ -169,189 +197,166 @@ Gateway runs as three Docker containers plus an optional Go daemon on each proxy
               ┌─────────┼─────────┐
               ▼                   ▼
    ┌──────────────────┐  ┌──────────────────┐
-   │  Node A (host)   │  │  Node B (host)   │
-   │  nginx-daemon    │  │  nginx-daemon    │
-   │  nginx (native)  │  │  nginx (native)  │
-   │  :80 :443        │  │  :80 :443        │
+   │  Nginx Node      │  │  Docker Node     │
+   │  nginx-daemon    │  │  docker-daemon   │
+   │  nginx (native)  │  │  Docker engine   │
+   │  :80 :443        │  │                  │
    └──────────────────┘  └──────────────────┘
 ```
 
-The app generates nginx configs and pushes them to daemons over gRPC. Each daemon writes configs to disk, tests with `nginx -t`, and reloads. Daemons connect outbound to Gateway — no inbound ports needed on proxy nodes (except 80/443 for traffic).
+All daemons connect outbound to the Gateway over gRPC with mTLS — no inbound ports needed on nodes for management. Each daemon type is independently versioned and released.
 
-## Adding Proxy Nodes
+## Adding Nodes
 
-Each proxy node runs **nginx** (native) and the **nginx-daemon** (Go binary) that receives configuration from the Gateway over gRPC with mTLS.
+Gateway supports three daemon types, each running as a Go binary on the managed host:
+
+| Type | Daemon | Purpose |
+|------|--------|---------|
+| **nginx** | `nginx-daemon` | Reverse proxy — manages host-native nginx |
+| **docker** | `docker-daemon` | Container management — manages Docker containers |
+| **monitoring** | `monitoring-daemon` | System metrics — reports CPU, memory, disk, network |
 
 ### Quick setup (recommended)
 
-1. In the Gateway UI, go to **Admin > Nodes > Add Node** and copy the setup command
-2. On the target host, paste and run it:
+1. In the Gateway UI, go to **Nodes > Add Node**, select the daemon type, and click **Create Node**
+2. Copy the setup command shown in the dialog
+3. On the target host, paste and run it:
 
 ```bash
-curl -sSL https://gateway.example.com/api/node/setup-script | \
-  sudo bash -s -- --token <ENROLLMENT_TOKEN>
+curl -sSL https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/scripts/setup-daemon.sh | \
+  sudo bash -s -- --type nginx --gateway gateway.example.com:9443 --token <TOKEN>
 ```
 
-The script is served directly from your Gateway with the gRPC address pre-configured — no need to specify `--gateway` separately. It installs nginx, configures `stub_status` for monitoring, downloads the daemon binary, enrolls with the Gateway, and starts the systemd service. The node appears as **online** within seconds.
-
-You can also specify the gateway address explicitly (useful if the API is behind a different hostname):
+The universal `setup-daemon.sh` wrapper downloads the type-specific setup script and forwards all arguments. You can also use the type-specific scripts directly:
 
 ```bash
-curl -sSL https://gateway.example.com/api/node/setup-script | \
+# Nginx node
+curl -sSL https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/scripts/setup-node.sh | \
+  sudo bash -s -- --gateway gateway.example.com:9443 --token <TOKEN>
+
+# Docker node (requires Docker already installed)
+curl -sSL https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/scripts/setup-docker-node.sh | \
+  sudo bash -s -- --gateway gateway.example.com:9443 --token <TOKEN>
+
+# Monitoring node (no nginx or Docker required)
+curl -sSL https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/scripts/setup-monitoring-node.sh | \
   sudo bash -s -- --gateway gateway.example.com:9443 --token <TOKEN>
 ```
 
-Non-interactive (CI/automation):
+All setup scripts support:
+- `--version <tag>` to install a specific version (default: latest release)
+- `--user <username>` to run the daemon as a non-root user
+- `--gitlab-url` and `--gitlab-project` to use a custom GitLab instance
+- `-y` for non-interactive mode (CI/automation)
+- SHA256 checksum verification of downloaded binaries
+- Backup of existing binary on upgrade
 
-```bash
-sudo bash setup-node.sh -y --token <TOKEN> --version v0.1.0
-```
-
-Run `bash setup-node.sh --help` for all options and environment variable alternatives.
+Run any script with `--help` for the full list of options and environment variable alternatives.
 
 ### Manual setup
-
-If you prefer step-by-step control:
 
 <details>
 <summary>Expand manual setup instructions</summary>
 
 #### Step 1: Create the node in Gateway
 
-1. Go to **Admin > Nodes > Add Node**
-2. Select type **nginx**, optionally set a display name
+1. Go to **Nodes > Add Node**
+2. Select the daemon type (nginx, docker, or monitoring) and optionally set a display name
 3. Copy the **enrollment token** — it is shown only once
 
-#### Step 2: Prepare the host
+#### Step 2: Download the daemon
 
-On the target machine (Debian/Ubuntu shown — adapt for your distro):
-
-```bash
-# Install nginx
-apt-get update && apt-get install -y nginx
-
-# Enable stub_status for monitoring (required for stats collection)
-cat > /etc/nginx/conf.d/stub_status.conf << 'EOF'
-server {
-    listen 127.0.0.1:80;
-    server_name localhost;
-    location /nginx_status {
-        stub_status;
-        allow 127.0.0.1;
-        deny all;
-    }
-}
-EOF
-
-# Create directories the daemon expects
-mkdir -p /etc/nginx/conf.d/sites /etc/nginx/certs /etc/nginx/htpasswd /var/www/acme-challenge
-
-# Reload nginx to pick up stub_status
-nginx -t && systemctl reload nginx
-```
-
-#### Step 3: Install the daemon
-
-Download the `nginx-daemon` binary for your platform from the [releases page](https://gitlab.wiolett.net/wiolett/gateway/-/releases) and place it at `/usr/local/bin/nginx-daemon`.
+Download the binary for your platform from the [releases page](https://gitlab.wiolett.net/wiolett/gateway/-/releases). Daemon releases use suffixed tags (e.g. `v2.0.0-nginx`, `v2.0.0-docker`, `v2.0.0-monitoring`).
 
 ```bash
-# Example for linux/amd64
-curl -sSL https://gitlab.wiolett.net/wiolett/gateway/-/releases/latest/downloads/nginx-daemon-linux-amd64 \
+# Example: nginx-daemon for linux/amd64
+curl -fsSL "https://gitlab.wiolett.net/api/v4/projects/wiolett%2Fgateway/packages/generic/nginx-daemon/v2.0.0-nginx/nginx-daemon-linux-amd64" \
   -o /usr/local/bin/nginx-daemon
 chmod +x /usr/local/bin/nginx-daemon
 ```
 
-#### Step 4: Enroll the node
+#### Step 3: Enroll and start
 
 ```bash
-nginx-daemon install --gateway gateway.example.com:9443 --token <ENROLLMENT_TOKEN>
-```
-
-This writes the config to `/etc/nginx-daemon/config.yaml` (with the enrollment token) and creates a systemd service unit.
-
-#### Step 5: Start the daemon
-
-```bash
+nginx-daemon install --gateway gateway.example.com:9443 --token <TOKEN>
 systemctl enable --now nginx-daemon
 ```
 
+Replace `nginx-daemon` with `docker-daemon` or `monitoring-daemon` as appropriate.
+
 </details>
 
-On first start the daemon:
-1. Connects to the Gateway using the enrollment token (token validated server-side)
-2. Receives an mTLS client certificate issued by the Gateway's internal CA
-3. Clears the enrollment token from the config file (it is single-use)
-4. Reconnects using the mTLS cert and registers with the Gateway
-5. Receives a full config sync if any proxy hosts are assigned to it
+### Enrollment flow
 
-The node appears as **online** in the Gateway UI. You can now assign proxy hosts to it.
+On first start, each daemon:
+1. Connects to the Gateway using the enrollment token
+2. Receives an mTLS client certificate issued by the Gateway's internal CA
+3. Clears the enrollment token from its config (single-use)
+4. Reconnects using the mTLS cert and registers with the Gateway
+5. Receives a full config sync (nginx) or begins reporting (docker/monitoring)
+
+The node appears as **online** in the Gateway UI within seconds.
 
 ### Daemon configuration reference
 
-The config file is at `/etc/nginx-daemon/config.yaml` (or set `NGINX_DAEMON_CONFIG` env var):
+Each daemon stores its config at `/etc/<daemon-name>/config.yaml`. The nginx-daemon example:
 
 ```yaml
 gateway:
-  address: "gateway.example.com:9443"   # Gateway gRPC address
-  token: ""                              # Enrollment token (cleared after first use)
+  address: "gateway.example.com:9443"
+  token: ""  # Cleared after enrollment
 
 tls:
-  ca_cert: "/etc/nginx-daemon/certs/ca.pem"       # Gateway CA cert (written on enrollment)
-  client_cert: "/etc/nginx-daemon/certs/node.pem"  # mTLS client cert (written on enrollment)
+  ca_cert: "/etc/nginx-daemon/certs/ca.pem"
+  client_cert: "/etc/nginx-daemon/certs/node.pem"
   client_key: "/etc/nginx-daemon/certs/node-key.pem"
 
 nginx:
-  config_dir: "/etc/nginx/conf.d/sites"   # Where proxy host configs are written
-  certs_dir: "/etc/nginx/certs"            # Where SSL certificates are deployed
-  logs_dir: "/var/log/nginx"               # Nginx log directory (for log streaming)
-  global_config: "/etc/nginx/nginx.conf"   # Main nginx.conf (for remote config editing)
-  binary: "/usr/sbin/nginx"                # Path to nginx binary
-  stub_status_url: "http://127.0.0.1/nginx_status"  # For stats collection
-  htpasswd_dir: "/etc/nginx/htpasswd"      # For access list basic auth
-  acme_challenge_dir: "/var/www/acme-challenge"      # For ACME HTTP-01 challenges
+  config_dir: "/etc/nginx/conf.d/sites"
+  certs_dir: "/etc/nginx/certs"
+  logs_dir: "/var/log/nginx"
+  global_config: "/etc/nginx/nginx.conf"
+  binary: "/usr/sbin/nginx"
+  stub_status_url: "http://127.0.0.1/nginx_status"
+  htpasswd_dir: "/etc/nginx/htpasswd"
+  acme_challenge_dir: "/var/www/acme-challenge"
 
-state_dir: "/var/lib/nginx-daemon"   # Persistent state (node ID, cert expiry, config hash)
-log_level: "info"                     # debug, info, warn, error
-log_format: "json"                    # json or text
+state_dir: "/var/lib/nginx-daemon"
+log_level: "info"
+log_format: "json"
 ```
 
-### Daemon commands
+### Daemon updates
 
-```bash
-nginx-daemon run                       # Run the daemon (default)
-nginx-daemon install --gateway <addr> --token <token>  # Write config + systemd unit
-nginx-daemon version                   # Print version
-```
-
-### Verifying the node
-
-After the daemon starts, check the node detail page in the Gateway UI:
-
-- **Details tab** — hostname, daemon version, nginx version, health status bar
-- **Monitoring tab** — CPU, memory, disk, network I/O, nginx connections and traffic stats
-- **Configuration tab** — view and edit the node's `nginx.conf` remotely
-- **Daemon Logs tab** — real-time daemon operational logs
-- **Nginx Logs tab** — real-time access and error logs for all proxy hosts on this node
+Daemons can be updated remotely from the Gateway UI. Go to a node's detail page and click **Update** in the Runtime section — the Gateway downloads the new binary, verifies the SHA256 checksum, performs an atomic file replace, and restarts the daemon via systemd. Each daemon type is versioned independently.
 
 ### Firewall requirements
 
 | Direction | Port | Purpose |
 |-----------|------|---------|
 | Node → Gateway | 9443 (TCP) | gRPC control plane (outbound from node) |
-| Internet → Node | 80, 443 (TCP) | HTTP/HTTPS traffic to proxy hosts |
+| Internet → Nginx Node | 80, 443 (TCP) | HTTP/HTTPS traffic to proxy hosts |
 
-The daemon connects **outbound** to the Gateway — no inbound ports needed on the node for management.
+All daemons connect **outbound** to the Gateway — no inbound ports needed on nodes for management.
 
 ## Updating
+
+### Gateway
 
 From the UI: **Settings > Check for updates > Update** (admin only). The app pulls the new image and recreates its own container automatically.
 
 Manually:
 
 ```bash
-# Edit .env: GATEWAY_VERSION=v1.6.0
+# Edit .env: GATEWAY_VERSION=v2.0.0
 docker compose pull && docker compose up -d
 ```
+
+### Daemons
+
+From the UI: go to a node's detail page and click **Update** in the Runtime section when an update is available. The Gateway downloads the new binary, verifies its SHA256 checksum, atomically replaces the old binary, and restarts the systemd service. Updates are per-daemon-type — nginx, docker, and monitoring daemons are versioned and released independently.
+
+Available updates are also shown as a badge on the Nodes list page.
 
 ## Configuration
 
@@ -417,12 +422,18 @@ gateway/
 │   ├── backend/          # Node.js/Hono REST API + gRPC server
 │   ├── frontend/         # React + Vite SPA
 │   └── daemons/
-│       └── nginx/        # Go daemon for nginx management
+│       ├── nginx/        # Go daemon for nginx management
+│       ├── docker/       # Go daemon for Docker container management
+│       ├── monitoring/   # Go daemon for system metrics
+│       └── shared/       # Shared Go packages (lifecycle, selfupdate)
 ├── proto/
 │   └── gateway/v1/       # Protobuf service definitions
 ├── scripts/
-│   ├── install.sh        # Gateway server installer
-│   └── setup-node.sh     # Proxy node setup script
+│   ├── install.sh              # Gateway server installer
+│   ├── setup-daemon.sh         # Universal daemon setup wrapper
+│   ├── setup-node.sh           # Nginx daemon setup
+│   ├── setup-docker-node.sh    # Docker daemon setup
+│   └── setup-monitoring-node.sh # Monitoring daemon setup
 ├── nx.json               # Nx monorepo config
 └── docker-compose.yml    # Production deployment
 ```
@@ -440,6 +451,10 @@ gateway/
 - [x] Opt-in AI assistant with tool calling, approval flows, and any OpenAI-compatible provider
 - [x] Group-based permission system with granular scopes for users and API tokens
 - [x] Multi-node proxy management with Go daemon and gRPC
+- [x] Docker container management with deploy, webhooks, and auto-cleanup
+- [x] Monitoring daemon for system metrics collection
+- [x] Independent daemon versioning with remote self-update
+- [x] Real-time WebSocket event stream for live UI updates
 - [ ] Bastion/SSH server management daemon
 - [ ] Per-user quota management for AI assistant (token budgets, request limits)
 - [ ] Webhook notifications with built-in templates (Discord, Telegram, Slack, email, and custom HTTP)
