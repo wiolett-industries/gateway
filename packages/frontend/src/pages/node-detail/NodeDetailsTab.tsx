@@ -134,8 +134,20 @@ export function NodeDetailsTab({ node }: NodeDetailsTabProps) {
 
         {/* Runtime */}
         <div className="border border-border bg-card">
-          <div className="border-b border-border p-4">
+          <div className="flex items-center justify-between border-b border-border p-4">
             <h2 className="font-semibold">Runtime</h2>
+            {daemonUpdate.available && (
+              <Button
+                size="sm"
+                style={{ backgroundColor: "rgb(234 179 8)", color: "#111" }}
+                className="hover:opacity-90 disabled:opacity-50"
+                onClick={handleDaemonUpdate}
+                disabled={isUpdating}
+              >
+                <ArrowUpCircle className="h-3.5 w-3.5" />
+                Update to {daemonUpdate.latestVersion}
+              </Button>
+            )}
           </div>
           <div className="divide-y divide-border [&>*:last-child]:border-b [&>*:last-child]:border-border">
             <DetailRow
@@ -151,18 +163,6 @@ export function NodeDetailsTab({ node }: NodeDetailsTabProps) {
                   )}
                   {(caps.versionMismatch as boolean) && (
                     <Badge variant="warning" className="text-xs">Mismatch</Badge>
-                  )}
-                  {daemonUpdate.available && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-6 text-xs gap-1"
-                      onClick={handleDaemonUpdate}
-                      disabled={isUpdating}
-                    >
-                      <ArrowUpCircle className="h-3 w-3" />
-                      {daemonUpdate.latestVersion}
-                    </Button>
                   )}
                 </div>
               }
