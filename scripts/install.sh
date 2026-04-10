@@ -533,6 +533,9 @@ services:
       - "\${BIND_HOST:-0.0.0.0}:9443:9443"
     env_file: .env
     mem_limit: ${APP_MEM_LIMIT}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./docker-compose.yml:/app/docker-compose.yml:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -593,6 +596,9 @@ services:
       - "\${BIND_HOST:-0.0.0.0}:9443:9443"
     env_file: .env
     mem_limit: ${APP_MEM_LIMIT}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./docker-compose.yml:/app/docker-compose.yml:ro
     depends_on:
       postgres:
         condition: service_healthy
