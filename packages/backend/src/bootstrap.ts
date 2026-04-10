@@ -247,17 +247,13 @@ export async function initializeContainer(): Promise<void> {
   // Wire ACME HTTP-01 challenge callbacks to deploy/remove via daemon.
   // Looks up which node(s) serve the requested domains, falling back to default node.
   const resolveNodeIdsForDomains = async (domains: string[]): Promise<string[]> => {
-    const { sql } = await import('drizzle-orm');
+    const { sql, or } = await import('drizzle-orm');
     const { proxyHosts } = await import('@/db/schema/index.js');
+    const conditions = domains.map((d) => sql`${proxyHosts.domainNames} @> ${JSON.stringify([d])}::jsonb`);
     const rows = await db
       .selectDistinct({ nodeId: proxyHosts.nodeId })
       .from(proxyHosts)
-      .where(
-        sql`${proxyHosts.domainNames} && ARRAY[${sql.join(
-          domains.map((d) => sql`${d}`),
-          sql`, `
-        )}]::text[]`
-      );
+      .where(or(...conditions));
     const nodeIds = rows.map((r) => r.nodeId).filter(Boolean) as string[];
     if (nodeIds.length > 0) return [...new Set(nodeIds)];
     // Fallback to default node
