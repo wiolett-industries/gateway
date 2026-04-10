@@ -156,9 +156,6 @@ check_dependencies() {
     if ! command_exists curl; then
         die "curl is required but not found. Install it and retry."
     fi
-    if ! command_exists jq; then
-        die "jq is required but not found. Install it and retry."
-    fi
 }
 
 build_gitlab_api() {
@@ -530,7 +527,7 @@ resolve_download_url() {
     if [[ "$version" == "latest" ]]; then
         log "Resolving latest nginx release tag..."
         local latest_tag
-        latest_tag=$(curl -fsSL "${GITLAB_API}/releases" | jq -r '[.[] | select(.tag_name | test("-nginx$"))][0].tag_name')
+        latest_tag=$(curl -fsSL "${GITLAB_API}/releases" | grep -o '"tag_name":"v[0-9]*\.[0-9]*\.[0-9]*-nginx"' | head -1 | cut -d'"' -f4)
         if [[ -z "$latest_tag" || "$latest_tag" == "null" ]]; then
             die "Could not resolve latest nginx release tag from ${GITLAB_API}/releases"
         fi
