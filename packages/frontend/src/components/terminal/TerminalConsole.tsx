@@ -184,22 +184,22 @@ export function TerminalConsole({
       }, 100);
     };
 
+    let cleared = false;
+
     ws.onmessage = (evt) => {
       try {
         const msg = JSON.parse(evt.data);
         if (msg.type === "connected") {
+          terminal.clear();
+          cleared = true;
           if (msg.isNew) {
             const shellName = (msg.shell ?? "/bin/sh").split("/").pop();
             terminal.write(`Using ${shellName}...\r\n`);
-            gotFirstOutput.current = false;
-          } else {
-            terminal.clear();
-            gotFirstOutput.current = true;
           }
         } else if (msg.type === "output") {
-          if (!gotFirstOutput.current) {
-            gotFirstOutput.current = true;
+          if (!cleared) {
             terminal.clear();
+            cleared = true;
           }
           const bytes = Uint8Array.from(atob(msg.data), (c) => c.charCodeAt(0));
           terminal.write(bytes);

@@ -154,7 +154,7 @@ check_health() {
     elif command -v wget &>/dev/null; then
         wget -qO /dev/null "$url" 2>/dev/null
     else
-        docker compose exec -T app wget -qO- http://localhost:3000/health > /dev/null 2>&1
+        docker compose exec -T app wget -qO- http://127.0.0.1:3000/health > /dev/null 2>&1
     fi
 }
 
@@ -396,6 +396,17 @@ generate_secrets() {
     info "Session secret generated"
     info "Database password generated"
     info "Setup token generated"
+
+    # Build gRPC TLS SANs (domain + public IP so external daemons can connect)
+    GRPC_EXTRA_SANS=""
+    if [ -n "${DOMAIN:-}" ] && [ "$DOMAIN" != "localhost" ]; then
+        GRPC_EXTRA_SANS="$DOMAIN"
+    fi
+    local public_ip
+    public_ip=$(curl -sf --max-time 5 https://api.ipify.org 2>/dev/null || curl -sf --max-time 5 https://ifconfig.me 2>/dev/null || true)
+    if [ -n "$public_ip" ]; then
+        GRPC_EXTRA_SANS="${GRPC_EXTRA_SANS:+${GRPC_EXTRA_SANS},}${public_ip}"
+    fi
 }
 
 # ── Write .env ────────────────────────────────────────────────────────
@@ -461,6 +472,7 @@ EXPIRY_CHECK_CRON=0 6 * * *
 
 # gRPC (daemon communication)
 GRPC_PORT=9443
+GRPC_TLS_EXTRA_SANS=${GRPC_EXTRA_SANS}
 
 # Setup token (for bootstrap API — management SSL provisioning)
 SETUP_TOKEN=${SETUP_TOKEN}
@@ -527,7 +539,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -587,7 +599,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10
