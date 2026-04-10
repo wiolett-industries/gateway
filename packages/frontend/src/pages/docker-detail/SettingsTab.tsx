@@ -22,14 +22,12 @@ export function SettingsTab({
   nodeId,
   containerId,
   data,
-  onAction,
   onRecreating,
   transition,
 }: {
   nodeId: string;
   containerId: string;
   data: InspectData;
-  onAction: () => void;
   onRecreating?: () => void;
   transition?: string;
 }) {
@@ -234,7 +232,6 @@ export function SettingsTab({
     currentNanoCPUs,
     currentCpuShares,
     currentPidsLimit,
-    onAction,
   ]);
 
   // ── Recreate handler ──
@@ -333,7 +330,7 @@ export function SettingsTab({
     imageTag,
     imageTagChanged,
     parsedImageName,
-    onAction,
+    onRecreating,
   ]);
 
   // ── Track runtime changes against baseline ──
