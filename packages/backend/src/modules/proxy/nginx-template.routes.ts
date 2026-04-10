@@ -125,9 +125,9 @@ nginxTemplateRoutes.post('/test', requireScope('proxy:edit'), async (c) => {
   const rendered = service.previewWithSampleData(input.content);
 
   try {
-    const nodeId = await nodeDispatch.getDefaultNodeId();
+    const nodeId = await nodeDispatch.getFirstNginxNodeId();
     if (!nodeId) {
-      return c.json({ data: { rendered, valid: false, errors: ['No default nginx node configured'] } });
+      return c.json({ data: { rendered, valid: false, errors: ['No nginx node available'] } });
     }
     // Send rendered config to daemon for test-only validation (writes temp, tests, removes)
     const testId = `test-${Date.now()}`;

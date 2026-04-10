@@ -1275,6 +1275,20 @@ main() {
 
         if [ "$SETUP_WITH_DOMAIN" -eq 1 ]; then
             install_nginx
+            # Wait for daemon to register with Gateway before requesting SSL
+            info "Waiting for daemon to connect..."
+            for i in $(seq 1 15); do
+                if curl -sf "http://localhost:3000/api/setup/enroll-node" -X OPTIONS >/dev/null 2>&1; then
+                    # Check if any nginx node is online
+                    local node_check
+                    node_check=$(curl -sf -H "Authorization: Bearer ${SETUP_TOKEN}" \
+                        "http://localhost:3000/api/nodes?type=nginx&status=online&limit=1" 2>/dev/null) || true
+                    if echo "$node_check" | grep -q '"status":"online"'; then
+                        break
+                    fi
+                fi
+                sleep 2
+            done
             bootstrap_ssl "$DOMAIN"
         fi
     else

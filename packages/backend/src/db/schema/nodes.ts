@@ -105,9 +105,6 @@ export const nodes = pgTable(
     // Extensible metadata
     metadata: jsonb('metadata').$type<Record<string, unknown>>().default({}),
 
-    // Default node for new proxy hosts
-    isDefault: boolean('is_default').notNull().default(false),
-
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

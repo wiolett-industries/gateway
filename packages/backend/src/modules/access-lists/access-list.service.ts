@@ -328,11 +328,6 @@ export class AccessListService {
       .where(eq(proxyHosts.accessListId, accessListId));
 
     const nodeIds = [...new Set(hostsUsingList.map((h) => h.nodeId).filter(Boolean))] as string[];
-    if (nodeIds.length === 0) {
-      // Deploy to default node
-      const defaultId = await this.nodeDispatch.getDefaultNodeId();
-      if (defaultId) nodeIds.push(defaultId);
-    }
 
     for (const nodeId of nodeIds) {
       await this.nodeDispatch.deployHtpasswd(nodeId, accessListId, content);
@@ -347,10 +342,6 @@ export class AccessListService {
       .where(eq(proxyHosts.accessListId, accessListId));
 
     const nodeIds = [...new Set(hostsUsingList.map((h) => h.nodeId).filter(Boolean))] as string[];
-    if (nodeIds.length === 0) {
-      const defaultId = await this.nodeDispatch.getDefaultNodeId();
-      if (defaultId) nodeIds.push(defaultId);
-    }
 
     for (const nodeId of nodeIds) {
       try {

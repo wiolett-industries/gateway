@@ -202,8 +202,8 @@ export class NginxStatsService {
       };
     }
     try {
-      const nodeId = await this.nodeDispatch.getDefaultNodeId();
-      if (!nodeId) {
+      const node = this.nodeRegistry.getNodesByType('nginx')[0];
+      if (!node) {
         return {
           statusCodes: { s2xx: 0, s3xx: 0, s4xx: 0, s5xx: 0 },
           avgResponseTime: 0,
@@ -211,6 +211,7 @@ export class NginxStatsService {
           totalRequests: 0,
         };
       }
+      const nodeId = node.nodeId;
       const result = await this.nodeDispatch.requestTrafficStats(nodeId, 200);
       if (result.success && result.detail) {
         return JSON.parse(result.detail);
