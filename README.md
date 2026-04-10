@@ -1,10 +1,10 @@
 # Gateway
 
-Self-hosted certificate manager and reverse proxy gateway.
+Self-hosted certificate manager, reverse proxy, and Docker container management platform.
 
 > **Note:** The primary source of this project is [Wiolett GitLab](https://gitlab.wiolett.net/wiolett/gateway). The [GitHub repository](https://github.com/wiolett-industries/gateway) is a mirror for public visibility. Issues, feature requests, and pull requests are welcome on [GitHub](https://github.com/wiolett-industries/gateway/issues).
 
-Gateway combines a full PKI (Certificate Authority) infrastructure with a reverse proxy manager — think Nginx Proxy Manager with a built-in CA. Issue and manage TLS certificates, configure proxy hosts, handle SSL termination, and monitor everything from a single interface.
+Gateway combines a full PKI (Certificate Authority) infrastructure with a reverse proxy manager and Docker container management platform. Issue and manage TLS certificates, configure proxy hosts, handle SSL termination, deploy and manage Docker containers across multiple hosts, collect system metrics, and monitor everything from a single interface.
 
 ## Screenshots
 
@@ -163,12 +163,12 @@ Gateway runs as three Docker containers plus Go daemons on managed hosts:
                         │ gRPC (mTLS)
               ┌─────────┼─────────┐
               ▼                   ▼
-   ┌──────────────────┐  ┌──────────────────┐
-   │  Nginx Node      │  │  Docker Node     │
-   │  nginx-daemon    │  │  docker-daemon   │
-   │  nginx (native)  │  │  Docker engine   │
-   │  :80 :443        │  │                  │
-   └──────────────────┘  └──────────────────┘
+   ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐
+   │  Nginx Node      │  │  Docker Node     │  │  Monitoring Node │
+   │  nginx-daemon    │  │  docker-daemon   │  │  monitoring-     │
+   │  nginx (native)  │  │  Docker engine   │  │    daemon        │
+   │  :80 :443        │  │                  │  │                  │
+   └──────────────────┘  └──────────────────┘  └──────────────────┘
 ```
 
 All daemons connect outbound to the Gateway over gRPC with mTLS — no inbound ports needed on nodes for management. Each daemon type is independently versioned and released.
@@ -351,7 +351,7 @@ The installer generates a `.env` file with all settings. Key configuration optio
 
 - Node.js >= 24
 - pnpm >= 9
-- Go >= 1.24 (for nginx-daemon)
+- Go >= 1.24 (for daemons — nginx, docker, monitoring)
 - Docker (for Postgres, Redis)
 - protoc (for proto codegen)
 
@@ -371,7 +371,7 @@ pnpm dev:all          # Start backend + frontend dev servers
 | `pnpm dev:all` | Start backend and frontend in parallel |
 | `pnpm build` | Build backend and frontend |
 | `pnpm build:all` | Build all projects (backend, frontend, daemon) |
-| `pnpm build:daemon` | Build the Go nginx-daemon binary |
+| `pnpm build:daemon` | Build all Go daemon binaries |
 | `pnpm test` | Run all tests |
 | `pnpm lint` | Lint all packages (biome) |
 | `pnpm typecheck` | TypeScript type check |

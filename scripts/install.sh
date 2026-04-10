@@ -222,7 +222,7 @@ check_prerequisites() {
 
 # ── Intro ─────────────────────────────────────────────────────────────
 show_intro() {
-    echo -e "  ${CYAN}Gateway${NC} — Certificate & Proxy Manager"
+    echo -e "  ${CYAN}Gateway${NC} — Certificate, Proxy & Container Manager"
     echo ""
     echo -e "  ${GRAY}This installer will set up Gateway in the current directory:${NC}"
     echo -e "  ${GRAY}  1. Verify prerequisites (Docker, Docker Compose, OpenSSL)${NC}"
