@@ -113,14 +113,13 @@ The interactive installer guides you through deployment mode, OIDC, SSL, resourc
 
 ### Install a Node
 
-After creating a node in the Gateway UI (**Nodes > Add Node**), run the setup command on the target host:
+After creating a node in the Gateway UI (**Nodes > Add Node**), run on the target host:
 
 ```bash
-curl -sSL https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/scripts/setup-daemon.sh | \
-  sudo bash -s -- --type nginx --gateway gw.example.com:9443 --token <TOKEN>
+curl -sSL https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/scripts/setup-daemon.sh | sudo bash
 ```
 
-Replace `--type nginx` with `docker` or `monitoring` as needed. See [Adding Nodes](#adding-nodes) for details.
+The script prompts for daemon type, gateway address, and enrollment token. See [Adding Nodes](#adding-nodes) for non-interactive usage and details.
 
 ### Non-interactive install
 
