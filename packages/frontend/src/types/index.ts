@@ -117,7 +117,6 @@ export interface Node {
   lastStatsReport: NodeStatsReport | null;
   healthHistory: Array<{ hour: string; healthy: boolean }>;
   metadata: Record<string, unknown>;
-  isDefault: boolean;
   isConnected: boolean;
   createdAt: string;
   updatedAt: string;

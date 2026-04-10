@@ -249,7 +249,6 @@ CREATE TABLE "nodes" (
 	"last_stats_report" jsonb,
 	"health_history" jsonb DEFAULT '[]'::jsonb,
 	"metadata" jsonb DEFAULT '{}'::jsonb,
-	"is_default" boolean DEFAULT false NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );

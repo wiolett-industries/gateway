@@ -787,10 +787,6 @@ export class SSLService {
       .selectDistinct({ nodeId: proxyHosts.nodeId })
       .from(proxyHosts)
       .where(eq(proxyHosts.sslCertificateId, certId));
-    const nodeIds = rows.map((r) => r.nodeId).filter(Boolean) as string[];
-    if (nodeIds.length > 0) return [...new Set(nodeIds)];
-    // Fallback to default node for pre-deployment
-    const defaultId = await this.nodeDispatch.getDefaultNodeId();
-    return defaultId ? [defaultId] : [];
+    return [...new Set(rows.map((r) => r.nodeId).filter(Boolean) as string[])];
   }
 }

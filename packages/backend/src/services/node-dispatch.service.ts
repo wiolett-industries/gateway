@@ -322,13 +322,14 @@ export class NodeDispatchService {
   }
 
   /** Get the default nginx node ID, or null if none configured */
-  async getDefaultNodeId(): Promise<string | null> {
-    const [defaultNode] = await this.db
+  /** Get the first online nginx node ID, or null if none available */
+  async getFirstNginxNodeId(): Promise<string | null> {
+    const [node] = await this.db
       .select({ id: nodes.id })
       .from(nodes)
-      .where(and(eq(nodes.type, 'nginx'), eq(nodes.isDefault, true)))
+      .where(and(eq(nodes.type, 'nginx'), eq(nodes.status, 'online')))
       .limit(1);
-    return defaultNode?.id ?? null;
+    return node?.id ?? null;
   }
 
   /** Resolve the node ID for a proxy host, falling back to default node */
@@ -345,11 +346,6 @@ export class NodeDispatchService {
 
   async resolveNodeId(proxyHostNodeId: string | null): Promise<string> {
     if (proxyHostNodeId) return proxyHostNodeId;
-
-    const defaultId = await this.getDefaultNodeId();
-    if (!defaultId) {
-      throw new Error('No node assigned and no default node configured');
-    }
-    return defaultId;
+    throw new Error('No node assigned to this proxy host');
   }
 }

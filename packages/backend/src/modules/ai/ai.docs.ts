@@ -390,7 +390,7 @@ Daemons report hardware/OS info on registration:
 - id, hostname, displayName, type, status (pending/online/offline/error)
 - lastSeenAt, capabilities (daemon version, features, system info)
 - certificateSerial (mTLS cert), enrollmentTokenHash
-- isDefault (nginx only — default proxy node)`,
+- metadata (extensible metadata object)`,
 
   housekeeping: `# Housekeeping
 

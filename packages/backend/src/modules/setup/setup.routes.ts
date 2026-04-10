@@ -82,7 +82,7 @@ setupRoutes.post('/enroll-node', async (c) => {
 
   try {
     const nodesService = container.resolve(NodesService);
-    const result = await nodesService.create({ type, hostname }, 'system');
+    const result = await nodesService.create({ type, hostname }, '00000000-0000-0000-0000-000000000000');
     return c.json({ data: result });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';

@@ -10,10 +10,14 @@ export class NginxConfigService {
 
   constructor(private readonly nodeDispatch: NodeDispatchService) {}
 
+  private async getFirstNginxNodeId(): Promise<string | null> {
+    return this.nodeDispatch.getFirstNginxNodeId();
+  }
+
   async getGlobalConfig(): Promise<string> {
-    const nodeId = await this.nodeDispatch.getDefaultNodeId();
+    const nodeId = await this.getFirstNginxNodeId();
     if (!nodeId) {
-      return '# No default nginx node configured\n';
+      return '# No nginx node available\n';
     }
     const result = await this.nodeDispatch.readGlobalConfig(nodeId);
     if (!result.success) {
@@ -35,9 +39,9 @@ export class NginxConfigService {
     try {
       logger.info('Updating global nginx.conf via daemon');
 
-      const nodeId = await this.nodeDispatch.getDefaultNodeId();
+      const nodeId = await this.getFirstNginxNodeId();
       if (!nodeId) {
-        return { valid: false, error: 'No default nginx node configured' };
+        return { valid: false, error: 'No nginx node available' };
       }
 
       const backup = ''; // Daemon handles rollback internally
@@ -55,9 +59,9 @@ export class NginxConfigService {
   }
 
   async testConfig(): Promise<{ valid: boolean; error?: string }> {
-    const nodeId = await this.nodeDispatch.getDefaultNodeId();
+    const nodeId = await this.getFirstNginxNodeId();
     if (!nodeId) {
-      return { valid: false, error: 'No default nginx node configured' };
+      return { valid: false, error: 'No nginx node available' };
     }
     const result = await this.nodeDispatch.testConfig(nodeId);
     return { valid: result.success, error: result.error || undefined };

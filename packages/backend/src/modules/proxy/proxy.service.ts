@@ -568,15 +568,9 @@ export class ProxyService {
   // -----------------------------------------------------------------------
 
   async resyncAllHostsOnNode(nodeId: string): Promise<void> {
-    // Include hosts explicitly assigned AND hosts with null nodeId if this is the default node
-    const isDefault = (await this.nodeDispatch.getDefaultNodeId()) === nodeId;
-    const nodeFilter = isDefault
-      ? or(eq(proxyHosts.nodeId, nodeId), isNull(proxyHosts.nodeId))
-      : eq(proxyHosts.nodeId, nodeId);
-
-    // Only resync enabled hosts — disabled hosts should not have active configs
+    // Only resync enabled hosts explicitly assigned to this node
     const hosts = await this.db.query.proxyHosts.findMany({
-      where: and(nodeFilter, eq(proxyHosts.enabled, true)),
+      where: and(eq(proxyHosts.nodeId, nodeId), eq(proxyHosts.enabled, true)),
     });
 
     if (hosts.length === 0) {

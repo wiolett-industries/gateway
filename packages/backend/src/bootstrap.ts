@@ -256,9 +256,12 @@ export async function initializeContainer(): Promise<void> {
       .where(or(...conditions));
     const nodeIds = rows.map((r) => r.nodeId).filter(Boolean) as string[];
     if (nodeIds.length > 0) return [...new Set(nodeIds)];
-    // Fallback to default node
-    const defaultId = await nodeDispatch.getDefaultNodeId();
-    return defaultId ? [defaultId] : [];
+    // Fallback: deploy to all online nginx nodes (handles initial setup before any proxy hosts exist)
+    const { nodes: nodesTable } = await import('@/db/schema/index.js');
+    const { and: andOp, eq: eqOp } = await import('drizzle-orm');
+    const allNginx = await db.select({ id: nodesTable.id }).from(nodesTable)
+      .where(andOp(eqOp(nodesTable.type, 'nginx'), eqOp(nodesTable.status, 'online')));
+    return allNginx.map((n) => n.id);
   };
 
   acmeService.onChallengeCreate = async (token: string, content: string, domains: string[]) => {
