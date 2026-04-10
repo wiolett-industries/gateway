@@ -1223,7 +1223,7 @@ main() {
     if [ -z "$VERSION" ]; then
         info "Fetching latest version..."
         VERSION=$(curl -sf "${GITLAB_API}/releases" 2>/dev/null \
-            | grep -o '"tag_name":"[^"]*"' | head -1 | cut -d'"' -f4) || true
+            | grep -o '"tag_name":"v[0-9]*\.[0-9]*\.[0-9]*"' | head -1 | cut -d'"' -f4) || true
         if [ -z "$VERSION" ]; then
             warn "Could not fetch latest version, falling back to 'latest' tag"
             VERSION="latest"
