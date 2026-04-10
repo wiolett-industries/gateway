@@ -103,74 +103,42 @@ Gateway combines a full PKI (Certificate Authority) infrastructure with a revers
 - OpenSSL
 - An OIDC provider (Keycloak, Authentik, Auth0, etc.)
 
-### Install
+### Install Gateway
 
 ```bash
-mkdir gateway && cd gateway
-curl -sSLO https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/scripts/install.sh
-bash install.sh
+curl -sSL https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/scripts/install.sh | bash
 ```
 
-The interactive installer guides you through:
+The interactive installer guides you through deployment mode, OIDC, SSL, resource limits, log rotation, and more. Run with `--help` for all options.
 
-1. **Deployment mode** — with domain (nginx + HTTPS) or direct access (port 3000)
-2. **OIDC configuration** — issuer, client ID, client secret
-3. **SSL setup** — Let's Encrypt (ACME) or custom certificate (when using a domain)
-4. **Resource limits** — small, medium (default), large, or custom memory/CPU profiles
-5. **Docker log rotation** — configurable max-size and max-file (default: 50m / 3 files)
-6. **Nginx version** — system default, official stable repo, or custom (when using a domain)
-7. **.env permissions** — restrict to owner-only (600) for security
+### Install a Node
 
-The installer backs up existing `.env` and `docker-compose.yml` before overwriting on re-runs.
+After creating a node in the Gateway UI (**Nodes > Add Node**), run the setup command on the target host:
+
+```bash
+curl -sSL https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/scripts/setup-daemon.sh | \
+  sudo bash -s -- --type nginx --gateway gw.example.com:9443 --token <TOKEN>
+```
+
+Replace `--type nginx` with `docker` or `monitoring` as needed. See [Adding Nodes](#adding-nodes) for details.
 
 ### Non-interactive install
 
-With domain (Let's Encrypt):
-
 ```bash
-bash install.sh -y \
-  --domain gateway.example.com \
+curl -sSL https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/scripts/install.sh | bash -s -- -y \
+  --domain gw.example.com \
   --oidc-issuer https://id.example.com \
   --oidc-client-id gateway \
   --oidc-client-secret your-secret \
   --acme-email admin@example.com
 ```
 
-With domain (custom certificate):
-
-```bash
-bash install.sh -y \
-  --domain gateway.example.com \
-  --oidc-issuer https://id.example.com \
-  --oidc-client-id gateway \
-  --oidc-client-secret your-secret \
-  --ssl-cert /path/to/cert.pem \
-  --ssl-key /path/to/key.pem
-```
-
-Direct access (no domain):
-
-```bash
-bash install.sh -y \
-  --oidc-issuer https://id.example.com \
-  --oidc-client-id gateway \
-  --oidc-client-secret your-secret
-```
-
-All flags have environment variable alternatives (`GATEWAY_DOMAIN`, `GATEWAY_OIDC_ISSUER`, etc.). Resource limits and logging can be set via `--resource-profile`, `--log-max-size`, `--log-max-file`. Run `bash install.sh --help` for the full list.
+All flags have environment variable alternatives (`GATEWAY_DOMAIN`, `GATEWAY_OIDC_ISSUER`, etc.). Resource limits and logging can be set via `--resource-profile`, `--log-max-size`, `--log-max-file`.
 
 ### Install a specific version
 
 ```bash
-bash install.sh --version v2.0.0
-```
-
-### Custom GitLab instance
-
-If you host your own fork, pass `--gitlab-url` and `--gitlab-project`:
-
-```bash
-bash install.sh --gitlab-url https://git.example.com --gitlab-project myorg/gateway
+curl -sSL https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/scripts/install.sh | bash -s -- --version v2.0.0
 ```
 
 ## Architecture
@@ -224,7 +192,7 @@ Gateway supports three daemon types, each running as a Go binary on the managed 
 
 ```bash
 curl -sSL https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/scripts/setup-daemon.sh | \
-  sudo bash -s -- --type nginx --gateway gateway.example.com:9443 --token <TOKEN>
+  sudo bash -s -- --type nginx --gateway gw.example.com:9443 --token <TOKEN>
 ```
 
 The universal `setup-daemon.sh` wrapper downloads the type-specific setup script and forwards all arguments. You can also use the type-specific scripts directly:
@@ -232,15 +200,15 @@ The universal `setup-daemon.sh` wrapper downloads the type-specific setup script
 ```bash
 # Nginx node
 curl -sSL https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/scripts/setup-node.sh | \
-  sudo bash -s -- --gateway gateway.example.com:9443 --token <TOKEN>
+  sudo bash -s -- --gateway gw.example.com:9443 --token <TOKEN>
 
 # Docker node (requires Docker already installed)
 curl -sSL https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/scripts/setup-docker-node.sh | \
-  sudo bash -s -- --gateway gateway.example.com:9443 --token <TOKEN>
+  sudo bash -s -- --gateway gw.example.com:9443 --token <TOKEN>
 
 # Monitoring node (no nginx or Docker required)
 curl -sSL https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/scripts/setup-monitoring-node.sh | \
-  sudo bash -s -- --gateway gateway.example.com:9443 --token <TOKEN>
+  sudo bash -s -- --gateway gw.example.com:9443 --token <TOKEN>
 ```
 
 All setup scripts support:
@@ -278,7 +246,7 @@ chmod +x /usr/local/bin/nginx-daemon
 #### Step 3: Enroll and start
 
 ```bash
-nginx-daemon install --gateway gateway.example.com:9443 --token <TOKEN>
+nginx-daemon install --gateway gw.example.com:9443 --token <TOKEN>
 systemctl enable --now nginx-daemon
 ```
 
@@ -303,7 +271,7 @@ Each daemon stores its config at `/etc/<daemon-name>/config.yaml`. The nginx-dae
 
 ```yaml
 gateway:
-  address: "gateway.example.com:9443"
+  address: "gw.example.com:9443"
   token: ""  # Cleared after enrollment
 
 tls:
