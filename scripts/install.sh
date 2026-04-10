@@ -859,9 +859,38 @@ DEFAULTEOF
     systemctl restart nginx >>"$LOG_FILE" 2>&1 || nginx -s reload >>"$LOG_FILE" 2>&1 || true
     success "Nginx configured and running"
 
+    # Auto-enroll and install the nginx daemon
     echo ""
-    info "The nginx daemon should be installed separately using setup-daemon.sh."
-    info "Run: bash setup-daemon.sh --gateway localhost:9443 --token <TOKEN>"
+    title "Installing Nginx Daemon"
+
+    info "Creating node enrollment via Gateway API..."
+    local enroll_response
+    enroll_response=$(curl -s -X POST "http://localhost:3000/api/setup/enroll-node" \
+        -H "Authorization: Bearer ${SETUP_TOKEN}" \
+        -H "Content-Type: application/json" \
+        -d '{"type":"nginx","hostname":"'"$(hostname -f 2>/dev/null || hostname)"'"}' \
+        --max-time 15 2>>"$LOG_FILE") || true
+
+    local enroll_token
+    enroll_token=$(echo "$enroll_response" | grep -o '"enrollmentToken":"[^"]*"' | cut -d'"' -f4) || true
+
+    if [ -z "$enroll_token" ]; then
+        warn "Could not auto-enroll node. You can install the daemon manually:"
+        echo -e "  ${GRAY}curl -sSL ${GITLAB_API_URL}/${GITLAB_PROJECT_PATH}/-/raw/main/scripts/setup-daemon.sh | sudo bash${NC}"
+    else
+        info "Downloading and running daemon setup script..."
+        local daemon_script
+        daemon_script=$(mktemp /tmp/gateway-setup-daemon-XXXXXX.sh)
+        if curl -fsSL "${GITLAB_API_URL}/${GITLAB_PROJECT_PATH}/-/raw/main/scripts/setup-node.sh" -o "$daemon_script" 2>>"$LOG_FILE"; then
+            chmod +x "$daemon_script"
+            bash "$daemon_script" -y --gateway "localhost:9443" --token "$enroll_token" 2>>"$LOG_FILE" && \
+                success "Nginx daemon installed and enrolled" || \
+                warn "Daemon setup failed. Check ${LOG_FILE} and retry manually."
+        else
+            warn "Could not download daemon setup script."
+        fi
+        rm -f "$daemon_script"
+    fi
 }
 
 # ── Bootstrap Management SSL ──────────────────────────────────────────
@@ -1009,9 +1038,9 @@ show_summary() {
 
     if [ "$SETUP_WITH_DOMAIN" -eq 1 ]; then
         echo ""
-        echo -e "  ${GRAY}Nginx daemon (install separately):${NC}"
-        echo -e "  ${GRAY}  bash setup-daemon.sh             Install the nginx daemon${NC}"
-        echo -e "  ${GRAY}  systemctl status nginx            Nginx status${NC}"
+        echo -e "  ${GRAY}Service status:${NC}"
+        echo -e "  ${GRAY}  systemctl status nginx-daemon     Daemon status${NC}"
+        echo -e "  ${GRAY}  systemctl status nginx             Nginx status${NC}"
     fi
 
     echo ""
