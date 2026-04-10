@@ -1,4 +1,4 @@
-import { ArrowUpCircle, Check, Copy, Plus, Server, Trash2 } from "lucide-react";
+import { Check, Copy, Plus, Server, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -254,7 +254,6 @@ export function AdminNodes() {
                     if (nodeStatus?.updateAvailable && typeStatus?.latestVersion) {
                       return (
                         <Badge className="text-xs" style={{ backgroundColor: "rgb(234 179 8)", color: "#111" }}>
-                          <ArrowUpCircle className="h-3 w-3 mr-1" />
                           {typeStatus.latestVersion}
                         </Badge>
                       );
