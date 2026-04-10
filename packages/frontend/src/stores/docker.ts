@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { api } from "@/services/api";
+import { isNodeIncompatible } from "@/types";
 import type {
   DockerContainer,
   DockerImage,
@@ -130,11 +131,12 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
 
   fetchContainers: async () => {
     const { selectedNodeId, dockerNodes } = get();
+    const compatibleNodes = dockerNodes.filter((n) => !isNodeIncompatible(n));
     set({ isLoading: true });
     try {
       if (selectedNodeId) {
         const data = await api.listDockerContainers(selectedNodeId);
-        const node = dockerNodes.find((n) => n.id === selectedNodeId);
+        const node = compatibleNodes.find((n) => n.id === selectedNodeId);
         const items = tagWithNode(
           normList<DockerContainer>(data),
           selectedNodeId,
@@ -144,7 +146,7 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
       } else {
         set({ containers: [] });
         await fetchAllNodes(
-          dockerNodes,
+          compatibleNodes,
           (nid) => api.listDockerContainers(nid),
           normList<DockerContainer>,
           (merged) => set({ containers: merged })
@@ -158,10 +160,11 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
 
   forceFetchContainers: async () => {
     const { selectedNodeId, dockerNodes } = get();
+    const compatibleNodes = dockerNodes.filter((n) => !isNodeIncompatible(n));
     try {
       if (selectedNodeId) {
         const data = await api.listDockerContainers(selectedNodeId, true);
-        const node = dockerNodes.find((n) => n.id === selectedNodeId);
+        const node = compatibleNodes.find((n) => n.id === selectedNodeId);
         const items = tagWithNode(
           normList<DockerContainer>(data),
           selectedNodeId,
@@ -170,7 +173,7 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
         set({ containers: items });
       } else {
         await fetchAllNodes(
-          dockerNodes,
+          compatibleNodes,
           (nid) => api.listDockerContainers(nid, true),
           normList<DockerContainer>,
           (merged) => set({ containers: merged })
@@ -183,10 +186,11 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
 
   fetchImages: async () => {
     const { selectedNodeId, dockerNodes } = get();
+    const compatibleNodes = dockerNodes.filter((n) => !isNodeIncompatible(n));
     try {
       if (selectedNodeId) {
         const data = await api.listDockerImages(selectedNodeId);
-        const node = dockerNodes.find((n) => n.id === selectedNodeId);
+        const node = compatibleNodes.find((n) => n.id === selectedNodeId);
         set({
           images: tagWithNode(
             normList<DockerImage>(data),
@@ -197,7 +201,7 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
       } else {
         set({ images: [] });
         await fetchAllNodes(
-          dockerNodes,
+          compatibleNodes,
           (nid) => api.listDockerImages(nid),
           normList<DockerImage>,
           (merged) => set({ images: merged })
@@ -210,10 +214,11 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
 
   fetchVolumes: async () => {
     const { selectedNodeId, dockerNodes } = get();
+    const compatibleNodes = dockerNodes.filter((n) => !isNodeIncompatible(n));
     try {
       if (selectedNodeId) {
         const data = await api.listDockerVolumes(selectedNodeId);
-        const node = dockerNodes.find((n) => n.id === selectedNodeId);
+        const node = compatibleNodes.find((n) => n.id === selectedNodeId);
         set({
           volumes: tagWithNode(
             normList<DockerVolume>(data),
@@ -224,7 +229,7 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
       } else {
         set({ volumes: [] });
         await fetchAllNodes(
-          dockerNodes,
+          compatibleNodes,
           (nid) => api.listDockerVolumes(nid),
           normList<DockerVolume>,
           (merged) => set({ volumes: merged })
@@ -237,10 +242,11 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
 
   fetchNetworks: async () => {
     const { selectedNodeId, dockerNodes } = get();
+    const compatibleNodes = dockerNodes.filter((n) => !isNodeIncompatible(n));
     try {
       if (selectedNodeId) {
         const data = await api.listDockerNetworks(selectedNodeId);
-        const node = dockerNodes.find((n) => n.id === selectedNodeId);
+        const node = compatibleNodes.find((n) => n.id === selectedNodeId);
         set({
           networks: tagWithNode(
             normList<DockerNetwork>(data),
@@ -251,7 +257,7 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
       } else {
         set({ networks: [] });
         await fetchAllNodes(
-          dockerNodes,
+          compatibleNodes,
           (nid) => api.listDockerNetworks(nid),
           normList<DockerNetwork>,
           (merged) => set({ networks: merged })

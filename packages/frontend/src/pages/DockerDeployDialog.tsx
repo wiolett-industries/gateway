@@ -23,6 +23,7 @@ import {
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
+import { isNodeIncompatible } from "@/types";
 import type { ContainerCreateConfig, Node } from "@/types";
 
 interface DockerDeployDialogProps {
@@ -158,11 +159,12 @@ export function DockerDeployDialog({
     }
   };
 
-  // Resolve available nodes: prefer store nodes, fall back to prop
-  const availableNodes =
+  // Resolve available nodes: prefer store nodes, fall back to prop; filter incompatible
+  const allNodes =
     useDockerStore.getState().dockerNodes.length > 0
       ? useDockerStore.getState().dockerNodes
       : dockerNodes;
+  const availableNodes = allNodes.filter((n) => !isNodeIncompatible(n));
 
   return (
     <Dialog open={open} onOpenChange={closeDeploy}>
