@@ -20,7 +20,6 @@ export function EnvironmentTab({
 }: {
   nodeId: string;
   containerId: string;
-  containerName: string;
   disabled?: boolean;
   onRecreating?: () => void;
 }) {

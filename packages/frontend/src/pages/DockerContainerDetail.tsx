@@ -453,7 +453,6 @@ export function DockerContainerDetail() {
             <EnvironmentTab
               nodeId={nodeId!}
               containerId={containerId!}
-              containerName={(container.Name ?? "").replace(/^\//, "")}
               disabled={!!transition}
               onRecreating={() => fetchContainer(true)}
             />
@@ -463,7 +462,6 @@ export function DockerContainerDetail() {
               nodeId={nodeId!}
               containerId={containerId!}
               data={container}
-              onAction={() => fetchContainer()}
               onRecreating={() => fetchContainer(true)}
               transition={transition}
             />
