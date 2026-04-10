@@ -1413,3 +1413,18 @@ export interface DockerWebhook {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface DaemonNodeUpdateStatus {
+  nodeId: string;
+  hostname: string;
+  currentVersion: string;
+  updateAvailable: boolean;
+  arch?: string;
+}
+
+export interface DaemonUpdateStatus {
+  daemonType: "nginx" | "docker" | "monitoring";
+  latestVersion: string | null;
+  lastCheckedAt: string | null;
+  nodes: DaemonNodeUpdateStatus[];
+}

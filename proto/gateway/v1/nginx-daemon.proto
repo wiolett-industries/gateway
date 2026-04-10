@@ -192,6 +192,7 @@ message GatewayCommand {
     DockerLogsCommand docker_logs = 25;
     ExecInput exec_input = 26;
     NodeExecCommand node_exec = 27;
+    UpdateDaemonCommand update_daemon = 28;
   }
 }
 
@@ -444,4 +445,10 @@ message LogSubscribe {
 
 message LogUnsubscribe {
   string host_id = 1;
+}
+
+message UpdateDaemonCommand {
+  string download_url = 1;
+  string target_version = 2;
+  string checksum = 3;        // sha256 of the binary
 }

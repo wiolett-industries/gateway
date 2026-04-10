@@ -7,6 +7,7 @@ import { DnsCheckJob } from '@/jobs/dns-check.job.js';
 import { ExpiryAlertJob } from '@/jobs/expiry-alert.job.js';
 import { HealthCheckJob } from '@/jobs/health-check.job.js';
 import { HousekeepingJob } from '@/jobs/housekeeping.job.js';
+import { DaemonUpdateCheckJob } from '@/jobs/daemon-update-check.job.js';
 import { UpdateCheckJob } from '@/jobs/update-check.job.js';
 import { logger } from '@/lib/logger.js';
 import { AccessListService } from '@/modules/access-lists/access-list.service.js';
@@ -55,6 +56,7 @@ import { NodeRegistryService } from '@/services/node-registry.service.js';
 import { SchedulerService } from '@/services/scheduler.service.js';
 import { SessionService } from '@/services/session.service.js';
 import { SystemCAService } from '@/services/system-ca.service.js';
+import { DaemonUpdateService } from '@/services/daemon-update.service.js';
 import { UpdateService } from '@/services/update.service.js';
 
 export { container };
@@ -280,6 +282,9 @@ export async function initializeContainer(): Promise<void> {
   const updateService = new UpdateService(db, dockerService, env);
   container.registerInstance(UpdateService, updateService);
 
+  const daemonUpdateService = new DaemonUpdateService(db, env);
+  container.registerInstance(DaemonUpdateService, daemonUpdateService);
+
   // Housekeeping service
   const housekeepingService = new HousekeepingService(db, dockerService, nodeDispatch, env);
   container.registerInstance(HousekeepingService, housekeepingService);
@@ -350,6 +355,9 @@ export async function initializeContainer(): Promise<void> {
 
   const updateCheckJob = new UpdateCheckJob(updateService);
   scheduler.registerInterval('update-check', env.UPDATE_CHECK_INTERVAL_HOURS * 3_600_000, () => updateCheckJob.run());
+
+  const daemonUpdateCheckJob = new DaemonUpdateCheckJob(daemonUpdateService);
+  scheduler.registerInterval('daemon-update-check', env.UPDATE_CHECK_INTERVAL_HOURS * 3_600_000, () => daemonUpdateCheckJob.run());
 
   const housekeepingJob = new HousekeepingJob(housekeepingService);
   const hkConfig = await housekeepingService.getConfig();

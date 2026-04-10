@@ -25,3 +25,11 @@ export function compareSemver(a: string, b: string): number {
 export function isNewerVersion(latest: string, current: string): boolean {
   return compareSemver(latest, current) > 0;
 }
+
+/** Returns true if both versions share the same major.minor (patch can differ). */
+export function isMinorCompatible(a: string, b: string): boolean {
+  const pa = parseSemver(a);
+  const pb = parseSemver(b);
+  if (!pa || !pb) return true; // unknown versions (dev) are compatible
+  return pa[0] === pb[0] && pa[1] === pb[1];
+}

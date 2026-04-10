@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { container } from '@/container.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { authMiddleware, requireScope, sessionOnly } from '@/modules/auth/auth.middleware.js';
+import { DaemonUpdateService } from '@/services/daemon-update.service.js';
 import { UpdateService } from '@/services/update.service.js';
 import type { AppEnv } from '@/types.js';
 
@@ -90,4 +91,61 @@ systemRoutes.get('/release-notes', requireScope('admin:update'), async (c) => {
     // Fallback to cached latest release notes
     return c.json({ data: status.releaseNotes ? [{ version: status.latestVersion, notes: status.releaseNotes }] : [] });
   }
+});
+
+// ── Daemon Updates ──────────────────────────────────────────────────
+
+// GET /daemon-updates — list update status for all daemon types
+systemRoutes.get('/daemon-updates', requireScope('admin:update'), async (c) => {
+  const service = container.resolve(DaemonUpdateService);
+  const data = await service.getCachedStatus();
+  return c.json({ data });
+});
+
+// POST /daemon-updates/check — force re-check daemon updates
+systemRoutes.post('/daemon-updates/check', requireScope('admin:update'), async (c) => {
+  const service = container.resolve(DaemonUpdateService);
+  const data = await service.checkForUpdates();
+  return c.json({ data });
+});
+
+// POST /daemon-updates/:nodeId — trigger update for a specific node
+systemRoutes.post('/daemon-updates/:nodeId', requireScope('admin:update'), async (c) => {
+  const nodeId = c.req.param('nodeId');
+  const service = container.resolve(DaemonUpdateService);
+  const { NodeDispatchService } = await import('@/services/node-dispatch.service.js');
+  const dispatch = container.resolve(NodeDispatchService);
+  const { TOKENS } = await import('@/container.js');
+  const { nodes: nodesTable } = await import('@/db/schema/nodes.js');
+  const { eq } = await import('drizzle-orm');
+  const db = container.resolve<any>(TOKENS.DrizzleClient);
+
+  const [node] = await db.select().from(nodesTable).where(eq(nodesTable.id, nodeId)).limit(1);
+  if (!node) return c.json({ error: 'Node not found' }, 404);
+
+  const daemonType = node.type as 'nginx' | 'docker' | 'monitoring';
+  const release = await service.getLatestRelease(daemonType);
+  if (!release) return c.json({ error: 'No release found for this daemon type' }, 404);
+
+  const arch = ((node.capabilities ?? {}) as Record<string, unknown>).architecture as string ?? 'amd64';
+  const downloadUrl = service.getDownloadUrl(daemonType, release.tagName, arch);
+
+  // Fetch checksum from checksums.txt
+  let checksum = '';
+  try {
+    const checksumUrl = service.getChecksumsUrl(daemonType, release.tagName);
+    const resp = await fetch(checksumUrl, { signal: AbortSignal.timeout(10_000) });
+    if (resp.ok) {
+      const text = await resp.text();
+      const daemonName = `${daemonType}-daemon-linux-${arch}`;
+      const line = text.split('\n').find((l) => l.includes(daemonName));
+      if (line) checksum = line.split(/\s+/)[0];
+    }
+  } catch {
+    logger.warn('Failed to fetch checksum for daemon update', { nodeId, daemonType });
+  }
+
+  await dispatch.sendUpdateDaemonCommand(nodeId, downloadUrl, release.version, checksum);
+
+  return c.json({ data: { scheduled: true, targetVersion: release.version } });
 });

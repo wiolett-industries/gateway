@@ -167,6 +167,7 @@ export interface GatewayCommand {
   dockerLogs?: DockerLogsCommand;
   execInput?: ExecInput;
   nodeExec?: NodeExecCommand;
+  updateDaemon?: UpdateDaemonCommand;
 }
 
 export interface ApplyConfigCommand {
@@ -401,4 +402,10 @@ export interface LogSubscribe {
 
 export interface LogUnsubscribe {
   hostId: string;
+}
+
+export interface UpdateDaemonCommand {
+  downloadUrl: string;
+  targetVersion: string;
+  checksum: string;
 }

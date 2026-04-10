@@ -22,6 +22,7 @@ import type {
   DockerNetwork,
   DockerRegistry,
   DockerSecret,
+  DaemonUpdateStatus,
   DockerWebhook,
   DockerTask,
   DockerTemplate,
@@ -1056,6 +1057,33 @@ class ApiClient extends ApiClientBase {
   async getAllReleaseNotes(): Promise<{ version: string; notes: string }[]> {
     return this.unwrapData(
       this.request<{ data: { version: string; notes: string }[] }>("/system/release-notes")
+    );
+  }
+
+  // ── Daemon Updates ──────────────────────────────────────────────
+
+  async getDaemonUpdates(): Promise<DaemonUpdateStatus[]> {
+    return this.unwrapData(
+      this.request<{ data: DaemonUpdateStatus[] }>("/system/daemon-updates"),
+    );
+  }
+
+  async checkDaemonUpdates(): Promise<DaemonUpdateStatus[]> {
+    return this.unwrapData(
+      this.request<{ data: DaemonUpdateStatus[] }>("/system/daemon-updates/check", {
+        method: "POST",
+      }),
+    );
+  }
+
+  async triggerDaemonUpdate(
+    nodeId: string,
+  ): Promise<{ scheduled: boolean; targetVersion: string }> {
+    return this.unwrapData(
+      this.request<{ data: { scheduled: boolean; targetVersion: string } }>(
+        `/system/daemon-updates/${nodeId}`,
+        { method: "POST" },
+      ),
     );
   }
 

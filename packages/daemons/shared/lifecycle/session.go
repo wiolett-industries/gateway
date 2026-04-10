@@ -120,6 +120,18 @@ func runSession(ctx context.Context, conn *grpc.ClientConn, d *DaemonBase) error
 				})
 			}(cmd)
 			continue
+		case *pb.GatewayCommand_UpdateDaemon:
+			// Self-update: download new binary, replace, restart
+			updateCmd := cmd.GetUpdateDaemon()
+			result := &pb.CommandResult{CommandId: cmd.CommandId, Success: true}
+			if err := SelfUpdate(updateCmd.DownloadUrl, updateCmd.TargetVersion, updateCmd.Checksum, d.logger); err != nil {
+				result.Success = false
+				result.Error = err.Error()
+			}
+			writer.Send(&pb.DaemonMessage{
+				Payload: &pb.DaemonMessage_CommandResult{CommandResult: result},
+			})
+			continue
 		}
 
 		// Process command and send result

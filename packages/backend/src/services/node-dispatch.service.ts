@@ -332,6 +332,17 @@ export class NodeDispatchService {
   }
 
   /** Resolve the node ID for a proxy host, falling back to default node */
+  async sendUpdateDaemonCommand(
+    nodeId: string,
+    downloadUrl: string,
+    targetVersion: string,
+    checksum: string
+  ): Promise<CommandResult> {
+    return this.registry.sendCommand(nodeId, {
+      updateDaemon: { downloadUrl, targetVersion, checksum },
+    });
+  }
+
   async resolveNodeId(proxyHostNodeId: string | null): Promise<string> {
     if (proxyHostNodeId) return proxyHostNodeId;
 
