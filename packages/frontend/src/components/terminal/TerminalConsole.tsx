@@ -190,8 +190,10 @@ export function TerminalConsole({
       try {
         const msg = JSON.parse(evt.data);
         if (msg.type === "connected") {
-          terminal.clear();
-          cleared = true;
+          if (!cleared) {
+            terminal.clear();
+            cleared = true;
+          }
           if (msg.isNew) {
             const shellName = (msg.shell ?? "/bin/sh").split("/").pop();
             terminal.write(`Using ${shellName}...\r\n`);
