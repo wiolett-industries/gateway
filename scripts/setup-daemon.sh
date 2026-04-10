@@ -120,7 +120,7 @@ ENCODED_PROJECT="${GITLAB_PROJECT//\//%2F}"
 GITLAB_API="${GITLAB_URL}/api/v4/projects/${ENCODED_PROJECT}"
 
 # ── Download and execute ────────────────────────────────────────────
-DOWNLOAD_URL="${GITLAB_API}/releases/permalink/latest/downloads/${SCRIPT_NAME}"
+DOWNLOAD_URL="${GITLAB_URL}/${GITLAB_PROJECT}/-/raw/main/scripts/${SCRIPT_NAME}"
 
 log "Downloading ${SCRIPT_NAME} from ${GITLAB_URL}..."
 
