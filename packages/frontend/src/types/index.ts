@@ -123,6 +123,11 @@ export interface Node {
   updatedAt: string;
 }
 
+/** Check if a node has a version mismatch (incompatible major.minor with gateway) */
+export function isNodeIncompatible(node: Node | NodeDetail): boolean {
+  return !!(node.capabilities as Record<string, unknown>)?.versionMismatch;
+}
+
 export interface NodeDetail extends Node {
   liveHealthReport: NodeHealthReport | null;
   liveStatsReport: NodeStatsReport | null;

@@ -25,6 +25,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
+import { isNodeIncompatible } from "@/types";
 import type {
   CreateProxyHostRequest,
   ForwardScheme,
@@ -190,8 +191,9 @@ export function CreateProxyHostDialog({
           api.listNginxTemplates(),
         ]);
 
+        const compatible = (nodeRes.data ?? []).filter((n) => !isNodeIncompatible(n));
         setNodes(
-          (nodeRes.data ?? []).map((n) => ({
+          compatible.map((n) => ({
             id: n.id,
             hostname: n.displayName || n.hostname,
             status: n.status,

@@ -16,7 +16,7 @@ import { useCAStore } from "@/stores/ca";
 import { useDockerStore } from "@/stores/docker";
 import { useUIStore } from "@/stores/ui";
 import { useUpdateStore } from "@/stores/update";
-import { AI_SCOPE } from "@/types";
+import { AI_SCOPE, isNodeIncompatible } from "@/types";
 import { SidebarContent } from "./SidebarContent";
 
 const SIDEBAR_WIDTH_KEY = "gateway-sidebar-width";
@@ -90,8 +90,8 @@ export function DashboardLayout() {
           api
             .listNodes({ limit: 100 })
             .then((r) => {
-              const dockerNds = r.data.filter((n) => n.type === "docker");
-              const nginxNds = r.data.filter((n) => n.type === "nginx");
+              const dockerNds = r.data.filter((n) => n.type === "docker" && !isNodeIncompatible(n));
+              const nginxNds = r.data.filter((n) => n.type === "nginx" && !isNodeIncompatible(n));
               useDockerStore.getState().setDockerNodes(dockerNds);
               if (dockerNds.length > 0) useDockerStore.getState().fetchContainers();
               setHasNginxNodes(nginxNds.length > 0);

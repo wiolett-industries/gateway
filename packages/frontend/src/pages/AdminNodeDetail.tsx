@@ -21,6 +21,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { usePinnedNodesStore } from "@/stores/pinned-nodes";
+import { isNodeIncompatible } from "@/types";
 import type { NodeDetail, NodeStatus } from "@/types";
 import { DockerContainers } from "./DockerContainers";
 import { DockerImages } from "./DockerImages";
@@ -189,12 +190,16 @@ export function AdminNodeDetail() {
         >
           <TabsList className="shrink-0">
             <TabsTrigger value="details">Details</TabsTrigger>
-            <TabsTrigger value="monitoring">Monitoring</TabsTrigger>
-            {node.type === "nginx" && (
+            {!isNodeIncompatible(node) && (
+              <TabsTrigger value="monitoring">Monitoring</TabsTrigger>
+            )}
+            {!isNodeIncompatible(node) && node.type === "nginx" && (
               <TabsTrigger value="configuration">Configuration</TabsTrigger>
             )}
-            {node.type === "nginx" && <TabsTrigger value="nginx-logs">Nginx Logs</TabsTrigger>}
-            {node.type === "docker" && (
+            {!isNodeIncompatible(node) && node.type === "nginx" && (
+              <TabsTrigger value="nginx-logs">Nginx Logs</TabsTrigger>
+            )}
+            {!isNodeIncompatible(node) && node.type === "docker" && (
               <PageTransition>
                 <TabsTrigger value="containers">Containers</TabsTrigger>
                 <TabsTrigger value="images">Images</TabsTrigger>
@@ -202,28 +207,39 @@ export function AdminNodeDetail() {
                 <TabsTrigger value="networks">Networks</TabsTrigger>
               </PageTransition>
             )}
-            {node.status === "online" && hasScope("nodes:console") && (
+            {!isNodeIncompatible(node) && node.status === "online" && hasScope("nodes:console") && (
               <TabsTrigger value="console">Console</TabsTrigger>
             )}
             <TabsTrigger value="daemon-logs">Daemon Logs</TabsTrigger>
           </TabsList>
+
+          {isNodeIncompatible(node) && (
+            <div className="bg-destructive/10 border border-destructive/20 p-3 mt-2 rounded-md">
+              <p className="text-sm text-destructive font-medium">
+                This node's daemon version is incompatible with the gateway. Update the daemon to restore full functionality.
+              </p>
+            </div>
+          )}
+
           <TabsContent value="details" className="pb-6">
             <NodeDetailsTab node={node} />
           </TabsContent>
-          <TabsContent value="monitoring" className="pb-6">
-            <NodeMonitoringTab nodeId={node.id} nodeStatus={node.status} nodeType={node.type} />
-          </TabsContent>
-          {node.type === "nginx" && (
+          {!isNodeIncompatible(node) && (
+            <TabsContent value="monitoring" className="pb-6">
+              <NodeMonitoringTab nodeId={node.id} nodeStatus={node.status} nodeType={node.type} />
+            </TabsContent>
+          )}
+          {!isNodeIncompatible(node) && node.type === "nginx" && (
             <TabsContent value="configuration" className="flex flex-col flex-1 min-h-0">
               <NodeConfigTab nodeId={node.id} nodeStatus={node.status} />
             </TabsContent>
           )}
-          {node.type === "nginx" && (
+          {!isNodeIncompatible(node) && node.type === "nginx" && (
             <TabsContent value="nginx-logs" className="flex flex-col flex-1 min-h-0">
               <NodeNginxLogsTab nodeId={node.id} nodeStatus={node.status} />
             </TabsContent>
           )}
-          {node.type === "docker" && (
+          {!isNodeIncompatible(node) && node.type === "docker" && (
             <>
               <TabsContent value="containers" className="flex flex-col flex-1 min-h-0">
                 <DockerContainers embedded fixedNodeId={node.id} />
@@ -239,7 +255,7 @@ export function AdminNodeDetail() {
               </TabsContent>
             </>
           )}
-          {node.status === "online" && hasScope("nodes:console") && (
+          {!isNodeIncompatible(node) && node.status === "online" && hasScope("nodes:console") && (
             <TabsContent value="console" className="flex flex-col flex-1 min-h-0">
               <NodeConsoleTab nodeId={node.id} />
             </TabsContent>

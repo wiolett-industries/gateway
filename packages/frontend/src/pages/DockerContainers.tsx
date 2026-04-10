@@ -30,6 +30,7 @@ import { formatCreated } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
+import { isNodeIncompatible } from "@/types";
 import type { DockerContainer, Node } from "@/types";
 import { DockerDeployDialog } from "./DockerDeployDialog";
 import { containerDisplayName, STATUS_BADGE } from "./docker-detail/helpers";
@@ -98,9 +99,10 @@ export function DockerContainers({
     api
       .listNodes({ type: "docker", limit: 100 })
       .then((r) => {
-        setDockerNodes(r.data);
+        const compatible = r.data.filter((n) => !isNodeIncompatible(n));
+        setDockerNodes(compatible);
         // Also set in store for multi-node fetching
-        useDockerStore.getState().setDockerNodes(r.data);
+        useDockerStore.getState().setDockerNodes(compatible);
       })
       .catch(() => {
         toast.error("Failed to load Docker nodes");
@@ -383,7 +385,7 @@ export function DockerContainers({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="__all__">All nodes</SelectItem>
-                {(embedded ? useDockerStore.getState().dockerNodes : dockerNodes).map((n) => (
+                {(embedded ? useDockerStore.getState().dockerNodes : dockerNodes).filter((n) => !isNodeIncompatible(n)).map((n) => (
                   <SelectItem key={n.id} value={n.id}>
                     {n.displayName || n.hostname}
                   </SelectItem>

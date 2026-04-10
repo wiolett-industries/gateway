@@ -1,4 +1,4 @@
-import { Check, Copy, Plus, Server, Trash2 } from "lucide-react";
+import { ArrowUpCircle, Check, Copy, Plus, Server, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -28,7 +28,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useNodesStore } from "@/stores/nodes";
-import type { NodeStatus } from "@/types";
+import type { DaemonUpdateStatus, NodeStatus } from "@/types";
+import { isNodeIncompatible } from "@/types";
 
 const NODE_TYPES = [
   {
@@ -90,10 +91,17 @@ export function AdminNodes() {
   const [enrollToken, setEnrollToken] = useState<string | null>(null);
   const [enrolling, setEnrolling] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [daemonUpdates, setDaemonUpdates] = useState<DaemonUpdateStatus[]>([]);
 
   useEffect(() => {
     fetchNodes();
   }, [fetchNodes]);
+
+  // Fetch daemon update statuses
+  useEffect(() => {
+    if (!hasScope("admin:update")) return;
+    api.getDaemonUpdates().then(setDaemonUpdates).catch(() => {});
+  }, [hasScope]);
 
   const handleSearch = () => setFilters({ search: searchInput });
   const hasActiveFilters = filters.search !== "" || filters.status !== "all";
@@ -236,9 +244,27 @@ export function AdminNodes() {
                   <Badge variant="outline" className="text-xs shrink-0">
                     {formatLastSeen(node.lastSeenAt)}
                   </Badge>
-                  <Badge variant={STATUS_BADGE[node.status]} className="text-xs">
-                    {node.status}
-                  </Badge>
+                  {isNodeIncompatible(node) ? (
+                    <Badge variant="destructive" className="text-xs">
+                      INCOMPATIBLE
+                    </Badge>
+                  ) : (() => {
+                    const typeStatus = daemonUpdates.find((s) => s.daemonType === node.type);
+                    const nodeStatus = typeStatus?.nodes.find((n) => n.nodeId === node.id);
+                    if (nodeStatus?.updateAvailable && typeStatus?.latestVersion) {
+                      return (
+                        <Badge className="text-xs" style={{ backgroundColor: "rgb(234 179 8)", color: "#111" }}>
+                          <ArrowUpCircle className="h-3 w-3 mr-1" />
+                          {typeStatus.latestVersion}
+                        </Badge>
+                      );
+                    }
+                    return (
+                      <Badge variant={STATUS_BADGE[node.status]} className="text-xs">
+                        {node.status}
+                      </Badge>
+                    );
+                  })()}
                   {hasScope("nodes:delete") && (
                     <Button
                       variant="ghost"
