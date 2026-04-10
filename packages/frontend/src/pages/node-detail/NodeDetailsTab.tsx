@@ -1,9 +1,13 @@
+import { ArrowUpCircle } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import { DetailRow } from "@/components/common/DetailRow";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { formatBytes, formatUptime } from "@/lib/utils";
 import { api } from "@/services/api";
+import { useAuthStore } from "@/stores/auth";
 import type { DockerContainer, NodeDetail, NodeHealthReport, ProxyHost } from "@/types";
 
 interface NodeDetailsTabProps {
@@ -12,8 +16,11 @@ interface NodeDetailsTabProps {
 
 export function NodeDetailsTab({ node }: NodeDetailsTabProps) {
   const navigate = useNavigate();
+  const { hasScope } = useAuthStore();
   const [proxyHosts, setProxyHosts] = useState<ProxyHost[]>([]);
   const [dockerContainers, setDockerContainers] = useState<DockerContainer[]>([]);
+  const [daemonUpdate, setDaemonUpdate] = useState<{ available: boolean; latestVersion: string | null }>({ available: false, latestVersion: null });
+  const [isUpdating, setIsUpdating] = useState(false);
   const h: NodeHealthReport | null = node.liveHealthReport ?? node.lastHealthReport;
   const caps = (node.capabilities ?? {}) as Record<string, unknown>;
   const resourcesRef = useRef<HTMLDivElement>(null);
@@ -53,6 +60,31 @@ export function NodeDetailsTab({ node }: NodeDetailsTabProps) {
       cancelled = true;
     };
   }, [node.id, node.type]);
+
+  // Check for daemon updates
+  useEffect(() => {
+    if (!hasScope("admin:update")) return;
+    api.getDaemonUpdates().then((statuses) => {
+      const typeStatus = statuses.find((s) => s.daemonType === node.type);
+      if (!typeStatus) return;
+      const nodeStatus = typeStatus.nodes.find((n) => n.nodeId === node.id);
+      if (nodeStatus?.updateAvailable && typeStatus.latestVersion) {
+        setDaemonUpdate({ available: true, latestVersion: typeStatus.latestVersion });
+      }
+    }).catch(() => {});
+  }, [node.id, node.type, hasScope]);
+
+  const handleDaemonUpdate = async () => {
+    setIsUpdating(true);
+    try {
+      await api.triggerDaemonUpdate(node.id);
+      toast.success("Daemon update triggered — the node will restart shortly");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to trigger update");
+    } finally {
+      setIsUpdating(false);
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -109,13 +141,30 @@ export function NodeDetailsTab({ node }: NodeDetailsTabProps) {
             <DetailRow
               label="Daemon Version"
               value={
-                node.daemonVersion ? (
-                  <Badge variant="secondary" className="text-xs uppercase">
-                    {node.daemonVersion}
-                  </Badge>
-                ) : (
-                  "Unknown"
-                )
+                <div className="flex items-center gap-2">
+                  {node.daemonVersion ? (
+                    <Badge variant="secondary" className="text-xs uppercase">
+                      {node.daemonVersion}
+                    </Badge>
+                  ) : (
+                    "Unknown"
+                  )}
+                  {(caps.versionMismatch as boolean) && (
+                    <Badge variant="warning" className="text-xs">Mismatch</Badge>
+                  )}
+                  {daemonUpdate.available && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-6 text-xs gap-1"
+                      onClick={handleDaemonUpdate}
+                      disabled={isUpdating}
+                    >
+                      <ArrowUpCircle className="h-3 w-3" />
+                      {daemonUpdate.latestVersion}
+                    </Button>
+                  )}
+                </div>
               }
             />
             {node.type === "nginx" && (

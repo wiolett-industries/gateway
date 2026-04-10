@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import { container } from '@/container.js';
 import { nodes } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
+import { isMinorCompatible } from '@/lib/semver.js';
 import { daemonLogRelay } from '@/modules/monitoring/log-relay.service.js';
 import { ProxyService } from '@/modules/proxy/proxy.service.js';
 import type { DaemonMessage, GatewayCommand } from '../generated/types.js';
@@ -86,6 +87,20 @@ export function createControlHandlers(deps: GrpcServerDeps) {
 
             // Update DB with latest info — do NOT overwrite configVersionHash
             // (the gateway's stored hash is authoritative, set by FullSync)
+            const { getEnv } = await import('@/config/env.js');
+            const appVersion = getEnv().APP_VERSION;
+            const versionMismatch =
+              appVersion !== 'dev' &&
+              msg.register.daemonVersion !== 'dev' &&
+              !isMinorCompatible(appVersion, msg.register.daemonVersion);
+            if (versionMismatch) {
+              logger.warn('Daemon version mismatch', {
+                nodeId,
+                gatewayVersion: appVersion,
+                daemonVersion: msg.register.daemonVersion,
+              });
+            }
+
             await deps.db
               .update(nodes)
               .set({
@@ -101,6 +116,7 @@ export function createControlHandlers(deps: GrpcServerDeps) {
                   cpuCores: msg.register.cpuCores || undefined,
                   architecture: msg.register.architecture || undefined,
                   kernelVersion: msg.register.kernelVersion || undefined,
+                  versionMismatch,
                 },
                 lastSeenAt: new Date(),
                 updatedAt: new Date(),

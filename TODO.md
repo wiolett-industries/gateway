@@ -32,22 +32,27 @@
 - [x] Remake image pull modal
 - [x] Working with compose
 - [x] Make tabs in route for other pages too (not only templates and nginx)
+- [x] Fix RO design of secrets
+- [x] Virtualization for infinite scrolling lists
+- [x] Add ability to change image per ct + full portainer update flow w/ API/webhook
+- [x] Fix section visibility for differene perms
+- [x] Values in table not centered vertically
+- [x] Deduplicate whole frontend
 
 ## Future
 
 - [ ] Configurable shortcuts
 - [ ] Add docker container templates
+- [ ] Fix empty states everywhere in modals (no node etc)
 
 ## Open
 
 - [ ] Write manual testcases and do full check on two external servers
 - [ ] Create bastion daemon and integration here in app
-- [ ] Separate daemon deploy tags from gateway deploy tags (not sure how to)
-- [ ] Deduplicate whole frontend
 - [ ] Verify all pages have data live update (polling or streaming)
 - [ ] Webhook notifications on events
 
-## Up next
-- [ ] Fix RO design of secrets
-- [ ] Virtualization for infinite scrolling lists
-- [ ] Add ability to change image per ct + full portainer update flow w/ API/webhook
+## Working On
+
+- [ ] Separate daemon deploy tags from gateway deploy tags (not sure how to)
+- [ ] Update install script to handle all daemon types + updates when re-ran

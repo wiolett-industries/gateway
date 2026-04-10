@@ -10,6 +10,9 @@ variables:
   before_script:
     - docker login -u ${CI_REGISTRY_USER} -p ${CI_REGISTRY_PASSWORD} ${CI_REGISTRY}
 
+# ── Gateway (backend + frontend Docker image) ──────────────────────
+# Triggered by tags like: v1.3.0
+
 build:
   stage: build
   image: docker:27
@@ -30,54 +33,148 @@ build:
     - docker push $IMAGE:latest
     - echo "Pushed $IMAGE:$CI_COMMIT_TAG, $IMAGE:${CI_COMMIT_TAG#v}, $IMAGE:latest"
   rules:
-    - if: $CI_COMMIT_TAG
-
-build-daemon:
-  stage: build
-  image: golang:1.24
-  script:
-    - cd packages/daemons/nginx
-    - |
-      VERSION="${CI_COMMIT_TAG}"
-      for GOARCH in amd64 arm64; do
-        echo "Building nginx-daemon ${VERSION} for linux/${GOARCH}..."
-        CGO_ENABLED=0 GOOS=linux GOARCH=${GOARCH} go build \
-          -ldflags "-s -w -X github.com/wiolett/gateway/nginx-daemon/internal/daemon.Version=${VERSION}" \
-          -o ../../../nginx-daemon-linux-${GOARCH} \
-          ./cmd/nginx-daemon
-      done
-    - cd ../../..
-    - |
-      for GOARCH in amd64 arm64; do
-        echo "Uploading nginx-daemon-linux-${GOARCH} to package registry..."
-        curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
-          --upload-file "nginx-daemon-linux-${GOARCH}" \
-          "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/nginx-daemon/${CI_COMMIT_TAG}/nginx-daemon-linux-${GOARCH}"
-      done
-  rules:
-    - if: $CI_COMMIT_TAG
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
 
 release:
   stage: release
   image: registry.gitlab.com/gitlab-org/release-cli:latest
   needs:
     - build
-    - build-daemon
   script:
     - echo "Creating release ${CI_COMMIT_TAG}"
   release:
     tag_name: $CI_COMMIT_TAG
     name: "Gateway ${CI_COMMIT_TAG}"
     description: "Release ${CI_COMMIT_TAG}"
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+
+# ── Daemon builds (shared template) ───────────────────────────────
+# Triggered by tags like: v1.3.0-nginx, v1.3.0-docker, v1.3.0-monitoring
+
+.build-daemon:
+  stage: build
+  image: golang:1.24
+  script:
+    - cd packages/daemons/${DAEMON_DIR}
+    - |
+      # Extract version from tag: v1.3.0-nginx → v1.3.0
+      VERSION=$(echo "${CI_COMMIT_TAG}" | sed "s/-${DAEMON_SUFFIX}$//")
+      echo "Building ${DAEMON_NAME} ${VERSION} (tag: ${CI_COMMIT_TAG})..."
+      for GOARCH in amd64 arm64; do
+        echo "  → linux/${GOARCH}"
+        CGO_ENABLED=0 GOOS=linux GOARCH=${GOARCH} go build \
+          -ldflags "-s -w -X ${LDFLAGS_VERSION_PKG}.Version=${VERSION}" \
+          -o ../../../${DAEMON_NAME}-linux-${GOARCH} \
+          ./cmd/${DAEMON_NAME}
+      done
+    - cd ../../..
+    - |
+      for GOARCH in amd64 arm64; do
+        echo "Uploading ${DAEMON_NAME}-linux-${GOARCH} to package registry..."
+        curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+          --upload-file "${DAEMON_NAME}-linux-${GOARCH}" \
+          "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/${DAEMON_NAME}/${CI_COMMIT_TAG}/${DAEMON_NAME}-linux-${GOARCH}"
+      done
+    - |
+      # Generate SHA256 checksums
+      for GOARCH in amd64 arm64; do
+        sha256sum "${DAEMON_NAME}-linux-${GOARCH}" >> checksums.txt
+      done
+      curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+        --upload-file checksums.txt \
+        "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/${DAEMON_NAME}/${CI_COMMIT_TAG}/checksums.txt"
+  artifacts:
+    paths:
+      - checksums.txt
+    expire_in: 1 hour
+
+.release-daemon:
+  stage: release
+  image: registry.gitlab.com/gitlab-org/release-cli:latest
+  script:
+    - echo "Creating release for ${DAEMON_NAME} ${CI_COMMIT_TAG}"
+  release:
+    tag_name: $CI_COMMIT_TAG
+    name: "${DAEMON_LABEL} ${CI_COMMIT_TAG}"
+    description: "Release ${DAEMON_NAME} ${CI_COMMIT_TAG}"
     assets:
       links:
-        - name: nginx-daemon-linux-amd64
-          url: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/nginx-daemon/${CI_COMMIT_TAG}/nginx-daemon-linux-amd64"
-          filepath: /nginx-daemon-linux-amd64
+        - name: "${DAEMON_NAME}-linux-amd64"
+          url: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/${DAEMON_NAME}/${CI_COMMIT_TAG}/${DAEMON_NAME}-linux-amd64"
+          filepath: /${DAEMON_NAME}-linux-amd64
           link_type: package
-        - name: nginx-daemon-linux-arm64
-          url: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/nginx-daemon/${CI_COMMIT_TAG}/nginx-daemon-linux-arm64"
-          filepath: /nginx-daemon-linux-arm64
+        - name: "${DAEMON_NAME}-linux-arm64"
+          url: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/${DAEMON_NAME}/${CI_COMMIT_TAG}/${DAEMON_NAME}-linux-arm64"
+          filepath: /${DAEMON_NAME}-linux-arm64
           link_type: package
+        - name: checksums.txt
+          url: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/${DAEMON_NAME}/${CI_COMMIT_TAG}/checksums.txt"
+          filepath: /checksums.txt
+          link_type: other
+
+# ── nginx-daemon ───────────────────────────────────────────────────
+
+build-nginx-daemon:
+  extends: .build-daemon
+  variables:
+    DAEMON_DIR: nginx
+    DAEMON_NAME: nginx-daemon
+    DAEMON_SUFFIX: nginx
+    LDFLAGS_VERSION_PKG: github.com/wiolett/gateway/nginx-daemon/internal/daemon
   rules:
-    - if: $CI_COMMIT_TAG
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+-nginx$/
+
+release-nginx-daemon:
+  extends: .release-daemon
+  needs:
+    - build-nginx-daemon
+  variables:
+    DAEMON_NAME: nginx-daemon
+    DAEMON_LABEL: "Nginx Daemon"
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+-nginx$/
+
+# ── docker-daemon ──────────────────────────────────────────────────
+
+build-docker-daemon:
+  extends: .build-daemon
+  variables:
+    DAEMON_DIR: docker
+    DAEMON_NAME: docker-daemon
+    DAEMON_SUFFIX: docker
+    LDFLAGS_VERSION_PKG: main
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+-docker$/
+
+release-docker-daemon:
+  extends: .release-daemon
+  needs:
+    - build-docker-daemon
+  variables:
+    DAEMON_NAME: docker-daemon
+    DAEMON_LABEL: "Docker Daemon"
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+-docker$/
+
+# ── monitoring-daemon ──────────────────────────────────────────────
+
+build-monitoring-daemon:
+  extends: .build-daemon
+  variables:
+    DAEMON_DIR: monitoring
+    DAEMON_NAME: monitoring-daemon
+    DAEMON_SUFFIX: monitoring
+    LDFLAGS_VERSION_PKG: main
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+-monitoring$/
+
+release-monitoring-daemon:
+  extends: .release-daemon
+  needs:
+    - build-monitoring-daemon
+  variables:
+    DAEMON_NAME: monitoring-daemon
+    DAEMON_LABEL: "Monitoring Daemon"
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+-monitoring$/
