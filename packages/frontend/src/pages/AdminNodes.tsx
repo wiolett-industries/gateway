@@ -149,18 +149,14 @@ export function AdminNodes() {
 
   const gatewayAddr = `${window.location.hostname}:9443`;
   const scriptUrl =
-    enrollType === "monitoring"
-      ? "https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/scripts/setup-monitoring-node.sh"
-      : enrollType === "docker"
-        ? "https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/scripts/setup-docker-node.sh"
-        : "https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/scripts/setup-node.sh";
+    "https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/scripts/setup-daemon.sh";
 
   const curlCommand = enrollToken
-    ? `curl -sSL ${scriptUrl} | sudo bash -s -- \\\n  --gateway ${gatewayAddr} --token ${enrollToken}`
+    ? `curl -sSL ${scriptUrl} | sudo bash -s -- \\\n  --type ${enrollType} --gateway ${gatewayAddr} --token ${enrollToken}`
     : "";
 
   const wgetCommand = enrollToken
-    ? `wget -qO- ${scriptUrl} | sudo bash -s -- \\\n  --gateway ${gatewayAddr} --token ${enrollToken}`
+    ? `wget -qO- ${scriptUrl} | sudo bash -s -- \\\n  --type ${enrollType} --gateway ${gatewayAddr} --token ${enrollToken}`
     : "";
 
   const copyToClipboard = (text: string, field: string) => {
