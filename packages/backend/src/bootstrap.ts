@@ -123,6 +123,48 @@ export async function initializeContainer(): Promise<void> {
   const alertService = new AlertService(db);
   container.registerInstance(AlertService, alertService);
 
+  // Upsert built-in groups (creates on fresh install, syncs scopes on upgrade)
+  {
+    const { BUILTIN_GROUPS } = await import('@/lib/scopes.js');
+    const { permissionGroups } = await import('@/db/schema/index.js');
+    for (const bg of BUILTIN_GROUPS) {
+      await db
+        .insert(permissionGroups)
+        .values({
+          name: bg.name,
+          description: bg.description,
+          isBuiltin: true,
+          scopes: [...bg.scopes],
+        })
+        .onConflictDoUpdate({
+          target: permissionGroups.name,
+          set: { scopes: [...bg.scopes], description: bg.description },
+        });
+    }
+  }
+
+  // Ensure system user exists before system CA (it's the owner of bootstrap resources)
+  {
+    const { users } = await import('@/db/schema/index.js');
+    const { permissionGroups } = await import('@/db/schema/index.js');
+    const { eq } = await import('drizzle-orm');
+    const SYSTEM_OIDC = 'system:gateway-setup';
+    const existing = await db.select({ id: users.id }).from(users).where(eq(users.oidcSubject, SYSTEM_OIDC)).limit(1);
+    if (existing.length === 0) {
+      const adminGroup = await db.query.permissionGroups.findFirst({ where: eq(permissionGroups.name, 'system-admin') });
+      if (adminGroup) {
+        await db.insert(users).values({
+          id: '00000000-0000-0000-0000-000000000000',
+          oidcSubject: SYSTEM_OIDC,
+          email: 'system@gateway.local',
+          name: 'Gateway System',
+          groupId: adminGroup.id,
+        });
+        logger.info('Created system user');
+      }
+    }
+  }
+
   // System CA for node mTLS
   const systemCA = new SystemCAService(db, caService, certService, cryptoService);
   container.registerInstance(SystemCAService, systemCA);
@@ -324,26 +366,6 @@ export async function initializeContainer(): Promise<void> {
   // Seed built-in templates
   await templatesService.seedBuiltinTemplates();
   await nginxTemplateService.seedBuiltinTemplates();
-
-  // Upsert built-in groups (creates on fresh install, syncs scopes on upgrade)
-  {
-    const { BUILTIN_GROUPS } = await import('@/lib/scopes.js');
-    const { permissionGroups } = await import('@/db/schema/index.js');
-    for (const bg of BUILTIN_GROUPS) {
-      await db
-        .insert(permissionGroups)
-        .values({
-          name: bg.name,
-          description: bg.description,
-          isBuiltin: true,
-          scopes: [...bg.scopes],
-        })
-        .onConflictDoUpdate({
-          target: permissionGroups.name,
-          set: { scopes: [...bg.scopes], description: bg.description },
-        });
-    }
-  }
 
   // Background jobs
   const scheduler = new SchedulerService();
