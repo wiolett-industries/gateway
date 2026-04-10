@@ -2,18 +2,21 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-# ── Gateway Monitoring Node Setup ──────────────────────────────────
-# Installs monitoring-daemon on a host and enrolls it with the Gateway.
-# No nginx or Docker required — this agent reports system metrics only.
+# ── Gateway Docker Node Setup ────────────────────────────────────────
+# Installs docker-daemon on a host and enrolls it with the Gateway.
+# Requires Docker to be already installed on the host.
 #
 # Usage:
-#   curl -sSL https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/scripts/setup-monitoring-node.sh | \
+#   curl -sSL https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/scripts/setup-docker-node.sh | \
 #     sudo bash -s -- --gateway gateway.example.com:9443 --token <ENROLLMENT_TOKEN>
-# ───────────────────────────────────────────────────────────────────
+#
+# Or download and run:
+#   bash setup-docker-node.sh --gateway gateway.example.com:9443 --token <TOKEN>
+# ──────────────────────────────────────────────────────────────────────
 
-LOG_FILE="/tmp/gateway_monitoring_setup.log"
+LOG_FILE="/tmp/gateway_docker_setup.log"
 
-# ── Colors ────────────────────────────────────────────────────────
+# ── Colors ───────────────────────────────────────────────────────────
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
@@ -22,7 +25,7 @@ GRAY='\033[0;90m'
 NC='\033[0m'
 BOLD='\033[1m'
 
-# ── Defaults ──────────────────────────────────────────────────────
+# ── Defaults ─────────────────────────────────────────────────────────
 GATEWAY_HOST="${GATEWAY_NODE_HOST:-}"
 GATEWAY_PORT="${GATEWAY_NODE_PORT:-9443}"
 GATEWAY_ADDR="${GATEWAY_NODE_ADDRESS:-}"
@@ -34,57 +37,13 @@ RUN_USER=""
 NON_INTERACTIVE=0
 NO_LOGO=0
 
-# ── Helpers ───────────────────────────────────────────────────────
+# ── Helpers ──────────────────────────────────────────────────────────
 log()  { echo -e "${CYAN}[INFO]${NC} $*"; }
 warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
 err()  { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 ok()   { echo -e "${GREEN}[OK]${NC} $*"; }
 
 die() { err "$@"; exit 1; }
-
-need_root() {
-    if [[ $EUID -ne 0 ]]; then
-        die "This script must be run as root (or with sudo)"
-    fi
-}
-
-detect_os() {
-    if [[ -f /etc/os-release ]]; then
-        . /etc/os-release
-        OS_ID="${ID:-unknown}"
-        OS_LIKE="${ID_LIKE:-$OS_ID}"
-    else
-        OS_ID="unknown"
-        OS_LIKE="unknown"
-    fi
-}
-
-detect_arch() {
-    local machine
-    machine=$(uname -m)
-    case "$machine" in
-        x86_64|amd64) ARCH="amd64" ;;
-        aarch64|arm64) ARCH="arm64" ;;
-        armv7l)        ARCH="armv7" ;;
-        *) die "Unsupported architecture: $machine" ;;
-    esac
-}
-
-command_exists() { command -v "$1" &>/dev/null; }
-
-check_dependencies() {
-    if ! command_exists curl; then
-        die "curl is required but not found. Install it and retry."
-    fi
-    if ! command_exists jq; then
-        die "jq is required but not found. Install it and retry."
-    fi
-}
-
-build_gitlab_api() {
-    local encoded_project="${GITLAB_PROJECT//\//%2F}"
-    GITLAB_API="${GITLAB_URL}/api/v4/projects/${encoded_project}"
-}
 
 prompt_input() {
     local prompt="$1"
@@ -161,16 +120,62 @@ prompt_choice() {
     echo "${reply:-$default}"
 }
 
-# ── Parse Arguments ───────────────────────────────────────────────
+need_root() {
+    if [[ $EUID -ne 0 ]]; then
+        die "This script must be run as root (or with sudo)"
+    fi
+}
+
+detect_os() {
+    if [[ -f /etc/os-release ]]; then
+        . /etc/os-release
+        OS_ID="${ID:-unknown}"
+        OS_LIKE="${ID_LIKE:-$OS_ID}"
+    else
+        OS_ID="unknown"
+        OS_LIKE="unknown"
+    fi
+}
+
+detect_arch() {
+    local machine
+    machine=$(uname -m)
+    case "$machine" in
+        x86_64|amd64) ARCH="amd64" ;;
+        aarch64|arm64) ARCH="arm64" ;;
+        armv7l)        ARCH="armv7" ;;
+        *) die "Unsupported architecture: $machine" ;;
+    esac
+}
+
+command_exists() { command -v "$1" &>/dev/null; }
+
+check_dependencies() {
+    if ! command_exists curl; then
+        die "curl is required but not found. Install it and retry."
+    fi
+    if ! command_exists jq; then
+        die "jq is required but not found. Install it and retry."
+    fi
+}
+
+build_gitlab_api() {
+    local encoded_project="${GITLAB_PROJECT//\//%2F}"
+    GITLAB_API="${GITLAB_URL}/api/v4/projects/${encoded_project}"
+}
+
+# ── Parse Arguments ──────────────────────────────────────────────────
 show_help() {
     cat <<'HELP'
-Gateway Monitoring Node Setup — installs monitoring-daemon and enrolls with Gateway
+Gateway Docker Node Setup — installs docker-daemon and enrolls with Gateway
 
 Usage:
-  setup-monitoring-node.sh [options]
+  setup-docker-node.sh [options]
 
   In interactive mode (default), the script prompts for gateway address, port,
   and enrollment token. Use flags to pre-fill or skip prompts.
+
+  Docker must be installed before running this script.
 
 Options:
   --gateway <addr>         Gateway gRPC address as host:port (e.g. gateway.example.com:9443)
@@ -196,16 +201,13 @@ Environment variables:
 
 Examples:
   # Interactive (prompts for everything):
-  sudo bash setup-monitoring-node.sh
-
-  # Partially interactive (pre-fill host, prompt for token):
-  sudo bash setup-monitoring-node.sh --host gateway.example.com
+  sudo bash setup-docker-node.sh
 
   # Fully non-interactive:
-  sudo bash setup-monitoring-node.sh -y --host gateway.example.com --token gw_node_abc123
+  sudo bash setup-docker-node.sh -y --host gateway.example.com --token gw_node_abc123
 
   # Custom GitLab and user:
-  sudo bash setup-monitoring-node.sh --gitlab-url https://git.example.com --user monitor --gateway gw:9443 --token TOKEN
+  sudo bash setup-docker-node.sh --gitlab-url https://git.example.com --user dockeruser --gateway gw:9443 --token TOKEN
 HELP
     exit 0
 }
@@ -241,7 +243,7 @@ if [[ -n "$GATEWAY_ADDR" && -z "$GATEWAY_HOST" ]]; then
     fi
 fi
 
-# ── Validate ──────────────────────────────────────────────────────
+# ── Validate ─────────────────────────────────────────────────────────
 need_root
 detect_os
 detect_arch
@@ -250,24 +252,31 @@ build_gitlab_api
 
 : > "$LOG_FILE"
 
-# ── Logo ──────────────────────────────────────────────────────────
+# ── Check Docker ─────────────────────────────────────────────────────
+if ! command_exists docker; then
+    die "Docker is required but not found. Install Docker first: https://docs.docker.com/engine/install/"
+fi
+
+DOCKER_VER=$(docker version --format '{{.Server.Version}}' 2>/dev/null || echo "unknown")
+
+# ── Logo ─────────────────────────────────────────────────────────────
 if [[ "$NO_LOGO" -eq 0 ]]; then
     echo ""
     echo -e "${BOLD}${CYAN}"
     echo '  ┌─────────────────────────────────────┐'
-    echo '  │     Gateway — Monitoring Node        │'
-    echo '  │     System Metrics Agent             │'
+    echo '  │     Gateway — Docker Node Setup      │'
+    echo '  │     Docker Daemon Installer          │'
     echo '  └─────────────────────────────────────┘'
     echo -e "${NC}"
 fi
 
-# ── Interactive configuration ─────────────────────────────────────
+# ── Interactive configuration ────────────────────────────────────────
 if [[ "$NON_INTERACTIVE" -eq 0 ]]; then
     echo -e "  ${GRAY}This script will:${NC}"
-    echo -e "  ${GRAY}  1. Download and install the monitoring-daemon binary${NC}"
+    echo -e "  ${GRAY}  1. Download and install the docker-daemon binary${NC}"
     echo -e "  ${GRAY}  2. Enroll this node with your Gateway server${NC}"
     echo -e "  ${GRAY}  3. Start the daemon as a systemd service${NC}"
-    echo -e "  ${GRAY}  No nginx or other software is required.${NC}"
+    echo -e "  ${GRAY}  Docker ${DOCKER_VER} detected.${NC}"
     echo ""
 
     # Gateway host
@@ -328,7 +337,7 @@ else
     [[ -z "$RUN_USER" ]] && RUN_USER="root"
 fi
 
-# ── Resolve run user/group ────────────────────────────────────────
+# ── Resolve run user/group ───────────────────────────────────────────
 RUN_GROUP=""
 if [[ "$RUN_USER" == "root" ]]; then
     RUN_GROUP="root"
@@ -337,15 +346,21 @@ else
         die "User '$RUN_USER' does not exist. Create it first or choose a different user."
     fi
     RUN_GROUP=$(id -gn "$RUN_USER" 2>/dev/null)
+    # Ensure user is in docker group
+    if ! groups "$RUN_USER" 2>/dev/null | grep -qw docker; then
+        warn "User '$RUN_USER' is not in the 'docker' group. The daemon may not be able to access Docker."
+        warn "Run: usermod -aG docker ${RUN_USER}"
+    fi
 fi
 
-# ── Confirmation ──────────────────────────────────────────────────
+# ── Confirmation ─────────────────────────────────────────────────────
 echo -e "  ${BOLD}Configuration Summary${NC}"
 echo -e "  ${GRAY}────────────────────────────────────────${NC}"
 echo -e "  Gateway:     ${CYAN}${GATEWAY_ADDR}${NC}"
 echo -e "  Token:       ${GRAY}${ENROLL_TOKEN:0:12}...${NC}"
 echo -e "  Arch:        ${ARCH}"
 echo -e "  OS:          ${OS_ID}"
+echo -e "  Docker:      ${DOCKER_VER}"
 echo -e "  Daemon ver:  ${DAEMON_VERSION}"
 echo -e "  Run as:      ${RUN_USER}:${RUN_GROUP}"
 echo -e "  GitLab:      ${GITLAB_URL}"
@@ -358,36 +373,36 @@ if ! prompt_yes_no "Proceed with installation?" "Y"; then
 fi
 echo ""
 
-# ── Step 1: Create directories ────────────────────────────────────
+# ── Step 1: Create directories ───────────────────────────────────────
 create_directories() {
     log "Creating required directories..."
-    mkdir -p /etc/monitoring-daemon/certs
-    mkdir -p /var/lib/monitoring-daemon
+    mkdir -p /etc/docker-daemon/certs
+    mkdir -p /var/lib/docker-daemon
 
     if [[ "$RUN_USER" != "root" ]]; then
-        chown -R "${RUN_USER}:${RUN_GROUP}" /etc/monitoring-daemon
-        chown -R "${RUN_USER}:${RUN_GROUP}" /var/lib/monitoring-daemon
+        chown -R "${RUN_USER}:${RUN_GROUP}" /etc/docker-daemon
+        chown -R "${RUN_USER}:${RUN_GROUP}" /var/lib/docker-daemon
     fi
 
     ok "Directories created"
 }
 
-# ── Step 2: Download monitoring-daemon binary ─────────────────────
+# ── Step 2: Download docker-daemon binary ────────────────────────────
 resolve_download_url() {
     local version="$1"
-    local binary_name="monitoring-daemon-linux-${ARCH}"
+    local binary_name="docker-daemon-linux-${ARCH}"
 
     if [[ "$version" == "latest" ]]; then
-        log "Resolving latest monitoring release tag..."
+        log "Resolving latest docker release tag..."
         local latest_tag
-        latest_tag=$(curl -fsSL "${GITLAB_API}/releases" | jq -r '[.[] | select(.tag_name | test("-monitoring$"))][0].tag_name')
+        latest_tag=$(curl -fsSL "${GITLAB_API}/releases" | jq -r '[.[] | select(.tag_name | test("-docker$"))][0].tag_name')
         if [[ -z "$latest_tag" || "$latest_tag" == "null" ]]; then
-            die "Could not resolve latest monitoring release tag from ${GITLAB_API}/releases"
+            die "Could not resolve latest docker release tag from ${GITLAB_API}/releases"
         fi
         log "Resolved tag: ${latest_tag}"
         RELEASE_BASE="${GITLAB_API}/releases/${latest_tag}/downloads"
     else
-        RELEASE_BASE="${GITLAB_API}/releases/${version}-monitoring/downloads"
+        RELEASE_BASE="${GITLAB_API}/releases/${version}-docker/downloads"
     fi
 
     DOWNLOAD_URL="${RELEASE_BASE}/${binary_name}"
@@ -421,23 +436,23 @@ verify_checksum() {
 }
 
 install_daemon() {
-    local target="/usr/local/bin/monitoring-daemon"
-    local binary_name="monitoring-daemon-linux-${ARCH}"
+    local target="/usr/local/bin/docker-daemon"
+    local binary_name="docker-daemon-linux-${ARCH}"
 
     if [[ -f "$target" ]]; then
         local existing_ver
         existing_ver=$("$target" version 2>/dev/null | awk '{print $2}' || echo "unknown")
         if [[ "$DAEMON_VERSION" == "latest" || "$DAEMON_VERSION" == "$existing_ver" ]]; then
-            ok "monitoring-daemon already installed (${existing_ver})"
+            ok "docker-daemon already installed (${existing_ver})"
             return 0
         fi
-        log "Upgrading monitoring-daemon from ${existing_ver} to ${DAEMON_VERSION}..."
+        log "Upgrading docker-daemon from ${existing_ver} to ${DAEMON_VERSION}..."
         # Backup existing binary
         local backup="${target}.backup.$(date +%Y%m%d_%H%M%S)"
         cp "$target" "$backup"
         ok "Backed up existing binary to ${backup}"
     else
-        log "Downloading monitoring-daemon..."
+        log "Downloading docker-daemon..."
     fi
 
     resolve_download_url "$DAEMON_VERSION"
@@ -448,49 +463,50 @@ install_daemon() {
         chmod +x "$target"
         local ver
         ver=$("$target" version 2>/dev/null | awk '{print $2}' || echo "unknown")
-        ok "monitoring-daemon installed (${ver})"
+        ok "docker-daemon installed (${ver})"
     else
         rm -f "${target}.tmp"
         warn "Failed to download from releases — you may need to install the binary manually"
-        warn "Place the monitoring-daemon binary at ${target}"
+        warn "Place the docker-daemon binary at ${target}"
 
         if [[ ! -f "$target" ]]; then
-            die "monitoring-daemon binary not found at ${target}"
+            die "docker-daemon binary not found at ${target}"
         fi
     fi
 }
 
-# ── Step 3: Install and enroll ────────────────────────────────────
+# ── Step 3: Install and enroll ───────────────────────────────────────
 enroll_daemon() {
-    local target="/usr/local/bin/monitoring-daemon"
+    local target="/usr/local/bin/docker-daemon"
 
     # Check if already enrolled (certs exist)
-    if [[ -f /etc/monitoring-daemon/certs/node.pem && -f /var/lib/monitoring-daemon/state.json ]]; then
+    if [[ -f /etc/docker-daemon/certs/node.pem && -f /var/lib/docker-daemon/state.json ]]; then
         ok "Node already enrolled — skipping enrollment"
         return 0
     fi
 
     log "Writing config and enrolling with Gateway..."
     "$target" install --gateway "$GATEWAY_ADDR" --token "$ENROLL_TOKEN"
-    ok "Config written to /etc/monitoring-daemon/config.yaml"
+    ok "Config written to /etc/docker-daemon/config.yaml"
 }
 
-# ── Step 4: Start the daemon ──────────────────────────────────────
+# ── Step 4: Start the daemon ─────────────────────────────────────────
 start_daemon() {
-    log "Enabling and starting monitoring-daemon..."
+    log "Enabling and starting docker-daemon..."
 
     if command_exists systemctl; then
-        cat > /etc/systemd/system/monitoring-daemon.service <<UNIT
+        cat > /etc/systemd/system/docker-daemon.service <<UNIT
 [Unit]
-Description=Gateway Monitoring Daemon
-After=network-online.target
+Description=Gateway Docker Daemon
+After=network-online.target docker.service
 Wants=network-online.target
+Requires=docker.service
 
 [Service]
 Type=simple
 User=${RUN_USER}
 Group=${RUN_GROUP}
-ExecStart=/usr/local/bin/monitoring-daemon run
+ExecStart=/usr/local/bin/docker-daemon run
 Restart=on-failure
 RestartSec=5
 LimitNOFILE=65536
@@ -500,30 +516,30 @@ WantedBy=multi-user.target
 UNIT
 
         systemctl daemon-reload >> "$LOG_FILE" 2>&1
-        systemctl enable monitoring-daemon >> "$LOG_FILE" 2>&1
-        systemctl restart monitoring-daemon >> "$LOG_FILE" 2>&1
+        systemctl enable docker-daemon >> "$LOG_FILE" 2>&1
+        systemctl restart docker-daemon >> "$LOG_FILE" 2>&1
         sleep 2
 
-        if systemctl is-active --quiet monitoring-daemon; then
-            ok "monitoring-daemon is running"
+        if systemctl is-active --quiet docker-daemon; then
+            ok "docker-daemon is running"
         else
-            warn "monitoring-daemon may not have started. Check: journalctl -u monitoring-daemon -f"
+            warn "docker-daemon may not have started. Check: journalctl -u docker-daemon -f"
         fi
     else
-        warn "systemd not found — start the daemon manually: monitoring-daemon run"
+        warn "systemd not found — start the daemon manually: docker-daemon run"
     fi
 }
 
-# ── Run ───────────────────────────────────────────────────────────
+# ── Run ──────────────────────────────────────────────────────────────
 create_directories
 install_daemon
 enroll_daemon
 start_daemon
 
 echo ""
-echo -e "${GREEN}${BOLD}Monitoring node setup complete!${NC}"
+echo -e "${GREEN}${BOLD}Docker node setup complete!${NC}"
 echo ""
 echo -e "  The node should appear as ${GREEN}online${NC} in Gateway within a few seconds."
-echo -e "  Check status:  ${CYAN}systemctl status monitoring-daemon${NC}"
-echo -e "  View logs:     ${CYAN}journalctl -u monitoring-daemon -f${NC}"
+echo -e "  Check status:  ${CYAN}systemctl status docker-daemon${NC}"
+echo -e "  View logs:     ${CYAN}journalctl -u docker-daemon -f${NC}"
 echo ""

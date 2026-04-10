@@ -54,5 +54,5 @@
 
 ## Working On
 
-- [ ] Separate daemon deploy tags from gateway deploy tags (not sure how to)
+- [x] Separate daemon deploy tags from gateway deploy tags (not sure how to)
 - [ ] Update install script to handle all daemon types + updates when re-ran

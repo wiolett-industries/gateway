@@ -13,7 +13,6 @@ IFS=$'\n\t'
 #   bash setup-node.sh --gateway gateway.example.com:9443 --token <TOKEN>
 # ──────────────────────────────────────────────────────────────────────
 
-GITLAB_API="https://gitlab.wiolett.net/api/v4/projects/wiolett%2Fgateway"
 LOG_FILE="/tmp/gateway_node_setup.log"
 
 # ── Colors ───────────────────────────────────────────────────────────
@@ -32,6 +31,10 @@ GATEWAY_ADDR="${GATEWAY_NODE_ADDRESS:-}"
 ENROLL_TOKEN="${GATEWAY_NODE_TOKEN:-}"
 DAEMON_VERSION="${GATEWAY_NODE_DAEMON_VERSION:-latest}"
 SKIP_NGINX="${GATEWAY_NODE_SKIP_NGINX:-0}"
+GITLAB_URL="${GATEWAY_GITLAB_URL:-https://gitlab.wiolett.net}"
+GITLAB_PROJECT="${GATEWAY_GITLAB_PROJECT:-wiolett/gateway}"
+RUN_USER=""
+NGINX_REPO=""
 NON_INTERACTIVE=0
 NO_LOGO=0
 
@@ -101,6 +104,24 @@ prompt_yes_no() {
     [[ "$reply" =~ ^[yY]$ ]]
 }
 
+prompt_choice() {
+    local prompt="$1"
+    local default="$2"
+    shift 2
+    local options=("$@")
+    local reply
+    if [[ "$NON_INTERACTIVE" -eq 1 ]]; then
+        echo "$default"
+        return
+    fi
+    if [ -e /dev/tty ]; then
+        read -r -p "$(echo -e "  ${CYAN}${prompt} [${default}]: ${NC}")" reply < /dev/tty
+    else
+        reply=""
+    fi
+    echo "${reply:-$default}"
+}
+
 need_root() {
     if [[ $EUID -ne 0 ]]; then
         die "This script must be run as root (or with sudo)"
@@ -131,6 +152,20 @@ detect_arch() {
 
 command_exists() { command -v "$1" &>/dev/null; }
 
+check_dependencies() {
+    if ! command_exists curl; then
+        die "curl is required but not found. Install it and retry."
+    fi
+    if ! command_exists jq; then
+        die "jq is required but not found. Install it and retry."
+    fi
+}
+
+build_gitlab_api() {
+    local encoded_project="${GITLAB_PROJECT//\//%2F}"
+    GITLAB_API="${GITLAB_URL}/api/v4/projects/${encoded_project}"
+}
+
 # ── Parse Arguments ──────────────────────────────────────────────────
 show_help() {
     cat <<'HELP'
@@ -143,15 +178,19 @@ Usage:
   and enrollment token. Use flags to pre-fill or skip prompts.
 
 Options:
-  --gateway <addr>     Gateway gRPC address as host:port (e.g. gateway.example.com:9443)
-  --host <host>        Gateway hostname or IP (e.g. gateway.example.com)
-  --port <port>        Gateway gRPC port (default: 9443)
-  --token <token>      Enrollment token from Gateway UI (Admin > Nodes > Add Node)
-  --version <ver>      Daemon version to install (default: latest)
-  --skip-nginx         Skip nginx installation (if already installed)
-  --no-logo            Suppress the logo banner
-  -y, --yes            Non-interactive mode (no prompts, all values required via flags)
-  -h, --help           Show this help
+  --gateway <addr>         Gateway gRPC address as host:port (e.g. gateway.example.com:9443)
+  --host <host>            Gateway hostname or IP (e.g. gateway.example.com)
+  --port <port>            Gateway gRPC port (default: 9443)
+  --token <token>          Enrollment token from Gateway UI (Admin > Nodes > Add Node)
+  --version <ver>          Daemon version to install (default: latest)
+  --user <user>            Run daemon as this user (default: root)
+  --skip-nginx             Skip nginx installation (if already installed)
+  --nginx-repo <type>      Nginx repo: system, stable, or custom (default: interactive)
+  --gitlab-url <url>       GitLab instance URL (default: https://gitlab.wiolett.net)
+  --gitlab-project <proj>  GitLab project path (default: wiolett/gateway)
+  --no-logo                Suppress the logo banner
+  -y, --yes                Non-interactive mode (no prompts, all values required via flags)
+  -h, --help               Show this help
 
 Environment variables:
   GATEWAY_NODE_HOST             Same as --host
@@ -160,6 +199,8 @@ Environment variables:
   GATEWAY_NODE_TOKEN            Same as --token
   GATEWAY_NODE_DAEMON_VERSION   Same as --version
   GATEWAY_NODE_SKIP_NGINX       Set to 1 to skip nginx install
+  GATEWAY_GITLAB_URL            Same as --gitlab-url
+  GATEWAY_GITLAB_PROJECT        Same as --gitlab-project
 
 Examples:
   # Interactive (prompts for everything):
@@ -173,21 +214,28 @@ Examples:
 
   # Legacy format (host:port combined):
   sudo bash setup-node.sh --gateway gateway.example.com:9443 --token gw_node_abc123
+
+  # Custom GitLab and user:
+  sudo bash setup-node.sh --gitlab-url https://git.example.com --user www-data --gateway gw:9443 --token TOKEN
 HELP
     exit 0
 }
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --gateway)    GATEWAY_ADDR="$2"; shift 2 ;;
-        --host)       GATEWAY_HOST="$2"; shift 2 ;;
-        --port)       GATEWAY_PORT="$2"; shift 2 ;;
-        --token)      ENROLL_TOKEN="$2"; shift 2 ;;
-        --version)    DAEMON_VERSION="$2"; shift 2 ;;
-        --skip-nginx) SKIP_NGINX=1; shift ;;
-        --no-logo)    NO_LOGO=1; shift ;;
-        -y|--yes)     NON_INTERACTIVE=1; NO_LOGO=1; shift ;;
-        -h|--help)    show_help ;;
+        --gateway)        GATEWAY_ADDR="$2"; shift 2 ;;
+        --host)           GATEWAY_HOST="$2"; shift 2 ;;
+        --port)           GATEWAY_PORT="$2"; shift 2 ;;
+        --token)          ENROLL_TOKEN="$2"; shift 2 ;;
+        --version)        DAEMON_VERSION="$2"; shift 2 ;;
+        --user)           RUN_USER="$2"; shift 2 ;;
+        --skip-nginx)     SKIP_NGINX=1; shift ;;
+        --nginx-repo)     NGINX_REPO="$2"; shift 2 ;;
+        --gitlab-url)     GITLAB_URL="$2"; shift 2 ;;
+        --gitlab-project) GITLAB_PROJECT="$2"; shift 2 ;;
+        --no-logo)        NO_LOGO=1; shift ;;
+        -y|--yes)         NON_INTERACTIVE=1; NO_LOGO=1; shift ;;
+        -h|--help)        show_help ;;
         *) die "Unknown option: $1. Use --help for usage." ;;
     esac
 done
@@ -211,6 +259,8 @@ fi
 need_root
 detect_os
 detect_arch
+check_dependencies
+build_gitlab_api
 
 : > "$LOG_FILE"
 
@@ -264,6 +314,42 @@ if [[ "$NON_INTERACTIVE" -eq 0 ]]; then
     DAEMON_VERSION=$(prompt_input "Daemon version" "${DAEMON_VERSION}")
 
     echo ""
+
+    # User selection
+    if [[ -z "$RUN_USER" ]]; then
+        echo -e "  ${GRAY}Run daemon as:${NC}"
+        echo -e "    ${CYAN}1)${NC} root  ${GRAY}[default]${NC}"
+        echo -e "    ${CYAN}2)${NC} Current user ($(logname 2>/dev/null || echo "$SUDO_USER"))"
+        echo -e "    ${CYAN}3)${NC} Custom user"
+        echo ""
+        user_choice=$(prompt_choice "Choose" "1")
+        case "$user_choice" in
+            1|root)   RUN_USER="root" ;;
+            2)        RUN_USER="$(logname 2>/dev/null || echo "${SUDO_USER:-root}")" ;;
+            3)        RUN_USER=$(prompt_input "Username" ""); [[ -z "$RUN_USER" ]] && die "Username is required" ;;
+            *)        RUN_USER="root" ;;
+        esac
+        echo ""
+    fi
+
+    # Nginx version selection
+    if [[ -z "$NGINX_REPO" && "$SKIP_NGINX" -eq 0 ]]; then
+        if ! command_exists nginx; then
+            echo -e "  ${GRAY}Nginx version:${NC}"
+            echo -e "    ${CYAN}1)${NC} System default  ${GRAY}[default]${NC}"
+            echo -e "    ${CYAN}2)${NC} Stable (nginx.org official repo)"
+            echo -e "    ${CYAN}3)${NC} Custom"
+            echo ""
+            nginx_choice=$(prompt_choice "Choose" "1")
+            case "$nginx_choice" in
+                1|system) NGINX_REPO="system" ;;
+                2|stable) NGINX_REPO="stable" ;;
+                3|custom) NGINX_REPO="custom" ;;
+                *)        NGINX_REPO="system" ;;
+            esac
+            echo ""
+        fi
+    fi
 else
     # Non-interactive: validate required fields
     if [[ -z "$GATEWAY_ADDR" ]]; then
@@ -272,6 +358,21 @@ else
     if [[ -z "$ENROLL_TOKEN" ]]; then
         die "--token is required in non-interactive mode"
     fi
+    # Default user to root in non-interactive mode
+    [[ -z "$RUN_USER" ]] && RUN_USER="root"
+    [[ -z "$NGINX_REPO" ]] && NGINX_REPO="system"
+fi
+
+# ── Resolve run user/group ───────────────────────────────────────────
+RUN_GROUP=""
+if [[ "$RUN_USER" == "root" ]]; then
+    RUN_GROUP="root"
+else
+    # Verify user exists
+    if ! id "$RUN_USER" &>/dev/null; then
+        die "User '$RUN_USER' does not exist. Create it first or choose a different user."
+    fi
+    RUN_GROUP=$(id -gn "$RUN_USER" 2>/dev/null)
 fi
 
 # ── Confirmation ─────────────────────────────────────────────────────
@@ -282,7 +383,9 @@ echo -e "  Token:       ${GRAY}${ENROLL_TOKEN:0:12}...${NC}"
 echo -e "  Arch:        ${ARCH}"
 echo -e "  OS:          ${OS_ID}"
 echo -e "  Daemon ver:  ${DAEMON_VERSION}"
+echo -e "  Run as:      ${RUN_USER}:${RUN_GROUP}"
 echo -e "  Skip nginx:  $([ "$SKIP_NGINX" -eq 1 ] && echo "yes" || echo "no")"
+echo -e "  GitLab:      ${GITLAB_URL}"
 echo -e "  ${GRAY}────────────────────────────────────────${NC}"
 echo ""
 
@@ -293,6 +396,33 @@ fi
 echo ""
 
 # ── Step 1: Install nginx ────────────────────────────────────────────
+install_nginx_stable_repo() {
+    log "Adding nginx.org stable repository..."
+    case "$OS_LIKE" in
+        *debian*|*ubuntu*)
+            apt-get install -y -qq gnupg2 ca-certificates lsb-release >> "$LOG_FILE" 2>&1
+            curl -fsSL https://nginx.org/keys/nginx_signing.key | gpg --dearmor -o /usr/share/keyrings/nginx-archive-keyring.gpg 2>> "$LOG_FILE"
+            echo "deb [signed-by=/usr/share/keyrings/nginx-archive-keyring.gpg] http://nginx.org/packages/$(. /etc/os-release && echo "$ID") $(lsb_release -cs) nginx" \
+                > /etc/apt/sources.list.d/nginx.list
+            apt-get update -qq >> "$LOG_FILE" 2>&1
+            ;;
+        *rhel*|*fedora*|*centos*)
+            cat > /etc/yum.repos.d/nginx.repo <<'REPO'
+[nginx-stable]
+name=nginx stable repo
+baseurl=http://nginx.org/packages/centos/$releasever/$basearch/
+gpgcheck=1
+enabled=1
+gpgkey=https://nginx.org/keys/nginx_signing.key
+module_hotfixes=true
+REPO
+            ;;
+        *)
+            warn "Cannot add nginx.org repo for ${OS_ID}. Falling back to system package."
+            ;;
+    esac
+}
+
 install_nginx() {
     if command_exists nginx; then
         local ver
@@ -304,6 +434,13 @@ install_nginx() {
     if [[ "$SKIP_NGINX" -eq 1 ]]; then
         warn "Skipping nginx install (--skip-nginx). Make sure nginx is available."
         return 0
+    fi
+
+    # Add stable repo if requested
+    if [[ "$NGINX_REPO" == "stable" ]]; then
+        install_nginx_stable_repo
+    elif [[ "$NGINX_REPO" == "custom" ]]; then
+        warn "Custom nginx repo selected — assuming repo is already configured."
     fi
 
     log "Installing nginx..."
@@ -375,12 +512,67 @@ create_directories() {
     mkdir -p /var/www/acme-challenge/.well-known/acme-challenge
     mkdir -p /etc/nginx-daemon/certs
     mkdir -p /var/lib/nginx-daemon
+
+    # Chown if non-root user
+    if [[ "$RUN_USER" != "root" ]]; then
+        chown -R "${RUN_USER}:${RUN_GROUP}" /etc/nginx-daemon
+        chown -R "${RUN_USER}:${RUN_GROUP}" /var/lib/nginx-daemon
+    fi
+
     ok "Directories created"
 }
 
 # ── Step 4: Download nginx-daemon binary ─────────────────────────────
+resolve_download_url() {
+    local version="$1"
+    local binary_name="nginx-daemon-linux-${ARCH}"
+
+    if [[ "$version" == "latest" ]]; then
+        log "Resolving latest nginx release tag..."
+        local latest_tag
+        latest_tag=$(curl -fsSL "${GITLAB_API}/releases" | jq -r '[.[] | select(.tag_name | test("-nginx$"))][0].tag_name')
+        if [[ -z "$latest_tag" || "$latest_tag" == "null" ]]; then
+            die "Could not resolve latest nginx release tag from ${GITLAB_API}/releases"
+        fi
+        log "Resolved tag: ${latest_tag}"
+        RELEASE_BASE="${GITLAB_API}/releases/${latest_tag}/downloads"
+    else
+        RELEASE_BASE="${GITLAB_API}/releases/${version}-nginx/downloads"
+    fi
+
+    DOWNLOAD_URL="${RELEASE_BASE}/${binary_name}"
+}
+
+verify_checksum() {
+    local file="$1"
+    local binary_name="$2"
+
+    log "Verifying checksum..."
+    local checksums_file="/tmp/gateway_checksums.txt"
+    if curl -fsSL "${RELEASE_BASE}/checksums.txt" -o "$checksums_file" >> "$LOG_FILE" 2>&1; then
+        local expected actual
+        expected=$(grep "$binary_name" "$checksums_file" | awk '{print $1}')
+        actual=$(sha256sum "$file" | awk '{print $1}')
+        rm -f "$checksums_file"
+
+        if [[ -z "$expected" ]]; then
+            warn "No checksum found for ${binary_name} in checksums.txt — skipping verification"
+            return 0
+        fi
+
+        if [[ "$expected" != "$actual" ]]; then
+            die "Checksum verification failed! Expected: ${expected}, Got: ${actual}"
+        fi
+        ok "Checksum verified"
+    else
+        rm -f "$checksums_file"
+        warn "Could not download checksums.txt — skipping verification"
+    fi
+}
+
 install_daemon() {
     local target="/usr/local/bin/nginx-daemon"
+    local binary_name="nginx-daemon-linux-${ARCH}"
 
     if [[ -f "$target" ]]; then
         local existing_ver
@@ -390,18 +582,18 @@ install_daemon() {
             return 0
         fi
         log "Upgrading nginx-daemon from ${existing_ver} to ${DAEMON_VERSION}..."
+        # Backup existing binary
+        local backup="${target}.backup.$(date +%Y%m%d_%H%M%S)"
+        cp "$target" "$backup"
+        ok "Backed up existing binary to ${backup}"
     else
         log "Downloading nginx-daemon..."
     fi
 
-    local download_url
-    if [[ "$DAEMON_VERSION" == "latest" ]]; then
-        download_url="${GITLAB_API}/releases/permalink/latest/downloads/nginx-daemon-linux-${ARCH}"
-    else
-        download_url="${GITLAB_API}/releases/${DAEMON_VERSION}/downloads/nginx-daemon-linux-${ARCH}"
-    fi
+    resolve_download_url "$DAEMON_VERSION"
 
-    if curl -fsSL "$download_url" -o "${target}.tmp" >> "$LOG_FILE" 2>&1; then
+    if curl -fsSL "$DOWNLOAD_URL" -o "${target}.tmp" >> "$LOG_FILE" 2>&1; then
+        verify_checksum "${target}.tmp" "$binary_name"
         mv "${target}.tmp" "$target"
         chmod +x "$target"
         local ver
@@ -438,6 +630,26 @@ start_daemon() {
     log "Enabling and starting nginx-daemon..."
 
     if command_exists systemctl; then
+        # Write systemd unit with user/group support
+        cat > /etc/systemd/system/nginx-daemon.service <<UNIT
+[Unit]
+Description=Gateway Nginx Daemon
+After=network-online.target nginx.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=${RUN_USER}
+Group=${RUN_GROUP}
+ExecStart=/usr/local/bin/nginx-daemon run
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
         systemctl daemon-reload >> "$LOG_FILE" 2>&1
         systemctl enable nginx-daemon >> "$LOG_FILE" 2>&1
         systemctl restart nginx-daemon >> "$LOG_FILE" 2>&1
