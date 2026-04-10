@@ -753,13 +753,13 @@ install_nginx() {
             info "Installing nginx..."
             if command -v apt-get &>/dev/null; then
                 run_quiet apt-get update
-                run_quiet apt-get install -y nginx
+                run_quiet apt-get install -y nginx jq
             elif command -v yum &>/dev/null; then
-                run_quiet yum install -y nginx
+                run_quiet yum install -y nginx jq
             elif command -v dnf &>/dev/null; then
-                run_quiet dnf install -y nginx
+                run_quiet dnf install -y nginx jq
             elif command -v apk &>/dev/null; then
-                run_quiet apk add nginx
+                run_quiet apk add nginx jq
             else
                 error "Could not detect package manager. Install nginx manually and re-run."
             fi
