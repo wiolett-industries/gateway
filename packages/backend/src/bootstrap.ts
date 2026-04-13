@@ -408,8 +408,11 @@ export async function initializeContainer(): Promise<void> {
   container.registerInstance(SchedulerService, scheduler);
 
   const acmeRenewalJob = new ACMERenewalJob(db, sslService, alertService);
+  acmeRenewalJob.setEventBus(eventBus);
   const healthCheckJob = new HealthCheckJob(db);
+  healthCheckJob.setEventBus(eventBus);
   const expiryAlertJob = new ExpiryAlertJob(db, alertService, env.EXPIRY_WARNING_DAYS, env.EXPIRY_CRITICAL_DAYS);
+  expiryAlertJob.setEventBus(eventBus);
 
   const dnsCheckJob = new DnsCheckJob(domainsService);
   scheduler.registerInterval('dns-check', env.DNS_CHECK_INTERVAL_SECONDS * 1000, () => dnsCheckJob.run());

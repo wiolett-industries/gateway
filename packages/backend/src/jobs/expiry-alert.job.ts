@@ -3,16 +3,21 @@ import type { DrizzleClient } from '@/db/client.js';
 import { alerts, certificateAuthorities, certificates, sslCertificates } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
 import type { AlertService } from '@/modules/audit/alert.service.js';
+import type { EventBusService } from '@/services/event-bus.service.js';
 
 const logger = createChildLogger('ExpiryAlertJob');
 
 export class ExpiryAlertJob {
+  private eventBus?: EventBusService;
+
   constructor(
     private readonly db: DrizzleClient,
     private readonly alertService: AlertService,
     private readonly warningDays: number,
     private readonly criticalDays: number
   ) {}
+
+  setEventBus(bus: EventBusService) { this.eventBus = bus; }
 
   async run(): Promise<void> {
     logger.info('Starting expiry alert check');
@@ -54,6 +59,9 @@ export class ExpiryAlertJob {
       });
       alertsCreated++;
       logger.info(`Created ${alertType} alert for SSL certificate: ${cert.name}`, { certId: cert.id, daysLeft });
+      if (daysLeft <= 0) {
+        this.eventBus?.publish('ssl.cert.changed', { id: cert.id, action: 'expired', name: cert.name });
+      }
     }
 
     // 2. Check PKI certificates

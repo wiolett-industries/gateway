@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import { proxyHosts } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
+import type { EventBusService } from '@/services/event-bus.service.js';
 
 const logger = createChildLogger('HealthCheckJob');
 
@@ -11,7 +12,11 @@ const MAX_HISTORY_AGE_MS = 90 * 24 * 3600 * 1000; // 90 days
 type HealthStatus = 'online' | 'offline' | 'degraded' | 'unknown';
 
 export class HealthCheckJob {
+  private eventBus?: EventBusService;
+
   constructor(private readonly db: DrizzleClient) {}
+
+  setEventBus(bus: EventBusService) { this.eventBus = bus; }
 
   async run(): Promise<void> {
     // Query proxy hosts with health checks enabled
@@ -51,13 +56,20 @@ export class HealthCheckJob {
         // Write to DB
         await this.db.update(proxyHosts).set(updatePayload).where(eq(proxyHosts.id, host.id));
 
-        // Log status transitions
+        // Log status transitions and publish event
         if (previousStatus !== newStatus) {
           logger.info(`Health status changed for ${host.domainNames?.join(', ') || host.id}`, {
             hostId: host.id,
             previousStatus,
             newStatus,
             forwardHost: host.forwardHost,
+          });
+          const healthAction = newStatus === 'online' ? 'health.online' : newStatus === 'offline' ? 'health.offline' : 'health.degraded';
+          this.eventBus?.publish('proxy.host.changed', {
+            id: host.id,
+            action: healthAction,
+            domain: host.domainNames?.[0],
+            health_status: newStatus,
           });
         }
 

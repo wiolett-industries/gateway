@@ -92,7 +92,6 @@ export const ALERT_CATEGORIES: CategoryDefinition[] = [
     ],
     events: [
       { id: 'stopped', label: 'Container Stopped', defaultSeverity: 'warning' },
-      { id: 'oom_killed', label: 'Container OOM Killed', defaultSeverity: 'critical' },
       { id: 'started', label: 'Container Started', defaultSeverity: 'info' },
       { id: 'exited', label: 'Container Exited', defaultSeverity: 'warning' },
     ],
@@ -185,6 +184,16 @@ export const EVENT_BUS_MAPPINGS: Record<string, EventMapping[]> = {
       match: (p) => p.action === 'renewed',
       extractResource: (p) => ({ type: 'certificate', id: p.id, name: p.name }),
     },
+    {
+      category: 'certificate', eventId: 'renewal_failed',
+      match: (p) => p.action === 'renewal_failed',
+      extractResource: (p) => ({ type: 'certificate', id: p.id, name: p.name }),
+    },
+    {
+      category: 'certificate', eventId: 'expired',
+      match: (p) => p.action === 'expired',
+      extractResource: (p) => ({ type: 'certificate', id: p.id, name: p.name }),
+    },
   ],
   'proxy.host.changed': [
     {
@@ -196,6 +205,24 @@ export const EVENT_BUS_MAPPINGS: Record<string, EventMapping[]> = {
       category: 'proxy', eventId: 'deleted',
       match: (p) => p.action === 'deleted',
       extractResource: (p) => ({ type: 'proxy', id: p.id, name: p.domain }),
+    },
+    {
+      category: 'proxy', eventId: 'health.offline',
+      match: (p) => p.action === 'health.offline',
+      extractResource: (p) => ({ type: 'proxy', id: p.id, name: p.domain }),
+      extractData: (p) => ({ health_status: p.health_status }),
+    },
+    {
+      category: 'proxy', eventId: 'health.degraded',
+      match: (p) => p.action === 'health.degraded',
+      extractResource: (p) => ({ type: 'proxy', id: p.id, name: p.domain }),
+      extractData: (p) => ({ health_status: p.health_status }),
+    },
+    {
+      category: 'proxy', eventId: 'health.online',
+      match: (p) => p.action === 'health.online',
+      extractResource: (p) => ({ type: 'proxy', id: p.id, name: p.domain }),
+      extractData: (p) => ({ health_status: p.health_status }),
     },
   ],
   'docker.container.changed': [
@@ -213,13 +240,7 @@ export const EVENT_BUS_MAPPINGS: Record<string, EventMapping[]> = {
     },
     {
       category: 'container', eventId: 'exited',
-      match: (p) => p.action === 'killed' && !p.oomKilled,
-      extractResource: (p) => ({ type: 'container', id: p.id, name: p.name }),
-      extractData: (p) => ({ nodeId: p.nodeId }),
-    },
-    {
-      category: 'container', eventId: 'oom_killed',
-      match: (p) => p.oomKilled || p.action === 'oom_killed',
+      match: (p) => p.action === 'killed',
       extractResource: (p) => ({ type: 'container', id: p.id, name: p.name }),
       extractData: (p) => ({ nodeId: p.nodeId }),
     },
