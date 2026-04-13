@@ -1,0 +1,249 @@
+import { createHmac } from 'node:crypto';
+import { eq } from 'drizzle-orm';
+import type { DrizzleClient } from '@/db/client.js';
+import { notificationDeliveryLog, notificationWebhooks } from '@/db/schema/index.js';
+import { createChildLogger } from '@/lib/logger.js';
+import type { NotificationWebhookService } from './notification-webhook.service.js';
+import { buildTemplateContext, renderTemplate, type NotificationEvent } from './notification-templates.js';
+import type { Env } from '@/config/env.js';
+
+const logger = createChildLogger('NotificationDispatcher');
+
+/** Exponential backoff delays in seconds for each retry attempt */
+const RETRY_DELAYS = [30, 120, 480, 1800, 7200]; // 30s, 2m, 8m, 30m, 2h
+const MAX_RESPONSE_BODY = 2048;
+const HTTP_TIMEOUT_MS = 10_000;
+
+export class NotificationDispatcherService {
+  constructor(
+    private db: DrizzleClient,
+    private webhookService: NotificationWebhookService,
+    private env: Env
+  ) {}
+
+  /**
+   * Dispatch a notification event to a single webhook.
+   * Renders the template, signs the payload, sends the HTTP request,
+   * and logs the delivery attempt.
+   *
+   * @param isTest - if true, returns result directly instead of scheduling retries
+   */
+  async dispatch(
+    webhook: {
+      id: string;
+      url: string;
+      method: string;
+      bodyTemplate: string | null;
+      headers: Record<string, string>;
+      signingSecret: string | null;
+      signingHeader: string | null;
+    },
+    event: NotificationEvent,
+    isTest = false
+  ): Promise<{ success: boolean; statusCode?: number; error?: string; rendered?: string }> {
+    const gatewayUrl = (this.env as any).PUBLIC_URL || (this.env as any).MANAGEMENT_DOMAIN || '';
+    const context = buildTemplateContext(event, gatewayUrl);
+
+    // Render template
+    const body = webhook.bodyTemplate ? renderTemplate(webhook.bodyTemplate, context) : JSON.stringify(context);
+
+    // Build headers
+    const headers: Record<string, string> = { ...webhook.headers };
+
+    // Compute HMAC signature if signing secret is set
+    if (webhook.signingSecret) {
+      const secret = this.webhookService.decryptSigningSecret(webhook.signingSecret);
+      if (secret) {
+        const headerName = webhook.signingHeader || 'X-Signature-256';
+        headers[headerName] = `sha256=${createHmac('sha256', secret).update(body).digest('hex')}`;
+      }
+    }
+
+    // Set Content-Type default if not already set
+    if (!Object.keys(headers).some((k) => k.toLowerCase() === 'content-type')) {
+      headers['Content-Type'] = 'application/json';
+    }
+
+    // Send HTTP request
+    const startTime = Date.now();
+    let responseStatus: number | undefined;
+    let responseBody: string | undefined;
+    let error: string | undefined;
+
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
+
+      const method = webhook.method || 'POST';
+      const fetchOptions: RequestInit = {
+        method,
+        headers,
+        signal: controller.signal,
+      };
+
+      // Only include body for methods that support it
+      if (method !== 'GET') {
+        fetchOptions.body = body;
+      }
+
+      const response = await fetch(webhook.url, fetchOptions);
+      clearTimeout(timeout);
+
+      responseStatus = response.status;
+      const rawBody = await response.text().catch(() => '');
+      responseBody = rawBody.length > MAX_RESPONSE_BODY ? rawBody.slice(0, MAX_RESPONSE_BODY) : rawBody;
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+      if (error.includes('abort')) {
+        error = `Request timed out after ${HTTP_TIMEOUT_MS}ms`;
+      }
+    }
+
+    const responseTimeMs = Date.now() - startTime;
+    const success = responseStatus !== undefined && responseStatus >= 200 && responseStatus < 300;
+
+    // Log the delivery attempt
+    const status = success ? 'success' : isTest ? 'failed' : 'retrying';
+    const nextRetryAt = !success && !isTest ? new Date(Date.now() + RETRY_DELAYS[0] * 1000) : null;
+
+    await this.db.insert(notificationDeliveryLog).values({
+      webhookId: webhook.id,
+      eventType: event.type,
+      severity: event.severity,
+      requestUrl: webhook.url,
+      requestMethod: webhook.method || 'POST',
+      requestBody: body,
+      responseStatus: responseStatus ?? null,
+      responseBody: responseBody ?? null,
+      responseTimeMs,
+      attempt: 1,
+      maxAttempts: isTest ? 1 : 5,
+      nextRetryAt,
+      status,
+      error: error ?? null,
+      completedAt: success ? new Date() : null,
+    });
+
+    if (!success) {
+      logger.warn('Webhook delivery failed', {
+        webhookId: webhook.id,
+        url: webhook.url,
+        event: event.type,
+        status: responseStatus,
+        error,
+      });
+    }
+
+    return { success, statusCode: responseStatus, error, rendered: isTest ? body : undefined };
+  }
+
+  /** Retry a failed delivery */
+  async retryDelivery(deliveryId: string): Promise<void> {
+    const [delivery] = await this.db
+      .select()
+      .from(notificationDeliveryLog)
+      .where(eq(notificationDeliveryLog.id, deliveryId))
+      .limit(1);
+
+    if (!delivery || delivery.status !== 'retrying') return;
+
+    // Re-fetch webhook to rebuild headers + HMAC signature
+    const [webhook] = await this.db
+      .select()
+      .from(notificationWebhooks)
+      .where(eq(notificationWebhooks.id, delivery.webhookId))
+      .limit(1);
+
+    if (!webhook) {
+      // Webhook deleted — mark delivery as failed
+      await this.db.update(notificationDeliveryLog)
+        .set({ status: 'failed', error: 'Webhook no longer exists', completedAt: new Date() })
+        .where(eq(notificationDeliveryLog.id, deliveryId));
+      return;
+    }
+
+    const nextAttempt = delivery.attempt + 1;
+
+    // Rebuild headers from webhook config
+    const retryHeaders: Record<string, string> = { ...((webhook.headers as Record<string, string>) ?? {}) };
+    if (webhook.signingSecret && delivery.requestBody) {
+      const secret = this.webhookService.decryptSigningSecret(webhook.signingSecret);
+      if (secret) {
+        const headerName = webhook.signingHeader || 'X-Signature-256';
+        retryHeaders[headerName] = `sha256=${createHmac('sha256', secret).update(delivery.requestBody).digest('hex')}`;
+      }
+    }
+    if (!Object.keys(retryHeaders).some((k) => k.toLowerCase() === 'content-type')) {
+      retryHeaders['Content-Type'] = 'application/json';
+    }
+
+    const startTime = Date.now();
+    let responseStatus: number | undefined;
+    let responseBody: string | undefined;
+    let error: string | undefined;
+
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
+
+      const fetchOptions: RequestInit = {
+        method: delivery.requestMethod,
+        headers: retryHeaders,
+        signal: controller.signal,
+      };
+
+      if (delivery.requestMethod !== 'GET' && delivery.requestBody) {
+        fetchOptions.body = delivery.requestBody;
+      }
+
+      const response = await fetch(delivery.requestUrl, fetchOptions);
+      clearTimeout(timeout);
+
+      responseStatus = response.status;
+      const rawBody = await response.text().catch(() => '');
+      responseBody = rawBody.length > MAX_RESPONSE_BODY ? rawBody.slice(0, MAX_RESPONSE_BODY) : rawBody;
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+      if (error.includes('abort')) {
+        error = `Request timed out after ${HTTP_TIMEOUT_MS}ms`;
+      }
+    }
+
+    const responseTimeMs = Date.now() - startTime;
+    const success = responseStatus !== undefined && responseStatus >= 200 && responseStatus < 300;
+    const isLastAttempt = nextAttempt >= delivery.maxAttempts;
+
+    let newStatus: string;
+    let nextRetryAt: Date | null = null;
+
+    if (success) {
+      newStatus = 'success';
+    } else if (isLastAttempt) {
+      newStatus = 'failed';
+    } else {
+      newStatus = 'retrying';
+      const delayIndex = Math.min(nextAttempt - 1, RETRY_DELAYS.length - 1);
+      nextRetryAt = new Date(Date.now() + RETRY_DELAYS[delayIndex] * 1000);
+    }
+
+    await this.db
+      .update(notificationDeliveryLog)
+      .set({
+        attempt: nextAttempt,
+        responseStatus: responseStatus ?? null,
+        responseBody: responseBody ?? null,
+        responseTimeMs,
+        status: newStatus,
+        error: error ?? null,
+        nextRetryAt,
+        completedAt: success || isLastAttempt ? new Date() : null,
+      })
+      .where(eq(notificationDeliveryLog.id, deliveryId));
+
+    if (success) {
+      logger.info('Webhook retry succeeded', { deliveryId, attempt: nextAttempt });
+    } else if (isLastAttempt) {
+      logger.warn('Webhook delivery permanently failed', { deliveryId, attempt: nextAttempt, error });
+    }
+  }
+}

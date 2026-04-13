@@ -16,7 +16,7 @@ import { createLogStreamHandlers } from './services/log-stream.js';
 
 const logger = createChildLogger('GrpcServer');
 
-const PROTO_PATH = resolve('proto/gateway/v1/nginx-daemon.proto');
+const PROTO_PATH = resolve(import.meta.dirname, '../../../../proto/gateway/v1/nginx-daemon.proto');
 
 export interface GrpcServerDeps {
   registry: NodeRegistryService;

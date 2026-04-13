@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowUpCircle,
   Award,
+  Bell,
   Box,
   FileText,
   Globe,
@@ -106,6 +107,7 @@ const navigationGroups: NavGroup[] = [
       { name: "Templates", href: "/templates", icon: Award, matchTabs: true },
       { name: "Nodes", href: "/nodes", icon: Server, scope: "nodes:list" },
       { name: "Access Lists", href: "/access-lists", icon: ShieldAlert, scope: "acl:list" },
+      { name: "Notifications", href: "/notifications", icon: Bell, scope: "notifications:view", matchTabs: true },
       { name: "Settings", href: "/settings", icon: Settings },
     ],
   },

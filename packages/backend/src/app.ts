@@ -42,6 +42,7 @@ import { setupRoutes } from '@/modules/setup/setup.routes.js';
 import { sslRoutes } from '@/modules/ssl/ssl.routes.js';
 import { systemRoutes } from '@/modules/system/system.routes.js';
 import { tokensRoutes } from '@/modules/tokens/tokens.routes.js';
+import { notificationRoutes } from '@/modules/notifications/notification.routes.js';
 import type { AppEnv } from '@/types.js';
 import { authenticateEventsConnection, createEventsWSHandlers } from '@/ws/events.ws.js';
 
@@ -124,6 +125,7 @@ export function createApp() {
   app.route('/api/setup', setupRoutes);
   app.route('/api/system', systemRoutes);
   app.route('/api/housekeeping', housekeepingRoutes);
+  app.route('/api/notifications', notificationRoutes);
   app.route('/api/ai', aiRoutes);
 
   // AI WebSocket endpoint

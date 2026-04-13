@@ -110,6 +110,9 @@ export const ALL_SCOPES = [
   'docker:templates:delete',
   // ── Docker: Tasks ────────────────────────────────────────────────
   'docker:tasks',
+  // ── Notifications ────────────────────────────────────────────────
+  'notifications:view',
+  'notifications:manage',
 ] as const;
 
 export type Scope = (typeof ALL_SCOPES)[number];
@@ -170,6 +173,9 @@ export const OPERATOR_SCOPES: readonly string[] = [
   'docker:containers:environment',
   'docker:containers:webhooks',
   'docker:tasks',
+  // Notifications
+  'notifications:view',
+  'notifications:manage',
 ];
 
 /** Viewer group: read-only scopes */
@@ -190,6 +196,8 @@ export const VIEWER_SCOPES: readonly string[] = [
   'acl:view',
   'docker:containers:list',
   'docker:containers:view',
+  // Notifications
+  'notifications:view',
 ];
 
 /** Built-in group definitions (order matters for display — most privileged first) */

@@ -95,7 +95,11 @@ export class AIService {
     private readonly monitoringService: MonitoringService,
     private readonly nodesService: NodesService,
     private readonly groupService: GroupService,
-    private readonly dockerService: DockerManagementService
+    private readonly dockerService: DockerManagementService,
+    private readonly notifRuleService?: import('@/modules/notifications/notification-alert-rule.service.js').NotificationAlertRuleService,
+    private readonly notifWebhookService?: import('@/modules/notifications/notification-webhook.service.js').NotificationWebhookService,
+    private readonly notifDeliveryService?: import('@/modules/notifications/notification-delivery.service.js').NotificationDeliveryService,
+    private readonly notifDispatcherService?: import('@/modules/notifications/notification-dispatcher.service.js').NotificationDispatcherService
   ) {}
 
   async buildSystemPrompt(user: User, pageContext?: PageContext): Promise<string> {
@@ -656,6 +660,60 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
       // ── Documentation ──
       case 'internal_documentation':
         return getInternalDocumentation(a.topic, user.scopes);
+
+      // ── Notifications ──
+      case 'list_alert_rules':
+        return this.notifRuleService?.list({ page: 1, limit: 100, category: a.category, enabled: a.enabled });
+      case 'get_alert_rule':
+        return this.notifRuleService?.getById(a.ruleId);
+      case 'create_alert_rule':
+        return this.notifRuleService?.create({
+          name: a.name, type: a.type, category: a.category, severity: a.severity,
+          metric: a.metric, operator: a.operator, thresholdValue: a.thresholdValue,
+          durationSeconds: a.durationSeconds ?? 0, resolveAfterSeconds: a.resolveAfterSeconds ?? 60,
+          eventPattern: a.eventPattern, resourceIds: a.resourceIds ?? [],
+          messageTemplate: a.messageTemplate, webhookIds: a.webhookIds ?? [],
+          cooldownSeconds: a.cooldownSeconds ?? 900,
+          enabled: a.enabled ?? true,
+        }, user.id);
+      case 'update_alert_rule':
+        return this.notifRuleService?.update(a.ruleId, {
+          name: a.name, enabled: a.enabled, severity: a.severity,
+          metric: a.metric, operator: a.operator, thresholdValue: a.thresholdValue,
+          durationSeconds: a.durationSeconds, resolveAfterSeconds: a.resolveAfterSeconds,
+          eventPattern: a.eventPattern, resourceIds: a.resourceIds,
+          messageTemplate: a.messageTemplate, webhookIds: a.webhookIds,
+          cooldownSeconds: a.cooldownSeconds,
+        }, user.id);
+      case 'delete_alert_rule':
+        return this.notifRuleService?.delete(a.ruleId, user.id);
+      case 'list_webhooks':
+        return this.notifWebhookService?.list({ page: 1, limit: 100 });
+      case 'create_webhook':
+        return this.notifWebhookService?.create({
+          name: a.name, url: a.url, method: a.method ?? 'POST',
+          templatePreset: a.templatePreset, bodyTemplate: a.bodyTemplate,
+          signingSecret: a.signingSecret, signingHeader: a.signingHeader ?? 'X-Signature-256',
+          enabled: true, headers: {},
+        }, user.id);
+      case 'update_webhook':
+        return this.notifWebhookService?.update(a.webhookId, {
+          name: a.name, url: a.url, method: a.method, enabled: a.enabled,
+          templatePreset: a.templatePreset, bodyTemplate: a.bodyTemplate,
+          signingSecret: a.signingSecret, signingHeader: a.signingHeader,
+        }, user.id);
+      case 'delete_webhook':
+        return this.notifWebhookService?.delete(a.webhookId, user.id);
+      case 'test_webhook': {
+        if (!this.notifWebhookService || !this.notifDispatcherService) return { error: 'Notification service not available' };
+        const wh = await this.notifWebhookService.getRaw(a.webhookId);
+        const { buildSampleEvent } = await import('@/modules/notifications/notification-templates.js');
+        return this.notifDispatcherService.dispatch(wh, buildSampleEvent(), true);
+      }
+      case 'list_webhook_deliveries':
+        return this.notifDeliveryService?.list({ page: 1, limit: a.limit ?? 50, webhookId: a.webhookId, status: a.status });
+      case 'get_delivery_stats':
+        return this.notifDeliveryService?.getStats(a.webhookId);
 
       // ── Web Search ──
       case 'web_search':

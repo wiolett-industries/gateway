@@ -5,6 +5,7 @@ import { nodes } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { isMinorCompatible } from '@/lib/semver.js';
 import { daemonLogRelay } from '@/modules/monitoring/log-relay.service.js';
+import { NotificationEvaluatorService } from '@/modules/notifications/notification-evaluator.service.js';
 import { ProxyService } from '@/modules/proxy/proxy.service.js';
 import type { DaemonMessage, GatewayCommand } from '../generated/types.js';
 import { extractNodeIdFromCert } from '../interceptors/auth.js';
@@ -267,6 +268,16 @@ export function createControlHandlers(deps: GrpcServerDeps) {
             };
 
             deps.registry.updateHealthReport(nodeId, healthData);
+
+            // Evaluate notification alert rules (fire-and-forget, don't block health persistence)
+            try {
+              const evaluator = container.resolve(NotificationEvaluatorService);
+              evaluator.evaluateHealthReport(nodeId, healthData).catch((err) => {
+                logger.error('Alert evaluation failed', { nodeId, error: (err as Error).message });
+              });
+            } catch (resolveErr) {
+              logger.error('Evaluator resolve failed', { error: (resolveErr as Error).message });
+            }
 
             // Persist periodically
             await deps.db

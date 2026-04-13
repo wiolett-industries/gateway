@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "notif_alert_states_unique_firing_idx" ON "notification_alert_states" USING btree ("rule_id","resource_type","resource_id") WHERE status = 'firing';

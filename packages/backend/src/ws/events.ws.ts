@@ -63,6 +63,7 @@ function requiredScopeFor(channel: string): string | null {
   if (channel === 'node.changed') return 'nodes:list';
   if (channel === 'user.changed') return 'admin:users';
   if (channel === 'group.changed') return 'admin:groups';
+  if (channel.startsWith('alert.')) return 'notifications:view';
   // permissions.changed.<userId> is filtered separately (own user only)
   return null;
 }
