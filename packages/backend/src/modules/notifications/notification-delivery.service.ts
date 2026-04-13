@@ -1,4 +1,4 @@
-import { and, count, eq, lt, type SQL } from 'drizzle-orm';
+import { and, count, desc, eq, lt, ne, type SQL } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import { notificationDeliveryLog, notificationWebhooks } from '@/db/schema/index.js';
 import { buildWhere } from '@/lib/utils.js';
@@ -56,7 +56,7 @@ export class NotificationDeliveryService {
       .from(notificationDeliveryLog)
       .leftJoin(notificationWebhooks, eq(notificationDeliveryLog.webhookId, notificationWebhooks.id))
       .where(where)
-      .orderBy(notificationDeliveryLog.createdAt)
+      .orderBy(desc(notificationDeliveryLog.createdAt))
       .limit(query.limit)
       .offset(offset);
 
@@ -94,7 +94,7 @@ export class NotificationDeliveryService {
 
     const result = await this.db
       .delete(notificationDeliveryLog)
-      .where(lt(notificationDeliveryLog.createdAt, threshold))
+      .where(and(lt(notificationDeliveryLog.createdAt, threshold), ne(notificationDeliveryLog.status, 'retrying')))
       .returning({ id: notificationDeliveryLog.id });
 
     return result.length;

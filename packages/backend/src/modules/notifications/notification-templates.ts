@@ -90,6 +90,12 @@ hbs.registerHelper('pluralize', (count, singular, plural) => {
 
 // ── Template Compilation ──────────────────────────────────────────────
 
+// JSON-escape helper — use in JSON templates: {{jsonescape resource.name}}
+hbs.registerHelper('jsonescape', (str) => {
+  if (typeof str !== 'string') return str;
+  return str.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t');
+});
+
 /**
  * Compile and render a Handlebars template with the given context.
  * Returns the rendered string, or a fallback JSON on compilation error.

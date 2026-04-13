@@ -131,9 +131,7 @@ export const ALERT_CATEGORIES: CategoryDefinition[] = [
   {
     id: 'certificate',
     label: 'Certificate',
-    metrics: [
-      { id: 'days_until_expiry', label: 'Days Until Expiry', unit: 'days', defaultOperator: '<', defaultValue: 14 },
-    ],
+    metrics: [],
     events: [
       { id: 'issued', label: 'Certificate Issued', defaultSeverity: 'info' },
       { id: 'renewed', label: 'Certificate Renewed', defaultSeverity: 'info' },
