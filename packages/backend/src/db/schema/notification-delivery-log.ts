@@ -27,7 +27,7 @@ export const notificationDeliveryLog = pgTable(
     maxAttempts: integer('max_attempts').notNull().default(5),
     nextRetryAt: timestamp('next_retry_at', { withTimezone: true }),
 
-    status: varchar('status', { length: 20 }).notNull().default('pending'), // 'pending' | 'success' | 'failed' | 'retrying'
+    status: varchar('status', { length: 20 }).notNull().default('retrying'), // 'success' | 'failed' | 'retrying'
     error: text('error'),
 
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

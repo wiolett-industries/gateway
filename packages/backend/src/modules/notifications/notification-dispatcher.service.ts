@@ -70,9 +70,9 @@ export class NotificationDispatcherService {
     let responseBody: string | undefined;
     let error: string | undefined;
 
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
 
       const method = webhook.method || 'POST';
       const fetchOptions: RequestInit = {
@@ -87,7 +87,6 @@ export class NotificationDispatcherService {
       }
 
       const response = await fetch(webhook.url, fetchOptions);
-      clearTimeout(timeout);
 
       responseStatus = response.status;
       const rawBody = await response.text().catch(() => '');
@@ -97,6 +96,8 @@ export class NotificationDispatcherService {
       if (error.includes('abort')) {
         error = `Request timed out after ${HTTP_TIMEOUT_MS}ms`;
       }
+    } finally {
+      clearTimeout(timeout);
     }
 
     const responseTimeMs = Date.now() - startTime;
@@ -182,10 +183,9 @@ export class NotificationDispatcherService {
     let responseBody: string | undefined;
     let error: string | undefined;
 
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
-
       const fetchOptions: RequestInit = {
         method: delivery.requestMethod,
         headers: retryHeaders,
@@ -197,7 +197,6 @@ export class NotificationDispatcherService {
       }
 
       const response = await fetch(delivery.requestUrl, fetchOptions);
-      clearTimeout(timeout);
 
       responseStatus = response.status;
       const rawBody = await response.text().catch(() => '');
@@ -207,6 +206,8 @@ export class NotificationDispatcherService {
       if (error.includes('abort')) {
         error = `Request timed out after ${HTTP_TIMEOUT_MS}ms`;
       }
+    } finally {
+      clearTimeout(timeout);
     }
 
     const responseTimeMs = Date.now() - startTime;

@@ -104,6 +104,11 @@ export class NotificationEvaluatorService {
             ? `${nodeId}:${resourceId}`
             : nodeId;
 
+        if (Number.isNaN(value)) {
+          logger.warn('Skipping NaN metric value', { ruleId: rule.id, metric: rule.metric, resourceId });
+          continue;
+        }
+
         const breached = evaluateThreshold(value, rule.operator, rule.thresholdValue);
         logger.debug('Threshold check', {
           ruleId: rule.id, ruleName: rule.name, metric: rule.metric,
@@ -159,7 +164,8 @@ export class NotificationEvaluatorService {
       }
 
       const allBreach = samples.every((s) => {
-        const val = Number.parseFloat(s.split(':')[1]);
+        const val = Number.parseFloat(s.split(':').slice(1).join(':'));
+        if (Number.isNaN(val)) return false;
         return evaluateThreshold(val, rule.operator, rule.thresholdValue);
       });
 
@@ -229,7 +235,8 @@ export class NotificationEvaluatorService {
 
       // All samples in window must be below threshold
       const allClear = samples.every((s) => {
-        const val = Number.parseFloat(s.split(':')[1]);
+        const val = Number.parseFloat(s.split(':').slice(1).join(':'));
+        if (Number.isNaN(val)) return false;
         return !evaluateThreshold(val, rule.operator, rule.thresholdValue);
       });
 
