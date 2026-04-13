@@ -7,6 +7,8 @@ import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
 import { SearchFilterBar } from "@/components/common/SearchFilterBar";
 import { StatusBadge } from "@/components/common/StatusBadge";
+import { useRealtime } from "@/hooks/use-realtime";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -19,6 +21,7 @@ import { daysUntil, formatDate } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth";
 import { useCAStore } from "@/stores/ca";
 import { useCertificatesStore } from "@/stores/certificates";
+import { useUIStore } from "@/stores/ui";
 import type { CertificateStatus, CertificateType } from "@/types";
 
 const statusOptions: { value: CertificateStatus | "all"; label: string }[] = [
@@ -39,7 +42,10 @@ const typeOptions: { value: CertificateType | "all"; label: string }[] = [
 export function Certificates() {
   const navigate = useNavigate();
   const { hasScope } = useAuthStore();
-  const { cas } = useCAStore();
+  const showSystemCertificates =
+    useAuthStore((s) => s.hasScope("admin:details:certificates")) &&
+    useUIStore((s) => s.showSystemCertificates);
+  const { cas, fetchCAs } = useCAStore();
   const {
     certificates,
     isLoading,
@@ -57,7 +63,17 @@ export function Certificates() {
 
   useEffect(() => {
     fetchCertificates();
-  }, [fetchCertificates]);
+  }, [fetchCertificates, showSystemCertificates]);
+
+  useRealtime("cert.changed", () => {
+    fetchCertificates();
+  });
+
+  useRealtime("ca.changed", () => {
+    if (hasScope("pki:ca:list:root")) {
+      fetchCAs();
+    }
+  });
 
   const handleSearch = () => {
     setFilters({ search: searchInput });
@@ -184,7 +200,14 @@ export function Certificates() {
                       >
                         <td className="p-3">
                           <div>
-                            <p className="text-sm font-medium">{cert.commonName}</p>
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm font-medium">{cert.commonName}</p>
+                              {cert.isSystem && (
+                                <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                                  System
+                                </Badge>
+                              )}
+                            </div>
                             {(cert.sans?.length ?? 0) > 0 && (
                               <p className="text-xs text-muted-foreground">
                                 +{cert.sans.length} SANs

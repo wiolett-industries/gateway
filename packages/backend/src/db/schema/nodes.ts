@@ -99,8 +99,8 @@ export const nodes = pgTable(
     lastHealthReport: jsonb('last_health_report').$type<NodeHealthReport>(),
     lastStatsReport: jsonb('last_stats_report').$type<NodeStatsReport>(),
 
-    // Hourly health history ring buffer (max 168 entries = 7 days)
-    healthHistory: jsonb('health_history').$type<Array<{ hour: string; healthy: boolean }>>().default([]),
+    // Health history: timestamped status entries (same format as proxy hosts)
+    healthHistory: jsonb('health_history').$type<Array<{ ts: string; status: string }>>().default([]),
 
     // Extensible metadata
     metadata: jsonb('metadata').$type<Record<string, unknown>>().default({}),

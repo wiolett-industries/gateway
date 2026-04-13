@@ -24,6 +24,7 @@ import { MoveToFolderDialog } from "@/components/proxy/MoveToFolderDialog";
 import { ProxyHostRow } from "@/components/proxy/ProxyHostRow";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useRealtime } from "@/hooks/use-realtime";
 import {
   Select,
   SelectContent,
@@ -102,6 +103,10 @@ export function ProxyHosts() {
   useEffect(() => {
     fetchGroupedHosts();
   }, [fetchGroupedHosts]);
+
+  useRealtime("proxy.host.changed", () => {
+    fetchGroupedHosts();
+  });
 
   const handleSearch = () => {
     setFilters({ search: searchInput });

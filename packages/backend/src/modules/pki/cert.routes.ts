@@ -1,5 +1,6 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
+import { hasScope } from '@/lib/permissions.js';
 import { sanitizeFilename } from '@/lib/utils.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
 import { authMiddleware, requireScope } from '@/modules/auth/auth.middleware.js';
@@ -29,11 +30,16 @@ certRoutes.get('/', requireScope('pki:cert:list'), async (c) => {
     status: c.req.query('status'),
     type: c.req.query('type'),
     search: c.req.query('search'),
+    showSystem: c.req.query('showSystem'),
     page: c.req.query('page'),
     limit: c.req.query('limit'),
     sortBy: c.req.query('sortBy'),
     sortOrder: c.req.query('sortOrder'),
   });
+  const user = c.get('user')!;
+  if (query.showSystem && !hasScope(user.scopes, 'admin:details:certificates')) {
+    return c.json({ code: 'FORBIDDEN', message: 'Insufficient permissions' }, 403);
+  }
   const result = await certService.listCertificates(query);
   return c.json(result);
 });
@@ -41,8 +47,11 @@ certRoutes.get('/', requireScope('pki:cert:list'), async (c) => {
 // Get certificate detail
 certRoutes.get('/:id', requireScope('pki:cert:view'), async (c) => {
   const certService = container.resolve(CertService);
+  const user = c.get('user')!;
   const id = c.req.param('id');
-  const cert = await certService.getCertificate(id);
+  const cert = await certService.getCertificate(id, {
+    includeSystem: hasScope(user.scopes, 'admin:details:certificates'),
+  });
   return c.json(cert);
 });
 
@@ -94,7 +103,9 @@ certRoutes.post('/:id/export', requireScope('pki:cert:export'), async (c) => {
   const body = await c.req.json();
   const { format, passphrase } = ExportCertificateQuerySchema.parse(body);
 
-  const cert = await certService.getCertificate(id);
+  const cert = await certService.getCertificate(id, {
+    includeSystem: hasScope(user.scopes, 'admin:details:certificates'),
+  });
 
   switch (format) {
     case 'pem':
@@ -175,14 +186,18 @@ certRoutes.get('/:id/chain', requireScope('pki:cert:view'), async (c) => {
   const exportService = container.resolve(ExportService);
   const id = c.req.param('id');
 
-  const cert = await certService.getCertificate(id);
+  const user = c.get('user')!;
+  const includeSystem = hasScope(user.scopes, 'admin:details:certificates');
+  const cert = await certService.getCertificate(id, {
+    includeSystem,
+  });
 
   // Build chain by walking up the CA hierarchy
   const chainPems: string[] = [];
   let currentCaId: string | null = cert.caId;
 
   while (currentCaId) {
-    const ca = await caService.getCA(currentCaId);
+    const ca = await caService.getCA(currentCaId, { includeSystem });
     chainPems.push(ca.certificatePem);
     currentCaId = ca.parentId;
   }

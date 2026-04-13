@@ -7,11 +7,32 @@ const DEFAULT_BUCKET_MS = 5 * 60 * 1000; // 5 minutes
 
 type BarStatus = "ok" | "warn" | "error" | "none";
 
+interface HealthEntry {
+  ts: string;
+  status: string;
+  slow?: boolean;
+}
+
+function currentStatusToBarStatus(status?: string): BarStatus {
+  if (!status || status === "unknown" || status === "disabled" || status === "pending") {
+    return "none";
+  }
+  if (status === "online") return "ok";
+  if (status === "recovering" || status === "degraded") return "warn";
+  return "error";
+}
+
+function mergeLatestBar(existing: BarStatus, current: BarStatus): BarStatus {
+  if (current === "none") return existing;
+  if (existing === "none") return current;
+  if (current === "error") return "error";
+  if (current === "warn") return "warn";
+  return existing === "ok" ? "ok" : "warn";
+}
+
 export interface HealthBarsProps {
-  /** Raw health check entries with timestamp + status */
-  history?: Array<{ ts: string; status: string }>;
-  /** Hourly health entries (node format) with hour key + healthy boolean */
-  hourlyHistory?: Array<{ hour: string; healthy: boolean }>;
+  /** Health check entries with timestamp + status */
+  history?: HealthEntry[];
   /** Current status used for the rightmost bar when no data in that bucket */
   currentStatus?: string;
   /** Bucket duration in ms (default: 5 min) */
@@ -27,7 +48,6 @@ export interface HealthBarsProps {
 
 export function HealthBars({
   history,
-  hourlyHistory,
   currentStatus,
   bucketMs = DEFAULT_BUCKET_MS,
   barWidth = DEFAULT_BAR_WIDTH,
@@ -62,23 +82,8 @@ export function HealthBars({
   const bars = useMemo(() => {
     if (barCount === 0) return [];
 
-    // Node hourly format
-    if (hourlyHistory) {
-      const historyMap = new Map(hourlyHistory.map((h) => [h.hour, h.healthy]));
-      const result: BarStatus[] = [];
-      const interval = bucketMs;
-
-      for (let i = barCount - 1; i >= 0; i--) {
-        const d = new Date(now - i * interval);
-        const hourKey = `${d.toISOString().slice(0, 13)}:00:00.000Z`;
-        const status = historyMap.get(hourKey);
-        result.push(status === true ? "ok" : status === false ? "error" : "none");
-      }
-      return result;
-    }
-
-    // Raw check format (proxy hosts)
-    const checks = history ?? [];
+    // Filter out legacy entries that lack a valid ts field
+    const checks = (history ?? []).filter((c) => c.ts);
     const result: BarStatus[] = [];
 
     for (let i = barCount - 1; i >= 0; i--) {
@@ -93,24 +98,37 @@ export function HealthBars({
       if (inBucket.length === 0) {
         result.push("none");
       } else {
-        const last = inBucket[inBucket.length - 1];
-        const lastOk = last.status === "online";
-        const hadErrors = inBucket.some((c) => c.status === "offline" || c.status === "degraded");
-        result.push(lastOk ? (hadErrors ? "warn" : "ok") : "error");
+        const offlineCount = inBucket.filter((c) => c.status === "offline").length;
+        const hasSlow = inBucket.some((c) => c.slow);
+
+        if (offlineCount === inBucket.length) {
+          result.push("error"); // all failed
+        } else if (offlineCount > 0 || hasSlow) {
+          result.push("warn"); // mixed or slow responses
+        } else {
+          result.push("ok"); // all online, not slow
+        }
       }
     }
 
-    // Fill trailing empty bars with current status color
-    if (currentStatus && currentStatus !== "unknown" && currentStatus !== "disabled") {
-      const fill: BarStatus = currentStatus === "online" ? "ok" : "error";
-      for (let j = result.length - 1; j >= 0; j--) {
-        if (result[j] !== "none") break;
-        result[j] = fill;
+    // Reflect current status on the newest bar immediately, then backfill any
+    // empty buckets leading up to it.
+    const currentBar = currentStatusToBarStatus(currentStatus);
+    if (currentBar !== "none") {
+      result[result.length - 1] = mergeLatestBar(result[result.length - 1], currentBar);
+      if (checks.length > 0) {
+        // Have data — fill any empty buckets after the last sample up to now
+        for (let j = result.length - 2; j >= 0; j--) {
+          if (result[j] !== "none") break;
+          result[j] = currentBar;
+        }
+      } else {
+        result[result.length - 1] = currentBar;
       }
     }
 
     return result;
-  }, [history, hourlyHistory, barCount, now, currentStatus, bucketMs]);
+  }, [history, barCount, now, currentStatus, bucketMs]);
 
   const totalMs = barCount * bucketMs;
   const totalHours = Math.round(totalMs / 3600000);

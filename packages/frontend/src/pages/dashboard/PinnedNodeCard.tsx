@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { HealthBars } from "@/components/ui/health-bars";
 import { StatCard as MetricCard } from "@/components/ui/stat-card";
 import { formatBytes } from "@/lib/utils";
+import { effectiveNodeStatus } from "@/types";
 import type { Node, NodeHealthReport } from "@/types";
 
 export const WARN_THRESHOLD = 80;
@@ -34,8 +35,9 @@ interface PinnedNodeCardProps {
 
 export function PinnedNodeCard({ node, liveHealth }: PinnedNodeCardProps) {
   const h = liveHealth ?? node.lastHealthReport;
+  const eStatus = effectiveNodeStatus(node);
   const statusColor =
-    node.status === "online" ? "success" : node.status === "error" ? "destructive" : "warning";
+    eStatus === "online" ? "success" : eStatus === "degraded" ? "warning" : "destructive";
 
   const memPercent =
     h && h.systemMemoryTotalBytes > 0
@@ -61,30 +63,32 @@ export function PinnedNodeCard({ node, liveHealth }: PinnedNodeCardProps) {
         </p>
         <p className="text-xl font-bold truncate">{node.displayName || node.hostname}</p>
         <div className="flex items-center gap-2">
-          <HealthBars hourlyHistory={node.healthHistory} showLabels={false} className="flex-1" />
+          <HealthBars history={node.healthHistory} currentStatus={node.status} showLabels={false} className="flex-1" />
           <Badge
             variant={statusColor}
             className="text-xs uppercase h-6"
-            style={{ border: "1px solid rgb(16 185 129)" }}
+            style={{
+              border: `1px solid ${eStatus === "online" ? "rgb(16 185 129)" : eStatus === "degraded" ? "rgb(234 179 8)" : "rgb(248 113 113)"}`,
+            }}
           >
-            {node.status === "online" ? "healthy" : node.status}
+            {eStatus}
           </Badge>
         </div>
       </Link>
       <MetricCard
         label="CPU"
-        value={h ? `${h.cpuPercent.toFixed(1)}%` : "—"}
+        value={h ? `${h.cpuPercent.toFixed(1)}%` : "0%"}
         icon={Cpu}
-        progress={h ? { percent: cpuPercent, color: cpuWarn.progressColor } : undefined}
+        progress={{ percent: cpuPercent, color: cpuWarn.progressColor }}
         valueColor={cpuWarn.valueColor}
         className="border-0 border-r border-border"
         style={cpuWarn.style}
       />
       <MetricCard
         label="Memory"
-        value={h ? `${memPercent}%` : "—"}
+        value={h ? `${memPercent}%` : "0%"}
         icon={MemoryStick}
-        progress={h ? { percent: memPercent, color: memWarn.progressColor } : undefined}
+        progress={{ percent: memPercent, color: memWarn.progressColor }}
         subtitle={
           h
             ? `${formatBytes(h.systemMemoryUsedBytes)} / ${formatBytes(h.systemMemoryTotalBytes)}`
@@ -96,9 +100,9 @@ export function PinnedNodeCard({ node, liveHealth }: PinnedNodeCardProps) {
       />
       <MetricCard
         label="Disk"
-        value={rootDisk ? `${diskPercent}%` : "—"}
+        value={rootDisk ? `${diskPercent}%` : "0%"}
         icon={HardDrive}
-        progress={rootDisk ? { percent: diskPercent, color: diskWarn.progressColor } : undefined}
+        progress={{ percent: diskPercent, color: diskWarn.progressColor }}
         subtitle={
           rootDisk
             ? `${formatBytes(rootDisk.usedBytes)} / ${formatBytes(rootDisk.totalBytes)}`

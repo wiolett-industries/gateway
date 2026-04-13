@@ -5,6 +5,7 @@ import { certificateTemplates } from '@/db/schema/index.js';
 import { AppError } from '@/middleware/error-handler.js';
 import { createChildLogger } from '@/lib/logger.js';
 import type { DrizzleClient } from '@/db/client.js';
+import type { EventBusService } from '@/services/event-bus.service.js';
 import type { CreateTemplateInput, UpdateTemplateInput } from './templates.schemas.js';
 
 const logger = createChildLogger('TemplatesService');
@@ -58,7 +59,17 @@ const BUILTIN_TEMPLATES = [
 
 @injectable()
 export class TemplatesService {
+  private eventBus?: EventBusService;
+
   constructor(@inject(TOKENS.DrizzleClient) private readonly db: DrizzleClient) {}
+
+  setEventBus(bus: EventBusService) {
+    this.eventBus = bus;
+  }
+
+  private emitTemplate(id: string, action: string) {
+    this.eventBus?.publish('pki.template.changed', { id, action });
+  }
 
   async seedBuiltinTemplates(): Promise<void> {
     for (const template of BUILTIN_TEMPLATES) {
@@ -93,6 +104,7 @@ export class TemplatesService {
       ...input,
       createdById: userId,
     }).returning();
+    this.emitTemplate(template.id, 'created');
     return template;
   }
 
@@ -106,6 +118,7 @@ export class TemplatesService {
       .set({ ...input, updatedAt: new Date() })
       .where(eq(certificateTemplates.id, id))
       .returning();
+    this.emitTemplate(id, 'updated');
     return updated;
   }
 
@@ -115,5 +128,6 @@ export class TemplatesService {
     if (existing.isBuiltin) throw new AppError(403, 'BUILTIN_IMMUTABLE', 'Built-in templates cannot be deleted');
 
     await this.db.delete(certificateTemplates).where(eq(certificateTemplates.id, id));
+    this.emitTemplate(id, 'deleted');
   }
 }

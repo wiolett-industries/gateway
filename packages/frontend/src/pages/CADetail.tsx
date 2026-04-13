@@ -9,7 +9,7 @@ import {
   Shield,
   ShieldOff,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { CACreateDialog } from "@/components/ca/CACreateDialog";
@@ -19,6 +19,7 @@ import { EmptyState } from "@/components/common/EmptyState";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
 import { StatusBadge } from "@/components/common/StatusBadge";
+import { useRealtime } from "@/hooks/use-realtime";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -41,6 +42,7 @@ import { daysUntil, formatDate, formatSerialNumber, hoursUntil } from "@/lib/uti
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useCAStore } from "@/stores/ca";
+import { useUIStore } from "@/stores/ui";
 import type { Certificate } from "@/types";
 
 export function CADetail() {
@@ -48,6 +50,9 @@ export function CADetail() {
   const navigate = useNavigate();
   const { hasScope } = useAuthStore();
   const { selectedCA, selectCA, fetchCAs, cas } = useCAStore();
+  const showSystemCertificates =
+    useAuthStore((s) => s.hasScope("admin:details:certificates")) &&
+    useUIStore((s) => s.showSystemCertificates);
   const [certificates, setCertificates] = useState<Certificate[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [issueDialogOpen, setIssueDialogOpen] = useState(false);
@@ -59,13 +64,17 @@ export function CADetail() {
   const [epCaIssuersUrl, setEpCaIssuersUrl] = useState("");
   const [isSavingEndpoints, setIsSavingEndpoints] = useState(false);
 
-  const reloadCerts = async () => {
+  const reloadCerts = useCallback(async () => {
     if (!id) return;
     try {
-      const certs = await api.listCertificates({ caId: id, limit: 50 });
+      const certs = await api.listCertificates({
+        caId: id,
+        limit: 50,
+        showSystem: showSystemCertificates,
+      });
       setCertificates(certs.data || []);
     } catch {}
-  };
+  }, [id, showSystemCertificates]);
 
   useEffect(() => {
     if (!id) return;
@@ -82,7 +91,29 @@ export function CADetail() {
     };
     load();
     // biome-ignore lint/correctness/useExhaustiveDependencies: load-once pattern
-  }, [id, reloadCerts, selectCA]);
+  }, [id, reloadCerts, selectCA, showSystemCertificates]);
+
+  useRealtime("ca.changed", (payload) => {
+    if (!id) return;
+    const ev = payload as { id?: string; action?: string };
+    fetchCAs();
+    if (ev?.id === id && ev.action !== "deleted") {
+      void selectCA(id);
+    }
+    if (ev?.id === id && ev.action === "deleted") {
+      toast.info("Certificate Authority was deleted");
+      navigate("/cas");
+    }
+  });
+
+  useRealtime("cert.changed", (payload) => {
+    if (!id) return;
+    const ev = payload as { caId?: string };
+    if (ev?.caId !== id) return;
+    fetchCAs();
+    void selectCA(id);
+    void reloadCerts();
+  });
 
   const handleRevoke = async () => {
     if (!selectedCA) return;
@@ -158,6 +189,7 @@ export function CADetail() {
               <div className="flex items-center gap-2">
                 <h1 className="text-2xl font-bold">{ca.commonName}</h1>
                 <StatusBadge status={ca.status} />
+                {ca.isSystem && <Badge variant="outline">System</Badge>}
               </div>
               <p className="text-sm text-muted-foreground">
                 {ca.type === "root" ? "Root CA" : "Intermediate CA"}
@@ -165,13 +197,13 @@ export function CADetail() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {hasScope("pki:ca:create:intermediate") && ca.status === "active" && (
+            {hasScope("pki:ca:create:intermediate") && ca.status === "active" && !ca.isSystem && (
               <Button variant="outline" onClick={() => setCreateIntermediateOpen(true)}>
                 <Shield className="h-4 w-4" />
                 Create Intermediate
               </Button>
             )}
-            {hasScope("pki:cert:issue") && ca.status === "active" && (
+            {hasScope("pki:cert:issue") && ca.status === "active" && !ca.isSystem && (
               <Button onClick={() => setIssueDialogOpen(true)}>
                 <Plus className="h-4 w-4" />
                 Issue Certificate
@@ -243,7 +275,7 @@ export function CADetail() {
                   <Copy className="h-4 w-4" />
                   Copy Serial
                 </DropdownMenuItem>
-                {hasScope("pki:ca:revoke:root") && ca.status === "active" && (
+                {hasScope("pki:ca:revoke:root") && ca.status === "active" && !ca.isSystem && (
                   <>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={handleRevoke} className="text-destructive">
@@ -288,7 +320,7 @@ export function CADetail() {
             <div className="border border-border bg-card">
               <div className="flex items-center justify-between border-b border-border p-4">
                 <h2 className="font-semibold">Distribution Endpoints</h2>
-                {hasScope("pki:ca:create:root") && (
+                {hasScope("pki:ca:create:root") && !ca.isSystem && (
                   <Button
                     variant="ghost"
                     size="icon"
@@ -335,7 +367,16 @@ export function CADetail() {
                           className="hover:bg-accent transition-colors cursor-pointer"
                           onClick={() => navigate(`/certificates/${cert.id}`)}
                         >
-                          <td className="p-3 text-sm font-medium">{cert.commonName}</td>
+                          <td className="p-3">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-medium">{cert.commonName}</span>
+                              {cert.isSystem && (
+                                <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                                  System
+                                </Badge>
+                              )}
+                            </div>
+                          </td>
                           <td className="p-3 text-sm text-muted-foreground">{cert.type}</td>
                           <td className="p-3 text-sm text-muted-foreground">
                             {formatDate(cert.notAfter)}
@@ -351,8 +392,12 @@ export function CADetail() {
               ) : (
                 <EmptyState
                   message="No certificates issued yet."
-                  actionLabel="Issue one"
-                  actionHref={`/certificates?ca=${ca.id}`}
+                  {...(!ca.isSystem
+                    ? {
+                        actionLabel: "Issue one",
+                        actionHref: `/certificates?ca=${ca.id}`,
+                      }
+                    : {})}
                 />
               )}
             </div>

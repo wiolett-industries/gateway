@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
 import { StatusBadge } from "@/components/common/StatusBadge";
+import { useRealtime } from "@/hooks/use-realtime";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -56,6 +57,17 @@ export function CertificateDetail() {
     };
     load();
   }, [id]);
+
+  useRealtime(id ? "cert.changed" : null, (payload) => {
+    const ev = payload as { id?: string };
+    if (!id || ev?.id !== id) return;
+    api
+      .getCertificate(id)
+      .then(setCert)
+      .catch(() => {
+        toast.error("Failed to load certificate");
+      });
+  });
 
   const [revokeDialogOpen, setRevokeDialogOpen] = useState(false);
   const [revokeReason, setRevokeReason] = useState("unspecified");
@@ -122,6 +134,7 @@ export function CertificateDetail() {
               <div className="flex items-center gap-2">
                 <h1 className="text-2xl font-bold">{cert.commonName}</h1>
                 <StatusBadge status={cert.status} />
+                {cert.isSystem && <Badge variant="outline">System</Badge>}
               </div>
               <p className="text-sm text-muted-foreground">
                 {cert.type} certificate &middot; Issuer: {cert.issuerDn || cert.caId}
@@ -170,7 +183,7 @@ export function CertificateDetail() {
                     Copy PEM
                   </DropdownMenuItem>
                 )}
-                {hasScope("pki:cert:revoke") && cert.status === "active" && (
+                {hasScope("pki:cert:revoke") && cert.status === "active" && !cert.isSystem && (
                   <>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem

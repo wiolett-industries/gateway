@@ -6,6 +6,7 @@ import { confirm } from "@/components/common/ConfirmDialog";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
 import { useUrlTab } from "@/hooks/use-url-tab";
+import { useRealtime } from "@/hooks/use-realtime";
 import { CreateProxyHostDialog } from "@/components/proxy/CreateProxyHostDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -63,6 +64,7 @@ export function ProxyHostDetail() {
   const [healthCheckUrl, setHealthCheckUrl] = useState("/");
   const [healthCheckExpectedStatus, setHealthCheckExpectedStatus] = useState<number | null>(null);
   const [healthCheckExpectedBody, setHealthCheckExpectedBody] = useState("");
+  const [healthCheckSlowThreshold, setHealthCheckSlowThreshold] = useState(3);
   // Access list tab state
   const [accessListId, setAccessListId] = useState<string>("");
   const [accessLists, setAccessLists] = useState<AccessList[]>([]);
@@ -98,6 +100,7 @@ export function ProxyHostDetail() {
 
         setHealthCheckExpectedStatus(data.healthCheckExpectedStatus ?? null);
         setHealthCheckExpectedBody(data.healthCheckExpectedBody || "");
+        setHealthCheckSlowThreshold(data.healthCheckSlowThreshold ?? 3);
         setAdvancedConfig(data.advancedConfig || "");
         setRawConfig(data.rawConfig || "");
       } catch {
@@ -116,6 +119,25 @@ export function ProxyHostDetail() {
     loadHost();
   }, [loadHost]);
 
+  useRealtime(id ? "proxy.host.changed" : null, (payload) => {
+    const ev = payload as { id?: string; action?: string };
+    if (!ev || ev.id !== id) return;
+    if (ev.action === "deleted") {
+      toast.info("Proxy host was deleted");
+      navigate("/proxy-hosts");
+      return;
+    }
+    loadHost(true);
+  });
+
+  useRealtime(id ? "ssl.cert.changed" : null, () => {
+    loadHost(true);
+  });
+
+  useRealtime(id ? "cert.changed" : null, () => {
+    loadHost(true);
+  });
+
   // ── Load access lists ─────────────────────────────────────────
   useEffect(() => {
     api
@@ -123,6 +145,13 @@ export function ProxyHostDetail() {
       .then((res) => setAccessLists(res.data || []))
       .catch(() => {});
   }, []);
+
+  useRealtime("access-list.changed", () => {
+    api
+      .listAccessLists({ limit: 100 })
+      .then((res) => setAccessLists(res.data || []))
+      .catch(() => {});
+  });
 
   // ── Load rendered config ──────────────────────────────────────
   const loadRenderedConfig = useCallback(async () => {
@@ -239,12 +268,13 @@ export function ProxyHostDetail() {
           healthCheckUrl,
           healthCheckExpectedStatus: healthCheckExpectedStatus ?? undefined,
           healthCheckExpectedBody: healthCheckExpectedBody || undefined,
+          healthCheckSlowThreshold: healthCheckSlowThreshold || undefined,
         })
         .then((updated) => setHost(updated))
         .catch(() => {});
     }, 800);
     return () => clearTimeout(timer);
-  }, [healthCheckUrl, healthCheckExpectedStatus, healthCheckExpectedBody]);
+  }, [healthCheckUrl, healthCheckExpectedStatus, healthCheckExpectedBody, healthCheckSlowThreshold]);
 
   // ── Save raw config ───────────────────────────────────────────
   const handleSaveRaw = async () => {
@@ -300,9 +330,10 @@ export function ProxyHostDetail() {
     return (
       healthCheckUrl !== (host.healthCheckUrl || "/") ||
       healthCheckExpectedStatus !== (host.healthCheckExpectedStatus ?? null) ||
-      healthCheckExpectedBody !== (host.healthCheckExpectedBody || "")
+      healthCheckExpectedBody !== (host.healthCheckExpectedBody || "") ||
+      healthCheckSlowThreshold !== (host.healthCheckSlowThreshold ?? 3)
     );
-  }, [host, healthCheckUrl, healthCheckExpectedStatus, healthCheckExpectedBody]);
+  }, [host, healthCheckUrl, healthCheckExpectedStatus, healthCheckExpectedBody, healthCheckSlowThreshold]);
 
   const visibleTabs = ["details", "settings", "advanced", "raw", "logs"];
 
@@ -473,6 +504,8 @@ export function ProxyHostDetail() {
                 setHealthCheckExpectedStatus={setHealthCheckExpectedStatus}
                 healthCheckExpectedBody={healthCheckExpectedBody}
                 setHealthCheckExpectedBody={setHealthCheckExpectedBody}
+                healthCheckSlowThreshold={healthCheckSlowThreshold}
+                setHealthCheckSlowThreshold={setHealthCheckSlowThreshold}
               />
             </TabsContent>
           )}

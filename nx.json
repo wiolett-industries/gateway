@@ -1,13 +1,19 @@
 {
   "$schema": "./node_modules/nx/schemas/nx-schema.json",
   "namedInputs": {
-    "default": ["{projectRoot}/**/*"],
-    "proto": ["{workspaceRoot}/proto/**/*.proto"]
+    "default": [
+      "{projectRoot}/**/*"
+    ],
+    "proto": [
+      "{workspaceRoot}/proto/**/*.proto"
+    ]
   },
   "targetDefaults": {
     "build": {
       "cache": true,
-      "dependsOn": ["^build"]
+      "dependsOn": [
+        "^build"
+      ]
     },
     "test": {
       "cache": true
@@ -20,8 +26,11 @@
     },
     "proto": {
       "cache": true,
-      "inputs": ["proto"]
+      "inputs": [
+        "proto"
+      ]
     }
   },
-  "defaultBase": "main"
+  "defaultBase": "main",
+  "analytics": false
 }

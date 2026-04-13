@@ -122,7 +122,8 @@ export class SystemCAService {
         keyAlgorithm: 'ecdsa-p256',
         validityDays: 365,
       },
-      SYSTEM_USER_ID
+      SYSTEM_USER_ID,
+      { allowSystem: true }
     );
 
     // Write cert and key to disk
@@ -163,7 +164,8 @@ export class SystemCAService {
         keyAlgorithm: 'ecdsa-p256',
         validityDays: 365,
       },
-      SYSTEM_USER_ID
+      SYSTEM_USER_ID,
+      { allowSystem: true }
     );
 
     return {

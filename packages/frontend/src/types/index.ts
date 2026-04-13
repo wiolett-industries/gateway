@@ -115,7 +115,7 @@ export interface Node {
   lastSeenAt: string | null;
   lastHealthReport: NodeHealthReport | null;
   lastStatsReport: NodeStatsReport | null;
-  healthHistory: Array<{ hour: string; healthy: boolean }>;
+  healthHistory: Array<{ ts: string; status: string }>;
   metadata: Record<string, unknown>;
   isConnected: boolean;
   createdAt: string;
@@ -125,6 +125,15 @@ export interface Node {
 /** Check if a node has a version mismatch (incompatible major.minor with gateway) */
 export function isNodeIncompatible(node: Node | NodeDetail): boolean {
   return !!(node.capabilities as Record<string, unknown>)?.versionMismatch;
+}
+
+/** Compute effective node status from recent health history (mirrors proxy effectiveHealthStatus) */
+export function effectiveNodeStatus(node: { status: NodeStatus; healthHistory?: Array<{ ts: string; status: string }> }): string {
+  if (node.status !== 'online' || !node.healthHistory?.length) return node.status;
+  const fiveMinAgo = Date.now() - 5 * 60 * 1000;
+  const recent = node.healthHistory.filter((h) => h.ts && new Date(h.ts).getTime() >= fiveMinAgo);
+  if (recent.some((h) => h.status === 'offline' || h.status === 'degraded')) return 'degraded';
+  return 'online';
 }
 
 export interface NodeDetail extends Node {
@@ -169,6 +178,7 @@ export interface CA {
   revokedAt: string | null;
   revocationReason: string | null;
   certCount: number;
+  isSystem?: boolean;
 }
 
 // Certificate types
@@ -205,6 +215,7 @@ export interface Certificate {
   revokedAt: string | null;
   revocationReason: string | null;
   issuedById: string;
+  isSystem?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -655,6 +666,12 @@ export const TOKEN_SCOPES = [
     group: "Administration",
   },
   {
+    value: "admin:details:certificates",
+    label: "View System Certificates",
+    desc: "View internal system PKI and SSL certificates in read-only mode",
+    group: "Administration",
+  },
+  {
     value: "admin:update",
     label: "Manage Updates",
     desc: "Check for and apply updates",
@@ -999,10 +1016,11 @@ export interface ProxyHost {
   healthCheckInterval: number;
   healthCheckExpectedStatus: number | null;
   healthCheckExpectedBody: string | null;
+  healthCheckSlowThreshold: number | null;
   healthStatus: HealthStatus;
   effectiveHealthStatus?: string;
   lastHealthCheckAt: string | null;
-  healthHistory?: Array<{ ts: string; status: string }>;
+  healthHistory?: Array<{ ts: string; status: string; responseMs?: number; slow?: boolean }>;
   isSystem?: boolean;
   createdById: string;
   createdAt: string;
@@ -1118,6 +1136,7 @@ export interface CreateProxyHostRequest {
   healthCheckInterval?: number;
   healthCheckExpectedStatus?: number;
   healthCheckExpectedBody?: string;
+  healthCheckSlowThreshold?: number;
 }
 
 // Proxy Host Folder Types

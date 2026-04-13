@@ -5,6 +5,7 @@ import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
+import { useRealtime } from "@/hooks/use-realtime";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -93,6 +94,10 @@ export function PkiTemplatesTab({
   useEffect(() => {
     loadTemplates();
   }, [loadTemplates]);
+
+  useRealtime("pki.template.changed", () => {
+    loadTemplates();
+  });
 
   const resetForm = () => {
     setName("");

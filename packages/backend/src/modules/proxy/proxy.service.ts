@@ -493,6 +493,7 @@ export class ProxyService {
     });
 
     logger.info('Toggled proxy host', { hostId: id, enabled });
+    this.emitHost(id, 'updated', existing.domainNames?.[0]);
 
     // Fire-and-forget immediate health check when enabling
     if (enabled && updated.healthCheckEnabled) {

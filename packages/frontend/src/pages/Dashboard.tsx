@@ -1,23 +1,19 @@
 import { ArrowRight } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
+import { useRealtime } from "@/hooks/use-realtime";
 import { daysUntil } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useCAStore } from "@/stores/ca";
+import { useNodesStore } from "@/stores/nodes";
 import { usePinnedNodesStore } from "@/stores/pinned-nodes";
 import { usePinnedProxiesStore } from "@/stores/pinned-proxies";
 import { useUIStore } from "@/stores/ui";
 import { useUpdateStore } from "@/stores/update";
-import type {
-  AuditLogEntry,
-  DashboardStats,
-  Node,
-  NodeHealthReport,
-  ProxyHost,
-} from "@/types";
+import type { AuditLogEntry, DashboardStats, Node, NodeHealthReport, ProxyHost } from "@/types";
 import { CertificateAuthoritiesCard } from "./dashboard/CertificateAuthoritiesCard";
 import { CertificateExpiryCard, type ExpiringItem } from "./dashboard/CertificateExpiryCard";
 import { HealthOverviewCard } from "./dashboard/HealthOverviewCard";
@@ -36,22 +32,107 @@ export function Dashboard() {
   const [statsLoading, setStatsLoading] = useState(true);
   const [expiringItems, setExpiringItems] = useState<ExpiringItem[]>([]);
   const [nodesList, setNodesList] = useState<Node[]>([]);
+  const nodeRefreshTick = useNodesStore((s) => s.refreshTick);
   const dashboardPinnedIds = usePinnedNodesStore((s) => s.dashboardNodeIds);
   const dashboardPinnedProxyIds = usePinnedProxiesStore((s) => s.dashboardProxyIds);
   const [pinnedProxyHosts, setPinnedProxyHosts] = useState<ProxyHost[]>([]);
   const updateStatus = useUpdateStore((s) => s.status);
   const showUpdateNotifications = useUIStore((s) => s.showUpdateNotifications);
+  const showSystemCertificates =
+    useAuthStore((s) => s.hasScope("admin:details:certificates")) &&
+    useUIStore((s) => s.showSystemCertificates);
+
+  const refreshNodes = useCallback(() => {
+    if (!hasScope("nodes:list")) return;
+    api
+      .listNodes({ limit: 100 })
+      .then((r) => setNodesList(r.data ?? []))
+      .catch(() => {});
+  }, [hasScope]);
+
+  const refreshStats = useCallback(() => {
+    const statsCacheKey = `dashboard:stats:${showSystemCertificates ? "system" : "default"}`;
+    return api
+      .getDashboardStats(showSystemCertificates)
+      .then((data) => {
+        api.setCache(statsCacheKey, data);
+        setStats(data);
+      })
+      .catch(() => {
+        setStats(null);
+      });
+  }, [showSystemCertificates]);
+
+  const refreshHealthOverview = useCallback(() => {
+    if (!hasScope("proxy:list")) return Promise.resolve();
+    return api
+      .getHealthOverview()
+      .then((hosts) => {
+        api.setCache("dashboard:health", hosts || []);
+        setHealthHosts(hosts || []);
+      })
+      .catch(() => setHealthHosts([]));
+  }, [hasScope]);
+
+  const refreshExpiringSSL = useCallback(() => {
+    if (!hasScope("ssl:cert:list")) return Promise.resolve();
+    return api
+      .listSSLCertificates({
+        status: "active",
+        limit: 100,
+        showSystem: showSystemCertificates,
+      })
+      .then((res) => {
+        const expiring = (res.data || [])
+          .filter((c) => c.notAfter && daysUntil(c.notAfter) <= 30 && daysUntil(c.notAfter) >= 0)
+          .map((c) => ({
+            id: c.id,
+            name: c.name,
+            type: "ssl" as const,
+            expiresAt: c.notAfter!,
+            daysLeft: daysUntil(c.notAfter!),
+          }));
+        setExpiringItems((prev) => [...prev.filter((i) => i.type !== "ssl"), ...expiring]);
+      })
+      .catch(() => {});
+  }, [hasScope, showSystemCertificates]);
+
+  const refreshExpiringPKI = useCallback(() => {
+    if (!hasScope("pki:cert:list")) return Promise.resolve();
+    return api
+      .listCertificates({ status: "active", limit: 100, showSystem: showSystemCertificates })
+      .then((res) => {
+        const expiring = (res.data || [])
+          .filter((c) => daysUntil(c.notAfter) <= 30 && daysUntil(c.notAfter) >= 0)
+          .map((c) => ({
+            id: c.id,
+            name: c.commonName,
+            type: "pki" as const,
+            expiresAt: c.notAfter,
+            daysLeft: daysUntil(c.notAfter),
+          }));
+        setExpiringItems((prev) => [...prev.filter((i) => i.type !== "pki"), ...expiring]);
+      })
+      .catch(() => {});
+  }, [hasScope, showSystemCertificates]);
+
+  const refreshPinnedProxies = useCallback(() => {
+    if (dashboardPinnedProxyIds.length === 0) {
+      setPinnedProxyHosts([]);
+      return Promise.resolve();
+    }
+    if (!hasScope("proxy:list")) return Promise.resolve();
+    return api
+      .listProxyHosts({ limit: 100 })
+      .then((r) => {
+        setPinnedProxyHosts((r.data ?? []).filter((p) => dashboardPinnedProxyIds.includes(p.id)));
+      })
+      .catch(() => {});
+  }, [dashboardPinnedProxyIds, hasScope]);
 
   useEffect(() => {
     if (hasScope("pki:ca:list:root")) {
       fetchCAs();
-    }
-
-    if (hasScope("nodes:list")) {
-      api
-        .listNodes({ limit: 100 })
-        .then((r) => setNodesList(r.data ?? []))
-        .catch(() => {});
     }
 
     if (hasScope("admin:audit")) {
@@ -62,87 +143,69 @@ export function Dashboard() {
     }
 
     // Use cached stats immediately, then refetch
-    const cachedStats = api.getCached<DashboardStats>("dashboard:stats");
+    const statsCacheKey = `dashboard:stats:${showSystemCertificates ? "system" : "default"}`;
+    const cachedStats = api.getCached<DashboardStats>(statsCacheKey);
     if (cachedStats) {
       setStats(cachedStats);
       setStatsLoading(false);
     }
-    api
-      .getDashboardStats()
-      .then((data) => {
-        api.setCache("dashboard:stats", data);
-        setStats(data);
-      })
-      .catch(() => {
-        setStats(null);
-      })
-      .finally(() => setStatsLoading(false));
+    refreshStats().finally(() => setStatsLoading(false));
 
     if (hasScope("proxy:list")) {
       const cachedHealth = api.getCached<ProxyHost[]>("dashboard:health");
       if (cachedHealth) setHealthHosts(cachedHealth);
-      api
-        .getHealthOverview()
-        .then((hosts) => {
-          api.setCache("dashboard:health", hosts || []);
-          setHealthHosts(hosts || []);
-        })
-        .catch(() => setHealthHosts([]));
+      refreshHealthOverview();
     }
 
-    // Fetch expiring SSL certs
-    if (hasScope("ssl:cert:list")) {
-      api
-        .listSSLCertificates({ status: "active", limit: 100 })
-        .then((res) => {
-          const expiring = (res.data || [])
-            .filter((c) => c.notAfter && daysUntil(c.notAfter) <= 30 && daysUntil(c.notAfter) >= 0)
-            .map((c) => ({
-              id: c.id,
-              name: c.name,
-              type: "ssl" as const,
-              expiresAt: c.notAfter!,
-              daysLeft: daysUntil(c.notAfter!),
-            }));
-          setExpiringItems((prev) => [...prev.filter((i) => i.type !== "ssl"), ...expiring]);
-        })
-        .catch(() => {});
-    }
+    refreshExpiringSSL();
+    refreshExpiringPKI();
+  }, [
+    fetchCAs,
+    hasScope,
+    refreshExpiringPKI,
+    refreshExpiringSSL,
+    refreshHealthOverview,
+    refreshStats,
+    showSystemCertificates,
+  ]);
 
-    // Fetch expiring PKI certs
-    if (hasScope("pki:cert:list")) {
-      api
-        .listCertificates({ status: "active", limit: 100 })
-        .then((res) => {
-          const expiring = (res.data || [])
-            .filter((c) => daysUntil(c.notAfter) <= 30 && daysUntil(c.notAfter) >= 0)
-            .map((c) => ({
-              id: c.id,
-              name: c.commonName,
-              type: "pki" as const,
-              expiresAt: c.notAfter,
-              daysLeft: daysUntil(c.notAfter),
-            }));
-          setExpiringItems((prev) => [...prev.filter((i) => i.type !== "pki"), ...expiring]);
-        })
-        .catch(() => {});
+  // Fetch/refetch nodes — also triggers on nodeRefreshTick from RealtimeBridge
+  useEffect(() => {
+    refreshNodes();
+  }, [refreshNodes, nodeRefreshTick]);
+
+  useRealtime(hasScope("nodes:list") ? "node.changed" : null, () => {
+    refreshNodes();
+  });
+
+  useRealtime(hasScope("pki:ca:list:root") ? "ca.changed" : null, () => {
+    fetchCAs();
+    refreshStats();
+  });
+
+  useRealtime(hasScope("pki:cert:list") ? "cert.changed" : null, () => {
+    if (hasScope("pki:ca:list:root")) {
+      fetchCAs();
     }
-  }, [fetchCAs, hasScope]);
+    refreshStats();
+    refreshExpiringPKI();
+  });
+
+  useRealtime(hasScope("ssl:cert:list") ? "ssl.cert.changed" : null, () => {
+    refreshStats();
+    refreshExpiringSSL();
+  });
+
+  useRealtime(hasScope("proxy:list") ? "proxy.host.changed" : null, () => {
+    refreshStats();
+    refreshHealthOverview();
+    refreshPinnedProxies();
+  });
 
   // Fetch pinned proxy hosts
   useEffect(() => {
-    if (dashboardPinnedProxyIds.length === 0) {
-      setPinnedProxyHosts([]);
-      return;
-    }
-    if (!hasScope("proxy:list")) return;
-    api
-      .listProxyHosts({ limit: 100 })
-      .then((r) => {
-        setPinnedProxyHosts((r.data ?? []).filter((p) => dashboardPinnedProxyIds.includes(p.id)));
-      })
-      .catch(() => {});
-  }, [dashboardPinnedProxyIds, hasScope]);
+    refreshPinnedProxies();
+  }, [refreshPinnedProxies]);
 
   // IDs of nodes shown on dashboard (pinned + disk warning)
   const warningNodeIds = nodesList
@@ -242,11 +305,7 @@ export function Dashboard() {
               </div>
             )}
 
-          <QuickStatsCard
-            displayStats={displayStats}
-            nodesList={nodesList}
-            hasScope={hasScope}
-          />
+          <QuickStatsCard displayStats={displayStats} nodesList={nodesList} hasScope={hasScope} />
 
           <CertificateExpiryCard expiringItems={expiringItems} hasScope={hasScope} />
 

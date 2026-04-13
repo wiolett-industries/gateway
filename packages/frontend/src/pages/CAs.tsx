@@ -7,6 +7,8 @@ import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
 import { SearchFilterBar } from "@/components/common/SearchFilterBar";
 import { StatusBadge } from "@/components/common/StatusBadge";
+import { useRealtime } from "@/hooks/use-realtime";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -48,10 +50,21 @@ export function CAs() {
   }, [modal, closeModal]);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
+  const showSystemCertificates =
+    useAuthStore((s) => s.hasScope("admin:details:certificates")) &&
+    useUIStore((s) => s.showSystemCertificates);
 
   useEffect(() => {
     fetchCAs();
-  }, [fetchCAs]);
+  }, [fetchCAs, showSystemCertificates]);
+
+  useRealtime("ca.changed", () => {
+    fetchCAs();
+  });
+
+  useRealtime("cert.changed", () => {
+    fetchCAs();
+  });
 
   const allCAs = cas || [];
   const filteredByStatus =
@@ -61,6 +74,7 @@ export function CAs() {
     : filteredByStatus;
   const rootCAs = visibleCAs.filter((ca) => !ca.parentId);
   const activeCAs = allCAs.filter((ca) => ca.status === "active");
+  const activeUserManagedCAs = activeCAs.filter((ca) => !ca.isSystem);
   const totalCerts = allCAs.reduce((sum, ca) => sum + (ca.certCount || 0), 0);
 
   const getChildren = (parentId: string) => visibleCAs.filter((ca) => ca.parentId === parentId);
@@ -98,7 +112,7 @@ export function CAs() {
                   setCreateIntermediateParentId("pick");
                   setCreateDialogOpen(true);
                 }}
-                disabled={allCAs.length === 0}
+                disabled={activeUserManagedCAs.length === 0}
               >
                 <Plus className="h-4 w-4" />
                 Create Intermediate
@@ -231,6 +245,11 @@ function CARows({
               <CornerDownRight className="h-3 w-3 text-muted-foreground shrink-0 ml-0 mr-1" />
             )}
             <span className="text-sm font-medium">{ca.commonName}</span>
+            {ca.isSystem && (
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                System
+              </Badge>
+            )}
           </div>
         </td>
         <td className="p-3 text-sm text-muted-foreground">{ca.keyAlgorithm}</td>

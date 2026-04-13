@@ -1,9 +1,10 @@
 import { ArrowLeft, Check, Eye, FlaskConical, Minus, Plus, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
+import { useRealtime } from "@/hooks/use-realtime";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CodeEditor } from "@/components/ui/code-editor";
@@ -86,27 +87,39 @@ export function NginxTemplateEdit() {
   const [isTesting, setIsTesting] = useState(false);
   const [showReference, setShowReference] = useState(false);
 
-  useEffect(() => {
+  const loadTemplate = useCallback(async () => {
     if (isNew || !id) return;
-    const load = async () => {
-      setIsLoading(true);
-      try {
-        const t = await api.getNginxTemplate(id);
-        setName(t.name);
-        setDescription(t.description || "");
-        setType(t.type);
-        setContent(t.content);
-        setVariables(t.variables || []);
-        setIsBuiltin(t.isBuiltin);
-      } catch {
-        toast.error("Failed to load template");
-        navigate("/nginx-templates");
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    load();
+    setIsLoading(true);
+    try {
+      const t = await api.getNginxTemplate(id);
+      setName(t.name);
+      setDescription(t.description || "");
+      setType(t.type);
+      setContent(t.content);
+      setVariables(t.variables || []);
+      setIsBuiltin(t.isBuiltin);
+    } catch {
+      toast.error("Failed to load template");
+      navigate("/nginx-templates");
+    } finally {
+      setIsLoading(false);
+    }
   }, [id, isNew, navigate]);
+
+  useEffect(() => {
+    loadTemplate();
+  }, [loadTemplate]);
+
+  useRealtime(!isNew ? "nginx.template.changed" : null, (payload) => {
+    const event = payload as { id?: string; action?: string } | undefined;
+    if (!id || (event?.id && event.id !== id)) return;
+    if (event?.action === "deleted") {
+      toast.error("Template was deleted");
+      navigate("/nginx-templates");
+      return;
+    }
+    loadTemplate();
+  });
 
   const handleSave = async () => {
     if (!name.trim()) {

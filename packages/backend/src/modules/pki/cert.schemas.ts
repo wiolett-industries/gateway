@@ -47,6 +47,10 @@ export const CertificateListQuerySchema = z.object({
   status: z.enum(['active', 'revoked', 'expired']).optional(),
   type: z.enum(['tls-server', 'tls-client', 'code-signing', 'email']).optional(),
   search: z.string().optional(),
+  showSystem: z.preprocess(
+    (v) => (v === 'true' ? true : v === 'false' ? false : undefined),
+    z.boolean().optional()
+  ),
   page: z.coerce.number().min(1).default(1),
   limit: z.coerce.number().min(1).max(100).default(20),
   sortBy: z.enum(['commonName', 'createdAt', 'notAfter', 'type']).default('createdAt'),

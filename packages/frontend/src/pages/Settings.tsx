@@ -16,7 +16,14 @@ import { UpdateSection } from "./settings/UpdateSection";
 
 export function Settings() {
   const { user, hasScope } = useAuthStore();
-  const { theme, setTheme, showUpdateNotifications, setShowUpdateNotifications } = useUIStore();
+  const {
+    theme,
+    setTheme,
+    showUpdateNotifications,
+    setShowUpdateNotifications,
+    showSystemCertificates,
+    setShowSystemCertificates,
+  } = useUIStore();
   const [nodesList, setNodesList] = useState<Node[]>([]);
   const [proxyHostsList, setProxyHostsList] = useState<ProxyHost[]>([]);
 
@@ -25,6 +32,7 @@ export function Settings() {
   const canHousekeep = hasScope("admin:housekeeping");
   const canConfigAI = hasScope("feat:ai:configure");
   const canManageRegistries = hasScope("docker:registries:list");
+  const canViewSystemCertificates = hasScope("admin:details:certificates");
 
   useEffect(() => {
     api
@@ -36,6 +44,18 @@ export function Settings() {
       .then((r) => setProxyHostsList(r.data ?? []))
       .catch(() => {});
   }, []);
+
+  const handleToggleSystemCertificates = (checked: boolean) => {
+    setShowSystemCertificates(checked);
+    api.invalidateCache("req:/api/cas");
+    api.invalidateCache("req:/api/certificates");
+    api.invalidateCache("req:/api/ssl-certificates");
+    api.invalidateCache("req:/api/monitoring/dashboard");
+    api.invalidateCache("cas:list:");
+    api.invalidateCache("certificates:list:");
+    api.invalidateCache("ssl:list:");
+    api.invalidateCache("dashboard:stats:");
+  };
 
   return (
     <PageTransition>
@@ -108,6 +128,20 @@ export function Settings() {
               </div>
               <Switch checked={showUpdateNotifications} onChange={setShowUpdateNotifications} />
             </div>
+            {canViewSystemCertificates && (
+              <div className="flex items-center justify-between gap-4 px-4 py-3">
+                <div>
+                  <p className="text-sm font-medium">Show system certificates</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Include internal PKI and SSL certificates in lists and dashboard counts
+                  </p>
+                </div>
+                <Switch
+                  checked={showSystemCertificates}
+                  onChange={handleToggleSystemCertificates}
+                />
+              </div>
+            )}
             {canUseAI && (
               <>
                 <AIBypassRow

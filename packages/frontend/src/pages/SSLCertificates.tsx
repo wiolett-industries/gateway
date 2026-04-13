@@ -6,6 +6,7 @@ import { EmptyState } from "@/components/common/EmptyState";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
 import { SearchFilterBar } from "@/components/common/SearchFilterBar";
+import { useRealtime } from "@/hooks/use-realtime";
 import { SSLCertificateCreateDialog } from "@/components/ssl/SSLCertificateCreateDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -74,6 +75,9 @@ function SSLStatusBadge({ status }: { status: SSLCertStatus }) {
 export function SSLCertificates() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const { hasScope } = useAuthStore();
+  const showSystemCertificates =
+    useAuthStore((s) => s.hasScope("admin:details:certificates")) &&
+    useUIStore((s) => s.showSystemCertificates);
   const modal = useUIStore((s) => s.modal);
   const closeModal = useUIStore((s) => s.closeModal);
 
@@ -102,7 +106,11 @@ export function SSLCertificates() {
 
   useEffect(() => {
     fetchCertificates();
-  }, [fetchCertificates]);
+  }, [fetchCertificates, showSystemCertificates]);
+
+  useRealtime("ssl.cert.changed", () => {
+    fetchCertificates();
+  });
 
   const handleSearch = () => {
     setFilters({ search: searchInput });

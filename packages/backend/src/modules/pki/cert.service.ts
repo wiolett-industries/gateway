@@ -1,5 +1,5 @@
 import { injectable, inject } from 'tsyringe';
-import { eq, and, or, ilike, desc, asc, count, lte, notInArray, sql } from 'drizzle-orm';
+import { eq, and, or, ilike, desc, asc, count, lte, inArray, sql } from 'drizzle-orm';
 import { x509 } from '@/lib/x509.js';
 import crypto from 'node:crypto';
 import { TOKENS } from '@/container.js';
@@ -12,6 +12,7 @@ import { createChildLogger } from '@/lib/logger.js';
 import { buildWhere, escapeLike } from '@/lib/utils.js';
 import type { DrizzleClient } from '@/db/client.js';
 import type { IssueCertificateInput, IssueCertFromCSRInput, CertificateListQuery } from './cert.schemas.js';
+import type { EventBusService } from '@/services/event-bus.service.js';
 import type { PaginatedResponse } from '@/types.js';
 
 const logger = createChildLogger('CertService');
@@ -27,6 +28,8 @@ const KEY_USAGE_MAP: Record<string, number> = {
 
 @injectable()
 export class CertService {
+  private eventBus?: EventBusService;
+
   constructor(
     @inject(TOKENS.DrizzleClient) private readonly db: DrizzleClient,
     private readonly cryptoService: CryptoService,
@@ -34,8 +37,18 @@ export class CertService {
     private readonly auditService: AuditService,
   ) {}
 
-  async issueCertificate(input: IssueCertificateInput, userId: string) {
-    const { ca, privateKeyPem: caPrivateKeyPem } = await this.caService.getCASigningMaterials(input.caId);
+  setEventBus(bus: EventBusService) {
+    this.eventBus = bus;
+  }
+
+  private emitCert(id: string, caId: string, action: 'created' | 'revoked') {
+    this.eventBus?.publish('cert.changed', { id, caId, action });
+  }
+
+  async issueCertificate(input: IssueCertificateInput, userId: string, options?: { allowSystem?: boolean }) {
+    const { ca, privateKeyPem: caPrivateKeyPem } = await this.caService.getCASigningMaterials(input.caId, {
+      allowSystem: options?.allowSystem,
+    });
 
     // Validate validity
     const notBefore = new Date();
@@ -154,6 +167,7 @@ export class CertService {
     });
 
     logger.info('Issued certificate', { certId: certificate.id, cn: input.commonName });
+    this.emitCert(certificate.id, certificate.caId, 'created');
 
     return {
       certificate,
@@ -161,8 +175,10 @@ export class CertService {
     };
   }
 
-  async issueCertificateFromCSR(input: IssueCertFromCSRInput, userId: string) {
-    const { ca, privateKeyPem: caPrivateKeyPem } = await this.caService.getCASigningMaterials(input.caId);
+  async issueCertificateFromCSR(input: IssueCertFromCSRInput, userId: string, options?: { allowSystem?: boolean }) {
+    const { ca, privateKeyPem: caPrivateKeyPem } = await this.caService.getCASigningMaterials(input.caId, {
+      allowSystem: options?.allowSystem,
+    });
 
     // Parse CSR
     let csr: x509.Pkcs10CertificateRequest;
@@ -284,18 +300,28 @@ export class CertService {
       details: { type: input.type, caId: input.caId, cn: commonName, serverGenerated: false },
     });
 
+    this.emitCert(certificate.id, certificate.caId, 'created');
     return certificate;
   }
 
-  async getCertificate(id: string) {
+  async getCertificate(id: string, options?: { includeSystem?: boolean }) {
     const cert = await this.db.query.certificates.findFirst({
       where: eq(certificates.id, id),
     });
 
     if (!cert) throw new AppError(404, 'CERT_NOT_FOUND', 'Certificate not found');
+    const [caRow] = await this.db
+      .select({ isSystem: certificateAuthorities.isSystem })
+      .from(certificateAuthorities)
+      .where(eq(certificateAuthorities.id, cert.caId))
+      .limit(1);
+    if (caRow?.isSystem && !options?.includeSystem) {
+      throw new AppError(404, 'CERT_NOT_FOUND', 'Certificate not found');
+    }
 
     return {
       ...cert,
+      isSystem: !!caRow?.isSystem,
       encryptedPrivateKey: undefined,
       encryptedDek: undefined,
       dekIv: undefined,
@@ -305,9 +331,11 @@ export class CertService {
   async listCertificates(params: CertificateListQuery): Promise<PaginatedResponse<any>> {
     const conditions = [];
 
-    // Exclude certificates issued by the internal system CA (node mTLS certs)
-    const systemCaIds = sql`(SELECT id FROM ${certificateAuthorities} WHERE is_system = true)`;
-    conditions.push(sql`${certificates.caId} NOT IN ${systemCaIds}`);
+    if (!params.showSystem) {
+      // Exclude certificates issued by the internal system CA (node mTLS certs)
+      const systemCaIds = sql`(SELECT id FROM ${certificateAuthorities} WHERE is_system = true)`;
+      conditions.push(sql`${certificates.caId} NOT IN ${systemCaIds}`);
+    }
 
     if (params.caId) conditions.push(eq(certificates.caId, params.caId));
     if (params.status) conditions.push(eq(certificates.status, params.status));
@@ -347,10 +375,23 @@ export class CertService {
       this.db.select({ count: count() }).from(certificates).where(where),
     ]);
 
+    const caIds = [...new Set(entries.map((entry) => entry.caId))];
+    const caRows = caIds.length
+      ? await this.db
+          .select({ id: certificateAuthorities.id, isSystem: certificateAuthorities.isSystem })
+          .from(certificateAuthorities)
+          .where(inArray(certificateAuthorities.id, caIds))
+      : [];
+    const caSystemMap = new Map(caRows.map((row) => [row.id, !!row.isSystem]));
+    const data = entries.map((entry) => ({
+      ...entry,
+      isSystem: caSystemMap.get(entry.caId) ?? false,
+    }));
+
     const total = Number(totalCount);
 
     return {
-      data: entries,
+      data,
       pagination: {
         page: params.page,
         limit: params.limit,
@@ -366,6 +407,14 @@ export class CertService {
     });
 
     if (!cert) throw new AppError(404, 'CERT_NOT_FOUND', 'Certificate not found');
+    const [caRow] = await this.db
+      .select({ isSystem: certificateAuthorities.isSystem })
+      .from(certificateAuthorities)
+      .where(eq(certificateAuthorities.id, cert.caId))
+      .limit(1);
+    if (caRow?.isSystem) {
+      throw new AppError(403, 'SYSTEM_CERT', 'System certificates cannot be revoked');
+    }
     if (cert.status !== 'active') throw new AppError(400, 'CERT_NOT_ACTIVE', 'Certificate is already revoked or expired');
 
     await this.db
@@ -382,6 +431,7 @@ export class CertService {
     });
 
     logger.info('Revoked certificate', { certId: id, reason });
+    this.emitCert(cert.id, cert.caId, 'revoked');
     return cert.caId; // Return CA ID for CRL regeneration
   }
 

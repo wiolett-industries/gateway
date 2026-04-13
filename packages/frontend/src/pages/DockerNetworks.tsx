@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { RefreshButton } from "@/components/ui/refresh-button";
+import { useRealtime } from "@/hooks/use-realtime";
 import {
   Select,
   SelectContent,
@@ -121,6 +122,12 @@ export function DockerNetworks({
     const interval = setInterval(() => fetchNetworks(), 30_000);
     return () => clearInterval(interval);
   }, [selectedNodeId, fetchNetworks, location.key]);
+
+  useRealtime("docker.network.changed", (payload) => {
+    const ev = payload as { nodeId?: string };
+    if (selectedNodeId && ev?.nodeId && ev.nodeId !== selectedNodeId) return;
+    fetchNetworks();
+  });
 
   const filteredNetworks = useMemo(() => {
     const sorted = [...networks].sort((a, b) => a.name.localeCompare(b.name));

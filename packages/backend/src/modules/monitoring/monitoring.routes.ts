@@ -1,5 +1,6 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { createChildLogger } from '@/lib/logger.js';
+import { hasScope } from '@/lib/permissions.js';
 
 const logger = createChildLogger('MonitoringRoutes');
 
@@ -20,7 +21,12 @@ monitoringRoutes.use('*', sessionOnly);
 // Dashboard stats — aggregate counts for proxy hosts, SSL certs, PKI certs, CAs
 monitoringRoutes.get('/dashboard', async (c) => {
   const monitoringService = container.resolve(MonitoringService);
-  const stats = await monitoringService.getDashboardStats();
+  const showSystem = c.req.query('showSystem') === 'true';
+  const user = c.get('user')!;
+  if (showSystem && !hasScope(user.scopes, 'admin:details:certificates')) {
+    return c.json({ code: 'FORBIDDEN', message: 'Insufficient permissions' }, 403);
+  }
+  const stats = await monitoringService.getDashboardStats(showSystem);
   return c.json({ data: stats });
 });
 

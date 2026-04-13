@@ -105,6 +105,7 @@ Scopes marked **Yes** in the "Restrictable" column can be limited to a specific 
 | `admin:groups` | Create, edit, and delete permission groups | |
 | `admin:audit` | View the audit log | |
 | `admin:system` | System-level administration (protected, cannot be removed from system-admin) | |
+| `admin:details:certificates` | View internal system PKI and SSL certificates in read-only mode | |
 | `admin:update` | Check for and apply updates | |
 | `admin:housekeeping` | Run housekeeping tasks (prune, cleanup) | |
 | `admin:alerts` | View and manage alerts | |
@@ -183,4 +184,4 @@ Scopes marked **Yes** in the "Restrictable" column can be limited to a specific 
 
 ---
 
-**Total: 82 scopes**
+**Total: 83 scopes**

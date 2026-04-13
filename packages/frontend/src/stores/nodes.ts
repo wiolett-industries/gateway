@@ -17,10 +17,14 @@ interface NodesState {
   limit: number;
   total: number;
   totalPages: number;
+  /** Incremented on every node.changed event — triggers refetch in consuming components */
+  refreshTick: number;
   fetchNodes: () => Promise<void>;
   setFilters: (filters: Partial<NodeFilters>) => void;
   setPage: (page: number) => void;
   resetFilters: () => void;
+  /** Called from RealtimeBridge when a node.changed event arrives */
+  invalidate: () => void;
 }
 
 export const useNodesStore = create<NodesState>()((set, get) => ({
@@ -32,6 +36,7 @@ export const useNodesStore = create<NodesState>()((set, get) => ({
   limit: 50,
   total: 0,
   totalPages: 0,
+  refreshTick: 0,
 
   fetchNodes: async () => {
     const { filters, page, limit } = get();
@@ -76,6 +81,12 @@ export const useNodesStore = create<NodesState>()((set, get) => ({
       filters: { search: "", status: "all", type: "all" },
       page: 1,
     });
+    get().fetchNodes();
+  },
+
+  invalidate: () => {
+    api.invalidateCache("req:/api/nodes");
+    set((s) => ({ refreshTick: s.refreshTick + 1 }));
     get().fetchNodes();
   },
 }));

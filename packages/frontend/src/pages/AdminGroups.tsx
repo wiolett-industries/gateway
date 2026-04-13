@@ -16,6 +16,7 @@ import { EmptyState } from "@/components/common/EmptyState";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
 import { ScopeList } from "@/components/common/ScopeList";
+import { useRealtime } from "@/hooks/use-realtime";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -157,6 +158,32 @@ export function AdminGroups() {
       .then((r) => setProxyHostsList(r.data ?? []))
       .catch(() => {});
   }, [fetchGroups, fetchCAs]);
+
+  useRealtime("group.changed", () => {
+    fetchGroups();
+  });
+
+  useRealtime("user.changed", () => {
+    fetchGroups();
+  });
+
+  useRealtime("ca.changed", () => {
+    fetchCAs();
+  });
+
+  useRealtime("node.changed", () => {
+    api
+      .listNodes({ limit: 100 })
+      .then((r) => setNodesList(r.data ?? []))
+      .catch(() => {});
+  });
+
+  useRealtime("proxy.host.changed", () => {
+    api
+      .listProxyHosts({ limit: 100 })
+      .then((r) => setProxyHostsList(r.data ?? []))
+      .catch(() => {});
+  });
 
   const openCreateDialog = () => {
     setEditingGroup(null);

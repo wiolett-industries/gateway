@@ -1,4 +1,5 @@
 import { useAuthStore } from "@/stores/auth";
+import { api } from "@/services/api";
 
 type EventHandler = (payload: unknown) => void;
 
@@ -124,13 +125,82 @@ class EventStream {
         return;
       }
       if (msg.type === "event" && msg.channel) {
+        // Direct store invalidation for node status changes
+        if (msg.channel === "node.changed") {
+          api.invalidateCache("req:/api/nodes");
+          import("@/stores/nodes")
+            .then((m) => m.useNodesStore.getState().invalidate())
+            .catch(() => {});
+          import("@/stores/pinned-nodes")
+            .then((m) => m.usePinnedNodesStore.getState().invalidate())
+            .catch(() => {});
+        } else if (msg.channel === "domain.changed") {
+          api.invalidateCache("req:/api/domains");
+          api.invalidateCache("domains:list");
+        } else if (msg.channel === "ca.changed") {
+          api.invalidateCache("req:/api/cas");
+          api.invalidateCache("cas:list:");
+          api.invalidateCache("req:/api/monitoring/dashboard");
+          api.invalidateCache("dashboard:stats:");
+        } else if (msg.channel === "cert.changed") {
+          api.invalidateCache("req:/api/certificates");
+          api.invalidateCache("certificates:list:");
+          api.invalidateCache("req:/api/cas");
+          api.invalidateCache("cas:list:");
+          api.invalidateCache("req:/api/monitoring/dashboard");
+          api.invalidateCache("dashboard:stats:");
+        } else if (msg.channel === "ssl.cert.changed") {
+          api.invalidateCache("req:/api/ssl-certificates");
+          api.invalidateCache("ssl:list:");
+          api.invalidateCache("req:/api/monitoring/dashboard");
+          api.invalidateCache("dashboard:stats:");
+        } else if (msg.channel === "proxy.host.changed") {
+          api.invalidateCache("req:/api/proxy-hosts");
+          api.invalidateCache("req:/api/proxy-host-folders/grouped");
+          api.invalidateCache("proxy:grouped");
+          api.invalidateCache("req:/api/domains");
+          api.invalidateCache("domains:list");
+          api.invalidateCache("req:/api/monitoring/dashboard");
+          api.invalidateCache("req:/api/monitoring/health-status");
+          api.invalidateCache("dashboard:stats:");
+          api.invalidateCache("dashboard:health");
+        } else if (msg.channel === "pki.template.changed") {
+          api.invalidateCache("req:/api/templates");
+          api.invalidateCache("templates:list");
+        } else if (msg.channel === "nginx.template.changed") {
+          api.invalidateCache("req:/api/nginx-templates");
+          api.invalidateCache("nginx-templates:list");
+        } else if (msg.channel === "access-list.changed") {
+          api.invalidateCache("req:/api/access-lists");
+          api.invalidateCache("access-lists:list");
+        } else if (msg.channel === "user.changed") {
+          api.invalidateCache("req:/api/admin/users");
+          api.invalidateCache("admin:users");
+        } else if (msg.channel === "group.changed") {
+          api.invalidateCache("req:/api/admin/groups");
+          api.invalidateCache("req:/api/admin/users");
+          api.invalidateCache("admin:users");
+        } else if (msg.channel === "docker.registry.changed") {
+          api.invalidateCache("req:/api/docker/registries");
+        } else if (msg.channel === "docker.template.changed") {
+          api.invalidateCache("req:/api/docker/templates");
+        } else if (msg.channel === "notification.alert-rule.changed") {
+          api.invalidateCache("req:/api/notifications/alert-rules");
+        } else if (msg.channel === "notification.webhook.changed") {
+          api.invalidateCache("req:/api/notifications/webhooks");
+        } else if (msg.channel.startsWith("docker.")) {
+          api.invalidateCache("req:/api/docker");
+        } else if (msg.channel.startsWith("alert.")) {
+          api.invalidateCache("req:/api/notifications/deliveries");
+        }
+
         const set = this.handlers.get(msg.channel);
         if (set) {
           for (const fn of set) {
             try {
               fn(msg.payload);
             } catch {
-              /* ignore handler error */
+              /* handler error */
             }
           }
         }

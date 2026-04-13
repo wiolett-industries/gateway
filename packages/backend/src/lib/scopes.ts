@@ -66,6 +66,7 @@ export const ALL_SCOPES = [
   'admin:groups',
   'admin:audit',
   'admin:system',
+  'admin:details:certificates',
   'admin:update',
   'admin:housekeeping',
   'admin:alerts',

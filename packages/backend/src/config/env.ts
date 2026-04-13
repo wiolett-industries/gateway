@@ -20,7 +20,7 @@ const envSchema = z.object({
 
   // Rate limiting
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60000),
-  RATE_LIMIT_MAX_REQUESTS: z.coerce.number().default(5000),
+  RATE_LIMIT_MAX_REQUESTS: z.coerce.number().default(20000),
 
   // Session
   SESSION_EXPIRY: z.coerce.number().default(2592000), // 30 days

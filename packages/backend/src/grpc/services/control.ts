@@ -13,8 +13,10 @@ import type { GrpcServerDeps } from '../server.js';
 
 const logger = createChildLogger('GrpcControl');
 
-// Track the last recorded hour per node to avoid redundant DB writes
-const lastRecordedHour = new Map<string, string>();
+// Throttle health history writes — track last recorded timestamp per node
+const lastRecordedTs = new Map<string, number>();
+const HEALTH_HISTORY_MIN_INTERVAL_MS = 30_000; // one entry per 30s
+const MAX_HEALTH_HISTORY_AGE_MS = 7 * 24 * 3600 * 1000; // 7 days
 
 export function createControlHandlers(deps: GrpcServerDeps) {
   return {
@@ -279,52 +281,57 @@ export function createControlHandlers(deps: GrpcServerDeps) {
               logger.error('Evaluator resolve failed', { error: (resolveErr as Error).message });
             }
 
-            // Persist periodically
-            await deps.db
-              .update(nodes)
-              .set({
-                lastHealthReport: healthData,
-                lastSeenAt: new Date(),
-              })
-              .where(eq(nodes.id, nodeId));
+            // Persist health report and restore online status if node was marked offline (e.g. after missed reports)
+            const [currentRow] = await deps.db
+              .select({ status: nodes.status })
+              .from(nodes)
+              .where(eq(nodes.id, nodeId))
+              .limit(1);
 
-            // Update hourly health history (ring buffer, max 168 hours = 7 days)
-            const currentHour = new Date().toISOString().slice(0, 13); // e.g. "2026-04-01T12"
-            const previousHour = lastRecordedHour.get(nodeId);
-            if (previousHour !== currentHour) {
+            const updatePayload: Record<string, unknown> = {
+              lastHealthReport: healthData,
+              lastSeenAt: new Date(),
+            };
+            if (currentRow?.status === 'offline') {
+              updatePayload.status = 'online';
+              updatePayload.updatedAt = new Date();
+              logger.info('Node resumed health reports, restored to online', { nodeId });
+            }
+
+            await deps.db.update(nodes).set(updatePayload).where(eq(nodes.id, nodeId));
+
+            // Publish status restoration event after DB write
+            if (currentRow?.status === 'offline') {
+              const connectedNode = deps.registry.getNode(nodeId);
+              deps.registry.publishNodeChanged(nodeId, 'online', connectedNode?.hostname);
+            }
+
+            // Record health history entry (same format as proxy health checks)
+            const nowMs = Date.now();
+            const lastTs = lastRecordedTs.get(nodeId) ?? 0;
+            if (nowMs - lastTs >= HEALTH_HISTORY_MIN_INTERVAL_MS) {
               const connectedNode = deps.registry.getNode(nodeId);
               const isHealthy =
-                connectedNode?.type === 'nginx' ? healthData.nginxRunning && healthData.configValid : true; // non-nginx nodes are healthy when connected + reporting
-              const hourKey = `${currentHour}:00:00.000Z`;
+                connectedNode?.type === 'nginx' ? healthData.nginxRunning && healthData.configValid : true;
+              const status = isHealthy ? 'online' : 'degraded';
 
               try {
+                const cutoff = new Date(nowMs - MAX_HEALTH_HISTORY_AGE_MS).toISOString();
                 const [histRow] = await deps.db
                   .select({ healthHistory: nodes.healthHistory })
                   .from(nodes)
                   .where(eq(nodes.id, nodeId))
                   .limit(1);
 
-                const history: Array<{ hour: string; healthy: boolean }> =
-                  (histRow?.healthHistory as Array<{ hour: string; healthy: boolean }>) ?? [];
+                const history: Array<{ ts: string; status: string }> = (
+                  (histRow?.healthHistory as Array<{ ts: string; status: string }>) ?? []
+                ).filter((h) => h.ts > cutoff);
 
-                // Update or append current hour
-                const existingIdx = history.findIndex((h) => h.hour === hourKey);
-                if (existingIdx >= 0) {
-                  // If ANY report in this hour was unhealthy, mark the hour as unhealthy
-                  if (!isHealthy) history[existingIdx].healthy = false;
-                } else {
-                  history.push({ hour: hourKey, healthy: isHealthy });
-                }
-
-                // Trim to last 168 entries
-                while (history.length > 168) history.shift();
+                history.push({ ts: new Date(nowMs).toISOString(), status });
 
                 await deps.db.update(nodes).set({ healthHistory: history }).where(eq(nodes.id, nodeId));
-
-                // Only mark as recorded after successful DB write so failures retry next report
-                lastRecordedHour.set(nodeId, currentHour);
+                lastRecordedTs.set(nodeId, nowMs);
               } catch (err) {
-                // Don't update lastRecordedHour — retry next time
                 logger.warn('Failed to update health history', { nodeId, error: (err as Error).message });
               }
             }
@@ -384,7 +391,7 @@ export function createControlHandlers(deps: GrpcServerDeps) {
       stream.on('end', async () => {
         if (nodeId) {
           logger.info('Node stream ended', { nodeId });
-          lastRecordedHour.delete(nodeId);
+          lastRecordedTs.delete(nodeId);
           await deps.registry.deregister(nodeId);
           await deps.auditService.log({
             userId: null,
@@ -399,7 +406,7 @@ export function createControlHandlers(deps: GrpcServerDeps) {
       stream.on('error', async (err) => {
         if (nodeId) {
           logger.warn('Node stream error', { nodeId, error: err.message });
-          lastRecordedHour.delete(nodeId);
+          lastRecordedTs.delete(nodeId);
           await deps.registry.deregister(nodeId);
           await deps.auditService.log({
             userId: null,

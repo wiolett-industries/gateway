@@ -1,5 +1,6 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
+import { hasScope } from '@/lib/permissions.js';
 import { authMiddleware, requireScope, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import {
@@ -24,7 +25,12 @@ sslRoutes.get('/', requireScope('ssl:cert:list'), async (c) => {
     type: c.req.query('type'),
     status: c.req.query('status'),
     search: c.req.query('search'),
+    showSystem: c.req.query('showSystem'),
   });
+  const user = c.get('user')!;
+  if (query.showSystem && !hasScope(user.scopes, 'admin:details:certificates')) {
+    return c.json({ code: 'FORBIDDEN', message: 'Insufficient permissions' }, 403);
+  }
   const result = await sslService.listCerts(query);
   return c.json(result);
 });

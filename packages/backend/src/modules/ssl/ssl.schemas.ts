@@ -36,6 +36,10 @@ export const SSLCertListQuerySchema = z.object({
   type: z.enum(['acme', 'upload', 'internal']).optional(),
   status: z.enum(['active', 'expired', 'pending', 'error']).optional(),
   search: z.string().optional(),
+  showSystem: z.preprocess(
+    (v) => (v === 'true' ? true : v === 'false' ? false : undefined),
+    z.boolean().optional()
+  ),
 });
 
 export type RequestACMECertInput = z.output<typeof RequestACMECertSchema>;

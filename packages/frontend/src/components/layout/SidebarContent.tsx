@@ -21,7 +21,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { AIButton } from "@/components/ai/AIButton";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -47,8 +47,8 @@ import { usePinnedNodesStore } from "@/stores/pinned-nodes";
 import { usePinnedProxiesStore } from "@/stores/pinned-proxies";
 import { useUIStore } from "@/stores/ui";
 import { useUpdateStore } from "@/stores/update";
+import { AI_SCOPE, effectiveNodeStatus } from "@/types";
 import type { Node, ProxyHost } from "@/types";
-import { AI_SCOPE } from "@/types";
 
 function getInitials(name: string | null): string {
   if (!name) return "?";
@@ -107,7 +107,13 @@ const navigationGroups: NavGroup[] = [
       { name: "Templates", href: "/templates", icon: Award, matchTabs: true },
       { name: "Nodes", href: "/nodes", icon: Server, scope: "nodes:list" },
       { name: "Access Lists", href: "/access-lists", icon: ShieldAlert, scope: "acl:list" },
-      { name: "Notifications", href: "/notifications", icon: Bell, scope: "notifications:view", matchTabs: true },
+      {
+        name: "Notifications",
+        href: "/notifications",
+        icon: Bell,
+        scope: "notifications:view",
+        matchTabs: true,
+      },
       { name: "Settings", href: "/settings", icon: Settings },
     ],
   },
@@ -158,11 +164,8 @@ export function SidebarContent({
   const sidebarPinnedContainerIds = usePinnedContainersStore((s) => s.sidebarContainerIds);
   const pinnedContainerMeta = usePinnedContainersStore((s) => s.containerMeta);
 
-  useEffect(() => {
-    if (sidebarPinnedIds.length === 0) {
-      setPinnedNodes([]);
-      return;
-    }
+  const refetchPinnedNodes = useCallback(() => {
+    if (sidebarPinnedIds.length === 0) return;
     api
       .listNodes({ limit: 100 })
       .then((r) => {
@@ -171,7 +174,15 @@ export function SidebarContent({
         usePinnedNodesStore.getState().removeOrphans(allIds);
       })
       .catch(() => {});
-  }, [sidebarPinnedIds, location.pathname, pinnedRefreshTick]);
+  }, [sidebarPinnedIds]);
+
+  useEffect(() => {
+    if (sidebarPinnedIds.length === 0) {
+      setPinnedNodes([]);
+      return;
+    }
+    refetchPinnedNodes();
+  }, [sidebarPinnedIds, location.pathname, pinnedRefreshTick, refetchPinnedNodes]);
 
   useEffect(() => {
     if (sidebarPinnedProxyIds.length === 0) {
@@ -233,7 +244,12 @@ export function SidebarContent({
           // Hide Docker when no docker nodes exist
           if (item.href === "/docker" && !hasDockerNodes) return false;
           // Templates: need at least one template scope
-          if (item.href === "/templates" && !hasScope("pki:templates:list") && !hasScope("docker:templates:list")) return false;
+          if (
+            item.href === "/templates" &&
+            !hasScope("pki:templates:list") &&
+            !hasScope("docker:templates:list")
+          )
+            return false;
           return true;
         }),
       };
@@ -474,6 +490,7 @@ export function SidebarContent({
                             const isActive =
                               location.pathname === `/nodes/${node.id}` ||
                               location.pathname.startsWith(`/nodes/${node.id}/`);
+                            const status = effectiveNodeStatus(node);
                             return (
                               <Link
                                 key={node.id}
@@ -493,11 +510,13 @@ export function SidebarContent({
                                 <span
                                   className={cn(
                                     "ml-auto h-2 w-2 rounded-full shrink-0",
-                                    node.status === "online"
+                                    status === "online"
                                       ? "bg-emerald-500"
-                                      : node.status === "error"
-                                        ? "bg-red-400"
-                                        : "bg-muted-foreground/40"
+                                      : status === "degraded"
+                                        ? "bg-yellow-500"
+                                        : status === "offline" || status === "error"
+                                          ? "bg-red-400"
+                                          : "bg-yellow-500"
                                   )}
                                 />
                               </Link>
