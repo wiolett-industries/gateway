@@ -4,6 +4,7 @@ import { sslCertificates } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
 import type { AlertService } from '@/modules/audit/alert.service.js';
 import type { SSLService } from '@/modules/ssl/ssl.service.js';
+import type { EventBusService } from '@/services/event-bus.service.js';
 
 const logger = createChildLogger('ACMERenewalJob');
 
@@ -11,11 +12,15 @@ const RENEWAL_WINDOW_DAYS = 30;
 const SYSTEM_USER_ID = '00000000-0000-0000-0000-000000000000';
 
 export class ACMERenewalJob {
+  private eventBus?: EventBusService;
+
   constructor(
     private readonly db: DrizzleClient,
     private readonly sslService: SSLService,
     private readonly alertService: AlertService
   ) {}
+
+  setEventBus(bus: EventBusService) { this.eventBus = bus; }
 
   async run(): Promise<void> {
     logger.info('Starting ACME certificate renewal check');
@@ -80,6 +85,7 @@ export class ACMERenewalJob {
           resourceId: cert.id,
           message: `Auto-renewal failed for certificate "${cert.name}": ${message}`,
         });
+        this.eventBus?.publish('ssl.cert.changed', { id: cert.id, action: 'renewal_failed', name: cert.name });
       }
     }
 

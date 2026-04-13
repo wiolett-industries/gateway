@@ -31,8 +31,8 @@ export class SSLService {
   setEventBus(bus: EventBusService) {
     this.eventBus = bus;
   }
-  private emitCert(id: string, action: 'created' | 'renewed' | 'deleted' | 'updated') {
-    this.eventBus?.publish('ssl.cert.changed', { id, action });
+  private emitCert(id: string, action: 'created' | 'renewed' | 'deleted' | 'updated' | 'renewal_failed' | 'expired', name?: string) {
+    this.eventBus?.publish('ssl.cert.changed', { id, action, name });
   }
 
   // ---------------------------------------------------------------------------
@@ -114,7 +114,7 @@ export class SSLService {
       });
 
       logger.info('ACME certificate issued via HTTP-01', { certId: cert.id, domains: input.domains });
-      this.emitCert(cert.id, 'created');
+      this.emitCert(cert.id, 'created', input.domains.join(', '));
 
       return {
         certificate: this.sanitizeCert(cert),
@@ -356,7 +356,7 @@ export class SSLService {
     });
 
     logger.info('Certificate uploaded', { certId: cert.id, name: input.name, domains });
-    this.emitCert(cert.id, 'created');
+    this.emitCert(cert.id, 'created', input.name);
 
     return this.sanitizeCert(cert);
   }
@@ -439,7 +439,7 @@ export class SSLService {
     });
 
     logger.info('Internal certificate linked', { certId: cert.id, internalCertId: input.internalCertId });
-    this.emitCert(cert.id, 'created');
+    this.emitCert(cert.id, 'created', name);
 
     return this.sanitizeCert(cert);
   }
@@ -527,7 +527,7 @@ export class SSLService {
       });
 
       logger.info('Certificate renewed', { certId, domains: cert.domainNames });
-      this.emitCert(certId, 'renewed');
+      this.emitCert(certId, 'renewed', cert.name);
 
       const updated = await this.db.query.sslCertificates.findFirst({
         where: eq(sslCertificates.id, certId),
@@ -592,7 +592,7 @@ export class SSLService {
     });
 
     logger.info('Certificate deleted', { certId, name: cert.name });
-    this.emitCert(certId, 'deleted');
+    this.emitCert(certId, 'deleted', cert.name);
   }
 
   // ---------------------------------------------------------------------------

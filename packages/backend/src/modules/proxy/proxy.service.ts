@@ -50,8 +50,8 @@ export class ProxyService {
   setEventBus(bus: EventBusService) {
     this.eventBus = bus;
   }
-  private emitHost(id: string, action: 'created' | 'updated' | 'deleted') {
-    this.eventBus?.publish('proxy.host.changed', { id, action });
+  private emitHost(id: string, action: string, domain?: string) {
+    this.eventBus?.publish('proxy.host.changed', { id, action, domain });
   }
 
   private async applyConfigToNode(hostId: string, config: string, nodeId: string | null): Promise<void> {
@@ -172,7 +172,7 @@ export class ProxyService {
     });
 
     logger.info('Created proxy host', { hostId: host.id, domains: host.domainNames });
-    this.emitHost(host.id, 'created');
+    this.emitHost(host.id, 'created', host.domainNames?.[0]);
 
     // 6. Fire-and-forget immediate health check
     if (host.healthCheckEnabled) {
@@ -315,7 +315,7 @@ export class ProxyService {
     });
 
     logger.info('Deleted proxy host', { hostId: id, domains: existing.domainNames });
-    this.emitHost(id, 'deleted');
+    this.emitHost(id, 'deleted', existing.domainNames?.[0]);
   }
 
   // -----------------------------------------------------------------------

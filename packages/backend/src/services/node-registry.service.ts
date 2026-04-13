@@ -259,7 +259,7 @@ export class NodeRegistryService {
     // For nodes that are in the DB as 'online' but not in our connected set
     // This handles ungraceful disconnects that the gRPC layer didn't catch
     const dbOnlineNodes = await this.db
-      .select({ id: nodes.id, lastSeenAt: nodes.lastSeenAt })
+      .select({ id: nodes.id, hostname: nodes.hostname, lastSeenAt: nodes.lastSeenAt })
       .from(nodes)
       .where(eq(nodes.status, 'online'));
 
@@ -275,6 +275,7 @@ export class NodeRegistryService {
             })
             .where(eq(nodes.id, dbNode.id));
           logger.warn('Marked stale node as offline', { nodeId: dbNode.id });
+          this.eventBus?.publish('node.changed', { id: dbNode.id, action: 'updated', status: 'offline', hostname: dbNode.hostname });
         }
       }
     }
