@@ -238,7 +238,7 @@ export class NotificationEvaluatorService {
 
     // Clear the resolve window buffer
     if (this.redis) {
-      await this.redis.del(`notif:resolve:${rule.id}:${compositeResourceId}`);
+      await this.redis.del(`notif:resolve:${rule.id}:${compositeResourceId}`).catch(() => {});
     }
 
     const firedAt = existingState.firedAt;

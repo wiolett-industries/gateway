@@ -129,6 +129,7 @@ function AlertsTab({ canManage }: { canManage: boolean }) {
   const [editingRule, setEditingRule] = useState<AlertRule | null>(null);
 
   const load = useCallback(async () => {
+    setIsLoading(true);
     try { setRules((await api.listAlertRules({ limit: 100 })).data); }
     catch { toast.error("Failed to load alerts"); }
     finally { setIsLoading(false); }
@@ -380,6 +381,8 @@ function AlertDialog({ open, onOpenChange, rule, onSaved }: {
         data.resolveAfterSeconds = Number(resolveAfterMinutes) * 60;
       } else {
         data.eventPattern = eventPattern;
+        data.durationSeconds = 0;
+        data.resolveAfterSeconds = 0;
       }
       if (isEdit) { await api.updateAlertRule(rule!.id, data); toast.success("Alert updated"); }
       else { await api.createAlertRule(data); toast.success("Alert created"); }
@@ -643,6 +646,7 @@ function WebhooksTab({ canManage }: { canManage: boolean }) {
   const [editingWh, setEditingWh] = useState<NotificationWebhook | null>(null);
 
   const load = useCallback(async () => {
+    setIsLoading(true);
     try { setWebhooks((await api.listWebhooks({ limit: 100 })).data); }
     catch { toast.error("Failed to load webhooks"); }
     finally { setIsLoading(false); }
@@ -966,6 +970,7 @@ function DeliveryLogTab() {
   const [detail, setDetail] = useState<WebhookDelivery | null>(null);
 
   const load = useCallback(async () => {
+    setIsLoading(true);
     try { setDeliveries((await api.listDeliveries({ limit: 100, status: statusFilter !== "all" ? statusFilter : undefined })).data); }
     catch { toast.error("Failed to load deliveries"); }
     finally { setIsLoading(false); }
@@ -1059,9 +1064,9 @@ function DeliveryLogTab() {
 
 function AnimatedHeight({ children }: { children: React.ReactNode }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [height, setHeight] = useState<number>(0);
+  const [height, setHeight] = useState<number | "auto">("auto");
 
-  // Set initial height synchronously to avoid auto → number jump
+  // Set initial height synchronously once measured
   useLayoutEffect(() => {
     if (containerRef.current) setHeight(containerRef.current.getBoundingClientRect().height);
   }, []);
@@ -1235,6 +1240,7 @@ const TemplateEditor = React.forwardRef<TemplateEditorHandle, { value: string; o
   const viewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+  const isInternalChange = useRef(false);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -1255,7 +1261,9 @@ const TemplateEditor = React.forwardRef<TemplateEditorHandle, { value: string; o
         EditorView.lineWrapping,
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
+            isInternalChange.current = true;
             onChangeRef.current(update.state.doc.toString());
+            isInternalChange.current = false;
           }
         }),
       ],
@@ -1268,8 +1276,9 @@ const TemplateEditor = React.forwardRef<TemplateEditorHandle, { value: string; o
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Sync external value changes (e.g., variable insert)
+  // Sync external value changes (e.g., preset switch)
   useEffect(() => {
+    if (isInternalChange.current) return;
     const view = viewRef.current;
     if (!view) return;
     const current = view.state.doc.toString();
