@@ -1,9 +1,8 @@
 import { json as cmJson } from "@codemirror/lang-json";
-import { defaultHighlightStyle, syntaxHighlighting, HighlightStyle } from "@codemirror/language";
+import { defaultHighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import { EditorView, Decoration, keymap, lineNumbers, placeholder as cmPlaceholder, drawSelection, ViewPlugin, type DecorationSet } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
-import { tags } from "@lezer/highlight";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertTriangle,
@@ -232,7 +231,7 @@ function AlertDialog({ open, onOpenChange, rule, onSaved }: {
   const [availableResources, setAvailableResources] = useState<Array<{ id: string; label: string }>>([]);
   const [resourceSearch, setResourceSearch] = useState("");
   const [webhookSearch, setWebhookSearch] = useState("");
-  const editorRef = useRef<TemplateEditorHandle>(null);
+  const editorRef = useRef<TemplateEditorHandle>(null); // retained for cheatsheet click-to-insert (future)
 
   const [name, setName] = useState("");
   const [category, setCategory] = useState<string>("node");
@@ -276,6 +275,7 @@ function AlertDialog({ open, onOpenChange, rule, onSaved }: {
   }, [open, rule]);
 
   useEffect(() => {
+    if (!open) return;
     setAvailableResources([]);
     if (category === "node") {
       api.listNodes({ limit: 100 }).then((r) =>
@@ -301,7 +301,7 @@ function AlertDialog({ open, onOpenChange, rule, onSaved }: {
         setAvailableResources(all);
       }).catch(() => {});
     }
-  }, [category]);
+  }, [open, category]);
 
   const cat = categories.find((c) => c.id === category);
 
@@ -364,11 +364,21 @@ function AlertDialog({ open, onOpenChange, rule, onSaved }: {
 
   const handleSave = async () => {
     if (selectedWebhookIds.length === 0) { toast.error("Select at least one webhook"); return; }
+    const cooldownNum = Number(cooldownSeconds);
+    if (Number.isNaN(cooldownNum) || cooldownNum < 0) { toast.error("Invalid cooldown value"); return; }
+    if (type === "threshold") {
+      const tv = Number(thresholdValue);
+      if (Number.isNaN(tv)) { toast.error("Invalid threshold value"); return; }
+      const dur = Number(durationMinutes);
+      if (Number.isNaN(dur) || dur < 0) { toast.error("Invalid duration value"); return; }
+      const res = Number(resolveAfterMinutes);
+      if (Number.isNaN(res) || res < 0) { toast.error("Invalid resolve-after value"); return; }
+    }
     setSaving(true);
     try {
       const data: any = {
         name: name.trim(), category, type, severity,
-        cooldownSeconds: Number(cooldownSeconds),
+        cooldownSeconds: cooldownNum,
         messageTemplate: messageTemplate || undefined,
         webhookIds: selectedWebhookIds,
         resourceIds: scopeEnabled ? resourceIds : [],
@@ -427,7 +437,7 @@ function AlertDialog({ open, onOpenChange, rule, onSaved }: {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <label className="text-sm font-medium">Category</label>
-                    <Select value={category} onValueChange={(v) => { setCategory(v); setMetric(""); setEventPattern(""); }}>
+                    <Select value={category} onValueChange={(v) => { setCategory(v); setMetric(""); setEventPattern(""); }} disabled={categories.length === 0}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         {categories.map((c) => <SelectItem key={c.id} value={c.id}>{c.label}</SelectItem>)}
@@ -503,7 +513,7 @@ function AlertDialog({ open, onOpenChange, rule, onSaved }: {
                       <Input type="number" min="0" value={resolveAfterMinutes} onChange={(e) => setResolveAfterMinutes(e.target.value)} />
                       <p className="text-xs text-muted-foreground">Must stay below threshold before resolving.</p>
                     </div>
-                    <div className="space-y-1.5 col-span-2">
+                    <div className={`space-y-1.5${category !== "certificate" ? " col-span-2" : ""}`}>
                       <label className="text-sm font-medium">Cooldown (seconds)</label>
                       <Input type="number" value={cooldownSeconds} onChange={(e) => setCooldownSeconds(e.target.value)} />
                       <p className="text-xs text-muted-foreground">Won't re-fire within this period.</p>
@@ -821,6 +831,7 @@ function WebhookDialog({ open, onOpenChange, webhook, onSaved }: {
   const handleSave = async () => {
     if (!name.trim()) { toast.error("Name is required"); return; }
     if (!url.trim()) { toast.error("URL is required"); return; }
+    if (!/^https?:\/\/.+/.test(url.trim())) { toast.error("URL must start with http:// or https://"); return; }
     setSaving(true);
     try {
       const headersObj: Record<string, string> = {};
@@ -943,7 +954,7 @@ function WebhookDialog({ open, onOpenChange, webhook, onSaved }: {
           {step === 1 ? (
             <>
               <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-              <Button onClick={() => { if (!name.trim()) { toast.error("Name is required"); return; } if (!url.trim()) { toast.error("URL is required"); return; } setStep(2); }}>
+              <Button onClick={() => { if (!name.trim()) { toast.error("Name is required"); return; } if (!url.trim()) { toast.error("URL is required"); return; } if (!/^https?:\/\/.+/.test(url.trim())) { toast.error("URL must start with http:// or https://"); return; } setStep(2); }}>
                 Next <ArrowRight className="h-4 w-4 ml-1" />
               </Button>
             </>
@@ -1045,7 +1056,7 @@ function DeliveryLogTab() {
                 <div><span className="text-muted-foreground">Status:</span> <Badge variant={STATUS_BADGE[detail.status]}>{detail.status}</Badge></div>
                 <div><span className="text-muted-foreground">Event:</span> {detail.eventType}</div>
                 <div><span className="text-muted-foreground">HTTP:</span> {detail.responseStatus ?? "N/A"}</div>
-                <div><span className="text-muted-foreground">Time:</span> {detail.responseTimeMs ?? "N/A"}ms</div>
+                <div><span className="text-muted-foreground">Time:</span> {detail.responseTimeMs != null ? `${detail.responseTimeMs}ms` : "N/A"}</div>
                 <div><span className="text-muted-foreground">Attempt:</span> {detail.attempt}/{detail.maxAttempts}</div>
                 <div><span className="text-muted-foreground">Created:</span> {new Date(detail.createdAt).toLocaleString()}</div>
               </div>
