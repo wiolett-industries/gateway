@@ -170,7 +170,6 @@ class ApiClient extends ApiClientBase {
     id: string,
     data: {
       crlDistributionUrl?: string | null;
-      ocspResponderUrl?: string | null;
       caIssuersUrl?: string | null;
       maxValidityDays?: number;
     }
@@ -200,10 +199,6 @@ class ApiClient extends ApiClientBase {
     });
     if (!response.ok) throw new Error("Failed to export CA key");
     return response.blob();
-  }
-
-  async generateOCSPResponder(id: string): Promise<void> {
-    return this.request<void>(`/cas/${id}/ocsp-responder`, { method: "POST" });
   }
 
   // ── Certificates ──────────────────────────────────────────────────

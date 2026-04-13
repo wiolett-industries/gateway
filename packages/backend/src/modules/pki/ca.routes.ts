@@ -15,7 +15,6 @@ import {
 } from './ca.schemas.js';
 import { CAService } from './ca.service.js';
 import { ExportService } from './export.service.js';
-import { OCSPService } from './ocsp.service.js';
 
 export const caRoutes = new OpenAPIHono<AppEnv>();
 
@@ -129,8 +128,5 @@ caRoutes.post('/:id/export-key', requireScope('pki:ca:create:root'), async (c) =
 
 // Generate OCSP responder cert (admin only)
 caRoutes.post('/:id/ocsp-responder', requireScope('pki:ca:create:root'), async (c) => {
-  const ocspService = container.resolve(OCSPService);
-  const id = c.req.param('id');
-  await ocspService.generateOCSPResponderCert(id);
-  return c.json({ message: 'OCSP responder certificate generated' });
+  return c.json({ code: 'OCSP_DISABLED', message: 'OCSP responder is currently disabled' }, 501);
 });

@@ -561,14 +561,12 @@ export class CertService {
     }
 
     // Authority Info Access: merge template + CA
-    const aia = template?.authorityInfoAccess as { ocspUrl?: string; caIssuersUrl?: string } | undefined;
-    const ocspUrl = aia?.ocspUrl || ca.ocspResponderUrl || null;
+    const aia = template?.authorityInfoAccess as { caIssuersUrl?: string } | undefined;
     const caIssuersUrl = aia?.caIssuersUrl || ca.caIssuersUrl || null;
 
-    if (ocspUrl || caIssuersUrl) {
+    if (caIssuersUrl) {
       try {
-        const params: { ocsp?: string[]; caIssuers?: string[] } = {};
-        if (ocspUrl) params.ocsp = [ocspUrl];
+        const params: { caIssuers?: string[] } = {};
         if (caIssuersUrl) params.caIssuers = [caIssuersUrl];
         extensions.push(new x509.AuthorityInfoAccessExtension(params, false));
       } catch (err) {

@@ -74,7 +74,6 @@ export function PkiTemplatesTab({
   const [dnSt, setDnSt] = useState("");
   const [dnC, setDnC] = useState("");
   const [crlDistributionPoints, setCrlDistributionPoints] = useState<string[]>([]);
-  const [ocspUrl, setOcspUrl] = useState("");
   const [caIssuersUrl, setCaIssuersUrl] = useState("");
   const [certificatePolicies, setCertificatePolicies] = useState<CertificatePolicy[]>([]);
   const [customExtensions, setCustomExtensions] = useState<CustomExtension[]>([]);
@@ -116,7 +115,6 @@ export function PkiTemplatesTab({
     setDnSt("");
     setDnC("");
     setCrlDistributionPoints([]);
-    setOcspUrl("");
     setCaIssuersUrl("");
     setCertificatePolicies([]);
     setCustomExtensions([]);
@@ -153,7 +151,6 @@ export function PkiTemplatesTab({
     setDnSt(t.subjectDnFields?.st || "");
     setDnC(t.subjectDnFields?.c || "");
     setCrlDistributionPoints(t.crlDistributionPoints || []);
-    setOcspUrl(t.authorityInfoAccess?.ocspUrl || "");
     setCaIssuersUrl(t.authorityInfoAccess?.caIssuersUrl || "");
     setCertificatePolicies(t.certificatePolicies || []);
     setCustomExtensions(t.customExtensions || []);
@@ -180,7 +177,6 @@ export function PkiTemplatesTab({
     },
     crlDistributionPoints: crlDistributionPoints.filter((u) => u.trim()),
     authorityInfoAccess: {
-      ...(ocspUrl ? { ocspUrl } : {}),
       ...(caIssuersUrl ? { caIssuersUrl } : {}),
     },
     certificatePolicies: certificatePolicies.filter((p) => p.oid.trim()),
@@ -407,8 +403,6 @@ export function PkiTemplatesTab({
                 <StepDistribution
                   crlDistributionPoints={crlDistributionPoints}
                   setCrlDistributionPoints={setCrlDistributionPoints}
-                  ocspUrl={ocspUrl}
-                  setOcspUrl={setOcspUrl}
                   caIssuersUrl={caIssuersUrl}
                   setCaIssuersUrl={setCaIssuersUrl}
                 />

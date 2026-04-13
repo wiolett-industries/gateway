@@ -60,7 +60,6 @@ export function CADetail() {
   const [installGuideOpen, setInstallGuideOpen] = useState(false);
   const [endpointsDialogOpen, setEndpointsDialogOpen] = useState(false);
   const [epCrlUrl, setEpCrlUrl] = useState("");
-  const [epOcspUrl, setEpOcspUrl] = useState("");
   const [epCaIssuersUrl, setEpCaIssuersUrl] = useState("");
   const [isSavingEndpoints, setIsSavingEndpoints] = useState(false);
 
@@ -152,7 +151,6 @@ export function CADetail() {
 
   const openEndpointsDialog = () => {
     setEpCrlUrl(ca.crlDistributionUrl || "");
-    setEpOcspUrl(ca.ocspResponderUrl || "");
     setEpCaIssuersUrl(ca.caIssuersUrl || "");
     setEndpointsDialogOpen(true);
   };
@@ -162,7 +160,6 @@ export function CADetail() {
     try {
       await api.updateCA(ca.id, {
         crlDistributionUrl: epCrlUrl || null,
-        ocspResponderUrl: epOcspUrl || null,
         caIssuersUrl: epCaIssuersUrl || null,
       });
       toast.success("Endpoints updated");
@@ -333,7 +330,6 @@ export function CADetail() {
               </div>
               <div className="p-4 space-y-3">
                 <InfoRow label="CRL Distribution URL" value={ca.crlDistributionUrl || "—"} />
-                <InfoRow label="OCSP Responder URL" value={ca.ocspResponderUrl || "—"} />
                 <InfoRow label="CA Issuers URL" value={ca.caIssuersUrl || "—"} />
                 <p className="text-xs text-muted-foreground">
                   These URLs are automatically embedded into certificates issued under this CA.
@@ -521,7 +517,7 @@ export function CADetail() {
             <DialogHeader>
               <DialogTitle>Edit Distribution Endpoints</DialogTitle>
               <DialogDescription>
-                Configure CRL and OCSP URLs for certificates issued under this CA.
+                Configure CRL and CA Issuers URLs for certificates issued under this CA.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
@@ -531,15 +527,6 @@ export function CADetail() {
                   value={epCrlUrl}
                   onChange={(e) => setEpCrlUrl(e.target.value)}
                   placeholder="http://crl.example.com/ca.crl"
-                  className="font-mono text-xs"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">OCSP Responder URL</label>
-                <Input
-                  value={epOcspUrl}
-                  onChange={(e) => setEpOcspUrl(e.target.value)}
-                  placeholder="http://ocsp.example.com"
                   className="font-mono text-xs"
                 />
               </div>
