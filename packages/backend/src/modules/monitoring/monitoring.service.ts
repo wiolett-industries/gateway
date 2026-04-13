@@ -49,11 +49,17 @@ export interface HealthOverviewEntry {
 export class MonitoringService {
   constructor(private readonly db: DrizzleClient) {}
 
-  async getDashboardStats(): Promise<DashboardStats> {
+  async getDashboardStats(showSystem = false): Promise<DashboardStats> {
     logger.debug('Fetching dashboard stats');
 
     const now = new Date();
     const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+    const visibleSsl = showSystem ? undefined : eq(sslCertificates.isSystem, false);
+    const visiblePki = showSystem
+      ? undefined
+      : sql`${certificates.caId} NOT IN (SELECT id FROM ${certificateAuthorities} WHERE is_system = true)`;
+    const visibleCa = showSystem ? undefined : eq(certificateAuthorities.isSystem, false);
 
     const [
       // Proxy host counts
@@ -93,32 +99,54 @@ export class MonitoringService {
       this.db.select({ value: count() }).from(proxyHosts).where(eq(proxyHosts.healthStatus, 'degraded')),
 
       // SSL certificates
-      this.db.select({ value: count() }).from(sslCertificates),
-      this.db.select({ value: count() }).from(sslCertificates).where(eq(sslCertificates.status, 'active')),
+      this.db.select({ value: count() }).from(sslCertificates).where(visibleSsl),
+      this.db
+        .select({ value: count() })
+        .from(sslCertificates)
+        .where(visibleSsl ? and(visibleSsl, eq(sslCertificates.status, 'active')) : eq(sslCertificates.status, 'active')),
       this.db
         .select({ value: count() })
         .from(sslCertificates)
         .where(
-          and(
-            eq(sslCertificates.status, 'active'),
-            gt(sslCertificates.notAfter, now),
-            lt(sslCertificates.notAfter, thirtyDaysFromNow)
-          )
+          visibleSsl
+            ? and(
+                visibleSsl,
+                eq(sslCertificates.status, 'active'),
+                gt(sslCertificates.notAfter, now),
+                lt(sslCertificates.notAfter, thirtyDaysFromNow)
+              )
+            : and(
+                eq(sslCertificates.status, 'active'),
+                gt(sslCertificates.notAfter, now),
+                lt(sslCertificates.notAfter, thirtyDaysFromNow)
+              )
         ),
-      this.db.select({ value: count() }).from(sslCertificates).where(eq(sslCertificates.status, 'expired')),
+      this.db
+        .select({ value: count() })
+        .from(sslCertificates)
+        .where(visibleSsl ? and(visibleSsl, eq(sslCertificates.status, 'expired')) : eq(sslCertificates.status, 'expired')),
 
       // PKI certificates
-      this.db.select({ value: count() }).from(certificates),
-      this.db.select({ value: count() }).from(certificates).where(eq(certificates.status, 'active')),
-      this.db.select({ value: count() }).from(certificates).where(eq(certificates.status, 'revoked')),
-      this.db.select({ value: count() }).from(certificates).where(eq(certificates.status, 'expired')),
+      this.db.select({ value: count() }).from(certificates).where(visiblePki),
+      this.db
+        .select({ value: count() })
+        .from(certificates)
+        .where(visiblePki ? and(visiblePki, eq(certificates.status, 'active')) : eq(certificates.status, 'active')),
+      this.db
+        .select({ value: count() })
+        .from(certificates)
+        .where(visiblePki ? and(visiblePki, eq(certificates.status, 'revoked')) : eq(certificates.status, 'revoked')),
+      this.db
+        .select({ value: count() })
+        .from(certificates)
+        .where(visiblePki ? and(visiblePki, eq(certificates.status, 'expired')) : eq(certificates.status, 'expired')),
 
       // Certificate authorities
-      this.db.select({ value: count() }).from(certificateAuthorities),
+      this.db.select({ value: count() }).from(certificateAuthorities).where(visibleCa),
       this.db
         .select({ value: count() })
         .from(certificateAuthorities)
-        .where(eq(certificateAuthorities.status, 'active')),
+        .where(visibleCa ? and(visibleCa, eq(certificateAuthorities.status, 'active')) : eq(certificateAuthorities.status, 'active')),
 
       // Nodes
       this.db.select({ value: count() }).from(nodes),

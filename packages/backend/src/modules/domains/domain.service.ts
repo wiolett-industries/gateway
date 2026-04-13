@@ -6,6 +6,7 @@ import { sslCertificates } from '@/db/schema/ssl-certificates.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { buildWhere } from '@/lib/utils.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
+import type { EventBusService } from '@/services/event-bus.service.js';
 import { computeDnsStatus, resolveDnsRecords } from './dns.utils.js';
 import type { CreateDomainInput, DomainListQuery, UpdateDomainInput } from './domain.schemas.js';
 
@@ -17,10 +18,20 @@ export interface DomainUsage {
 }
 
 export class DomainsService {
+  private eventBus?: EventBusService;
+
   constructor(
     private readonly db: DrizzleClient,
     private readonly auditService: AuditService
   ) {}
+
+  setEventBus(bus: EventBusService) {
+    this.eventBus = bus;
+  }
+
+  private emitDomain(id: string, action: string, domain?: string) {
+    this.eventBus?.publish('domain.changed', { id, action, domain });
+  }
 
   async listDomains(params: DomainListQuery) {
     const conditions = [];
@@ -91,6 +102,8 @@ export class DomainsService {
       details: { domain: row.domain },
     });
 
+    this.emitDomain(row.id, 'created', row.domain);
+
     // Fire-and-forget DNS check
     this.checkDns(row.id).catch((err) => logger.warn('Initial DNS check failed', { id: row.id, error: err.message }));
 
@@ -113,6 +126,8 @@ export class DomainsService {
       resourceId: id,
       details: { domain: row.domain },
     });
+
+    this.emitDomain(id, 'updated', row.domain);
 
     return row;
   }
@@ -147,6 +162,8 @@ export class DomainsService {
         usedBySslCerts: usage.sslCertificates.length,
       },
     });
+
+    this.emitDomain(id, 'deleted', row.domain);
   }
 
   async checkDns(id: string) {
@@ -163,6 +180,7 @@ export class DomainsService {
       .returning();
 
     logger.debug('DNS check complete', { domain: row.domain, status: dnsStatus });
+    this.emitDomain(id, 'updated', row.domain);
     return updated;
   }
 
@@ -180,6 +198,7 @@ export class DomainsService {
           .update(domains)
           .set({ dnsStatus, dnsRecords, lastDnsCheckAt: new Date(), updatedAt: new Date() })
           .where(eq(domains.id, d.id));
+        this.emitDomain(d.id, 'updated', d.domain);
         return { domain: d.domain, status: dnsStatus };
       })
     );

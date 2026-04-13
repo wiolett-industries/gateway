@@ -45,6 +45,7 @@ function RealtimeBridge() {
   const sessionId = useAuthStore((s) => s.sessionId);
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
+  const canListNodes = useAuthStore((s) => s.hasScope("nodes:list"));
 
   useEffect(() => {
     if (sessionId) {
@@ -73,6 +74,13 @@ function RealtimeBridge() {
       }
     });
   }, [user?.id, setUser]);
+
+  // Keep node-related views in sync by activating the shared node.changed
+  // invalidation path in the event stream singleton.
+  useEffect(() => {
+    if (!sessionId || !canListNodes) return;
+    return eventStream.subscribe("node.changed", () => {});
+  }, [sessionId, canListNodes]);
 
   return null;
 }
@@ -125,7 +133,10 @@ export default function App() {
               />
               <Route path="/templates/:tab?" element={<TemplatesPage />} />
               <Route path="/audit" element={scoped("admin:audit", <AuditLog />)} />
-              <Route path="/notifications/:tab?" element={scoped("notifications:view", <Notifications />)} />
+              <Route
+                path="/notifications/:tab?"
+                element={scoped("notifications:view", <Notifications />)}
+              />
               <Route path="/settings" element={<Settings />} />
               <Route path="/admin/users" element={scoped("admin:users", <AdminUsers />)} />
               <Route path="/admin/groups" element={scoped("admin:groups", <AdminGroups />)} />

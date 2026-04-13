@@ -31,6 +31,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { useRealtime } from "@/hooks/use-realtime";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import type { AccessList, IPRule } from "@/types";
@@ -70,6 +71,10 @@ export function AccessLists() {
   useEffect(() => {
     loadAccessLists();
   }, [loadAccessLists]);
+
+  useRealtime("access-list.changed", () => {
+    loadAccessLists();
+  });
 
   const resetForm = () => {
     setName("");

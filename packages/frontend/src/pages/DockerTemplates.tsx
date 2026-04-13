@@ -24,6 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useRealtime } from "@/hooks/use-realtime";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
@@ -74,6 +75,10 @@ export function DockerTemplatesPage({
       .then((r) => setDockerNodes(r.data))
       .catch(() => {});
   }, []);
+
+  useRealtime("docker.template.changed", () => {
+    fetchTemplates();
+  });
 
   const filteredTemplates = useMemo(() => {
     if (!search) return templates;

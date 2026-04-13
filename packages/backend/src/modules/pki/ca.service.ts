@@ -109,6 +109,7 @@ export class CAService {
     });
 
     if (!parent) throw new AppError(404, 'CA_NOT_FOUND', 'Parent CA not found');
+    if (parent.isSystem) throw new AppError(403, 'SYSTEM_CA', 'System CAs are read-only');
     if (parent.status !== 'active') throw new AppError(400, 'CA_NOT_ACTIVE', 'Parent CA is not active');
 
     // Validate path length constraint
@@ -203,9 +204,9 @@ export class CAService {
     return ca;
   }
 
-  async getCATree() {
+  async getCATree(showSystem = false) {
     const allCAs = await this.db.query.certificateAuthorities.findMany({
-      where: (ca, { eq, not }) => not(eq(ca.isSystem, true)),
+      where: showSystem ? undefined : (ca, { eq, not }) => not(eq(ca.isSystem, true)),
       orderBy: (ca, { asc }) => [asc(ca.createdAt)],
     });
 
@@ -230,12 +231,15 @@ export class CAService {
     }));
   }
 
-  async getCA(id: string) {
+  async getCA(id: string, options?: { includeSystem?: boolean }) {
     const ca = await this.db.query.certificateAuthorities.findFirst({
       where: eq(certificateAuthorities.id, id),
     });
 
     if (!ca) throw new AppError(404, 'CA_NOT_FOUND', 'Certificate Authority not found');
+    if (ca.isSystem && !options?.includeSystem) {
+      throw new AppError(404, 'CA_NOT_FOUND', 'Certificate Authority not found');
+    }
 
     const [{ count: certCount }] = await this.db
       .select({ count: count() })
@@ -259,6 +263,7 @@ export class CAService {
       where: eq(certificateAuthorities.id, id),
     });
     if (!ca) throw new AppError(404, 'CA_NOT_FOUND', 'Certificate Authority not found');
+    if (ca.isSystem) throw new AppError(403, 'SYSTEM_CA', 'System CAs are read-only');
 
     const [updated] = await this.db
       .update(certificateAuthorities)
@@ -287,6 +292,7 @@ export class CAService {
     });
 
     if (!ca) throw new AppError(404, 'CA_NOT_FOUND', 'CA not found');
+    if (ca.isSystem) throw new AppError(403, 'SYSTEM_CA', 'System CAs cannot be revoked');
     if (ca.status !== 'active') throw new AppError(400, 'CA_NOT_ACTIVE', 'CA is already revoked or expired');
 
     await this.db
@@ -326,6 +332,7 @@ export class CAService {
     });
 
     if (!ca) throw new AppError(404, 'CA_NOT_FOUND', 'CA not found');
+    if (ca.isSystem) throw new AppError(403, 'SYSTEM_CA', 'System CAs cannot be deleted');
 
     const [{ count: certCount }] = await this.db
       .select({ count: count() })
@@ -358,12 +365,15 @@ export class CAService {
   /**
    * Get CA's decrypted signing key — internal use only
    */
-  async getCASigningMaterials(caId: string) {
+  async getCASigningMaterials(caId: string, options?: { allowSystem?: boolean }) {
     const ca = await this.db.query.certificateAuthorities.findFirst({
       where: eq(certificateAuthorities.id, caId),
     });
 
     if (!ca) throw new AppError(404, 'CA_NOT_FOUND', 'CA not found');
+    if (ca.isSystem && !options?.allowSystem) {
+      throw new AppError(403, 'SYSTEM_CA', 'System CAs are read-only');
+    }
     if (ca.status !== 'active') throw new AppError(400, 'CA_NOT_ACTIVE', 'CA is not active');
 
     const privateKeyPem = this.cryptoService.decryptPrivateKey({

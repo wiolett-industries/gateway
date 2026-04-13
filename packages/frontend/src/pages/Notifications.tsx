@@ -55,6 +55,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api } from "@/services/api";
+import { useRealtime } from "@/hooks/use-realtime";
 import { useAuthStore } from "@/stores/auth";
 import type {
   AlertCategoryDef,
@@ -135,6 +136,10 @@ function AlertsTab({ canManage }: { canManage: boolean }) {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  useRealtime("notification.alert-rule.changed", () => {
+    load();
+  });
 
   const toggle = async (rule: AlertRule) => {
     try { await api.updateAlertRule(rule.id, { enabled: !rule.enabled }); load(); }
@@ -670,6 +675,10 @@ function WebhooksTab({ canManage }: { canManage: boolean }) {
 
   useEffect(() => { load(); }, [load]);
 
+  useRealtime("notification.webhook.changed", () => {
+    load();
+  });
+
   const toggle = async (wh: NotificationWebhook) => {
     try { await api.updateWebhook(wh.id, { enabled: !wh.enabled }); load(); }
     catch { toast.error("Failed"); }
@@ -997,6 +1006,14 @@ function DeliveryLogTab() {
   }, [statusFilter]);
 
   useEffect(() => { load(); }, [load]);
+
+  useRealtime("alert.fired", () => {
+    load();
+  });
+
+  useRealtime("alert.resolved", () => {
+    load();
+  });
 
   const sIcon = (s: string) => {
     if (s === "success") return <CheckCircle2 className="h-4 w-4 text-emerald-500" />;

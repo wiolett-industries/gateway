@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { useRealtime } from "@/hooks/use-realtime";
 import { formatRelativeDate } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
@@ -77,18 +78,46 @@ export function DomainDetailDialog({
   const [isCheckingDns, setIsCheckingDns] = useState(false);
   const [isIssuingCert, setIsIssuingCert] = useState(false);
 
-  useEffect(() => {
+  const loadDomain = async () => {
     if (!domainId || !open) return;
     setIsLoading(true);
-    api
-      .getDomain(domainId)
-      .then((d) => {
-        setDomain(d);
-        setDescription(d.description || "");
-      })
-      .catch(() => toast.error("Failed to load domain"))
-      .finally(() => setIsLoading(false));
+    try {
+      const d = await api.getDomain(domainId);
+      setDomain(d);
+      setDescription(d.description || "");
+    } catch {
+      toast.error("Failed to load domain");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadDomain();
+    // biome-ignore lint/correctness/useExhaustiveDependencies: dialog reloads from explicit triggers
   }, [domainId, open]);
+
+  useRealtime(open ? "domain.changed" : null, (payload) => {
+    const event = payload as { id?: string; action?: string } | undefined;
+    if (!domainId || (event?.id && event.id !== domainId)) return;
+    if (event?.action === "deleted") {
+      onOpenChange(false);
+      onUpdated();
+      return;
+    }
+    loadDomain();
+    onUpdated();
+  });
+
+  useRealtime(open ? "proxy.host.changed" : null, () => {
+    loadDomain();
+    onUpdated();
+  });
+
+  useRealtime(open ? "ssl.cert.changed" : null, () => {
+    loadDomain();
+    onUpdated();
+  });
 
   const saveIfChanged = async () => {
     if (!domain) return;
@@ -128,8 +157,7 @@ export function DomainDetailDialog({
     try {
       await api.issueDomainCert(domain.id);
       toast.success("Certificate issued");
-      const updated = await api.getDomain(domain.id);
-      setDomain(updated);
+      await loadDomain();
       onUpdated();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to issue certificate");

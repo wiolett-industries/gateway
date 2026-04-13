@@ -6,6 +6,7 @@ import { PageTransition } from "@/components/common/PageTransition";
 import { SearchFilterBar } from "@/components/common/SearchFilterBar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useRealtime } from "@/hooks/use-realtime";
 import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -50,7 +51,7 @@ function formatTime(dateStr: string): string {
 }
 
 export function DockerTasks({ embedded }: { embedded?: boolean } = {}) {
-  const { tasks, fetchTasks } = useDockerStore();
+  const { tasks, fetchTasks, selectedNodeId } = useDockerStore();
 
   const [dockerNodes, setDockerNodes] = useState<Node[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -79,6 +80,12 @@ export function DockerTasks({ embedded }: { embedded?: boolean } = {}) {
     const interval = setInterval(() => fetchTasks(), 5_000);
     return () => clearInterval(interval);
   }, [fetchTasks]);
+
+  useRealtime("docker.task.changed", (payload) => {
+    const ev = payload as { nodeId?: string };
+    if (selectedNodeId && ev?.nodeId && ev.nodeId !== selectedNodeId) return;
+    loadTasks();
+  });
 
   const nodeMap = useMemo(() => {
     const map = new Map<string, string>();

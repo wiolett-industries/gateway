@@ -1,5 +1,7 @@
 import { create } from "zustand";
 import { api } from "@/services/api";
+import { useAuthStore } from "@/stores/auth";
+import { useUIStore } from "@/stores/ui";
 import type {
   DNSChallenge,
   LinkInternalCertRequest,
@@ -62,15 +64,19 @@ export const useSSLStore = create<SSLState>()((set, get) => ({
 
   fetchCertificates: async () => {
     const { filters, page, limit } = get();
+    const showSystem =
+      useUIStore.getState().showSystemCertificates &&
+      useAuthStore.getState().hasScope("admin:details:certificates");
     const isDefault =
       page === 1 && !filters.search && filters.type === "all" && filters.status === "active";
+    const cacheKey = `ssl:list:${showSystem ? "system" : "default"}`;
 
     // Show cached data instantly for default view
     if (isDefault && get().certificates.length === 0) {
       const cached = api.getCached<{
         data: SSLCertificate[];
         pagination: { total: number; totalPages: number };
-      }>("ssl:list");
+      }>(cacheKey);
       if (cached)
         set({
           certificates: cached.data || [],
@@ -88,8 +94,9 @@ export const useSSLStore = create<SSLState>()((set, get) => ({
         search: filters.search || undefined,
         type: filters.type !== "all" ? filters.type : undefined,
         status: filters.status !== "all" ? filters.status : undefined,
+        showSystem,
       });
-      if (isDefault) api.setCache("ssl:list", response);
+      if (isDefault) api.setCache(cacheKey, response);
       set({
         certificates: response.data || [],
         total: response.pagination?.total ?? 0,

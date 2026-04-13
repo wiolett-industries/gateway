@@ -6,6 +6,7 @@ import { createChildLogger } from '@/lib/logger.js';
 import { buildWhere } from '@/lib/utils.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
+import type { EventBusService } from '@/services/event-bus.service.js';
 import type {
   CreateFolderInput,
   GroupedHostsQuery,
@@ -64,10 +65,20 @@ export interface GroupedHostsResponse {
 // ---------------------------------------------------------------------------
 
 export class FolderService {
+  private eventBus?: EventBusService;
+
   constructor(
     private readonly db: DrizzleClient,
     private readonly auditService: AuditService
   ) {}
+
+  setEventBus(bus: EventBusService) {
+    this.eventBus = bus;
+  }
+
+  private emitLayoutChanged(action: string, folderId?: string | null) {
+    this.eventBus?.publish('proxy.host.changed', { action, folderId });
+  }
 
   // -----------------------------------------------------------------------
   // Create
@@ -117,6 +128,7 @@ export class FolderService {
     });
 
     logger.info('Created folder', { folderId: folder.id, name: folder.name });
+    this.emitLayoutChanged('folder_created', folder.id);
     return folder;
   }
 
@@ -145,6 +157,7 @@ export class FolderService {
     });
 
     logger.info('Renamed folder', { folderId: id, name: input.name });
+    this.emitLayoutChanged('folder_updated', id);
     return updated;
   }
 
@@ -236,6 +249,7 @@ export class FolderService {
     });
 
     logger.info('Moved folder', { folderId: id, newParentId: input.parentId });
+    this.emitLayoutChanged('folder_updated', id);
     return updated;
   }
 
@@ -278,6 +292,8 @@ export class FolderService {
       subfoldersDeleted: descendantIds.length,
       hostsUngrouped: affectedHosts.length,
     });
+
+    this.emitLayoutChanged('folder_deleted', id);
   }
 
   // -----------------------------------------------------------------------
@@ -291,6 +307,8 @@ export class FolderService {
         .set({ sortOrder: item.sortOrder, updatedAt: new Date() })
         .where(eq(proxyHostFolders.id, item.id));
     }
+
+    this.emitLayoutChanged('folders_reordered');
   }
 
   // -----------------------------------------------------------------------
@@ -398,6 +416,8 @@ export class FolderService {
       hostCount: input.hostIds.length,
       folderId: input.folderId,
     });
+
+    this.emitLayoutChanged('hosts_moved', input.folderId);
   }
 
   // -----------------------------------------------------------------------
@@ -411,6 +431,8 @@ export class FolderService {
         .set({ sortOrder: item.sortOrder, updatedAt: new Date() })
         .where(eq(proxyHosts.id, item.id));
     }
+
+    this.emitLayoutChanged('hosts_reordered');
   }
 
   // -----------------------------------------------------------------------

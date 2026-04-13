@@ -1,5 +1,6 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
+import { hasScope } from '@/lib/permissions.js';
 import { sanitizeFilename } from '@/lib/utils.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
 import { authMiddleware, requireAnyScope, requireScope } from '@/modules/auth/auth.middleware.js';
@@ -23,15 +24,23 @@ caRoutes.use('*', authMiddleware);
 // List CAs (tree)
 caRoutes.get('/', requireAnyScope('pki:ca:list:root', 'pki:ca:list:intermediate'), async (c) => {
   const caService = container.resolve(CAService);
-  const tree = await caService.getCATree();
+  const showSystem = c.req.query('showSystem') === 'true';
+  const user = c.get('user')!;
+  if (showSystem && !hasScope(user.scopes, 'admin:details:certificates')) {
+    return c.json({ code: 'FORBIDDEN', message: 'Insufficient permissions' }, 403);
+  }
+  const tree = await caService.getCATree(showSystem);
   return c.json(tree);
 });
 
 // Get CA detail
 caRoutes.get('/:id', requireAnyScope('pki:ca:view:root', 'pki:ca:view:intermediate'), async (c) => {
   const caService = container.resolve(CAService);
+  const user = c.get('user')!;
   const id = c.req.param('id');
-  const ca = await caService.getCA(id);
+  const ca = await caService.getCA(id, {
+    includeSystem: hasScope(user.scopes, 'admin:details:certificates'),
+  });
   return c.json(ca);
 });
 

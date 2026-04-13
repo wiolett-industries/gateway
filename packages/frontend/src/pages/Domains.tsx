@@ -36,6 +36,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { formatRelativeDate } from "@/lib/utils";
+import { useRealtime } from "@/hooks/use-realtime";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import type { DnsStatus, Domain } from "@/types";
@@ -80,6 +81,18 @@ export function Domains() {
   useEffect(() => {
     loadDomains();
   }, [loadDomains]);
+
+  useRealtime("domain.changed", () => {
+    loadDomains();
+  });
+
+  useRealtime("proxy.host.changed", () => {
+    loadDomains();
+  });
+
+  useRealtime("ssl.cert.changed", () => {
+    loadDomains();
+  });
 
   const handleCheckDns = async (d: Domain) => {
     try {

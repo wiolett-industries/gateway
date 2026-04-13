@@ -6,16 +6,27 @@ import { buildWhere } from '@/lib/utils.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { CryptoService } from '@/services/crypto.service.js';
+import type { EventBusService } from '@/services/event-bus.service.js';
 import type { CreateWebhookInput, UpdateWebhookInput, WebhookListQuery } from './notification-webhook.schemas.js';
 
 const logger = createChildLogger('WebhookService');
 
 export class NotificationWebhookService {
+  private eventBus?: EventBusService;
+
   constructor(
     private db: DrizzleClient,
     private auditService: AuditService,
     private cryptoService: CryptoService
   ) {}
+
+  setEventBus(bus: EventBusService) {
+    this.eventBus = bus;
+  }
+
+  private emitWebhook(id: string, action: string) {
+    this.eventBus?.publish('notification.webhook.changed', { id, action });
+  }
 
   async list(query: WebhookListQuery) {
     const conditions: SQL[] = [];
@@ -110,6 +121,7 @@ export class NotificationWebhookService {
     });
 
     logger.info('Webhook created', { id: webhook.id, name: input.name });
+    this.emitWebhook(webhook.id, 'created');
     return { ...webhook, signingSecret: webhook.signingSecret ? '********' : null };
   }
 
@@ -148,6 +160,7 @@ export class NotificationWebhookService {
     });
 
     logger.info('Webhook updated', { id, name: updated.name });
+    this.emitWebhook(id, 'updated');
     return { ...updated, signingSecret: updated.signingSecret ? '********' : null };
   }
 
@@ -164,6 +177,7 @@ export class NotificationWebhookService {
     });
 
     logger.info('Webhook deleted', { id, name: existing.name });
+    this.emitWebhook(id, 'deleted');
   }
 
   decryptSigningSecret(encryptedJson: string): string | null {

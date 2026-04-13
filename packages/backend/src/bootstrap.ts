@@ -232,9 +232,15 @@ export async function initializeContainer(): Promise<void> {
   dockerTaskService.setEventBus(eventBus);
   dockerWebhookService.setEventBus(eventBus);
   authService.setEventBus(eventBus);
+  templatesService.setEventBus(eventBus);
   caService.setEventBus(eventBus);
+  certService.setEventBus(eventBus);
   nodesService.setEventBus(eventBus);
   nodeRegistry.setEventBus(eventBus);
+  folderService.setEventBus(eventBus);
+  nginxTemplateService.setEventBus(eventBus);
+  dockerRegistryService.setEventBus(eventBus);
+  dockerTemplateService.setEventBus(eventBus);
 
   const nginxSyntaxValidator = new NginxSyntaxValidatorService();
   const proxyService = new ProxyService(
@@ -315,6 +321,7 @@ export async function initializeContainer(): Promise<void> {
 
   // Domain management
   const domainsService = new DomainsService(db, auditService);
+  domainsService.setEventBus(eventBus);
   container.registerInstance(DomainsService, domainsService);
 
   // Setup service (bootstrap management SSL)
@@ -342,9 +349,11 @@ export async function initializeContainer(): Promise<void> {
 
   // ── Notification services (before AI — AI uses them) ──────────────
   const notifRuleService = new NotificationAlertRuleService(db, auditService);
+  notifRuleService.setEventBus(eventBus);
   container.registerInstance(NotificationAlertRuleService, notifRuleService);
 
   const notifWebhookService = new NotificationWebhookService(db, auditService, cryptoService);
+  notifWebhookService.setEventBus(eventBus);
   container.registerInstance(NotificationWebhookService, notifWebhookService);
 
   const notifDeliveryService = new NotificationDeliveryService(db);
@@ -431,8 +440,9 @@ export async function initializeContainer(): Promise<void> {
   const hkConfig = await housekeepingService.getConfig();
   scheduler.register('housekeeping', hkConfig.cronExpression, () => housekeepingJob.run());
 
-  // Stale node detection (every 60 seconds)
+  // Stale node detection (every 60 seconds) + missed health report detection (every 30 seconds)
   scheduler.registerInterval('stale-node-check', 60000, () => nodeRegistry.markStaleNodesOffline());
+  scheduler.registerInterval('node-health-record', 30000, () => nodeRegistry.recordHealthChecks());
 
   // Notification webhook retry job (every 30 seconds)
   const notifRetryJob = new NotificationRetryJob(notifDeliveryService, notifDispatcherService);

@@ -3,12 +3,23 @@ import type { DrizzleClient } from '@/db/client.js';
 import { dockerTemplates } from '@/db/schema/index.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
+import type { EventBusService } from '@/services/event-bus.service.js';
 
 export class DockerTemplateService {
+  private eventBus?: EventBusService;
+
   constructor(
     private db: DrizzleClient,
     private auditService: AuditService
   ) {}
+
+  setEventBus(bus: EventBusService) {
+    this.eventBus = bus;
+  }
+
+  private emitTemplate(id: string, action: string) {
+    this.eventBus?.publish('docker.template.changed', { id, action });
+  }
 
   async list() {
     return this.db.select().from(dockerTemplates).orderBy(desc(dockerTemplates.createdAt));
@@ -39,6 +50,7 @@ export class DockerTemplateService {
       details: { name: input.name },
     });
 
+    this.emitTemplate(row.id, 'created');
     return row;
   }
 
@@ -61,6 +73,7 @@ export class DockerTemplateService {
       details: { name: input.name },
     });
 
+    this.emitTemplate(id, 'updated');
     return row;
   }
 
@@ -76,5 +89,7 @@ export class DockerTemplateService {
       resourceId: id,
       details: { name: template.name },
     });
+
+    this.emitTemplate(id, 'deleted');
   }
 }

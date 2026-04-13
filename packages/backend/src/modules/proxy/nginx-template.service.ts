@@ -6,6 +6,7 @@ import { proxyHosts } from '@/db/schema/proxy-hosts.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
+import type { EventBusService } from '@/services/event-bus.service.js';
 import type { ProxyHostConfig } from '@/services/nginx-config-generator.service.js';
 import type { CreateNginxTemplateInput, UpdateNginxTemplateInput } from './nginx-template.schemas.js';
 
@@ -325,10 +326,20 @@ const SAMPLE_CONTEXT = {
 // ---------------------------------------------------------------------------
 
 export class NginxTemplateService {
+  private eventBus?: EventBusService;
+
   constructor(
     private readonly db: DrizzleClient,
     private readonly auditService: AuditService
   ) {}
+
+  setEventBus(bus: EventBusService) {
+    this.eventBus = bus;
+  }
+
+  private emitTemplate(id: string, action: string) {
+    this.eventBus?.publish('nginx.template.changed', { id, action });
+  }
 
   // -----------------------------------------------------------------------
   // Seed built-in templates
@@ -393,6 +404,7 @@ export class NginxTemplateService {
       details: { name: template.name },
     });
 
+    this.emitTemplate(template.id, 'created');
     return template;
   }
 
@@ -418,6 +430,7 @@ export class NginxTemplateService {
       details: { changes: Object.keys(input) },
     });
 
+    this.emitTemplate(id, 'updated');
     return updated;
   }
 
@@ -444,6 +457,8 @@ export class NginxTemplateService {
       resourceId: id,
       details: { name: existing.name },
     });
+
+    this.emitTemplate(id, 'deleted');
   }
 
   async cloneTemplate(id: string, userId: string) {
@@ -469,6 +484,7 @@ export class NginxTemplateService {
       details: { sourceId: id, sourceName: existing.name },
     });
 
+    this.emitTemplate(clone.id, 'created');
     return clone;
   }
 

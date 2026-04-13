@@ -31,6 +31,8 @@ interface UIState {
   // Preferences
   showUpdateNotifications: boolean;
   setShowUpdateNotifications: (show: boolean) => void;
+  showSystemCertificates: boolean;
+  setShowSystemCertificates: (show: boolean) => void;
 
   // AI Approval Bypass
   aiBypassCreateApprovals: boolean;
@@ -88,6 +90,8 @@ export const useUIStore = create<UIState>()(
       // Preferences
       showUpdateNotifications: true,
       setShowUpdateNotifications: (showUpdateNotifications) => set({ showUpdateNotifications }),
+      showSystemCertificates: false,
+      setShowSystemCertificates: (showSystemCertificates) => set({ showSystemCertificates }),
 
       // AI Approval Bypass
       aiBypassCreateApprovals: false,
@@ -126,6 +130,7 @@ export const useUIStore = create<UIState>()(
         sidebarOpen: state.sidebarOpen,
         sidebarCollapsed: state.sidebarCollapsed,
         showUpdateNotifications: state.showUpdateNotifications,
+        showSystemCertificates: state.showSystemCertificates,
         aiPanelOpen: state.aiPanelOpen,
         aiBypassCreateApprovals: state.aiBypassCreateApprovals,
         aiBypassEditApprovals: state.aiBypassEditApprovals,

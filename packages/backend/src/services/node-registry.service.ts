@@ -18,6 +18,7 @@ export interface ConnectedNode {
   logStream: ServerDuplexStream<unknown, unknown> | null;
   connectedAt: Date;
   lastHealthReport: NodeHealthReport | null;
+  lastReportAt: Date | null;
   lastStatsReport: NodeStatsReport | null;
   lastTrafficStats: Record<string, unknown> | null;
   configVersionHash: string;
@@ -44,6 +45,10 @@ export class NodeRegistryService {
   private eventBus?: EventBusService;
   setEventBus(bus: EventBusService) {
     this.eventBus = bus;
+  }
+
+  publishNodeChanged(nodeId: string, status: string, hostname?: string) {
+    this.eventBus?.publish('node.changed', { id: nodeId, action: 'updated', status, hostname });
   }
 
   registerExecHandler(execId: string, handler: (data: any) => void) {
@@ -113,6 +118,7 @@ export class NodeRegistryService {
       logStream: null,
       connectedAt: new Date(),
       lastHealthReport: null,
+      lastReportAt: null,
       lastStatsReport: null,
       lastTrafficStats: null,
       configVersionHash,
@@ -146,6 +152,9 @@ export class NodeRegistryService {
         updatedAt: new Date(),
       })
       .where(eq(nodes.id, nodeId));
+
+    // Record unhealthy hour in health history so the health bar shows the offline state
+    await this.recordOfflineStatus(nodeId);
 
     logger.info('Node deregistered', { nodeId });
     this.eventBus?.publish('node.changed', { id: nodeId, action: 'updated', status: 'offline', hostname: node.hostname });
@@ -232,6 +241,7 @@ export class NodeRegistryService {
     const node = this.nodes.get(nodeId);
     if (node) {
       node.lastHealthReport = report;
+      node.lastReportAt = new Date();
     }
   }
 
@@ -274,10 +284,73 @@ export class NodeRegistryService {
               updatedAt: new Date(),
             })
             .where(eq(nodes.id, dbNode.id));
+          await this.recordOfflineStatus(dbNode.id);
           logger.warn('Marked stale node as offline', { nodeId: dbNode.id });
           this.eventBus?.publish('node.changed', { id: dbNode.id, action: 'updated', status: 'offline', hostname: dbNode.hostname });
         }
       }
+    }
+  }
+
+  /** Record ongoing offline entries for disconnected nodes + detect missed reports from connected ones */
+  async recordHealthChecks(missedThresholdMs = 60000): Promise<void> {
+    const now = Date.now();
+
+    // 1. Connected nodes that stopped sending reports — mark offline and notify
+    for (const node of this.nodes.values()) {
+      if (!node.lastReportAt) continue;
+      const elapsed = now - node.lastReportAt.getTime();
+      if (elapsed > missedThresholdMs) {
+        await this.recordOfflineStatus(node.nodeId);
+
+        // Update DB status and publish event (only once per transition)
+        const [dbRow] = await this.db
+          .select({ status: nodes.status })
+          .from(nodes)
+          .where(eq(nodes.id, node.nodeId))
+          .limit(1);
+        if (dbRow?.status === 'online') {
+          await this.db.update(nodes).set({ status: 'offline', updatedAt: new Date() }).where(eq(nodes.id, node.nodeId));
+          this.eventBus?.publish('node.changed', { id: node.nodeId, action: 'updated', status: 'offline', hostname: node.hostname });
+          logger.warn('Marked connected node offline (missed health reports)', { nodeId: node.nodeId, elapsedMs: elapsed });
+        }
+      }
+    }
+
+    // 2. Disconnected nodes — keep recording offline entries (same as proxy health check job)
+    const connectedIds = this.getConnectedNodeIds();
+    const offlineNodes = await this.db
+      .select({ id: nodes.id })
+      .from(nodes)
+      .where(eq(nodes.status, 'offline'));
+
+    for (const dbNode of offlineNodes) {
+      if (!connectedIds.includes(dbNode.id)) {
+        await this.recordOfflineStatus(dbNode.id);
+      }
+    }
+  }
+
+  /** Record an offline entry in health history (same format as proxy health checks) */
+  private async recordOfflineStatus(nodeId: string): Promise<void> {
+    try {
+      const nowMs = Date.now();
+      const cutoff = new Date(nowMs - 7 * 24 * 3600 * 1000).toISOString();
+      const [row] = await this.db
+        .select({ healthHistory: nodes.healthHistory })
+        .from(nodes)
+        .where(eq(nodes.id, nodeId))
+        .limit(1);
+
+      const history: Array<{ ts: string; status: string }> = (
+        (row?.healthHistory as Array<{ ts: string; status: string }>) ?? []
+      ).filter((h) => h.ts > cutoff);
+
+      history.push({ ts: new Date(nowMs).toISOString(), status: 'offline' });
+
+      await this.db.update(nodes).set({ healthHistory: history }).where(eq(nodes.id, nodeId));
+    } catch (err) {
+      logger.warn('Failed to record offline status', { nodeId, error: (err as Error).message });
     }
   }
 

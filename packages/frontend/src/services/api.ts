@@ -1,4 +1,5 @@
 import { useAuthStore } from "@/stores/auth";
+import { useUIStore } from "@/stores/ui";
 import type {
   AccessList,
   Alert,
@@ -69,22 +70,41 @@ class ApiClient extends ApiClientBase {
    */
   prefetchAll(isAdmin: boolean): void {
     const quiet = <T>(p: Promise<T>) => p.then((d) => d).catch(() => {});
+    const showSystem =
+      useUIStore.getState().showSystemCertificates &&
+      useAuthStore.getState().hasScope("admin:details:certificates");
 
     // Dashboard data
-    quiet(this.getDashboardStats().then((d) => this.setCache("dashboard:stats", d)));
+    quiet(
+      this.getDashboardStats(showSystem).then((d) =>
+        this.setCache(`dashboard:stats:${showSystem ? "system" : "default"}`, d)
+      )
+    );
     quiet(this.getHealthOverview().then((d) => this.setCache("dashboard:health", d)));
 
     // CAs
-    quiet(this.listCAs().then((d) => this.setCache("cas:list", d)));
+    quiet(
+      this.listCAs({ showSystem }).then((d) =>
+        this.setCache(`cas:list:${showSystem ? "system" : "default"}`, d)
+      )
+    );
 
     // Proxy hosts (grouped)
     quiet(this.getGroupedProxyHosts({}).then((d) => this.setCache("proxy:grouped", d)));
 
     // SSL Certificates
-    quiet(this.listSSLCertificates({}).then((d) => this.setCache("ssl:list", d)));
+    quiet(
+      this.listSSLCertificates({ showSystem }).then((d) =>
+        this.setCache(`ssl:list:${showSystem ? "system" : "default"}`, d)
+      )
+    );
 
     // PKI Certificates
-    quiet(this.listCertificates({}).then((d) => this.setCache("certificates:list", d)));
+    quiet(
+      this.listCertificates({ showSystem }).then((d) =>
+        this.setCache(`certificates:list:${showSystem ? "system" : "default"}`, d)
+      )
+    );
 
     // Domains
     quiet(this.listDomains({}).then((d) => this.setCache("domains:list", d)));
@@ -124,12 +144,12 @@ class ApiClient extends ApiClientBase {
 
   // ── Certificate Authorities ───────────────────────────────────────
 
-  async listCAs(): Promise<CA[]> {
-    return this.request<CA[]>("/cas");
+  async listCAs(params?: { showSystem?: boolean }): Promise<CA[]> {
+    return this.request<CA[]>(`/cas${params?.showSystem ? "?showSystem=true" : ""}`);
   }
 
-  async getCA(id: string): Promise<CA> {
-    return this.request<CA>(`/cas/${id}`);
+  async getCA(id: string, params?: { showSystem?: boolean }): Promise<CA> {
+    return this.request<CA>(`/cas/${id}${params?.showSystem ? "?showSystem=true" : ""}`);
   }
 
   async createRootCA(data: CreateRootCARequest): Promise<CA> {
@@ -197,6 +217,7 @@ class ApiClient extends ApiClientBase {
     caId?: string;
     sortBy?: string;
     sortOrder?: string;
+    showSystem?: boolean;
   }): Promise<PaginatedResponse<Certificate>> {
     const searchParams = new URLSearchParams();
     if (params?.page) searchParams.set("page", params.page.toString());
@@ -207,6 +228,8 @@ class ApiClient extends ApiClientBase {
     if (params?.caId) searchParams.set("caId", params.caId);
     if (params?.sortBy) searchParams.set("sortBy", params.sortBy);
     if (params?.sortOrder) searchParams.set("sortOrder", params.sortOrder);
+    if (params?.showSystem) searchParams.set("showSystem", "true");
+    searchParams.set("meta", "v2");
 
     const query = searchParams.toString();
     return this.request<PaginatedResponse<Certificate>>(`/certificates${query ? `?${query}` : ""}`);
@@ -780,6 +803,7 @@ class ApiClient extends ApiClientBase {
     status?: SSLCertStatus;
     sortBy?: string;
     sortOrder?: string;
+    showSystem?: boolean;
   }): Promise<PaginatedResponse<SSLCertificate>> {
     const searchParams = new URLSearchParams();
     if (params?.page) searchParams.set("page", params.page.toString());
@@ -789,6 +813,7 @@ class ApiClient extends ApiClientBase {
     if (params?.status) searchParams.set("status", params.status);
     if (params?.sortBy) searchParams.set("sortBy", params.sortBy);
     if (params?.sortOrder) searchParams.set("sortOrder", params.sortOrder);
+    if (params?.showSystem) searchParams.set("showSystem", "true");
 
     const query = searchParams.toString();
     return this.request<PaginatedResponse<SSLCertificate>>(
@@ -894,8 +919,12 @@ class ApiClient extends ApiClientBase {
 
   // ── Monitoring ─────────────────────────────────────────────────
 
-  async getDashboardStats(): Promise<DashboardStats> {
-    return this.unwrapData(this.request<{ data: DashboardStats }>("/monitoring/dashboard"));
+  async getDashboardStats(showSystem?: boolean): Promise<DashboardStats> {
+    return this.unwrapData(
+      this.request<{ data: DashboardStats }>(
+        `/monitoring/dashboard${showSystem ? "?showSystem=true" : ""}`
+      )
+    );
   }
 
   async getHealthOverview(): Promise<ProxyHost[]> {

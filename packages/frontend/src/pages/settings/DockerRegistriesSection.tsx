@@ -20,6 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useRealtime } from "@/hooks/use-realtime";
 import { api } from "@/services/api";
 import type { DockerRegistry, Node } from "@/types";
 
@@ -52,6 +53,10 @@ export function DockerRegistriesSection({ nodesList }: DockerRegistriesSectionPr
   useEffect(() => {
     loadRegistries();
   }, [loadRegistries]);
+
+  useRealtime("docker.registry.changed", () => {
+    loadRegistries();
+  });
 
   const openRegCreate = () => {
     setRegEditId(null);

@@ -6,6 +6,7 @@ import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
 import { PageTransition } from "@/components/common/PageTransition";
 import { SearchFilterBar } from "@/components/common/SearchFilterBar";
+import { useRealtime } from "@/hooks/use-realtime";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,7 +30,7 @@ import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useNodesStore } from "@/stores/nodes";
 import type { DaemonUpdateStatus, NodeStatus } from "@/types";
-import { isNodeIncompatible } from "@/types";
+import { effectiveNodeStatus, isNodeIncompatible } from "@/types";
 
 const NODE_TYPES = [
   {
@@ -59,11 +60,12 @@ const NODE_TYPES = [
 ];
 
 const STATUS_BADGE: Record<
-  NodeStatus,
+  string,
   "default" | "secondary" | "destructive" | "success" | "warning"
 > = {
   online: "success",
-  offline: "warning",
+  offline: "destructive",
+  degraded: "warning",
   pending: "secondary",
   error: "destructive",
 };
@@ -97,10 +99,17 @@ export function AdminNodes() {
     fetchNodes();
   }, [fetchNodes]);
 
+  useRealtime("node.changed", () => {
+    fetchNodes();
+  });
+
   // Fetch daemon update statuses
   useEffect(() => {
     if (!hasScope("admin:update")) return;
-    api.getDaemonUpdates().then(setDaemonUpdates).catch(() => {});
+    api
+      .getDaemonUpdates()
+      .then(setDaemonUpdates)
+      .catch(() => {});
   }, [hasScope]);
 
   const handleSearch = () => setFilters({ search: searchInput });
@@ -148,8 +157,7 @@ export function AdminNodes() {
   };
 
   const gatewayAddr = `${window.location.hostname}:9443`;
-  const scriptUrl =
-    "https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/scripts/setup-daemon.sh";
+  const scriptUrl = "https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/scripts/setup-daemon.sh";
 
   const curlCommand = enrollToken
     ? `curl -sSL ${scriptUrl} | sudo bash -s -- \\\n  --type ${enrollType} --gateway ${gatewayAddr} --token ${enrollToken}`
@@ -244,22 +252,28 @@ export function AdminNodes() {
                     <Badge variant="destructive" className="text-xs">
                       INCOMPATIBLE
                     </Badge>
-                  ) : (() => {
-                    const typeStatus = daemonUpdates.find((s) => s.daemonType === node.type);
-                    const nodeStatus = typeStatus?.nodes.find((n) => n.nodeId === node.id);
-                    if (nodeStatus?.updateAvailable && typeStatus?.latestVersion) {
+                  ) : (
+                    (() => {
+                      const typeStatus = daemonUpdates.find((s) => s.daemonType === node.type);
+                      const nodeStatus = typeStatus?.nodes.find((n) => n.nodeId === node.id);
+                      if (nodeStatus?.updateAvailable && typeStatus?.latestVersion) {
+                        return (
+                          <Badge
+                            className="text-xs"
+                            style={{ backgroundColor: "rgb(234 179 8)", color: "#111" }}
+                          >
+                            {typeStatus.latestVersion}
+                          </Badge>
+                        );
+                      }
+                      const eStatus = effectiveNodeStatus(node);
                       return (
-                        <Badge className="text-xs" style={{ backgroundColor: "rgb(234 179 8)", color: "#111" }}>
-                          {typeStatus.latestVersion}
+                        <Badge variant={STATUS_BADGE[eStatus] || "secondary"} className="text-xs">
+                          {eStatus}
                         </Badge>
                       );
-                    }
-                    return (
-                      <Badge variant={STATUS_BADGE[node.status]} className="text-xs">
-                        {node.status}
-                      </Badge>
-                    );
-                  })()}
+                    })()
+                  )}
                   {hasScope("nodes:delete") && (
                     <Button
                       variant="ghost"

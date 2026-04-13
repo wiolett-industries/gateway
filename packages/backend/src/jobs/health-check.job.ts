@@ -8,8 +8,16 @@ const logger = createChildLogger('HealthCheckJob');
 
 const HEALTH_CHECK_TIMEOUT_MS = 10_000;
 const MAX_HISTORY_AGE_MS = 90 * 24 * 3600 * 1000; // 90 days
+const SLOW_BASELINE_WINDOW_MS = 3 * 60 * 60 * 1000; // 3 hours of history for baseline avg
 
 type HealthStatus = 'online' | 'offline' | 'degraded' | 'unknown';
+
+interface HealthEntry {
+  ts: string;
+  status: string;
+  responseMs?: number;
+  slow?: boolean;
+}
 
 export class HealthCheckJob {
   private eventBus?: EventBusService;
@@ -35,26 +43,45 @@ export class HealthCheckJob {
     const results = await Promise.allSettled(
       hosts.map(async (host) => {
         const previousStatus = host.healthStatus as HealthStatus;
-        const newStatus = await this.checkHost(host);
+        const { status: checkStatus, responseMs } = await this.checkHost(host);
 
-        // Build update payload
-        const updatePayload: Record<string, unknown> = {
-          healthStatus: newStatus,
-          lastHealthCheckAt: new Date(),
-        };
-
-        // Record every health check result, prune entries older than 90 days
         const now = Date.now();
         const cutoff = new Date(now - MAX_HISTORY_AGE_MS).toISOString();
-        const history: Array<{ ts: string; status: string }> = (
-          (host.healthHistory as Array<{ ts: string; status: string }>) ?? []
+        const history: HealthEntry[] = (
+          (host.healthHistory as HealthEntry[]) ?? []
         ).filter((h) => h.ts > cutoff);
 
-        history.push({ ts: new Date(now).toISOString(), status: newStatus });
-        updatePayload.healthHistory = history;
+        // Compute slow flag: compare response time against baseline average
+        let slow = false;
+        if (checkStatus === 'online' && responseMs != null) {
+          const threshold = host.healthCheckSlowThreshold ?? 3;
+          if (threshold > 0) {
+            const baselineCutoff = now - SLOW_BASELINE_WINDOW_MS;
+            const baselineTimes = history
+              .filter((h) => h.status === 'online' && h.responseMs != null && new Date(h.ts).getTime() >= baselineCutoff)
+              .map((h) => h.responseMs!);
+            if (baselineTimes.length >= 5) { // need enough samples for a meaningful baseline
+              const avgMs = baselineTimes.reduce((a, b) => a + b, 0) / baselineTimes.length;
+              slow = responseMs >= avgMs * threshold;
+            }
+          }
+        }
+
+        // Push new entry
+        const entry: HealthEntry = { ts: new Date(now).toISOString(), status: checkStatus };
+        if (responseMs != null) entry.responseMs = responseMs;
+        if (slow) entry.slow = true;
+        history.push(entry);
+
+        // Derive the stored healthStatus field from the check
+        const newStatus: HealthStatus = checkStatus === 'online' ? (slow ? 'degraded' : 'online') : 'offline';
 
         // Write to DB
-        await this.db.update(proxyHosts).set(updatePayload).where(eq(proxyHosts.id, host.id));
+        await this.db.update(proxyHosts).set({
+          healthStatus: newStatus,
+          lastHealthCheckAt: new Date(),
+          healthHistory: history,
+        }).where(eq(proxyHosts.id, host.id));
 
         // Log status transitions and publish event
         if (previousStatus !== newStatus) {
@@ -107,15 +134,16 @@ export class HealthCheckJob {
     }
   }
 
-  private async checkHost(host: typeof proxyHosts.$inferSelect): Promise<HealthStatus> {
+  private async checkHost(host: typeof proxyHosts.$inferSelect): Promise<{ status: 'online' | 'offline'; responseMs?: number }> {
     if (!host.forwardHost || !host.forwardPort) {
-      return 'unknown';
+      return { status: 'offline' };
     }
 
     const scheme = host.forwardScheme || 'http';
     const path = host.healthCheckUrl || '/';
     const url = `${scheme}://${host.forwardHost}:${host.forwardPort}${path}`;
 
+    const start = performance.now();
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), HEALTH_CHECK_TIMEOUT_MS);
@@ -127,44 +155,33 @@ export class HealthCheckJob {
           redirect: 'follow',
         });
 
-        clearTimeout(timeout);
+        const responseMs = Math.round(performance.now() - start);
 
-        let status: HealthStatus;
+        let passed = true;
 
         if (host.healthCheckExpectedStatus) {
-          // Custom expected status code check
-          status = response.status === host.healthCheckExpectedStatus ? 'online' : 'offline';
+          // Custom expected status code
+          if (response.status !== host.healthCheckExpectedStatus) passed = false;
         } else {
-          // Default 2xx/5xx/other logic
-          if (response.status >= 200 && response.status < 300) {
-            status = 'online';
-          } else if (response.status >= 500) {
-            status = 'offline';
-          } else {
-            // 3xx (after redirect), 4xx, or other non-2xx/non-5xx
-            status = 'degraded';
-          }
+          // Default: 2xx = pass
+          if (response.status < 200 || response.status >= 300) passed = false;
         }
 
-        // Body content matching (only if status is 'online' and expectedBody is set)
-        if (status === 'online' && host.healthCheckExpectedBody) {
+        // Body content matching
+        if (passed && host.healthCheckExpectedBody) {
           try {
             const body = await response.text();
-            if (!body.includes(host.healthCheckExpectedBody)) {
-              status = 'degraded';
-            }
+            if (!body.includes(host.healthCheckExpectedBody)) passed = false;
           } catch {
-            // Failed to read body — treat as degraded
-            status = 'degraded';
+            passed = false;
           }
         }
 
-        return status;
+        return { status: passed ? 'online' : 'offline', responseMs };
       } finally {
         clearTimeout(timeout);
       }
     } catch (error) {
-      // Timeout (AbortError) or network error
       if (error instanceof DOMException && error.name === 'AbortError') {
         logger.debug(`Health check timed out for ${host.forwardHost}:${host.forwardPort}`);
       } else {
@@ -172,7 +189,7 @@ export class HealthCheckJob {
           error: error instanceof Error ? error.message : 'Unknown error',
         });
       }
-      return 'offline';
+      return { status: 'offline' };
     }
   }
 }

@@ -49,20 +49,30 @@ function send(ws: WSContext, msg: ServerMsg) {
  * Channels with no scope mapping are subscribable by any authenticated user.
  */
 function requiredScopeFor(channel: string): string | null {
+  if (channel === 'domain.changed') return 'proxy:list';
+  if (channel === 'pki.template.changed') return 'pki:templates:list';
+  if (channel === 'nginx.template.changed') return 'proxy:list';
+  if (channel === 'docker.registry.changed') return 'docker:registries:list';
+  if (channel === 'docker.template.changed') return 'docker:templates:list';
   if (channel.startsWith('docker.container')) return 'docker:containers:list';
   if (channel.startsWith('docker.image')) return 'docker:images:list';
   if (channel.startsWith('docker.volume')) return 'docker:volumes:list';
   if (channel.startsWith('docker.network')) return 'docker:networks:list';
+  if (channel.startsWith('docker.template')) return 'docker:templates:list';
+  if (channel.startsWith('docker.registry')) return 'docker:registries:list';
   if (channel.startsWith('docker.task')) return 'docker:containers:list';
   if (channel.startsWith('docker.webhook')) return 'docker:containers:webhooks';
   if (channel.startsWith('docker.')) return 'docker:containers:list';
   if (channel.startsWith('proxy.host')) return 'proxy:list';
   if (channel.startsWith('ssl.cert')) return 'ssl:cert:list';
+  if (channel === 'cert.changed') return 'pki:cert:list';
   if (channel === 'ca.changed') return 'pki:ca:list:root';
   if (channel === 'access-list.changed') return 'acl:list';
   if (channel === 'node.changed') return 'nodes:list';
   if (channel === 'user.changed') return 'admin:users';
   if (channel === 'group.changed') return 'admin:groups';
+  if (channel === 'notification.alert-rule.changed') return 'notifications:view';
+  if (channel === 'notification.webhook.changed') return 'notifications:view';
   if (channel.startsWith('alert.')) return 'notifications:view';
   // permissions.changed.<userId> is filtered separately (own user only)
   return null;

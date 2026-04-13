@@ -1,11 +1,12 @@
 import { Copy, FileCode, MoreVertical, Pencil, Plus, Trash2 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
+import { useRealtime } from "@/hooks/use-realtime";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -32,7 +33,7 @@ export function NginxTemplates({
   const [templates, setTemplates] = useState<NginxTemplate[]>(cachedTemplates ?? []);
   const [isLoading, setIsLoading] = useState(!cachedTemplates);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     try {
       const data = await api.listNginxTemplates();
       setTemplates(data || []);
@@ -41,12 +42,15 @@ export function NginxTemplates({
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     load();
-    // biome-ignore lint/correctness/useExhaustiveDependencies: load-once pattern
   }, [load]);
+
+  useRealtime("nginx.template.changed", () => {
+    load();
+  });
 
   // Expose create action to parent
   const createRefSet = useRef(false);

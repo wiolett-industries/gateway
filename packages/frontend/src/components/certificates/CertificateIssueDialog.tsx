@@ -128,7 +128,7 @@ export function CertificateIssueDialog({
     }
   };
 
-  const activeCAs = (cas || []).filter((ca) => ca.status === "active");
+  const activeCAs = (cas || []).filter((ca) => ca.status === "active" && !ca.isSystem);
   const sansRequired = type === "tls-server" || type === "email";
   const step2Valid =
     commonName.trim() !== "" &&

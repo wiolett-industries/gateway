@@ -1,9 +1,10 @@
 import { ArrowLeft, Pencil, Pin, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useCallback, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { PageTransition } from "@/components/common/PageTransition";
+import { useRealtime } from "@/hooks/use-realtime";
 import { useUrlTab } from "@/hooks/use-url-tab";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,8 +22,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { usePinnedNodesStore } from "@/stores/pinned-nodes";
-import { isNodeIncompatible } from "@/types";
-import type { NodeDetail, NodeStatus } from "@/types";
+import { useNodesStore } from "@/stores/nodes";
+import { effectiveNodeStatus, isNodeIncompatible } from "@/types";
+import type { NodeDetail } from "@/types";
 import { DockerContainers } from "./DockerContainers";
 import { DockerImages } from "./DockerImages";
 import { DockerNetworks } from "./DockerNetworks";
@@ -35,11 +37,12 @@ import { NodeMonitoringTab } from "./node-detail/NodeMonitoringTab";
 import { NodeNginxLogsTab } from "./node-detail/NodeNginxLogsTab";
 
 const STATUS_BADGE: Record<
-  NodeStatus,
+  string,
   "default" | "secondary" | "destructive" | "success" | "warning"
 > = {
   online: "success",
-  offline: "warning",
+  offline: "destructive",
+  degraded: "warning",
   pending: "secondary",
   error: "destructive",
 };
@@ -51,11 +54,23 @@ export function AdminNodeDetail() {
 
   const [node, setNode] = useState<NodeDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const nodeRefreshTick = useNodesStore((s) => s.refreshTick);
 
   const [activeTab, setActiveTab] = useUrlTab(
-    ["details", "monitoring", "console", "configuration", "nginx-logs", "containers", "images", "volumes", "networks", "daemon-logs"],
+    [
+      "details",
+      "monitoring",
+      "console",
+      "configuration",
+      "nginx-logs",
+      "containers",
+      "images",
+      "volumes",
+      "networks",
+      "daemon-logs",
+    ],
     "details",
-    (tab) => `/nodes/${id}/${tab}`,
+    (tab) => `/nodes/${id}/${tab}`
   );
 
   // Rename dialog
@@ -68,9 +83,9 @@ export function AdminNodeDetail() {
   const { isPinnedDashboard, isPinnedSidebar, toggleDashboard, toggleSidebar } =
     usePinnedNodesStore();
 
-  useEffect(() => {
-    if (!id) return;
-    const load = async (silent = false) => {
+  const loadNode = useCallback(
+    async (silent = false) => {
+      if (!id) return;
       if (!silent) setIsLoading(true);
       try {
         const data = await api.getNode(id);
@@ -83,11 +98,30 @@ export function AdminNodeDetail() {
       } finally {
         if (!silent) setIsLoading(false);
       }
-    };
-    load();
-    const interval = setInterval(() => load(true), 30000);
+    },
+    [id, navigate]
+  );
+
+  useEffect(() => {
+    loadNode();
+    const interval = setInterval(() => loadNode(true), 30000);
     return () => clearInterval(interval);
-  }, [id, navigate]);
+  }, [loadNode]);
+
+  // Refetch on live node.changed events (triggered by RealtimeBridge → store invalidation)
+  useEffect(() => {
+    if (nodeRefreshTick > 0) loadNode(true);
+  }, [nodeRefreshTick, loadNode]);
+
+  useRealtime(id ? "node.changed" : null, (payload) => {
+    const event = payload as { id?: string; action?: string };
+    if (!id || event.id !== id) return;
+    if (event.action === "deleted") {
+      navigate("/nodes");
+      return;
+    }
+    loadNode(true);
+  });
 
   const handleRename = async () => {
     if (!id) return;
@@ -144,7 +178,10 @@ export function AdminNodeDetail() {
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-2xl font-bold">{node.displayName || node.hostname}</h1>
-                <Badge variant={STATUS_BADGE[node.status]}>{node.status}</Badge>
+                {(() => {
+                  const s = effectiveNodeStatus(node);
+                  return <Badge variant={STATUS_BADGE[s] || "secondary"}>{s}</Badge>;
+                })()}
               </div>
               <p className="text-sm text-muted-foreground">
                 {node.hostname} &middot; {node.type} &middot;{" "}
@@ -180,7 +217,7 @@ export function AdminNodeDetail() {
         </div>
 
         {/* Health bars */}
-        {node.status === "online" && <HealthBars hourlyHistory={node.healthHistory} />}
+        <HealthBars history={node.healthHistory} currentStatus={node.status} />
 
         {/* Tabs */}
         <Tabs
@@ -190,9 +227,7 @@ export function AdminNodeDetail() {
         >
           <TabsList className="shrink-0">
             <TabsTrigger value="details">Details</TabsTrigger>
-            {!isNodeIncompatible(node) && (
-              <TabsTrigger value="monitoring">Monitoring</TabsTrigger>
-            )}
+            {!isNodeIncompatible(node) && <TabsTrigger value="monitoring">Monitoring</TabsTrigger>}
             {!isNodeIncompatible(node) && node.type === "nginx" && (
               <TabsTrigger value="configuration">Configuration</TabsTrigger>
             )}
@@ -216,7 +251,8 @@ export function AdminNodeDetail() {
           {isNodeIncompatible(node) && (
             <div className="bg-destructive/10 border border-destructive/20 p-3 mt-2 rounded-md">
               <p className="text-sm text-destructive font-medium">
-                This node's daemon version is incompatible with the gateway. Update the daemon to restore full functionality.
+                This node's daemon version is incompatible with the gateway. Update the daemon to
+                restore full functionality.
               </p>
             </div>
           )}

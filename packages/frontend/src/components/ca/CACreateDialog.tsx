@@ -42,7 +42,7 @@ export function CACreateDialog({ open, onOpenChange, parentId }: CACreateDialogP
   const needsParentPicker = parentId === "pick";
   const resolvedParentId = needsParentPicker ? selectedParentId : parentId;
   const isIntermediate = !!resolvedParentId;
-  const activeCAs = (cas || []).filter((ca) => ca.status === "active");
+  const activeCAs = (cas || []).filter((ca) => ca.status === "active" && !ca.isSystem);
 
   const handleCreate = async () => {
     if (!commonName.trim()) {

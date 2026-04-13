@@ -45,6 +45,8 @@ export interface SettingsTabProps {
   setHealthCheckExpectedStatus: (v: number | null) => void;
   healthCheckExpectedBody: string;
   setHealthCheckExpectedBody: (v: string) => void;
+  healthCheckSlowThreshold: number;
+  setHealthCheckSlowThreshold: (v: number) => void;
 }
 
 export function SettingsTab({
@@ -78,6 +80,8 @@ export function SettingsTab({
   setHealthCheckExpectedStatus,
   healthCheckExpectedBody,
   setHealthCheckExpectedBody,
+  healthCheckSlowThreshold,
+  setHealthCheckSlowThreshold,
 }: SettingsTabProps) {
   return (
     <div className="space-y-4">
@@ -212,7 +216,7 @@ export function SettingsTab({
             checked={host.healthCheckEnabled}
             onChange={(v) => onToggle("healthCheckEnabled", v)}
           />
-          <div className="border-t border-border px-4 py-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="border-t border-border px-4 py-3 grid grid-cols-1 md:grid-cols-2 gap-3">
             <div className="space-y-1">
               <label className="text-xs font-medium text-muted-foreground">URL Path</label>
               <Input
@@ -242,6 +246,20 @@ export function SettingsTab({
                 placeholder="Optional"
                 disabled={!host.healthCheckEnabled}
               />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Slow Threshold (Nx avg)</label>
+              <Input
+                type="number"
+                min={0}
+                value={healthCheckSlowThreshold}
+                onChange={(e) => setHealthCheckSlowThreshold(Number(e.target.value) || 0)}
+                placeholder="3"
+                disabled={!host.healthCheckEnabled}
+              />
+              <p className="text-[10px] text-muted-foreground">
+                Mark degraded when response time exceeds Nx the 3-hour average. 0 to disable.
+              </p>
             </div>
           </div>
         </div>

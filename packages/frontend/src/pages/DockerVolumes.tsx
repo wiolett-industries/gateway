@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { RefreshButton } from "@/components/ui/refresh-button";
+import { useRealtime } from "@/hooks/use-realtime";
 import {
   Select,
   SelectContent,
@@ -119,6 +120,12 @@ export function DockerVolumes({
     const interval = setInterval(() => fetchVolumes(), 30_000);
     return () => clearInterval(interval);
   }, [selectedNodeId, fetchVolumes, location.key]);
+
+  useRealtime("docker.volume.changed", (payload) => {
+    const ev = payload as { nodeId?: string };
+    if (selectedNodeId && ev?.nodeId && ev.nodeId !== selectedNodeId) return;
+    fetchVolumes();
+  });
 
   const filteredVolumes = useMemo(() => {
     const sorted = [...volumes].sort((a, b) => a.name.localeCompare(b.name));

@@ -9,6 +9,7 @@ import { PageTransition } from "@/components/common/PageTransition";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useRealtime } from "@/hooks/use-realtime";
 import {
   Select,
   SelectContent,
@@ -69,6 +70,18 @@ export function AdminUsers() {
       .then(setGroups)
       .catch(() => {});
   }, []);
+
+  useRealtime("user.changed", () => {
+    reloadUsers();
+  });
+
+  useRealtime("group.changed", () => {
+    api
+      .listGroups()
+      .then(setGroups)
+      .catch(() => {});
+    reloadUsers();
+  });
 
   const reloadUsers = useCallback(() => {
     api.invalidateCache("req:");

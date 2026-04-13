@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { RefreshButton } from "@/components/ui/refresh-button";
+import { useRealtime } from "@/hooks/use-realtime";
 import {
   Select,
   SelectContent,
@@ -130,6 +131,12 @@ export function DockerImages({
     const interval = setInterval(() => fetchImages(), 30_000);
     return () => clearInterval(interval);
   }, [selectedNodeId, fetchImages, location.key]);
+
+  useRealtime("docker.image.changed", (payload) => {
+    const ev = payload as { nodeId?: string };
+    if (selectedNodeId && ev?.nodeId && ev.nodeId !== selectedNodeId) return;
+    fetchImages();
+  });
 
   const filteredImages = useMemo(() => {
     // Hide dangling images (<none>:<none>) — same as Docker Desktop

@@ -6,17 +6,28 @@ import { buildWhere } from '@/lib/utils.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { CryptoService } from '@/services/crypto.service.js';
+import type { EventBusService } from '@/services/event-bus.service.js';
 import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
 
 const logger = createChildLogger('DockerRegistryService');
 
 export class DockerRegistryService {
+  private eventBus?: EventBusService;
+
   constructor(
     private db: DrizzleClient,
     private auditService: AuditService,
     private cryptoService: CryptoService,
     private nodeDispatch: NodeDispatchService
   ) {}
+
+  setEventBus(bus: EventBusService) {
+    this.eventBus = bus;
+  }
+
+  private emitRegistry(id: string, action: string) {
+    this.eventBus?.publish('docker.registry.changed', { id, action });
+  }
 
   async list(nodeId?: string) {
     const conditions = [];
@@ -81,6 +92,7 @@ export class DockerRegistryService {
     });
 
     const { encryptedPassword: _ep, ...safe } = row;
+    this.emitRegistry(row.id, 'created');
     return safe;
   }
 
@@ -126,6 +138,7 @@ export class DockerRegistryService {
     });
 
     const { encryptedPassword: _ep, ...safe } = row;
+    this.emitRegistry(id, 'updated');
     return safe;
   }
 
@@ -141,6 +154,8 @@ export class DockerRegistryService {
       resourceId: id,
       details: { name: registry.name },
     });
+
+    this.emitRegistry(id, 'deleted');
   }
 
   async testConnection(id: string) {

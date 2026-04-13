@@ -5,15 +5,26 @@ import { createChildLogger } from '@/lib/logger.js';
 import { buildWhere } from '@/lib/utils.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
+import type { EventBusService } from '@/services/event-bus.service.js';
 import type { AlertRuleListQuery, CreateAlertRuleInput, UpdateAlertRuleInput } from './notification-alert-rule.schemas.js';
 
 const logger = createChildLogger('AlertRuleService');
 
 export class NotificationAlertRuleService {
+  private eventBus?: EventBusService;
+
   constructor(
     private db: DrizzleClient,
     private auditService: AuditService
   ) {}
+
+  setEventBus(bus: EventBusService) {
+    this.eventBus = bus;
+  }
+
+  private emitRule(id: string, action: string) {
+    this.eventBus?.publish('notification.alert-rule.changed', { id, action });
+  }
 
   async list(query: AlertRuleListQuery) {
     const conditions: SQL[] = [];
@@ -90,6 +101,7 @@ export class NotificationAlertRuleService {
     });
 
     logger.info('Alert rule created', { id: rule.id, name: input.name, type: input.type, category: input.category });
+    this.emitRule(rule.id, 'created');
     return rule;
   }
 
@@ -126,6 +138,7 @@ export class NotificationAlertRuleService {
     });
 
     logger.info('Alert rule updated', { id, name: updated.name });
+    this.emitRule(id, 'updated');
     return updated;
   }
 
@@ -142,6 +155,7 @@ export class NotificationAlertRuleService {
     });
 
     logger.info('Alert rule deleted', { id, name: existing.name });
+    this.emitRule(id, 'deleted');
   }
 
   async getEnabledThresholdRules() {

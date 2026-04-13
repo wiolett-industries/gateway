@@ -51,13 +51,13 @@ export function DetailsTab({ host }: { host: ProxyHost }) {
                 variant={
                   nodeInfo.status === "online"
                     ? "success"
-                    : nodeInfo.status === "error"
+                    : nodeInfo.status === "offline" || nodeInfo.status === "error"
                       ? "destructive"
                       : "warning"
                 }
                 className="text-xs uppercase"
               >
-                {nodeInfo.status === "online" ? "healthy" : nodeInfo.status}
+                {nodeInfo.status}
               </Badge>
             </div>
           </div>

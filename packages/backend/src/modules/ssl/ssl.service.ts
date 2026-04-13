@@ -602,6 +602,7 @@ export class SSLService {
   async listCerts(params: SSLCertListQuery): Promise<PaginatedResponse<any>> {
     const conditions = [];
 
+    if (!params.showSystem) conditions.push(eq(sslCertificates.isSystem, false));
     if (params.type) conditions.push(eq(sslCertificates.type, params.type));
     if (params.status) conditions.push(eq(sslCertificates.status, params.status));
     if (params.search) {

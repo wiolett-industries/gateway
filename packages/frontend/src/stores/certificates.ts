@@ -1,5 +1,7 @@
 import { create } from "zustand";
 import { api } from "@/services/api";
+import { useAuthStore } from "@/stores/auth";
+import { useUIStore } from "@/stores/ui";
 import type { Certificate, CertificateStatus, CertificateType } from "@/types";
 
 interface CertificateFilters {
@@ -48,19 +50,23 @@ export const useCertificatesStore = create<CertificatesState>()((set, get) => ({
 
   fetchCertificates: async () => {
     const { filters, page, limit } = get();
+    const showSystem =
+      useUIStore.getState().showSystemCertificates &&
+      useAuthStore.getState().hasScope("admin:details:certificates");
     const isDefault =
       page === 1 &&
       !filters.search &&
       filters.status === "active" &&
       filters.type === "all" &&
       filters.caId === "all";
+    const cacheKey = `certificates:list:${showSystem ? "system" : "default"}`;
 
     // Show cached data instantly for default view
     if (isDefault && get().certificates.length === 0) {
       const cached = api.getCached<{
         data: Certificate[];
         pagination: { total: number; totalPages: number };
-      }>("certificates:list");
+      }>(cacheKey);
       if (cached)
         set({
           certificates: cached.data || [],
@@ -79,8 +85,9 @@ export const useCertificatesStore = create<CertificatesState>()((set, get) => ({
         status: filters.status !== "all" ? filters.status : undefined,
         type: filters.type !== "all" ? filters.type : undefined,
         caId: filters.caId !== "all" ? filters.caId : undefined,
+        showSystem,
       });
-      if (isDefault) api.setCache("certificates:list", response);
+      if (isDefault) api.setCache(cacheKey, response);
       set({
         certificates: response.data || [],
         total: response.pagination?.total ?? 0,

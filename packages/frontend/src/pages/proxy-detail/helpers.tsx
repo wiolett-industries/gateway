@@ -20,15 +20,15 @@ export const HEALTH_LABEL: Record<string, string> = {
   disabled: "Disabled",
 };
 
-/** Compute effective status: if currently online but had errors in last 5 min, show "recovering" */
+/** Compute effective status: if currently online but had errors/slow in last 5 min, show "recovering" */
 export function effectiveHealthStatus(host: {
   healthStatus: string;
-  healthHistory?: Array<{ ts: string; status: string }>;
+  healthHistory?: Array<{ ts: string; status: string; slow?: boolean }>;
 }): string {
   if (host.healthStatus !== "online" || !host.healthHistory?.length) return host.healthStatus;
   const fiveMinAgo = Date.now() - 5 * 60 * 1000;
   const recent = host.healthHistory.filter((h) => new Date(h.ts).getTime() >= fiveMinAgo);
-  if (recent.some((h) => h.status === "offline" || h.status === "degraded")) return "recovering";
+  if (recent.some((h) => h.status === "offline" || h.slow)) return "recovering";
   return "online";
 }
 
