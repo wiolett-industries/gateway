@@ -31,8 +31,10 @@ export function isPrivateUrl(urlStr: string): boolean {
   try {
     const url = new URL(urlStr);
     if (!['http:', 'https:'].includes(url.protocol)) return true;
-    const host = url.hostname.replace(/^\[|\]$/g, '');
-    if (host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '0.0.0.0') return true;
+    const host = url.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+    if (host === 'localhost' || host === '::1' || host === '::' || host === '0.0.0.0') return true;
+    if (/^0x/i.test(host) || /^0\d/.test(host)) return true; // octal/hex IPv4 literals
+    if (host.startsWith('127.')) return true;
     if (host.startsWith('10.') || host.startsWith('192.168.') || host.startsWith('169.254.')) return true;
     if (/^172\.(1[6-9]|2\d|3[01])\./.test(host)) return true;
     if (host.startsWith('100.') && /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(host)) return true;

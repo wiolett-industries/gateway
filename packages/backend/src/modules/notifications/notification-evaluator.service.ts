@@ -243,11 +243,6 @@ export class NotificationEvaluatorService {
       if (!allClear) return;
     }
 
-    // Clear the resolve window buffer
-    if (this.redis) {
-      await this.redis.del(`notif:resolve:${rule.id}:${compositeResourceId}`).catch(() => {});
-    }
-
     const firedAt = existingState.firedAt;
     const firedDurationSec = firedAt ? Math.round((Date.now() - firedAt.getTime()) / 1000) : 0;
 
@@ -266,6 +261,11 @@ export class NotificationEvaluatorService {
       fired_at: firedAt?.toISOString(),
       fired_duration: firedDurationSec,
     });
+
+    // Clear the resolve window buffer after successful DB write
+    if (this.redis) {
+      await this.redis.del(`notif:resolve:${rule.id}:${compositeResourceId}`).catch(() => {});
+    }
   }
 
   // ── EventBus Event Handling ─────────────────────────────────────────
@@ -501,7 +501,7 @@ export class NotificationEvaluatorService {
   /** Check if an event-type alert is still in cooldown */
   private async isEventInCooldown(ruleId: string, resourceType: string, resourceId: string, cooldownSeconds: number): Promise<boolean> {
     const [latest] = await this.db
-      .select({ firedAt: notificationAlertStates.firedAt })
+      .select({ resolvedAt: notificationAlertStates.resolvedAt })
       .from(notificationAlertStates)
       .where(
         and(
@@ -510,11 +510,11 @@ export class NotificationEvaluatorService {
           eq(notificationAlertStates.resourceId, resourceId)
         )
       )
-      .orderBy(desc(notificationAlertStates.firedAt))
+      .orderBy(desc(notificationAlertStates.resolvedAt))
       .limit(1);
 
-    if (!latest) return false;
-    const elapsed = Date.now() - latest.firedAt.getTime();
+    if (!latest?.resolvedAt) return false;
+    const elapsed = Date.now() - latest.resolvedAt.getTime();
     return elapsed < cooldownSeconds * 1000;
   }
 
