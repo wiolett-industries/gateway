@@ -6,6 +6,7 @@ import { createChildLogger } from '@/lib/logger.js';
 import type { NotificationWebhookService } from './notification-webhook.service.js';
 import { buildTemplateContext, renderTemplate, type NotificationEvent } from './notification-templates.js';
 import type { Env } from '@/config/env.js';
+import { isPrivateUrl } from '@/lib/utils.js';
 
 const logger = createChildLogger('NotificationDispatcher');
 
@@ -41,6 +42,11 @@ export class NotificationDispatcherService {
     event: NotificationEvent,
     isTest = false
   ): Promise<{ success: boolean; statusCode?: number; error?: string; rendered?: string }> {
+    // SSRF guard — runtime check even though schema validates on create/update
+    if (isPrivateUrl(webhook.url)) {
+      return { success: false, error: 'Blocked: URL points to a private/internal address' };
+    }
+
     const gatewayUrl = (this.env as any).PUBLIC_URL || (this.env as any).MANAGEMENT_DOMAIN || '';
     const context = buildTemplateContext(event, gatewayUrl);
 
@@ -79,6 +85,7 @@ export class NotificationDispatcherService {
         method,
         headers,
         signal: controller.signal,
+        redirect: 'error',
       };
 
       // Only include body for methods that support it
@@ -163,6 +170,14 @@ export class NotificationDispatcherService {
       return;
     }
 
+    // SSRF guard — block retries to private/internal URLs (logged URL or current webhook URL)
+    if (isPrivateUrl(delivery.requestUrl) || isPrivateUrl(webhook.url)) {
+      await this.db.update(notificationDeliveryLog)
+        .set({ status: 'failed', error: 'Blocked: URL points to a private/internal address', completedAt: new Date() })
+        .where(eq(notificationDeliveryLog.id, deliveryId));
+      return;
+    }
+
     const nextAttempt = delivery.attempt + 1;
 
     // Rebuild headers from webhook config
@@ -190,6 +205,7 @@ export class NotificationDispatcherService {
         method: delivery.requestMethod,
         headers: retryHeaders,
         signal: controller.signal,
+        redirect: 'error',
       };
 
       if (delivery.requestMethod !== 'GET' && delivery.requestBody) {

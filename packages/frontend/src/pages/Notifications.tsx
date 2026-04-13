@@ -159,7 +159,7 @@ function AlertsTab({ canManage }: { canManage: boolean }) {
         {canManage && <Button onClick={openCreate}><Plus className="h-4 w-4" /> New Alert</Button>}
       </div>
       {rules.length === 0 ? (
-        <EmptyState icon={AlertTriangle} title="No alerts" description="Create an alert to start receiving notifications." />
+        <EmptyState message="No alerts configured. Create an alert to start receiving notifications." />
       ) : (
         <div className="border border-border bg-card">
           <div className="overflow-x-auto -mb-px">
@@ -228,10 +228,12 @@ function AlertDialog({ open, onOpenChange, rule, onSaved }: {
   const [saving, setSaving] = useState(false);
   const [categories, setCategories] = useState<AlertCategoryDef[]>([]);
   const [webhooks, setWebhooks] = useState<NotificationWebhook[]>([]);
+  const [webhooksLoading, setWebhooksLoading] = useState(false);
   const [availableResources, setAvailableResources] = useState<Array<{ id: string; label: string }>>([]);
   const [resourceSearch, setResourceSearch] = useState("");
   const [webhookSearch, setWebhookSearch] = useState("");
   const editorRef = useRef<TemplateEditorHandle>(null); // retained for cheatsheet click-to-insert (future)
+  const catInitRef = useRef(false);
 
   const [name, setName] = useState("");
   const [category, setCategory] = useState<string>("node");
@@ -251,6 +253,7 @@ function AlertDialog({ open, onOpenChange, rule, onSaved }: {
 
   useEffect(() => {
     if (!open) return;
+    setCategories([]);
     catInitRef.current = false;
     setStep(1);
     setName(rule?.name ?? "");
@@ -271,7 +274,8 @@ function AlertDialog({ open, onOpenChange, rule, onSaved }: {
     setResourceSearch("");
     setWebhookSearch("");
     api.getAlertCategories().then(setCategories).catch(() => {});
-    api.listWebhooks({ limit: 100 }).then((r) => setWebhooks(r.data)).catch(() => {});
+    setWebhooksLoading(true);
+    api.listWebhooks({ limit: 100 }).then((r) => setWebhooks(r.data)).catch(() => {}).finally(() => setWebhooksLoading(false));
   }, [open, rule]);
 
   useEffect(() => {
@@ -306,7 +310,6 @@ function AlertDialog({ open, onOpenChange, rule, onSaved }: {
   const cat = categories.find((c) => c.id === category);
 
   // Auto-fix type and set defaults when category changes (skip in edit mode on first load)
-  const catInitRef = useRef(false);
   useEffect(() => {
     if (!cat) return;
     // Skip the first run in edit mode (categories just loaded, don't overwrite saved values)
@@ -364,6 +367,7 @@ function AlertDialog({ open, onOpenChange, rule, onSaved }: {
 
   const handleSave = async () => {
     if (selectedWebhookIds.length === 0) { toast.error("Select at least one webhook"); return; }
+    if (scopeEnabled && resourceIds.length === 0) { toast.error("Select at least one resource, or disable scope restriction"); return; }
     const cooldownNum = Number(cooldownSeconds);
     if (Number.isNaN(cooldownNum) || cooldownNum < 0) { toast.error("Invalid cooldown value"); return; }
     if (type === "threshold") {
@@ -581,7 +585,9 @@ function AlertDialog({ open, onOpenChange, rule, onSaved }: {
                 {/* Webhooks */}
                 <div className="space-y-1.5">
                   <label className="text-sm font-medium">Send to Webhooks</label>
-                  {webhooks.length === 0 ? (
+                  {webhooksLoading ? (
+                    <div className="flex items-center gap-2 py-4"><LoadingSpinner className="h-4 w-4" /> <span className="text-sm text-muted-foreground">Loading webhooks...</span></div>
+                  ) : webhooks.length === 0 ? (
                     <p className="text-sm text-muted-foreground">No webhooks configured. Create a webhook first.</p>
                   ) : (
                     <div className="border border-border">
@@ -694,7 +700,7 @@ function WebhooksTab({ canManage }: { canManage: boolean }) {
         {canManage && <Button onClick={openCreate}><Plus className="h-4 w-4" /> New Webhook</Button>}
       </div>
       {webhooks.length === 0 ? (
-        <EmptyState icon={Webhook} title="No webhooks" description="Create a webhook to configure notification delivery." />
+        <EmptyState message="No webhooks configured. Create a webhook to configure notification delivery." />
       ) : (
         <div className="border border-border bg-card">
           <div className="overflow-x-auto -mb-px">
@@ -822,7 +828,10 @@ function WebhookDialog({ open, onOpenChange, webhook, onSaved }: {
     setHeaders((prev) => prev.map((h, i) => (i === idx ? { ...h, [field]: val } : h)));
   };
   const removeHeader = (idx: number) => {
-    setHeaders((prev) => prev.filter((_, i) => i !== idx));
+    setHeaders((prev) => {
+      const next = prev.filter((_, i) => i !== idx);
+      return next.length > 0 ? next : [{ key: "", value: "" }];
+    });
   };
   const addHeader = () => {
     setHeaders((prev) => [...prev, { key: "", value: "" }]);
@@ -1012,7 +1021,7 @@ function DeliveryLogTab() {
         <Button variant="outline" size="sm" onClick={load}>Refresh</Button>
       </div>
       {deliveries.length === 0 ? (
-        <EmptyState icon={Send} title="No deliveries" description="Delivery attempts will appear here when alerts fire." />
+        <EmptyState message="No deliveries yet. Delivery attempts will appear here when alerts fire." />
       ) : (
         <div className="border border-border bg-card">
           <div className="overflow-x-auto -mb-px">
@@ -1112,15 +1121,14 @@ function AnimatedHeight({ children }: { children: React.ReactNode }) {
 const hbsVarMark = Decoration.mark({ class: "cm-hbs-var" });
 const hbsHelperMark = Decoration.mark({ class: "cm-hbs-helper" });
 const hbsArgVarMark = Decoration.mark({ class: "cm-hbs-var" }); // higher-priority purple for args
-const hbsRegex = /\{\{[#/]?[a-zA-Z_][\w.]*(?:\s[^}]*)?\}\}/g;
-const hbsArgVarRegex = /[a-zA-Z_][\w.]*/g;
 
 function buildHbsDecos(view: EditorView) {
+  const hbsRegex = /\{\{[#/]?[a-zA-Z_][\w.]*(?:\s[^}]*)?\}\}/g;
+  const hbsArgVarRegex = /[a-zA-Z_][\w.]*/g;
   const ranges: import("@codemirror/state").Range<Decoration>[] = [];
   for (const { from, to } of view.visibleRanges) {
     const text = view.state.doc.sliceString(from, to);
     let m: RegExpExecArray | null;
-    hbsRegex.lastIndex = 0;
     while ((m = hbsRegex.exec(text))) {
       const start = from + m.index;
       const end = start + m[0].length;
