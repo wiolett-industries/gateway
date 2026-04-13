@@ -30,7 +30,6 @@ const SubjectDnFieldsSchema = z
 
 const AuthorityInfoAccessSchema = z
   .object({
-    ocspUrl: z.string().url().max(500).optional(),
     caIssuersUrl: z.string().url().max(500).optional(),
   })
   .default({});

@@ -462,24 +462,19 @@ export function StepSubjectDN({
 export function StepDistribution({
   crlDistributionPoints,
   setCrlDistributionPoints,
-  ocspUrl,
-  setOcspUrl,
   caIssuersUrl,
   setCaIssuersUrl,
 }: {
   crlDistributionPoints: string[];
   setCrlDistributionPoints: (v: string[]) => void;
-  ocspUrl: string;
-  setOcspUrl: (v: string) => void;
   caIssuersUrl: string;
   setCaIssuersUrl: (v: string) => void;
 }) {
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
-        Distribution endpoints tell clients where to check if a certificate has been revoked and
-        where to download the issuing CA certificate. These are embedded directly into the
-        certificate.{" "}
+        Distribution endpoints tell clients where to check revocation lists and where to download
+        the issuing CA certificate. These are embedded directly into the certificate.{" "}
         <strong>If your CA already has these configured, you can skip this step</strong> — the CA's
         URLs will be used automatically.
       </p>
@@ -521,20 +516,6 @@ export function StepDistribution({
         >
           <Plus className="h-4 w-4" /> Add CRL URL
         </Button>
-      </div>
-
-      <div className="space-y-2">
-        <label className="text-sm font-medium">OCSP Responder URL</label>
-        <p className="text-xs text-muted-foreground">
-          Online Certificate Status Protocol — a real-time alternative to CRL for revocation
-          checking.
-        </p>
-        <Input
-          value={ocspUrl}
-          onChange={(e) => setOcspUrl(e.target.value)}
-          placeholder="http://ocsp.example.com"
-          className="font-mono text-xs"
-        />
       </div>
 
       <div className="space-y-2">

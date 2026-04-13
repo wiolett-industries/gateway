@@ -26,7 +26,6 @@ export const ExportCAKeySchema = z.object({
 
 export const UpdateCASchema = z.object({
   crlDistributionUrl: z.string().url().max(500).optional().nullable(),
-  ocspResponderUrl: z.string().url().max(500).optional().nullable(),
   caIssuersUrl: z.string().url().max(500).optional().nullable(),
   maxValidityDays: z.number().int().min(1).max(3650).optional(),
 });

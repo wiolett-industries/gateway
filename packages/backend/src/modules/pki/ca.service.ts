@@ -264,10 +264,15 @@ export class CAService {
     });
     if (!ca) throw new AppError(404, 'CA_NOT_FOUND', 'Certificate Authority not found');
     if (ca.isSystem) throw new AppError(403, 'SYSTEM_CA', 'System CAs are read-only');
+    if (input.ocspResponderUrl) {
+      throw new AppError(400, 'OCSP_DISABLED', 'OCSP responder is currently disabled');
+    }
+
+    const { ocspResponderUrl: _ocspResponderUrl, ...updates } = input;
 
     const [updated] = await this.db
       .update(certificateAuthorities)
-      .set({ ...input, updatedAt: new Date() })
+      .set({ ...updates, updatedAt: new Date() })
       .where(eq(certificateAuthorities.id, id))
       .returning();
 
@@ -276,7 +281,7 @@ export class CAService {
       action: 'ca.update',
       resourceType: 'ca',
       resourceId: id,
-      details: { changes: Object.keys(input) },
+      details: { changes: Object.keys(updates) },
     });
 
     this.emitCa(id, 'updated');
