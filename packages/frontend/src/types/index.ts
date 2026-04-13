@@ -281,6 +281,83 @@ export interface Alert {
 /** The scope that grants access to the AI assistant — must match backend canUseAI() */
 export const AI_SCOPE = "feat:ai:use" as const;
 
+// ── Notifications ──────────────────────────────────────────────────
+
+export interface AlertRule {
+  id: string;
+  name: string;
+  enabled: boolean;
+  type: "threshold" | "event";
+  category: "node" | "container" | "proxy" | "certificate";
+  severity: "info" | "warning" | "critical";
+  metric: string | null;
+  operator: string | null;
+  thresholdValue: number | null;
+  durationSeconds: number;
+  resolveAfterSeconds: number;
+  eventPattern: string | null;
+  resourceIds: string[];
+  messageTemplate: string | null;
+  webhookIds: string[];
+  cooldownSeconds: number;
+  isBuiltin: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface NotificationWebhook {
+  id: string;
+  name: string;
+  url: string;
+  method: string;
+  enabled: boolean;
+  signingSecret: string | null;
+  signingHeader: string | null;
+  templatePreset: string | null;
+  bodyTemplate: string | null;
+  headers: Record<string, string>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WebhookDelivery {
+  id: string;
+  webhookId: string;
+  webhookName: string | null;
+  eventType: string;
+  severity: string;
+  requestUrl: string;
+  requestMethod: string;
+  requestBody: string | null;
+  responseStatus: number | null;
+  responseBody: string | null;
+  responseTimeMs: number | null;
+  attempt: number;
+  maxAttempts: number;
+  nextRetryAt: string | null;
+  status: "pending" | "success" | "failed" | "retrying";
+  error: string | null;
+  createdAt: string;
+  completedAt: string | null;
+}
+
+export interface WebhookPreset {
+  id: string;
+  name: string;
+  description: string;
+  urlHint: string;
+  defaultHeaders: Record<string, string>;
+  bodyTemplate: string;
+}
+
+export interface AlertCategoryDef {
+  id: string;
+  label: string;
+  metrics: Array<{ id: string; label: string; unit: string; defaultOperator: string; defaultValue: number }>;
+  events: Array<{ id: string; label: string; defaultSeverity: string }>;
+  variables: Array<{ name: string; description: string }>;
+}
+
 // API Token / Group scopes
 export const TOKEN_SCOPES = [
   // PKI: Certificate Authorities

@@ -10,6 +10,7 @@ import { settings } from '@/db/schema/settings.js';
 import { createChildLogger } from '@/lib/logger.js';
 import type { DockerService } from './docker.service.js';
 import type { NodeDispatchService } from './node-dispatch.service.js';
+import type { NotificationDeliveryService } from '@/modules/notifications/notification-delivery.service.js';
 
 const logger = createChildLogger('HousekeepingService');
 
@@ -21,6 +22,7 @@ export interface HousekeepingConfig {
   nginxLogs: { enabled: boolean; retentionDays: number };
   auditLog: { enabled: boolean; retentionDays: number };
   dismissedAlerts: { enabled: boolean; retentionDays: number };
+  deliveryLog: { enabled: boolean; retentionDays: number };
   dockerPrune: { enabled: boolean };
   orphanedCerts: { enabled: boolean };
   acmeCleanup: { enabled: boolean };
@@ -67,6 +69,8 @@ const KEYS = {
   auditLogRetention: 'housekeeping:audit_log:retention_days',
   dismissedAlertsEnabled: 'housekeeping:dismissed_alerts:enabled',
   dismissedAlertsRetention: 'housekeeping:dismissed_alerts:retention_days',
+  deliveryLogEnabled: 'housekeeping:delivery_log:enabled',
+  deliveryLogRetention: 'housekeeping:delivery_log:retention_days',
   dockerPruneEnabled: 'housekeeping:docker_prune:enabled',
   orphanedCertsEnabled: 'housekeeping:orphaned_certs:enabled',
   acmeCleanupEnabled: 'housekeeping:acme_cleanup:enabled',
@@ -83,6 +87,8 @@ const DEFAULTS: Record<string, unknown> = {
   [KEYS.auditLogRetention]: 90,
   [KEYS.dismissedAlertsEnabled]: true,
   [KEYS.dismissedAlertsRetention]: 30,
+  [KEYS.deliveryLogEnabled]: true,
+  [KEYS.deliveryLogRetention]: 7,
   [KEYS.dockerPruneEnabled]: true,
   [KEYS.orphanedCertsEnabled]: false,
   [KEYS.acmeCleanupEnabled]: true,
@@ -132,6 +138,10 @@ export class HousekeepingService {
         enabled: get(KEYS.dismissedAlertsEnabled, DEFAULTS[KEYS.dismissedAlertsEnabled] as boolean),
         retentionDays: get(KEYS.dismissedAlertsRetention, DEFAULTS[KEYS.dismissedAlertsRetention] as number),
       },
+      deliveryLog: {
+        enabled: get(KEYS.deliveryLogEnabled, DEFAULTS[KEYS.deliveryLogEnabled] as boolean),
+        retentionDays: get(KEYS.deliveryLogRetention, DEFAULTS[KEYS.deliveryLogRetention] as number),
+      },
       dockerPrune: {
         enabled: get(KEYS.dockerPruneEnabled, DEFAULTS[KEYS.dockerPruneEnabled] as boolean),
       },
@@ -159,6 +169,10 @@ export class HousekeepingService {
       updates.push([KEYS.dismissedAlertsEnabled, partial.dismissedAlerts.enabled]);
     if (partial.dismissedAlerts?.retentionDays !== undefined)
       updates.push([KEYS.dismissedAlertsRetention, partial.dismissedAlerts.retentionDays]);
+    if (partial.deliveryLog?.enabled !== undefined)
+      updates.push([KEYS.deliveryLogEnabled, partial.deliveryLog.enabled]);
+    if (partial.deliveryLog?.retentionDays !== undefined)
+      updates.push([KEYS.deliveryLogRetention, partial.deliveryLog.retentionDays]);
     if (partial.dockerPrune?.enabled !== undefined)
       updates.push([KEYS.dockerPruneEnabled, partial.dockerPrune.enabled]);
     if (partial.orphanedCerts?.enabled !== undefined)
@@ -225,6 +239,11 @@ export class HousekeepingService {
           await this.runCategory('Dismissed Alerts', () =>
             this.cleanDismissedAlerts(config.dismissedAlerts.retentionDays)
           )
+        );
+      }
+      if (config.deliveryLog.enabled) {
+        categories.push(
+          await this.runCategory('Delivery Log', () => this.cleanDeliveryLog(config.deliveryLog.retentionDays))
         );
       }
       if (config.orphanedCerts.enabled) {
@@ -299,6 +318,17 @@ export class HousekeepingService {
       .returning({ id: alerts.id });
 
     return { itemsCleaned: result.length };
+  }
+
+  private notifDeliveryService?: NotificationDeliveryService;
+  setNotifDeliveryService(svc: NotificationDeliveryService) {
+    this.notifDeliveryService = svc;
+  }
+
+  private async cleanDeliveryLog(retentionDays: number): Promise<{ itemsCleaned: number }> {
+    if (!this.notifDeliveryService) return { itemsCleaned: 0 };
+    const count = await this.notifDeliveryService.cleanOldEntries(retentionDays);
+    return { itemsCleaned: count };
   }
 
   private async cleanOrphanedCerts(): Promise<{ itemsCleaned: number }> {

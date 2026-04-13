@@ -29,6 +29,7 @@ import { NginxTemplateEdit } from "@/pages/NginxTemplateEdit";
 import { NodeConsolePopout } from "@/pages/NodeConsolePopout";
 import { ProxyHostDetail } from "@/pages/ProxyHostDetail";
 import { ProxyHosts } from "@/pages/ProxyHosts";
+import { Notifications } from "@/pages/Notifications";
 import { Settings } from "@/pages/Settings";
 import { SSLCertificates } from "@/pages/SSLCertificates";
 import { TemplatesPage } from "@/pages/TemplatesPage";
@@ -124,6 +125,7 @@ export default function App() {
               />
               <Route path="/templates/:tab?" element={<TemplatesPage />} />
               <Route path="/audit" element={scoped("admin:audit", <AuditLog />)} />
+              <Route path="/notifications/:tab?" element={scoped("notifications:view", <Notifications />)} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/admin/users" element={scoped("admin:users", <AdminUsers />)} />
               <Route path="/admin/groups" element={scoped("admin:groups", <AdminGroups />)} />

@@ -730,6 +730,106 @@ Token permissions are controlled by scopes. Each endpoint requires specific scop
 - Revoking a token invalidates it immediately
 - Token last-used timestamp is tracked for auditing
 - Tokens inherit the user's resource restrictions (if the user's group restricts a scope to specific resources, the token is similarly restricted)`,
+
+  notifications: `# Webhook Notifications
+
+## Overview
+The notification system sends HTTP webhook notifications when alert conditions are met. It supports threshold-based alerts (CPU, memory, disk) and event-based alerts (node offline, container stopped, etc.).
+
+## Alert Rules
+Each alert rule defines:
+- **Category**: node, container, proxy, or certificate
+- **Type**: threshold (metric breaches a value) or event (something happens)
+- **Threshold fields** (for threshold type): metric, operator (>, >=, <, <=), thresholdValue, durationSeconds (how long metric must breach before firing), resolveAfterSeconds (how long metric must stay below threshold before resolving, default 60s)
+- **Event fields** (for event type): eventPattern (offline, stopped, oom_killed, etc.)
+- **Scope**: resourceIds — specific nodes/containers/certs to monitor (empty = all)
+- **Severity**: info, warning, critical
+- **Webhooks**: webhookIds — which webhooks receive notifications from this rule
+- **Message template**: Handlebars template rendered with event-specific variables
+- **Cooldown**: cooldownSeconds — won't re-fire within this period (default 900s = 15 min)
+
+## Webhooks
+Webhooks define where notifications are delivered:
+- URL, HTTP method (POST/PUT/PATCH/GET)
+- Body template (Handlebars) with preset options: Discord, Slack, Telegram, Generic JSON, Plain Text
+- Custom headers (key-value pairs)
+- HMAC-SHA256 signing with configurable secret and header name
+- Delivery log with retry (5 attempts, exponential backoff)
+
+## Handlebars Template Variables
+Available in message templates (per-alert) and body templates (per-webhook):
+
+### Common variables (all alerts)
+- \`{{alert_name}}\` — alert rule name
+- \`{{severity}}\` — alert severity (info/warning/critical)
+- \`{{severity_emoji}}\` — emoji for severity
+- \`{{resource.name}}\` — resource display name
+- \`{{resource.id}}\` — resource ID
+- \`{{resource.type}}\` — resource type (node/container/proxy/certificate)
+- \`{{timestamp}}\` — ISO 8601 timestamp
+- \`{{fired_at}}\` — when alert started firing
+- \`{{fired_duration}}\` — seconds the alert was firing (on resolve)
+
+### Threshold-specific variables
+- \`{{value}}\` — current metric value
+- \`{{threshold}}\` — configured threshold
+- \`{{operator}}\` — comparison operator
+- \`{{metric}}\` — metric name (cpu, memory, disk)
+- \`{{duration}}\` — configured fire-after duration (e.g. "5m")
+- \`{{node_name}}\` / \`{{hostname}}\` — node hostname
+
+### Category-specific variables
+- Container: \`{{node_name}}\` — hosting node
+- Proxy: \`{{health_status}}\` — health status
+- Certificate: \`{{days_until_expiry}}\`, \`{{expiry_date}}\`
+
+## Handlebars Helpers
+Available in all templates:
+
+### Comparison & logic
+\`{{#if (gt value 90)}}CRITICAL{{else}}OK{{/if}}\`, \`eq\`, \`ne\`, \`gt\`, \`lt\`, \`gte\`, \`lte\`, \`and\`, \`or\`, \`not\`
+
+### Formatting
+- \`{{round value 1}}\` — round to N decimals (e.g. 11.237 → 11.2)
+- \`{{uppercase str}}\`, \`{{lowercase str}}\`
+- \`{{truncate str 50}}\` — truncate with ellipsis
+- \`{{json obj}}\` — JSON.stringify
+- \`{{default value "N/A"}}\` — fallback for null/undefined
+- \`{{join array ", "}}\` — join array elements
+
+### Math & calculations
+- \`{{math value "+" 10}}\` — arithmetic (+, -, *, /, %)
+- \`{{percent used total}}\` — calculate percentage
+- \`{{round (math value "/" 1024) 2}}\` — combine helpers
+
+### Time & dates
+- \`{{formatDuration seconds}}\` — human format: "5m 30s", "2h 15m"
+- \`{{timeago timestamp}}\` — relative: "3 minutes ago"
+- \`{{dateformat timestamp "YYYY-MM-DD HH:mm"}}\` — custom format
+- Format tokens: YYYY, MM, DD, HH, mm, ss
+
+### Text
+- \`{{pluralize count "container" "containers"}}\` — singular/plural
+
+## Template Examples
+- \`CPU at {{round value 1}}% on {{resource.name}} (threshold: {{operator}} {{threshold}}%)\`
+- \`{{resource.name}} {{metric}} has been above {{threshold}}% for {{duration}}\`
+- \`Resolved after {{formatDuration fired_duration}} — {{metric}} now at {{round value 1}}%\`
+- \`{{#if (gt value 95)}}🔥 CRITICAL{{else}}⚠️ Warning{{/if}}: {{alert_name}}\`
+
+## API Endpoints
+- \`GET /api/notifications/alert-rules\` — list rules (notifications:view)
+- \`POST /api/notifications/alert-rules\` — create rule (notifications:manage)
+- \`PUT /api/notifications/alert-rules/:id\` — update rule (notifications:manage)
+- \`DELETE /api/notifications/alert-rules/:id\` — delete rule (notifications:manage)
+- \`GET /api/notifications/alert-rules/categories\` — list categories with metrics/events/variables
+- \`GET /api/notifications/webhooks\` — list webhooks (notifications:view)
+- \`POST /api/notifications/webhooks\` — create webhook (notifications:manage)
+- \`PUT /api/notifications/webhooks/:id\` — update webhook (notifications:manage)
+- \`DELETE /api/notifications/webhooks/:id\` — delete webhook (notifications:manage)
+- \`POST /api/notifications/webhooks/:id/test\` — send test delivery
+- \`GET /api/notifications/deliveries\` — list delivery log (notifications:view)
+- \`GET /api/notifications/deliveries/stats\` — delivery statistics`,
 };
 
 /** Map doc topics to the scope required to read them */
@@ -749,6 +849,7 @@ export const DOC_TOPIC_SCOPES: Record<string, string> = {
   housekeeping: 'admin:housekeeping',
   permissions: 'feat:ai:use',
   api: 'feat:ai:use',
+  notifications: 'notifications:view',
 };
 
 export function getInternalDocumentation(topic: string, userScopes: string[]): { topic: string; content: string } {

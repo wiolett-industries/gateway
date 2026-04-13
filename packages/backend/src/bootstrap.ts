@@ -58,6 +58,12 @@ import { SessionService } from '@/services/session.service.js';
 import { SystemCAService } from '@/services/system-ca.service.js';
 import { DaemonUpdateService } from '@/services/daemon-update.service.js';
 import { UpdateService } from '@/services/update.service.js';
+import { NotificationAlertRuleService } from '@/modules/notifications/notification-alert-rule.service.js';
+import { NotificationWebhookService } from '@/modules/notifications/notification-webhook.service.js';
+import { NotificationDeliveryService } from '@/modules/notifications/notification-delivery.service.js';
+import { NotificationDispatcherService } from '@/modules/notifications/notification-dispatcher.service.js';
+import { NotificationEvaluatorService } from '@/modules/notifications/notification-evaluator.service.js';
+import { NotificationRetryJob } from '@/jobs/notification-retry.job.js';
 
 export { container };
 
@@ -334,6 +340,19 @@ export async function initializeContainer(): Promise<void> {
   const groupService = container.resolve(GroupService);
   groupService.setEventBus(eventBus);
 
+  // ── Notification services (before AI — AI uses them) ──────────────
+  const notifRuleService = new NotificationAlertRuleService(db, auditService);
+  container.registerInstance(NotificationAlertRuleService, notifRuleService);
+
+  const notifWebhookService = new NotificationWebhookService(db, auditService, cryptoService);
+  container.registerInstance(NotificationWebhookService, notifWebhookService);
+
+  const notifDeliveryService = new NotificationDeliveryService(db);
+  container.registerInstance(NotificationDeliveryService, notifDeliveryService);
+
+  const notifDispatcherService = new NotificationDispatcherService(db, notifWebhookService, env);
+  container.registerInstance(NotificationDispatcherService, notifDispatcherService);
+
   // AI Service (depends on many services above)
   const aiService = new AIService(
     aiSettingsService,
@@ -350,7 +369,11 @@ export async function initializeContainer(): Promise<void> {
     monitoringService,
     nodesService,
     groupService,
-    dockerManagementService
+    dockerManagementService,
+    notifRuleService,
+    notifWebhookService,
+    notifDeliveryService,
+    notifDispatcherService
   );
   container.registerInstance(AIService, aiService);
 
@@ -361,6 +384,20 @@ export async function initializeContainer(): Promise<void> {
       .filter(Boolean)
   );
   await detectPublicIP(env.PUBLIC_IPV4, env.PUBLIC_IPV6);
+
+  const notifEvaluatorService = new NotificationEvaluatorService(
+    db,
+    notifRuleService,
+    notifWebhookService,
+    notifDispatcherService,
+    cacheService,
+    nodeRegistry
+  );
+  notifEvaluatorService.setEventBus(eventBus);
+  notifEvaluatorService.start();
+  container.registerInstance(NotificationEvaluatorService, notifEvaluatorService);
+
+  housekeepingService.setNotifDeliveryService(notifDeliveryService);
 
   // Seed built-in templates
   await templatesService.seedBuiltinTemplates();
@@ -393,6 +430,10 @@ export async function initializeContainer(): Promise<void> {
 
   // Stale node detection (every 60 seconds)
   scheduler.registerInterval('stale-node-check', 60000, () => nodeRegistry.markStaleNodesOffline());
+
+  // Notification webhook retry job (every 30 seconds)
+  const notifRetryJob = new NotificationRetryJob(notifDeliveryService, notifDispatcherService);
+  scheduler.registerInterval('notification-retry', 30000, () => notifRetryJob.run());
 
   logger.info('Dependency injection container initialized');
 }

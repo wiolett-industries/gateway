@@ -129,7 +129,7 @@ export class NodeRegistryService {
       .where(eq(nodes.id, nodeId));
 
     logger.info('Node registered', { nodeId, type, hostname });
-    this.eventBus?.publish('node.changed', { id: nodeId, action: 'updated', status: 'online' });
+    this.eventBus?.publish('node.changed', { id: nodeId, action: 'updated', status: 'online', hostname });
   }
 
   async deregister(nodeId: string): Promise<void> {
@@ -148,7 +148,7 @@ export class NodeRegistryService {
       .where(eq(nodes.id, nodeId));
 
     logger.info('Node deregistered', { nodeId });
-    this.eventBus?.publish('node.changed', { id: nodeId, action: 'updated', status: 'offline' });
+    this.eventBus?.publish('node.changed', { id: nodeId, action: 'updated', status: 'offline', hostname: node.hostname });
   }
 
   getNode(nodeId: string): ConnectedNode | undefined {

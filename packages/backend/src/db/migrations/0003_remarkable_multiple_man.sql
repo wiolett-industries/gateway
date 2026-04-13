@@ -1,0 +1,1 @@
+ALTER TABLE "notification_alert_rules" ADD COLUMN "resolve_after_seconds" integer DEFAULT 60;

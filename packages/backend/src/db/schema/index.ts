@@ -18,4 +18,8 @@ export * from './proxy-host-folders.js';
 export * from './proxy-hosts.js';
 export * from './settings.js';
 export * from './ssl-certificates.js';
+export * from './notification-alert-rules.js';
+export * from './notification-alert-states.js';
+export * from './notification-delivery-log.js';
+export * from './notification-webhooks.js';
 export * from './users.js';
