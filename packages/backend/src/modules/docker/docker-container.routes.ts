@@ -1,6 +1,6 @@
 import type { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
-import { requireScope } from '@/modules/auth/auth.middleware.js';
+import { requireScopeForResource } from '@/modules/auth/auth.middleware.js';
 import { TokensService } from '@/modules/tokens/tokens.service.js';
 import type { AppEnv } from '@/types.js';
 import {
@@ -35,7 +35,7 @@ export function registerContainerRoutes(router: OpenAPIHono<AppEnv>) {
   // ─── Container routes ────────────────────────────────────────────────
 
   // List containers
-  router.get('/nodes/:nodeId/containers', requireScope('docker:containers:list'), async (c) => {
+  router.get('/nodes/:nodeId/containers', requireScopeForResource('docker:containers:list', 'nodeId'), async (c) => {
     const service = container.resolve(DockerManagementService);
     const nodeId = c.req.param('nodeId');
     const data = await service.listContainers(nodeId);
@@ -43,7 +43,7 @@ export function registerContainerRoutes(router: OpenAPIHono<AppEnv>) {
   });
 
   // Create container
-  router.post('/nodes/:nodeId/containers', requireScope('docker:containers:create'), async (c) => {
+  router.post('/nodes/:nodeId/containers', requireScopeForResource('docker:containers:create', 'nodeId'), async (c) => {
     const service = container.resolve(DockerManagementService);
     const nodeId = c.req.param('nodeId');
     const user = c.get('user')!;
@@ -54,87 +54,115 @@ export function registerContainerRoutes(router: OpenAPIHono<AppEnv>) {
   });
 
   // Inspect container
-  router.get('/nodes/:nodeId/containers/:containerId', requireScope('docker:containers:view'), async (c) => {
-    const service = container.resolve(DockerManagementService);
-    const nodeId = c.req.param('nodeId');
-    const containerId = c.req.param('containerId');
-    const data = await service.inspectContainer(nodeId, containerId);
-    return c.json({ data });
-  });
+  router.get(
+    '/nodes/:nodeId/containers/:containerId',
+    requireScopeForResource('docker:containers:view', 'nodeId'),
+    async (c) => {
+      const service = container.resolve(DockerManagementService);
+      const nodeId = c.req.param('nodeId');
+      const containerId = c.req.param('containerId');
+      const data = await service.inspectContainer(nodeId, containerId);
+      return c.json({ data });
+    }
+  );
 
   // Start container
-  router.post('/nodes/:nodeId/containers/:containerId/start', requireScope('docker:containers:manage'), async (c) => {
-    const service = container.resolve(DockerManagementService);
-    const nodeId = c.req.param('nodeId');
-    const containerId = c.req.param('containerId');
-    const user = c.get('user')!;
-    await service.startContainer(nodeId, containerId, user.id);
-    return c.json({ success: true });
-  });
+  router.post(
+    '/nodes/:nodeId/containers/:containerId/start',
+    requireScopeForResource('docker:containers:manage', 'nodeId'),
+    async (c) => {
+      const service = container.resolve(DockerManagementService);
+      const nodeId = c.req.param('nodeId');
+      const containerId = c.req.param('containerId');
+      const user = c.get('user')!;
+      await service.startContainer(nodeId, containerId, user.id);
+      return c.json({ success: true });
+    }
+  );
 
   // Stop container
-  router.post('/nodes/:nodeId/containers/:containerId/stop', requireScope('docker:containers:manage'), async (c) => {
-    const service = container.resolve(DockerManagementService);
-    const nodeId = c.req.param('nodeId');
-    const containerId = c.req.param('containerId');
-    const user = c.get('user')!;
-    const body = await c.req.json().catch(() => ({}));
-    const { timeout } = ContainerStopSchema.parse(body);
-    await service.stopContainer(nodeId, containerId, timeout, user.id);
-    return c.json({ success: true });
-  });
+  router.post(
+    '/nodes/:nodeId/containers/:containerId/stop',
+    requireScopeForResource('docker:containers:manage', 'nodeId'),
+    async (c) => {
+      const service = container.resolve(DockerManagementService);
+      const nodeId = c.req.param('nodeId');
+      const containerId = c.req.param('containerId');
+      const user = c.get('user')!;
+      const body = await c.req.json().catch(() => ({}));
+      const { timeout } = ContainerStopSchema.parse(body);
+      await service.stopContainer(nodeId, containerId, timeout, user.id);
+      return c.json({ success: true });
+    }
+  );
 
   // Restart container
-  router.post('/nodes/:nodeId/containers/:containerId/restart', requireScope('docker:containers:manage'), async (c) => {
-    const service = container.resolve(DockerManagementService);
-    const nodeId = c.req.param('nodeId');
-    const containerId = c.req.param('containerId');
-    const user = c.get('user')!;
-    const body = await c.req.json().catch(() => ({}));
-    const { timeout } = ContainerStopSchema.parse(body);
-    await service.restartContainer(nodeId, containerId, timeout, user.id);
-    return c.json({ success: true });
-  });
+  router.post(
+    '/nodes/:nodeId/containers/:containerId/restart',
+    requireScopeForResource('docker:containers:manage', 'nodeId'),
+    async (c) => {
+      const service = container.resolve(DockerManagementService);
+      const nodeId = c.req.param('nodeId');
+      const containerId = c.req.param('containerId');
+      const user = c.get('user')!;
+      const body = await c.req.json().catch(() => ({}));
+      const { timeout } = ContainerStopSchema.parse(body);
+      await service.restartContainer(nodeId, containerId, timeout, user.id);
+      return c.json({ success: true });
+    }
+  );
 
   // Kill container
-  router.post('/nodes/:nodeId/containers/:containerId/kill', requireScope('docker:containers:manage'), async (c) => {
-    const service = container.resolve(DockerManagementService);
-    const nodeId = c.req.param('nodeId');
-    const containerId = c.req.param('containerId');
-    const user = c.get('user')!;
-    const body = await c.req.json().catch(() => ({}));
-    const { signal } = ContainerKillSchema.parse(body);
-    await service.killContainer(nodeId, containerId, signal, user.id);
-    return c.json({ success: true });
-  });
+  router.post(
+    '/nodes/:nodeId/containers/:containerId/kill',
+    requireScopeForResource('docker:containers:manage', 'nodeId'),
+    async (c) => {
+      const service = container.resolve(DockerManagementService);
+      const nodeId = c.req.param('nodeId');
+      const containerId = c.req.param('containerId');
+      const user = c.get('user')!;
+      const body = await c.req.json().catch(() => ({}));
+      const { signal } = ContainerKillSchema.parse(body);
+      await service.killContainer(nodeId, containerId, signal, user.id);
+      return c.json({ success: true });
+    }
+  );
 
   // Remove container
-  router.delete('/nodes/:nodeId/containers/:containerId', requireScope('docker:containers:delete'), async (c) => {
-    const service = container.resolve(DockerManagementService);
-    const nodeId = c.req.param('nodeId');
-    const containerId = c.req.param('containerId');
-    const user = c.get('user')!;
-    const force = c.req.query('force') === 'true';
-    await service.removeContainer(nodeId, containerId, force, user.id);
-    return c.json({ success: true });
-  });
+  router.delete(
+    '/nodes/:nodeId/containers/:containerId',
+    requireScopeForResource('docker:containers:delete', 'nodeId'),
+    async (c) => {
+      const service = container.resolve(DockerManagementService);
+      const nodeId = c.req.param('nodeId');
+      const containerId = c.req.param('containerId');
+      const user = c.get('user')!;
+      const force = c.req.query('force') === 'true';
+      await service.removeContainer(nodeId, containerId, force, user.id);
+      return c.json({ success: true });
+    }
+  );
 
   // Rename container
-  router.post('/nodes/:nodeId/containers/:containerId/rename', requireScope('docker:containers:edit'), async (c) => {
-    const service = container.resolve(DockerManagementService);
-    const nodeId = c.req.param('nodeId');
-    const containerId = c.req.param('containerId');
-    const user = c.get('user')!;
-    const body = await c.req.json();
-    const { name } = ContainerRenameSchema.parse(body);
-    await service.renameContainer(nodeId, containerId, name, user.id);
-    return c.json({ success: true });
-  });
+  router.post(
+    '/nodes/:nodeId/containers/:containerId/rename',
+    requireScopeForResource('docker:containers:edit', 'nodeId'),
+    async (c) => {
+      const service = container.resolve(DockerManagementService);
+      const nodeId = c.req.param('nodeId');
+      const containerId = c.req.param('containerId');
+      const user = c.get('user')!;
+      const body = await c.req.json();
+      const { name } = ContainerRenameSchema.parse(body);
+      await service.renameContainer(nodeId, containerId, name, user.id);
+      return c.json({ success: true });
+    }
+  );
 
   // Duplicate container
   router.post(
     '/nodes/:nodeId/containers/:containerId/duplicate',
-    requireScope('docker:containers:create'),
+    requireScopeForResource('docker:containers:create', 'nodeId'),
     async (c) => {
       const service = container.resolve(DockerManagementService);
       const nodeId = c.req.param('nodeId');
@@ -148,21 +176,25 @@ export function registerContainerRoutes(router: OpenAPIHono<AppEnv>) {
   );
 
   // Update container (pull + redeploy)
-  router.post('/nodes/:nodeId/containers/:containerId/update', requireScope('docker:containers:edit'), async (c) => {
-    const service = container.resolve(DockerManagementService);
-    const nodeId = c.req.param('nodeId');
-    const containerId = c.req.param('containerId');
-    const user = c.get('user')!;
-    const body = await c.req.json();
-    const config = ContainerUpdateSchema.parse(body);
-    const data = await service.updateContainer(nodeId, containerId, config, user.id);
-    return c.json({ data });
-  });
+  router.post(
+    '/nodes/:nodeId/containers/:containerId/update',
+    requireScopeForResource('docker:containers:edit', 'nodeId'),
+    async (c) => {
+      const service = container.resolve(DockerManagementService);
+      const nodeId = c.req.param('nodeId');
+      const containerId = c.req.param('containerId');
+      const user = c.get('user')!;
+      const body = await c.req.json();
+      const config = ContainerUpdateSchema.parse(body);
+      const data = await service.updateContainer(nodeId, containerId, config, user.id);
+      return c.json({ data });
+    }
+  );
 
   // Live update container (no recreation — resource limits + restart policy)
   router.post(
     '/nodes/:nodeId/containers/:containerId/live-update',
-    requireScope('docker:containers:edit'),
+    requireScopeForResource('docker:containers:edit', 'nodeId'),
     async (c) => {
       const service = container.resolve(DockerManagementService);
       const nodeId = c.req.param('nodeId');
@@ -178,7 +210,7 @@ export function registerContainerRoutes(router: OpenAPIHono<AppEnv>) {
   // Recreate container with new config (ports, mounts, entrypoint, etc.)
   router.post(
     '/nodes/:nodeId/containers/:containerId/recreate',
-    requireScope('docker:containers:manage'),
+    requireScopeForResource('docker:containers:manage', 'nodeId'),
     async (c) => {
       const service = container.resolve(DockerManagementService);
       const nodeId = c.req.param('nodeId');
@@ -192,29 +224,37 @@ export function registerContainerRoutes(router: OpenAPIHono<AppEnv>) {
   );
 
   // Container logs
-  router.get('/nodes/:nodeId/containers/:containerId/logs', requireScope('docker:containers:view'), async (c) => {
-    const service = container.resolve(DockerManagementService);
-    const nodeId = c.req.param('nodeId');
-    const containerId = c.req.param('containerId');
-    const rawQuery = c.req.query();
-    const { tail, timestamps } = LogQuerySchema.parse(rawQuery);
-    const data = await service.getContainerLogs(nodeId, containerId, tail, timestamps);
-    return c.json({ data });
-  });
+  router.get(
+    '/nodes/:nodeId/containers/:containerId/logs',
+    requireScopeForResource('docker:containers:view', 'nodeId'),
+    async (c) => {
+      const service = container.resolve(DockerManagementService);
+      const nodeId = c.req.param('nodeId');
+      const containerId = c.req.param('containerId');
+      const rawQuery = c.req.query();
+      const { tail, timestamps } = LogQuerySchema.parse(rawQuery);
+      const data = await service.getContainerLogs(nodeId, containerId, tail, timestamps);
+      return c.json({ data });
+    }
+  );
 
   // Container stats (live one-shot)
-  router.get('/nodes/:nodeId/containers/:containerId/stats', requireScope('docker:containers:view'), async (c) => {
-    const service = container.resolve(DockerManagementService);
-    const nodeId = c.req.param('nodeId');
-    const containerId = c.req.param('containerId');
-    const data = await service.getContainerStats(nodeId, containerId);
-    return c.json({ data });
-  });
+  router.get(
+    '/nodes/:nodeId/containers/:containerId/stats',
+    requireScopeForResource('docker:containers:view', 'nodeId'),
+    async (c) => {
+      const service = container.resolve(DockerManagementService);
+      const nodeId = c.req.param('nodeId');
+      const containerId = c.req.param('containerId');
+      const data = await service.getContainerStats(nodeId, containerId);
+      return c.json({ data });
+    }
+  );
 
   // Container stats history (for sparklines)
   router.get(
     '/nodes/:nodeId/containers/:containerId/stats/history',
-    requireScope('docker:containers:view'),
+    requireScopeForResource('docker:containers:view', 'nodeId'),
     async (c) => {
       const { NodeMonitoringService } = await import('@/modules/nodes/node-monitoring.service.js');
       const monitoring = container.resolve(NodeMonitoringService);
@@ -225,53 +265,69 @@ export function registerContainerRoutes(router: OpenAPIHono<AppEnv>) {
   );
 
   // Container top (process list)
-  router.get('/nodes/:nodeId/containers/:containerId/top', requireScope('docker:containers:view'), async (c) => {
-    const service = container.resolve(DockerManagementService);
-    const nodeId = c.req.param('nodeId');
-    const containerId = c.req.param('containerId');
-    const data = await service.getContainerTop(nodeId, containerId);
-    return c.json({ data });
-  });
+  router.get(
+    '/nodes/:nodeId/containers/:containerId/top',
+    requireScopeForResource('docker:containers:view', 'nodeId'),
+    async (c) => {
+      const service = container.resolve(DockerManagementService);
+      const nodeId = c.req.param('nodeId');
+      const containerId = c.req.param('containerId');
+      const data = await service.getContainerTop(nodeId, containerId);
+      return c.json({ data });
+    }
+  );
 
   // Get container env
-  router.get('/nodes/:nodeId/containers/:containerId/env', requireScope('docker:containers:view'), async (c) => {
-    const service = container.resolve(DockerManagementService);
-    const nodeId = c.req.param('nodeId');
-    const containerId = c.req.param('containerId');
-    const data = await service.getContainerEnv(nodeId, containerId);
-    return c.json({ data });
-  });
+  router.get(
+    '/nodes/:nodeId/containers/:containerId/env',
+    requireScopeForResource('docker:containers:view', 'nodeId'),
+    async (c) => {
+      const service = container.resolve(DockerManagementService);
+      const nodeId = c.req.param('nodeId');
+      const containerId = c.req.param('containerId');
+      const data = await service.getContainerEnv(nodeId, containerId);
+      return c.json({ data });
+    }
+  );
 
   // Update container env
-  router.put('/nodes/:nodeId/containers/:containerId/env', requireScope('docker:containers:environment'), async (c) => {
-    const service = container.resolve(DockerManagementService);
-    const nodeId = c.req.param('nodeId');
-    const containerId = c.req.param('containerId');
-    const user = c.get('user')!;
-    const body = await c.req.json();
-    const { env, removeEnv } = EnvUpdateSchema.parse(body);
-    const data = await service.updateContainerEnv(nodeId, containerId, env, removeEnv, user.id);
-    return c.json({ data });
-  });
+  router.put(
+    '/nodes/:nodeId/containers/:containerId/env',
+    requireScopeForResource('docker:containers:environment', 'nodeId'),
+    async (c) => {
+      const service = container.resolve(DockerManagementService);
+      const nodeId = c.req.param('nodeId');
+      const containerId = c.req.param('containerId');
+      const user = c.get('user')!;
+      const body = await c.req.json();
+      const { env, removeEnv } = EnvUpdateSchema.parse(body);
+      const data = await service.updateContainerEnv(nodeId, containerId, env, removeEnv, user.id);
+      return c.json({ data });
+    }
+  );
 
   // ─── Secret routes ────────────────────────────────────────────────────
 
   // List secrets (values masked unless user has docker:containers:secrets scope)
-  router.get('/nodes/:nodeId/containers/:containerId/secrets', requireScope('docker:containers:view'), async (c) => {
-    const service = container.resolve(DockerSecretService);
-    const nodeId = c.req.param('nodeId');
-    const containerId = c.req.param('containerId');
-    const containerName = await resolveContainerName(nodeId, containerId);
-    const scopes = c.get('effectiveScopes') || [];
-    const canReveal = TokensService.hasScope(scopes, 'docker:containers:secrets');
-    const data = await service.list(nodeId, containerName, canReveal);
-    return c.json({ data });
-  });
+  router.get(
+    '/nodes/:nodeId/containers/:containerId/secrets',
+    requireScopeForResource('docker:containers:view', 'nodeId'),
+    async (c) => {
+      const service = container.resolve(DockerSecretService);
+      const nodeId = c.req.param('nodeId');
+      const containerId = c.req.param('containerId');
+      const containerName = await resolveContainerName(nodeId, containerId);
+      const scopes = c.get('effectiveScopes') || [];
+      const canReveal = TokensService.hasScope(scopes, `docker:containers:secrets:${nodeId}`);
+      const data = await service.list(nodeId, containerName, canReveal);
+      return c.json({ data });
+    }
+  );
 
   // Create secret
   router.post(
     '/nodes/:nodeId/containers/:containerId/secrets',
-    requireScope('docker:containers:secrets'),
+    requireScopeForResource('docker:containers:secrets', 'nodeId'),
     async (c) => {
       const service = container.resolve(DockerSecretService);
       const nodeId = c.req.param('nodeId');
@@ -288,7 +344,7 @@ export function registerContainerRoutes(router: OpenAPIHono<AppEnv>) {
   // Update secret
   router.put(
     '/nodes/:nodeId/containers/:containerId/secrets/:secretId',
-    requireScope('docker:containers:secrets'),
+    requireScopeForResource('docker:containers:secrets', 'nodeId'),
     async (c) => {
       const service = container.resolve(DockerSecretService);
       const secretId = c.req.param('secretId');
@@ -303,7 +359,7 @@ export function registerContainerRoutes(router: OpenAPIHono<AppEnv>) {
   // Delete secret
   router.delete(
     '/nodes/:nodeId/containers/:containerId/secrets/:secretId',
-    requireScope('docker:containers:secrets'),
+    requireScopeForResource('docker:containers:secrets', 'nodeId'),
     async (c) => {
       const service = container.resolve(DockerSecretService);
       const secretId = c.req.param('secretId');
@@ -316,20 +372,24 @@ export function registerContainerRoutes(router: OpenAPIHono<AppEnv>) {
   // ─── File browser routes ─────────────────────────────────────────────
 
   // List directory
-  router.get('/nodes/:nodeId/containers/:containerId/files', requireScope('docker:containers:files'), async (c) => {
-    const service = container.resolve(DockerManagementService);
-    const nodeId = c.req.param('nodeId');
-    const containerId = c.req.param('containerId');
-    const rawQuery = c.req.query();
-    const { path } = FileBrowseSchema.parse(rawQuery);
-    const data = await service.listDirectory(nodeId, containerId, path);
-    return c.json({ data });
-  });
+  router.get(
+    '/nodes/:nodeId/containers/:containerId/files',
+    requireScopeForResource('docker:containers:files', 'nodeId'),
+    async (c) => {
+      const service = container.resolve(DockerManagementService);
+      const nodeId = c.req.param('nodeId');
+      const containerId = c.req.param('containerId');
+      const rawQuery = c.req.query();
+      const { path } = FileBrowseSchema.parse(rawQuery);
+      const data = await service.listDirectory(nodeId, containerId, path);
+      return c.json({ data });
+    }
+  );
 
   // Read file
   router.get(
     '/nodes/:nodeId/containers/:containerId/files/read',
-    requireScope('docker:containers:files'),
+    requireScopeForResource('docker:containers:files', 'nodeId'),
     async (c) => {
       const service = container.resolve(DockerManagementService);
       const nodeId = c.req.param('nodeId');
@@ -344,7 +404,7 @@ export function registerContainerRoutes(router: OpenAPIHono<AppEnv>) {
   // Write file
   router.put(
     '/nodes/:nodeId/containers/:containerId/files/write',
-    requireScope('docker:containers:files'),
+    requireScopeForResource('docker:containers:files', 'nodeId'),
     async (c) => {
       const service = container.resolve(DockerManagementService);
       const nodeId = c.req.param('nodeId');

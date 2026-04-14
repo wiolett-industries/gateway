@@ -38,28 +38,7 @@ import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useCAStore } from "@/stores/ca";
 import type { Node, PermissionGroup, ProxyHost } from "@/types";
-import { TOKEN_SCOPES } from "@/types";
-
-/** Scopes that can be restricted to specific resources (CAs, nodes, or proxy hosts) */
-const RESTRICTABLE_SCOPES = [
-  "pki:cert:issue",
-  "pki:cert:revoke",
-  "pki:cert:export",
-  "pki:ca:create:intermediate",
-  "proxy:view",
-  "proxy:edit",
-  "proxy:delete",
-  "proxy:advanced",
-  "proxy:raw:read",
-  "proxy:raw:write",
-  "proxy:raw:toggle",
-  "nodes:details",
-  "nodes:config:view",
-  "nodes:config:edit",
-  "nodes:logs",
-  "nodes:rename",
-  "nodes:delete",
-];
+import { RESOURCE_SCOPABLE_SCOPES, TOKEN_SCOPES } from "@/types";
 
 /**
  * Parse a scopes array into base selections + resource map.
@@ -74,7 +53,7 @@ function parseScopesForForm(scopes: string[]) {
   for (const s of scopes) {
     // Check if this scope is a resource-scoped version of a restrictable scope
     let matched = false;
-    for (const base of RESTRICTABLE_SCOPES) {
+    for (const base of RESOURCE_SCOPABLE_SCOPES) {
       if (s.startsWith(`${base}:`)) {
         const resourceId = s.slice(base.length + 1);
         if (!baseScopes.includes(base)) baseScopes.push(base);
@@ -413,7 +392,7 @@ export function AdminGroups() {
                 cas={cas}
                 nodes={nodesList}
                 proxyHosts={proxyHostsList}
-                restrictableScopes={RESTRICTABLE_SCOPES}
+                restrictableScopes={RESOURCE_SCOPABLE_SCOPES}
                 inheritedScopes={
                   formParentId
                     ? [

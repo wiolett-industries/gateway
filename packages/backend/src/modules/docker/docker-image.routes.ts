@@ -1,6 +1,6 @@
 import type { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
-import { requireScope } from '@/modules/auth/auth.middleware.js';
+import { requireScopeForResource } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import { ImagePullSchema } from './docker.schemas.js';
 import { DockerManagementService } from './docker.service.js';
@@ -10,7 +10,7 @@ export function registerImageRoutes(router: OpenAPIHono<AppEnv>) {
   // ─── Image routes ────────────────────────────────────────────────────
 
   // List images
-  router.get('/nodes/:nodeId/images', requireScope('docker:images:list'), async (c) => {
+  router.get('/nodes/:nodeId/images', requireScopeForResource('docker:images:list', 'nodeId'), async (c) => {
     const service = container.resolve(DockerManagementService);
     const nodeId = c.req.param('nodeId');
     const data = await service.listImages(nodeId);
@@ -18,7 +18,7 @@ export function registerImageRoutes(router: OpenAPIHono<AppEnv>) {
   });
 
   // Pull image
-  router.post('/nodes/:nodeId/images/pull', requireScope('docker:images:pull'), async (c) => {
+  router.post('/nodes/:nodeId/images/pull', requireScopeForResource('docker:images:pull', 'nodeId'), async (c) => {
     const service = container.resolve(DockerManagementService);
     const registryService = container.resolve(DockerRegistryService);
     const nodeId = c.req.param('nodeId');
@@ -46,7 +46,7 @@ export function registerImageRoutes(router: OpenAPIHono<AppEnv>) {
   });
 
   // Pull image (synchronous — waits for completion, validates image exists)
-  router.post('/nodes/:nodeId/images/pull-sync', requireScope('docker:images:pull'), async (c) => {
+  router.post('/nodes/:nodeId/images/pull-sync', requireScopeForResource('docker:images:pull', 'nodeId'), async (c) => {
     const registryService = container.resolve(DockerRegistryService);
     const nodeId = c.req.param('nodeId');
     const body = await c.req.json();
@@ -80,18 +80,22 @@ export function registerImageRoutes(router: OpenAPIHono<AppEnv>) {
   });
 
   // Remove image
-  router.delete('/nodes/:nodeId/images/:imageId', requireScope('docker:images:delete'), async (c) => {
-    const service = container.resolve(DockerManagementService);
-    const nodeId = c.req.param('nodeId');
-    const imageId = c.req.param('imageId');
-    const user = c.get('user')!;
-    const force = c.req.query('force') === 'true';
-    await service.removeImage(nodeId, imageId, force, user.id);
-    return c.json({ success: true });
-  });
+  router.delete(
+    '/nodes/:nodeId/images/:imageId',
+    requireScopeForResource('docker:images:delete', 'nodeId'),
+    async (c) => {
+      const service = container.resolve(DockerManagementService);
+      const nodeId = c.req.param('nodeId');
+      const imageId = c.req.param('imageId');
+      const user = c.get('user')!;
+      const force = c.req.query('force') === 'true';
+      await service.removeImage(nodeId, imageId, force, user.id);
+      return c.json({ success: true });
+    }
+  );
 
   // Prune images
-  router.post('/nodes/:nodeId/images/prune', requireScope('docker:images:delete'), async (c) => {
+  router.post('/nodes/:nodeId/images/prune', requireScopeForResource('docker:images:delete', 'nodeId'), async (c) => {
     const service = container.resolve(DockerManagementService);
     const nodeId = c.req.param('nodeId');
     const user = c.get('user')!;

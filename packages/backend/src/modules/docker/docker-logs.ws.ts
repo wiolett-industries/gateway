@@ -219,7 +219,7 @@ async function authenticateAndStartStream(
   }
 
   // Check docker:view scope
-  if (!hasScope(user.scopes, 'docker:containers:view')) {
+  if (!hasScope(user.scopes, `docker:containers:view:${nodeId}`)) {
     send(ws, { type: 'auth_error', message: 'Missing required scope: docker:view' });
     ws.close(1008, 'Insufficient permissions');
     return;

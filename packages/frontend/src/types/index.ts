@@ -387,6 +387,47 @@ export interface AlertCategoryDef {
   variables: Array<{ name: string; description: string }>;
 }
 
+export const RESOURCE_SCOPABLE_SCOPES = [
+  "pki:cert:issue",
+  "pki:cert:revoke",
+  "pki:cert:export",
+  "pki:ca:create:intermediate",
+  "proxy:view",
+  "proxy:edit",
+  "proxy:delete",
+  "proxy:advanced",
+  "proxy:raw:read",
+  "proxy:raw:write",
+  "proxy:raw:toggle",
+  "nodes:details",
+  "nodes:config:view",
+  "nodes:config:edit",
+  "nodes:logs",
+  "nodes:rename",
+  "nodes:delete",
+  "docker:containers:list",
+  "docker:containers:view",
+  "docker:containers:create",
+  "docker:containers:edit",
+  "docker:containers:manage",
+  "docker:containers:environment",
+  "docker:containers:delete",
+  "docker:containers:console",
+  "docker:containers:files",
+  "docker:containers:secrets",
+  "docker:containers:webhooks",
+  "docker:images:list",
+  "docker:images:pull",
+  "docker:images:delete",
+  "docker:volumes:list",
+  "docker:volumes:create",
+  "docker:volumes:delete",
+  "docker:networks:list",
+  "docker:networks:create",
+  "docker:networks:edit",
+  "docker:networks:delete",
+] as const;
+
 // API Token / Group scopes
 export const TOKEN_SCOPES = [
   // PKI: Certificate Authorities
