@@ -86,6 +86,13 @@ export const ContainerRecreateSchema = z.object({
   user: z.string().optional(),
   hostname: z.string().optional(),
   labels: z.record(z.string()).optional(),
+  restartPolicy: z.enum(['no', 'always', 'unless-stopped', 'on-failure']).optional(),
+  maxRetries: z.number().int().min(0).optional(),
+  memoryLimit: z.number().int().min(0).optional(),
+  memorySwap: z.number().int().optional(),
+  nanoCPUs: z.number().int().min(0).optional(),
+  cpuShares: z.number().int().min(0).optional(),
+  pidsLimit: z.number().int().min(0).optional(),
 });
 
 // Container action params

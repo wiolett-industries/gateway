@@ -554,13 +554,13 @@ func (c *Client) UpdateContainer(ctx context.Context, id string, newTag string, 
 // without recreating it. This uses Docker's ContainerUpdate API.
 func (c *Client) LiveUpdateContainer(ctx context.Context, id string, configJSON string) error {
 	var params struct {
-		RestartPolicy string `json:"restartPolicy"`
-		MaxRetries    int    `json:"maxRetries"`
-		MemoryLimit   int64  `json:"memoryLimit"` // bytes
-		MemorySwap    int64  `json:"memorySwap"`  // bytes, -1 = unlimited
-		NanoCPUs      int64  `json:"nanoCPUs"`    // 1e9 = 1 CPU
-		CpuShares     int64  `json:"cpuShares"`
-		PidsLimit     int64  `json:"pidsLimit"` // 0 = unlimited
+		RestartPolicy *string `json:"restartPolicy"`
+		MaxRetries    *int    `json:"maxRetries"`
+		MemoryLimit   *int64  `json:"memoryLimit"` // bytes
+		MemorySwap    *int64  `json:"memorySwap"`  // bytes, -1 = unlimited
+		NanoCPUs      *int64  `json:"nanoCPUs"`    // 1e9 = 1 CPU
+		CpuShares     *int64  `json:"cpuShares"`
+		PidsLimit     *int64  `json:"pidsLimit"` // 0 = unlimited
 	}
 	if err := json.Unmarshal([]byte(configJSON), &params); err != nil {
 		return fmt.Errorf("parse live update params: %w", err)
@@ -569,10 +569,10 @@ func (c *Client) LiveUpdateContainer(ctx context.Context, id string, configJSON 
 	opts := client.ContainerUpdateOptions{}
 
 	// Restart policy
-	if params.RestartPolicy != "" {
-		policy := container.RestartPolicy{Name: container.RestartPolicyMode(params.RestartPolicy)}
-		if params.RestartPolicy == "on-failure" && params.MaxRetries > 0 {
-			policy.MaximumRetryCount = params.MaxRetries
+	if params.RestartPolicy != nil {
+		policy := container.RestartPolicy{Name: container.RestartPolicyMode(*params.RestartPolicy)}
+		if *params.RestartPolicy == "on-failure" && params.MaxRetries != nil {
+			policy.MaximumRetryCount = *params.MaxRetries
 		}
 		opts.RestartPolicy = &policy
 	}
@@ -580,24 +580,25 @@ func (c *Client) LiveUpdateContainer(ctx context.Context, id string, configJSON 
 	// Resource limits
 	resources := container.Resources{}
 	hasResources := false
-	if params.MemoryLimit > 0 {
-		resources.Memory = params.MemoryLimit
+	if params.MemoryLimit != nil {
+		resources.Memory = *params.MemoryLimit
 		hasResources = true
 	}
-	if params.MemorySwap != 0 {
-		resources.MemorySwap = params.MemorySwap
+	if params.MemorySwap != nil {
+		resources.MemorySwap = *params.MemorySwap
 		hasResources = true
 	}
-	if params.NanoCPUs > 0 {
-		resources.NanoCPUs = params.NanoCPUs
+	if params.NanoCPUs != nil {
+		resources.NanoCPUs = *params.NanoCPUs
 		hasResources = true
 	}
-	if params.CpuShares > 0 {
-		resources.CPUShares = params.CpuShares
+	if params.CpuShares != nil {
+		resources.CPUShares = *params.CpuShares
 		hasResources = true
 	}
-	if params.PidsLimit > 0 {
-		resources.PidsLimit = &params.PidsLimit
+	if params.PidsLimit != nil {
+		pids := *params.PidsLimit
+		resources.PidsLimit = &pids
 		hasResources = true
 	}
 	if hasResources {
@@ -627,12 +628,19 @@ func (c *Client) RecreateWithConfig(ctx context.Context, id string, configJSON s
 			Name          string `json:"name"`
 			ReadOnly      bool   `json:"readOnly"`
 		} `json:"mounts"`
-		Entrypoint []string          `json:"entrypoint"`
-		Command    []string          `json:"command"`
-		WorkingDir string            `json:"workingDir"`
-		User       string            `json:"user"`
-		Hostname   string            `json:"hostname"`
-		Labels     map[string]string `json:"labels"`
+		Entrypoint    []string          `json:"entrypoint"`
+		Command       []string          `json:"command"`
+		WorkingDir    string            `json:"workingDir"`
+		User          string            `json:"user"`
+		Hostname      string            `json:"hostname"`
+		Labels        map[string]string `json:"labels"`
+		RestartPolicy *string           `json:"restartPolicy"`
+		MaxRetries    *int              `json:"maxRetries"`
+		MemoryLimit   *int64            `json:"memoryLimit"`
+		MemorySwap    *int64            `json:"memorySwap"`
+		NanoCPUs      *int64            `json:"nanoCPUs"`
+		CpuShares     *int64            `json:"cpuShares"`
+		PidsLimit     *int64            `json:"pidsLimit"`
 	}
 	if err := json.Unmarshal([]byte(configJSON), &params); err != nil {
 		return fmt.Errorf("parse recreate config: %w", err)
@@ -718,6 +726,33 @@ func (c *Client) RecreateWithConfig(ctx context.Context, id string, configJSON s
 	// Apply labels override
 	if params.Labels != nil {
 		insp.Config.Labels = params.Labels
+	}
+
+	// Apply runtime overrides to HostConfig so they persist after recreation.
+	if params.RestartPolicy != nil {
+		policy := container.RestartPolicy{Name: container.RestartPolicyMode(*params.RestartPolicy)}
+		if *params.RestartPolicy == "on-failure" && params.MaxRetries != nil {
+			policy.MaximumRetryCount = *params.MaxRetries
+		}
+		insp.HostConfig.RestartPolicy = policy
+	} else if params.MaxRetries != nil && insp.HostConfig.RestartPolicy.Name == "on-failure" {
+		insp.HostConfig.RestartPolicy.MaximumRetryCount = *params.MaxRetries
+	}
+	if params.MemoryLimit != nil {
+		insp.HostConfig.Memory = *params.MemoryLimit
+	}
+	if params.MemorySwap != nil {
+		insp.HostConfig.MemorySwap = *params.MemorySwap
+	}
+	if params.NanoCPUs != nil {
+		insp.HostConfig.NanoCPUs = *params.NanoCPUs
+	}
+	if params.CpuShares != nil {
+		insp.HostConfig.CPUShares = *params.CpuShares
+	}
+	if params.PidsLimit != nil {
+		pids := *params.PidsLimit
+		insp.HostConfig.PidsLimit = &pids
 	}
 
 	imageRef := params.Image

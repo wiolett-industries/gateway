@@ -11,6 +11,7 @@ import {
 
 interface RuntimeSectionProps {
   canEdit: boolean;
+  appliesLive: boolean;
   restartPolicy: string;
   setRestartPolicy: (v: string) => void;
   maxRetries: string;
@@ -32,6 +33,7 @@ interface RuntimeSectionProps {
 
 export function RuntimeSection({
   canEdit,
+  appliesLive,
   restartPolicy,
   setRestartPolicy,
   maxRetries,
@@ -55,12 +57,16 @@ export function RuntimeSection({
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div>
           <h3 className="text-sm font-semibold">Runtime Settings</h3>
-          <p className="text-xs text-muted-foreground">Applied instantly without restart</p>
+          <p className="text-xs text-muted-foreground">
+            {appliesLive
+              ? "Applied instantly without restart"
+              : "Saved with container configuration"}
+          </p>
         </div>
         {canEdit && (
           <Button size="sm" onClick={onApply} disabled={liveLoading || !hasRuntimeChanges}>
             <Save className="h-3.5 w-3.5" />
-            Apply
+            {appliesLive ? "Apply" : "Save"}
           </Button>
         )}
       </div>
