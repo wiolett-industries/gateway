@@ -13,6 +13,7 @@ todo.md
 # Nx
 .nx/cache
 .nx/workspace-data
+.cache/
 
 # Go
 packages/daemons/nginx/bin/
