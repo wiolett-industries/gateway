@@ -57,6 +57,7 @@ const STATUS_BADGE: Record<
   degraded: "warning",
   pending: "secondary",
   error: "destructive",
+  updating: "warning",
 };
 
 export function AdminNodeDetail() {
@@ -199,6 +200,7 @@ export function AdminNodeDetail() {
 
   const nodeUpdating = isNodeUpdating(node);
   const updateTargetVersion = getNodeUpdateTargetVersion(node);
+  const nodeState = nodeUpdating ? "updating" : effectiveNodeStatus(node);
 
   return (
     <PageTransition>
@@ -214,19 +216,14 @@ export function AdminNodeDetail() {
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-2xl font-bold">{node.displayName || node.hostname}</h1>
-                {(() => {
-                  const s = effectiveNodeStatus(node);
-                  return <Badge variant={STATUS_BADGE[s] || "secondary"}>{s}</Badge>;
-                })()}
-                {nodeUpdating && (
-                  <Badge variant="warning">
-                    Updating{updateTargetVersion ? ` to ${updateTargetVersion}` : ""}
-                  </Badge>
-                )}
+                <Badge variant={STATUS_BADGE[nodeState] || "secondary"}>{nodeState}</Badge>
               </div>
               <p className="text-sm text-muted-foreground">
                 {node.hostname} &middot; {node.type} &middot;{" "}
                 {node.daemonVersion ?? "unknown version"}
+                {nodeUpdating && updateTargetVersion ? (
+                  <> &middot; updating to {updateTargetVersion}</>
+                ) : null}
                 {node.osInfo ? <> &middot; {node.osInfo}</> : null}
               </p>
             </div>
@@ -281,13 +278,6 @@ export function AdminNodeDetail() {
         {/* Health bars */}
         <HealthBars history={node.healthHistory} currentStatus={node.status} />
 
-        {nodeUpdating && (
-          <div className="border border-yellow-500/40 bg-yellow-500/10 p-3 text-sm text-yellow-100">
-            Daemon update in progress. Node actions are locked until the node reconnects on the new
-            version.
-          </div>
-        )}
-
         {/* Tabs */}
         <Tabs
           value={activeTab}
@@ -327,9 +317,6 @@ export function AdminNodeDetail() {
           )}
 
           <div className="relative flex-1 min-h-0">
-            {nodeUpdating && (
-              <div className="absolute inset-0 z-10 cursor-not-allowed bg-background/45 backdrop-blur-[1px]" />
-            )}
             <TabsContent value="details" className="pb-6">
               <NodeDetailsTab node={node} />
             </TabsContent>

@@ -161,29 +161,17 @@ export function NodeDetailsTab({ node }: NodeDetailsTabProps) {
         <div className="border border-border bg-card">
           <div className="flex items-center justify-between border-b border-border p-4">
             <h2 className="font-semibold">Runtime</h2>
-            {nodeUpdating ? (
+            {!nodeUpdating && daemonUpdate.available && (
               <Button
                 size="sm"
                 style={{ backgroundColor: "rgb(234 179 8)", color: "#111" }}
                 className="hover:opacity-90 disabled:opacity-50"
-                disabled
+                onClick={handleDaemonUpdate}
+                disabled={isUpdating}
               >
                 <ArrowUpCircle className="h-3.5 w-3.5" />
-                Updating{updateTargetVersion ? ` to ${updateTargetVersion}` : "..."}
+                Update to {daemonUpdate.latestVersion}
               </Button>
-            ) : (
-              daemonUpdate.available && (
-                <Button
-                  size="sm"
-                  style={{ backgroundColor: "rgb(234 179 8)", color: "#111" }}
-                  className="hover:opacity-90 disabled:opacity-50"
-                  onClick={handleDaemonUpdate}
-                  disabled={isUpdating}
-                >
-                  <ArrowUpCircle className="h-3.5 w-3.5" />
-                  Update to {daemonUpdate.latestVersion}
-                </Button>
-              )
             )}
           </div>
           <div className="divide-y divide-border [&>*:last-child]:border-b [&>*:last-child]:border-border">
@@ -201,6 +189,11 @@ export function NodeDetailsTab({ node }: NodeDetailsTabProps) {
                   {(caps.versionMismatch as boolean) && (
                     <Badge variant="warning" className="text-xs">
                       Mismatch
+                    </Badge>
+                  )}
+                  {nodeUpdating && (
+                    <Badge variant="warning" className="text-xs">
+                      Updating{updateTargetVersion ? ` to ${updateTargetVersion}` : ""}
                     </Badge>
                   )}
                 </div>

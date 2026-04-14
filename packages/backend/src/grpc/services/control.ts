@@ -403,7 +403,7 @@ export function createControlHandlers(deps: GrpcServerDeps) {
         if (nodeId) {
           logger.info('Node stream ended', { nodeId });
           lastRecordedTs.delete(nodeId);
-          await deps.registry.deregister(nodeId);
+          await deps.registry.deregister(nodeId, stream as any);
           await deps.auditService.log({
             userId: null,
             action: 'node.disconnected',
@@ -418,7 +418,7 @@ export function createControlHandlers(deps: GrpcServerDeps) {
         if (nodeId) {
           logger.warn('Node stream error', { nodeId, error: err.message });
           lastRecordedTs.delete(nodeId);
-          await deps.registry.deregister(nodeId);
+          await deps.registry.deregister(nodeId, stream as any);
           await deps.auditService.log({
             userId: null,
             action: 'node.disconnected',
