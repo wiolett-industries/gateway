@@ -291,6 +291,9 @@ build_gitlab_api
 
 # ── Logo ──────────────────────────────────────────────────────────
 if [[ "$NO_LOGO" -eq 0 ]]; then
+    if [ -t 1 ] && command_exists clear; then
+        clear
+    fi
     show_logo
     title "Gateway Monitoring Node Setup"
 fi
