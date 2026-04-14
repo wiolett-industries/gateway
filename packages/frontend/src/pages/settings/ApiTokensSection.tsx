@@ -17,7 +17,7 @@ import { formatDate, formatRelativeDate } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useCAStore } from "@/stores/ca";
 import type { Node, ProxyHost, User } from "@/types";
-import { type ApiToken, TOKEN_SCOPES } from "@/types";
+import { type ApiToken, RESOURCE_SCOPABLE_SCOPES, TOKEN_SCOPES } from "@/types";
 
 interface ApiTokensSectionProps {
   user: User | null;
@@ -56,27 +56,8 @@ export function ApiTokensSection({ user, nodesList, proxyHostsList }: ApiTokensS
     const base: string[] = [];
     const res: Record<string, string[]> = {};
     for (const s of token.scopes || []) {
-      const restrictable = [
-        "pki:cert:issue",
-        "pki:cert:revoke",
-        "pki:cert:export",
-        "pki:ca:create:intermediate",
-        "proxy:view",
-        "proxy:edit",
-        "proxy:delete",
-        "proxy:advanced",
-        "proxy:raw:read",
-        "proxy:raw:write",
-        "proxy:raw:toggle",
-        "nodes:details",
-        "nodes:config:view",
-        "nodes:config:edit",
-        "nodes:logs",
-        "nodes:rename",
-        "nodes:delete",
-      ];
       let matched = false;
-      for (const b of restrictable) {
+      for (const b of RESOURCE_SCOPABLE_SCOPES) {
         if (s.startsWith(`${b}:`)) {
           if (!base.includes(b)) base.push(b);
           if (!res[b]) res[b] = [];
@@ -329,25 +310,7 @@ export function ApiTokensSection({ user, nodesList, proxyHostsList }: ApiTokensS
                     cas={cas}
                     nodes={nodesList}
                     proxyHosts={proxyHostsList}
-                    restrictableScopes={[
-                      "pki:cert:issue",
-                      "pki:cert:revoke",
-                      "pki:cert:export",
-                      "pki:ca:create:intermediate",
-                      "proxy:view",
-                      "proxy:edit",
-                      "proxy:delete",
-                      "proxy:advanced",
-                      "proxy:raw:read",
-                      "proxy:raw:write",
-                      "proxy:raw:toggle",
-                      "nodes:details",
-                      "nodes:config:view",
-                      "nodes:config:edit",
-                      "nodes:logs",
-                      "nodes:rename",
-                      "nodes:delete",
-                    ]}
+                    restrictableScopes={RESOURCE_SCOPABLE_SCOPES}
                   />
                   <div className="border-t border-border px-3 py-2">
                     <p className="text-xs text-muted-foreground">

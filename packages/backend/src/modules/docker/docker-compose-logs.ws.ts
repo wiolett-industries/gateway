@@ -116,7 +116,7 @@ async function startComposeStream(
     ws.close(1008, 'Auth failed');
     return;
   }
-  if (!hasScope(user.scopes, 'docker:containers:view')) {
+  if (!hasScope(user.scopes, `docker:containers:view:${nodeId}`)) {
     send(ws, { type: 'auth_error', message: 'Missing scope' });
     ws.close(1008, 'Insufficient permissions');
     return;

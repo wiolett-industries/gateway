@@ -46,6 +46,9 @@ function getResourceOptions(
   nodes?: Node[],
   proxyHosts?: ProxyHost[]
 ): ResourceOption[] {
+  if (scope.startsWith("docker:")) {
+    return (nodes ?? []).map((n) => ({ id: n.id, label: n.displayName || n.hostname }));
+  }
   if (scope.startsWith("nodes:")) {
     return (nodes ?? []).map((n) => ({ id: n.id, label: n.displayName || n.hostname }));
   }
@@ -59,6 +62,9 @@ function getResourceOptions(
 }
 
 function getResourceLabel(scope: string): string {
+  if (scope.startsWith("docker:")) {
+    return "Restrict to specific Docker nodes (leave unchecked for all):";
+  }
   if (scope.startsWith("nodes:")) return "Restrict to specific nodes (leave unchecked for all):";
   if (scope.startsWith("proxy:"))
     return "Restrict to specific proxy hosts (leave unchecked for all):";
