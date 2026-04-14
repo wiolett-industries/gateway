@@ -23,6 +23,18 @@ interface GitLabRelease {
   _links: { self: string };
 }
 
+export function isGatewayReleaseTag(tag: string): boolean {
+  return /^v?\d+\.\d+\.\d+$/.test(tag);
+}
+
+export function selectLatestGatewayRelease(releases: GitLabRelease[]): GitLabRelease | null {
+  const matching = releases
+    .filter((release) => isGatewayReleaseTag(release.tag_name))
+    .sort((a, b) => compareSemver(b.tag_name, a.tag_name));
+
+  return matching[0] ?? null;
+}
+
 const SETTINGS_KEYS = {
   latestVersion: 'update:latest_version',
   lastCheckedAt: 'update:last_checked_at',
@@ -108,7 +120,12 @@ export class UpdateService {
         return this.getCachedStatus();
       }
 
-      const latest = releases[0];
+      const latest = selectLatestGatewayRelease(releases);
+      if (!latest) {
+        logger.debug('No gateway releases found');
+        return this.getCachedStatus();
+      }
+
       const latestVersion = latest.tag_name;
       const releaseNotes = latest.description || null;
       const releaseUrl = latest._links?.self || null;
@@ -178,7 +195,7 @@ export class UpdateService {
     return releases
       .filter((r) => {
         const tag = r.tag_name;
-        return compareSemver(tag, after) > 0 && compareSemver(tag, upTo) <= 0;
+        return isGatewayReleaseTag(tag) && compareSemver(tag, after) > 0 && compareSemver(tag, upTo) <= 0;
       })
       .sort((a, b) => compareSemver(b.tag_name, a.tag_name))
       .map((r) => ({ version: r.tag_name, notes: r.description || '' }));

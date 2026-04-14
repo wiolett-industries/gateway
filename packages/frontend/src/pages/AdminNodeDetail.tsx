@@ -1,4 +1,4 @@
-import { ArrowLeft, Pencil, Pin, Trash2 } from "lucide-react";
+import { ArrowLeft, ArrowUpCircle, EllipsisVertical, Pencil, Pin, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -13,6 +13,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { HealthBars } from "@/components/ui/health-bars";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -77,6 +84,7 @@ export function AdminNodeDetail() {
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameName, setRenameName] = useState("");
   const [renaming, setRenaming] = useState(false);
+  const [checkingUpdates, setCheckingUpdates] = useState(false);
 
   // Pin dialog
   const [pinOpen, setPinOpen] = useState(false);
@@ -158,6 +166,26 @@ export function AdminNodeDetail() {
     }
   };
 
+  const handleCheckUpdates = async () => {
+    if (!node) return;
+    setCheckingUpdates(true);
+    try {
+      const statuses = await api.checkDaemonUpdates();
+      const typeStatus = statuses.find((status) => status.daemonType === node.type);
+      const nodeStatus = typeStatus?.nodes.find((status) => status.nodeId === node.id);
+
+      if (nodeStatus?.updateAvailable && typeStatus?.latestVersion) {
+        toast.info(`Update available: ${typeStatus.latestVersion}`);
+      } else {
+        toast.success("Node daemon is already up to date");
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to check daemon updates");
+    } finally {
+      setCheckingUpdates(false);
+    }
+  };
+
   if (isLoading || !node) {
     return (
       <div className="flex items-center justify-center py-16 text-muted-foreground">Loading...</div>
@@ -207,11 +235,31 @@ export function AdminNodeDetail() {
                 Rename
               </Button>
             )}
-            {hasScope("nodes:delete") && (
-              <Button variant="outline" onClick={handleDelete}>
-                <Trash2 className="h-4 w-4" />
-                Remove
-              </Button>
+            {(hasScope("admin:update") || hasScope("nodes:delete")) && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="icon" disabled={checkingUpdates}>
+                    <EllipsisVertical className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {hasScope("admin:update") && (
+                    <DropdownMenuItem onClick={handleCheckUpdates}>
+                      <ArrowUpCircle className="h-3.5 w-3.5 mr-2" />
+                      Check for updates
+                    </DropdownMenuItem>
+                  )}
+                  {hasScope("admin:update") && hasScope("nodes:delete") && (
+                    <DropdownMenuSeparator />
+                  )}
+                  {hasScope("nodes:delete") && (
+                    <DropdownMenuItem onClick={handleDelete} className="text-destructive">
+                      <Trash2 className="h-3.5 w-3.5 mr-2" />
+                      Remove
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
           </div>
         </div>

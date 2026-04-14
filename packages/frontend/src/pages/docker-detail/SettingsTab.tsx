@@ -34,7 +34,8 @@ export function SettingsTab({
   const { hasScope } = useAuthStore();
   const invalidate = useDockerStore((s) => s.invalidate);
   const canEdit = hasScope("docker:containers:edit");
-  const recreatesRunningContainer = (data.State?.Status ?? (data.State?.Running ? "running" : "stopped")) === "running";
+  const recreatesRunningContainer =
+    (data.State?.Status ?? (data.State?.Running ? "running" : "stopped")) === "running";
 
   // ── Live settings state (no recreation) ──
   const hostConfig = data.HostConfig ?? {};
@@ -333,7 +334,9 @@ export function SettingsTab({
       }
 
       await api.recreateWithConfig(nodeId, containerId, payload);
-      toast.success(recreatesRunningContainer ? "Recreating container..." : "Container configuration saved");
+      toast.success(
+        recreatesRunningContainer ? "Recreating container..." : "Container configuration saved"
+      );
       // Trigger an immediate parent refresh; the realtime channel will deliver
       // the recreate event (with new id) to every open tab, including this one,
       // and the parent navigates accordingly.
@@ -362,6 +365,7 @@ export function SettingsTab({
     ports,
     portsChanged,
     recreateBaseline,
+    recreatesRunningContainer,
     user,
     workingDir,
   ]);
