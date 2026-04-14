@@ -11,6 +11,7 @@ import type { EventBusService } from '@/services/event-bus.service.js';
 const logger = createChildLogger('NodeRegistry');
 
 export interface ConnectedNode {
+  connectionId: string;
   nodeId: string;
   type: 'nginx' | 'bastion' | 'monitoring' | 'docker';
   hostname: string;
@@ -103,14 +104,27 @@ export class NodeRegistryService {
     configVersionHash: string,
     commandStream: ServerDuplexStream<DaemonMessage, GatewayCommand>
   ): Promise<void> {
-    // Reject duplicate connection — only one daemon per node ID allowed
+    const connectionId = randomUUID();
+
+    // Replace stale/overlapping connection for the same node ID.
     const existing = this.nodes.get(nodeId);
     if (existing) {
-      logger.warn('Duplicate daemon connection rejected — another instance already connected', { nodeId, hostname });
-      throw new Error(`Node ${nodeId} is already connected. Only one daemon instance per node is allowed.`);
+      logger.warn('Replacing existing daemon connection for node', { nodeId, hostname });
+      this.cleanupPendingCommands(existing);
+      try {
+        existing.commandStream.end();
+      } catch {
+        /* ignore */
+      }
+      try {
+        (existing.commandStream as any).destroy?.();
+      } catch {
+        /* ignore */
+      }
     }
 
     this.nodes.set(nodeId, {
+      connectionId,
       nodeId,
       type,
       hostname,
@@ -138,9 +152,13 @@ export class NodeRegistryService {
     this.eventBus?.publish('node.changed', { id: nodeId, action: 'updated', status: 'online', hostname });
   }
 
-  async deregister(nodeId: string): Promise<void> {
+  async deregister(nodeId: string, commandStream?: ServerDuplexStream<DaemonMessage, GatewayCommand>): Promise<void> {
     const node = this.nodes.get(nodeId);
-    if (!node) return; // Already removed (e.g., replaced by reconnect)
+    if (!node) return; // Already removed
+    if (commandStream && node.commandStream !== commandStream) {
+      logger.debug('Ignoring stale deregister for replaced node stream', { nodeId });
+      return;
+    }
 
     this.cleanupPendingCommands(node);
     this.nodes.delete(nodeId);
