@@ -13,6 +13,10 @@ LOG_FILE="/tmp/gateway_install.log"
 NO_LOGO=0
 NON_INTERACTIVE=0
 APT_UPDATED=0
+OS_RELEASE_LOADED=0
+OS_ID=""
+OS_ID_LIKE=""
+OS_VERSION_CODENAME=""
 
 # Non-interactive config (set via flags or env vars)
 OPT_DOMAIN="${GATEWAY_DOMAIN:-}"
@@ -179,6 +183,155 @@ pkg_update_once() {
     fi
 }
 
+load_os_release() {
+    if [ "$OS_RELEASE_LOADED" -eq 1 ]; then
+        return
+    fi
+
+    if [ ! -f /etc/os-release ]; then
+        error "Cannot detect operating system: /etc/os-release not found."
+    fi
+
+    # shellcheck disable=SC1091
+    . /etc/os-release
+    OS_ID="${ID:-}"
+    OS_ID_LIKE="${ID_LIKE:-}"
+    OS_VERSION_CODENAME="${VERSION_CODENAME:-}"
+    OS_RELEASE_LOADED=1
+}
+
+docker_repo_distro_family() {
+    load_os_release
+
+    case "$OS_ID" in
+        ubuntu) echo "ubuntu" ;;
+        debian) echo "debian" ;;
+        fedora) echo "fedora" ;;
+        rhel) echo "rhel" ;;
+        centos|centos_stream) echo "centos" ;;
+        *)
+            if [[ "$OS_ID_LIKE" == *ubuntu* ]]; then
+                echo "ubuntu"
+            elif [[ "$OS_ID_LIKE" == *debian* ]]; then
+                echo "debian"
+            elif [[ "$OS_ID_LIKE" == *fedora* ]]; then
+                echo "fedora"
+            elif [[ "$OS_ID_LIKE" == *rhel* ]] || [[ "$OS_ID_LIKE" == *centos* ]]; then
+                echo "rhel"
+            else
+                echo ""
+            fi
+            ;;
+    esac
+}
+
+setup_docker_apt_repository() {
+    local repo_distro="$1"
+
+    info "Configuring Docker apt repository..."
+    install_system_packages ca-certificates curl gnupg
+
+    run_privileged_quiet install -m 0755 -d /etc/apt/keyrings
+    run_privileged_quiet curl -fsSL "https://download.docker.com/linux/${repo_distro}/gpg" -o /etc/apt/keyrings/docker.asc
+    run_privileged_quiet chmod a+r /etc/apt/keyrings/docker.asc
+
+    local codename="$OS_VERSION_CODENAME"
+    if [ -z "$codename" ] && command -v lsb_release &>/dev/null; then
+        codename=$(lsb_release -cs 2>/dev/null || true)
+    fi
+    [ -n "$codename" ] || error "Could not determine distribution codename for Docker apt repository."
+
+    local arch
+    arch=$(dpkg --print-architecture)
+    run_privileged_quiet tee /etc/apt/sources.list.d/docker.sources >/dev/null <<EOF
+Types: deb
+URIs: https://download.docker.com/linux/${repo_distro}
+Suites: ${codename}
+Components: stable
+Architectures: ${arch}
+Signed-By: /etc/apt/keyrings/docker.asc
+EOF
+
+    APT_UPDATED=0
+    pkg_update_once
+}
+
+setup_docker_rpm_repository() {
+    local repo_distro="$1"
+    local repo_url="https://download.docker.com/linux/${repo_distro}/docker-ce.repo"
+
+    info "Configuring Docker rpm repository..."
+    ensure_curl_installed
+
+    if command -v dnf &>/dev/null; then
+        install_system_packages dnf-plugins-core
+    elif command -v yum &>/dev/null; then
+        install_system_packages yum-utils
+    fi
+
+    run_privileged_quiet curl -fsSL "$repo_url" -o /etc/yum.repos.d/docker-ce.repo
+}
+
+remove_conflicting_docker_packages() {
+    local repo_family="$1"
+
+    case "$repo_family" in
+        ubuntu)
+            info "Removing conflicting Docker packages..."
+            local packages=()
+            while IFS= read -r package; do
+                [ -n "$package" ] && packages+=("$package")
+            done < <(dpkg --get-selections docker.io docker-compose docker-compose-v2 docker-doc podman-docker containerd runc 2>/dev/null | awk '{print $1}')
+            if [ "${#packages[@]}" -gt 0 ]; then
+                run_privileged_quiet apt remove -y "${packages[@]}"
+                APT_UPDATED=0
+            fi
+            ;;
+        debian)
+            info "Removing conflicting Docker packages..."
+            local packages=()
+            while IFS= read -r package; do
+                [ -n "$package" ] && packages+=("$package")
+            done < <(dpkg --get-selections docker.io docker-compose docker-doc podman-docker containerd runc 2>/dev/null | awk '{print $1}')
+            if [ "${#packages[@]}" -gt 0 ]; then
+                run_privileged_quiet apt remove -y "${packages[@]}"
+                APT_UPDATED=0
+            fi
+            ;;
+        fedora|centos|rhel)
+            info "Removing conflicting Docker packages..."
+            if command -v dnf &>/dev/null; then
+                run_privileged_quiet dnf remove -y docker docker-client docker-client-latest docker-common docker-latest docker-latest-logrotate docker-logrotate docker-engine podman runc || true
+            elif command -v yum &>/dev/null; then
+                run_privileged_quiet yum remove -y docker docker-client docker-client-latest docker-common docker-latest docker-latest-logrotate docker-logrotate docker-engine podman runc || true
+            fi
+            ;;
+    esac
+}
+
+install_docker_engine_from_official_repo() {
+    local repo_family
+    repo_family=$(docker_repo_distro_family)
+
+    [ -n "$repo_family" ] || error "Automatic Docker installation is only supported for Debian/Ubuntu/Fedora/CentOS/RHEL hosts."
+
+    remove_conflicting_docker_packages "$repo_family"
+
+    case "$repo_family" in
+        ubuntu|debian)
+            setup_docker_apt_repository "$repo_family"
+            install_system_packages docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+            ;;
+        fedora|centos|rhel)
+            setup_docker_rpm_repository "$repo_family"
+            install_system_packages docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+            ;;
+        *)
+            error "Unsupported Docker repository family: ${repo_family}"
+            ;;
+    esac
+}
+
 install_system_packages() {
     if [ "$#" -eq 0 ]; then
         return
@@ -211,6 +364,8 @@ ensure_docker_service_running() {
     info "Starting Docker service..."
     if command -v systemctl &>/dev/null; then
         run_privileged_quiet systemctl enable --now docker
+        run_privileged_quiet systemctl enable containerd || true
+        run_privileged_quiet systemctl start containerd || true
     elif command -v service &>/dev/null; then
         run_privileged_quiet service docker start
     fi
@@ -235,17 +390,7 @@ ensure_docker_installed() {
     fi
 
     info "Docker not found, installing it..."
-    if command -v apt-get &>/dev/null; then
-        install_system_packages docker.io
-    elif command -v yum &>/dev/null; then
-        install_system_packages docker
-    elif command -v dnf &>/dev/null; then
-        install_system_packages docker
-    elif command -v apk &>/dev/null; then
-        install_system_packages docker
-    else
-        error "Could not detect a supported package manager to install Docker automatically."
-    fi
+    install_docker_engine_from_official_repo
 
     ensure_docker_service_running
 }
@@ -255,18 +400,9 @@ ensure_docker_compose_installed() {
         return
     fi
 
-    info "Docker Compose v2 not found, installing it..."
-    if command -v apt-get &>/dev/null; then
-        install_system_packages docker-compose-plugin
-    elif command -v yum &>/dev/null; then
-        install_system_packages docker-compose-plugin
-    elif command -v dnf &>/dev/null; then
-        install_system_packages docker-compose-plugin
-    elif command -v apk &>/dev/null; then
-        install_system_packages docker-cli-compose
-    else
-        error "Could not detect a supported package manager to install Docker Compose automatically."
-    fi
+    info "Docker Compose v2 not found, installing it from Docker's repository..."
+    install_docker_engine_from_official_repo
+    ensure_docker_service_running
 
     docker compose version &>/dev/null || error "Docker Compose v2 is still unavailable after installation."
 }
