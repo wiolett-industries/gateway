@@ -32,6 +32,7 @@ import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
 import type { DockerRegistry, Node } from "@/types";
+import { isNodeIncompatible } from "@/types";
 
 export function DockerImages({
   embedded,
@@ -119,8 +120,9 @@ export function DockerImages({
 
     try {
       const r = await api.listNodes({ type: "docker", limit: 100 });
-      setDockerNodes(r.data);
-      useDockerStore.getState().setDockerNodes(r.data);
+      const onlineNodes = r.data.filter((n) => n.status === "online" && !isNodeIncompatible(n));
+      setDockerNodes(onlineNodes);
+      useDockerStore.getState().setDockerNodes(onlineNodes);
     } catch {
       toast.error("Failed to load Docker nodes");
     }

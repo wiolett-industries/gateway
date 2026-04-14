@@ -1,3 +1,4 @@
+import { useAppStatusStore } from "@/stores/app-status";
 import { useAuthStore } from "@/stores/auth";
 import type { ApiError } from "@/types";
 
@@ -11,6 +12,39 @@ interface CacheEntry<T = unknown> {
 const DEFAULT_CACHE_TTL = 60_000; // 1 minute
 
 export { API_BASE, DEFAULT_CACHE_TTL };
+
+export class ApiRequestError extends Error {
+  readonly status: number;
+  readonly code?: string;
+  readonly retryAfterSeconds?: number;
+
+  constructor(
+    message: string,
+    {
+      status,
+      code,
+      retryAfterSeconds,
+    }: { status: number; code?: string; retryAfterSeconds?: number }
+  ) {
+    super(message);
+    this.name = "ApiRequestError";
+    this.status = status;
+    this.code = code;
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
+
+function getRetryAfterSeconds(response: Response): number {
+  const retryAfter = Number(response.headers.get("Retry-After"));
+  if (Number.isFinite(retryAfter) && retryAfter > 0) return retryAfter;
+
+  const resetAt = Number(response.headers.get("X-RateLimit-Reset"));
+  if (Number.isFinite(resetAt) && resetAt > 0) {
+    return Math.max(1, Math.ceil(resetAt - Date.now() / 1000));
+  }
+
+  return 60;
+}
 
 export class ApiClientBase {
   protected cache = new Map<string, CacheEntry>();
@@ -75,6 +109,97 @@ export class ApiClientBase {
     return headers;
   }
 
+  protected async fetchRaw<T>(
+    url: string,
+    options: RequestInit = {},
+    { suppressGlobalStatus = false }: { suppressGlobalStatus?: boolean } = {}
+  ): Promise<T> {
+    let response: Response;
+
+    try {
+      response = await fetch(url, {
+        ...options,
+        headers: {
+          ...this.getHeaders(),
+          ...options.headers,
+        },
+      });
+    } catch {
+      if (!suppressGlobalStatus) {
+        useAppStatusStore.getState().setMaintenanceActive(true);
+      }
+      throw new ApiRequestError("Service unavailable", {
+        status: 0,
+        code: "SERVICE_UNAVAILABLE",
+      });
+    }
+
+    if (response.status < 500 && !suppressGlobalStatus) {
+      useAppStatusStore.getState().setMaintenanceActive(false);
+    }
+
+    if (!response.ok) {
+      if (response.status >= 500) {
+        throw new ApiRequestError("Service unavailable", {
+          status: response.status,
+          code: "SERVICE_UNAVAILABLE",
+        });
+      }
+
+      if (response.status === 429) {
+        const retryAfterSeconds = getRetryAfterSeconds(response);
+        if (!suppressGlobalStatus) {
+          useAppStatusStore.getState().activateRateLimit(retryAfterSeconds);
+        }
+        throw new ApiRequestError("Too many requests, please try again later", {
+          status: response.status,
+          code: "RATE_LIMIT_EXCEEDED",
+          retryAfterSeconds,
+        });
+      }
+
+      if (response.status === 401) {
+        useAuthStore.getState().logout();
+        window.location.href = "/login";
+        throw new ApiRequestError("Session expired", {
+          status: response.status,
+          code: "UNAUTHORIZED",
+        });
+      }
+
+      if (response.status === 403) {
+        const body = await response.json().catch(() => ({ message: "" }));
+        if (body.message === "Account is blocked") {
+          window.location.href = "/blocked";
+          throw new ApiRequestError("Account is blocked", {
+            status: response.status,
+            code: "ACCOUNT_BLOCKED",
+          });
+        }
+        throw new ApiRequestError("Insufficient permissions", {
+          status: response.status,
+          code: "FORBIDDEN",
+        });
+      }
+
+      const error: ApiError = await response.json().catch(() => ({
+        code: "UNKNOWN_ERROR",
+        message: "An unknown error occurred",
+      }));
+
+      throw new ApiRequestError(error.message, {
+        status: response.status,
+        code: error.code,
+      });
+    }
+
+    if (response.status === 204) {
+      return undefined as T;
+    }
+
+    return response.json();
+  }
+
   protected async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const url = endpoint.startsWith("/auth") ? endpoint : `${API_BASE}${endpoint}`;
     const method = (options.method || "GET").toUpperCase();
@@ -85,7 +210,7 @@ export class ApiClientBase {
       const cached = this.getCached<T>(cacheKey);
       if (cached !== undefined) {
         // Refresh in background
-        this.fetchRaw<T>(url, options)
+        this.fetchRaw<T>(url, options, { suppressGlobalStatus: true })
           .then((data) => this.setCache(cacheKey, data))
           .catch(() => {});
         return cached;
@@ -104,50 +229,6 @@ export class ApiClientBase {
       }
     }
     return this.fetchRaw<T>(url, options);
-  }
-
-  protected async fetchRaw<T>(url: string, options: RequestInit = {}): Promise<T> {
-    const response = await fetch(url, {
-      ...options,
-      headers: {
-        ...this.getHeaders(),
-        ...options.headers,
-      },
-    });
-
-    if (!response.ok) {
-      if (response.status >= 500) {
-        throw new Error("Service unavailable");
-      }
-
-      if (response.status === 401) {
-        useAuthStore.getState().logout();
-        window.location.href = "/login";
-        throw new Error("Session expired");
-      }
-
-      if (response.status === 403) {
-        const body = await response.json().catch(() => ({ message: "" }));
-        if (body.message === "Account is blocked") {
-          window.location.href = "/blocked";
-          throw new Error("Account is blocked");
-        }
-        throw new Error("Insufficient permissions");
-      }
-
-      const error: ApiError = await response.json().catch(() => ({
-        code: "UNKNOWN_ERROR",
-        message: "An unknown error occurred",
-      }));
-
-      throw new Error(error.message);
-    }
-
-    if (response.status === 204) {
-      return undefined as T;
-    }
-
-    return response.json();
   }
 
   /**

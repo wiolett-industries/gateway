@@ -10,6 +10,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { api } from "@/services/api";
+import { ApiRequestError } from "@/services/api-base";
 import { useAIStore } from "@/stores/ai";
 import { useAuthStore } from "@/stores/auth";
 import { useCAStore } from "@/stores/ca";
@@ -82,9 +83,6 @@ export function DashboardLayout() {
           return;
         }
         setUser(user);
-        // Prefetch data for all pages in background
-        const hasAdminScopes = user.scopes?.some((s: string) => s.startsWith("admin:")) ?? false;
-        api.prefetchAll(hasAdminScopes);
         // Preload node types for sidebar visibility + Docker command palette
         if (
           user.scopes?.some(
@@ -95,10 +93,11 @@ export function DashboardLayout() {
           api
             .listNodes({ limit: 100 })
             .then((r) => {
-              const dockerNds = r.data.filter((n) => n.type === "docker" && !isNodeIncompatible(n));
+              const dockerNds = r.data.filter(
+                (n) => n.type === "docker" && n.status === "online" && !isNodeIncompatible(n)
+              );
               const nginxNds = r.data.filter((n) => n.type === "nginx" && !isNodeIncompatible(n));
               useDockerStore.getState().setDockerNodes(dockerNds);
-              if (dockerNds.length > 0) useDockerStore.getState().fetchContainers();
               setHasNginxNodes(nginxNds.length > 0);
             })
             .catch(() => {});
@@ -112,9 +111,11 @@ export function DashboardLayout() {
             .then((s) => useAIStore.getState().setEnabled(s.enabled))
             .catch(() => {});
         }
-      } catch {
-        logout();
-        navigate("/login");
+      } catch (error) {
+        if (error instanceof ApiRequestError && error.status === 401) {
+          logout();
+          navigate("/login");
+        }
       } finally {
         setLoading(false);
       }

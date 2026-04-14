@@ -29,6 +29,7 @@ import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
 import type { DockerTemplate, Node } from "@/types";
+import { isNodeIncompatible } from "@/types";
 
 function formatDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString();
@@ -79,7 +80,9 @@ export function DockerTemplatesPage({
     await fetchTemplates().finally(() => setIsLoading(false));
     api
       .listNodes({ type: "docker", limit: 100 })
-      .then((r) => setDockerNodes(r.data))
+      .then((r) =>
+        setDockerNodes(r.data.filter((n) => n.status === "online" && !isNodeIncompatible(n)))
+      )
       .catch(() => {});
   }, [fetchTemplates]);
 

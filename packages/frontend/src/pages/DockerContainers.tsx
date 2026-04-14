@@ -92,7 +92,7 @@ export function DockerContainers({
     setNodesLoading(true);
     try {
       const r = await api.listNodes({ type: "docker", limit: 100 });
-      const compatible = r.data.filter((n) => !isNodeIncompatible(n));
+      const compatible = r.data.filter((n) => n.status === "online" && !isNodeIncompatible(n));
       setDockerNodes(compatible);
       useDockerStore.getState().setDockerNodes(compatible);
     } catch {

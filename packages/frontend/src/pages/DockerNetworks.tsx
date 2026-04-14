@@ -31,6 +31,7 @@ import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
 import type { DockerNetwork, Node } from "@/types";
+import { isNodeIncompatible } from "@/types";
 
 export function DockerNetworks({
   embedded,
@@ -110,8 +111,9 @@ export function DockerNetworks({
 
     try {
       const r = await api.listNodes({ type: "docker", limit: 100 });
-      setDockerNodes(r.data);
-      useDockerStore.getState().setDockerNodes(r.data);
+      const onlineNodes = r.data.filter((n) => n.status === "online" && !isNodeIncompatible(n));
+      setDockerNodes(onlineNodes);
+      useDockerStore.getState().setDockerNodes(onlineNodes);
     } catch {
       toast.error("Failed to load Docker nodes");
     }

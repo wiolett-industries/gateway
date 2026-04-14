@@ -19,6 +19,7 @@ import { useRealtime } from "@/hooks/use-realtime";
 import { api } from "@/services/api";
 import { useDockerStore } from "@/stores/docker";
 import type { DockerTask, Node } from "@/types";
+import { isNodeIncompatible } from "@/types";
 
 const STATUS_BADGE: Record<
   string,
@@ -71,7 +72,9 @@ export function DockerTasks({ embedded }: { embedded?: boolean } = {}) {
     loadTasks();
     api
       .listNodes({ type: "docker", limit: 100 })
-      .then((r) => setDockerNodes(r.data))
+      .then((r) =>
+        setDockerNodes(r.data.filter((n) => n.status === "online" && !isNodeIncompatible(n)))
+      )
       .catch(() => {});
   }, []);
 
