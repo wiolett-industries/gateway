@@ -209,40 +209,71 @@ export function SettingsTab({
     ]
   );
 
+  const buildRuntimePayload = useCallback(() => {
+    const payload: Record<string, unknown> = {};
+    if (restartPolicy !== currentRestartPolicy) payload.restartPolicy = restartPolicy;
+    if (restartPolicy === "on-failure" && Number(maxRetries) !== currentMaxRetries) {
+      payload.maxRetries = Number(maxRetries) || 0;
+    }
+    const memBytes = memoryMB ? Number(memoryMB) * 1048576 : 0;
+    const swapOnly = memSwapMB === "-1" ? -1 : memSwapMB ? Number(memSwapMB) * 1048576 : 0;
+    const combinedSwap =
+      swapOnly === -1 ? -1 : swapOnly > 0 ? memBytes + swapOnly : memBytes > 0 ? memBytes * 2 : 0;
+    if (memBytes !== currentMemory || combinedSwap !== currentMemSwap) {
+      payload.memoryLimit = memBytes;
+      payload.memorySwap = combinedSwap;
+    }
+    const nanos = cpuCount ? Math.round(Number(cpuCount) * 1e9) : 0;
+    if (nanos !== currentNanoCPUs) payload.nanoCPUs = nanos;
+    const shares = cpuShares ? Number(cpuShares) : 0;
+    if (shares !== currentCpuShares) payload.cpuShares = shares;
+    const pids = pidsLimit ? Number(pidsLimit) : 0;
+    if (pids !== currentPidsLimit) payload.pidsLimit = pids;
+
+    if (Object.keys(payload).length === 0) {
+      return null;
+    }
+    if (!("restartPolicy" in payload)) {
+      payload.restartPolicy = restartPolicy;
+    }
+    return payload;
+  }, [
+    restartPolicy,
+    currentRestartPolicy,
+    maxRetries,
+    currentMaxRetries,
+    memoryMB,
+    memSwapMB,
+    currentMemory,
+    currentMemSwap,
+    cpuCount,
+    currentNanoCPUs,
+    cpuShares,
+    currentCpuShares,
+    pidsLimit,
+    currentPidsLimit,
+  ]);
+
   // ── Live update handler ──
   const handleLiveUpdate = useCallback(async () => {
     setLiveLoading(true);
     try {
-      const payload: Record<string, unknown> = {};
-      if (restartPolicy !== currentRestartPolicy) payload.restartPolicy = restartPolicy;
-      if (restartPolicy === "on-failure" && Number(maxRetries) !== currentMaxRetries) {
-        payload.maxRetries = Number(maxRetries) || 0;
-      }
-      const memBytes = memoryMB ? Number(memoryMB) * 1048576 : 0;
-      const swapOnly = memSwapMB === "-1" ? -1 : memSwapMB ? Number(memSwapMB) * 1048576 : 0;
-      // Docker requires memorySwap >= memory, so always send both together
-      // Empty swap = double memory (Docker's default), -1 = unlimited, 0 = no swap
-      const combinedSwap =
-        swapOnly === -1 ? -1 : swapOnly > 0 ? memBytes + swapOnly : memBytes > 0 ? memBytes * 2 : 0;
-      if (memBytes !== currentMemory || combinedSwap !== currentMemSwap) {
-        payload.memoryLimit = memBytes;
-        payload.memorySwap = combinedSwap;
-      }
-      const nanos = cpuCount ? Math.round(Number(cpuCount) * 1e9) : 0;
-      if (nanos !== currentNanoCPUs) payload.nanoCPUs = nanos;
-      const shares = cpuShares ? Number(cpuShares) : 0;
-      if (shares !== currentCpuShares) payload.cpuShares = shares;
-      const pids = pidsLimit ? Number(pidsLimit) : 0;
-      if (pids !== currentPidsLimit) payload.pidsLimit = pids;
-
-      if (Object.keys(payload).length === 0) {
+      const payload = buildRuntimePayload();
+      if (!payload) {
         toast.info("No changes to apply");
         return;
       }
-      if (!payload.restartPolicy) payload.restartPolicy = restartPolicy;
 
-      await api.liveUpdateContainer(nodeId, containerId, payload);
-      toast.success("Settings applied (no restart needed)");
+      if (recreatesRunningContainer) {
+        await api.liveUpdateContainer(nodeId, containerId, payload);
+        toast.success("Settings applied (no restart needed)");
+      } else {
+        await api.recreateWithConfig(nodeId, containerId, payload);
+        toast.success("Container runtime configuration saved");
+        onRecreating?.();
+        invalidate("containers", "tasks");
+      }
+
       // Update baseline so hasRuntimeChanges becomes false immediately
       baselineRef.current = {
         restartPolicy,
@@ -259,22 +290,19 @@ export function SettingsTab({
       setLiveLoading(false);
     }
   }, [
-    nodeId,
+    buildRuntimePayload,
     containerId,
-    restartPolicy,
+    invalidate,
     maxRetries,
     memoryMB,
     memSwapMB,
+    nodeId,
+    onRecreating,
+    pidsLimit,
+    recreatesRunningContainer,
+    restartPolicy,
     cpuCount,
     cpuShares,
-    pidsLimit,
-    currentRestartPolicy,
-    currentMaxRetries,
-    currentMemory,
-    currentMemSwap,
-    currentNanoCPUs,
-    currentCpuShares,
-    currentPidsLimit,
   ]);
 
   // ── Track recreate changes per section ──
@@ -289,6 +317,17 @@ export function SettingsTab({
   const labelsChanged = JSON.stringify(labels) !== recreateBaseline.labels;
   const hasRecreateChanges =
     portsChanged || mountsChanged || execChanged || labelsChanged || imageTagChanged;
+
+  // ── Track runtime changes against baseline ──
+  const b = baselineRef.current;
+  const hasRuntimeChanges =
+    restartPolicy !== b.restartPolicy ||
+    maxRetries !== b.maxRetries ||
+    memoryMB !== b.memoryMB ||
+    memSwapMB !== b.memSwapMB ||
+    cpuCount !== b.cpuCount ||
+    cpuShares !== b.cpuShares ||
+    pidsLimit !== b.pidsLimit;
 
   // ── Recreate handler ──
   const handleRecreate = useCallback(async () => {
@@ -360,6 +399,9 @@ export function SettingsTab({
         }
         payload.labels = labelMap;
       }
+      if (hasRuntimeChanges) {
+        Object.assign(payload, buildRuntimePayload() ?? {});
+      }
 
       await api.recreateWithConfig(nodeId, containerId, payload);
       toast.success(
@@ -392,22 +434,13 @@ export function SettingsTab({
     parsedImageName,
     ports,
     portsChanged,
+    buildRuntimePayload,
+    hasRuntimeChanges,
     recreateBaseline,
     recreatesRunningContainer,
     user,
     workingDir,
   ]);
-
-  // ── Track runtime changes against baseline ──
-  const b = baselineRef.current;
-  const hasRuntimeChanges =
-    restartPolicy !== b.restartPolicy ||
-    maxRetries !== b.maxRetries ||
-    memoryMB !== b.memoryMB ||
-    memSwapMB !== b.memSwapMB ||
-    cpuCount !== b.cpuCount ||
-    cpuShares !== b.cpuShares ||
-    pidsLimit !== b.pidsLimit;
 
   // ── Shared input styles ──
   const inputCell =
@@ -523,6 +556,7 @@ export function SettingsTab({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <RuntimeSection
           canEdit={canEdit}
+          appliesLive={recreatesRunningContainer}
           restartPolicy={restartPolicy}
           setRestartPolicy={setRestartPolicy}
           maxRetries={maxRetries}
