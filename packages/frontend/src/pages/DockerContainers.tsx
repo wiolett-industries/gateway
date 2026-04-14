@@ -64,6 +64,12 @@ export function DockerContainers({
     if (selectedNodeId && ev.nodeId && ev.nodeId !== selectedNodeId) return;
     forceFetchContainers();
   });
+  useRealtime("docker.task.changed", (payload) => {
+    const ev = payload as { nodeId?: string };
+    if (!ev) return;
+    if (selectedNodeId && ev.nodeId && ev.nodeId !== selectedNodeId) return;
+    forceFetchContainers();
+  });
 
   const [searchInput, setSearchInput] = useState(filters.search);
   const [dockerNodes, setDockerNodes] = useState<Node[]>([]);
@@ -250,24 +256,31 @@ export function DockerContainers({
       {
         key: "node",
         header: "Node",
-        width: "140px",
+        width: "200px",
         render: (c) => (
-          <Badge variant="secondary" className="text-xs w-fit">
-            {(c as any)._nodeName || "-"}
-          </Badge>
+          <div className="min-w-0 flex">
+            <Badge
+              variant="secondary"
+              className="text-xs max-w-full overflow-hidden text-ellipsis whitespace-nowrap inline-flex"
+            >
+              {(c as any)._nodeName || "-"}
+            </Badge>
+          </div>
         ),
       },
       {
         key: "status",
         header: "Status",
-        width: "131px",
+        width: "140px",
         render: (c) => (
-          <Badge
-            variant={STATUS_BADGE[(c as any)._transition ?? c.state] ?? "secondary"}
-            className="text-xs w-fit"
-          >
-            {(c as any)._transition ?? c.state}
-          </Badge>
+          <div className="min-w-0 flex">
+            <Badge
+              variant={STATUS_BADGE[(c as any)._transition ?? c.state] ?? "secondary"}
+              className="text-xs max-w-full overflow-hidden text-ellipsis whitespace-nowrap inline-flex"
+            >
+              {(c as any)._transition ?? c.state}
+            </Badge>
+          </div>
         ),
       },
       {

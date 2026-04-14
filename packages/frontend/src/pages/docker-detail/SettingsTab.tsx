@@ -34,6 +34,7 @@ export function SettingsTab({
   const { hasScope } = useAuthStore();
   const invalidate = useDockerStore((s) => s.invalidate);
   const canEdit = hasScope("docker:containers:edit");
+  const recreatesRunningContainer = (data.State?.Status ?? (data.State?.Running ? "running" : "stopped")) === "running";
 
   // ── Live settings state (no recreation) ──
   const hostConfig = data.HostConfig ?? {};
@@ -263,10 +264,11 @@ export function SettingsTab({
   // ── Recreate handler ──
   const handleRecreate = useCallback(async () => {
     const ok = await confirm({
-      title: "Recreate Container",
-      description:
-        "This will stop and recreate the container with the new configuration. The container will experience downtime. Continue?",
-      confirmLabel: "Recreate",
+      title: recreatesRunningContainer ? "Save & Recreate" : "Save",
+      description: recreatesRunningContainer
+        ? "This will stop and recreate the container with the new configuration. The container will experience downtime. Continue?"
+        : "This will save the new container configuration. The container will remain stopped. Continue?",
+      confirmLabel: recreatesRunningContainer ? "Recreate" : "Save",
     });
     if (!ok) return;
 
@@ -331,7 +333,7 @@ export function SettingsTab({
       }
 
       await api.recreateWithConfig(nodeId, containerId, payload);
-      toast.success("Recreating container...");
+      toast.success(recreatesRunningContainer ? "Recreating container..." : "Container configuration saved");
       // Trigger an immediate parent refresh; the realtime channel will deliver
       // the recreate event (with new id) to every open tab, including this one,
       // and the parent navigates accordingly.
@@ -424,7 +426,7 @@ export function SettingsTab({
                 disabled={recreateLoading || !hasRecreateChanges}
               >
                 <RotateCcw className="h-3.5 w-3.5" />
-                Recreate
+                {recreatesRunningContainer ? "Save & Recreate" : "Save"}
               </Button>
             )}
           </div>
