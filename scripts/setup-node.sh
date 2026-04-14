@@ -48,6 +48,8 @@ INTEGRATED_STUB_STATUS_PORT="8081"
 RESOLVED_DAEMON_VERSION=""
 EXISTING_INSTALL=0
 EXISTING_VERSION=""
+EXISTING_GATEWAY_ADDR=""
+EXISTING_ENROLLED=0
 
 # ── Helpers ──────────────────────────────────────────────────────────
 log()  { echo -e "${INFO_TAG} INFO ${NC} $*"; }
@@ -185,12 +187,28 @@ normalize_daemon_version() {
 
 detect_existing_install() {
     local target="/usr/local/bin/nginx-daemon"
+    local config_path="/etc/nginx-daemon/config.yaml"
+    local state_path="/var/lib/nginx-daemon/state.json"
+    local cert_path="/etc/nginx-daemon/certs/node.pem"
     EXISTING_INSTALL=0
     EXISTING_VERSION=""
+    EXISTING_GATEWAY_ADDR=""
+    EXISTING_ENROLLED=0
 
     if [[ -x "$target" ]]; then
         EXISTING_INSTALL=1
         EXISTING_VERSION=$("$target" version 2>/dev/null | awk '{print $2}' || echo "unknown")
+    fi
+
+    if [[ -f "$config_path" ]]; then
+        EXISTING_GATEWAY_ADDR=$(awk -F'"' '/^[[:space:]]*address:[[:space:]]*"/ {print $2; exit}' "$config_path")
+        if [[ -z "$EXISTING_GATEWAY_ADDR" ]]; then
+            EXISTING_GATEWAY_ADDR=$(awk '/^[[:space:]]*address:[[:space:]]*/ {print $2; exit}' "$config_path")
+        fi
+    fi
+
+    if [[ -f "$cert_path" && -f "$state_path" ]]; then
+        EXISTING_ENROLLED=1
     fi
 }
 
@@ -314,6 +332,17 @@ detect_os
 detect_arch
 check_dependencies
 build_gitlab_api
+detect_existing_install
+
+if [[ -z "$GATEWAY_ADDR" && -n "$EXISTING_GATEWAY_ADDR" ]]; then
+    GATEWAY_ADDR="$EXISTING_GATEWAY_ADDR"
+    GATEWAY_HOST="${GATEWAY_ADDR%%:*}"
+    GATEWAY_PORT="${GATEWAY_ADDR##*:}"
+    if [[ "$GATEWAY_PORT" == "$GATEWAY_HOST" ]]; then
+        GATEWAY_PORT="9443"
+        GATEWAY_ADDR="${GATEWAY_HOST}:${GATEWAY_PORT}"
+    fi
+fi
 
 : > "$LOG_FILE"
 
@@ -340,31 +369,35 @@ if [[ "$NON_INTERACTIVE" -eq 0 ]]; then
     echo -e "  ${GRAY}  4. Start the daemon as a systemd service${NC}"
     echo ""
 
-    # Gateway host
-    if [[ -z "$GATEWAY_HOST" ]]; then
-        GATEWAY_HOST=$(prompt_input "Gateway hostname or IP" "")
-        [[ -z "$GATEWAY_HOST" ]] && die "Gateway hostname is required"
+    if [[ "$EXISTING_ENROLLED" -eq 1 && -n "$EXISTING_GATEWAY_ADDR" && -z "$ENROLL_TOKEN" ]]; then
+        log "Existing enrolled nginx node detected — reusing current gateway configuration"
     else
-        echo -e "  ${GRAY}Gateway host: ${BRAND_MINT}${GATEWAY_HOST}${NC}"
+        # Gateway host
+        if [[ -z "$GATEWAY_HOST" ]]; then
+            GATEWAY_HOST=$(prompt_input "Gateway hostname or IP" "")
+            [[ -z "$GATEWAY_HOST" ]] && die "Gateway hostname is required"
+        else
+            echo -e "  ${GRAY}Gateway host: ${BRAND_MINT}${GATEWAY_HOST}${NC}"
+        fi
+
+        # Gateway port
+        GATEWAY_PORT=$(prompt_input "gRPC port" "${GATEWAY_PORT}")
+        [[ -z "$GATEWAY_PORT" ]] && GATEWAY_PORT="9443"
+
+        GATEWAY_ADDR="${GATEWAY_HOST}:${GATEWAY_PORT}"
+
+        echo ""
+
+        # Enrollment token
+        if [[ -z "$ENROLL_TOKEN" ]]; then
+            ENROLL_TOKEN=$(prompt_secret "Enrollment token (from Admin > Nodes)")
+            [[ -z "$ENROLL_TOKEN" ]] && die "Enrollment token is required"
+        else
+            echo -e "  ${GRAY}Token: ${ENROLL_TOKEN:0:12}...${ENROLL_TOKEN: -4}${NC}"
+        fi
+
+        echo ""
     fi
-
-    # Gateway port
-    GATEWAY_PORT=$(prompt_input "gRPC port" "${GATEWAY_PORT}")
-    [[ -z "$GATEWAY_PORT" ]] && GATEWAY_PORT="9443"
-
-    GATEWAY_ADDR="${GATEWAY_HOST}:${GATEWAY_PORT}"
-
-    echo ""
-
-    # Enrollment token
-    if [[ -z "$ENROLL_TOKEN" ]]; then
-        ENROLL_TOKEN=$(prompt_secret "Enrollment token (from Admin > Nodes)")
-        [[ -z "$ENROLL_TOKEN" ]] && die "Enrollment token is required"
-    else
-        echo -e "  ${GRAY}Token: ${ENROLL_TOKEN:0:12}...${ENROLL_TOKEN: -4}${NC}"
-    fi
-
-    echo ""
 
     # Daemon version
     DAEMON_VERSION=$(prompt_input "Daemon version" "${DAEMON_VERSION}")
@@ -426,10 +459,10 @@ if [[ "$NON_INTERACTIVE" -eq 0 ]]; then
     fi
 else
     # Non-interactive: validate required fields
-    if [[ -z "$GATEWAY_ADDR" ]]; then
+    if [[ -z "$GATEWAY_ADDR" && "$EXISTING_ENROLLED" -eq 0 ]]; then
         die "--gateway or --host is required in non-interactive mode"
     fi
-    if [[ -z "$ENROLL_TOKEN" ]]; then
+    if [[ -z "$ENROLL_TOKEN" && "$EXISTING_ENROLLED" -eq 0 ]]; then
         die "--token is required in non-interactive mode"
     fi
     # Default user to root in non-interactive mode
@@ -475,7 +508,11 @@ fi
 echo -e "  ${BOLD}Configuration Summary${NC}"
 echo -e "  ${GRAY}────────────────────────────────────────${NC}"
 echo -e "  Gateway:     ${BRAND_MINT}${GATEWAY_ADDR}${NC}"
-echo -e "  Token:       ${GRAY}${ENROLL_TOKEN:0:12}...${NC}"
+if [[ -n "$ENROLL_TOKEN" ]]; then
+    echo -e "  Token:       ${GRAY}${ENROLL_TOKEN:0:12}...${NC}"
+else
+    echo -e "  Token:       ${GRAY}existing enrollment${NC}"
+fi
 echo -e "  Arch:        ${ARCH}"
 echo -e "  OS:          ${OS_ID}"
 echo -e "  Install ver: ${RESOLVED_DAEMON_VERSION}"
