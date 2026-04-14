@@ -12,9 +12,9 @@ import { useDockerStore } from "@/stores/docker";
 import type { DockerWebhook } from "@/types";
 import type { InspectData } from "./helpers";
 import { LabelsSection } from "./LabelsSection";
-import { PortMappingsSection, type PortMapping } from "./PortMappingsSection";
+import { type PortMapping, PortMappingsSection } from "./PortMappingsSection";
 import { RuntimeSection } from "./RuntimeSection";
-import { VolumeMountsSection, type MountEntry } from "./VolumeMountsSection";
+import { type MountEntry, VolumeMountsSection } from "./VolumeMountsSection";
 
 // ── Component ────────────────────────────────────────────────────
 
@@ -83,39 +83,45 @@ export function SettingsTab({
     string,
     Array<{ HostIp: string; HostPort: string }> | null
   >;
-  const initialPorts: PortMapping[] = [];
-  for (const [containerPort, bindings] of Object.entries(portBindings)) {
-    if (bindings) {
+  const initialPorts = useMemo(() => {
+    const ports: PortMapping[] = [];
+    for (const [containerPort, bindings] of Object.entries(portBindings)) {
+      if (!bindings) continue;
       const [port, proto] = containerPort.split("/");
-      for (const b of bindings) {
-        initialPorts.push({
-          hostPort: b.HostPort ?? "",
+      for (const binding of bindings) {
+        ports.push({
+          hostPort: binding.HostPort ?? "",
           containerPort: port,
           protocol: (proto as "tcp" | "udp") ?? "tcp",
         });
       }
     }
-  }
+    return ports;
+  }, [portBindings]);
 
-  const initialMounts: MountEntry[] = (
-    (data.Mounts ?? []) as Array<{
-      Type: string;
-      Source: string;
-      Destination: string;
-      Name?: string;
-      RW: boolean;
-    }>
-  ).map((m) => ({
-    hostPath: m.Type === "bind" ? m.Source : "",
-    containerPath: m.Destination,
-    name: m.Type === "volume" ? (m.Name ?? m.Source) : "",
-    readOnly: !m.RW,
-  }));
+  const initialMounts = useMemo(
+    () =>
+      (
+        (data.Mounts ?? []) as Array<{
+          Type: string;
+          Source: string;
+          Destination: string;
+          Name?: string;
+          RW: boolean;
+        }>
+      ).map((mount) => ({
+        hostPath: mount.Type === "bind" ? mount.Source : "",
+        containerPath: mount.Destination,
+        name: mount.Type === "volume" ? (mount.Name ?? mount.Source) : "",
+        readOnly: !mount.RW,
+      })),
+    [data.Mounts]
+  );
 
   const config = data.Config ?? {};
   const containerName = useMemo(
     () => ((data.Name ?? "") as string).replace(/^\//, ""),
-    [data.Name],
+    [data.Name]
   );
   const currentImage = (config.Image ?? "") as string;
   const { imageName: parsedImageName, tag: parsedTag } = useMemo(() => {
@@ -150,8 +156,6 @@ export function SettingsTab({
   );
   const [recreateLoading, setRecreateLoading] = useState(false);
 
-  // Snapshot initial recreate values (frozen per container, not re-derived on every render)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const recreateBaseline = useMemo(
     () => ({
       ports: JSON.stringify(initialPorts),
@@ -163,7 +167,16 @@ export function SettingsTab({
       hostname: initialHostname,
       labels: JSON.stringify(Object.entries(initialLabels).map(([k, v]) => ({ key: k, value: v }))),
     }),
-    [containerId]
+    [
+      initialCmd,
+      initialEntrypoint,
+      initialHostname,
+      initialLabels,
+      initialMounts,
+      initialPorts,
+      initialUser,
+      initialWorkdir,
+    ]
   );
 
   // ── Live update handler ──
@@ -233,6 +246,19 @@ export function SettingsTab({
     currentCpuShares,
     currentPidsLimit,
   ]);
+
+  // ── Track recreate changes per section ──
+  const portsChanged = JSON.stringify(ports) !== recreateBaseline.ports;
+  const mountsChanged = JSON.stringify(mounts) !== recreateBaseline.mounts;
+  const execChanged =
+    entrypoint !== recreateBaseline.entrypoint ||
+    command !== recreateBaseline.command ||
+    workingDir !== recreateBaseline.workingDir ||
+    user !== recreateBaseline.user ||
+    hostname !== recreateBaseline.hostname;
+  const labelsChanged = JSON.stringify(labels) !== recreateBaseline.labels;
+  const hasRecreateChanges =
+    portsChanged || mountsChanged || execChanged || labelsChanged || imageTagChanged;
 
   // ── Recreate handler ──
   const handleRecreate = useCallback(async () => {
@@ -317,20 +343,25 @@ export function SettingsTab({
       setRecreateLoading(false);
     }
   }, [
-    nodeId,
-    containerId,
-    ports,
-    mounts,
-    entrypoint,
     command,
-    workingDir,
-    user,
+    containerId,
+    entrypoint,
     hostname,
-    labels,
     imageTag,
     imageTagChanged,
-    parsedImageName,
+    invalidate,
+    labels,
+    labelsChanged,
+    mounts,
+    mountsChanged,
+    nodeId,
     onRecreating,
+    parsedImageName,
+    ports,
+    portsChanged,
+    recreateBaseline,
+    user,
+    workingDir,
   ]);
 
   // ── Track runtime changes against baseline ──
@@ -343,18 +374,6 @@ export function SettingsTab({
     cpuCount !== b.cpuCount ||
     cpuShares !== b.cpuShares ||
     pidsLimit !== b.pidsLimit;
-
-  // ── Track recreate changes per section ──
-  const portsChanged = JSON.stringify(ports) !== recreateBaseline.ports;
-  const mountsChanged = JSON.stringify(mounts) !== recreateBaseline.mounts;
-  const execChanged =
-    entrypoint !== recreateBaseline.entrypoint ||
-    command !== recreateBaseline.command ||
-    workingDir !== recreateBaseline.workingDir ||
-    user !== recreateBaseline.user ||
-    hostname !== recreateBaseline.hostname;
-  const labelsChanged = JSON.stringify(labels) !== recreateBaseline.labels;
-  const hasRecreateChanges = portsChanged || mountsChanged || execChanged || labelsChanged || imageTagChanged;
 
   // ── Shared input styles ──
   const inputCell =
@@ -592,7 +611,7 @@ function WebhookSection({ nodeId, containerName }: { nodeId: string; containerNa
         toast.error(err instanceof Error ? err.message : "Failed to save");
       }
     },
-    [nodeId, containerName],
+    [nodeId, containerName]
   );
 
   const handleCleanupToggle = useCallback(
@@ -600,7 +619,7 @@ function WebhookSection({ nodeId, containerName }: { nodeId: string; containerNa
       setCleanupEnabled(v);
       autoSave({ cleanupEnabled: v });
     },
-    [autoSave],
+    [autoSave]
   );
 
   const handleRetentionBlur = useCallback(() => {
@@ -670,7 +689,9 @@ function WebhookSection({ nodeId, containerName }: { nodeId: string; containerNa
 
   return (
     <div className="border border-border bg-card overflow-hidden">
-      <div className={`flex items-center justify-between px-4 py-3 ${webhook ? "border-b border-border" : ""}`}>
+      <div
+        className={`flex items-center justify-between px-4 py-3 ${webhook ? "border-b border-border" : ""}`}
+      >
         <div>
           <h3 className="text-sm font-semibold">Webhook</h3>
           <p className="text-xs text-muted-foreground">
@@ -699,11 +720,7 @@ function WebhookSection({ nodeId, containerName }: { nodeId: string; containerNa
                   className="h-8 w-8 shrink-0"
                   onClick={() => copyToClipboard(webhookUrl, "url")}
                 >
-                  {copied ? (
-                    <Check className="h-3.5 w-3.5" />
-                  ) : (
-                    <Copy className="h-3.5 w-3.5" />
-                  )}
+                  {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
                 </Button>
                 <Button
                   variant="outline"
@@ -731,11 +748,7 @@ function WebhookSection({ nodeId, containerName }: { nodeId: string; containerNa
                 className="absolute top-1.5 right-1.5 h-6 w-6"
                 onClick={() => copyToClipboard(curlExample, "curl")}
               >
-                {copiedCurl ? (
-                  <Check className="h-3 w-3" />
-                ) : (
-                  <Copy className="h-3 w-3" />
-                )}
+                {copiedCurl ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
               </Button>
             </div>
           </div>
@@ -754,7 +767,9 @@ function WebhookSection({ nodeId, containerName }: { nodeId: string; containerNa
           {/* Retention count */}
           <div className="flex items-center justify-between gap-4 px-4 py-3">
             <div>
-              <p className={`text-sm font-medium ${!cleanupEnabled ? "text-muted-foreground" : ""}`}>
+              <p
+                className={`text-sm font-medium ${!cleanupEnabled ? "text-muted-foreground" : ""}`}
+              >
                 Keep last N versions
               </p>
               <p className="text-xs text-muted-foreground mt-0.5">

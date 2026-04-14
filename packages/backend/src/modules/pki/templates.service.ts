@@ -1,10 +1,10 @@
-import { injectable, inject } from 'tsyringe';
 import { eq } from 'drizzle-orm';
+import { inject, injectable } from 'tsyringe';
 import { TOKENS } from '@/container.js';
-import { certificateTemplates } from '@/db/schema/index.js';
-import { AppError } from '@/middleware/error-handler.js';
-import { createChildLogger } from '@/lib/logger.js';
 import type { DrizzleClient } from '@/db/client.js';
+import { certificateTemplates } from '@/db/schema/index.js';
+import { createChildLogger } from '@/lib/logger.js';
+import { AppError } from '@/middleware/error-handler.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
 import type { CreateTemplateInput, UpdateTemplateInput } from './templates.schemas.js';
 
@@ -100,10 +100,13 @@ export class TemplatesService {
   }
 
   async createTemplate(input: CreateTemplateInput, userId: string) {
-    const [template] = await this.db.insert(certificateTemplates).values({
-      ...input,
-      createdById: userId,
-    }).returning();
+    const [template] = await this.db
+      .insert(certificateTemplates)
+      .values({
+        ...input,
+        createdById: userId,
+      })
+      .returning();
     this.emitTemplate(template.id, 'created');
     return template;
   }

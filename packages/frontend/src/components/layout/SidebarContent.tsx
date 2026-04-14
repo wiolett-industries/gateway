@@ -47,8 +47,8 @@ import { usePinnedNodesStore } from "@/stores/pinned-nodes";
 import { usePinnedProxiesStore } from "@/stores/pinned-proxies";
 import { useUIStore } from "@/stores/ui";
 import { useUpdateStore } from "@/stores/update";
-import { AI_SCOPE, effectiveNodeStatus } from "@/types";
 import type { Node, ProxyHost } from "@/types";
+import { AI_SCOPE, effectiveNodeStatus } from "@/types";
 
 function getInitials(name: string | null): string {
   if (!name) return "?";
@@ -181,14 +181,16 @@ export function SidebarContent({
       setPinnedNodes([]);
       return;
     }
+    void pinnedRefreshTick;
     refetchPinnedNodes();
-  }, [sidebarPinnedIds, location.pathname, pinnedRefreshTick, refetchPinnedNodes]);
+  }, [sidebarPinnedIds, pinnedRefreshTick, refetchPinnedNodes]);
 
   useEffect(() => {
     if (sidebarPinnedProxyIds.length === 0) {
       setPinnedProxies([]);
       return;
     }
+    void pinnedProxyRefreshTick;
     api
       .listProxyHosts({ limit: 100 })
       .then((r) => {
@@ -197,14 +199,13 @@ export function SidebarContent({
         usePinnedProxiesStore.getState().removeOrphans(allIds);
       })
       .catch(() => {});
-  }, [sidebarPinnedProxyIds, location.pathname, pinnedProxyRefreshTick]);
+  }, [sidebarPinnedProxyIds, pinnedProxyRefreshTick]);
 
   // Clean up orphaned pinned containers on mount
   useEffect(() => {
     if (sidebarPinnedContainerIds.length === 0) return;
-    const meta = usePinnedContainersStore.getState().containerMeta;
     const entries = sidebarPinnedContainerIds
-      .map((cid) => ({ cid, meta: meta[cid] }))
+      .map((cid) => ({ cid, meta: pinnedContainerMeta[cid] }))
       .filter((e) => e.meta);
     const nodeIds = [...new Set(entries.map((e) => e.meta!.nodeId))];
     if (nodeIds.length === 0) return;
@@ -215,8 +216,7 @@ export function SidebarContent({
         usePinnedContainersStore.getState().removeOrphans(validIds);
       })
       .catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [sidebarPinnedContainerIds, pinnedContainerMeta]);
 
   const handleLogout = async () => {
     try {
@@ -528,7 +528,7 @@ export function SidebarContent({
                             const containerPath = `/docker/containers/${meta.nodeId}/${cid}`;
                             const isActive =
                               location.pathname === containerPath ||
-                              location.pathname.startsWith(containerPath + "/");
+                              location.pathname.startsWith(`${containerPath}/`);
                             return (
                               <Link
                                 key={cid}
@@ -576,7 +576,7 @@ export function SidebarContent({
                       const isActive =
                         location.pathname === item.href ||
                         (item.matchTabs &&
-                          location.pathname.startsWith(item.href + "/") &&
+                          location.pathname.startsWith(`${item.href}/`) &&
                           !location.pathname.slice(item.href.length + 1).includes("/"));
                       return (
                         <Link

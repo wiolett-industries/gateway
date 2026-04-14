@@ -1,11 +1,11 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
-import type { AppEnv } from '@/types.js';
 import { authMiddleware, requireScope } from '@/modules/auth/auth.middleware.js';
-import { TEMPLATE_PRESETS, buildSampleEvent, buildTemplateContext, renderTemplate } from './notification-templates.js';
-import { NotificationWebhookService } from './notification-webhook.service.js';
-import { CreateWebhookSchema, UpdateWebhookSchema, WebhookListQuerySchema } from './notification-webhook.schemas.js';
+import type { AppEnv } from '@/types.js';
 import { NotificationDispatcherService } from './notification-dispatcher.service.js';
+import { buildSampleEvent, buildTemplateContext, renderTemplate, TEMPLATE_PRESETS } from './notification-templates.js';
+import { CreateWebhookSchema, UpdateWebhookSchema, WebhookListQuerySchema } from './notification-webhook.schemas.js';
+import { NotificationWebhookService } from './notification-webhook.service.js';
 
 export const webhookRoutes = new OpenAPIHono<AppEnv>();
 
@@ -78,4 +78,3 @@ webhookRoutes.post('/:id/test', requireScope('notifications:manage'), async (c) 
   const result = await dispatcher.dispatch(webhook, sampleEvent, true);
   return c.json({ data: result });
 });
-

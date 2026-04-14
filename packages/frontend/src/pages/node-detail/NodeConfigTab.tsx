@@ -114,9 +114,7 @@ export function NodeConfigTab({ nodeId, nodeStatus }: NodeConfigTabProps) {
   }
 
   if (loading) {
-    return (
-      <LoadingSpinner />
-    );
+    return <LoadingSpinner />;
   }
 
   const hasChanges = configContent !== originalConfig;

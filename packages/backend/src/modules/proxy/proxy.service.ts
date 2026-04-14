@@ -1,4 +1,4 @@
-import { and, count, desc, eq, ilike, isNull, or, sql } from 'drizzle-orm';
+import { and, count, desc, eq, ilike, sql } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import { accessLists } from '@/db/schema/access-lists.js';
 import { certificates } from '@/db/schema/certificates.js';

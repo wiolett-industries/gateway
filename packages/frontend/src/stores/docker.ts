@@ -1,6 +1,5 @@
 import { create } from "zustand";
 import { api } from "@/services/api";
-import { isNodeIncompatible } from "@/types";
 import type {
   DockerContainer,
   DockerImage,
@@ -11,10 +10,10 @@ import type {
   DockerVolume,
   Node,
 } from "@/types";
+import { isNodeIncompatible } from "@/types";
 
 // Docker API returns PascalCase fields; normalize to camelCase for frontend types.
-// biome-ignore lint/suspicious/noExplicitAny: raw Docker API response
-function norm(item: any): any {
+function norm(item: unknown): unknown {
   if (!item || typeof item !== "object") return item;
   if (Array.isArray(item)) return item.map(norm);
   const out: Record<string, unknown> = {};

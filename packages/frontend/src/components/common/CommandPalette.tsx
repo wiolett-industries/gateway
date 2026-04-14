@@ -52,6 +52,22 @@ interface CommandPaletteProps {
   onOpenChange: (open: boolean) => void;
 }
 
+function fuzzyMatch(text: string, query: string): number {
+  if (!query) return 1;
+  const words = query.split(/\s+/).filter(Boolean);
+  const lower = text.toLowerCase();
+  let score = 0;
+  for (const word of words) {
+    const idx = lower.indexOf(word);
+    if (idx === -1) return 0;
+    score +=
+      idx === 0 || lower[idx - 1] === " " || lower[idx - 1] === "-" || lower[idx - 1] === "/"
+        ? 2
+        : 1;
+  }
+  return score;
+}
+
 export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -113,27 +129,6 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const isCommandMode = search.startsWith(">");
   const commandQuery = isCommandMode ? search.slice(1).trim().toLowerCase() : "";
   const searchQuery = search.toLowerCase().trim();
-
-  /**
-   * Per-word fuzzy match: every word in the query must appear somewhere in the text.
-   * Returns a score (higher = better) or 0 for no match.
-   * "con ubu" matches "Open console in dev-ubuntu" because "con" and "ubu" both hit.
-   */
-  const fuzzyMatch = (text: string, query: string): number => {
-    if (!query) return 1;
-    const words = query.split(/\s+/).filter(Boolean);
-    const lower = text.toLowerCase();
-    let score = 0;
-    for (const word of words) {
-      const idx = lower.indexOf(word);
-      if (idx === -1) return 0;
-      score +=
-        idx === 0 || lower[idx - 1] === " " || lower[idx - 1] === "-" || lower[idx - 1] === "/"
-          ? 2
-          : 1;
-    }
-    return score;
-  };
 
   /** Returns true if an item should be visible given the current search query */
   const matches = (text: string) => !searchQuery || fuzzyMatch(text, searchQuery) > 0;
@@ -198,7 +193,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 
     if (!commandQuery) return items;
     return items
-      .map((i) => ({ ...i, score: fuzzyMatch(i.label + " " + i.detail, commandQuery) }))
+      .map((i) => ({ ...i, score: fuzzyMatch(`${i.label} ${i.detail}`, commandQuery) }))
       .filter((i) => i.score > 0)
       .sort((a, b) => b.score - a.score);
   }, [isCommandMode, commandQuery, containers, nodes, hasScope]);
@@ -465,40 +460,29 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       />
       <CommandList>
         {/* ── Command mode ── */}
-        {isCommandMode && (
-          <>
-            {commandItems.length > 0 ? (
-              <CommandGroup heading="Commands">
-                {commandItems.map((item, i) => (
-                  <CommandItem
-                    key={i}
-                    value={item.label}
-                    onSelect={() => handleSelect(item.action)}
-                  >
-                    <item.icon className="mr-2 h-4 w-4" />
-                    {item.detail}
-                  </CommandItem>
-                ))}
-              </CommandGroup>
-            ) : (
-              <>
-                {aiEnabled !== false && aiScopeOk ? (
-                  <CommandGroup heading="No commands found">
-                    <CommandItem
-                      value="ask-ai"
-                      onSelect={() => handleSelect(() => askAI(search.slice(1).trim()))}
-                    >
-                      <Sparkles className="mr-2 h-4 w-4" />
-                      Ask AI: "{search.slice(1).trim()}"
-                    </CommandItem>
-                  </CommandGroup>
-                ) : (
-                  <CommandEmpty>No matching commands.</CommandEmpty>
-                )}
-              </>
-            )}
-          </>
-        )}
+        {isCommandMode &&
+          (commandItems.length > 0 ? (
+            <CommandGroup heading="Commands">
+              {commandItems.map((item, i) => (
+                <CommandItem key={i} value={item.label} onSelect={() => handleSelect(item.action)}>
+                  <item.icon className="mr-2 h-4 w-4" />
+                  {item.detail}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          ) : aiEnabled !== false && aiScopeOk ? (
+            <CommandGroup heading="No commands found">
+              <CommandItem
+                value="ask-ai"
+                onSelect={() => handleSelect(() => askAI(search.slice(1).trim()))}
+              >
+                <Sparkles className="mr-2 h-4 w-4" />
+                Ask AI: "{search.slice(1).trim()}"
+              </CommandItem>
+            </CommandGroup>
+          ) : (
+            <CommandEmpty>No matching commands.</CommandEmpty>
+          ))}
 
         {/* ── Normal mode ── */}
         {!isCommandMode && (

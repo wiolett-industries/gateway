@@ -18,6 +18,7 @@ export function PopoutTerminal({ wsFactory, channelKey, title }: PopoutTerminalP
   const terminalRef = useRef<any>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
+  const connectRef = useRef<(() => void) | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
   const gotFirstOutput = useRef(false);
@@ -51,6 +52,14 @@ export function PopoutTerminal({ wsFactory, channelKey, title }: PopoutTerminalP
   useEffect(() => {
     if (title) document.title = title;
   }, [title]);
+
+  const scheduleReconnect = useCallback(() => {
+    if (!mountedRef.current) return;
+    if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
+    reconnectTimer.current = setTimeout(() => {
+      connectRef.current?.();
+    }, 3000);
+  }, []);
 
   const connect = useCallback(async () => {
     if (wsRef.current) {
@@ -187,18 +196,11 @@ export function PopoutTerminal({ wsFactory, channelKey, title }: PopoutTerminalP
       isReconnect.current = true;
       scheduleReconnect();
     };
-  }, [wsFactory]);
+  }, [scheduleReconnect, wsFactory]);
 
-  const scheduleReconnect = useCallback(() => {
-    if (!mountedRef.current) return;
-    if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
-    reconnectTimer.current = setTimeout(() => {
-      if (mountedRef.current) connect();
-    }, 3000);
-  }, [connect]);
+  connectRef.current = connect;
 
   const didConnect = useRef(false);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: run once
   useEffect(() => {
     mountedRef.current = true;
     if (!didConnect.current) {
@@ -213,7 +215,7 @@ export function PopoutTerminal({ wsFactory, channelKey, title }: PopoutTerminalP
         cleanupRef.current = null;
       }
     };
-  }, []);
+  }, [connect]);
 
   return <div ref={termRef} className="fixed inset-0 bg-[#0e0e0e]" style={{ padding: 4 }} />;
 }

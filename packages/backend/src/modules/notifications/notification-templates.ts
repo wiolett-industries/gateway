@@ -35,19 +35,27 @@ hbs.registerHelper('round', (value, decimals) => {
   return Number(n.toFixed(d));
 });
 hbs.registerHelper('math', (a, op, b) => {
-  const x = Number(a), y = Number(b);
+  const x = Number(a),
+    y = Number(b);
   if (Number.isNaN(x) || Number.isNaN(y)) return a;
   switch (op) {
-    case '+': return x + y;
-    case '-': return x - y;
-    case '*': return x * y;
-    case '/': return y !== 0 ? x / y : 0;
-    case '%': return y !== 0 ? x % y : 0;
-    default: return x;
+    case '+':
+      return x + y;
+    case '-':
+      return x - y;
+    case '*':
+      return x * y;
+    case '/':
+      return y !== 0 ? x / y : 0;
+    case '%':
+      return y !== 0 ? x % y : 0;
+    default:
+      return x;
   }
 });
 hbs.registerHelper('percent', (value, total) => {
-  const v = Number(value), t = Number(total);
+  const v = Number(value),
+    t = Number(total);
   if (Number.isNaN(v) || Number.isNaN(t) || t === 0) return 0;
   return Number(((v / t) * 100).toFixed(1));
 });
@@ -93,7 +101,12 @@ hbs.registerHelper('pluralize', (count, singular, plural) => {
 // JSON-escape helper — use in JSON templates: {{jsonescape resource.name}}
 hbs.registerHelper('jsonescape', (str) => {
   if (typeof str !== 'string') return str;
-  return str.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t');
+  return str
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+    .replace(/\t/g, '\\t');
 });
 
 /**

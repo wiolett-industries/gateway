@@ -17,7 +17,9 @@ export class ExpiryAlertJob {
     private readonly criticalDays: number
   ) {}
 
-  setEventBus(bus: EventBusService) { this.eventBus = bus; }
+  setEventBus(bus: EventBusService) {
+    this.eventBus = bus;
+  }
 
   async run(): Promise<void> {
     logger.info('Starting expiry alert check');

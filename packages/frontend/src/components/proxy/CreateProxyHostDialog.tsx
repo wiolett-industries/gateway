@@ -25,7 +25,6 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
-import { isNodeIncompatible } from "@/types";
 import type {
   CreateProxyHostRequest,
   ForwardScheme,
@@ -35,6 +34,7 @@ import type {
   ProxyHostType,
   SSLCertificate,
 } from "@/types";
+import { isNodeIncompatible } from "@/types";
 
 interface CreateProxyHostDialogProps {
   open: boolean;

@@ -1,5 +1,5 @@
 import { Download, FileJson, Pencil, Play, Plus, Trash2, Upload } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
@@ -50,9 +50,17 @@ export function DockerTemplatesPage({
 
   // Create/Edit dialog
   const [dialogOpen, setDialogOpen] = useState(false);
+  const openCreate = useCallback(() => {
+    setEditingId(null);
+    setFormName("");
+    setFormDescription("");
+    setFormConfig("{}");
+    setDialogOpen(true);
+  }, []);
+
   useEffect(() => {
-    onCreateRef?.(() => setDialogOpen(true));
-  }, [onCreateRef]);
+    onCreateRef?.(openCreate);
+  }, [onCreateRef, openCreate]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formName, setFormName] = useState("");
   const [formDescription, setFormDescription] = useState("");
@@ -67,14 +75,17 @@ export function DockerTemplatesPage({
   const [deploying, setDeploying] = useState(false);
   const [dockerNodes, setDockerNodes] = useState<Node[]>([]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only
-  useEffect(() => {
-    fetchTemplates().finally(() => setIsLoading(false));
+  const loadTemplatesPageData = useCallback(async () => {
+    await fetchTemplates().finally(() => setIsLoading(false));
     api
       .listNodes({ type: "docker", limit: 100 })
       .then((r) => setDockerNodes(r.data))
       .catch(() => {});
-  }, []);
+  }, [fetchTemplates]);
+
+  useEffect(() => {
+    void loadTemplatesPageData();
+  }, [loadTemplatesPageData]);
 
   useRealtime("docker.template.changed", () => {
     fetchTemplates();
@@ -88,26 +99,18 @@ export function DockerTemplatesPage({
     );
   }, [templates, search]);
 
-  const openCreate = () => {
-    setEditingId(null);
-    setFormName("");
-    setFormDescription("");
-    setFormConfig("{}");
-    setDialogOpen(true);
-  };
-
-  const openEdit = (t: DockerTemplate) => {
+  const openEdit = useCallback((t: DockerTemplate) => {
     setEditingId(t.id);
     setFormName(t.name);
     setFormDescription(t.description ?? "");
     setFormConfig(JSON.stringify(t.config, null, 2));
     setDialogOpen(true);
-  };
+  }, []);
 
-  const closeDialog = () => {
+  const closeDialog = useCallback(() => {
     setDialogOpen(false);
     setEditingId(null);
-  };
+  }, []);
 
   const handleSave = async () => {
     if (!formName.trim()) return;
@@ -144,28 +147,34 @@ export function DockerTemplatesPage({
     }
   };
 
-  const handleDelete = async (t: DockerTemplate) => {
-    const ok = await confirm({
-      title: "Delete Template",
-      description: `Delete template "${t.name}"? This cannot be undone.`,
-      confirmLabel: "Delete",
-    });
-    if (!ok) return;
-    try {
-      await api.deleteDockerTemplate(t.id);
-      toast.success("Template deleted");
-      fetchTemplates();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to delete template");
-    }
-  };
+  const handleDelete = useCallback(
+    async (t: DockerTemplate) => {
+      const ok = await confirm({
+        title: "Delete Template",
+        description: `Delete template "${t.name}"? This cannot be undone.`,
+        confirmLabel: "Delete",
+      });
+      if (!ok) return;
+      try {
+        await api.deleteDockerTemplate(t.id);
+        toast.success("Template deleted");
+        fetchTemplates();
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to delete template");
+      }
+    },
+    [fetchTemplates]
+  );
 
-  const openDeploy = (t: DockerTemplate) => {
-    setDeployTemplateId(t.id);
-    setDeployNodeId(dockerNodes.length > 0 ? dockerNodes[0].id : "");
-    setDeployOverrides("");
-    setDeployOpen(true);
-  };
+  const openDeploy = useCallback(
+    (t: DockerTemplate) => {
+      setDeployTemplateId(t.id);
+      setDeployNodeId(dockerNodes.length > 0 ? dockerNodes[0].id : "");
+      setDeployOverrides("");
+      setDeployOpen(true);
+    },
+    [dockerNodes]
+  );
 
   const handleDeploy = async () => {
     if (!deployTemplateId || !deployNodeId) return;
@@ -193,7 +202,7 @@ export function DockerTemplatesPage({
     }
   };
 
-  const handleExport = (t: DockerTemplate) => {
+  const handleExport = useCallback((t: DockerTemplate) => {
     const json = JSON.stringify(
       { name: t.name, description: t.description, config: t.config },
       null,
@@ -206,7 +215,7 @@ export function DockerTemplatesPage({
     a.download = `${t.name.replace(/\s+/g, "-").toLowerCase()}.json`;
     a.click();
     URL.revokeObjectURL(url);
-  };
+  }, []);
 
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -235,11 +244,11 @@ export function DockerTemplatesPage({
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  const extractImage = (config: Record<string, unknown>): string => {
+  const extractImage = useCallback((config: Record<string, unknown>): string => {
     if (typeof config.image === "string") return config.image;
     if (typeof config.Image === "string") return config.Image;
     return "-";
-  };
+  }, []);
 
   const templateColumns: DataTableColumn<DockerTemplate>[] = useMemo(
     () => [

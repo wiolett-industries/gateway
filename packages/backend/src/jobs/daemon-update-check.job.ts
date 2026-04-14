@@ -13,7 +13,9 @@ export class DaemonUpdateCheckJob {
       for (const s of statuses) {
         const outdated = s.nodes.filter((n) => n.updateAvailable);
         if (outdated.length > 0) {
-          logger.info(`${s.daemonType} daemon update available: ${s.latestVersion} (${outdated.length} node(s) outdated)`);
+          logger.info(
+            `${s.daemonType} daemon update available: ${s.latestVersion} (${outdated.length} node(s) outdated)`
+          );
         }
       }
     } catch (error) {

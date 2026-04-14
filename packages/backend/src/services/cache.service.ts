@@ -1,5 +1,5 @@
-import { injectable, inject } from 'tsyringe';
 import { Redis } from 'ioredis';
+import { inject, injectable } from 'tsyringe';
 import { TOKENS } from '@/container.js';
 import { createChildLogger } from '@/lib/logger.js';
 

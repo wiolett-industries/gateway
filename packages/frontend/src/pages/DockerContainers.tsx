@@ -30,8 +30,8 @@ import { formatCreated } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
-import { isNodeIncompatible } from "@/types";
 import type { DockerContainer, Node } from "@/types";
+import { isNodeIncompatible } from "@/types";
 import { DockerDeployDialog } from "./DockerDeployDialog";
 import { containerDisplayName, STATUS_BADGE } from "./docker-detail/helpers";
 
@@ -74,12 +74,12 @@ export function DockerContainers({
 
   // Deploy dialog state
   const [deployOpen, setDeployOpen] = useState(false);
-  const openDeploy = () => setDeployOpen(true);
+  const openDeploy = useCallback(() => setDeployOpen(true), []);
 
   // Expose deploy dialog opener to parent
   useEffect(() => {
     onDeployRef?.(openDeploy);
-  }, [onDeployRef]);
+  }, [onDeployRef, openDeploy]);
 
   // When fixedNodeId is set (e.g. from node detail page), use it directly
   useEffect(() => {
@@ -88,28 +88,27 @@ export function DockerContainers({
     }
   }, [fixedNodeId, setSelectedNode]);
 
-  // Fetch docker nodes on mount — intentionally runs once
-  // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only effect
+  const loadDockerNodes = useCallback(async () => {
+    setNodesLoading(true);
+    try {
+      const r = await api.listNodes({ type: "docker", limit: 100 });
+      const compatible = r.data.filter((n) => !isNodeIncompatible(n));
+      setDockerNodes(compatible);
+      useDockerStore.getState().setDockerNodes(compatible);
+    } catch {
+      toast.error("Failed to load Docker nodes");
+    } finally {
+      setNodesLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (embedded) {
       setNodesLoading(false);
       return;
     }
-    setNodesLoading(true);
-    api
-      .listNodes({ type: "docker", limit: 100 })
-      .then((r) => {
-        const compatible = r.data.filter((n) => !isNodeIncompatible(n));
-        setDockerNodes(compatible);
-        // Also set in store for multi-node fetching
-        useDockerStore.getState().setDockerNodes(compatible);
-      })
-      .catch(() => {
-        toast.error("Failed to load Docker nodes");
-      })
-      .finally(() => setNodesLoading(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    void loadDockerNodes();
+  }, [embedded, loadDockerNodes]);
 
   // Fetch containers and auto-refresh every 30s
   useEffect(() => {
@@ -117,7 +116,7 @@ export function DockerContainers({
     fetchContainers();
     const interval = setInterval(() => fetchContainers(), 30_000);
     return () => clearInterval(interval);
-  }, [selectedNodeId, fetchContainers, embedded]);
+  }, [fetchContainers, embedded]);
 
   // Sync search input with store filter
   const handleSearch = useCallback(() => {
@@ -175,34 +174,46 @@ export function DockerContainers({
   const hasActiveFilters = filters.search !== "" || filters.status !== "all";
 
   // Container actions
-  const doAction = async (containerId: string, action: string, fn: () => Promise<void>) => {
-    setActionLoading((prev) => ({ ...prev, [containerId]: action }));
-    try {
-      await fn();
-      toast.success(`Container ${action} successful`);
-      // Force-fetch bypasses SWR cache; transition polling handles the rest
-      forceFetchContainers();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : `Failed to ${action} container`);
-    } finally {
-      setActionLoading((prev) => {
-        const copy = { ...prev };
-        delete copy[containerId];
-        return copy;
-      });
-    }
-  };
+  const doAction = useCallback(
+    async (containerId: string, action: string, fn: () => Promise<void>) => {
+      setActionLoading((prev) => ({ ...prev, [containerId]: action }));
+      try {
+        await fn();
+        toast.success(`Container ${action} successful`);
+        // Force-fetch bypasses SWR cache; transition polling handles the rest
+        forceFetchContainers();
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : `Failed to ${action} container`);
+      } finally {
+        setActionLoading((prev) => {
+          const copy = { ...prev };
+          delete copy[containerId];
+          return copy;
+        });
+      }
+    },
+    [forceFetchContainers]
+  );
 
-  const nodeOf = (c: DockerContainer) => (c as any)._nodeId || selectedNodeId!;
+  const nodeOf = useCallback(
+    (c: DockerContainer) => (c as any)._nodeId || selectedNodeId!,
+    [selectedNodeId]
+  );
 
-  const handleStart = (c: DockerContainer) =>
-    doAction(c.id, "start", () => api.startContainer(nodeOf(c), c.id));
+  const handleStart = useCallback(
+    (c: DockerContainer) => doAction(c.id, "start", () => api.startContainer(nodeOf(c), c.id)),
+    [doAction, nodeOf]
+  );
 
-  const handleStop = (c: DockerContainer) =>
-    doAction(c.id, "stop", () => api.stopContainer(nodeOf(c), c.id));
+  const handleStop = useCallback(
+    (c: DockerContainer) => doAction(c.id, "stop", () => api.stopContainer(nodeOf(c), c.id)),
+    [doAction, nodeOf]
+  );
 
-  const handleRestart = (c: DockerContainer) =>
-    doAction(c.id, "restart", () => api.restartContainer(nodeOf(c), c.id));
+  const handleRestart = useCallback(
+    (c: DockerContainer) => doAction(c.id, "restart", () => api.restartContainer(nodeOf(c), c.id)),
+    [doAction, nodeOf]
+  );
 
   const allContainerColumns: DataTableColumn<DockerContainer>[] = useMemo(
     () => [
@@ -331,32 +342,30 @@ export function DockerContainers({
     <>
       {/* Header — hidden in embedded mode */}
       {!embedded && (
-        <>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-2xl font-bold">Docker Containers</h1>
-                {!isLoading && selectedNodeId && (
-                  <Badge variant="secondary">{containers.length}</Badge>
-                )}
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Manage containers across your Docker nodes
-              </p>
-            </div>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
             <div className="flex items-center gap-2">
-              {selectedNodeId && (
-                <RefreshButton onClick={() => fetchContainers()} disabled={isLoading} />
-              )}
-              {hasScope("docker:containers:create") && selectedNodeId && (
-                <Button onClick={() => openDeploy()}>
-                  <Plus className="h-4 w-4 mr-1" />
-                  Deploy Container
-                </Button>
+              <h1 className="text-2xl font-bold">Docker Containers</h1>
+              {!isLoading && selectedNodeId && (
+                <Badge variant="secondary">{containers.length}</Badge>
               )}
             </div>
+            <p className="text-sm text-muted-foreground">
+              Manage containers across your Docker nodes
+            </p>
           </div>
-        </>
+          <div className="flex items-center gap-2">
+            {selectedNodeId && (
+              <RefreshButton onClick={() => fetchContainers()} disabled={isLoading} />
+            )}
+            {hasScope("docker:containers:create") && selectedNodeId && (
+              <Button onClick={openDeploy}>
+                <Plus className="h-4 w-4 mr-1" />
+                Deploy Container
+              </Button>
+            )}
+          </div>
+        </div>
       )}
 
       {/* Filters */}
@@ -385,11 +394,13 @@ export function DockerContainers({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="__all__">All nodes</SelectItem>
-                {(embedded ? useDockerStore.getState().dockerNodes : dockerNodes).filter((n) => !isNodeIncompatible(n)).map((n) => (
-                  <SelectItem key={n.id} value={n.id}>
-                    {n.displayName || n.hostname}
-                  </SelectItem>
-                ))}
+                {(embedded ? useDockerStore.getState().dockerNodes : dockerNodes)
+                  .filter((n) => !isNodeIncompatible(n))
+                  .map((n) => (
+                    <SelectItem key={n.id} value={n.id}>
+                      {n.displayName || n.hostname}
+                    </SelectItem>
+                  ))}
               </SelectContent>
             </Select>
             <Select value={filters.status} onValueChange={(v) => setFilters({ status: v })}>

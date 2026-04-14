@@ -96,10 +96,11 @@ function PanelContent({ onClose }: { onClose: () => void }) {
   // WS lifecycle managed by store subscription to aiPanelOpen — no connect/disconnect here
 
   // Auto-scroll to bottom on new messages or streaming updates
-  const lastMessageContent = messages[messages.length - 1]?.content;
+  const scrollKey = `${messages[messages.length - 1]?.id ?? ""}:${isStreaming ? "streaming" : "idle"}`;
   useEffect(() => {
+    if (!scrollKey) return;
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages.length, lastMessageContent, isStreaming]);
+  }, [scrollKey]);
 
   useEffect(() => {
     const timer = setTimeout(() => textareaRef.current?.focus(), 150);

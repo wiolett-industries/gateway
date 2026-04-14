@@ -161,9 +161,7 @@ export function SecretsSection({
                 </>
               ) : (
                 <>
-                  <span className="px-3 py-2 text-xs md:text-sm font-mono truncate">
-                    {row.key}
-                  </span>
+                  <span className="px-3 py-2 text-xs md:text-sm font-mono truncate">{row.key}</span>
                   <span className="px-3 py-2 text-xs md:text-sm font-mono text-muted-foreground truncate border-l border-border">
                     ••••••••
                   </span>

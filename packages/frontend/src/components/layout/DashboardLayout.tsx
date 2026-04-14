@@ -86,7 +86,12 @@ export function DashboardLayout() {
         const hasAdminScopes = user.scopes?.some((s: string) => s.startsWith("admin:")) ?? false;
         api.prefetchAll(hasAdminScopes);
         // Preload node types for sidebar visibility + Docker command palette
-        if (user.scopes?.some((s: string) => s.startsWith("nodes:") || s.startsWith("docker:") || s.startsWith("proxy:"))) {
+        if (
+          user.scopes?.some(
+            (s: string) =>
+              s.startsWith("nodes:") || s.startsWith("docker:") || s.startsWith("proxy:")
+          )
+        ) {
           api
             .listNodes({ limit: 100 })
             .then((r) => {
@@ -336,7 +341,11 @@ export function DashboardLayout() {
               <SheetHeader className="sr-only">
                 <SheetTitle>Navigation</SheetTitle>
               </SheetHeader>
-              <SidebarContent onNavigate={() => setMobileMenuOpen(false)} alwaysExpanded hasNginxNodes={hasNginxNodes} />
+              <SidebarContent
+                onNavigate={() => setMobileMenuOpen(false)}
+                alwaysExpanded
+                hasNginxNodes={hasNginxNodes}
+              />
             </SheetContent>
           </Sheet>
 

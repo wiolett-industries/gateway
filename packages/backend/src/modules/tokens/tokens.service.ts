@@ -1,11 +1,11 @@
-import { injectable, inject } from 'tsyringe';
-import { eq, and } from 'drizzle-orm';
 import { createHash, randomBytes } from 'node:crypto';
+import { and, eq } from 'drizzle-orm';
+import { inject, injectable } from 'tsyringe';
 import { TOKENS } from '@/container.js';
-import { apiTokens, users, permissionGroups } from '@/db/schema/index.js';
-import { AppError } from '@/middleware/error-handler.js';
-import { createChildLogger } from '@/lib/logger.js';
 import type { DrizzleClient } from '@/db/client.js';
+import { apiTokens, permissionGroups, users } from '@/db/schema/index.js';
+import { createChildLogger } from '@/lib/logger.js';
+import { AppError } from '@/middleware/error-handler.js';
 import type { User } from '@/types.js';
 import type { CreateTokenInput } from './tokens.schemas.js';
 
@@ -20,17 +20,20 @@ export class TokensService {
   constructor(@inject(TOKENS.DrizzleClient) private readonly db: DrizzleClient) {}
 
   async createToken(userId: string, input: CreateTokenInput) {
-    const raw = 'gw_' + randomBytes(32).toString('hex');
+    const raw = `gw_${randomBytes(32).toString('hex')}`;
     const tokenHash = hashToken(raw);
     const tokenPrefix = raw.slice(0, 10);
 
-    const [token] = await this.db.insert(apiTokens).values({
-      userId,
-      name: input.name,
-      tokenHash,
-      tokenPrefix,
-      scopes: input.scopes,
-    }).returning();
+    const [token] = await this.db
+      .insert(apiTokens)
+      .values({
+        userId,
+        name: input.name,
+        tokenHash,
+        tokenPrefix,
+        scopes: input.scopes,
+      })
+      .returning();
 
     logger.info('Created API token', { tokenId: token.id, userId, scopes: input.scopes });
 
@@ -50,7 +53,7 @@ export class TokensService {
       where: eq(apiTokens.userId, userId),
     });
 
-    return tokens.map(t => ({
+    return tokens.map((t) => ({
       id: t.id,
       name: t.name,
       tokenPrefix: t.tokenPrefix,
@@ -90,11 +93,12 @@ export class TokensService {
 
     if (!token) return null;
 
-    this.db.update(apiTokens)
+    this.db
+      .update(apiTokens)
       .set({ lastUsedAt: new Date() })
       .where(eq(apiTokens.id, token.id))
       .execute()
-      .catch(err => logger.error('Failed to update lastUsedAt', { err }));
+      .catch((err) => logger.error('Failed to update lastUsedAt', { err }));
 
     const user = await this.db.query.users.findFirst({
       where: eq(users.id, token.userId),

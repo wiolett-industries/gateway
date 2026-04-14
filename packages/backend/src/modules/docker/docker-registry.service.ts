@@ -304,7 +304,7 @@ export class DockerRegistryService {
    */
   async getAuthForPull(registryId: string): Promise<{ url: string; authJson: string } | null> {
     const [row] = await this.db.select().from(dockerRegistries).where(eq(dockerRegistries.id, registryId)).limit(1);
-    if (!row || !row.username || !row.encryptedPassword) return null;
+    if (!row?.username || !row.encryptedPassword) return null;
     const password = this.decryptPassword(row.encryptedPassword);
     const authJson = Buffer.from(
       JSON.stringify({

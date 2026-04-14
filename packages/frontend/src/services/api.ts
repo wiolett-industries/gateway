@@ -15,6 +15,7 @@ import type {
   CreateIntermediateCARequest,
   CreateProxyHostRequest,
   CreateRootCARequest,
+  DaemonUpdateStatus,
   DashboardStats,
   DNSChallenge,
   DnsStatus,
@@ -23,11 +24,10 @@ import type {
   DockerNetwork,
   DockerRegistry,
   DockerSecret,
-  DaemonUpdateStatus,
-  DockerWebhook,
   DockerTask,
   DockerTemplate,
   DockerVolume,
+  DockerWebhook,
   Domain,
   DomainSearchResult,
   DomainWithUsage,
@@ -59,7 +59,7 @@ import type {
   UploadCertRequest,
   User,
 } from "@/types";
-import { ApiClientBase, API_BASE } from "./api-base";
+import { API_BASE, ApiClientBase } from "./api-base";
 
 const AUTH_BASE = "/auth";
 
@@ -1087,27 +1087,25 @@ class ApiClient extends ApiClientBase {
   // ── Daemon Updates ──────────────────────────────────────────────
 
   async getDaemonUpdates(): Promise<DaemonUpdateStatus[]> {
-    return this.unwrapData(
-      this.request<{ data: DaemonUpdateStatus[] }>("/system/daemon-updates"),
-    );
+    return this.unwrapData(this.request<{ data: DaemonUpdateStatus[] }>("/system/daemon-updates"));
   }
 
   async checkDaemonUpdates(): Promise<DaemonUpdateStatus[]> {
     return this.unwrapData(
       this.request<{ data: DaemonUpdateStatus[] }>("/system/daemon-updates/check", {
         method: "POST",
-      }),
+      })
     );
   }
 
   async triggerDaemonUpdate(
-    nodeId: string,
+    nodeId: string
   ): Promise<{ scheduled: boolean; targetVersion: string }> {
     return this.unwrapData(
       this.request<{ data: { scheduled: boolean; targetVersion: string } }>(
         `/system/daemon-updates/${nodeId}`,
-        { method: "POST" },
-      ),
+        { method: "POST" }
+      )
     );
   }
 
@@ -1672,12 +1670,9 @@ class ApiClient extends ApiClientBase {
 
   // ── Docker Webhooks ────────────────────────────────────────────
 
-  async getContainerWebhook(
-    nodeId: string,
-    containerName: string,
-  ): Promise<DockerWebhook | null> {
+  async getContainerWebhook(nodeId: string, containerName: string): Promise<DockerWebhook | null> {
     const result = await this.request<{ data: DockerWebhook | null }>(
-      `/docker/nodes/${nodeId}/containers/${encodeURIComponent(containerName)}/webhook`,
+      `/docker/nodes/${nodeId}/containers/${encodeURIComponent(containerName)}/webhook`
     );
     return result.data;
   }
@@ -1685,48 +1680,42 @@ class ApiClient extends ApiClientBase {
   async upsertContainerWebhook(
     nodeId: string,
     containerName: string,
-    input: { cleanupEnabled?: boolean; retentionCount?: number },
+    input: { cleanupEnabled?: boolean; retentionCount?: number }
   ): Promise<DockerWebhook> {
     return this.unwrapData(
       this.request<{ data: DockerWebhook }>(
         `/docker/nodes/${nodeId}/containers/${encodeURIComponent(containerName)}/webhook`,
-        { method: "PUT", body: JSON.stringify(input) },
-      ),
+        { method: "PUT", body: JSON.stringify(input) }
+      )
     );
   }
 
-  async deleteContainerWebhook(
-    nodeId: string,
-    containerName: string,
-  ): Promise<void> {
+  async deleteContainerWebhook(nodeId: string, containerName: string): Promise<void> {
     await this.request<void>(
       `/docker/nodes/${nodeId}/containers/${encodeURIComponent(containerName)}/webhook`,
-      { method: "DELETE" },
+      { method: "DELETE" }
     );
   }
 
-  async regenerateWebhookToken(
-    nodeId: string,
-    containerName: string,
-  ): Promise<DockerWebhook> {
+  async regenerateWebhookToken(nodeId: string, containerName: string): Promise<DockerWebhook> {
     return this.unwrapData(
       this.request<{ data: DockerWebhook }>(
         `/docker/nodes/${nodeId}/containers/${encodeURIComponent(containerName)}/webhook/regenerate`,
-        { method: "POST" },
-      ),
+        { method: "POST" }
+      )
     );
   }
 
   async pullImageSync(
     nodeId: string,
     imageRef: string,
-    registryId?: string,
+    registryId?: string
   ): Promise<{ success: boolean; imageRef: string }> {
     return this.unwrapData(
       this.request<{ data: { success: boolean; imageRef: string } }>(
         `/docker/nodes/${nodeId}/images/pull-sync`,
-        { method: "POST", body: JSON.stringify({ imageRef, registryId }) },
-      ),
+        { method: "POST", body: JSON.stringify({ imageRef, registryId }) }
+      )
     );
   }
 
@@ -1768,19 +1757,22 @@ class ApiClient extends ApiClientBase {
   }
 
   async createAlertRule(
-    data: Omit<import("@/types").AlertRule, "id" | "createdAt" | "updatedAt" | "isBuiltin">,
+    data: Omit<import("@/types").AlertRule, "id" | "createdAt" | "updatedAt" | "isBuiltin">
   ): Promise<import("@/types").AlertRule> {
     return this.unwrapData(
-      this.request("/notifications/alert-rules", { method: "POST", body: JSON.stringify(data) }),
+      this.request("/notifications/alert-rules", { method: "POST", body: JSON.stringify(data) })
     );
   }
 
   async updateAlertRule(
     id: string,
-    data: Partial<Omit<import("@/types").AlertRule, "id" | "createdAt" | "updatedAt" | "isBuiltin">>,
+    data: Partial<Omit<import("@/types").AlertRule, "id" | "createdAt" | "updatedAt" | "isBuiltin">>
   ): Promise<import("@/types").AlertRule> {
     return this.unwrapData(
-      this.request(`/notifications/alert-rules/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+      this.request(`/notifications/alert-rules/${id}`, {
+        method: "PUT",
+        body: JSON.stringify(data),
+      })
     );
   }
 
@@ -1816,19 +1808,19 @@ class ApiClient extends ApiClientBase {
   }
 
   async createWebhook(
-    data: Omit<import("@/types").NotificationWebhook, "id" | "createdAt" | "updatedAt">,
+    data: Omit<import("@/types").NotificationWebhook, "id" | "createdAt" | "updatedAt">
   ): Promise<import("@/types").NotificationWebhook> {
     return this.unwrapData(
-      this.request("/notifications/webhooks", { method: "POST", body: JSON.stringify(data) }),
+      this.request("/notifications/webhooks", { method: "POST", body: JSON.stringify(data) })
     );
   }
 
   async updateWebhook(
     id: string,
-    data: Partial<Omit<import("@/types").NotificationWebhook, "id" | "createdAt" | "updatedAt">>,
+    data: Partial<Omit<import("@/types").NotificationWebhook, "id" | "createdAt" | "updatedAt">>
   ): Promise<import("@/types").NotificationWebhook> {
     return this.unwrapData(
-      this.request(`/notifications/webhooks/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+      this.request(`/notifications/webhooks/${id}`, { method: "PUT", body: JSON.stringify(data) })
     );
   }
 
@@ -1836,18 +1828,20 @@ class ApiClient extends ApiClientBase {
     await this.request(`/notifications/webhooks/${id}`, { method: "DELETE" });
   }
 
-  async testWebhook(id: string): Promise<{ success: boolean; statusCode?: number; error?: string; rendered?: string }> {
-    return this.unwrapData(
-      this.request(`/notifications/webhooks/${id}/test`, { method: "POST" }),
-    );
+  async testWebhook(
+    id: string
+  ): Promise<{ success: boolean; statusCode?: number; error?: string; rendered?: string }> {
+    return this.unwrapData(this.request(`/notifications/webhooks/${id}/test`, { method: "POST" }));
   }
 
-  async previewWebhookTemplate(bodyTemplate: string): Promise<{ rendered: string; context: Record<string, unknown> }> {
+  async previewWebhookTemplate(
+    bodyTemplate: string
+  ): Promise<{ rendered: string; context: Record<string, unknown> }> {
     return this.unwrapData(
       this.request("/notifications/webhooks/preview", {
         method: "POST",
         body: JSON.stringify({ bodyTemplate }),
-      }),
+      })
     );
   }
 
@@ -1876,7 +1870,9 @@ class ApiClient extends ApiClientBase {
     return this.request(`/notifications/deliveries${qs ? `?${qs}` : ""}`);
   }
 
-  async getDeliveryStats(webhookId?: string): Promise<{ total: number; success: number; failed: number; retrying: number }> {
+  async getDeliveryStats(
+    webhookId?: string
+  ): Promise<{ total: number; success: number; failed: number; retrying: number }> {
     const qs = webhookId ? `?webhookId=${webhookId}` : "";
     return this.unwrapData(this.request(`/notifications/deliveries/stats${qs}`));
   }

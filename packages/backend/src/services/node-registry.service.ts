@@ -157,7 +157,12 @@ export class NodeRegistryService {
     await this.recordOfflineStatus(nodeId);
 
     logger.info('Node deregistered', { nodeId });
-    this.eventBus?.publish('node.changed', { id: nodeId, action: 'updated', status: 'offline', hostname: node.hostname });
+    this.eventBus?.publish('node.changed', {
+      id: nodeId,
+      action: 'updated',
+      status: 'offline',
+      hostname: node.hostname,
+    });
   }
 
   getNode(nodeId: string): ConnectedNode | undefined {
@@ -286,7 +291,12 @@ export class NodeRegistryService {
             .where(eq(nodes.id, dbNode.id));
           await this.recordOfflineStatus(dbNode.id);
           logger.warn('Marked stale node as offline', { nodeId: dbNode.id });
-          this.eventBus?.publish('node.changed', { id: dbNode.id, action: 'updated', status: 'offline', hostname: dbNode.hostname });
+          this.eventBus?.publish('node.changed', {
+            id: dbNode.id,
+            action: 'updated',
+            status: 'offline',
+            hostname: dbNode.hostname,
+          });
         }
       }
     }
@@ -310,19 +320,27 @@ export class NodeRegistryService {
           .where(eq(nodes.id, node.nodeId))
           .limit(1);
         if (dbRow?.status === 'online') {
-          await this.db.update(nodes).set({ status: 'offline', updatedAt: new Date() }).where(eq(nodes.id, node.nodeId));
-          this.eventBus?.publish('node.changed', { id: node.nodeId, action: 'updated', status: 'offline', hostname: node.hostname });
-          logger.warn('Marked connected node offline (missed health reports)', { nodeId: node.nodeId, elapsedMs: elapsed });
+          await this.db
+            .update(nodes)
+            .set({ status: 'offline', updatedAt: new Date() })
+            .where(eq(nodes.id, node.nodeId));
+          this.eventBus?.publish('node.changed', {
+            id: node.nodeId,
+            action: 'updated',
+            status: 'offline',
+            hostname: node.hostname,
+          });
+          logger.warn('Marked connected node offline (missed health reports)', {
+            nodeId: node.nodeId,
+            elapsedMs: elapsed,
+          });
         }
       }
     }
 
     // 2. Disconnected nodes — keep recording offline entries (same as proxy health check job)
     const connectedIds = this.getConnectedNodeIds();
-    const offlineNodes = await this.db
-      .select({ id: nodes.id })
-      .from(nodes)
-      .where(eq(nodes.status, 'offline'));
+    const offlineNodes = await this.db.select({ id: nodes.id }).from(nodes).where(eq(nodes.status, 'offline'));
 
     for (const dbNode of offlineNodes) {
       if (!connectedIds.includes(dbNode.id)) {

@@ -3,12 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { formatBytes, formatRelativeDate } from "@/lib/utils";
@@ -153,9 +148,7 @@ export function HousekeepingSection() {
               stat={hkStats ? formatBytes(hkStats.nginxLogs.totalSizeBytes) : "..."}
               statDetail={hkStats ? `${hkStats.nginxLogs.fileCount} files` : undefined}
               enabled={hkConfig.nginxLogs.enabled}
-              onToggle={(v) =>
-                updateHkConfig({ nginxLogs: { ...hkConfig.nginxLogs, enabled: v } })
-              }
+              onToggle={(v) => updateHkConfig({ nginxLogs: { ...hkConfig.nginxLogs, enabled: v } })}
               retentionDays={hkConfig.nginxLogs.retentionDays}
               onRetentionChange={(v) =>
                 updateHkConfig({ nginxLogs: { ...hkConfig.nginxLogs, retentionDays: v } })
@@ -169,9 +162,7 @@ export function HousekeepingSection() {
               stat={hkStats ? hkStats.auditLog.totalRows.toLocaleString() : "..."}
               statDetail="rows"
               enabled={hkConfig.auditLog.enabled}
-              onToggle={(v) =>
-                updateHkConfig({ auditLog: { ...hkConfig.auditLog, enabled: v } })
-              }
+              onToggle={(v) => updateHkConfig({ auditLog: { ...hkConfig.auditLog, enabled: v } })}
               retentionDays={hkConfig.auditLog.retentionDays}
               onRetentionChange={(v) =>
                 updateHkConfig({ auditLog: { ...hkConfig.auditLog, retentionDays: v } })
@@ -206,9 +197,7 @@ export function HousekeepingSection() {
               statDetail="found"
               enabled={hkConfig.orphanedCerts.enabled}
               onToggle={(v) => updateHkConfig({ orphanedCerts: { enabled: v } })}
-              lastResult={hkStats?.lastRun?.categories.find(
-                (c) => c.category === "Orphaned Certs"
-              )}
+              lastResult={hkStats?.lastRun?.categories.find((c) => c.category === "Orphaned Certs")}
               disabled={hkRunning}
             />
             <HousekeepingCard
@@ -216,9 +205,7 @@ export function HousekeepingSection() {
               description="Clean up validation tokens"
               stat={hkStats ? String(hkStats.acmeChallenges.fileCount) : "..."}
               statDetail={
-                hkStats
-                  ? `files (${formatBytes(hkStats.acmeChallenges.totalSizeBytes)})`
-                  : "files"
+                hkStats ? `files (${formatBytes(hkStats.acmeChallenges.totalSizeBytes)})` : "files"
               }
               enabled={hkConfig.acmeCleanup.enabled}
               onToggle={(v) => updateHkConfig({ acmeCleanup: { enabled: v } })}
@@ -236,9 +223,7 @@ export function HousekeepingSection() {
               }
               enabled={hkConfig.dockerPrune.enabled}
               onToggle={(v) => updateHkConfig({ dockerPrune: { enabled: v } })}
-              lastResult={hkStats?.lastRun?.categories.find(
-                (c) => c.category === "Docker Images"
-              )}
+              lastResult={hkStats?.lastRun?.categories.find((c) => c.category === "Docker Images")}
               disabled={hkRunning}
             />
           </div>

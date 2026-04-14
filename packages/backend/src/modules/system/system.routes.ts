@@ -127,7 +127,7 @@ systemRoutes.post('/daemon-updates/:nodeId', requireScope('admin:update'), async
   const release = await service.getLatestRelease(daemonType);
   if (!release) return c.json({ error: 'No release found for this daemon type' }, 404);
 
-  const arch = ((node.capabilities ?? {}) as Record<string, unknown>).architecture as string ?? 'amd64';
+  const arch = (((node.capabilities ?? {}) as Record<string, unknown>).architecture as string) ?? 'amd64';
   const downloadUrl = service.getDownloadUrl(daemonType, release.tagName, arch);
 
   // Fetch checksum from checksums.txt

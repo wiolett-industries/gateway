@@ -163,63 +163,74 @@ export interface EventMapping {
 export const EVENT_BUS_MAPPINGS: Record<string, EventMapping[]> = {
   'node.changed': [
     {
-      category: 'node', eventId: 'online',
+      category: 'node',
+      eventId: 'online',
       match: (p) => p.status === 'online',
       extractResource: (p) => ({ type: 'node', id: p.id, name: p.hostname }),
     },
     {
-      category: 'node', eventId: 'offline',
+      category: 'node',
+      eventId: 'offline',
       match: (p) => p.status === 'offline',
       extractResource: (p) => ({ type: 'node', id: p.id, name: p.hostname }),
     },
   ],
   'ssl.cert.changed': [
     {
-      category: 'certificate', eventId: 'issued',
+      category: 'certificate',
+      eventId: 'issued',
       match: (p) => p.action === 'created',
       extractResource: (p) => ({ type: 'certificate', id: p.id, name: p.name }),
     },
     {
-      category: 'certificate', eventId: 'renewed',
+      category: 'certificate',
+      eventId: 'renewed',
       match: (p) => p.action === 'renewed',
       extractResource: (p) => ({ type: 'certificate', id: p.id, name: p.name }),
     },
     {
-      category: 'certificate', eventId: 'renewal_failed',
+      category: 'certificate',
+      eventId: 'renewal_failed',
       match: (p) => p.action === 'renewal_failed',
       extractResource: (p) => ({ type: 'certificate', id: p.id, name: p.name }),
     },
     {
-      category: 'certificate', eventId: 'expired',
+      category: 'certificate',
+      eventId: 'expired',
       match: (p) => p.action === 'expired',
       extractResource: (p) => ({ type: 'certificate', id: p.id, name: p.name }),
     },
   ],
   'proxy.host.changed': [
     {
-      category: 'proxy', eventId: 'created',
+      category: 'proxy',
+      eventId: 'created',
       match: (p) => p.action === 'created',
       extractResource: (p) => ({ type: 'proxy', id: p.id, name: p.domain }),
     },
     {
-      category: 'proxy', eventId: 'deleted',
+      category: 'proxy',
+      eventId: 'deleted',
       match: (p) => p.action === 'deleted',
       extractResource: (p) => ({ type: 'proxy', id: p.id, name: p.domain }),
     },
     {
-      category: 'proxy', eventId: 'health.offline',
+      category: 'proxy',
+      eventId: 'health.offline',
       match: (p) => p.action === 'health.offline',
       extractResource: (p) => ({ type: 'proxy', id: p.id, name: p.domain }),
       extractData: (p) => ({ health_status: p.health_status }),
     },
     {
-      category: 'proxy', eventId: 'health.degraded',
+      category: 'proxy',
+      eventId: 'health.degraded',
       match: (p) => p.action === 'health.degraded',
       extractResource: (p) => ({ type: 'proxy', id: p.id, name: p.domain }),
       extractData: (p) => ({ health_status: p.health_status }),
     },
     {
-      category: 'proxy', eventId: 'health.online',
+      category: 'proxy',
+      eventId: 'health.online',
       match: (p) => p.action === 'health.online',
       extractResource: (p) => ({ type: 'proxy', id: p.id, name: p.domain }),
       extractData: (p) => ({ health_status: p.health_status }),
@@ -227,19 +238,22 @@ export const EVENT_BUS_MAPPINGS: Record<string, EventMapping[]> = {
   ],
   'docker.container.changed': [
     {
-      category: 'container', eventId: 'started',
+      category: 'container',
+      eventId: 'started',
       match: (p) => p.action === 'started',
       extractResource: (p) => ({ type: 'container', id: p.id, name: p.name }),
       extractData: (p) => ({ nodeId: p.nodeId }),
     },
     {
-      category: 'container', eventId: 'stopped',
+      category: 'container',
+      eventId: 'stopped',
       match: (p) => p.action === 'stopped',
       extractResource: (p) => ({ type: 'container', id: p.id, name: p.name }),
       extractData: (p) => ({ nodeId: p.nodeId }),
     },
     {
-      category: 'container', eventId: 'exited',
+      category: 'container',
+      eventId: 'exited',
       match: (p) => p.action === 'killed',
       extractResource: (p) => ({ type: 'container', id: p.id, name: p.name }),
       extractData: (p) => ({ nodeId: p.nodeId }),
@@ -247,11 +261,14 @@ export const EVENT_BUS_MAPPINGS: Record<string, EventMapping[]> = {
   ],
 };
 
-
 // ── Threshold Metric Extraction ───────────────────────────────────────
 
 /** Given a category + metric, extract its value from a health report */
-export function extractMetricFromHealthReport(category: string, metric: string, healthData: any): { values: Array<{ resourceId: string; value: number }> } | null {
+export function extractMetricFromHealthReport(
+  category: string,
+  metric: string,
+  healthData: any
+): { values: Array<{ resourceId: string; value: number }> } | null {
   if (category === 'node') {
     switch (metric) {
       case 'cpu': {
@@ -314,10 +331,15 @@ export function extractMetricFromHealthReport(category: string, metric: string, 
 /** Evaluate a threshold condition */
 export function evaluateThreshold(value: number, operator: string, threshold: number): boolean {
   switch (operator) {
-    case '>': return value > threshold;
-    case '>=': return value >= threshold;
-    case '<': return value < threshold;
-    case '<=': return value <= threshold;
-    default: return false;
+    case '>':
+      return value > threshold;
+    case '>=':
+      return value >= threshold;
+    case '<':
+      return value < threshold;
+    case '<=':
+      return value <= threshold;
+    default:
+      return false;
   }
 }

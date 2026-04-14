@@ -75,7 +75,7 @@ dockerWebhookTriggerRoutes.post('/:token', async (c) => {
 
   // Look up webhook by token
   const webhook = await service.getByToken(token);
-  if (!webhook || !webhook.enabled) {
+  if (!webhook?.enabled) {
     return c.json({ error: 'Invalid or disabled webhook' }, 404);
   }
 

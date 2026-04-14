@@ -24,7 +24,6 @@ import { MoveToFolderDialog } from "@/components/proxy/MoveToFolderDialog";
 import { ProxyHostRow } from "@/components/proxy/ProxyHostRow";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { useRealtime } from "@/hooks/use-realtime";
 import {
   Select,
   SelectContent,
@@ -32,6 +31,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useRealtime } from "@/hooks/use-realtime";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useFolderStore } from "@/stores/folders";

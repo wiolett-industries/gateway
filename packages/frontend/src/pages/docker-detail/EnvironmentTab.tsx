@@ -10,7 +10,7 @@ import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
 import type { DockerSecret } from "@/types";
-import { SecretsSection, type SecretRow } from "./SecretsSection";
+import { type SecretRow, SecretsSection } from "./SecretsSection";
 
 export function EnvironmentTab({
   nodeId,

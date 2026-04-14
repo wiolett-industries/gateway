@@ -128,9 +128,7 @@ export function AIConfigSection() {
                   key={level}
                   onClick={() => {
                     setAiConfig({ ...aiConfig, reasoningEffort: level });
-                    setAiSavedConfig((prev) =>
-                      prev ? { ...prev, reasoningEffort: level } : prev
-                    );
+                    setAiSavedConfig((prev) => (prev ? { ...prev, reasoningEffort: level } : prev));
                     updateAIConfig({ reasoningEffort: level });
                   }}
                   className={`px-3 py-1.5 text-xs capitalize transition-colors ${
@@ -258,9 +256,7 @@ export function AIConfigSection() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="max_completion_tokens">
-                        max_completion_tokens
-                      </SelectItem>
+                      <SelectItem value="max_completion_tokens">max_completion_tokens</SelectItem>
                       <SelectItem value="max_tokens">max_tokens</SelectItem>
                     </SelectContent>
                   </Select>
@@ -277,9 +273,7 @@ export function AIConfigSection() {
                 className="w-full flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm resize-none min-h-[120px]"
                 placeholder="Add custom instructions for the AI assistant.&#10;&#10;Examples:&#10;- Company PKI policies and naming conventions&#10;- Preferred certificate settings&#10;- Security guidelines"
                 value={aiConfig.customSystemPrompt}
-                onChange={(e) =>
-                  setAiConfig({ ...aiConfig, customSystemPrompt: e.target.value })
-                }
+                onChange={(e) => setAiConfig({ ...aiConfig, customSystemPrompt: e.target.value })}
               />
             </div>
 

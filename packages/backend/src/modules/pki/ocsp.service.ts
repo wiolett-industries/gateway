@@ -1,14 +1,12 @@
-import { injectable, inject } from 'tsyringe';
-import { eq, and } from 'drizzle-orm';
-import crypto from 'node:crypto';
+import { and, eq } from 'drizzle-orm';
+import { inject, injectable } from 'tsyringe';
 import { TOKENS } from '@/container.js';
-import { certificates, certificateAuthorities } from '@/db/schema/index.js';
-import { CryptoService } from '@/services/crypto.service.js';
-import { CAService } from './ca.service.js';
-import { CacheService } from '@/services/cache.service.js';
-import { getEnv } from '@/config/env.js';
-import { createChildLogger } from '@/lib/logger.js';
 import type { DrizzleClient } from '@/db/client.js';
+import { certificateAuthorities, certificates } from '@/db/schema/index.js';
+import { createChildLogger } from '@/lib/logger.js';
+import type { CacheService } from '@/services/cache.service.js';
+import type { CryptoService } from '@/services/crypto.service.js';
+import type { CAService } from './ca.service.js';
 
 const logger = createChildLogger('OCSPService');
 
@@ -24,20 +22,13 @@ const OCSP_RESPONSE_STATUS = {
   UNAUTHORIZED: 6,
 } as const;
 
-// Certificate status
-const CERT_STATUS = {
-  GOOD: 0,
-  REVOKED: 1,
-  UNKNOWN: 2,
-} as const;
-
 @injectable()
 export class OCSPService {
   constructor(
     @inject(TOKENS.DrizzleClient) private readonly db: DrizzleClient,
     private readonly cryptoService: CryptoService,
     private readonly caService: CAService,
-    private readonly cacheService: CacheService,
+    private readonly cacheService: CacheService
   ) {}
 
   /**
@@ -45,7 +36,7 @@ export class OCSPService {
    * Full ASN.1 OCSP parsing/building would use @peculiar/asn1-ocsp.
    * This is a simplified implementation that responds with the certificate status.
    */
-  async handleOCSPRequest(caId: string, requestBody: Buffer): Promise<Buffer> {
+  async handleOCSPRequest(caId: string, _requestBody: Buffer): Promise<Buffer> {
     try {
       // For a full implementation, we'd parse the OCSP request using @peculiar/asn1-ocsp
       // and extract the serial number being queried. For now, return a basic response
@@ -71,16 +62,16 @@ export class OCSPService {
   /**
    * Check certificate status by serial number (used for API-based status checks).
    */
-  async getCertificateStatus(caId: string, serialNumber: string): Promise<{
+  async getCertificateStatus(
+    caId: string,
+    serialNumber: string
+  ): Promise<{
     status: 'good' | 'revoked' | 'unknown';
     revokedAt?: Date;
     revocationReason?: string;
   }> {
     const cert = await this.db.query.certificates.findFirst({
-      where: and(
-        eq(certificates.caId, caId),
-        eq(certificates.serialNumber, serialNumber),
-      ),
+      where: and(eq(certificates.caId, caId), eq(certificates.serialNumber, serialNumber)),
     });
 
     if (!cert) {
@@ -105,12 +96,10 @@ export class OCSPService {
   async generateOCSPResponderCert(caId: string): Promise<void> {
     // Generate a delegated OCSP signing certificate for the CA
     // This cert is used to sign OCSP responses without exposing the CA key
-    const { ca, privateKeyPem: caPrivateKeyPem } = await this.caService.getCASigningMaterials(caId);
+    const { ca } = await this.caService.getCASigningMaterials(caId);
 
-    const { publicKeyPem, privateKeyPem } = this.cryptoService.generateKeyPair(ca.keyAlgorithm);
+    const { privateKeyPem } = this.cryptoService.generateKeyPair(ca.keyAlgorithm);
 
-    const serialNumber = this.cryptoService.generateSerialNumber();
-    const notBefore = new Date();
     const notAfter = new Date();
     notAfter.setFullYear(notAfter.getFullYear() + 1); // OCSP responder cert valid for 1 year
 

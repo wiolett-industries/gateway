@@ -1,7 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { createChildLogger } from '@/lib/logger.js';
 import type { CacheService } from '@/services/cache.service.js';
-import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import type { NodeRegistryService } from '@/services/node-registry.service.js';
 
 const logger = createChildLogger('NodeMonitoring');
@@ -26,7 +25,6 @@ export class NodeMonitoringService extends EventEmitter {
 
   constructor(
     private registry: NodeRegistryService,
-    private dispatch: NodeDispatchService,
     private cache?: CacheService
   ) {
     super();

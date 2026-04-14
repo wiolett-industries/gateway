@@ -1,6 +1,6 @@
 import { Network, Plus, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
@@ -19,7 +19,6 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { RefreshButton } from "@/components/ui/refresh-button";
-import { useRealtime } from "@/hooks/use-realtime";
 import {
   Select,
   SelectContent,
@@ -27,6 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useRealtime } from "@/hooks/use-realtime";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
@@ -51,13 +51,13 @@ export function DockerNetworks({
   // Create dialog
   const [createOpen, setCreateOpen] = useState(false);
   const [createNodeId, setCreateNodeId] = useState<string>("");
-  const openCreate = () => {
+  const openCreate = useCallback(() => {
     setCreateNodeId(selectedNodeId || "");
     setCreateOpen(true);
-  };
+  }, [selectedNodeId]);
   useEffect(() => {
     onCreateRef?.(() => openCreate());
-  }, [onCreateRef]);
+  }, [onCreateRef, openCreate]);
   const [createName, setCreateName] = useState("");
   const [createDriver, setCreateDriver] = useState("bridge");
   const [createSubnet, setCreateSubnet] = useState("");
@@ -72,32 +72,34 @@ export function DockerNetworks({
   >([]);
   const [usageLoading, setUsageLoading] = useState(false);
 
-  const showUsage = async (net: DockerNetwork) => {
-    const nid = (net as any)._nodeId || selectedNodeId;
-    if (!nid) return;
-    setUsageNetwork(net.name);
-    setUsageOpen(true);
-    setUsageLoading(true);
-    try {
-      const c = (net as any).containers ?? (net as any).Containers ?? {};
-      const containerIds = Object.keys(c);
-      const containers = await api.listDockerContainers(nid);
-      const matched = (containers ?? [])
-        .filter((ct: any) => containerIds.includes(ct.id))
-        .map((ct: any) => ({
-          id: ct.id,
-          name: (ct.name ?? "").replace(/^\//, ""),
-          state: ct.state,
-        }));
-      setUsageContainers(matched);
-    } catch {
-      setUsageContainers([]);
-    }
-    setUsageLoading(false);
-  };
+  const showUsage = useCallback(
+    async (net: DockerNetwork) => {
+      const nid = (net as any)._nodeId || selectedNodeId;
+      if (!nid) return;
+      setUsageNetwork(net.name);
+      setUsageOpen(true);
+      setUsageLoading(true);
+      try {
+        const c = (net as any).containers ?? (net as any).Containers ?? {};
+        const containerIds = Object.keys(c);
+        const containers = await api.listDockerContainers(nid);
+        const matched = (containers ?? [])
+          .filter((ct: any) => containerIds.includes(ct.id))
+          .map((ct: any) => ({
+            id: ct.id,
+            name: (ct.name ?? "").replace(/^\//, ""),
+            state: ct.state,
+          }));
+        setUsageContainers(matched);
+      } catch {
+        setUsageContainers([]);
+      }
+      setUsageLoading(false);
+    },
+    [selectedNodeId]
+  );
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only
-  useEffect(() => {
+  const loadNetworkNodes = useCallback(async () => {
     if (embedded && !fixedNodeId) {
       return;
     }
@@ -106,22 +108,25 @@ export function DockerNetworks({
       return;
     }
 
-    api
-      .listNodes({ type: "docker", limit: 100 })
-      .then((r) => {
-        setDockerNodes(r.data);
-        useDockerStore.getState().setDockerNodes(r.data);
-      })
-      .catch(() => toast.error("Failed to load Docker nodes"));
-  }, []);
+    try {
+      const r = await api.listNodes({ type: "docker", limit: 100 });
+      setDockerNodes(r.data);
+      useDockerStore.getState().setDockerNodes(r.data);
+    } catch {
+      toast.error("Failed to load Docker nodes");
+    }
+  }, [embedded, fixedNodeId, setSelectedNode]);
 
-  const location = useLocation();
+  useEffect(() => {
+    void loadNetworkNodes();
+  }, [loadNetworkNodes]);
+
   useEffect(() => {
     if (!selectedNodeId) return;
     fetchNetworks();
     const interval = setInterval(() => fetchNetworks(), 30_000);
     return () => clearInterval(interval);
-  }, [selectedNodeId, fetchNetworks, location.key]);
+  }, [selectedNodeId, fetchNetworks]);
 
   useRealtime("docker.network.changed", (payload) => {
     const ev = payload as { nodeId?: string };
@@ -141,40 +146,43 @@ export function DockerNetworks({
     );
   }, [networks, search]);
 
-  const containerCount = (net: DockerNetwork): number => {
+  const containerCount = useCallback((net: DockerNetwork): number => {
     const c = (net as any).containers ?? (net as any).Containers;
     return c ? Object.keys(c).length : 0;
-  };
+  }, []);
 
-  const getIPAM = (net: DockerNetwork): { subnet: string; gateway: string } => {
+  const getIPAM = useCallback((net: DockerNetwork): { subnet: string; gateway: string } => {
     const ipam = (net as any).ipam ?? (net as any).IPAM;
     const cfg = ipam?.Config?.[0] ?? ipam?.config?.[0] ?? {};
     return {
       subnet: cfg.Subnet ?? cfg.subnet ?? "-",
       gateway: cfg.Gateway ?? cfg.gateway ?? "-",
     };
-  };
+  }, []);
 
-  const handleRemove = async (net: DockerNetwork & { _nodeId?: string }) => {
-    const count = containerCount(net);
-    const extra =
-      count > 0 ? ` ${count} container${count > 1 ? "s are" : " is"} currently connected.` : "";
-    const ok = await confirm({
-      title: "Remove Network",
-      description: `Remove network "${net.name}"?${extra} This cannot be undone.`,
-      confirmLabel: "Remove",
-    });
-    if (!ok) return;
-    try {
-      const nid = net._nodeId || selectedNodeId;
-      if (!nid) return;
-      await api.removeNetwork(nid, net.id);
-      toast.success("Network removed");
-      fetchNetworks();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to remove network");
-    }
-  };
+  const handleRemove = useCallback(
+    async (net: DockerNetwork & { _nodeId?: string }) => {
+      const count = containerCount(net);
+      const extra =
+        count > 0 ? ` ${count} container${count > 1 ? "s are" : " is"} currently connected.` : "";
+      const ok = await confirm({
+        title: "Remove Network",
+        description: `Remove network "${net.name}"?${extra} This cannot be undone.`,
+        confirmLabel: "Remove",
+      });
+      if (!ok) return;
+      try {
+        const nid = net._nodeId || selectedNodeId;
+        if (!nid) return;
+        await api.removeNetwork(nid, net.id);
+        toast.success("Network removed");
+        fetchNetworks();
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to remove network");
+      }
+    },
+    [containerCount, fetchNetworks, selectedNodeId]
+  );
 
   const handleCreate = async () => {
     if (!createNodeId || !createName.trim()) return;

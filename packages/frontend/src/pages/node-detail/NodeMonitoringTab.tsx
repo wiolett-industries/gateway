@@ -14,8 +14,8 @@ import { useEffect, useState } from "react";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/ui/stat-card";
-import { api } from "@/services/api";
 import { formatBytes, formatUptime } from "@/lib/utils";
+import { api } from "@/services/api";
 import type { NodeHealthReport, NodeStatsReport } from "@/types";
 
 interface TrafficStats {

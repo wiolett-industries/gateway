@@ -163,7 +163,7 @@ async function startComposeStream(
     containers: composeContainers.map((c: any) => ({
       id: c.id ?? c.Id,
       name: c.name ?? c.Name ?? '',
-      service: (c.labels ?? c.Labels ?? {})['com.docker.compose.service'] ?? '',
+      service: (c.labels ?? c.Labels)?.['com.docker.compose.service'] ?? '',
       state: c.state ?? c.State ?? '',
     })),
   });
@@ -173,7 +173,7 @@ async function startComposeStream(
   for (const c of composeContainers) {
     const cid = c.id ?? c.Id;
     const cname = c.name ?? c.Name ?? cid.slice(0, 12);
-    const service = (c.labels ?? c.Labels ?? {})['com.docker.compose.service'] ?? cname;
+    const service = (c.labels ?? c.Labels)?.['com.docker.compose.service'] ?? cname;
     try {
       const result = await dispatch.sendDockerLogsCommand(nodeId, cid, {
         tailLines: 50,
@@ -203,7 +203,7 @@ async function startComposeStream(
   for (const c of composeContainers) {
     const cid = c.id ?? c.Id;
     const cname = c.name ?? c.Name ?? cid.slice(0, 12);
-    const service = (c.labels ?? c.Labels ?? {})['com.docker.compose.service'] ?? cname;
+    const service = (c.labels ?? c.Labels)?.['com.docker.compose.service'] ?? cname;
     const handlerKey = `${nodeId}:${cid}`;
 
     const handler = (data: any) => {

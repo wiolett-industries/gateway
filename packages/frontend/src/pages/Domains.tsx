@@ -35,8 +35,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { formatRelativeDate } from "@/lib/utils";
 import { useRealtime } from "@/hooks/use-realtime";
+import { formatRelativeDate } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import type { DnsStatus, Domain } from "@/types";
@@ -144,9 +144,7 @@ export function Domains() {
   };
 
   if (isLoading) {
-    return (
-      <LoadingSpinner />
-    );
+    return <LoadingSpinner />;
   }
 
   return (

@@ -77,7 +77,7 @@ export function ApiTokensSection({ user, nodesList, proxyHostsList }: ApiTokensS
       ];
       let matched = false;
       for (const b of restrictable) {
-        if (s.startsWith(b + ":")) {
+        if (s.startsWith(`${b}:`)) {
           if (!base.includes(b)) base.push(b);
           if (!res[b]) res[b] = [];
           res[b].push(s.slice(b.length + 1));

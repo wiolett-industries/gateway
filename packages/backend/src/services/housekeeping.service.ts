@@ -8,9 +8,9 @@ import { alerts } from '@/db/schema/alerts.js';
 import { auditLog } from '@/db/schema/audit-log.js';
 import { settings } from '@/db/schema/settings.js';
 import { createChildLogger } from '@/lib/logger.js';
+import type { NotificationDeliveryService } from '@/modules/notifications/notification-delivery.service.js';
 import type { DockerService } from './docker.service.js';
 import type { NodeDispatchService } from './node-dispatch.service.js';
-import type { NotificationDeliveryService } from '@/modules/notifications/notification-delivery.service.js';
 
 const logger = createChildLogger('HousekeepingService');
 

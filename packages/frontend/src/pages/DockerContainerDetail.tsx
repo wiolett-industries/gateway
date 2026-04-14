@@ -18,7 +18,6 @@ import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { PageTransition } from "@/components/common/PageTransition";
-import { useUrlTab } from "@/hooks/use-url-tab";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -39,6 +38,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useRealtime } from "@/hooks/use-realtime";
+import { useUrlTab } from "@/hooks/use-url-tab";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
@@ -56,7 +56,11 @@ import { StatsTab } from "./docker-detail/StatsTab";
 // ── Main Page ────────────────────────────────────────────────────
 
 export function DockerContainerDetail() {
-  const { nodeId, containerId } = useParams<{ nodeId: string; containerId: string; tab?: string }>();
+  const { nodeId, containerId } = useParams<{
+    nodeId: string;
+    containerId: string;
+    tab?: string;
+  }>();
   const navigate = useNavigate();
   const { hasScope } = useAuthStore();
   const invalidate = useDockerStore((s) => s.invalidate);
@@ -74,7 +78,7 @@ export function DockerContainerDetail() {
   const [activeTab, setActiveTab] = useUrlTab(
     ["overview", "logs", "console", "files", "stats", "environment", "settings", "config"],
     "overview",
-    (tab) => `/docker/containers/${nodeId}/${containerId}/${tab}`,
+    (tab) => `/docker/containers/${nodeId}/${containerId}/${tab}`
   );
   const [isLoading, setIsLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -108,7 +112,7 @@ export function DockerContainerDetail() {
         if (!silent) setIsLoading(false);
       }
     },
-    [nodeId, containerId, navigate]
+    [nodeId, containerId, navigate, updateMeta]
   );
 
   useEffect(() => {
@@ -152,7 +156,7 @@ export function DockerContainerDetail() {
       navigate("/docker");
       return;
     }
-    fetchContainer(true);
+    void fetchContainer(true);
   });
 
   const currentTransition = container?._transition as string | undefined;
@@ -187,7 +191,7 @@ export function DockerContainerDetail() {
         /* */
       }
     }
-  }, [currentBaseState, currentTransition, activeTab, containerId]);
+  }, [activeTab, container, containerId, currentBaseState, currentTransition, setActiveTab]);
 
   if (isLoading || !container) {
     return (
@@ -230,7 +234,7 @@ export function DockerContainerDetail() {
   };
 
   const handleDuplicate = async () => {
-    const dName = containerDisplayName(container.Name ?? "") + "-copy";
+    const dName = `${containerDisplayName(container.Name ?? "")}-copy`;
     setActionLoading(true);
     try {
       const result = await api.duplicateContainer(nodeId!, containerId!, dName);

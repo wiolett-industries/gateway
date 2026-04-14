@@ -1,5 +1,5 @@
 import { ArrowRight } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
@@ -38,9 +38,9 @@ export function Dashboard() {
   const [pinnedProxyHosts, setPinnedProxyHosts] = useState<ProxyHost[]>([]);
   const updateStatus = useUpdateStore((s) => s.status);
   const showUpdateNotifications = useUIStore((s) => s.showUpdateNotifications);
-  const showSystemCertificates =
-    useAuthStore((s) => s.hasScope("admin:details:certificates")) &&
-    useUIStore((s) => s.showSystemCertificates);
+  const canViewSystemCertificates = useAuthStore((s) => s.hasScope("admin:details:certificates"));
+  const showSystemCertificatePreference = useUIStore((s) => s.showSystemCertificates);
+  const showSystemCertificates = canViewSystemCertificates && showSystemCertificatePreference;
 
   const refreshNodes = useCallback(() => {
     if (!hasScope("nodes:list")) return;
@@ -171,6 +171,7 @@ export function Dashboard() {
 
   // Fetch/refetch nodes — also triggers on nodeRefreshTick from RealtimeBridge
   useEffect(() => {
+    void nodeRefreshTick;
     refreshNodes();
   }, [refreshNodes, nodeRefreshTick]);
 
@@ -208,19 +209,27 @@ export function Dashboard() {
   }, [refreshPinnedProxies]);
 
   // IDs of nodes shown on dashboard (pinned + disk warning)
-  const warningNodeIds = nodesList
-    .filter((n) => {
-      if (dashboardPinnedIds.includes(n.id)) return false; // already pinned
-      const disk = n.lastHealthReport?.diskMounts?.find((d) => d.mountPoint === "/");
-      return disk ? disk.usagePercent >= WARN_THRESHOLD : false;
-    })
-    .map((n) => n.id);
-  const dashboardVisibleIds = [...dashboardPinnedIds, ...warningNodeIds];
+  const warningNodeIds = useMemo(
+    () =>
+      nodesList
+        .filter((n) => {
+          if (dashboardPinnedIds.includes(n.id)) return false;
+          const disk = n.lastHealthReport?.diskMounts?.find((d) => d.mountPoint === "/");
+          return disk ? disk.usagePercent >= WARN_THRESHOLD : false;
+        })
+        .map((n) => n.id),
+    [dashboardPinnedIds, nodesList]
+  );
+  const dashboardVisibleIds = useMemo(
+    () => [...dashboardPinnedIds, ...warningNodeIds],
+    [dashboardPinnedIds, warningNodeIds]
+  );
 
   // Open monitoring SSE streams for visible dashboard nodes.
   const [pinnedHealth, setPinnedHealth] = useState<Record<string, NodeHealthReport>>({});
   useEffect(() => {
-    if (dashboardVisibleIds.length === 0 || !hasScope("nodes:list")) return;
+    if (!hasScope("nodes:list")) return;
+    if (dashboardVisibleIds.length === 0) return;
     const streams: EventSource[] = [];
     for (const nodeId of dashboardVisibleIds) {
       const es = api.createNodeMonitoringStream(nodeId);
@@ -235,8 +244,7 @@ export function Dashboard() {
       streams.push(es);
     }
     return () => streams.forEach((es) => es.close());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dashboardVisibleIds.join(","), hasScope]);
+  }, [dashboardVisibleIds, hasScope]);
 
   // Collect expiring CAs from store
   useEffect(() => {

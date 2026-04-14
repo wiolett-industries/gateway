@@ -16,7 +16,6 @@ import { EmptyState } from "@/components/common/EmptyState";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
 import { ScopeList } from "@/components/common/ScopeList";
-import { useRealtime } from "@/hooks/use-realtime";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,6 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useRealtime } from "@/hooks/use-realtime";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useCAStore } from "@/stores/ca";
@@ -75,7 +75,7 @@ function parseScopesForForm(scopes: string[]) {
     // Check if this scope is a resource-scoped version of a restrictable scope
     let matched = false;
     for (const base of RESTRICTABLE_SCOPES) {
-      if (s.startsWith(base + ":")) {
+      if (s.startsWith(`${base}:`)) {
         const resourceId = s.slice(base.length + 1);
         if (!baseScopes.includes(base)) baseScopes.push(base);
         if (!resources[base]) resources[base] = [];
@@ -293,9 +293,7 @@ export function AdminGroups() {
   const selectedCount = ownCount + inheritedCount;
 
   if (isLoading) {
-    return (
-      <LoadingSpinner />
-    );
+    return <LoadingSpinner />;
   }
 
   return (

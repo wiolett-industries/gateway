@@ -23,8 +23,8 @@ import {
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
-import { isNodeIncompatible } from "@/types";
 import type { ContainerCreateConfig, Node } from "@/types";
+import { isNodeIncompatible } from "@/types";
 
 interface DockerDeployDialogProps {
   open: boolean;
@@ -122,7 +122,7 @@ export function DockerDeployDialog({
     } else {
       setDeployPullableImages([]);
     }
-  }, [deployNodeId]);
+  }, [deployNodeId, hasScope]);
 
   const closeDeploy = () => {
     onOpenChange(false);

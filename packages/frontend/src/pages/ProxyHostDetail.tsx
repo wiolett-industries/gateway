@@ -5,8 +5,6 @@ import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
-import { useUrlTab } from "@/hooks/use-url-tab";
-import { useRealtime } from "@/hooks/use-realtime";
 import { CreateProxyHostDialog } from "@/components/proxy/CreateProxyHostDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,6 +12,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { HealthBars } from "@/components/ui/health-bars";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useRealtime } from "@/hooks/use-realtime";
+import { useUrlTab } from "@/hooks/use-url-tab";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
@@ -21,7 +21,12 @@ import { usePinnedProxiesStore } from "@/stores/pinned-proxies";
 import type { AccessList, CustomHeader, ProxyHost, RewriteRule } from "@/types";
 import { AdvancedTab } from "./proxy-detail/AdvancedTab";
 import { DetailsTab } from "./proxy-detail/DetailsTab";
-import { effectiveHealthStatus, HEALTH_BADGE, HEALTH_LABEL, TYPE_BADGE } from "./proxy-detail/helpers";
+import {
+  effectiveHealthStatus,
+  HEALTH_BADGE,
+  HEALTH_LABEL,
+  TYPE_BADGE,
+} from "./proxy-detail/helpers";
 import { LogsTab } from "./proxy-detail/LogsTab";
 import { RawConfigTab } from "./proxy-detail/RawConfigTab";
 import { SettingsTab } from "./proxy-detail/SettingsTab";
@@ -38,7 +43,7 @@ export function ProxyHostDetail() {
   const [activeTab, setActiveTab] = useUrlTab(
     ["details", "settings", "advanced", "raw", "logs"],
     "details",
-    (tab) => `/proxy-hosts/${id}/${tab}`,
+    (tab) => `/proxy-hosts/${id}/${tab}`
   );
 
   // Edit dialog
@@ -139,18 +144,19 @@ export function ProxyHostDetail() {
   });
 
   // ── Load access lists ─────────────────────────────────────────
-  useEffect(() => {
-    api
-      .listAccessLists({ limit: 100 })
-      .then((res) => setAccessLists(res.data || []))
-      .catch(() => {});
+  const loadAccessLists = useCallback(async () => {
+    try {
+      const res = await api.listAccessLists({ limit: 100 });
+      setAccessLists(res.data || []);
+    } catch {}
   }, []);
 
+  useEffect(() => {
+    void loadAccessLists();
+  }, [loadAccessLists]);
+
   useRealtime("access-list.changed", () => {
-    api
-      .listAccessLists({ limit: 100 })
-      .then((res) => setAccessLists(res.data || []))
-      .catch(() => {});
+    void loadAccessLists();
   });
 
   // ── Load rendered config ──────────────────────────────────────
@@ -259,23 +265,6 @@ export function ProxyHostDetail() {
     }
   };
 
-  // ── Auto-save health check settings on change (debounced) ─────
-  useEffect(() => {
-    if (!id || !host || !hasHealthCheckChanged) return;
-    const timer = setTimeout(() => {
-      api
-        .updateProxyHost(id, {
-          healthCheckUrl,
-          healthCheckExpectedStatus: healthCheckExpectedStatus ?? undefined,
-          healthCheckExpectedBody: healthCheckExpectedBody || undefined,
-          healthCheckSlowThreshold: healthCheckSlowThreshold || undefined,
-        })
-        .then((updated) => setHost(updated))
-        .catch(() => {});
-    }, 800);
-    return () => clearTimeout(timer);
-  }, [healthCheckUrl, healthCheckExpectedStatus, healthCheckExpectedBody, healthCheckSlowThreshold]);
-
   // ── Save raw config ───────────────────────────────────────────
   const handleSaveRaw = async () => {
     if (!id) return;
@@ -333,7 +322,38 @@ export function ProxyHostDetail() {
       healthCheckExpectedBody !== (host.healthCheckExpectedBody || "") ||
       healthCheckSlowThreshold !== (host.healthCheckSlowThreshold ?? 3)
     );
-  }, [host, healthCheckUrl, healthCheckExpectedStatus, healthCheckExpectedBody, healthCheckSlowThreshold]);
+  }, [
+    host,
+    healthCheckUrl,
+    healthCheckExpectedStatus,
+    healthCheckExpectedBody,
+    healthCheckSlowThreshold,
+  ]);
+
+  // ── Auto-save health check settings on change (debounced) ─────
+  useEffect(() => {
+    if (!id || !host || !hasHealthCheckChanged) return;
+    const timer = setTimeout(() => {
+      api
+        .updateProxyHost(id, {
+          healthCheckUrl,
+          healthCheckExpectedStatus: healthCheckExpectedStatus ?? undefined,
+          healthCheckExpectedBody: healthCheckExpectedBody || undefined,
+          healthCheckSlowThreshold: healthCheckSlowThreshold || undefined,
+        })
+        .then((updated) => setHost(updated))
+        .catch(() => {});
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [
+    hasHealthCheckChanged,
+    host,
+    id,
+    healthCheckUrl,
+    healthCheckExpectedStatus,
+    healthCheckExpectedBody,
+    healthCheckSlowThreshold,
+  ]);
 
   const visibleTabs = ["details", "settings", "advanced", "raw", "logs"];
 
@@ -342,13 +362,11 @@ export function ProxyHostDetail() {
     if (isRawMode && (activeTab === "settings" || activeTab === "advanced")) {
       setActiveTab("details");
     }
-  }, [isRawMode, activeTab]);
+  }, [activeTab, isRawMode, setActiveTab]);
 
   // ── Loading state ─────────────────────────────────────────────
   if (isLoading || !host) {
-    return (
-      <LoadingSpinner />
-    );
+    return <LoadingSpinner />;
   }
 
   return (

@@ -358,6 +358,7 @@ export function CodeEditor({
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const errorCompartmentRef = useRef(new Compartment());
+  const initialValueRef = useRef(value);
 
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
@@ -367,7 +368,7 @@ export function CodeEditor({
     errorCompartmentRef.current = new Compartment();
 
     const state = EditorState.create({
-      doc: value,
+      doc: initialValueRef.current,
       extensions: [
         lineNumbers(),
         history(),
@@ -403,7 +404,6 @@ export function CodeEditor({
       view.destroy();
       viewRef.current = null;
     };
-    // biome-ignore lint: only recreate on readOnly/language change
   }, [readOnly, language]);
 
   // Sync external value

@@ -24,7 +24,9 @@ export class HealthCheckJob {
 
   constructor(private readonly db: DrizzleClient) {}
 
-  setEventBus(bus: EventBusService) { this.eventBus = bus; }
+  setEventBus(bus: EventBusService) {
+    this.eventBus = bus;
+  }
 
   async run(): Promise<void> {
     // Query proxy hosts with health checks enabled
@@ -47,9 +49,7 @@ export class HealthCheckJob {
 
         const now = Date.now();
         const cutoff = new Date(now - MAX_HISTORY_AGE_MS).toISOString();
-        const history: HealthEntry[] = (
-          (host.healthHistory as HealthEntry[]) ?? []
-        ).filter((h) => h.ts > cutoff);
+        const history: HealthEntry[] = ((host.healthHistory as HealthEntry[]) ?? []).filter((h) => h.ts > cutoff);
 
         // Compute slow flag: compare response time against baseline average
         let slow = false;
@@ -58,9 +58,12 @@ export class HealthCheckJob {
           if (threshold > 0) {
             const baselineCutoff = now - SLOW_BASELINE_WINDOW_MS;
             const baselineTimes = history
-              .filter((h) => h.status === 'online' && h.responseMs != null && new Date(h.ts).getTime() >= baselineCutoff)
+              .filter(
+                (h) => h.status === 'online' && h.responseMs != null && new Date(h.ts).getTime() >= baselineCutoff
+              )
               .map((h) => h.responseMs!);
-            if (baselineTimes.length >= 5) { // need enough samples for a meaningful baseline
+            if (baselineTimes.length >= 5) {
+              // need enough samples for a meaningful baseline
               const avgMs = baselineTimes.reduce((a, b) => a + b, 0) / baselineTimes.length;
               slow = responseMs >= avgMs * threshold;
             }
@@ -77,11 +80,14 @@ export class HealthCheckJob {
         const newStatus: HealthStatus = checkStatus === 'online' ? (slow ? 'degraded' : 'online') : 'offline';
 
         // Write to DB
-        await this.db.update(proxyHosts).set({
-          healthStatus: newStatus,
-          lastHealthCheckAt: new Date(),
-          healthHistory: history,
-        }).where(eq(proxyHosts.id, host.id));
+        await this.db
+          .update(proxyHosts)
+          .set({
+            healthStatus: newStatus,
+            lastHealthCheckAt: new Date(),
+            healthHistory: history,
+          })
+          .where(eq(proxyHosts.id, host.id));
 
         // Log status transitions and publish event
         if (previousStatus !== newStatus) {
@@ -91,7 +97,8 @@ export class HealthCheckJob {
             newStatus,
             forwardHost: host.forwardHost,
           });
-          const healthAction = newStatus === 'online' ? 'health.online' : newStatus === 'offline' ? 'health.offline' : 'health.degraded';
+          const healthAction =
+            newStatus === 'online' ? 'health.online' : newStatus === 'offline' ? 'health.offline' : 'health.degraded';
           this.eventBus?.publish('proxy.host.changed', {
             id: host.id,
             action: healthAction,
@@ -134,7 +141,9 @@ export class HealthCheckJob {
     }
   }
 
-  private async checkHost(host: typeof proxyHosts.$inferSelect): Promise<{ status: 'online' | 'offline'; responseMs?: number }> {
+  private async checkHost(
+    host: typeof proxyHosts.$inferSelect
+  ): Promise<{ status: 'online' | 'offline'; responseMs?: number }> {
     if (!host.forwardHost || !host.forwardPort) {
       return { status: 'offline' };
     }

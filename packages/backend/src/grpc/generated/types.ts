@@ -230,10 +230,10 @@ export interface RemoveHtpasswdCommand {
   accessListId: string;
 }
 
-export type TestConfigCommand = {};
-export type RequestHealthCommand = {};
-export type RequestStatsCommand = {};
-export type ReadGlobalConfigCommand = {};
+export type TestConfigCommand = Record<string, never>;
+export type RequestHealthCommand = Record<string, never>;
+export type RequestStatsCommand = Record<string, never>;
+export type ReadGlobalConfigCommand = Record<string, never>;
 
 export interface RequestTrafficStatsCommand {
   tailLines: number;

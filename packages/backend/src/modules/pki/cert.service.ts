@@ -1,19 +1,19 @@
-import { injectable, inject } from 'tsyringe';
-import { eq, and, or, ilike, desc, asc, count, lte, inArray, sql } from 'drizzle-orm';
-import { x509 } from '@/lib/x509.js';
 import crypto from 'node:crypto';
+import { and, asc, count, desc, eq, ilike, inArray, lte, or, sql } from 'drizzle-orm';
+import { inject, injectable } from 'tsyringe';
 import { TOKENS } from '@/container.js';
-import { certificates, certificateAuthorities, certificateTemplates } from '@/db/schema/index.js';
-import { CryptoService } from '@/services/crypto.service.js';
-import { CAService } from './ca.service.js';
-import { AuditService } from '@/modules/audit/audit.service.js';
-import { AppError } from '@/middleware/error-handler.js';
+import type { DrizzleClient } from '@/db/client.js';
+import { certificateAuthorities, certificates, certificateTemplates } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { buildWhere, escapeLike } from '@/lib/utils.js';
-import type { DrizzleClient } from '@/db/client.js';
-import type { IssueCertificateInput, IssueCertFromCSRInput, CertificateListQuery } from './cert.schemas.js';
+import { x509 } from '@/lib/x509.js';
+import { AppError } from '@/middleware/error-handler.js';
+import type { AuditService } from '@/modules/audit/audit.service.js';
+import type { CryptoService } from '@/services/crypto.service.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
 import type { PaginatedResponse } from '@/types.js';
+import type { CAService } from './ca.service.js';
+import type { CertificateListQuery, IssueCertFromCSRInput, IssueCertificateInput } from './cert.schemas.js';
 
 const logger = createChildLogger('CertService');
 
@@ -34,7 +34,7 @@ export class CertService {
     @inject(TOKENS.DrizzleClient) private readonly db: DrizzleClient,
     private readonly cryptoService: CryptoService,
     private readonly caService: CAService,
-    private readonly auditService: AuditService,
+    private readonly auditService: AuditService
   ) {}
 
   setEventBus(bus: EventBusService) {
@@ -84,19 +84,23 @@ export class CertService {
       : null;
 
     // Resolve key usage from template or cert type fallback
-    const keyUsageStrings = (template?.keyUsage?.length ?? 0) > 0
-      ? template!.keyUsage as string[]
-      : this.getKeyUsageStrings(input.type);
+    const keyUsageStrings =
+      (template?.keyUsage?.length ?? 0) > 0 ? (template!.keyUsage as string[]) : this.getKeyUsageStrings(input.type);
     const keyUsageFlags = this.buildKeyUsageFlags(keyUsageStrings);
 
     // Resolve ext key usage from template or cert type fallback
-    const extKeyUsageStrings = (template?.extKeyUsage?.length ?? 0) > 0
-      ? template!.extKeyUsage as string[]
-      : this.getExtKeyUsageStrings(input.type);
+    const extKeyUsageStrings =
+      (template?.extKeyUsage?.length ?? 0) > 0
+        ? (template!.extKeyUsage as string[])
+        : this.getExtKeyUsageStrings(input.type);
     const extKeyUsageOids = this.resolveExtKeyUsageOids(extKeyUsageStrings);
 
     // Build subject DN
-    const subjectDn = this.buildSubjectDn(input.commonName, input.subjectDnFields, template?.subjectDnFields as Record<string, string> | undefined);
+    const subjectDn = this.buildSubjectDn(
+      input.commonName,
+      input.subjectDnFields,
+      template?.subjectDnFields as Record<string, string> | undefined
+    );
 
     // Build extensions
     const extensions: x509.Extension[] = [
@@ -136,27 +140,30 @@ export class CertService {
     const certificatePem = cert.toString('pem');
     const encrypted = this.cryptoService.encryptPrivateKey(privateKeyPem);
 
-    const [certificate] = await this.db.insert(certificates).values({
-      caId: input.caId,
-      templateId: input.templateId,
-      type: input.type,
-      commonName: input.commonName,
-      sans: input.sans,
-      serialNumber,
-      certificatePem,
-      encryptedPrivateKey: encrypted.encryptedPrivateKey,
-      encryptedDek: encrypted.encryptedDek,
-      dekIv: encrypted.dekIv,
-      keyAlgorithm: input.keyAlgorithm,
-      subjectDn,
-      issuerDn: ca.subjectDn,
-      notBefore,
-      notAfter,
-      serverGenerated: true,
-      keyUsage: keyUsageStrings,
-      extKeyUsage: extKeyUsageStrings,
-      issuedById: userId,
-    }).returning();
+    const [certificate] = await this.db
+      .insert(certificates)
+      .values({
+        caId: input.caId,
+        templateId: input.templateId,
+        type: input.type,
+        commonName: input.commonName,
+        sans: input.sans,
+        serialNumber,
+        certificatePem,
+        encryptedPrivateKey: encrypted.encryptedPrivateKey,
+        encryptedDek: encrypted.encryptedDek,
+        dekIv: encrypted.dekIv,
+        keyAlgorithm: input.keyAlgorithm,
+        subjectDn,
+        issuerDn: ca.subjectDn,
+        notBefore,
+        notAfter,
+        serverGenerated: true,
+        keyUsage: keyUsageStrings,
+        extKeyUsage: extKeyUsageStrings,
+        issuedById: userId,
+      })
+      .returning();
 
     await this.auditService.log({
       userId,
@@ -221,15 +228,15 @@ export class CertService {
       : null;
 
     // Resolve key usage from template or cert type fallback
-    const keyUsageStrings = (template?.keyUsage?.length ?? 0) > 0
-      ? template!.keyUsage as string[]
-      : this.getKeyUsageStrings(input.type);
+    const keyUsageStrings =
+      (template?.keyUsage?.length ?? 0) > 0 ? (template!.keyUsage as string[]) : this.getKeyUsageStrings(input.type);
     const keyUsageFlags = this.buildKeyUsageFlags(keyUsageStrings);
 
     // Resolve ext key usage from template or cert type fallback
-    const extKeyUsageStrings = (template?.extKeyUsage?.length ?? 0) > 0
-      ? template!.extKeyUsage as string[]
-      : this.getExtKeyUsageStrings(input.type);
+    const extKeyUsageStrings =
+      (template?.extKeyUsage?.length ?? 0) > 0
+        ? (template!.extKeyUsage as string[])
+        : this.getExtKeyUsageStrings(input.type);
     const extKeyUsageOids = this.resolveExtKeyUsageOids(extKeyUsageStrings);
 
     const subjectDn = `CN=${commonName}`;
@@ -254,9 +261,7 @@ export class CertService {
     this.addPolicyExtensions(extensions, template ?? null);
     this.addCustomExtensions(extensions, template ?? null);
 
-    // Detect key algorithm from CSR
-    const csrPublicKey = await csr.publicKey.export(caAlgorithm, ['verify']).catch(() => null);
-    let keyAlgorithm = ca.keyAlgorithm; // fallback
+    const keyAlgorithm = ca.keyAlgorithm; // fallback
 
     const cert = await x509.X509CertificateGenerator.create({
       serialNumber,
@@ -272,25 +277,28 @@ export class CertService {
 
     const certificatePem = cert.toString('pem');
 
-    const [certificate] = await this.db.insert(certificates).values({
-      caId: input.caId,
-      templateId: input.templateId,
-      type: input.type,
-      commonName,
-      sans,
-      serialNumber,
-      certificatePem,
-      keyAlgorithm,
-      subjectDn,
-      issuerDn: ca.subjectDn,
-      notBefore,
-      notAfter,
-      csrPem: input.csrPem,
-      serverGenerated: false,
-      keyUsage: keyUsageStrings,
-      extKeyUsage: extKeyUsageStrings,
-      issuedById: userId,
-    }).returning();
+    const [certificate] = await this.db
+      .insert(certificates)
+      .values({
+        caId: input.caId,
+        templateId: input.templateId,
+        type: input.type,
+        commonName,
+        sans,
+        serialNumber,
+        certificatePem,
+        keyAlgorithm,
+        subjectDn,
+        issuerDn: ca.subjectDn,
+        notBefore,
+        notAfter,
+        csrPem: input.csrPem,
+        serverGenerated: false,
+        keyUsage: keyUsageStrings,
+        extKeyUsage: extKeyUsageStrings,
+        issuedById: userId,
+      })
+      .returning();
 
     await this.auditService.log({
       userId,
@@ -344,19 +352,20 @@ export class CertService {
       conditions.push(
         or(
           ilike(certificates.commonName, `%${escapeLike(params.search)}%`),
-          ilike(certificates.serialNumber, `%${escapeLike(params.search)}%`),
+          ilike(certificates.serialNumber, `%${escapeLike(params.search)}%`)
         )!
       );
     }
 
     const where = buildWhere(conditions);
 
-    const orderColumn = {
-      commonName: certificates.commonName,
-      createdAt: certificates.createdAt,
-      notAfter: certificates.notAfter,
-      type: certificates.type,
-    }[params.sortBy] || certificates.createdAt;
+    const orderColumn =
+      {
+        commonName: certificates.commonName,
+        createdAt: certificates.createdAt,
+        notAfter: certificates.notAfter,
+        type: certificates.type,
+      }[params.sortBy] || certificates.createdAt;
 
     const orderFn = params.sortOrder === 'asc' ? asc : desc;
 
@@ -415,7 +424,8 @@ export class CertService {
     if (caRow?.isSystem) {
       throw new AppError(403, 'SYSTEM_CERT', 'System certificates cannot be revoked');
     }
-    if (cert.status !== 'active') throw new AppError(400, 'CERT_NOT_ACTIVE', 'Certificate is already revoked or expired');
+    if (cert.status !== 'active')
+      throw new AppError(400, 'CERT_NOT_ACTIVE', 'Certificate is already revoked or expired');
 
     await this.db
       .update(certificates)
@@ -440,10 +450,7 @@ export class CertService {
     threshold.setDate(threshold.getDate() + withinDays);
 
     return this.db.query.certificates.findMany({
-      where: and(
-        eq(certificates.status, 'active'),
-        lte(certificates.notAfter, threshold),
-      ),
+      where: and(eq(certificates.status, 'active'), lte(certificates.notAfter, threshold)),
       columns: {
         encryptedPrivateKey: false,
         encryptedDek: false,
@@ -461,7 +468,7 @@ export class CertService {
       where: eq(certificates.id, id),
     });
 
-    if (!cert || !cert.encryptedPrivateKey || !cert.encryptedDek) return null;
+    if (!cert?.encryptedPrivateKey || !cert.encryptedDek) return null;
 
     return this.cryptoService.decryptPrivateKey({
       encryptedPrivateKey: cert.encryptedPrivateKey,
@@ -478,11 +485,16 @@ export class CertService {
 
   private getKeyUsageStrings(certType: string): string[] {
     switch (certType) {
-      case 'tls-server': return ['digitalSignature', 'keyEncipherment'];
-      case 'tls-client': return ['digitalSignature'];
-      case 'code-signing': return ['digitalSignature'];
-      case 'email': return ['digitalSignature', 'keyEncipherment'];
-      default: return ['digitalSignature'];
+      case 'tls-server':
+        return ['digitalSignature', 'keyEncipherment'];
+      case 'tls-client':
+        return ['digitalSignature'];
+      case 'code-signing':
+        return ['digitalSignature'];
+      case 'email':
+        return ['digitalSignature', 'keyEncipherment'];
+      default:
+        return ['digitalSignature'];
     }
   }
 
@@ -496,11 +508,16 @@ export class CertService {
 
   private getExtKeyUsageStrings(certType: string): string[] {
     switch (certType) {
-      case 'tls-server': return ['serverAuth'];
-      case 'tls-client': return ['clientAuth'];
-      case 'code-signing': return ['codeSigning'];
-      case 'email': return ['emailProtection'];
-      default: return [];
+      case 'tls-server':
+        return ['serverAuth'];
+      case 'tls-client':
+        return ['clientAuth'];
+      case 'code-signing':
+        return ['codeSigning'];
+      case 'email':
+        return ['emailProtection'];
+      default:
+        return [];
     }
   }
 
@@ -525,7 +542,7 @@ export class CertService {
   private buildSubjectDn(
     commonName: string,
     inputFields?: { o?: string; ou?: string; l?: string; st?: string; c?: string },
-    templateFields?: Record<string, string>,
+    templateFields?: Record<string, string>
   ): string {
     // Merge: input overrides template defaults
     const merged = { ...templateFields, ...inputFields };
@@ -545,12 +562,14 @@ export class CertService {
   private addDistributionExtensions(
     extensions: x509.Extension[],
     template: { crlDistributionPoints?: unknown; authorityInfoAccess?: unknown } | null,
-    ca: { crlDistributionUrl?: string | null; ocspResponderUrl?: string | null; caIssuersUrl?: string | null },
+    ca: { crlDistributionUrl?: string | null; ocspResponderUrl?: string | null; caIssuersUrl?: string | null }
   ) {
     // CRL Distribution Points: template overrides CA
     const crlUrls = (template?.crlDistributionPoints as string[] | undefined)?.length
       ? (template!.crlDistributionPoints as string[])
-      : ca.crlDistributionUrl ? [ca.crlDistributionUrl] : [];
+      : ca.crlDistributionUrl
+        ? [ca.crlDistributionUrl]
+        : [];
 
     if (crlUrls.length > 0) {
       try {
@@ -575,10 +594,7 @@ export class CertService {
     }
   }
 
-  private addPolicyExtensions(
-    extensions: x509.Extension[],
-    template: { certificatePolicies?: unknown } | null,
-  ) {
+  private addPolicyExtensions(extensions: x509.Extension[], template: { certificatePolicies?: unknown } | null) {
     const policies = template?.certificatePolicies as { oid: string; qualifier?: string }[] | undefined;
     if (!policies?.length) return;
 
@@ -590,10 +606,7 @@ export class CertService {
     }
   }
 
-  private addCustomExtensions(
-    extensions: x509.Extension[],
-    template: { customExtensions?: unknown } | null,
-  ) {
+  private addCustomExtensions(extensions: x509.Extension[], template: { customExtensions?: unknown } | null) {
     const custom = template?.customExtensions as { oid: string; critical: boolean; value: string }[] | undefined;
     if (!custom?.length) return;
 
@@ -624,10 +637,7 @@ export class CertService {
   }
 
   private pemToBuffer(pem: string, label: string): ArrayBuffer {
-    const base64 = pem
-      .replace(`-----BEGIN ${label}-----`, '')
-      .replace(`-----END ${label}-----`, '')
-      .replace(/\s/g, '');
+    const base64 = pem.replace(`-----BEGIN ${label}-----`, '').replace(`-----END ${label}-----`, '').replace(/\s/g, '');
     const binary = Buffer.from(base64, 'base64');
     return binary.buffer.slice(binary.byteOffset, binary.byteOffset + binary.byteLength);
   }

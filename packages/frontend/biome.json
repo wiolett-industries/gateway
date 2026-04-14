@@ -1,7 +1,16 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.4.6/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.4.9/schema.json",
   "files": {
-    "includes": ["src/**/*.ts", "src/**/*.tsx"]
+    "includes": [
+      "src/**/*.ts",
+      "src/**/*.tsx",
+      "tests/**/*.ts",
+      "tests/**/*.tsx",
+      "vite.config.ts",
+      "vitest.config.ts",
+      "!dist",
+      "!node_modules"
+    ]
   },
   "linter": {
     "enabled": true,
@@ -21,7 +30,7 @@
       },
       "correctness": {
         "noChildrenProp": "off",
-        "useExhaustiveDependencies": "warn"
+        "useExhaustiveDependencies": "error"
       },
       "complexity": {
         "noCommaOperator": "off"

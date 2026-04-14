@@ -7,7 +7,6 @@ import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
 import { SearchFilterBar } from "@/components/common/SearchFilterBar";
 import { StatusBadge } from "@/components/common/StatusBadge";
-import { useRealtime } from "@/hooks/use-realtime";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,6 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useRealtime } from "@/hooks/use-realtime";
 import { daysUntil, formatDate } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth";
 import { useCAStore } from "@/stores/ca";
@@ -42,9 +42,9 @@ const typeOptions: { value: CertificateType | "all"; label: string }[] = [
 export function Certificates() {
   const navigate = useNavigate();
   const { hasScope } = useAuthStore();
-  const showSystemCertificates =
-    useAuthStore((s) => s.hasScope("admin:details:certificates")) &&
-    useUIStore((s) => s.showSystemCertificates);
+  const canViewSystemCertificates = useAuthStore((s) => s.hasScope("admin:details:certificates"));
+  const showSystemCertificatePreference = useUIStore((s) => s.showSystemCertificates);
+  const showSystemCertificates = canViewSystemCertificates && showSystemCertificatePreference;
   const { cas, fetchCAs } = useCAStore();
   const {
     certificates,
@@ -62,6 +62,7 @@ export function Certificates() {
   const [issueDialogOpen, setIssueDialogOpen] = useState(false);
 
   useEffect(() => {
+    void showSystemCertificates;
     fetchCertificates();
   }, [fetchCertificates, showSystemCertificates]);
 

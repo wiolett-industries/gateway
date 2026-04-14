@@ -74,7 +74,7 @@ export function OverviewTab({
   }, [nodeId, containerId, containerName]);
   useEffect(() => {
     refreshTasks();
-  }, [refreshTasks, data]);
+  }, [refreshTasks]);
   useRealtime("docker.task.changed", (payload) => {
     const ev = payload as { nodeId?: string };
     if (!ev || ev.nodeId !== nodeId) return;

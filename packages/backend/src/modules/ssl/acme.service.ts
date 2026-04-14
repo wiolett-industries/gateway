@@ -1,6 +1,6 @@
-import { x509 } from '@/lib/x509.js';
 import * as acme from 'acme-client';
 import { createChildLogger } from '@/lib/logger.js';
+import { x509 } from '@/lib/x509.js';
 
 const logger = createChildLogger('ACMEService');
 

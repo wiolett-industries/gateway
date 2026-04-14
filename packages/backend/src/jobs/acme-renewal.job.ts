@@ -20,7 +20,9 @@ export class ACMERenewalJob {
     private readonly alertService: AlertService
   ) {}
 
-  setEventBus(bus: EventBusService) { this.eventBus = bus; }
+  setEventBus(bus: EventBusService) {
+    this.eventBus = bus;
+  }
 
   async run(): Promise<void> {
     logger.info('Starting ACME certificate renewal check');
