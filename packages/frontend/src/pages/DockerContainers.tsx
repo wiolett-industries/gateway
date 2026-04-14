@@ -55,20 +55,21 @@ export function DockerContainers({
   const resetFilters = useDockerStore((s) => s.resetFilters);
   const fetchContainers = useDockerStore((s) => s.fetchContainers);
   const forceFetchContainers = useDockerStore((s) => s.forceFetchContainers);
+  const visibleNodeId = fixedNodeId ?? selectedNodeId;
 
   // Realtime: refetch the list whenever any container on the visible node(s) changes.
   useRealtime("docker.container.changed", (payload) => {
     const ev = payload as { nodeId?: string };
     if (!ev) return;
     // If we're scoped to a single node, ignore events from other nodes
-    if (selectedNodeId && ev.nodeId && ev.nodeId !== selectedNodeId) return;
-    forceFetchContainers();
+    if (visibleNodeId && ev.nodeId && ev.nodeId !== visibleNodeId) return;
+    forceFetchContainers(fixedNodeId);
   });
   useRealtime("docker.task.changed", (payload) => {
     const ev = payload as { nodeId?: string };
     if (!ev) return;
-    if (selectedNodeId && ev.nodeId && ev.nodeId !== selectedNodeId) return;
-    forceFetchContainers();
+    if (visibleNodeId && ev.nodeId && ev.nodeId !== visibleNodeId) return;
+    forceFetchContainers(fixedNodeId);
   });
 
   const [searchInput, setSearchInput] = useState(filters.search);
@@ -118,11 +119,10 @@ export function DockerContainers({
 
   // Fetch containers and auto-refresh every 30s
   useEffect(() => {
-    if (embedded) return; // Parent handles fetch in embedded mode
-    fetchContainers();
-    const interval = setInterval(() => fetchContainers(), 30_000);
+    fetchContainers(fixedNodeId);
+    const interval = setInterval(() => fetchContainers(fixedNodeId), 30_000);
     return () => clearInterval(interval);
-  }, [fetchContainers, embedded]);
+  }, [fetchContainers, fixedNodeId]);
 
   // Sync search input with store filter
   const handleSearch = useCallback(() => {
@@ -187,7 +187,7 @@ export function DockerContainers({
         await fn();
         toast.success(`Container ${action} successful`);
         // Force-fetch bypasses SWR cache; transition polling handles the rest
-        forceFetchContainers();
+        forceFetchContainers(fixedNodeId);
       } catch (err) {
         toast.error(err instanceof Error ? err.message : `Failed to ${action} container`);
       } finally {
@@ -198,7 +198,7 @@ export function DockerContainers({
         });
       }
     },
-    [forceFetchContainers]
+    [fixedNodeId, forceFetchContainers]
   );
 
   const nodeOf = useCallback(

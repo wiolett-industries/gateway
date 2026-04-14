@@ -50,6 +50,7 @@ export function DockerVolumes({
   const navigate = useNavigate();
   const { hasScope } = useAuthStore();
   const { volumes, selectedNodeId, isLoading, setSelectedNode, fetchVolumes } = useDockerStore();
+  const visibleNodeId = fixedNodeId ?? selectedNodeId;
 
   const [dockerNodes, setDockerNodes] = useState<Node[]>([]);
   const [search, setSearch] = useState("");
@@ -122,16 +123,16 @@ export function DockerVolumes({
   }, [loadVolumeNodes]);
 
   useEffect(() => {
-    if (!selectedNodeId) return;
-    fetchVolumes();
-    const interval = setInterval(() => fetchVolumes(), 30_000);
+    if (!visibleNodeId) return;
+    fetchVolumes(fixedNodeId);
+    const interval = setInterval(() => fetchVolumes(fixedNodeId), 30_000);
     return () => clearInterval(interval);
-  }, [selectedNodeId, fetchVolumes]);
+  }, [fetchVolumes, fixedNodeId, visibleNodeId]);
 
   useRealtime("docker.volume.changed", (payload) => {
     const ev = payload as { nodeId?: string };
-    if (selectedNodeId && ev?.nodeId && ev.nodeId !== selectedNodeId) return;
-    fetchVolumes();
+    if (visibleNodeId && ev?.nodeId && ev.nodeId !== visibleNodeId) return;
+    fetchVolumes(fixedNodeId);
   });
 
   const filteredVolumes = useMemo(() => {

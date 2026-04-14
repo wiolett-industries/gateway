@@ -280,6 +280,41 @@ export function createControlHandlers(deps: GrpcServerDeps) {
                 : {}),
             };
 
+            const connectedNode = deps.registry.getNode(nodeId);
+            const previousContainerStats = Array.isArray((connectedNode?.lastHealthReport as any)?.containerStats)
+              ? (((connectedNode?.lastHealthReport as any)?.containerStats as any[]) ?? [])
+              : [];
+            const nextContainerStats = Array.isArray((healthData as any).containerStats)
+              ? (((healthData as any).containerStats as any[]) ?? [])
+              : [];
+
+            if (connectedNode?.type === 'docker') {
+              const previousById = new Map<string, any>(
+                previousContainerStats.map((container: any) => [String(container.containerId), container])
+              );
+              const nextById = new Map<string, any>(
+                nextContainerStats.map((container: any) => [String(container.containerId), container])
+              );
+
+              for (const [containerId, nextContainer] of nextById) {
+                const previousContainer = previousById.get(containerId);
+                if (!previousContainer || previousContainer.state !== nextContainer.state) {
+                  deps.registry.publishDockerContainerChanged(
+                    nodeId,
+                    containerId,
+                    nextContainer.name,
+                    nextContainer.state
+                  );
+                }
+              }
+
+              for (const [containerId, previousContainer] of previousById) {
+                if (!nextById.has(containerId)) {
+                  deps.registry.publishDockerContainerChanged(nodeId, containerId, previousContainer.name, 'exited');
+                }
+              }
+            }
+
             deps.registry.updateHealthReport(nodeId, healthData);
 
             // Evaluate notification alert rules (fire-and-forget, don't block health persistence)
@@ -321,7 +356,6 @@ export function createControlHandlers(deps: GrpcServerDeps) {
             const nowMs = Date.now();
             const lastTs = lastRecordedTs.get(nodeId) ?? 0;
             if (nowMs - lastTs >= HEALTH_HISTORY_MIN_INTERVAL_MS) {
-              const connectedNode = deps.registry.getNode(nodeId);
               const isHealthy =
                 connectedNode?.type === 'nginx' ? healthData.nginxRunning && healthData.configValid : true;
               const status = isHealthy ? 'online' : 'degraded';

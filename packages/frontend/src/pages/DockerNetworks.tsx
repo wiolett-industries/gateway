@@ -45,6 +45,7 @@ export function DockerNetworks({
   const navigate = useNavigate();
   const { hasScope } = useAuthStore();
   const { networks, selectedNodeId, isLoading, setSelectedNode, fetchNetworks } = useDockerStore();
+  const visibleNodeId = fixedNodeId ?? selectedNodeId;
 
   const [dockerNodes, setDockerNodes] = useState<Node[]>([]);
   const [search, setSearch] = useState("");
@@ -124,16 +125,16 @@ export function DockerNetworks({
   }, [loadNetworkNodes]);
 
   useEffect(() => {
-    if (!selectedNodeId) return;
-    fetchNetworks();
-    const interval = setInterval(() => fetchNetworks(), 30_000);
+    if (!visibleNodeId) return;
+    fetchNetworks(fixedNodeId);
+    const interval = setInterval(() => fetchNetworks(fixedNodeId), 30_000);
     return () => clearInterval(interval);
-  }, [selectedNodeId, fetchNetworks]);
+  }, [fetchNetworks, fixedNodeId, visibleNodeId]);
 
   useRealtime("docker.network.changed", (payload) => {
     const ev = payload as { nodeId?: string };
-    if (selectedNodeId && ev?.nodeId && ev.nodeId !== selectedNodeId) return;
-    fetchNetworks();
+    if (visibleNodeId && ev?.nodeId && ev.nodeId !== visibleNodeId) return;
+    fetchNetworks(fixedNodeId);
   });
 
   const filteredNetworks = useMemo(() => {

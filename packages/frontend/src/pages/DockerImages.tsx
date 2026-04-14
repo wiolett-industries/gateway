@@ -46,6 +46,7 @@ export function DockerImages({
   const navigate = useNavigate();
   const { hasScope } = useAuthStore();
   const { images, selectedNodeId, isLoading, setSelectedNode, fetchImages } = useDockerStore();
+  const visibleNodeId = fixedNodeId ?? selectedNodeId;
 
   const [dockerNodes, setDockerNodes] = useState<Node[]>([]);
   const [search, setSearch] = useState("");
@@ -133,16 +134,16 @@ export function DockerImages({
   }, [loadImagePageState]);
 
   useEffect(() => {
-    if (!selectedNodeId) return;
-    fetchImages();
-    const interval = setInterval(() => fetchImages(), 30_000);
+    if (!visibleNodeId) return;
+    fetchImages(fixedNodeId);
+    const interval = setInterval(() => fetchImages(fixedNodeId), 30_000);
     return () => clearInterval(interval);
-  }, [selectedNodeId, fetchImages]);
+  }, [fetchImages, fixedNodeId, visibleNodeId]);
 
   useRealtime("docker.image.changed", (payload) => {
     const ev = payload as { nodeId?: string };
-    if (selectedNodeId && ev?.nodeId && ev.nodeId !== selectedNodeId) return;
-    fetchImages();
+    if (visibleNodeId && ev?.nodeId && ev.nodeId !== visibleNodeId) return;
+    fetchImages(fixedNodeId);
   });
 
   const filteredImages = useMemo(() => {
