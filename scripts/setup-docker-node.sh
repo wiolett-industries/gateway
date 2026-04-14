@@ -4,7 +4,6 @@ IFS=$'\n\t'
 
 # ── Gateway Docker Node Setup ────────────────────────────────────────
 # Installs docker-daemon on a host and enrolls it with the Gateway.
-# Requires Docker to be already installed on the host.
 #
 # Usage:
 #   curl -sSL https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/scripts/setup-docker-node.sh | \
@@ -17,13 +16,14 @@ IFS=$'\n\t'
 LOG_FILE="/tmp/gateway_docker_setup.log"
 
 # ── Colors ───────────────────────────────────────────────────────────
+BRAND_MINT='\033[38;2;140;176;132m'
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
-CYAN='\033[0;36m'
 GRAY='\033[0;90m'
 NC='\033[0m'
 BOLD='\033[1m'
+TITLE_TAG='\033[48;2;140;176;132m\033[30m'
 
 # ── Defaults ─────────────────────────────────────────────────────────
 GATEWAY_HOST="${GATEWAY_NODE_HOST:-}"
@@ -36,14 +36,37 @@ GITLAB_PROJECT="${GATEWAY_GITLAB_PROJECT:-wiolett/gateway}"
 RUN_USER=""
 NON_INTERACTIVE=0
 NO_LOGO=0
+APT_UPDATED=0
+OS_VERSION_CODENAME=""
+DOCKER_USE_SUDO=0
 
 # ── Helpers ──────────────────────────────────────────────────────────
-log()  { echo -e "${CYAN}[INFO]${NC} $*"; }
+log()  { echo -e "${BRAND_MINT}[INFO]${NC} $*"; }
 warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
 err()  { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 ok()   { echo -e "${GREEN}[OK]${NC} $*"; }
 
 die() { err "$@"; exit 1; }
+
+show_logo() {
+    echo ""
+    echo '░██       ░██ ░██           ░██               ░██       ░██    '
+    echo '░██       ░██               ░██               ░██       ░██    '
+    echo '░██  ░██  ░██ ░██ ░███████  ░██  ░███████  ░████████ ░████████ '
+    echo '░██ ░████ ░██ ░██░██    ░██ ░██ ░██    ░██    ░██       ░██    '
+    echo '░██░██ ░██░██ ░██░██    ░██ ░██ ░█████████    ░██       ░██    '
+    echo '░████   ░████ ░██░██    ░██ ░██ ░██           ░██       ░██    '
+    echo '░███     ░███ ░██ ░███████  ░██  ░███████      ░████     ░████ '
+    echo ""
+    echo -e "${BRAND_MINT}░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░${NC}"
+    echo -e "${BRAND_MINT}░░░█▀▀░█▀█░▀█▀░█▀▀░█░█░█▀█░█░█░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░${NC}"
+    echo -e "${BRAND_MINT}░░░█░█░█▀█░░█░░█▀▀░█▄█░█▀█░░█░░░░▀░▀░▀░▀░▀░▀░▀░▀░▀░▀░▀░▀░▀░░░░${NC}"
+    echo -e "${BRAND_MINT}░░░▀▀▀░▀░▀░░▀░░▀▀▀░▀░▀░▀░▀░░▀░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░${NC}"
+    echo -e "${BRAND_MINT}░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░${NC}"
+    echo ""
+}
+
+title() { echo ""; echo -e "${TITLE_TAG} $1 ${NC}"; echo ""; }
 
 prompt_input() {
     local prompt="$1"
@@ -55,9 +78,9 @@ prompt_input() {
     fi
     if [ -e /dev/tty ]; then
         if [ -n "$default" ]; then
-            read -r -p "$(echo -e "  ${CYAN}${prompt} [${default}]: ${NC}")" result < /dev/tty
+            read -r -p "$(echo -e "  ${BRAND_MINT}${prompt} [${default}]: ${NC}")" result < /dev/tty
         else
-            read -r -p "$(echo -e "  ${CYAN}${prompt}: ${NC}")" result < /dev/tty
+            read -r -p "$(echo -e "  ${BRAND_MINT}${prompt}: ${NC}")" result < /dev/tty
         fi
     else
         result=""
@@ -73,7 +96,7 @@ prompt_secret() {
         return
     fi
     if [ -e /dev/tty ]; then
-        read -rs -p "$(echo -e "  ${CYAN}${prompt}: ${NC}")" result < /dev/tty
+        read -rs -p "$(echo -e "  ${BRAND_MINT}${prompt}: ${NC}")" result < /dev/tty
         echo "" >&2
     else
         result=""
@@ -91,10 +114,10 @@ prompt_yes_no() {
     fi
     if [ -e /dev/tty ]; then
         if [[ "$default" == "Y" ]]; then
-            read -r -p "$(echo -e "  ${CYAN}${prompt} [Y/n]: ${NC}")" reply < /dev/tty
+            read -r -p "$(echo -e "  ${BRAND_MINT}${prompt} [Y/n]: ${NC}")" reply < /dev/tty
             reply="${reply:-Y}"
         else
-            read -r -p "$(echo -e "  ${CYAN}${prompt} [y/N]: ${NC}")" reply < /dev/tty
+            read -r -p "$(echo -e "  ${BRAND_MINT}${prompt} [y/N]: ${NC}")" reply < /dev/tty
             reply="${reply:-N}"
         fi
     else
@@ -113,7 +136,7 @@ prompt_choice() {
         return
     fi
     if [ -e /dev/tty ]; then
-        read -r -p "$(echo -e "  ${CYAN}${prompt} [${default}]: ${NC}")" reply < /dev/tty
+        read -r -p "$(echo -e "  ${BRAND_MINT}${prompt} [${default}]: ${NC}")" reply < /dev/tty
     else
         reply=""
     fi
@@ -131,6 +154,7 @@ detect_os() {
         . /etc/os-release
         OS_ID="${ID:-unknown}"
         OS_LIKE="${ID_LIKE:-$OS_ID}"
+        OS_VERSION_CODENAME="${VERSION_CODENAME:-}"
     else
         OS_ID="unknown"
         OS_LIKE="unknown"
@@ -150,10 +174,205 @@ detect_arch() {
 
 command_exists() { command -v "$1" &>/dev/null; }
 
-check_dependencies() {
-    if ! command_exists curl; then
-        die "curl is required but not found. Install it and retry."
+run_quiet() {
+    if "$@" >>"$LOG_FILE" 2>&1; then
+        return 0
     fi
+    die "Command failed: $*. Check ${LOG_FILE} for details."
+}
+
+run_privileged_quiet() {
+    if [[ $EUID -eq 0 ]]; then
+        run_quiet "$@"
+        return
+    fi
+    if command_exists sudo; then
+        run_quiet sudo "$@"
+        return
+    fi
+    die "This step requires root privileges. Re-run as root or install sudo."
+}
+
+pkg_update_once() {
+    if command_exists apt-get; then
+        if [[ "$APT_UPDATED" -eq 0 ]]; then
+            run_privileged_quiet apt-get update
+            APT_UPDATED=1
+        fi
+    elif command_exists apk; then
+        run_privileged_quiet apk update
+    fi
+}
+
+install_system_packages() {
+    pkg_update_once
+    if command_exists apt-get; then
+        run_privileged_quiet apt-get install -y "$@"
+    elif command_exists yum; then
+        run_privileged_quiet yum install -y "$@"
+    elif command_exists dnf; then
+        run_privileged_quiet dnf install -y "$@"
+    elif command_exists apk; then
+        run_privileged_quiet apk add "$@"
+    else
+        die "Could not detect a supported package manager for automatic dependency installation."
+    fi
+}
+
+ensure_curl_installed() {
+    if command_exists curl; then
+        return
+    fi
+    log "curl not found, installing it..."
+    install_system_packages curl ca-certificates
+}
+
+docker_run() {
+    if [[ "$DOCKER_USE_SUDO" -eq 1 ]]; then
+        sudo docker "$@"
+    else
+        docker "$@"
+    fi
+}
+
+detect_docker_access() {
+    if docker info >/dev/null 2>&1; then
+        DOCKER_USE_SUDO=0
+        return 0
+    fi
+    if command_exists sudo && sudo docker info >/dev/null 2>&1; then
+        DOCKER_USE_SUDO=1
+        return 0
+    fi
+    return 1
+}
+
+docker_repo_distro_family() {
+    case "$OS_ID" in
+        ubuntu) echo "ubuntu" ;;
+        debian) echo "debian" ;;
+        fedora) echo "fedora" ;;
+        rhel) echo "rhel" ;;
+        centos|centos_stream) echo "centos" ;;
+        *)
+            if [[ "$OS_LIKE" == *ubuntu* ]]; then
+                echo "ubuntu"
+            elif [[ "$OS_LIKE" == *debian* ]]; then
+                echo "debian"
+            elif [[ "$OS_LIKE" == *fedora* ]]; then
+                echo "fedora"
+            elif [[ "$OS_LIKE" == *rhel* ]] || [[ "$OS_LIKE" == *centos* ]]; then
+                echo "rhel"
+            else
+                echo ""
+            fi
+            ;;
+    esac
+}
+
+setup_docker_apt_repository() {
+    local repo_distro="$1"
+    install_system_packages ca-certificates curl gnupg
+    run_privileged_quiet install -m 0755 -d /etc/apt/keyrings
+    run_privileged_quiet curl -fsSL "https://download.docker.com/linux/${repo_distro}/gpg" -o /etc/apt/keyrings/docker.asc
+    run_privileged_quiet chmod a+r /etc/apt/keyrings/docker.asc
+    local codename="$OS_VERSION_CODENAME"
+    if [[ -z "$codename" ]] && command_exists lsb_release; then
+        codename=$(lsb_release -cs 2>/dev/null || true)
+    fi
+    [[ -n "$codename" ]] || die "Could not determine distribution codename for Docker apt repository."
+    local arch
+    arch=$(dpkg --print-architecture)
+    run_privileged_quiet tee /etc/apt/sources.list.d/docker.sources >/dev/null <<EOF
+Types: deb
+URIs: https://download.docker.com/linux/${repo_distro}
+Suites: ${codename}
+Components: stable
+Architectures: ${arch}
+Signed-By: /etc/apt/keyrings/docker.asc
+EOF
+    APT_UPDATED=0
+}
+
+setup_docker_rpm_repository() {
+    local repo_distro="$1"
+    ensure_curl_installed
+    if command_exists dnf; then
+        install_system_packages dnf-plugins-core
+    elif command_exists yum; then
+        install_system_packages yum-utils
+    fi
+    run_privileged_quiet curl -fsSL "https://download.docker.com/linux/${repo_distro}/docker-ce.repo" -o /etc/yum.repos.d/docker-ce.repo
+}
+
+remove_conflicting_docker_packages() {
+    local repo_family="$1"
+    case "$repo_family" in
+        ubuntu|debian)
+            run_privileged_quiet apt remove -y docker.io docker-compose docker-compose-v2 docker-doc podman-docker containerd runc || true
+            APT_UPDATED=0
+            ;;
+        fedora|centos|rhel)
+            if command_exists dnf; then
+                run_privileged_quiet dnf remove -y docker docker-client docker-client-latest docker-common docker-latest docker-latest-logrotate docker-logrotate docker-engine podman runc || true
+            elif command_exists yum; then
+                run_privileged_quiet yum remove -y docker docker-client docker-client-latest docker-common docker-latest docker-latest-logrotate docker-logrotate docker-engine podman runc || true
+            fi
+            ;;
+    esac
+}
+
+install_docker_engine() {
+    local repo_family
+    repo_family=$(docker_repo_distro_family)
+    [[ -n "$repo_family" ]] || die "Automatic Docker installation is supported only on Debian/Ubuntu/Fedora/CentOS/RHEL."
+    remove_conflicting_docker_packages "$repo_family"
+    case "$repo_family" in
+        ubuntu|debian)
+            setup_docker_apt_repository "$repo_family"
+            install_system_packages docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+            ;;
+        fedora|centos|rhel)
+            setup_docker_rpm_repository "$repo_family"
+            install_system_packages docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+            ;;
+    esac
+}
+
+ensure_docker_running() {
+    if detect_docker_access; then
+        return
+    fi
+    log "Starting Docker service..."
+    if command_exists systemctl; then
+        run_privileged_quiet systemctl enable --now containerd || true
+        run_privileged_quiet systemctl enable --now docker
+    elif command_exists service; then
+        run_privileged_quiet service containerd start || true
+        run_privileged_quiet service docker start
+    fi
+    local retries=5
+    while [[ "$retries" -gt 0 ]]; do
+        if detect_docker_access; then
+            return
+        fi
+        retries=$((retries - 1))
+        sleep 2
+    done
+    die "Docker is installed but the daemon is not reachable. Check ${LOG_FILE} for details."
+}
+
+ensure_docker_installed() {
+    ensure_curl_installed
+    if ! command_exists docker; then
+        log "Docker not found, installing it..."
+        install_docker_engine
+    fi
+    ensure_docker_running
+}
+
+check_dependencies() {
+    ensure_curl_installed
 }
 
 build_gitlab_api() {
@@ -171,8 +390,6 @@ Usage:
 
   In interactive mode (default), the script prompts for gateway address, port,
   and enrollment token. Use flags to pre-fill or skip prompts.
-
-  Docker must be installed before running this script.
 
 Options:
   --gateway <addr>         Gateway gRPC address as host:port (e.g. gateway.example.com:9443)
@@ -249,22 +466,13 @@ build_gitlab_api
 
 : > "$LOG_FILE"
 
-# ── Check Docker ─────────────────────────────────────────────────────
-if ! command_exists docker; then
-    die "Docker is required but not found. Install Docker first: https://docs.docker.com/engine/install/"
-fi
-
-DOCKER_VER=$(docker version --format '{{.Server.Version}}' 2>/dev/null || echo "unknown")
+ensure_docker_installed
+DOCKER_VER=$(docker_run version --format '{{.Server.Version}}' 2>/dev/null || echo "unknown")
 
 # ── Logo ─────────────────────────────────────────────────────────────
 if [[ "$NO_LOGO" -eq 0 ]]; then
-    echo ""
-    echo -e "${BOLD}${CYAN}"
-    echo '  ┌─────────────────────────────────────┐'
-    echo '  │     Gateway — Docker Node Setup      │'
-    echo '  │     Docker Daemon Installer          │'
-    echo '  └─────────────────────────────────────┘'
-    echo -e "${NC}"
+    show_logo
+    title "Gateway Docker Node Setup"
 fi
 
 # ── Interactive configuration ────────────────────────────────────────
@@ -281,7 +489,7 @@ if [[ "$NON_INTERACTIVE" -eq 0 ]]; then
         GATEWAY_HOST=$(prompt_input "Gateway hostname or IP" "")
         [[ -z "$GATEWAY_HOST" ]] && die "Gateway hostname is required"
     else
-        echo -e "  ${GRAY}Gateway host: ${CYAN}${GATEWAY_HOST}${NC}"
+        echo -e "  ${GRAY}Gateway host: ${BRAND_MINT}${GATEWAY_HOST}${NC}"
     fi
 
     # Gateway port
@@ -310,9 +518,9 @@ if [[ "$NON_INTERACTIVE" -eq 0 ]]; then
     # User selection
     if [[ -z "$RUN_USER" ]]; then
         echo -e "  ${GRAY}Run daemon as:${NC}"
-        echo -e "    ${CYAN}1)${NC} root  ${GRAY}[default]${NC}"
-        echo -e "    ${CYAN}2)${NC} Current user ($(logname 2>/dev/null || echo "$SUDO_USER"))"
-        echo -e "    ${CYAN}3)${NC} Custom user"
+        echo -e "    ${BRAND_MINT}1)${NC} root  ${GRAY}[default]${NC}"
+        echo -e "    ${BRAND_MINT}2)${NC} Current user ($(logname 2>/dev/null || echo "$SUDO_USER"))"
+        echo -e "    ${BRAND_MINT}3)${NC} Custom user"
         echo ""
         user_choice=$(prompt_choice "Choose" "1")
         case "$user_choice" in
@@ -343,17 +551,16 @@ else
         die "User '$RUN_USER' does not exist. Create it first or choose a different user."
     fi
     RUN_GROUP=$(id -gn "$RUN_USER" 2>/dev/null)
-    # Ensure user is in docker group
     if ! groups "$RUN_USER" 2>/dev/null | grep -qw docker; then
-        warn "User '$RUN_USER' is not in the 'docker' group. The daemon may not be able to access Docker."
-        warn "Run: usermod -aG docker ${RUN_USER}"
+        warn "User '$RUN_USER' is not in the 'docker' group. Adding it now."
+        usermod -aG docker "$RUN_USER" >>"$LOG_FILE" 2>&1 || true
     fi
 fi
 
 # ── Confirmation ─────────────────────────────────────────────────────
 echo -e "  ${BOLD}Configuration Summary${NC}"
 echo -e "  ${GRAY}────────────────────────────────────────${NC}"
-echo -e "  Gateway:     ${CYAN}${GATEWAY_ADDR}${NC}"
+echo -e "  Gateway:     ${BRAND_MINT}${GATEWAY_ADDR}${NC}"
 echo -e "  Token:       ${GRAY}${ENROLL_TOKEN:0:12}...${NC}"
 echo -e "  Arch:        ${ARCH}"
 echo -e "  OS:          ${OS_ID}"
@@ -506,6 +713,7 @@ ExecStart=/usr/local/bin/docker-daemon run
 Restart=on-failure
 RestartSec=5
 LimitNOFILE=65536
+SupplementaryGroups=docker
 
 [Install]
 WantedBy=multi-user.target
@@ -536,6 +744,6 @@ echo ""
 echo -e "${GREEN}${BOLD}Docker node setup complete!${NC}"
 echo ""
 echo -e "  The node should appear as ${GREEN}online${NC} in Gateway within a few seconds."
-echo -e "  Check status:  ${CYAN}systemctl status docker-daemon${NC}"
-echo -e "  View logs:     ${CYAN}journalctl -u docker-daemon -f${NC}"
+echo -e "  Check status:  ${BRAND_MINT}systemctl status docker-daemon${NC}"
+echo -e "  View logs:     ${BRAND_MINT}journalctl -u docker-daemon -f${NC}"
 echo ""

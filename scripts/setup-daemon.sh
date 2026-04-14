@@ -11,10 +11,10 @@ IFS=$'\n\t'
 # ────────────────────────────────────────────────────────────────────
 
 # ── Colors ──────────────────────────────────────────────────────────
+BRAND_MINT='\033[38;2;140;176;132m'
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
-CYAN='\033[0;36m'
 GRAY='\033[0;90m'
 NC='\033[0m'
 BOLD='\033[1m'
@@ -26,12 +26,30 @@ GITLAB_PROJECT="${GATEWAY_GITLAB_PROJECT:-wiolett/gateway}"
 PASSTHROUGH_ARGS=()
 
 # ── Helpers ─────────────────────────────────────────────────────────
-log()  { echo -e "${CYAN}[INFO]${NC} $*"; }
+log()  { echo -e "${BRAND_MINT}[INFO]${NC} $*"; }
 warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
 err()  { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 die()  { err "$@"; exit 1; }
 
 command_exists() { command -v "$1" &>/dev/null; }
+
+show_logo() {
+    echo ""
+    echo '░██       ░██ ░██           ░██               ░██       ░██    '
+    echo '░██       ░██               ░██               ░██       ░██    '
+    echo '░██  ░██  ░██ ░██ ░███████  ░██  ░███████  ░████████ ░████████ '
+    echo '░██ ░████ ░██ ░██░██    ░██ ░██ ░██    ░██    ░██       ░██    '
+    echo '░██░██ ░██░██ ░██░██    ░██ ░██ ░█████████    ░██       ░██    '
+    echo '░████   ░████ ░██░██    ░██ ░██ ░██           ░██       ░██    '
+    echo '░███     ░███ ░██ ░███████  ░██  ░███████      ░████     ░████ '
+    echo ""
+    echo -e "${BRAND_MINT}░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░${NC}"
+    echo -e "${BRAND_MINT}░░░█▀▀░█▀█░▀█▀░█▀▀░█░█░█▀█░█░█░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░${NC}"
+    echo -e "${BRAND_MINT}░░░█░█░█▀█░░█░░█▀▀░█▄█░█▀█░░█░░░░▀░▀░▀░▀░▀░▀░▀░▀░▀░▀░▀░▀░▀░░░░${NC}"
+    echo -e "${BRAND_MINT}░░░▀▀▀░▀░▀░░▀░░▀▀▀░▀░▀░▀░▀░░▀░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░${NC}"
+    echo -e "${BRAND_MINT}░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░${NC}"
+    echo ""
+}
 
 # ── Parse Arguments ─────────────────────────────────────────────────
 show_help() {
@@ -79,17 +97,17 @@ fi
 
 # ── Interactive type selection ──────────────────────────────────────
 if [[ -z "$DAEMON_TYPE" ]]; then
-    echo ""
-    echo -e "${BOLD}${CYAN}  Gateway — Daemon Setup${NC}"
+    show_logo
+    echo -e "${BOLD}${BRAND_MINT}  Gateway — Daemon Setup${NC}"
     echo ""
     echo -e "  ${GRAY}Select daemon type to install:${NC}"
     echo ""
-    echo -e "    ${CYAN}1)${NC} nginx       — Reverse proxy node (nginx + nginx-daemon)"
-    echo -e "    ${CYAN}2)${NC} docker      — Docker container management node"
-    echo -e "    ${CYAN}3)${NC} monitoring  — System metrics agent (no nginx/docker)"
+    echo -e "    ${BRAND_MINT}1)${NC} nginx       — Reverse proxy node (nginx + nginx-daemon)"
+    echo -e "    ${BRAND_MINT}2)${NC} docker      — Docker container management node"
+    echo -e "    ${BRAND_MINT}3)${NC} monitoring  — System metrics agent (no nginx/docker)"
     echo ""
     if [ -e /dev/tty ]; then
-        read -r -p "$(echo -e "  ${CYAN}Choose [1-3]: ${NC}")" choice < /dev/tty
+        read -r -p "$(echo -e "  ${BRAND_MINT}Choose [1-3]: ${NC}")" choice < /dev/tty
     else
         die "Cannot prompt for type — use --type flag"
     fi

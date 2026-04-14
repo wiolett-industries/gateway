@@ -14,13 +14,14 @@ IFS=$'\n\t'
 LOG_FILE="/tmp/gateway_monitoring_setup.log"
 
 # ── Colors ────────────────────────────────────────────────────────
+BRAND_MINT='\033[38;2;140;176;132m'
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
-CYAN='\033[0;36m'
 GRAY='\033[0;90m'
 NC='\033[0m'
 BOLD='\033[1m'
+TITLE_TAG='\033[48;2;140;176;132m\033[30m'
 
 # ── Defaults ──────────────────────────────────────────────────────
 GATEWAY_HOST="${GATEWAY_NODE_HOST:-}"
@@ -33,14 +34,35 @@ GITLAB_PROJECT="${GATEWAY_GITLAB_PROJECT:-wiolett/gateway}"
 RUN_USER=""
 NON_INTERACTIVE=0
 NO_LOGO=0
+APT_UPDATED=0
 
 # ── Helpers ───────────────────────────────────────────────────────
-log()  { echo -e "${CYAN}[INFO]${NC} $*"; }
+log()  { echo -e "${BRAND_MINT}[INFO]${NC} $*"; }
 warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
 err()  { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 ok()   { echo -e "${GREEN}[OK]${NC} $*"; }
 
 die() { err "$@"; exit 1; }
+
+show_logo() {
+    echo ""
+    echo '░██       ░██ ░██           ░██               ░██       ░██    '
+    echo '░██       ░██               ░██               ░██       ░██    '
+    echo '░██  ░██  ░██ ░██ ░███████  ░██  ░███████  ░████████ ░████████ '
+    echo '░██ ░████ ░██ ░██░██    ░██ ░██ ░██    ░██    ░██       ░██    '
+    echo '░██░██ ░██░██ ░██░██    ░██ ░██ ░█████████    ░██       ░██    '
+    echo '░████   ░████ ░██░██    ░██ ░██ ░██           ░██       ░██    '
+    echo '░███     ░███ ░██ ░███████  ░██  ░███████      ░████     ░████ '
+    echo ""
+    echo -e "${BRAND_MINT}░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░${NC}"
+    echo -e "${BRAND_MINT}░░░█▀▀░█▀█░▀█▀░█▀▀░█░█░█▀█░█░█░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░${NC}"
+    echo -e "${BRAND_MINT}░░░█░█░█▀█░░█░░█▀▀░█▄█░█▀█░░█░░░░▀░▀░▀░▀░▀░▀░▀░▀░▀░▀░▀░▀░▀░░░░${NC}"
+    echo -e "${BRAND_MINT}░░░▀▀▀░▀░▀░░▀░░▀▀▀░▀░▀░▀░▀░░▀░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░${NC}"
+    echo -e "${BRAND_MINT}░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░${NC}"
+    echo ""
+}
+
+title() { echo ""; echo -e "${TITLE_TAG} $1 ${NC}"; echo ""; }
 
 need_root() {
     if [[ $EUID -ne 0 ]]; then
@@ -73,8 +95,24 @@ detect_arch() {
 command_exists() { command -v "$1" &>/dev/null; }
 
 check_dependencies() {
-    if ! command_exists curl; then
-        die "curl is required but not found. Install it and retry."
+    if command_exists curl; then
+        return
+    fi
+    log "curl not found, installing it..."
+    if command_exists apt-get; then
+        if [[ "$APT_UPDATED" -eq 0 ]]; then
+            apt-get update >>"$LOG_FILE" 2>&1
+            APT_UPDATED=1
+        fi
+        apt-get install -y curl ca-certificates >>"$LOG_FILE" 2>&1
+    elif command_exists yum; then
+        yum install -y curl ca-certificates >>"$LOG_FILE" 2>&1
+    elif command_exists dnf; then
+        dnf install -y curl ca-certificates >>"$LOG_FILE" 2>&1
+    elif command_exists apk; then
+        apk add curl ca-certificates >>"$LOG_FILE" 2>&1
+    else
+        die "curl is required and no supported package manager was found for automatic installation."
     fi
 }
 
@@ -93,9 +131,9 @@ prompt_input() {
     fi
     if [ -e /dev/tty ]; then
         if [ -n "$default" ]; then
-            read -r -p "$(echo -e "  ${CYAN}${prompt} [${default}]: ${NC}")" result < /dev/tty
+            read -r -p "$(echo -e "  ${BRAND_MINT}${prompt} [${default}]: ${NC}")" result < /dev/tty
         else
-            read -r -p "$(echo -e "  ${CYAN}${prompt}: ${NC}")" result < /dev/tty
+            read -r -p "$(echo -e "  ${BRAND_MINT}${prompt}: ${NC}")" result < /dev/tty
         fi
     else
         result=""
@@ -111,7 +149,7 @@ prompt_secret() {
         return
     fi
     if [ -e /dev/tty ]; then
-        read -rs -p "$(echo -e "  ${CYAN}${prompt}: ${NC}")" result < /dev/tty
+        read -rs -p "$(echo -e "  ${BRAND_MINT}${prompt}: ${NC}")" result < /dev/tty
         echo "" >&2
     else
         result=""
@@ -129,10 +167,10 @@ prompt_yes_no() {
     fi
     if [ -e /dev/tty ]; then
         if [[ "$default" == "Y" ]]; then
-            read -r -p "$(echo -e "  ${CYAN}${prompt} [Y/n]: ${NC}")" reply < /dev/tty
+            read -r -p "$(echo -e "  ${BRAND_MINT}${prompt} [Y/n]: ${NC}")" reply < /dev/tty
             reply="${reply:-Y}"
         else
-            read -r -p "$(echo -e "  ${CYAN}${prompt} [y/N]: ${NC}")" reply < /dev/tty
+            read -r -p "$(echo -e "  ${BRAND_MINT}${prompt} [y/N]: ${NC}")" reply < /dev/tty
             reply="${reply:-N}"
         fi
     else
@@ -151,7 +189,7 @@ prompt_choice() {
         return
     fi
     if [ -e /dev/tty ]; then
-        read -r -p "$(echo -e "  ${CYAN}${prompt} [${default}]: ${NC}")" reply < /dev/tty
+        read -r -p "$(echo -e "  ${BRAND_MINT}${prompt} [${default}]: ${NC}")" reply < /dev/tty
     else
         reply=""
     fi
@@ -249,13 +287,8 @@ build_gitlab_api
 
 # ── Logo ──────────────────────────────────────────────────────────
 if [[ "$NO_LOGO" -eq 0 ]]; then
-    echo ""
-    echo -e "${BOLD}${CYAN}"
-    echo '  ┌─────────────────────────────────────┐'
-    echo '  │     Gateway — Monitoring Node        │'
-    echo '  │     System Metrics Agent             │'
-    echo '  └─────────────────────────────────────┘'
-    echo -e "${NC}"
+    show_logo
+    title "Gateway Monitoring Node Setup"
 fi
 
 # ── Interactive configuration ─────────────────────────────────────
@@ -272,7 +305,7 @@ if [[ "$NON_INTERACTIVE" -eq 0 ]]; then
         GATEWAY_HOST=$(prompt_input "Gateway hostname or IP" "")
         [[ -z "$GATEWAY_HOST" ]] && die "Gateway hostname is required"
     else
-        echo -e "  ${GRAY}Gateway host: ${CYAN}${GATEWAY_HOST}${NC}"
+        echo -e "  ${GRAY}Gateway host: ${BRAND_MINT}${GATEWAY_HOST}${NC}"
     fi
 
     # Gateway port
@@ -301,9 +334,9 @@ if [[ "$NON_INTERACTIVE" -eq 0 ]]; then
     # User selection
     if [[ -z "$RUN_USER" ]]; then
         echo -e "  ${GRAY}Run daemon as:${NC}"
-        echo -e "    ${CYAN}1)${NC} root  ${GRAY}[default]${NC}"
-        echo -e "    ${CYAN}2)${NC} Current user ($(logname 2>/dev/null || echo "$SUDO_USER"))"
-        echo -e "    ${CYAN}3)${NC} Custom user"
+        echo -e "    ${BRAND_MINT}1)${NC} root  ${GRAY}[default]${NC}"
+        echo -e "    ${BRAND_MINT}2)${NC} Current user ($(logname 2>/dev/null || echo "$SUDO_USER"))"
+        echo -e "    ${BRAND_MINT}3)${NC} Custom user"
         echo ""
         user_choice=$(prompt_choice "Choose" "1")
         case "$user_choice" in
@@ -339,7 +372,7 @@ fi
 # ── Confirmation ──────────────────────────────────────────────────
 echo -e "  ${BOLD}Configuration Summary${NC}"
 echo -e "  ${GRAY}────────────────────────────────────────${NC}"
-echo -e "  Gateway:     ${CYAN}${GATEWAY_ADDR}${NC}"
+echo -e "  Gateway:     ${BRAND_MINT}${GATEWAY_ADDR}${NC}"
 echo -e "  Token:       ${GRAY}${ENROLL_TOKEN:0:12}...${NC}"
 echo -e "  Arch:        ${ARCH}"
 echo -e "  OS:          ${OS_ID}"
@@ -520,6 +553,6 @@ echo ""
 echo -e "${GREEN}${BOLD}Monitoring node setup complete!${NC}"
 echo ""
 echo -e "  The node should appear as ${GREEN}online${NC} in Gateway within a few seconds."
-echo -e "  Check status:  ${CYAN}systemctl status monitoring-daemon${NC}"
-echo -e "  View logs:     ${CYAN}journalctl -u monitoring-daemon -f${NC}"
+echo -e "  Check status:  ${BRAND_MINT}systemctl status monitoring-daemon${NC}"
+echo -e "  View logs:     ${BRAND_MINT}journalctl -u monitoring-daemon -f${NC}"
 echo ""
