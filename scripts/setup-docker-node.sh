@@ -475,6 +475,9 @@ DOCKER_VER=$(docker_run version --format '{{.Server.Version}}' 2>/dev/null || ec
 
 # ── Logo ─────────────────────────────────────────────────────────────
 if [[ "$NO_LOGO" -eq 0 ]]; then
+    if [ -t 1 ] && command_exists clear; then
+        clear
+    fi
     show_logo
     title "Gateway Docker Node Setup"
 fi

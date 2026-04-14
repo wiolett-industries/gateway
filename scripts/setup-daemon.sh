@@ -100,6 +100,9 @@ fi
 
 # ── Interactive type selection ──────────────────────────────────────
 if [[ -z "$DAEMON_TYPE" ]]; then
+    if [ -t 1 ] && command_exists clear; then
+        clear
+    fi
     show_logo
     echo -e "${BOLD}${BRAND_MINT}  Gateway — Daemon Setup${NC}"
     echo ""
