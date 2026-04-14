@@ -91,7 +91,7 @@ export function SecretsSection({
         </div>
       )}
 
-      <div className="-mb-px">
+      <div>
         {secretRows.map((row, idx) => {
           const isNew = !row.id;
           const isMasked = row.value === "••••••••";

@@ -1,5 +1,6 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import * as grpc from '@grpc/grpc-js';
 import * as protoLoader from '@grpc/proto-loader';
 import type { DrizzleClient } from '@/db/client.js';
@@ -16,7 +17,24 @@ import { createLogStreamHandlers } from './services/log-stream.js';
 
 const logger = createChildLogger('GrpcServer');
 
-const PROTO_PATH = resolve(process.cwd(), 'proto/gateway/v1/nginx-daemon.proto');
+function resolveProtoPath() {
+  const moduleDir = dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    resolve(process.cwd(), 'proto/gateway/v1/nginx-daemon.proto'),
+    resolve(process.cwd(), '../proto/gateway/v1/nginx-daemon.proto'),
+    resolve(process.cwd(), '../../proto/gateway/v1/nginx-daemon.proto'),
+    resolve(moduleDir, '../../proto/gateway/v1/nginx-daemon.proto'),
+    resolve(moduleDir, '../../../proto/gateway/v1/nginx-daemon.proto'),
+  ];
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
+  }
+
+  throw new Error(`Could not locate nginx-daemon.proto. Tried: ${candidates.join(', ')}`);
+}
+
+const PROTO_PATH = resolveProtoPath();
 
 export interface GrpcServerDeps {
   registry: NodeRegistryService;

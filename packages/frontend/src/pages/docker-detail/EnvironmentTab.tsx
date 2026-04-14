@@ -370,7 +370,7 @@ export function EnvironmentTab({
                   <div className="px-3 py-2 border-l border-border">Value</div>
                 </div>
               )}
-              <div className="-mb-px">
+              <div>
                 {envVars.map((env, idx) => (
                   <div
                     key={idx}

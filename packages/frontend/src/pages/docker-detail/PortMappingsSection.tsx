@@ -63,7 +63,7 @@ export function PortMappingsSection({
             <div className="px-3 py-2 border-l border-border">Protocol</div>
             {canEdit && <div />}
           </div>
-          <div className="-mb-px">
+          <div>
             {ports.map((p, i) => (
               <div
                 key={i}
