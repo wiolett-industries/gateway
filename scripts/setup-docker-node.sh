@@ -418,8 +418,7 @@ verify_checksum() {
         rm -f "$checksums_file"
 
         if [[ -z "$expected" ]]; then
-            warn "No checksum found for ${binary_name} in checksums.txt — skipping verification"
-            return 0
+            die "No checksum found for ${binary_name} in checksums.txt"
         fi
 
         if [[ "$expected" != "$actual" ]]; then
@@ -428,7 +427,7 @@ verify_checksum() {
         ok "Checksum verified"
     else
         rm -f "$checksums_file"
-        warn "Could not download checksums.txt — skipping verification"
+        die "Could not download checksums.txt for checksum verification"
     fi
 }
 
