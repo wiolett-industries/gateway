@@ -232,13 +232,33 @@ export class DaemonUpdateService {
   getDownloadUrl(daemonType: DaemonType, tag: string, arch: string): string {
     const daemonName = DAEMON_NAME_MAP[daemonType];
     const encodedPath = encodeURIComponent(this.env.GITLAB_PROJECT_PATH);
-    return `${this.env.GITLAB_API_URL}/api/v4/projects/${encodedPath}/packages/generic/${daemonName}/${tag}/${daemonName}-linux-${arch}`;
+    return `${this.env.GITLAB_API_URL}/api/v4/projects/${encodedPath}/packages/generic/${daemonName}/${tag}/${this.getBinaryName(daemonType, arch)}`;
   }
 
   getChecksumsUrl(daemonType: DaemonType, tag: string): string {
     const daemonName = DAEMON_NAME_MAP[daemonType];
     const encodedPath = encodeURIComponent(this.env.GITLAB_PROJECT_PATH);
     return `${this.env.GITLAB_API_URL}/api/v4/projects/${encodedPath}/packages/generic/${daemonName}/${tag}/checksums.txt`;
+  }
+
+  getBinaryName(daemonType: DaemonType, arch: string): string {
+    const daemonName = DAEMON_NAME_MAP[daemonType];
+    return `${daemonName}-linux-${this.normalizePackageArch(arch)}`;
+  }
+
+  normalizePackageArch(arch: string): string {
+    const normalized = arch.trim().toLowerCase();
+    switch (normalized) {
+      case 'x86_64':
+      case 'x64':
+      case 'amd64':
+        return 'amd64';
+      case 'aarch64':
+      case 'arm64':
+        return 'arm64';
+      default:
+        return normalized || 'amd64';
+    }
   }
 
   private async getSetting(key: string): Promise<string | null> {

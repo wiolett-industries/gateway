@@ -137,7 +137,7 @@ systemRoutes.post('/daemon-updates/:nodeId', requireScope('admin:update'), async
     const resp = await fetch(checksumUrl, { signal: AbortSignal.timeout(10_000) });
     if (resp.ok) {
       const text = await resp.text();
-      const daemonName = `${daemonType}-daemon-linux-${arch}`;
+      const daemonName = service.getBinaryName(daemonType, arch);
       const line = text.split('\n').find((l) => l.includes(daemonName));
       if (line) checksum = line.split(/\s+/)[0];
     }
