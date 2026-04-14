@@ -7,6 +7,8 @@ dist/
 .vite/
 coverage/
 .mcp.json
+TODO.md
+todo.md
 
 # Nx
 .nx/cache
