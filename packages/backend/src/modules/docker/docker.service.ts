@@ -527,14 +527,7 @@ export class DockerManagementService {
       120000 // 2min timeout for pull+redeploy
     );
     const data = this.parseResult(result);
-    this.watchRecreateByName(
-      nodeId,
-      name,
-      containerId,
-      task?.id,
-      'Container updated',
-      expectedState
-    );
+    this.watchRecreateByName(nodeId, name, containerId, task?.id, 'Container updated', expectedState);
     await this.auditService.log({
       action: 'docker.container.update',
       userId,
@@ -628,14 +621,7 @@ export class DockerManagementService {
         details: { nodeId },
       });
 
-      this.watchRecreateByName(
-        nodeId,
-        name,
-        containerId,
-        task?.id,
-        'Container recreated',
-        expectedState
-      );
+      this.watchRecreateByName(nodeId, name, containerId, task?.id, 'Container recreated', expectedState);
       return data;
     } catch (err) {
       this.clearTransition(nodeId, name);
@@ -703,14 +689,7 @@ export class DockerManagementService {
       }
       throw err;
     }
-    this.watchRecreateByName(
-      nodeId,
-      name,
-      containerId,
-      task?.id,
-      'Container env updated',
-      expectedState
-    );
+    this.watchRecreateByName(nodeId, name, containerId, task?.id, 'Container env updated', expectedState);
     await this.auditService.log({
       action: 'docker.container.env.update',
       userId,
