@@ -154,6 +154,16 @@ export class DockerManagementService {
     }
   }
 
+  private async resolveExpectedRecreateState(nodeId: string, containerId: string): Promise<'running' | 'created'> {
+    try {
+      const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'inspect', { containerId });
+      const data = this.parseResult(result);
+      return data?.State?.Status === 'running' ? 'running' : 'created';
+    } catch {
+      return 'running';
+    }
+  }
+
   private async createTask(nodeId: string, containerId: string, containerName: string, type: string) {
     if (!this.taskService) return undefined;
     const task = await this.taskService.create({ nodeId, containerId, containerName, type });
@@ -219,6 +229,7 @@ export class DockerManagementService {
     oldContainerId: string,
     taskId: string | undefined,
     progress: string,
+    expectedState: string,
     timeoutMs = 60000
   ) {
     const start = Date.now();
@@ -237,8 +248,8 @@ export class DockerManagementService {
           const newId = match.id ?? match.Id;
           const state = match.state ?? match.State ?? '';
 
-          if (newId !== oldContainerId && state === 'running') {
-            // Recreation complete — new container is running
+          if (newId !== oldContainerId && state === expectedState) {
+            // Recreation complete — new container reached the expected post-recreate state
             clearInterval(poll);
             this.clearTransition(nodeId, containerName);
             if (taskId && this.taskService) {
@@ -504,6 +515,7 @@ export class DockerManagementService {
   async updateContainer(nodeId: string, containerId: string, config: Record<string, unknown>, userId: string) {
     await this.validateDockerNode(nodeId);
     const name = await this.resolveContainerName(nodeId, containerId);
+    const expectedState = await this.resolveExpectedRecreateState(nodeId, containerId);
     this.requireNoTransition(nodeId, name);
     this.setTransition(nodeId, name, 'updating');
     this.emitTransition(nodeId, name, containerId, 'updating');
@@ -515,7 +527,14 @@ export class DockerManagementService {
       120000 // 2min timeout for pull+redeploy
     );
     const data = this.parseResult(result);
-    this.watchRecreateByName(nodeId, name, containerId, task?.id, 'Container updated');
+    this.watchRecreateByName(
+      nodeId,
+      name,
+      containerId,
+      task?.id,
+      'Container updated',
+      expectedState
+    );
     await this.auditService.log({
       action: 'docker.container.update',
       userId,
@@ -578,6 +597,7 @@ export class DockerManagementService {
   async recreateWithConfig(nodeId: string, containerId: string, config: Record<string, unknown>, userId: string) {
     await this.validateDockerNode(nodeId);
     const name = await this.resolveContainerName(nodeId, containerId);
+    const expectedState = await this.resolveExpectedRecreateState(nodeId, containerId);
     this.requireNoTransition(nodeId, name);
     this.setTransition(nodeId, name, 'recreating');
     this.emitTransition(nodeId, name, containerId, 'recreating');
@@ -608,7 +628,14 @@ export class DockerManagementService {
         details: { nodeId },
       });
 
-      this.watchRecreateByName(nodeId, name, containerId, task?.id, 'Container recreated');
+      this.watchRecreateByName(
+        nodeId,
+        name,
+        containerId,
+        task?.id,
+        'Container recreated',
+        expectedState
+      );
       return data;
     } catch (err) {
       this.clearTransition(nodeId, name);
@@ -634,6 +661,7 @@ export class DockerManagementService {
   ) {
     await this.validateDockerNode(nodeId);
     const name = await this.resolveContainerName(nodeId, containerId);
+    const expectedState = await this.resolveExpectedRecreateState(nodeId, containerId);
     this.requireNoTransition(nodeId, name);
 
     // Merge decrypted secrets into the env update so secrets persist across recreate
@@ -675,7 +703,14 @@ export class DockerManagementService {
       }
       throw err;
     }
-    this.watchRecreateByName(nodeId, name, containerId, task?.id, 'Container env updated');
+    this.watchRecreateByName(
+      nodeId,
+      name,
+      containerId,
+      task?.id,
+      'Container env updated',
+      expectedState
+    );
     await this.auditService.log({
       action: 'docker.container.env.update',
       userId,

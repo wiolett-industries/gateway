@@ -15,11 +15,13 @@ import { type SecretRow, SecretsSection } from "./SecretsSection";
 export function EnvironmentTab({
   nodeId,
   containerId,
+  containerState,
   disabled,
   onRecreating,
 }: {
   nodeId: string;
   containerId: string;
+  containerState?: string;
   disabled?: boolean;
   onRecreating?: () => void;
 }) {
@@ -39,6 +41,7 @@ export function EnvironmentTab({
 
   const canEdit = hasScope("docker:containers:environment");
   const canManageSecrets = hasScope("docker:containers:secrets");
+  const recreatesRunningContainer = containerState === "running";
 
   const fetchEnv = useCallback(async () => {
     setIsLoading(true);
@@ -154,10 +157,11 @@ export function EnvironmentTab({
       : envVars;
 
     const ok = await confirm({
-      title: "Save & Recreate",
-      description:
-        "Updating environment variables will recreate the container. The container will experience brief downtime. Continue?",
-      confirmLabel: "Recreate",
+      title: recreatesRunningContainer ? "Save & Recreate" : "Save",
+      description: recreatesRunningContainer
+        ? "Updating environment variables will recreate the container. The container will experience brief downtime. Continue?"
+        : "Updating environment variables will save the new container configuration. The container will remain stopped. Continue?",
+      confirmLabel: recreatesRunningContainer ? "Recreate" : "Save",
     });
     if (!ok) return;
 
@@ -199,7 +203,11 @@ export function EnvironmentTab({
         newEnv,
         removeEnv.length > 0 ? removeEnv : undefined
       );
-      toast.success("Environment updated — recreating container");
+      toast.success(
+        recreatesRunningContainer
+          ? "Environment updated — recreating container"
+          : "Environment updated"
+      );
       invalidate("containers", "tasks");
       // Realtime channel will deliver the recreate event to every open tab.
       setIsSaving(false);
@@ -321,7 +329,7 @@ export function EnvironmentTab({
                 disabled={isSaving || !hasChanges || hasErrors}
               >
                 <RotateCcw className="h-3.5 w-3.5" />
-                Save & Recreate
+                {recreatesRunningContainer ? "Save & Recreate" : "Save"}
               </Button>
             )}
           </div>

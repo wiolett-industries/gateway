@@ -740,10 +740,14 @@ func (c *Client) recreateContainer(ctx context.Context, insp *container.InspectR
 		name = insp.ID[:12]
 	}
 
-	// Stop the container (10s grace period, then SIGKILL)
-	timeoutSec := 10
-	if _, err := c.cli.ContainerStop(ctx, insp.ID, client.ContainerStopOptions{Timeout: &timeoutSec}); err != nil {
-		return fmt.Errorf("stop container: %w", err)
+	wasRunning := insp.State != nil && insp.State.Running
+
+	if wasRunning {
+		// Stop the container (10s grace period, then SIGKILL)
+		timeoutSec := 10
+		if _, err := c.cli.ContainerStop(ctx, insp.ID, client.ContainerStopOptions{Timeout: &timeoutSec}); err != nil {
+			return fmt.Errorf("stop container: %w", err)
+		}
 	}
 
 	// Remove the container
@@ -791,9 +795,11 @@ func (c *Client) recreateContainer(ctx context.Context, insp *container.InspectR
 		}
 	}
 
-	// Start the new container
-	if _, err := c.cli.ContainerStart(ctx, createResult.ID, client.ContainerStartOptions{}); err != nil {
-		return fmt.Errorf("start container: %w", err)
+	// Preserve the original running state. A stopped container should stay stopped.
+	if wasRunning {
+		if _, err := c.cli.ContainerStart(ctx, createResult.ID, client.ContainerStartOptions{}); err != nil {
+			return fmt.Errorf("start container: %w", err)
+		}
 	}
 
 	return nil

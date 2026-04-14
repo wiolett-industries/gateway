@@ -457,6 +457,7 @@ export function DockerContainerDetail() {
             <EnvironmentTab
               nodeId={nodeId!}
               containerId={containerId!}
+              containerState={state}
               disabled={!!transition}
               onRecreating={() => fetchContainer(true)}
             />
