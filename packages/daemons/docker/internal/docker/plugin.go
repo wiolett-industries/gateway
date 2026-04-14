@@ -293,6 +293,7 @@ func (p *DockerPlugin) handleContainerCommand(cmd *pb.DockerContainerCommand, re
 			Tag         string            `json:"tag"`
 			Env         map[string]string `json:"env"`
 			EnvRemovals []string          `json:"env_removals"`
+			RemoveEnv   []string          `json:"removeEnv"`
 		}
 		if cmd.ConfigJson != "" {
 			if err := json.Unmarshal([]byte(cmd.ConfigJson), &params); err != nil {
@@ -320,10 +321,13 @@ func (p *DockerPlugin) handleContainerCommand(cmd *pb.DockerContainerCommand, re
 			var envOverrides map[string]string
 			var envRemovals []string
 
-			if len(params.Env) > 0 || len(params.EnvRemovals) > 0 {
+			explicitRemovals := append([]string{}, params.EnvRemovals...)
+			explicitRemovals = append(explicitRemovals, params.RemoveEnv...)
+
+			if len(params.Env) > 0 || len(explicitRemovals) > 0 {
 				if containerName != "" {
 					// Apply env changes through envstore
-					_, applyErr := p.envStore.Apply(containerName, params.Env, params.EnvRemovals)
+					_, applyErr := p.envStore.Apply(containerName, params.Env, explicitRemovals)
 					if applyErr != nil {
 						p.logger.Warn("envstore apply failed", "error", applyErr)
 					}
@@ -332,7 +336,7 @@ func (p *DockerPlugin) handleContainerCommand(cmd *pb.DockerContainerCommand, re
 					if compErr != nil {
 						p.logger.Warn("envstore compute removals failed", "error", compErr)
 					}
-					envRemovals = append(params.EnvRemovals, removals...)
+					envRemovals = append(explicitRemovals, removals...)
 				}
 				envOverrides = params.Env
 			}

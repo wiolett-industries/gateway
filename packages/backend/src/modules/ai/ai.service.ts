@@ -627,7 +627,7 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
         // Pull the new image first (sync)
         const { NodeDispatchService: NDS } = await import('@/services/node-dispatch.service.js');
         const dispatch = container.resolve(NDS);
-        const pullResult = await dispatch.sendDockerImageCommand(a.nodeId, 'pull', { imageRef: targetRef }, 300000);
+        const pullResult = await dispatch.sendDockerImageCommand(a.nodeId, 'pull', { imageRef: targetRef }, 600000);
         if (!pullResult.success) return { error: `Failed to pull ${targetRef}: ${pullResult.error}` };
         // Recreate with new image
         await this.dockerService.recreateWithConfig(a.nodeId, a.containerId, { image: targetRef }, user.id);
@@ -640,7 +640,7 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
       case 'pull_docker_image': {
         const { NodeDispatchService: PullNDS } = await import('@/services/node-dispatch.service.js');
         const pullDispatch = container.resolve(PullNDS);
-        const pullRes = await pullDispatch.sendDockerImageCommand(a.nodeId, 'pull', { imageRef: a.imageRef }, 300000);
+        const pullRes = await pullDispatch.sendDockerImageCommand(a.nodeId, 'pull', { imageRef: a.imageRef }, 600000);
         if (!pullRes.success) return { error: `Failed to pull ${a.imageRef}: ${pullRes.error}` };
         return { success: true, message: `Pulled ${a.imageRef}` };
       }

@@ -498,9 +498,10 @@ func (c *Client) DuplicateContainer(ctx context.Context, id string, newName stri
 	return result.ID, nil
 }
 
-// UpdateContainer performs a rolling update: pull new image (if newTag is set),
-// stop, remove, and recreate the container preserving its configuration and
-// network connections. envOverrides are merged on top; envRemovals are stripped.
+// UpdateContainer performs an update of the container configuration.
+// If newTag is set, it pulls that image first, then recreates the container.
+// For env-only/config-preserving updates, it recreates directly without talking
+// to the registry. envOverrides are merged on top; envRemovals are stripped.
 func (c *Client) UpdateContainer(ctx context.Context, id string, newTag string, envOverrides map[string]string, envRemovals []string, registryAuth string) error {
 	inspResult, err := c.cli.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
 	if err != nil {
@@ -519,7 +520,7 @@ func (c *Client) UpdateContainer(ctx context.Context, id string, newTag string, 
 		imageRef += ":latest"
 	}
 
-	// Apply new tag if specified
+	// Only talk to the registry when the requested image tag changes.
 	if newTag != "" {
 		named, err := reference.ParseNormalizedNamed(imageRef)
 		if err != nil {
@@ -531,21 +532,20 @@ func (c *Client) UpdateContainer(ctx context.Context, id string, newTag string, 
 			return fmt.Errorf("apply tag %q: %w", newTag, err)
 		}
 		imageRef = newRef.String()
-	}
 
-	// Pull the image
-	pullOpts := client.ImagePullOptions{}
-	if registryAuth != "" {
-		pullOpts.RegistryAuth = registryAuth
-	}
+		pullOpts := client.ImagePullOptions{}
+		if registryAuth != "" {
+			pullOpts.RegistryAuth = registryAuth
+		}
 
-	pullResp, err := c.cli.ImagePull(ctx, imageRef, pullOpts)
-	if err != nil {
-		return fmt.Errorf("pull image: %w", err)
+		pullResp, err := c.cli.ImagePull(ctx, imageRef, pullOpts)
+		if err != nil {
+			return fmt.Errorf("pull image: %w", err)
+		}
+		// Drain the pull response to complete the pull.
+		_, _ = io.Copy(io.Discard, pullResp)
+		pullResp.Close()
 	}
-	// Drain the pull response to complete the pull
-	_, _ = io.Copy(io.Discard, pullResp)
-	pullResp.Close()
 
 	return c.recreateContainer(ctx, &insp, imageRef, envOverrides, envRemovals)
 }
@@ -556,11 +556,11 @@ func (c *Client) LiveUpdateContainer(ctx context.Context, id string, configJSON 
 	var params struct {
 		RestartPolicy string `json:"restartPolicy"`
 		MaxRetries    int    `json:"maxRetries"`
-		MemoryLimit   int64  `json:"memoryLimit"`   // bytes
-		MemorySwap    int64  `json:"memorySwap"`    // bytes, -1 = unlimited
-		NanoCPUs      int64  `json:"nanoCPUs"`      // 1e9 = 1 CPU
+		MemoryLimit   int64  `json:"memoryLimit"` // bytes
+		MemorySwap    int64  `json:"memorySwap"`  // bytes, -1 = unlimited
+		NanoCPUs      int64  `json:"nanoCPUs"`    // 1e9 = 1 CPU
 		CpuShares     int64  `json:"cpuShares"`
-		PidsLimit     int64  `json:"pidsLimit"`     // 0 = unlimited
+		PidsLimit     int64  `json:"pidsLimit"` // 0 = unlimited
 	}
 	if err := json.Unmarshal([]byte(configJSON), &params); err != nil {
 		return fmt.Errorf("parse live update params: %w", err)
