@@ -8,11 +8,11 @@ import { useParams } from "react-router-dom";
 export function useUrlTab(
   validTabs: string[],
   defaultTab: string,
-  buildUrl: (tab: string) => string,
+  buildUrl: (tab: string) => string
 ): [string, (tab: string) => void] {
   const { tab: tabParam } = useParams<{ tab?: string }>();
   const [activeTab, setActiveTabState] = useState(() =>
-    tabParam && validTabs.includes(tabParam) ? tabParam : defaultTab,
+    tabParam && validTabs.includes(tabParam) ? tabParam : defaultTab
   );
   const setActiveTab = (tab: string) => {
     setActiveTabState(tab);

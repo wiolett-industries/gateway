@@ -2,6 +2,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useAuthStore } from "@/stores/auth";
 
+const SERVICE_COLORS = [
+  "\x1b[36m",
+  "\x1b[33m",
+  "\x1b[32m",
+  "\x1b[35m",
+  "\x1b[34m",
+  "\x1b[91m",
+  "\x1b[92m",
+  "\x1b[93m",
+] as const;
+
 export function DockerComposeLogsPopout() {
   const { nodeId, project } = useParams<{ nodeId: string; project: string }>();
   const termRef = useRef<HTMLDivElement>(null);
@@ -16,23 +27,16 @@ export function DockerComposeLogsPopout() {
   >([]);
 
   // Color palette for compose services
-  const colors = [
-    "\x1b[36m", // cyan
-    "\x1b[33m", // yellow
-    "\x1b[32m", // green
-    "\x1b[35m", // magenta
-    "\x1b[34m", // blue
-    "\x1b[91m", // bright red
-    "\x1b[92m", // bright green
-    "\x1b[93m", // bright yellow
-  ];
   const serviceColorMap = useRef(new Map<string, string>());
-  const getServiceColor = (service: string) => {
+  const getServiceColor = useCallback((service: string) => {
     if (!serviceColorMap.current.has(service)) {
-      serviceColorMap.current.set(service, colors[serviceColorMap.current.size % colors.length]);
+      serviceColorMap.current.set(
+        service,
+        SERVICE_COLORS[serviceColorMap.current.size % SERVICE_COLORS.length]
+      );
     }
     return serviceColorMap.current.get(service)!;
-  };
+  }, []);
 
   useEffect(() => {
     if (project) document.title = `Compose Logs — ${project}`;
@@ -124,7 +128,7 @@ export function DockerComposeLogsPopout() {
               const padded = service.padEnd(15);
               terminal.write(`${color}${padded}\x1b[0m \x1b[90m│\x1b[0m ${rest}\r\n`);
             } else {
-              terminal.write(line + "\r\n");
+              terminal.write(`${line}\r\n`);
             }
           }
         } else if (msg.type === "error") {
@@ -147,7 +151,7 @@ export function DockerComposeLogsPopout() {
       if (!mountedRef.current) return;
       terminal.write(`\r\n\x1b[31mConnection error.\x1b[0m\r\n`);
     };
-  }, [nodeId, project]);
+  }, [getServiceColor, nodeId, project]);
 
   const didConnect = useRef(false);
   useEffect(() => {

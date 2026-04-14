@@ -19,7 +19,6 @@ import { EmptyState } from "@/components/common/EmptyState";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
 import { StatusBadge } from "@/components/common/StatusBadge";
-import { useRealtime } from "@/hooks/use-realtime";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -38,6 +37,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { useRealtime } from "@/hooks/use-realtime";
 import { daysUntil, formatDate, formatSerialNumber, hoursUntil } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
@@ -50,9 +50,9 @@ export function CADetail() {
   const navigate = useNavigate();
   const { hasScope } = useAuthStore();
   const { selectedCA, selectCA, fetchCAs, cas } = useCAStore();
-  const showSystemCertificates =
-    useAuthStore((s) => s.hasScope("admin:details:certificates")) &&
-    useUIStore((s) => s.showSystemCertificates);
+  const canViewSystemCertificates = useAuthStore((s) => s.hasScope("admin:details:certificates"));
+  const showSystemCertificatePreference = useUIStore((s) => s.showSystemCertificates);
+  const showSystemCertificates = canViewSystemCertificates && showSystemCertificatePreference;
   const [certificates, setCertificates] = useState<Certificate[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [issueDialogOpen, setIssueDialogOpen] = useState(false);
@@ -88,9 +88,8 @@ export function CADetail() {
         setIsLoading(false);
       }
     };
-    load();
-    // biome-ignore lint/correctness/useExhaustiveDependencies: load-once pattern
-  }, [id, reloadCerts, selectCA, showSystemCertificates]);
+    void load();
+  }, [id, reloadCerts, selectCA]);
 
   useRealtime("ca.changed", (payload) => {
     if (!id) return;
@@ -134,9 +133,7 @@ export function CADetail() {
   };
 
   if (isLoading) {
-    return (
-      <LoadingSpinner />
-    );
+    return <LoadingSpinner />;
   }
   if (!selectedCA) {
     return (

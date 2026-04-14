@@ -24,6 +24,7 @@ export function TerminalConsole({
   const wsRef = useRef<WebSocket | null>(null);
   const fitRef = useRef<any>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
+  const connectRef = useRef<(() => void) | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
   const gotFirstOutput = useRef(false);
@@ -88,6 +89,14 @@ export function TerminalConsole({
     isPopoutRef.current = false;
     setIsPopout(false);
     if (popoutAliveTimer.current) clearTimeout(popoutAliveTimer.current);
+  }, []);
+
+  const scheduleReconnect = useCallback(() => {
+    if (!mountedRef.current) return;
+    if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
+    reconnectTimer.current = setTimeout(() => {
+      connectRef.current?.();
+    }, 3000);
   }, []);
 
   const connect = useCallback(async () => {
@@ -230,18 +239,11 @@ export function TerminalConsole({
       isReconnect.current = true;
       scheduleReconnect();
     };
-  }, [wsFactory, connectLabel]);
+  }, [scheduleReconnect, wsFactory, connectLabel]);
 
-  const scheduleReconnect = useCallback(() => {
-    if (!mountedRef.current) return;
-    if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
-    reconnectTimer.current = setTimeout(() => {
-      if (mountedRef.current) connect();
-    }, 3000);
-  }, [connect]);
+  connectRef.current = connect;
 
   const didConnect = useRef(false);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: must run only once on mount
   useEffect(() => {
     mountedRef.current = true;
     const startTimer = setTimeout(() => {
@@ -260,7 +262,7 @@ export function TerminalConsole({
         cleanupRef.current = null;
       }
     };
-  }, []);
+  }, [connect]);
 
   useEffect(() => {
     if (isPopout && wsRef.current) {

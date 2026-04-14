@@ -103,7 +103,9 @@ export class MonitoringService {
       this.db
         .select({ value: count() })
         .from(sslCertificates)
-        .where(visibleSsl ? and(visibleSsl, eq(sslCertificates.status, 'active')) : eq(sslCertificates.status, 'active')),
+        .where(
+          visibleSsl ? and(visibleSsl, eq(sslCertificates.status, 'active')) : eq(sslCertificates.status, 'active')
+        ),
       this.db
         .select({ value: count() })
         .from(sslCertificates)
@@ -124,7 +126,9 @@ export class MonitoringService {
       this.db
         .select({ value: count() })
         .from(sslCertificates)
-        .where(visibleSsl ? and(visibleSsl, eq(sslCertificates.status, 'expired')) : eq(sslCertificates.status, 'expired')),
+        .where(
+          visibleSsl ? and(visibleSsl, eq(sslCertificates.status, 'expired')) : eq(sslCertificates.status, 'expired')
+        ),
 
       // PKI certificates
       this.db.select({ value: count() }).from(certificates).where(visiblePki),
@@ -146,7 +150,11 @@ export class MonitoringService {
       this.db
         .select({ value: count() })
         .from(certificateAuthorities)
-        .where(visibleCa ? and(visibleCa, eq(certificateAuthorities.status, 'active')) : eq(certificateAuthorities.status, 'active')),
+        .where(
+          visibleCa
+            ? and(visibleCa, eq(certificateAuthorities.status, 'active'))
+            : eq(certificateAuthorities.status, 'active')
+        ),
 
       // Nodes
       this.db.select({ value: count() }).from(nodes),

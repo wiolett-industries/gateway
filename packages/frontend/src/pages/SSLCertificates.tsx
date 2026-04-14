@@ -6,7 +6,6 @@ import { EmptyState } from "@/components/common/EmptyState";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
 import { SearchFilterBar } from "@/components/common/SearchFilterBar";
-import { useRealtime } from "@/hooks/use-realtime";
 import { SSLCertificateCreateDialog } from "@/components/ssl/SSLCertificateCreateDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,6 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useRealtime } from "@/hooks/use-realtime";
 import { cn, daysUntil, formatDate, hoursUntil } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth";
 import { useSSLStore } from "@/stores/ssl";
@@ -75,9 +75,9 @@ function SSLStatusBadge({ status }: { status: SSLCertStatus }) {
 export function SSLCertificates() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const { hasScope } = useAuthStore();
-  const showSystemCertificates =
-    useAuthStore((s) => s.hasScope("admin:details:certificates")) &&
-    useUIStore((s) => s.showSystemCertificates);
+  const canViewSystemCertificates = useAuthStore((s) => s.hasScope("admin:details:certificates"));
+  const showSystemCertificatePreference = useUIStore((s) => s.showSystemCertificates);
+  const showSystemCertificates = canViewSystemCertificates && showSystemCertificatePreference;
   const modal = useUIStore((s) => s.modal);
   const closeModal = useUIStore((s) => s.closeModal);
 
@@ -105,6 +105,7 @@ export function SSLCertificates() {
   const [searchInput, setSearchInput] = useState(filters.search);
 
   useEffect(() => {
+    void showSystemCertificates;
     fetchCertificates();
   }, [fetchCertificates, showSystemCertificates]);
 

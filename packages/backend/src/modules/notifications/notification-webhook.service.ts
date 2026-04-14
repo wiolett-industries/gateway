@@ -84,10 +84,7 @@ export class NotificationWebhookService {
   /** Get multiple raw webhooks by IDs (for dispatch) */
   async getRawByIds(ids: string[]) {
     if (ids.length === 0) return [];
-    return this.db
-      .select()
-      .from(notificationWebhooks)
-      .where(inArray(notificationWebhooks.id, ids));
+    return this.db.select().from(notificationWebhooks).where(inArray(notificationWebhooks.id, ids));
   }
 
   async create(input: CreateWebhookInput, userId: string) {

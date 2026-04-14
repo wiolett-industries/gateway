@@ -19,7 +19,10 @@ export function NodeDetailsTab({ node }: NodeDetailsTabProps) {
   const { hasScope } = useAuthStore();
   const [proxyHosts, setProxyHosts] = useState<ProxyHost[]>([]);
   const [dockerContainers, setDockerContainers] = useState<DockerContainer[]>([]);
-  const [daemonUpdate, setDaemonUpdate] = useState<{ available: boolean; latestVersion: string | null }>({ available: false, latestVersion: null });
+  const [daemonUpdate, setDaemonUpdate] = useState<{
+    available: boolean;
+    latestVersion: string | null;
+  }>({ available: false, latestVersion: null });
   const [isUpdating, setIsUpdating] = useState(false);
   const h: NodeHealthReport | null = node.liveHealthReport ?? node.lastHealthReport;
   const caps = (node.capabilities ?? {}) as Record<string, unknown>;
@@ -33,7 +36,7 @@ export function NodeDetailsTab({ node }: NodeDetailsTabProps) {
     });
     ro.observe(resourcesRef.current);
     return () => ro.disconnect();
-  }, [h]);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -64,14 +67,17 @@ export function NodeDetailsTab({ node }: NodeDetailsTabProps) {
   // Check for daemon updates
   useEffect(() => {
     if (!hasScope("admin:update")) return;
-    api.getDaemonUpdates().then((statuses) => {
-      const typeStatus = statuses.find((s) => s.daemonType === node.type);
-      if (!typeStatus) return;
-      const nodeStatus = typeStatus.nodes.find((n) => n.nodeId === node.id);
-      if (nodeStatus?.updateAvailable && typeStatus.latestVersion) {
-        setDaemonUpdate({ available: true, latestVersion: typeStatus.latestVersion });
-      }
-    }).catch(() => {});
+    api
+      .getDaemonUpdates()
+      .then((statuses) => {
+        const typeStatus = statuses.find((s) => s.daemonType === node.type);
+        if (!typeStatus) return;
+        const nodeStatus = typeStatus.nodes.find((n) => n.nodeId === node.id);
+        if (nodeStatus?.updateAvailable && typeStatus.latestVersion) {
+          setDaemonUpdate({ available: true, latestVersion: typeStatus.latestVersion });
+        }
+      })
+      .catch(() => {});
   }, [node.id, node.type, hasScope]);
 
   const handleDaemonUpdate = async () => {
@@ -93,9 +99,19 @@ export function NodeDetailsTab({ node }: NodeDetailsTabProps) {
         <div className="border border-border bg-card">
           <div className="grid grid-cols-4 divide-x divide-border">
             {[
-              { label: "Running", count: dockerContainers.filter((c) => c.state === "running").length },
-              { label: "Stopped", count: dockerContainers.filter((c) => c.state === "exited" || c.state === "stopped").length },
-              { label: "Paused", count: dockerContainers.filter((c) => c.state === "paused").length },
+              {
+                label: "Running",
+                count: dockerContainers.filter((c) => c.state === "running").length,
+              },
+              {
+                label: "Stopped",
+                count: dockerContainers.filter((c) => c.state === "exited" || c.state === "stopped")
+                  .length,
+              },
+              {
+                label: "Paused",
+                count: dockerContainers.filter((c) => c.state === "paused").length,
+              },
               { label: "Total", count: dockerContainers.length },
             ].map((s) => (
               <div key={s.label} className="p-4 text-center">
@@ -162,7 +178,9 @@ export function NodeDetailsTab({ node }: NodeDetailsTabProps) {
                     "Unknown"
                   )}
                   {(caps.versionMismatch as boolean) && (
-                    <Badge variant="warning" className="text-xs">Mismatch</Badge>
+                    <Badge variant="warning" className="text-xs">
+                      Mismatch
+                    </Badge>
                   )}
                 </div>
               }
@@ -306,9 +324,6 @@ export function NodeDetailsTab({ node }: NodeDetailsTabProps) {
           )}
         </div>
       )}
-
     </div>
   );
 }
-
-

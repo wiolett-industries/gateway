@@ -60,7 +60,7 @@ export function Docker() {
         }
       })
       .catch(() => toast.error("Failed to load Docker nodes"));
-  }, []);
+  }, [setDockerNodes]);
 
   const handleTabChange = (value: string) => {
     navigate(`/docker/${value}`, { replace: true });

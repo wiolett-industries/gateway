@@ -4,8 +4,8 @@ import { Badge } from "@/components/ui/badge";
 import { HealthBars } from "@/components/ui/health-bars";
 import { StatCard as MetricCard } from "@/components/ui/stat-card";
 import { formatBytes } from "@/lib/utils";
-import { effectiveNodeStatus } from "@/types";
 import type { Node, NodeHealthReport } from "@/types";
+import { effectiveNodeStatus } from "@/types";
 
 export const WARN_THRESHOLD = 80;
 const WARN_COLOR = "rgb(234 179 8)";
@@ -63,7 +63,12 @@ export function PinnedNodeCard({ node, liveHealth }: PinnedNodeCardProps) {
         </p>
         <p className="text-xl font-bold truncate">{node.displayName || node.hostname}</p>
         <div className="flex items-center gap-2">
-          <HealthBars history={node.healthHistory} currentStatus={node.status} showLabels={false} className="flex-1" />
+          <HealthBars
+            history={node.healthHistory}
+            currentStatus={node.status}
+            showLabels={false}
+            className="flex-1"
+          />
           <Badge
             variant={statusColor}
             className="text-xs uppercase h-6"

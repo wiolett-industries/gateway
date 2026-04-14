@@ -128,12 +128,15 @@ export function isNodeIncompatible(node: Node | NodeDetail): boolean {
 }
 
 /** Compute effective node status from recent health history (mirrors proxy effectiveHealthStatus) */
-export function effectiveNodeStatus(node: { status: NodeStatus; healthHistory?: Array<{ ts: string; status: string }> }): string {
-  if (node.status !== 'online' || !node.healthHistory?.length) return node.status;
+export function effectiveNodeStatus(node: {
+  status: NodeStatus;
+  healthHistory?: Array<{ ts: string; status: string }>;
+}): string {
+  if (node.status !== "online" || !node.healthHistory?.length) return node.status;
   const fiveMinAgo = Date.now() - 5 * 60 * 1000;
   const recent = node.healthHistory.filter((h) => h.ts && new Date(h.ts).getTime() >= fiveMinAgo);
-  if (recent.some((h) => h.status === 'offline' || h.status === 'degraded')) return 'degraded';
-  return 'online';
+  if (recent.some((h) => h.status === "offline" || h.status === "degraded")) return "degraded";
+  return "online";
 }
 
 export interface NodeDetail extends Node {
@@ -364,7 +367,13 @@ export interface WebhookPreset {
 export interface AlertCategoryDef {
   id: string;
   label: string;
-  metrics: Array<{ id: string; label: string; unit: string; defaultOperator: string; defaultValue: number }>;
+  metrics: Array<{
+    id: string;
+    label: string;
+    unit: string;
+    defaultOperator: string;
+    defaultValue: number;
+  }>;
   events: Array<{ id: string; label: string; defaultSeverity: string }>;
   variables: Array<{ name: string; description: string }>;
 }

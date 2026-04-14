@@ -248,7 +248,9 @@ export function SettingsTab({
               />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground">Slow Threshold (Nx avg)</label>
+              <label className="text-xs font-medium text-muted-foreground">
+                Slow Threshold (Nx avg)
+              </label>
               <Input
                 type="number"
                 min={0}

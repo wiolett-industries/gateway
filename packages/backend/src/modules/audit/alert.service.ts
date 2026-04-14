@@ -1,8 +1,8 @@
-import { injectable, inject } from 'tsyringe';
-import { eq, and } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
+import { inject, injectable } from 'tsyringe';
 import { TOKENS } from '@/container.js';
-import { alerts } from '@/db/schema/index.js';
 import type { DrizzleClient } from '@/db/client.js';
+import { alerts } from '@/db/schema/index.js';
 
 @injectable()
 export class AlertService {
@@ -16,10 +16,7 @@ export class AlertService {
   }
 
   async dismissAlert(alertId: string): Promise<void> {
-    await this.db
-      .update(alerts)
-      .set({ dismissed: true })
-      .where(eq(alerts.id, alertId));
+    await this.db.update(alerts).set({ dismissed: true }).where(eq(alerts.id, alertId));
   }
 
   async createAlert(data: {

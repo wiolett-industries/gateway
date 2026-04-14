@@ -14,17 +14,16 @@ export class GroupService {
   constructor(@inject(TOKENS.DrizzleClient) private readonly db: DrizzleClient) {}
 
   private eventBus?: import('@/services/event-bus.service.js').EventBusService;
-  setEventBus(bus: import('@/services/event-bus.service.js').EventBusService) { this.eventBus = bus; }
+  setEventBus(bus: import('@/services/event-bus.service.js').EventBusService) {
+    this.eventBus = bus;
+  }
   private emitGroup(id: string, action: 'created' | 'updated' | 'deleted') {
     this.eventBus?.publish('group.changed', { id, action });
   }
   /** Cascade a permissions change to every user in the affected group. */
   private async cascadePermissions(groupId: string, scopes: string[] | null) {
     if (!this.eventBus) return;
-    const affected = await this.db
-      .select({ id: users.id })
-      .from(users)
-      .where(eq(users.groupId, groupId));
+    const affected = await this.db.select({ id: users.id }).from(users).where(eq(users.groupId, groupId));
     for (const u of affected) {
       this.eventBus.publish(`permissions.changed.${u.id}`, { scopes: scopes ?? [], groupId });
     }
@@ -101,7 +100,11 @@ export class GroupService {
         throw new AppError(404, 'PARENT_NOT_FOUND', 'Parent group not found');
       }
       if (parent.parentId) {
-        throw new AppError(400, 'NESTING_TOO_DEEP', 'Groups can only be nested one level deep — the parent group is already a child of another group');
+        throw new AppError(
+          400,
+          'NESTING_TOO_DEEP',
+          'Groups can only be nested one level deep — the parent group is already a child of another group'
+        );
       }
     }
 
@@ -160,13 +163,21 @@ export class GroupService {
         // Only allow nesting under top-level groups
         const parent = groupMap.get(input.parentId);
         if (parent?.parentId) {
-          throw new AppError(400, 'NESTING_TOO_DEEP', 'Groups can only be nested one level deep — the parent group is already a child of another group');
+          throw new AppError(
+            400,
+            'NESTING_TOO_DEEP',
+            'Groups can only be nested one level deep — the parent group is already a child of another group'
+          );
         }
 
         // A group with children cannot become a child itself
         const hasChildren = allGroups.some((g) => g.parentId === id);
         if (hasChildren) {
-          throw new AppError(400, 'NESTING_TOO_DEEP', 'This group has child groups — it cannot be nested under another group');
+          throw new AppError(
+            400,
+            'NESTING_TOO_DEEP',
+            'This group has child groups — it cannot be nested under another group'
+          );
         }
 
         // Walk up from proposed parent to check for cycles

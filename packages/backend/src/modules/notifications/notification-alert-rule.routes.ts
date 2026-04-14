@@ -1,18 +1,26 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
-import type { AppEnv } from '@/types.js';
 import { authMiddleware, requireScope } from '@/modules/auth/auth.middleware.js';
+import type { AppEnv } from '@/types.js';
 import { ALERT_CATEGORIES } from './notification.constants.js';
+import {
+  AlertRuleListQuerySchema,
+  CreateAlertRuleSchema,
+  UpdateAlertRuleSchema,
+} from './notification-alert-rule.schemas.js';
 import { NotificationAlertRuleService } from './notification-alert-rule.service.js';
 import { NotificationEvaluatorService } from './notification-evaluator.service.js';
-import { AlertRuleListQuerySchema, CreateAlertRuleSchema, UpdateAlertRuleSchema } from './notification-alert-rule.schemas.js';
 
 export const alertRuleRoutes = new OpenAPIHono<AppEnv>();
 
 alertRuleRoutes.use('*', authMiddleware);
 
 function invalidateCache() {
-  try { container.resolve(NotificationEvaluatorService).invalidateRuleCache(); } catch { /* not yet registered */ }
+  try {
+    container.resolve(NotificationEvaluatorService).invalidateRuleCache();
+  } catch {
+    /* not yet registered */
+  }
 }
 
 // GET /categories — list alert categories with their metrics, events, and variables

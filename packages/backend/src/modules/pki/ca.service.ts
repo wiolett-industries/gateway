@@ -1,17 +1,16 @@
-import { injectable, inject } from 'tsyringe';
-import { eq, and, count, isNull } from 'drizzle-orm';
-import { x509 } from '@/lib/x509.js';
 import crypto from 'node:crypto';
+import { and, count, eq } from 'drizzle-orm';
+import { inject, injectable } from 'tsyringe';
 import { TOKENS } from '@/container.js';
-import { certificateAuthorities, certificates } from '@/db/schema/index.js';
-import { CryptoService } from '@/services/crypto.service.js';
-import { AuditService } from '@/modules/audit/audit.service.js';
-import { AppError } from '@/middleware/error-handler.js';
-import { getEnv } from '@/config/env.js';
-import { createChildLogger } from '@/lib/logger.js';
 import type { DrizzleClient } from '@/db/client.js';
+import { certificateAuthorities, certificates } from '@/db/schema/index.js';
+import { createChildLogger } from '@/lib/logger.js';
+import { x509 } from '@/lib/x509.js';
+import { AppError } from '@/middleware/error-handler.js';
+import type { AuditService } from '@/modules/audit/audit.service.js';
+import type { CryptoService } from '@/services/crypto.service.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
-import type { CreateRootCAInput, CreateIntermediateCAInput } from './ca.schemas.js';
+import type { CreateIntermediateCAInput, CreateRootCAInput } from './ca.schemas.js';
 
 const logger = createChildLogger('CAService');
 
@@ -20,17 +19,18 @@ export class CAService {
   constructor(
     @inject(TOKENS.DrizzleClient) private readonly db: DrizzleClient,
     private readonly cryptoService: CryptoService,
-    private readonly auditService: AuditService,
+    private readonly auditService: AuditService
   ) {}
 
   private eventBus?: EventBusService;
-  setEventBus(bus: EventBusService) { this.eventBus = bus; }
+  setEventBus(bus: EventBusService) {
+    this.eventBus = bus;
+  }
   private emitCa(id: string, action: 'created' | 'updated' | 'revoked' | 'deleted') {
     this.eventBus?.publish('ca.changed', { id, action });
   }
 
   async createRootCA(input: CreateRootCAInput, userId: string) {
-    const env = getEnv();
     const serialNumber = this.cryptoService.generateSerialNumber();
 
     // Generate key pair
@@ -48,10 +48,7 @@ export class CAService {
     // Build self-signed certificate
     const extensions: x509.Extension[] = [
       new x509.BasicConstraintsExtension(true, input.pathLengthConstraint, true),
-      new x509.KeyUsagesExtension(
-        x509.KeyUsageFlags.keyCertSign | x509.KeyUsageFlags.cRLSign,
-        true
-      ),
+      new x509.KeyUsagesExtension(x509.KeyUsageFlags.keyCertSign | x509.KeyUsageFlags.cRLSign, true),
       await x509.SubjectKeyIdentifierExtension.create(keys.publicKey),
     ];
 
@@ -72,23 +69,26 @@ export class CAService {
     const encrypted = this.cryptoService.encryptPrivateKey(privateKeyPem);
 
     // Store in database
-    const [ca] = await this.db.insert(certificateAuthorities).values({
-      type: 'root',
-      commonName: input.commonName,
-      keyAlgorithm: input.keyAlgorithm,
-      serialNumber,
-      encryptedPrivateKey: encrypted.encryptedPrivateKey,
-      encryptedDek: encrypted.encryptedDek,
-      dekIv: encrypted.dekIv,
-      certificatePem,
-      subjectDn,
-      issuerDn: subjectDn, // self-signed
-      pathLengthConstraint: input.pathLengthConstraint ?? null,
-      maxValidityDays: input.maxValidityDays,
-      notBefore,
-      notAfter,
-      createdById: userId,
-    }).returning();
+    const [ca] = await this.db
+      .insert(certificateAuthorities)
+      .values({
+        type: 'root',
+        commonName: input.commonName,
+        keyAlgorithm: input.keyAlgorithm,
+        serialNumber,
+        encryptedPrivateKey: encrypted.encryptedPrivateKey,
+        encryptedDek: encrypted.encryptedDek,
+        dekIv: encrypted.dekIv,
+        certificatePem,
+        subjectDn,
+        issuerDn: subjectDn, // self-signed
+        pathLengthConstraint: input.pathLengthConstraint ?? null,
+        maxValidityDays: input.maxValidityDays,
+        notBefore,
+        notAfter,
+        createdById: userId,
+      })
+      .returning();
 
     await this.auditService.log({
       userId,
@@ -114,7 +114,11 @@ export class CAService {
 
     // Validate path length constraint
     if (parent.pathLengthConstraint !== null && parent.pathLengthConstraint <= 0) {
-      throw new AppError(400, 'PATH_LENGTH_EXCEEDED', 'Parent CA path length constraint does not allow more intermediate CAs');
+      throw new AppError(
+        400,
+        'PATH_LENGTH_EXCEEDED',
+        'Parent CA path length constraint does not allow more intermediate CAs'
+      );
     }
 
     const serialNumber = this.cryptoService.generateSerialNumber();
@@ -143,15 +147,13 @@ export class CAService {
     const parentKeys = await this.importKeyPair(parent.certificatePem, parentPrivateKeyPem, parentAlgorithm, true);
 
     // Calculate child pathLength
-    const childPathLength = input.pathLengthConstraint ??
+    const childPathLength =
+      input.pathLengthConstraint ??
       (parent.pathLengthConstraint !== null ? parent.pathLengthConstraint - 1 : undefined);
 
     const extensions: x509.Extension[] = [
       new x509.BasicConstraintsExtension(true, childPathLength, true),
-      new x509.KeyUsagesExtension(
-        x509.KeyUsageFlags.keyCertSign | x509.KeyUsageFlags.cRLSign,
-        true
-      ),
+      new x509.KeyUsagesExtension(x509.KeyUsageFlags.keyCertSign | x509.KeyUsageFlags.cRLSign, true),
       await x509.SubjectKeyIdentifierExtension.create(subjectKeys.publicKey),
       await x509.AuthorityKeyIdentifierExtension.create(parentKeys.publicKey),
     ];
@@ -172,24 +174,27 @@ export class CAService {
     const subjectDn = `CN=${input.commonName}`;
     const encrypted = this.cryptoService.encryptPrivateKey(privateKeyPem);
 
-    const [ca] = await this.db.insert(certificateAuthorities).values({
-      parentId,
-      type: 'intermediate',
-      commonName: input.commonName,
-      keyAlgorithm: input.keyAlgorithm,
-      serialNumber,
-      encryptedPrivateKey: encrypted.encryptedPrivateKey,
-      encryptedDek: encrypted.encryptedDek,
-      dekIv: encrypted.dekIv,
-      certificatePem,
-      subjectDn,
-      issuerDn: parent.subjectDn,
-      pathLengthConstraint: childPathLength ?? null,
-      maxValidityDays: input.maxValidityDays,
-      notBefore,
-      notAfter,
-      createdById: userId,
-    }).returning();
+    const [ca] = await this.db
+      .insert(certificateAuthorities)
+      .values({
+        parentId,
+        type: 'intermediate',
+        commonName: input.commonName,
+        keyAlgorithm: input.keyAlgorithm,
+        serialNumber,
+        encryptedPrivateKey: encrypted.encryptedPrivateKey,
+        encryptedDek: encrypted.encryptedDek,
+        dekIv: encrypted.dekIv,
+        certificatePem,
+        subjectDn,
+        issuerDn: parent.subjectDn,
+        pathLengthConstraint: childPathLength ?? null,
+        maxValidityDays: input.maxValidityDays,
+        notBefore,
+        notAfter,
+        createdById: userId,
+      })
+      .returning();
 
     await this.auditService.log({
       userId,
@@ -216,9 +221,9 @@ export class CAService {
       .from(certificates)
       .groupBy(certificates.caId);
 
-    const countMap = new Map(certCounts.map(c => [c.caId, Number(c.count)]));
+    const countMap = new Map(certCounts.map((c) => [c.caId, Number(c.count)]));
 
-    return allCAs.map(ca => ({
+    return allCAs.map((ca) => ({
       ...ca,
       certCount: countMap.get(ca.id) || 0,
       // Remove sensitive fields
@@ -258,7 +263,16 @@ export class CAService {
     };
   }
 
-  async updateCA(id: string, input: { crlDistributionUrl?: string | null; ocspResponderUrl?: string | null; caIssuersUrl?: string | null; maxValidityDays?: number }, userId: string) {
+  async updateCA(
+    id: string,
+    input: {
+      crlDistributionUrl?: string | null;
+      ocspResponderUrl?: string | null;
+      caIssuersUrl?: string | null;
+      maxValidityDays?: number;
+    },
+    userId: string
+  ) {
     const ca = await this.db.query.certificateAuthorities.findFirst({
       where: eq(certificateAuthorities.id, id),
     });
@@ -270,7 +284,7 @@ export class CAService {
 
     const { ocspResponderUrl: _ocspResponderUrl, ...updates } = input;
 
-    const [updated] = await this.db
+    await this.db
       .update(certificateAuthorities)
       .set({ ...updates, updatedAt: new Date() })
       .where(eq(certificateAuthorities.id, id))
@@ -411,7 +425,7 @@ export class CAService {
     publicPemOrCert: string,
     privateKeyPem: string,
     algorithm: any,
-    isCert = false,
+    isCert = false
   ): Promise<{ publicKey: CryptoKey; privateKey: CryptoKey }> {
     let publicKey: CryptoKey;
 
@@ -441,10 +455,7 @@ export class CAService {
   }
 
   private pemToBuffer(pem: string, label: string): ArrayBuffer {
-    const base64 = pem
-      .replace(`-----BEGIN ${label}-----`, '')
-      .replace(`-----END ${label}-----`, '')
-      .replace(/\s/g, '');
+    const base64 = pem.replace(`-----BEGIN ${label}-----`, '').replace(`-----END ${label}-----`, '').replace(/\s/g, '');
     const binary = Buffer.from(base64, 'base64');
     return binary.buffer.slice(binary.byteOffset, binary.byteOffset + binary.byteLength);
   }

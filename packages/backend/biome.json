@@ -1,20 +1,7 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.4.9/schema.json",
   "files": {
-    "includes": [
-      "src/**/*.ts",
-      "!src/modules/pki/ca.service.ts",
-      "!src/modules/pki/cert.service.ts",
-      "!src/modules/pki/crl.service.ts",
-      "!src/modules/pki/ocsp.service.ts",
-      "!src/modules/pki/templates.service.ts",
-      "!src/modules/audit/alert.service.ts",
-      "!src/modules/audit/audit.service.ts",
-      "!src/modules/auth/auth.service.ts",
-      "!src/modules/tokens/tokens.service.ts",
-      "!src/services/cache.service.ts",
-      "!src/modules/groups/group.service.ts"
-    ]
+    "includes": ["src/**/*.ts", "vitest.config.ts", "!dist", "!node_modules"]
   },
   "linter": {
     "enabled": true,
@@ -45,6 +32,9 @@
     "formatWithErrors": true
   },
   "javascript": {
+    "parser": {
+      "unsafeParameterDecoratorsEnabled": true
+    },
     "formatter": {
       "quoteStyle": "single",
       "trailingCommas": "es5",

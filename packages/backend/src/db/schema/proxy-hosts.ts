@@ -97,7 +97,9 @@ export const proxyHosts = pgTable(
     healthCheckSlowThreshold: integer('health_check_slow_threshold').default(3), // Nx multiplier for response time degradation
     healthStatus: healthStatusEnum('health_status').default('unknown'),
     lastHealthCheckAt: timestamp('last_health_check_at', { withTimezone: true }),
-    healthHistory: jsonb('health_history').$type<Array<{ ts: string; status: string; responseMs?: number; slow?: boolean }>>().default([]),
+    healthHistory: jsonb('health_history')
+      .$type<Array<{ ts: string; status: string; responseMs?: number; slow?: boolean }>>()
+      .default([]),
 
     // System flag — locked hosts cannot be deleted (e.g. management proxy)
     isSystem: boolean('is_system').notNull().default(false),

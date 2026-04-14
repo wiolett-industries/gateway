@@ -108,7 +108,7 @@ export function FilesTab({ nodeId, containerId }: { nodeId: string; containerId:
       // We need to check current state — use a callback pattern
       setRoots((prev) => {
         const node = findNode(prev);
-        if (node && node.loading) {
+        if (node?.loading) {
           // Fetch in background, then update
           fetchDir(path)
             .then((children) => {
@@ -302,8 +302,7 @@ function TreeRow({
       </tr>
       {node.isDir &&
         node.expanded &&
-        node.children &&
-        node.children.map((child) => (
+        node.children?.map((child) => (
           <TreeRow
             key={child.path}
             node={child}

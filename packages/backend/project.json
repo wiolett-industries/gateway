@@ -24,7 +24,12 @@
     },
     "lint": {
       "command": "pnpm --filter backend lint",
-      "inputs": ["{projectRoot}/src/**/*"],
+      "inputs": [
+        "{projectRoot}/src/**/*",
+        "{projectRoot}/biome.json",
+        "{projectRoot}/package.json",
+        "{projectRoot}/vitest.config.*"
+      ],
       "cache": true
     },
     "typecheck": {

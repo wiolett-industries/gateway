@@ -1,6 +1,6 @@
 import { Database, Minus, Plus, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
@@ -19,7 +19,6 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { RefreshButton } from "@/components/ui/refresh-button";
-import { useRealtime } from "@/hooks/use-realtime";
 import {
   Select,
   SelectContent,
@@ -27,6 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useRealtime } from "@/hooks/use-realtime";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
@@ -56,13 +56,13 @@ export function DockerVolumes({
   // Create dialog
   const [createOpen, setCreateOpen] = useState(false);
   const [createNodeId, setCreateNodeId] = useState<string>("");
-  const openCreate = () => {
+  const openCreate = useCallback(() => {
     setCreateNodeId(selectedNodeId || "");
     setCreateOpen(true);
-  };
+  }, [selectedNodeId]);
   useEffect(() => {
     onCreateRef?.(() => openCreate());
-  }, [onCreateRef]);
+  }, [onCreateRef, openCreate]);
   const [createName, setCreateName] = useState("");
   const [createDriver, setCreateDriver] = useState("local");
   const [createLabels, setCreateLabels] = useState<LabelEntry[]>([]);
@@ -76,26 +76,28 @@ export function DockerVolumes({
   >([]);
   const [usageLoading, setUsageLoading] = useState(false);
 
-  const showUsage = async (volumeName: string, containerNames: string[], nodeId?: string) => {
-    const nid = nodeId || selectedNodeId;
-    if (!nid) return;
-    setUsageVolume(volumeName);
-    setUsageOpen(true);
-    setUsageLoading(true);
-    try {
-      const containers = await api.listDockerContainers(nid);
-      const matched = (containers ?? [])
-        .filter((c: any) => containerNames.includes((c.name ?? "").replace(/^\//, "")))
-        .map((c: any) => ({ id: c.id, name: (c.name ?? "").replace(/^\//, ""), state: c.state }));
-      setUsageContainers(matched);
-    } catch {
-      setUsageContainers([]);
-    }
-    setUsageLoading(false);
-  };
+  const showUsage = useCallback(
+    async (volumeName: string, containerNames: string[], nodeId?: string) => {
+      const nid = nodeId || selectedNodeId;
+      if (!nid) return;
+      setUsageVolume(volumeName);
+      setUsageOpen(true);
+      setUsageLoading(true);
+      try {
+        const containers = await api.listDockerContainers(nid);
+        const matched = (containers ?? [])
+          .filter((c: any) => containerNames.includes((c.name ?? "").replace(/^\//, "")))
+          .map((c: any) => ({ id: c.id, name: (c.name ?? "").replace(/^\//, ""), state: c.state }));
+        setUsageContainers(matched);
+      } catch {
+        setUsageContainers([]);
+      }
+      setUsageLoading(false);
+    },
+    [selectedNodeId]
+  );
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only
-  useEffect(() => {
+  const loadVolumeNodes = useCallback(async () => {
     if (embedded && !fixedNodeId) {
       return;
     }
@@ -104,22 +106,25 @@ export function DockerVolumes({
       return;
     }
 
-    api
-      .listNodes({ type: "docker", limit: 100 })
-      .then((r) => {
-        setDockerNodes(r.data);
-        useDockerStore.getState().setDockerNodes(r.data);
-      })
-      .catch(() => toast.error("Failed to load Docker nodes"));
-  }, []);
+    try {
+      const r = await api.listNodes({ type: "docker", limit: 100 });
+      setDockerNodes(r.data);
+      useDockerStore.getState().setDockerNodes(r.data);
+    } catch {
+      toast.error("Failed to load Docker nodes");
+    }
+  }, [embedded, fixedNodeId, setSelectedNode]);
 
-  const location = useLocation();
+  useEffect(() => {
+    void loadVolumeNodes();
+  }, [loadVolumeNodes]);
+
   useEffect(() => {
     if (!selectedNodeId) return;
     fetchVolumes();
     const interval = setInterval(() => fetchVolumes(), 30_000);
     return () => clearInterval(interval);
-  }, [selectedNodeId, fetchVolumes, location.key]);
+  }, [selectedNodeId, fetchVolumes]);
 
   useRealtime("docker.volume.changed", (payload) => {
     const ev = payload as { nodeId?: string };
@@ -136,23 +141,26 @@ export function DockerVolumes({
     );
   }, [volumes, search]);
 
-  const handleRemove = async (name: string, nodeId?: string) => {
-    const nid = nodeId || selectedNodeId;
-    if (!nid) return;
-    const ok = await confirm({
-      title: "Remove Volume",
-      description: `Remove volume "${name}"? Any data stored in this volume will be permanently lost.`,
-      confirmLabel: "Remove",
-    });
-    if (!ok) return;
-    try {
-      await api.removeVolume(nid, name);
-      toast.success("Volume removed");
-      fetchVolumes();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to remove volume");
-    }
-  };
+  const handleRemove = useCallback(
+    async (name: string, nodeId?: string) => {
+      const nid = nodeId || selectedNodeId;
+      if (!nid) return;
+      const ok = await confirm({
+        title: "Remove Volume",
+        description: `Remove volume "${name}"? Any data stored in this volume will be permanently lost.`,
+        confirmLabel: "Remove",
+      });
+      if (!ok) return;
+      try {
+        await api.removeVolume(nid, name);
+        toast.success("Volume removed");
+        fetchVolumes();
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to remove volume");
+      }
+    },
+    [fetchVolumes, selectedNodeId]
+  );
 
   const handleCreate = async () => {
     if (!createNodeId || !createName.trim()) return;

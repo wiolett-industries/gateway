@@ -5,7 +5,6 @@ import { toast } from "sonner";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
 import { StatusBadge } from "@/components/common/StatusBadge";
-import { useRealtime } from "@/hooks/use-realtime";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -30,6 +29,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useRealtime } from "@/hooks/use-realtime";
 import { daysUntil, formatDate, formatSerialNumber, hoursUntil } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
@@ -106,9 +106,7 @@ export function CertificateDetail() {
   };
 
   if (isLoading) {
-    return (
-      <LoadingSpinner />
-    );
+    return <LoadingSpinner />;
   }
 
   if (!cert) {

@@ -991,7 +991,11 @@ export const AI_TOOLS: AIToolDefinition[] = [
         },
         env: { type: 'object', description: 'Environment variables as key-value pairs' },
         networks: { type: 'array', items: { type: 'string' }, description: 'Network names to connect to' },
-        restartPolicy: { type: 'string', enum: ['no', 'always', 'unless-stopped', 'on-failure'], description: 'Default: no' },
+        restartPolicy: {
+          type: 'string',
+          enum: ['no', 'always', 'unless-stopped', 'on-failure'],
+          description: 'Default: no',
+        },
         labels: { type: 'object', description: 'Container labels as key-value pairs' },
         command: { type: 'array', items: { type: 'string' }, description: 'Override container command' },
       },
@@ -1295,7 +1299,11 @@ export const AI_TOOLS: AIToolDefinition[] = [
     parameters: {
       type: 'object',
       properties: {
-        category: { type: 'string', enum: ['node', 'container', 'proxy', 'certificate'], description: 'Filter by category' },
+        category: {
+          type: 'string',
+          enum: ['node', 'container', 'proxy', 'certificate'],
+          description: 'Filter by category',
+        },
         enabled: { type: 'boolean', description: 'Filter by enabled/disabled' },
       },
     },
@@ -1328,16 +1336,33 @@ export const AI_TOOLS: AIToolDefinition[] = [
       properties: {
         name: { type: 'string', description: 'Alert name (e.g., "CPU High")' },
         type: { type: 'string', enum: ['threshold', 'event'], description: 'Rule type' },
-        category: { type: 'string', enum: ['node', 'container', 'proxy', 'certificate'], description: 'Resource category' },
+        category: {
+          type: 'string',
+          enum: ['node', 'container', 'proxy', 'certificate'],
+          description: 'Resource category',
+        },
         severity: { type: 'string', enum: ['info', 'warning', 'critical'], description: 'Alert severity' },
         metric: { type: 'string', description: 'For threshold: metric name (cpu, memory, disk, days_until_expiry)' },
         operator: { type: 'string', enum: ['>', '>=', '<', '<='], description: 'For threshold: comparison operator' },
         thresholdValue: { type: 'number', description: 'For threshold: threshold value' },
-        durationSeconds: { type: 'number', description: 'For threshold: seconds metric must exceed threshold before firing (0 = instant)' },
-        resolveAfterSeconds: { type: 'number', description: 'For threshold: seconds metric must stay below threshold before resolving (default 60)' },
+        durationSeconds: {
+          type: 'number',
+          description: 'For threshold: seconds metric must exceed threshold before firing (0 = instant)',
+        },
+        resolveAfterSeconds: {
+          type: 'number',
+          description: 'For threshold: seconds metric must stay below threshold before resolving (default 60)',
+        },
         eventPattern: { type: 'string', description: 'For event: event pattern (offline, stopped, oom_killed, etc.)' },
-        resourceIds: { type: 'array', items: { type: 'string' }, description: 'Scope to specific resources (empty = all)' },
-        messageTemplate: { type: 'string', description: 'Handlebars message template (e.g., "CPU at {{value}}% on {{resource.name}}")' },
+        resourceIds: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Scope to specific resources (empty = all)',
+        },
+        messageTemplate: {
+          type: 'string',
+          description: 'Handlebars message template (e.g., "CPU at {{value}}% on {{resource.name}}")',
+        },
         webhookIds: { type: 'array', items: { type: 'string' }, description: 'Webhook IDs to deliver to' },
         cooldownSeconds: { type: 'number', description: 'Cooldown between repeated firings (default 900)' },
         enabled: { type: 'boolean', description: 'Whether the rule is active (default true)' },
@@ -1395,8 +1420,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
   // ── Notifications - Webhooks ──
   {
     name: 'list_webhooks',
-    description:
-      'List all notification webhooks. Returns id, name, url, method, enabled, templatePreset, headers.',
+    description: 'List all notification webhooks. Returns id, name, url, method, enabled, templatePreset, headers.',
     parameters: { type: 'object', properties: {} },
     destructive: false,
     category: 'Notifications',
@@ -1413,7 +1437,11 @@ export const AI_TOOLS: AIToolDefinition[] = [
         name: { type: 'string', description: 'Webhook name (e.g., "Discord Alerts")' },
         url: { type: 'string', description: 'HTTP URL to POST to' },
         method: { type: 'string', enum: ['GET', 'POST', 'PUT', 'PATCH'], description: 'HTTP method (default POST)' },
-        templatePreset: { type: 'string', enum: ['discord', 'slack', 'telegram', 'json', 'plain'], description: 'Built-in template preset' },
+        templatePreset: {
+          type: 'string',
+          enum: ['discord', 'slack', 'telegram', 'json', 'plain'],
+          description: 'Built-in template preset',
+        },
         bodyTemplate: { type: 'string', description: 'Custom Handlebars body template (overrides preset)' },
         signingSecret: { type: 'string', description: 'HMAC-SHA256 signing secret (optional)' },
         signingHeader: { type: 'string', description: 'HMAC header name (default X-Signature-256)' },
@@ -1465,7 +1493,8 @@ export const AI_TOOLS: AIToolDefinition[] = [
   },
   {
     name: 'test_webhook',
-    description: 'Send a test notification to a webhook to verify it works. Returns success status, HTTP status code, and any error.',
+    description:
+      'Send a test notification to a webhook to verify it works. Returns success status, HTTP status code, and any error.',
     parameters: {
       type: 'object',
       properties: {
@@ -1487,7 +1516,11 @@ export const AI_TOOLS: AIToolDefinition[] = [
       type: 'object',
       properties: {
         webhookId: { type: 'string', description: 'Filter by webhook UUID' },
-        status: { type: 'string', enum: ['success', 'failed', 'retrying', 'pending'], description: 'Filter by delivery status' },
+        status: {
+          type: 'string',
+          enum: ['success', 'failed', 'retrying', 'pending'],
+          description: 'Filter by delivery status',
+        },
         limit: { type: 'number', description: 'Max results (default 50)' },
       },
     },

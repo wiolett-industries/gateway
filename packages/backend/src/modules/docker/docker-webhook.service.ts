@@ -8,7 +8,6 @@ import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
 import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import type { DockerManagementService } from './docker.service.js';
-import type { DockerRegistryService } from './docker-registry.service.js';
 import type { DockerTaskService } from './docker-task.service.js';
 
 const logger = createChildLogger('DockerWebhookService');
@@ -20,7 +19,6 @@ export class DockerWebhookService {
     private db: DrizzleClient,
     private docker: DockerManagementService,
     private tasks: DockerTaskService,
-    private registries: DockerRegistryService,
     private audit: AuditService,
     private dispatch: NodeDispatchService
   ) {}
@@ -166,12 +164,7 @@ export class DockerWebhookService {
 
     try {
       // Synchronous pull — validates the image exists
-      const pullResult = await this.dispatch.sendDockerImageCommand(
-        nodeId,
-        'pull',
-        { imageRef: targetRef },
-        300000
-      );
+      const pullResult = await this.dispatch.sendDockerImageCommand(nodeId, 'pull', { imageRef: targetRef }, 300000);
       if (!pullResult.success) {
         throw new AppError(400, 'PULL_FAILED', pullResult.error || `Failed to pull ${targetRef}`);
       }
@@ -302,7 +295,11 @@ export class DockerWebhookService {
         }
       }
     } catch (err) {
-      logger.warn('Image cleanup failed', { nodeId, imageName, error: err instanceof Error ? err.message : String(err) });
+      logger.warn('Image cleanup failed', {
+        nodeId,
+        imageName,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
@@ -321,7 +318,7 @@ function parseImageRef(ref: string): { imageName: string; currentTag: string } {
   const lastColon = ref.lastIndexOf(':');
   // Check if the colon is part of a port number (e.g., registry.com:5000/repo)
   const lastSlash = ref.lastIndexOf('/');
-  if (lastColon === -1 || (lastSlash > lastColon)) {
+  if (lastColon === -1 || lastSlash > lastColon) {
     return { imageName: ref, currentTag: 'latest' };
   }
   return { imageName: ref.slice(0, lastColon), currentTag: ref.slice(lastColon + 1) };

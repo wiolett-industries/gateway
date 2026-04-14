@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
-import { effectiveNodeStatus } from "@/types";
 import type { Node } from "@/types";
+import { effectiveNodeStatus } from "@/types";
 
 interface NodesCardProps {
   nodesList: Node[];
@@ -39,8 +39,19 @@ export function NodesCard({ nodesList, hasScope }: NodesCardProps) {
             )}
             {(() => {
               const s = effectiveNodeStatus(node);
-              const v = s === "online" ? "success" : s === "degraded" ? "warning" : s === "pending" ? "secondary" : "destructive";
-              return <Badge variant={v} className="text-xs uppercase">{s}</Badge>;
+              const v =
+                s === "online"
+                  ? "success"
+                  : s === "degraded"
+                    ? "warning"
+                    : s === "pending"
+                      ? "secondary"
+                      : "destructive";
+              return (
+                <Badge variant={v} className="text-xs uppercase">
+                  {s}
+                </Badge>
+              );
             })()}
           </Link>
         ))}

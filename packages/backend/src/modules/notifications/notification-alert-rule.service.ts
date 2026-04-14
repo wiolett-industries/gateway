@@ -6,7 +6,11 @@ import { buildWhere } from '@/lib/utils.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
-import type { AlertRuleListQuery, CreateAlertRuleInput, UpdateAlertRuleInput } from './notification-alert-rule.schemas.js';
+import type {
+  AlertRuleListQuery,
+  CreateAlertRuleInput,
+  UpdateAlertRuleInput,
+} from './notification-alert-rule.schemas.js';
 
 const logger = createChildLogger('AlertRuleService');
 
@@ -65,7 +69,11 @@ export class NotificationAlertRuleService {
   }
 
   async getById(id: string) {
-    const [rule] = await this.db.select().from(notificationAlertRules).where(eq(notificationAlertRules.id, id)).limit(1);
+    const [rule] = await this.db
+      .select()
+      .from(notificationAlertRules)
+      .where(eq(notificationAlertRules.id, id))
+      .limit(1);
     if (!rule) throw new AppError(404, 'NOT_FOUND', 'Alert rule not found');
     return rule;
   }

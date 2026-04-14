@@ -32,13 +32,9 @@ export function RecentActivityCard({ activity, hasScope }: RecentActivityCardPro
             <tbody className="divide-y divide-border">
               {activity.map((entry) => (
                 <tr key={entry.id}>
+                  <td className="p-3 text-sm">{entry.userName || entry.userEmail || "System"}</td>
                   <td className="p-3 text-sm">
-                    {entry.userName || entry.userEmail || "System"}
-                  </td>
-                  <td className="p-3 text-sm">
-                    <span className="font-mono text-xs bg-muted px-1.5 py-0.5">
-                      {entry.action}
-                    </span>
+                    <span className="font-mono text-xs bg-muted px-1.5 py-0.5">{entry.action}</span>
                   </td>
                   <td className="p-3 text-sm text-muted-foreground">
                     {entry.resourceType}

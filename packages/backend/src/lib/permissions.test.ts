@@ -53,11 +53,11 @@ describe('Scope-based permissions', () => {
   });
 
   describe('canUseAI', () => {
-    it('user with ai:use can use AI', () => {
-      expect(canUseAI(['ai:use', 'cert:read'])).toBe(true);
+    it('user with feat:ai:use can use AI', () => {
+      expect(canUseAI(['feat:ai:use', 'cert:read'])).toBe(true);
     });
 
-    it('user without ai:use cannot use AI', () => {
+    it('user without feat:ai:use cannot use AI', () => {
       expect(canUseAI(['cert:read', 'cert:issue'])).toBe(false);
     });
   });

@@ -1,18 +1,17 @@
-import { injectable, inject } from 'tsyringe';
+import { count, eq, like, not } from 'drizzle-orm';
 import * as client from 'openid-client';
-import { eq, count, not, like } from 'drizzle-orm';
-import { TOKENS } from '@/container.js';
+import { inject, injectable } from 'tsyringe';
 import { getEnv } from '@/config/env.js';
-import { SessionService } from '@/services/session.service.js';
-import { CacheService } from '@/services/cache.service.js';
-import { createChildLogger } from '@/lib/logger.js';
-import { users, permissionGroups } from '@/db/schema/index.js';
+import { TOKENS } from '@/container.js';
 import type { DrizzleClient } from '@/db/client.js';
+import { permissionGroups, users } from '@/db/schema/index.js';
+import { createChildLogger } from '@/lib/logger.js';
+import type { CacheService } from '@/services/cache.service.js';
+import type { SessionService } from '@/services/session.service.js';
 import type { User } from '@/types.js';
 
 const logger = createChildLogger('AuthService');
 
-const OIDC_CONFIG_CACHE_KEY = 'oidc:config';
 const PKCE_STATE_PREFIX = 'oidc:pkce:';
 
 interface OIDCState {
@@ -32,7 +31,9 @@ export class AuthService {
   ) {}
 
   private eventBus?: import('@/services/event-bus.service.js').EventBusService;
-  setEventBus(bus: import('@/services/event-bus.service.js').EventBusService) { this.eventBus = bus; }
+  setEventBus(bus: import('@/services/event-bus.service.js').EventBusService) {
+    this.eventBus = bus;
+  }
   private emitUser(id: string, action: 'created' | 'updated' | 'deleted') {
     this.eventBus?.publish('user.changed', { id, action });
   }
@@ -48,11 +49,7 @@ export class AuthService {
     const env = getEnv();
 
     try {
-      this.oidcConfig = await client.discovery(
-        new URL(env.OIDC_ISSUER),
-        env.OIDC_CLIENT_ID,
-        env.OIDC_CLIENT_SECRET
-      );
+      this.oidcConfig = await client.discovery(new URL(env.OIDC_ISSUER), env.OIDC_CLIENT_ID, env.OIDC_CLIENT_SECRET);
 
       logger.info('OIDC configuration discovered', {
         issuer: env.OIDC_ISSUER,
@@ -79,11 +76,7 @@ export class AuthService {
       returnTo,
     };
 
-    await this.cacheService.set(
-      `${PKCE_STATE_PREFIX}${state}`,
-      oidcState,
-      300
-    );
+    await this.cacheService.set(`${PKCE_STATE_PREFIX}${state}`, oidcState, 300);
 
     const parameters: Record<string, string> = {
       redirect_uri: env.OIDC_REDIRECT_URI,
@@ -102,7 +95,6 @@ export class AuthService {
     callbackUrl: string,
     state: string
   ): Promise<{ sessionId: string; user: User; returnTo?: string }> {
-    const env = getEnv();
     const config = await this.getOIDCConfig();
 
     const oidcState = await this.cacheService.get<OIDCState>(`${PKCE_STATE_PREFIX}${state}`);
@@ -136,11 +128,7 @@ export class AuthService {
         avatarUrl: (claims.picture as string) || null,
       });
 
-      const { sessionId } = await this.sessionService.createSession(
-        user,
-        tokens.access_token,
-        tokens.refresh_token
-      );
+      const { sessionId } = await this.sessionService.createSession(user, tokens.access_token, tokens.refresh_token);
 
       logger.info('User logged in', { userId: user.id, email: user.email });
 
@@ -377,10 +365,7 @@ export class AuthService {
     // Destroy all sessions first
     await this.sessionService.destroyAllUserSessions(userId);
 
-    const result = await this.db
-      .delete(users)
-      .where(eq(users.id, userId))
-      .returning({ id: users.id });
+    const result = await this.db.delete(users).where(eq(users.id, userId)).returning({ id: users.id });
 
     if (!result.length) {
       throw new Error('User not found');

@@ -21,10 +21,10 @@ import type { ProxyService } from '@/modules/proxy/proxy.service.js';
 import type { SSLService } from '@/modules/ssl/ssl.service.js';
 import { SessionService } from '@/services/session.service.js';
 import type { User } from '@/types.js';
+import { DOC_TOPIC_SCOPES, getInternalDocumentation, INTERNAL_DOCS } from './ai.docs.js';
 import type { AISettingsService } from './ai.settings.service.js';
 import { AI_TOOLS, getOpenAITools, isDestructiveTool, TOOL_STORE_INVALIDATION_MAP } from './ai.tools.js';
 import type { ChatMessage, PageContext, ToolExecutionResult, WSServerMessage } from './ai.types.js';
-import { DOC_TOPIC_SCOPES, getInternalDocumentation, INTERNAL_DOCS } from './ai.docs.js';
 
 const logger = createChildLogger('AIService');
 
@@ -77,7 +77,6 @@ function trimToTokenBudget(messages: Record<string, unknown>[], maxTokens: numbe
 
   return [system, ...kept];
 }
-
 
 export class AIService {
   constructor(
@@ -574,17 +573,21 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
 
       // ── Docker ──
       case 'create_docker_container': {
-        const data = await this.dockerService.createContainer(a.nodeId, {
-          image: a.image,
-          name: a.name,
-          ports: a.ports,
-          volumes: a.volumes,
-          env: a.env,
-          networks: a.networks,
-          restartPolicy: a.restartPolicy ?? 'no',
-          labels: a.labels,
-          command: a.command,
-        }, user.id);
+        const data = await this.dockerService.createContainer(
+          a.nodeId,
+          {
+            image: a.image,
+            name: a.name,
+            ports: a.ports,
+            volumes: a.volumes,
+            env: a.env,
+            networks: a.networks,
+            restartPolicy: a.restartPolicy ?? 'no',
+            labels: a.labels,
+            command: a.command,
+          },
+          user.id
+        );
         return { success: true, message: 'Container created', data };
       }
       case 'list_docker_containers':
@@ -670,25 +673,47 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
         return this.notifRuleService.getById(a.ruleId);
       case 'create_alert_rule':
         if (!this.notifRuleService) return { error: 'Notification service not available' };
-        return this.notifRuleService.create({
-          name: a.name, type: a.type, category: a.category, severity: a.severity,
-          metric: a.metric, operator: a.operator, thresholdValue: a.thresholdValue,
-          durationSeconds: a.durationSeconds ?? 0, resolveAfterSeconds: a.resolveAfterSeconds ?? 60,
-          eventPattern: a.eventPattern, resourceIds: a.resourceIds ?? [],
-          messageTemplate: a.messageTemplate, webhookIds: a.webhookIds ?? [],
-          cooldownSeconds: a.cooldownSeconds ?? 900,
-          enabled: a.enabled ?? true,
-        }, user.id);
+        return this.notifRuleService.create(
+          {
+            name: a.name,
+            type: a.type,
+            category: a.category,
+            severity: a.severity,
+            metric: a.metric,
+            operator: a.operator,
+            thresholdValue: a.thresholdValue,
+            durationSeconds: a.durationSeconds ?? 0,
+            resolveAfterSeconds: a.resolveAfterSeconds ?? 60,
+            eventPattern: a.eventPattern,
+            resourceIds: a.resourceIds ?? [],
+            messageTemplate: a.messageTemplate,
+            webhookIds: a.webhookIds ?? [],
+            cooldownSeconds: a.cooldownSeconds ?? 900,
+            enabled: a.enabled ?? true,
+          },
+          user.id
+        );
       case 'update_alert_rule':
         if (!this.notifRuleService) return { error: 'Notification service not available' };
-        return this.notifRuleService.update(a.ruleId, {
-          name: a.name, enabled: a.enabled, severity: a.severity,
-          metric: a.metric, operator: a.operator, thresholdValue: a.thresholdValue,
-          durationSeconds: a.durationSeconds, resolveAfterSeconds: a.resolveAfterSeconds,
-          eventPattern: a.eventPattern, resourceIds: a.resourceIds,
-          messageTemplate: a.messageTemplate, webhookIds: a.webhookIds,
-          cooldownSeconds: a.cooldownSeconds,
-        }, user.id);
+        return this.notifRuleService.update(
+          a.ruleId,
+          {
+            name: a.name,
+            enabled: a.enabled,
+            severity: a.severity,
+            metric: a.metric,
+            operator: a.operator,
+            thresholdValue: a.thresholdValue,
+            durationSeconds: a.durationSeconds,
+            resolveAfterSeconds: a.resolveAfterSeconds,
+            eventPattern: a.eventPattern,
+            resourceIds: a.resourceIds,
+            messageTemplate: a.messageTemplate,
+            webhookIds: a.webhookIds,
+            cooldownSeconds: a.cooldownSeconds,
+          },
+          user.id
+        );
       case 'delete_alert_rule':
         if (!this.notifRuleService) return { error: 'Notification service not available' };
         return this.notifRuleService.delete(a.ruleId, user.id);
@@ -697,31 +722,54 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
         return this.notifWebhookService.list({ page: 1, limit: 100 });
       case 'create_webhook':
         if (!this.notifWebhookService) return { error: 'Notification service not available' };
-        return this.notifWebhookService.create({
-          name: a.name, url: a.url, method: a.method ?? 'POST',
-          templatePreset: a.templatePreset, bodyTemplate: a.bodyTemplate,
-          signingSecret: a.signingSecret, signingHeader: a.signingHeader ?? 'X-Signature-256',
-          enabled: true, headers: {},
-        }, user.id);
+        return this.notifWebhookService.create(
+          {
+            name: a.name,
+            url: a.url,
+            method: a.method ?? 'POST',
+            templatePreset: a.templatePreset,
+            bodyTemplate: a.bodyTemplate,
+            signingSecret: a.signingSecret,
+            signingHeader: a.signingHeader ?? 'X-Signature-256',
+            enabled: true,
+            headers: {},
+          },
+          user.id
+        );
       case 'update_webhook':
         if (!this.notifWebhookService) return { error: 'Notification service not available' };
-        return this.notifWebhookService.update(a.webhookId, {
-          name: a.name, url: a.url, method: a.method, enabled: a.enabled,
-          templatePreset: a.templatePreset, bodyTemplate: a.bodyTemplate,
-          signingSecret: a.signingSecret, signingHeader: a.signingHeader,
-        }, user.id);
+        return this.notifWebhookService.update(
+          a.webhookId,
+          {
+            name: a.name,
+            url: a.url,
+            method: a.method,
+            enabled: a.enabled,
+            templatePreset: a.templatePreset,
+            bodyTemplate: a.bodyTemplate,
+            signingSecret: a.signingSecret,
+            signingHeader: a.signingHeader,
+          },
+          user.id
+        );
       case 'delete_webhook':
         if (!this.notifWebhookService) return { error: 'Notification service not available' };
         return this.notifWebhookService.delete(a.webhookId, user.id);
       case 'test_webhook': {
-        if (!this.notifWebhookService || !this.notifDispatcherService) return { error: 'Notification service not available' };
+        if (!this.notifWebhookService || !this.notifDispatcherService)
+          return { error: 'Notification service not available' };
         const wh = await this.notifWebhookService.getRaw(a.webhookId);
         const { buildSampleEvent } = await import('@/modules/notifications/notification-templates.js');
         return this.notifDispatcherService.dispatch(wh, buildSampleEvent(), true);
       }
       case 'list_webhook_deliveries':
         if (!this.notifDeliveryService) return { error: 'Notification service not available' };
-        return this.notifDeliveryService.list({ page: 1, limit: a.limit ?? 50, webhookId: a.webhookId, status: a.status });
+        return this.notifDeliveryService.list({
+          page: 1,
+          limit: a.limit ?? 50,
+          webhookId: a.webhookId,
+          status: a.status,
+        });
       case 'get_delivery_stats':
         if (!this.notifDeliveryService) return { error: 'Notification service not available' };
         return this.notifDeliveryService.getStats(a.webhookId);

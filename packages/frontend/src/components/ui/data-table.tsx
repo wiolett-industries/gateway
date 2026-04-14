@@ -92,8 +92,7 @@ export function DataTable<T>({
   // size cache so estimates re-pick the correct kind on group transitions.
   useEffect(() => {
     virtualizer.measure();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items.length]);
+  }, [virtualizer]);
 
   if (data.length === 0) {
     return (

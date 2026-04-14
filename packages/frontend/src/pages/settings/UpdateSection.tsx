@@ -6,12 +6,7 @@ import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { api } from "@/services/api";
 import { useUpdateStore } from "@/stores/update";
 
@@ -211,16 +206,14 @@ export function UpdateSection({ canUpdate }: UpdateSectionProps) {
             <DialogTitle>Release Notes</DialogTitle>
           </DialogHeader>
           <div className="prose prose-sm dark:prose-invert max-w-none">
-            {(releaseNotesList ?? [updateStatus?.releaseNotes])
-              .filter(Boolean)
-              .map((notes, i) => (
-                <div key={i}>
-                  {releaseNotesList && releaseNotesList.length > 1 && (
-                    <h3 className="text-base font-semibold mt-0">{releaseVersions?.[i]}</h3>
-                  )}
-                  <Markdown>{notes ?? ""}</Markdown>
-                </div>
-              ))}
+            {(releaseNotesList ?? [updateStatus?.releaseNotes]).filter(Boolean).map((notes, i) => (
+              <div key={i}>
+                {releaseNotesList && releaseNotesList.length > 1 && (
+                  <h3 className="text-base font-semibold mt-0">{releaseVersions?.[i]}</h3>
+                )}
+                <Markdown>{notes ?? ""}</Markdown>
+              </div>
+            ))}
           </div>
         </DialogContent>
       </Dialog>

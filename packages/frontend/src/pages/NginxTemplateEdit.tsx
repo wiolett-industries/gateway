@@ -4,7 +4,6 @@ import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
-import { useRealtime } from "@/hooks/use-realtime";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CodeEditor } from "@/components/ui/code-editor";
@@ -16,6 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useRealtime } from "@/hooks/use-realtime";
 import { api } from "@/services/api";
 import type { ProxyHostType, TemplateVariableDef } from "@/types";
 
@@ -192,9 +192,7 @@ export function NginxTemplateEdit() {
   };
 
   if (isLoading) {
-    return (
-      <LoadingSpinner />
-    );
+    return <LoadingSpinner />;
   }
 
   return (

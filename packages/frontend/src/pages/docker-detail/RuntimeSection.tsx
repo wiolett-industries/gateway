@@ -58,11 +58,7 @@ export function RuntimeSection({
           <p className="text-xs text-muted-foreground">Applied instantly without restart</p>
         </div>
         {canEdit && (
-          <Button
-            size="sm"
-            onClick={onApply}
-            disabled={liveLoading || !hasRuntimeChanges}
-          >
+          <Button size="sm" onClick={onApply} disabled={liveLoading || !hasRuntimeChanges}>
             <Save className="h-3.5 w-3.5" />
             Apply
           </Button>
@@ -113,9 +109,7 @@ export function RuntimeSection({
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground">
-              Memory Limit (MB)
-            </label>
+            <label className="text-xs font-medium text-muted-foreground">Memory Limit (MB)</label>
             <Input
               type="number"
               className="h-8 text-xs"
@@ -140,9 +134,7 @@ export function RuntimeSection({
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground">
-              CPU Limit (cores)
-            </label>
+            <label className="text-xs font-medium text-muted-foreground">CPU Limit (cores)</label>
             <Input
               type="number"
               className="h-8 text-xs"

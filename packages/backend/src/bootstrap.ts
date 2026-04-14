@@ -3,11 +3,12 @@ import { getEnv } from '@/config/env.js';
 import { container, TOKENS } from '@/container.js';
 import { createDrizzleClient } from '@/db/client.js';
 import { ACMERenewalJob } from '@/jobs/acme-renewal.job.js';
+import { DaemonUpdateCheckJob } from '@/jobs/daemon-update-check.job.js';
 import { DnsCheckJob } from '@/jobs/dns-check.job.js';
 import { ExpiryAlertJob } from '@/jobs/expiry-alert.job.js';
 import { HealthCheckJob } from '@/jobs/health-check.job.js';
 import { HousekeepingJob } from '@/jobs/housekeeping.job.js';
-import { DaemonUpdateCheckJob } from '@/jobs/daemon-update-check.job.js';
+import { NotificationRetryJob } from '@/jobs/notification-retry.job.js';
 import { UpdateCheckJob } from '@/jobs/update-check.job.js';
 import { logger } from '@/lib/logger.js';
 import { AccessListService } from '@/modules/access-lists/access-list.service.js';
@@ -30,6 +31,11 @@ import { NginxConfigService } from '@/modules/monitoring/nginx-config.service.js
 import { NginxStatsService } from '@/modules/monitoring/nginx-stats.service.js';
 import { NodeMonitoringService } from '@/modules/nodes/node-monitoring.service.js';
 import { NodesService } from '@/modules/nodes/nodes.service.js';
+import { NotificationAlertRuleService } from '@/modules/notifications/notification-alert-rule.service.js';
+import { NotificationDeliveryService } from '@/modules/notifications/notification-delivery.service.js';
+import { NotificationDispatcherService } from '@/modules/notifications/notification-dispatcher.service.js';
+import { NotificationEvaluatorService } from '@/modules/notifications/notification-evaluator.service.js';
+import { NotificationWebhookService } from '@/modules/notifications/notification-webhook.service.js';
 import { CAService } from '@/modules/pki/ca.service.js';
 import { CertService } from '@/modules/pki/cert.service.js';
 import { CRLService } from '@/modules/pki/crl.service.js';
@@ -46,6 +52,7 @@ import { TokensService } from '@/modules/tokens/tokens.service.js';
 import { CacheService, createRedisClient } from '@/services/cache.service.js';
 import { ConfigValidatorService } from '@/services/config-validator.service.js';
 import { CryptoService } from '@/services/crypto.service.js';
+import { DaemonUpdateService } from '@/services/daemon-update.service.js';
 import { DockerService } from '@/services/docker.service.js';
 import { EventBusService } from '@/services/event-bus.service.js';
 import { HousekeepingService } from '@/services/housekeeping.service.js';
@@ -56,14 +63,7 @@ import { NodeRegistryService } from '@/services/node-registry.service.js';
 import { SchedulerService } from '@/services/scheduler.service.js';
 import { SessionService } from '@/services/session.service.js';
 import { SystemCAService } from '@/services/system-ca.service.js';
-import { DaemonUpdateService } from '@/services/daemon-update.service.js';
 import { UpdateService } from '@/services/update.service.js';
-import { NotificationAlertRuleService } from '@/modules/notifications/notification-alert-rule.service.js';
-import { NotificationWebhookService } from '@/modules/notifications/notification-webhook.service.js';
-import { NotificationDeliveryService } from '@/modules/notifications/notification-delivery.service.js';
-import { NotificationDispatcherService } from '@/modules/notifications/notification-dispatcher.service.js';
-import { NotificationEvaluatorService } from '@/modules/notifications/notification-evaluator.service.js';
-import { NotificationRetryJob } from '@/jobs/notification-retry.job.js';
 
 export { container };
 
@@ -157,7 +157,9 @@ export async function initializeContainer(): Promise<void> {
     const SYSTEM_OIDC = 'system:gateway-setup';
     const existing = await db.select({ id: users.id }).from(users).where(eq(users.oidcSubject, SYSTEM_OIDC)).limit(1);
     if (existing.length === 0) {
-      const adminGroup = await db.query.permissionGroups.findFirst({ where: eq(permissionGroups.name, 'system-admin') });
+      const adminGroup = await db.query.permissionGroups.findFirst({
+        where: eq(permissionGroups.name, 'system-admin'),
+      });
       if (adminGroup) {
         await db.insert(users).values({
           id: '00000000-0000-0000-0000-000000000000',
@@ -271,7 +273,9 @@ export async function initializeContainer(): Promise<void> {
     // Fallback: deploy to all online nginx nodes (handles initial setup before any proxy hosts exist)
     const { nodes: nodesTable } = await import('@/db/schema/index.js');
     const { and: andOp, eq: eqOp } = await import('drizzle-orm');
-    const allNginx = await db.select({ id: nodesTable.id }).from(nodesTable)
+    const allNginx = await db
+      .select({ id: nodesTable.id })
+      .from(nodesTable)
       .where(andOp(eqOp(nodesTable.type, 'nginx'), eqOp(nodesTable.status, 'online')));
     return allNginx.map((n) => n.id);
   };
@@ -434,7 +438,9 @@ export async function initializeContainer(): Promise<void> {
   scheduler.registerInterval('update-check', env.UPDATE_CHECK_INTERVAL_HOURS * 3_600_000, () => updateCheckJob.run());
 
   const daemonUpdateCheckJob = new DaemonUpdateCheckJob(daemonUpdateService);
-  scheduler.registerInterval('daemon-update-check', env.UPDATE_CHECK_INTERVAL_HOURS * 3_600_000, () => daemonUpdateCheckJob.run());
+  scheduler.registerInterval('daemon-update-check', env.UPDATE_CHECK_INTERVAL_HOURS * 3_600_000, () =>
+    daemonUpdateCheckJob.run()
+  );
 
   const housekeepingJob = new HousekeepingJob(housekeepingService);
   const hkConfig = await housekeepingService.getConfig();

@@ -1,10 +1,10 @@
-import { injectable, inject } from 'tsyringe';
-import { desc, eq, gte, lte, count as countFn } from 'drizzle-orm';
+import { count as countFn, desc, eq, gte, lte } from 'drizzle-orm';
+import { inject, injectable } from 'tsyringe';
 import { TOKENS } from '@/container.js';
+import type { DrizzleClient } from '@/db/client.js';
 import { auditLog, users } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { buildWhere } from '@/lib/utils.js';
-import type { DrizzleClient } from '@/db/client.js';
 import type { PaginatedResponse } from '@/types.js';
 
 const logger = createChildLogger('AuditService');

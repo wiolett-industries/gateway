@@ -1,5 +1,5 @@
 import { ExternalLink, Lock, RefreshCw, Shield } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -78,7 +78,7 @@ export function DomainDetailDialog({
   const [isCheckingDns, setIsCheckingDns] = useState(false);
   const [isIssuingCert, setIsIssuingCert] = useState(false);
 
-  const loadDomain = async () => {
+  const loadDomain = useCallback(async () => {
     if (!domainId || !open) return;
     setIsLoading(true);
     try {
@@ -90,12 +90,11 @@ export function DomainDetailDialog({
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [domainId, open]);
 
   useEffect(() => {
-    loadDomain();
-    // biome-ignore lint/correctness/useExhaustiveDependencies: dialog reloads from explicit triggers
-  }, [domainId, open]);
+    void loadDomain();
+  }, [loadDomain]);
 
   useRealtime(open ? "domain.changed" : null, (payload) => {
     const event = payload as { id?: string; action?: string } | undefined;
@@ -105,17 +104,17 @@ export function DomainDetailDialog({
       onUpdated();
       return;
     }
-    loadDomain();
+    void loadDomain();
     onUpdated();
   });
 
   useRealtime(open ? "proxy.host.changed" : null, () => {
-    loadDomain();
+    void loadDomain();
     onUpdated();
   });
 
   useRealtime(open ? "ssl.cert.changed" : null, () => {
-    loadDomain();
+    void loadDomain();
     onUpdated();
   });
 

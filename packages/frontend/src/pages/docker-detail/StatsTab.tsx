@@ -66,7 +66,7 @@ export function StatsTab({
     diskW: number;
   } | null>(null);
 
-  const pushStats = (s: ContainerStats) => {
+  const pushStats = useCallback((s: ContainerStats) => {
     setCurrent(s);
     setCpuHist((prev) => [...prev.slice(-(MAX_HISTORY - 1)), s.cpuPercent]);
     setMemHist((prev) => [...prev.slice(-(MAX_HISTORY - 1)), s.memoryUsageBytes]);
@@ -97,7 +97,7 @@ export function StatsTab({
       diskR: s.blockReadBytes,
       diskW: s.blockWriteBytes,
     };
-  };
+  }, []);
 
   // Load history from Redis on mount, then connect to SSE
   useEffect(() => {
@@ -176,7 +176,7 @@ export function StatsTab({
     });
 
     return () => es.close();
-  }, [nodeId, containerId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [nodeId, containerId, pushStats]);
 
   // Fetch process list (separate from SSE — needs direct call)
   useEffect(() => {

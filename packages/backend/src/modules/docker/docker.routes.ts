@@ -3,11 +3,11 @@ import { authMiddleware, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import { registerContainerRoutes } from './docker-container.routes.js';
 import { registerImageRoutes } from './docker-image.routes.js';
-import { registerVolumeRoutes } from './docker-volume.routes.js';
 import { registerNetworkRoutes } from './docker-network.routes.js';
 import { registerRegistryRoutes } from './docker-registry.routes.js';
-import { registerTemplateRoutes } from './docker-template.routes.js';
 import { registerTaskRoutes } from './docker-task.routes.js';
+import { registerTemplateRoutes } from './docker-template.routes.js';
+import { registerVolumeRoutes } from './docker-volume.routes.js';
 import { registerWebhookConfigRoutes } from './docker-webhook.routes.js';
 
 export const dockerRoutes = new OpenAPIHono<AppEnv>();

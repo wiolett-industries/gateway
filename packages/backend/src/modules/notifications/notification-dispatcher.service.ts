@@ -1,11 +1,11 @@
 import { createHmac } from 'node:crypto';
 import { eq } from 'drizzle-orm';
+import type { Env } from '@/config/env.js';
 import type { DrizzleClient } from '@/db/client.js';
 import { notificationDeliveryLog, notificationWebhooks } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
+import { buildTemplateContext, type NotificationEvent, renderTemplate } from './notification-templates.js';
 import type { NotificationWebhookService } from './notification-webhook.service.js';
-import { buildTemplateContext, renderTemplate, type NotificationEvent } from './notification-templates.js';
-import type { Env } from '@/config/env.js';
 
 const logger = createChildLogger('NotificationDispatcher');
 
@@ -73,7 +73,6 @@ export class NotificationDispatcherService {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
     try {
-
       const method = webhook.method || 'POST';
       const fetchOptions: RequestInit = {
         method,
@@ -158,7 +157,8 @@ export class NotificationDispatcherService {
 
     if (!webhook) {
       // Webhook deleted — mark delivery as failed
-      await this.db.update(notificationDeliveryLog)
+      await this.db
+        .update(notificationDeliveryLog)
         .set({ status: 'failed', error: 'Webhook no longer exists', completedAt: new Date() })
         .where(eq(notificationDeliveryLog.id, deliveryId));
       return;

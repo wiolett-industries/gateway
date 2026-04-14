@@ -8,7 +8,6 @@
       "inputs": [
         "{projectRoot}/src/**/*",
         "{projectRoot}/tsconfig.json",
-        "{projectRoot}/tsconfig.app.json",
         "{projectRoot}/vite.config.*",
         "{projectRoot}/index.html",
         "{projectRoot}/package.json"
@@ -22,7 +21,23 @@
     },
     "lint": {
       "command": "pnpm --filter frontend lint",
-      "inputs": ["{projectRoot}/src/**/*"],
+      "inputs": [
+        "{projectRoot}/src/**/*",
+        "{projectRoot}/tests/**/*",
+        "{projectRoot}/biome.json",
+        "{projectRoot}/package.json",
+        "{projectRoot}/vite.config.*",
+        "{projectRoot}/vitest.config.*"
+      ],
+      "cache": true
+    },
+    "test": {
+      "command": "pnpm --filter frontend test",
+      "inputs": [
+        "{projectRoot}/src/**/*",
+        "{projectRoot}/vitest.config.*",
+        "{projectRoot}/package.json"
+      ],
       "cache": true
     },
     "preview": {

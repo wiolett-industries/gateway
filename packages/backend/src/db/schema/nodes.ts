@@ -1,4 +1,4 @@
-import { boolean, index, jsonb, pgEnum, pgTable, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
+import { index, jsonb, pgEnum, pgTable, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
 
 export const nodeTypeEnum = pgEnum('node_type', ['nginx', 'bastion', 'monitoring', 'docker']);
 export const nodeStatusEnum = pgEnum('node_status', ['pending', 'online', 'offline', 'error']);

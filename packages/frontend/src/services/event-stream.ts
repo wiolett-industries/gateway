@@ -1,5 +1,5 @@
-import { useAuthStore } from "@/stores/auth";
 import { api } from "@/services/api";
+import { useAuthStore } from "@/stores/auth";
 
 type EventHandler = (payload: unknown) => void;
 

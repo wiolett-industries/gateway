@@ -31,11 +31,7 @@ export class DockerTaskService {
     if (filters?.status) conditions.push(eq(dockerTasks.status, filters.status));
     if (filters?.type) conditions.push(eq(dockerTasks.type, filters.type));
 
-    return this.db
-      .select()
-      .from(dockerTasks)
-      .where(buildWhere(conditions))
-      .orderBy(desc(dockerTasks.createdAt));
+    return this.db.select().from(dockerTasks).where(buildWhere(conditions)).orderBy(desc(dockerTasks.createdAt));
   }
 
   async get(id: string) {

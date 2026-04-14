@@ -1,10 +1,10 @@
 import crypto from 'node:crypto';
-import { x509 } from '@/lib/x509.js';
 import { and, count, desc, eq, ilike, lte, or } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import { certificates, proxyHosts, sslCertificates } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { buildWhere, escapeLike } from '@/lib/utils.js';
+import { x509 } from '@/lib/x509.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { CryptoService } from '@/services/crypto.service.js';
@@ -31,7 +31,11 @@ export class SSLService {
   setEventBus(bus: EventBusService) {
     this.eventBus = bus;
   }
-  private emitCert(id: string, action: 'created' | 'renewed' | 'deleted' | 'updated' | 'renewal_failed' | 'expired', name?: string) {
+  private emitCert(
+    id: string,
+    action: 'created' | 'renewed' | 'deleted' | 'updated' | 'renewal_failed' | 'expired',
+    name?: string
+  ) {
     this.eventBus?.publish('ssl.cert.changed', { id, action, name });
   }
 

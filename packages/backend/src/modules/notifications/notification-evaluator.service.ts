@@ -5,16 +5,16 @@ import { createChildLogger } from '@/lib/logger.js';
 import type { CacheService, RedisClient } from '@/services/cache.service.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
 import type { NodeRegistryService } from '@/services/node-registry.service.js';
-import type { NotificationAlertRuleService } from './notification-alert-rule.service.js';
-import type { NotificationDispatcherService } from './notification-dispatcher.service.js';
-import type { NotificationWebhookService } from './notification-webhook.service.js';
-import { renderTemplate, type NotificationEvent } from './notification-templates.js';
 import {
   EVENT_BUS_MAPPINGS,
   evaluateThreshold,
   extractMetricFromHealthReport,
   type Severity,
 } from './notification.constants.js';
+import type { NotificationAlertRuleService } from './notification-alert-rule.service.js';
+import type { NotificationDispatcherService } from './notification-dispatcher.service.js';
+import { type NotificationEvent, renderTemplate } from './notification-templates.js';
+import type { NotificationWebhookService } from './notification-webhook.service.js';
 
 const logger = createChildLogger('NotificationEvaluator');
 
@@ -98,11 +98,12 @@ export class NotificationEvaluatorService {
           if (!rule.resourceIds.includes(resourceId)) continue;
         }
 
-        const compositeResourceId = rule.category === 'container'
-          ? `${nodeId}:${resourceId}`
-          : rule.metric === 'disk'
+        const compositeResourceId =
+          rule.category === 'container'
             ? `${nodeId}:${resourceId}`
-            : nodeId;
+            : rule.metric === 'disk'
+              ? `${nodeId}:${resourceId}`
+              : nodeId;
 
         if (Number.isNaN(value)) {
           logger.warn('Skipping NaN metric value', { ruleId: rule.id, metric: rule.metric, resourceId });
@@ -111,9 +112,14 @@ export class NotificationEvaluatorService {
 
         const breached = evaluateThreshold(value, rule.operator, rule.thresholdValue);
         logger.debug('Threshold check', {
-          ruleId: rule.id, ruleName: rule.name, metric: rule.metric,
-          value: Math.round(value * 100) / 100, threshold: rule.thresholdValue,
-          operator: rule.operator, breached, resourceId: compositeResourceId,
+          ruleId: rule.id,
+          ruleName: rule.name,
+          metric: rule.metric,
+          value: Math.round(value * 100) / 100,
+          threshold: rule.thresholdValue,
+          operator: rule.operator,
+          breached,
+          resourceId: compositeResourceId,
         });
 
         if (breached) {
@@ -159,7 +165,12 @@ export class NotificationEvaluatorService {
       const oldestSample = Number.parseInt(samples[0].split(':')[0], 10);
       const elapsed = now - oldestSample;
       if (elapsed < durationMs * 0.8) {
-        logger.debug('Duration check: not enough time elapsed', { ruleId: rule.id, elapsed, required: durationMs * 0.8, samples: samples.length });
+        logger.debug('Duration check: not enough time elapsed', {
+          ruleId: rule.id,
+          elapsed,
+          required: durationMs * 0.8,
+          samples: samples.length,
+        });
         return;
       }
 
@@ -199,11 +210,7 @@ export class NotificationEvaluatorService {
     });
   }
 
-  private async handleThresholdClear(
-    rule: any,
-    compositeResourceId: string,
-    currentValue: number
-  ): Promise<void> {
+  private async handleThresholdClear(rule: any, compositeResourceId: string, currentValue: number): Promise<void> {
     const existingState = await this.getActiveAlertState(rule.id, rule.category, compositeResourceId);
     if (!existingState) return;
 
@@ -228,7 +235,10 @@ export class NotificationEvaluatorService {
       const oldestSample = Number.parseInt(samples[0].split(':')[0], 10);
       if (now - oldestSample < resolveMs * 0.8) {
         logger.debug('Resolve delay: not enough time below threshold', {
-          ruleId: rule.id, elapsed: now - oldestSample, required: resolveMs * 0.8, samples: samples.length,
+          ruleId: rule.id,
+          elapsed: now - oldestSample,
+          required: resolveMs * 0.8,
+          samples: samples.length,
         });
         return;
       }
@@ -246,9 +256,10 @@ export class NotificationEvaluatorService {
     const firedAt = existingState.firedAt;
     const firedDurationSec = firedAt ? Math.round((Date.now() - firedAt.getTime()) / 1000) : 0;
 
-    const nodeName = rule.category === 'node' || rule.category === 'container'
-      ? this.getNodeName(compositeResourceId.split(':')[0] || compositeResourceId)
-      : undefined;
+    const nodeName =
+      rule.category === 'node' || rule.category === 'container'
+        ? this.getNodeName(compositeResourceId.split(':')[0] || compositeResourceId)
+        : undefined;
 
     await this.resolveAlert(existingState.id, rule, rule.category, compositeResourceId, nodeName, {
       value: currentValue,
@@ -499,7 +510,12 @@ export class NotificationEvaluatorService {
   }
 
   /** Check if an event-type alert is still in cooldown */
-  private async isEventInCooldown(ruleId: string, resourceType: string, resourceId: string, cooldownSeconds: number): Promise<boolean> {
+  private async isEventInCooldown(
+    ruleId: string,
+    resourceType: string,
+    resourceId: string,
+    cooldownSeconds: number
+  ): Promise<boolean> {
     const [latest] = await this.db
       .select({ resolvedAt: notificationAlertStates.resolvedAt })
       .from(notificationAlertStates)

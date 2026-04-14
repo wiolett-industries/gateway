@@ -1,21 +1,149 @@
 stages:
+  - test
   - build
   - release
 
 variables:
   IMAGE: ${CI_REGISTRY_IMAGE}
   DOCKER_HOST: unix:///var/run/docker.sock
+  PNPM_STORE_DIR: ${CI_PROJECT_DIR}/.pnpm-store
+  GOCACHE: ${CI_PROJECT_DIR}/.cache/go-build
+  GOMODCACHE: ${CI_PROJECT_DIR}/.cache/go-mod
 
 .docker-login: &docker-login
   before_script:
     - docker login -u ${CI_REGISTRY_USER} -p ${CI_REGISTRY_PASSWORD} ${CI_REGISTRY}
 
-# ── Gateway (backend + frontend Docker image) ──────────────────────
+.pnpm-job: &pnpm-job
+  image: node:24
+  before_script:
+    - corepack enable
+    - pnpm config set store-dir ${PNPM_STORE_DIR}
+    - pnpm install --frozen-lockfile
+  cache:
+    key:
+      files:
+        - pnpm-lock.yaml
+    paths:
+      - .pnpm-store
+
+.go-job: &go-job
+  image: golang:1.24
+  before_script:
+    - mkdir -p ${GOCACHE} ${GOMODCACHE}
+    - cd packages/daemons
+  cache:
+    key:
+      files:
+        - packages/daemons/go.work
+        - packages/daemons/docker/go.sum
+        - packages/daemons/monitoring/go.sum
+        - packages/daemons/nginx/go.sum
+        - packages/daemons/shared/go.sum
+    paths:
+      - .cache/go-build
+      - .cache/go-mod
+
+.gateway-frontend-rules: &gateway-frontend-rules
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes:
+        - package.json
+        - pnpm-lock.yaml
+        - pnpm-workspace.yaml
+        - nx.json
+        - tsconfig.json
+        - packages/frontend/**/*
+
+.gateway-backend-rules: &gateway-backend-rules
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes:
+        - package.json
+        - pnpm-lock.yaml
+        - pnpm-workspace.yaml
+        - nx.json
+        - tsconfig.json
+        - packages/backend/**/*
+
+.daemon-nginx-rules: &daemon-nginx-rules
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+-nginx$/
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes:
+        - proto/**/*
+        - packages/daemons/go.work
+        - packages/daemons/nginx/**/*
+        - packages/daemons/shared/**/*
+
+.daemon-docker-rules: &daemon-docker-rules
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+-docker$/
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes:
+        - proto/**/*
+        - packages/daemons/go.work
+        - packages/daemons/docker/**/*
+        - packages/daemons/shared/**/*
+
+.daemon-monitoring-rules: &daemon-monitoring-rules
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+-monitoring$/
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes:
+        - proto/**/*
+        - packages/daemons/go.work
+        - packages/daemons/monitoring/**/*
+        - packages/daemons/shared/**/*
+
+# ── Tests ─────────────────────────────────────────────────────────
+
+test-frontend:
+  stage: test
+  extends: .pnpm-job
+  script:
+    - pnpm --filter frontend test
+  <<: *gateway-frontend-rules
+
+test-backend:
+  stage: test
+  extends: .pnpm-job
+  script:
+    - pnpm --filter backend test
+  <<: *gateway-backend-rules
+
+test-nginx-daemon:
+  stage: test
+  extends: .go-job
+  script:
+    - go test ./nginx/... ./shared/...
+  <<: *daemon-nginx-rules
+
+test-docker-daemon:
+  stage: test
+  extends: .go-job
+  script:
+    - go test ./docker/... ./shared/...
+  <<: *daemon-docker-rules
+
+test-monitoring-daemon:
+  stage: test
+  extends: .go-job
+  script:
+    - go test ./monitoring/... ./shared/...
+  <<: *daemon-monitoring-rules
+
+# ── Gateway (backend + frontend Docker image) ─────────────────────
 # Triggered by tags like: v1.3.0
 
 build:
   stage: build
   image: docker:27
+  needs:
+    - test-frontend
+    - test-backend
   <<: *docker-login
   script:
     - |
@@ -55,10 +183,11 @@ release:
 .build-daemon:
   stage: build
   image: golang:1.24
+  before_script:
+    - mkdir -p ${GOCACHE} ${GOMODCACHE}
   script:
     - cd packages/daemons/${DAEMON_DIR}
     - |
-      # Extract version from tag: v1.3.0-nginx → v1.3.0
       VERSION=$(echo "${CI_COMMIT_TAG}" | sed "s/-${DAEMON_SUFFIX}$//")
       echo "Building ${DAEMON_NAME} ${VERSION} (tag: ${CI_COMMIT_TAG})..."
       for GOARCH in amd64 arm64; do
@@ -77,13 +206,23 @@ release:
           "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/${DAEMON_NAME}/${CI_COMMIT_TAG}/${DAEMON_NAME}-linux-${GOARCH}"
       done
     - |
-      # Generate SHA256 checksums
       for GOARCH in amd64 arm64; do
         sha256sum "${DAEMON_NAME}-linux-${GOARCH}" >> checksums.txt
       done
       curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
         --upload-file checksums.txt \
         "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/${DAEMON_NAME}/${CI_COMMIT_TAG}/checksums.txt"
+  cache:
+    key:
+      files:
+        - packages/daemons/go.work
+        - packages/daemons/docker/go.sum
+        - packages/daemons/monitoring/go.sum
+        - packages/daemons/nginx/go.sum
+        - packages/daemons/shared/go.sum
+    paths:
+      - .cache/go-build
+      - .cache/go-mod
   artifacts:
     paths:
       - checksums.txt
@@ -113,10 +252,12 @@ release:
           filepath: /checksums.txt
           link_type: other
 
-# ── nginx-daemon ───────────────────────────────────────────────────
+# ── nginx-daemon ──────────────────────────────────────────────────
 
 build-nginx-daemon:
   extends: .build-daemon
+  needs:
+    - test-nginx-daemon
   variables:
     DAEMON_DIR: nginx
     DAEMON_NAME: nginx-daemon
@@ -135,10 +276,12 @@ release-nginx-daemon:
   rules:
     - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+-nginx$/
 
-# ── docker-daemon ──────────────────────────────────────────────────
+# ── docker-daemon ─────────────────────────────────────────────────
 
 build-docker-daemon:
   extends: .build-daemon
+  needs:
+    - test-docker-daemon
   variables:
     DAEMON_DIR: docker
     DAEMON_NAME: docker-daemon
@@ -157,10 +300,12 @@ release-docker-daemon:
   rules:
     - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+-docker$/
 
-# ── monitoring-daemon ──────────────────────────────────────────────
+# ── monitoring-daemon ─────────────────────────────────────────────
 
 build-monitoring-daemon:
   extends: .build-daemon
+  needs:
+    - test-monitoring-daemon
   variables:
     DAEMON_DIR: monitoring
     DAEMON_NAME: monitoring-daemon

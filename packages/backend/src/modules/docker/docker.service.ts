@@ -164,9 +164,7 @@ export class DockerManagementService {
   private async failTask(taskId: string | undefined, error: string, nodeId?: string, containerName?: string) {
     if (nodeId && containerName) this.clearTransition(nodeId, containerName);
     if (taskId && this.taskService) {
-      await this.taskService
-        .update(taskId, { status: 'failed', error, completedAt: new Date() })
-        .catch(() => {});
+      await this.taskService.update(taskId, { status: 'failed', error, completedAt: new Date() }).catch(() => {});
     }
   }
 
