@@ -12,6 +12,7 @@ VERSION=""
 LOG_FILE="/tmp/gateway_install.log"
 NO_LOGO=0
 NON_INTERACTIVE=0
+APT_UPDATED=0
 
 # Non-interactive config (set via flags or env vars)
 OPT_DOMAIN="${GATEWAY_DOMAIN:-}"
@@ -49,7 +50,7 @@ PG_MEM_LIMIT=""
 REDIS_MEM_LIMIT=""
 
 # ── Colors & Tags ─────────────────────────────────────────────────────
-CYAN='\033[38;2;140;176;132m'
+BRAND_MINT='\033[38;2;140;176;132m'
 GRAY='\033[0;90m'
 NC='\033[0m'
 INFO_TAG='\033[47m\033[90m'       # light gray bg, dark gray text
@@ -69,11 +70,11 @@ show_logo() {
     echo '░████   ░████ ░██░██    ░██ ░██ ░██           ░██       ░██    '
     echo '░███     ░███ ░██ ░███████  ░██  ░███████      ░████     ░████ '
     echo ""
-    echo -e "${CYAN}░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░${NC}"
-    echo -e "${CYAN}░░░█▀▀░█▀█░▀█▀░█▀▀░█░█░█▀█░█░█░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░${NC}"
-    echo -e "${CYAN}░░░█░█░█▀█░░█░░█▀▀░█▄█░█▀█░░█░░░░▀░▀░▀░▀░▀░▀░▀░▀░▀░▀░▀░▀░▀░░░░${NC}"
-    echo -e "${CYAN}░░░▀▀▀░▀░▀░░▀░░▀▀▀░▀░▀░▀░▀░░▀░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░${NC}"
-    echo -e "${CYAN}░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░${NC}"
+    echo -e "${BRAND_MINT}░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░${NC}"
+    echo -e "${BRAND_MINT}░░░█▀▀░█▀█░▀█▀░█▀▀░█░█░█▀█░█░█░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░${NC}"
+    echo -e "${BRAND_MINT}░░░█░█░█▀█░░█░░█▀▀░█▄█░█▀█░░█░░░░▀░▀░▀░▀░▀░▀░▀░▀░▀░▀░▀░▀░▀░░░░${NC}"
+    echo -e "${BRAND_MINT}░░░▀▀▀░▀░▀░░▀░░▀▀▀░▀░▀░▀░▀░░▀░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░${NC}"
+    echo -e "${BRAND_MINT}░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░${NC}"
     echo ""
 }
 
@@ -95,6 +96,20 @@ run_quiet() {
     error "Command failed: $*\n  Check ${LOG_FILE} for details."
 }
 
+run_privileged_quiet() {
+    if [ "$(id -u)" -eq 0 ]; then
+        run_quiet "$@"
+        return
+    fi
+
+    if command -v sudo &>/dev/null; then
+        run_quiet sudo "$@"
+        return
+    fi
+
+    error "This step requires root privileges. Re-run as root or install sudo."
+}
+
 prompt_input() {
     local prompt="$1"
     local default="${2:-}"
@@ -105,9 +120,9 @@ prompt_input() {
     fi
     if [ -e /dev/tty ]; then
         if [ -n "$default" ]; then
-            read -r -p "$(echo -e "  ${CYAN}${prompt} [${default}]: ${NC}")" result < /dev/tty
+            read -r -p "$(echo -e "  ${BRAND_MINT}${prompt} [${default}]: ${NC}")" result < /dev/tty
         else
-            read -r -p "$(echo -e "  ${CYAN}${prompt}: ${NC}")" result < /dev/tty
+            read -r -p "$(echo -e "  ${BRAND_MINT}${prompt}: ${NC}")" result < /dev/tty
         fi
     else
         result=""
@@ -123,7 +138,7 @@ prompt_secret() {
         return
     fi
     if [ -e /dev/tty ]; then
-        read -rs -p "$(echo -e "  ${CYAN}${prompt}: ${NC}")" result < /dev/tty
+        read -rs -p "$(echo -e "  ${BRAND_MINT}${prompt}: ${NC}")" result < /dev/tty
         echo "" >&2
     else
         result=""
@@ -141,16 +156,129 @@ prompt_yes_no() {
     fi
     if [ -e /dev/tty ]; then
         if [[ "$default" == "Y" ]]; then
-            read -r -p "$(echo -e "  ${CYAN}${prompt} [Y/n]: ${NC}")" reply < /dev/tty
+            read -r -p "$(echo -e "  ${BRAND_MINT}${prompt} [Y/n]: ${NC}")" reply < /dev/tty
             reply="${reply:-Y}"
         else
-            read -r -p "$(echo -e "  ${CYAN}${prompt} [y/N]: ${NC}")" reply < /dev/tty
+            read -r -p "$(echo -e "  ${BRAND_MINT}${prompt} [y/N]: ${NC}")" reply < /dev/tty
             reply="${reply:-N}"
         fi
     else
         reply="$default"
     fi
     [[ "$reply" =~ ^[yY]$ ]]
+}
+
+pkg_update_once() {
+    if command -v apt-get &>/dev/null; then
+        if [ "$APT_UPDATED" -eq 0 ]; then
+            run_privileged_quiet apt-get update
+            APT_UPDATED=1
+        fi
+    elif command -v apk &>/dev/null; then
+        run_privileged_quiet apk update
+    fi
+}
+
+install_system_packages() {
+    if [ "$#" -eq 0 ]; then
+        return
+    fi
+
+    pkg_update_once
+
+    if command -v apt-get &>/dev/null; then
+        run_privileged_quiet apt-get install -y "$@"
+    elif command -v yum &>/dev/null; then
+        run_privileged_quiet yum install -y "$@"
+    elif command -v dnf &>/dev/null; then
+        run_privileged_quiet dnf install -y "$@"
+    elif command -v apk &>/dev/null; then
+        run_privileged_quiet apk add "$@"
+    else
+        error "Could not detect a supported package manager for automatic dependency installation."
+    fi
+}
+
+ensure_docker_service_running() {
+    if ! command -v docker &>/dev/null; then
+        return
+    fi
+
+    if docker info >/dev/null 2>&1; then
+        return
+    fi
+
+    info "Starting Docker service..."
+    if command -v systemctl &>/dev/null; then
+        run_privileged_quiet systemctl enable --now docker
+    elif command -v service &>/dev/null; then
+        run_privileged_quiet service docker start
+    fi
+
+    docker info >/dev/null 2>&1 || error "Docker is installed but the daemon is not running."
+}
+
+ensure_curl_installed() {
+    if command -v curl &>/dev/null; then
+        return
+    fi
+
+    info "curl not found, installing it..."
+    install_system_packages curl ca-certificates
+    command -v curl &>/dev/null || error "Failed to install curl."
+}
+
+ensure_docker_installed() {
+    if command -v docker &>/dev/null; then
+        ensure_docker_service_running
+        return
+    fi
+
+    info "Docker not found, installing it..."
+    if command -v apt-get &>/dev/null; then
+        install_system_packages docker.io
+    elif command -v yum &>/dev/null; then
+        install_system_packages docker
+    elif command -v dnf &>/dev/null; then
+        install_system_packages docker
+    elif command -v apk &>/dev/null; then
+        install_system_packages docker
+    else
+        error "Could not detect a supported package manager to install Docker automatically."
+    fi
+
+    ensure_docker_service_running
+}
+
+ensure_docker_compose_installed() {
+    if command -v docker &>/dev/null && docker compose version &>/dev/null; then
+        return
+    fi
+
+    info "Docker Compose v2 not found, installing it..."
+    if command -v apt-get &>/dev/null; then
+        install_system_packages docker-compose-plugin
+    elif command -v yum &>/dev/null; then
+        install_system_packages docker-compose-plugin
+    elif command -v dnf &>/dev/null; then
+        install_system_packages docker-compose-plugin
+    elif command -v apk &>/dev/null; then
+        install_system_packages docker-cli-compose
+    else
+        error "Could not detect a supported package manager to install Docker Compose automatically."
+    fi
+
+    docker compose version &>/dev/null || error "Docker Compose v2 is still unavailable after installation."
+}
+
+ensure_openssl_installed() {
+    if command -v openssl &>/dev/null; then
+        return
+    fi
+
+    info "OpenSSL not found, installing it..."
+    install_system_packages openssl
+    command -v openssl &>/dev/null || error "Failed to install OpenSSL."
 }
 
 # ── Health check helper ───────────────────────────────────────────────
@@ -208,28 +336,20 @@ apply_resource_profile() {
 check_prerequisites() {
     title "Prerequisites"
 
-    if command -v docker &>/dev/null; then
-        info "Docker $(docker --version | awk '{print $3}' | tr -d ',')"
-    else
-        error "Docker is not installed.\n  Install: https://docs.docker.com/engine/install/"
-    fi
+    ensure_docker_installed
+    info "Docker $(docker --version | awk '{print $3}' | tr -d ',')"
 
-    if docker compose version &>/dev/null; then
-        info "Docker Compose $(docker compose version --short 2>/dev/null || echo 'v2')"
-    else
-        error "Docker Compose v2 is required.\n  Install the docker-compose-plugin package."
-    fi
+    ensure_docker_compose_installed
+    info "Docker Compose $(docker compose version --short 2>/dev/null || echo 'v2')"
 
-    if command -v openssl &>/dev/null; then
-        info "OpenSSL $(openssl version 2>/dev/null | awk '{print $2}')"
-    else
-        error "OpenSSL is required to generate security keys."
-    fi
+    ensure_openssl_installed
+    info "OpenSSL $(openssl version 2>/dev/null | awk '{print $2}')"
 }
 
 # ── Intro ─────────────────────────────────────────────────────────────
 show_intro() {
     echo -e "  ${GRAY}${DEFAULT_TAGLINE}${NC}"
+    echo -e "  ${GRAY}Version to install: ${BRAND_MINT}${VERSION}${NC}"
     echo ""
     echo -e "  ${GRAY}This installer will set up Gateway in the current directory:${NC}"
     echo -e "  ${GRAY}  1. Verify prerequisites (Docker, Docker Compose, OpenSSL)${NC}"
@@ -256,12 +376,7 @@ resolve_version() {
         return
     fi
 
-    if ! command -v curl &>/dev/null; then
-        warn "curl is not available, falling back to 'latest' tag"
-        VERSION="latest"
-        info "Install version: ${VERSION}"
-        return
-    fi
+    ensure_curl_installed
 
     info "Fetching latest version..."
     VERSION=$(curl -sf "${GITLAB_API}/releases" 2>/dev/null \
@@ -311,7 +426,7 @@ gather_config() {
     fi
 
     # Interactive: ask about domain setup
-    echo -e "  ${CYAN}Deployment mode:${NC}"
+    echo -e "  ${BRAND_MINT}Deployment mode:${NC}"
     echo -e "  ${GRAY}  1) Set up with domain — installs nginx on this host,${NC}"
     echo -e "  ${GRAY}     serves the management UI via HTTPS on your domain${NC}"
     echo -e "  ${GRAY}  2) Direct access — no domain, access the management UI${NC}"
@@ -372,7 +487,7 @@ gather_config() {
     echo ""
 
     # Resource profile
-    echo -e "  ${CYAN}Resource profile:${NC}"
+    echo -e "  ${BRAND_MINT}Resource profile:${NC}"
     echo -e "  ${GRAY}  1) Small  — App: 1GB, Postgres: 512MB, Redis: 256MB${NC}"
     echo -e "  ${GRAY}  2) Medium — App: 2GB, Postgres: 1GB,   Redis: 512MB  [default]${NC}"
     echo -e "  ${GRAY}  3) Large  — App: 4GB, Postgres: 2GB,   Redis: 1GB${NC}"
@@ -766,7 +881,7 @@ install_nginx() {
         if [[ "$NON_INTERACTIVE" -eq 1 ]]; then
             nginx_version_choice="$OPT_NGINX_VERSION"
         else
-            echo -e "  ${CYAN}Nginx version:${NC}"
+            echo -e "  ${BRAND_MINT}Nginx version:${NC}"
             echo -e "  ${GRAY}  1) System default  [default]${NC}"
             echo -e "  ${GRAY}  2) Stable (nginx.org repo)${NC}"
             echo -e "  ${GRAY}  3) Custom version${NC}"
@@ -966,7 +1081,7 @@ bootstrap_ssl() {
             info "Issuing Let's Encrypt certificate for ${domain}..."
         fi
     else
-        echo -e "  ${CYAN}SSL certificate for ${domain}:${NC}"
+        echo -e "  ${BRAND_MINT}SSL certificate for ${domain}:${NC}"
         echo -e "  ${GRAY}  1) Let's Encrypt (automatic, requires DNS pointing here)${NC}"
         echo -e "  ${GRAY}  2) Custom certificate (e.g. Cloudflare Origin, self-signed)${NC}"
         echo -e "  ${GRAY}  3) Skip (configure later from UI)${NC}"
@@ -1069,14 +1184,14 @@ show_summary() {
     echo ""
     echo -e "${SUCCESS_TAG} SUCCESS ${NC} Gateway is running!"
     echo ""
-    echo -e "  Management UI   ${CYAN}${APP_URL}${NC}"
+    echo -e "  Management UI   ${BRAND_MINT}${APP_URL}${NC}"
 
     if [ "$SETUP_WITH_DOMAIN" -eq 1 ]; then
-        echo -e "  Proxy (HTTP)    ${CYAN}:80${NC}"
-        echo -e "  Proxy (HTTPS)   ${CYAN}:443${NC}"
-        echo -e "  gRPC (daemons)  ${CYAN}:9443${NC}"
+        echo -e "  Proxy (HTTP)    ${BRAND_MINT}:80${NC}"
+        echo -e "  Proxy (HTTPS)   ${BRAND_MINT}:443${NC}"
+        echo -e "  gRPC (daemons)  ${BRAND_MINT}:9443${NC}"
     else
-        echo -e "  gRPC (daemons)  ${CYAN}:9443${NC}"
+        echo -e "  gRPC (daemons)  ${BRAND_MINT}:9443${NC}"
     fi
 
     echo ""
@@ -1275,8 +1390,6 @@ main() {
     [[ "$NO_LOGO" -eq 0 ]] && show_logo
 
     show_intro
-
-    info "Version to install: ${VERSION}"
 
     check_prerequisites
 
