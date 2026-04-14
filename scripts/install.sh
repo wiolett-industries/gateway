@@ -17,6 +17,7 @@ OS_RELEASE_LOADED=0
 OS_ID=""
 OS_ID_LIKE=""
 OS_VERSION_CODENAME=""
+DOCKER_USE_SUDO=0
 
 # Non-interactive config (set via flags or env vars)
 OPT_DOMAIN="${GATEWAY_DOMAIN:-}"
@@ -112,6 +113,40 @@ run_privileged_quiet() {
     fi
 
     error "This step requires root privileges. Re-run as root or install sudo."
+}
+
+docker_run() {
+    if [ "$DOCKER_USE_SUDO" -eq 1 ]; then
+        sudo docker "$@"
+    else
+        docker "$@"
+    fi
+}
+
+docker_compose_run() {
+    if [ "$DOCKER_USE_SUDO" -eq 1 ]; then
+        sudo docker compose "$@"
+    else
+        docker compose "$@"
+    fi
+}
+
+detect_docker_access() {
+    if docker info >/dev/null 2>&1; then
+        DOCKER_USE_SUDO=0
+        return 0
+    fi
+
+    if [ "$(id -u)" -eq 0 ]; then
+        return 1
+    fi
+
+    if command -v sudo &>/dev/null && sudo docker info >/dev/null 2>&1; then
+        DOCKER_USE_SUDO=1
+        return 0
+    fi
+
+    return 1
 }
 
 prompt_input() {
@@ -357,20 +392,37 @@ ensure_docker_service_running() {
         return
     fi
 
-    if docker info >/dev/null 2>&1; then
+    if detect_docker_access; then
         return
     fi
 
     info "Starting Docker service..."
     if command -v systemctl &>/dev/null; then
+        run_privileged_quiet systemctl enable --now containerd || true
         run_privileged_quiet systemctl enable --now docker
-        run_privileged_quiet systemctl enable containerd || true
-        run_privileged_quiet systemctl start containerd || true
     elif command -v service &>/dev/null; then
+        run_privileged_quiet service containerd start || true
         run_privileged_quiet service docker start
     fi
 
-    docker info >/dev/null 2>&1 || error "Docker is installed but the daemon is not running."
+    local retries=5
+    while [ "$retries" -gt 0 ]; do
+        if detect_docker_access; then
+            return
+        fi
+        retries=$((retries - 1))
+        sleep 2
+    done
+
+    if command -v systemctl &>/dev/null; then
+        run_privileged_quiet systemctl status docker --no-pager >>"$LOG_FILE" 2>&1 || true
+        run_privileged_quiet systemctl status containerd --no-pager >>"$LOG_FILE" 2>&1 || true
+    elif command -v service &>/dev/null; then
+        run_privileged_quiet service docker status >>"$LOG_FILE" 2>&1 || true
+        run_privileged_quiet service containerd status >>"$LOG_FILE" 2>&1 || true
+    fi
+
+    error "Docker is installed but the daemon is not reachable. Check docker/containerd service status in ${LOG_FILE}."
 }
 
 ensure_curl_installed() {
@@ -396,7 +448,7 @@ ensure_docker_installed() {
 }
 
 ensure_docker_compose_installed() {
-    if command -v docker &>/dev/null && docker compose version &>/dev/null; then
+    if command -v docker &>/dev/null && docker_compose_run version &>/dev/null; then
         return
     fi
 
@@ -404,7 +456,7 @@ ensure_docker_compose_installed() {
     install_docker_engine_from_official_repo
     ensure_docker_service_running
 
-    docker compose version &>/dev/null || error "Docker Compose v2 is still unavailable after installation."
+    docker_compose_run version &>/dev/null || error "Docker Compose v2 is still unavailable after installation."
 }
 
 ensure_openssl_installed() {
@@ -425,7 +477,7 @@ check_health() {
     elif command -v wget &>/dev/null; then
         wget -qO /dev/null "$url" 2>/dev/null
     else
-        docker compose exec -T app wget -qO- http://127.0.0.1:3000/health > /dev/null 2>&1
+        docker_compose_run exec -T app wget -qO- http://127.0.0.1:3000/health > /dev/null 2>&1
     fi
 }
 
@@ -473,10 +525,10 @@ check_prerequisites() {
     title "Prerequisites"
 
     ensure_docker_installed
-    info "Docker $(docker --version | awk '{print $3}' | tr -d ',')"
+    info "Docker $(docker_run --version | awk '{print $3}' | tr -d ',')"
 
     ensure_docker_compose_installed
-    info "Docker Compose $(docker compose version --short 2>/dev/null || echo 'v2')"
+    info "Docker Compose $(docker_compose_run version --short 2>/dev/null || echo 'v2')"
 
     ensure_openssl_installed
     info "OpenSSL $(openssl version 2>/dev/null | awk '{print $2}')"
@@ -940,10 +992,10 @@ start_services() {
     title "Starting Services"
 
     info "Pulling Docker images..."
-    run_quiet docker compose pull
+    run_quiet docker_compose_run pull
 
     info "Starting services..."
-    run_quiet docker compose up -d
+    run_quiet docker_compose_run up -d
 
     info "Waiting for services to become healthy (this may take a minute on first start)..."
     local retries=60
