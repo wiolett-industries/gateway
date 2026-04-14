@@ -1,3 +1,4 @@
+import { useAppStatusStore } from "@/stores/app-status";
 import { useAuthStore } from "@/stores/auth";
 import { useCAStore } from "@/stores/ca";
 import { useCertificatesStore } from "@/stores/certificates";
@@ -14,6 +15,11 @@ export function resetTestStores() {
     sessionId: null,
     isAuthenticated: false,
     isLoading: true,
+  });
+
+  useAppStatusStore.setState({
+    maintenanceActive: false,
+    rateLimitedUntil: null,
   });
 
   useUIStore.setState({

@@ -1,5 +1,6 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { AppStatusGate } from "@/components/common/AppStatusGate";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { RequireScope } from "@/components/common/RequireScope";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
@@ -34,6 +35,7 @@ import { Settings } from "@/pages/Settings";
 import { SSLCertificates } from "@/pages/SSLCertificates";
 import { TemplatesPage } from "@/pages/TemplatesPage";
 import { eventStream } from "@/services/event-stream";
+import { useAppStatusStore } from "@/stores/app-status";
 import { useAuthStore } from "@/stores/auth";
 
 /** Helper to wrap a page element with a scope guard */
@@ -86,10 +88,63 @@ function RealtimeBridge() {
 }
 
 export default function App() {
+  const [startupChecked, setStartupChecked] = useState(false);
+  const maintenanceActive = useAppStatusStore((s) => s.maintenanceActive);
+  const setMaintenanceActive = useAppStatusStore((s) => s.setMaintenanceActive);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const checkHealth = async () => {
+      try {
+        const response = await fetch("/health", { cache: "no-store" });
+        if (!cancelled) {
+          setMaintenanceActive(!response.ok);
+          setStartupChecked(true);
+        }
+      } catch {
+        if (!cancelled) {
+          setMaintenanceActive(true);
+          setStartupChecked(true);
+        }
+      }
+    };
+
+    void checkHealth();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [setMaintenanceActive]);
+
+  if (!startupChecked) {
+    return (
+      <ThemeProvider>
+        <div className="flex h-screen items-center justify-center">
+          <div className="flex flex-col items-center gap-4">
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+            <p className="text-sm text-muted-foreground">Loading...</p>
+          </div>
+        </div>
+      </ThemeProvider>
+    );
+  }
+
+  if (maintenanceActive) {
+    return (
+      <ErrorBoundary>
+        <ThemeProvider>
+          <AppStatusGate />
+        </ThemeProvider>
+      </ErrorBoundary>
+    );
+  }
+
   return (
     <ErrorBoundary>
       <ThemeProvider>
         <RealtimeBridge />
+        <AppStatusGate />
         <BrowserRouter>
           <Routes>
             <Route path="/login" element={<LoginPage />} />

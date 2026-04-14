@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
+import { isNodeIncompatible } from "@/types";
 import { DockerContainers } from "./DockerContainers";
 import { DockerImages } from "./DockerImages";
 import { DockerNetworks } from "./DockerNetworks";
@@ -27,6 +28,7 @@ export function Docker() {
   const { tab: tabParam } = useParams<{ tab?: string }>();
   const navigate = useNavigate();
   const { hasScope } = useAuthStore();
+  const selectedNodeId = useDockerStore((s) => s.selectedNodeId);
   const setDockerNodes = useDockerStore((s) => s.setDockerNodes);
   const fetchContainers = useDockerStore((s) => s.fetchContainers);
   const fetchImages = useDockerStore((s) => s.fetchImages);
@@ -50,17 +52,28 @@ export function Docker() {
     api
       .listNodes({ type: "docker", limit: 100 })
       .then((r) => {
-        setDockerNodes(r.data);
-        if (r.data.length > 0) {
-          const store = useDockerStore.getState();
-          store.fetchContainers();
-          store.fetchImages();
-          store.fetchVolumes();
-          store.fetchNetworks();
-        }
+        setDockerNodes(r.data.filter((n) => n.status === "online" && !isNodeIncompatible(n)));
       })
       .catch(() => toast.error("Failed to load Docker nodes"));
   }, [setDockerNodes]);
+
+  useEffect(() => {
+    void selectedNodeId;
+    switch (activeTab) {
+      case "containers":
+        void fetchContainers();
+        break;
+      case "images":
+        void fetchImages();
+        break;
+      case "volumes":
+        void fetchVolumes();
+        break;
+      case "networks":
+        void fetchNetworks();
+        break;
+    }
+  }, [activeTab, selectedNodeId, fetchContainers, fetchImages, fetchVolumes, fetchNetworks]);
 
   const handleTabChange = (value: string) => {
     navigate(`/docker/${value}`, { replace: true });
