@@ -7,6 +7,7 @@ DEFAULT_IMAGE="registry.gitlab.wiolett.net/wiolett/gateway"
 GITLAB_API_URL="${GITLAB_API_URL:-https://gitlab.wiolett.net}"
 GITLAB_PROJECT_PATH="${GITLAB_PROJECT_PATH:-wiolett/gateway}"
 GITLAB_API="${GITLAB_API_URL}/api/v4/projects/$(echo "$GITLAB_PROJECT_PATH" | sed 's|/|%2F|g')"
+DEFAULT_TAGLINE="Unified PKI, Proxy & Container Control Plane"
 VERSION=""
 LOG_FILE="/tmp/gateway_install.log"
 NO_LOGO=0
@@ -48,7 +49,7 @@ PG_MEM_LIMIT=""
 REDIS_MEM_LIMIT=""
 
 # ── Colors & Tags ─────────────────────────────────────────────────────
-CYAN='\033[0;36m'
+CYAN='\033[38;2;140;176;132m'
 GRAY='\033[0;90m'
 NC='\033[0m'
 INFO_TAG='\033[47m\033[90m'       # light gray bg, dark gray text
@@ -67,6 +68,12 @@ show_logo() {
     echo '░██░██ ░██░██ ░██░██    ░██ ░██ ░█████████    ░██       ░██    '
     echo '░████   ░████ ░██░██    ░██ ░██ ░██           ░██       ░██    '
     echo '░███     ░███ ░██ ░███████  ░██  ░███████      ░████     ░████ '
+    echo ""
+    echo -e "${CYAN}░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░${NC}"
+    echo -e "${CYAN}░░░█▀▀░█▀█░▀█▀░█▀▀░█░█░█▀█░█░█░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░${NC}"
+    echo -e "${CYAN}░░░█░█░█▀█░░█░░█▀▀░█▄█░█▀█░░█░░░░▀░▀░▀░▀░▀░▀░▀░▀░▀░▀░▀░▀░▀░░░░${NC}"
+    echo -e "${CYAN}░░░▀▀▀░▀░▀░░▀░░▀▀▀░▀░▀░▀░▀░░▀░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░${NC}"
+    echo -e "${CYAN}░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░${NC}"
     echo ""
 }
 
@@ -222,7 +229,7 @@ check_prerequisites() {
 
 # ── Intro ─────────────────────────────────────────────────────────────
 show_intro() {
-    echo -e "  ${CYAN}Gateway${NC} — Certificate, Proxy & Container Manager"
+    echo -e "  ${GRAY}${DEFAULT_TAGLINE}${NC}"
     echo ""
     echo -e "  ${GRAY}This installer will set up Gateway in the current directory:${NC}"
     echo -e "  ${GRAY}  1. Verify prerequisites (Docker, Docker Compose, OpenSSL)${NC}"
@@ -241,6 +248,31 @@ show_intro() {
         info "Cancelled."
         exit 0
     fi
+}
+
+resolve_version() {
+    if [ -n "$VERSION" ]; then
+        info "Install version: ${VERSION}"
+        return
+    fi
+
+    if ! command -v curl &>/dev/null; then
+        warn "curl is not available, falling back to 'latest' tag"
+        VERSION="latest"
+        info "Install version: ${VERSION}"
+        return
+    fi
+
+    info "Fetching latest version..."
+    VERSION=$(curl -sf "${GITLAB_API}/releases" 2>/dev/null \
+        | grep -o '"tag_name":"v[0-9]*\.[0-9]*\.[0-9]*"' | head -1 | cut -d'"' -f4) || true
+
+    if [ -z "$VERSION" ]; then
+        warn "Could not fetch latest version, falling back to 'latest' tag"
+        VERSION="latest"
+    fi
+
+    info "Install version: ${VERSION}"
 }
 
 # ── Configuration ─────────────────────────────────────────────────────
@@ -1234,9 +1266,17 @@ main() {
 
     : > "$LOG_FILE"
 
+    resolve_version
+
+    if [ -t 1 ] && command -v clear &>/dev/null; then
+        clear
+    fi
+
     [[ "$NO_LOGO" -eq 0 ]] && show_logo
 
     show_intro
+
+    info "Version to install: ${VERSION}"
 
     check_prerequisites
 
@@ -1264,19 +1304,6 @@ main() {
             return
         fi
         echo ""
-    fi
-
-    # Resolve version if not specified
-    if [ -z "$VERSION" ]; then
-        info "Fetching latest version..."
-        VERSION=$(curl -sf "${GITLAB_API}/releases" 2>/dev/null \
-            | grep -o '"tag_name":"v[0-9]*\.[0-9]*\.[0-9]*"' | head -1 | cut -d'"' -f4) || true
-        if [ -z "$VERSION" ]; then
-            warn "Could not fetch latest version, falling back to 'latest' tag"
-            VERSION="latest"
-        else
-            info "Latest version: ${VERSION}"
-        fi
     fi
 
     gather_config
