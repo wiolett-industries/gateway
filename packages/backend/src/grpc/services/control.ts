@@ -126,6 +126,17 @@ export function createControlHandlers(deps: GrpcServerDeps) {
               })
               .where(eq(nodes.id, nodeId));
 
+            try {
+              const { DaemonUpdateService } = await import('@/services/daemon-update.service.js');
+              const daemonUpdateService = container.resolve(DaemonUpdateService);
+              await daemonUpdateService.clearNodeUpdateInProgressOnReconnect(nodeId);
+            } catch (err) {
+              logger.warn('Failed to reconcile node update lock on register', {
+                nodeId,
+                error: err instanceof Error ? err.message : String(err),
+              });
+            }
+
             await deps.auditService.log({
               userId: null,
               action: 'node.connected',

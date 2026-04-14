@@ -121,16 +121,24 @@ func runSession(ctx context.Context, conn *grpc.ClientConn, d *DaemonBase) error
 			}(cmd)
 			continue
 		case *pb.GatewayCommand_UpdateDaemon:
-			// Self-update: download new binary, replace, restart
+			// Self-update: download new binary, replace it on disk, acknowledge the
+			// command to the gateway, then exit so systemd restarts the daemon.
 			updateCmd := cmd.GetUpdateDaemon()
 			result := &pb.CommandResult{CommandId: cmd.CommandId, Success: true}
 			if err := SelfUpdate(updateCmd.DownloadUrl, updateCmd.TargetVersion, updateCmd.Checksum, d.logger); err != nil {
 				result.Success = false
 				result.Error = err.Error()
 			}
-			writer.Send(&pb.DaemonMessage{
+			if err := writer.Send(&pb.DaemonMessage{
 				Payload: &pb.DaemonMessage_CommandResult{CommandResult: result},
-			})
+			}); err != nil {
+				return err
+			}
+			if result.Success {
+				d.logger.Info("self-update staged successfully, exiting for restart", "target_version", updateCmd.TargetVersion)
+				return &RestartRequestedError{Message: "self-update staged successfully"}
+			}
+			d.logger.Error("self-update failed", "target_version", updateCmd.TargetVersion, "error", result.Error)
 			continue
 		}
 

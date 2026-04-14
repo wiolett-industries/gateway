@@ -127,6 +127,15 @@ export function isNodeIncompatible(node: Node | NodeDetail): boolean {
   return !!(node.capabilities as Record<string, unknown>)?.versionMismatch;
 }
 
+export function isNodeUpdating(node: Node | NodeDetail): boolean {
+  return (node.metadata as Record<string, unknown> | undefined)?.updateInProgress === true;
+}
+
+export function getNodeUpdateTargetVersion(node: Node | NodeDetail): string | null {
+  const target = (node.metadata as Record<string, unknown> | undefined)?.updateTargetVersion;
+  return typeof target === "string" && target.length > 0 ? target : null;
+}
+
 /** Compute effective node status from recent health history (mirrors proxy effectiveHealthStatus) */
 export function effectiveNodeStatus(node: {
   status: NodeStatus;

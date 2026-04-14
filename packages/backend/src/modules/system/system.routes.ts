@@ -145,7 +145,17 @@ systemRoutes.post('/daemon-updates/:nodeId', requireScope('admin:update'), async
     logger.warn('Failed to fetch checksum for daemon update', { nodeId, daemonType });
   }
 
-  await dispatch.sendUpdateDaemonCommand(nodeId, downloadUrl, release.version, checksum);
+  await service.markNodeUpdateInProgress(nodeId, release.version);
+  try {
+    const result = await dispatch.sendUpdateDaemonCommand(nodeId, downloadUrl, release.version, checksum);
+    if (!result.success) {
+      await service.clearNodeUpdateInProgress(nodeId);
+      return c.json({ error: result.error || 'Failed to start daemon update' }, 502);
+    }
+  } catch (error) {
+    await service.clearNodeUpdateInProgress(nodeId);
+    throw error;
+  }
 
   return c.json({ data: { scheduled: true, targetVersion: release.version } });
 });

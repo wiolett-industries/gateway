@@ -3,23 +3,39 @@ import type { DrizzleClient } from '@/db/client.js';
 import { nodes } from '@/db/schema/index.js';
 import type { CommandResult } from '@/grpc/generated/types.js';
 import { createChildLogger } from '@/lib/logger.js';
+import { AppError } from '@/middleware/error-handler.js';
+import type { DaemonUpdateService } from './daemon-update.service.js';
 import type { NodeRegistryService } from './node-registry.service.js';
 
 const logger = createChildLogger('NodeDispatch');
 
 export class NodeDispatchService {
+  private daemonUpdateService?: DaemonUpdateService;
+
   constructor(
     private registry: NodeRegistryService,
     private db: DrizzleClient
   ) {}
 
+  setDaemonUpdateService(service: DaemonUpdateService) {
+    this.daemonUpdateService = service;
+  }
+
+  private async assertNodeMutable(nodeId: string) {
+    if (this.daemonUpdateService && (await this.daemonUpdateService.isNodeUpdateInProgress(nodeId))) {
+      throw new AppError(409, 'NODE_UPDATING', 'Node daemon update is in progress');
+    }
+  }
+
   async applyConfig(nodeId: string, hostId: string, configContent: string, testOnly = false): Promise<CommandResult> {
+    await this.assertNodeMutable(nodeId);
     return this.registry.sendCommand(nodeId, {
       applyConfig: { hostId, configContent, testOnly },
     });
   }
 
   async removeConfig(nodeId: string, hostId: string): Promise<CommandResult> {
+    await this.assertNodeMutable(nodeId);
     return this.registry.sendCommand(nodeId, {
       removeConfig: { hostId },
     });
@@ -32,6 +48,7 @@ export class NodeDispatchService {
     keyPem: Buffer,
     chainPem?: Buffer
   ): Promise<CommandResult> {
+    await this.assertNodeMutable(nodeId);
     return this.registry.sendCommand(nodeId, {
       deployCert: {
         certId,
@@ -43,30 +60,35 @@ export class NodeDispatchService {
   }
 
   async removeCertificate(nodeId: string, certId: string): Promise<CommandResult> {
+    await this.assertNodeMutable(nodeId);
     return this.registry.sendCommand(nodeId, {
       removeCert: { certId },
     });
   }
 
   async deployHtpasswd(nodeId: string, accessListId: string, content: string): Promise<CommandResult> {
+    await this.assertNodeMutable(nodeId);
     return this.registry.sendCommand(nodeId, {
       deployHtpasswd: { accessListId, content },
     });
   }
 
   async removeHtpasswd(nodeId: string, accessListId: string): Promise<CommandResult> {
+    await this.assertNodeMutable(nodeId);
     return this.registry.sendCommand(nodeId, {
       removeHtpasswd: { accessListId },
     });
   }
 
   async updateGlobalConfig(nodeId: string, content: string, backupContent: string): Promise<CommandResult> {
+    await this.assertNodeMutable(nodeId);
     return this.registry.sendCommand(nodeId, {
       updateGlobalConfig: { content, backupContent },
     });
   }
 
   async testConfig(nodeId: string): Promise<CommandResult> {
+    await this.assertNodeMutable(nodeId);
     return this.registry.sendCommand(
       nodeId,
       {
@@ -97,12 +119,14 @@ export class NodeDispatchService {
   }
 
   async deployAcmeChallenge(nodeId: string, token: string, content: string): Promise<CommandResult> {
+    await this.assertNodeMutable(nodeId);
     return this.registry.sendCommand(nodeId, {
       deployAcmeChallenge: { token, content },
     });
   }
 
   async removeAcmeChallenge(nodeId: string, token: string): Promise<CommandResult> {
+    await this.assertNodeMutable(nodeId);
     return this.registry.sendCommand(nodeId, {
       removeAcmeChallenge: { token },
     });
@@ -131,6 +155,7 @@ export class NodeDispatchService {
     htpasswdFiles: { accessListId: string; content: string }[],
     versionHash: string
   ): Promise<CommandResult> {
+    await this.assertNodeMutable(nodeId);
     logger.info('Sending full sync', { nodeId, hostCount: hosts.length, certCount: certs.length });
     return this.registry.sendCommand(
       nodeId,
@@ -162,6 +187,9 @@ export class NodeDispatchService {
     } = {},
     timeoutMs?: number
   ): Promise<CommandResult> {
+    if (!['list', 'inspect', 'stats', 'top'].includes(action)) {
+      await this.assertNodeMutable(nodeId);
+    }
     return this.registry.sendCommand(
       nodeId,
       {
@@ -181,6 +209,9 @@ export class NodeDispatchService {
     } = {},
     timeoutMs?: number
   ): Promise<CommandResult> {
+    if (action !== 'list') {
+      await this.assertNodeMutable(nodeId);
+    }
     return this.registry.sendCommand(
       nodeId,
       {
@@ -201,6 +232,9 @@ export class NodeDispatchService {
     } = {},
     timeoutMs?: number
   ): Promise<CommandResult> {
+    if (action !== 'list') {
+      await this.assertNodeMutable(nodeId);
+    }
     return this.registry.sendCommand(
       nodeId,
       {
@@ -222,6 +256,9 @@ export class NodeDispatchService {
     } = {},
     timeoutMs?: number
   ): Promise<CommandResult> {
+    if (action !== 'list') {
+      await this.assertNodeMutable(nodeId);
+    }
     return this.registry.sendCommand(
       nodeId,
       {
@@ -243,6 +280,7 @@ export class NodeDispatchService {
       cols?: number;
     } = {}
   ): Promise<CommandResult> {
+    await this.assertNodeMutable(nodeId);
     return this.registry.sendCommand(nodeId, {
       dockerExec: { action, ...options } as any,
     });
@@ -258,6 +296,7 @@ export class NodeDispatchService {
       cols?: number;
     } = {}
   ): Promise<CommandResult> {
+    await this.assertNodeMutable(nodeId);
     return this.registry.sendCommand(nodeId, {
       nodeExec: { action, ...options } as any,
     });
@@ -273,6 +312,9 @@ export class NodeDispatchService {
       content?: string;
     } = {}
   ): Promise<CommandResult> {
+    if (!['list', 'read'].includes(action)) {
+      await this.assertNodeMutable(nodeId);
+    }
     const { content, ...rest } = options;
     const payload: Record<string, unknown> = { action, ...rest };
     if (content != null) {
@@ -305,6 +347,7 @@ export class NodeDispatchService {
     registries: Array<{ url: string; username: string; password: string }>,
     allowlist: string[]
   ): Promise<CommandResult> {
+    await this.assertNodeMutable(nodeId);
     return this.registry.sendCommand(nodeId, {
       dockerConfigPush: { registries, allowlist },
     });

@@ -17,6 +17,16 @@ func (e *FatalError) Error() string {
 	return e.Message
 }
 
+// RestartRequestedError is returned when the daemon should exit immediately
+// so its supervisor can restart it (e.g. after a successful self-update).
+type RestartRequestedError struct {
+	Message string
+}
+
+func (e *RestartRequestedError) Error() string {
+	return e.Message
+}
+
 // DaemonPlugin defines the interface that daemon-specific logic must implement.
 // The lifecycle manager calls these methods at appropriate points in the
 // enrollment, connection, and session lifecycle.

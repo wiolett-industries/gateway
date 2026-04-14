@@ -5,6 +5,8 @@ import { nodes } from '@/db/schema/nodes.js';
 import { settings } from '@/db/schema/settings.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { compareSemver, isNewerVersion } from '@/lib/semver.js';
+import { AppError } from '@/middleware/error-handler.js';
+import type { EventBusService } from '@/services/event-bus.service.js';
 
 const logger = createChildLogger('DaemonUpdateService');
 
@@ -62,6 +64,7 @@ export interface DaemonUpdateStatus {
 
 export class DaemonUpdateService {
   private readonly gitlabReleasesUrl: string;
+  private eventBus?: EventBusService;
 
   constructor(
     private readonly db: DrizzleClient,
@@ -69,6 +72,14 @@ export class DaemonUpdateService {
   ) {
     const encodedPath = encodeURIComponent(this.env.GITLAB_PROJECT_PATH);
     this.gitlabReleasesUrl = `${this.env.GITLAB_API_URL}/api/v4/projects/${encodedPath}/releases`;
+  }
+
+  setEventBus(eventBus: EventBusService) {
+    this.eventBus = eventBus;
+  }
+
+  private emitNodeUpdated(nodeId: string) {
+    this.eventBus?.publish('node.changed', { id: nodeId, action: 'updated' });
   }
 
   async checkForUpdates(): Promise<DaemonUpdateStatus[]> {
@@ -158,6 +169,64 @@ export class DaemonUpdateService {
       releaseNotes: notes || null,
       releaseUrl: null,
     };
+  }
+
+  async isNodeUpdateInProgress(nodeId: string): Promise<boolean> {
+    const [node] = await this.db.select({ metadata: nodes.metadata }).from(nodes).where(eq(nodes.id, nodeId)).limit(1);
+    if (!node) throw new AppError(404, 'NOT_FOUND', 'Node not found');
+    const metadata = (node.metadata ?? {}) as Record<string, unknown>;
+    return metadata.updateInProgress === true;
+  }
+
+  async markNodeUpdateInProgress(nodeId: string, targetVersion: string): Promise<void> {
+    const [node] = await this.db.select({ metadata: nodes.metadata }).from(nodes).where(eq(nodes.id, nodeId)).limit(1);
+    if (!node) throw new AppError(404, 'NOT_FOUND', 'Node not found');
+
+    const metadata = { ...((node.metadata ?? {}) as Record<string, unknown>) };
+    if (metadata.updateInProgress === true) {
+      throw new AppError(409, 'NODE_UPDATING', 'Node daemon update is already in progress');
+    }
+
+    metadata.updateInProgress = true;
+    metadata.updateTargetVersion = targetVersion;
+    metadata.updateStartedAt = new Date().toISOString();
+
+    await this.db.update(nodes).set({ metadata, updatedAt: new Date() }).where(eq(nodes.id, nodeId));
+
+    this.emitNodeUpdated(nodeId);
+  }
+
+  async clearNodeUpdateInProgress(nodeId: string): Promise<void> {
+    const [node] = await this.db.select({ metadata: nodes.metadata }).from(nodes).where(eq(nodes.id, nodeId)).limit(1);
+    if (!node) return;
+
+    const metadata = { ...((node.metadata ?? {}) as Record<string, unknown>) };
+    if (metadata.updateInProgress !== true) return;
+
+    delete metadata.updateInProgress;
+    delete metadata.updateTargetVersion;
+    delete metadata.updateStartedAt;
+
+    await this.db.update(nodes).set({ metadata, updatedAt: new Date() }).where(eq(nodes.id, nodeId));
+
+    this.emitNodeUpdated(nodeId);
+  }
+
+  async clearNodeUpdateInProgressOnReconnect(nodeId: string): Promise<boolean> {
+    const [node] = await this.db.select({ metadata: nodes.metadata }).from(nodes).where(eq(nodes.id, nodeId)).limit(1);
+    if (!node) return false;
+
+    const metadata = { ...((node.metadata ?? {}) as Record<string, unknown>) };
+    if (metadata.updateInProgress !== true) return false;
+
+    delete metadata.updateInProgress;
+    delete metadata.updateTargetVersion;
+    delete metadata.updateStartedAt;
+
+    await this.db.update(nodes).set({ metadata, updatedAt: new Date() }).where(eq(nodes.id, nodeId));
+
+    this.emitNodeUpdated(nodeId);
+    return true;
   }
 
   getDownloadUrl(daemonType: DaemonType, tag: string, arch: string): string {

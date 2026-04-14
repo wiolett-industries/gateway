@@ -85,6 +85,10 @@ func (d *DaemonBase) Run(ctx context.Context) error {
 			d.logger.Error("fatal: "+fatal.Message, "action", "exiting")
 			return fmt.Errorf("fatal: %s", fatal.Message)
 		}
+		if restart, ok := err.(*RestartRequestedError); ok {
+			d.logger.Info(restart.Message, "action", "restarting")
+			return fmt.Errorf("restart requested: %s", restart.Message)
+		}
 		d.logger.Warn("session ended, reconnecting", "error", err)
 	}
 }
@@ -99,7 +103,7 @@ func (d *DaemonBase) enroll() error {
 		d.cfg.Gateway.Address,
 		d.cfg.Gateway.Token,
 		hostname,
-		"",     // nginxVersion — filled by plugin if applicable
+		"", // nginxVersion — filled by plugin if applicable
 		osInfo,
 		Version,
 		d.plugin.Type(),

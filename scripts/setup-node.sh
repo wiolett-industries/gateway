@@ -814,7 +814,7 @@ Type=simple
 User=${RUN_USER}
 Group=${RUN_GROUP}
 ExecStart=/usr/local/bin/nginx-daemon run
-Restart=on-failure
+Restart=always
 RestartSec=5
 LimitNOFILE=65536
 
