@@ -43,6 +43,9 @@ NO_LOGO=0
 APT_UPDATED=0
 OS_VERSION_CODENAME=""
 DOCKER_USE_SUDO=0
+RESOLVED_DAEMON_VERSION=""
+EXISTING_INSTALL=0
+EXISTING_VERSION=""
 
 # ── Helpers ──────────────────────────────────────────────────────────
 log()  { echo -e "${INFO_TAG} INFO ${NC} $*"; }
@@ -384,6 +387,48 @@ build_gitlab_api() {
     GITLAB_API="${GITLAB_URL}/api/v4/projects/${encoded_project}"
 }
 
+normalize_daemon_version() {
+    local version="$1"
+    version="${version%-docker}"
+    if [[ "$version" != v* ]]; then
+        version="v${version}"
+    fi
+    echo "$version"
+}
+
+detect_existing_install() {
+    local target="/usr/local/bin/docker-daemon"
+    EXISTING_INSTALL=0
+    EXISTING_VERSION=""
+
+    if [[ -x "$target" ]]; then
+        EXISTING_INSTALL=1
+        EXISTING_VERSION=$("$target" version 2>/dev/null | awk '{print $2}' || echo "unknown")
+    fi
+}
+
+resolve_download_url() {
+    local version="$1"
+    local binary_name="docker-daemon-linux-${ARCH}"
+
+    if [[ "$version" == "latest" ]]; then
+        log "Resolving latest docker release tag..."
+        local latest_tag
+        latest_tag=$(curl -fsSL "${GITLAB_API}/releases" | grep -o '"tag_name":"v[0-9]*\.[0-9]*\.[0-9]*-docker"' | head -1 | cut -d'"' -f4)
+        if [[ -z "$latest_tag" || "$latest_tag" == "null" ]]; then
+            die "Could not resolve latest docker release tag from ${GITLAB_API}/releases"
+        fi
+        log "Resolved tag: ${latest_tag}"
+        RESOLVED_DAEMON_VERSION="${latest_tag%-docker}"
+        RELEASE_BASE="${GITLAB_API}/releases/${latest_tag}/downloads"
+    else
+        RESOLVED_DAEMON_VERSION=$(normalize_daemon_version "$version")
+        RELEASE_BASE="${GITLAB_API}/releases/${RESOLVED_DAEMON_VERSION}-docker/downloads"
+    fi
+
+    DOWNLOAD_URL="${RELEASE_BASE}/${binary_name}"
+}
+
 # ── Parse Arguments ──────────────────────────────────────────────────
 show_help() {
     cat <<'HELP'
@@ -564,7 +609,17 @@ else
     fi
 fi
 
+resolve_download_url "$DAEMON_VERSION"
+detect_existing_install
+
 # ── Confirmation ─────────────────────────────────────────────────────
+if [[ "$EXISTING_INSTALL" -eq 1 ]]; then
+    log "Existing docker-daemon installation detected"
+    echo -e "  ${GRAY}Current version: ${BRAND_MINT}${EXISTING_VERSION}${NC}"
+    echo -e "  ${GRAY}Version to install: ${BRAND_MINT}${RESOLVED_DAEMON_VERSION}${NC}"
+    echo ""
+fi
+
 echo -e "  ${BOLD}Configuration Summary${NC}"
 echo -e "  ${GRAY}────────────────────────────────────────${NC}"
 echo -e "  Gateway:     ${BRAND_MINT}${GATEWAY_ADDR}${NC}"
@@ -572,7 +627,9 @@ echo -e "  Token:       ${GRAY}${ENROLL_TOKEN:0:12}...${NC}"
 echo -e "  Arch:        ${ARCH}"
 echo -e "  OS:          ${OS_ID}"
 echo -e "  Docker:      ${DOCKER_VER}"
-echo -e "  Daemon ver:  ${DAEMON_VERSION}"
+echo -e "  Install ver: ${RESOLVED_DAEMON_VERSION}"
+echo -e "  Current ver: $([[ "$EXISTING_INSTALL" -eq 1 ]] && echo "${EXISTING_VERSION}" || echo "not installed")"
+echo -e "  Mode:        $([[ "$EXISTING_INSTALL" -eq 1 ]] && echo "update" || echo "fresh install")"
 echo -e "  Run as:      ${RUN_USER}:${RUN_GROUP}"
 echo -e "  GitLab:      ${GITLAB_URL}"
 echo -e "  ${GRAY}────────────────────────────────────────${NC}"
@@ -599,25 +656,6 @@ create_directories() {
 }
 
 # ── Step 2: Download docker-daemon binary ────────────────────────────
-resolve_download_url() {
-    local version="$1"
-    local binary_name="docker-daemon-linux-${ARCH}"
-
-    if [[ "$version" == "latest" ]]; then
-        log "Resolving latest docker release tag..."
-        local latest_tag
-        latest_tag=$(curl -fsSL "${GITLAB_API}/releases" | grep -o '"tag_name":"v[0-9]*\.[0-9]*\.[0-9]*-docker"' | head -1 | cut -d'"' -f4)
-        if [[ -z "$latest_tag" || "$latest_tag" == "null" ]]; then
-            die "Could not resolve latest docker release tag from ${GITLAB_API}/releases"
-        fi
-        log "Resolved tag: ${latest_tag}"
-        RELEASE_BASE="${GITLAB_API}/releases/${latest_tag}/downloads"
-    else
-        RELEASE_BASE="${GITLAB_API}/releases/${version}-docker/downloads"
-    fi
-
-    DOWNLOAD_URL="${RELEASE_BASE}/${binary_name}"
-}
 
 verify_checksum() {
     local file="$1"
@@ -652,11 +690,11 @@ install_daemon() {
     if [[ -f "$target" ]]; then
         local existing_ver
         existing_ver=$("$target" version 2>/dev/null | awk '{print $2}' || echo "unknown")
-        if [[ "$DAEMON_VERSION" == "latest" || "$DAEMON_VERSION" == "$existing_ver" ]]; then
+        if [[ "$RESOLVED_DAEMON_VERSION" == "$existing_ver" ]]; then
             ok "docker-daemon already installed (${existing_ver})"
             return 0
         fi
-        log "Upgrading docker-daemon from ${existing_ver} to ${DAEMON_VERSION}..."
+        log "Upgrading docker-daemon from ${existing_ver} to ${RESOLVED_DAEMON_VERSION}..."
         # Backup existing binary
         local backup="${target}.backup.$(date +%Y%m%d_%H%M%S)"
         cp "$target" "$backup"
@@ -664,8 +702,6 @@ install_daemon() {
     else
         log "Downloading docker-daemon..."
     fi
-
-    resolve_download_url "$DAEMON_VERSION"
 
     if curl -fsSL "$DOWNLOAD_URL" -o "${target}.tmp" >> "$LOG_FILE" 2>&1; then
         verify_checksum "${target}.tmp" "$binary_name"
