@@ -60,12 +60,12 @@ interface DockerState {
   setFilters: (filters: Partial<DockerFilters>) => void;
   resetFilters: () => void;
 
-  fetchContainers: () => Promise<void>;
+  fetchContainers: (nodeIdOverride?: string | null) => Promise<void>;
   /** Fetch containers bypassing API cache — use during transitions */
-  forceFetchContainers: () => Promise<void>;
-  fetchImages: () => Promise<void>;
-  fetchVolumes: () => Promise<void>;
-  fetchNetworks: () => Promise<void>;
+  forceFetchContainers: (nodeIdOverride?: string | null) => Promise<void>;
+  fetchImages: (nodeIdOverride?: string | null) => Promise<void>;
+  fetchVolumes: (nodeIdOverride?: string | null) => Promise<void>;
+  fetchNetworks: (nodeIdOverride?: string | null) => Promise<void>;
   fetchTemplates: () => Promise<void>;
   fetchTasks: () => Promise<void>;
   fetchRegistries: () => Promise<void>;
@@ -127,16 +127,17 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
     set({ filters: { search: "", status: "all" } });
   },
 
-  fetchContainers: async () => {
+  fetchContainers: async (nodeIdOverride) => {
     const { selectedNodeId, dockerNodes } = get();
+    const effectiveNodeId = nodeIdOverride ?? selectedNodeId;
     set({ isLoading: true });
     try {
-      if (selectedNodeId) {
-        const data = await api.listDockerContainers(selectedNodeId);
-        const node = dockerNodes.find((n) => n.id === selectedNodeId);
+      if (effectiveNodeId) {
+        const data = await api.listDockerContainers(effectiveNodeId);
+        const node = dockerNodes.find((n) => n.id === effectiveNodeId);
         const items = tagWithNode(
           normList<DockerContainer>(data),
-          selectedNodeId,
+          effectiveNodeId,
           node?.displayName || node?.hostname || ""
         );
         set({ containers: items, isLoading: false });
@@ -155,15 +156,16 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
     }
   },
 
-  forceFetchContainers: async () => {
+  forceFetchContainers: async (nodeIdOverride) => {
     const { selectedNodeId, dockerNodes } = get();
+    const effectiveNodeId = nodeIdOverride ?? selectedNodeId;
     try {
-      if (selectedNodeId) {
-        const data = await api.listDockerContainers(selectedNodeId, true);
-        const node = dockerNodes.find((n) => n.id === selectedNodeId);
+      if (effectiveNodeId) {
+        const data = await api.listDockerContainers(effectiveNodeId, true);
+        const node = dockerNodes.find((n) => n.id === effectiveNodeId);
         const items = tagWithNode(
           normList<DockerContainer>(data),
-          selectedNodeId,
+          effectiveNodeId,
           node?.displayName || node?.hostname || ""
         );
         set({ containers: items });
@@ -180,16 +182,17 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
     }
   },
 
-  fetchImages: async () => {
+  fetchImages: async (nodeIdOverride) => {
     const { selectedNodeId, dockerNodes } = get();
+    const effectiveNodeId = nodeIdOverride ?? selectedNodeId;
     try {
-      if (selectedNodeId) {
-        const data = await api.listDockerImages(selectedNodeId);
-        const node = dockerNodes.find((n) => n.id === selectedNodeId);
+      if (effectiveNodeId) {
+        const data = await api.listDockerImages(effectiveNodeId);
+        const node = dockerNodes.find((n) => n.id === effectiveNodeId);
         set({
           images: tagWithNode(
             normList<DockerImage>(data),
-            selectedNodeId,
+            effectiveNodeId,
             node?.displayName || node?.hostname || ""
           ),
         });
@@ -207,16 +210,17 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
     }
   },
 
-  fetchVolumes: async () => {
+  fetchVolumes: async (nodeIdOverride) => {
     const { selectedNodeId, dockerNodes } = get();
+    const effectiveNodeId = nodeIdOverride ?? selectedNodeId;
     try {
-      if (selectedNodeId) {
-        const data = await api.listDockerVolumes(selectedNodeId);
-        const node = dockerNodes.find((n) => n.id === selectedNodeId);
+      if (effectiveNodeId) {
+        const data = await api.listDockerVolumes(effectiveNodeId);
+        const node = dockerNodes.find((n) => n.id === effectiveNodeId);
         set({
           volumes: tagWithNode(
             normList<DockerVolume>(data),
-            selectedNodeId,
+            effectiveNodeId,
             node?.displayName || node?.hostname || ""
           ),
         });
@@ -234,16 +238,17 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
     }
   },
 
-  fetchNetworks: async () => {
+  fetchNetworks: async (nodeIdOverride) => {
     const { selectedNodeId, dockerNodes } = get();
+    const effectiveNodeId = nodeIdOverride ?? selectedNodeId;
     try {
-      if (selectedNodeId) {
-        const data = await api.listDockerNetworks(selectedNodeId);
-        const node = dockerNodes.find((n) => n.id === selectedNodeId);
+      if (effectiveNodeId) {
+        const data = await api.listDockerNetworks(effectiveNodeId);
+        const node = dockerNodes.find((n) => n.id === effectiveNodeId);
         set({
           networks: tagWithNode(
             normList<DockerNetwork>(data),
-            selectedNodeId,
+            effectiveNodeId,
             node?.displayName || node?.hostname || ""
           ),
         });

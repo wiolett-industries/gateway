@@ -52,6 +52,16 @@ export class NodeRegistryService {
     this.eventBus?.publish('node.changed', { id: nodeId, action: 'updated', status, hostname });
   }
 
+  publishDockerContainerChanged(nodeId: string, id: string, name?: string, state?: string) {
+    this.eventBus?.publish('docker.container.changed', {
+      nodeId,
+      id,
+      name,
+      action: 'updated',
+      state,
+    });
+  }
+
   registerExecHandler(execId: string, handler: (data: any) => void) {
     let handlers = this.execOutputHandlers.get(execId);
     if (!handlers) {
