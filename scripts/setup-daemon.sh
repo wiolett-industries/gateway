@@ -18,6 +18,9 @@ YELLOW='\033[0;33m'
 GRAY='\033[0;90m'
 NC='\033[0m'
 BOLD='\033[1m'
+INFO_TAG='\033[47m\033[90m'
+WARN_TAG='\033[43m\033[30m'
+ERROR_TAG='\033[41m\033[97m'
 
 # ── Defaults ────────────────────────────────────────────────────────
 DAEMON_TYPE=""
@@ -26,9 +29,9 @@ GITLAB_PROJECT="${GATEWAY_GITLAB_PROJECT:-wiolett/gateway}"
 PASSTHROUGH_ARGS=()
 
 # ── Helpers ─────────────────────────────────────────────────────────
-log()  { echo -e "${BRAND_MINT}[INFO]${NC} $*"; }
-warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
-err()  { echo -e "${RED}[ERROR]${NC} $*" >&2; }
+log()  { echo -e "${INFO_TAG} INFO ${NC} $*"; }
+warn() { echo -e "${WARN_TAG} WARN ${NC} $*"; }
+err()  { echo -e "${ERROR_TAG} ERROR ${NC} $*" >&2; }
 die()  { err "$@"; exit 1; }
 
 command_exists() { command -v "$1" &>/dev/null; }

@@ -16,13 +16,18 @@ IFS=$'\n\t'
 LOG_FILE="/tmp/gateway_node_setup.log"
 
 # ── Colors ───────────────────────────────────────────────────────────
+BRAND_MINT='\033[38;2;140;176;132m'
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
-CYAN='\033[0;36m'
 GRAY='\033[0;90m'
 NC='\033[0m'
 BOLD='\033[1m'
+INFO_TAG='\033[47m\033[90m'
+WARN_TAG='\033[43m\033[30m'
+ERROR_TAG='\033[41m\033[97m'
+SUCCESS_TAG='\033[42m\033[97m'
+TITLE_TAG='\033[48;2;140;176;132m\033[30m'
 
 # ── Defaults ─────────────────────────────────────────────────────────
 GATEWAY_HOST="${GATEWAY_NODE_HOST:-}"
@@ -42,10 +47,10 @@ STUB_STATUS_URL="http://127.0.0.1/nginx_status"
 INTEGRATED_STUB_STATUS_PORT="8081"
 
 # ── Helpers ──────────────────────────────────────────────────────────
-log()  { echo -e "${CYAN}[INFO]${NC} $*"; }
-warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
-err()  { echo -e "${RED}[ERROR]${NC} $*" >&2; }
-ok()   { echo -e "${GREEN}[OK]${NC} $*"; }
+log()  { echo -e "${INFO_TAG} INFO ${NC} $*"; }
+warn() { echo -e "${WARN_TAG} WARN ${NC} $*"; }
+err()  { echo -e "${ERROR_TAG} ERROR ${NC} $*" >&2; }
+ok()   { echo -e "${SUCCESS_TAG} OK ${NC} $*"; }
 
 die() { err "$@"; exit 1; }
 
@@ -59,9 +64,9 @@ prompt_input() {
     fi
     if [ -e /dev/tty ]; then
         if [ -n "$default" ]; then
-            read -r -p "$(echo -e "  ${CYAN}${prompt} [${default}]: ${NC}")" result < /dev/tty
+            read -r -p "$(echo -e "  ${BRAND_MINT}${prompt} [${default}]: ${NC}")" result < /dev/tty
         else
-            read -r -p "$(echo -e "  ${CYAN}${prompt}: ${NC}")" result < /dev/tty
+            read -r -p "$(echo -e "  ${BRAND_MINT}${prompt}: ${NC}")" result < /dev/tty
         fi
     else
         result=""
@@ -77,7 +82,7 @@ prompt_secret() {
         return
     fi
     if [ -e /dev/tty ]; then
-        read -rs -p "$(echo -e "  ${CYAN}${prompt}: ${NC}")" result < /dev/tty
+        read -rs -p "$(echo -e "  ${BRAND_MINT}${prompt}: ${NC}")" result < /dev/tty
         echo "" >&2
     else
         result=""
@@ -95,10 +100,10 @@ prompt_yes_no() {
     fi
     if [ -e /dev/tty ]; then
         if [[ "$default" == "Y" ]]; then
-            read -r -p "$(echo -e "  ${CYAN}${prompt} [Y/n]: ${NC}")" reply < /dev/tty
+            read -r -p "$(echo -e "  ${BRAND_MINT}${prompt} [Y/n]: ${NC}")" reply < /dev/tty
             reply="${reply:-Y}"
         else
-            read -r -p "$(echo -e "  ${CYAN}${prompt} [y/N]: ${NC}")" reply < /dev/tty
+            read -r -p "$(echo -e "  ${BRAND_MINT}${prompt} [y/N]: ${NC}")" reply < /dev/tty
             reply="${reply:-N}"
         fi
     else
@@ -118,7 +123,7 @@ prompt_choice() {
         return
     fi
     if [ -e /dev/tty ]; then
-        read -r -p "$(echo -e "  ${CYAN}${prompt} [${default}]: ${NC}")" reply < /dev/tty
+        read -r -p "$(echo -e "  ${BRAND_MINT}${prompt} [${default}]: ${NC}")" reply < /dev/tty
     else
         reply=""
     fi
@@ -270,7 +275,7 @@ build_gitlab_api
 # ── Logo ─────────────────────────────────────────────────────────────
 if [[ "$NO_LOGO" -eq 0 ]]; then
     echo ""
-    echo -e "${BOLD}${CYAN}"
+    echo -e "${BOLD}${BRAND_MINT}"
     echo '  ┌─────────────────────────────────────┐'
     echo '  │     Gateway — Node Setup             │'
     echo '  │     Nginx Daemon Installer           │'
@@ -292,7 +297,7 @@ if [[ "$NON_INTERACTIVE" -eq 0 ]]; then
         GATEWAY_HOST=$(prompt_input "Gateway hostname or IP" "")
         [[ -z "$GATEWAY_HOST" ]] && die "Gateway hostname is required"
     else
-        echo -e "  ${GRAY}Gateway host: ${CYAN}${GATEWAY_HOST}${NC}"
+        echo -e "  ${GRAY}Gateway host: ${BRAND_MINT}${GATEWAY_HOST}${NC}"
     fi
 
     # Gateway port
@@ -321,9 +326,9 @@ if [[ "$NON_INTERACTIVE" -eq 0 ]]; then
     # User selection
     if [[ -z "$RUN_USER" ]]; then
         echo -e "  ${GRAY}Run daemon as:${NC}"
-        echo -e "    ${CYAN}1)${NC} root  ${GRAY}[default]${NC}"
-        echo -e "    ${CYAN}2)${NC} Current user ($(logname 2>/dev/null || echo "$SUDO_USER"))"
-        echo -e "    ${CYAN}3)${NC} Custom user"
+        echo -e "    ${BRAND_MINT}1)${NC} root  ${GRAY}[default]${NC}"
+        echo -e "    ${BRAND_MINT}2)${NC} Current user ($(logname 2>/dev/null || echo "$SUDO_USER"))"
+        echo -e "    ${BRAND_MINT}3)${NC} Custom user"
         echo ""
         user_choice=$(prompt_choice "Choose" "1")
         case "$user_choice" in
@@ -339,9 +344,9 @@ if [[ "$NON_INTERACTIVE" -eq 0 ]]; then
     if [[ -z "$NGINX_REPO" && "$SKIP_NGINX" -eq 0 ]]; then
         if ! command_exists nginx; then
             echo -e "  ${GRAY}Nginx version:${NC}"
-            echo -e "    ${CYAN}1)${NC} System default  ${GRAY}[default]${NC}"
-            echo -e "    ${CYAN}2)${NC} Stable (nginx.org official repo)"
-            echo -e "    ${CYAN}3)${NC} Custom"
+            echo -e "    ${BRAND_MINT}1)${NC} System default  ${GRAY}[default]${NC}"
+            echo -e "    ${BRAND_MINT}2)${NC} Stable (nginx.org official repo)"
+            echo -e "    ${BRAND_MINT}3)${NC} Custom"
             echo ""
             nginx_choice=$(prompt_choice "Choose" "1")
             case "$nginx_choice" in
@@ -356,8 +361,8 @@ if [[ "$NON_INTERACTIVE" -eq 0 ]]; then
 
     if [[ -z "$NGINX_MODE" ]]; then
         echo -e "  ${GRAY}Nginx configuration mode:${NC}"
-        echo -e "    ${CYAN}1)${NC} Managed    — installer owns the base nginx config"
-        echo -e "    ${CYAN}2)${NC} Integrate  — keep existing nginx.conf and add Gateway includes"
+        echo -e "    ${BRAND_MINT}1)${NC} Managed    — installer owns the base nginx config"
+        echo -e "    ${BRAND_MINT}2)${NC} Integrate  — keep existing nginx.conf and add Gateway includes"
         echo ""
         nginx_mode_default="1"
         if command_exists nginx; then
@@ -411,7 +416,7 @@ fi
 # ── Confirmation ─────────────────────────────────────────────────────
 echo -e "  ${BOLD}Configuration Summary${NC}"
 echo -e "  ${GRAY}────────────────────────────────────────${NC}"
-echo -e "  Gateway:     ${CYAN}${GATEWAY_ADDR}${NC}"
+echo -e "  Gateway:     ${BRAND_MINT}${GATEWAY_ADDR}${NC}"
 echo -e "  Token:       ${GRAY}${ENROLL_TOKEN:0:12}...${NC}"
 echo -e "  Arch:        ${ARCH}"
 echo -e "  OS:          ${OS_ID}"
@@ -841,6 +846,6 @@ echo ""
 echo -e "${GREEN}${BOLD}Node setup complete!${NC}"
 echo ""
 echo -e "  The node should appear as ${GREEN}online${NC} in Gateway within a few seconds."
-echo -e "  Check status:  ${CYAN}systemctl status nginx-daemon${NC}"
-echo -e "  View logs:     ${CYAN}journalctl -u nginx-daemon -f${NC}"
+echo -e "  Check status:  ${BRAND_MINT}systemctl status nginx-daemon${NC}"
+echo -e "  View logs:     ${BRAND_MINT}journalctl -u nginx-daemon -f${NC}"
 echo ""
