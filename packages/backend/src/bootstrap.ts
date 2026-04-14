@@ -340,7 +340,10 @@ export async function initializeContainer(): Promise<void> {
   container.registerInstance(UpdateService, updateService);
 
   const daemonUpdateService = new DaemonUpdateService(db, env);
+  daemonUpdateService.setEventBus(eventBus);
   container.registerInstance(DaemonUpdateService, daemonUpdateService);
+  nodeDispatch.setDaemonUpdateService(daemonUpdateService);
+  nodesService.setDaemonUpdateService(daemonUpdateService);
 
   // Housekeeping service
   const housekeepingService = new HousekeepingService(db, dockerService, nodeDispatch, env);

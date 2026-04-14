@@ -8,7 +8,14 @@ import { Button } from "@/components/ui/button";
 import { formatBytes, formatUptime } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
-import type { DockerContainer, NodeDetail, NodeHealthReport, ProxyHost } from "@/types";
+import {
+  type DockerContainer,
+  getNodeUpdateTargetVersion,
+  isNodeUpdating,
+  type NodeDetail,
+  type NodeHealthReport,
+  type ProxyHost,
+} from "@/types";
 
 interface NodeDetailsTabProps {
   node: NodeDetail;
@@ -26,6 +33,8 @@ export function NodeDetailsTab({ node }: NodeDetailsTabProps) {
   const [isUpdating, setIsUpdating] = useState(false);
   const h: NodeHealthReport | null = node.liveHealthReport ?? node.lastHealthReport;
   const caps = (node.capabilities ?? {}) as Record<string, unknown>;
+  const nodeUpdating = isNodeUpdating(node);
+  const updateTargetVersion = getNodeUpdateTargetVersion(node);
   const resourcesRef = useRef<HTMLDivElement>(null);
   const [resourcesHeight, setResourcesHeight] = useState(0);
 
@@ -152,17 +161,29 @@ export function NodeDetailsTab({ node }: NodeDetailsTabProps) {
         <div className="border border-border bg-card">
           <div className="flex items-center justify-between border-b border-border p-4">
             <h2 className="font-semibold">Runtime</h2>
-            {daemonUpdate.available && (
+            {nodeUpdating ? (
               <Button
                 size="sm"
                 style={{ backgroundColor: "rgb(234 179 8)", color: "#111" }}
                 className="hover:opacity-90 disabled:opacity-50"
-                onClick={handleDaemonUpdate}
-                disabled={isUpdating}
+                disabled
               >
                 <ArrowUpCircle className="h-3.5 w-3.5" />
-                Update to {daemonUpdate.latestVersion}
+                Updating{updateTargetVersion ? ` to ${updateTargetVersion}` : "..."}
               </Button>
+            ) : (
+              daemonUpdate.available && (
+                <Button
+                  size="sm"
+                  style={{ backgroundColor: "rgb(234 179 8)", color: "#111" }}
+                  className="hover:opacity-90 disabled:opacity-50"
+                  onClick={handleDaemonUpdate}
+                  disabled={isUpdating}
+                >
+                  <ArrowUpCircle className="h-3.5 w-3.5" />
+                  Update to {daemonUpdate.latestVersion}
+                </Button>
+              )
             )}
           </div>
           <div className="divide-y divide-border [&>*:last-child]:border-b [&>*:last-child]:border-border">

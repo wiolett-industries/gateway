@@ -30,7 +30,7 @@ import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useNodesStore } from "@/stores/nodes";
 import type { DaemonUpdateStatus, NodeStatus } from "@/types";
-import { effectiveNodeStatus, isNodeIncompatible } from "@/types";
+import { effectiveNodeStatus, isNodeIncompatible, isNodeUpdating } from "@/types";
 
 const NODE_TYPES = [
   {
@@ -224,70 +224,78 @@ export function AdminNodes() {
         {nodes.length > 0 ? (
           <div className="border border-border rounded-lg bg-card">
             <div className="divide-y divide-border -mb-px [&>*:last-child]:border-b [&>*:last-child]:border-border">
-              {nodes.map((node) => (
-                <div
-                  key={node.id}
-                  className="flex items-center gap-4 p-4 cursor-pointer hover:bg-muted/50 transition-colors"
-                  onClick={() => navigate(`/nodes/${node.id}`)}
-                >
-                  <div className="flex items-center justify-center h-10 w-10 rounded-lg bg-muted">
-                    <Server className="h-5 w-5 text-muted-foreground" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">
-                      {node.displayName || node.hostname}
-                    </p>
-                    <p className="text-xs text-muted-foreground truncate">
-                      {node.displayName ? node.hostname : ""}{" "}
-                      {node.daemonVersion ? `v${node.daemonVersion}` : ""}
-                    </p>
-                  </div>
-                  <Badge variant="secondary" className="text-xs uppercase shrink-0">
-                    {node.type}
-                  </Badge>
-                  <Badge variant="outline" className="text-xs shrink-0">
-                    {formatLastSeen(node.lastSeenAt)}
-                  </Badge>
-                  {isNodeIncompatible(node) ? (
-                    <Badge variant="destructive" className="text-xs">
-                      INCOMPATIBLE
+              {nodes.map((node) => {
+                const nodeUpdating = isNodeUpdating(node);
+                return (
+                  <div
+                    key={node.id}
+                    className="flex items-center gap-4 p-4 cursor-pointer hover:bg-muted/50 transition-colors"
+                    onClick={() => navigate(`/nodes/${node.id}`)}
+                  >
+                    <div className="flex items-center justify-center h-10 w-10 rounded-lg bg-muted">
+                      <Server className="h-5 w-5 text-muted-foreground" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">
+                        {node.displayName || node.hostname}
+                      </p>
+                      <p className="text-xs text-muted-foreground truncate">
+                        {node.displayName ? node.hostname : ""}{" "}
+                        {node.daemonVersion ? `v${node.daemonVersion}` : ""}
+                      </p>
+                    </div>
+                    <Badge variant="secondary" className="text-xs uppercase shrink-0">
+                      {node.type}
                     </Badge>
-                  ) : (
-                    (() => {
-                      const typeStatus = daemonUpdates.find((s) => s.daemonType === node.type);
-                      const nodeStatus = typeStatus?.nodes.find((n) => n.nodeId === node.id);
-                      if (nodeStatus?.updateAvailable && typeStatus?.latestVersion) {
+                    <Badge variant="outline" className="text-xs shrink-0">
+                      {formatLastSeen(node.lastSeenAt)}
+                    </Badge>
+                    {nodeUpdating ? (
+                      <Badge variant="warning" className="text-xs">
+                        UPDATING
+                      </Badge>
+                    ) : isNodeIncompatible(node) ? (
+                      <Badge variant="destructive" className="text-xs">
+                        INCOMPATIBLE
+                      </Badge>
+                    ) : (
+                      (() => {
+                        const typeStatus = daemonUpdates.find((s) => s.daemonType === node.type);
+                        const nodeStatus = typeStatus?.nodes.find((n) => n.nodeId === node.id);
+                        if (nodeStatus?.updateAvailable && typeStatus?.latestVersion) {
+                          return (
+                            <Badge
+                              className="text-xs"
+                              style={{ backgroundColor: "rgb(234 179 8)", color: "#111" }}
+                            >
+                              {typeStatus.latestVersion}
+                            </Badge>
+                          );
+                        }
+                        const eStatus = effectiveNodeStatus(node);
                         return (
-                          <Badge
-                            className="text-xs"
-                            style={{ backgroundColor: "rgb(234 179 8)", color: "#111" }}
-                          >
-                            {typeStatus.latestVersion}
+                          <Badge variant={STATUS_BADGE[eStatus] || "secondary"} className="text-xs">
+                            {eStatus}
                           </Badge>
                         );
-                      }
-                      const eStatus = effectiveNodeStatus(node);
-                      return (
-                        <Badge variant={STATUS_BADGE[eStatus] || "secondary"} className="text-xs">
-                          {eStatus}
-                        </Badge>
-                      );
-                    })()
-                  )}
-                  {hasScope("nodes:delete") && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDelete(node.id, node.hostname);
-                      }}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  )}
-                </div>
-              ))}
+                      })()
+                    )}
+                    {hasScope("nodes:delete") && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        disabled={nodeUpdating}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDelete(node.id, node.hostname);
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         ) : isLoading ? (

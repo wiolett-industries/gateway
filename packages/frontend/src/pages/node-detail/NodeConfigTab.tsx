@@ -11,6 +11,7 @@ import { useAuthStore } from "@/stores/auth";
 interface NodeConfigTabProps {
   nodeId: string;
   nodeStatus: string;
+  actionLocked?: boolean;
 }
 
 /** Parse line numbers from nginx error output */
@@ -30,7 +31,7 @@ function splitErrors(error: string): string[] {
     .filter((l) => l.length > 0);
 }
 
-export function NodeConfigTab({ nodeId, nodeStatus }: NodeConfigTabProps) {
+export function NodeConfigTab({ nodeId, nodeStatus, actionLocked = false }: NodeConfigTabProps) {
   const { hasScope } = useAuthStore();
   const canManage = hasScope("nodes:config:edit");
 
@@ -124,23 +125,28 @@ export function NodeConfigTab({ nodeId, nodeStatus }: NodeConfigTabProps) {
       <CodeEditor
         value={configContent}
         onChange={
-          canManage
+          canManage && !actionLocked
             ? (val) => {
                 setConfigContent(val);
                 setErrorLines([]);
               }
             : () => {}
         }
-        readOnly={!canManage}
+        readOnly={!canManage || actionLocked}
         errorLines={errorLines}
       />
       <div className="absolute right-2.5 bottom-2.5 z-10 flex items-center gap-2">
-        <Button variant="outline" size="sm" onClick={handleTest} disabled={isTesting}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleTest}
+          disabled={isTesting || actionLocked}
+        >
           <RefreshCw className={cn("h-4 w-4", isTesting && "animate-spin")} />
           Validate
         </Button>
         {canManage && (
-          <Button size="sm" onClick={handleSave} disabled={isSaving || !hasChanges}>
+          <Button size="sm" onClick={handleSave} disabled={isSaving || !hasChanges || actionLocked}>
             <Save className="h-4 w-4" />
             Save
           </Button>

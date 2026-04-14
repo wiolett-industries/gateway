@@ -31,7 +31,12 @@ import { useAuthStore } from "@/stores/auth";
 import { useNodesStore } from "@/stores/nodes";
 import { usePinnedNodesStore } from "@/stores/pinned-nodes";
 import type { NodeDetail } from "@/types";
-import { effectiveNodeStatus, isNodeIncompatible } from "@/types";
+import {
+  effectiveNodeStatus,
+  getNodeUpdateTargetVersion,
+  isNodeIncompatible,
+  isNodeUpdating,
+} from "@/types";
 import { DockerContainers } from "./DockerContainers";
 import { DockerImages } from "./DockerImages";
 import { DockerNetworks } from "./DockerNetworks";
@@ -192,6 +197,9 @@ export function AdminNodeDetail() {
     );
   }
 
+  const nodeUpdating = isNodeUpdating(node);
+  const updateTargetVersion = getNodeUpdateTargetVersion(node);
+
   return (
     <PageTransition>
       <div
@@ -210,6 +218,11 @@ export function AdminNodeDetail() {
                   const s = effectiveNodeStatus(node);
                   return <Badge variant={STATUS_BADGE[s] || "secondary"}>{s}</Badge>;
                 })()}
+                {nodeUpdating && (
+                  <Badge variant="warning">
+                    Updating{updateTargetVersion ? ` to ${updateTargetVersion}` : ""}
+                  </Badge>
+                )}
               </div>
               <p className="text-sm text-muted-foreground">
                 {node.hostname} &middot; {node.type} &middot;{" "}
@@ -226,6 +239,7 @@ export function AdminNodeDetail() {
             {hasScope("nodes:rename") && (
               <Button
                 variant="outline"
+                disabled={nodeUpdating}
                 onClick={() => {
                   setRenameName(node.displayName ?? "");
                   setRenameOpen(true);
@@ -238,13 +252,13 @@ export function AdminNodeDetail() {
             {(hasScope("admin:update") || hasScope("nodes:delete")) && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="icon" disabled={checkingUpdates}>
+                  <Button variant="outline" size="icon" disabled={checkingUpdates || nodeUpdating}>
                     <EllipsisVertical className="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   {hasScope("admin:update") && (
-                    <DropdownMenuItem onClick={handleCheckUpdates}>
+                    <DropdownMenuItem onClick={handleCheckUpdates} disabled={nodeUpdating}>
                       <ArrowUpCircle className="h-3.5 w-3.5 mr-2" />
                       Check for updates
                     </DropdownMenuItem>
@@ -266,6 +280,13 @@ export function AdminNodeDetail() {
 
         {/* Health bars */}
         <HealthBars history={node.healthHistory} currentStatus={node.status} />
+
+        {nodeUpdating && (
+          <div className="border border-yellow-500/40 bg-yellow-500/10 p-3 text-sm text-yellow-100">
+            Daemon update in progress. Node actions are locked until the node reconnects on the new
+            version.
+          </div>
+        )}
 
         {/* Tabs */}
         <Tabs
@@ -305,48 +326,57 @@ export function AdminNodeDetail() {
             </div>
           )}
 
-          <TabsContent value="details" className="pb-6">
-            <NodeDetailsTab node={node} />
-          </TabsContent>
-          {!isNodeIncompatible(node) && (
-            <TabsContent value="monitoring" className="pb-6">
-              <NodeMonitoringTab nodeId={node.id} nodeStatus={node.status} nodeType={node.type} />
+          <div className="relative flex-1 min-h-0">
+            {nodeUpdating && (
+              <div className="absolute inset-0 z-10 cursor-not-allowed bg-background/45 backdrop-blur-[1px]" />
+            )}
+            <TabsContent value="details" className="pb-6">
+              <NodeDetailsTab node={node} />
             </TabsContent>
-          )}
-          {!isNodeIncompatible(node) && node.type === "nginx" && (
-            <TabsContent value="configuration" className="flex flex-col flex-1 min-h-0">
-              <NodeConfigTab nodeId={node.id} nodeStatus={node.status} />
+            {!isNodeIncompatible(node) && (
+              <TabsContent value="monitoring" className="pb-6">
+                <NodeMonitoringTab nodeId={node.id} nodeStatus={node.status} nodeType={node.type} />
+              </TabsContent>
+            )}
+            {!isNodeIncompatible(node) && node.type === "nginx" && (
+              <TabsContent value="configuration" className="flex flex-col flex-1 min-h-0">
+                <NodeConfigTab
+                  nodeId={node.id}
+                  nodeStatus={node.status}
+                  actionLocked={nodeUpdating}
+                />
+              </TabsContent>
+            )}
+            {!isNodeIncompatible(node) && node.type === "nginx" && (
+              <TabsContent value="nginx-logs" className="flex flex-col flex-1 min-h-0">
+                <NodeNginxLogsTab nodeId={node.id} nodeStatus={node.status} />
+              </TabsContent>
+            )}
+            {!isNodeIncompatible(node) && node.type === "docker" && (
+              <>
+                <TabsContent value="containers" className="flex flex-col flex-1 min-h-0">
+                  <DockerContainers embedded fixedNodeId={node.id} />
+                </TabsContent>
+                <TabsContent value="images" className="flex flex-col flex-1 min-h-0">
+                  <DockerImages embedded fixedNodeId={node.id} />
+                </TabsContent>
+                <TabsContent value="volumes" className="flex flex-col flex-1 min-h-0">
+                  <DockerVolumes embedded fixedNodeId={node.id} />
+                </TabsContent>
+                <TabsContent value="networks" className="flex flex-col flex-1 min-h-0">
+                  <DockerNetworks embedded fixedNodeId={node.id} />
+                </TabsContent>
+              </>
+            )}
+            {!isNodeIncompatible(node) && node.status === "online" && hasScope("nodes:console") && (
+              <TabsContent value="console" className="flex flex-col flex-1 min-h-0">
+                <NodeConsoleTab nodeId={node.id} />
+              </TabsContent>
+            )}
+            <TabsContent value="daemon-logs" className="flex flex-col flex-1 min-h-0">
+              <NodeLogsTab nodeId={node.id} nodeStatus={node.status} />
             </TabsContent>
-          )}
-          {!isNodeIncompatible(node) && node.type === "nginx" && (
-            <TabsContent value="nginx-logs" className="flex flex-col flex-1 min-h-0">
-              <NodeNginxLogsTab nodeId={node.id} nodeStatus={node.status} />
-            </TabsContent>
-          )}
-          {!isNodeIncompatible(node) && node.type === "docker" && (
-            <>
-              <TabsContent value="containers" className="flex flex-col flex-1 min-h-0">
-                <DockerContainers embedded fixedNodeId={node.id} />
-              </TabsContent>
-              <TabsContent value="images" className="flex flex-col flex-1 min-h-0">
-                <DockerImages embedded fixedNodeId={node.id} />
-              </TabsContent>
-              <TabsContent value="volumes" className="flex flex-col flex-1 min-h-0">
-                <DockerVolumes embedded fixedNodeId={node.id} />
-              </TabsContent>
-              <TabsContent value="networks" className="flex flex-col flex-1 min-h-0">
-                <DockerNetworks embedded fixedNodeId={node.id} />
-              </TabsContent>
-            </>
-          )}
-          {!isNodeIncompatible(node) && node.status === "online" && hasScope("nodes:console") && (
-            <TabsContent value="console" className="flex flex-col flex-1 min-h-0">
-              <NodeConsoleTab nodeId={node.id} />
-            </TabsContent>
-          )}
-          <TabsContent value="daemon-logs" className="flex flex-col flex-1 min-h-0">
-            <NodeLogsTab nodeId={node.id} nodeStatus={node.status} />
-          </TabsContent>
+          </div>
         </Tabs>
       </div>
 

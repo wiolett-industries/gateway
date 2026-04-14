@@ -7,6 +7,7 @@ import { createChildLogger } from '@/lib/logger.js';
 import { buildWhere } from '@/lib/utils.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
+import type { DaemonUpdateService } from '@/services/daemon-update.service.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
 import type { NodeRegistryService } from '@/services/node-registry.service.js';
 import type { CreateNodeInput, NodeListQuery, UpdateNodeInput } from './nodes.schemas.js';
@@ -14,6 +15,8 @@ import type { CreateNodeInput, NodeListQuery, UpdateNodeInput } from './nodes.sc
 const logger = createChildLogger('NodesService');
 
 export class NodesService {
+  private daemonUpdateService?: DaemonUpdateService;
+
   constructor(
     private db: DrizzleClient,
     private auditService: AuditService,
@@ -23,6 +26,9 @@ export class NodesService {
   private eventBus?: EventBusService;
   setEventBus(bus: EventBusService) {
     this.eventBus = bus;
+  }
+  setDaemonUpdateService(service: DaemonUpdateService) {
+    this.daemonUpdateService = service;
   }
   private emitNode(id: string, action: 'created' | 'updated' | 'deleted') {
     this.eventBus?.publish('node.changed', { id, action });
@@ -121,6 +127,10 @@ export class NodesService {
   }
 
   async update(id: string, input: UpdateNodeInput, userId: string) {
+    if (this.daemonUpdateService && (await this.daemonUpdateService.isNodeUpdateInProgress(id))) {
+      throw new AppError(409, 'NODE_UPDATING', 'Node daemon update is in progress');
+    }
+
     const [existing] = await this.db.select().from(nodes).where(eq(nodes.id, id)).limit(1);
 
     if (!existing) {
@@ -149,6 +159,10 @@ export class NodesService {
   }
 
   async remove(id: string, userId: string) {
+    if (this.daemonUpdateService && (await this.daemonUpdateService.isNodeUpdateInProgress(id))) {
+      throw new AppError(409, 'NODE_UPDATING', 'Node daemon update is in progress');
+    }
+
     const [node] = await this.db.select().from(nodes).where(eq(nodes.id, id)).limit(1);
 
     if (!node) {
