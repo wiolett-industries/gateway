@@ -212,10 +212,6 @@ release:
     key:
       files:
         - packages/daemons/go.work
-        - packages/daemons/docker/go.sum
-        - packages/daemons/monitoring/go.sum
-        - packages/daemons/nginx/go.sum
-        - packages/daemons/shared/go.sum
     paths:
       - .cache/go-build
       - .cache/go-mod
