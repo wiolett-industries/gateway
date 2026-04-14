@@ -164,7 +164,7 @@ export class DockerWebhookService {
 
     try {
       // Synchronous pull — validates the image exists
-      const pullResult = await this.dispatch.sendDockerImageCommand(nodeId, 'pull', { imageRef: targetRef }, 300000);
+      const pullResult = await this.dispatch.sendDockerImageCommand(nodeId, 'pull', { imageRef: targetRef }, 600000);
       if (!pullResult.success) {
         throw new AppError(400, 'PULL_FAILED', pullResult.error || `Failed to pull ${targetRef}`);
       }

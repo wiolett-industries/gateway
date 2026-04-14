@@ -24,6 +24,8 @@ type ContainerAction =
   | 'duplicated';
 
 export class DockerManagementService {
+  private static readonly LONG_DOCKER_OPERATION_TIMEOUT_MS = 600000; // 10 minutes
+
   /**
    * `${nodeId}:${containerName}` → current transition state.
    * Keyed by name (not ID) so the badge survives recreate/update, which
@@ -516,6 +518,7 @@ export class DockerManagementService {
     await this.validateDockerNode(nodeId);
     const name = await this.resolveContainerName(nodeId, containerId);
     const expectedState = await this.resolveExpectedRecreateState(nodeId, containerId);
+    const hasImageChange = typeof config.tag === 'string' && config.tag.length > 0;
     this.requireNoTransition(nodeId, name);
     this.setTransition(nodeId, name, 'updating');
     this.emitTransition(nodeId, name, containerId, 'updating');
@@ -524,10 +527,18 @@ export class DockerManagementService {
       nodeId,
       'update',
       { containerId, configJson: JSON.stringify(config) },
-      120000 // 2min timeout for pull+redeploy
+      hasImageChange ? DockerManagementService.LONG_DOCKER_OPERATION_TIMEOUT_MS : 120000
     );
     const data = this.parseResult(result);
-    this.watchRecreateByName(nodeId, name, containerId, task?.id, 'Container updated', expectedState);
+    this.watchRecreateByName(
+      nodeId,
+      name,
+      containerId,
+      task?.id,
+      'Container updated',
+      expectedState,
+      hasImageChange ? DockerManagementService.LONG_DOCKER_OPERATION_TIMEOUT_MS : undefined
+    );
     await this.auditService.log({
       action: 'docker.container.update',
       userId,
@@ -727,7 +738,12 @@ export class DockerManagementService {
 
     // Fire pull in background
     this.nodeDispatch
-      .sendDockerImageCommand(nodeId, 'pull', { imageRef, registryAuthJson: registryAuth }, 300000)
+      .sendDockerImageCommand(
+        nodeId,
+        'pull',
+        { imageRef, registryAuthJson: registryAuth },
+        DockerManagementService.LONG_DOCKER_OPERATION_TIMEOUT_MS
+      )
       .then((result) => {
         try {
           this.parseResult(result);

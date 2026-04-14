@@ -71,7 +71,7 @@ export function registerImageRoutes(router: OpenAPIHono<AppEnv>) {
       nodeId,
       'pull',
       { imageRef: finalImageRef, registryAuthJson: registryAuth },
-      300000
+      600000
     );
     if (!result.success) {
       return c.json({ error: result.error || `Failed to pull ${finalImageRef}` }, 400);
