@@ -114,7 +114,7 @@ export async function initializeContainer(): Promise<void> {
   const certService = new CertService(db, cryptoService, caService, auditService);
   container.registerInstance(CertService, certService);
 
-  const crlService = new CRLService(db, cryptoService, caService, cacheService);
+  const crlService = new CRLService(db, caService, cacheService);
   container.registerInstance(CRLService, crlService);
 
   const ocspService = new OCSPService(db, cryptoService, caService, cacheService);
@@ -201,7 +201,7 @@ export async function initializeContainer(): Promise<void> {
   const nodesService = new NodesService(db, auditService, nodeRegistry);
   container.registerInstance(NodesService, nodesService);
 
-  const nodeMonitoringService = new NodeMonitoringService(nodeRegistry, nodeDispatch, cacheService);
+  const nodeMonitoringService = new NodeMonitoringService(nodeRegistry, cacheService);
   container.registerInstance(NodeMonitoringService, nodeMonitoringService);
 
   const dockerManagementService = new DockerManagementService(db, auditService, nodeDispatch, nodeRegistry);
@@ -222,7 +222,6 @@ export async function initializeContainer(): Promise<void> {
     db,
     dockerManagementService,
     dockerTaskService,
-    dockerRegistryService,
     auditService,
     nodeDispatch
   );

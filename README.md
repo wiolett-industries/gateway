@@ -51,7 +51,7 @@ Gateway combines a full PKI (Certificate Authority) infrastructure with a revers
 - Create root and intermediate CAs (RSA-2048/4096, ECDSA P-256/P-384)
 - Issue TLS server, TLS client, code-signing, and email certificates
 - Certificate templates with custom extensions and policies
-- CRL distribution and OCSP responder built-in
+- CRL distribution support built-in
 - Certificate export (PEM, PKCS#12, JKS)
 
 **SSL Management**
@@ -119,7 +119,7 @@ After creating a node in the Gateway UI (**Nodes > Add Node**), run on the targe
 curl -sSL https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/scripts/setup-daemon.sh | sudo bash
 ```
 
-The script prompts for daemon type, gateway address, and enrollment token. See [Adding Nodes](#adding-nodes) for non-interactive usage and details.
+The script prompts for daemon type, gateway address, and enrollment token. For nginx nodes it also lets you choose between a fully managed nginx config or integration with an existing host nginx setup. See [Adding Nodes](#adding-nodes) for non-interactive usage and details.
 
 ### Non-interactive install
 
@@ -215,8 +215,12 @@ All setup scripts support:
 - `--user <username>` to run the daemon as a non-root user
 - `--gitlab-url` and `--gitlab-project` to use a custom GitLab instance
 - `-y` for non-interactive mode (CI/automation)
-- SHA256 checksum verification of downloaded binaries
+- mandatory SHA256 checksum verification of downloaded binaries
 - Backup of existing binary on upgrade
+
+The nginx installer also supports `--nginx-mode <managed|integrate>`:
+- `managed` writes a full known-good nginx base config and default server
+- `integrate` keeps the existing `nginx.conf` and injects Gateway-specific includes plus a dedicated localhost `stub_status` server
 
 Run any script with `--help` for the full list of options and environment variable alternatives.
 
@@ -238,8 +242,13 @@ Download the binary for your platform from the [releases page](https://gitlab.wi
 ```bash
 # Example: nginx-daemon for linux/amd64
 curl -fsSL "https://gitlab.wiolett.net/api/v4/projects/wiolett%2Fgateway/packages/generic/nginx-daemon/v2.0.0-nginx/nginx-daemon-linux-amd64" \
-  -o /usr/local/bin/nginx-daemon
-chmod +x /usr/local/bin/nginx-daemon
+  -o /tmp/nginx-daemon-linux-amd64
+curl -fsSL "https://gitlab.wiolett.net/api/v4/projects/wiolett%2Fgateway/packages/generic/nginx-daemon/v2.0.0-nginx/checksums.txt" \
+  -o /tmp/nginx-daemon-checksums.txt
+expected=$(awk '/nginx-daemon-linux-amd64/ { print $1 }' /tmp/nginx-daemon-checksums.txt)
+actual=$(sha256sum /tmp/nginx-daemon-linux-amd64 | awk '{ print $1 }')
+[ "$expected" = "$actual" ] || { echo "checksum mismatch"; exit 1; }
+install -m 755 /tmp/nginx-daemon-linux-amd64 /usr/local/bin/nginx-daemon
 ```
 
 #### Step 3: Enroll and start
@@ -284,7 +293,7 @@ nginx:
   logs_dir: "/var/log/nginx"
   global_config: "/etc/nginx/nginx.conf"
   binary: "/usr/sbin/nginx"
-  stub_status_url: "http://127.0.0.1/nginx_status"
+  stub_status_url: "http://127.0.0.1/nginx_status"  # managed mode; integrate mode uses http://127.0.0.1:8081/nginx_status
   htpasswd_dir: "/etc/nginx/htpasswd"
   acme_challenge_dir: "/var/www/acme-challenge"
 
@@ -370,10 +379,11 @@ pnpm dev:all          # Start backend + frontend dev servers
 |---------|-------------|
 | `pnpm dev:all` | Start backend and frontend in parallel |
 | `pnpm build` | Build backend and frontend |
-| `pnpm build:all` | Build all projects (backend, frontend, daemon) |
+| `pnpm build:all` | Build backend, frontend, and all daemon binaries |
 | `pnpm build:daemon` | Build all Go daemon binaries |
-| `pnpm test` | Run all tests |
-| `pnpm lint` | Lint all packages (biome) |
+| `pnpm test` | Run frontend, backend, and all Go daemon tests |
+| `pnpm test:daemon` | Run all Go daemon tests |
+| `pnpm lint` | Run Biome for frontend/backend and `go vet` for all daemons |
 | `pnpm typecheck` | TypeScript type check |
 | `pnpm proto` | Regenerate protobuf stubs from proto files |
 | `pnpm db:generate` | Generate Drizzle ORM migration |

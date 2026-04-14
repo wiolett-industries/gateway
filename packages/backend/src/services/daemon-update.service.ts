@@ -4,7 +4,7 @@ import type { DrizzleClient } from '@/db/client.js';
 import { nodes } from '@/db/schema/nodes.js';
 import { settings } from '@/db/schema/settings.js';
 import { createChildLogger } from '@/lib/logger.js';
-import { compareSemver } from '@/lib/semver.js';
+import { compareSemver, isNewerVersion } from '@/lib/semver.js';
 
 const logger = createChildLogger('DaemonUpdateService');
 
