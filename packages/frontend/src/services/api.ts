@@ -1149,12 +1149,15 @@ class ApiClient extends ApiClientBase {
     return this.unwrapData(this.request<{ data: DockerContainer[] }>(url));
   }
 
-  async inspectContainer(nodeId: string, containerId: string): Promise<Record<string, unknown>> {
-    return this.unwrapData(
-      this.request<{ data: Record<string, unknown> }>(
-        `/docker/nodes/${nodeId}/containers/${containerId}`
-      )
-    );
+  async inspectContainer(
+    nodeId: string,
+    containerId: string,
+    noCache = false
+  ): Promise<Record<string, unknown>> {
+    const url = noCache
+      ? `/docker/nodes/${nodeId}/containers/${containerId}?_t=${Date.now()}`
+      : `/docker/nodes/${nodeId}/containers/${containerId}`;
+    return this.unwrapData(this.request<{ data: Record<string, unknown> }>(url));
   }
 
   async createContainer(

@@ -841,6 +841,23 @@ export class DockerManagementService {
     return this.parseResult(result);
   }
 
+  private isBuiltInDockerNetwork(name: string) {
+    return ['bridge', 'host', 'none'].includes(name);
+  }
+
+  private async resolveNetworkName(nodeId: string, networkId: string) {
+    const networks = await this.listNetworks(nodeId);
+    if (!Array.isArray(networks)) return networkId;
+
+    const match = networks.find((network: any) => {
+      const id = String(network.id ?? network.Id ?? '');
+      const name = String(network.name ?? network.Name ?? '');
+      return id === networkId || name === networkId;
+    });
+
+    return String(match?.name ?? match?.Name ?? networkId);
+  }
+
   async createNetwork(
     nodeId: string,
     config: { name: string; driver: string; subnet?: string; gateway?: string },
@@ -866,6 +883,10 @@ export class DockerManagementService {
 
   async removeNetwork(nodeId: string, networkId: string, userId: string) {
     await this.validateDockerNode(nodeId);
+    const networkName = await this.resolveNetworkName(nodeId, networkId);
+    if (this.isBuiltInDockerNetwork(networkName)) {
+      throw new AppError(400, 'BUILTIN_NETWORK', 'Built-in Docker networks cannot be removed');
+    }
     const result = await this.nodeDispatch.sendDockerNetworkCommand(nodeId, 'remove', { networkId });
     this.parseResult(result);
     await this.auditService.log({
@@ -893,6 +914,10 @@ export class DockerManagementService {
 
   async disconnectContainerFromNetwork(nodeId: string, networkId: string, containerId: string, userId: string) {
     await this.validateDockerNode(nodeId);
+    const networkName = await this.resolveNetworkName(nodeId, networkId);
+    if (this.isBuiltInDockerNetwork(networkName)) {
+      throw new AppError(400, 'BUILTIN_NETWORK', 'Containers cannot be disconnected from built-in Docker networks');
+    }
     const result = await this.nodeDispatch.sendDockerNetworkCommand(nodeId, 'disconnect', { networkId, containerId });
     this.parseResult(result);
     await this.auditService.log({

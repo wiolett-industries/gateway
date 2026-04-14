@@ -45,7 +45,7 @@ export function LabelsSection({
             <div className="px-3 py-2">Key</div>
             <div className="px-3 py-2 border-l border-border">Value</div>
           </div>
-          <div className="-mb-px">
+          <div>
             {labels.map((l, i) => (
               <div
                 key={i}

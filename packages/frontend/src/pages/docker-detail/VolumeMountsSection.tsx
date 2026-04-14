@@ -64,7 +64,7 @@ export function VolumeMountsSection({
             <div className="px-3 py-2 border-l border-border">Mode</div>
             {canEdit && <div />}
           </div>
-          <div className="-mb-px">
+          <div>
             {mounts.map((m, i) => (
               <div
                 key={i}

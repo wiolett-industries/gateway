@@ -167,10 +167,8 @@ export function DataTable<T>({
                   {columns.map((col) => (
                     <div
                       key={col.key}
-                      className={`px-4 py-3 text-sm ${col.align === "right" ? "text-right" : ""} ${
-                        col.truncate
-                          ? "overflow-hidden text-ellipsis whitespace-nowrap min-w-0"
-                          : "min-w-0"
+                      className={`min-w-0 overflow-hidden px-4 py-3 text-sm ${col.align === "right" ? "text-right" : ""} ${
+                        col.truncate ? "text-ellipsis whitespace-nowrap" : ""
                       } ${col.className ?? ""}`}
                     >
                       {col.render(item.row)}

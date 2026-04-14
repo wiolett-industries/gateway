@@ -90,11 +90,11 @@ export function DockerContainerDetail() {
   const { isPinnedSidebar, toggleSidebar, updateMeta } = usePinnedContainersStore();
 
   const fetchContainer = useCallback(
-    async (silent = false) => {
+    async (silent = false, noCache = false) => {
       if (!nodeId || !containerId) return;
       if (!silent) setIsLoading(true);
       try {
-        const data = await api.inspectContainer(nodeId, containerId);
+        const data = await api.inspectContainer(nodeId, containerId, noCache);
         setContainer(data);
         // Keep pinned meta in sync
         if (usePinnedContainersStore.getState().isPinnedSidebar(containerId)) {
@@ -459,7 +459,7 @@ export function DockerContainerDetail() {
               containerId={containerId!}
               containerState={state}
               disabled={!!transition}
-              onRecreating={() => fetchContainer(true)}
+              onRecreating={() => fetchContainer(true, true)}
             />
           </TabsContent>
           <TabsContent value="settings" className="pb-0">
@@ -467,7 +467,8 @@ export function DockerContainerDetail() {
               nodeId={nodeId!}
               containerId={containerId!}
               data={container}
-              onRecreating={() => fetchContainer(true)}
+              onRecreating={() => fetchContainer(true, true)}
+              onRefresh={() => fetchContainer(true, true)}
               transition={transition}
             />
           </TabsContent>
