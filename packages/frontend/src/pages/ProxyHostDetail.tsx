@@ -16,6 +16,7 @@ import { useRealtime } from "@/hooks/use-realtime";
 import { useUrlTab } from "@/hooks/use-url-tab";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
+import { ApiRequestError } from "@/services/api-base";
 import { useAuthStore } from "@/stores/auth";
 import { usePinnedProxiesStore } from "@/stores/pinned-proxies";
 import type { AccessList, CustomHeader, ProxyHost, RewriteRule } from "@/types";
@@ -108,7 +109,10 @@ export function ProxyHostDetail() {
         setHealthCheckSlowThreshold(data.healthCheckSlowThreshold ?? 3);
         setAdvancedConfig(data.advancedConfig || "");
         setRawConfig(data.rawConfig || "");
-      } catch {
+      } catch (err) {
+        if (err instanceof ApiRequestError && err.status === 404) {
+          usePinnedProxiesStore.getState().removePin(id);
+        }
         if (!silent) {
           toast.error("Failed to load proxy host");
           navigate("/proxy-hosts");
@@ -293,6 +297,7 @@ export function ProxyHostDetail() {
     if (!ok) return;
     try {
       await api.deleteProxyHost(host.id);
+      usePinnedProxiesStore.getState().removePin(host.id);
       api.invalidateCache();
       toast.success("Proxy host deleted");
       navigate("/proxy-hosts");

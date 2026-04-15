@@ -13,6 +13,7 @@ import type { User } from '@/types.js';
 const logger = createChildLogger('AuthService');
 
 const PKCE_STATE_PREFIX = 'oidc:pkce:';
+const PRECREATED_SUBJECT_PREFIX = 'manual:';
 
 interface OIDCState {
   codeVerifier: string;
@@ -149,20 +150,22 @@ export class AuthService {
     name: string | null;
     avatarUrl: string | null;
   }): Promise<User> {
+    const normalizedEmail = data.email.trim().toLowerCase();
+
     const existingUser = await this.db.query.users.findFirst({
       where: eq(users.oidcSubject, data.oidcSubject),
     });
 
     if (existingUser) {
       if (
-        existingUser.email !== data.email ||
+        existingUser.email !== normalizedEmail ||
         existingUser.name !== data.name ||
         existingUser.avatarUrl !== data.avatarUrl
       ) {
         const [updatedUser] = await this.db
           .update(users)
           .set({
-            email: data.email,
+            email: normalizedEmail,
             name: data.name,
             avatarUrl: data.avatarUrl,
             updatedAt: new Date(),
@@ -174,6 +177,34 @@ export class AuthService {
       }
 
       return this.mapDbUserToUser(existingUser);
+    }
+
+    const precreatedUser = await this.db.query.users.findFirst({
+      where: eq(users.email, normalizedEmail),
+    });
+
+    if (precreatedUser?.oidcSubject.startsWith(PRECREATED_SUBJECT_PREFIX)) {
+      const [claimedUser] = await this.db
+        .update(users)
+        .set({
+          oidcSubject: data.oidcSubject,
+          email: normalizedEmail,
+          name: data.name,
+          avatarUrl: data.avatarUrl,
+          updatedAt: new Date(),
+        })
+        .where(eq(users.id, precreatedUser.id))
+        .returning();
+
+      logger.info('Claimed pre-created user on first login', {
+        userId: claimedUser.id,
+        email: claimedUser.email,
+      });
+
+      this.emitUser(claimedUser.id, 'updated');
+      const mapped = await this.mapDbUserToUser(claimedUser);
+      this.emitPermissions(mapped.id, mapped.scopes, mapped.groupId);
+      return mapped;
     }
 
     // Check if this is the first real user — assign system-admin group
@@ -196,7 +227,7 @@ export class AuthService {
       .insert(users)
       .values({
         oidcSubject: data.oidcSubject,
-        email: data.email,
+        email: normalizedEmail,
         name: data.name,
         avatarUrl: data.avatarUrl,
         groupId: group.id,
@@ -204,8 +235,50 @@ export class AuthService {
       .returning();
 
     logger.info('Created new user', { userId: createdUser.id, email: createdUser.email, group: groupName });
+    this.emitUser(createdUser.id, 'created');
+    const mapped = await this.mapDbUserToUser(createdUser, group);
+    this.emitPermissions(mapped.id, mapped.scopes, mapped.groupId);
+    return mapped;
+  }
 
-    return this.mapDbUserToUser(createdUser, group);
+  async createUser(data: { email: string; name?: string | null; groupId: string }): Promise<User> {
+    const normalizedEmail = data.email.trim().toLowerCase();
+
+    const group = await this.db.query.permissionGroups.findFirst({
+      where: eq(permissionGroups.id, data.groupId),
+    });
+    if (!group) {
+      throw new Error('Permission group not found');
+    }
+
+    const existingByEmail = await this.db.query.users.findFirst({
+      where: eq(users.email, normalizedEmail),
+    });
+    if (existingByEmail) {
+      throw new Error('User with this email already exists');
+    }
+
+    const [createdUser] = await this.db
+      .insert(users)
+      .values({
+        oidcSubject: `${PRECREATED_SUBJECT_PREFIX}${normalizedEmail}`,
+        email: normalizedEmail,
+        name: data.name?.trim() || null,
+        avatarUrl: null,
+        groupId: data.groupId,
+      })
+      .returning();
+
+    logger.info('Pre-created user', {
+      userId: createdUser.id,
+      email: createdUser.email,
+      groupId: createdUser.groupId,
+    });
+
+    this.emitUser(createdUser.id, 'created');
+    const mapped = await this.mapDbUserToUser(createdUser, group);
+    this.emitPermissions(mapped.id, mapped.scopes, mapped.groupId);
+    return mapped;
   }
 
   private async mapDbUserToUser(

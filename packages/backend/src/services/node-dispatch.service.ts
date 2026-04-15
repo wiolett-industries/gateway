@@ -278,6 +278,7 @@ export class NodeDispatchService {
       stdin?: boolean;
       rows?: number;
       cols?: number;
+      user?: string;
     } = {}
   ): Promise<CommandResult> {
     await this.assertNodeMutable(nodeId);

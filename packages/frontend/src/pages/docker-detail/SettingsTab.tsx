@@ -48,7 +48,7 @@ export function SettingsTab({
   nodeId: string;
   containerId: string;
   data: InspectData;
-  onRecreating?: () => void;
+  onRecreating?: () => void | Promise<void>;
   onRefresh?: () => void | Promise<void>;
   transition?: string;
 }) {
@@ -270,8 +270,8 @@ export function SettingsTab({
       } else {
         await api.recreateWithConfig(nodeId, containerId, payload);
         toast.success("Container runtime configuration saved");
-        onRecreating?.();
         invalidate("containers", "tasks");
+        await Promise.resolve(onRecreating?.());
       }
 
       // Update baseline so hasRuntimeChanges becomes false immediately
@@ -407,11 +407,10 @@ export function SettingsTab({
       toast.success(
         recreatesRunningContainer ? "Recreating container..." : "Container configuration saved"
       );
-      // Trigger an immediate parent refresh; the realtime channel will deliver
-      // the recreate event (with new id) to every open tab, including this one,
-      // and the parent navigates accordingly.
-      onRecreating?.();
       invalidate("containers", "tasks");
+      // Trigger an immediate no-cache refresh and keep the UI locked until
+      // the detail view has observed the updated container state.
+      await Promise.resolve(onRecreating?.());
       setRecreateLoading(false);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to recreate container");

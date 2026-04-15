@@ -1,7 +1,7 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
-import { z } from 'zod';
 import { container } from '@/container.js';
 import { canManageUser, isScopeSubset } from '@/lib/permissions.js';
+import { CreateUserSchema, UpdateBlockSchema, UpdateUserGroupSchema } from '@/modules/admin/admin.schemas.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
 import { authMiddleware, requireScope } from '@/modules/auth/auth.middleware.js';
 import { AuthService } from '@/modules/auth/auth.service.js';
@@ -13,19 +13,55 @@ export const adminRoutes = new OpenAPIHono<AppEnv>();
 
 adminRoutes.use('*', authMiddleware);
 
-const UpdateGroupSchema = z.object({
-  groupId: z.string().uuid(),
-});
-
-const UpdateBlockSchema = z.object({
-  blocked: z.boolean(),
-});
-
 // List all users
 adminRoutes.get('/users', requireScope('admin:users'), async (c) => {
   const authService = container.resolve(AuthService);
   const userList = await authService.listUsers();
   return c.json(userList);
+});
+
+// Create user before first login
+adminRoutes.post('/users', requireScope('admin:users'), async (c) => {
+  const authService = container.resolve(AuthService);
+  const groupService = container.resolve(GroupService);
+  const auditService = container.resolve(AuditService);
+  const currentUser = c.get('user')!;
+  const actorScopes = c.get('effectiveScopes') || [];
+  const body = await c.req.json();
+  const input = CreateUserSchema.parse(body);
+
+  const destGroup = await groupService.getGroup(input.groupId);
+  if (!isScopeSubset(destGroup.scopes as string[], actorScopes)) {
+    return c.json(
+      { code: 'PRIVILEGE_BOUNDARY', message: 'Cannot assign a group with permissions you do not possess' },
+      403
+    );
+  }
+
+  try {
+    const createdUser = await authService.createUser(input);
+
+    await auditService.log({
+      userId: currentUser.id,
+      action: 'user.create',
+      resourceType: 'user',
+      resourceId: createdUser.id,
+      details: { email: createdUser.email, groupId: createdUser.groupId },
+      ipAddress: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || c.req.header('x-real-ip'),
+      userAgent: c.req.header('user-agent'),
+    });
+
+    return c.json(createdUser, 201);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to create user';
+    if (message === 'User with this email already exists') {
+      return c.json({ code: 'CONFLICT', message }, 409);
+    }
+    if (message === 'Permission group not found') {
+      return c.json({ code: 'NOT_FOUND', message }, 404);
+    }
+    throw err;
+  }
 });
 
 // Update user group
@@ -37,7 +73,7 @@ adminRoutes.patch('/users/:id/group', requireScope('admin:users'), async (c) => 
   const actorScopes = c.get('effectiveScopes') || [];
   const userId = c.req.param('id');
   const body = await c.req.json();
-  const { groupId } = UpdateGroupSchema.parse(body);
+  const { groupId } = UpdateUserGroupSchema.parse(body);
 
   if (userId === currentUser.id) {
     return c.json({ code: 'SELF_DEMOTION', message: 'Cannot change your own group' }, 400);

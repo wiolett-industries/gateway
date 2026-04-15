@@ -26,6 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { TruncateStart } from "@/components/ui/truncate-start";
 import { useRealtime } from "@/hooks/use-realtime";
 import { formatBytes, formatCreated } from "@/lib/utils";
 import { api } from "@/services/api";
@@ -260,7 +261,7 @@ export function DockerImages({
                 <HardDrive className="h-4 w-4 text-muted-foreground" />
               </div>
               <div className="min-w-0">
-                <p className="text-sm font-medium truncate">{tag}</p>
+                <TruncateStart text={tag} className="text-sm font-medium" />
                 {tags.length > 1 && (
                   <p className="text-xs text-muted-foreground truncate">
                     +{tags.length - 1} more tag{tags.length > 2 ? "s" : ""}
@@ -286,11 +287,16 @@ export function DockerImages({
       {
         key: "node",
         header: "Node",
-        width: "140px",
+        width: "minmax(210px, 0.8fr)",
         render: (img: any) => (
-          <Badge variant="secondary" className="text-xs w-fit">
-            {(img as any)._nodeName || "-"}
-          </Badge>
+          <div className="min-w-0 flex">
+            <Badge
+              variant="secondary"
+              className="text-xs max-w-full overflow-hidden text-ellipsis whitespace-nowrap inline-flex"
+            >
+              {(img as any)._nodeName || "-"}
+            </Badge>
+          </div>
         ),
       },
       {

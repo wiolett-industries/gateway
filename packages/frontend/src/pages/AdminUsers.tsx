@@ -1,4 +1,4 @@
-import { Ban, Lock, Trash2, Unlock } from "lucide-react";
+import { Ban, Lock, Plus, Trash2, Unlock } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -9,6 +9,14 @@ import { PageTransition } from "@/components/common/PageTransition";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -41,6 +49,11 @@ export function AdminUsers() {
   const [users, setUsers] = useState<User[]>(cachedUsers ?? []);
   const [groups, setGroups] = useState<PermissionGroup[]>([]);
   const [isLoading, setIsLoading] = useState(!cachedUsers);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [createEmail, setCreateEmail] = useState("");
+  const [createName, setCreateName] = useState("");
+  const [createGroupId, setCreateGroupId] = useState("");
 
   useEffect(() => {
     if (!hasScope("admin:users")) {
@@ -70,6 +83,15 @@ export function AdminUsers() {
       .then(setGroups)
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (createGroupId || groups.length === 0) return;
+    const preferred =
+      groups.find((group) => group.name === "viewer") ??
+      groups.find((group) => !group.isBuiltin) ??
+      groups[0];
+    if (preferred) setCreateGroupId(preferred.id);
+  }, [createGroupId, groups]);
 
   useRealtime("user.changed", () => {
     reloadUsers();
@@ -126,6 +148,40 @@ export function AdminUsers() {
     }
   };
 
+  const resetCreateDialog = () => {
+    setCreateOpen(false);
+    setCreateEmail("");
+    setCreateName("");
+    const preferred =
+      groups.find((group) => group.name === "viewer") ??
+      groups.find((group) => !group.isBuiltin) ??
+      groups[0];
+    setCreateGroupId(preferred?.id ?? "");
+  };
+
+  const handleCreateUser = async () => {
+    if (!createEmail.trim() || !createGroupId) {
+      toast.error("Email and group are required");
+      return;
+    }
+
+    setCreating(true);
+    try {
+      await api.createUser({
+        email: createEmail.trim(),
+        name: createName.trim() || undefined,
+        groupId: createGroupId,
+      });
+      toast.success("User created");
+      resetCreateDialog();
+      reloadUsers();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to create user");
+    } finally {
+      setCreating(false);
+    }
+  };
+
   if (isLoading) {
     return <LoadingSpinner />;
   }
@@ -155,6 +211,10 @@ export function AdminUsers() {
             {summaryParts.length > 0 && <> &middot; {summaryParts.join(", ")}</>}
           </p>
         </div>
+        <Button onClick={() => setCreateOpen(true)}>
+          <Plus className="h-4 w-4" />
+          Create User
+        </Button>
 
         {users.length > 0 ? (
           <div className="border border-border bg-card">
@@ -259,6 +319,69 @@ export function AdminUsers() {
         ) : (
           <EmptyState message="No users." />
         )}
+
+        <Dialog open={createOpen} onOpenChange={(open) => (!creating ? setCreateOpen(open) : null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Create User</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label htmlFor="create-user-email" className="text-sm font-medium">
+                  Email
+                </label>
+                <Input
+                  id="create-user-email"
+                  type="email"
+                  placeholder="user@example.com"
+                  value={createEmail}
+                  onChange={(e) => setCreateEmail(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <label htmlFor="create-user-name" className="text-sm font-medium">
+                  Name
+                </label>
+                <Input
+                  id="create-user-name"
+                  placeholder="Jane Doe"
+                  value={createName}
+                  onChange={(e) => setCreateName(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Group</label>
+                <Select value={createGroupId} onValueChange={setCreateGroupId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select group" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {groups.map((group) => (
+                      <SelectItem key={group.id} value={group.id}>
+                        {group.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                This creates a placeholder account so you can assign permissions before the user
+                logs in for the first time.
+              </p>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={resetCreateDialog} disabled={creating}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleCreateUser}
+                disabled={creating || !createEmail || !createGroupId}
+              >
+                Create
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </PageTransition>
   );

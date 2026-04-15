@@ -69,7 +69,7 @@ func NewExecManager(c *Client, writer *stream.Writer, logger *slog.Logger) *Exec
 }
 
 // CreateOrReuse returns an existing session or creates a new one.
-func (em *ExecManager) CreateOrReuse(ctx context.Context, containerID string, cmd []string, tty bool, rows, cols int) (string, bool, error) {
+func (em *ExecManager) CreateOrReuse(ctx context.Context, containerID string, cmd []string, tty bool, rows, cols int, user string) (string, bool, error) {
 	em.mu.Lock()
 	existing, ok := em.sessions[containerID]
 	em.mu.Unlock()
@@ -104,6 +104,7 @@ func (em *ExecManager) CreateOrReuse(ctx context.Context, containerID string, cm
 		AttachStdout: true,
 		AttachStderr: true,
 		ConsoleSize:  consoleSize,
+		User:         user,
 	})
 	if err != nil {
 		return "", false, err

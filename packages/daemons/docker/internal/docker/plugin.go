@@ -851,7 +851,15 @@ func (p *DockerPlugin) handleExecCommand(cmd *pb.DockerExecCommand, result *pb.C
 			result.Error = "container_id is required for exec create"
 			return
 		}
-		execID, isNew, err := p.execMgr.CreateOrReuse(ctx, cmd.ContainerId, cmd.Command, cmd.Tty, int(cmd.Rows), int(cmd.Cols))
+		execID, isNew, err := p.execMgr.CreateOrReuse(
+			ctx,
+			cmd.ContainerId,
+			cmd.Command,
+			cmd.Tty,
+			int(cmd.Rows),
+			int(cmd.Cols),
+			cmd.User,
+		)
 		if err != nil {
 			result.Success = false
 			result.Error = fmt.Sprintf("exec create: %v", err)

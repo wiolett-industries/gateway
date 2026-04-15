@@ -13,6 +13,7 @@ interface PinnedContainersState {
     containerId: string,
     meta?: { nodeId: string; name: string; state?: string }
   ) => void;
+  removePin: (containerId: string) => void;
   isPinnedDashboard: (containerId: string) => boolean;
   isPinnedSidebar: (containerId: string) => boolean;
   /** Update display name / state (e.g. after rename or status change) */
@@ -52,6 +53,17 @@ export const usePinnedContainersStore = create<PinnedContainersState>()(
             sidebarContainerIds: isSidebar
               ? s.sidebarContainerIds.filter((id) => id !== containerId)
               : [...s.sidebarContainerIds, containerId],
+            containerMeta: newMeta,
+          };
+        }),
+
+      removePin: (containerId) =>
+        set((s) => {
+          const newMeta = { ...s.containerMeta };
+          delete newMeta[containerId];
+          return {
+            dashboardContainerIds: s.dashboardContainerIds.filter((id) => id !== containerId),
+            sidebarContainerIds: s.sidebarContainerIds.filter((id) => id !== containerId),
             containerMeta: newMeta,
           };
         }),

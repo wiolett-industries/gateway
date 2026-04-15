@@ -298,6 +298,7 @@ export interface DockerExecCommand {
   stdin: boolean;
   rows: number;
   cols: number;
+  user?: string;
 }
 
 export interface DockerFileCommand {

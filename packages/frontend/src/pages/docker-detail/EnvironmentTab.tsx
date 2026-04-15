@@ -23,7 +23,7 @@ export function EnvironmentTab({
   containerId: string;
   containerState?: string;
   disabled?: boolean;
-  onRecreating?: () => void;
+  onRecreating?: () => void | Promise<void>;
 }) {
   const { hasScope } = useAuthStore();
   const invalidate = useDockerStore((s) => s.invalidate);
@@ -209,7 +209,7 @@ export function EnvironmentTab({
           : "Environment updated"
       );
       invalidate("containers", "tasks");
-      // Realtime channel will deliver the recreate event to every open tab.
+      await Promise.resolve(onRecreating?.());
       setIsSaving(false);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to update environment");

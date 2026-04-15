@@ -26,6 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { TruncateStart } from "@/components/ui/truncate-start";
 import { useRealtime } from "@/hooks/use-realtime";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
@@ -207,7 +208,7 @@ export function DockerVolumes({
             <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-muted shrink-0">
               <Database className="h-4 w-4 text-muted-foreground" />
             </div>
-            <p className="text-sm font-medium truncate">{v.name}</p>
+            <TruncateStart text={v.name} className="text-sm font-medium" />
           </div>
         ),
       },
@@ -219,11 +220,16 @@ export function DockerVolumes({
       {
         key: "node",
         header: "Node",
-        width: "140px",
+        width: "minmax(210px, 0.8fr)",
         render: (v) => (
-          <Badge variant="secondary" className="text-xs w-fit">
-            {(v as any)._nodeName || "-"}
-          </Badge>
+          <div className="min-w-0 flex">
+            <Badge
+              variant="secondary"
+              className="text-xs max-w-full overflow-hidden text-ellipsis whitespace-nowrap inline-flex"
+            >
+              {(v as any)._nodeName || "-"}
+            </Badge>
+          </div>
         ),
       },
       {
