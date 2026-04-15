@@ -1,6 +1,7 @@
 import { Download, ExternalLink, ScrollText } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { AnsiText } from "@/components/ui/ansi-text";
 import { Button } from "@/components/ui/button";
 import { VirtualLogList } from "@/components/ui/virtual-log-list";
 import { api } from "@/services/api";
@@ -335,7 +336,7 @@ export function LogsTab({
         keyFn={(_, i) => i}
         renderLine={(line) => (
           <div className="whitespace-pre-wrap break-all leading-5 px-4 font-mono text-xs text-foreground/80">
-            {line as string}
+            <AnsiText text={line as string} />
           </div>
         )}
         onLoadMore={requestMoreLines}
