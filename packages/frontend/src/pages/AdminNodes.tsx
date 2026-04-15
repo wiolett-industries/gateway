@@ -29,6 +29,7 @@ import { useRealtime } from "@/hooks/use-realtime";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useNodesStore } from "@/stores/nodes";
+import { usePinnedNodesStore } from "@/stores/pinned-nodes";
 import type { DaemonUpdateStatus, NodeStatus } from "@/types";
 import { effectiveNodeStatus, isNodeIncompatible, isNodeUpdating } from "@/types";
 
@@ -124,6 +125,7 @@ export function AdminNodes() {
     if (!ok) return;
     try {
       await api.deleteNode(nodeId);
+      usePinnedNodesStore.getState().removePin(nodeId);
       toast.success("Node removed");
       fetchNodes();
     } catch (err) {

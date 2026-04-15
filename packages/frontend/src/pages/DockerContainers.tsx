@@ -25,6 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { TruncateStart } from "@/components/ui/truncate-start";
 import { useRealtime } from "@/hooks/use-realtime";
 import { formatCreated } from "@/lib/utils";
 import { api } from "@/services/api";
@@ -238,7 +239,10 @@ export function DockerContainers({
                 <Box className="h-4 w-4 text-muted-foreground" />
               </div>
               <div className="min-w-0">
-                <p className="text-sm font-medium truncate">{containerDisplayName(c.name)}</p>
+                <TruncateStart
+                  text={containerDisplayName(c.name)}
+                  className="text-sm font-medium"
+                />
                 <p className="text-xs text-muted-foreground font-mono truncate">
                   {c.id.slice(0, 12)}
                 </p>
@@ -251,12 +255,12 @@ export function DockerContainers({
         key: "image",
         header: "Image",
         truncate: true,
-        render: (c) => <span className="text-muted-foreground">{c.image}</span>,
+        render: (c) => <TruncateStart text={c.image} className="text-muted-foreground" />,
       },
       {
         key: "node",
         header: "Node",
-        width: "200px",
+        width: "minmax(210px, 0.8fr)",
         render: (c) => (
           <div className="min-w-0 flex">
             <Badge
@@ -271,7 +275,7 @@ export function DockerContainers({
       {
         key: "status",
         header: "Status",
-        width: "140px",
+        width: "160px",
         render: (c) => (
           <div className="min-w-0 flex">
             <Badge

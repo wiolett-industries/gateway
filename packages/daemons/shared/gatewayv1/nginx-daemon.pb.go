@@ -3150,6 +3150,7 @@ type DockerExecCommand struct {
 	Stdin         bool                   `protobuf:"varint,5,opt,name=stdin,proto3" json:"stdin,omitempty"`
 	Rows          int32                  `protobuf:"varint,6,opt,name=rows,proto3" json:"rows,omitempty"`
 	Cols          int32                  `protobuf:"varint,7,opt,name=cols,proto3" json:"cols,omitempty"`
+	User          string                 `protobuf:"bytes,8,opt,name=user,proto3" json:"user,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3231,6 +3232,13 @@ func (x *DockerExecCommand) GetCols() int32 {
 		return x.Cols
 	}
 	return 0
+}
+
+func (x *DockerExecCommand) GetUser() string {
+	if x != nil {
+		return x.User
+	}
+	return ""
 }
 
 type DockerFileCommand struct {
@@ -4530,7 +4538,7 @@ const file_gateway_v1_nginx_daemon_proto_rawDesc = "" +
 	"\fcontainer_id\x18\x03 \x01(\tR\vcontainerId\x12\x16\n" +
 	"\x06driver\x18\x04 \x01(\tR\x06driver\x12\x16\n" +
 	"\x06subnet\x18\x05 \x01(\tR\x06subnet\x12!\n" +
-	"\fgateway_addr\x18\x06 \x01(\tR\vgatewayAddr\"\xb8\x01\n" +
+	"\fgateway_addr\x18\x06 \x01(\tR\vgatewayAddr\"\xcc\x01\n" +
 	"\x11DockerExecCommand\x12\x16\n" +
 	"\x06action\x18\x01 \x01(\tR\x06action\x12!\n" +
 	"\fcontainer_id\x18\x02 \x01(\tR\vcontainerId\x12\x18\n" +
@@ -4538,7 +4546,8 @@ const file_gateway_v1_nginx_daemon_proto_rawDesc = "" +
 	"\x03tty\x18\x04 \x01(\bR\x03tty\x12\x14\n" +
 	"\x05stdin\x18\x05 \x01(\bR\x05stdin\x12\x12\n" +
 	"\x04rows\x18\x06 \x01(\x05R\x04rows\x12\x12\n" +
-	"\x04cols\x18\a \x01(\x05R\x04cols\"\x99\x01\n" +
+	"\x04cols\x18\a \x01(\x05R\x04cols\x12\x12\n" +
+	"\x04user\x18\b \x01(\tR\x04user\"\x99\x01\n" +
 	"\x11DockerFileCommand\x12\x16\n" +
 	"\x06action\x18\x01 \x01(\tR\x06action\x12!\n" +
 	"\fcontainer_id\x18\x02 \x01(\tR\vcontainerId\x12\x12\n" +

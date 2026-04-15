@@ -13,7 +13,7 @@ import {
   Trash2,
   Type,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
@@ -40,6 +40,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useRealtime } from "@/hooks/use-realtime";
 import { useUrlTab } from "@/hooks/use-url-tab";
 import { api } from "@/services/api";
+import { ApiRequestError } from "@/services/api-base";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
 import { usePinnedContainersStore } from "@/stores/pinned-containers";
@@ -74,6 +75,7 @@ export function DockerContainerDetail() {
     }
   }, [nodeId, storeNodeId, setSelectedNode]);
   const [container, setContainer] = useState<InspectData | null>(null);
+  const containerRef = useRef<InspectData | null>(null);
 
   const [activeTab, setActiveTab] = useUrlTab(
     ["overview", "logs", "console", "files", "stats", "environment", "settings", "config"],
@@ -103,7 +105,10 @@ export function DockerContainerDetail() {
           const cState = (data as any)?._transition ?? (data as any)?.State?.Status ?? "unknown";
           updateMeta(containerId, { nodeId, name: cName, state: cState });
         }
-      } catch {
+      } catch (err) {
+        if (err instanceof ApiRequestError && err.status === 404) {
+          usePinnedContainersStore.getState().removePin(containerId);
+        }
         if (!silent) {
           toast.error("Failed to load container");
           navigate("/docker");
@@ -122,6 +127,86 @@ export function DockerContainerDetail() {
     const interval = setInterval(() => fetchContainer(true), 30000);
     return () => clearInterval(interval);
   }, [fetchContainer]);
+
+  useEffect(() => {
+    containerRef.current = container;
+  }, [container]);
+
+  const refreshAfterMutation = useCallback(async () => {
+    if (!nodeId || !containerId) return;
+
+    const before = containerRef.current;
+    const beforeConfig = (before?.Config ?? {}) as Record<string, any>;
+    const beforeHostConfig = (before?.HostConfig ?? {}) as Record<string, any>;
+    const beforeState = (before?.State ?? {}) as Record<string, any>;
+    const previousSignature = before
+      ? JSON.stringify({
+          id: before.Id ?? "",
+          image: beforeConfig.Image ?? "",
+          env: beforeConfig.Env ?? [],
+          ports: beforeHostConfig.PortBindings ?? {},
+          mounts: before.Mounts ?? [],
+          entrypoint: beforeConfig.Entrypoint ?? [],
+          cmd: beforeConfig.Cmd ?? [],
+          workingDir: beforeConfig.WorkingDir ?? "",
+          user: beforeConfig.User ?? "",
+          hostname: beforeConfig.Hostname ?? "",
+          labels: beforeConfig.Labels ?? {},
+          restartPolicy: beforeHostConfig.RestartPolicy ?? {},
+          memory: beforeHostConfig.Memory ?? 0,
+          memorySwap: beforeHostConfig.MemorySwap ?? 0,
+          nanoCPUs: beforeHostConfig.NanoCPUs ?? 0,
+          cpuShares: beforeHostConfig.CpuShares ?? 0,
+          pidsLimit: beforeHostConfig.PidsLimit ?? 0,
+          transition: (before as any)?._transition ?? null,
+          state: beforeState.Status ?? "",
+        })
+      : "";
+
+    const attempts = [0, 250, 750, 1500, 2500];
+    for (const delayMs of attempts) {
+      if (delayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+
+      try {
+        const next = await api.inspectContainer(nodeId, containerId, true);
+        setContainer(next);
+        containerRef.current = next;
+        const nextConfig = (next.Config ?? {}) as Record<string, any>;
+        const nextHostConfig = (next.HostConfig ?? {}) as Record<string, any>;
+        const nextState = (next.State ?? {}) as Record<string, any>;
+
+        const nextSignature = JSON.stringify({
+          id: next.Id ?? "",
+          image: nextConfig.Image ?? "",
+          env: nextConfig.Env ?? [],
+          ports: nextHostConfig.PortBindings ?? {},
+          mounts: next.Mounts ?? [],
+          entrypoint: nextConfig.Entrypoint ?? [],
+          cmd: nextConfig.Cmd ?? [],
+          workingDir: nextConfig.WorkingDir ?? "",
+          user: nextConfig.User ?? "",
+          hostname: nextConfig.Hostname ?? "",
+          labels: nextConfig.Labels ?? {},
+          restartPolicy: nextHostConfig.RestartPolicy ?? {},
+          memory: nextHostConfig.Memory ?? 0,
+          memorySwap: nextHostConfig.MemorySwap ?? 0,
+          nanoCPUs: nextHostConfig.NanoCPUs ?? 0,
+          cpuShares: nextHostConfig.CpuShares ?? 0,
+          pidsLimit: nextHostConfig.PidsLimit ?? 0,
+          transition: (next as any)?._transition ?? null,
+          state: nextState.Status ?? "",
+        });
+
+        if (nextSignature !== previousSignature || (next as any)?._transition) {
+          return;
+        }
+      } catch {
+        // Realtime/delete handlers already deal with hard failures; keep polling briefly.
+      }
+    }
+  }, [containerId, nodeId]);
 
   // Realtime: refetch on any container.changed event for this container's name.
   // Also handle the recreate ID migration for every open tab.
@@ -224,6 +309,7 @@ export function DockerContainerDetail() {
     setActionLoading(true);
     try {
       await api.removeContainer(nodeId!, containerId!, true);
+      usePinnedContainersStore.getState().removePin(containerId!);
       toast.success("Container removed");
       invalidate("containers", "tasks");
       navigate("/docker");
@@ -459,7 +545,7 @@ export function DockerContainerDetail() {
               containerId={containerId!}
               containerState={state}
               disabled={!!transition}
-              onRecreating={() => fetchContainer(true, true)}
+              onRecreating={refreshAfterMutation}
             />
           </TabsContent>
           <TabsContent value="settings" className="pb-0">
@@ -467,8 +553,8 @@ export function DockerContainerDetail() {
               nodeId={nodeId!}
               containerId={containerId!}
               data={container}
-              onRecreating={() => fetchContainer(true, true)}
-              onRefresh={() => fetchContainer(true, true)}
+              onRecreating={refreshAfterMutation}
+              onRefresh={refreshAfterMutation}
               transition={transition}
             />
           </TabsContent>

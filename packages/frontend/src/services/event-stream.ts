@@ -134,6 +134,12 @@ class EventStream {
           import("@/stores/pinned-nodes")
             .then((m) => m.usePinnedNodesStore.getState().invalidate())
             .catch(() => {});
+          const payload = msg.payload as { action?: string; id?: string } | undefined;
+          if (payload?.action === "deleted" && payload.id) {
+            import("@/stores/pinned-nodes")
+              .then((m) => m.usePinnedNodesStore.getState().removePin(payload.id!))
+              .catch(() => {});
+          }
         } else if (msg.channel === "domain.changed") {
           api.invalidateCache("req:/api/domains");
           api.invalidateCache("domains:list");
@@ -164,6 +170,12 @@ class EventStream {
           api.invalidateCache("req:/api/monitoring/health-status");
           api.invalidateCache("dashboard:stats:");
           api.invalidateCache("dashboard:health");
+          const payload = msg.payload as { action?: string; id?: string } | undefined;
+          if (payload?.action === "deleted" && payload.id) {
+            import("@/stores/pinned-proxies")
+              .then((m) => m.usePinnedProxiesStore.getState().removePin(payload.id!))
+              .catch(() => {});
+          }
         } else if (msg.channel === "pki.template.changed") {
           api.invalidateCache("req:/api/templates");
           api.invalidateCache("templates:list");
@@ -190,6 +202,18 @@ class EventStream {
           api.invalidateCache("req:/api/notifications/webhooks");
         } else if (msg.channel.startsWith("docker.")) {
           api.invalidateCache("req:/api/docker");
+          if (msg.channel === "docker.container.changed") {
+            const payload = msg.payload as
+              | { action?: string; id?: string; oldId?: string }
+              | undefined;
+            const removedId =
+              payload?.action === "removed" ? (payload.id ?? payload.oldId) : undefined;
+            if (removedId) {
+              import("@/stores/pinned-containers")
+                .then((m) => m.usePinnedContainersStore.getState().removePin(removedId))
+                .catch(() => {});
+            }
+          }
         } else if (msg.channel.startsWith("alert.")) {
           api.invalidateCache("req:/api/notifications/deliveries");
         }

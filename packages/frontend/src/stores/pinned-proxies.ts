@@ -7,6 +7,7 @@ interface PinnedProxiesState {
   refreshTick: number;
   toggleDashboard: (proxyId: string) => void;
   toggleSidebar: (proxyId: string) => void;
+  removePin: (proxyId: string) => void;
   isPinnedDashboard: (proxyId: string) => boolean;
   isPinnedSidebar: (proxyId: string) => boolean;
   removeOrphans: (validIds: string[]) => void;
@@ -32,6 +33,12 @@ export const usePinnedProxiesStore = create<PinnedProxiesState>()(
           sidebarProxyIds: s.sidebarProxyIds.includes(proxyId)
             ? s.sidebarProxyIds.filter((id) => id !== proxyId)
             : [...s.sidebarProxyIds, proxyId],
+        })),
+
+      removePin: (proxyId) =>
+        set((s) => ({
+          dashboardProxyIds: s.dashboardProxyIds.filter((id) => id !== proxyId),
+          sidebarProxyIds: s.sidebarProxyIds.filter((id) => id !== proxyId),
         })),
 
       isPinnedDashboard: (proxyId) => get().dashboardProxyIds.includes(proxyId),

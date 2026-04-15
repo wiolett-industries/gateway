@@ -27,6 +27,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useRealtime } from "@/hooks/use-realtime";
 import { useUrlTab } from "@/hooks/use-url-tab";
 import { api } from "@/services/api";
+import { ApiRequestError } from "@/services/api-base";
 import { useAuthStore } from "@/stores/auth";
 import { useNodesStore } from "@/stores/nodes";
 import { usePinnedNodesStore } from "@/stores/pinned-nodes";
@@ -104,7 +105,10 @@ export function AdminNodeDetail() {
       try {
         const data = await api.getNode(id);
         setNode(data);
-      } catch {
+      } catch (err) {
+        if (err instanceof ApiRequestError && err.status === 404) {
+          usePinnedNodesStore.getState().removePin(id);
+        }
         if (!silent) {
           toast.error("Failed to load node");
           navigate("/nodes");
@@ -165,6 +169,7 @@ export function AdminNodeDetail() {
     if (!ok) return;
     try {
       await api.deleteNode(node.id);
+      usePinnedNodesStore.getState().removePin(node.id);
       toast.success("Node removed");
       navigate("/nodes");
     } catch (err) {

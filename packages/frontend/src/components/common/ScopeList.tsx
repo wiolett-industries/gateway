@@ -12,6 +12,12 @@ interface ResourceOption {
   label: string;
 }
 
+interface ParsedScopedSelections {
+  baseScopes: string[];
+  resources: Record<string, string[]>;
+  exactBaseScopes: Set<string>;
+}
+
 interface ScopeListProps {
   scopes: readonly ScopeItem[];
   search: string;
@@ -37,6 +43,35 @@ function matchesQuery(scope: ScopeItem, q: string): boolean {
     scope.value.toLowerCase().includes(q) ||
     scope.desc.toLowerCase().includes(q)
   );
+}
+
+function parseScopedSelections(
+  values: string[],
+  restrictableScopes: readonly string[] = []
+): ParsedScopedSelections {
+  const baseScopes: string[] = [];
+  const resources: Record<string, string[]> = {};
+  const exactBaseScopes = new Set<string>();
+
+  for (const value of values) {
+    let matchedBase: string | null = null;
+    for (const base of restrictableScopes) {
+      if (value.startsWith(`${base}:`)) {
+        matchedBase = base;
+        const resourceId = value.slice(base.length + 1);
+        if (!baseScopes.includes(base)) baseScopes.push(base);
+        if (!resources[base]) resources[base] = [];
+        if (!resources[base].includes(resourceId)) resources[base].push(resourceId);
+        break;
+      }
+    }
+
+    if (matchedBase) continue;
+    if (!baseScopes.includes(value)) baseScopes.push(value);
+    exactBaseScopes.add(value);
+  }
+
+  return { baseScopes, resources, exactBaseScopes };
 }
 
 /** Determine which resource list to show for a scope */
@@ -87,15 +122,18 @@ export function ScopeList({
   readOnly,
 }: ScopeListProps) {
   const q = search.toLowerCase().trim();
-
-  // Build inherited scope items that reuse the same ScopeItem shape
-  const inheritedSet = new Set(inheritedScopes ?? []);
+  const inheritedParsed = parseScopedSelections(inheritedScopes ?? [], restrictableScopes ?? []);
+  const inheritedBaseSet = new Set(inheritedParsed.baseScopes);
   const inheritedItems: ScopeItem[] =
-    inheritedSet.size > 0 ? scopes.filter((s) => inheritedSet.has(s.value)) : [];
+    inheritedBaseSet.size > 0 ? scopes.filter((s) => inheritedBaseSet.has(s.value)) : [];
 
-  // Filter out inherited scopes from the regular list
+  // Filter out only exact inherited base scopes from the regular list.
+  // If a parent grants a scoped variant, keep the base row available so
+  // the child can add broader or additional resource restrictions.
   const ownScopes =
-    inheritedSet.size > 0 ? scopes.filter((s) => !inheritedSet.has(s.value)) : scopes;
+    inheritedParsed.exactBaseScopes.size > 0
+      ? scopes.filter((s) => !inheritedParsed.exactBaseScopes.has(s.value))
+      : scopes;
   const categories = [...new Set(ownScopes.map((s) => s.group))];
 
   const inheritedSection =
@@ -114,7 +152,7 @@ export function ScopeList({
             onToggle={() => {}}
             muted
             disabled
-            resources={resources}
+            resources={inheritedParsed.resources}
             cas={cas}
             nodes={nodes}
             proxyHosts={proxyHosts}
@@ -231,11 +269,19 @@ function ScopeRow({
   proxyHosts?: ProxyHost[];
   restrictableScopes?: readonly string[];
 }) {
-  const canRestrict = !disabled && (restrictableScopes?.includes(scope.value) ?? false);
+  const isRestrictable = restrictableScopes?.includes(scope.value) ?? false;
   const selectedIds = resources?.[scope.value] || [];
-  const resourceOptions = canRestrict
+  const baseResourceOptions = isRestrictable
     ? getResourceOptions(scope.value, cas, nodes, proxyHosts)
     : [];
+  const resourceOptions = [...baseResourceOptions];
+  for (const selectedId of selectedIds) {
+    if (!resourceOptions.some((opt) => opt.id === selectedId)) {
+      resourceOptions.push({ id: selectedId, label: selectedId });
+    }
+  }
+  const showRestrictions =
+    isRestrictable && resourceOptions.length > 0 && (isSelected || selectedIds.length > 0);
 
   return (
     <div className={muted ? "opacity-40" : undefined}>
@@ -257,15 +303,19 @@ function ScopeRow({
           <p className="text-xs text-muted-foreground">{scope.desc}</p>
         </div>
       </label>
-      {canRestrict && isSelected && resourceOptions.length > 0 && onToggleResource && (
+      {showRestrictions && (
         <div className="px-3 pb-2 pl-10">
           <p className="text-xs text-muted-foreground mb-1">{getResourceLabel(scope.value)}</p>
           {resourceOptions.map((opt) => (
-            <label key={opt.id} className="flex items-center gap-2 py-0.5 text-xs cursor-pointer">
+            <label
+              key={opt.id}
+              className={`flex items-center gap-2 py-0.5 text-xs ${disabled ? "cursor-default" : "cursor-pointer"}`}
+            >
               <input
                 type="checkbox"
                 checked={selectedIds.includes(opt.id)}
-                onChange={() => onToggleResource(scope.value, opt.id)}
+                onChange={() => !disabled && onToggleResource?.(scope.value, opt.id)}
+                disabled={disabled || !onToggleResource}
                 className="form-checkbox"
               />
               <span>{opt.label}</span>

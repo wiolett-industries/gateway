@@ -367,6 +367,13 @@ class ApiClient extends ApiClientBase {
     return this.request<User[]>("/admin/users");
   }
 
+  async createUser(data: { email: string; name?: string; groupId: string }): Promise<User> {
+    return this.request<User>("/admin/users", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
   async updateUserGroup(userId: string, groupId: string): Promise<User> {
     return this.request<User>(`/admin/users/${userId}/group`, {
       method: "PATCH",

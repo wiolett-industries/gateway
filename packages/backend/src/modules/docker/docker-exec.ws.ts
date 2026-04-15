@@ -259,6 +259,7 @@ async function authenticateAndCreateExec(
       command: [usedShell],
       tty: true,
       stdin: true,
+      user: 'root',
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to create exec session';

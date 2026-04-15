@@ -26,6 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { TruncateStart } from "@/components/ui/truncate-start";
 import { useRealtime } from "@/hooks/use-realtime";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
@@ -228,7 +229,7 @@ export function DockerNetworks({
               <Network className="h-4 w-4 text-muted-foreground" />
             </div>
             <div className="min-w-0">
-              <p className="text-sm font-medium truncate">{net.name}</p>
+              <TruncateStart text={net.name} className="text-sm font-medium" />
               <p className="text-xs text-muted-foreground font-mono truncate">
                 {net.id.slice(0, 12)}
               </p>
@@ -258,11 +259,16 @@ export function DockerNetworks({
       {
         key: "node",
         header: "Node",
-        width: "140px",
+        width: "minmax(210px, 0.8fr)",
         render: (n) => (
-          <Badge variant="secondary" className="text-xs w-fit">
-            {(n as any)._nodeName || "-"}
-          </Badge>
+          <div className="min-w-0 flex">
+            <Badge
+              variant="secondary"
+              className="text-xs max-w-full overflow-hidden text-ellipsis whitespace-nowrap inline-flex"
+            >
+              {(n as any)._nodeName || "-"}
+            </Badge>
+          </div>
         ),
       },
       {

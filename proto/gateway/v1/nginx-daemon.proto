@@ -340,6 +340,7 @@ message DockerExecCommand {
   bool stdin = 5;
   int32 rows = 6;
   int32 cols = 7;
+  string user = 8;
 }
 
 message DockerFileCommand {

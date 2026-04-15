@@ -46,7 +46,11 @@ export function Dashboard() {
     if (!hasScope("nodes:list")) return;
     api
       .listNodes({ limit: 100 })
-      .then((r) => setNodesList(r.data ?? []))
+      .then((r) => {
+        const nodes = r.data ?? [];
+        setNodesList(nodes);
+        usePinnedNodesStore.getState().removeOrphans(nodes.map((n) => n.id));
+      })
       .catch(() => {});
   }, [hasScope]);
 
@@ -125,7 +129,9 @@ export function Dashboard() {
     return api
       .listProxyHosts({ limit: 100 })
       .then((r) => {
-        setPinnedProxyHosts((r.data ?? []).filter((p) => dashboardPinnedProxyIds.includes(p.id)));
+        const hosts = r.data ?? [];
+        setPinnedProxyHosts(hosts.filter((p) => dashboardPinnedProxyIds.includes(p.id)));
+        usePinnedProxiesStore.getState().removeOrphans(hosts.map((p) => p.id));
       })
       .catch(() => {});
   }, [dashboardPinnedProxyIds, hasScope]);
