@@ -299,7 +299,7 @@ export function TerminalConsole({
     <div className="relative flex-1 min-h-0">
       <div
         ref={termRef}
-        className="absolute inset-0 bg-[#0e0e0e] rounded-md overflow-hidden border border-border p-2"
+        className="absolute inset-0 bg-[#0e0e0e] rounded-md overflow-hidden border border-border"
       />
       {popoutUrl && (
         <div className="absolute right-2.5 bottom-2.5 z-10">
