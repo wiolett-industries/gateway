@@ -294,12 +294,12 @@ export function AdminNodeDetail() {
               <TabsTrigger value="nginx-logs">Nginx Logs</TabsTrigger>
             )}
             {!isNodeIncompatible(node) && node.type === "docker" && (
-              <PageTransition>
+              <>
                 <TabsTrigger value="containers">Containers</TabsTrigger>
                 <TabsTrigger value="images">Images</TabsTrigger>
                 <TabsTrigger value="volumes">Volumes</TabsTrigger>
                 <TabsTrigger value="networks">Networks</TabsTrigger>
-              </PageTransition>
+              </>
             )}
             {!isNodeIncompatible(node) && node.status === "online" && hasScope("nodes:console") && (
               <TabsTrigger value="console">Console</TabsTrigger>
@@ -316,7 +316,7 @@ export function AdminNodeDetail() {
             </div>
           )}
 
-          <div className="relative flex-1 min-h-0">
+          <div className="relative flex flex-col flex-1 min-h-0">
             <TabsContent value="details" className="pb-6">
               <NodeDetailsTab node={node} />
             </TabsContent>
