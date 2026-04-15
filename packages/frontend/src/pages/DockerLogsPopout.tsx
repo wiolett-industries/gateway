@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
+import { AnsiText } from "@/components/ui/ansi-text";
 import { VirtualLogList } from "@/components/ui/virtual-log-list";
 import { api } from "@/services/api";
 
@@ -173,7 +174,7 @@ export function DockerLogsPopout() {
       keyFn={(_, i) => i}
       renderLine={(line) => (
         <div className="whitespace-pre-wrap break-all leading-5 px-4 font-mono text-xs text-gray-300">
-          {line as string}
+          <AnsiText text={line as string} />
         </div>
       )}
       onLoadMore={requestMoreLines}
