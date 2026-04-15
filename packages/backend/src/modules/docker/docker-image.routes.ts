@@ -30,14 +30,12 @@ export function registerImageRoutes(router: OpenAPIHono<AppEnv>) {
     // Resolve registry credentials and prefix image ref if using private registry
     let finalImageRef = imageRef;
     let registryAuth: string | undefined;
-    if (registryId) {
-      const auth = await registryService.getAuthForPull(registryId);
-      if (auth) {
-        registryAuth = auth.authJson;
-        // Prefix image ref with registry URL if not already prefixed
-        if (!imageRef.includes('/') || !imageRef.split('/')[0].includes('.')) {
-          finalImageRef = `${auth.url}/${imageRef}`;
-        }
+    const auth = await registryService.resolveAuthForImagePull(nodeId, imageRef, registryId);
+    if (auth) {
+      registryAuth = auth.authJson;
+      // Prefix image ref with registry URL if not already prefixed
+      if (!imageRef.includes('/') || !imageRef.split('/')[0].includes('.')) {
+        finalImageRef = `${auth.url}/${imageRef}`;
       }
     }
 
@@ -55,13 +53,11 @@ export function registerImageRoutes(router: OpenAPIHono<AppEnv>) {
 
     let finalImageRef = imageRef;
     let registryAuth: string | undefined;
-    if (registryId) {
-      const auth = await registryService.getAuthForPull(registryId);
-      if (auth) {
-        registryAuth = auth.authJson;
-        if (!imageRef.includes('/') || !imageRef.split('/')[0].includes('.')) {
-          finalImageRef = `${auth.url}/${imageRef}`;
-        }
+    const auth = await registryService.resolveAuthForImagePull(nodeId, imageRef, registryId);
+    if (auth) {
+      registryAuth = auth.authJson;
+      if (!imageRef.includes('/') || !imageRef.split('/')[0].includes('.')) {
+        finalImageRef = `${auth.url}/${imageRef}`;
       }
     }
 

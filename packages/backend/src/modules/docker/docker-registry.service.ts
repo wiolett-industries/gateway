@@ -298,6 +298,30 @@ export class DockerRegistryService {
     }
   }
 
+  private normalizeRegistryHost(value: string): string {
+    const trimmed = value.trim();
+    if (!trimmed) return '';
+    try {
+      const withScheme = /^[a-z]+:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+      const url = new URL(withScheme);
+      return url.host.toLowerCase();
+    } catch {
+      return trimmed
+        .replace(/^https?:\/\//i, '')
+        .replace(/\/.*$/, '')
+        .toLowerCase();
+    }
+  }
+
+  private extractRegistryHostFromImageRef(imageRef: string): string | null {
+    const firstSegment = imageRef.split('/')[0] ?? '';
+    if (!firstSegment) return null;
+    if (firstSegment === 'localhost' || firstSegment.includes('.') || firstSegment.includes(':')) {
+      return firstSegment.toLowerCase();
+    }
+    return null;
+  }
+
   /**
    * Get base64-encoded Docker auth JSON for a registry (for image pull).
    * Returns the registry URL and auth string, or null if not found.
@@ -314,6 +338,43 @@ export class DockerRegistryService {
       })
     ).toString('base64');
     return { url: row.url.replace(/^https?:\/\//, '').replace(/\/+$/, ''), authJson };
+  }
+
+  /**
+   * Resolve registry auth either by explicit registryId or by inferring the registry
+   * host from the image reference and matching it against saved registries visible
+   * to the target node (global + node-specific).
+   */
+  async resolveAuthForImagePull(
+    nodeId: string,
+    imageRef: string,
+    registryId?: string
+  ): Promise<{ url: string; authJson: string } | null> {
+    if (registryId) {
+      return this.getAuthForPull(registryId);
+    }
+
+    const imageRegistryHost = this.extractRegistryHostFromImageRef(imageRef);
+    if (!imageRegistryHost) return null;
+
+    const rows = await this.db
+      .select()
+      .from(dockerRegistries)
+      .where(or(eq(dockerRegistries.scope, 'global'), eq(dockerRegistries.nodeId, nodeId)));
+
+    const match = rows.find((row) => this.normalizeRegistryHost(row.url) === imageRegistryHost);
+    if (!match?.username || !match.encryptedPassword) return null;
+
+    const password = this.decryptPassword(match.encryptedPassword);
+    const authJson = Buffer.from(
+      JSON.stringify({
+        username: match.username,
+        password,
+        serveraddress: match.url,
+      })
+    ).toString('base64');
+
+    return { url: this.normalizeRegistryHost(match.url), authJson };
   }
 
   private decryptPassword(encryptedJson: string): string {
