@@ -11,7 +11,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import type { AccessList, CustomHeader, ProxyHost, RewriteRule, SSLCertificate } from "@/types";
+import type {
+  AccessList,
+  CustomHeader,
+  NginxTemplate,
+  ProxyHost,
+  RewriteRule,
+  SSLCertificate,
+} from "@/types";
 import { ToggleRow } from "./helpers";
 
 export interface SettingsTabProps {
@@ -38,6 +45,15 @@ export interface SettingsTabProps {
   onAccessListChange: (v: string) => void;
   sslCerts: SSLCertificate[];
   onSslCertificateChange: (v: string) => void;
+  nginxTemplates: NginxTemplate[];
+  nginxTemplateId: string;
+  onNginxTemplateChange: (v: string) => void;
+  selectedTemplate: NginxTemplate | null;
+  templateVariables: Record<string, string | number | boolean>;
+  onTemplateVariableChange: (name: string, value: string | number | boolean) => void;
+  onSaveTemplateSettings: () => void;
+  isSavingTemplate: boolean;
+  hasTemplateSettingsChanged: boolean;
   canManage: boolean;
   hasHeadersChanged: boolean;
   hasRewritesChanged: boolean;
@@ -77,6 +93,15 @@ export function SettingsTab({
   onAccessListChange,
   sslCerts,
   onSslCertificateChange,
+  nginxTemplates,
+  nginxTemplateId,
+  onNginxTemplateChange,
+  selectedTemplate,
+  templateVariables,
+  onTemplateVariableChange,
+  onSaveTemplateSettings,
+  isSavingTemplate,
+  hasTemplateSettingsChanged,
   canManage,
   hasHeadersChanged,
   hasRewritesChanged,
@@ -134,6 +159,124 @@ export function SettingsTab({
           </div>
         </div>
       </div>
+
+      {(nginxTemplates.length > 0 || nginxTemplateId) && (
+        <div className="border border-border bg-card">
+          <div className="flex items-center justify-between p-4 border-b border-border">
+            <div>
+              <h2 className="font-semibold text-sm">Config Template</h2>
+              <p className="text-xs text-muted-foreground">
+                Select a proxy template and configure its variables
+              </p>
+            </div>
+            {canManage && (
+              <Button
+                size="sm"
+                className="h-7 text-xs px-2.5"
+                onClick={onSaveTemplateSettings}
+                disabled={!hasTemplateSettingsChanged || isSavingTemplate}
+              >
+                <Save className="h-3.5 w-3.5" />
+                Save
+              </Button>
+            )}
+          </div>
+          <div className="p-4 space-y-4">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Template</label>
+              <Select
+                value={nginxTemplateId || "__none__"}
+                onValueChange={(v) => onNginxTemplateChange(v === "__none__" ? "" : v)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Default template" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">Default template</SelectItem>
+                  {nginxTemplates.map((template) => (
+                    <SelectItem key={template.id} value={template.id}>
+                      {template.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {selectedTemplate?.variables?.length ? (
+              <div className="border border-border">
+                <div className="grid grid-cols-[minmax(0,14rem)_minmax(0,1fr)_minmax(0,12rem)] border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  <div className="px-3 py-2">Variable</div>
+                  <div className="px-3 py-2 border-l border-border">Description</div>
+                  <div className="px-3 py-2 border-l border-border">Value</div>
+                </div>
+                <div>
+                  {selectedTemplate.variables.map((variable) => (
+                    <div
+                      key={variable.name}
+                      className="grid grid-cols-[minmax(0,14rem)_minmax(0,1fr)_minmax(0,12rem)] border-b border-border last:border-b-0"
+                    >
+                      <div className="px-3 py-2 min-w-0 flex items-center">
+                        <p className="text-sm font-medium truncate">{variable.name}</p>
+                      </div>
+                      <div className="border-l border-border">
+                        <div className="flex h-9 items-center px-3 min-w-0">
+                          <p className="text-sm font-medium truncate">
+                            {variable.description || "—"}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="border-l border-border">
+                        {variable.type === "boolean" ? (
+                          <Select
+                            value={
+                              templateVariables[variable.name] === true ||
+                              templateVariables[variable.name] === "true"
+                                ? "true"
+                                : "false"
+                            }
+                            onValueChange={(value) =>
+                              onTemplateVariableChange(variable.name, value === "true")
+                            }
+                          >
+                            <SelectTrigger className="h-9 text-xs border-0 rounded-none shadow-none focus:ring-1 focus:ring-inset focus:ring-ring">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="true">Enabled</SelectItem>
+                              <SelectItem value="false">Disabled</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        ) : variable.type === "number" ? (
+                          <NumericInput
+                            value={Number(
+                              templateVariables[variable.name] ?? variable.default ?? 0
+                            )}
+                            onChange={(value) => onTemplateVariableChange(variable.name, value)}
+                            className="h-9 text-xs border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+                          />
+                        ) : (
+                          <Input
+                            value={String(
+                              templateVariables[variable.name] ?? variable.default ?? ""
+                            )}
+                            onChange={(e) =>
+                              onTemplateVariableChange(variable.name, e.target.value)
+                            }
+                            placeholder={
+                              variable.default !== undefined ? String(variable.default) : ""
+                            }
+                            className="h-9 text-xs border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+                          />
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      )}
 
       {/* SSL */}
       <div className="border border-border bg-card">

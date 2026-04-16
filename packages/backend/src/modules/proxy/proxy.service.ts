@@ -11,7 +11,6 @@ import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { CryptoService } from '@/services/crypto.service.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
 import type { NginxConfigGenerator, ProxyHostConfig } from '@/services/nginx-config-generator.service.js';
-import type { NginxSyntaxValidatorService } from '@/services/nginx-syntax-validator.service.js';
 import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import type { PaginatedResponse } from '@/types.js';
 import type { NginxTemplateService } from './nginx-template.service.js';
@@ -57,8 +56,7 @@ export class ProxyService {
     private readonly auditService: AuditService,
     private readonly cryptoService: CryptoService,
     private readonly configGenerator: NginxConfigGenerator,
-    private readonly nodeDispatch: NodeDispatchService,
-    private readonly nginxSyntaxValidator: NginxSyntaxValidatorService
+    private readonly nodeDispatch: NodeDispatchService
   ) {}
 
   private eventBus?: EventBusService;
@@ -637,10 +635,12 @@ export class ProxyService {
     const staticResult = this.configGenerator.validateAdvancedConfig(snippet, rawMode);
     if (!staticResult.valid) return staticResult;
 
-    // For raw mode, also run nginx -t syntax validation if available
+    // Do not run backend-local nginx -t for raw mode. Raw configs can contain
+    // valid node-specific includes/paths that do not exist inside the Gateway
+    // container, so local syntax checks produce false failures. The actual
+    // node-side validation still happens during save/apply.
     if (rawMode) {
-      const syntaxResult = await this.nginxSyntaxValidator.validate(snippet);
-      if (!syntaxResult.valid) return syntaxResult;
+      return staticResult;
     }
 
     return staticResult;

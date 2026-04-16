@@ -242,12 +242,6 @@ export function CreateProxyHostDialog({
     [nginxTemplateList, type]
   );
 
-  // Derived: selected template for variable rendering
-  const selectedTemplate = useMemo(
-    () => nginxTemplateList.find((t) => t.id === nginxTemplateId),
-    [nginxTemplateList, nginxTemplateId]
-  );
-
   // Validation
   const isStep1Valid = nodeId !== "" && domainNames.some((d) => d.trim() !== "");
 
@@ -789,51 +783,6 @@ export function CreateProxyHostDialog({
                         ))}
                       </SelectContent>
                     </Select>
-
-                    {selectedTemplate?.variables && selectedTemplate.variables.length > 0 && (
-                      <div className="space-y-3 border border-border p-3">
-                        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                          Template Variables
-                        </h4>
-                        {selectedTemplate.variables.map((v) => (
-                          <div key={v.name} className="space-y-1">
-                            <label className="text-xs font-medium">{v.name}</label>
-                            {v.description && (
-                              <p className="text-xs text-muted-foreground">{v.description}</p>
-                            )}
-                            {v.type === "boolean" ? (
-                              <Switch
-                                checked={
-                                  templateVariables[v.name] === true ||
-                                  templateVariables[v.name] === "true"
-                                }
-                                onChange={(checked) =>
-                                  setTemplateVariables({ ...templateVariables, [v.name]: checked })
-                                }
-                              />
-                            ) : v.type === "number" ? (
-                              <NumericInput
-                                value={Number(templateVariables[v.name] ?? v.default ?? 0)}
-                                onChange={(num) =>
-                                  setTemplateVariables({ ...templateVariables, [v.name]: num })
-                                }
-                                className="w-48"
-                              />
-                            ) : (
-                              <Input
-                                value={String(templateVariables[v.name] ?? v.default ?? "")}
-                                onChange={(e) =>
-                                  setTemplateVariables({
-                                    ...templateVariables,
-                                    [v.name]: e.target.value,
-                                  })
-                                }
-                              />
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
                   </div>
                 </div>
               )}

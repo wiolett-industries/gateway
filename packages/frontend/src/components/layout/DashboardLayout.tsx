@@ -199,6 +199,18 @@ export function DashboardLayout() {
         const ca = useCAStore.getState().cas?.find((c) => c.id === caMatch[1]);
         return ca ? `CA: ${ca.commonName}` : `CA: ${caMatch[1].slice(0, 8)}`;
       }
+      // Nginx template detail: /nginx-templates/:id
+      const templateMatch = path.match(/^\/nginx-templates\/([0-9a-f-]{36})/);
+      if (templateMatch) {
+        api
+          .getNginxTemplate(templateMatch[1])
+          .then((template) => {
+            const resolvedLabel = `Template: ${template.name}`;
+            useUIStore.getState().addRecentPage(path, resolvedLabel);
+          })
+          .catch(() => {});
+        return `Template: ${templateMatch[1].slice(0, 8)}`;
+      }
       // Generic: prettify path segments
       const segments = path.split("/").filter(Boolean);
       return segments
