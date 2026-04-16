@@ -204,7 +204,7 @@ export function DockerVolumes({
       {
         key: "name",
         header: "Name",
-        width: "minmax(260px, 1.35fr)",
+        width: "minmax(0, 1.25fr)",
         render: (v) => (
           <div className="flex items-center gap-3 min-w-0">
             <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-muted shrink-0">
@@ -217,16 +217,16 @@ export function DockerVolumes({
       {
         key: "driver",
         header: "Driver",
-        width: "110px",
+        width: "7rem",
         render: (v) => <span className="text-sm text-muted-foreground">{v.driver}</span>,
       },
       {
         key: "node",
         header: "Node",
-        width: "minmax(220px, 1fr)",
+        width: "minmax(0, 0.95fr)",
         render: (v) => (
           <div className="min-w-0 flex">
-            <Badge variant="secondary" className="text-xs w-fit max-w-full">
+            <Badge variant="secondary" className="text-xs">
               {(v as any)._nodeName || "-"}
             </Badge>
           </div>
@@ -235,7 +235,7 @@ export function DockerVolumes({
       {
         key: "usage",
         header: "Usage",
-        width: "108px",
+        width: "6.5rem",
         render: (v) => {
           const usedBy: string[] = (v as any).usedBy ?? (v as any).UsedBy ?? [];
           const isUsed = usedBy.length > 0;
@@ -260,7 +260,7 @@ export function DockerVolumes({
       {
         key: "created",
         header: "Created",
-        width: "120px",
+        width: "8rem",
         align: "right" as const,
         render: (v) => (
           <span className="text-sm text-muted-foreground">
@@ -271,7 +271,7 @@ export function DockerVolumes({
       {
         key: "actions",
         header: "Actions",
-        width: "72px",
+        width: "5rem",
         align: "right" as const,
         render: (v) => {
           const usedBy: string[] = (v as any).usedBy ?? (v as any).UsedBy ?? [];

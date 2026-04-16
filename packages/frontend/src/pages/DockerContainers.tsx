@@ -228,7 +228,7 @@ export function DockerContainers({
       {
         key: "name",
         header: "Name",
-        width: "minmax(260px, 1.35fr)",
+        width: "minmax(0, 1.2fr)",
         truncate: true,
         render: (c) => {
           const isCompose = !!c.labels?.["com.docker.compose.project"];
@@ -256,17 +256,17 @@ export function DockerContainers({
       {
         key: "image",
         header: "Image",
-        width: "minmax(280px, 1.45fr)",
+        width: "minmax(0, 1.4fr)",
         truncate: true,
         render: (c) => <TruncateStart text={c.image} className="text-muted-foreground" />,
       },
       {
         key: "node",
         header: "Node",
-        width: "minmax(220px, 1fr)",
+        width: "minmax(0, 0.95fr)",
         render: (c) => (
           <div className="min-w-0 flex">
-            <Badge variant="secondary" className="text-xs w-fit max-w-full">
+            <Badge variant="secondary" className="text-xs">
               {(c as any)._nodeName || "-"}
             </Badge>
           </div>
@@ -275,12 +275,12 @@ export function DockerContainers({
       {
         key: "status",
         header: "Status",
-        width: "120px",
+        width: "8.5rem",
         render: (c) => (
           <div className="min-w-0 flex">
             <Badge
               variant={STATUS_BADGE[(c as any)._transition ?? c.state] ?? "secondary"}
-              className="text-xs w-fit max-w-full"
+              className="text-xs"
             >
               {(c as any)._transition ?? c.state}
             </Badge>
@@ -290,7 +290,7 @@ export function DockerContainers({
       {
         key: "created",
         header: "Created",
-        width: "120px",
+        width: "8rem",
         render: (c) => (
           <span className="text-muted-foreground whitespace-nowrap">
             {formatCreated(c.created)}
@@ -300,7 +300,7 @@ export function DockerContainers({
       {
         key: "actions",
         header: "Actions",
-        width: "72px",
+        width: "5.5rem",
         align: "right" as const,
         render: (c) => {
           const loadingAction = actionLoading[c.id];

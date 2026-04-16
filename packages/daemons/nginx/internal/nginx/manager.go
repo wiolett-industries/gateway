@@ -61,24 +61,23 @@ func (m *Manager) GetVersion() (string, error) {
 
 func (m *Manager) IsRunning() bool {
 	pidFile := m.findPidFile()
-	if pidFile == "" {
-		return false
+	if pidFile != "" {
+		data, err := os.ReadFile(pidFile)
+		if err == nil {
+			pid, parseErr := strconv.Atoi(strings.TrimSpace(string(data)))
+			if parseErr == nil {
+				proc, findErr := os.FindProcess(pid)
+				if findErr == nil {
+					// On Unix, FindProcess always succeeds. Check if process exists via signal 0.
+					if signalErr := proc.Signal(syscall.Signal(0)); signalErr == nil {
+						return true
+					}
+				}
+			}
+		}
 	}
-	data, err := os.ReadFile(pidFile)
-	if err != nil {
-		return false
-	}
-	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
-	if err != nil {
-		return false
-	}
-	proc, err := os.FindProcess(pid)
-	if err != nil {
-		return false
-	}
-	// On Unix, FindProcess always succeeds. Check if process exists via signal 0.
-	err = proc.Signal(syscall.Signal(0))
-	return err == nil
+
+	return m.hasRunningProcess()
 }
 
 func (m *Manager) GetUptime() (time.Duration, error) {
@@ -149,6 +148,8 @@ func (m *Manager) findPidFile() string {
 	candidates := []string{
 		"/run/nginx.pid",
 		"/var/run/nginx.pid",
+		"/run/nginx/nginx.pid",
+		"/var/run/nginx/nginx.pid",
 		"/etc/nginx/nginx.pid",
 	}
 	// Also try to parse from nginx.conf
@@ -172,6 +173,41 @@ func (m *Manager) findPidFile() string {
 		}
 	}
 	return ""
+}
+
+func (m *Manager) hasRunningProcess() bool {
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return false
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		pid := entry.Name()
+		if _, err := strconv.Atoi(pid); err != nil {
+			continue
+		}
+
+		cmdline, err := os.ReadFile(filepath.Join("/proc", pid, "cmdline"))
+		if err == nil {
+			cmdlineText := strings.ReplaceAll(string(cmdline), "\x00", " ")
+			if strings.Contains(cmdlineText, "nginx: master process") {
+				return true
+			}
+			if strings.Contains(cmdlineText, m.binary) {
+				return true
+			}
+		}
+
+		comm, err := os.ReadFile(filepath.Join("/proc", pid, "comm"))
+		if err == nil && strings.TrimSpace(string(comm)) == "nginx" {
+			return true
+		}
+	}
+
+	return false
 }
 
 // GetProcessRSS scans /proc for all nginx processes and sums their RSS in bytes.
