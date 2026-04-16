@@ -8,12 +8,12 @@ import (
 )
 
 type Config struct {
-	Gateway  GatewayConfig `yaml:"gateway"`
-	TLS      TLSConfig     `yaml:"tls"`
-	Nginx    NginxConfig   `yaml:"nginx"`
-	StateDir string        `yaml:"state_dir"`
-	LogLevel string        `yaml:"log_level"`
-	LogFormat string       `yaml:"log_format"`
+	Gateway   GatewayConfig `yaml:"gateway"`
+	TLS       TLSConfig     `yaml:"tls"`
+	Nginx     NginxConfig   `yaml:"nginx"`
+	StateDir  string        `yaml:"state_dir"`
+	LogLevel  string        `yaml:"log_level"`
+	LogFormat string        `yaml:"log_format"`
 }
 
 type GatewayConfig struct {
@@ -50,12 +50,12 @@ func Load(path string) (*Config, error) {
 		LogFormat: "json",
 	}
 	cfg.Nginx.Binary = "/usr/sbin/nginx"
-	cfg.Nginx.ConfigDir = "/etc/nginx/conf.d/sites"
+	cfg.Nginx.ConfigDir = "/etc/nginx/gateway/conf.d"
 	cfg.Nginx.CertsDir = "/etc/nginx/certs"
 	cfg.Nginx.LogsDir = "/var/log/nginx"
 	cfg.Nginx.GlobalConfig = "/etc/nginx/nginx.conf"
 	cfg.Nginx.StubStatusURL = "http://127.0.0.1/nginx_status"
-	cfg.Nginx.HtpasswdDir = "/etc/nginx/htpasswd"
+	cfg.Nginx.HtpasswdDir = "/etc/nginx/gateway/htpasswd"
 	cfg.Nginx.AcmeChallengeDir = "/var/www/acme-challenge"
 
 	if err := yaml.Unmarshal(data, cfg); err != nil {

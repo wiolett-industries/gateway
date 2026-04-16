@@ -70,6 +70,8 @@ func main() {
 	}
 }
 
+func defaultNginxConfigDir() string { return "/etc/nginx/gateway/conf.d" }
+
 func setupLogger(level, format string) *slog.Logger {
 	var lvl slog.Level
 	switch level {
@@ -134,19 +136,19 @@ tls:
   client_key: "/etc/nginx-daemon/certs/node-key.pem"
 
 nginx:
-  config_dir: "/etc/nginx/conf.d/sites"
+  config_dir: "%s"
   certs_dir: "/etc/nginx/certs"
   logs_dir: "/var/log/nginx"
   global_config: "/etc/nginx/nginx.conf"
   binary: "/usr/sbin/nginx"
   stub_status_url: "http://127.0.0.1/nginx_status"
-  htpasswd_dir: "/etc/nginx/htpasswd"
+  htpasswd_dir: "/etc/nginx/gateway/htpasswd"
   acme_challenge_dir: "/var/www/acme-challenge"
 
 state_dir: "/var/lib/nginx-daemon"
 log_level: "info"
 log_format: "json"
-`, address, token)
+`, address, token, defaultNginxConfigDir())
 
 	if err := os.WriteFile(configPath, []byte(configContent), 0600); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to write config: %v\n", err)
