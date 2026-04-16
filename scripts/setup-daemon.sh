@@ -36,6 +36,17 @@ die()  { err "$@"; exit 1; }
 
 command_exists() { command -v "$1" &>/dev/null; }
 
+mktemp_compat() {
+    local prefix="${1:-/tmp/gateway-tmp}"
+    local dir template
+
+    dir="$(dirname "$prefix")"
+    template="$(basename "$prefix").XXXXXX"
+
+    mkdir -p "$dir"
+    mktemp "${dir}/${template}"
+}
+
 show_logo() {
     echo ""
     echo '░██       ░██ ░██           ░██               ░██       ░██    '
@@ -148,7 +159,7 @@ DOWNLOAD_URL="${GITLAB_URL}/${GITLAB_PROJECT}/-/raw/main/scripts/${SCRIPT_NAME}"
 
 log "Downloading ${SCRIPT_NAME} from ${GITLAB_URL}..."
 
-TMPSCRIPT=$(mktemp /tmp/gateway-setup-XXXXXX.sh)
+TMPSCRIPT=$(mktemp_compat /tmp/gateway-setup)
 trap 'rm -f "$TMPSCRIPT"' EXIT
 
 if ! curl -fsSL "$DOWNLOAD_URL" -o "$TMPSCRIPT"; then
