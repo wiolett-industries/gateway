@@ -24,9 +24,12 @@ const NGINX_KEYWORDS = new Set([
   "location",
   "upstream",
   "listen",
+  "http2",
   "server_name",
   "proxy_pass",
   "proxy_set_header",
+  "proxy_hide_header",
+  "proxy_ignore_headers",
   "proxy_cache",
   "proxy_cache_path",
   "proxy_cache_valid",
@@ -36,6 +39,14 @@ const NGINX_KEYWORDS = new Set([
   "proxy_connect_timeout",
   "proxy_send_timeout",
   "proxy_read_timeout",
+  "proxy_buffering",
+  "proxy_buffer_size",
+  "proxy_buffers",
+  "proxy_busy_buffers_size",
+  "proxy_request_buffering",
+  "proxy_redirect",
+  "proxy_next_upstream",
+  "proxy_temp_path",
   "ssl_certificate",
   "ssl_certificate_key",
   "ssl_trusted_certificate",
@@ -45,17 +56,26 @@ const NGINX_KEYWORDS = new Set([
   "ssl_session_cache",
   "ssl_session_timeout",
   "ssl_session_tickets",
+  "ssl_stapling",
+  "ssl_stapling_verify",
   "access_log",
   "error_log",
   "return",
   "rewrite",
+  "try_files",
   "alias",
   "root",
+  "index",
+  "resolver",
+  "resolver_timeout",
   "add_header",
+  "add_trailer",
   "auth_basic",
   "auth_basic_user_file",
   "limit_req",
   "limit_req_zone",
+  "limit_conn",
+  "limit_conn_zone",
   "deny",
   "allow",
   "if",
@@ -68,7 +88,19 @@ const NGINX_KEYWORDS = new Set([
   "types",
   "default_type",
   "sendfile",
+  "client_max_body_size",
+  "client_body_buffer_size",
+  "client_body_timeout",
+  "client_body_temp_path",
+  "client_header_timeout",
+  "large_client_header_buffers",
   "keepalive_timeout",
+  "keepalive_requests",
+  "underscores_in_headers",
+  "reset_timedout_connection",
+  "chunked_transfer_encoding",
+  "expires",
+  "etag",
   "gzip",
   "gzip_types",
 ]);
@@ -313,16 +345,32 @@ const errorLineTheme = EditorView.baseTheme({
   ".cm-errorLine": {
     backgroundColor: "rgba(239, 68, 68, 0.15) !important",
   },
+  ".cm-inlineError": {
+    backgroundColor: "rgba(239, 68, 68, 0.68)",
+    borderRadius: "2px",
+  },
 });
 
 const errorLineMark = Decoration.line({ class: "cm-errorLine" });
+const inlineErrorMark = Decoration.mark({ class: "cm-inlineError" });
 
-function makeErrorLineDecorations(state: EditorState, lines: number[]) {
+function makeErrorDecorations(
+  state: EditorState,
+  lines: number[],
+  ranges: Array<{ from: number; to: number }>
+) {
   const builder = new RangeSetBuilder<Decoration>();
   const sortedLines = [...lines].sort((a, b) => a - b);
   for (const lineNum of sortedLines) {
     if (lineNum >= 1 && lineNum <= state.doc.lines) {
       builder.add(state.doc.line(lineNum).from, state.doc.line(lineNum).from, errorLineMark);
+    }
+  }
+  for (const range of ranges) {
+    const from = Math.max(0, Math.min(range.from, state.doc.length));
+    const to = Math.max(from, Math.min(range.to, state.doc.length));
+    if (from < to) {
+      builder.add(from, to, inlineErrorMark);
     }
   }
   return builder.finish();
@@ -341,6 +389,8 @@ interface CodeEditorProps {
   height?: string;
   /** Line numbers to highlight with red background (1-based) */
   errorLines?: number[];
+  /** Character ranges to highlight inline with an error background */
+  errorRanges?: Array<{ from: number; to: number }>;
   /** Syntax highlighting language (default: "nginx") */
   language?: "nginx" | "env" | "json";
 }
@@ -353,6 +403,7 @@ export function CodeEditor({
   minHeight = "300px",
   height,
   errorLines = [],
+  errorRanges = [],
   language = "nginx",
 }: CodeEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -423,11 +474,13 @@ export function CodeEditor({
     const view = viewRef.current;
     if (!view) return;
     const decos =
-      errorLines.length > 0 ? makeErrorLineDecorations(view.state, errorLines) : Decoration.none;
+      errorLines.length > 0 || errorRanges.length > 0
+        ? makeErrorDecorations(view.state, errorLines, errorRanges)
+        : Decoration.none;
     view.dispatch({
       effects: errorCompartmentRef.current.reconfigure(EditorView.decorations.of(decos)),
     });
-  }, [errorLines]);
+  }, [errorLines, errorRanges]);
 
   return (
     <div

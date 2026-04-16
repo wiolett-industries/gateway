@@ -19,7 +19,14 @@ import { api } from "@/services/api";
 import { ApiRequestError } from "@/services/api-base";
 import { useAuthStore } from "@/stores/auth";
 import { usePinnedProxiesStore } from "@/stores/pinned-proxies";
-import type { AccessList, CustomHeader, ProxyHost, RewriteRule, SSLCertificate } from "@/types";
+import type {
+  AccessList,
+  CustomHeader,
+  NginxTemplate,
+  ProxyHost,
+  RewriteRule,
+  SSLCertificate,
+} from "@/types";
 import { AdvancedTab } from "./proxy-detail/AdvancedTab";
 import { DetailsTab } from "./proxy-detail/DetailsTab";
 import {
@@ -78,6 +85,12 @@ export function ProxyHostDetail() {
   const [accessListId, setAccessListId] = useState<string>("");
   const [accessLists, setAccessLists] = useState<AccessList[]>([]);
   const [sslCerts, setSslCerts] = useState<SSLCertificate[]>([]);
+  const [nginxTemplates, setNginxTemplates] = useState<NginxTemplate[]>([]);
+  const [nginxTemplateId, setNginxTemplateId] = useState<string>("");
+  const [templateVariables, setTemplateVariables] = useState<
+    Record<string, string | number | boolean>
+  >({});
+  const [isSavingTemplate, setIsSavingTemplate] = useState(false);
 
   // Advanced tab state
   const [advancedConfig, setAdvancedConfig] = useState("");
@@ -112,6 +125,8 @@ export function ProxyHostDetail() {
         setHealthCheckExpectedBody(data.healthCheckExpectedBody || "");
         setHealthCheckBodyMatchMode(data.healthCheckBodyMatchMode || "includes");
         setHealthCheckSlowThreshold(data.healthCheckSlowThreshold ?? 3);
+        setNginxTemplateId(data.nginxTemplateId || "");
+        setTemplateVariables(data.templateVariables || {});
         setAdvancedConfig(data.advancedConfig || "");
         setRawConfig(data.rawConfig || "");
       } catch (err) {
@@ -167,6 +182,13 @@ export function ProxyHostDetail() {
     } catch {}
   }, []);
 
+  const loadNginxTemplates = useCallback(async () => {
+    try {
+      const data = await api.listNginxTemplates();
+      setNginxTemplates(data || []);
+    } catch {}
+  }, []);
+
   useEffect(() => {
     void loadAccessLists();
   }, [loadAccessLists]);
@@ -175,12 +197,20 @@ export function ProxyHostDetail() {
     void loadSSLCerts();
   }, [loadSSLCerts]);
 
+  useEffect(() => {
+    void loadNginxTemplates();
+  }, [loadNginxTemplates]);
+
   useRealtime("access-list.changed", () => {
     void loadAccessLists();
   });
 
   useRealtime("ssl.cert.changed", () => {
     void loadSSLCerts();
+  });
+
+  useRealtime("nginx.template.changed", () => {
+    void loadNginxTemplates();
   });
 
   // ── Load rendered config ──────────────────────────────────────
@@ -229,6 +259,97 @@ export function ProxyHostDetail() {
     },
     [id]
   );
+
+  const selectedTemplate = useMemo(
+    () => nginxTemplates.find((t) => t.id === nginxTemplateId) ?? null,
+    [nginxTemplates, nginxTemplateId]
+  );
+
+  const userTemplates = useMemo(
+    () => nginxTemplates.filter((t) => !t.isBuiltin && t.type === host?.type),
+    [nginxTemplates, host?.type]
+  );
+
+  const normalizeTemplateVariables = useCallback(
+    (templateId: string, vars: Record<string, string | number | boolean>) => {
+      const template = nginxTemplates.find((t) => t.id === templateId);
+      if (!template?.variables?.length) return {};
+
+      const next: Record<string, string | number | boolean> = {};
+      for (const def of template.variables) {
+        if (vars[def.name] !== undefined) {
+          next[def.name] = vars[def.name];
+        } else if (def.default !== undefined) {
+          next[def.name] = def.default;
+        } else if (def.type === "boolean") {
+          next[def.name] = false;
+        } else if (def.type === "number") {
+          next[def.name] = 0;
+        } else {
+          next[def.name] = "";
+        }
+      }
+      return next;
+    },
+    [nginxTemplates]
+  );
+
+  const hasTemplateSettingsChanged = useMemo(() => {
+    if (!host) return false;
+    const currentId = host.nginxTemplateId || "";
+    const currentVars = currentId
+      ? normalizeTemplateVariables(currentId, host.templateVariables || {})
+      : {};
+    const nextVars = nginxTemplateId
+      ? normalizeTemplateVariables(nginxTemplateId, templateVariables)
+      : {};
+    return (
+      currentId !== nginxTemplateId || JSON.stringify(currentVars) !== JSON.stringify(nextVars)
+    );
+  }, [host, nginxTemplateId, normalizeTemplateVariables, templateVariables]);
+
+  const handleTemplateSelectionChange = useCallback(
+    (value: string) => {
+      const nextId = value || "";
+      setNginxTemplateId(nextId);
+      if (!nextId) {
+        setTemplateVariables({});
+        return;
+      }
+
+      setTemplateVariables((prev) => normalizeTemplateVariables(nextId, prev));
+    },
+    [normalizeTemplateVariables]
+  );
+
+  const handleTemplateVariableChange = useCallback(
+    (name: string, value: string | number | boolean) => {
+      setTemplateVariables((prev) => ({ ...prev, [name]: value }));
+    },
+    []
+  );
+
+  const handleSaveTemplateSettings = useCallback(async () => {
+    if (!id) return;
+    setIsSavingTemplate(true);
+    try {
+      const vars = nginxTemplateId
+        ? normalizeTemplateVariables(nginxTemplateId, templateVariables)
+        : {};
+      const updated = await api.updateProxyHost(id, {
+        nginxTemplateId: nginxTemplateId || null,
+        templateVariables: vars,
+      });
+      setHost(updated);
+      setNginxTemplateId(updated.nginxTemplateId || "");
+      setTemplateVariables(updated.templateVariables || {});
+      toast.success("Template settings updated");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update template settings");
+    } finally {
+      setIsSavingTemplate(false);
+    }
+  }, [id, nginxTemplateId, normalizeTemplateVariables, templateVariables]);
 
   // ── Save custom config ────────────────────────────────────────
   const handleSaveCustom = async () => {
@@ -562,6 +683,15 @@ export function ProxyHostDetail() {
                 }}
                 sslCerts={sslCerts}
                 onSslCertificateChange={handleSslCertificateChange}
+                nginxTemplates={userTemplates}
+                nginxTemplateId={nginxTemplateId}
+                onNginxTemplateChange={handleTemplateSelectionChange}
+                selectedTemplate={selectedTemplate}
+                templateVariables={templateVariables}
+                onTemplateVariableChange={handleTemplateVariableChange}
+                onSaveTemplateSettings={handleSaveTemplateSettings}
+                isSavingTemplate={isSavingTemplate}
+                hasTemplateSettingsChanged={hasTemplateSettingsChanged}
                 canManage={hasScope("proxy:edit")}
                 hasHeadersChanged={hasHeadersChanged}
                 hasRewritesChanged={hasRewritesChanged}

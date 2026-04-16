@@ -57,7 +57,6 @@ import { DockerService } from '@/services/docker.service.js';
 import { EventBusService } from '@/services/event-bus.service.js';
 import { HousekeepingService } from '@/services/housekeeping.service.js';
 import { NginxConfigGenerator } from '@/services/nginx-config-generator.service.js';
-import { NginxSyntaxValidatorService } from '@/services/nginx-syntax-validator.service.js';
 import { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import { NodeRegistryService } from '@/services/node-registry.service.js';
 import { SchedulerService } from '@/services/scheduler.service.js';
@@ -243,15 +242,13 @@ export async function initializeContainer(): Promise<void> {
   dockerRegistryService.setEventBus(eventBus);
   dockerTemplateService.setEventBus(eventBus);
 
-  const nginxSyntaxValidator = new NginxSyntaxValidatorService();
   const proxyService = new ProxyService(
     db,
     nginxTemplateService,
     auditService,
     cryptoService,
     nginxConfigGenerator,
-    nodeDispatch,
-    nginxSyntaxValidator
+    nodeDispatch
   );
   proxyService.setEventBus(eventBus);
   container.registerInstance(ProxyService, proxyService);
