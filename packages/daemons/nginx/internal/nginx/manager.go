@@ -28,7 +28,11 @@ func NewManager(binary, configDir, certsDir, globalConfig string) *Manager {
 }
 
 func (m *Manager) TestConfig() (bool, string) {
-	cmd := exec.Command(m.binary, "-t")
+	args := []string{"-t"}
+	if m.globalCfg != "" {
+		args = append(args, "-c", m.globalCfg)
+	}
+	cmd := exec.Command(m.binary, args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return false, string(output)
@@ -37,7 +41,11 @@ func (m *Manager) TestConfig() (bool, string) {
 }
 
 func (m *Manager) Reload() error {
-	cmd := exec.Command(m.binary, "-s", "reload")
+	args := []string{"-s", "reload"}
+	if m.globalCfg != "" {
+		args = append(args, "-c", m.globalCfg)
+	}
+	cmd := exec.Command(m.binary, args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("nginx reload failed: %s: %w", string(output), err)

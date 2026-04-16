@@ -45,6 +45,8 @@ NON_INTERACTIVE=0
 NO_LOGO=0
 STUB_STATUS_URL="http://127.0.0.1/nginx_status"
 INTEGRATED_STUB_STATUS_PORT="8081"
+NGINX_SITES_DIR="/etc/nginx/gateway/conf.d"
+NGINX_HTPASSWD_DIR="/etc/nginx/gateway/htpasswd"
 RESOLVED_DAEMON_VERSION=""
 EXISTING_INSTALL=0
 EXISTING_VERSION=""
@@ -693,9 +695,10 @@ http {
     }
 
     include /etc/nginx/conf.d/*.conf;
-    include /etc/nginx/conf.d/sites/*.conf;
+    include __GATEWAY_SITES_DIR__/*.conf;
 }
 EOF
+    sed -i "s|__GATEWAY_SITES_DIR__|${NGINX_SITES_DIR}|g" /etc/nginx/nginx.conf
 
     cat > /etc/nginx/conf.d/default.conf << 'EOF'
 server {
@@ -736,8 +739,9 @@ configure_nginx_integrated() {
     log "Configuring nginx in integrate mode..."
 
     cat > "$include_file" << 'EOF'
-include /etc/nginx/conf.d/sites/*.conf;
+include __GATEWAY_SITES_DIR__/*.conf;
 EOF
+    sed -i "s|__GATEWAY_SITES_DIR__|${NGINX_SITES_DIR}|g" "$include_file"
 
     cat > "$stub_conf" << EOF
 server {
@@ -785,9 +789,9 @@ configure_nginx() {
 # ── Step 3: Create directories ───────────────────────────────────────
 create_directories() {
     log "Creating required directories..."
-    mkdir -p /etc/nginx/conf.d/sites
+    mkdir -p "${NGINX_SITES_DIR}"
     mkdir -p /etc/nginx/certs
-    mkdir -p /etc/nginx/htpasswd
+    mkdir -p "${NGINX_HTPASSWD_DIR}"
     mkdir -p /etc/nginx/gateway
     mkdir -p /var/www/acme-challenge/.well-known/acme-challenge
     mkdir -p /etc/nginx-daemon/certs
@@ -800,6 +804,24 @@ create_directories() {
     fi
 
     ok "Directories created"
+}
+
+migrate_legacy_gateway_paths() {
+    local legacy_dirs=(
+        "/etc/nginx/conf.d/sites"
+        "/etc/nginx/http.d/gateway"
+    )
+
+    for legacy_dir in "${legacy_dirs[@]}"; do
+        [[ "$legacy_dir" == "$NGINX_SITES_DIR" ]] && continue
+        if [[ -d "$legacy_dir" ]]; then
+            find "$legacy_dir" -maxdepth 1 -type f -name '*.conf' -exec mv -f {} "$NGINX_SITES_DIR"/ \; >> "$LOG_FILE" 2>&1 || true
+        fi
+    done
+
+    if [[ -d /etc/nginx/htpasswd && "/etc/nginx/htpasswd" != "$NGINX_HTPASSWD_DIR" ]]; then
+        find /etc/nginx/htpasswd -maxdepth 1 -type f -name 'access-list-*' -exec mv -f {} "$NGINX_HTPASSWD_DIR"/ \; >> "$LOG_FILE" 2>&1 || true
+    fi
 }
 
 # ── Step 4: Download nginx-daemon binary ─────────────────────────────
@@ -872,6 +894,14 @@ install_daemon() {
 enroll_daemon() {
     local target="/usr/local/bin/nginx-daemon"
 
+    if [[ -f /etc/nginx-daemon/config.yaml ]]; then
+        sed -i "s|config_dir: \".*\"|config_dir: \"${NGINX_SITES_DIR}\"|" /etc/nginx-daemon/config.yaml
+        sed -i "s|htpasswd_dir: \".*\"|htpasswd_dir: \"${NGINX_HTPASSWD_DIR}\"|" /etc/nginx-daemon/config.yaml
+        if [[ "$STUB_STATUS_URL" != "http://127.0.0.1/nginx_status" ]]; then
+            sed -i "s|stub_status_url: \".*\"|stub_status_url: \"${STUB_STATUS_URL}\"|" /etc/nginx-daemon/config.yaml
+        fi
+    fi
+
     # Check if already enrolled (certs exist)
     if [[ -f /etc/nginx-daemon/certs/node.pem && -f /var/lib/nginx-daemon/state.json ]]; then
         ok "Node already enrolled — skipping enrollment"
@@ -880,6 +910,8 @@ enroll_daemon() {
 
     log "Writing config and enrolling with Gateway..."
     "$target" install --gateway "$GATEWAY_ADDR" --token "$ENROLL_TOKEN"
+    sed -i "s|config_dir: \".*\"|config_dir: \"${NGINX_SITES_DIR}\"|" /etc/nginx-daemon/config.yaml
+    sed -i "s|htpasswd_dir: \".*\"|htpasswd_dir: \"${NGINX_HTPASSWD_DIR}\"|" /etc/nginx-daemon/config.yaml
     if [[ "$STUB_STATUS_URL" != "http://127.0.0.1/nginx_status" ]]; then
         sed -i "s|stub_status_url: \"http://127.0.0.1/nginx_status\"|stub_status_url: \"${STUB_STATUS_URL}\"|" /etc/nginx-daemon/config.yaml
     fi
@@ -958,6 +990,7 @@ UNIT
 # ── Run ──────────────────────────────────────────────────────────────
 install_nginx
 create_directories
+migrate_legacy_gateway_paths
 configure_nginx
 install_daemon
 enroll_daemon

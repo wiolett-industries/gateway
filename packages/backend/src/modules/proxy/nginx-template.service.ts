@@ -152,7 +152,7 @@ server {
 
 {{#if accessList.basicAuthEnabled}}
     auth_basic "Restricted Access";
-    auth_basic_user_file /etc/nginx/conf.d/sites/htpasswd/access-list-{{accessList.id}};
+    auth_basic_user_file /etc/nginx/gateway/htpasswd/access-list-{{accessList.id}};
 {{/if}}
 {{#if advancedConfig}}
     {{{indent advancedConfig 4}}}

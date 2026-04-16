@@ -257,7 +257,7 @@ export class NginxConfigGenerator {
       lines.push('');
       lines.push('    # Basic authentication');
       lines.push('    auth_basic "Restricted Access";');
-      lines.push(`    auth_basic_user_file /etc/nginx/htpasswd/access-list-${host.accessList.id};`);
+      lines.push(`    auth_basic_user_file /etc/nginx/gateway/htpasswd/access-list-${host.accessList.id};`);
     }
 
     if (host.advancedConfig) {
