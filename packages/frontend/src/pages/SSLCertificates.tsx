@@ -247,6 +247,8 @@ export function SSLCertificates() {
                 <tbody className="divide-y divide-border">
                   {certificates.map((cert) => {
                     const expDays = cert.notAfter ? daysUntil(cert.notAfter) : null;
+                    const supportsAutoRenew =
+                      cert.type === "acme" && cert.acmeChallengeType !== "dns-01" && cert.autoRenew;
                     return (
                       <tr key={cert.id} className="hover:bg-accent transition-colors">
                         <td className="p-3">
@@ -307,7 +309,7 @@ export function SSLCertificates() {
                           )}
                         </td>
                         <td className="p-3">
-                          {cert.autoRenew ? (
+                          {supportsAutoRenew ? (
                             <Badge variant="success">Yes</Badge>
                           ) : (
                             <Badge variant="secondary">No</Badge>
@@ -322,7 +324,7 @@ export function SSLCertificates() {
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
-                                {cert.type === "acme" && (
+                                {cert.type === "acme" && cert.acmeChallengeType !== "dns-01" && (
                                   <DropdownMenuItem onClick={() => handleRenew(cert.id)}>
                                     <RefreshCw className="h-4 w-4" />
                                     Renew
