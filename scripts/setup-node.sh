@@ -564,7 +564,8 @@ REPO
 install_nginx() {
     if command_exists nginx; then
         local ver
-        ver=$(nginx -v 2>&1 | grep -oP 'nginx/\K[\d.]+' || echo "unknown")
+        ver=$(nginx -v 2>&1 | sed -n 's#.*nginx/\([0-9.]*\).*#\1#p' | head -n 1)
+        ver="${ver:-unknown}"
         ok "nginx already installed (${ver})"
         return 0
     fi
