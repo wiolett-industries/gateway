@@ -123,10 +123,22 @@ export function HealthBars({
       });
 
       if (recentChecks.length > 0) {
-        // Have in-range data — fill only empty buckets after the latest sample up to now.
-        for (let j = result.length - 2; j >= 0; j--) {
-          if (result[j] !== "none") break;
-          result[j] = currentBar;
+        // Have in-range data — fill only empty buckets between the latest
+        // known sample and the newest bar, never the older history to the left.
+        let latestKnownIndex = -1;
+        for (let j = result.length - 1; j >= 0; j--) {
+          if (result[j] !== "none") {
+            latestKnownIndex = j;
+            break;
+          }
+        }
+
+        if (latestKnownIndex >= 0) {
+          for (let j = latestKnownIndex + 1; j < result.length - 1; j++) {
+            if (result[j] === "none") {
+              result[j] = currentBar;
+            }
+          }
         }
       } else {
         result[result.length - 1] = currentBar;

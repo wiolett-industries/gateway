@@ -1174,8 +1174,8 @@ export interface CreateProxyHostRequest {
   sslEnabled?: boolean;
   sslForced?: boolean;
   http2Support?: boolean;
-  sslCertificateId?: string;
-  internalCertificateId?: string;
+  sslCertificateId?: string | null;
+  internalCertificateId?: string | null;
   websocketSupport?: boolean;
   redirectUrl?: string;
   redirectStatusCode?: number;
@@ -1188,9 +1188,9 @@ export interface CreateProxyHostRequest {
   advancedConfig?: string;
   rawConfig?: string;
   rawConfigEnabled?: boolean;
-  accessListId?: string;
-  folderId?: string;
-  nginxTemplateId?: string;
+  accessListId?: string | null;
+  folderId?: string | null;
+  nginxTemplateId?: string | null;
   templateVariables?: Record<string, string | number | boolean>;
   healthCheckEnabled?: boolean;
   healthCheckUrl?: string;

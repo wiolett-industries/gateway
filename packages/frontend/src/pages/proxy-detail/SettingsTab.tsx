@@ -11,7 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import type { AccessList, CustomHeader, ProxyHost, RewriteRule } from "@/types";
+import type { AccessList, CustomHeader, ProxyHost, RewriteRule, SSLCertificate } from "@/types";
 import { ToggleRow } from "./helpers";
 
 export interface SettingsTabProps {
@@ -36,6 +36,8 @@ export interface SettingsTabProps {
   accessListId: string;
   accessLists: AccessList[];
   onAccessListChange: (v: string) => void;
+  sslCerts: SSLCertificate[];
+  onSslCertificateChange: (v: string) => void;
   canManage: boolean;
   hasHeadersChanged: boolean;
   hasRewritesChanged: boolean;
@@ -73,6 +75,8 @@ export function SettingsTab({
   accessListId,
   accessLists,
   onAccessListChange,
+  sslCerts,
+  onSslCertificateChange,
   canManage,
   hasHeadersChanged,
   hasRewritesChanged,
@@ -139,7 +143,7 @@ export function SettingsTab({
           checked={host.sslEnabled}
           onChange={(v) => onToggle("sslEnabled", v)}
         />
-        <div className="border-t border-border grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-border">
+        <div className="border-t border-border grid grid-cols-1 md:grid-cols-[1fr_1fr_2fr] divide-y md:divide-y-0 md:divide-x divide-border">
           <ToggleRow
             label="Force HTTPS"
             description="Redirect HTTP to HTTPS"
@@ -154,6 +158,33 @@ export function SettingsTab({
             onChange={(v) => onToggle("http2Support", v)}
             disabled={!host.sslEnabled}
           />
+          <div className="flex items-center justify-between px-4 py-3">
+            <div className={cn(!host.sslEnabled && "opacity-50")}>
+              <span className="text-sm font-medium">SSL Certificate</span>
+              <p className="text-xs text-muted-foreground">Select the certificate for HTTPS</p>
+            </div>
+            <div
+              className={cn("w-56 shrink-0", !host.sslEnabled && "opacity-50 pointer-events-none")}
+            >
+              <Select
+                value={host.sslCertificateId || "__none__"}
+                onValueChange={(v) => onSslCertificateChange(v === "__none__" ? "" : v)}
+                disabled={!host.sslEnabled}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select certificate..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">None</SelectItem>
+                  {sslCerts.map((cert) => (
+                    <SelectItem key={cert.id} value={cert.id}>
+                      {cert.name} ({cert.type})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
         </div>
       </div>
 
