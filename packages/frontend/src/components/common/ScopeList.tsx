@@ -124,48 +124,12 @@ export function ScopeList({
   const q = search.toLowerCase().trim();
   const inheritedParsed = parseScopedSelections(inheritedScopes ?? [], restrictableScopes ?? []);
   const inheritedBaseSet = new Set(inheritedParsed.baseScopes);
-  const inheritedItems: ScopeItem[] =
-    inheritedBaseSet.size > 0 ? scopes.filter((s) => inheritedBaseSet.has(s.value)) : [];
-
-  // Filter out only exact inherited base scopes from the regular list.
-  // If a parent grants a scoped variant, keep the base row available so
-  // the child can add broader or additional resource restrictions.
-  const ownScopes =
-    inheritedParsed.exactBaseScopes.size > 0
-      ? scopes.filter((s) => !inheritedParsed.exactBaseScopes.has(s.value))
-      : scopes;
-  const categories = [...new Set(ownScopes.map((s) => s.group))];
-
-  const inheritedSection =
-    inheritedItems.length > 0 ? (
-      <div>
-        <div className="px-3 py-1.5 bg-muted sticky top-0 z-10 border-b border-border border-t">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-            Inherited{inheritedFromName ? ` from ${inheritedFromName}` : ""}
-          </p>
-        </div>
-        {inheritedItems.map((scope) => (
-          <ScopeRow
-            key={`inherited-${scope.value}`}
-            scope={scope}
-            isSelected
-            onToggle={() => {}}
-            muted
-            disabled
-            resources={inheritedParsed.resources}
-            cas={cas}
-            nodes={nodes}
-            proxyHosts={proxyHosts}
-            restrictableScopes={restrictableScopes}
-          />
-        ))}
-      </div>
-    ) : null;
+  const categories = [...new Set(scopes.map((s) => s.group))];
 
   // When searching: split into matches (top) and rest (muted below)
   if (q) {
-    const matches = ownScopes.filter((s) => matchesQuery(s, q));
-    const rest = ownScopes.filter((s) => !matchesQuery(s, q));
+    const matches = scopes.filter((s) => matchesQuery(s, q));
+    const rest = scopes.filter((s) => !matchesQuery(s, q));
 
     return (
       <div className="max-h-[40vh] overflow-y-auto">
@@ -173,16 +137,19 @@ export function ScopeList({
           <ScopeRow
             key={scope.value}
             scope={scope}
-            isSelected={selected.includes(scope.value)}
+            isSelected={selected.includes(scope.value) || inheritedBaseSet.has(scope.value)}
             onToggle={onToggle}
             muted={false}
             disabled={readOnly}
             resources={resources}
+            inheritedResources={inheritedParsed.resources}
+            inheritedExactBase={inheritedParsed.exactBaseScopes.has(scope.value)}
             onToggleResource={onToggleResource}
             cas={cas}
             nodes={nodes}
             proxyHosts={proxyHosts}
             restrictableScopes={restrictableScopes}
+            inheritedFromName={inheritedFromName}
           />
         ))}
         {rest.length > 0 && matches.length > 0 && <div className="border-t border-border" />}
@@ -190,19 +157,21 @@ export function ScopeList({
           <ScopeRow
             key={scope.value}
             scope={scope}
-            isSelected={selected.includes(scope.value)}
+            isSelected={selected.includes(scope.value) || inheritedBaseSet.has(scope.value)}
             onToggle={onToggle}
             muted
             disabled={readOnly}
             resources={resources}
+            inheritedResources={inheritedParsed.resources}
+            inheritedExactBase={inheritedParsed.exactBaseScopes.has(scope.value)}
             onToggleResource={onToggleResource}
             cas={cas}
             nodes={nodes}
             proxyHosts={proxyHosts}
             restrictableScopes={restrictableScopes}
+            inheritedFromName={inheritedFromName}
           />
         ))}
-        {inheritedSection}
       </div>
     );
   }
@@ -211,7 +180,7 @@ export function ScopeList({
   return (
     <div className="max-h-[40vh] overflow-y-auto">
       {categories.map((cat) => {
-        const catScopes = ownScopes.filter((s) => s.group === cat);
+        const catScopes = scopes.filter((s) => s.group === cat);
         if (catScopes.length === 0) return null;
         return (
           <div key={cat}>
@@ -224,22 +193,24 @@ export function ScopeList({
               <ScopeRow
                 key={scope.value}
                 scope={scope}
-                isSelected={selected.includes(scope.value)}
+                isSelected={selected.includes(scope.value) || inheritedBaseSet.has(scope.value)}
                 onToggle={onToggle}
                 muted={false}
                 disabled={readOnly}
                 resources={resources}
+                inheritedResources={inheritedParsed.resources}
+                inheritedExactBase={inheritedParsed.exactBaseScopes.has(scope.value)}
                 onToggleResource={onToggleResource}
                 cas={cas}
                 nodes={nodes}
                 proxyHosts={proxyHosts}
                 restrictableScopes={restrictableScopes}
+                inheritedFromName={inheritedFromName}
               />
             ))}
           </div>
         );
       })}
-      {inheritedSection}
     </div>
   );
 }
@@ -251,11 +222,14 @@ function ScopeRow({
   muted,
   disabled,
   resources,
+  inheritedResources,
+  inheritedExactBase,
   onToggleResource,
   cas,
   nodes,
   proxyHosts,
   restrictableScopes,
+  inheritedFromName,
 }: {
   scope: ScopeItem;
   isSelected: boolean;
@@ -263,42 +237,55 @@ function ScopeRow({
   muted: boolean;
   disabled?: boolean;
   resources?: Record<string, string[]>;
+  inheritedResources?: Record<string, string[]>;
+  inheritedExactBase?: boolean;
   onToggleResource?: (scope: string, resourceId: string) => void;
   cas?: CA[];
   nodes?: Node[];
   proxyHosts?: ProxyHost[];
   restrictableScopes?: readonly string[];
+  inheritedFromName?: string;
 }) {
   const isRestrictable = restrictableScopes?.includes(scope.value) ?? false;
   const selectedIds = resources?.[scope.value] || [];
+  const inheritedSelectedIds = inheritedResources?.[scope.value] || [];
+  const inheritedSet = new Set(inheritedSelectedIds);
+  const combinedSelectedIds = [...new Set([...inheritedSelectedIds, ...selectedIds])];
   const baseResourceOptions = isRestrictable
     ? getResourceOptions(scope.value, cas, nodes, proxyHosts)
     : [];
   const resourceOptions = [...baseResourceOptions];
-  for (const selectedId of selectedIds) {
+  for (const selectedId of combinedSelectedIds) {
     if (!resourceOptions.some((opt) => opt.id === selectedId)) {
       resourceOptions.push({ id: selectedId, label: selectedId });
     }
   }
   const showRestrictions =
-    isRestrictable && resourceOptions.length > 0 && (isSelected || selectedIds.length > 0);
+    isRestrictable && resourceOptions.length > 0 && (isSelected || combinedSelectedIds.length > 0);
+  const baseLocked = !!inheritedExactBase || inheritedSelectedIds.length > 0;
+  const rowDisabled = disabled || baseLocked;
 
   return (
     <div className={muted ? "opacity-40" : undefined}>
       <label
-        className={`flex items-center gap-3 px-3 py-2 ${disabled ? "cursor-default" : "hover:bg-accent transition-colors cursor-pointer"}`}
+        className={`flex items-center gap-3 px-3 py-2 ${rowDisabled ? "cursor-default" : "hover:bg-accent transition-colors cursor-pointer"}`}
       >
         <input
           type="checkbox"
           checked={isSelected}
-          onChange={() => !disabled && onToggle(scope.value)}
-          disabled={disabled}
+          onChange={() => !rowDisabled && onToggle(scope.value)}
+          disabled={rowDisabled}
           className="form-checkbox"
         />
         <div className="flex-1 min-w-0">
-          <div className="flex items-baseline gap-2">
+          <div className="flex flex-wrap items-baseline gap-2">
             <p className="text-sm">{scope.label}</p>
             <p className="text-[10px] text-muted-foreground font-mono">{scope.value}</p>
+            {baseLocked && inheritedFromName && (
+              <p className="text-[10px] text-muted-foreground">
+                inherited from {inheritedFromName}
+              </p>
+            )}
           </div>
           <p className="text-xs text-muted-foreground">{scope.desc}</p>
         </div>
@@ -313,12 +300,17 @@ function ScopeRow({
             >
               <input
                 type="checkbox"
-                checked={selectedIds.includes(opt.id)}
-                onChange={() => !disabled && onToggleResource?.(scope.value, opt.id)}
-                disabled={disabled || !onToggleResource}
+                checked={combinedSelectedIds.includes(opt.id)}
+                onChange={() =>
+                  !disabled && !inheritedSet.has(opt.id) && onToggleResource?.(scope.value, opt.id)
+                }
+                disabled={disabled || inheritedSet.has(opt.id) || !onToggleResource}
                 className="form-checkbox"
               />
               <span>{opt.label}</span>
+              {inheritedSet.has(opt.id) && inheritedFromName && (
+                <span className="text-[10px] text-muted-foreground">inherited</span>
+              )}
             </label>
           ))}
         </div>

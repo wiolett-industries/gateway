@@ -403,6 +403,7 @@ export const RESOURCE_SCOPABLE_SCOPES = [
   "nodes:config:view",
   "nodes:config:edit",
   "nodes:logs",
+  "nodes:console",
   "nodes:rename",
   "nodes:delete",
   "docker:containers:list",

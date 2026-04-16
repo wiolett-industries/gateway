@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { api } from "@/services/api";
+import { useAppStatusStore } from "@/stores/app-status";
 import type { UpdateStatus } from "@/types";
 
 interface UpdateState {
@@ -44,6 +45,7 @@ export const useUpdateStore = create<UpdateState>()((set, get) => ({
   triggerUpdate: async (version: string) => {
     set({ isUpdating: true });
     try {
+      useAppStatusStore.getState().setGatewayUpdatingActive(true, version);
       await api.triggerUpdate(version);
       // Poll for completion
       const currentVersion = get().status?.currentVersion;
@@ -67,6 +69,7 @@ export const useUpdateStore = create<UpdateState>()((set, get) => ({
         });
       }, 300_000);
     } catch {
+      useAppStatusStore.getState().clearGatewayUpdating();
       set({ isUpdating: false });
     }
   },

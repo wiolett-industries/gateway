@@ -51,6 +51,61 @@ function MaintenanceScreen() {
   );
 }
 
+function GatewayUpdatingScreen() {
+  const targetVersion = useAppStatusStore((s) => s.gatewayUpdatingTargetVersion);
+  const clearGatewayUpdating = useAppStatusStore((s) => s.clearGatewayUpdating);
+
+  useEffect(() => {
+    let seenUnavailable = false;
+
+    const checkHealth = async () => {
+      try {
+        const response = await fetch("/health", { cache: "no-store" });
+        if (!response.ok) {
+          seenUnavailable = true;
+          return;
+        }
+
+        if (seenUnavailable) {
+          clearGatewayUpdating();
+          window.location.reload();
+        }
+      } catch {
+        seenUnavailable = true;
+      }
+    };
+
+    const interval = window.setInterval(() => {
+      void checkHealth();
+    }, 3000);
+
+    return () => window.clearInterval(interval);
+  }, [clearGatewayUpdating]);
+
+  return (
+    <div className="fixed inset-0 z-[205] flex min-h-screen items-center justify-center bg-background px-4">
+      <div className="w-full max-w-sm space-y-8 text-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="flex h-12 w-12 items-center justify-center border border-amber-500/30 bg-amber-500/5 text-amber-600">
+            <RotateCw className="h-6 w-6 animate-spin" />
+          </div>
+          <h2 className="text-lg font-semibold text-foreground">Updating Gateway</h2>
+          <p className="text-sm text-muted-foreground">
+            {targetVersion
+              ? `Gateway is updating to ${targetVersion}.`
+              : "Gateway is applying an update."}{" "}
+            All actions are temporarily locked until the restart completes.
+          </p>
+        </div>
+
+        <div className="space-y-3">
+          <p className="text-xs text-muted-foreground">This page will reload automatically.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function RateLimitScreen() {
   const rateLimitedUntil = useAppStatusStore((s) => s.rateLimitedUntil);
   const clearRateLimit = useAppStatusStore((s) => s.clearRateLimit);
@@ -99,6 +154,7 @@ function RateLimitScreen() {
 
 export function AppStatusGate() {
   const maintenanceActive = useAppStatusStore((s) => s.maintenanceActive);
+  const gatewayUpdatingActive = useAppStatusStore((s) => s.gatewayUpdatingActive);
   const rateLimitedUntil = useAppStatusStore((s) => s.rateLimitedUntil);
   const [showMaintenanceScreen, setShowMaintenanceScreen] = useState(false);
 
@@ -116,6 +172,7 @@ export function AppStatusGate() {
   }, [maintenanceActive]);
 
   if (rateLimitedUntil != null) return <RateLimitScreen />;
+  if (gatewayUpdatingActive) return <GatewayUpdatingScreen />;
   if (showMaintenanceScreen) return <MaintenanceScreen />;
   return null;
 }

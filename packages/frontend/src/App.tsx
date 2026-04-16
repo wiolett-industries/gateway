@@ -1,3 +1,4 @@
+import { Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AppStatusGate } from "@/components/common/AppStatusGate";
@@ -48,6 +49,8 @@ function RealtimeBridge() {
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
   const canListNodes = useAuthStore((s) => s.hasScope("nodes:list"));
+  const setGatewayUpdatingActive = useAppStatusStore((s) => s.setGatewayUpdatingActive);
+  const clearGatewayUpdating = useAppStatusStore((s) => s.clearGatewayUpdating);
 
   useEffect(() => {
     if (sessionId) {
@@ -83,6 +86,18 @@ function RealtimeBridge() {
     if (!sessionId || !canListNodes) return;
     return eventStream.subscribe("node.changed", () => {});
   }, [sessionId, canListNodes]);
+
+  useEffect(() => {
+    if (!sessionId) return;
+    return eventStream.subscribe("system.update.changed", (payload) => {
+      const ev = payload as { updating?: boolean; targetVersion?: string | null } | undefined;
+      if (ev?.updating) {
+        setGatewayUpdatingActive(true, ev.targetVersion ?? null);
+      } else {
+        clearGatewayUpdating();
+      }
+    });
+  }, [clearGatewayUpdating, sessionId, setGatewayUpdatingActive]);
 
   return null;
 }
@@ -122,7 +137,7 @@ export default function App() {
       <ThemeProvider>
         <div className="flex h-screen items-center justify-center">
           <div className="flex flex-col items-center gap-4">
-            <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
             <p className="text-sm text-muted-foreground">Loading...</p>
           </div>
         </div>

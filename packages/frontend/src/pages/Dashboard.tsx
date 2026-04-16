@@ -30,6 +30,9 @@ export function Dashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [healthHosts, setHealthHosts] = useState<ProxyHost[]>([]);
   const [statsLoading, setStatsLoading] = useState(true);
+  const [activityLoading, setActivityLoading] = useState(hasScope("admin:audit"));
+  const [nodesLoading, setNodesLoading] = useState(hasScope("nodes:list"));
+  const [healthLoading, setHealthLoading] = useState(hasScope("proxy:list"));
   const [expiringItems, setExpiringItems] = useState<ExpiringItem[]>([]);
   const [nodesList, setNodesList] = useState<Node[]>([]);
   const nodeRefreshTick = useNodesStore((s) => s.refreshTick);
@@ -43,7 +46,10 @@ export function Dashboard() {
   const showSystemCertificates = canViewSystemCertificates && showSystemCertificatePreference;
 
   const refreshNodes = useCallback(() => {
-    if (!hasScope("nodes:list")) return;
+    if (!hasScope("nodes:list")) {
+      setNodesLoading(false);
+      return;
+    }
     api
       .listNodes({ limit: 100 })
       .then((r) => {
@@ -51,7 +57,8 @@ export function Dashboard() {
         setNodesList(nodes);
         usePinnedNodesStore.getState().removeOrphans(nodes.map((n) => n.id));
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setNodesLoading(false));
   }, [hasScope]);
 
   const refreshStats = useCallback(() => {
@@ -68,14 +75,18 @@ export function Dashboard() {
   }, [showSystemCertificates]);
 
   const refreshHealthOverview = useCallback(() => {
-    if (!hasScope("proxy:list")) return Promise.resolve();
+    if (!hasScope("proxy:list")) {
+      setHealthLoading(false);
+      return Promise.resolve();
+    }
     return api
       .getHealthOverview()
       .then((hosts) => {
         api.setCache("dashboard:health", hosts || []);
         setHealthHosts(hosts || []);
       })
-      .catch(() => setHealthHosts([]));
+      .catch(() => setHealthHosts([]))
+      .finally(() => setHealthLoading(false));
   }, [hasScope]);
 
   const refreshExpiringSSL = useCallback(() => {
@@ -145,7 +156,10 @@ export function Dashboard() {
       api
         .getAuditLog({ limit: 6 })
         .then((r) => setActivity(r.data || []))
-        .catch(() => {});
+        .catch(() => {})
+        .finally(() => setActivityLoading(false));
+    } else {
+      setActivityLoading(false);
     }
 
     // Use cached stats immediately, then refetch
@@ -323,9 +337,13 @@ export function Dashboard() {
 
           <CertificateExpiryCard expiringItems={expiringItems} hasScope={hasScope} />
 
-          <HealthOverviewCard healthHosts={healthHosts} hasScope={hasScope} />
+          <HealthOverviewCard
+            healthHosts={healthHosts}
+            hasScope={hasScope}
+            loading={healthLoading}
+          />
 
-          <NodesCard nodesList={nodesList} hasScope={hasScope} />
+          <NodesCard nodesList={nodesList} hasScope={hasScope} loading={nodesLoading} />
 
           {/* Pinned Proxy Host Cards */}
           {pinnedProxyHosts.map((proxy) => (
@@ -345,7 +363,7 @@ export function Dashboard() {
 
           <CertificateAuthoritiesCard cas={cas} hasScope={hasScope} />
 
-          <RecentActivityCard activity={activity} hasScope={hasScope} />
+          <RecentActivityCard activity={activity} hasScope={hasScope} loading={activityLoading} />
         </div>
       </div>
     </PageTransition>

@@ -12,6 +12,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/common/EmptyState";
+import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
 import { SearchFilterBar } from "@/components/common/SearchFilterBar";
 import { Badge } from "@/components/ui/badge";
@@ -227,6 +228,7 @@ export function DockerContainers({
       {
         key: "name",
         header: "Name",
+        width: "minmax(260px, 1.35fr)",
         truncate: true,
         render: (c) => {
           const isCompose = !!c.labels?.["com.docker.compose.project"];
@@ -254,19 +256,17 @@ export function DockerContainers({
       {
         key: "image",
         header: "Image",
+        width: "minmax(280px, 1.45fr)",
         truncate: true,
         render: (c) => <TruncateStart text={c.image} className="text-muted-foreground" />,
       },
       {
         key: "node",
         header: "Node",
-        width: "minmax(210px, 0.8fr)",
+        width: "minmax(220px, 1fr)",
         render: (c) => (
           <div className="min-w-0 flex">
-            <Badge
-              variant="secondary"
-              className="text-xs max-w-full overflow-hidden text-ellipsis whitespace-nowrap inline-flex"
-            >
+            <Badge variant="secondary" className="text-xs w-fit max-w-full">
               {(c as any)._nodeName || "-"}
             </Badge>
           </div>
@@ -275,12 +275,12 @@ export function DockerContainers({
       {
         key: "status",
         header: "Status",
-        width: "160px",
+        width: "120px",
         render: (c) => (
           <div className="min-w-0 flex">
             <Badge
               variant={STATUS_BADGE[(c as any)._transition ?? c.state] ?? "secondary"}
-              className="text-xs max-w-full overflow-hidden text-ellipsis whitespace-nowrap inline-flex"
+              className="text-xs w-fit max-w-full"
             >
               {(c as any)._transition ?? c.state}
             </Badge>
@@ -300,7 +300,7 @@ export function DockerContainers({
       {
         key: "actions",
         header: "Actions",
-        width: "100px",
+        width: "72px",
         align: "right" as const,
         render: (c) => {
           const loadingAction = actionLoading[c.id];
@@ -492,8 +492,11 @@ export function DockerContainers({
               }}
             />
           ) : isLoading ? (
-            <div className="flex items-center justify-center py-16 text-muted-foreground">
-              Loading containers...
+            <div className="flex items-center justify-center py-16">
+              <div className="flex flex-col items-center gap-3">
+                <LoadingSpinner className="" />
+                <p className="text-sm text-muted-foreground">Loading containers...</p>
+              </div>
             </div>
           ) : (
             <EmptyState

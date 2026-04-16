@@ -263,13 +263,19 @@ export function AdminGroups() {
   };
 
   const ownCount = buildFinalScopes(formBaseScopes, formResources).length;
-  const inheritedCount = formParentId
-    ? new Set([
-        ...(groups.find((g) => g.id === formParentId)?.scopes ?? []),
-        ...(groups.find((g) => g.id === formParentId)?.inheritedScopes ?? []),
-      ]).size
-    : 0;
-  const selectedCount = ownCount + inheritedCount;
+  const inheritedScopes = formParentId
+    ? [
+        ...new Set([
+          ...(groups.find((g) => g.id === formParentId)?.scopes ?? []),
+          ...(groups.find((g) => g.id === formParentId)?.inheritedScopes ?? []),
+        ]),
+      ]
+    : [];
+  const inheritedCount = inheritedScopes.length;
+  const selectedCount = new Set([
+    ...buildFinalScopes(formBaseScopes, formResources),
+    ...inheritedScopes,
+  ]).size;
 
   if (isLoading) {
     return <LoadingSpinner />;
@@ -370,7 +376,8 @@ export function AdminGroups() {
                     </SelectContent>
                   </Select>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Inherited permissions are added automatically and shown as read-only below
+                    Inherited permissions stay inline in their normal categories and cannot be
+                    removed here
                   </p>
                 </>
               )}
@@ -393,16 +400,7 @@ export function AdminGroups() {
                 nodes={nodesList}
                 proxyHosts={proxyHostsList}
                 restrictableScopes={RESOURCE_SCOPABLE_SCOPES}
-                inheritedScopes={
-                  formParentId
-                    ? [
-                        ...new Set([
-                          ...(groups.find((g) => g.id === formParentId)?.scopes ?? []),
-                          ...(groups.find((g) => g.id === formParentId)?.inheritedScopes ?? []),
-                        ]),
-                      ]
-                    : undefined
-                }
+                inheritedScopes={inheritedScopes}
                 inheritedFromName={groups.find((g) => g.id === formParentId)?.name}
               />
               <div className="border-t border-border px-3 py-2">

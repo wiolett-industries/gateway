@@ -1,9 +1,10 @@
 import { Check, Copy, Plus, Server, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
+import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
 import { SearchFilterBar } from "@/components/common/SearchFilterBar";
 import { Badge } from "@/components/ui/badge";
@@ -81,6 +82,11 @@ function formatLastSeen(dateStr: string | null): string {
   return d.toLocaleDateString();
 }
 
+function formatDaemonVersion(version: string | null | undefined): string {
+  if (!version) return "";
+  return version.startsWith("v") ? version : `v${version}`;
+}
+
 export function AdminNodes() {
   const navigate = useNavigate();
   const { hasScope } = useAuthStore();
@@ -96,22 +102,29 @@ export function AdminNodes() {
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [daemonUpdates, setDaemonUpdates] = useState<DaemonUpdateStatus[]>([]);
 
+  const loadDaemonUpdates = useCallback(async () => {
+    if (!hasScope("admin:update")) return;
+    try {
+      const data = await api.getDaemonUpdates();
+      setDaemonUpdates(data);
+    } catch {
+      // ignore
+    }
+  }, [hasScope]);
+
   useEffect(() => {
     fetchNodes();
   }, [fetchNodes]);
 
   useRealtime("node.changed", () => {
     fetchNodes();
+    void loadDaemonUpdates();
   });
 
   // Fetch daemon update statuses
   useEffect(() => {
-    if (!hasScope("admin:update")) return;
-    api
-      .getDaemonUpdates()
-      .then(setDaemonUpdates)
-      .catch(() => {});
-  }, [hasScope]);
+    void loadDaemonUpdates();
+  }, [loadDaemonUpdates]);
 
   const handleSearch = () => setFilters({ search: searchInput });
   const hasActiveFilters = filters.search !== "" || filters.status !== "all";
@@ -243,7 +256,7 @@ export function AdminNodes() {
                       </p>
                       <p className="text-xs text-muted-foreground truncate">
                         {node.displayName ? node.hostname : ""}{" "}
-                        {node.daemonVersion ? `v${node.daemonVersion}` : ""}
+                        {formatDaemonVersion(node.daemonVersion)}
                       </p>
                     </div>
                     <Badge variant="secondary" className="text-xs uppercase shrink-0">
@@ -301,8 +314,11 @@ export function AdminNodes() {
             </div>
           </div>
         ) : isLoading ? (
-          <div className="flex items-center justify-center py-16 text-muted-foreground">
-            Loading...
+          <div className="flex items-center justify-center py-16">
+            <div className="flex flex-col items-center gap-3">
+              <LoadingSpinner className="" />
+              <p className="text-sm text-muted-foreground">Loading nodes...</p>
+            </div>
           </div>
         ) : (
           <EmptyState

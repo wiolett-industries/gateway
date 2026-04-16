@@ -108,7 +108,7 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
   selectedNodeId: null,
   dockerNodes: [],
   filters: { search: "", status: "all" },
-  isLoading: false,
+  isLoading: true,
 
   setSelectedNode: (nodeId) => {
     set({ selectedNodeId: nodeId });
@@ -130,7 +130,7 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
   fetchContainers: async (nodeIdOverride) => {
     const { selectedNodeId, dockerNodes } = get();
     const effectiveNodeId = nodeIdOverride ?? selectedNodeId;
-    set({ isLoading: true });
+    set({ isLoading: get().containers.length === 0 });
     try {
       if (effectiveNodeId) {
         const data = await api.listDockerContainers(effectiveNodeId);
@@ -185,6 +185,7 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
   fetchImages: async (nodeIdOverride) => {
     const { selectedNodeId, dockerNodes } = get();
     const effectiveNodeId = nodeIdOverride ?? selectedNodeId;
+    set({ isLoading: get().images.length === 0 });
     try {
       if (effectiveNodeId) {
         const data = await api.listDockerImages(effectiveNodeId);
@@ -195,6 +196,7 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
             effectiveNodeId,
             node?.displayName || node?.hostname || ""
           ),
+          isLoading: false,
         });
       } else {
         set({ images: [] });
@@ -204,15 +206,17 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
           normList<DockerImage>,
           (merged) => set({ images: merged })
         );
+        set({ isLoading: false });
       }
     } catch {
-      /* swallow */
+      set({ isLoading: false });
     }
   },
 
   fetchVolumes: async (nodeIdOverride) => {
     const { selectedNodeId, dockerNodes } = get();
     const effectiveNodeId = nodeIdOverride ?? selectedNodeId;
+    set({ isLoading: get().volumes.length === 0 });
     try {
       if (effectiveNodeId) {
         const data = await api.listDockerVolumes(effectiveNodeId);
@@ -223,6 +227,7 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
             effectiveNodeId,
             node?.displayName || node?.hostname || ""
           ),
+          isLoading: false,
         });
       } else {
         set({ volumes: [] });
@@ -232,15 +237,17 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
           normList<DockerVolume>,
           (merged) => set({ volumes: merged })
         );
+        set({ isLoading: false });
       }
     } catch {
-      /* swallow */
+      set({ isLoading: false });
     }
   },
 
   fetchNetworks: async (nodeIdOverride) => {
     const { selectedNodeId, dockerNodes } = get();
     const effectiveNodeId = nodeIdOverride ?? selectedNodeId;
+    set({ isLoading: get().networks.length === 0 });
     try {
       if (effectiveNodeId) {
         const data = await api.listDockerNetworks(effectiveNodeId);
@@ -251,6 +258,7 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
             effectiveNodeId,
             node?.displayName || node?.hostname || ""
           ),
+          isLoading: false,
         });
       } else {
         set({ networks: [] });
@@ -260,39 +268,43 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
           normList<DockerNetwork>,
           (merged) => set({ networks: merged })
         );
+        set({ isLoading: false });
       }
     } catch {
-      /* swallow */
+      set({ isLoading: false });
     }
   },
 
   fetchTemplates: async () => {
+    set({ isLoading: get().templates.length === 0 });
     try {
       const data = await api.listDockerTemplates();
-      set({ templates: data ?? [] });
+      set({ templates: data ?? [], isLoading: false });
     } catch {
-      /* swallow */
+      set({ isLoading: false });
     }
   },
 
   fetchTasks: async () => {
+    set({ isLoading: get().tasks.length === 0 });
     try {
       const { selectedNodeId } = get();
       const data = await api.listDockerTasks(
         selectedNodeId ? { nodeId: selectedNodeId } : undefined
       );
-      set({ tasks: data ?? [] });
+      set({ tasks: data ?? [], isLoading: false });
     } catch {
-      /* swallow */
+      set({ isLoading: false });
     }
   },
 
   fetchRegistries: async () => {
+    set({ isLoading: get().registries.length === 0 });
     try {
       const data = await api.listDockerRegistries();
-      set({ registries: data ?? [] });
+      set({ registries: data ?? [], isLoading: false });
     } catch {
-      /* swallow */
+      set({ isLoading: false });
     }
   },
 

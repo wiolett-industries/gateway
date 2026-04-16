@@ -157,8 +157,8 @@ async function authenticateAndCreateExec(
     return;
   }
 
-  if (!hasScope(user.scopes, 'nodes:console')) {
-    send(ws, { type: 'auth_error', message: 'Missing required scope: nodes:console' });
+  if (!hasScope(user.scopes, `nodes:console:${nodeId}`)) {
+    send(ws, { type: 'auth_error', message: `Missing required scope: nodes:console:${nodeId}` });
     ws.close(1008, 'Insufficient permissions');
     return;
   }
