@@ -1,13 +1,19 @@
 import { Link } from "react-router-dom";
+import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { formatRelativeDate } from "@/lib/utils";
 import type { AuditLogEntry } from "@/types";
 
 interface RecentActivityCardProps {
   activity: AuditLogEntry[];
   hasScope: (scope: string) => boolean;
+  loading?: boolean;
 }
 
-export function RecentActivityCard({ activity, hasScope }: RecentActivityCardProps) {
+export function RecentActivityCard({
+  activity,
+  hasScope,
+  loading = false,
+}: RecentActivityCardProps) {
   return (
     <div className="border border-border bg-card">
       <div className="flex items-center justify-between border-b border-border p-4">
@@ -18,7 +24,14 @@ export function RecentActivityCard({ activity, hasScope }: RecentActivityCardPro
           </Link>
         )}
       </div>
-      {activity.length > 0 ? (
+      {loading ? (
+        <div className="flex items-center justify-center py-12">
+          <div className="flex flex-col items-center gap-3">
+            <LoadingSpinner className="" />
+            <p className="text-sm text-muted-foreground">Loading activity...</p>
+          </div>
+        </div>
+      ) : activity.length > 0 ? (
         <div className="overflow-x-auto -mb-px">
           <table className="w-full">
             <thead>

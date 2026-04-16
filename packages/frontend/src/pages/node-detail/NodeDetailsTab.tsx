@@ -1,5 +1,5 @@
 import { ArrowUpCircle } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { DetailRow } from "@/components/common/DetailRow";
@@ -38,6 +38,22 @@ export function NodeDetailsTab({ node }: NodeDetailsTabProps) {
   const resourcesRef = useRef<HTMLDivElement>(null);
   const [resourcesHeight, setResourcesHeight] = useState(0);
 
+  const loadDaemonUpdateStatus = useCallback(async () => {
+    if (!hasScope("admin:update")) return;
+    try {
+      const statuses = await api.getDaemonUpdates();
+      const typeStatus = statuses.find((s) => s.daemonType === node.type);
+      const nodeStatus = typeStatus?.nodes.find((n) => n.nodeId === node.id);
+      if (nodeStatus?.updateAvailable && typeStatus?.latestVersion) {
+        setDaemonUpdate({ available: true, latestVersion: typeStatus.latestVersion });
+      } else {
+        setDaemonUpdate({ available: false, latestVersion: null });
+      }
+    } catch {
+      // ignore
+    }
+  }, [hasScope, node.id, node.type]);
+
   useEffect(() => {
     if (!resourcesRef.current) return;
     const ro = new ResizeObserver(([entry]) => {
@@ -75,19 +91,8 @@ export function NodeDetailsTab({ node }: NodeDetailsTabProps) {
 
   // Check for daemon updates
   useEffect(() => {
-    if (!hasScope("admin:update")) return;
-    api
-      .getDaemonUpdates()
-      .then((statuses) => {
-        const typeStatus = statuses.find((s) => s.daemonType === node.type);
-        if (!typeStatus) return;
-        const nodeStatus = typeStatus.nodes.find((n) => n.nodeId === node.id);
-        if (nodeStatus?.updateAvailable && typeStatus.latestVersion) {
-          setDaemonUpdate({ available: true, latestVersion: typeStatus.latestVersion });
-        }
-      })
-      .catch(() => {});
-  }, [node.id, node.type, hasScope]);
+    void loadDaemonUpdateStatus();
+  }, [loadDaemonUpdateStatus]);
 
   const handleDaemonUpdate = async () => {
     setIsUpdating(true);

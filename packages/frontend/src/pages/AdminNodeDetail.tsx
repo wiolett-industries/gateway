@@ -64,7 +64,7 @@ const STATUS_BADGE: Record<
 export function AdminNodeDetail() {
   const { id } = useParams<{ id: string; tab?: string }>();
   const navigate = useNavigate();
-  const { hasScope } = useAuthStore();
+  const { hasScope, user } = useAuthStore();
 
   const [node, setNode] = useState<NodeDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -97,6 +97,11 @@ export function AdminNodeDetail() {
   const [pinOpen, setPinOpen] = useState(false);
   const { isPinnedDashboard, isPinnedSidebar, toggleDashboard, toggleSidebar } =
     usePinnedNodesStore();
+  const nodeUpdating = node ? isNodeUpdating(node) : false;
+  const nonInteractiveWhileUpdating =
+    nodeUpdating && activeTab !== "details" && activeTab !== "daemon-logs";
+  const canUseNodeConsole =
+    !!(id && user?.scopes.includes(`nodes:console:${id}`)) || hasScope("nodes:console");
 
   const loadNode = useCallback(
     async (silent = false) => {
@@ -140,6 +145,12 @@ export function AdminNodeDetail() {
     }
     loadNode(true);
   });
+
+  useEffect(() => {
+    if (nodeUpdating && activeTab !== "details" && activeTab !== "daemon-logs") {
+      setActiveTab("details");
+    }
+  }, [activeTab, nodeUpdating, setActiveTab]);
 
   const handleRename = async () => {
     if (!id) return;
@@ -203,7 +214,6 @@ export function AdminNodeDetail() {
     );
   }
 
-  const nodeUpdating = isNodeUpdating(node);
   const updateTargetVersion = getNodeUpdateTargetVersion(node);
   const nodeState = nodeUpdating ? "updating" : effectiveNodeStatus(node);
 
@@ -235,7 +245,12 @@ export function AdminNodeDetail() {
           </div>
 
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="icon" onClick={() => setPinOpen(true)}>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setPinOpen(true)}
+              disabled={nodeUpdating}
+            >
               <Pin className="h-4 w-4" />
             </Button>
             {hasScope("nodes:rename") && (
@@ -291,24 +306,41 @@ export function AdminNodeDetail() {
         >
           <TabsList className="shrink-0">
             <TabsTrigger value="details">Details</TabsTrigger>
-            {!isNodeIncompatible(node) && <TabsTrigger value="monitoring">Monitoring</TabsTrigger>}
-            {!isNodeIncompatible(node) && node.type === "nginx" && (
-              <TabsTrigger value="configuration">Configuration</TabsTrigger>
+            {!isNodeIncompatible(node) && (
+              <TabsTrigger value="monitoring" disabled={nodeUpdating}>
+                Monitoring
+              </TabsTrigger>
             )}
             {!isNodeIncompatible(node) && node.type === "nginx" && (
-              <TabsTrigger value="nginx-logs">Nginx Logs</TabsTrigger>
+              <TabsTrigger value="configuration" disabled={nodeUpdating}>
+                Configuration
+              </TabsTrigger>
+            )}
+            {!isNodeIncompatible(node) && node.type === "nginx" && (
+              <TabsTrigger value="nginx-logs" disabled={nodeUpdating}>
+                Nginx Logs
+              </TabsTrigger>
             )}
             {!isNodeIncompatible(node) && node.type === "docker" && (
               <>
-                <TabsTrigger value="containers">Containers</TabsTrigger>
-                <TabsTrigger value="images">Images</TabsTrigger>
-                <TabsTrigger value="volumes">Volumes</TabsTrigger>
-                <TabsTrigger value="networks">Networks</TabsTrigger>
+                <TabsTrigger value="containers" disabled={nodeUpdating}>
+                  Containers
+                </TabsTrigger>
+                <TabsTrigger value="images" disabled={nodeUpdating}>
+                  Images
+                </TabsTrigger>
+                <TabsTrigger value="volumes" disabled={nodeUpdating}>
+                  Volumes
+                </TabsTrigger>
+                <TabsTrigger value="networks" disabled={nodeUpdating}>
+                  Networks
+                </TabsTrigger>
               </>
             )}
-            {!isNodeIncompatible(node) && node.status === "online" && hasScope("nodes:console") && (
-              <TabsTrigger value="console">Console</TabsTrigger>
-            )}
+            {!isNodeIncompatible(node) &&
+              !nodeUpdating &&
+              node.status === "online" &&
+              canUseNodeConsole && <TabsTrigger value="console">Console</TabsTrigger>}
             <TabsTrigger value="daemon-logs">Daemon Logs</TabsTrigger>
           </TabsList>
 
@@ -322,6 +354,16 @@ export function AdminNodeDetail() {
           )}
 
           <div className="relative flex flex-col flex-1 min-h-0">
+            {nonInteractiveWhileUpdating && (
+              <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/85 backdrop-blur-sm">
+                <div className="border border-border bg-card px-6 py-4 text-center">
+                  <p className="text-sm font-medium">Node daemon update in progress</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Interactive node actions are locked until the update completes.
+                  </p>
+                </div>
+              </div>
+            )}
             <TabsContent value="details" className="pb-6">
               <NodeDetailsTab node={node} />
             </TabsContent>
@@ -360,7 +402,7 @@ export function AdminNodeDetail() {
                 </TabsContent>
               </>
             )}
-            {!isNodeIncompatible(node) && node.status === "online" && hasScope("nodes:console") && (
+            {!isNodeIncompatible(node) && node.status === "online" && canUseNodeConsole && (
               <TabsContent value="console" className="flex flex-col flex-1 min-h-0">
                 <NodeConsoleTab nodeId={node.id} />
               </TabsContent>

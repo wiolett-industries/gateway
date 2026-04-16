@@ -164,6 +164,8 @@ detect_arch() {
 }
 
 command_exists() { command -v "$1" &>/dev/null; }
+has_systemd() { command_exists systemctl; }
+has_openrc() { command_exists rc-service && command_exists rc-update; }
 
 check_dependencies() {
     if ! command_exists curl; then
@@ -603,8 +605,15 @@ install_nginx() {
             ;;
     esac
 
-    systemctl enable nginx >> "$LOG_FILE" 2>&1 || true
-    systemctl start nginx >> "$LOG_FILE" 2>&1 || true
+    if has_systemd; then
+        systemctl enable nginx >> "$LOG_FILE" 2>&1 || true
+        systemctl start nginx >> "$LOG_FILE" 2>&1 || true
+    elif has_openrc; then
+        rc-update add nginx default >> "$LOG_FILE" 2>&1 || true
+        rc-service nginx start >> "$LOG_FILE" 2>&1 || true
+    elif command_exists service; then
+        service nginx start >> "$LOG_FILE" 2>&1 || true
+    fi
     ok "nginx installed"
 }
 
@@ -759,7 +768,13 @@ configure_nginx() {
     fi
 
     if nginx -t >> "$LOG_FILE" 2>&1; then
-        systemctl reload nginx >> "$LOG_FILE" 2>&1 || nginx -s reload >> "$LOG_FILE" 2>&1 || true
+        if has_systemd; then
+            systemctl reload nginx >> "$LOG_FILE" 2>&1 || nginx -s reload >> "$LOG_FILE" 2>&1 || true
+        elif has_openrc; then
+            rc-service nginx reload >> "$LOG_FILE" 2>&1 || nginx -s reload >> "$LOG_FILE" 2>&1 || true
+        else
+            nginx -s reload >> "$LOG_FILE" 2>&1 || true
+        fi
         ok "nginx configuration updated (${NGINX_MODE} mode)"
     else
         warn "nginx config test failed after configuration changes — check $LOG_FILE"
@@ -874,7 +889,7 @@ enroll_daemon() {
 start_daemon() {
     log "Enabling and starting nginx-daemon..."
 
-    if command_exists systemctl; then
+    if has_systemd; then
         # Write systemd unit with user/group support
         cat > /etc/systemd/system/nginx-daemon.service <<UNIT
 [Unit]
@@ -905,6 +920,35 @@ UNIT
         else
             warn "nginx-daemon may not have started. Check: journalctl -u nginx-daemon -f"
         fi
+    elif has_openrc; then
+        cat > /etc/init.d/nginx-daemon <<UNIT
+#!/sbin/openrc-run
+name="Gateway Nginx Daemon"
+description="Gateway Nginx Daemon"
+command="/usr/local/bin/nginx-daemon"
+command_args="run"
+command_user="${RUN_USER}:${RUN_GROUP}"
+pidfile="/run/\${RC_SVCNAME}.pid"
+supervisor="supervise-daemon"
+respawn_delay=5
+output_log="/var/log/nginx-daemon.log"
+error_log="/var/log/nginx-daemon.err"
+
+depend() {
+    need net
+    use nginx
+}
+UNIT
+        chmod +x /etc/init.d/nginx-daemon
+        rc-update add nginx-daemon default >> "$LOG_FILE" 2>&1
+        rc-service nginx-daemon restart >> "$LOG_FILE" 2>&1 || rc-service nginx-daemon start >> "$LOG_FILE" 2>&1
+        sleep 2
+
+        if rc-service nginx-daemon status >> "$LOG_FILE" 2>&1; then
+            ok "nginx-daemon is running"
+        else
+            warn "nginx-daemon may not have started. Check: rc-service nginx-daemon status"
+        fi
     else
         warn "systemd not found — start the daemon manually: nginx-daemon run"
     fi
@@ -922,6 +966,13 @@ echo ""
 echo -e "${GREEN}${BOLD}Node setup complete!${NC}"
 echo ""
 echo -e "  The node should appear as ${GREEN}online${NC} in Gateway within a few seconds."
-echo -e "  Check status:  ${BRAND_MINT}systemctl status nginx-daemon${NC}"
-echo -e "  View logs:     ${BRAND_MINT}journalctl -u nginx-daemon -f${NC}"
+if has_systemd; then
+    echo -e "  Check status:  ${BRAND_MINT}systemctl status nginx-daemon${NC}"
+    echo -e "  View logs:     ${BRAND_MINT}journalctl -u nginx-daemon -f${NC}"
+elif has_openrc; then
+    echo -e "  Check status:  ${BRAND_MINT}rc-service nginx-daemon status${NC}"
+    echo -e "  View logs:     ${BRAND_MINT}tail -f /var/log/nginx-daemon.log${NC}"
+else
+    echo -e "  Start daemon:  ${BRAND_MINT}nginx-daemon run${NC}"
+fi
 echo ""

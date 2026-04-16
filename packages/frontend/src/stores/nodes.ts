@@ -29,7 +29,7 @@ interface NodesState {
 
 export const useNodesStore = create<NodesState>()((set, get) => ({
   nodes: [],
-  isLoading: false,
+  isLoading: true,
   error: null,
   filters: { search: "", status: "all", type: "all" },
   page: 1,
@@ -40,7 +40,8 @@ export const useNodesStore = create<NodesState>()((set, get) => ({
 
   fetchNodes: async () => {
     const { filters, page, limit } = get();
-    set({ isLoading: true, error: null });
+    const hasData = get().nodes.length > 0;
+    set({ isLoading: !hasData, error: null });
     try {
       const result = await api.listNodes({
         search: filters.search || undefined,

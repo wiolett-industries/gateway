@@ -19,6 +19,8 @@ export function resetTestStores() {
 
   useAppStatusStore.setState({
     maintenanceActive: false,
+    gatewayUpdatingActive: false,
+    gatewayUpdatingTargetVersion: null,
     rateLimitedUntil: null,
   });
 

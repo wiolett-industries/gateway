@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
+import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
 import { SearchFilterBar } from "@/components/common/SearchFilterBar";
 import { Badge } from "@/components/ui/badge";
@@ -203,6 +204,7 @@ export function DockerVolumes({
       {
         key: "name",
         header: "Name",
+        width: "minmax(260px, 1.35fr)",
         render: (v) => (
           <div className="flex items-center gap-3 min-w-0">
             <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-muted shrink-0">
@@ -215,18 +217,16 @@ export function DockerVolumes({
       {
         key: "driver",
         header: "Driver",
+        width: "110px",
         render: (v) => <span className="text-sm text-muted-foreground">{v.driver}</span>,
       },
       {
         key: "node",
         header: "Node",
-        width: "minmax(210px, 0.8fr)",
+        width: "minmax(220px, 1fr)",
         render: (v) => (
           <div className="min-w-0 flex">
-            <Badge
-              variant="secondary"
-              className="text-xs max-w-full overflow-hidden text-ellipsis whitespace-nowrap inline-flex"
-            >
+            <Badge variant="secondary" className="text-xs w-fit max-w-full">
               {(v as any)._nodeName || "-"}
             </Badge>
           </div>
@@ -235,6 +235,7 @@ export function DockerVolumes({
       {
         key: "usage",
         header: "Usage",
+        width: "108px",
         render: (v) => {
           const usedBy: string[] = (v as any).usedBy ?? (v as any).UsedBy ?? [];
           const isUsed = usedBy.length > 0;
@@ -259,6 +260,7 @@ export function DockerVolumes({
       {
         key: "created",
         header: "Created",
+        width: "120px",
         align: "right" as const,
         render: (v) => (
           <span className="text-sm text-muted-foreground">
@@ -269,6 +271,7 @@ export function DockerVolumes({
       {
         key: "actions",
         header: "Actions",
+        width: "72px",
         align: "right" as const,
         render: (v) => {
           const usedBy: string[] = (v as any).usedBy ?? (v as any).UsedBy ?? [];
@@ -363,8 +366,11 @@ export function DockerVolumes({
           emptyMessage="No volumes found."
         />
       ) : isLoading ? (
-        <div className="flex items-center justify-center py-16 text-muted-foreground">
-          Loading volumes...
+        <div className="flex items-center justify-center py-16">
+          <div className="flex flex-col items-center gap-3">
+            <LoadingSpinner className="" />
+            <p className="text-sm text-muted-foreground">Loading volumes...</p>
+          </div>
         </div>
       ) : (
         <EmptyState

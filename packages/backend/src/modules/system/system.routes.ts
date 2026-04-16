@@ -4,6 +4,7 @@ import { container } from '@/container.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { authMiddleware, requireScope, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import { DaemonUpdateService } from '@/services/daemon-update.service.js';
+import { EventBusService } from '@/services/event-bus.service.js';
 import { UpdateService } from '@/services/update.service.js';
 import type { AppEnv } from '@/types.js';
 
@@ -38,6 +39,7 @@ systemRoutes.post('/update', requireScope('admin:update'), async (c) => {
     .parse(body);
 
   const updateService = container.resolve(UpdateService);
+  const eventBus = container.resolve(EventBusService);
 
   // Verify update is actually available and version matches
   const status = await updateService.getCachedStatus();
@@ -50,8 +52,10 @@ systemRoutes.post('/update', requireScope('admin:update'), async (c) => {
 
   // Respond immediately, then trigger the update asynchronously.
   // The container will be replaced — the response must be sent first.
+  eventBus.publish('system.update.changed', { updating: true, targetVersion: version });
   setTimeout(() => {
     updateService.performUpdate(version).catch((err) => {
+      eventBus.publish('system.update.changed', { updating: false, targetVersion: version });
       logger.error('Update failed', {
         error: err instanceof Error ? err.message : String(err),
         stack: err instanceof Error ? err.stack : undefined,

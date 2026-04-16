@@ -1,13 +1,19 @@
 import { Link } from "react-router-dom";
+import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { Badge } from "@/components/ui/badge";
 import type { ProxyHost } from "@/types";
 
 interface HealthOverviewCardProps {
   healthHosts: ProxyHost[];
   hasScope: (scope: string) => boolean;
+  loading?: boolean;
 }
 
-export function HealthOverviewCard({ healthHosts, hasScope }: HealthOverviewCardProps) {
+export function HealthOverviewCard({
+  healthHosts,
+  hasScope,
+  loading = false,
+}: HealthOverviewCardProps) {
   if (!hasScope("proxy:list")) return null;
 
   return (
@@ -18,7 +24,14 @@ export function HealthOverviewCard({ healthHosts, hasScope }: HealthOverviewCard
           View all
         </Link>
       </div>
-      {healthHosts.length > 0 ? (
+      {loading ? (
+        <div className="flex items-center justify-center py-12">
+          <div className="flex flex-col items-center gap-3">
+            <LoadingSpinner className="" />
+            <p className="text-sm text-muted-foreground">Loading health overview...</p>
+          </div>
+        </div>
+      ) : healthHosts.length > 0 ? (
         <div className="divide-y divide-border -mb-px [&>*:last-child]:border-b [&>*:last-child]:border-border">
           {healthHosts.slice(0, 6).map((host) => (
             <Link

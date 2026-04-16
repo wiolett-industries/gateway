@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
+import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
 import { SearchFilterBar } from "@/components/common/SearchFilterBar";
 import { Badge } from "@/components/ui/badge";
@@ -223,6 +224,7 @@ export function DockerNetworks({
       {
         key: "name",
         header: "Name",
+        width: "minmax(260px, 1.35fr)",
         render: (net) => (
           <div className="flex items-center gap-3 min-w-0">
             <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-muted shrink-0">
@@ -240,11 +242,13 @@ export function DockerNetworks({
       {
         key: "driver",
         header: "Driver",
+        width: "110px",
         render: (net) => <span className="text-sm text-muted-foreground">{net.driver}</span>,
       },
       {
         key: "subnet",
         header: "Subnet",
+        width: "160px",
         render: (net) => {
           const ipam = getIPAM(net);
           return ipam.subnet !== "-" ? (
@@ -259,13 +263,10 @@ export function DockerNetworks({
       {
         key: "node",
         header: "Node",
-        width: "minmax(210px, 0.8fr)",
+        width: "minmax(220px, 1fr)",
         render: (n) => (
           <div className="min-w-0 flex">
-            <Badge
-              variant="secondary"
-              className="text-xs max-w-full overflow-hidden text-ellipsis whitespace-nowrap inline-flex"
-            >
+            <Badge variant="secondary" className="text-xs w-fit max-w-full">
               {(n as any)._nodeName || "-"}
             </Badge>
           </div>
@@ -274,6 +275,7 @@ export function DockerNetworks({
       {
         key: "usage",
         header: "Usage",
+        width: "108px",
         render: (net) => {
           const count = containerCount(net);
           return count > 0 ? (
@@ -297,6 +299,7 @@ export function DockerNetworks({
       {
         key: "actions",
         header: "Actions",
+        width: "72px",
         align: "right" as const,
         render: (net) => {
           const count = containerCount(net);
@@ -392,8 +395,11 @@ export function DockerNetworks({
           emptyMessage="No networks found."
         />
       ) : isLoading ? (
-        <div className="flex items-center justify-center py-16 text-muted-foreground">
-          Loading networks...
+        <div className="flex items-center justify-center py-16">
+          <div className="flex flex-col items-center gap-3">
+            <LoadingSpinner className="" />
+            <p className="text-sm text-muted-foreground">Loading networks...</p>
+          </div>
         </div>
       ) : (
         <EmptyState

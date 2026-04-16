@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
+import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
 import { SearchFilterBar } from "@/components/common/SearchFilterBar";
 import { Badge } from "@/components/ui/badge";
@@ -252,6 +253,7 @@ export function DockerImages({
       {
         key: "tag",
         header: "Repository:Tag",
+        width: "minmax(280px, 1.45fr)",
         render: (img: any) => {
           const tags = img.repoTags ?? img.RepoTags ?? [];
           const tag = tags.length > 0 ? tags[0] : "<none>:<none>";
@@ -275,6 +277,7 @@ export function DockerImages({
       {
         key: "id",
         header: "Image ID",
+        width: "140px",
         render: (img: any) => {
           const id = img.id ?? img.Id ?? "";
           return (
@@ -287,13 +290,10 @@ export function DockerImages({
       {
         key: "node",
         header: "Node",
-        width: "minmax(210px, 0.8fr)",
+        width: "minmax(220px, 1fr)",
         render: (img: any) => (
           <div className="min-w-0 flex">
-            <Badge
-              variant="secondary"
-              className="text-xs max-w-full overflow-hidden text-ellipsis whitespace-nowrap inline-flex"
-            >
+            <Badge variant="secondary" className="text-xs w-fit max-w-full">
               {(img as any)._nodeName || "-"}
             </Badge>
           </div>
@@ -302,6 +302,7 @@ export function DockerImages({
       {
         key: "usage",
         header: "Usage",
+        width: "108px",
         render: (img: any) => {
           const tags = img.repoTags ?? img.RepoTags ?? [];
           const tag = tags.length > 0 ? tags[0] : "<none>:<none>";
@@ -328,6 +329,7 @@ export function DockerImages({
       {
         key: "size",
         header: "Size",
+        width: "112px",
         render: (img: any) => {
           const size = img.size ?? img.Size ?? 0;
           return <span className="text-sm text-muted-foreground">{formatBytes(size)}</span>;
@@ -336,6 +338,7 @@ export function DockerImages({
       {
         key: "created",
         header: "Created",
+        width: "120px",
         align: "right" as const,
         render: (img: any) => {
           const created = img.created ?? img.Created ?? 0;
@@ -345,6 +348,7 @@ export function DockerImages({
       {
         key: "actions",
         header: "Actions",
+        width: "72px",
         align: "right" as const,
         render: (img: any) => {
           const tags = img.repoTags ?? img.RepoTags ?? [];
@@ -461,8 +465,11 @@ export function DockerImages({
           emptyMessage="No images found."
         />
       ) : isLoading ? (
-        <div className="flex items-center justify-center py-16 text-muted-foreground">
-          Loading images...
+        <div className="flex items-center justify-center py-16">
+          <div className="flex flex-col items-center gap-3">
+            <LoadingSpinner className="" />
+            <p className="text-sm text-muted-foreground">Loading images...</p>
+          </div>
         </div>
       ) : (
         <EmptyState

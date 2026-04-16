@@ -81,7 +81,7 @@ export const useFolderStore = create<FolderState>()((set, get) => ({
   folders: [],
   ungroupedHosts: [],
   totalHosts: 0,
-  isLoading: false,
+  isLoading: true,
   error: null,
   filters: { ...defaultFilters },
   expandedFolderIds: new Set<string>(),

@@ -1,4 +1,4 @@
-import { ExternalLink, Lock, RefreshCw, Shield } from "lucide-react";
+import { ExternalLink, Loader2, Lock, RefreshCw, Shield } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
@@ -179,7 +179,7 @@ export function DomainDetailDialog({
 
         {isLoading ? (
           <div className="flex items-center justify-center py-8">
-            <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+            <Loader2 className="h-6 w-6 animate-spin text-primary" />
           </div>
         ) : domain ? (
           <div className="space-y-4">

@@ -182,6 +182,8 @@ detect_arch() {
 }
 
 command_exists() { command -v "$1" &>/dev/null; }
+has_systemd() { command_exists systemctl; }
+has_openrc() { command_exists rc-service && command_exists rc-update; }
 
 run_quiet() {
     if "$@" >>"$LOG_FILE" 2>&1; then
@@ -353,9 +355,14 @@ ensure_docker_running() {
         return
     fi
     log "Starting Docker service..."
-    if command_exists systemctl; then
+    if has_systemd; then
         run_privileged_quiet systemctl enable --now containerd || true
         run_privileged_quiet systemctl enable --now docker
+    elif has_openrc; then
+        run_privileged_quiet rc-update add containerd default || true
+        run_privileged_quiet rc-service containerd start || true
+        run_privileged_quiet rc-update add docker default || true
+        run_privileged_quiet rc-service docker start
     elif command_exists service; then
         run_privileged_quiet service containerd start || true
         run_privileged_quiet service docker start
@@ -777,7 +784,7 @@ enroll_daemon() {
 start_daemon() {
     log "Enabling and starting docker-daemon..."
 
-    if command_exists systemctl; then
+    if has_systemd; then
         cat > /etc/systemd/system/docker-daemon.service <<UNIT
 [Unit]
 Description=Gateway Docker Daemon
@@ -809,6 +816,34 @@ UNIT
         else
             warn "docker-daemon may not have started. Check: journalctl -u docker-daemon -f"
         fi
+    elif has_openrc; then
+        cat > /etc/init.d/docker-daemon <<UNIT
+#!/sbin/openrc-run
+name="Gateway Docker Daemon"
+description="Gateway Docker Daemon"
+command="/usr/local/bin/docker-daemon"
+command_args="run"
+command_user="${RUN_USER}:${RUN_GROUP}"
+pidfile="/run/\${RC_SVCNAME}.pid"
+supervisor="supervise-daemon"
+respawn_delay=5
+output_log="/var/log/docker-daemon.log"
+error_log="/var/log/docker-daemon.err"
+
+depend() {
+    need net docker
+}
+UNIT
+        chmod +x /etc/init.d/docker-daemon
+        rc-update add docker-daemon default >> "$LOG_FILE" 2>&1
+        rc-service docker-daemon restart >> "$LOG_FILE" 2>&1 || rc-service docker-daemon start >> "$LOG_FILE" 2>&1
+        sleep 2
+
+        if rc-service docker-daemon status >> "$LOG_FILE" 2>&1; then
+            ok "docker-daemon is running"
+        else
+            warn "docker-daemon may not have started. Check: rc-service docker-daemon status"
+        fi
     else
         warn "systemd not found — start the daemon manually: docker-daemon run"
     fi
@@ -824,6 +859,13 @@ echo ""
 echo -e "${GREEN}${BOLD}Docker node setup complete!${NC}"
 echo ""
 echo -e "  The node should appear as ${GREEN}online${NC} in Gateway within a few seconds."
-echo -e "  Check status:  ${BRAND_MINT}systemctl status docker-daemon${NC}"
-echo -e "  View logs:     ${BRAND_MINT}journalctl -u docker-daemon -f${NC}"
+if has_systemd; then
+    echo -e "  Check status:  ${BRAND_MINT}systemctl status docker-daemon${NC}"
+    echo -e "  View logs:     ${BRAND_MINT}journalctl -u docker-daemon -f${NC}"
+elif has_openrc; then
+    echo -e "  Check status:  ${BRAND_MINT}rc-service docker-daemon status${NC}"
+    echo -e "  View logs:     ${BRAND_MINT}tail -f /var/log/docker-daemon.log${NC}"
+else
+    echo -e "  Start daemon:  ${BRAND_MINT}docker-daemon run${NC}"
+fi
 echo ""

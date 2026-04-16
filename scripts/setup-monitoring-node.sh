@@ -102,6 +102,8 @@ detect_arch() {
 }
 
 command_exists() { command -v "$1" &>/dev/null; }
+has_systemd() { command_exists systemctl; }
+has_openrc() { command_exists rc-service && command_exists rc-update; }
 
 check_dependencies() {
     if command_exists curl; then
@@ -588,7 +590,7 @@ enroll_daemon() {
 start_daemon() {
     log "Enabling and starting monitoring-daemon..."
 
-    if command_exists systemctl; then
+    if has_systemd; then
         cat > /etc/systemd/system/monitoring-daemon.service <<UNIT
 [Unit]
 Description=Gateway Monitoring Daemon
@@ -618,6 +620,34 @@ UNIT
         else
             warn "monitoring-daemon may not have started. Check: journalctl -u monitoring-daemon -f"
         fi
+    elif has_openrc; then
+        cat > /etc/init.d/monitoring-daemon <<UNIT
+#!/sbin/openrc-run
+name="Gateway Monitoring Daemon"
+description="Gateway Monitoring Daemon"
+command="/usr/local/bin/monitoring-daemon"
+command_args="run"
+command_user="${RUN_USER}:${RUN_GROUP}"
+pidfile="/run/\${RC_SVCNAME}.pid"
+supervisor="supervise-daemon"
+respawn_delay=5
+output_log="/var/log/monitoring-daemon.log"
+error_log="/var/log/monitoring-daemon.err"
+
+depend() {
+    need net
+}
+UNIT
+        chmod +x /etc/init.d/monitoring-daemon
+        rc-update add monitoring-daemon default >> "$LOG_FILE" 2>&1
+        rc-service monitoring-daemon restart >> "$LOG_FILE" 2>&1 || rc-service monitoring-daemon start >> "$LOG_FILE" 2>&1
+        sleep 2
+
+        if rc-service monitoring-daemon status >> "$LOG_FILE" 2>&1; then
+            ok "monitoring-daemon is running"
+        else
+            warn "monitoring-daemon may not have started. Check: rc-service monitoring-daemon status"
+        fi
     else
         warn "systemd not found — start the daemon manually: monitoring-daemon run"
     fi
@@ -633,6 +663,13 @@ echo ""
 echo -e "${GREEN}${BOLD}Monitoring node setup complete!${NC}"
 echo ""
 echo -e "  The node should appear as ${GREEN}online${NC} in Gateway within a few seconds."
-echo -e "  Check status:  ${BRAND_MINT}systemctl status monitoring-daemon${NC}"
-echo -e "  View logs:     ${BRAND_MINT}journalctl -u monitoring-daemon -f${NC}"
+if has_systemd; then
+    echo -e "  Check status:  ${BRAND_MINT}systemctl status monitoring-daemon${NC}"
+    echo -e "  View logs:     ${BRAND_MINT}journalctl -u monitoring-daemon -f${NC}"
+elif has_openrc; then
+    echo -e "  Check status:  ${BRAND_MINT}rc-service monitoring-daemon status${NC}"
+    echo -e "  View logs:     ${BRAND_MINT}tail -f /var/log/monitoring-daemon.log${NC}"
+else
+    echo -e "  Start daemon:  ${BRAND_MINT}monitoring-daemon run${NC}"
+fi
 echo ""
