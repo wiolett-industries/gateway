@@ -36,7 +36,7 @@ import { Settings } from "@/pages/Settings";
 import { SSLCertificates } from "@/pages/SSLCertificates";
 import { TemplatesPage } from "@/pages/TemplatesPage";
 import { eventStream } from "@/services/event-stream";
-import { useAppStatusStore } from "@/stores/app-status";
+import { APP_STATUS_STORAGE_KEY, useAppStatusStore } from "@/stores/app-status";
 import { useAuthStore } from "@/stores/auth";
 
 /** Helper to wrap a page element with a scope guard */
@@ -106,6 +106,8 @@ export default function App() {
   const [startupChecked, setStartupChecked] = useState(false);
   const maintenanceActive = useAppStatusStore((s) => s.maintenanceActive);
   const setMaintenanceActive = useAppStatusStore((s) => s.setMaintenanceActive);
+  const setGatewayUpdatingActive = useAppStatusStore((s) => s.setGatewayUpdatingActive);
+  const clearGatewayUpdating = useAppStatusStore((s) => s.clearGatewayUpdating);
 
   useEffect(() => {
     let cancelled = false;
@@ -131,6 +133,31 @@ export default function App() {
       cancelled = true;
     };
   }, [setMaintenanceActive]);
+
+  useEffect(() => {
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== APP_STATUS_STORAGE_KEY || event.newValue == null) return;
+
+      try {
+        const parsed = JSON.parse(event.newValue) as {
+          state?: {
+            gatewayUpdatingActive?: boolean;
+            gatewayUpdatingTargetVersion?: string | null;
+          };
+        };
+        if (parsed.state?.gatewayUpdatingActive) {
+          setGatewayUpdatingActive(true, parsed.state.gatewayUpdatingTargetVersion ?? null);
+        } else {
+          clearGatewayUpdating();
+        }
+      } catch {
+        // Ignore malformed storage updates.
+      }
+    };
+
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, [clearGatewayUpdating, setGatewayUpdatingActive]);
 
   if (!startupChecked) {
     return (
