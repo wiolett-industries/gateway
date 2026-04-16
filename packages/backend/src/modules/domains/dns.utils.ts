@@ -8,6 +8,13 @@ const logger = createChildLogger('DnsUtils');
 let resolver = new Resolver();
 resolver.setServers(['8.8.8.8', '1.1.1.1']);
 
+function parseConfiguredIPs(value?: string): string[] {
+  return (value ?? '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
 export function initDnsResolver(servers: string[]): void {
   resolver = new Resolver();
   resolver.setServers(servers);
@@ -23,30 +30,33 @@ function withTimeout<T>(promise: Promise<T>): Promise<T> {
   ]);
 }
 
-let cachedPublicIPv4: string | null = null;
-let cachedPublicIPv6: string | null = null;
+let cachedPublicIPv4: string[] = [];
+let cachedPublicIPv6: string[] = [];
 
 export async function detectPublicIP(envIPv4?: string, envIPv6?: string): Promise<void> {
-  cachedPublicIPv4 = envIPv4 || null;
-  cachedPublicIPv6 = envIPv6 || null;
+  cachedPublicIPv4 = parseConfiguredIPs(envIPv4);
+  cachedPublicIPv6 = parseConfiguredIPs(envIPv6);
 
-  if (!cachedPublicIPv4) {
+  if (cachedPublicIPv4.length === 0) {
     try {
       const resp = await fetch('https://api.ipify.org?format=text');
-      cachedPublicIPv4 = (await resp.text()).trim();
-      logger.info(`Detected public IPv4: ${cachedPublicIPv4}`);
+      const ip = (await resp.text()).trim();
+      if (ip) {
+        cachedPublicIPv4 = [ip];
+        logger.info(`Detected public IPv4: ${ip}`);
+      }
     } catch {
       logger.warn('Failed to detect public IPv4');
     }
   }
 
-  if (!cachedPublicIPv6) {
+  if (cachedPublicIPv6.length === 0) {
     try {
       const resp = await fetch('https://api64.ipify.org?format=text');
       const ip = (await resp.text()).trim();
       if (ip.includes(':')) {
-        cachedPublicIPv6 = ip;
-        logger.info(`Detected public IPv6: ${cachedPublicIPv6}`);
+        cachedPublicIPv6 = [ip];
+        logger.info(`Detected public IPv6: ${ip}`);
       }
     } catch {
       logger.warn('Failed to detect public IPv6');
@@ -54,7 +64,7 @@ export async function detectPublicIP(envIPv4?: string, envIPv6?: string): Promis
   }
 }
 
-export function getPublicIPs(): { ipv4: string | null; ipv6: string | null } {
+export function getPublicIPs(): { ipv4: string[]; ipv6: string[] } {
   return { ipv4: cachedPublicIPv4, ipv6: cachedPublicIPv6 };
 }
 
@@ -95,8 +105,8 @@ export function computeDnsStatus(records: DnsRecords): DnsStatus {
     return 'unknown';
   }
 
-  const ipv4Match = ipv4 ? records.a.includes(ipv4) : false;
-  const ipv6Match = ipv6 ? records.aaaa.includes(ipv6) : false;
+  const ipv4Match = ipv4.some((ip) => records.a.includes(ip));
+  const ipv6Match = ipv6.some((ip) => records.aaaa.includes(ip));
 
   if (ipv4Match || ipv6Match) {
     return 'valid';
