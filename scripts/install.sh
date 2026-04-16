@@ -131,6 +131,17 @@ docker_compose_run() {
     fi
 }
 
+mktemp_compat() {
+    local prefix="${1:-/tmp/gateway-tmp}"
+    local dir template
+
+    dir="$(dirname "$prefix")"
+    template="$(basename "$prefix").XXXXXX"
+
+    mkdir -p "$dir"
+    mktemp "${dir}/${template}"
+}
+
 detect_docker_access() {
     if docker info >/dev/null 2>&1; then
         DOCKER_USE_SUDO=0
@@ -1233,7 +1244,7 @@ DEFAULTEOF
     else
         info "Downloading and running daemon setup script..."
         local daemon_script
-        daemon_script=$(mktemp /tmp/gateway-setup-daemon-XXXXXX.sh)
+        daemon_script=$(mktemp_compat /tmp/gateway-setup-daemon)
         if curl -fsSL "${GITLAB_API_URL}/${GITLAB_PROJECT_PATH}/-/raw/main/scripts/setup-node.sh" -o "$daemon_script" 2>>"$LOG_FILE"; then
             chmod +x "$daemon_script"
             bash "$daemon_script" -y --gateway "localhost:9443" --token "$enroll_token" 2>>"$LOG_FILE" && \
