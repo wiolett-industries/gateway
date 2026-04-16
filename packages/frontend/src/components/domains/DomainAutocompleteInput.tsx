@@ -17,34 +17,34 @@ export function DomainAutocompleteInput({
 }: DomainAutocompleteInputProps) {
   const [suggestions, setSuggestions] = useState<DomainSearchResult[]>([]);
   const [open, setOpen] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
   const isFocusedRef = useRef(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Fetch suggestions on value change, but only open dropdown if input is focused
+  // Fetch suggestions on value change and on focus. Empty query is allowed so
+  // the dropdown can show available domains immediately on focus.
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (value.length < 2) {
-      setSuggestions([]);
+    if (!isFocused) {
       setOpen(false);
       return;
     }
+    const query = value.trim();
     debounceRef.current = setTimeout(async () => {
       try {
-        const results = await api.searchDomains(value);
+        const results = await api.searchDomains(query);
         setSuggestions(results);
-        // Only open if input is currently focused
-        if (isFocusedRef.current && results.length > 0) {
-          setOpen(true);
-        }
+        setOpen(results.length > 0 && isFocusedRef.current);
       } catch {
         setSuggestions([]);
+        setOpen(false);
       }
     }, 300);
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [value]);
+  }, [isFocused, value]);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -64,10 +64,12 @@ export function DomainAutocompleteInput({
         onChange={(e) => onChange(e.target.value)}
         onFocus={() => {
           isFocusedRef.current = true;
+          setIsFocused(true);
           if (suggestions.length > 0) setOpen(true);
         }}
         onBlur={() => {
           isFocusedRef.current = false;
+          setIsFocused(false);
           // Delay close to allow click on suggestion
           setTimeout(() => {
             if (!isFocusedRef.current) setOpen(false);

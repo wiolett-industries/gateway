@@ -410,11 +410,16 @@ export function CreateProxyHostDialog({
                     {nodes.map((node) => (
                       <SelectItem key={node.id} value={node.id}>
                         <div className="flex items-center justify-between w-full gap-3">
-                          <span>{node.hostname}</span>
+                          <span className="min-w-0 truncate">{node.hostname}</span>
                           <Badge variant="secondary" className="text-xs capitalize">
                             {node.type}
                           </Badge>
-                          <Badge variant={nodeStatusVariant(node.status)}>{node.status}</Badge>
+                          <Badge
+                            variant={nodeStatusVariant(node.status)}
+                            className="text-xs capitalize"
+                          >
+                            {node.status}
+                          </Badge>
                         </div>
                       </SelectItem>
                     ))}

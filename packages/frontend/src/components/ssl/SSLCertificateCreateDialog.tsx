@@ -1,6 +1,7 @@
 import { CheckCircle, Copy, Minus, Plus, Upload } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { DomainAutocompleteInput } from "@/components/domains/DomainAutocompleteInput";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -282,11 +283,11 @@ export function SSLCertificateCreateDialog({
                     <div className="space-y-2">
                       {acmeDomains.map((domain, i) => (
                         <div key={i} className="flex gap-2">
-                          <Input
+                          <DomainAutocompleteInput
                             value={domain}
-                            onChange={(e) => {
+                            onChange={(v) => {
                               const next = [...acmeDomains];
-                              next[i] = e.target.value;
+                              next[i] = v;
                               setAcmeDomains(next);
                             }}
                             placeholder="example.com"

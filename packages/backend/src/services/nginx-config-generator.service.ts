@@ -143,9 +143,11 @@ export class NginxConfigGenerator {
     }
 
     if (host.sslEnabled) {
-      const h2 = host.http2Support ? ' http2' : '';
-      lines.push(`    listen 443 ssl${h2};`);
-      lines.push(`    listen [::]:443 ssl${h2};`);
+      lines.push('    listen 443 ssl;');
+      lines.push('    listen [::]:443 ssl;');
+      if (host.http2Support) {
+        lines.push('    http2 on;');
+      }
     }
 
     lines.push(`    server_name ${serverNames};`);
@@ -160,7 +162,6 @@ export class NginxConfigGenerator {
         '    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;'
       );
       lines.push('    ssl_prefer_server_ciphers off;');
-      lines.push('    ssl_session_cache shared:SSL:10m;');
       lines.push('    ssl_session_timeout 1d;');
       lines.push('    ssl_session_tickets off;');
       lines.push('');
@@ -321,9 +322,11 @@ export class NginxConfigGenerator {
     if (host.sslEnabled) {
       lines.push('');
       lines.push('server {');
-      const h2 = host.http2Support ? ' http2' : '';
-      lines.push(`    listen 443 ssl${h2};`);
-      lines.push(`    listen [::]:443 ssl${h2};`);
+      lines.push('    listen 443 ssl;');
+      lines.push('    listen [::]:443 ssl;');
+      if (host.http2Support) {
+        lines.push('    http2 on;');
+      }
       lines.push(`    server_name ${serverNames};`);
       lines.push('');
 
@@ -372,9 +375,11 @@ export class NginxConfigGenerator {
     if (host.sslEnabled) {
       lines.push('');
       lines.push('server {');
-      const h2 = host.http2Support ? ' http2' : '';
-      lines.push(`    listen 443 ssl${h2};`);
-      lines.push(`    listen [::]:443 ssl${h2};`);
+      lines.push('    listen 443 ssl;');
+      lines.push('    listen [::]:443 ssl;');
+      if (host.http2Support) {
+        lines.push('    http2 on;');
+      }
       lines.push(`    server_name ${serverNames};`);
       lines.push('');
       if (host.sslCertPath) lines.push(`    ssl_certificate ${host.sslCertPath};`);

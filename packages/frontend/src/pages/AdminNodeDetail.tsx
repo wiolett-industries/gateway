@@ -92,6 +92,10 @@ export function AdminNodeDetail() {
   const [renameName, setRenameName] = useState("");
   const [renaming, setRenaming] = useState(false);
   const [checkingUpdates, setCheckingUpdates] = useState(false);
+  const [daemonUpdate, setDaemonUpdate] = useState<{
+    available: boolean;
+    latestVersion: string | null;
+  }>({ available: false, latestVersion: null });
 
   // Pin dialog
   const [pinOpen, setPinOpen] = useState(false);
@@ -125,6 +129,23 @@ export function AdminNodeDetail() {
     [id, navigate]
   );
 
+  const loadDaemonUpdateStatus = useCallback(async () => {
+    if (!id || !node || !hasScope("admin:update")) return;
+    try {
+      const statuses = await api.getDaemonUpdates();
+      const typeStatus = statuses.find((status) => status.daemonType === node.type);
+      const nodeStatus = typeStatus?.nodes.find((status) => status.nodeId === id);
+
+      if (nodeStatus?.updateAvailable && typeStatus?.latestVersion) {
+        setDaemonUpdate({ available: true, latestVersion: typeStatus.latestVersion });
+      } else {
+        setDaemonUpdate({ available: false, latestVersion: null });
+      }
+    } catch {
+      // ignore
+    }
+  }, [hasScope, id, node]);
+
   useEffect(() => {
     loadNode();
     const interval = setInterval(() => loadNode(true), 30000);
@@ -133,8 +154,15 @@ export function AdminNodeDetail() {
 
   // Refetch on live node.changed events (triggered by RealtimeBridge → store invalidation)
   useEffect(() => {
-    if (nodeRefreshTick > 0) loadNode(true);
-  }, [nodeRefreshTick, loadNode]);
+    if (nodeRefreshTick > 0) {
+      loadNode(true);
+      void loadDaemonUpdateStatus();
+    }
+  }, [nodeRefreshTick, loadNode, loadDaemonUpdateStatus]);
+
+  useEffect(() => {
+    void loadDaemonUpdateStatus();
+  }, [loadDaemonUpdateStatus]);
 
   useRealtime(id ? "node.changed" : null, (payload) => {
     const event = payload as { id?: string; action?: string };
@@ -144,6 +172,7 @@ export function AdminNodeDetail() {
       return;
     }
     loadNode(true);
+    void loadDaemonUpdateStatus();
   });
 
   useEffect(() => {
@@ -197,8 +226,10 @@ export function AdminNodeDetail() {
       const nodeStatus = typeStatus?.nodes.find((status) => status.nodeId === node.id);
 
       if (nodeStatus?.updateAvailable && typeStatus?.latestVersion) {
+        setDaemonUpdate({ available: true, latestVersion: typeStatus.latestVersion });
         toast.info(`Update available: ${typeStatus.latestVersion}`);
       } else {
+        setDaemonUpdate({ available: false, latestVersion: null });
         toast.success("Node daemon is already up to date");
       }
     } catch (err) {
@@ -365,7 +396,11 @@ export function AdminNodeDetail() {
               </div>
             )}
             <TabsContent value="details" className="pb-6">
-              <NodeDetailsTab node={node} />
+              <NodeDetailsTab
+                node={node}
+                daemonUpdate={daemonUpdate}
+                refreshDaemonUpdateStatus={loadDaemonUpdateStatus}
+              />
             </TabsContent>
             {!isNodeIncompatible(node) && (
               <TabsContent value="monitoring" className="pb-6">

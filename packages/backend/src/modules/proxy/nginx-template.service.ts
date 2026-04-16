@@ -73,8 +73,11 @@ server {
     listen [::]:80;
 {{/unless}}
 {{#if sslEnabled}}
-    listen 443 ssl{{#if http2Support}} http2{{/if}};
-    listen [::]:443 ssl{{#if http2Support}} http2{{/if}};
+    listen 443 ssl;
+    listen [::]:443 ssl;
+{{#if http2Support}}
+    http2 on;
+{{/if}}
 {{/if}}
     server_name {{serverNames}};
 
@@ -87,7 +90,6 @@ server {
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
     ssl_prefer_server_ciphers off;
-    ssl_session_cache shared:SSL:10m;
     ssl_session_timeout 1d;
     ssl_session_tickets off;
 
@@ -184,8 +186,11 @@ const BUILTIN_REDIRECT_TEMPLATE = `server {
 {{#if sslEnabled}}
 
 server {
-    listen 443 ssl{{#if http2Support}} http2{{/if}};
-    listen [::]:443 ssl{{#if http2Support}} http2{{/if}};
+    listen 443 ssl;
+    listen [::]:443 ssl;
+{{#if http2Support}}
+    http2 on;
+{{/if}}
     server_name {{serverNames}};
 
 {{#if sslCertPath}}
@@ -233,8 +238,11 @@ const BUILTIN_DEAD_TEMPLATE = `server {
 {{#if sslEnabled}}
 
 server {
-    listen 443 ssl{{#if http2Support}} http2{{/if}};
-    listen [::]:443 ssl{{#if http2Support}} http2{{/if}};
+    listen 443 ssl;
+    listen [::]:443 ssl;
+{{#if http2Support}}
+    http2 on;
+{{/if}}
     server_name {{serverNames}};
 
 {{#if sslCertPath}}
