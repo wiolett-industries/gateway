@@ -10,6 +10,12 @@ import { users } from './users.js';
 export const proxyHostTypeEnum = pgEnum('proxy_host_type', ['proxy', 'redirect', '404', 'raw']);
 export const forwardSchemeEnum = pgEnum('forward_scheme', ['http', 'https']);
 export const healthStatusEnum = pgEnum('health_status', ['online', 'offline', 'degraded', 'unknown', 'disabled']);
+export const healthCheckBodyMatchModeEnum = pgEnum('health_check_body_match_mode', [
+  'includes',
+  'exact',
+  'starts_with',
+  'ends_with',
+]);
 
 export interface CustomHeader {
   name: string;
@@ -94,6 +100,9 @@ export const proxyHosts = pgTable(
     healthCheckInterval: integer('health_check_interval').default(30), // seconds
     healthCheckExpectedStatus: integer('health_check_expected_status'), // null = accept 2xx
     healthCheckExpectedBody: varchar('health_check_expected_body', { length: 500 }), // null = don't check body
+    healthCheckBodyMatchMode: healthCheckBodyMatchModeEnum('health_check_body_match_mode')
+      .notNull()
+      .default('includes'),
     healthCheckSlowThreshold: integer('health_check_slow_threshold').default(3), // Nx multiplier for response time degradation
     healthStatus: healthStatusEnum('health_status').default('unknown'),
     lastHealthCheckAt: timestamp('last_health_check_at', { withTimezone: true }),

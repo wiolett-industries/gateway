@@ -109,6 +109,9 @@ export function CreateProxyHostDialog({
   const [healthCheckInterval, setHealthCheckInterval] = useState(30);
   const [healthCheckExpectedStatus, setHealthCheckExpectedStatus] = useState<number | null>(null);
   const [healthCheckExpectedBody, setHealthCheckExpectedBody] = useState("");
+  const [healthCheckBodyMatchMode, setHealthCheckBodyMatchMode] = useState<
+    "includes" | "exact" | "starts_with" | "ends_with"
+  >("includes");
 
   // Saving state
   const [isSaving, setIsSaving] = useState(false);
@@ -146,6 +149,7 @@ export function CreateProxyHostDialog({
     setHealthCheckInterval(30);
     setHealthCheckExpectedStatus(null);
     setHealthCheckExpectedBody("");
+    setHealthCheckBodyMatchMode("includes");
     setIsSaving(false);
   }, []);
 
@@ -175,6 +179,7 @@ export function CreateProxyHostDialog({
     setHealthCheckInterval(existingHost.healthCheckInterval || 30);
     setHealthCheckExpectedStatus(existingHost.healthCheckExpectedStatus ?? null);
     setHealthCheckExpectedBody(existingHost.healthCheckExpectedBody || "");
+    setHealthCheckBodyMatchMode(existingHost.healthCheckBodyMatchMode || "includes");
     setStep(1);
   }, [existingHost]);
 
@@ -283,7 +288,10 @@ export function CreateProxyHostDialog({
       healthCheckUrl,
       healthCheckInterval,
       healthCheckExpectedStatus: healthCheckExpectedStatus ?? undefined,
-      healthCheckExpectedBody: healthCheckExpectedBody || undefined,
+      healthCheckExpectedBody:
+        healthCheckExpectedBody.trim() === "" ? undefined : healthCheckExpectedBody,
+      healthCheckBodyMatchMode:
+        healthCheckExpectedBody.trim() === "" ? undefined : healthCheckBodyMatchMode,
       nodeId: nodeId || undefined,
     } as any;
 
@@ -650,6 +658,100 @@ export function CreateProxyHostDialog({
                   </div>
                 </div>
               </div>
+
+              {type !== "404" && (
+                <div className="border border-border bg-card">
+                  <div className="divide-y divide-border">
+                    <div className="flex items-center justify-between px-4 py-3">
+                      <div>
+                        <p className="text-sm font-medium">Health Check</p>
+                        <p className="text-xs text-muted-foreground">
+                          Enable periodic health monitoring
+                        </p>
+                      </div>
+                      <Switch checked={healthCheckEnabled} onChange={setHealthCheckEnabled} />
+                    </div>
+                    <div
+                      className={cn(
+                        "grid grid-cols-1 gap-3 px-4 py-3 md:grid-cols-2",
+                        !healthCheckEnabled && "opacity-50 pointer-events-none"
+                      )}
+                    >
+                      <div className="space-y-1">
+                        <label className="text-xs font-medium text-muted-foreground">
+                          URL Path
+                        </label>
+                        <Input
+                          value={healthCheckUrl}
+                          onChange={(e) => setHealthCheckUrl(e.target.value)}
+                          placeholder="/"
+                          disabled={!healthCheckEnabled}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-medium text-muted-foreground">
+                          Expected Status
+                        </label>
+                        <Input
+                          type="number"
+                          value={healthCheckExpectedStatus ?? ""}
+                          onChange={(e) =>
+                            setHealthCheckExpectedStatus(
+                              e.target.value ? Number(e.target.value) : null
+                            )
+                          }
+                          placeholder="Any 2xx"
+                          disabled={!healthCheckEnabled}
+                        />
+                      </div>
+                      <div className="space-y-1 md:col-span-2">
+                        <label className="text-xs font-medium text-muted-foreground">
+                          Expected Body
+                        </label>
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-[11rem_minmax(0,1fr)]">
+                          <Select
+                            value={healthCheckBodyMatchMode}
+                            onValueChange={(v) =>
+                              setHealthCheckBodyMatchMode(
+                                v as "includes" | "exact" | "starts_with" | "ends_with"
+                              )
+                            }
+                            disabled={!healthCheckEnabled}
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="includes">Includes</SelectItem>
+                              <SelectItem value="exact">Exact Match</SelectItem>
+                              <SelectItem value="starts_with">Starts With</SelectItem>
+                              <SelectItem value="ends_with">Ends With</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <Input
+                            value={healthCheckExpectedBody}
+                            onChange={(e) => setHealthCheckExpectedBody(e.target.value)}
+                            placeholder="Optional"
+                            disabled={!healthCheckEnabled}
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-medium text-muted-foreground">
+                          Interval (seconds)
+                        </label>
+                        <NumericInput
+                          value={healthCheckInterval}
+                          onChange={(v) => setHealthCheckInterval(v)}
+                          min={5}
+                          max={3600}
+                          disabled={!healthCheckEnabled}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Config Template card */}
               {userTemplates.length > 0 && (

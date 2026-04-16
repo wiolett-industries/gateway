@@ -70,6 +70,9 @@ export function ProxyHostDetail() {
   const [healthCheckUrl, setHealthCheckUrl] = useState("/");
   const [healthCheckExpectedStatus, setHealthCheckExpectedStatus] = useState<number | null>(null);
   const [healthCheckExpectedBody, setHealthCheckExpectedBody] = useState("");
+  const [healthCheckBodyMatchMode, setHealthCheckBodyMatchMode] = useState<
+    "includes" | "exact" | "starts_with" | "ends_with"
+  >("includes");
   const [healthCheckSlowThreshold, setHealthCheckSlowThreshold] = useState(3);
   // Access list tab state
   const [accessListId, setAccessListId] = useState<string>("");
@@ -106,6 +109,7 @@ export function ProxyHostDetail() {
 
         setHealthCheckExpectedStatus(data.healthCheckExpectedStatus ?? null);
         setHealthCheckExpectedBody(data.healthCheckExpectedBody || "");
+        setHealthCheckBodyMatchMode(data.healthCheckBodyMatchMode || "includes");
         setHealthCheckSlowThreshold(data.healthCheckSlowThreshold ?? 3);
         setAdvancedConfig(data.advancedConfig || "");
         setRawConfig(data.rawConfig || "");
@@ -325,6 +329,7 @@ export function ProxyHostDetail() {
       healthCheckUrl !== (host.healthCheckUrl || "/") ||
       healthCheckExpectedStatus !== (host.healthCheckExpectedStatus ?? null) ||
       healthCheckExpectedBody !== (host.healthCheckExpectedBody || "") ||
+      healthCheckBodyMatchMode !== (host.healthCheckBodyMatchMode || "includes") ||
       healthCheckSlowThreshold !== (host.healthCheckSlowThreshold ?? 3)
     );
   }, [
@@ -332,6 +337,7 @@ export function ProxyHostDetail() {
     healthCheckUrl,
     healthCheckExpectedStatus,
     healthCheckExpectedBody,
+    healthCheckBodyMatchMode,
     healthCheckSlowThreshold,
   ]);
 
@@ -343,7 +349,10 @@ export function ProxyHostDetail() {
         .updateProxyHost(id, {
           healthCheckUrl,
           healthCheckExpectedStatus: healthCheckExpectedStatus ?? undefined,
-          healthCheckExpectedBody: healthCheckExpectedBody || undefined,
+          healthCheckExpectedBody:
+            healthCheckExpectedBody.trim() === "" ? null : healthCheckExpectedBody,
+          healthCheckBodyMatchMode:
+            healthCheckExpectedBody.trim() === "" ? undefined : healthCheckBodyMatchMode,
           healthCheckSlowThreshold: healthCheckSlowThreshold || undefined,
         })
         .then((updated) => setHost(updated))
@@ -357,6 +366,7 @@ export function ProxyHostDetail() {
     healthCheckUrl,
     healthCheckExpectedStatus,
     healthCheckExpectedBody,
+    healthCheckBodyMatchMode,
     healthCheckSlowThreshold,
   ]);
 
@@ -527,6 +537,8 @@ export function ProxyHostDetail() {
                 setHealthCheckExpectedStatus={setHealthCheckExpectedStatus}
                 healthCheckExpectedBody={healthCheckExpectedBody}
                 setHealthCheckExpectedBody={setHealthCheckExpectedBody}
+                healthCheckBodyMatchMode={healthCheckBodyMatchMode}
+                setHealthCheckBodyMatchMode={setHealthCheckBodyMatchMode}
                 healthCheckSlowThreshold={healthCheckSlowThreshold}
                 setHealthCheckSlowThreshold={setHealthCheckSlowThreshold}
               />

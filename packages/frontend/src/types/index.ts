@@ -1076,6 +1076,7 @@ export interface ProxyHost {
   healthCheckInterval: number;
   healthCheckExpectedStatus: number | null;
   healthCheckExpectedBody: string | null;
+  healthCheckBodyMatchMode: "includes" | "exact" | "starts_with" | "ends_with";
   healthCheckSlowThreshold: number | null;
   healthStatus: HealthStatus;
   effectiveHealthStatus?: string;
@@ -1195,7 +1196,8 @@ export interface CreateProxyHostRequest {
   healthCheckUrl?: string;
   healthCheckInterval?: number;
   healthCheckExpectedStatus?: number;
-  healthCheckExpectedBody?: string;
+  healthCheckExpectedBody?: string | null;
+  healthCheckBodyMatchMode?: "includes" | "exact" | "starts_with" | "ends_with" | null;
   healthCheckSlowThreshold?: number;
 }
 

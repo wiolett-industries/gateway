@@ -7,6 +7,13 @@ import { api } from "@/services/api";
 import type { ProxyHost } from "@/types";
 import { effectiveHealthStatus, HEALTH_BADGE, HEALTH_LABEL } from "./helpers";
 
+const HEALTH_BODY_MATCH_LABEL: Record<ProxyHost["healthCheckBodyMatchMode"], string> = {
+  includes: "Includes",
+  exact: "Exact Match",
+  starts_with: "Starts With",
+  ends_with: "Ends With",
+};
+
 export function DetailsTab({ host }: { host: ProxyHost }) {
   const navigate = useNavigate();
   const nodeId = (host as any).nodeId as string | null;
@@ -67,7 +74,9 @@ export function DetailsTab({ host }: { host: ProxyHost }) {
       {/* Host Info + Health Check in one row */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Host Info Card */}
-        <div className="border border-border bg-card">
+        <div
+          className={`border border-border bg-card ${!host.healthCheckEnabled ? "md:col-span-2" : ""}`}
+        >
           <div className="border-b border-border p-4">
             <h2 className="font-semibold">Host Information</h2>
           </div>
@@ -126,6 +135,12 @@ export function DetailsTab({ host }: { host: ProxyHost }) {
                     : "Any 2xx"
                 }
               />
+              {host.healthCheckExpectedBody && (
+                <DetailRow
+                  label="Expected Body"
+                  value={`${HEALTH_BODY_MATCH_LABEL[host.healthCheckBodyMatchMode || "includes"]}: ${host.healthCheckExpectedBody}`}
+                />
+              )}
               {host.lastHealthCheckAt && (
                 <DetailRow
                   label="Last Check"

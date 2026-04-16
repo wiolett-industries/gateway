@@ -84,6 +84,7 @@ export function HealthBars({
 
     // Filter out legacy entries that lack a valid ts field
     const checks = (history ?? []).filter((c) => c.ts);
+    const rangeStart = now - barCount * bucketMs;
     const result: BarStatus[] = [];
 
     for (let i = barCount - 1; i >= 0; i--) {
@@ -116,8 +117,13 @@ export function HealthBars({
     const currentBar = currentStatusToBarStatus(currentStatus);
     if (currentBar !== "none") {
       result[result.length - 1] = mergeLatestBar(result[result.length - 1], currentBar);
-      if (checks.length > 0) {
-        // Have data — fill any empty buckets after the last sample up to now
+      const recentChecks = checks.filter((c) => {
+        const t = new Date(c.ts).getTime();
+        return t >= rangeStart && t < now;
+      });
+
+      if (recentChecks.length > 0) {
+        // Have in-range data — fill only empty buckets after the latest sample up to now.
         for (let j = result.length - 2; j >= 0; j--) {
           if (result[j] !== "none") break;
           result[j] = currentBar;
