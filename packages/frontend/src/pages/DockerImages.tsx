@@ -253,7 +253,7 @@ export function DockerImages({
       {
         key: "tag",
         header: "Repository:Tag",
-        width: "minmax(280px, 1.45fr)",
+        width: "minmax(0, 1.35fr)",
         render: (img: any) => {
           const tags = img.repoTags ?? img.RepoTags ?? [];
           const tag = tags.length > 0 ? tags[0] : "<none>:<none>";
@@ -277,7 +277,7 @@ export function DockerImages({
       {
         key: "id",
         header: "Image ID",
-        width: "140px",
+        width: "9rem",
         render: (img: any) => {
           const id = img.id ?? img.Id ?? "";
           return (
@@ -290,10 +290,10 @@ export function DockerImages({
       {
         key: "node",
         header: "Node",
-        width: "minmax(220px, 1fr)",
+        width: "minmax(0, 0.95fr)",
         render: (img: any) => (
           <div className="min-w-0 flex">
-            <Badge variant="secondary" className="text-xs w-fit max-w-full">
+            <Badge variant="secondary" className="text-xs">
               {(img as any)._nodeName || "-"}
             </Badge>
           </div>
@@ -302,7 +302,7 @@ export function DockerImages({
       {
         key: "usage",
         header: "Usage",
-        width: "108px",
+        width: "6.5rem",
         render: (img: any) => {
           const tags = img.repoTags ?? img.RepoTags ?? [];
           const tag = tags.length > 0 ? tags[0] : "<none>:<none>";
@@ -329,7 +329,7 @@ export function DockerImages({
       {
         key: "size",
         header: "Size",
-        width: "112px",
+        width: "7rem",
         render: (img: any) => {
           const size = img.size ?? img.Size ?? 0;
           return <span className="text-sm text-muted-foreground">{formatBytes(size)}</span>;
@@ -338,7 +338,7 @@ export function DockerImages({
       {
         key: "created",
         header: "Created",
-        width: "120px",
+        width: "8rem",
         align: "right" as const,
         render: (img: any) => {
           const created = img.created ?? img.Created ?? 0;
@@ -348,7 +348,7 @@ export function DockerImages({
       {
         key: "actions",
         header: "Actions",
-        width: "72px",
+        width: "5rem",
         align: "right" as const,
         render: (img: any) => {
           const tags = img.repoTags ?? img.RepoTags ?? [];
