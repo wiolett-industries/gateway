@@ -36,6 +36,13 @@
       "when": 1776109089729,
       "tag": "0004_salty_prism",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1776375000000,
+      "tag": "0005_fair_mojo",
+      "breakpoints": true
     }
   ]
 }

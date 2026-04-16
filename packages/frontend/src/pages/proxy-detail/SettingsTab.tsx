@@ -45,6 +45,8 @@ export interface SettingsTabProps {
   setHealthCheckExpectedStatus: (v: number | null) => void;
   healthCheckExpectedBody: string;
   setHealthCheckExpectedBody: (v: string) => void;
+  healthCheckBodyMatchMode: "includes" | "exact" | "starts_with" | "ends_with";
+  setHealthCheckBodyMatchMode: (v: "includes" | "exact" | "starts_with" | "ends_with") => void;
   healthCheckSlowThreshold: number;
   setHealthCheckSlowThreshold: (v: number) => void;
 }
@@ -80,6 +82,8 @@ export function SettingsTab({
   setHealthCheckExpectedStatus,
   healthCheckExpectedBody,
   setHealthCheckExpectedBody,
+  healthCheckBodyMatchMode,
+  setHealthCheckBodyMatchMode,
   healthCheckSlowThreshold,
   setHealthCheckSlowThreshold,
 }: SettingsTabProps) {
@@ -239,15 +243,6 @@ export function SettingsTab({
               />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground">Expected Body</label>
-              <Input
-                value={healthCheckExpectedBody}
-                onChange={(e) => setHealthCheckExpectedBody(e.target.value)}
-                placeholder="Optional"
-                disabled={!host.healthCheckEnabled}
-              />
-            </div>
-            <div className="space-y-1">
               <label className="text-xs font-medium text-muted-foreground">
                 Slow Threshold (Nx avg)
               </label>
@@ -262,6 +257,36 @@ export function SettingsTab({
               <p className="text-[10px] text-muted-foreground">
                 Mark degraded when response time exceeds Nx the 3-hour average. 0 to disable.
               </p>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Expected Body</label>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-[11rem_minmax(0,1fr)]">
+                <Select
+                  value={healthCheckBodyMatchMode}
+                  onValueChange={(v) =>
+                    setHealthCheckBodyMatchMode(
+                      v as "includes" | "exact" | "starts_with" | "ends_with"
+                    )
+                  }
+                  disabled={!host.healthCheckEnabled}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="includes">Includes</SelectItem>
+                    <SelectItem value="exact">Exact Match</SelectItem>
+                    <SelectItem value="starts_with">Starts With</SelectItem>
+                    <SelectItem value="ends_with">Ends With</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Input
+                  value={healthCheckExpectedBody}
+                  onChange={(e) => setHealthCheckExpectedBody(e.target.value)}
+                  placeholder="Optional"
+                  disabled={!host.healthCheckEnabled}
+                />
+              </div>
             </div>
           </div>
         </div>

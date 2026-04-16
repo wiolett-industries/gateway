@@ -19,6 +19,21 @@ import type { CreateProxyHostInput, ProxyHostListQuery, UpdateProxyHostInput } f
 
 const logger = createChildLogger('ProxyService');
 
+type HealthCheckBodyMatchMode = 'includes' | 'exact' | 'starts_with' | 'ends_with';
+
+function matchesExpectedBody(body: string, expectedBody: string, mode: HealthCheckBodyMatchMode): boolean {
+  switch (mode) {
+    case 'exact':
+      return body === expectedBody;
+    case 'starts_with':
+      return body.startsWith(expectedBody);
+    case 'ends_with':
+      return body.endsWith(expectedBody);
+    default:
+      return body.includes(expectedBody);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -135,6 +150,7 @@ export class ProxyService {
         healthCheckInterval: input.healthCheckInterval ?? 30,
         healthCheckExpectedStatus: input.healthCheckExpectedStatus ?? null,
         healthCheckExpectedBody: input.healthCheckExpectedBody ?? null,
+        healthCheckBodyMatchMode: input.healthCheckBodyMatchMode ?? 'includes',
         healthStatus: input.healthCheckEnabled ? 'unknown' : 'disabled',
         createdById: userId,
       })
@@ -543,9 +559,11 @@ export class ProxyService {
 
           // Check expected body if configured
           const expectedBody = (host as any).healthCheckExpectedBody as string | null;
+          const bodyMatchMode =
+            ((host as any).healthCheckBodyMatchMode as HealthCheckBodyMatchMode | null) ?? 'includes';
           if (expectedBody && status === 'online') {
             const body = await response.text();
-            if (!body.includes(expectedBody)) status = 'degraded';
+            if (!matchesExpectedBody(body, expectedBody, bodyMatchMode)) status = 'degraded';
           }
         } catch {
           clearTimeout(timeout);

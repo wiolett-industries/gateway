@@ -29,6 +29,8 @@ const RewriteRuleSchema = z.object({
   type: z.enum(['permanent', 'temporary']),
 });
 
+const HealthCheckBodyMatchModeSchema = z.enum(['includes', 'exact', 'starts_with', 'ends_with']);
+
 // ---------------------------------------------------------------------------
 // Create
 // ---------------------------------------------------------------------------
@@ -98,6 +100,7 @@ export const CreateProxyHostSchema = z
     healthCheckInterval: z.number().int().min(5).max(3600).optional(),
     healthCheckExpectedStatus: z.number().int().min(100).max(599).optional(),
     healthCheckExpectedBody: z.string().max(500).optional(),
+    healthCheckBodyMatchMode: HealthCheckBodyMatchModeSchema.optional(),
     healthCheckSlowThreshold: z.number().int().min(0).max(100).optional(),
   })
   .superRefine((data, ctx) => {
@@ -195,6 +198,7 @@ export const UpdateProxyHostSchema = z.object({
   healthCheckInterval: z.number().int().min(5).max(3600).optional().nullable(),
   healthCheckExpectedStatus: z.number().int().min(100).max(599).optional().nullable(),
   healthCheckExpectedBody: z.string().max(500).optional().nullable(),
+  healthCheckBodyMatchMode: HealthCheckBodyMatchModeSchema.optional().nullable(),
   healthCheckSlowThreshold: z.number().int().min(0).max(100).optional().nullable(),
 });
 
