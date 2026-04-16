@@ -19,7 +19,7 @@ import { api } from "@/services/api";
 import { ApiRequestError } from "@/services/api-base";
 import { useAuthStore } from "@/stores/auth";
 import { usePinnedProxiesStore } from "@/stores/pinned-proxies";
-import type { AccessList, CustomHeader, ProxyHost, RewriteRule } from "@/types";
+import type { AccessList, CustomHeader, ProxyHost, RewriteRule, SSLCertificate } from "@/types";
 import { AdvancedTab } from "./proxy-detail/AdvancedTab";
 import { DetailsTab } from "./proxy-detail/DetailsTab";
 import {
@@ -77,6 +77,7 @@ export function ProxyHostDetail() {
   // Access list tab state
   const [accessListId, setAccessListId] = useState<string>("");
   const [accessLists, setAccessLists] = useState<AccessList[]>([]);
+  const [sslCerts, setSslCerts] = useState<SSLCertificate[]>([]);
 
   // Advanced tab state
   const [advancedConfig, setAdvancedConfig] = useState("");
@@ -159,12 +160,27 @@ export function ProxyHostDetail() {
     } catch {}
   }, []);
 
+  const loadSSLCerts = useCallback(async () => {
+    try {
+      const res = await api.listSSLCertificates({ limit: 100 });
+      setSslCerts(res.data || []);
+    } catch {}
+  }, []);
+
   useEffect(() => {
     void loadAccessLists();
   }, [loadAccessLists]);
 
+  useEffect(() => {
+    void loadSSLCerts();
+  }, [loadSSLCerts]);
+
   useRealtime("access-list.changed", () => {
     void loadAccessLists();
+  });
+
+  useRealtime("ssl.cert.changed", () => {
+    void loadSSLCerts();
   });
 
   // ── Load rendered config ──────────────────────────────────────
@@ -196,6 +212,22 @@ export function ProxyHostDetail() {
       }
     },
     [id, host]
+  );
+
+  const handleSslCertificateChange = useCallback(
+    async (value: string) => {
+      if (!id) return;
+      try {
+        const updated = await api.updateProxyHost(id, {
+          sslCertificateId: value || null,
+        });
+        setHost(updated);
+        toast.success("SSL certificate updated");
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to update SSL certificate");
+      }
+    },
+    [id]
   );
 
   // ── Save custom config ────────────────────────────────────────
@@ -528,6 +560,8 @@ export function ProxyHostDetail() {
                       toast.error(err instanceof Error ? err.message : "Failed to update")
                     );
                 }}
+                sslCerts={sslCerts}
+                onSslCertificateChange={handleSslCertificateChange}
                 canManage={hasScope("proxy:edit")}
                 hasHeadersChanged={hasHeadersChanged}
                 hasRewritesChanged={hasRewritesChanged}
