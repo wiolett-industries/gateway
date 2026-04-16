@@ -340,7 +340,7 @@ interface AISidePanelProps {
 export function AISidePanel({ isMobile = false }: AISidePanelProps) {
   const { aiPanelOpen, setAIPanelOpen } = useUIStore();
   const [panelWidth, setPanelWidth] = useState(readPanelWidth);
-  const [, setIsResizing] = useState(false);
+  const [isResizing, setIsResizing] = useState(false);
 
   const handleClose = () => setAIPanelOpen(false);
 
@@ -377,7 +377,7 @@ export function AISidePanel({ isMobile = false }: AISidePanelProps) {
           initial={{ width: 0 }}
           animate={{ width: panelWidth }}
           exit={{ width: 0 }}
-          transition={{ duration: 0.15, ease: "easeOut" }}
+          transition={isResizing ? { duration: 0 } : { duration: 0.15, ease: "easeOut" }}
           className="relative h-full shrink-0 overflow-hidden border-l border-border"
         >
           {/* Inner content pinned to panelWidth so it never reflows */}
