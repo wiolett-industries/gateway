@@ -1,4 +1,7 @@
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
+
+export const APP_STATUS_STORAGE_KEY = "gateway-app-status";
 
 interface AppStatusState {
   maintenanceActive: boolean;
@@ -12,24 +15,35 @@ interface AppStatusState {
   clearRateLimit: () => void;
 }
 
-export const useAppStatusStore = create<AppStatusState>()((set) => ({
-  maintenanceActive: false,
-  gatewayUpdatingActive: false,
-  gatewayUpdatingTargetVersion: null,
-  rateLimitedUntil: null,
+export const useAppStatusStore = create<AppStatusState>()(
+  persist(
+    (set) => ({
+      maintenanceActive: false,
+      gatewayUpdatingActive: false,
+      gatewayUpdatingTargetVersion: null,
+      rateLimitedUntil: null,
 
-  setMaintenanceActive: (maintenanceActive) => set({ maintenanceActive }),
+      setMaintenanceActive: (maintenanceActive) => set({ maintenanceActive }),
 
-  setGatewayUpdatingActive: (gatewayUpdatingActive, gatewayUpdatingTargetVersion = null) =>
-    set({ gatewayUpdatingActive, gatewayUpdatingTargetVersion }),
+      setGatewayUpdatingActive: (gatewayUpdatingActive, gatewayUpdatingTargetVersion = null) =>
+        set({ gatewayUpdatingActive, gatewayUpdatingTargetVersion }),
 
-  clearGatewayUpdating: () =>
-    set({ gatewayUpdatingActive: false, gatewayUpdatingTargetVersion: null }),
+      clearGatewayUpdating: () =>
+        set({ gatewayUpdatingActive: false, gatewayUpdatingTargetVersion: null }),
 
-  activateRateLimit: (seconds = 60) =>
-    set({
-      rateLimitedUntil: Date.now() + Math.max(1, seconds) * 1000,
+      activateRateLimit: (seconds = 60) =>
+        set({
+          rateLimitedUntil: Date.now() + Math.max(1, seconds) * 1000,
+        }),
+
+      clearRateLimit: () => set({ rateLimitedUntil: null }),
     }),
-
-  clearRateLimit: () => set({ rateLimitedUntil: null }),
-}));
+    {
+      name: APP_STATUS_STORAGE_KEY,
+      partialize: (state) => ({
+        gatewayUpdatingActive: state.gatewayUpdatingActive,
+        gatewayUpdatingTargetVersion: state.gatewayUpdatingTargetVersion,
+      }),
+    }
+  )
+);
