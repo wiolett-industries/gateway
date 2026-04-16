@@ -1,5 +1,5 @@
 import { ArrowUpCircle } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { DetailRow } from "@/components/common/DetailRow";
@@ -7,7 +7,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatBytes, formatUptime } from "@/lib/utils";
 import { api } from "@/services/api";
-import { useAuthStore } from "@/stores/auth";
 import {
   type DockerContainer,
   getNodeUpdateTargetVersion,
@@ -19,17 +18,21 @@ import {
 
 interface NodeDetailsTabProps {
   node: NodeDetail;
-}
-
-export function NodeDetailsTab({ node }: NodeDetailsTabProps) {
-  const navigate = useNavigate();
-  const { hasScope } = useAuthStore();
-  const [proxyHosts, setProxyHosts] = useState<ProxyHost[]>([]);
-  const [dockerContainers, setDockerContainers] = useState<DockerContainer[]>([]);
-  const [daemonUpdate, setDaemonUpdate] = useState<{
+  daemonUpdate: {
     available: boolean;
     latestVersion: string | null;
-  }>({ available: false, latestVersion: null });
+  };
+  refreshDaemonUpdateStatus: () => Promise<void>;
+}
+
+export function NodeDetailsTab({
+  node,
+  daemonUpdate,
+  refreshDaemonUpdateStatus,
+}: NodeDetailsTabProps) {
+  const navigate = useNavigate();
+  const [proxyHosts, setProxyHosts] = useState<ProxyHost[]>([]);
+  const [dockerContainers, setDockerContainers] = useState<DockerContainer[]>([]);
   const [isUpdating, setIsUpdating] = useState(false);
   const h: NodeHealthReport | null = node.liveHealthReport ?? node.lastHealthReport;
   const caps = (node.capabilities ?? {}) as Record<string, unknown>;
@@ -37,22 +40,6 @@ export function NodeDetailsTab({ node }: NodeDetailsTabProps) {
   const updateTargetVersion = getNodeUpdateTargetVersion(node);
   const resourcesRef = useRef<HTMLDivElement>(null);
   const [resourcesHeight, setResourcesHeight] = useState(0);
-
-  const loadDaemonUpdateStatus = useCallback(async () => {
-    if (!hasScope("admin:update")) return;
-    try {
-      const statuses = await api.getDaemonUpdates();
-      const typeStatus = statuses.find((s) => s.daemonType === node.type);
-      const nodeStatus = typeStatus?.nodes.find((n) => n.nodeId === node.id);
-      if (nodeStatus?.updateAvailable && typeStatus?.latestVersion) {
-        setDaemonUpdate({ available: true, latestVersion: typeStatus.latestVersion });
-      } else {
-        setDaemonUpdate({ available: false, latestVersion: null });
-      }
-    } catch {
-      // ignore
-    }
-  }, [hasScope, node.id, node.type]);
 
   useEffect(() => {
     if (!resourcesRef.current) return;
@@ -89,16 +76,12 @@ export function NodeDetailsTab({ node }: NodeDetailsTabProps) {
     };
   }, [node.id, node.type]);
 
-  // Check for daemon updates
-  useEffect(() => {
-    void loadDaemonUpdateStatus();
-  }, [loadDaemonUpdateStatus]);
-
   const handleDaemonUpdate = async () => {
     setIsUpdating(true);
     try {
       await api.triggerDaemonUpdate(node.id);
       toast.success("Daemon update triggered — the node will restart shortly");
+      await refreshDaemonUpdateStatus();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to trigger update");
     } finally {

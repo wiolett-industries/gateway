@@ -19,13 +19,15 @@ interface NumericInputProps
 const NumericInput = React.forwardRef<HTMLInputElement, NumericInputProps>(
   ({ className, value, onChange, min, max, ...props }, ref) => {
     const [raw, setRaw] = React.useState(String(value));
+    const lastPropValueRef = React.useRef(value);
 
-    // Sync when value changes externally
+    // Sync only when the prop value actually changes from outside. This keeps
+    // the user's temporary empty/raw editing state intact.
     React.useEffect(() => {
-      const parsed = parseInt(raw, 10);
-      if (!Number.isNaN(parsed) && parsed === value) return;
+      if (lastPropValueRef.current === value) return;
+      lastPropValueRef.current = value;
       setRaw(String(value));
-    }, [value, raw]);
+    }, [value]);
 
     const parsed = parseInt(raw, 10);
     const isInvalid =
@@ -38,6 +40,9 @@ const NumericInput = React.forwardRef<HTMLInputElement, NumericInputProps>(
       const newRaw = e.target.value;
       setRaw(newRaw);
       const num = parseInt(newRaw, 10);
+      if (!Number.isNaN(num)) {
+        lastPropValueRef.current = num;
+      }
       onChange(Number.isNaN(num) ? value : num, newRaw);
     };
 
