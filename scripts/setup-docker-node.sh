@@ -439,7 +439,9 @@ resolve_download_url() {
     if [[ "$version" == "latest" ]]; then
         log "Resolving latest docker release tag..."
         local latest_tag
-        latest_tag=$(curl -fsSL "${GITLAB_API}/releases" | grep -o '"tag_name":"v[0-9]*\.[0-9]*\.[0-9]*-docker"' | head -1 | cut -d'"' -f4)
+        local releases_json
+        releases_json=$(curl -fsSL "${GITLAB_API}/releases")
+        latest_tag=$(printf '%s' "$releases_json" | grep -o '"tag_name":"v[0-9]*\.[0-9]*\.[0-9]*-docker"' | head -1 | cut -d'"' -f4 || true)
         if [[ -z "$latest_tag" || "$latest_tag" == "null" ]]; then
             die "Could not resolve latest docker release tag from ${GITLAB_API}/releases"
         fi
