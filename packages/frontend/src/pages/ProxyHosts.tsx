@@ -286,7 +286,7 @@ export function ProxyHosts() {
       <col style={{ width: "8%" }} />
       <col style={{ width: "10%" }} />
       <col style={{ width: "8%" }} />
-      {hasScope("proxy:edit") && <col style={{ width: "48px" }} />}
+      {hasScope("proxy:edit") && <col style={{ width: "56px" }} />}
     </colgroup>
   );
 
@@ -300,7 +300,7 @@ export function ProxyHosts() {
         <th className="p-3 text-xs font-medium text-muted-foreground">Health</th>
         <th className="p-3 text-xs font-medium text-muted-foreground">Enabled</th>
         {hasScope("proxy:edit") && (
-          <th className="p-3 text-xs font-medium text-muted-foreground w-10"></th>
+          <th className="w-14 p-3 text-xs font-medium text-muted-foreground"></th>
         )}
       </tr>
     </thead>
@@ -441,7 +441,11 @@ export function ProxyHosts() {
               {(folders.length > 0 || ungroupedHosts.length > 0) && (
                 <UngroupedDropZone>
                   {folders.length > 0 && (
-                    <div className="flex items-center gap-2 py-2 px-3 border-b border-border">
+                    <div
+                      className={`flex items-center gap-2 px-3 py-2 ${
+                        ungroupedHosts.length > 0 ? "border-b border-border" : ""
+                      }`}
+                    >
                       <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                         Ungrouped
                       </span>
@@ -475,7 +479,7 @@ export function ProxyHosts() {
               )}
             </div>
 
-            <DragOverlay active={activeDrag} />
+            <DragOverlay active={activeDrag} colGroup={colGroup} />
           </DndContext>
         ) : (
           <EmptyState

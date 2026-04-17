@@ -67,7 +67,7 @@ export function ProxyHostRow({
     <tr
       ref={isOverlay ? undefined : setNodeRef}
       style={isOverlay ? undefined : style}
-      className={`hover:bg-accent transition-colors cursor-pointer border-b border-border last:border-b-0 select-none ${
+      className={`hover:bg-accent transition-colors cursor-pointer border-b border-border select-none ${
         isOverlay ? "bg-card shadow-lg border border-border" : ""
       }`}
       onClick={handleRowClick}
@@ -139,7 +139,7 @@ export function ProxyHostRow({
         )}
       </td>
       {hasScope("proxy:edit") && (
-        <td className="p-3 w-10" onClick={(e) => e.stopPropagation()}>
+        <td className="p-3 text-right" onClick={(e) => e.stopPropagation()}>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="h-8 w-8">
