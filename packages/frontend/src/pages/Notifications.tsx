@@ -17,7 +17,6 @@ import {
   AlertTriangle,
   ArrowLeft,
   ArrowRight,
-  Bell,
   CheckCircle2,
   Clock,
   HelpCircle,
@@ -136,9 +135,11 @@ export function Notifications() {
   return (
     <div className="flex flex-col gap-6 p-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-3">
-          <Bell className="h-6 w-6" />
+        <div>
           <h1 className="text-2xl font-semibold">Notifications</h1>
+          <p className="text-sm text-muted-foreground">
+            Manage alert rules, webhooks, and delivery activity
+          </p>
         </div>
         {headerAction}
       </div>

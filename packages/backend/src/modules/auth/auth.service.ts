@@ -9,6 +9,7 @@ import { createChildLogger } from '@/lib/logger.js';
 import type { CacheService } from '@/services/cache.service.js';
 import type { SessionService } from '@/services/session.service.js';
 import type { User } from '@/types.js';
+import type { AuthSettingsService } from './auth.settings.service.js';
 
 const logger = createChildLogger('AuthService');
 
@@ -28,7 +29,8 @@ export class AuthService {
   constructor(
     @inject(TOKENS.DrizzleClient) private readonly db: DrizzleClient,
     private readonly sessionService: SessionService,
-    private readonly cacheService: CacheService
+    private readonly cacheService: CacheService,
+    private readonly authSettingsService: AuthSettingsService
   ) {}
 
   private eventBus?: import('@/services/event-bus.service.js').EventBusService;
@@ -214,13 +216,15 @@ export class AuthService {
       .from(users)
       .where(not(like(users.oidcSubject, 'system:%')));
 
-    const groupName = userCount === 0 ? 'system-admin' : 'viewer';
-    const group = await this.db.query.permissionGroups.findFirst({
-      where: eq(permissionGroups.name, groupName),
-    });
+    const group =
+      userCount === 0
+        ? await this.db.query.permissionGroups.findFirst({
+            where: eq(permissionGroups.name, 'system-admin'),
+          })
+        : await this.resolveOidcProvisioningGroup();
 
     if (!group) {
-      throw new Error(`Built-in group "${groupName}" not found. Has the migration been run?`);
+      throw new Error('Default OIDC group not found. Has the migration been run?');
     }
 
     const [createdUser] = await this.db
@@ -234,11 +238,23 @@ export class AuthService {
       })
       .returning();
 
-    logger.info('Created new user', { userId: createdUser.id, email: createdUser.email, group: groupName });
+    logger.info('Created new user', { userId: createdUser.id, email: createdUser.email, group: group.name });
     this.emitUser(createdUser.id, 'created');
     const mapped = await this.mapDbUserToUser(createdUser, group);
     this.emitPermissions(mapped.id, mapped.scopes, mapped.groupId);
     return mapped;
+  }
+
+  private async resolveOidcProvisioningGroup() {
+    const authSettings = await this.authSettingsService.getConfig();
+    if (!authSettings.oidcAutoCreateUsers) {
+      throw new Error('Your account has not been provisioned yet. Contact an administrator.');
+    }
+
+    const group = await this.db.query.permissionGroups.findFirst({
+      where: eq(permissionGroups.id, authSettings.oidcDefaultGroupId),
+    });
+    return group ?? null;
   }
 
   async createUser(data: { email: string; name?: string | null; groupId: string }): Promise<User> {

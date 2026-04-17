@@ -10,6 +10,7 @@ import { useUIStore } from "@/stores/ui";
 import type { Node, ProxyHost } from "@/types";
 import { AIConfigSection } from "./settings/AIConfigSection";
 import { ApiTokensSection } from "./settings/ApiTokensSection";
+import { AuthProvisioningSection } from "./settings/AuthProvisioningSection";
 import { DockerRegistriesSection } from "./settings/DockerRegistriesSection";
 import { HousekeepingSection } from "./settings/HousekeepingSection";
 import { UpdateSection } from "./settings/UpdateSection";
@@ -28,6 +29,7 @@ export function Settings() {
   const [proxyHostsList, setProxyHostsList] = useState<ProxyHost[]>([]);
 
   const canUpdate = hasScope("admin:update");
+  const canManageUsers = hasScope("admin:users");
   const canUseAI = hasScope("feat:ai:use");
   const canHousekeep = hasScope("admin:housekeeping");
   const canConfigAI = hasScope("feat:ai:configure");
@@ -171,6 +173,9 @@ export function Settings() {
 
         {/* API Tokens */}
         <ApiTokensSection user={user} nodesList={nodesList} proxyHostsList={proxyHostsList} />
+
+        {/* Authentication */}
+        {canManageUsers && <AuthProvisioningSection />}
 
         {/* AI Assistant */}
         {canConfigAI && <AIConfigSection />}

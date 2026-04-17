@@ -37,6 +37,18 @@ export interface PermissionGroup {
   updatedAt: string;
 }
 
+export interface AuthProvisioningGroupOption {
+  id: string;
+  name: string;
+  isBuiltin: boolean;
+}
+
+export interface AuthProvisioningSettings {
+  oidcAutoCreateUsers: boolean;
+  oidcDefaultGroupId: string;
+  availableGroups: AuthProvisioningGroupOption[];
+}
+
 // Nodes
 export type NodeType = "nginx" | "bastion" | "monitoring" | "docker";
 export type NodeStatus = "pending" | "online" | "offline" | "error";
