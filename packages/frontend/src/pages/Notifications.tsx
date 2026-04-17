@@ -239,6 +239,7 @@ function AlertsTab({
   const [isLoading, setIsLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<AlertRule | null>(null);
+  const lastHandledCreateToken = useRef(0);
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -296,7 +297,10 @@ function AlertsTab({
   }, []);
 
   useEffect(() => {
-    if (openCreateToken > 0 && canManage) openCreate();
+    if (openCreateToken > lastHandledCreateToken.current && canManage) {
+      lastHandledCreateToken.current = openCreateToken;
+      openCreate();
+    }
   }, [canManage, openCreate, openCreateToken]);
 
   if (isLoading) return <LoadingSpinner />;
@@ -1117,6 +1121,7 @@ function WebhooksTab({
   const [isLoading, setIsLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingWh, setEditingWh] = useState<NotificationWebhook | null>(null);
+  const lastHandledCreateToken = useRef(0);
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -1185,7 +1190,10 @@ function WebhooksTab({
   }, []);
 
   useEffect(() => {
-    if (openCreateToken > 0 && canManage) openCreate();
+    if (openCreateToken > lastHandledCreateToken.current && canManage) {
+      lastHandledCreateToken.current = openCreateToken;
+      openCreate();
+    }
   }, [canManage, openCreate, openCreateToken]);
 
   if (isLoading) return <LoadingSpinner />;
