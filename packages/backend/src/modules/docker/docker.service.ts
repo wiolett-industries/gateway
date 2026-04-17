@@ -321,6 +321,17 @@ export class DockerManagementService {
     const data = this.parseResult(result);
     if (data) {
       const cName = ((data.Name ?? '') as string).replace(/^\//, '');
+      if (this.secretService && cName && Array.isArray(data?.Config?.Env)) {
+        const secretKeys = await this.secretService.getSecretKeys(nodeId, cName);
+        if (secretKeys.size > 0) {
+          data.Config.Env = data.Config.Env.map((entry: string) => {
+            const eqIndex = entry.indexOf('=');
+            if (eqIndex === -1) return entry;
+            const key = entry.slice(0, eqIndex);
+            return secretKeys.has(key) ? `${key}=********` : entry;
+          });
+        }
+      }
       const transition = cName ? this.getTransition(nodeId, cName) : undefined;
       if (transition) data._transition = transition;
     }

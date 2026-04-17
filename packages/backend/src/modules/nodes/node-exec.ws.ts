@@ -1,5 +1,8 @@
+import { eq } from 'drizzle-orm';
 import type { WSContext } from 'hono/ws';
-import { container } from '@/container.js';
+import { container, TOKENS } from '@/container.js';
+import type { DrizzleClient } from '@/db/client.js';
+import { permissionGroups } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { hasScope } from '@/lib/permissions.js';
 import { NodeDispatchService } from '@/services/node-dispatch.service.js';
@@ -9,7 +12,7 @@ import type { User } from '@/types.js';
 
 const logger = createChildLogger('NodeExec');
 
-async function authenticateFromToken(token: string): Promise<User | null> {
+async function resolveLiveSessionUser(token: string): Promise<{ user: User; effectiveScopes: string[] } | null> {
   if (token.startsWith('gw_')) return null;
   const sessionService = container.resolve(SessionService);
   const session = await sessionService.getSession(token);
@@ -17,7 +20,43 @@ async function authenticateFromToken(token: string): Promise<User | null> {
 
   const { AuthService } = await import('@/modules/auth/auth.service.js');
   const authService = container.resolve(AuthService);
-  return authService.getUserById(session.user.id);
+  const user = await authService.getUserById(session.user.id);
+  if (!user) return null;
+
+  const db = container.resolve<DrizzleClient>(TOKENS.DrizzleClient);
+  const allGroups = await db.query.permissionGroups.findMany({
+    columns: { id: true, parentId: true, scopes: true, name: true },
+  });
+  const groupMap = new Map(allGroups.map((group) => [group.id, group]));
+  const group = groupMap.get(user.groupId);
+  const scopeSet = new Set<string>();
+
+  if (group) {
+    for (const scope of (group.scopes as string[]) ?? []) scopeSet.add(scope);
+    const visited = new Set<string>([group.id]);
+    let parent = group.parentId ? groupMap.get(group.parentId) : undefined;
+    while (parent && !visited.has(parent.id)) {
+      visited.add(parent.id);
+      for (const scope of (parent.scopes as string[]) ?? []) scopeSet.add(scope);
+      parent = parent.parentId ? groupMap.get(parent.parentId) : undefined;
+    }
+  } else {
+    const freshGroup = await db.query.permissionGroups.findFirst({
+      where: eq(permissionGroups.id, user.groupId),
+      columns: { scopes: true, name: true },
+    });
+    for (const scope of (freshGroup?.scopes as string[]) ?? []) scopeSet.add(scope);
+  }
+
+  const effectiveScopes = [...scopeSet];
+  return {
+    user: {
+      ...user,
+      scopes: effectiveScopes,
+      groupName: group?.name ?? user.groupName,
+    },
+    effectiveScopes,
+  };
 }
 
 function send(ws: WSContext, msg: Record<string, unknown>): void {
@@ -150,14 +189,15 @@ async function authenticateAndCreateExec(
   dispatch: NodeDispatchService,
   registry: NodeRegistryService
 ): Promise<void> {
-  const user = await authenticateFromToken(token);
-  if (!user) {
+  const authResult = await resolveLiveSessionUser(token);
+  if (!authResult) {
     send(ws, { type: 'auth_error', message: 'Invalid or expired token' });
     ws.close(1008, 'Authentication failed');
     return;
   }
+  const { user, effectiveScopes } = authResult;
 
-  if (!hasScope(user.scopes, `nodes:console:${nodeId}`)) {
+  if (!hasScope(effectiveScopes, `nodes:console:${nodeId}`)) {
     send(ws, { type: 'auth_error', message: `Missing required scope: nodes:console:${nodeId}` });
     ws.close(1008, 'Insufficient permissions');
     return;

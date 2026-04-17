@@ -13,7 +13,7 @@ import {
   Trash2,
   Type,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
@@ -76,6 +76,21 @@ export function DockerContainerDetail() {
   const canDelete =
     hasScope("docker:containers:delete") ||
     !!(nodeId && hasScope(`docker:containers:delete:${nodeId}`));
+  const canViewContainer =
+    hasScope("docker:containers:view") ||
+    !!(nodeId && hasScope(`docker:containers:view:${nodeId}`));
+  const canUseConsole =
+    hasScope("docker:containers:console") ||
+    !!(nodeId && hasScope(`docker:containers:console:${nodeId}`));
+  const canUseFiles =
+    hasScope("docker:containers:files") ||
+    !!(nodeId && hasScope(`docker:containers:files:${nodeId}`));
+  const canUseEnvironment =
+    hasScope("docker:containers:environment") ||
+    !!(nodeId && hasScope(`docker:containers:environment:${nodeId}`));
+  const canUseSecrets =
+    hasScope("docker:containers:secrets") ||
+    !!(nodeId && hasScope(`docker:containers:secrets:${nodeId}`));
   const invalidate = useDockerStore((s) => s.invalidate);
   const setSelectedNode = useDockerStore((s) => s.setSelectedNode);
   const storeNodeId = useDockerStore((s) => s.selectedNodeId);
@@ -102,6 +117,19 @@ export function DockerContainerDetail() {
   // Pin
   const [pinOpen, setPinOpen] = useState(false);
   const { isPinnedSidebar, toggleSidebar, updateMeta } = usePinnedContainersStore();
+  const visibleTabs = useMemo(
+    () => [
+      "overview",
+      ...(canViewContainer ? ["logs"] : []),
+      ...(canUseConsole ? ["console"] : []),
+      ...(canUseFiles ? ["files"] : []),
+      ...(canViewContainer ? ["stats"] : []),
+      ...(canUseEnvironment || canUseSecrets ? ["environment"] : []),
+      ...(canEdit ? ["settings"] : []),
+      ...(canViewContainer ? ["config"] : []),
+    ],
+    [canEdit, canUseConsole, canUseEnvironment, canUseFiles, canUseSecrets, canViewContainer]
+  );
 
   const fetchContainer = useCallback(
     async (silent = false, noCache = false) => {
@@ -289,6 +317,12 @@ export function DockerContainerDetail() {
       }
     }
   }, [activeTab, container, containerId, currentBaseState, currentTransition, setActiveTab]);
+
+  useEffect(() => {
+    if (!visibleTabs.includes(activeTab)) {
+      setActiveTab("overview");
+    }
+  }, [activeTab, setActiveTab, visibleTabs]);
 
   if (isLoading || !container) {
     return (
@@ -508,71 +542,99 @@ export function DockerContainerDetail() {
         >
           <TabsList className="shrink-0">
             <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="logs" disabled={isTabDisabled("logs")}>
-              Logs
-            </TabsTrigger>
-            <TabsTrigger value="console" disabled={isTabDisabled("console")}>
-              <TerminalIcon className="h-3.5 w-3.5 mr-1" />
-              Console
-            </TabsTrigger>
-            <TabsTrigger value="files" disabled={isTabDisabled("files")}>
-              Files
-            </TabsTrigger>
-            <TabsTrigger value="stats" disabled={isTabDisabled("stats")}>
-              Monitoring
-            </TabsTrigger>
-            <TabsTrigger value="environment">Environment</TabsTrigger>
-            <TabsTrigger value="settings">
-              <Settings className="h-3.5 w-3.5 mr-1" />
-              Settings
-            </TabsTrigger>
-            <TabsTrigger value="config">
-              <Code2 className="h-3.5 w-3.5 mr-1" />
-              Config
-            </TabsTrigger>
+            {canViewContainer && (
+              <TabsTrigger value="logs" disabled={isTabDisabled("logs")}>
+                Logs
+              </TabsTrigger>
+            )}
+            {canUseConsole && (
+              <TabsTrigger value="console" disabled={isTabDisabled("console")}>
+                <TerminalIcon className="h-3.5 w-3.5 mr-1" />
+                Console
+              </TabsTrigger>
+            )}
+            {canUseFiles && (
+              <TabsTrigger value="files" disabled={isTabDisabled("files")}>
+                Files
+              </TabsTrigger>
+            )}
+            {canViewContainer && (
+              <TabsTrigger value="stats" disabled={isTabDisabled("stats")}>
+                Monitoring
+              </TabsTrigger>
+            )}
+            {(canUseEnvironment || canUseSecrets) && (
+              <TabsTrigger value="environment">Environment</TabsTrigger>
+            )}
+            {canEdit && (
+              <TabsTrigger value="settings">
+                <Settings className="h-3.5 w-3.5 mr-1" />
+                Settings
+              </TabsTrigger>
+            )}
+            {canViewContainer && (
+              <TabsTrigger value="config">
+                <Code2 className="h-3.5 w-3.5 mr-1" />
+                Config
+              </TabsTrigger>
+            )}
           </TabsList>
           <TabsContent value="overview" className="pb-0">
             <OverviewTab nodeId={nodeId!} containerId={containerId!} data={container} />
           </TabsContent>
-          <TabsContent value="logs" className="flex flex-col flex-1 min-h-0 pb-0">
-            <LogsTab
-              nodeId={nodeId!}
-              containerId={containerId!}
-              containerState={state}
-              inspectData={container}
-            />
-          </TabsContent>
-          <TabsContent value="console" className="flex flex-col flex-1 min-h-0">
-            <ConsoleTab nodeId={nodeId!} containerId={containerId!} />
-          </TabsContent>
-          <TabsContent value="files" className="pb-0">
-            <FilesTab nodeId={nodeId!} containerId={containerId!} />
-          </TabsContent>
-          <TabsContent value="stats" className="pb-0">
-            <StatsTab nodeId={nodeId!} containerId={containerId!} data={container} />
-          </TabsContent>
-          <TabsContent value="environment" className="flex flex-col flex-1 min-h-0 pb-0">
-            <EnvironmentTab
-              nodeId={nodeId!}
-              containerId={containerId!}
-              containerState={state}
-              disabled={!!transition}
-              onRecreating={refreshAfterMutation}
-            />
-          </TabsContent>
-          <TabsContent value="settings" className="pb-0">
-            <SettingsTab
-              nodeId={nodeId!}
-              containerId={containerId!}
-              data={container}
-              onRecreating={refreshAfterMutation}
-              onRefresh={refreshAfterMutation}
-              transition={transition}
-            />
-          </TabsContent>
-          <TabsContent value="config" className="flex flex-col flex-1 min-h-0 pb-0">
-            <ConfigTab data={container} />
-          </TabsContent>
+          {canViewContainer && (
+            <TabsContent value="logs" className="flex flex-col flex-1 min-h-0 pb-0">
+              <LogsTab
+                nodeId={nodeId!}
+                containerId={containerId!}
+                containerState={state}
+                inspectData={container}
+              />
+            </TabsContent>
+          )}
+          {canUseConsole && (
+            <TabsContent value="console" className="flex flex-col flex-1 min-h-0">
+              <ConsoleTab nodeId={nodeId!} containerId={containerId!} />
+            </TabsContent>
+          )}
+          {canUseFiles && (
+            <TabsContent value="files" className="pb-0">
+              <FilesTab nodeId={nodeId!} containerId={containerId!} />
+            </TabsContent>
+          )}
+          {canViewContainer && (
+            <TabsContent value="stats" className="pb-0">
+              <StatsTab nodeId={nodeId!} containerId={containerId!} data={container} />
+            </TabsContent>
+          )}
+          {(canUseEnvironment || canUseSecrets) && (
+            <TabsContent value="environment" className="flex flex-col flex-1 min-h-0 pb-0">
+              <EnvironmentTab
+                nodeId={nodeId!}
+                containerId={containerId!}
+                containerState={state}
+                disabled={!!transition}
+                onRecreating={refreshAfterMutation}
+              />
+            </TabsContent>
+          )}
+          {canEdit && (
+            <TabsContent value="settings" className="pb-0">
+              <SettingsTab
+                nodeId={nodeId!}
+                containerId={containerId!}
+                data={container}
+                onRecreating={refreshAfterMutation}
+                onRefresh={refreshAfterMutation}
+                transition={transition}
+              />
+            </TabsContent>
+          )}
+          {canViewContainer && (
+            <TabsContent value="config" className="flex flex-col flex-1 min-h-0 pb-0">
+              <ConfigTab data={container} />
+            </TabsContent>
+          )}
         </Tabs>
       </div>
       {/* Pin Dialog */}

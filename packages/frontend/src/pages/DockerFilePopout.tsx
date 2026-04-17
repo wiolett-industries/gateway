@@ -6,12 +6,18 @@ import { Button } from "@/components/ui/button";
 import { CodeEditor } from "@/components/ui/code-editor";
 import { Toaster } from "@/components/ui/sonner";
 import { api } from "@/services/api";
+import { useAuthStore } from "@/stores/auth";
 
 export function DockerFilePopout() {
   const { nodeId, containerId } = useParams<{ nodeId: string; containerId: string }>();
   const [searchParams] = useSearchParams();
+  const { hasScope } = useAuthStore();
   const filePath = searchParams.get("path") || "/";
   const isWritable = searchParams.get("writable") === "1";
+  const canUseFiles =
+    !!nodeId &&
+    !!containerId &&
+    (hasScope("docker:containers:files") || hasScope(`docker:containers:files:${nodeId}`));
 
   const [content, setContent] = useState<string | null>(null);
   const [savedContent, setSavedContent] = useState<string | null>(null);
@@ -94,6 +100,14 @@ export function DockerFilePopout() {
       setIsSaving(false);
     }
   }, [nodeId, containerId, filePath, content]);
+
+  if (!canUseFiles) {
+    return (
+      <div className="fixed inset-0 flex items-center justify-center bg-background px-4 text-sm text-muted-foreground">
+        You don't have permission to access container files.
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 flex flex-col bg-background">

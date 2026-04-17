@@ -1,5 +1,5 @@
 import { ArrowLeft, ArrowUpCircle, EllipsisVertical, Pencil, Pin, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
@@ -64,7 +64,7 @@ const STATUS_BADGE: Record<
 export function AdminNodeDetail() {
   const { id } = useParams<{ id: string; tab?: string }>();
   const navigate = useNavigate();
-  const { hasScope, user } = useAuthStore();
+  const { hasScope } = useAuthStore();
 
   const [node, setNode] = useState<NodeDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -104,8 +104,29 @@ export function AdminNodeDetail() {
   const nodeUpdating = node ? isNodeUpdating(node) : false;
   const nonInteractiveWhileUpdating =
     nodeUpdating && activeTab !== "details" && activeTab !== "daemon-logs";
-  const canUseNodeConsole =
-    !!(id && user?.scopes.includes(`nodes:console:${id}`)) || hasScope("nodes:console");
+  const canUseNodeConsole = !!(id && hasScope(`nodes:console:${id}`)) || hasScope("nodes:console");
+  const canViewNodeLogs = !!(id && hasScope(`nodes:logs:${id}`)) || hasScope("nodes:logs");
+  const canViewNodeConfig =
+    !!(id && (hasScope(`nodes:config:view:${id}`) || hasScope(`nodes:config:edit:${id}`))) ||
+    hasScope("nodes:config:view") ||
+    hasScope("nodes:config:edit");
+  const isCompatibleNode = !!node && !isNodeIncompatible(node);
+  const visibleTabs = useMemo(
+    () => [
+      "details",
+      ...(isCompatibleNode ? ["monitoring"] : []),
+      ...(isCompatibleNode && node.type === "nginx" && canViewNodeConfig ? ["configuration"] : []),
+      ...(isCompatibleNode && node.type === "nginx" && canViewNodeLogs ? ["nginx-logs"] : []),
+      ...(isCompatibleNode && node.type === "docker"
+        ? ["containers", "images", "volumes", "networks"]
+        : []),
+      ...(isCompatibleNode && !nodeUpdating && node.status === "online" && canUseNodeConsole
+        ? ["console"]
+        : []),
+      ...(canViewNodeLogs ? ["daemon-logs"] : []),
+    ],
+    [canUseNodeConsole, canViewNodeConfig, canViewNodeLogs, isCompatibleNode, node, nodeUpdating]
+  );
 
   const loadNode = useCallback(
     async (silent = false) => {
@@ -145,6 +166,12 @@ export function AdminNodeDetail() {
       // ignore
     }
   }, [hasScope, id, node]);
+
+  useEffect(() => {
+    if (!visibleTabs.includes(activeTab)) {
+      setActiveTab("details");
+    }
+  }, [activeTab, setActiveTab, visibleTabs]);
 
   useEffect(() => {
     loadNode();
@@ -342,12 +369,12 @@ export function AdminNodeDetail() {
                 Monitoring
               </TabsTrigger>
             )}
-            {!isNodeIncompatible(node) && node.type === "nginx" && (
+            {!isNodeIncompatible(node) && node.type === "nginx" && canViewNodeConfig && (
               <TabsTrigger value="configuration" disabled={nodeUpdating}>
                 Configuration
               </TabsTrigger>
             )}
-            {!isNodeIncompatible(node) && node.type === "nginx" && (
+            {!isNodeIncompatible(node) && node.type === "nginx" && canViewNodeLogs && (
               <TabsTrigger value="nginx-logs" disabled={nodeUpdating}>
                 Nginx Logs
               </TabsTrigger>
@@ -372,7 +399,7 @@ export function AdminNodeDetail() {
               !nodeUpdating &&
               node.status === "online" &&
               canUseNodeConsole && <TabsTrigger value="console">Console</TabsTrigger>}
-            <TabsTrigger value="daemon-logs">Daemon Logs</TabsTrigger>
+            {canViewNodeLogs && <TabsTrigger value="daemon-logs">Daemon Logs</TabsTrigger>}
           </TabsList>
 
           {isNodeIncompatible(node) && (
@@ -407,7 +434,7 @@ export function AdminNodeDetail() {
                 <NodeMonitoringTab nodeId={node.id} nodeStatus={node.status} nodeType={node.type} />
               </TabsContent>
             )}
-            {!isNodeIncompatible(node) && node.type === "nginx" && (
+            {!isNodeIncompatible(node) && node.type === "nginx" && canViewNodeConfig && (
               <TabsContent value="configuration" className="flex flex-col flex-1 min-h-0">
                 <NodeConfigTab
                   nodeId={node.id}
@@ -416,7 +443,7 @@ export function AdminNodeDetail() {
                 />
               </TabsContent>
             )}
-            {!isNodeIncompatible(node) && node.type === "nginx" && (
+            {!isNodeIncompatible(node) && node.type === "nginx" && canViewNodeLogs && (
               <TabsContent value="nginx-logs" className="flex flex-col flex-1 min-h-0">
                 <NodeNginxLogsTab nodeId={node.id} nodeStatus={node.status} />
               </TabsContent>
@@ -442,9 +469,11 @@ export function AdminNodeDetail() {
                 <NodeConsoleTab nodeId={node.id} />
               </TabsContent>
             )}
-            <TabsContent value="daemon-logs" className="flex flex-col flex-1 min-h-0">
-              <NodeLogsTab nodeId={node.id} nodeStatus={node.status} />
-            </TabsContent>
+            {canViewNodeLogs && (
+              <TabsContent value="daemon-logs" className="flex flex-col flex-1 min-h-0">
+                <NodeLogsTab nodeId={node.id} nodeStatus={node.status} />
+              </TabsContent>
+            )}
           </div>
         </Tabs>
       </div>
