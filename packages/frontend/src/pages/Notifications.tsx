@@ -44,6 +44,7 @@ import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
+import { SearchFilterBar } from "@/components/common/SearchFilterBar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -113,12 +114,33 @@ export function Notifications() {
   const { hasScope } = useAuthStore();
   const canManage = hasScope("notifications:manage");
   const activeTab = tabParam && TABS.some((t) => t.value === tabParam) ? tabParam : "alerts";
+  const [openCreateAlertToken, setOpenCreateAlertToken] = useState(0);
+  const [openCreateWebhookToken, setOpenCreateWebhookToken] = useState(0);
+  const [refreshDeliveriesToken, setRefreshDeliveriesToken] = useState(0);
+
+  const headerAction =
+    activeTab === "alerts" && canManage ? (
+      <Button onClick={() => setOpenCreateAlertToken((v) => v + 1)}>
+        <Plus className="h-4 w-4" /> New Alert
+      </Button>
+    ) : activeTab === "webhooks" && canManage ? (
+      <Button onClick={() => setOpenCreateWebhookToken((v) => v + 1)}>
+        <Plus className="h-4 w-4" /> New Webhook
+      </Button>
+    ) : activeTab === "deliveries" ? (
+      <Button variant="outline" onClick={() => setRefreshDeliveriesToken((v) => v + 1)}>
+        Refresh
+      </Button>
+    ) : null;
 
   return (
     <div className="flex flex-col gap-6 p-6">
-      <div className="flex items-center gap-3">
-        <Bell className="h-6 w-6" />
-        <h1 className="text-2xl font-semibold">Notifications</h1>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-3">
+          <Bell className="h-6 w-6" />
+          <h1 className="text-2xl font-semibold">Notifications</h1>
+        </div>
+        {headerAction}
       </div>
       <Tabs
         value={activeTab}
@@ -133,13 +155,13 @@ export function Notifications() {
           ))}
         </TabsList>
         <TabsContent value="alerts" className="mt-4">
-          <AlertsTab canManage={canManage} />
+          <AlertsTab canManage={canManage} openCreateToken={openCreateAlertToken} />
         </TabsContent>
         <TabsContent value="webhooks" className="mt-4">
-          <WebhooksTab canManage={canManage} />
+          <WebhooksTab canManage={canManage} openCreateToken={openCreateWebhookToken} />
         </TabsContent>
         <TabsContent value="deliveries" className="mt-4">
-          <DeliveryLogTab />
+          <DeliveryLogTab refreshToken={refreshDeliveriesToken} />
         </TabsContent>
       </Tabs>
     </div>
@@ -148,7 +170,13 @@ export function Notifications() {
 
 // ── Alerts Tab ──────────────────────────────────────────────────────
 
-function AlertsTab({ canManage }: { canManage: boolean }) {
+function AlertsTab({
+  canManage,
+  openCreateToken,
+}: {
+  canManage: boolean;
+  openCreateToken: number;
+}) {
   const [rules, setRules] = useState<AlertRule[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -204,25 +232,22 @@ function AlertsTab({ canManage }: { canManage: boolean }) {
     setEditingRule(rule);
     setDialogOpen(true);
   };
-  const openCreate = () => {
+  const openCreate = useCallback(() => {
     setEditingRule(null);
     setDialogOpen(true);
-  };
+  }, []);
+
+  useEffect(() => {
+    if (openCreateToken > 0 && canManage) openCreate();
+  }, [canManage, openCreate, openCreateToken]);
 
   if (isLoading) return <LoadingSpinner />;
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">
-          Alerts define conditions that trigger notifications to webhooks.
-        </p>
-        {canManage && (
-          <Button onClick={openCreate}>
-            <Plus className="h-4 w-4" /> New Alert
-          </Button>
-        )}
-      </div>
+      <p className="text-sm text-muted-foreground">
+        Alerts define conditions that trigger notifications to webhooks.
+      </p>
       {rules.length === 0 ? (
         <EmptyState message="No alerts configured. Create an alert to start receiving notifications." />
       ) : (
@@ -1023,7 +1048,13 @@ function AlertDialog({
 
 // ── Webhooks Tab ────────────────────────────────────────────────────
 
-function WebhooksTab({ canManage }: { canManage: boolean }) {
+function WebhooksTab({
+  canManage,
+  openCreateToken,
+}: {
+  canManage: boolean;
+  openCreateToken: number;
+}) {
   const [webhooks, setWebhooks] = useState<NotificationWebhook[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -1090,25 +1121,22 @@ function WebhooksTab({ canManage }: { canManage: boolean }) {
     setEditingWh(wh);
     setDialogOpen(true);
   };
-  const openCreate = () => {
+  const openCreate = useCallback(() => {
     setEditingWh(null);
     setDialogOpen(true);
-  };
+  }, []);
+
+  useEffect(() => {
+    if (openCreateToken > 0 && canManage) openCreate();
+  }, [canManage, openCreate, openCreateToken]);
 
   if (isLoading) return <LoadingSpinner />;
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">
-          Webhooks define where and how notifications are delivered.
-        </p>
-        {canManage && (
-          <Button onClick={openCreate}>
-            <Plus className="h-4 w-4" /> New Webhook
-          </Button>
-        )}
-      </div>
+      <p className="text-sm text-muted-foreground">
+        Webhooks define where and how notifications are delivered.
+      </p>
       {webhooks.length === 0 ? (
         <EmptyState message="No webhooks configured. Create a webhook to configure notification delivery." />
       ) : (
@@ -1543,9 +1571,11 @@ function WebhookDialog({
 
 // ── Delivery Log Tab ────────────────────────────────────────────────
 
-function DeliveryLogTab() {
+function DeliveryLogTab({ refreshToken }: { refreshToken: number }) {
   const [deliveries, setDeliveries] = useState<WebhookDelivery[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [detail, setDetail] = useState<WebhookDelivery | null>(null);
 
@@ -1571,6 +1601,10 @@ function DeliveryLogTab() {
     load();
   }, [load]);
 
+  useEffect(() => {
+    if (refreshToken > 0) void load();
+  }, [load, refreshToken]);
+
   useRealtime("alert.fired", () => {
     load();
   });
@@ -1585,27 +1619,52 @@ function DeliveryLogTab() {
     return <Clock className="h-4 w-4 text-amber-500" />;
   };
 
+  const filteredDeliveries = useMemo(() => {
+    if (!search) return deliveries;
+    const q = search.toLowerCase();
+    return deliveries.filter((delivery) =>
+      [
+        delivery.webhookName,
+        delivery.webhookId,
+        delivery.eventType,
+        delivery.severity,
+        delivery.responseStatus != null ? String(delivery.responseStatus) : "",
+      ]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(q))
+    );
+  }, [deliveries, search]);
+
   if (isLoading) return <LoadingSpinner />;
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-[150px]">
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All</SelectItem>
-            <SelectItem value="success">Success</SelectItem>
-            <SelectItem value="failed">Failed</SelectItem>
-            <SelectItem value="retrying">Retrying</SelectItem>
-          </SelectContent>
-        </Select>
-        <Button variant="outline" size="sm" onClick={load}>
-          Refresh
-        </Button>
-      </div>
-      {deliveries.length === 0 ? (
+      <SearchFilterBar
+        placeholder="Search by webhook, event, severity, or HTTP status..."
+        search={searchInput}
+        onSearchChange={setSearchInput}
+        onSearchSubmit={() => setSearch(searchInput)}
+        hasActiveFilters={statusFilter !== "all" || search !== ""}
+        onReset={() => {
+          setSearchInput("");
+          setSearch("");
+          setStatusFilter("all");
+        }}
+        filters={
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-40">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All statuses</SelectItem>
+              <SelectItem value="success">Success</SelectItem>
+              <SelectItem value="failed">Failed</SelectItem>
+              <SelectItem value="retrying">Retrying</SelectItem>
+            </SelectContent>
+          </Select>
+        }
+      />
+      {filteredDeliveries.length === 0 ? (
         <EmptyState message="No deliveries yet. Delivery attempts will appear here when alerts fire." />
       ) : (
         <div className="border border-border bg-card">
@@ -1624,7 +1683,7 @@ function DeliveryLogTab() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {deliveries.map((d) => (
+                {filteredDeliveries.map((d) => (
                   <tr
                     key={d.id}
                     className="hover:bg-accent transition-colors cursor-pointer"
