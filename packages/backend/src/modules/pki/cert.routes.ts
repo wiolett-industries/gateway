@@ -36,8 +36,8 @@ certRoutes.get('/', requireScope('pki:cert:list'), async (c) => {
     sortBy: c.req.query('sortBy'),
     sortOrder: c.req.query('sortOrder'),
   });
-  const user = c.get('user')!;
-  if (query.showSystem && !hasScope(user.scopes, 'admin:details:certificates')) {
+  const scopes = c.get('effectiveScopes') || [];
+  if (query.showSystem && !hasScope(scopes, 'admin:details:certificates')) {
     return c.json({ code: 'FORBIDDEN', message: 'Insufficient permissions' }, 403);
   }
   const result = await certService.listCertificates(query);
@@ -47,10 +47,10 @@ certRoutes.get('/', requireScope('pki:cert:list'), async (c) => {
 // Get certificate detail
 certRoutes.get('/:id', requireScope('pki:cert:view'), async (c) => {
   const certService = container.resolve(CertService);
-  const user = c.get('user')!;
+  const scopes = c.get('effectiveScopes') || [];
   const id = c.req.param('id');
   const cert = await certService.getCertificate(id, {
-    includeSystem: hasScope(user.scopes, 'admin:details:certificates'),
+    includeSystem: hasScope(scopes, 'admin:details:certificates'),
   });
   return c.json(cert);
 });
@@ -99,12 +99,13 @@ certRoutes.post('/:id/export', requireScope('pki:cert:export'), async (c) => {
   const exportService = container.resolve(ExportService);
   const auditService = container.resolve(AuditService);
   const user = c.get('user')!;
+  const scopes = c.get('effectiveScopes') || [];
   const id = c.req.param('id');
   const body = await c.req.json();
   const { format, passphrase } = ExportCertificateQuerySchema.parse(body);
 
   const cert = await certService.getCertificate(id, {
-    includeSystem: hasScope(user.scopes, 'admin:details:certificates'),
+    includeSystem: hasScope(scopes, 'admin:details:certificates'),
   });
 
   switch (format) {
@@ -186,8 +187,8 @@ certRoutes.get('/:id/chain', requireScope('pki:cert:view'), async (c) => {
   const exportService = container.resolve(ExportService);
   const id = c.req.param('id');
 
-  const user = c.get('user')!;
-  const includeSystem = hasScope(user.scopes, 'admin:details:certificates');
+  const scopes = c.get('effectiveScopes') || [];
+  const includeSystem = hasScope(scopes, 'admin:details:certificates');
   const cert = await certService.getCertificate(id, {
     includeSystem,
   });

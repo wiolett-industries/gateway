@@ -22,8 +22,8 @@ monitoringRoutes.use('*', sessionOnly);
 monitoringRoutes.get('/dashboard', async (c) => {
   const monitoringService = container.resolve(MonitoringService);
   const showSystem = c.req.query('showSystem') === 'true';
-  const user = c.get('user')!;
-  if (showSystem && !hasScope(user.scopes, 'admin:details:certificates')) {
+  const scopes = c.get('effectiveScopes') || [];
+  if (showSystem && !hasScope(scopes, 'admin:details:certificates')) {
     return c.json({ code: 'FORBIDDEN', message: 'Insufficient permissions' }, 403);
   }
   const stats = await monitoringService.getDashboardStats(showSystem);

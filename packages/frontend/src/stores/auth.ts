@@ -28,6 +28,7 @@ interface AuthState {
   login: (user: User, sessionId: string) => void;
   logout: () => void;
   hasScope: (scope: string) => boolean;
+  hasScopedAccess: (scopeBase: string) => boolean;
   hasAnyScope: (...scopes: string[]) => boolean;
 }
 
@@ -69,6 +70,14 @@ export const useAuthStore = create<AuthState>()(
         const user = get().user;
         if (!user) return false;
         return scopeMatches(user.scopes, scope);
+      },
+
+      hasScopedAccess: (scopeBase) => {
+        const user = get().user;
+        if (!user) return false;
+        return user.scopes.some(
+          (scope) => scope === scopeBase || scope.startsWith(`${scopeBase}:`)
+        );
       },
 
       hasAnyScope: (...scopes) => {

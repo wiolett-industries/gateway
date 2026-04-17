@@ -64,6 +64,18 @@ export function DockerContainerDetail() {
   }>();
   const navigate = useNavigate();
   const { hasScope } = useAuthStore();
+  const canManage =
+    hasScope("docker:containers:manage") ||
+    !!(nodeId && hasScope(`docker:containers:manage:${nodeId}`));
+  const canEdit =
+    hasScope("docker:containers:edit") ||
+    !!(nodeId && hasScope(`docker:containers:edit:${nodeId}`));
+  const canCreate =
+    hasScope("docker:containers:create") ||
+    !!(nodeId && hasScope(`docker:containers:create:${nodeId}`));
+  const canDelete =
+    hasScope("docker:containers:delete") ||
+    !!(nodeId && hasScope(`docker:containers:delete:${nodeId}`));
   const invalidate = useDockerStore((s) => s.invalidate);
   const setSelectedNode = useDockerStore((s) => s.setSelectedNode);
   const storeNodeId = useDockerStore((s) => s.selectedNodeId);
@@ -399,7 +411,7 @@ export function DockerContainerDetail() {
             <Button variant="outline" size="icon" onClick={() => setPinOpen(true)}>
               <Pin className="h-4 w-4" />
             </Button>
-            {baseState !== "running" && hasScope("docker:containers:manage") && (
+            {baseState !== "running" && canManage && (
               <Button
                 variant="outline"
                 size="default"
@@ -412,7 +424,7 @@ export function DockerContainerDetail() {
                 Start
               </Button>
             )}
-            {baseState === "running" && hasScope("docker:containers:manage") && (
+            {baseState === "running" && canManage && (
               <>
                 <Button
                   variant="outline"
@@ -448,19 +460,19 @@ export function DockerContainerDetail() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                {hasScope("docker:containers:edit") && (
+                {canEdit && (
                   <DropdownMenuItem onClick={openRename}>
                     <Type className="h-3.5 w-3.5 mr-2" />
                     Rename
                   </DropdownMenuItem>
                 )}
-                {hasScope("docker:containers:create") && (
+                {canCreate && (
                   <DropdownMenuItem onClick={handleDuplicate}>
                     <Copy className="h-3.5 w-3.5 mr-2" />
                     Duplicate
                   </DropdownMenuItem>
                 )}
-                {baseState === "running" && hasScope("docker:containers:manage") && (
+                {baseState === "running" && canManage && (
                   <>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
@@ -474,7 +486,7 @@ export function DockerContainerDetail() {
                     </DropdownMenuItem>
                   </>
                 )}
-                {hasScope("docker:containers:delete") && (
+                {canDelete && (
                   <>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={handleRemove} className="text-destructive">

@@ -39,8 +39,11 @@ export function EnvironmentTab({
   const [secretRows, setSecretRows] = useState<SecretRow[]>([]);
   const [deletedSecretIds, setDeletedSecretIds] = useState<Set<string>>(new Set());
 
-  const canEdit = hasScope("docker:containers:environment");
-  const canManageSecrets = hasScope("docker:containers:secrets");
+  const canEdit =
+    hasScope("docker:containers:environment") ||
+    hasScope(`docker:containers:environment:${nodeId}`);
+  const canManageSecrets =
+    hasScope("docker:containers:secrets") || hasScope(`docker:containers:secrets:${nodeId}`);
   const recreatesRunningContainer = containerState === "running";
 
   const fetchEnv = useCallback(async () => {

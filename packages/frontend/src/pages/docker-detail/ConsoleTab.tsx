@@ -5,13 +5,15 @@ import { useAuthStore } from "@/stores/auth";
 
 export function ConsoleTab({ nodeId, containerId }: { nodeId: string; containerId: string }) {
   const { hasScope } = useAuthStore();
+  const canUseConsole =
+    hasScope("docker:containers:console") || hasScope(`docker:containers:console:${nodeId}`);
 
   const wsFactory = useCallback(
     () => api.createExecWebSocket(nodeId, containerId, "auto"),
     [nodeId, containerId]
   );
 
-  if (!hasScope("docker:containers:console")) {
+  if (!canUseConsole) {
     return (
       <div className="py-12 text-center text-muted-foreground">
         You don't have permission to access the console.

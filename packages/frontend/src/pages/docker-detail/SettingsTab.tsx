@@ -54,7 +54,8 @@ export function SettingsTab({
 }) {
   const { hasScope } = useAuthStore();
   const invalidate = useDockerStore((s) => s.invalidate);
-  const canEdit = hasScope("docker:containers:edit");
+  const canEdit =
+    hasScope("docker:containers:edit") || hasScope(`docker:containers:edit:${nodeId}`);
   const canManageNetworks = hasScope("docker:networks:edit");
   const canListNetworks = hasScope("docker:networks:list");
   const recreatesRunningContainer =

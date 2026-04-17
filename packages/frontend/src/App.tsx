@@ -1,6 +1,6 @@
 import { Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes, useParams } from "react-router-dom";
 import { AppStatusGate } from "@/components/common/AppStatusGate";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { RequireScope } from "@/components/common/RequireScope";
@@ -35,6 +35,7 @@ import { ProxyHosts } from "@/pages/ProxyHosts";
 import { Settings } from "@/pages/Settings";
 import { SSLCertificates } from "@/pages/SSLCertificates";
 import { TemplatesPage } from "@/pages/TemplatesPage";
+import { api } from "@/services/api";
 import { eventStream } from "@/services/event-stream";
 import { APP_STATUS_STORAGE_KEY, useAppStatusStore } from "@/stores/app-status";
 import { useAuthStore } from "@/stores/auth";
@@ -44,10 +45,42 @@ function scoped(scope: string, element: React.ReactElement) {
   return <RequireScope scope={scope}>{element}</RequireScope>;
 }
 
+function DockerContainerDetailGuard() {
+  const { nodeId } = useParams<{ nodeId: string }>();
+  const hasScope = useAuthStore((s) => s.hasScope);
+
+  if (
+    !hasScope("docker:containers:view") &&
+    !(nodeId && hasScope(`docker:containers:view:${nodeId}`))
+  ) {
+    return <Navigate to="/" replace />;
+  }
+
+  return <DockerContainerDetail />;
+}
+
+function DockerPageGuard() {
+  const hasScopedAccess = useAuthStore((s) => s.hasScopedAccess);
+
+  const canAccessDocker =
+    hasScopedAccess("docker:containers:list") ||
+    hasScopedAccess("docker:images:list") ||
+    hasScopedAccess("docker:volumes:list") ||
+    hasScopedAccess("docker:networks:list") ||
+    hasScopedAccess("docker:tasks");
+
+  if (!canAccessDocker) {
+    return <Navigate to="/" replace />;
+  }
+
+  return <Docker />;
+}
+
 function RealtimeBridge() {
   const sessionId = useAuthStore((s) => s.sessionId);
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
+  const logout = useAuthStore((s) => s.logout);
   const canListNodes = useAuthStore((s) => s.hasScope("nodes:list"));
   const setGatewayUpdatingActive = useAppStatusStore((s) => s.setGatewayUpdatingActive);
   const clearGatewayUpdating = useAppStatusStore((s) => s.clearGatewayUpdating);
@@ -64,21 +97,15 @@ function RealtimeBridge() {
   // the server says this user's permissions changed.
   useEffect(() => {
     if (!user?.id) return;
-    return eventStream.subscribe(`permissions.changed.${user.id}`, async (payload) => {
-      const ev = payload as { scopes?: string[]; groupId?: string | null };
-      // Trust the pushed scopes — these come from the same source the server uses
-      if (Array.isArray(ev?.scopes)) {
-        const current = useAuthStore.getState().user;
-        if (current) {
-          setUser({
-            ...current,
-            scopes: ev.scopes,
-            groupId: ev.groupId ?? current.groupId,
-          } as typeof current);
-        }
+    return eventStream.subscribe(`permissions.changed.${user.id}`, async () => {
+      try {
+        const freshUser = await api.getCurrentUser();
+        setUser(freshUser);
+      } catch {
+        logout();
       }
     });
-  }, [user?.id, setUser]);
+  }, [logout, setUser, user?.id]);
 
   // Keep node-related views in sync by activating the shared node.changed
   // invalidation path in the event stream singleton.
@@ -239,10 +266,10 @@ export default function App() {
               <Route path="/admin/groups" element={scoped("admin:groups", <AdminGroups />)} />
               <Route path="/nodes" element={scoped("nodes:list", <AdminNodes />)} />
               <Route path="/nodes/:id/:tab?" element={scoped("nodes:list", <AdminNodeDetail />)} />
-              <Route path="/docker/:tab?" element={scoped("docker:containers:list", <Docker />)} />
+              <Route path="/docker/:tab?" element={<DockerPageGuard />} />
               <Route
                 path="/docker/containers/:nodeId/:containerId/:tab?"
-                element={scoped("docker:containers:view", <DockerContainerDetail />)}
+                element={<DockerContainerDetailGuard />}
               />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />

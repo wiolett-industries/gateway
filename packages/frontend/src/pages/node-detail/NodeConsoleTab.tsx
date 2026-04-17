@@ -5,10 +5,11 @@ import { useAuthStore } from "@/stores/auth";
 
 export function NodeConsoleTab({ nodeId }: { nodeId: string }) {
   const { hasScope } = useAuthStore();
+  const canUseConsole = hasScope("nodes:console") || hasScope(`nodes:console:${nodeId}`);
 
   const wsFactory = useCallback(() => api.createNodeExecWebSocket(nodeId, "auto"), [nodeId]);
 
-  if (!hasScope("nodes:console")) {
+  if (!canUseConsole) {
     return (
       <div className="py-12 text-center text-muted-foreground">
         You don't have permission to access the node console.
