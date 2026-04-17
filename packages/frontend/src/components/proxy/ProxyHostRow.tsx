@@ -140,7 +140,11 @@ export function ProxyHostRow({
           </span>
         ) : (
           <div className={togglingIds.has(host.id) ? "opacity-50 pointer-events-none" : undefined}>
-            <Switch checked={host.enabled} onChange={(v) => onToggle(host.id, !v)} />
+            <Switch
+              checked={host.enabled}
+              onChange={(v) => onToggle(host.id, !v)}
+              disabled={!canEditHost}
+            />
           </div>
         )}
       </td>

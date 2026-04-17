@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/select";
 import { useRealtime } from "@/hooks/use-realtime";
 import { api } from "@/services/api";
+import { useAuthStore } from "@/stores/auth";
 import type { DockerRegistry, Node } from "@/types";
 
 interface DockerRegistriesSectionProps {
@@ -29,6 +30,11 @@ interface DockerRegistriesSectionProps {
 }
 
 export function DockerRegistriesSection({ nodesList }: DockerRegistriesSectionProps) {
+  const { hasScope } = useAuthStore();
+  const canCreateRegistry = hasScope("docker:registries:create");
+  const canEditRegistry = hasScope("docker:registries:edit");
+  const canDeleteRegistry = hasScope("docker:registries:delete");
+  const canTestRegistry = canCreateRegistry || canEditRegistry;
   const [registries, setRegistries] = useState<DockerRegistry[]>([]);
   const [regDialogOpen, setRegDialogOpen] = useState(false);
   const [regEditId, setRegEditId] = useState<string | null>(null);
@@ -70,6 +76,7 @@ export function DockerRegistriesSection({ nodesList }: DockerRegistriesSectionPr
   };
 
   const openRegEdit = (r: DockerRegistry) => {
+    if (!canEditRegistry) return;
     setRegEditId(r.id);
     setRegName(r.name);
     setRegUrl(r.url);
@@ -98,9 +105,11 @@ export function DockerRegistriesSection({ nodesList }: DockerRegistriesSectionPr
         nodeId: regScope === "node" ? regNodeId || undefined : undefined,
       };
       if (regEditId) {
+        if (!canEditRegistry) return;
         await api.updateRegistry(regEditId, payload);
         toast.success("Registry updated");
       } else {
+        if (!canCreateRegistry) return;
         const testResult = await api.testRegistryDirect({
           url: regUrl.trim(),
           username: regUsername.trim() || undefined,
@@ -167,10 +176,12 @@ export function DockerRegistriesSection({ nodesList }: DockerRegistriesSectionPr
               Configure private container registries for pulling images
             </p>
           </div>
-          <Button size="sm" onClick={openRegCreate}>
-            <Plus className="h-4 w-4" />
-            Add Registry
-          </Button>
+          {canCreateRegistry && (
+            <Button size="sm" onClick={openRegCreate}>
+              <Plus className="h-4 w-4" />
+              Add Registry
+            </Button>
+          )}
         </div>
         <div>
           {registries.length > 0 ? (
@@ -178,8 +189,10 @@ export function DockerRegistriesSection({ nodesList }: DockerRegistriesSectionPr
               {registries.map((r) => (
                 <div
                   key={r.id}
-                  className="flex items-center justify-between p-4 gap-4 cursor-pointer hover:bg-accent/50 transition-colors"
-                  onClick={() => openRegEdit(r)}
+                  className={`flex items-center justify-between p-4 gap-4 transition-colors ${
+                    canEditRegistry ? "cursor-pointer hover:bg-accent/50" : ""
+                  }`}
+                  onClick={canEditRegistry ? () => openRegEdit(r) : undefined}
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     {r.scope === "global" ? (
@@ -211,22 +224,26 @@ export function DockerRegistriesSection({ nodesList }: DockerRegistriesSectionPr
                     className="flex items-center gap-2 shrink-0"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <Button
-                      variant="outline"
-                      size="default"
-                      disabled={regTesting === r.id}
-                      onClick={() => handleRegTest(r)}
-                    >
-                      {regTesting === r.id ? (
-                        <RefreshCw className="h-3.5 w-3.5 mr-1 animate-spin" />
-                      ) : (
-                        <Play className="h-3.5 w-3.5 mr-1" />
-                      )}
-                      Test
-                    </Button>
-                    <Button variant="outline" size="icon" onClick={() => handleRegDelete(r)}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    {canTestRegistry && (
+                      <Button
+                        variant="outline"
+                        size="default"
+                        disabled={regTesting === r.id}
+                        onClick={() => handleRegTest(r)}
+                      >
+                        {regTesting === r.id ? (
+                          <RefreshCw className="h-3.5 w-3.5 mr-1 animate-spin" />
+                        ) : (
+                          <Play className="h-3.5 w-3.5 mr-1" />
+                        )}
+                        Test
+                      </Button>
+                    )}
+                    {canDeleteRegistry && (
+                      <Button variant="outline" size="icon" onClick={() => handleRegDelete(r)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -332,7 +349,13 @@ export function DockerRegistriesSection({ nodesList }: DockerRegistriesSectionPr
             </Button>
             <Button
               onClick={handleRegSave}
-              disabled={regSaving || !regName.trim() || !regUrl.trim()}
+              disabled={
+                regSaving ||
+                !regName.trim() ||
+                !regUrl.trim() ||
+                (!regEditId && !canCreateRegistry) ||
+                (!!regEditId && !canEditRegistry)
+              }
             >
               {regSaving ? "Saving..." : regEditId ? "Update" : "Add"}
             </Button>

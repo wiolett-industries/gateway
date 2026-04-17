@@ -335,16 +335,6 @@ export function Dashboard() {
 
           <QuickStatsCard displayStats={displayStats} nodesList={nodesList} hasScope={hasScope} />
 
-          <CertificateExpiryCard expiringItems={expiringItems} hasScope={hasScope} />
-
-          <HealthOverviewCard
-            healthHosts={healthHosts}
-            hasScope={hasScope}
-            loading={healthLoading}
-          />
-
-          <NodesCard nodesList={nodesList} hasScope={hasScope} loading={nodesLoading} />
-
           {/* Pinned Proxy Host Cards */}
           {pinnedProxyHosts.map((proxy) => (
             <PinnedProxyCard key={proxy.id} proxy={proxy} />
@@ -360,6 +350,16 @@ export function Dashboard() {
             .map((node) => (
               <PinnedNodeCard key={node.id} node={node} liveHealth={pinnedHealth[node.id]} />
             ))}
+
+          <CertificateExpiryCard expiringItems={expiringItems} hasScope={hasScope} />
+
+          <HealthOverviewCard
+            healthHosts={healthHosts}
+            hasScope={hasScope}
+            loading={healthLoading}
+          />
+
+          <NodesCard nodesList={nodesList} hasScope={hasScope} loading={nodesLoading} />
 
           <CertificateAuthoritiesCard cas={cas} hasScope={hasScope} />
 

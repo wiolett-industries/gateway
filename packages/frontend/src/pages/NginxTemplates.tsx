@@ -8,6 +8,8 @@ import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { CodeEditor } from "@/components/ui/code-editor";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,9 +31,12 @@ export function NginxTemplates({
 }) {
   const navigate = useNavigate();
   const { hasScope } = useAuthStore();
+  const canViewTemplates = hasScope("proxy:list");
   const cachedTemplates = api.getCached<NginxTemplate[]>("nginx-templates:list");
   const [templates, setTemplates] = useState<NginxTemplate[]>(cachedTemplates ?? []);
   const [isLoading, setIsLoading] = useState(!cachedTemplates);
+  const [previewTemplate, setPreviewTemplate] = useState<NginxTemplate | null>(null);
+  const [previewContent, setPreviewContent] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -85,6 +90,16 @@ export function NginxTemplates({
     }
   };
 
+  const handlePreview = async (template: NginxTemplate) => {
+    try {
+      const result = await api.previewNginxTemplate(template.content);
+      setPreviewContent(result.rendered);
+      setPreviewTemplate(template);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to render preview");
+    }
+  };
+
   if (isLoading) {
     return <LoadingSpinner />;
   }
@@ -116,17 +131,22 @@ export function NginxTemplates({
               const canCloneTemplate = hasScope("proxy:edit");
               const canDeleteTemplate = hasScope("proxy:delete") && !t.isBuiltin;
               const hasActions = canEditTemplate || canCloneTemplate || canDeleteTemplate;
+              const canOpenTemplate = canEditTemplate || canViewTemplates;
 
               return (
                 <div key={t.id} className="border border-border bg-card p-4 space-y-3">
                   <div className="flex items-start justify-between">
                     <div
                       className={`flex items-center gap-2 ${
-                        canEditTemplate ? "cursor-pointer hover:opacity-80" : ""
+                        canOpenTemplate ? "cursor-pointer hover:opacity-80" : ""
                       }`}
-                      onClick={
-                        canEditTemplate ? () => navigate(`/nginx-templates/${t.id}`) : undefined
-                      }
+                      onClick={() => {
+                        if (canEditTemplate) {
+                          navigate(`/nginx-templates/${t.id}`);
+                        } else if (canViewTemplates) {
+                          void handlePreview(t);
+                        }
+                      }}
                     >
                       <FileCode className="h-4 w-4 text-muted-foreground" />
                       <h3 className="font-semibold text-sm">{t.name}</h3>
@@ -188,6 +208,23 @@ export function NginxTemplates({
           />
         )}
       </div>
+      <Dialog open={!!previewTemplate} onOpenChange={(open) => !open && setPreviewTemplate(null)}>
+        <DialogContent className="w-[92vw] sm:max-w-[64rem] h-[85vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>{previewTemplate?.name ?? "Template Preview"}</DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 min-h-0">
+            <CodeEditor
+              value={previewContent}
+              onChange={() => {}}
+              readOnly
+              language="nginx"
+              height="100%"
+              minHeight="100%"
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   );
 
