@@ -47,6 +47,8 @@ export function ProxyHostRow({
 }: ProxyHostRowProps) {
   const navigate = useNavigate();
   const { hasScope } = useAuthStore();
+  const canViewHost = hasScope("proxy:view") || hasScope(`proxy:view:${host.id}`);
+  const canEditHost = hasScope("proxy:edit") || hasScope(`proxy:edit:${host.id}`);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: host.id,
     data: { type: "host", host },
@@ -60,15 +62,19 @@ export function ProxyHostRow({
   };
 
   const handleRowClick = () => {
-    if (!isDragging) navigate(`/proxy-hosts/${host.id}`);
+    if (!isDragging && canViewHost) navigate(`/proxy-hosts/${host.id}`);
   };
 
   return (
     <tr
       ref={isOverlay ? undefined : setNodeRef}
       style={isOverlay ? undefined : style}
-      className={`hover:bg-accent transition-colors cursor-pointer border-b border-border select-none ${
-        isOverlay ? "bg-card shadow-lg border border-border" : ""
+      className={`transition-colors border-b border-border select-none ${
+        isOverlay
+          ? "bg-card shadow-lg border border-border"
+          : canViewHost
+            ? "cursor-pointer hover:bg-accent"
+            : "cursor-default opacity-80"
       }`}
       onClick={handleRowClick}
       {...(isOverlay ? {} : attributes)}
@@ -138,7 +144,7 @@ export function ProxyHostRow({
           </div>
         )}
       </td>
-      {hasScope("proxy:edit") && (
+      {canEditHost && (
         <td className="p-3 text-right" onClick={(e) => e.stopPropagation()}>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

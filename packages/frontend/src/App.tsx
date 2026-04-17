@@ -59,6 +59,28 @@ function DockerContainerDetailGuard() {
   return <DockerContainerDetail />;
 }
 
+function ProxyHostDetailGuard() {
+  const { id } = useParams<{ id: string }>();
+  const hasScope = useAuthStore((s) => s.hasScope);
+
+  if (!hasScope("proxy:view") && !(id && hasScope(`proxy:view:${id}`))) {
+    return <Navigate to="/" replace />;
+  }
+
+  return <ProxyHostDetail />;
+}
+
+function NodeDetailGuard() {
+  const { id } = useParams<{ id: string }>();
+  const hasScope = useAuthStore((s) => s.hasScope);
+
+  if (!hasScope("nodes:details") && !(id && hasScope(`nodes:details:${id}`))) {
+    return <Navigate to="/" replace />;
+  }
+
+  return <AdminNodeDetail />;
+}
+
 function DockerPageGuard() {
   const hasScopedAccess = useAuthStore((s) => s.hasScopedAccess);
 
@@ -230,17 +252,14 @@ export default function App() {
             <Route element={<DashboardLayout />}>
               <Route path="/" element={<Dashboard />} />
               <Route path="/proxy-hosts" element={scoped("proxy:list", <ProxyHosts />)} />
-              <Route
-                path="/proxy-hosts/:id/:tab?"
-                element={scoped("proxy:list", <ProxyHostDetail />)}
-              />
+              <Route path="/proxy-hosts/:id/:tab?" element={<ProxyHostDetailGuard />} />
               <Route
                 path="/nginx-templates/new"
                 element={scoped("proxy:edit", <NginxTemplateEdit />)}
               />
               <Route
                 path="/nginx-templates/:id"
-                element={scoped("proxy:list", <NginxTemplateEdit />)}
+                element={scoped("proxy:edit", <NginxTemplateEdit />)}
               />
               <Route
                 path="/ssl-certificates"
@@ -265,7 +284,7 @@ export default function App() {
               <Route path="/admin/users" element={scoped("admin:users", <AdminUsers />)} />
               <Route path="/admin/groups" element={scoped("admin:groups", <AdminGroups />)} />
               <Route path="/nodes" element={scoped("nodes:list", <AdminNodes />)} />
-              <Route path="/nodes/:id/:tab?" element={scoped("nodes:list", <AdminNodeDetail />)} />
+              <Route path="/nodes/:id/:tab?" element={<NodeDetailGuard />} />
               <Route path="/docker/:tab?" element={<DockerPageGuard />} />
               <Route
                 path="/docker/containers/:nodeId/:containerId/:tab?"

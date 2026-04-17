@@ -379,9 +379,11 @@ export function DockerImages({
     ],
     [hasScope, handleRemove, showUsage]
   );
-  const imageColumns = fixedNodeId
-    ? allImageColumns.filter((c) => c.key !== "node")
-    : allImageColumns;
+  const imageColumns = allImageColumns.filter((c) => {
+    if (fixedNodeId && c.key === "node") return false;
+    if (!hasScope("docker:images:delete") && c.key === "actions") return false;
+    return true;
+  });
 
   const content = (
     <>

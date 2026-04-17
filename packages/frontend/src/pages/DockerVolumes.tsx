@@ -301,9 +301,11 @@ export function DockerVolumes({
     ],
     [hasScope, handleRemove, showUsage]
   );
-  const volumeColumns = fixedNodeId
-    ? allVolumeColumns.filter((c) => c.key !== "node")
-    : allVolumeColumns;
+  const volumeColumns = allVolumeColumns.filter((c) => {
+    if (fixedNodeId && c.key === "node") return false;
+    if (!hasScope("docker:volumes:delete") && c.key === "actions") return false;
+    return true;
+  });
 
   const content = (
     <>

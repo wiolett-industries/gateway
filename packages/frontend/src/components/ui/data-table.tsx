@@ -23,6 +23,7 @@ interface DataTableProps<T> {
   data: T[];
   keyFn: (row: T) => string;
   onRowClick?: (row: T) => void;
+  isRowClickable?: (row: T) => boolean;
   emptyMessage?: string;
   /** Ref for scroll container (for infinite scroll sentinel) */
   scrollRef?: React.RefObject<HTMLDivElement | null>;
@@ -46,6 +47,7 @@ export function DataTable<T>({
   data,
   keyFn,
   onRowClick,
+  isRowClickable,
   emptyMessage = "No data.",
   scrollRef,
   footer,
@@ -150,19 +152,21 @@ export function DataTable<T>({
               );
             }
 
+            const canClick = isRowClickable?.(item.row) ?? !!onRowClick;
+
             return (
               <Fragment key={item.key}>
                 <div
                   ref={virtualizer.measureElement}
                   data-index={vi.index}
                   className={`absolute left-0 right-0 grid items-center border-b border-border transition-colors ${
-                    onRowClick ? "cursor-pointer hover:bg-muted/50" : ""
+                    canClick ? "cursor-pointer hover:bg-muted/50" : ""
                   }`}
                   style={{
                     transform: `translateY(${top}px)`,
                     gridTemplateColumns,
                   }}
-                  onClick={onRowClick ? () => onRowClick(item.row) : undefined}
+                  onClick={canClick && onRowClick ? () => onRowClick(item.row) : undefined}
                 >
                   {columns.map((col) => (
                     <div

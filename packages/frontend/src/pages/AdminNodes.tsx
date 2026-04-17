@@ -241,11 +241,17 @@ export function AdminNodes() {
             <div className="divide-y divide-border -mb-px [&>*:last-child]:border-b [&>*:last-child]:border-border">
               {nodes.map((node) => {
                 const nodeUpdating = isNodeUpdating(node);
+                const canOpenDetails =
+                  hasScope("nodes:details") || hasScope(`nodes:details:${node.id}`);
                 return (
                   <div
                     key={node.id}
-                    className="flex items-center gap-4 p-4 cursor-pointer hover:bg-muted/50 transition-colors"
-                    onClick={() => navigate(`/nodes/${node.id}`)}
+                    className={`flex items-center gap-4 p-4 transition-colors ${
+                      canOpenDetails
+                        ? "cursor-pointer hover:bg-muted/50"
+                        : "cursor-default opacity-80"
+                    }`}
+                    onClick={canOpenDetails ? () => navigate(`/nodes/${node.id}`) : undefined}
                   >
                     <div className="flex items-center justify-center h-10 w-10 rounded-lg bg-muted">
                       <Server className="h-5 w-5 text-muted-foreground" />
