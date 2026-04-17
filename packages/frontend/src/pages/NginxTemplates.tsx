@@ -111,67 +111,80 @@ export function NginxTemplates({
 
         {templates.length > 0 ? (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {templates.map((t) => (
-              <div key={t.id} className="border border-border bg-card p-4 space-y-3">
-                <div className="flex items-start justify-between">
-                  <div
-                    className="flex items-center gap-2 cursor-pointer hover:opacity-80"
-                    onClick={() => !t.isBuiltin && navigate(`/nginx-templates/${t.id}`)}
-                  >
-                    <FileCode className="h-4 w-4 text-muted-foreground" />
-                    <h3 className="font-semibold text-sm">{t.name}</h3>
+            {templates.map((t) => {
+              const canEditTemplate = hasScope("proxy:edit") && !t.isBuiltin;
+              const canCloneTemplate = hasScope("proxy:edit");
+              const canDeleteTemplate = hasScope("proxy:delete") && !t.isBuiltin;
+              const hasActions = canEditTemplate || canCloneTemplate || canDeleteTemplate;
+
+              return (
+                <div key={t.id} className="border border-border bg-card p-4 space-y-3">
+                  <div className="flex items-start justify-between">
+                    <div
+                      className={`flex items-center gap-2 ${
+                        canEditTemplate ? "cursor-pointer hover:opacity-80" : ""
+                      }`}
+                      onClick={
+                        canEditTemplate ? () => navigate(`/nginx-templates/${t.id}`) : undefined
+                      }
+                    >
+                      <FileCode className="h-4 w-4 text-muted-foreground" />
+                      <h3 className="font-semibold text-sm">{t.name}</h3>
+                    </div>
+                    {hasActions && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <MoreVertical className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          {canEditTemplate && (
+                            <DropdownMenuItem onClick={() => navigate(`/nginx-templates/${t.id}`)}>
+                              <Pencil className="h-4 w-4" />
+                              Edit
+                            </DropdownMenuItem>
+                          )}
+                          {canCloneTemplate && (
+                            <DropdownMenuItem onClick={() => handleClone(t.id)}>
+                              <Copy className="h-4 w-4" />
+                              Clone
+                            </DropdownMenuItem>
+                          )}
+                          {canDeleteTemplate && (
+                            <>
+                              {(canEditTemplate || canCloneTemplate) && <DropdownMenuSeparator />}
+                              <DropdownMenuItem
+                                onClick={() => handleDelete(t)}
+                                className="text-destructive"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                                Delete
+                              </DropdownMenuItem>
+                            </>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
                   </div>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-8 w-8">
-                        <MoreVertical className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      {!t.isBuiltin && (
-                        <DropdownMenuItem onClick={() => navigate(`/nginx-templates/${t.id}`)}>
-                          <Pencil className="h-4 w-4" />
-                          Edit
-                        </DropdownMenuItem>
-                      )}
-                      {hasScope("proxy:edit") && (
-                        <DropdownMenuItem onClick={() => handleClone(t.id)}>
-                          <Copy className="h-4 w-4" />
-                          Clone
-                        </DropdownMenuItem>
-                      )}
-                      {!t.isBuiltin && hasScope("proxy:delete") && (
-                        <>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            onClick={() => handleDelete(t)}
-                            className="text-destructive"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                            Delete
-                          </DropdownMenuItem>
-                        </>
-                      )}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  <p className="text-sm text-muted-foreground line-clamp-2">
+                    {t.description || "No description"}
+                  </p>
+                  <div className="flex flex-wrap gap-1">
+                    <Badge variant="secondary" className="text-xs uppercase">
+                      {t.type}
+                    </Badge>
+                    {t.isBuiltin && <Badge className="text-xs">Built-in</Badge>}
+                  </div>
                 </div>
-                <p className="text-sm text-muted-foreground line-clamp-2">
-                  {t.description || "No description"}
-                </p>
-                <div className="flex flex-wrap gap-1">
-                  <Badge variant="secondary" className="text-xs uppercase">
-                    {t.type}
-                  </Badge>
-                  {t.isBuiltin && <Badge className="text-xs">Built-in</Badge>}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <EmptyState
             message="No config templates."
-            actionLabel="Create one"
-            actionHref="/nginx-templates/new"
+            actionLabel={hasScope("proxy:edit") ? "Create one" : undefined}
+            actionHref={hasScope("proxy:edit") ? "/nginx-templates/new" : undefined}
           />
         )}
       </div>

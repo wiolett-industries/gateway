@@ -47,7 +47,7 @@ export function DockerContainers({
   fixedNodeId?: string;
 } = {}) {
   const navigate = useNavigate();
-  const { hasScope } = useAuthStore();
+  const { hasScope, hasScopedAccess } = useAuthStore();
   const containers = useDockerStore((s) => s.containers);
   const selectedNodeId = useDockerStore((s) => s.selectedNodeId);
   const filters = useDockerStore((s) => s.filters);
@@ -208,6 +208,17 @@ export function DockerContainers({
     [selectedNodeId]
   );
 
+  const canManageContainer = useCallback(
+    (container: DockerContainer) => {
+      const containerNodeId = (container as any)._nodeId || selectedNodeId;
+      return (
+        hasScope("docker:containers:manage") ||
+        !!(containerNodeId && hasScope(`docker:containers:manage:${containerNodeId}`))
+      );
+    },
+    [hasScope, selectedNodeId]
+  );
+
   const handleStart = useCallback(
     (c: DockerContainer) => doAction(c.id, "start", () => api.startContainer(nodeOf(c), c.id)),
     [doAction, nodeOf]
@@ -309,7 +320,7 @@ export function DockerContainers({
               className="flex items-center gap-0.5 justify-end"
               onClick={(e) => e.stopPropagation()}
             >
-              {c.state === "running" ? (
+              {!canManageContainer(c) ? null : c.state === "running" ? (
                 <>
                   <Button
                     variant="ghost"
@@ -349,11 +360,24 @@ export function DockerContainers({
         },
       },
     ],
-    [actionLoading, handleStop, handleRestart, handleStart]
+    [actionLoading, canManageContainer, handleStop, handleRestart, handleStart]
   );
-  const containerColumns = fixedNodeId
-    ? allContainerColumns.filter((c) => c.key !== "node")
-    : allContainerColumns;
+  const containerColumns = allContainerColumns.filter((c) => {
+    if (fixedNodeId && c.key === "node") return false;
+    if (!hasScopedAccess("docker:containers:manage") && c.key === "actions") return false;
+    return true;
+  });
+
+  const canOpenContainer = useCallback(
+    (container: DockerContainer) => {
+      const containerNodeId = (container as any)._nodeId || selectedNodeId;
+      return (
+        hasScope("docker:containers:view") ||
+        !!(containerNodeId && hasScope(`docker:containers:view:${containerNodeId}`))
+      );
+    },
+    [hasScope, selectedNodeId]
+  );
 
   const content = (
     <>
@@ -449,9 +473,11 @@ export function DockerContainers({
               columns={containerColumns}
               data={filteredContainers}
               keyFn={(c) => c.id}
-              onRowClick={(c) =>
-                navigate(`/docker/containers/${(c as any)._nodeId || selectedNodeId}/${c.id}`)
-              }
+              isRowClickable={canOpenContainer}
+              onRowClick={(c) => {
+                if (!canOpenContainer(c)) return;
+                navigate(`/docker/containers/${(c as any)._nodeId || selectedNodeId}/${c.id}`);
+              }}
               emptyMessage="No containers found."
               groupBy={(c) => {
                 const project = c.labels?.["com.docker.compose.project"];

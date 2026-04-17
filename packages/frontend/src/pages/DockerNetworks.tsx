@@ -224,13 +224,13 @@ export function DockerNetworks({
       {
         key: "name",
         header: "Name",
-        width: "minmax(0, 1.2fr)",
+        width: "minmax(0, 1.35fr)",
         render: (net) => (
           <div className="flex items-center gap-3 min-w-0">
             <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-muted shrink-0">
               <Network className="h-4 w-4 text-muted-foreground" />
             </div>
-            <div className="min-w-0">
+            <div className="flex-1 min-w-0">
               <TruncateStart text={net.name} className="text-sm font-medium" />
               <p className="text-xs text-muted-foreground font-mono truncate">
                 {net.id.slice(0, 12)}
@@ -263,11 +263,11 @@ export function DockerNetworks({
       {
         key: "node",
         header: "Node",
-        width: "minmax(0, 0.95fr)",
+        width: "minmax(0, 1.15fr)",
         render: (n) => (
-          <div className="min-w-0 flex">
-            <Badge variant="secondary" className="text-xs">
-              {(n as any)._nodeName || "-"}
+          <div className="min-w-0">
+            <Badge variant="secondary" className="max-w-full shrink-0 px-2.5 text-xs">
+              <span className="truncate">{(n as any)._nodeName || "-"}</span>
             </Badge>
           </div>
         ),
@@ -299,12 +299,15 @@ export function DockerNetworks({
       {
         key: "actions",
         header: "Actions",
-        width: "5rem",
+        width: "5.75rem",
         align: "right" as const,
         render: (net) => {
           const count = containerCount(net);
           return (
-            <div className="flex items-center justify-end" onClick={(e) => e.stopPropagation()}>
+            <div
+              className="flex items-center justify-end pr-1"
+              onClick={(e) => e.stopPropagation()}
+            >
               {hasScope("docker:networks:delete") && count === 0 && (
                 <Button
                   variant="ghost"
@@ -323,9 +326,11 @@ export function DockerNetworks({
     ],
     [hasScope, handleRemove, showUsage, containerCount, getIPAM]
   );
-  const networkColumns = fixedNodeId
-    ? allNetworkColumns.filter((c) => c.key !== "node")
-    : allNetworkColumns;
+  const networkColumns = allNetworkColumns.filter((c) => {
+    if (fixedNodeId && c.key === "node") return false;
+    if (!hasScope("docker:networks:delete") && c.key === "actions") return false;
+    return true;
+  });
 
   const content = (
     <>

@@ -346,6 +346,13 @@ export function DockerTemplatesPage({
     ],
     [hasScope, dockerNodes.length, openDeploy, openEdit, handleExport, handleDelete, extractImage]
   );
+  const canDeployTemplate = hasScope("docker:templates:create") && dockerNodes.length > 0;
+  const canEditTemplate = hasScope("docker:templates:create");
+  const canDeleteTemplate = hasScope("docker:templates:delete");
+  const hasTemplateActions = canDeployTemplate || canEditTemplate || canDeleteTemplate;
+  const visibleTemplateColumns = templateColumns.filter(
+    (column) => column.key !== "actions" || hasTemplateActions
+  );
 
   const content = (
     <>
@@ -394,7 +401,7 @@ export function DockerTemplatesPage({
 
       {filteredTemplates.length > 0 ? (
         <DataTable
-          columns={templateColumns}
+          columns={visibleTemplateColumns}
           data={filteredTemplates}
           keyFn={(t) => t.id}
           emptyMessage="No templates found."
