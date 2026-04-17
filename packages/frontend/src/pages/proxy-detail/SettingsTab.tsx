@@ -302,17 +302,14 @@ export function SettingsTab({
             disabled={!host.sslEnabled}
           />
           <div className="flex items-center justify-between px-4 py-3">
-            <div className={cn(!host.sslEnabled && "opacity-50")}>
+            <div>
               <span className="text-sm font-medium">SSL Certificate</span>
               <p className="text-xs text-muted-foreground">Select the certificate for HTTPS</p>
             </div>
-            <div
-              className={cn("w-56 shrink-0", !host.sslEnabled && "opacity-50 pointer-events-none")}
-            >
+            <div className="w-56 shrink-0">
               <Select
                 value={host.sslCertificateId || "__none__"}
                 onValueChange={(v) => onSslCertificateChange(v === "__none__" ? "" : v)}
-                disabled={!host.sslEnabled}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select certificate..." />
