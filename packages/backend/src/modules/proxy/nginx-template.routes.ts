@@ -70,7 +70,7 @@ nginxTemplateRoutes.post('/:id/clone', requireScope('proxy:edit'), async (c) => 
 });
 
 // Preview template with sample or real host data
-nginxTemplateRoutes.post('/preview', requireScope('proxy:edit'), async (c) => {
+nginxTemplateRoutes.post('/preview', requireScope('proxy:list'), async (c) => {
   const service = container.resolve(NginxTemplateService);
   const body = await c.req.json();
   const input = PreviewNginxTemplateSchema.parse(body);

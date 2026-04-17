@@ -249,6 +249,12 @@ export function SSLCertificates() {
                     const expDays = cert.notAfter ? daysUntil(cert.notAfter) : null;
                     const supportsAutoRenew =
                       cert.type === "acme" && cert.acmeChallengeType !== "dns-01" && cert.autoRenew;
+                    const canRenewCert =
+                      hasScope("ssl:cert:issue") &&
+                      cert.type === "acme" &&
+                      cert.acmeChallengeType !== "dns-01";
+                    const canDeleteCert = !cert.isSystem && hasScope("ssl:cert:delete");
+                    const hasActions = canRenewCert || canDeleteCert;
                     return (
                       <tr key={cert.id} className="hover:bg-accent transition-colors">
                         <td className="p-3">
@@ -316,7 +322,7 @@ export function SSLCertificates() {
                           )}
                         </td>
                         <td className="p-3">
-                          {hasScope("ssl:cert:issue") && (
+                          {hasActions && (
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
                                 <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -324,13 +330,13 @@ export function SSLCertificates() {
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
-                                {cert.type === "acme" && cert.acmeChallengeType !== "dns-01" && (
+                                {canRenewCert && (
                                   <DropdownMenuItem onClick={() => handleRenew(cert.id)}>
                                     <RefreshCw className="h-4 w-4" />
                                     Renew
                                   </DropdownMenuItem>
                                 )}
-                                {!cert.isSystem && hasScope("ssl:cert:delete") && (
+                                {canDeleteCert && (
                                   <DropdownMenuItem
                                     onClick={() => handleDelete(cert.id, cert.name)}
                                     className="text-destructive"
