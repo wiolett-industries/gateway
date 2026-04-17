@@ -110,27 +110,78 @@ const STEP_ANIMATION = {
 export function Notifications() {
   const { tab: tabParam } = useParams<{ tab?: string }>();
   const navigate = useNavigate();
-  const { hasScope } = useAuthStore();
-  const canManage = hasScope("notifications:manage");
-  const activeTab = tabParam && TABS.some((t) => t.value === tabParam) ? tabParam : "alerts";
+  const { hasAnyScope } = useAuthStore();
+  const canViewAlerts = hasAnyScope(
+    "notifications:alerts:list",
+    "notifications:alerts:view",
+    "notifications:alerts:create",
+    "notifications:alerts:edit",
+    "notifications:alerts:delete",
+    "notifications:view",
+    "notifications:manage"
+  );
+  const canManageAlerts = hasAnyScope(
+    "notifications:alerts:create",
+    "notifications:alerts:edit",
+    "notifications:alerts:delete",
+    "notifications:manage"
+  );
+  const canViewWebhooks = hasAnyScope(
+    "notifications:webhooks:list",
+    "notifications:webhooks:view",
+    "notifications:webhooks:create",
+    "notifications:webhooks:edit",
+    "notifications:webhooks:delete",
+    "notifications:view",
+    "notifications:manage"
+  );
+  const canManageWebhooks = hasAnyScope(
+    "notifications:webhooks:create",
+    "notifications:webhooks:edit",
+    "notifications:webhooks:delete",
+    "notifications:manage"
+  );
+  const canViewDeliveries = hasAnyScope(
+    "notifications:deliveries:list",
+    "notifications:deliveries:view",
+    "notifications:view",
+    "notifications:manage"
+  );
+  const visibleTabs = TABS.filter((tab) => {
+    if (tab.value === "alerts") return canViewAlerts;
+    if (tab.value === "webhooks") return canViewWebhooks;
+    if (tab.value === "deliveries") return canViewDeliveries;
+    return false;
+  });
+  const activeTab =
+    tabParam && visibleTabs.some((t) => t.value === tabParam)
+      ? tabParam
+      : visibleTabs[0]?.value || "alerts";
   const [openCreateAlertToken, setOpenCreateAlertToken] = useState(0);
   const [openCreateWebhookToken, setOpenCreateWebhookToken] = useState(0);
   const [refreshDeliveriesToken, setRefreshDeliveriesToken] = useState(0);
 
   const headerAction =
-    activeTab === "alerts" && canManage ? (
+    activeTab === "alerts" && canManageAlerts ? (
       <Button onClick={() => setOpenCreateAlertToken((v) => v + 1)}>
         <Plus className="h-4 w-4" /> New Alert
       </Button>
-    ) : activeTab === "webhooks" && canManage ? (
+    ) : activeTab === "webhooks" && canManageWebhooks ? (
       <Button onClick={() => setOpenCreateWebhookToken((v) => v + 1)}>
         <Plus className="h-4 w-4" /> New Webhook
       </Button>
-    ) : activeTab === "deliveries" ? (
+    ) : activeTab === "deliveries" && canViewDeliveries ? (
       <Button variant="outline" onClick={() => setRefreshDeliveriesToken((v) => v + 1)}>
         Refresh
       </Button>
     ) : null;
+
+  useEffect(() => {
+    if (visibleTabs.length === 0) return;
+    if (!tabParam || !visibleTabs.some((t) => t.value === tabParam)) {
+      navigate(`/notifications/${activeTab}`, { replace: true });
+    }
+  }, [activeTab, navigate, tabParam, visibleTabs]);
 
   return (
     <div className="flex flex-col gap-6 p-6">
@@ -148,22 +199,28 @@ export function Notifications() {
         onValueChange={(v) => navigate(`/notifications/${v}`, { replace: true })}
       >
         <TabsList>
-          {TABS.map((t) => (
+          {visibleTabs.map((t) => (
             <TabsTrigger key={t.value} value={t.value} className="flex items-center gap-2">
               <t.icon className="h-4 w-4" />
               {t.label}
             </TabsTrigger>
           ))}
         </TabsList>
-        <TabsContent value="alerts" className="mt-4">
-          <AlertsTab canManage={canManage} openCreateToken={openCreateAlertToken} />
-        </TabsContent>
-        <TabsContent value="webhooks" className="mt-4">
-          <WebhooksTab canManage={canManage} openCreateToken={openCreateWebhookToken} />
-        </TabsContent>
-        <TabsContent value="deliveries" className="mt-4">
-          <DeliveryLogTab refreshToken={refreshDeliveriesToken} />
-        </TabsContent>
+        {canViewAlerts && (
+          <TabsContent value="alerts" className="mt-4">
+            <AlertsTab canManage={canManageAlerts} openCreateToken={openCreateAlertToken} />
+          </TabsContent>
+        )}
+        {canViewWebhooks && (
+          <TabsContent value="webhooks" className="mt-4">
+            <WebhooksTab canManage={canManageWebhooks} openCreateToken={openCreateWebhookToken} />
+          </TabsContent>
+        )}
+        {canViewDeliveries && (
+          <TabsContent value="deliveries" className="mt-4">
+            <DeliveryLogTab refreshToken={refreshDeliveriesToken} />
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );
@@ -1639,7 +1696,7 @@ function DeliveryLogTab({ refreshToken }: { refreshToken: number }) {
   if (isLoading) return <LoadingSpinner />;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 min-w-0">
       <SearchFilterBar
         placeholder="Search by webhook, event, severity, or HTTP status..."
         search={searchInput}
@@ -1668,9 +1725,9 @@ function DeliveryLogTab({ refreshToken }: { refreshToken: number }) {
       {filteredDeliveries.length === 0 ? (
         <EmptyState message="No deliveries yet. Delivery attempts will appear here when alerts fire." />
       ) : (
-        <div className="border border-border bg-card">
+        <div className="min-w-0 border border-border bg-card">
           <div className="overflow-x-auto -mb-px">
-            <table className="w-full">
+            <table className="w-full min-w-[56rem]">
               <thead>
                 <tr className="border-b border-border text-left">
                   <th className="p-3 text-xs font-medium text-muted-foreground w-10" />
@@ -1704,15 +1761,9 @@ function DeliveryLogTab({ refreshToken }: { refreshToken: number }) {
                     </td>
                     <td className="p-3">
                       {d.responseStatus ? (
-                        <span
-                          className={
-                            d.responseStatus < 300
-                              ? "text-emerald-500 text-sm"
-                              : "text-red-500 text-sm"
-                          }
-                        >
+                        <Badge variant={d.responseStatus < 300 ? "success" : "destructive"}>
                           {d.responseStatus}
-                        </span>
+                        </Badge>
                       ) : (
                         <span className="text-sm text-muted-foreground">—</span>
                       )}
@@ -1756,7 +1807,13 @@ function DeliveryLogTab({ refreshToken }: { refreshToken: number }) {
                 </div>
                 <div>
                   <span className="text-muted-foreground">HTTP:</span>{" "}
-                  {detail.responseStatus ?? "N/A"}
+                  {detail.responseStatus ? (
+                    <Badge variant={detail.responseStatus < 300 ? "success" : "destructive"}>
+                      {detail.responseStatus}
+                    </Badge>
+                  ) : (
+                    "N/A"
+                  )}
                 </div>
                 <div>
                   <span className="text-muted-foreground">Time:</span>{" "}

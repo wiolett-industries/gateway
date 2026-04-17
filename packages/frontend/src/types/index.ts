@@ -761,6 +761,79 @@ export const TOKEN_SCOPES = [
     desc: "View and manage alerts",
     group: "Administration",
   },
+  // Notifications
+  {
+    value: "notifications:alerts:list",
+    label: "List Alert Rules",
+    desc: "List notification alert rules",
+    group: "Notifications",
+  },
+  {
+    value: "notifications:alerts:view",
+    label: "View Alert Rules",
+    desc: "View alert rule details",
+    group: "Notifications",
+  },
+  {
+    value: "notifications:alerts:create",
+    label: "Create Alert Rules",
+    desc: "Create notification alert rules",
+    group: "Notifications",
+  },
+  {
+    value: "notifications:alerts:edit",
+    label: "Edit Alert Rules",
+    desc: "Edit notification alert rules",
+    group: "Notifications",
+  },
+  {
+    value: "notifications:alerts:delete",
+    label: "Delete Alert Rules",
+    desc: "Delete notification alert rules",
+    group: "Notifications",
+  },
+  {
+    value: "notifications:webhooks:list",
+    label: "List Webhooks",
+    desc: "List notification webhooks",
+    group: "Notifications",
+  },
+  {
+    value: "notifications:webhooks:view",
+    label: "View Webhooks",
+    desc: "View webhook details",
+    group: "Notifications",
+  },
+  {
+    value: "notifications:webhooks:create",
+    label: "Create Webhooks",
+    desc: "Create notification webhooks",
+    group: "Notifications",
+  },
+  {
+    value: "notifications:webhooks:edit",
+    label: "Edit Webhooks",
+    desc: "Edit notification webhooks",
+    group: "Notifications",
+  },
+  {
+    value: "notifications:webhooks:delete",
+    label: "Delete Webhooks",
+    desc: "Delete notification webhooks",
+    group: "Notifications",
+  },
+  {
+    value: "notifications:deliveries:list",
+    label: "List Delivery Logs",
+    desc: "List webhook delivery attempts",
+    group: "Notifications",
+  },
+  {
+    value: "notifications:deliveries:view",
+    label: "View Delivery Logs",
+    desc: "View delivery log details",
+    group: "Notifications",
+  },
   // Features
   {
     value: "feat:ai:use",

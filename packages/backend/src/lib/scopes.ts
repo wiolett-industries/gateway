@@ -112,6 +112,18 @@ export const ALL_SCOPES = [
   // ── Docker: Tasks ────────────────────────────────────────────────
   'docker:tasks',
   // ── Notifications ────────────────────────────────────────────────
+  'notifications:alerts:list',
+  'notifications:alerts:view',
+  'notifications:alerts:create',
+  'notifications:alerts:edit',
+  'notifications:alerts:delete',
+  'notifications:webhooks:list',
+  'notifications:webhooks:view',
+  'notifications:webhooks:create',
+  'notifications:webhooks:edit',
+  'notifications:webhooks:delete',
+  'notifications:deliveries:list',
+  'notifications:deliveries:view',
   'notifications:view',
   'notifications:manage',
 ] as const;
@@ -175,6 +187,18 @@ export const OPERATOR_SCOPES: readonly string[] = [
   'docker:containers:webhooks',
   'docker:tasks',
   // Notifications
+  'notifications:alerts:list',
+  'notifications:alerts:view',
+  'notifications:alerts:create',
+  'notifications:alerts:edit',
+  'notifications:alerts:delete',
+  'notifications:webhooks:list',
+  'notifications:webhooks:view',
+  'notifications:webhooks:create',
+  'notifications:webhooks:edit',
+  'notifications:webhooks:delete',
+  'notifications:deliveries:list',
+  'notifications:deliveries:view',
   'notifications:view',
   'notifications:manage',
 ];
@@ -198,6 +222,12 @@ export const VIEWER_SCOPES: readonly string[] = [
   'docker:containers:list',
   'docker:containers:view',
   // Notifications
+  'notifications:alerts:list',
+  'notifications:alerts:view',
+  'notifications:webhooks:list',
+  'notifications:webhooks:view',
+  'notifications:deliveries:list',
+  'notifications:deliveries:view',
   'notifications:view',
 ];
 
