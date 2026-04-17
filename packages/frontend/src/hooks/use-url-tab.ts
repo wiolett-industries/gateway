@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 
 /**
@@ -14,6 +14,12 @@ export function useUrlTab(
   const [activeTab, setActiveTabState] = useState(() =>
     tabParam && validTabs.includes(tabParam) ? tabParam : defaultTab
   );
+
+  useEffect(() => {
+    const nextTab = tabParam && validTabs.includes(tabParam) ? tabParam : defaultTab;
+    setActiveTabState((current) => (current === nextTab ? current : nextTab));
+  }, [defaultTab, tabParam, validTabs]);
+
   const setActiveTab = (tab: string) => {
     setActiveTabState(tab);
     window.history.replaceState(null, "", buildUrl(tab));

@@ -29,6 +29,7 @@ export function Docker() {
   const navigate = useNavigate();
   const { hasScope, hasScopedAccess } = useAuthStore();
   const selectedNodeId = useDockerStore((s) => s.selectedNodeId);
+  const dockerNodes = useDockerStore((s) => s.dockerNodes);
   const setDockerNodes = useDockerStore((s) => s.setDockerNodes);
   const fetchContainers = useDockerStore((s) => s.fetchContainers);
   const fetchImages = useDockerStore((s) => s.fetchImages);
@@ -58,6 +59,7 @@ export function Docker() {
   }, [setDockerNodes]);
 
   useEffect(() => {
+    if (!selectedNodeId && dockerNodes.length === 0) return;
     void selectedNodeId;
     switch (activeTab) {
       case "containers":
@@ -73,7 +75,15 @@ export function Docker() {
         void fetchNetworks();
         break;
     }
-  }, [activeTab, selectedNodeId, fetchContainers, fetchImages, fetchVolumes, fetchNetworks]);
+  }, [
+    activeTab,
+    dockerNodes.length,
+    selectedNodeId,
+    fetchContainers,
+    fetchImages,
+    fetchVolumes,
+    fetchNetworks,
+  ]);
 
   const handleTabChange = (value: string) => {
     navigate(`/docker/${value}`, { replace: true });

@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import { AnsiText } from "@/components/ui/ansi-text";
 import { VirtualLogList } from "@/components/ui/virtual-log-list";
 import { api } from "@/services/api";
+import { useAuthStore } from "@/stores/auth";
 
 const CHANNEL_PREFIX = "docker-logs:";
 
@@ -12,6 +13,11 @@ function hasTimestamp(line: string): boolean {
 
 export function DockerLogsPopout() {
   const { nodeId, containerId } = useParams<{ nodeId: string; containerId: string }>();
+  const { hasScope } = useAuthStore();
+  const canViewLogs =
+    !!nodeId &&
+    !!containerId &&
+    (hasScope("docker:containers:view") || hasScope(`docker:containers:view:${nodeId}`));
 
   const [lines, setLines] = useState<string[]>([]);
   const [hasMore, setHasMore] = useState(true);
@@ -21,6 +27,7 @@ export function DockerLogsPopout() {
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
   const channelRef = useRef<BroadcastChannel | null>(null);
+  const authFailedRef = useRef(false);
 
   // BroadcastChannel
   useEffect(() => {
@@ -95,6 +102,7 @@ export function DockerLogsPopout() {
 
     const ws = api.createLogStreamWebSocket(nodeId, containerId, 200);
     wsRef.current = ws;
+    authFailedRef.current = false;
 
     ws.onmessage = (evt) => {
       if (!mountedRef.current) return;
@@ -113,6 +121,17 @@ export function DockerLogsPopout() {
             const updated = [...prev, ...processLogs(msg.lines ?? [])];
             return updated.length > 10000 ? updated.slice(-10000) : updated;
           });
+        } else if (msg.type === "auth_error") {
+          authFailedRef.current = true;
+          setIsConnecting(false);
+          setHasMore(false);
+          setLoadingMore(false);
+          setLines([`Access denied: ${msg.message}`]);
+          try {
+            ws.close(1008, "Authentication failed");
+          } catch {
+            /* */
+          }
         }
       } catch {
         /* */
@@ -122,6 +141,7 @@ export function DockerLogsPopout() {
     ws.onclose = () => {
       wsRef.current = null;
       if (!mountedRef.current) return;
+      if (authFailedRef.current) return;
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
       reconnectTimer.current = setTimeout(() => {
         if (mountedRef.current) connectWs();
@@ -167,6 +187,14 @@ export function DockerLogsPopout() {
     setLoadingMore(true);
     wsRef.current.send(JSON.stringify({ type: "load_more" }));
   }, []);
+
+  if (!canViewLogs) {
+    return (
+      <div className="fixed inset-0 flex items-center justify-center bg-[#0e0e0e] px-4 text-sm text-muted-foreground">
+        You don't have permission to access container logs.
+      </div>
+    );
+  }
 
   return (
     <VirtualLogList

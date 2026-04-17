@@ -15,12 +15,18 @@ const SERVICE_COLORS = [
 
 export function DockerComposeLogsPopout() {
   const { nodeId, project } = useParams<{ nodeId: string; project: string }>();
+  const { hasScope } = useAuthStore();
+  const canViewLogs =
+    !!nodeId &&
+    !!project &&
+    (hasScope("docker:containers:view") || hasScope(`docker:containers:view:${nodeId}`));
   const termRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<any>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
   const mountedRef = useRef(true);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const authFailedRef = useRef(false);
 
   const [, setContainers] = useState<
     Array<{ id: string; name: string; service: string; state: string }>
@@ -106,6 +112,7 @@ export function DockerComposeLogsPopout() {
     const url = `${proto}//${window.location.host}/api/docker/nodes/${nodeId}/compose/${encodeURIComponent(project)}/logs/stream?token=${sessionId}`;
     const ws = new WebSocket(url);
     wsRef.current = ws;
+    authFailedRef.current = false;
 
     ws.onmessage = (evt) => {
       try {
@@ -133,6 +140,14 @@ export function DockerComposeLogsPopout() {
           }
         } else if (msg.type === "error") {
           terminal.write(`\x1b[31mError: ${msg.message}\x1b[0m\r\n`);
+        } else if (msg.type === "auth_error") {
+          authFailedRef.current = true;
+          terminal.write(`\x1b[31mAccess denied: ${msg.message}\x1b[0m\r\n`);
+          try {
+            ws.close(1008, "Authentication failed");
+          } catch {
+            /* */
+          }
         }
       } catch {
         /* */
@@ -141,6 +156,7 @@ export function DockerComposeLogsPopout() {
 
     ws.onclose = () => {
       if (!mountedRef.current) return;
+      if (authFailedRef.current) return;
       terminal.write(`\r\n\x1b[90mConnection lost. Reconnecting...\x1b[0m\r\n`);
       reconnectTimer.current = setTimeout(() => {
         if (mountedRef.current) connect();
@@ -169,6 +185,14 @@ export function DockerComposeLogsPopout() {
       }
     };
   }, [connect]);
+
+  if (!canViewLogs) {
+    return (
+      <div className="fixed inset-0 flex items-center justify-center bg-[#0e0e0e] px-4 text-sm text-muted-foreground">
+        You don't have permission to access container logs.
+      </div>
+    );
+  }
 
   return <div ref={termRef} className="fixed inset-0 bg-[#0e0e0e]" style={{ padding: 4 }} />;
 }

@@ -253,7 +253,7 @@ export function DockerImages({
       {
         key: "tag",
         header: "Repository:Tag",
-        width: "minmax(0, 1.35fr)",
+        width: "minmax(0, 1.45fr)",
         render: (img: any) => {
           const tags = img.repoTags ?? img.RepoTags ?? [];
           const tag = tags.length > 0 ? tags[0] : "<none>:<none>";
@@ -262,7 +262,7 @@ export function DockerImages({
               <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-muted shrink-0">
                 <HardDrive className="h-4 w-4 text-muted-foreground" />
               </div>
-              <div className="min-w-0">
+              <div className="flex-1 min-w-0">
                 <TruncateStart text={tag} className="text-sm font-medium" />
                 {tags.length > 1 && (
                   <p className="text-xs text-muted-foreground truncate">
@@ -290,11 +290,11 @@ export function DockerImages({
       {
         key: "node",
         header: "Node",
-        width: "minmax(0, 0.95fr)",
+        width: "minmax(0, 1.15fr)",
         render: (img: any) => (
-          <div className="min-w-0 flex">
-            <Badge variant="secondary" className="text-xs">
-              {(img as any)._nodeName || "-"}
+          <div className="min-w-0">
+            <Badge variant="secondary" className="max-w-full shrink-0 px-2.5 text-xs">
+              <span className="truncate">{(img as any)._nodeName || "-"}</span>
             </Badge>
           </div>
         ),
@@ -348,7 +348,7 @@ export function DockerImages({
       {
         key: "actions",
         header: "Actions",
-        width: "5rem",
+        width: "5.75rem",
         align: "right" as const,
         render: (img: any) => {
           const tags = img.repoTags ?? img.RepoTags ?? [];
@@ -357,7 +357,10 @@ export function DockerImages({
           const containerCount = img.containers ?? img.Containers ?? 0;
           const isUsed = containerCount > 0;
           return (
-            <div className="flex items-center justify-end" onClick={(e) => e.stopPropagation()}>
+            <div
+              className="flex items-center justify-end pr-1"
+              onClick={(e) => e.stopPropagation()}
+            >
               {hasScope("docker:images:delete") && !isUsed && (
                 <Button
                   variant="ghost"

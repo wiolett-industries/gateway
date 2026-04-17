@@ -204,13 +204,15 @@ export function DockerVolumes({
       {
         key: "name",
         header: "Name",
-        width: "minmax(0, 1.25fr)",
+        width: "minmax(0, 1.35fr)",
         render: (v) => (
           <div className="flex items-center gap-3 min-w-0">
             <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-muted shrink-0">
               <Database className="h-4 w-4 text-muted-foreground" />
             </div>
-            <TruncateStart text={v.name} className="text-sm font-medium" />
+            <div className="flex-1 min-w-0">
+              <TruncateStart text={v.name} className="text-sm font-medium" />
+            </div>
           </div>
         ),
       },
@@ -223,11 +225,11 @@ export function DockerVolumes({
       {
         key: "node",
         header: "Node",
-        width: "minmax(0, 0.95fr)",
+        width: "minmax(0, 1.15fr)",
         render: (v) => (
-          <div className="min-w-0 flex">
-            <Badge variant="secondary" className="text-xs">
-              {(v as any)._nodeName || "-"}
+          <div className="min-w-0">
+            <Badge variant="secondary" className="max-w-full shrink-0 px-2.5 text-xs">
+              <span className="truncate">{(v as any)._nodeName || "-"}</span>
             </Badge>
           </div>
         ),
@@ -271,13 +273,16 @@ export function DockerVolumes({
       {
         key: "actions",
         header: "Actions",
-        width: "5rem",
+        width: "5.75rem",
         align: "right" as const,
         render: (v) => {
           const usedBy: string[] = (v as any).usedBy ?? (v as any).UsedBy ?? [];
           const isUsed = usedBy.length > 0;
           return (
-            <div className="flex items-center justify-end" onClick={(e) => e.stopPropagation()}>
+            <div
+              className="flex items-center justify-end pr-1"
+              onClick={(e) => e.stopPropagation()}
+            >
               {hasScope("docker:volumes:delete") && !isUsed && (
                 <Button
                   variant="ghost"

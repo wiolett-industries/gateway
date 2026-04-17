@@ -29,6 +29,7 @@ export function TerminalConsole({
   const mountedRef = useRef(true);
   const gotFirstOutput = useRef(false);
   const isReconnect = useRef(false);
+  const authFailedRef = useRef(false);
 
   // ── Popout tracking via BroadcastChannel ──
   const [isPopout, setIsPopout] = useState(false);
@@ -182,6 +183,7 @@ export function TerminalConsole({
 
     const ws = wsFactory();
     wsRef.current = ws;
+    authFailedRef.current = false;
 
     ws.onopen = () => {
       if (!mountedRef.current) return;
@@ -218,6 +220,14 @@ export function TerminalConsole({
           terminal.write(`\r\nProcess exited (code ${msg.exitCode}). Reconnecting...\r\n`);
           isReconnect.current = false;
           scheduleReconnect();
+        } else if (msg.type === "auth_error") {
+          authFailedRef.current = true;
+          terminal.write(`\r\nAccess denied: ${msg.message}\r\n`);
+          try {
+            ws.close(1008, "Authentication failed");
+          } catch {
+            /* */
+          }
         } else if (msg.type === "error") {
           terminal.write(`\r\nError: ${msg.message}\r\n`);
         }
@@ -228,6 +238,7 @@ export function TerminalConsole({
 
     ws.onclose = () => {
       if (!mountedRef.current) return;
+      if (authFailedRef.current) return;
       terminal.write(`\r\nConnection lost. Reconnecting...\r\n`);
       isReconnect.current = true;
       scheduleReconnect();
@@ -235,6 +246,7 @@ export function TerminalConsole({
 
     ws.onerror = () => {
       if (!mountedRef.current) return;
+      if (authFailedRef.current) return;
       terminal.write(`\r\nConnection error. Reconnecting...\r\n`);
       isReconnect.current = true;
       scheduleReconnect();

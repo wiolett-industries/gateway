@@ -9,13 +9,13 @@ export function TruncateStart({ text, className, title, ...props }: TruncateStar
   return (
     <span
       className={cn(
-        "block min-w-0 overflow-hidden whitespace-nowrap text-left [direction:rtl]",
+        "block w-full min-w-0 overflow-hidden whitespace-nowrap text-left [direction:rtl]",
         className
       )}
       title={title ?? text}
       {...props}
     >
-      <span className="inline-block min-w-full overflow-hidden text-ellipsis whitespace-nowrap text-left [direction:ltr] [unicode-bidi:plaintext]">
+      <span className="block min-w-full overflow-hidden text-ellipsis whitespace-nowrap text-left [direction:ltr] [unicode-bidi:plaintext]">
         {text}
       </span>
     </span>
