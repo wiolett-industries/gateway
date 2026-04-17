@@ -27,6 +27,7 @@ interface FolderState {
 
   // Expansion state
   expandedFolderIds: Set<string>;
+  savedExpandedFolderIds: Set<string>;
 
   // Actions
   fetchGroupedHosts: () => Promise<void>;
@@ -54,6 +55,27 @@ const defaultFilters: FolderFilters = {
   healthStatus: "all",
 };
 
+const EXPANDED_FOLDERS_STORAGE_KEY = "proxy-folder-expanded";
+
+function loadExpandedFolderIds(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(EXPANDED_FOLDERS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveExpandedFolderIds(ids: Set<string>) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(EXPANDED_FOLDERS_STORAGE_KEY, JSON.stringify(Array.from(ids)));
+  } catch {}
+}
+
 /** Collect all folder IDs from a tree */
 function collectFolderIds(nodes: FolderTreeNode[]): string[] {
   const ids: string[] = [];
@@ -78,13 +100,19 @@ function collectFoldersWithHosts(nodes: FolderTreeNode[]): string[] {
 }
 
 export const useFolderStore = create<FolderState>()((set, get) => ({
+  ...(() => {
+    const initialExpanded = new Set(loadExpandedFolderIds());
+    return {
+      expandedFolderIds: initialExpanded,
+      savedExpandedFolderIds: initialExpanded,
+    };
+  })(),
   folders: [],
   ungroupedHosts: [],
   totalHosts: 0,
   isLoading: true,
   error: null,
   filters: { ...defaultFilters },
-  expandedFolderIds: new Set<string>(),
 
   fetchGroupedHosts: async () => {
     const { filters } = get();
@@ -121,7 +149,9 @@ export const useFolderStore = create<FolderState>()((set, get) => ({
         // When searching, auto-expand folders with matches
         if (filters.search) {
           const matchingFolderIds = collectFoldersWithHosts(response.folders);
-          expandedFolderIds = new Set(matchingFolderIds);
+          expandedFolderIds = new Set([...state.savedExpandedFolderIds, ...matchingFolderIds]);
+        } else {
+          expandedFolderIds = new Set(state.savedExpandedFolderIds);
         }
 
         return {
@@ -155,9 +185,10 @@ export const useFolderStore = create<FolderState>()((set, get) => ({
     // Auto-expand parent so the new folder is visible
     if (parentId) {
       set((state) => {
-        const next = new Set(state.expandedFolderIds);
+        const next = new Set(state.savedExpandedFolderIds);
         next.add(parentId);
-        return { expandedFolderIds: next };
+        saveExpandedFolderIds(next);
+        return { expandedFolderIds: new Set(next), savedExpandedFolderIds: next };
       });
     }
     await get().fetchGroupedHosts();
@@ -172,9 +203,10 @@ export const useFolderStore = create<FolderState>()((set, get) => ({
   deleteFolder: async (id) => {
     await api.deleteFolder(id);
     set((state) => {
-      const next = new Set(state.expandedFolderIds);
+      const next = new Set(state.savedExpandedFolderIds);
       next.delete(id);
-      return { expandedFolderIds: next };
+      saveExpandedFolderIds(next);
+      return { expandedFolderIds: new Set(next), savedExpandedFolderIds: next };
     });
     await get().fetchGroupedHosts();
   },
@@ -191,22 +223,27 @@ export const useFolderStore = create<FolderState>()((set, get) => ({
 
   toggleFolder: (id) => {
     set((state) => {
-      const next = new Set(state.expandedFolderIds);
+      const next = new Set(state.savedExpandedFolderIds);
       if (next.has(id)) {
         next.delete(id);
       } else {
         next.add(id);
       }
-      return { expandedFolderIds: next };
+      saveExpandedFolderIds(next);
+      return { expandedFolderIds: new Set(next), savedExpandedFolderIds: next };
     });
   },
 
   expandAll: () => {
     const { folders } = get();
-    set({ expandedFolderIds: new Set(collectFolderIds(folders)) });
+    const next = new Set(collectFolderIds(folders));
+    saveExpandedFolderIds(next);
+    set({ expandedFolderIds: new Set(next), savedExpandedFolderIds: next });
   },
 
   collapseAll: () => {
-    set({ expandedFolderIds: new Set() });
+    const next = new Set<string>();
+    saveExpandedFolderIds(next);
+    set({ expandedFolderIds: next, savedExpandedFolderIds: next });
   },
 }));

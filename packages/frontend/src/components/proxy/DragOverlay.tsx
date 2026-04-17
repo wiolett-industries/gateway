@@ -4,11 +4,12 @@ import { ProxyHostRow } from "./ProxyHostRow";
 
 interface DragOverlayProps {
   active: Active | null;
+  colGroup: React.ReactNode;
 }
 
 const noop = () => {};
 
-export function DragOverlay({ active }: DragOverlayProps) {
+export function DragOverlay({ active, colGroup }: DragOverlayProps) {
   if (!active) return null;
 
   const host = active.data.current?.host;
@@ -16,7 +17,11 @@ export function DragOverlay({ active }: DragOverlayProps) {
 
   return (
     <DndDragOverlay>
-      <table className="w-full bg-card border border-border shadow-lg opacity-95">
+      <table
+        className="w-full bg-card border border-border shadow-lg opacity-95"
+        style={{ tableLayout: "fixed" }}
+      >
+        {colGroup}
         <tbody>
           <ProxyHostRow
             host={host}
