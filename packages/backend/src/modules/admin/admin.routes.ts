@@ -1,10 +1,16 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
 import { canManageUser, isScopeSubset } from '@/lib/permissions.js';
-import { CreateUserSchema, UpdateBlockSchema, UpdateUserGroupSchema } from '@/modules/admin/admin.schemas.js';
+import {
+  CreateUserSchema,
+  UpdateAuthProvisioningSettingsSchema,
+  UpdateBlockSchema,
+  UpdateUserGroupSchema,
+} from '@/modules/admin/admin.schemas.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
 import { authMiddleware, requireScope } from '@/modules/auth/auth.middleware.js';
 import { AuthService } from '@/modules/auth/auth.service.js';
+import { AuthSettingsService } from '@/modules/auth/auth.settings.service.js';
 import { GroupService } from '@/modules/groups/group.service.js';
 import { SessionService } from '@/services/session.service.js';
 import type { AppEnv } from '@/types.js';
@@ -18,6 +24,75 @@ adminRoutes.get('/users', requireScope('admin:users'), async (c) => {
   const authService = container.resolve(AuthService);
   const userList = await authService.listUsers();
   return c.json(userList);
+});
+
+adminRoutes.get('/auth-settings', requireScope('admin:users'), async (c) => {
+  const authSettingsService = container.resolve(AuthSettingsService);
+  const groupService = container.resolve(GroupService);
+  const actorScopes = c.get('effectiveScopes') || [];
+
+  const [settings, groups] = await Promise.all([authSettingsService.getConfig(), groupService.listGroups()]);
+  const assignableGroups = groups.filter((group) => isScopeSubset(group.scopes as string[], actorScopes));
+
+  return c.json({
+    ...settings,
+    availableGroups: assignableGroups.map((group) => ({
+      id: group.id,
+      name: group.name,
+      isBuiltin: group.isBuiltin,
+    })),
+  });
+});
+
+adminRoutes.put('/auth-settings', requireScope('admin:users'), async (c) => {
+  const authSettingsService = container.resolve(AuthSettingsService);
+  const groupService = container.resolve(GroupService);
+  const auditService = container.resolve(AuditService);
+  const currentUser = c.get('user')!;
+  const actorScopes = c.get('effectiveScopes') || [];
+  const body = await c.req.json();
+  const input = UpdateAuthProvisioningSettingsSchema.parse(body);
+
+  if (input.oidcDefaultGroupId) {
+    const destGroup = await groupService.getGroup(input.oidcDefaultGroupId);
+    if (!isScopeSubset(destGroup.scopes as string[], actorScopes)) {
+      return c.json(
+        { code: 'PRIVILEGE_BOUNDARY', message: 'Cannot assign a group with permissions you do not possess' },
+        403
+      );
+    }
+  }
+
+  try {
+    const updated = await authSettingsService.updateConfig(input);
+    const groups = await groupService.listGroups();
+    const assignableGroups = groups.filter((group) => isScopeSubset(group.scopes as string[], actorScopes));
+
+    await auditService.log({
+      userId: currentUser.id,
+      action: 'auth.settings_update',
+      resourceType: 'settings',
+      resourceId: 'auth',
+      details: input,
+      ipAddress: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || c.req.header('x-real-ip'),
+      userAgent: c.req.header('user-agent'),
+    });
+
+    return c.json({
+      ...updated,
+      availableGroups: assignableGroups.map((group) => ({
+        id: group.id,
+        name: group.name,
+        isBuiltin: group.isBuiltin,
+      })),
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to update authentication settings';
+    if (message === 'Permission group not found') {
+      return c.json({ code: 'NOT_FOUND', message }, 404);
+    }
+    throw err;
+  }
 });
 
 // Create user before first login

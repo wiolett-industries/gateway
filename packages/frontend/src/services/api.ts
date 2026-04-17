@@ -5,6 +5,7 @@ import type {
   Alert,
   ApiToken,
   AuditLogEntry,
+  AuthProvisioningSettings,
   CA,
   Certificate,
   CertificateStatus,
@@ -390,6 +391,20 @@ class ApiClient extends ApiClientBase {
 
   async deleteUser(userId: string): Promise<void> {
     await this.request(`/admin/users/${userId}`, { method: "DELETE" });
+  }
+
+  async getAuthProvisioningSettings(): Promise<AuthProvisioningSettings> {
+    return this.request<AuthProvisioningSettings>("/admin/auth-settings");
+  }
+
+  async updateAuthProvisioningSettings(data: {
+    oidcAutoCreateUsers?: boolean;
+    oidcDefaultGroupId?: string;
+  }): Promise<AuthProvisioningSettings> {
+    return this.request<AuthProvisioningSettings>("/admin/auth-settings", {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
   }
 
   // ── Permission Groups ──

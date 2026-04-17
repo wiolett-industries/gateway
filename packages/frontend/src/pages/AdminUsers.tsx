@@ -204,17 +204,19 @@ export function AdminUsers() {
   return (
     <PageTransition>
       <div className="h-full overflow-y-auto p-6 space-y-4">
-        <div>
-          <h1 className="text-2xl font-bold">Users</h1>
-          <p className="text-sm text-muted-foreground">
-            {users.length} user{users.length !== 1 ? "s" : ""}
-            {summaryParts.length > 0 && <> &middot; {summaryParts.join(", ")}</>}
-          </p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold">Users</h1>
+            <p className="text-sm text-muted-foreground">
+              {users.length} user{users.length !== 1 ? "s" : ""}
+              {summaryParts.length > 0 && <> &middot; {summaryParts.join(", ")}</>}
+            </p>
+          </div>
+          <Button onClick={() => setCreateOpen(true)}>
+            <Plus className="h-4 w-4" />
+            Create User
+          </Button>
         </div>
-        <Button onClick={() => setCreateOpen(true)}>
-          <Plus className="h-4 w-4" />
-          Create User
-        </Button>
 
         {users.length > 0 ? (
           <div className="border border-border bg-card">

@@ -14,6 +14,12 @@ export const UpdateBlockSchema = z.object({
   blocked: z.boolean(),
 });
 
+export const UpdateAuthProvisioningSettingsSchema = z.object({
+  oidcAutoCreateUsers: z.boolean().optional(),
+  oidcDefaultGroupId: z.string().uuid().optional(),
+});
+
 export type UpdateUserGroupInput = z.infer<typeof UpdateUserGroupSchema>;
 export type UpdateBlockInput = z.infer<typeof UpdateBlockSchema>;
 export type CreateUserInput = z.infer<typeof CreateUserSchema>;
+export type UpdateAuthProvisioningSettingsInput = z.infer<typeof UpdateAuthProvisioningSettingsSchema>;

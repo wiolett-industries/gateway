@@ -17,6 +17,7 @@ import { AISettingsService } from '@/modules/ai/ai.settings.service.js';
 import { AlertService } from '@/modules/audit/alert.service.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
 import { AuthService } from '@/modules/auth/auth.service.js';
+import { AuthSettingsService } from '@/modules/auth/auth.settings.service.js';
 import { DockerManagementService } from '@/modules/docker/docker.service.js';
 import { DockerRegistryService } from '@/modules/docker/docker-registry.service.js';
 import { DockerSecretService } from '@/modules/docker/docker-secret.service.js';
@@ -98,7 +99,10 @@ export async function initializeContainer(): Promise<void> {
   const cryptoService = new CryptoService(env.PKI_MASTER_KEY);
   container.registerInstance(CryptoService, cryptoService);
 
-  const authService = new AuthService(db, sessionService, cacheService);
+  const authSettingsService = new AuthSettingsService(db);
+  container.registerInstance(AuthSettingsService, authSettingsService);
+
+  const authService = new AuthService(db, sessionService, cacheService, authSettingsService);
   container.registerInstance(AuthService, authService);
 
   const auditService = new AuditService(db);
