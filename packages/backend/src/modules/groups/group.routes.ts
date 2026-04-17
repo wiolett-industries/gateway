@@ -3,7 +3,6 @@ import { container } from '@/container.js';
 import { isScopeSubset } from '@/lib/permissions.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
 import { authMiddleware, requireScope } from '@/modules/auth/auth.middleware.js';
-import { SessionService } from '@/services/session.service.js';
 import type { AppEnv } from '@/types.js';
 import { CreateGroupSchema, UpdateGroupSchema } from './group.schemas.js';
 import { GroupService } from './group.service.js';
@@ -83,13 +82,6 @@ groupRoutes.put('/:id', async (c) => {
   }
 
   const group = await groupService.updateGroup(id, input);
-
-  // If scopes changed, invalidate all member sessions so they pick up new scopes
-  if (input.scopes) {
-    const sessionService = container.resolve(SessionService);
-    const memberIds = await groupService.getMemberIds(id);
-    await Promise.all(memberIds.map((uid) => sessionService.destroyAllUserSessions(uid)));
-  }
 
   await auditService.log({
     userId: user.id,

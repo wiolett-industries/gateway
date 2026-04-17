@@ -12,7 +12,6 @@ import { authMiddleware, requireScope } from '@/modules/auth/auth.middleware.js'
 import { AuthService } from '@/modules/auth/auth.service.js';
 import { AuthSettingsService } from '@/modules/auth/auth.settings.service.js';
 import { GroupService } from '@/modules/groups/group.service.js';
-import { SessionService } from '@/services/session.service.js';
 import type { AppEnv } from '@/types.js';
 
 export const adminRoutes = new OpenAPIHono<AppEnv>();
@@ -177,10 +176,6 @@ adminRoutes.patch('/users/:id/group', requireScope('admin:users'), async (c) => 
   }
 
   const updatedUser = await authService.updateUserGroup(userId, groupId);
-
-  // Destroy all sessions so the user picks up new scopes on next login
-  const sessionService = container.resolve(SessionService);
-  await sessionService.destroyAllUserSessions(userId);
 
   await auditService.log({
     userId: currentUser.id,

@@ -148,7 +148,7 @@ export function SidebarContent({
 }: SidebarContentProps) {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, hasScope, logout } = useAuthStore();
+  const { user, hasScope, hasScopedAccess, logout } = useAuthStore();
   const { sidebarOpen, toggleSidebar, setCommandPaletteOpen: openPalette } = useUIStore();
 
   const updateAvailable = useUpdateStore((s) => s.status?.updateAvailable ?? false);
@@ -231,6 +231,12 @@ export function SidebarContent({
 
   const dockerNodes = useDockerStore((s) => s.dockerNodes);
   const hasDockerNodes = dockerNodes.length > 0;
+  const canAccessDocker =
+    hasScopedAccess("docker:containers:list") ||
+    hasScopedAccess("docker:images:list") ||
+    hasScopedAccess("docker:volumes:list") ||
+    hasScopedAccess("docker:networks:list") ||
+    hasScopedAccess("docker:tasks");
 
   // Build nav groups with scope + context filtering
   const effectiveGroups = navigationGroups
@@ -240,7 +246,11 @@ export function SidebarContent({
       return {
         ...group,
         items: group.items.filter((item) => {
-          if (item.scope && !hasScope(item.scope)) return false;
+          if (item.href === "/docker") {
+            if (!canAccessDocker) return false;
+          } else if (item.scope && !hasScope(item.scope)) {
+            return false;
+          }
           // Hide Docker when no docker nodes exist
           if (item.href === "/docker" && !hasDockerNodes) return false;
           // Templates: need at least one template scope

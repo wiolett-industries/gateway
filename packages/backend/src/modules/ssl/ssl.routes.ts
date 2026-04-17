@@ -27,8 +27,8 @@ sslRoutes.get('/', requireScope('ssl:cert:list'), async (c) => {
     search: c.req.query('search'),
     showSystem: c.req.query('showSystem'),
   });
-  const user = c.get('user')!;
-  if (query.showSystem && !hasScope(user.scopes, 'admin:details:certificates')) {
+  const scopes = c.get('effectiveScopes') || [];
+  if (query.showSystem && !hasScope(scopes, 'admin:details:certificates')) {
     return c.json({ code: 'FORBIDDEN', message: 'Insufficient permissions' }, 403);
   }
   const result = await sslService.listCerts(query);

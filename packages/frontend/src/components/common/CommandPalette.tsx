@@ -72,7 +72,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const [search, setSearch] = useState("");
-  const { hasScope, logout } = useAuthStore();
+  const { hasScope, hasScopedAccess, logout } = useAuthStore();
   const { cas } = useCAStore();
   const { setTheme, theme, toggleSidebar } = useUIStore();
   const recentPages = useUIStore((s) => s.recentPages);
@@ -148,7 +148,10 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     for (const c of containers) {
       const nodeId = (c as any)._nodeId;
       if (!nodeId) continue;
-      if (hasScope("docker:containers:console")) {
+      if (
+        hasScope("docker:containers:console") ||
+        hasScope(`docker:containers:console:${nodeId}`)
+      ) {
         items.push({
           label: `console ${c.name}`,
           detail: `Open console in ${c.name}`,
@@ -161,7 +164,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
             ),
         });
       }
-      if (hasScope("docker:containers:view")) {
+      if (hasScope("docker:containers:view") || hasScope(`docker:containers:view:${nodeId}`)) {
         items.push({
           label: `logs ${c.name}`,
           detail: `Open logs for ${c.name}`,
@@ -173,9 +176,10 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     }
 
     // Console for nodes
-    if (hasScope("nodes:console")) {
+    if (hasScopedAccess("nodes:console")) {
       for (const n of nodes) {
         if (n.status !== "online") continue;
+        if (!hasScope("nodes:console") && !hasScope(`nodes:console:${n.id}`)) continue;
         const name = n.displayName || n.hostname;
         items.push({
           label: `console ${name}`,
@@ -196,7 +200,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       .map((i) => ({ ...i, score: fuzzyMatch(`${i.label} ${i.detail}`, commandQuery) }))
       .filter((i) => i.score > 0)
       .sort((a, b) => b.score - a.score);
-  }, [isCommandMode, commandQuery, containers, nodes, hasScope]);
+  }, [isCommandMode, commandQuery, containers, nodes, hasScope, hasScopedAccess]);
 
   // ── Context-aware actions based on current page ──
   const contextActions = useMemo(() => {
@@ -208,7 +212,10 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     const containerMatch = path.match(/\/docker\/containers\/([^/]+)\/([^/]+)/);
     if (containerMatch) {
       const [, nodeId, containerId] = containerMatch;
-      if (hasScope("docker:containers:console")) {
+      if (
+        hasScope("docker:containers:console") ||
+        hasScope(`docker:containers:console:${nodeId}`)
+      ) {
         items.push({
           label: "Open console",
           icon: Terminal,
@@ -220,7 +227,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
             ),
         });
       }
-      if (hasScope("docker:containers:view")) {
+      if (hasScope("docker:containers:view") || hasScope(`docker:containers:view:${nodeId}`)) {
         items.push({
           label: "Open logs",
           icon: ScrollText,
@@ -238,7 +245,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     const nodeMatch = path.match(/\/nodes\/([^/]+)/);
     if (nodeMatch && !path.includes("/console")) {
       const nodeId = nodeMatch[1];
-      if (hasScope("nodes:console")) {
+      if (hasScope("nodes:console") || hasScope(`nodes:console:${nodeId}`)) {
         items.push({
           label: "Open node console",
           icon: Terminal,
@@ -366,9 +373,12 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     },
     { label: "Settings", icon: Settings, shortcut: "⌘,", action: () => navigate("/settings") },
   ];
-  const filteredNav = allNavItems.filter(
-    (i) => (!i.scope || hasScope(i.scope)) && matches(i.label)
-  );
+  const filteredNav = allNavItems.filter((i) => {
+    if (!matches(i.label)) return false;
+    if (!i.scope) return true;
+    if (i.scope.startsWith("docker:")) return hasScopedAccess(i.scope);
+    return hasScope(i.scope);
+  });
 
   const allActionItems: NavEntry[] = [
     { label: "Toggle sidebar", icon: PanelLeft, shortcut: "⌘J", action: () => toggleSidebar() },
@@ -419,7 +429,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 
   // Filtered entities for search mode
   const filteredContainers =
-    searchQuery && hasScope("docker:containers:list")
+    searchQuery && hasScopedAccess("docker:containers:list")
       ? containers.filter((c) => fuzzyMatch(`${c.name} ${c.image}`, searchQuery) > 0).slice(0, 5)
       : [];
   const filteredProxies =

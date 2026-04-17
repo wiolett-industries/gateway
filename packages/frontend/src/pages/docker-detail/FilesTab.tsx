@@ -27,6 +27,8 @@ interface TreeNode extends FileEntry {
 
 export function FilesTab({ nodeId, containerId }: { nodeId: string; containerId: string }) {
   const { hasScope } = useAuthStore();
+  const canBrowseFiles =
+    hasScope("docker:containers:files") || hasScope(`docker:containers:files:${nodeId}`);
   const [roots, setRoots] = useState<TreeNode[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -161,7 +163,7 @@ export function FilesTab({ nodeId, containerId }: { nodeId: string; containerId:
     [nodeId, containerId]
   );
 
-  if (!hasScope("docker:containers:files")) {
+  if (!canBrowseFiles) {
     return (
       <div className="py-12 text-center text-muted-foreground">
         You don't have permission to browse files.

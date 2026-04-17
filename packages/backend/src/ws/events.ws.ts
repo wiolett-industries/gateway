@@ -78,6 +78,48 @@ function requiredScopeFor(channel: string): string | null {
   return null;
 }
 
+function hasChannelAccess(scopes: string[], channel: string): boolean {
+  const required = requiredScopeFor(channel);
+  if (!required) return true;
+
+  if (channel.startsWith('docker.container') || channel.startsWith('docker.task')) {
+    return scopes.some((scope) => scope === 'docker:containers:list' || scope.startsWith('docker:containers:list:'));
+  }
+  if (channel.startsWith('docker.image')) {
+    return scopes.some((scope) => scope === 'docker:images:list' || scope.startsWith('docker:images:list:'));
+  }
+  if (channel.startsWith('docker.volume')) {
+    return scopes.some((scope) => scope === 'docker:volumes:list' || scope.startsWith('docker:volumes:list:'));
+  }
+  if (channel.startsWith('docker.network')) {
+    return scopes.some((scope) => scope === 'docker:networks:list' || scope.startsWith('docker:networks:list:'));
+  }
+
+  return hasScope(scopes, required);
+}
+
+function canReceiveChannelPayload(scopes: string[], channel: string, payload: unknown): boolean {
+  if (channel.startsWith('docker.container') || channel.startsWith('docker.task')) {
+    const nodeId = (payload as { nodeId?: string } | undefined)?.nodeId;
+    return (
+      hasScope(scopes, 'docker:containers:list') || !!(nodeId && hasScope(scopes, `docker:containers:list:${nodeId}`))
+    );
+  }
+  if (channel.startsWith('docker.image')) {
+    const nodeId = (payload as { nodeId?: string } | undefined)?.nodeId;
+    return hasScope(scopes, 'docker:images:list') || !!(nodeId && hasScope(scopes, `docker:images:list:${nodeId}`));
+  }
+  if (channel.startsWith('docker.volume')) {
+    const nodeId = (payload as { nodeId?: string } | undefined)?.nodeId;
+    return hasScope(scopes, 'docker:volumes:list') || !!(nodeId && hasScope(scopes, `docker:volumes:list:${nodeId}`));
+  }
+  if (channel.startsWith('docker.network')) {
+    const nodeId = (payload as { nodeId?: string } | undefined)?.nodeId;
+    return hasScope(scopes, 'docker:networks:list') || !!(nodeId && hasScope(scopes, `docker:networks:list:${nodeId}`));
+  }
+  return true;
+}
+
 async function authenticate(token: string): Promise<{ user: User; scopes: string[] } | null> {
   if (!token || token.startsWith('gw_')) return null;
   const sessionService = container.resolve(SessionService);
@@ -223,8 +265,7 @@ function processMessage(ws: WSContext, state: ConnState, msg: ClientMsg) {
         accepted.push(ch);
         continue;
       }
-      const required = requiredScopeFor(ch);
-      if (required && !hasScope(state.scopes, required)) {
+      if (!hasChannelAccess(state.scopes, ch)) {
         rejected.push(ch);
         continue;
       }
@@ -237,6 +278,7 @@ function processMessage(ws: WSContext, state: ConnState, msg: ClientMsg) {
         }
       }
       const unsub = eventBus.subscribe(ch, (payload) => {
+        if (!canReceiveChannelPayload(state.scopes, ch, payload)) return;
         send(ws, { type: 'event', channel: ch, payload });
       });
       state.subs.set(ch, unsub);

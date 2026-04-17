@@ -27,7 +27,7 @@ const TABS = [
 export function Docker() {
   const { tab: tabParam } = useParams<{ tab?: string }>();
   const navigate = useNavigate();
-  const { hasScope } = useAuthStore();
+  const { hasScope, hasScopedAccess } = useAuthStore();
   const selectedNodeId = useDockerStore((s) => s.selectedNodeId);
   const setDockerNodes = useDockerStore((s) => s.setDockerNodes);
   const fetchContainers = useDockerStore((s) => s.fetchContainers);
@@ -41,7 +41,7 @@ export function Docker() {
   const createVolumeRef = useRef<(() => void) | null>(null);
   const createNetworkRef = useRef<(() => void) | null>(null);
 
-  const visibleTabs = TABS.filter((t) => hasScope(t.scope));
+  const visibleTabs = TABS.filter((t) => hasScopedAccess(t.scope));
   const activeTab =
     tabParam && visibleTabs.some((t) => t.value === tabParam)
       ? tabParam
