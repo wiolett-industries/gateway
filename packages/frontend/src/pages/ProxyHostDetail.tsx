@@ -231,6 +231,15 @@ export function ProxyHostDetail() {
   const handleToggle = useCallback(
     async (field: string, value: boolean) => {
       if (!id || !host) return;
+      if (
+        field === "sslEnabled" &&
+        value &&
+        !host.sslCertificateId &&
+        !host.internalCertificateId
+      ) {
+        toast.error("Select an SSL certificate before enabling HTTPS");
+        return;
+      }
       try {
         const updated = await api.updateProxyHost(id, { [field]: value } as any);
         setHost(updated);

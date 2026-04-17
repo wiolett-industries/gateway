@@ -67,6 +67,16 @@ export class ProxyService {
     this.eventBus?.publish('proxy.host.changed', { id, action, domain });
   }
 
+  private assertSslPrerequisites(input: {
+    sslEnabled: boolean;
+    sslCertificateId?: string | null;
+    internalCertificateId?: string | null;
+  }) {
+    if (input.sslEnabled && !input.sslCertificateId && !input.internalCertificateId) {
+      throw new AppError(400, 'SSL_CERTIFICATE_REQUIRED', 'An SSL certificate must be selected before enabling HTTPS');
+    }
+  }
+
   private async applyConfigToNode(hostId: string, config: string, nodeId: string | null): Promise<void> {
     const resolvedNodeId = await this.nodeDispatch.resolveNodeId(nodeId);
     const result = await this.nodeDispatch.applyConfig(resolvedNodeId, hostId, config);
@@ -111,6 +121,12 @@ export class ProxyService {
         );
       }
     }
+
+    this.assertSslPrerequisites({
+      sslEnabled: input.sslEnabled,
+      sslCertificateId: input.sslCertificateId,
+      internalCertificateId: input.internalCertificateId,
+    });
 
     // 1. Insert into DB
     const [host] = await this.db
@@ -219,6 +235,13 @@ export class ProxyService {
       where: eq(proxyHosts.id, id),
     });
     if (!existing) throw new AppError(404, 'PROXY_HOST_NOT_FOUND', 'Proxy host not found');
+
+    this.assertSslPrerequisites({
+      sslEnabled: input.sslEnabled ?? existing.sslEnabled,
+      sslCertificateId: input.sslCertificateId !== undefined ? input.sslCertificateId : existing.sslCertificateId,
+      internalCertificateId:
+        input.internalCertificateId !== undefined ? input.internalCertificateId : existing.internalCertificateId,
+    });
 
     // 2. Update DB
     const updateData: Record<string, unknown> = {
@@ -793,7 +816,7 @@ export class ProxyService {
       forwardHost: host.forwardHost,
       forwardPort: host.forwardPort,
       forwardScheme: host.forwardScheme ?? 'http',
-      sslEnabled: host.sslEnabled,
+      sslEnabled: host.sslEnabled && !!certPaths.sslCertPath && !!certPaths.sslKeyPath,
       sslForced: host.sslForced,
       http2Support: host.http2Support,
       websocketSupport: host.websocketSupport,
