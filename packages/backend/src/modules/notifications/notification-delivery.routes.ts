@@ -1,7 +1,7 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { z } from 'zod';
 import { container } from '@/container.js';
-import { authMiddleware, requireScope } from '@/modules/auth/auth.middleware.js';
+import { authMiddleware, requireAnyScope } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import { NotificationDeliveryService } from './notification-delivery.service.js';
 
@@ -18,25 +18,52 @@ export const deliveryRoutes = new OpenAPIHono<AppEnv>();
 deliveryRoutes.use('*', authMiddleware);
 
 // GET / — list deliveries
-deliveryRoutes.get('/', requireScope('notifications:view'), async (c) => {
-  const service = container.resolve(NotificationDeliveryService);
-  const query = DeliveryListQuerySchema.parse(c.req.query());
-  const result = await service.list(query);
-  return c.json(result);
-});
+deliveryRoutes.get(
+  '/',
+  requireAnyScope(
+    'notifications:deliveries:list',
+    'notifications:deliveries:view',
+    'notifications:view',
+    'notifications:manage'
+  ),
+  async (c) => {
+    const service = container.resolve(NotificationDeliveryService);
+    const query = DeliveryListQuerySchema.parse(c.req.query());
+    const result = await service.list(query);
+    return c.json(result);
+  }
+);
 
 // GET /stats — delivery stats
-deliveryRoutes.get('/stats', requireScope('notifications:view'), async (c) => {
-  const service = container.resolve(NotificationDeliveryService);
-  const webhookId = c.req.query('webhookId');
-  const stats = await service.getStats(webhookId);
-  return c.json({ data: stats });
-});
+deliveryRoutes.get(
+  '/stats',
+  requireAnyScope(
+    'notifications:deliveries:list',
+    'notifications:deliveries:view',
+    'notifications:view',
+    'notifications:manage'
+  ),
+  async (c) => {
+    const service = container.resolve(NotificationDeliveryService);
+    const webhookId = c.req.query('webhookId');
+    const stats = await service.getStats(webhookId);
+    return c.json({ data: stats });
+  }
+);
 
 // GET /:id — get delivery detail
-deliveryRoutes.get('/:id', requireScope('notifications:view'), async (c) => {
-  const service = container.resolve(NotificationDeliveryService);
-  const delivery = await service.getById(c.req.param('id'));
-  if (!delivery) return c.json({ error: 'Not found' }, 404);
-  return c.json({ data: delivery });
-});
+deliveryRoutes.get(
+  '/:id',
+  requireAnyScope(
+    'notifications:deliveries:view',
+    'notifications:deliveries:list',
+    'notifications:view',
+    'notifications:manage'
+  ),
+  async (c) => {
+    const service = container.resolve(NotificationDeliveryService);
+    const delivery = await service.getById(c.req.param('id'));
+    if (!delivery) return c.json({ error: 'Not found' }, 404);
+    return c.json({ data: delivery });
+  }
+);

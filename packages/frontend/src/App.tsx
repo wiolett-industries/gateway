@@ -98,6 +98,33 @@ function DockerPageGuard() {
   return <Docker />;
 }
 
+function NotificationsPageGuard() {
+  const hasAnyScope = useAuthStore((s) => s.hasAnyScope);
+
+  const canAccessNotifications = hasAnyScope(
+    "notifications:alerts:list",
+    "notifications:alerts:view",
+    "notifications:alerts:create",
+    "notifications:alerts:edit",
+    "notifications:alerts:delete",
+    "notifications:webhooks:list",
+    "notifications:webhooks:view",
+    "notifications:webhooks:create",
+    "notifications:webhooks:edit",
+    "notifications:webhooks:delete",
+    "notifications:deliveries:list",
+    "notifications:deliveries:view",
+    "notifications:view",
+    "notifications:manage"
+  );
+
+  if (!canAccessNotifications) {
+    return <Navigate to="/" replace />;
+  }
+
+  return <Notifications />;
+}
+
 function RealtimeBridge() {
   const sessionId = useAuthStore((s) => s.sessionId);
   const user = useAuthStore((s) => s.user);
@@ -276,10 +303,7 @@ export default function App() {
               />
               <Route path="/templates/:tab?" element={<TemplatesPage />} />
               <Route path="/audit" element={scoped("admin:audit", <AuditLog />)} />
-              <Route
-                path="/notifications/:tab?"
-                element={scoped("notifications:view", <Notifications />)}
-              />
+              <Route path="/notifications/:tab?" element={<NotificationsPageGuard />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/admin/users" element={scoped("admin:users", <AdminUsers />)} />
               <Route path="/admin/groups" element={scoped("admin:groups", <AdminGroups />)} />
