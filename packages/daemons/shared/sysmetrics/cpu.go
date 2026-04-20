@@ -2,6 +2,7 @@ package sysmetrics
 
 import (
 	"bufio"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -37,10 +38,16 @@ func GetCPUPercent(state *CPUState) float64 {
 	totalDelta := total - state.PrevTotal
 	state.PrevIdle = idle
 	state.PrevTotal = total
-	if totalDelta == 0 {
+	return calculateCPUPercentFromDeltas(idleDelta, totalDelta)
+}
+
+func calculateCPUPercentFromDeltas(idleDelta uint64, totalDelta uint64) float64 {
+	if totalDelta == 0 || idleDelta > totalDelta {
 		return 0
 	}
-	return float64(totalDelta-idleDelta) / float64(totalDelta) * 100.0
+
+	percent := float64(totalDelta-idleDelta) / float64(totalDelta) * 100.0
+	return math.Min(math.Max(percent, 0), 100)
 }
 
 // GetCPUInfo reads /proc/cpuinfo and returns the CPU model name and core count.

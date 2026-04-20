@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"math"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -124,15 +126,20 @@ func (sc *StatsCollector) collectOne(ctx context.Context, containerID string) (*
 		return nil, err
 	}
 
-	return statsResponseToProto(&stats), nil
+	inspectResult, err := sc.client.cli.ContainerInspect(ctx, containerID, client.ContainerInspectOptions{})
+	if err != nil {
+		return statsResponseToProto(&stats, nil), nil
+	}
+
+	return statsResponseToProto(&stats, &inspectResult.Container), nil
 }
 
 // statsResponseToProto converts a Docker StatsResponse to the protobuf ContainerStats.
-func statsResponseToProto(stats *container.StatsResponse) *pb.ContainerStats {
+func statsResponseToProto(stats *container.StatsResponse, inspect *container.InspectResponse) *pb.ContainerStats {
 	cs := &pb.ContainerStats{}
 
 	// CPU percent calculation
-	cs.CpuPercent = calculateCPUPercent(stats)
+	cs.CpuPercent = calculateCPUPercent(stats, inspect)
 
 	// Memory
 	cs.MemoryUsageBytes = int64(stats.MemoryStats.Usage)
@@ -166,9 +173,11 @@ func statsResponseToProto(stats *container.StatsResponse) *pb.ContainerStats {
 	return cs
 }
 
-// calculateCPUPercent computes the CPU usage percentage from a Docker stats response.
-// Formula: (cpuDelta / systemDelta) * numCPUs * 100.0
-func calculateCPUPercent(stats *container.StatsResponse) float64 {
+// calculateCPUPercent computes container CPU relative to the CPU capacity available
+// to that container. A 1-CPU-limited container should show 100% when it fully
+// saturates its quota, while an unlimited container uses total host CPU as its
+// reference and stays on a 0-100 scale.
+func calculateCPUPercent(stats *container.StatsResponse, inspect *container.InspectResponse) float64 {
 	cpuDelta := float64(stats.CPUStats.CPUUsage.TotalUsage) - float64(stats.PreCPUStats.CPUUsage.TotalUsage)
 	systemDelta := float64(stats.CPUStats.SystemUsage) - float64(stats.PreCPUStats.SystemUsage)
 
@@ -176,14 +185,81 @@ func calculateCPUPercent(stats *container.StatsResponse) float64 {
 		return 0.0
 	}
 
-	numCPUs := float64(stats.CPUStats.OnlineCPUs)
-	if numCPUs == 0 {
-		// Fallback: count per-CPU entries
-		numCPUs = float64(len(stats.CPUStats.CPUUsage.PercpuUsage))
-	}
-	if numCPUs == 0 {
-		numCPUs = 1
+	hostCPUs := availableHostCPUs(stats)
+	containerCPUs := availableContainerCPUs(inspect, hostCPUs)
+	if hostCPUs <= 0 || containerCPUs <= 0 {
+		return 0.0
 	}
 
-	return (cpuDelta / systemDelta) * numCPUs * 100.0
+	return math.Min(((cpuDelta/systemDelta)*hostCPUs/containerCPUs)*100.0, 100.0)
+}
+
+func availableHostCPUs(stats *container.StatsResponse) float64 {
+	if stats.CPUStats.OnlineCPUs > 0 {
+		return float64(stats.CPUStats.OnlineCPUs)
+	}
+	if n := len(stats.CPUStats.CPUUsage.PercpuUsage); n > 0 {
+		return float64(n)
+	}
+	return 1
+}
+
+func availableContainerCPUs(inspect *container.InspectResponse, fallback float64) float64 {
+	limit := fallback
+	if inspect == nil || inspect.HostConfig == nil {
+		return limit
+	}
+
+	if inspect.HostConfig.NanoCPUs > 0 {
+		limit = math.Min(limit, float64(inspect.HostConfig.NanoCPUs)/1e9)
+	}
+
+	if inspect.HostConfig.CPUPeriod > 0 && inspect.HostConfig.CPUQuota > 0 {
+		quotaLimit := float64(inspect.HostConfig.CPUQuota) / float64(inspect.HostConfig.CPUPeriod)
+		if quotaLimit > 0 {
+			limit = math.Min(limit, quotaLimit)
+		}
+	}
+
+	if cpusetLimit := countCPUSet(inspect.HostConfig.CpusetCpus); cpusetLimit > 0 {
+		limit = math.Min(limit, cpusetLimit)
+	}
+
+	if limit <= 0 {
+		return fallback
+	}
+	return limit
+}
+
+func countCPUSet(cpuset string) float64 {
+	cpuset = strings.TrimSpace(cpuset)
+	if cpuset == "" {
+		return 0
+	}
+
+	var count float64
+	for _, part := range strings.Split(cpuset, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+
+		if !strings.Contains(part, "-") {
+			count++
+			continue
+		}
+
+		bounds := strings.SplitN(part, "-", 2)
+		if len(bounds) != 2 {
+			continue
+		}
+		start, errStart := strconv.Atoi(strings.TrimSpace(bounds[0]))
+		end, errEnd := strconv.Atoi(strings.TrimSpace(bounds[1]))
+		if errStart != nil || errEnd != nil || end < start {
+			continue
+		}
+		count += float64(end-start) + 1
+	}
+
+	return count
 }
