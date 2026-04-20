@@ -102,11 +102,11 @@ export async function initializeContainer(): Promise<void> {
   const authSettingsService = new AuthSettingsService(db);
   container.registerInstance(AuthSettingsService, authSettingsService);
 
-  const authService = new AuthService(db, sessionService, cacheService, authSettingsService);
-  container.registerInstance(AuthService, authService);
-
   const auditService = new AuditService(db);
   container.registerInstance(AuditService, auditService);
+
+  const authService = new AuthService(db, sessionService, cacheService, authSettingsService, auditService);
+  container.registerInstance(AuthService, authService);
 
   const templatesService = new TemplatesService(db);
   container.registerInstance(TemplatesService, templatesService);

@@ -134,7 +134,7 @@ authRoutes.post('/logout', async (c) => {
     userId: user?.id ?? null,
     action: 'auth.logout',
     resourceType: 'session',
-    details: { sessionId },
+    details: { hasSession: true },
   });
   const logoutUrl = await authService.logout(sessionId);
   deleteCookie(c, SESSION_COOKIE_NAME, { path: '/' });
