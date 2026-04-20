@@ -1,6 +1,7 @@
 import { Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { formatBytes } from "@/lib/utils";
 import {
   Select,
   SelectContent,
@@ -26,6 +27,10 @@ interface RuntimeSectionProps {
   setCpuShares: (v: string) => void;
   pidsLimit: string;
   setPidsLimit: (v: string) => void;
+  maxMemoryBytes: number | null;
+  maxSwapBytes: number | null;
+  maxCpuCount: number | null;
+  runtimeValidationError: string | null;
   hasRuntimeChanges: boolean;
   liveLoading: boolean;
   onApply: () => void;
@@ -48,10 +53,17 @@ export function RuntimeSection({
   setCpuShares,
   pidsLimit,
   setPidsLimit,
+  maxMemoryBytes,
+  maxSwapBytes,
+  maxCpuCount,
+  runtimeValidationError,
   hasRuntimeChanges,
   liveLoading,
   onApply,
 }: RuntimeSectionProps) {
+  const maxMemoryMB = maxMemoryBytes && maxMemoryBytes > 0 ? Math.floor(maxMemoryBytes / 1048576) : null;
+  const maxSwapMB = maxSwapBytes && maxSwapBytes > 0 ? Math.floor(maxSwapBytes / 1048576) : null;
+
   return (
     <div className="border border-border bg-card overflow-hidden">
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
@@ -64,13 +76,22 @@ export function RuntimeSection({
           </p>
         </div>
         {canEdit && (
-          <Button size="sm" onClick={onApply} disabled={liveLoading || !hasRuntimeChanges}>
+          <Button
+            size="sm"
+            onClick={onApply}
+            disabled={liveLoading || !hasRuntimeChanges || !!runtimeValidationError}
+          >
             <Save className="h-3.5 w-3.5" />
             {appliesLive ? "Apply" : "Save"}
           </Button>
         )}
       </div>
       <div className="p-4 space-y-4">
+        {hasRuntimeChanges && runtimeValidationError && (
+          <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+            {runtimeValidationError}
+          </div>
+        )}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-muted-foreground">Restart Policy</label>
@@ -124,7 +145,11 @@ export function RuntimeSection({
               placeholder="Unlimited"
               disabled={!canEdit}
               min={0}
+              max={maxMemoryMB ?? undefined}
             />
+            {maxMemoryBytes && maxMemoryBytes > 0 && (
+              <p className="text-[11px] text-muted-foreground">Max: {formatBytes(maxMemoryBytes)}</p>
+            )}
           </div>
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-muted-foreground">Swap (MB)</label>
@@ -135,7 +160,14 @@ export function RuntimeSection({
               onChange={(e) => setMemSwapMB(e.target.value)}
               placeholder="-1 = unlimited, 0 = disabled"
               disabled={!canEdit}
+              min={-1}
+              max={maxSwapMB ?? undefined}
             />
+            {maxSwapBytes && maxSwapBytes > 0 && (
+              <p className="text-[11px] text-muted-foreground">
+                Max extra swap: {formatBytes(maxSwapBytes)}
+              </p>
+            )}
           </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -149,8 +181,12 @@ export function RuntimeSection({
               placeholder="Unlimited"
               disabled={!canEdit}
               min={0}
+              max={maxCpuCount ?? undefined}
               step={0.1}
             />
+            {maxCpuCount && maxCpuCount > 0 && (
+              <p className="text-[11px] text-muted-foreground">Max: {maxCpuCount} cores</p>
+            )}
           </div>
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-muted-foreground">CPU Shares</label>
