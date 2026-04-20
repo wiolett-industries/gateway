@@ -13,7 +13,6 @@ import {
   LogOut,
   PanelLeft,
   PanelLeftClose,
-  ScrollText,
   Search,
   Server,
   Settings,
@@ -44,6 +43,7 @@ import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
 import { usePinnedContainersStore } from "@/stores/pinned-containers";
+import { usePinnedDatabasesStore } from "@/stores/pinned-databases";
 import { usePinnedNodesStore } from "@/stores/pinned-nodes";
 import { usePinnedProxiesStore } from "@/stores/pinned-proxies";
 import { useUIStore } from "@/stores/ui";
@@ -96,7 +96,7 @@ const navigationGroups: NavGroup[] = [
     ],
   },
   {
-    label: "Management",
+    label: "Resources",
     items: [
       {
         name: "Docker",
@@ -111,8 +111,13 @@ const navigationGroups: NavGroup[] = [
         icon: Database,
         scope: "databases:list",
       },
-      { name: "Templates", href: "/templates", icon: Award, matchTabs: true },
       { name: "Nodes", href: "/nodes", icon: Server, scope: "nodes:list" },
+    ],
+  },
+  {
+    label: "Management",
+    items: [
+      { name: "Templates", href: "/templates", icon: Award, matchTabs: true },
       { name: "Access Lists", href: "/access-lists", icon: ShieldAlert, scope: "acl:list" },
       {
         name: "Notifications",
@@ -121,15 +126,10 @@ const navigationGroups: NavGroup[] = [
         scope: "notifications:view",
         matchTabs: true,
       },
+      { name: "Administration", href: "/administration", icon: Users, matchTabs: true },
       { name: "Settings", href: "/settings", icon: Settings },
     ],
   },
-];
-
-const adminNavigation: NavItem[] = [
-  { name: "Audit Log", href: "/audit", icon: ScrollText, scope: "admin:audit" },
-  { name: "Users", href: "/admin/users", icon: Users, scope: "admin:users" },
-  { name: "Groups", href: "/admin/groups", icon: ShieldCheck, scope: "admin:groups" },
 ];
 
 export interface SidebarContentProps {
@@ -170,6 +170,9 @@ export function SidebarContent({
 
   const sidebarPinnedContainerIds = usePinnedContainersStore((s) => s.sidebarContainerIds);
   const pinnedContainerMeta = usePinnedContainersStore((s) => s.containerMeta);
+  const sidebarPinnedDatabaseIds = usePinnedDatabasesStore((s) => s.sidebarDatabaseIds);
+  const pinnedDatabaseMeta = usePinnedDatabasesStore((s) => s.databaseMeta);
+  const pinnedDatabaseRefreshTick = usePinnedDatabasesStore((s) => s.refreshTick);
   const canViewNodeDetails = useCallback(
     (nodeId: string) => hasScope("nodes:details") || hasScope(`nodes:details:${nodeId}`),
     [hasScope]
@@ -181,6 +184,11 @@ export function SidebarContent({
   const canViewContainerDetails = useCallback(
     (nodeId: string) =>
       hasScope("docker:containers:view") || hasScope(`docker:containers:view:${nodeId}`),
+    [hasScope]
+  );
+  const canViewDatabaseDetails = useCallback(
+    (databaseId: string) =>
+      hasScope("databases:view") || hasScope(`databases:view:${databaseId}`),
     [hasScope]
   );
 
@@ -226,6 +234,41 @@ export function SidebarContent({
       })
       .catch(() => {});
   }, [canViewProxyDetails, sidebarPinnedProxyIds, pinnedProxyRefreshTick]);
+
+  useEffect(() => {
+    if (sidebarPinnedDatabaseIds.length === 0) return;
+    void pinnedDatabaseRefreshTick;
+    api
+      .listDatabases({ limit: 200 })
+      .then((r) => {
+        const all = r.data ?? [];
+        const allIds = all.map((db) => db.id);
+        usePinnedDatabasesStore.getState().removeOrphans(allIds);
+        for (const db of all) {
+          if (!sidebarPinnedDatabaseIds.includes(db.id)) continue;
+          if (!canViewDatabaseDetails(db.id)) continue;
+          const existing = pinnedDatabaseMeta[db.id];
+          if (
+            !existing ||
+            existing.name !== db.name ||
+            existing.type !== db.type ||
+            existing.healthStatus !== db.healthStatus
+          ) {
+            usePinnedDatabasesStore.getState().updateMeta(db.id, {
+              name: db.name,
+              type: db.type,
+              healthStatus: db.healthStatus,
+            });
+          }
+        }
+      })
+      .catch(() => {});
+  }, [
+    canViewDatabaseDetails,
+    pinnedDatabaseMeta,
+    pinnedDatabaseRefreshTick,
+    sidebarPinnedDatabaseIds,
+  ]);
 
   // Clean up orphaned pinned containers on mount
   useEffect(() => {
@@ -280,10 +323,7 @@ export function SidebarContent({
     "notifications:manage"
   );
   const canAccessDatabases =
-    hasScopedAccess("databases:list") ||
-    hasScopedAccess("databases:view") ||
-    hasScopedAccess("databases:query:read") ||
-    hasScopedAccess("databases:monitoring:view");
+    hasScopedAccess("databases:list");
   const canAccessAuthorities = hasAnyScope("pki:ca:list:root", "pki:ca:list:intermediate");
   // Build nav groups with scope + context filtering
   const effectiveGroups = navigationGroups
@@ -301,6 +341,8 @@ export function SidebarContent({
             if (!canAccessAuthorities) return false;
           } else if (item.href === "/notifications") {
             if (!canAccessNotifications) return false;
+          } else if (item.href === "/administration") {
+            if (!hasAnyScope("admin:audit", "admin:users", "admin:groups")) return false;
           } else if (item.scope) {
             const isResourceScoped =
               item.scope.startsWith("docker:") || item.scope.startsWith("databases:");
@@ -323,9 +365,7 @@ export function SidebarContent({
     })
     .filter((group) => group.items.length > 0);
 
-  const filteredAdminNav = adminNavigation.filter((item) => !item.scope || hasScope(item.scope));
-
-  const allNavItems = [...effectiveGroups.flatMap((g) => g.items), ...filteredAdminNav];
+  const allNavItems = effectiveGroups.flatMap((g) => g.items);
 
   const AccountDropdownContent = () => (
     <>
@@ -515,6 +555,7 @@ export function SidebarContent({
                   {groupIndex === 1 &&
                     (pinnedNodes.length > 0 ||
                       pinnedProxies.length > 0 ||
+                      sidebarPinnedDatabaseIds.length > 0 ||
                       sidebarPinnedContainerIds.length > 0) && (
                       <>
                         <nav className="space-y-0.5 px-2 py-2">
@@ -584,6 +625,41 @@ export function SidebarContent({
                                         : status === "offline" || status === "error"
                                           ? "bg-red-400"
                                           : "bg-yellow-500"
+                                  )}
+                                />
+                              </Link>
+                            );
+                          })}
+                          {sidebarPinnedDatabaseIds.map((databaseId) => {
+                            const meta = pinnedDatabaseMeta[databaseId];
+                            if (!meta || !canViewDatabaseDetails(databaseId)) return null;
+                            const isActive =
+                              location.pathname === `/databases/${databaseId}` ||
+                              location.pathname.startsWith(`/databases/${databaseId}/`);
+                            return (
+                              <Link
+                                key={databaseId}
+                                to={`/databases/${databaseId}/overview`}
+                                onClick={onNavigate}
+                                className={cn(
+                                  "flex items-center gap-3 px-3 py-2 text-sm transition-colors whitespace-nowrap overflow-hidden",
+                                  isActive
+                                    ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                                )}
+                              >
+                                <Database className="h-4 w-4 shrink-0" />
+                                <span className="truncate">{meta.name}</span>
+                                <span
+                                  className={cn(
+                                    "ml-auto h-2 w-2 rounded-full shrink-0",
+                                    meta.healthStatus === "online"
+                                      ? "bg-emerald-500"
+                                      : meta.healthStatus === "degraded"
+                                        ? "bg-yellow-500"
+                                        : meta.healthStatus === "offline"
+                                          ? "bg-red-400"
+                                          : "bg-muted-foreground/40"
                                   )}
                                 />
                               </Link>
@@ -666,36 +742,6 @@ export function SidebarContent({
                 </div>
               ))}
 
-              {/* Admin navigation */}
-              {filteredAdminNav.length > 0 && (
-                <>
-                  <Separator className="my-1" />
-                  <nav className="space-y-0.5 p-2">
-                    <p className="px-3 py-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                      Administration
-                    </p>
-                    {filteredAdminNav.map((item) => {
-                      const isActive = location.pathname === item.href;
-                      return (
-                        <Link
-                          key={item.href}
-                          to={item.href}
-                          onClick={onNavigate}
-                          className={cn(
-                            "flex items-center gap-3 px-3 py-2 text-sm transition-colors whitespace-nowrap overflow-hidden",
-                            isActive
-                              ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-                              : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                          )}
-                        >
-                          <item.icon className="h-4 w-4 shrink-0" />
-                          <span className="truncate">{item.name}</span>
-                        </Link>
-                      );
-                    })}
-                  </nav>
-                </>
-              )}
             </ScrollArea>
 
             <Separator />

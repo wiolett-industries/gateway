@@ -366,22 +366,17 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       scope: "acl:list",
     },
     {
-      label: "Audit Log",
-      icon: ScrollText,
-      action: () => navigate("/audit"),
-      scope: "admin:audit",
-    },
-    { label: "Users", icon: Users, action: () => navigate("/admin/users"), scope: "admin:users" },
-    {
-      label: "Groups",
-      icon: Shield,
-      action: () => navigate("/admin/groups"),
-      scope: "admin:groups",
+      label: "Administration",
+      icon: Users,
+      action: () => navigate("/administration"),
     },
     { label: "Settings", icon: Settings, shortcut: "⌘,", action: () => navigate("/settings") },
   ];
   const filteredNav = allNavItems.filter((i) => {
     if (!matches(i.label)) return false;
+    if (i.label === "Administration") {
+      return hasAnyScope("admin:audit", "admin:users", "admin:groups");
+    }
     if (!i.scope) return true;
     if (i.label === "Authorities") {
       return hasAnyScope("pki:ca:list:root", "pki:ca:list:intermediate");

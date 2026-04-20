@@ -37,13 +37,38 @@ export function DatabaseConsoleTab({ database }: { database: DatabaseConnection 
     }
   };
 
-  const tableResult =
+  const postgresResults =
     database.type === "postgres" &&
     result &&
     typeof result === "object" &&
-    "fields" in result &&
-    Array.isArray((result as { fields: string[] }).fields)
-      ? (result as { fields: string[]; rows: Record<string, unknown>[] })
+    "results" in result &&
+    Array.isArray((result as { results: unknown[] }).results)
+      ? (result as {
+          results: Array<{
+            command: string;
+            rowCount: number;
+            fields: string[];
+            rows: Record<string, unknown>[];
+          }>;
+        }).results
+      : null;
+
+  const tableResult =
+    database.type === "postgres" &&
+    postgresResults &&
+    postgresResults.length === 1 &&
+    postgresResults[0] &&
+    Array.isArray(postgresResults[0].fields)
+      ? postgresResults[0]
+      : null;
+
+  const redisResults =
+    database.type === "redis" &&
+    result &&
+    typeof result === "object" &&
+    "results" in result &&
+    Array.isArray((result as { results: unknown[] }).results)
+      ? (result as { results: Array<{ command: string; result: unknown }> }).results
       : null;
 
   const resultRowVirtualizer = useVirtualizer({
@@ -86,7 +111,7 @@ export function DatabaseConsoleTab({ database }: { database: DatabaseConnection 
                 {database.type === "postgres" ? "SQL Console" : "Redis Command Console"}
               </h3>
               <p className="text-xs text-muted-foreground">
-                Run a single {database.type === "postgres" ? "SQL statement" : "Redis command"}.
+                Run one or more {database.type === "postgres" ? "SQL statements" : "Redis commands"}.
               </p>
             </div>
             <Button size="sm" onClick={() => void execute()} disabled={running}>
@@ -174,6 +199,69 @@ export function DatabaseConsoleTab({ database }: { database: DatabaseConnection 
                   )}
                 </tbody>
               </table>
+            </div>
+          ) : postgresResults ? (
+            <div className="flex-1 min-h-0 overflow-auto space-y-4">
+              {postgresResults.map((entry, index) => (
+                <div key={`${entry.command}-${index}`} className="border border-border bg-card overflow-hidden">
+                  <div className="flex items-center justify-between gap-4 border-b border-border px-4 py-3">
+                    <div>
+                      <h4 className="text-sm font-semibold">Statement {index + 1}</h4>
+                      <p className="text-xs text-muted-foreground">
+                        {entry.command} · {entry.rowCount} row{entry.rowCount === 1 ? "" : "s"}
+                      </p>
+                    </div>
+                  </div>
+                  {entry.fields.length > 0 ? (
+                    <div className="overflow-auto">
+                      <table className="min-w-full border-collapse text-sm">
+                        <thead className="sticky top-0 z-10 bg-card">
+                          <tr className="border-b border-border">
+                            {entry.fields.map((field) => (
+                              <th
+                                key={field}
+                                className="px-4 py-2 text-left text-xs font-medium tracking-wider text-muted-foreground uppercase whitespace-nowrap"
+                              >
+                                {field}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {entry.rows.map((row, rowIndex) => (
+                            <tr key={rowIndex} className="border-b border-border last:border-b-0">
+                              {entry.fields.map((field) => (
+                                <td
+                                  key={field}
+                                  className="px-4 py-3 font-mono whitespace-nowrap align-top"
+                                >
+                                  {stringifyCell(row?.[field])}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="p-4 text-sm text-muted-foreground">Command completed.</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : redisResults ? (
+            <div className="flex-1 min-h-0 overflow-auto space-y-4">
+              {redisResults.map((entry, index) => (
+                <div key={`${entry.command}-${index}`} className="border border-border bg-card overflow-hidden">
+                  <div className="border-b border-border px-4 py-3">
+                    <h4 className="text-sm font-semibold">Command {index + 1}</h4>
+                    <p className="text-xs text-muted-foreground">{entry.command}</p>
+                  </div>
+                  <pre className="overflow-auto p-4 text-sm whitespace-pre-wrap">
+                    {JSON.stringify(entry.result, null, 2)}
+                  </pre>
+                </div>
+              ))}
             </div>
           ) : (
             <div className="border border-border bg-card overflow-hidden flex-1 min-h-0">

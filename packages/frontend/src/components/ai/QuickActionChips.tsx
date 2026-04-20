@@ -35,11 +35,9 @@ const QUICK_ACTIONS: Record<string, QuickAction[]> = {
     { label: "List templates", prompt: "Show all certificate templates" },
     { label: "Create template", prompt: "Help me create a new certificate template" },
   ],
-  "/admin/users": [
+  "/administration": [
     { label: "List users", prompt: "List all users with their roles" },
     { label: "User activity", prompt: "Show recent audit log activity" },
-  ],
-  "/audit": [
     { label: "Recent activity", prompt: "Show the last 20 audit log entries" },
     { label: "AI actions", prompt: "Show audit log entries from AI assistant actions" },
   ],

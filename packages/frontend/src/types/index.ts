@@ -446,7 +446,6 @@ export const RESOURCE_SCOPABLE_SCOPES = [
   "databases:query:read",
   "databases:query:write",
   "databases:query:admin",
-  "databases:monitoring:view",
   "databases:credentials:reveal",
 ] as const;
 
@@ -1077,12 +1076,6 @@ export const TOKEN_SCOPES = [
     value: "databases:query:admin",
     label: "Admin Database Queries",
     desc: "Run administrative or DDL database commands",
-    group: "Databases",
-  },
-  {
-    value: "databases:monitoring:view",
-    label: "View Database Monitoring",
-    desc: "View database health, metrics, and monitoring history",
     group: "Databases",
   },
   {

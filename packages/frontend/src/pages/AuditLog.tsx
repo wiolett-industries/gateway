@@ -60,7 +60,7 @@ const columns: DataTableColumn<AuditLogEntry>[] = [
   },
 ];
 
-export function AuditLog() {
+export function AuditLog({ embedded = false }: { embedded?: boolean }) {
   const [entries, setEntries] = useState<AuditLogEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -133,9 +133,8 @@ export function AuditLog() {
     return () => obs.disconnect();
   }, [fetchPage, hasMore, loadingMore, isLoading]);
 
-  return (
-    <PageTransition>
-      <div className="h-full p-6 space-y-4 flex flex-col min-h-0">
+  const content = (
+      <div className={embedded ? "h-full space-y-4 flex flex-col min-h-0" : "h-full p-6 space-y-4 flex flex-col min-h-0"}>
         <div>
           <h1 className="text-2xl font-bold">Audit Log</h1>
           <p className="text-sm text-muted-foreground">{total} entries</p>
@@ -198,6 +197,7 @@ export function AuditLog() {
           </div>
         )}
       </div>
-    </PageTransition>
   );
+
+  return embedded ? content : <PageTransition>{content}</PageTransition>;
 }

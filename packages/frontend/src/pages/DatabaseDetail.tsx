@@ -12,11 +12,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { HealthBars } from "@/components/ui/health-bars";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useRealtime } from "@/hooks/use-realtime";
 import { useUrlTab } from "@/hooks/use-url-tab";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
+import { usePinnedDatabasesStore } from "@/stores/pinned-databases";
 import type { DatabaseConnection, DatabaseMetricSnapshot } from "@/types";
 import { DatabaseConsoleTab } from "./database-detail/DatabaseConsoleTab";
 import { DatabaseHeader } from "./database-detail/DatabaseHeader";
@@ -36,12 +38,14 @@ export function DatabaseDetail() {
   const [liveHealthStatus, setLiveHealthStatus] =
     useState<DatabaseConnection["healthStatus"]>("unknown");
   const [monitoringHistory, setMonitoringHistory] = useState<DatabaseMetricSnapshot[]>([]);
+  const [pinOpen, setPinOpen] = useState(false);
   const [credentialsOpen, setCredentialsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [revealedCredentials, setRevealedCredentials] = useState<Record<string, unknown> | null>(
     null
   );
   const [loadingCredentials, setLoadingCredentials] = useState(false);
+  const { isPinnedSidebar, toggleSidebar } = usePinnedDatabasesStore();
 
   const canEdit = !!(id && (hasScope("databases:edit") || hasScope(`databases:edit:${id}`)));
   const canDelete = !!(
@@ -67,7 +71,7 @@ export function DatabaseDetail() {
   );
   const canViewMonitoring = !!(
     id &&
-    (hasScope("databases:monitoring:view") || hasScope(`databases:monitoring:view:${id}`))
+    (hasScope("databases:view") || hasScope(`databases:view:${id}`))
   );
 
   const [activeTab, setActiveTab] = useUrlTab(
@@ -168,6 +172,7 @@ export function DatabaseDetail() {
     if (!ok) return;
     try {
       await api.deleteDatabase(id);
+      usePinnedDatabasesStore.getState().removePin(id);
       toast.success("Database deleted");
       navigate("/databases");
     } catch (error) {
@@ -223,6 +228,7 @@ export function DatabaseDetail() {
           canEdit={canEdit}
           canReveal={canReveal}
           canDelete={canDelete}
+          onOpenPin={() => setPinOpen(true)}
           onBack={() => navigate("/databases")}
           onTest={() => void testConnection()}
           onOpenSettings={() => setSettingsOpen(true)}
@@ -301,6 +307,33 @@ export function DatabaseDetail() {
                   : "Credentials are hidden."}
               </pre>
             )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={pinOpen} onOpenChange={setPinOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Pin Database</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium">Add to sidebar</p>
+                <p className="text-xs text-muted-foreground">Quick access link in the sidebar</p>
+              </div>
+              <Switch
+                checked={isPinnedSidebar(database.id)}
+                onChange={() => {
+                  toggleSidebar(database.id, {
+                    name: database.name,
+                    type: database.type,
+                    healthStatus: liveHealthStatus,
+                  });
+                  usePinnedDatabasesStore.getState().invalidate();
+                }}
+              />
+            </div>
           </div>
         </DialogContent>
       </Dialog>

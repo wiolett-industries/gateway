@@ -86,18 +86,278 @@ function hashPreview(input: string): string {
   return createHash('sha256').update(input).digest('hex').slice(0, 16);
 }
 
-function ensureSingleStatement(sql: string): string {
-  const trimmed = sql.trim();
-  const stripped = trimmed.endsWith(';') ? trimmed.slice(0, -1).trim() : trimmed;
-  if (stripped.includes(';')) {
-    throw new AppError(400, 'MULTI_STATEMENT_NOT_ALLOWED', 'Only a single SQL statement is allowed');
+function splitPostgresStatements(sql: string): string[] {
+  const statements: string[] = [];
+  let current = '';
+  let i = 0;
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+  let inLineComment = false;
+  let inBlockComment = false;
+  let dollarQuoteTag: string | null = null;
+
+  while (i < sql.length) {
+    const char = sql[i]!;
+    const next = sql[i + 1];
+
+    if (inLineComment) {
+      current += char;
+      if (char === '\n') inLineComment = false;
+      i += 1;
+      continue;
+    }
+
+    if (inBlockComment) {
+      current += char;
+      if (char === '*' && next === '/') {
+        current += next;
+        inBlockComment = false;
+        i += 2;
+      } else {
+        i += 1;
+      }
+      continue;
+    }
+
+    if (dollarQuoteTag) {
+      if (sql.startsWith(dollarQuoteTag, i)) {
+        current += dollarQuoteTag;
+        i += dollarQuoteTag.length;
+        dollarQuoteTag = null;
+      } else {
+        current += char;
+        i += 1;
+      }
+      continue;
+    }
+
+    if (inSingleQuote) {
+      current += char;
+      if (char === "'" && next === "'") {
+        current += next;
+        i += 2;
+        continue;
+      }
+      if (char === "'") inSingleQuote = false;
+      i += 1;
+      continue;
+    }
+
+    if (inDoubleQuote) {
+      current += char;
+      if (char === '"' && next === '"') {
+        current += next;
+        i += 2;
+        continue;
+      }
+      if (char === '"') inDoubleQuote = false;
+      i += 1;
+      continue;
+    }
+
+    if (char === '-' && next === '-') {
+      current += char + next;
+      inLineComment = true;
+      i += 2;
+      continue;
+    }
+
+    if (char === '/' && next === '*') {
+      current += char + next;
+      inBlockComment = true;
+      i += 2;
+      continue;
+    }
+
+    if (char === "'") {
+      current += char;
+      inSingleQuote = true;
+      i += 1;
+      continue;
+    }
+
+    if (char === '"') {
+      current += char;
+      inDoubleQuote = true;
+      i += 1;
+      continue;
+    }
+
+    if (char === '$') {
+      const match = sql.slice(i).match(/^\$[A-Za-z0-9_]*\$/);
+      if (match) {
+        const tag = match[0];
+        current += tag;
+        dollarQuoteTag = tag;
+        i += tag.length;
+        continue;
+      }
+    }
+
+    if (char === ';') {
+      const statement = current.trim();
+      if (statement) statements.push(statement);
+      current = '';
+      i += 1;
+      continue;
+    }
+
+    current += char;
+    i += 1;
   }
-  if (!stripped) throw new AppError(400, 'INVALID_SQL', 'SQL statement is required');
-  return stripped;
+
+  const finalStatement = current.trim();
+  if (finalStatement) statements.push(finalStatement);
+  if (statements.length === 0) {
+    throw new AppError(400, 'INVALID_SQL', 'SQL statement is required');
+  }
+  return statements;
 }
 
-export function inferPostgresIntent(sql: string): 'read' | 'write' | 'admin' {
-  const normalized = ensureSingleStatement(sql).replace(/^\s+/, '').toLowerCase();
+function splitRedisCommands(commandText: string): string[] {
+  const commands: string[] = [];
+  let current = '';
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+  let escaped = false;
+
+  for (let i = 0; i < commandText.length; i += 1) {
+    const char = commandText[i]!;
+
+    if (escaped) {
+      current += char;
+      escaped = false;
+      continue;
+    }
+
+    if (char === '\\') {
+      current += char;
+      escaped = true;
+      continue;
+    }
+
+    if (inSingleQuote) {
+      current += char;
+      if (char === "'") inSingleQuote = false;
+      continue;
+    }
+
+    if (inDoubleQuote) {
+      current += char;
+      if (char === '"') inDoubleQuote = false;
+      continue;
+    }
+
+    if (char === "'") {
+      current += char;
+      inSingleQuote = true;
+      continue;
+    }
+
+    if (char === '"') {
+      current += char;
+      inDoubleQuote = true;
+      continue;
+    }
+
+    if (char === ';' || char === '\n') {
+      const trimmed = current.trim();
+      if (trimmed) commands.push(trimmed);
+      current = '';
+      continue;
+    }
+
+    current += char;
+  }
+
+  const trimmed = current.trim();
+  if (trimmed) commands.push(trimmed);
+  if (commands.length === 0) {
+    throw new AppError(400, 'INVALID_COMMAND', 'Redis command is required');
+  }
+  if (inSingleQuote || inDoubleQuote || escaped) {
+    throw new AppError(400, 'INVALID_COMMAND', 'Unterminated quoted Redis command');
+  }
+  return commands;
+}
+
+function tokenizeRedisCommand(command: string): string[] {
+  const tokens: string[] = [];
+  let current = '';
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+  let escaped = false;
+
+  const pushCurrent = () => {
+    if (current.length > 0) {
+      tokens.push(current);
+      current = '';
+    }
+  };
+
+  for (let i = 0; i < command.length; i += 1) {
+    const char = command[i]!;
+
+    if (escaped) {
+      current += char;
+      escaped = false;
+      continue;
+    }
+
+    if (char === '\\') {
+      escaped = true;
+      continue;
+    }
+
+    if (inSingleQuote) {
+      if (char === "'") {
+        inSingleQuote = false;
+      } else {
+        current += char;
+      }
+      continue;
+    }
+
+    if (inDoubleQuote) {
+      if (char === '"') {
+        inDoubleQuote = false;
+      } else {
+        current += char;
+      }
+      continue;
+    }
+
+    if (char === "'") {
+      inSingleQuote = true;
+      continue;
+    }
+
+    if (char === '"') {
+      inDoubleQuote = true;
+      continue;
+    }
+
+    if (/\s/.test(char)) {
+      pushCurrent();
+      continue;
+    }
+
+    current += char;
+  }
+
+  if (escaped || inSingleQuote || inDoubleQuote) {
+    throw new AppError(400, 'INVALID_COMMAND', 'Unterminated quoted Redis command');
+  }
+
+  pushCurrent();
+  if (tokens.length === 0) {
+    throw new AppError(400, 'INVALID_COMMAND', 'Redis command is required');
+  }
+  return tokens;
+}
+
+function inferPostgresStatementIntent(sql: string): 'read' | 'write' | 'admin' {
+  const normalized = sql.trim().replace(/^\s+/, '').toLowerCase();
   const token = normalized.split(/\s+/, 1)[0] ?? '';
   if (['select', 'show', 'explain', 'values'].includes(token) || normalized.startsWith('with ')) {
     if (
@@ -113,7 +373,14 @@ export function inferPostgresIntent(sql: string): 'read' | 'write' | 'admin' {
   return 'admin';
 }
 
-export function inferRedisIntent(command: string): 'read' | 'write' | 'admin' {
+export function inferPostgresIntent(sql: string): 'read' | 'write' | 'admin' {
+  const intents = splitPostgresStatements(sql).map(inferPostgresStatementIntent);
+  if (intents.includes('admin')) return 'admin';
+  if (intents.includes('write')) return 'write';
+  return 'read';
+}
+
+function inferRedisSingleCommandIntent(command: string): 'read' | 'write' | 'admin' {
   const token = command.trim().split(/\s+/, 1)[0]?.toLowerCase() ?? '';
   if (
     [
@@ -170,6 +437,13 @@ export function inferRedisIntent(command: string): 'read' | 'write' | 'admin' {
     return 'write';
   }
   return 'admin';
+}
+
+export function inferRedisIntent(commandText: string): 'read' | 'write' | 'admin' {
+  const intents = splitRedisCommands(commandText).map(inferRedisSingleCommandIntent);
+  if (intents.includes('admin')) return 'admin';
+  if (intents.includes('write')) return 'write';
+  return 'read';
 }
 
 export class DatabaseConnectionService {
@@ -662,26 +936,33 @@ export class DatabaseConnectionService {
 
   async executePostgresSql(id: string, sqlText: string, userId: string) {
     const pool = await this.getPostgresPool(id);
-    const sql = ensureSingleStatement(sqlText);
-    const result = await pool.query(sql);
+    const statements = splitPostgresStatements(sqlText);
+    const result = await pool.query(sqlText);
+    const results = (Array.isArray(result) ? result : [result]).map((entry) => ({
+      command: entry.command,
+      rowCount: entry.rowCount ?? 0,
+      fields: entry.fields?.map((field: { name: string }) => field.name) ?? [],
+      rows: entry.rows,
+    }));
+    const intent = inferPostgresIntent(sqlText);
     await this.auditService.log({
       userId,
       action: 'database.postgres.query',
       resourceType: 'database',
       resourceId: id,
       details: {
-        intent: inferPostgresIntent(sql),
-        statementHash: hashPreview(sql),
-        statementPreview: sql.slice(0, 160),
+        intent,
+        statementCount: statements.length,
+        statementHash: hashPreview(sqlText),
+        statementPreview: sqlText.trim().slice(0, 160),
       },
     });
-    this.emitChange(id, 'query.executed', { provider: 'postgres', intent: inferPostgresIntent(sql) });
-    return {
-      command: result.command,
-      rowCount: result.rowCount ?? 0,
-      fields: result.fields?.map((field) => field.name) ?? [],
-      rows: result.rows,
-    };
+    this.emitChange(id, 'query.executed', {
+      provider: 'postgres',
+      intent,
+      statementCount: statements.length,
+    });
+    return { results };
   }
 
   async scanRedisKeys(id: string, cursor: number, limit: number, search?: string, type?: string) {
@@ -824,10 +1105,17 @@ export class DatabaseConnectionService {
 
   async executeRedisCommand(id: string, commandText: string, userId: string) {
     const client = await this.getRedisClient(id);
-    const parts = commandText.trim().split(/\s+/).filter(Boolean);
-    if (parts.length === 0) throw new AppError(400, 'INVALID_COMMAND', 'Redis command is required');
-    const result = await client.call(parts[0], ...parts.slice(1));
-    const intent = inferRedisIntent(commandText);
+    const commands = splitRedisCommands(commandText);
+    const results = [];
+    const intents = new Set<'read' | 'write' | 'admin'>();
+    for (const command of commands) {
+      const parts = tokenizeRedisCommand(command);
+      const commandName = parts[0]!.toUpperCase();
+      const result = await client.call(parts[0]!, ...parts.slice(1));
+      results.push({ command: commandName, result });
+      intents.add(inferRedisSingleCommandIntent(command));
+    }
+    const intent = intents.has('admin') ? 'admin' : intents.has('write') ? 'write' : 'read';
     await this.auditService.log({
       userId,
       action: 'database.redis.command.execute',
@@ -835,13 +1123,19 @@ export class DatabaseConnectionService {
       resourceId: id,
       details: {
         intent,
-        command: parts[0].toUpperCase(),
+        commandCount: commands.length,
+        commands: results.slice(0, 5).map((entry) => entry.command),
         commandHash: hashPreview(commandText),
         commandPreview: commandText.slice(0, 160),
       },
     });
-    this.emitChange(id, 'query.executed', { provider: 'redis', intent, command: parts[0].toUpperCase() });
-    return { command: parts[0].toUpperCase(), result };
+    this.emitChange(id, 'query.executed', {
+      provider: 'redis',
+      intent,
+      commandCount: commands.length,
+      commands: results.slice(0, 5).map((entry) => entry.command),
+    });
+    return { results };
   }
 
   async getDecryptedConfig(id: string): Promise<DatabaseConnectionConfig> {
