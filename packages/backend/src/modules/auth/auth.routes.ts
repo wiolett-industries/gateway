@@ -2,6 +2,7 @@ import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import { deleteCookie, setCookie } from 'hono/cookie';
 import { getEnv, isDevelopment } from '@/config/env.js';
 import { container } from '@/container.js';
+import { AuditService } from '@/modules/audit/audit.service.js';
 import type { AppEnv } from '@/types.js';
 import { authMiddleware, SESSION_COOKIE_NAME } from './auth.middleware.js';
 import { AuthService } from './auth.service.js';
@@ -59,10 +60,17 @@ const callbackRoute = createRoute({
 
 authRoutes.openapi(callbackRoute, async (c) => {
   const authService = container.resolve(AuthService);
+  const auditService = container.resolve(AuditService);
   const env = getEnv();
   const { state, error, error_description } = c.req.valid('query');
 
   if (error) {
+    await auditService.log({
+      userId: null,
+      action: 'auth.login_failed',
+      resourceType: 'session',
+      details: { error, errorDescription: error_description || null },
+    });
     return c.json({ code: 'AUTH_ERROR', message: error_description || error }, 400);
   }
 
@@ -72,6 +80,12 @@ authRoutes.openapi(callbackRoute, async (c) => {
     callbackUrl.search = requestUrl.search;
 
     const result = await authService.handleCallback(callbackUrl.toString(), state);
+    await auditService.log({
+      userId: result.user.id,
+      action: 'auth.login',
+      resourceType: 'session',
+      details: { returnTo: result.returnTo ?? null },
+    });
 
     setCookie(c, SESSION_COOKIE_NAME, result.sessionId, {
       httpOnly: true,
@@ -96,6 +110,12 @@ authRoutes.openapi(callbackRoute, async (c) => {
     return c.redirect(redirectUrl.toString(), 302);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Authentication failed';
+    await auditService.log({
+      userId: null,
+      action: 'auth.login_failed',
+      resourceType: 'session',
+      details: { error: message },
+    });
     return c.json({ code: 'AUTH_ERROR', message }, 400);
   }
 });
@@ -108,6 +128,14 @@ authRoutes.post('/logout', async (c) => {
     return c.json({ message: 'Not a session-based login' }, 400);
   }
   const authService = container.resolve(AuthService);
+  const auditService = container.resolve(AuditService);
+  const user = c.get('user');
+  await auditService.log({
+    userId: user?.id ?? null,
+    action: 'auth.logout',
+    resourceType: 'session',
+    details: { sessionId },
+  });
   const logoutUrl = await authService.logout(sessionId);
   deleteCookie(c, SESSION_COOKIE_NAME, { path: '/' });
   return c.json({ message: 'Logged out successfully', logoutUrl });

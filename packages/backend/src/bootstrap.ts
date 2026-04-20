@@ -126,7 +126,7 @@ export async function initializeContainer(): Promise<void> {
   const exportService = new ExportService(cryptoService);
   container.registerInstance(ExportService, exportService);
 
-  const tokensService = new TokensService(db);
+  const tokensService = new TokensService(db, auditService);
   container.registerInstance(TokensService, tokensService);
 
   const alertService = new AlertService(db);

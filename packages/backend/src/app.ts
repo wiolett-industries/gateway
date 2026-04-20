@@ -9,6 +9,7 @@ import { requestId } from 'hono/request-id';
 import { secureHeaders } from 'hono/secure-headers';
 
 import { getEnv, isDevelopment } from '@/config/env.js';
+import { auditContextMiddleware } from '@/middleware/audit-context.js';
 import { errorHandler } from '@/middleware/error-handler.js';
 import { loggerMiddleware } from '@/middleware/logger.js';
 import { rateLimitMiddleware } from '@/middleware/rate-limit.js';
@@ -54,6 +55,7 @@ export function createApp() {
 
   // Global middleware
   app.use('*', requestId());
+  app.use('*', auditContextMiddleware);
   app.use('*', loggerMiddleware);
   app.use('*', secureHeaders());
   app.use(
