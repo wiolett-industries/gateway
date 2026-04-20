@@ -26,10 +26,10 @@ export function isNewerVersion(latest: string, current: string): boolean {
   return compareSemver(latest, current) > 0;
 }
 
-/** Returns true if both versions share the same major.minor (patch can differ). */
+/** Returns true if both versions share the same major and are fewer than 2 minors apart. */
 export function isMinorCompatible(a: string, b: string): boolean {
   const pa = parseSemver(a);
   const pb = parseSemver(b);
   if (!pa || !pb) return true; // unknown versions (dev) are compatible
-  return pa[0] === pb[0] && pa[1] === pb[1];
+  return pa[0] === pb[0] && Math.abs(pa[1] - pb[1]) < 2;
 }
