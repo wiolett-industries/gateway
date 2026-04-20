@@ -439,6 +439,15 @@ export const RESOURCE_SCOPABLE_SCOPES = [
   "docker:networks:create",
   "docker:networks:edit",
   "docker:networks:delete",
+  "databases:list",
+  "databases:view",
+  "databases:edit",
+  "databases:delete",
+  "databases:query:read",
+  "databases:query:write",
+  "databases:query:admin",
+  "databases:monitoring:view",
+  "databases:credentials:reveal",
 ] as const;
 
 // API Token / Group scopes
@@ -1021,6 +1030,67 @@ export const TOKEN_SCOPES = [
     desc: "View Docker task progress",
     group: "Docker: Tasks",
   },
+  // Databases
+  {
+    value: "databases:list",
+    label: "List Databases",
+    desc: "List saved database connections",
+    group: "Databases",
+  },
+  {
+    value: "databases:view",
+    label: "View Databases",
+    desc: "View database connection details",
+    group: "Databases",
+  },
+  {
+    value: "databases:create",
+    label: "Create Databases",
+    desc: "Create saved database connections",
+    group: "Databases",
+  },
+  {
+    value: "databases:edit",
+    label: "Edit Databases",
+    desc: "Edit saved database connections",
+    group: "Databases",
+  },
+  {
+    value: "databases:delete",
+    label: "Delete Databases",
+    desc: "Delete saved database connections",
+    group: "Databases",
+  },
+  {
+    value: "databases:query:read",
+    label: "Read Database Data",
+    desc: "Browse tables, keys, and run read-only database queries",
+    group: "Databases",
+  },
+  {
+    value: "databases:query:write",
+    label: "Write Database Data",
+    desc: "Insert, update, delete, and run write queries against databases",
+    group: "Databases",
+  },
+  {
+    value: "databases:query:admin",
+    label: "Admin Database Queries",
+    desc: "Run administrative or DDL database commands",
+    group: "Databases",
+  },
+  {
+    value: "databases:monitoring:view",
+    label: "View Database Monitoring",
+    desc: "View database health, metrics, and monitoring history",
+    group: "Databases",
+  },
+  {
+    value: "databases:credentials:reveal",
+    label: "Reveal Database Credentials",
+    desc: "Reveal saved database credentials and connection strings",
+    group: "Databases",
+  },
 ] as const;
 
 export interface ApiToken {
@@ -1207,6 +1277,92 @@ export interface AccessList {
   createdAt: string;
   updatedAt: string;
   usageCount?: number;
+}
+
+// Databases
+export type DatabaseType = "postgres" | "redis";
+export type DatabaseHealthStatus = "online" | "offline" | "degraded" | "unknown";
+
+export interface DatabaseHealthEntry {
+  ts: string;
+  status: DatabaseHealthStatus;
+  responseMs?: number;
+  slow?: boolean;
+}
+
+export interface PostgresDatabaseConfig {
+  host: string;
+  port: number;
+  database: string;
+  username: string;
+  password: string;
+  sslEnabled: boolean;
+}
+
+export interface RedisDatabaseConfig {
+  host: string;
+  port: number;
+  username: string | null;
+  password: string;
+  db: number;
+  tlsEnabled: boolean;
+}
+
+export interface DatabaseConnection {
+  id: string;
+  name: string;
+  type: DatabaseType;
+  description: string | null;
+  tags: string[];
+  manualSizeLimitMb: number | null;
+  host: string;
+  port: number;
+  databaseName: string | null;
+  username: string | null;
+  tlsEnabled: boolean;
+  healthStatus: DatabaseHealthStatus;
+  lastHealthCheckAt: string | null;
+  lastError: string | null;
+  healthHistory: DatabaseHealthEntry[];
+  hasStoredPassword: boolean;
+  config: PostgresDatabaseConfig | RedisDatabaseConfig;
+  createdById: string;
+  updatedById: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DatabaseMetricSnapshot {
+  timestamp: string;
+  databaseId: string;
+  type: DatabaseType;
+  name: string;
+  status: DatabaseHealthStatus;
+  responseMs: number;
+  metrics: Record<string, number | null>;
+}
+
+export interface PostgresTableColumn {
+  name: string;
+  dataType: string;
+  udtName: string;
+  nullable: boolean;
+  isPrimaryKey: boolean;
+  hasDefault: boolean;
+}
+
+export interface PostgresTableMetadata {
+  schema: string;
+  table: string;
+  columns: PostgresTableColumn[];
+  primaryKey: string[];
+  hasPrimaryKey: boolean;
+}
+
+export interface RedisKeyRecord {
+  key: string;
+  type: string;
+  ttlSeconds: number;
 }
 
 // Dashboard Stats

@@ -31,7 +31,7 @@ export const SEVERITY_COLOR: Record<Severity, number> = {
 
 // ── Alert Categories ──────────────────────────────────────────────────
 
-export type AlertCategory = 'node' | 'container' | 'proxy' | 'certificate';
+export type AlertCategory = 'node' | 'container' | 'proxy' | 'certificate' | 'database_postgres' | 'database_redis';
 
 export interface MetricDefinition {
   id: string;
@@ -142,6 +142,56 @@ export const ALERT_CATEGORIES: CategoryDefinition[] = [
       { name: '{{resource.id}}', description: 'Certificate ID' },
       { name: '{{days_until_expiry}}', description: 'Days until expiry' },
       { name: '{{expiry_date}}', description: 'Expiry date' },
+      { name: '{{severity}}', description: 'Alert severity' },
+      { name: '{{alert_name}}', description: 'Alert rule name' },
+    ],
+  },
+  {
+    id: 'database_postgres',
+    label: 'Database - Postgres',
+    metrics: [
+      { id: 'latency_ms', label: 'Latency (ms)', unit: 'ms', defaultOperator: '>', defaultValue: 1000 },
+      {
+        id: 'active_connections_pct',
+        label: 'Active Connections (%)',
+        unit: '%',
+        defaultOperator: '>',
+        defaultValue: 90,
+      },
+    ],
+    events: [
+      { id: 'health.offline', label: 'Database Offline', defaultSeverity: 'critical' },
+      { id: 'health.degraded', label: 'Database Degraded', defaultSeverity: 'warning' },
+      { id: 'health.online', label: 'Database Online', defaultSeverity: 'info' },
+    ],
+    variables: [
+      { name: '{{resource.name}}', description: 'Database connection name' },
+      { name: '{{resource.id}}', description: 'Database connection ID' },
+      { name: '{{value}}', description: 'Current metric value' },
+      { name: '{{threshold}}', description: 'Configured threshold' },
+      { name: '{{metric}}', description: 'Metric name' },
+      { name: '{{severity}}', description: 'Alert severity' },
+      { name: '{{alert_name}}', description: 'Alert rule name' },
+    ],
+  },
+  {
+    id: 'database_redis',
+    label: 'Database - Redis',
+    metrics: [
+      { id: 'latency_ms', label: 'Latency (ms)', unit: 'ms', defaultOperator: '>', defaultValue: 1000 },
+      { id: 'memory_pct', label: 'Memory Usage (%)', unit: '%', defaultOperator: '>', defaultValue: 90 },
+    ],
+    events: [
+      { id: 'health.offline', label: 'Database Offline', defaultSeverity: 'critical' },
+      { id: 'health.degraded', label: 'Database Degraded', defaultSeverity: 'warning' },
+      { id: 'health.online', label: 'Database Online', defaultSeverity: 'info' },
+    ],
+    variables: [
+      { name: '{{resource.name}}', description: 'Database connection name' },
+      { name: '{{resource.id}}', description: 'Database connection ID' },
+      { name: '{{value}}', description: 'Current metric value' },
+      { name: '{{threshold}}', description: 'Configured threshold' },
+      { name: '{{metric}}', description: 'Metric name' },
       { name: '{{severity}}', description: 'Alert severity' },
       { name: '{{alert_name}}', description: 'Alert rule name' },
     ],
@@ -259,6 +309,50 @@ export const EVENT_BUS_MAPPINGS: Record<string, EventMapping[]> = {
       extractData: (p) => ({ nodeId: p.nodeId }),
     },
   ],
+  'database.changed': [
+    {
+      category: 'database_postgres',
+      eventId: 'health.offline',
+      match: (p) => p.action === 'health.offline' && p.type === 'postgres',
+      extractResource: (p) => ({ type: 'database', id: p.id, name: p.name }),
+      extractData: (p) => ({ health_status: p.healthStatus }),
+    },
+    {
+      category: 'database_postgres',
+      eventId: 'health.degraded',
+      match: (p) => p.action === 'health.degraded' && p.type === 'postgres',
+      extractResource: (p) => ({ type: 'database', id: p.id, name: p.name }),
+      extractData: (p) => ({ health_status: p.healthStatus }),
+    },
+    {
+      category: 'database_postgres',
+      eventId: 'health.online',
+      match: (p) => p.action === 'health.online' && p.type === 'postgres',
+      extractResource: (p) => ({ type: 'database', id: p.id, name: p.name }),
+      extractData: (p) => ({ health_status: p.healthStatus }),
+    },
+    {
+      category: 'database_redis',
+      eventId: 'health.offline',
+      match: (p) => p.action === 'health.offline' && p.type === 'redis',
+      extractResource: (p) => ({ type: 'database', id: p.id, name: p.name }),
+      extractData: (p) => ({ health_status: p.healthStatus }),
+    },
+    {
+      category: 'database_redis',
+      eventId: 'health.degraded',
+      match: (p) => p.action === 'health.degraded' && p.type === 'redis',
+      extractResource: (p) => ({ type: 'database', id: p.id, name: p.name }),
+      extractData: (p) => ({ health_status: p.healthStatus }),
+    },
+    {
+      category: 'database_redis',
+      eventId: 'health.online',
+      match: (p) => p.action === 'health.online' && p.type === 'redis',
+      extractResource: (p) => ({ type: 'database', id: p.id, name: p.name }),
+      extractData: (p) => ({ health_status: p.healthStatus }),
+    },
+  ],
 };
 
 // ── Threshold Metric Extraction ───────────────────────────────────────
@@ -326,6 +420,17 @@ export function extractMetricFromHealthReport(
   }
 
   return null;
+}
+
+export function extractMetricFromDatabaseSnapshot(
+  category: string,
+  metric: string,
+  snapshot: { databaseId: string; metrics: Record<string, number | null> }
+): { values: Array<{ resourceId: string; value: number }> } | null {
+  if (category !== 'database_postgres' && category !== 'database_redis') return null;
+  const value = snapshot.metrics[metric];
+  if (typeof value !== 'number' || Number.isNaN(value)) return null;
+  return { values: [{ resourceId: snapshot.databaseId, value }] };
 }
 
 /** Evaluate a threshold condition */

@@ -105,6 +105,17 @@ export const ALL_SCOPES = [
   'docker:registries:delete',
   // ── Docker: Tasks ────────────────────────────────────────────────
   'docker:tasks',
+  // ── Databases ────────────────────────────────────────────────────
+  'databases:list',
+  'databases:view',
+  'databases:create',
+  'databases:edit',
+  'databases:delete',
+  'databases:query:read',
+  'databases:query:write',
+  'databases:query:admin',
+  'databases:monitoring:view',
+  'databases:credentials:reveal',
   // ── Notifications ────────────────────────────────────────────────
   'notifications:alerts:list',
   'notifications:alerts:view',
@@ -180,6 +191,16 @@ export const OPERATOR_SCOPES: readonly string[] = [
   'docker:containers:environment',
   'docker:containers:webhooks',
   'docker:tasks',
+  // Databases
+  'databases:list',
+  'databases:view',
+  'databases:create',
+  'databases:edit',
+  'databases:delete',
+  'databases:query:read',
+  'databases:query:write',
+  'databases:query:admin',
+  'databases:monitoring:view',
   // Notifications
   'notifications:alerts:list',
   'notifications:alerts:view',
@@ -215,6 +236,9 @@ export const VIEWER_SCOPES: readonly string[] = [
   'acl:view',
   'docker:containers:list',
   'docker:containers:view',
+  'databases:list',
+  'databases:view',
+  'databases:monitoring:view',
   // Notifications
   'notifications:alerts:list',
   'notifications:alerts:view',
@@ -285,6 +309,16 @@ export const RESOURCE_SCOPABLE: readonly string[] = [
   'docker:containers:files',
   'docker:containers:secrets',
   'docker:containers:webhooks',
+  // Databases
+  'databases:list',
+  'databases:view',
+  'databases:edit',
+  'databases:delete',
+  'databases:query:read',
+  'databases:query:write',
+  'databases:query:admin',
+  'databases:monitoring:view',
+  'databases:credentials:reveal',
 ];
 
 const ALL_SCOPES_SET = new Set<string>(ALL_SCOPES);

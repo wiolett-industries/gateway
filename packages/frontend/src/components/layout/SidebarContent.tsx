@@ -4,6 +4,7 @@ import {
   Award,
   Bell,
   Box,
+  Database,
   FileText,
   Globe,
   Globe2,
@@ -103,6 +104,12 @@ const navigationGroups: NavGroup[] = [
         icon: Box,
         scope: "docker:containers:list",
         matchTabs: true,
+      },
+      {
+        name: "Databases",
+        href: "/databases",
+        icon: Database,
+        scope: "databases:list",
       },
       { name: "Templates", href: "/templates", icon: Award, matchTabs: true },
       { name: "Nodes", href: "/nodes", icon: Server, scope: "nodes:list" },
@@ -272,6 +279,11 @@ export function SidebarContent({
     "notifications:view",
     "notifications:manage"
   );
+  const canAccessDatabases =
+    hasScopedAccess("databases:list") ||
+    hasScopedAccess("databases:view") ||
+    hasScopedAccess("databases:query:read") ||
+    hasScopedAccess("databases:monitoring:view");
   const canAccessAuthorities = hasAnyScope("pki:ca:list:root", "pki:ca:list:intermediate");
   // Build nav groups with scope + context filtering
   const effectiveGroups = navigationGroups
@@ -283,12 +295,18 @@ export function SidebarContent({
         items: group.items.filter((item) => {
           if (item.href === "/docker") {
             if (!canAccessDocker) return false;
+          } else if (item.href === "/databases") {
+            if (!canAccessDatabases) return false;
           } else if (item.href === "/cas") {
             if (!canAccessAuthorities) return false;
           } else if (item.href === "/notifications") {
             if (!canAccessNotifications) return false;
-          } else if (item.scope && !hasScope(item.scope)) {
-            return false;
+          } else if (item.scope) {
+            const isResourceScoped =
+              item.scope.startsWith("docker:") || item.scope.startsWith("databases:");
+            if (isResourceScoped ? !hasScopedAccess(item.scope) : !hasScope(item.scope)) {
+              return false;
+            }
           }
           // Hide Docker when no docker nodes exist
           if (item.href === "/docker" && !hasDockerNodes) return false;

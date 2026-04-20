@@ -33,6 +33,8 @@ interface DataTableProps<T> {
   groupBy?: (row: T) => DataTableGroup | null;
   /** Called when a group header is clicked */
   onGroupClick?: (group: DataTableGroup) => void;
+  /** Allow horizontal scrolling when columns exceed the container width */
+  horizontalScroll?: boolean;
 }
 
 type FlatItem<T> =
@@ -53,6 +55,7 @@ export function DataTable<T>({
   footer,
   groupBy,
   onGroupClick,
+  horizontalScroll = false,
 }: DataTableProps<T>) {
   const internalRef = useRef<HTMLDivElement>(null);
   const containerRef = scrollRef ?? internalRef;
@@ -109,81 +112,86 @@ export function DataTable<T>({
 
   return (
     <div className="border border-border rounded-lg bg-card flex flex-col min-h-0 max-h-full overflow-hidden">
-      <div ref={containerRef} className="overflow-y-auto min-h-0 -mb-px">
-        {/* Sticky header — sibling of the virtualized body, sharing the same grid template */}
-        <div
-          className="sticky top-0 bg-card z-10 shadow-[inset_0_-1px_0_var(--color-border)] grid text-xs font-medium text-muted-foreground uppercase tracking-wider"
-          style={{ gridTemplateColumns }}
-        >
-          {columns.map((col) => (
-            <div
-              key={col.key}
-              className={`${col.align === "right" ? "text-right" : "text-left"} px-4 py-2 font-medium`}
-            >
-              {col.header}
-            </div>
-          ))}
-        </div>
+      <div
+        ref={containerRef}
+        className={`${horizontalScroll ? "overflow-auto" : "overflow-y-auto"} min-h-0 -mb-px`}
+      >
+        <div className={horizontalScroll ? "min-w-max" : ""}>
+          {/* Sticky header — sibling of the virtualized body, sharing the same grid template */}
+          <div
+            className="sticky top-0 bg-card z-10 shadow-[inset_0_-1px_0_var(--color-border)] grid text-xs font-medium text-muted-foreground uppercase tracking-wider"
+            style={{ gridTemplateColumns }}
+          >
+            {columns.map((col) => (
+              <div
+                key={col.key}
+                className={`${col.align === "right" ? "text-right" : "text-left"} px-4 py-2 font-medium`}
+              >
+                {col.header}
+              </div>
+            ))}
+          </div>
 
-        {/* Virtualized body */}
-        <div style={{ height: totalSize, position: "relative" }}>
-          {virtualItems.map((vi) => {
-            const item = items[vi.index];
-            if (!item) return null;
-            const top = vi.start;
+          {/* Virtualized body */}
+          <div style={{ height: totalSize, position: "relative" }}>
+            {virtualItems.map((vi) => {
+              const item = items[vi.index];
+              if (!item) return null;
+              const top = vi.start;
 
-            if (item.kind === "group") {
+              if (item.kind === "group") {
+                return (
+                  <div
+                    key={item.key}
+                    ref={virtualizer.measureElement}
+                    data-index={vi.index}
+                    className={`absolute inset-x-0 grid bg-muted/50 border-b border-border ${
+                      onGroupClick ? "cursor-pointer hover:bg-muted transition-colors" : ""
+                    }`}
+                    style={{
+                      transform: `translateY(${top}px)`,
+                      gridTemplateColumns: "1fr",
+                    }}
+                    onClick={onGroupClick ? () => onGroupClick(item.group) : undefined}
+                  >
+                    <div className="px-4 py-2">{item.group.label}</div>
+                  </div>
+                );
+              }
+
+              const canClick = isRowClickable?.(item.row) ?? !!onRowClick;
+
               return (
-                <div
-                  key={item.key}
-                  ref={virtualizer.measureElement}
-                  data-index={vi.index}
-                  className={`absolute left-0 right-0 grid bg-muted/50 border-b border-border ${
-                    onGroupClick ? "cursor-pointer hover:bg-muted transition-colors" : ""
-                  }`}
-                  style={{
-                    transform: `translateY(${top}px)`,
-                    gridTemplateColumns: "1fr",
-                  }}
-                  onClick={onGroupClick ? () => onGroupClick(item.group) : undefined}
-                >
-                  <div className="px-4 py-2">{item.group.label}</div>
-                </div>
+                <Fragment key={item.key}>
+                  <div
+                    ref={virtualizer.measureElement}
+                    data-index={vi.index}
+                    className={`absolute inset-x-0 grid items-center border-b border-border transition-colors ${
+                      canClick ? "cursor-pointer hover:bg-muted/50" : ""
+                    }`}
+                    style={{
+                      transform: `translateY(${top}px)`,
+                      gridTemplateColumns,
+                    }}
+                    onClick={canClick && onRowClick ? () => onRowClick(item.row) : undefined}
+                  >
+                    {columns.map((col) => (
+                      <div
+                        key={col.key}
+                        className={`min-w-0 overflow-hidden px-4 py-3 text-sm ${col.align === "right" ? "text-right" : ""} ${
+                          col.truncate ? "text-ellipsis whitespace-nowrap" : ""
+                        } ${col.className ?? ""}`}
+                      >
+                        {col.render(item.row)}
+                      </div>
+                    ))}
+                  </div>
+                </Fragment>
               );
-            }
-
-            const canClick = isRowClickable?.(item.row) ?? !!onRowClick;
-
-            return (
-              <Fragment key={item.key}>
-                <div
-                  ref={virtualizer.measureElement}
-                  data-index={vi.index}
-                  className={`absolute left-0 right-0 grid items-center border-b border-border transition-colors ${
-                    canClick ? "cursor-pointer hover:bg-muted/50" : ""
-                  }`}
-                  style={{
-                    transform: `translateY(${top}px)`,
-                    gridTemplateColumns,
-                  }}
-                  onClick={canClick && onRowClick ? () => onRowClick(item.row) : undefined}
-                >
-                  {columns.map((col) => (
-                    <div
-                      key={col.key}
-                      className={`min-w-0 overflow-hidden px-4 py-3 text-sm ${col.align === "right" ? "text-right" : ""} ${
-                        col.truncate ? "text-ellipsis whitespace-nowrap" : ""
-                      } ${col.className ?? ""}`}
-                    >
-                      {col.render(item.row)}
-                    </div>
-                  ))}
-                </div>
-              </Fragment>
-            );
-          })}
+            })}
+          </div>
+          {footer}
         </div>
-        {footer}
       </div>
     </div>
   );

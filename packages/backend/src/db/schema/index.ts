@@ -5,6 +5,7 @@ export * from './audit-log.js';
 export * from './certificate-authorities.js';
 export * from './certificate-templates.js';
 export * from './certificates.js';
+export * from './databases.js';
 export * from './docker-env-vars.js';
 export * from './docker-registries.js';
 export * from './docker-secrets.js';

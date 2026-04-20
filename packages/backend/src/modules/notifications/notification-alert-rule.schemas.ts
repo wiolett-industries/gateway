@@ -1,10 +1,19 @@
 import { z } from 'zod';
 
+const alertCategorySchema = z.enum([
+  'node',
+  'container',
+  'proxy',
+  'certificate',
+  'database_postgres',
+  'database_redis',
+]);
+
 export const AlertRuleListQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   type: z.enum(['threshold', 'event']).optional(),
-  category: z.enum(['node', 'container', 'proxy', 'certificate']).optional(),
+  category: alertCategorySchema.optional(),
   enabled: z.coerce.boolean().optional(),
   search: z.string().optional(),
 });
@@ -16,7 +25,7 @@ export const CreateAlertRuleSchema = z
     name: z.string().min(1).max(255),
     enabled: z.boolean().default(false),
     type: z.enum(['threshold', 'event']),
-    category: z.enum(['node', 'container', 'proxy', 'certificate']),
+    category: alertCategorySchema,
     severity: z.enum(['info', 'warning', 'critical']).default('warning'),
 
     // Threshold

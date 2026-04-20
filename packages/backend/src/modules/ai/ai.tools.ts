@@ -917,7 +917,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
   {
     name: 'internal_documentation',
     description:
-      'Get detailed internal documentation about a specific topic in this system. Use this whenever you need deeper knowledge about how something works, what fields mean, or what the correct workflow is. Topics: pki, ssl, proxy, domains, access-lists, templates, acme, users, audit, nginx, nodes, docker, housekeeping, permissions, api.',
+      'Get detailed internal documentation about a specific topic in this system. Use this whenever you need deeper knowledge about how something works, what fields mean, or what the correct workflow is. Topics: pki, ssl, proxy, domains, access-lists, templates, acme, users, audit, nginx, nodes, docker, databases, postgres, redis, housekeeping, permissions, api.',
     parameters: {
       type: 'object',
       properties: {
@@ -936,6 +936,9 @@ export const AI_TOOLS: AIToolDefinition[] = [
             'nginx',
             'nodes',
             'docker',
+            'databases',
+            'postgres',
+            'redis',
             'housekeeping',
             'permissions',
             'api',
@@ -1290,18 +1293,155 @@ export const AI_TOOLS: AIToolDefinition[] = [
     invalidateStores: [],
   },
 
+  // ── Databases ──
+  {
+    name: 'list_databases',
+    description: 'List saved database connections managed by Gateway.',
+    parameters: {
+      type: 'object',
+      properties: {
+        type: { type: 'string', enum: ['postgres', 'redis'], description: 'Optional provider filter' },
+        healthStatus: {
+          type: 'string',
+          enum: ['online', 'offline', 'degraded', 'unknown'],
+          description: 'Optional health status filter',
+        },
+        search: { type: 'string', description: 'Optional text search' },
+      },
+    },
+    destructive: false,
+    category: 'Databases',
+    requiredScope: 'databases:list',
+    invalidateStores: [],
+  },
+  {
+    name: 'get_database_connection',
+    description: 'Get a saved database connection by ID, including provider, host, status, and safe config fields.',
+    parameters: {
+      type: 'object',
+      properties: {
+        databaseId: { type: 'string', description: 'Database connection UUID' },
+      },
+      required: ['databaseId'],
+    },
+    destructive: false,
+    category: 'Databases',
+    requiredScope: 'databases:view',
+    invalidateStores: [],
+  },
+  {
+    name: 'query_postgres_read',
+    description: 'Run a single read-only SQL statement against a saved Postgres connection.',
+    parameters: {
+      type: 'object',
+      properties: {
+        databaseId: { type: 'string', description: 'Database connection UUID' },
+        sql: { type: 'string', description: 'Single read-only SQL statement' },
+      },
+      required: ['databaseId', 'sql'],
+    },
+    destructive: false,
+    category: 'Databases',
+    requiredScope: 'databases:query:read',
+    invalidateStores: [],
+  },
+  {
+    name: 'execute_postgres_sql',
+    description: 'Run a single mutating or administrative SQL statement against a saved Postgres connection.',
+    parameters: {
+      type: 'object',
+      properties: {
+        databaseId: { type: 'string', description: 'Database connection UUID' },
+        sql: { type: 'string', description: 'Single SQL statement' },
+      },
+      required: ['databaseId', 'sql'],
+    },
+    destructive: true,
+    category: 'Databases',
+    requiredScope: 'databases:query:write',
+    invalidateStores: [],
+  },
+  {
+    name: 'browse_redis_keys',
+    description: 'Browse keys in a saved Redis connection using SCAN.',
+    parameters: {
+      type: 'object',
+      properties: {
+        databaseId: { type: 'string', description: 'Database connection UUID' },
+        search: { type: 'string', description: 'Optional SCAN match pattern or substring search' },
+        type: { type: 'string', description: 'Optional Redis TYPE filter' },
+      },
+      required: ['databaseId'],
+    },
+    destructive: false,
+    category: 'Databases',
+    requiredScope: 'databases:query:read',
+    invalidateStores: [],
+  },
+  {
+    name: 'get_redis_key',
+    description: 'Get the value, type, and TTL of a Redis key from a saved connection.',
+    parameters: {
+      type: 'object',
+      properties: {
+        databaseId: { type: 'string', description: 'Database connection UUID' },
+        key: { type: 'string', description: 'Redis key name' },
+      },
+      required: ['databaseId', 'key'],
+    },
+    destructive: false,
+    category: 'Databases',
+    requiredScope: 'databases:query:read',
+    invalidateStores: [],
+  },
+  {
+    name: 'set_redis_key',
+    description: 'Create or replace a Redis key using the visual-editor-compatible payload format.',
+    parameters: {
+      type: 'object',
+      properties: {
+        databaseId: { type: 'string', description: 'Database connection UUID' },
+        key: { type: 'string', description: 'Redis key name' },
+        type: { type: 'string', enum: ['string', 'hash', 'list', 'set', 'zset'], description: 'Redis value type' },
+        value: { type: 'object', description: 'Value payload. Use a JSON string for string type, object for hash, array for list/set, array of {member,score} for zset.' },
+        ttlSeconds: { type: 'number', description: 'Optional TTL in seconds' },
+      },
+      required: ['databaseId', 'key', 'type', 'value'],
+    },
+    destructive: true,
+    category: 'Databases',
+    requiredScope: 'databases:query:write',
+    invalidateStores: [],
+  },
+  {
+    name: 'execute_redis_command',
+    description: 'Run a single Redis command against a saved Redis connection.',
+    parameters: {
+      type: 'object',
+      properties: {
+        databaseId: { type: 'string', description: 'Database connection UUID' },
+        command: { type: 'string', description: 'Single Redis command line' },
+      },
+      required: ['databaseId', 'command'],
+    },
+    destructive: true,
+    category: 'Databases',
+    requiredScope: 'databases:query:admin',
+    invalidateStores: [],
+  },
+
   // ── Web Search (conditional) ──
   // ── Notifications - Alert Rules ──
   {
     name: 'list_alert_rules',
     description:
-      'List all notification alert rules. Returns id, name, enabled, type (threshold/event), category (node/container/proxy/certificate), severity, metric, operator, thresholdValue, eventPattern, resourceIds, webhookIds, cooldownSeconds.',
+      'List all notification alert rules. Returns id, name, enabled, type (threshold/event), category (node/container/proxy/certificate/database_postgres/database_redis), severity, metric, operator, thresholdValue, eventPattern, resourceIds, webhookIds, cooldownSeconds.',
     parameters: {
       type: 'object',
       properties: {
         category: {
           type: 'string',
-          enum: ['node', 'container', 'proxy', 'certificate'],
+          enum: ['node', 'container', 'proxy', 'certificate', 'database_postgres', 'database_redis'],
           description: 'Filter by category',
         },
         enabled: { type: 'boolean', description: 'Filter by enabled/disabled' },

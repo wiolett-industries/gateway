@@ -7,7 +7,7 @@ import { Switch } from "@/components/ui/switch";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useUIStore } from "@/stores/ui";
-import type { Node, ProxyHost } from "@/types";
+import type { DatabaseConnection, Node, ProxyHost } from "@/types";
 import { AIConfigSection } from "./settings/AIConfigSection";
 import { ApiTokensSection } from "./settings/ApiTokensSection";
 import { AuthProvisioningSection } from "./settings/AuthProvisioningSection";
@@ -27,6 +27,7 @@ export function Settings() {
   } = useUIStore();
   const [nodesList, setNodesList] = useState<Node[]>([]);
   const [proxyHostsList, setProxyHostsList] = useState<ProxyHost[]>([]);
+  const [databasesList, setDatabasesList] = useState<DatabaseConnection[]>([]);
 
   const canUpdate = hasScope("admin:update");
   const canManageUsers = hasScope("admin:users");
@@ -44,6 +45,10 @@ export function Settings() {
     api
       .listProxyHosts({ limit: 100 })
       .then((r) => setProxyHostsList(r.data ?? []))
+      .catch(() => {});
+    api
+      .listDatabases({ limit: 200 })
+      .then((r) => setDatabasesList(r.data ?? []))
       .catch(() => {});
   }, []);
 
@@ -172,7 +177,12 @@ export function Settings() {
         </div>
 
         {/* API Tokens */}
-        <ApiTokensSection user={user} nodesList={nodesList} proxyHostsList={proxyHostsList} />
+        <ApiTokensSection
+          user={user}
+          nodesList={nodesList}
+          proxyHostsList={proxyHostsList}
+          databasesList={databasesList}
+        />
 
         {/* Authentication */}
         {canManageUsers && <AuthProvisioningSection />}

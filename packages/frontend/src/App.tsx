@@ -19,6 +19,8 @@ import { CAs } from "@/pages/CAs";
 import { CertificateDetail } from "@/pages/CertificateDetail";
 import { Certificates } from "@/pages/Certificates";
 import { Dashboard } from "@/pages/Dashboard";
+import { DatabaseDetail } from "@/pages/DatabaseDetail";
+import { Databases } from "@/pages/Databases";
 import { Docker } from "@/pages/Docker";
 import { DockerComposeLogsPopout } from "@/pages/DockerComposeLogsPopout";
 import { DockerConsolePopout } from "@/pages/DockerConsolePopout";
@@ -126,6 +128,33 @@ function DockerPageGuard() {
   }
 
   return <Docker />;
+}
+
+function DatabasesPageGuard() {
+  const hasScopedAccess = useAuthStore((s) => s.hasScopedAccess);
+
+  const canAccessDatabases =
+    hasScopedAccess("databases:list") ||
+    hasScopedAccess("databases:view") ||
+    hasScopedAccess("databases:query:read") ||
+    hasScopedAccess("databases:monitoring:view");
+
+  if (!canAccessDatabases) {
+    return <Navigate to="/" replace />;
+  }
+
+  return <Databases />;
+}
+
+function DatabaseDetailGuard() {
+  const { id } = useParams<{ id: string }>();
+  const hasScope = useAuthStore((s) => s.hasScope);
+
+  if (!hasScope("databases:view") && !(id && hasScope(`databases:view:${id}`))) {
+    return <Navigate to="/" replace />;
+  }
+
+  return <DatabaseDetail />;
 }
 
 function NotificationsPageGuard() {
@@ -331,6 +360,8 @@ export default function App() {
               <Route path="/templates/:tab?" element={<TemplatesPage />} />
               <Route path="/audit" element={scoped("admin:audit", <AuditLog />)} />
               <Route path="/notifications/:tab?" element={<NotificationsPageGuard />} />
+              <Route path="/databases" element={<DatabasesPageGuard />} />
+              <Route path="/databases/:id/:tab?" element={<DatabaseDetailGuard />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/admin/users" element={scoped("admin:users", <AdminUsers />)} />
               <Route path="/admin/groups" element={scoped("admin:groups", <AdminGroups />)} />

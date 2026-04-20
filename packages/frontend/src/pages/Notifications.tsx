@@ -571,6 +571,21 @@ function AlertDialog({
         }
         if (resourceLoadTokenRef.current !== loadToken) return;
         setAvailableResources(all);
+        return;
+      }
+
+      if (category === "database_postgres" || category === "database_redis") {
+        const response = await api.listDatabases({
+          limit: 200,
+          type: category === "database_postgres" ? "postgres" : "redis",
+        });
+        if (resourceLoadTokenRef.current !== loadToken) return;
+        setAvailableResources(
+          response.data.map((database) => ({
+            id: database.id,
+            label: `${database.name} (${database.host}:${database.port})`,
+          }))
+        );
       }
     } catch {
       /* ignore */

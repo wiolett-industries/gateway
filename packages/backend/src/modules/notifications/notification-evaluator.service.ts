@@ -7,6 +7,7 @@ import type { EventBusService } from '@/services/event-bus.service.js';
 import type { NodeRegistryService } from '@/services/node-registry.service.js';
 import {
   EVENT_BUS_MAPPINGS,
+  extractMetricFromDatabaseSnapshot,
   evaluateThreshold,
   extractMetricFromHealthReport,
   type Severity,
@@ -133,6 +134,38 @@ export class NotificationEvaluatorService {
     }
   }
 
+  async evaluateDatabaseSnapshot(snapshot: {
+    databaseId: string;
+    type: 'postgres' | 'redis';
+    name: string;
+    metrics: Record<string, number | null>;
+  }): Promise<void> {
+    const rules = await this.getThresholdRules();
+    if (rules.length === 0) return;
+
+    const category = snapshot.type === 'postgres' ? 'database_postgres' : 'database_redis';
+
+    for (const rule of rules) {
+      if (rule.category !== category) continue;
+      if (rule.resourceIds?.length > 0 && !rule.resourceIds.includes(snapshot.databaseId)) continue;
+
+      const extraction = extractMetricFromDatabaseSnapshot(rule.category, rule.metric, snapshot);
+      if (!extraction) continue;
+
+      for (const { resourceId, value } of extraction.values) {
+        if (Number.isNaN(value)) continue;
+
+        const breached = evaluateThreshold(value, rule.operator, rule.thresholdValue);
+        if (breached) {
+          if (this.redis) await this.redis.del(`notif:resolve:${rule.id}:${resourceId}`).catch(() => {});
+          await this.handleThresholdBreach(rule, resourceId, value, snapshot.databaseId, snapshot.name);
+        } else {
+          await this.handleThresholdClear(rule, resourceId, value);
+        }
+      }
+    }
+  }
+
   private async handleThresholdBreach(
     rule: any,
     compositeResourceId: string,
@@ -196,8 +229,8 @@ export class NotificationEvaluatorService {
       return;
     }
 
-    const nodeName = this.getNodeName(nodeId);
-    const resourceName = rawResourceId === 'system' ? nodeName : rawResourceId;
+    const nodeName = rule.category === 'node' || rule.category === 'container' ? this.getNodeName(nodeId) : undefined;
+    const resourceName = rawResourceId === 'system' ? nodeName || nodeId : rawResourceId;
 
     await this.fireAlert(rule, rule.category, compositeResourceId, resourceName, {
       value: currentValue,

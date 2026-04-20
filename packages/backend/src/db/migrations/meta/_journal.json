@@ -50,6 +50,20 @@
       "when": 1776412800000,
       "tag": "0006_tidy_gateway",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1776643200000,
+      "tag": "0007_polite_databases",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1776729600000,
+      "tag": "0008_late_size_limit",
+      "breakpoints": true
     }
   ]
 }

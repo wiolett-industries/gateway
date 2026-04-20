@@ -6,6 +6,7 @@ import { isPrivateUrl } from '@/lib/utils.js';
 import type { AccessListService } from '@/modules/access-lists/access-list.service.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { AuthService } from '@/modules/auth/auth.service.js';
+import type { DatabaseConnectionService } from '@/modules/databases/databases.service.js';
 import type { DockerManagementService } from '@/modules/docker/docker.service.js';
 import type { DomainsService } from '@/modules/domains/domain.service.js';
 import type { GroupService } from '@/modules/groups/group.service.js';
@@ -94,6 +95,7 @@ export class AIService {
     private readonly monitoringService: MonitoringService,
     private readonly nodesService: NodesService,
     private readonly groupService: GroupService,
+    private readonly databaseService: DatabaseConnectionService,
     private readonly dockerService: DockerManagementService,
     private readonly notifRuleService?: import('@/modules/notifications/notification-alert-rule.service.js').NotificationAlertRuleService,
     private readonly notifWebhookService?: import('@/modules/notifications/notification-webhook.service.js').NotificationWebhookService,
@@ -656,6 +658,44 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
       case 'list_docker_networks':
         return this.dockerService.listNetworks(a.nodeId);
 
+      // ── Databases ──
+      case 'list_databases':
+        return this.databaseService.list({
+          page: 1,
+          limit: 100,
+          search: a.search,
+          type: a.type,
+          healthStatus: a.healthStatus,
+        });
+      case 'get_database_connection':
+        this.ensureDatabaseScope(user, 'databases:view', a.databaseId);
+        return this.databaseService.get(a.databaseId);
+      case 'query_postgres_read':
+        this.ensureDatabaseScope(user, 'databases:query:read', a.databaseId);
+        return this.databaseService.executePostgresSql(a.databaseId, a.sql, user.id);
+      case 'execute_postgres_sql':
+        this.ensureDatabaseScope(user, 'databases:query:write', a.databaseId);
+        return this.databaseService.executePostgresSql(a.databaseId, a.sql, user.id);
+      case 'browse_redis_keys':
+        this.ensureDatabaseScope(user, 'databases:query:read', a.databaseId);
+        return this.databaseService.scanRedisKeys(a.databaseId, 0, 100, a.search, a.type);
+      case 'get_redis_key':
+        this.ensureDatabaseScope(user, 'databases:query:read', a.databaseId);
+        return this.databaseService.getRedisKey(a.databaseId, a.key);
+      case 'set_redis_key':
+        this.ensureDatabaseScope(user, 'databases:query:write', a.databaseId);
+        return this.databaseService.setRedisKey(
+          a.databaseId,
+          a.key,
+          a.type,
+          a.value,
+          a.ttlSeconds,
+          user.id
+        );
+      case 'execute_redis_command':
+        this.ensureDatabaseScope(user, 'databases:query:admin', a.databaseId);
+        return this.databaseService.executeRedisCommand(a.databaseId, a.command, user.id);
+
       // ── Ask Question (handled client-side, backend just passes through) ──
       case 'ask_question':
         return { _askQuestion: true, question: a.question, options: a.options, allowFreeText: a.allowFreeText };
@@ -780,6 +820,12 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
 
       default:
         throw new Error(`Tool not implemented: ${toolName}`);
+    }
+  }
+
+  private ensureDatabaseScope(user: User, baseScope: string, databaseId: string) {
+    if (!hasScope(user.scopes, `${baseScope}:${databaseId}`)) {
+      throw new Error(`PERMISSION_DENIED: Missing required scope ${baseScope}:${databaseId}`);
     }
   }
 
