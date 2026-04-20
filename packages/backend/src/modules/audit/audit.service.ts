@@ -6,6 +6,7 @@ import { auditLog, users } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { buildWhere } from '@/lib/utils.js';
 import type { PaginatedResponse } from '@/types.js';
+import { getAuditRequestContext, markAuditEmitted } from './audit-request-context.js';
 
 const logger = createChildLogger('AuditService');
 
@@ -25,15 +26,17 @@ export class AuditService {
 
   async log(entry: AuditEntry): Promise<void> {
     try {
+      const requestContext = getAuditRequestContext();
       await this.db.insert(auditLog).values({
         userId: entry.userId,
         action: entry.action,
         resourceType: entry.resourceType,
         resourceId: entry.resourceId,
         details: entry.details,
-        ipAddress: entry.ipAddress,
-        userAgent: entry.userAgent,
+        ipAddress: entry.ipAddress ?? requestContext?.ipAddress,
+        userAgent: entry.userAgent ?? requestContext?.userAgent,
       });
+      markAuditEmitted();
     } catch (error) {
       logger.error('Failed to write audit log', { error, entry });
     }

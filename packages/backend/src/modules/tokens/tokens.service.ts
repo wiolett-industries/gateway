@@ -6,6 +6,7 @@ import type { DrizzleClient } from '@/db/client.js';
 import { apiTokens, permissionGroups, users } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { AppError } from '@/middleware/error-handler.js';
+import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { User } from '@/types.js';
 import type { CreateTokenInput } from './tokens.schemas.js';
 
@@ -17,7 +18,10 @@ function hashToken(raw: string): string {
 
 @injectable()
 export class TokensService {
-  constructor(@inject(TOKENS.DrizzleClient) private readonly db: DrizzleClient) {}
+  constructor(
+    @inject(TOKENS.DrizzleClient) private readonly db: DrizzleClient,
+    private readonly auditService: AuditService
+  ) {}
 
   async createToken(userId: string, input: CreateTokenInput) {
     const raw = `gw_${randomBytes(32).toString('hex')}`;
@@ -36,6 +40,13 @@ export class TokensService {
       .returning();
 
     logger.info('Created API token', { tokenId: token.id, userId, scopes: input.scopes });
+    await this.auditService.log({
+      userId,
+      action: 'api_token.create',
+      resourceType: 'api-token',
+      resourceId: token.id,
+      details: { name: token.name, scopes: token.scopes },
+    });
 
     return {
       id: token.id,
@@ -69,6 +80,13 @@ export class TokensService {
     });
     if (!token) throw new AppError(404, 'TOKEN_NOT_FOUND', 'Token not found');
     await this.db.update(apiTokens).set({ name }).where(eq(apiTokens.id, tokenId));
+    await this.auditService.log({
+      userId,
+      action: 'api_token.rename',
+      resourceType: 'api-token',
+      resourceId: tokenId,
+      details: { name },
+    });
   }
 
   async revokeToken(userId: string, tokenId: string): Promise<void> {
@@ -82,6 +100,13 @@ export class TokensService {
 
     await this.db.delete(apiTokens).where(eq(apiTokens.id, tokenId));
     logger.info('Revoked API token', { tokenId, userId });
+    await this.auditService.log({
+      userId,
+      action: 'api_token.revoke',
+      resourceType: 'api-token',
+      resourceId: tokenId,
+      details: { name: token.name, scopes: token.scopes },
+    });
   }
 
   async validateToken(rawToken: string): Promise<{ user: User; scopes: string[] } | null> {
