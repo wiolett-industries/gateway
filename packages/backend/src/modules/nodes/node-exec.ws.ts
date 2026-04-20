@@ -1,63 +1,13 @@
-import { eq } from 'drizzle-orm';
 import type { WSContext } from 'hono/ws';
-import { container, TOKENS } from '@/container.js';
-import type { DrizzleClient } from '@/db/client.js';
-import { permissionGroups } from '@/db/schema/index.js';
+import { container } from '@/container.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { hasScope } from '@/lib/permissions.js';
+import { resolveLiveSessionUser } from '@/modules/auth/live-session-user.js';
 import { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import { NodeRegistryService } from '@/services/node-registry.service.js';
-import { SessionService } from '@/services/session.service.js';
 import type { User } from '@/types.js';
 
 const logger = createChildLogger('NodeExec');
-
-async function resolveLiveSessionUser(token: string): Promise<{ user: User; effectiveScopes: string[] } | null> {
-  if (token.startsWith('gw_')) return null;
-  const sessionService = container.resolve(SessionService);
-  const session = await sessionService.getSession(token);
-  if (!session?.user) return null;
-
-  const { AuthService } = await import('@/modules/auth/auth.service.js');
-  const authService = container.resolve(AuthService);
-  const user = await authService.getUserById(session.user.id);
-  if (!user) return null;
-
-  const db = container.resolve<DrizzleClient>(TOKENS.DrizzleClient);
-  const allGroups = await db.query.permissionGroups.findMany({
-    columns: { id: true, parentId: true, scopes: true, name: true },
-  });
-  const groupMap = new Map(allGroups.map((group) => [group.id, group]));
-  const group = groupMap.get(user.groupId);
-  const scopeSet = new Set<string>();
-
-  if (group) {
-    for (const scope of (group.scopes as string[]) ?? []) scopeSet.add(scope);
-    const visited = new Set<string>([group.id]);
-    let parent = group.parentId ? groupMap.get(group.parentId) : undefined;
-    while (parent && !visited.has(parent.id)) {
-      visited.add(parent.id);
-      for (const scope of (parent.scopes as string[]) ?? []) scopeSet.add(scope);
-      parent = parent.parentId ? groupMap.get(parent.parentId) : undefined;
-    }
-  } else {
-    const freshGroup = await db.query.permissionGroups.findFirst({
-      where: eq(permissionGroups.id, user.groupId),
-      columns: { scopes: true, name: true },
-    });
-    for (const scope of (freshGroup?.scopes as string[]) ?? []) scopeSet.add(scope);
-  }
-
-  const effectiveScopes = [...scopeSet];
-  return {
-    user: {
-      ...user,
-      scopes: effectiveScopes,
-      groupName: group?.name ?? user.groupName,
-    },
-    effectiveScopes,
-  };
-}
 
 function send(ws: WSContext, msg: Record<string, unknown>): void {
   try {
@@ -73,6 +23,7 @@ interface ExecWSState {
   execId: string | null;
   outputHandler: ((data: any) => void) | null;
   keepaliveInterval: ReturnType<typeof setInterval> | null;
+  token: string;
 }
 
 const wsStates = new WeakMap<WSContext, ExecWSState>();
@@ -93,15 +44,12 @@ export function createNodeExecWSHandlers(nodeId: string, shell: string, token: s
         execId: null,
         outputHandler: null,
         keepaliveInterval: null,
+        token,
       };
       wsStates.set(ws, state);
 
       state.keepaliveInterval = setInterval(() => {
-        try {
-          ws.send(JSON.stringify({ type: 'pong' }));
-        } catch {
-          if (state.keepaliveInterval) clearInterval(state.keepaliveInterval);
-        }
+        void revalidateNodeExecAccess(ws, state, nodeId, true);
       }, 30_000);
 
       authenticateAndCreateExec(ws, state, token, nodeId, shell, dispatch, registry).catch((err) => {
@@ -132,6 +80,7 @@ export function createNodeExecWSHandlers(nodeId: string, shell: string, token: s
       }
 
       if (msg.type === 'input' && state.execId) {
+        if (!(await revalidateNodeExecAccess(ws, state, nodeId))) return;
         try {
           const inputData = Buffer.from(msg.data as string, 'base64');
           dispatch.sendExecInput(nodeId, state.execId, inputData);
@@ -142,6 +91,7 @@ export function createNodeExecWSHandlers(nodeId: string, shell: string, token: s
       }
 
       if (msg.type === 'resize' && state.execId) {
+        if (!(await revalidateNodeExecAccess(ws, state, nodeId))) return;
         try {
           await dispatch.sendNodeExecCommand(nodeId, 'resize', {
             rows: msg.rows as number,
@@ -265,20 +215,23 @@ async function authenticateAndCreateExec(
   state.execId = execId;
 
   const outputHandler = (output: any) => {
-    if (output.data && output.data.length > 0) {
-      const b64 = Buffer.isBuffer(output.data)
-        ? output.data.toString('base64')
-        : Buffer.from(output.data).toString('base64');
-      send(ws, { type: 'output', data: b64 });
-    }
-    if (output.exited) {
-      send(ws, { type: 'exit', exitCode: output.exitCode ?? 0 });
-      try {
-        ws.close(1000, 'Process exited');
-      } catch {
-        /* */
+    void (async () => {
+      if (!(await revalidateNodeExecAccess(ws, state, nodeId))) return;
+      if (output.data && output.data.length > 0) {
+        const b64 = Buffer.isBuffer(output.data)
+          ? output.data.toString('base64')
+          : Buffer.from(output.data).toString('base64');
+        send(ws, { type: 'output', data: b64 });
       }
-    }
+      if (output.exited) {
+        send(ws, { type: 'exit', exitCode: output.exitCode ?? 0 });
+        try {
+          ws.close(1000, 'Process exited');
+        } catch {
+          /* */
+        }
+      }
+    })();
   };
   state.outputHandler = outputHandler;
   registry.registerExecHandler(execId, outputHandler);
@@ -290,4 +243,33 @@ async function authenticateAndCreateExec(
   }
 
   send(ws, { type: 'connected', execId, shell: usedShell, isNew });
+}
+
+async function revalidateNodeExecAccess(
+  ws: WSContext,
+  state: ExecWSState,
+  nodeId: string,
+  emitPong = false
+): Promise<boolean> {
+  const authResult = await resolveLiveSessionUser(state.token);
+  if (!authResult || authResult.user.isBlocked || !hasScope(authResult.effectiveScopes, `nodes:console:${nodeId}`)) {
+    state.authenticated = false;
+    send(ws, { type: 'auth_error', message: 'Access revoked or token expired' });
+    try {
+      ws.close(1008, 'Authentication failed');
+    } catch {
+      /* */
+    }
+    return false;
+  }
+
+  state.user = authResult.user;
+  if (emitPong) {
+    try {
+      ws.send(JSON.stringify({ type: 'pong' }));
+    } catch {
+      if (state.keepaliveInterval) clearInterval(state.keepaliveInterval);
+    }
+  }
+  return true;
 }

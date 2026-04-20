@@ -6,7 +6,6 @@ import type {
   DockerNetwork,
   DockerRegistry,
   DockerTask,
-  DockerTemplate,
   DockerVolume,
   Node,
 } from "@/types";
@@ -45,7 +44,6 @@ interface DockerState {
   images: DockerImage[];
   volumes: DockerVolume[];
   networks: DockerNetwork[];
-  templates: DockerTemplate[];
   tasks: DockerTask[];
   registries: DockerRegistry[];
   /** null = all nodes */
@@ -66,14 +64,11 @@ interface DockerState {
   fetchImages: (nodeIdOverride?: string | null) => Promise<void>;
   fetchVolumes: (nodeIdOverride?: string | null) => Promise<void>;
   fetchNetworks: (nodeIdOverride?: string | null) => Promise<void>;
-  fetchTemplates: () => Promise<void>;
   fetchTasks: () => Promise<void>;
   fetchRegistries: () => Promise<void>;
 
   invalidate: (
-    ...resources: Array<
-      "containers" | "images" | "volumes" | "networks" | "tasks" | "templates" | "registries"
-    >
+    ...resources: Array<"containers" | "images" | "volumes" | "networks" | "tasks" | "registries">
   ) => Promise<void>;
 }
 
@@ -102,7 +97,6 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
   images: [],
   volumes: [],
   networks: [],
-  templates: [],
   tasks: [],
   registries: [],
   selectedNodeId: null,
@@ -275,16 +269,6 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
     }
   },
 
-  fetchTemplates: async () => {
-    set({ isLoading: get().templates.length === 0 });
-    try {
-      const data = await api.listDockerTemplates();
-      set({ templates: data ?? [], isLoading: false });
-    } catch {
-      set({ isLoading: false });
-    }
-  },
-
   fetchTasks: async () => {
     set({ isLoading: get().tasks.length === 0 });
     try {
@@ -316,7 +300,6 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
       volumes: s.fetchVolumes,
       networks: s.fetchNetworks,
       tasks: s.fetchTasks,
-      templates: s.fetchTemplates,
       registries: s.fetchRegistries,
     };
     await Promise.all(resources.map((r) => map[r]?.()));

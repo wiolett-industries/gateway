@@ -280,7 +280,7 @@ export function registerContainerRoutes(router: OpenAPIHono<AppEnv>) {
   // Get container env
   router.get(
     '/nodes/:nodeId/containers/:containerId/env',
-    requireScopeForResource('docker:containers:view', 'nodeId'),
+    requireScopeForResource('docker:containers:environment', 'nodeId'),
     async (c) => {
       const service = container.resolve(DockerManagementService);
       const nodeId = c.req.param('nodeId');
@@ -311,7 +311,7 @@ export function registerContainerRoutes(router: OpenAPIHono<AppEnv>) {
   // List secrets (values masked unless user has docker:containers:secrets scope)
   router.get(
     '/nodes/:nodeId/containers/:containerId/secrets',
-    requireScopeForResource('docker:containers:view', 'nodeId'),
+    requireScopeForResource('docker:containers:secrets', 'nodeId'),
     async (c) => {
       const service = container.resolve(DockerSecretService);
       const nodeId = c.req.param('nodeId');
@@ -347,11 +347,12 @@ export function registerContainerRoutes(router: OpenAPIHono<AppEnv>) {
     requireScopeForResource('docker:containers:secrets', 'nodeId'),
     async (c) => {
       const service = container.resolve(DockerSecretService);
+      const nodeId = c.req.param('nodeId');
       const secretId = c.req.param('secretId');
       const user = c.get('user')!;
       const body = await c.req.json();
       const { value } = SecretUpdateSchema.parse(body);
-      const data = await service.update(secretId, value, user.id);
+      const data = await service.update(secretId, nodeId, value, user.id);
       return c.json({ data });
     }
   );
@@ -362,9 +363,10 @@ export function registerContainerRoutes(router: OpenAPIHono<AppEnv>) {
     requireScopeForResource('docker:containers:secrets', 'nodeId'),
     async (c) => {
       const service = container.resolve(DockerSecretService);
+      const nodeId = c.req.param('nodeId');
       const secretId = c.req.param('secretId');
       const user = c.get('user')!;
-      await service.delete(secretId, user.id);
+      await service.delete(secretId, nodeId, user.id);
       return c.json({ success: true });
     }
   );

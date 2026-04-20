@@ -52,7 +52,7 @@ export function ProxyHostRow({
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: host.id,
     data: { type: "host", host },
-    disabled: isOverlay,
+    disabled: isOverlay || !canEditHost,
   });
 
   const style = {

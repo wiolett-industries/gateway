@@ -6,6 +6,7 @@ import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
 import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import type { NodeRegistryService } from '@/services/node-registry.service.js';
+import type { DockerEnvironmentService } from './docker-environment.service.js';
 import type { DockerSecretService } from './docker-secret.service.js';
 import type { DockerTaskService } from './docker-task.service.js';
 
@@ -34,6 +35,7 @@ export class DockerManagementService {
   private containerTransitions = new Map<string, ContainerTransition>();
 
   private taskService?: DockerTaskService;
+  private environmentService?: DockerEnvironmentService;
   private secretService?: DockerSecretService;
   private eventBus?: EventBusService;
 
@@ -46,6 +48,10 @@ export class DockerManagementService {
 
   setTaskService(taskService: DockerTaskService) {
     this.taskService = taskService;
+  }
+
+  setEnvironmentService(environmentService: DockerEnvironmentService) {
+    this.environmentService = environmentService;
   }
 
   setSecretService(secretService: DockerSecretService) {
@@ -363,7 +369,14 @@ export class DockerManagementService {
       resourceType: 'docker-container',
       details: { nodeId, name: config.name, image: config.image },
     });
+    const createdName = (requestedName || data?.name || data?.Name || '') as string;
     const newId = (data?.Id ?? data?.id ?? '') as string;
+    if (createdName && this.environmentService) {
+      const env = this.normalizeEnvRecord(config.env);
+      if (env) {
+        await this.environmentService.replace(nodeId, createdName, env);
+      }
+    }
     if (requestedName && newId) {
       this.emitContainer(nodeId, requestedName, newId, 'created');
     }
@@ -479,6 +492,9 @@ export class DockerManagementService {
     } finally {
       this.clearTransition(nodeId, newName);
     }
+    if (this.environmentService) {
+      await this.environmentService.rename(nodeId, oldName, newName);
+    }
     await this.auditService.log({
       action: 'docker.container.rename',
       userId,
@@ -509,6 +525,9 @@ export class DockerManagementService {
     }
 
     // Copy secrets from source container to the new one (keyed by name)
+    if (this.environmentService) {
+      await this.environmentService.copy(nodeId, sourceName, name);
+    }
     if (this.secretService) {
       await this.secretService.copySecrets(nodeId, sourceName, name, userId);
     }
@@ -529,6 +548,18 @@ export class DockerManagementService {
     await this.validateDockerNode(nodeId);
     const name = await this.resolveContainerName(nodeId, containerId);
     const expectedState = await this.resolveExpectedRecreateState(nodeId, containerId);
+    if (this.environmentService) {
+      const storedEnv = await this.environmentService.getDecryptedMap(nodeId, name);
+      if (Object.keys(storedEnv).length > 0) {
+        config.env = { ...storedEnv, ...(this.normalizeEnvRecord(config.env) || {}) };
+      }
+    }
+    if (this.secretService) {
+      const secrets = await this.secretService.getDecryptedMap(nodeId, name);
+      if (Object.keys(secrets).length > 0) {
+        config.env = { ...(this.normalizeEnvRecord(config.env) || {}), ...secrets };
+      }
+    }
     const hasImageChange = typeof config.tag === 'string' && config.tag.length > 0;
     this.requireNoTransition(nodeId, name);
     this.setTransition(nodeId, name, 'updating');
@@ -574,21 +605,32 @@ export class DockerManagementService {
     const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'inspect', { containerId });
     const inspect = this.parseResult(result);
     const allEnv: string[] = inspect?.Config?.Env || [];
+    const name = (inspect?.Name ?? '').replace(/^\//, '');
 
     // Strip secret keys from the env array so they only appear in the secrets section
+    let visibleEnv = allEnv;
     if (this.secretService) {
-      const name = (inspect?.Name ?? '').replace(/^\//, '');
       if (name) {
         const secretKeys = await this.secretService.getSecretKeys(nodeId, name);
         if (secretKeys.size > 0) {
-          return allEnv.filter((entry) => {
+          visibleEnv = allEnv.filter((entry) => {
             const key = entry.split('=')[0];
             return !secretKeys.has(key);
           });
         }
       }
     }
-    return allEnv;
+
+    if (this.environmentService && name) {
+      const storedEnv = await this.environmentService.getDecryptedMap(nodeId, name);
+      if (Object.keys(storedEnv).length > 0) {
+        return this.envMapToList(storedEnv);
+      }
+
+      await this.environmentService.seedFromRuntimeIfMissing(nodeId, name, this.envListToMap(visibleEnv));
+    }
+
+    return visibleEnv;
   }
 
   async liveUpdateContainer(nodeId: string, containerId: string, config: Record<string, unknown>, userId: string) {
@@ -619,6 +661,14 @@ export class DockerManagementService {
     const task = await this.createTask(nodeId, containerId, name, 'recreate');
 
     // Inject decrypted secrets into the recreate config's env (keyed by container name)
+    if (this.environmentService) {
+      const storedEnv = await this.environmentService.getDecryptedMap(nodeId, name);
+      if (Object.keys(storedEnv).length > 0) {
+        const existingEnv = (config.env as Record<string, string> | undefined) || {};
+        config.env = { ...storedEnv, ...existingEnv };
+      }
+    }
+
     if (this.secretService) {
       const secrets = await this.secretService.getDecryptedMap(nodeId, name);
       if (Object.keys(secrets).length > 0) {
@@ -698,6 +748,9 @@ export class DockerManagementService {
         60000
       );
       data = this.parseResult(result);
+      if (this.environmentService) {
+        await this.environmentService.replace(nodeId, name, env || {});
+      }
     } catch (err) {
       this.clearTransition(nodeId, name);
       if (task && this.taskService) {
@@ -721,6 +774,35 @@ export class DockerManagementService {
     });
 
     return data;
+  }
+
+  private normalizeEnvRecord(value: unknown): Record<string, string> | undefined {
+    if (!value || typeof value !== 'object') {
+      return undefined;
+    }
+
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .filter(([key]) => key.trim().length > 0)
+        .map(([key, entryValue]) => [key, String(entryValue ?? '')])
+    );
+  }
+
+  private envListToMap(entries: string[]): Record<string, string> {
+    const env: Record<string, string> = {};
+    for (const entry of entries) {
+      const idx = entry.indexOf('=');
+      if (idx === -1) {
+        env[entry] = '';
+      } else {
+        env[entry.slice(0, idx)] = entry.slice(idx + 1);
+      }
+    }
+    return env;
+  }
+
+  private envMapToList(env: Record<string, string>): string[] {
+    return Object.entries(env).map(([key, value]) => `${key}=${value}`);
   }
 
   // ─── Image operations ──────────────────────────────────────────────

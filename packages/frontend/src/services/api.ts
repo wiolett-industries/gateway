@@ -26,7 +26,6 @@ import type {
   DockerRegistry,
   DockerSecret,
   DockerTask,
-  DockerTemplate,
   DockerVolume,
   DockerWebhook,
   Domain,
@@ -1605,53 +1604,6 @@ class ApiClient extends ApiClientBase {
       )
     );
     return { ok: result.success ?? false, error: result.error || result.statusText };
-  }
-
-  // ── Docker Templates ──────────────────────────────────────────────
-
-  async listDockerTemplates(): Promise<DockerTemplate[]> {
-    return this.unwrapData(this.request<{ data: DockerTemplate[] }>("/docker/templates"));
-  }
-
-  async createDockerTemplate(config: {
-    name: string;
-    description?: string;
-    config: object;
-  }): Promise<DockerTemplate> {
-    return this.unwrapData(
-      this.request<{ data: DockerTemplate }>("/docker/templates", {
-        method: "POST",
-        body: JSON.stringify(config),
-      })
-    );
-  }
-
-  async updateDockerTemplate(
-    id: string,
-    config: Partial<{ name: string; description?: string; config: object }>
-  ): Promise<DockerTemplate> {
-    return this.unwrapData(
-      this.request<{ data: DockerTemplate }>(`/docker/templates/${id}`, {
-        method: "PUT",
-        body: JSON.stringify(config),
-      })
-    );
-  }
-
-  async deleteDockerTemplate(id: string): Promise<void> {
-    await this.request<void>(`/docker/templates/${id}`, { method: "DELETE" });
-  }
-
-  async deployTemplate(
-    id: string,
-    config: { nodeId: string; overrides?: object }
-  ): Promise<Record<string, unknown>> {
-    return this.unwrapData(
-      this.request<{ data: Record<string, unknown> }>(`/docker/templates/${id}/deploy`, {
-        method: "POST",
-        body: JSON.stringify(config),
-      })
-    );
   }
 
   // ── Docker Tasks ──────────────────────────────────────────────────

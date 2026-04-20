@@ -43,6 +43,13 @@
       "when": 1776375000000,
       "tag": "0005_fair_mojo",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1776412800000,
+      "tag": "0006_tidy_gateway",
+      "breakpoints": true
     }
   ]
 }

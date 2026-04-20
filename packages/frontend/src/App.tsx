@@ -70,6 +70,36 @@ function ProxyHostDetailGuard() {
   return <ProxyHostDetail />;
 }
 
+function CAsPageGuard() {
+  const hasAnyScope = useAuthStore((s) => s.hasAnyScope);
+
+  if (!hasAnyScope("pki:ca:list:root", "pki:ca:list:intermediate")) {
+    return <Navigate to="/" replace />;
+  }
+
+  return <CAs />;
+}
+
+function CADetailGuard() {
+  const hasAnyScope = useAuthStore((s) => s.hasAnyScope);
+
+  if (!hasAnyScope("pki:ca:view:root", "pki:ca:view:intermediate")) {
+    return <Navigate to="/" replace />;
+  }
+
+  return <CADetail />;
+}
+
+function CertificateDetailGuard() {
+  const hasScope = useAuthStore((s) => s.hasScope);
+
+  if (!hasScope("pki:cert:view")) {
+    return <Navigate to="/" replace />;
+  }
+
+  return <CertificateDetail />;
+}
+
 function NodeDetailGuard() {
   const { id } = useParams<{ id: string }>();
   const hasScope = useAuthStore((s) => s.hasScope);
@@ -294,13 +324,10 @@ export default function App() {
               />
               <Route path="/domains" element={scoped("proxy:list", <Domains />)} />
               <Route path="/access-lists" element={scoped("acl:list", <AccessLists />)} />
-              <Route path="/cas" element={scoped("pki:ca:list:root", <CAs />)} />
-              <Route path="/cas/:id" element={scoped("pki:ca:list:root", <CADetail />)} />
+              <Route path="/cas" element={<CAsPageGuard />} />
+              <Route path="/cas/:id" element={<CADetailGuard />} />
               <Route path="/certificates" element={scoped("pki:cert:list", <Certificates />)} />
-              <Route
-                path="/certificates/:id"
-                element={scoped("pki:cert:list", <CertificateDetail />)}
-              />
+              <Route path="/certificates/:id" element={<CertificateDetailGuard />} />
               <Route path="/templates/:tab?" element={<TemplatesPage />} />
               <Route path="/audit" element={scoped("admin:audit", <AuditLog />)} />
               <Route path="/notifications/:tab?" element={<NotificationsPageGuard />} />

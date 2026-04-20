@@ -1,10 +1,11 @@
-import { count, eq, sql } from 'drizzle-orm';
+import { count, eq, inArray, sql } from 'drizzle-orm';
 import { inject, injectable } from 'tsyringe';
 import { TOKENS } from '@/container.js';
 import type { DrizzleClient } from '@/db/client.js';
 import { permissionGroups, users } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { AppError } from '@/middleware/error-handler.js';
+import { computeEffectiveGroupAccess, fetchGroupScopeMap } from '@/modules/auth/live-session-user.js';
 import type { CreateGroupInput, UpdateGroupInput } from './group.schemas.js';
 
 const logger = createChildLogger('GroupService');
@@ -20,13 +21,54 @@ export class GroupService {
   private emitGroup(id: string, action: 'created' | 'updated' | 'deleted') {
     this.eventBus?.publish('group.changed', { id, action });
   }
-  /** Cascade a permissions change to every user in the affected group. */
-  private async cascadePermissions(groupId: string, scopes: string[] | null) {
-    if (!this.eventBus) return;
-    const affected = await this.db.select({ id: users.id }).from(users).where(eq(users.groupId, groupId));
-    for (const u of affected) {
-      this.eventBus.publish(`permissions.changed.${u.id}`, { scopes: scopes ?? [], groupId });
+
+  private collectDescendantGroupIds(
+    groupId: string,
+    groupMap: Map<string, { id: string; parentId: string | null }>
+  ): string[] {
+    const descendants: string[] = [];
+    const queue = [groupId];
+
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      for (const group of groupMap.values()) {
+        if (group.parentId !== current) continue;
+        descendants.push(group.id);
+        queue.push(group.id);
+      }
     }
+
+    return descendants;
+  }
+
+  /** Cascade a permissions change to every user in the affected group tree. */
+  private async cascadePermissions(groupId: string) {
+    if (!this.eventBus) return;
+
+    const allGroups = await this.db
+      .select({ id: permissionGroups.id, parentId: permissionGroups.parentId })
+      .from(permissionGroups);
+    const groupMap = new Map(allGroups.map((group) => [group.id, group]));
+    const affectedGroupIds = [groupId, ...this.collectDescendantGroupIds(groupId, groupMap)];
+
+    const affected = await this.db.select({ id: users.id }).from(users).where(inArray(users.groupId, affectedGroupIds));
+
+    for (const u of affected) {
+      this.eventBus.publish(`permissions.changed.${u.id}`, { groupId });
+    }
+  }
+
+  async getEffectiveScopesForGroupId(groupId: string): Promise<string[]> {
+    const groupMap = await fetchGroupScopeMap(this.db);
+    return computeEffectiveGroupAccess(groupId, groupMap).scopes;
+  }
+
+  async buildEffectiveScopes(scopes: string[], parentId: string | null | undefined): Promise<string[]> {
+    const directScopes = [...new Set(scopes)];
+    if (!parentId) return directScopes;
+
+    const parentScopes = await this.getEffectiveScopesForGroupId(parentId);
+    return [...new Set([...directScopes, ...parentScopes])];
   }
 
   async listGroups() {
@@ -207,8 +249,8 @@ export class GroupService {
 
     logger.info('Updated permission group', { groupId: id, name: updated.name });
     this.emitGroup(id, 'updated');
-    if (input.scopes !== undefined) {
-      await this.cascadePermissions(id, updated.scopes as string[]);
+    if (input.scopes !== undefined || input.parentId !== undefined) {
+      await this.cascadePermissions(id);
     }
 
     return {
@@ -242,11 +284,18 @@ export class GroupService {
     }
 
     // Unparent child groups before deleting
+    const childGroupIds = (
+      await this.db.select({ id: permissionGroups.id }).from(permissionGroups).where(eq(permissionGroups.parentId, id))
+    ).map((group) => group.id);
     await this.db.update(permissionGroups).set({ parentId: null }).where(eq(permissionGroups.parentId, id));
 
     await this.db.delete(permissionGroups).where(eq(permissionGroups.id, id));
     logger.info('Deleted permission group', { groupId: id, name: group.name });
     this.emitGroup(id, 'deleted');
+
+    for (const childGroupId of childGroupIds) {
+      await this.cascadePermissions(childGroupId);
+    }
   }
 
   async getMemberIds(groupId: string): Promise<string[]> {

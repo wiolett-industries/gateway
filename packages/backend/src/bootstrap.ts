@@ -19,10 +19,10 @@ import { AuditService } from '@/modules/audit/audit.service.js';
 import { AuthService } from '@/modules/auth/auth.service.js';
 import { AuthSettingsService } from '@/modules/auth/auth.settings.service.js';
 import { DockerManagementService } from '@/modules/docker/docker.service.js';
+import { DockerEnvironmentService } from '@/modules/docker/docker-environment.service.js';
 import { DockerRegistryService } from '@/modules/docker/docker-registry.service.js';
 import { DockerSecretService } from '@/modules/docker/docker-secret.service.js';
 import { DockerTaskService } from '@/modules/docker/docker-task.service.js';
-import { DockerTemplateService } from '@/modules/docker/docker-template.service.js';
 import { DockerWebhookService } from '@/modules/docker/docker-webhook.service.js';
 import { detectPublicIP, initDnsResolver } from '@/modules/domains/dns.utils.js';
 import { DomainsService } from '@/modules/domains/domain.service.js';
@@ -213,11 +213,11 @@ export async function initializeContainer(): Promise<void> {
   const dockerRegistryService = new DockerRegistryService(db, auditService, cryptoService, nodeDispatch);
   container.registerInstance(DockerRegistryService, dockerRegistryService);
 
-  const dockerTemplateService = new DockerTemplateService(db, auditService);
-  container.registerInstance(DockerTemplateService, dockerTemplateService);
-
   const dockerSecretService = new DockerSecretService(db, auditService, cryptoService);
   container.registerInstance(DockerSecretService, dockerSecretService);
+
+  const dockerEnvironmentService = new DockerEnvironmentService(db, cryptoService);
+  container.registerInstance(DockerEnvironmentService, dockerEnvironmentService);
 
   const dockerTaskService = new DockerTaskService(db);
   container.registerInstance(DockerTaskService, dockerTaskService);
@@ -231,6 +231,7 @@ export async function initializeContainer(): Promise<void> {
   container.registerInstance(DockerWebhookService, dockerWebhookService);
 
   dockerManagementService.setTaskService(dockerTaskService);
+  dockerManagementService.setEnvironmentService(dockerEnvironmentService);
   dockerManagementService.setSecretService(dockerSecretService);
   dockerManagementService.setEventBus(eventBus);
   dockerTaskService.setEventBus(eventBus);
@@ -244,7 +245,6 @@ export async function initializeContainer(): Promise<void> {
   folderService.setEventBus(eventBus);
   nginxTemplateService.setEventBus(eventBus);
   dockerRegistryService.setEventBus(eventBus);
-  dockerTemplateService.setEventBus(eventBus);
 
   const proxyService = new ProxyService(
     db,

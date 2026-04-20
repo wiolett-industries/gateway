@@ -10,6 +10,7 @@ import type { CacheService } from '@/services/cache.service.js';
 import type { SessionService } from '@/services/session.service.js';
 import type { User } from '@/types.js';
 import type { AuthSettingsService } from './auth.settings.service.js';
+import { computeEffectiveGroupAccess, fetchGroupScopeMap, resolveEffectiveGroupAccess } from './live-session-user.js';
 
 const logger = createChildLogger('AuthService');
 
@@ -240,7 +241,7 @@ export class AuthService {
 
     logger.info('Created new user', { userId: createdUser.id, email: createdUser.email, group: group.name });
     this.emitUser(createdUser.id, 'created');
-    const mapped = await this.mapDbUserToUser(createdUser, group);
+    const mapped = await this.mapDbUserToUser(createdUser);
     this.emitPermissions(mapped.id, mapped.scopes, mapped.groupId);
     return mapped;
   }
@@ -292,36 +293,13 @@ export class AuthService {
     });
 
     this.emitUser(createdUser.id, 'created');
-    const mapped = await this.mapDbUserToUser(createdUser, group);
+    const mapped = await this.mapDbUserToUser(createdUser);
     this.emitPermissions(mapped.id, mapped.scopes, mapped.groupId);
     return mapped;
   }
 
-  private async mapDbUserToUser(
-    dbUser: typeof users.$inferSelect,
-    group?: typeof permissionGroups.$inferSelect | null
-  ): Promise<User> {
-    if (!group) {
-      group = await this.db.query.permissionGroups.findFirst({
-        where: eq(permissionGroups.id, dbUser.groupId),
-      });
-    }
-
-    // Compute effective scopes including parent chain
-    const scopeSet = new Set<string>((group?.scopes as string[]) ?? []);
-    if (group?.parentId) {
-      const allGroups = await this.db.query.permissionGroups.findMany({
-        columns: { id: true, parentId: true, scopes: true },
-      });
-      const groupMap = new Map(allGroups.map((g) => [g.id, g]));
-      const visited = new Set<string>([group.id]);
-      let parent = groupMap.get(group.parentId);
-      while (parent && !visited.has(parent.id)) {
-        visited.add(parent.id);
-        for (const s of (parent.scopes as string[]) ?? []) scopeSet.add(s);
-        parent = parent.parentId ? groupMap.get(parent.parentId) : undefined;
-      }
-    }
+  private async mapDbUserToUser(dbUser: typeof users.$inferSelect): Promise<User> {
+    const effective = await resolveEffectiveGroupAccess(this.db, dbUser.groupId);
 
     return {
       id: dbUser.id,
@@ -330,8 +308,8 @@ export class AuthService {
       name: dbUser.name,
       avatarUrl: dbUser.avatarUrl,
       groupId: dbUser.groupId,
-      groupName: group?.name ?? 'unknown',
-      scopes: [...scopeSet],
+      groupName: effective.groupName,
+      scopes: effective.scopes,
       isBlocked: dbUser.isBlocked,
     };
   }
@@ -369,12 +347,10 @@ export class AuthService {
       orderBy: (users, { asc }) => [asc(users.createdAt)],
     });
 
-    // Batch-fetch all groups
-    const allGroups = await this.db.query.permissionGroups.findMany();
-    const groupMap = new Map(allGroups.map((g) => [g.id, g]));
+    const groupMap = await fetchGroupScopeMap(this.db);
 
     return allUsers.map((u) => {
-      const group = groupMap.get(u.groupId);
+      const effective = computeEffectiveGroupAccess(u.groupId, groupMap);
       return {
         id: u.id,
         oidcSubject: u.oidcSubject,
@@ -382,8 +358,8 @@ export class AuthService {
         name: u.name,
         avatarUrl: u.avatarUrl,
         groupId: u.groupId,
-        groupName: group?.name ?? 'unknown',
-        scopes: (group?.scopes as string[]) ?? [],
+        groupName: effective.groupName,
+        scopes: effective.scopes,
         isBlocked: u.isBlocked,
       };
     });
@@ -408,7 +384,7 @@ export class AuthService {
       throw new Error('User not found');
     }
 
-    const mapped = await this.mapDbUserToUser(updatedUser, group);
+    const mapped = await this.mapDbUserToUser(updatedUser);
     this.emitUser(userId, 'updated');
     this.emitPermissions(userId, mapped.scopes, groupId);
     return mapped;

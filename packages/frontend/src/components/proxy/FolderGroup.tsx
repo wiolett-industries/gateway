@@ -71,6 +71,7 @@ export function FolderGroup({
   const { setNodeRef, isOver } = useDroppable({
     id: `folder-${folder.id}`,
     data: { type: "folder", folderId: folder.id },
+    disabled: !canManage,
   });
 
   const totalHosts = countAllHosts(folder);
@@ -187,11 +188,29 @@ export function FolderGroup({
             ))}
 
             {/* Hosts in this folder */}
-            {folder.hosts.length > 0 && (
-              <SortableContext
-                items={folder.hosts.map((h) => h.id)}
-                strategy={verticalListSortingStrategy}
-              >
+            {folder.hosts.length > 0 &&
+              (canManage ? (
+                <SortableContext
+                  items={folder.hosts.map((h) => h.id)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  <table className="w-full" style={{ tableLayout: "fixed" }}>
+                    {colGroup}
+                    <tbody>
+                      {folder.hosts.map((host) => (
+                        <ProxyHostRow
+                          key={host.id}
+                          host={host}
+                          depth={depth + 1}
+                          onToggle={onToggleHost}
+                          togglingIds={togglingIds}
+                          onMoveToFolder={onMoveHostToFolder}
+                        />
+                      ))}
+                    </tbody>
+                  </table>
+                </SortableContext>
+              ) : (
                 <table className="w-full" style={{ tableLayout: "fixed" }}>
                   {colGroup}
                   <tbody>
@@ -207,8 +226,7 @@ export function FolderGroup({
                     ))}
                   </tbody>
                 </table>
-              </SortableContext>
-            )}
+              ))}
           </motion.div>
         )}
       </AnimatePresence>

@@ -49,7 +49,7 @@ export function DockerComposeLogsPopout() {
   }, [project]);
 
   const connect = useCallback(async () => {
-    if (!nodeId || !project) return;
+    if (!canViewLogs || !nodeId || !project) return;
     if (wsRef.current) {
       wsRef.current.close();
       wsRef.current = null;
@@ -167,10 +167,11 @@ export function DockerComposeLogsPopout() {
       if (!mountedRef.current) return;
       terminal.write(`\r\n\x1b[31mConnection error.\x1b[0m\r\n`);
     };
-  }, [getServiceColor, nodeId, project]);
+  }, [canViewLogs, getServiceColor, nodeId, project]);
 
   const didConnect = useRef(false);
   useEffect(() => {
+    if (!canViewLogs) return;
     mountedRef.current = true;
     if (!didConnect.current) {
       didConnect.current = true;
@@ -184,7 +185,7 @@ export function DockerComposeLogsPopout() {
         cleanupRef.current = null;
       }
     };
-  }, [connect]);
+  }, [canViewLogs, connect]);
 
   if (!canViewLogs) {
     return (

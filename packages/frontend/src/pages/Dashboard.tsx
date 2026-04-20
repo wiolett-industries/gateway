@@ -44,6 +44,14 @@ export function Dashboard() {
   const canViewSystemCertificates = useAuthStore((s) => s.hasScope("admin:details:certificates"));
   const showSystemCertificatePreference = useUIStore((s) => s.showSystemCertificates);
   const showSystemCertificates = canViewSystemCertificates && showSystemCertificatePreference;
+  const canViewNodeDetails = useCallback(
+    (nodeId: string) => hasScope("nodes:details") || hasScope(`nodes:details:${nodeId}`),
+    [hasScope]
+  );
+  const canViewProxyDetails = useCallback(
+    (hostId: string) => hasScope("proxy:view") || hasScope(`proxy:view:${hostId}`),
+    [hasScope]
+  );
 
   const refreshNodes = useCallback(() => {
     if (!hasScope("nodes:list")) {
@@ -141,11 +149,13 @@ export function Dashboard() {
       .listProxyHosts({ limit: 100 })
       .then((r) => {
         const hosts = r.data ?? [];
-        setPinnedProxyHosts(hosts.filter((p) => dashboardPinnedProxyIds.includes(p.id)));
+        setPinnedProxyHosts(
+          hosts.filter((p) => dashboardPinnedProxyIds.includes(p.id) && canViewProxyDetails(p.id))
+        );
         usePinnedProxiesStore.getState().removeOrphans(hosts.map((p) => p.id));
       })
       .catch(() => {});
-  }, [dashboardPinnedProxyIds, hasScope]);
+  }, [canViewProxyDetails, dashboardPinnedProxyIds, hasScope]);
 
   useEffect(() => {
     if (hasScope("pki:ca:list:root")) {
@@ -233,16 +243,25 @@ export function Dashboard() {
     () =>
       nodesList
         .filter((n) => {
+          if (!canViewNodeDetails(n.id)) return false;
           if (dashboardPinnedIds.includes(n.id)) return false;
           const disk = n.lastHealthReport?.diskMounts?.find((d) => d.mountPoint === "/");
           return disk ? disk.usagePercent >= WARN_THRESHOLD : false;
         })
         .map((n) => n.id),
-    [dashboardPinnedIds, nodesList]
+    [canViewNodeDetails, dashboardPinnedIds, nodesList]
   );
   const dashboardVisibleIds = useMemo(
-    () => [...dashboardPinnedIds, ...warningNodeIds],
-    [dashboardPinnedIds, warningNodeIds]
+    () => [...dashboardPinnedIds.filter(canViewNodeDetails), ...warningNodeIds],
+    [canViewNodeDetails, dashboardPinnedIds, warningNodeIds]
+  );
+  const visibleHealthHosts = useMemo(
+    () => healthHosts.filter((host) => canViewProxyDetails(host.id)),
+    [canViewProxyDetails, healthHosts]
+  );
+  const visibleNodesForCards = useMemo(
+    () => nodesList.filter((node) => canViewNodeDetails(node.id)),
+    [canViewNodeDetails, nodesList]
   );
 
   // Open monitoring SSE streams for visible dashboard nodes.
@@ -336,12 +355,14 @@ export function Dashboard() {
           <QuickStatsCard displayStats={displayStats} nodesList={nodesList} hasScope={hasScope} />
 
           {/* Pinned Proxy Host Cards */}
-          {pinnedProxyHosts.map((proxy) => (
-            <PinnedProxyCard key={proxy.id} proxy={proxy} />
-          ))}
+          {pinnedProxyHosts
+            .filter((proxy) => canViewProxyDetails(proxy.id))
+            .map((proxy) => (
+              <PinnedProxyCard key={proxy.id} proxy={proxy} />
+            ))}
 
           {/* Pinned + Warning Node Overview Cards */}
-          {nodesList
+          {visibleNodesForCards
             .filter((n) => {
               if (dashboardPinnedIds.includes(n.id)) return true;
               const disk = n.lastHealthReport?.diskMounts?.find((d) => d.mountPoint === "/");
@@ -354,12 +375,12 @@ export function Dashboard() {
           <CertificateExpiryCard expiringItems={expiringItems} hasScope={hasScope} />
 
           <HealthOverviewCard
-            healthHosts={healthHosts}
+            healthHosts={visibleHealthHosts}
             hasScope={hasScope}
             loading={healthLoading}
           />
 
-          <NodesCard nodesList={nodesList} hasScope={hasScope} loading={nodesLoading} />
+          <NodesCard nodesList={visibleNodesForCards} hasScope={hasScope} loading={nodesLoading} />
 
           <CertificateAuthoritiesCard cas={cas} hasScope={hasScope} />
 

@@ -72,7 +72,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const [search, setSearch] = useState("");
-  const { hasScope, hasScopedAccess, logout } = useAuthStore();
+  const { hasScope, hasAnyScope, hasScopedAccess, logout } = useAuthStore();
   const { cas } = useCAStore();
   const { setTheme, theme, toggleSidebar } = useUIStore();
   const recentPages = useUIStore((s) => s.recentPages);
@@ -376,6 +376,9 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const filteredNav = allNavItems.filter((i) => {
     if (!matches(i.label)) return false;
     if (!i.scope) return true;
+    if (i.label === "Authorities") {
+      return hasAnyScope("pki:ca:list:root", "pki:ca:list:intermediate");
+    }
     if (i.scope.startsWith("docker:")) return hasScopedAccess(i.scope);
     return hasScope(i.scope);
   });
@@ -443,7 +446,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
           .slice(0, 5)
       : [];
   const filteredCAs =
-    searchQuery && hasScope("pki:ca:list:root")
+    searchQuery && hasAnyScope("pki:ca:list:root", "pki:ca:list:intermediate")
       ? (cas || []).filter((ca) => fuzzyMatch(ca.commonName, searchQuery) > 0).slice(0, 5)
       : [];
 
@@ -612,23 +615,25 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
             )}
 
             {/* CAs when no search */}
-            {!searchQuery && hasScope("pki:ca:list:root") && (cas || []).length > 0 && (
-              <>
-                <CommandGroup heading="Certificate Authorities">
-                  {(cas || []).slice(0, 5).map((ca) => (
-                    <CommandItem
-                      key={ca.id}
-                      value={`ca ${ca.commonName}`}
-                      onSelect={() => handleSelect(() => navigate(`/cas/${ca.id}`))}
-                    >
-                      <Shield className="mr-2 h-4 w-4" />
-                      <span className="truncate">{ca.commonName}</span>
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-                <CommandSeparator />
-              </>
-            )}
+            {!searchQuery &&
+              hasAnyScope("pki:ca:list:root", "pki:ca:list:intermediate") &&
+              (cas || []).length > 0 && (
+                <>
+                  <CommandGroup heading="Certificate Authorities">
+                    {(cas || []).slice(0, 5).map((ca) => (
+                      <CommandItem
+                        key={ca.id}
+                        value={`ca ${ca.commonName}`}
+                        onSelect={() => handleSelect(() => navigate(`/cas/${ca.id}`))}
+                      >
+                        <Shield className="mr-2 h-4 w-4" />
+                        <span className="truncate">{ca.commonName}</span>
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                  <CommandSeparator />
+                </>
+              )}
 
             {/* Navigation */}
             {filteredNav.length > 0 && (

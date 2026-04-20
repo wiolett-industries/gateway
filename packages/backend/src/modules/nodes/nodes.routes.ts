@@ -1,6 +1,7 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { streamSSE } from 'hono/streaming';
 import { container } from '@/container.js';
+import { hasScope } from '@/lib/permissions.js';
 import { authMiddleware, requireScope, requireScopeForResource, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import {
   daemonLogRelay,
@@ -254,11 +255,16 @@ nodesRoutes.get('/:id/nginx-logs', requireScopeForResource('nodes:logs', 'id'), 
   const { proxyHosts } = await import('@/db/schema/index.js');
   const { TOKENS } = await import('@/container.js');
   const db = container.resolve(TOKENS.DrizzleClient) as any;
+  const scopes = c.get('effectiveScopes') || [];
   const hosts = await db.select({ id: proxyHosts.id }).from(proxyHosts).where(eq(proxyHosts.nodeId, nodeId));
-  const hostIds = new Set(hosts.map((h: any) => h.id));
+  const visibleHostIds = new Set(
+    hosts
+      .map((h: any) => h.id as string)
+      .filter((hostId: string) => hasScope(scopes, 'proxy:view') || hasScope(scopes, `proxy:view:${hostId}`))
+  );
 
   const matchesFilter = (entry: RelayedLogEntry): boolean => {
-    if (!hostIds.has(entry.hostId)) return false;
+    if (!visibleHostIds.has(entry.hostId)) return false;
     if (
       searchFilter &&
       !entry.path?.toLowerCase().includes(searchFilter) &&
@@ -285,7 +291,7 @@ nodesRoutes.get('/:id/nginx-logs', requireScopeForResource('nodes:logs', 'id'), 
 
   return streamSSE(c, async (stream) => {
     await stream.writeSSE({
-      data: JSON.stringify({ connected: true, nodeId, hostCount: hostIds.size }),
+      data: JSON.stringify({ connected: true, nodeId, hostCount: visibleHostIds.size }),
       event: 'connected',
     });
 

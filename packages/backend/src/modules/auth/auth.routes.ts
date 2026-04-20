@@ -119,6 +119,7 @@ authRoutes.get('/me', async (c) => {
   const sessionUser = c.get('user')!;
   const authService = container.resolve(AuthService);
   const user = await authService.getUserById(sessionUser.id);
+  const effectiveScopes = c.get('effectiveScopes') || user?.scopes || [];
 
   if (!user) {
     return c.json({ error: 'User not found' }, 404);
@@ -131,7 +132,7 @@ authRoutes.get('/me', async (c) => {
     avatarUrl: user.avatarUrl,
     groupId: user.groupId,
     groupName: user.groupName,
-    scopes: user.scopes,
+    scopes: effectiveScopes,
     isBlocked: user.isBlocked,
   });
 });

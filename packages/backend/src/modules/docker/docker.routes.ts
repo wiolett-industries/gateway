@@ -6,7 +6,6 @@ import { registerImageRoutes } from './docker-image.routes.js';
 import { registerNetworkRoutes } from './docker-network.routes.js';
 import { registerRegistryRoutes } from './docker-registry.routes.js';
 import { registerTaskRoutes } from './docker-task.routes.js';
-import { registerTemplateRoutes } from './docker-template.routes.js';
 import { registerVolumeRoutes } from './docker-volume.routes.js';
 import { registerWebhookConfigRoutes } from './docker-webhook.routes.js';
 
@@ -22,5 +21,4 @@ registerImageRoutes(dockerRoutes);
 registerVolumeRoutes(dockerRoutes);
 registerNetworkRoutes(dockerRoutes);
 registerRegistryRoutes(dockerRoutes);
-registerTemplateRoutes(dockerRoutes);
 registerTaskRoutes(dockerRoutes);

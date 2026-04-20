@@ -54,6 +54,11 @@ export function FilesTab({ nodeId, containerId }: { nodeId: string; containerId:
 
   // Load root on mount
   useEffect(() => {
+    if (!canBrowseFiles) {
+      setIsLoading(false);
+      setRoots([]);
+      return;
+    }
     let cancelled = false;
     setIsLoading(true);
     fetchDir("/")
@@ -69,7 +74,7 @@ export function FilesTab({ nodeId, containerId }: { nodeId: string; containerId:
     return () => {
       cancelled = true;
     };
-  }, [fetchDir]);
+  }, [canBrowseFiles, fetchDir]);
 
   // Toggle a directory open/closed
   const toggleDir = useCallback(

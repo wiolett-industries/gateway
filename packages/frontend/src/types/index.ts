@@ -834,6 +834,18 @@ export const TOKEN_SCOPES = [
     desc: "View delivery log details",
     group: "Notifications",
   },
+  {
+    value: "notifications:view",
+    label: "View Notifications",
+    desc: "Read notification resources across alerts, webhooks, and deliveries",
+    group: "Notifications",
+  },
+  {
+    value: "notifications:manage",
+    label: "Manage Notifications",
+    desc: "Full management access to alerts, webhooks, and deliveries",
+    group: "Notifications",
+  },
   // Features
   {
     value: "feat:ai:use",
@@ -906,6 +918,12 @@ export const TOKEN_SCOPES = [
     value: "docker:containers:secrets",
     label: "Container Secrets",
     desc: "View and manage encrypted secrets",
+    group: "Docker: Containers",
+  },
+  {
+    value: "docker:containers:webhooks",
+    label: "Container Webhooks",
+    desc: "View and manage container webhook update triggers",
     group: "Docker: Containers",
   },
   // Docker: Images
@@ -995,37 +1013,6 @@ export const TOKEN_SCOPES = [
     label: "Delete Registries",
     desc: "Remove Docker registries",
     group: "Docker: Registries",
-  },
-  // Docker: Templates
-  {
-    value: "docker:templates:list",
-    label: "List Templates",
-    desc: "List Docker templates",
-    group: "Docker: Templates",
-  },
-  {
-    value: "docker:templates:view",
-    label: "View Templates",
-    desc: "View Docker template details",
-    group: "Docker: Templates",
-  },
-  {
-    value: "docker:templates:create",
-    label: "Create Templates",
-    desc: "Create Docker templates",
-    group: "Docker: Templates",
-  },
-  {
-    value: "docker:templates:edit",
-    label: "Edit Templates",
-    desc: "Edit Docker templates",
-    group: "Docker: Templates",
-  },
-  {
-    value: "docker:templates:delete",
-    label: "Delete Templates",
-    desc: "Delete Docker templates",
-    group: "Docker: Templates",
   },
   // Docker: Tasks
   {
@@ -1576,16 +1563,6 @@ export interface DockerNetwork {
   scope: string;
   ipam?: { subnet?: string; gateway?: string };
   containers?: Record<string, { name: string }>;
-}
-
-export interface DockerTemplate {
-  id: string;
-  name: string;
-  description?: string;
-  config: Record<string, unknown>;
-  createdBy?: string;
-  createdAt: string;
-  updatedAt: string;
 }
 
 export interface DockerTask {
