@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { formatBytes } from "@/lib/utils";
 import {
   Select,
   SelectContent,
@@ -16,7 +17,7 @@ import { useRealtime } from "@/hooks/use-realtime";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
-import type { DockerNetwork, DockerWebhook } from "@/types";
+import type { DockerNetwork, DockerWebhook, NodeDetail } from "@/types";
 import type { InspectData } from "./helpers";
 import { LabelsSection } from "./LabelsSection";
 import { type PortMapping, PortMappingsSection } from "./PortMappingsSection";
@@ -33,6 +34,12 @@ function normalizeDockerNetwork(network: DockerNetwork | Record<string, unknown>
     ipam: (raw.ipam ?? raw.IPAM ?? undefined) as DockerNetwork["ipam"],
     containers: (raw.containers ?? raw.Containers ?? undefined) as DockerNetwork["containers"],
   };
+}
+
+function parseOptionalNumber(value: string): number | null {
+  if (value.trim() === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : Number.NaN;
 }
 
 // ── Component ────────────────────────────────────────────────────
@@ -92,6 +99,7 @@ export function SettingsTab({
   const [cpuShares, setCpuShares] = useState(initShares);
   const [pidsLimit, setPidsLimit] = useState(initPids);
   const [liveLoading, setLiveLoading] = useState(false);
+  const [nodeDetail, setNodeDetail] = useState<NodeDetail | null>(null);
 
   // Baseline snapshot — updated after successful live apply
   const baselineRef = useRef({
@@ -210,6 +218,92 @@ export function SettingsTab({
     ]
   );
 
+  useEffect(() => {
+    let cancelled = false;
+    void api
+      .getNode(nodeId)
+      .then((node) => {
+        if (!cancelled) setNodeDetail(node);
+      })
+      .catch(() => {
+        if (!cancelled) setNodeDetail(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [nodeId]);
+
+  const runtimeCapacity = useMemo(() => {
+    const caps = (nodeDetail?.capabilities ?? {}) as Record<string, unknown>;
+    const cpuCoresRaw = Number(caps.cpuCores ?? 0);
+    const maxCpuCount = Number.isFinite(cpuCoresRaw) && cpuCoresRaw > 0 ? cpuCoresRaw : null;
+    const health = nodeDetail?.liveHealthReport ?? nodeDetail?.lastHealthReport ?? null;
+    const memoryBytesRaw = Number(health?.systemMemoryTotalBytes ?? 0);
+    const swapBytesRaw = Number(health?.swapTotalBytes ?? 0);
+
+    return {
+      maxCpuCount,
+      maxMemoryBytes: Number.isFinite(memoryBytesRaw) && memoryBytesRaw > 0 ? memoryBytesRaw : null,
+      maxSwapBytes: Number.isFinite(swapBytesRaw) && swapBytesRaw > 0 ? swapBytesRaw : null,
+    };
+  }, [nodeDetail]);
+
+  const runtimeValidationError = useMemo(() => {
+    const parsedMemoryMB = parseOptionalNumber(memoryMB);
+    if (Number.isNaN(parsedMemoryMB) || (parsedMemoryMB !== null && parsedMemoryMB < 0)) {
+      return "Memory limit must be a non-negative number.";
+    }
+
+    const parsedSwapMB = memSwapMB === "-1" ? -1 : parseOptionalNumber(memSwapMB);
+    if (
+      Number.isNaN(parsedSwapMB) ||
+      (parsedSwapMB !== null && parsedSwapMB !== -1 && parsedSwapMB < 0)
+    ) {
+      return "Swap must be -1 or a non-negative number.";
+    }
+
+    const parsedCpuCount = parseOptionalNumber(cpuCount);
+    if (Number.isNaN(parsedCpuCount) || (parsedCpuCount !== null && parsedCpuCount < 0)) {
+      return "CPU limit must be a non-negative number.";
+    }
+
+    if ((parsedSwapMB === -1 || (parsedSwapMB ?? 0) > 0) && !parsedMemoryMB) {
+      return "Set a memory limit before configuring swap.";
+    }
+
+    const maxMemoryMB =
+      runtimeCapacity.maxMemoryBytes && runtimeCapacity.maxMemoryBytes > 0
+        ? runtimeCapacity.maxMemoryBytes / 1048576
+        : null;
+    if (maxMemoryMB && parsedMemoryMB !== null && parsedMemoryMB > maxMemoryMB) {
+      return `Memory limit cannot exceed node memory (${formatBytes(runtimeCapacity.maxMemoryBytes ?? 0)}).`;
+    }
+
+    const maxSwapMB =
+      runtimeCapacity.maxSwapBytes && runtimeCapacity.maxSwapBytes > 0
+        ? runtimeCapacity.maxSwapBytes / 1048576
+        : null;
+    if (
+      maxSwapMB &&
+      parsedSwapMB !== null &&
+      parsedSwapMB !== -1 &&
+      parsedSwapMB > maxSwapMB
+    ) {
+      return `Swap cannot exceed node swap (${formatBytes(runtimeCapacity.maxSwapBytes ?? 0)}).`;
+    }
+
+    if (
+      runtimeCapacity.maxCpuCount &&
+      parsedCpuCount !== null &&
+      parsedCpuCount > runtimeCapacity.maxCpuCount
+    ) {
+      return `CPU limit cannot exceed node CPU capacity (${runtimeCapacity.maxCpuCount} cores).`;
+    }
+
+    return null;
+  }, [cpuCount, memSwapMB, memoryMB, runtimeCapacity]);
+
   const buildRuntimePayload = useCallback(() => {
     const payload: Record<string, unknown> = {};
     if (restartPolicy !== currentRestartPolicy) payload.restartPolicy = restartPolicy;
@@ -259,6 +353,11 @@ export function SettingsTab({
   const handleLiveUpdate = useCallback(async () => {
     setLiveLoading(true);
     try {
+      if (runtimeValidationError) {
+        toast.error(runtimeValidationError);
+        return;
+      }
+
       const payload = buildRuntimePayload();
       if (!payload) {
         toast.info("No changes to apply");
@@ -304,6 +403,7 @@ export function SettingsTab({
     restartPolicy,
     cpuCount,
     cpuShares,
+    runtimeValidationError,
   ]);
 
   // ── Track recreate changes per section ──
@@ -343,6 +443,12 @@ export function SettingsTab({
 
     setRecreateLoading(true);
     try {
+      if (hasRuntimeChanges && runtimeValidationError) {
+        toast.error(runtimeValidationError);
+        setRecreateLoading(false);
+        return;
+      }
+
       // If the image tag changed, pull the new image first to validate it exists
       if (imageTagChanged) {
         const newRef = `${parsedImageName}:${imageTag}`;
@@ -438,6 +544,7 @@ export function SettingsTab({
     hasRuntimeChanges,
     recreateBaseline,
     recreatesRunningContainer,
+    runtimeValidationError,
     user,
     workingDir,
   ]);
@@ -571,6 +678,10 @@ export function SettingsTab({
           setCpuShares={setCpuShares}
           pidsLimit={pidsLimit}
           setPidsLimit={setPidsLimit}
+          maxMemoryBytes={runtimeCapacity.maxMemoryBytes}
+          maxSwapBytes={runtimeCapacity.maxSwapBytes}
+          maxCpuCount={runtimeCapacity.maxCpuCount}
+          runtimeValidationError={runtimeValidationError}
           hasRuntimeChanges={hasRuntimeChanges}
           liveLoading={liveLoading}
           onApply={handleLiveUpdate}
@@ -591,7 +702,9 @@ export function SettingsTab({
                 style={{ backgroundColor: "rgb(234 179 8)", color: "#111" }}
                 className="hover:opacity-90 disabled:opacity-50"
                 onClick={handleRecreate}
-                disabled={recreateLoading || !hasRecreateChanges}
+                disabled={
+                  recreateLoading || !hasRecreateChanges || (hasRuntimeChanges && !!runtimeValidationError)
+                }
               >
                 <RotateCcw className="h-3.5 w-3.5" />
                 {recreatesRunningContainer ? "Save & Recreate" : "Save"}

@@ -7,6 +7,11 @@ import type { EventBusService } from '@/services/event-bus.service.js';
 import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import type { NodeRegistryService } from '@/services/node-registry.service.js';
 import type { DockerEnvironmentService } from './docker-environment.service.js';
+import {
+  validateContainerRuntimeLimits,
+  type ContainerRuntimeConfig,
+  type NodeRuntimeCapacity,
+} from './docker-runtime-limits.js';
 import type { DockerSecretService } from './docker-secret.service.js';
 import type { DockerTaskService } from './docker-task.service.js';
 
@@ -184,6 +189,81 @@ export class DockerManagementService {
     if (taskId && this.taskService) {
       await this.taskService.update(taskId, { status: 'failed', error, completedAt: new Date() }).catch(() => {});
     }
+  }
+
+  private normalizePositiveNumber(value: unknown): number | null {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }
+
+  private normalizeNonNegativeNumber(value: unknown): number | null {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+  }
+
+  private async getNodeRuntimeCapacity(nodeId: string): Promise<NodeRuntimeCapacity> {
+    const [row] = await this.db
+      .select({
+        capabilities: nodes.capabilities,
+        lastHealthReport: nodes.lastHealthReport,
+      })
+      .from(nodes)
+      .where(eq(nodes.id, nodeId))
+      .limit(1);
+
+    if (!row) {
+      throw new AppError(404, 'NOT_FOUND', 'Node not found');
+    }
+
+    const liveHealth = this.nodeRegistry.getNode(nodeId)?.lastHealthReport ?? row.lastHealthReport ?? null;
+    const capabilities = (row.capabilities ?? {}) as Record<string, unknown>;
+
+    return {
+      cpuCores: this.normalizePositiveNumber(capabilities.cpuCores),
+      memoryBytes: this.normalizePositiveNumber(liveHealth?.systemMemoryTotalBytes),
+      swapBytes: this.normalizeNonNegativeNumber(liveHealth?.swapTotalBytes),
+    };
+  }
+
+  private async getCurrentRuntimeConfig(nodeId: string, containerId: string): Promise<ContainerRuntimeConfig> {
+    const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'inspect', { containerId });
+    const data = this.parseResult(result);
+    const hostConfig = (data?.HostConfig ?? {}) as Record<string, unknown>;
+
+    return {
+      memoryLimit: this.normalizeNonNegativeNumber(hostConfig.Memory) ?? 0,
+      memorySwap:
+        hostConfig.MemorySwap === -1 ? -1 : (this.normalizeNonNegativeNumber(hostConfig.MemorySwap) ?? 0),
+      nanoCPUs: this.normalizeNonNegativeNumber(hostConfig.NanoCPUs) ?? 0,
+    };
+  }
+
+  private async validateRuntimeResourceConfig(
+    nodeId: string,
+    containerId: string,
+    config: Record<string, unknown>
+  ) {
+    const resourceConfig: ContainerRuntimeConfig = {
+      memoryLimit:
+        typeof config.memoryLimit === 'number' ? config.memoryLimit : undefined,
+      memorySwap: typeof config.memorySwap === 'number' ? config.memorySwap : undefined,
+      nanoCPUs: typeof config.nanoCPUs === 'number' ? config.nanoCPUs : undefined,
+    };
+
+    if (
+      resourceConfig.memoryLimit === undefined &&
+      resourceConfig.memorySwap === undefined &&
+      resourceConfig.nanoCPUs === undefined
+    ) {
+      return;
+    }
+
+    const [capacity, current] = await Promise.all([
+      this.getNodeRuntimeCapacity(nodeId),
+      this.getCurrentRuntimeConfig(nodeId, containerId),
+    ]);
+
+    validateContainerRuntimeLimits(resourceConfig, current, capacity);
   }
 
   /**
@@ -637,6 +717,7 @@ export class DockerManagementService {
     await this.validateDockerNode(nodeId);
     const name = await this.resolveContainerName(nodeId, containerId);
     this.requireNoTransition(nodeId, name);
+    await this.validateRuntimeResourceConfig(nodeId, containerId, config);
     const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'live_update', {
       containerId,
       configJson: JSON.stringify(config),
@@ -656,6 +737,7 @@ export class DockerManagementService {
     const name = await this.resolveContainerName(nodeId, containerId);
     const expectedState = await this.resolveExpectedRecreateState(nodeId, containerId);
     this.requireNoTransition(nodeId, name);
+    await this.validateRuntimeResourceConfig(nodeId, containerId, config);
     this.setTransition(nodeId, name, 'recreating');
     this.emitTransition(nodeId, name, containerId, 'recreating');
     const task = await this.createTask(nodeId, containerId, name, 'recreate');
