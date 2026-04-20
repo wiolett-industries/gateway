@@ -134,7 +134,7 @@ export interface Node {
   updatedAt: string;
 }
 
-/** Check if a node has a version mismatch (incompatible major.minor with gateway) */
+/** Check if a node is outside the supported gateway/daemon minor-version window. */
 export function isNodeIncompatible(node: Node | NodeDetail): boolean {
   return !!(node.capabilities as Record<string, unknown>)?.versionMismatch;
 }
