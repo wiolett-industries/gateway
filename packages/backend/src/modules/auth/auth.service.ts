@@ -6,6 +6,7 @@ import { TOKENS } from '@/container.js';
 import type { DrizzleClient } from '@/db/client.js';
 import { permissionGroups, users } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
+import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { CacheService } from '@/services/cache.service.js';
 import type { SessionService } from '@/services/session.service.js';
 import type { User } from '@/types.js';
@@ -31,7 +32,8 @@ export class AuthService {
     @inject(TOKENS.DrizzleClient) private readonly db: DrizzleClient,
     private readonly sessionService: SessionService,
     private readonly cacheService: CacheService,
-    private readonly authSettingsService: AuthSettingsService
+    private readonly authSettingsService: AuthSettingsService,
+    private readonly auditService: AuditService
   ) {}
 
   private eventBus?: import('@/services/event-bus.service.js').EventBusService;
@@ -176,6 +178,18 @@ export class AuthService {
           .where(eq(users.id, existingUser.id))
           .returning();
 
+        await this.auditService.log({
+          userId: updatedUser.id,
+          action: 'auth.user_profile_sync',
+          resourceType: 'user',
+          resourceId: updatedUser.id,
+          details: {
+            emailChanged: existingUser.email !== normalizedEmail,
+            nameChanged: existingUser.name !== data.name,
+            avatarChanged: existingUser.avatarUrl !== data.avatarUrl,
+          },
+        });
+
         return this.mapDbUserToUser(updatedUser);
       }
 
@@ -202,6 +216,14 @@ export class AuthService {
       logger.info('Claimed pre-created user on first login', {
         userId: claimedUser.id,
         email: claimedUser.email,
+      });
+
+      await this.auditService.log({
+        userId: claimedUser.id,
+        action: 'auth.user_claimed',
+        resourceType: 'user',
+        resourceId: claimedUser.id,
+        details: { email: claimedUser.email },
       });
 
       this.emitUser(claimedUser.id, 'updated');
@@ -240,6 +262,13 @@ export class AuthService {
       .returning();
 
     logger.info('Created new user', { userId: createdUser.id, email: createdUser.email, group: group.name });
+    await this.auditService.log({
+      userId: createdUser.id,
+      action: 'auth.user_provisioned',
+      resourceType: 'user',
+      resourceId: createdUser.id,
+      details: { email: createdUser.email, group: group.name },
+    });
     this.emitUser(createdUser.id, 'created');
     const mapped = await this.mapDbUserToUser(createdUser);
     this.emitPermissions(mapped.id, mapped.scopes, mapped.groupId);
