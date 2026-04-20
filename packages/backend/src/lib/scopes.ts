@@ -114,7 +114,6 @@ export const ALL_SCOPES = [
   'databases:query:read',
   'databases:query:write',
   'databases:query:admin',
-  'databases:monitoring:view',
   'databases:credentials:reveal',
   // ── Notifications ────────────────────────────────────────────────
   'notifications:alerts:list',
@@ -200,7 +199,6 @@ export const OPERATOR_SCOPES: readonly string[] = [
   'databases:query:read',
   'databases:query:write',
   'databases:query:admin',
-  'databases:monitoring:view',
   // Notifications
   'notifications:alerts:list',
   'notifications:alerts:view',
@@ -238,7 +236,6 @@ export const VIEWER_SCOPES: readonly string[] = [
   'docker:containers:view',
   'databases:list',
   'databases:view',
-  'databases:monitoring:view',
   // Notifications
   'notifications:alerts:list',
   'notifications:alerts:view',
@@ -317,7 +314,6 @@ export const RESOURCE_SCOPABLE: readonly string[] = [
   'databases:query:read',
   'databases:query:write',
   'databases:query:admin',
-  'databases:monitoring:view',
   'databases:credentials:reveal',
 ];
 

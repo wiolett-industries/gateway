@@ -43,7 +43,6 @@ const DATABASE_CHANNEL_SCOPE_BASES = [
   'databases:query:read',
   'databases:query:write',
   'databases:query:admin',
-  'databases:monitoring:view',
   'databases:credentials:reveal',
 ] as const;
 

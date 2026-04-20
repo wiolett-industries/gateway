@@ -7,11 +7,9 @@ import { RequireScope } from "@/components/common/RequireScope";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { ThemeProvider } from "@/components/layout/ThemeProvider";
 import { AccessLists } from "@/pages/AccessLists";
-import { AdminGroups } from "@/pages/AdminGroups";
+import { Administration } from "@/pages/Administration";
 import { AdminNodeDetail } from "@/pages/AdminNodeDetail";
 import { AdminNodes } from "@/pages/AdminNodes";
-import { AdminUsers } from "@/pages/AdminUsers";
-import { AuditLog } from "@/pages/AuditLog";
 import { AuthCallback } from "@/pages/AuthCallback";
 import { BlockedPage } from "@/pages/Blocked";
 import { CADetail } from "@/pages/CADetail";
@@ -133,11 +131,7 @@ function DockerPageGuard() {
 function DatabasesPageGuard() {
   const hasScopedAccess = useAuthStore((s) => s.hasScopedAccess);
 
-  const canAccessDatabases =
-    hasScopedAccess("databases:list") ||
-    hasScopedAccess("databases:view") ||
-    hasScopedAccess("databases:query:read") ||
-    hasScopedAccess("databases:monitoring:view");
+  const canAccessDatabases = hasScopedAccess("databases:list");
 
   if (!canAccessDatabases) {
     return <Navigate to="/" replace />;
@@ -182,6 +176,16 @@ function NotificationsPageGuard() {
   }
 
   return <Notifications />;
+}
+
+function AdministrationPageGuard() {
+  const hasAnyScope = useAuthStore((s) => s.hasAnyScope);
+
+  if (!hasAnyScope("admin:audit", "admin:users", "admin:groups")) {
+    return <Navigate to="/" replace />;
+  }
+
+  return <Administration />;
 }
 
 function RealtimeBridge() {
@@ -358,13 +362,24 @@ export default function App() {
               <Route path="/certificates" element={scoped("pki:cert:list", <Certificates />)} />
               <Route path="/certificates/:id" element={<CertificateDetailGuard />} />
               <Route path="/templates/:tab?" element={<TemplatesPage />} />
-              <Route path="/audit" element={scoped("admin:audit", <AuditLog />)} />
+              <Route path="/administration" element={<AdministrationPageGuard />} />
+              <Route path="/administration/:tab" element={<AdministrationPageGuard />} />
+              <Route
+                path="/audit"
+                element={scoped("admin:audit", <Navigate to="/administration/audit" replace />)}
+              />
               <Route path="/notifications/:tab?" element={<NotificationsPageGuard />} />
               <Route path="/databases" element={<DatabasesPageGuard />} />
               <Route path="/databases/:id/:tab?" element={<DatabaseDetailGuard />} />
               <Route path="/settings" element={<Settings />} />
-              <Route path="/admin/users" element={scoped("admin:users", <AdminUsers />)} />
-              <Route path="/admin/groups" element={scoped("admin:groups", <AdminGroups />)} />
+              <Route
+                path="/admin/users"
+                element={scoped("admin:users", <Navigate to="/administration/users" replace />)}
+              />
+              <Route
+                path="/admin/groups"
+                element={scoped("admin:groups", <Navigate to="/administration/groups" replace />)}
+              />
               <Route path="/nodes" element={scoped("nodes:list", <AdminNodes />)} />
               <Route path="/nodes/:id/:tab?" element={<NodeDetailGuard />} />
               <Route path="/docker/:tab?" element={<DockerPageGuard />} />

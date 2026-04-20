@@ -89,7 +89,7 @@ function buildFinalScopes(baseScopes: string[], resources: Record<string, string
   return result;
 }
 
-export function AdminGroups() {
+export function AdminGroups({ embedded = false }: { embedded?: boolean }) {
   const navigate = useNavigate();
   const hasScope = useAuthStore((s) => s.hasScope);
   const { cas, fetchCAs } = useCAStore();
@@ -293,9 +293,13 @@ export function AdminGroups() {
     return <LoadingSpinner />;
   }
 
-  return (
-    <PageTransition>
-      <div className="h-full overflow-y-auto p-6 space-y-4">
+  const content = (
+    <>
+      <div
+        className={
+          embedded ? "h-full overflow-y-auto space-y-4" : "h-full overflow-y-auto p-6 space-y-4"
+        }
+      >
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h1 className="text-2xl font-bold">Permission Groups</h1>
@@ -435,8 +439,10 @@ export function AdminGroups() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </PageTransition>
+    </>
   );
+
+  return embedded ? content : <PageTransition>{content}</PageTransition>;
 }
 
 function GroupRow({

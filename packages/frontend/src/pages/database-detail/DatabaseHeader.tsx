@@ -2,6 +2,7 @@ import {
   ArrowLeft,
   EllipsisVertical,
   KeyRound,
+  Pin,
   RefreshCw,
   Settings,
   Trash2,
@@ -24,6 +25,7 @@ interface DatabaseHeaderProps {
   canEdit: boolean;
   canReveal: boolean;
   canDelete: boolean;
+  onOpenPin: () => void;
   onBack: () => void;
   onTest: () => void;
   onOpenSettings: () => void;
@@ -37,6 +39,7 @@ export function DatabaseHeader({
   canEdit,
   canReveal,
   canDelete,
+  onOpenPin,
   onBack,
   onTest,
   onOpenSettings,
@@ -65,6 +68,9 @@ export function DatabaseHeader({
       </div>
 
       <div className="flex items-center gap-2">
+        <Button variant="outline" size="icon" onClick={onOpenPin}>
+          <Pin className="h-4 w-4" />
+        </Button>
         {canEdit && (
           <Button variant="outline" onClick={onTest}>
             <RefreshCw className="h-4 w-4" />

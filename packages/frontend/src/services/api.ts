@@ -1197,14 +1197,23 @@ class ApiClient extends ApiClientBase {
   async executePostgresSql(
     id: string,
     sql: string
-  ): Promise<{ command: string; rowCount: number; fields: string[]; rows: Record<string, unknown>[] }> {
+  ): Promise<{
+    results: Array<{
+      command: string;
+      rowCount: number;
+      fields: string[];
+      rows: Record<string, unknown>[];
+    }>;
+  }> {
     return this.unwrapData(
       this.request<{
         data: {
-          command: string;
-          rowCount: number;
-          fields: string[];
-          rows: Record<string, unknown>[];
+          results: Array<{
+            command: string;
+            rowCount: number;
+            fields: string[];
+            rows: Record<string, unknown>[];
+          }>;
         };
       }>(`/databases/${id}/postgres/query`, {
         method: "POST",
@@ -1281,9 +1290,9 @@ class ApiClient extends ApiClientBase {
   async executeRedisCommand(
     id: string,
     command: string
-  ): Promise<{ command: string; result: unknown }> {
+  ): Promise<{ results: Array<{ command: string; result: unknown }> }> {
     return this.unwrapData(
-      this.request<{ data: { command: string; result: unknown } }>(
+      this.request<{ data: { results: Array<{ command: string; result: unknown }> } }>(
         `/databases/${id}/redis/command`,
         {
           method: "POST",

@@ -32,22 +32,16 @@ const DATABASE_ACCESS_SCOPE_BASES = [
   'databases:query:read',
   'databases:query:write',
   'databases:query:admin',
-  'databases:monitoring:view',
   'databases:credentials:reveal',
 ] as const;
 
-function hasAnyGlobalDatabaseAccess(scopes: string[]): boolean {
-  return DATABASE_ACCESS_SCOPE_BASES.some((base) => hasScope(scopes, base));
-}
-
-function getAccessibleDatabaseIds(scopes: string[]): string[] {
+function getListAccessibleDatabaseIds(scopes: string[]): string[] {
   const ids = new Set<string>();
   for (const scope of scopes) {
-    for (const base of DATABASE_ACCESS_SCOPE_BASES) {
-      if (scope.startsWith(`${base}:`)) {
-        const id = scope.slice(base.length + 1);
-        if (id) ids.add(id);
-      }
+    const base = 'databases:list';
+    if (scope.startsWith(`${base}:`)) {
+      const id = scope.slice(base.length + 1);
+      if (id) ids.add(id);
     }
   }
   return [...ids];
@@ -77,8 +71,8 @@ databaseRoutes.use('*', sessionOnly);
 databaseRoutes.get('/', async (c) => {
   const service = container.resolve(DatabaseConnectionService);
   const scopes = c.get('effectiveScopes') ?? [];
-  const hasGlobalAccess = hasAnyGlobalDatabaseAccess(scopes);
-  const allowedIds = getAccessibleDatabaseIds(scopes);
+  const hasGlobalAccess = hasScope(scopes, 'databases:list');
+  const allowedIds = getListAccessibleDatabaseIds(scopes);
   if (!hasGlobalAccess && allowedIds.length === 0) {
     throw new AppError(403, 'FORBIDDEN', 'Missing required database access scope');
   }
@@ -129,7 +123,7 @@ databaseRoutes.get('/:id/reveal-credentials', requireScopeForResource('databases
   return c.json({ data });
 });
 
-databaseRoutes.get('/:id/monitoring/stream', requireScopeForResource('databases:monitoring:view', 'id'), async (c) => {
+databaseRoutes.get('/:id/monitoring/stream', requireScopeForResource('databases:view', 'id'), async (c) => {
   const databaseId = c.req.param('id');
   const monitoring = container.resolve(DatabaseMonitoringService);
   const connections = container.resolve(DatabaseConnectionService);

@@ -19,7 +19,10 @@ export function RecentActivityCard({
       <div className="flex items-center justify-between border-b border-border p-4">
         <h2 className="font-semibold">Recent Activity</h2>
         {hasScope("admin:audit") && (
-          <Link to="/audit" className="text-sm text-muted-foreground hover:text-foreground">
+          <Link
+            to="/administration/audit"
+            className="text-sm text-muted-foreground hover:text-foreground"
+          >
             View all
           </Link>
         )}

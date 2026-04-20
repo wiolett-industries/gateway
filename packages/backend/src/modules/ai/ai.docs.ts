@@ -639,7 +639,7 @@ Gateway can store and operate external Postgres and Redis connections directly f
 ## Permissions
 - \`databases:list\`, \`databases:view\`, \`databases:create\`, \`databases:edit\`, \`databases:delete\`
 - \`databases:query:read\`, \`databases:query:write\`, \`databases:query:admin\`
-- \`databases:monitoring:view\`, \`databases:credentials:reveal\`
+- \`databases:credentials:reveal\`
 - Most database scopes are resource-scopable by database ID, so access can be limited per saved connection.
 
 ## Monitoring
@@ -659,7 +659,7 @@ Gateway can store and operate external Postgres and Redis connections directly f
 - Explorer pages are paginated; use the SQL console for advanced filtering or bulk operations.
 
 ## SQL Console
-- Only a single SQL statement is executed per request.
+- One or more SQL statements can be executed per request.
 - Read, write, and admin statements are separated by permissions: \`databases:query:read\`, \`databases:query:write\`, and \`databases:query:admin\`.
 
 ## Monitoring
@@ -674,7 +674,7 @@ Gateway can store and operate external Postgres and Redis connections directly f
 - Streams are browse-only in the visual explorer; use the command console for advanced stream operations.
 
 ## Command Console
-- Only a single Redis command is executed per request.
+- One or more Redis commands can be executed per request.
 - Read, write, and admin commands are permission-gated by \`databases:query:read\`, \`databases:query:write\`, and \`databases:query:admin\`.
 
 ## Monitoring
