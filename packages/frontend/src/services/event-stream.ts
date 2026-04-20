@@ -198,6 +198,8 @@ class EventStream {
           api.invalidateCache("req:/api/notifications/alert-rules");
         } else if (msg.channel === "notification.webhook.changed") {
           api.invalidateCache("req:/api/notifications/webhooks");
+        } else if (msg.channel === "database.changed") {
+          api.invalidateCache("req:/api/databases");
         } else if (msg.channel.startsWith("docker.")) {
           api.invalidateCache("req:/api/docker");
           if (msg.channel === "docker.container.changed") {

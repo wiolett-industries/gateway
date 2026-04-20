@@ -26,6 +26,7 @@ import { createComposeLogsWSHandlers } from '@/modules/docker/docker-compose-log
 import { createDockerExecWSHandlers } from '@/modules/docker/docker-exec.ws.js';
 import { createDockerLogStreamWSHandlers } from '@/modules/docker/docker-logs.ws.js';
 import { dockerWebhookTriggerRoutes } from '@/modules/docker/docker-webhook.routes.js';
+import { databaseRoutes } from '@/modules/databases/databases.routes.js';
 import { domainRoutes } from '@/modules/domains/domain.routes.js';
 import { groupRoutes } from '@/modules/groups/group.routes.js';
 import { housekeepingRoutes } from '@/modules/housekeeping/housekeeping.routes.js';
@@ -115,6 +116,7 @@ export function createApp() {
   app.route('/api/admin/groups', groupRoutes);
   app.route('/api/admin', adminRoutes);
   app.route('/api/docker', dockerRoutes);
+  app.route('/api/databases', databaseRoutes);
   app.route('/api/webhooks/docker', dockerWebhookTriggerRoutes);
   app.route('/api/nodes', nodesRoutes);
   app.route('/api/proxy-hosts', proxyRoutes);

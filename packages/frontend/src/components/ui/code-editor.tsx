@@ -276,6 +276,141 @@ const envLang = StreamLanguage.define<{ inValue: boolean }>({
 });
 
 // ---------------------------------------------------------------------------
+// SQL stream parser
+// ---------------------------------------------------------------------------
+
+const SQL_KEYWORDS = new Set([
+  "select",
+  "from",
+  "where",
+  "insert",
+  "into",
+  "values",
+  "update",
+  "set",
+  "delete",
+  "create",
+  "table",
+  "alter",
+  "drop",
+  "truncate",
+  "join",
+  "left",
+  "right",
+  "inner",
+  "outer",
+  "full",
+  "on",
+  "group",
+  "by",
+  "order",
+  "limit",
+  "offset",
+  "having",
+  "as",
+  "distinct",
+  "union",
+  "all",
+  "with",
+  "and",
+  "or",
+  "not",
+  "null",
+  "is",
+  "in",
+  "exists",
+  "between",
+  "like",
+  "ilike",
+  "returning",
+  "primary",
+  "key",
+  "foreign",
+  "references",
+  "constraint",
+  "default",
+  "true",
+  "false",
+  "case",
+  "when",
+  "then",
+  "else",
+  "end",
+  "begin",
+  "commit",
+  "rollback",
+  "view",
+  "index",
+  "if",
+  "replace",
+]);
+
+const SQL_TYPES = new Set([
+  "text",
+  "integer",
+  "int",
+  "bigint",
+  "smallint",
+  "boolean",
+  "bool",
+  "uuid",
+  "json",
+  "jsonb",
+  "numeric",
+  "decimal",
+  "real",
+  "double",
+  "precision",
+  "timestamp",
+  "date",
+  "time",
+  "serial",
+  "bigserial",
+  "varchar",
+  "char",
+]);
+
+const sqlLang = StreamLanguage.define<{ inBlockComment: boolean }>({
+  startState: () => ({ inBlockComment: false }),
+  token(stream, state) {
+    if (state.inBlockComment) {
+      if (stream.match("*/")) {
+        state.inBlockComment = false;
+      } else {
+        stream.next();
+      }
+      return "comment";
+    }
+
+    if (stream.match("--")) {
+      stream.skipToEnd();
+      return "comment";
+    }
+
+    if (stream.match("/*")) {
+      state.inBlockComment = true;
+      return "comment";
+    }
+
+    if (stream.match(/'(?:[^']|'')*'/)) return "string";
+    if (stream.match(/"(?:[^"]|"")*"/)) return "propertyName";
+    if (stream.match(/\b\d+(\.\d+)?\b/)) return "number";
+    if (stream.match(/[(),.;]/)) return "brace";
+    if (stream.match(/<>|!=|<=|>=|=|<|>|\+|-|\*|\//)) return "operator";
+
+    if (stream.match(/[A-Za-z_][A-Za-z0-9_$]*/)) {
+      const word = stream.current().toLowerCase();
+      if (SQL_KEYWORDS.has(word)) return "keyword";
+      if (SQL_TYPES.has(word)) return "atom";
+      return "variableName";
+    }
+
+    stream.next();
+    return null;
+  },
+});
+
+// ---------------------------------------------------------------------------
 // Theme + highlighting
 // ---------------------------------------------------------------------------
 
@@ -392,7 +527,7 @@ interface CodeEditorProps {
   /** Character ranges to highlight inline with an error background */
   errorRanges?: Array<{ from: number; to: number }>;
   /** Syntax highlighting language (default: "nginx") */
-  language?: "nginx" | "env" | "json";
+  language?: "nginx" | "env" | "json" | "plain" | "sql";
 }
 
 export function CodeEditor({
@@ -428,7 +563,17 @@ export function CodeEditor({
         highlightSelectionMatches(),
         keymap.of([indentWithTab, ...defaultKeymap, ...historyKeymap, ...searchKeymap]),
         indentUnit.of("    "),
-        language === "json" ? json() : language === "env" ? envLang : nginxHandlebarsLang,
+        ...(language === "plain"
+          ? []
+          : [
+              language === "json"
+                ? json()
+                : language === "env"
+                  ? envLang
+                  : language === "sql"
+                    ? sqlLang
+                    : nginxHandlebarsLang,
+            ]),
         ...(language === "json" ? [foldGutter(), keymap.of(foldKeymap)] : []),
         editorTheme,
         highlightStyles,

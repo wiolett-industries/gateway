@@ -35,6 +35,17 @@ type ServerMsg =
   | { type: 'error'; message: string };
 
 const states = new WeakMap<WSContext, ConnState>();
+const DATABASE_CHANNEL_SCOPE_BASES = [
+  'databases:list',
+  'databases:view',
+  'databases:edit',
+  'databases:delete',
+  'databases:query:read',
+  'databases:query:write',
+  'databases:query:admin',
+  'databases:monitoring:view',
+  'databases:credentials:reveal',
+] as const;
 
 function send(ws: WSContext, msg: ServerMsg) {
   try {
@@ -61,6 +72,7 @@ function requiredScopeFor(channel: string): string | null {
   if (channel.startsWith('docker.task')) return 'docker:containers:list';
   if (channel.startsWith('docker.webhook')) return 'docker:containers:webhooks';
   if (channel.startsWith('docker.')) return 'docker:containers:list';
+  if (channel.startsWith('database.')) return 'databases:list';
   if (channel.startsWith('proxy.host')) return 'proxy:list';
   if (channel.startsWith('ssl.cert')) return 'ssl:cert:list';
   if (channel === 'cert.changed') return 'pki:cert:list';
@@ -92,6 +104,11 @@ function hasChannelAccess(scopes: string[], channel: string): boolean {
   if (channel.startsWith('docker.network')) {
     return scopes.some((scope) => scope === 'docker:networks:list' || scope.startsWith('docker:networks:list:'));
   }
+  if (channel.startsWith('database.')) {
+    return scopes.some((scope) =>
+      DATABASE_CHANNEL_SCOPE_BASES.some((base) => scope === base || scope.startsWith(`${base}:`))
+    );
+  }
 
   return hasScope(scopes, required);
 }
@@ -114,6 +131,14 @@ function canReceiveChannelPayload(scopes: string[], channel: string, payload: un
   if (channel.startsWith('docker.network')) {
     const nodeId = (payload as { nodeId?: string } | undefined)?.nodeId;
     return hasScope(scopes, 'docker:networks:list') || !!(nodeId && hasScope(scopes, `docker:networks:list:${nodeId}`));
+  }
+  if (channel.startsWith('database.')) {
+    const databaseId = (payload as { id?: string } | undefined)?.id;
+    return (
+      DATABASE_CHANNEL_SCOPE_BASES.some((base) => hasScope(scopes, base)) ||
+      !!(databaseId &&
+        DATABASE_CHANNEL_SCOPE_BASES.some((base) => hasScope(scopes, `${base}:${databaseId}`)))
+    );
   }
   return true;
 }
@@ -166,6 +191,14 @@ function subscribePerUser(ws: WSContext, state: ConnState) {
     }
     for (const ch of [...state.subs.keys()]) {
       const required = requiredScopeFor(ch);
+      if (ch.startsWith('database.')) {
+        if (!hasChannelAccess(state.scopes, ch)) {
+          const unsub = state.subs.get(ch);
+          unsub?.();
+          state.subs.delete(ch);
+        }
+        continue;
+      }
       if (required && !hasScope(state.scopes, required)) {
         const unsub = state.subs.get(ch);
         unsub?.();

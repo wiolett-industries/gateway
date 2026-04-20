@@ -622,6 +622,65 @@ Long-running operations (stop, restart, kill, recreate, update) create tasks vis
 - Container IDs change after recreate/update — the frontend handles navigation to new IDs
 - Transition states (stopping, restarting, recreating, etc.) block concurrent operations on the same container`,
 
+  databases: `# Databases
+
+## Overview
+Gateway can store and operate external Postgres and Redis connections directly from the backend. No daemon is involved.
+
+## Providers
+- **Postgres**: schema/table explorer, paginated row browser, row insert/update/delete for PK-backed tables, SQL console, monitoring.
+- **Redis**: key browser, type-aware viewer/editor for common types (string, hash, list, set, zset), Redis command console, monitoring.
+
+## Credentials
+- Connection credentials are encrypted at rest in the Gateway database using the same envelope-encryption primitive used for Docker secrets and PKI keys.
+- Raw credentials are hidden by default. Revealing them requires the \`databases:credentials:reveal\` scope.
+- Team members can operate databases through Gateway without being given the raw hosting credentials.
+
+## Permissions
+- \`databases:list\`, \`databases:view\`, \`databases:create\`, \`databases:edit\`, \`databases:delete\`
+- \`databases:query:read\`, \`databases:query:write\`, \`databases:query:admin\`
+- \`databases:monitoring:view\`, \`databases:credentials:reveal\`
+- Most database scopes are resource-scopable by database ID, so access can be limited per saved connection.
+
+## Monitoring
+- Gateway stores short rolling metric history for database sparklines and persists health-history entries for health bars.
+- Postgres metrics include latency and active connection utilization.
+- Redis metrics include latency and memory utilization.
+
+## Audit
+- Connection CRUD, connection tests, credential reveals, data mutations, and console executions are audit logged.
+- Query text and command text are sanitized and truncated in the audit log to avoid leaking secrets.`,
+
+  postgres: `# Postgres in Gateway
+
+## Explorer
+- Schemas and tables are discovered from \`information_schema\`.
+- Row editing in the visual explorer requires a primary key. Tables or views without a PK are browse-only in the explorer.
+- Explorer pages are paginated; use the SQL console for advanced filtering or bulk operations.
+
+## SQL Console
+- Only a single SQL statement is executed per request.
+- Read, write, and admin statements are separated by permissions: \`databases:query:read\`, \`databases:query:write\`, and \`databases:query:admin\`.
+
+## Monitoring
+- Health is based on connectivity and latency.
+- Metrics include \`latency_ms\`, \`active_connections\`, \`max_connections\`, \`active_connections_pct\`, and \`database_size_bytes\`.`,
+
+  redis: `# Redis in Gateway
+
+## Explorer
+- Keys are discovered with \`SCAN\`, not \`KEYS\`, so the browser can safely handle large keyspaces.
+- Visual editing supports string, hash, list, set, and zset.
+- Streams are browse-only in the visual explorer; use the command console for advanced stream operations.
+
+## Command Console
+- Only a single Redis command is executed per request.
+- Read, write, and admin commands are permission-gated by \`databases:query:read\`, \`databases:query:write\`, and \`databases:query:admin\`.
+
+## Monitoring
+- Health is based on connectivity and latency.
+- Metrics include \`latency_ms\`, \`used_memory_bytes\`, \`maxmemory_bytes\`, \`memory_pct\`, \`connected_clients\`, and \`instantaneous_ops_per_sec\`.`,
+
   api: `# Gateway REST API
 
 Gateway provides a full REST API for programmatic access to all features. API tokens allow external scripts, CI/CD pipelines, and integrations to interact with Gateway without a browser session.
@@ -841,6 +900,9 @@ export const DOC_TOPIC_SCOPES: Record<string, string> = {
   nginx: 'proxy:edit',
   nodes: 'nodes:list',
   docker: 'docker:containers:list',
+  databases: 'databases:list',
+  postgres: 'databases:view',
+  redis: 'databases:view',
   housekeeping: 'admin:housekeeping',
   permissions: 'feat:ai:use',
   api: 'feat:ai:use',

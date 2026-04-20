@@ -37,7 +37,7 @@ import { useRealtime } from "@/hooks/use-realtime";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useCAStore } from "@/stores/ca";
-import type { Node, PermissionGroup, ProxyHost } from "@/types";
+import type { DatabaseConnection, Node, PermissionGroup, ProxyHost } from "@/types";
 import { RESOURCE_SCOPABLE_SCOPES, TOKEN_SCOPES } from "@/types";
 
 /**
@@ -95,6 +95,7 @@ export function AdminGroups() {
   const { cas, fetchCAs } = useCAStore();
   const [nodesList, setNodesList] = useState<Node[]>([]);
   const [proxyHostsList, setProxyHostsList] = useState<ProxyHost[]>([]);
+  const [databasesList, setDatabasesList] = useState<DatabaseConnection[]>([]);
   const [groups, setGroups] = useState<PermissionGroup[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -136,6 +137,10 @@ export function AdminGroups() {
       .listProxyHosts({ limit: 100 })
       .then((r) => setProxyHostsList(r.data ?? []))
       .catch(() => {});
+    api
+      .listDatabases({ limit: 200 })
+      .then((r) => setDatabasesList(r.data ?? []))
+      .catch(() => {});
   }, [fetchGroups, fetchCAs]);
 
   useRealtime("group.changed", () => {
@@ -161,6 +166,13 @@ export function AdminGroups() {
     api
       .listProxyHosts({ limit: 100 })
       .then((r) => setProxyHostsList(r.data ?? []))
+      .catch(() => {});
+  });
+
+  useRealtime("database.changed", () => {
+    api
+      .listDatabases({ limit: 200 })
+      .then((r) => setDatabasesList(r.data ?? []))
       .catch(() => {});
   });
 
@@ -399,6 +411,7 @@ export function AdminGroups() {
                 cas={cas}
                 nodes={nodesList}
                 proxyHosts={proxyHostsList}
+                databases={databasesList}
                 restrictableScopes={RESOURCE_SCOPABLE_SCOPES}
                 inheritedScopes={inheritedScopes}
                 inheritedFromName={groups.find((g) => g.id === formParentId)?.name}

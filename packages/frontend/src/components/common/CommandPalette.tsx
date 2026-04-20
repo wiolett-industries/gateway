@@ -2,6 +2,7 @@ import {
   Award,
   Box,
   Clock,
+  Database,
   FileText,
   Globe,
   Globe2,
@@ -345,6 +346,12 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       scope: "docker:tasks",
     },
     {
+      label: "Databases",
+      icon: Database,
+      action: () => navigate("/databases"),
+      scope: "databases:list",
+    },
+    {
       label: "Nodes",
       icon: Server,
       shortcut: "⌘9",
@@ -379,7 +386,9 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     if (i.label === "Authorities") {
       return hasAnyScope("pki:ca:list:root", "pki:ca:list:intermediate");
     }
-    if (i.scope.startsWith("docker:")) return hasScopedAccess(i.scope);
+    if (i.scope.startsWith("docker:") || i.scope.startsWith("databases:")) {
+      return hasScopedAccess(i.scope);
+    }
     return hasScope(i.scope);
   });
 

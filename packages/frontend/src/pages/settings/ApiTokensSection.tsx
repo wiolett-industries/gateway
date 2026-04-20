@@ -16,16 +16,22 @@ import { Input } from "@/components/ui/input";
 import { formatDate, formatRelativeDate } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useCAStore } from "@/stores/ca";
-import type { Node, ProxyHost, User } from "@/types";
+import type { DatabaseConnection, Node, ProxyHost, User } from "@/types";
 import { type ApiToken, RESOURCE_SCOPABLE_SCOPES, TOKEN_SCOPES } from "@/types";
 
 interface ApiTokensSectionProps {
   user: User | null;
   nodesList: Node[];
   proxyHostsList: ProxyHost[];
+  databasesList: DatabaseConnection[];
 }
 
-export function ApiTokensSection({ user, nodesList, proxyHostsList }: ApiTokensSectionProps) {
+export function ApiTokensSection({
+  user,
+  nodesList,
+  proxyHostsList,
+  databasesList,
+}: ApiTokensSectionProps) {
   const { cas } = useCAStore();
   const [tokens, setTokens] = useState<ApiToken[]>([]);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -310,6 +316,7 @@ export function ApiTokensSection({ user, nodesList, proxyHostsList }: ApiTokensS
                     cas={cas}
                     nodes={nodesList}
                     proxyHosts={proxyHostsList}
+                    databases={databasesList}
                     restrictableScopes={RESOURCE_SCOPABLE_SCOPES}
                   />
                   <div className="border-t border-border px-3 py-2">

@@ -53,13 +53,7 @@ export function StatCard({
               className="h-1.5 transition-all"
               style={{
                 width: `${Math.min(progress.percent, 100)}%`,
-                backgroundColor:
-                  progress.color ??
-                  (progress.percent > 90
-                    ? "var(--destructive)"
-                    : progress.percent > 75
-                      ? "#f97316"
-                      : color),
+                backgroundColor: progress.color ?? color,
               }}
             />
           </div>

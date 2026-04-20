@@ -1,4 +1,4 @@
-import type { CA, Node, ProxyHost } from "@/types";
+import type { CA, DatabaseConnection, Node, ProxyHost } from "@/types";
 
 interface ScopeItem {
   value: string;
@@ -29,6 +29,7 @@ interface ScopeListProps {
   cas?: CA[];
   nodes?: Node[];
   proxyHosts?: ProxyHost[];
+  databases?: DatabaseConnection[];
   restrictableScopes?: readonly string[];
   /** Inherited scopes from parent group — shown as read-only checked at bottom */
   inheritedScopes?: string[];
@@ -79,8 +80,15 @@ function getResourceOptions(
   scope: string,
   cas?: CA[],
   nodes?: Node[],
-  proxyHosts?: ProxyHost[]
+  proxyHosts?: ProxyHost[],
+  databases?: DatabaseConnection[]
 ): ResourceOption[] {
+  if (scope.startsWith("databases:")) {
+    return (databases ?? []).map((database) => ({
+      id: database.id,
+      label: `${database.name} (${database.host}:${database.port})`,
+    }));
+  }
   if (scope.startsWith("docker:")) {
     return (nodes ?? []).map((n) => ({ id: n.id, label: n.displayName || n.hostname }));
   }
@@ -97,6 +105,9 @@ function getResourceOptions(
 }
 
 function getResourceLabel(scope: string): string {
+  if (scope.startsWith("databases:")) {
+    return "Restrict to specific databases (leave unchecked for all):";
+  }
   if (scope.startsWith("docker:")) {
     return "Restrict to specific Docker nodes (leave unchecked for all):";
   }
@@ -116,6 +127,7 @@ export function ScopeList({
   cas,
   nodes,
   proxyHosts,
+  databases,
   restrictableScopes,
   inheritedScopes,
   inheritedFromName,
@@ -148,6 +160,7 @@ export function ScopeList({
             cas={cas}
             nodes={nodes}
             proxyHosts={proxyHosts}
+            databases={databases}
             restrictableScopes={restrictableScopes}
             inheritedFromName={inheritedFromName}
           />
@@ -168,6 +181,7 @@ export function ScopeList({
             cas={cas}
             nodes={nodes}
             proxyHosts={proxyHosts}
+            databases={databases}
             restrictableScopes={restrictableScopes}
             inheritedFromName={inheritedFromName}
           />
@@ -204,6 +218,7 @@ export function ScopeList({
                 cas={cas}
                 nodes={nodes}
                 proxyHosts={proxyHosts}
+                databases={databases}
                 restrictableScopes={restrictableScopes}
                 inheritedFromName={inheritedFromName}
               />
@@ -228,6 +243,7 @@ function ScopeRow({
   cas,
   nodes,
   proxyHosts,
+  databases,
   restrictableScopes,
   inheritedFromName,
 }: {
@@ -243,6 +259,7 @@ function ScopeRow({
   cas?: CA[];
   nodes?: Node[];
   proxyHosts?: ProxyHost[];
+  databases?: DatabaseConnection[];
   restrictableScopes?: readonly string[];
   inheritedFromName?: string;
 }) {
@@ -252,7 +269,7 @@ function ScopeRow({
   const inheritedSet = new Set(inheritedSelectedIds);
   const combinedSelectedIds = [...new Set([...inheritedSelectedIds, ...selectedIds])];
   const baseResourceOptions = isRestrictable
-    ? getResourceOptions(scope.value, cas, nodes, proxyHosts)
+    ? getResourceOptions(scope.value, cas, nodes, proxyHosts, databases)
     : [];
   const resourceOptions = [...baseResourceOptions];
   for (const selectedId of combinedSelectedIds) {

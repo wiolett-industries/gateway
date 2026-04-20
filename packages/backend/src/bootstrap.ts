@@ -24,6 +24,8 @@ import { DockerRegistryService } from '@/modules/docker/docker-registry.service.
 import { DockerSecretService } from '@/modules/docker/docker-secret.service.js';
 import { DockerTaskService } from '@/modules/docker/docker-task.service.js';
 import { DockerWebhookService } from '@/modules/docker/docker-webhook.service.js';
+import { DatabaseMonitoringService } from '@/modules/databases/database-monitoring.service.js';
+import { DatabaseConnectionService } from '@/modules/databases/databases.service.js';
 import { detectPublicIP, initDnsResolver } from '@/modules/domains/dns.utils.js';
 import { DomainsService } from '@/modules/domains/domain.service.js';
 import { GroupService } from '@/modules/groups/group.service.js';
@@ -246,6 +248,13 @@ export async function initializeContainer(): Promise<void> {
   nginxTemplateService.setEventBus(eventBus);
   dockerRegistryService.setEventBus(eventBus);
 
+  const databaseConnectionService = new DatabaseConnectionService(db, auditService, cryptoService);
+  container.registerInstance(DatabaseConnectionService, databaseConnectionService);
+
+  const databaseMonitoringService = new DatabaseMonitoringService(databaseConnectionService, cacheService);
+  container.registerInstance(DatabaseMonitoringService, databaseMonitoringService);
+  databaseConnectionService.setEventBus(eventBus);
+
   const proxyService = new ProxyService(
     db,
     nginxTemplateService,
@@ -385,6 +394,7 @@ export async function initializeContainer(): Promise<void> {
     monitoringService,
     nodesService,
     groupService,
+    databaseConnectionService,
     dockerManagementService,
     notifRuleService,
     notifWebhookService,
@@ -410,6 +420,7 @@ export async function initializeContainer(): Promise<void> {
     nodeRegistry
   );
   notifEvaluatorService.setEventBus(eventBus);
+  databaseMonitoringService.setEvaluator(notifEvaluatorService);
   notifEvaluatorService.start();
   container.registerInstance(NotificationEvaluatorService, notifEvaluatorService);
 
