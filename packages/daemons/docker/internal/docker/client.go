@@ -508,6 +508,10 @@ func (c *Client) UpdateContainer(ctx context.Context, id string, newTag string, 
 		return fmt.Errorf("inspect container: %w", err)
 	}
 	insp := inspResult.Container
+	rollbackSnapshot, err := cloneInspectResponse(&insp)
+	if err != nil {
+		return fmt.Errorf("clone container for rollback: %w", err)
+	}
 
 	imageRef := insp.Config.Image
 	if imageRef == "" {
@@ -547,7 +551,7 @@ func (c *Client) UpdateContainer(ctx context.Context, id string, newTag string, 
 		pullResp.Close()
 	}
 
-	return c.recreateContainer(ctx, &insp, imageRef, envOverrides, envRemovals)
+	return c.recreateContainer(ctx, &insp, imageRef, envOverrides, envRemovals, rollbackSnapshot)
 }
 
 // LiveUpdateContainer applies resource limits and restart policy to a running container
@@ -616,8 +620,10 @@ func (c *Client) LiveUpdateContainer(ctx context.Context, id string, configJSON 
 // overrides for ports, mounts, entrypoint, command, working directory, user, hostname, and labels.
 func (c *Client) RecreateWithConfig(ctx context.Context, id string, configJSON string) error {
 	var params struct {
-		Image string `json:"image"`
-		Ports []struct {
+		Image     string            `json:"image"`
+		Env       map[string]string `json:"env"`
+		RemoveEnv []string          `json:"removeEnv"`
+		Ports     []struct {
 			HostPort      uint16 `json:"hostPort"`
 			ContainerPort uint16 `json:"containerPort"`
 			Protocol      string `json:"protocol"`
@@ -651,6 +657,10 @@ func (c *Client) RecreateWithConfig(ctx context.Context, id string, configJSON s
 		return fmt.Errorf("inspect container: %w", err)
 	}
 	insp := inspResult.Container
+	rollbackSnapshot, err := cloneInspectResponse(&insp)
+	if err != nil {
+		return fmt.Errorf("clone container for rollback: %w", err)
+	}
 
 	// Apply port binding overrides
 	if params.Ports != nil {
@@ -763,13 +773,20 @@ func (c *Client) RecreateWithConfig(ctx context.Context, id string, configJSON s
 		imageRef = insp.Image
 	}
 
-	return c.recreateContainer(ctx, &insp, imageRef, nil, nil)
+	return c.recreateContainer(ctx, &insp, imageRef, params.Env, params.RemoveEnv, rollbackSnapshot)
 }
 
 // recreateContainer stops, removes, and recreates a container with the given
 // imageRef, preserving all network connections. envOverrides are merged on top
 // of the existing env; envRemovals are stripped.
-func (c *Client) recreateContainer(ctx context.Context, insp *container.InspectResponse, imageRef string, envOverrides map[string]string, envRemovals []string) error {
+func (c *Client) recreateContainer(
+	ctx context.Context,
+	insp *container.InspectResponse,
+	imageRef string,
+	envOverrides map[string]string,
+	envRemovals []string,
+	rollbackSnapshot *container.InspectResponse,
+) error {
 	name := strings.TrimPrefix(insp.Name, "/")
 	if name == "" {
 		name = insp.ID[:12]
@@ -789,6 +806,39 @@ func (c *Client) recreateContainer(ctx context.Context, insp *container.InspectR
 	if _, err := c.cli.ContainerRemove(ctx, insp.ID, client.ContainerRemoveOptions{Force: true}); err != nil {
 		return fmt.Errorf("remove container: %w", err)
 	}
+
+	if _, err := c.createContainerFromInspect(ctx, insp, imageRef, envOverrides, envRemovals); err != nil {
+		if rollbackSnapshot != nil {
+			rollbackImage := rollbackSnapshot.Config.Image
+			if rollbackImage == "" {
+				rollbackImage = rollbackSnapshot.Image
+			}
+			if rollbackImage == "" {
+				rollbackImage = imageRef
+			}
+			if _, rollbackErr := c.createContainerFromInspect(ctx, rollbackSnapshot, rollbackImage, nil, nil); rollbackErr != nil {
+				return fmt.Errorf("create container: %w (rollback failed: %v)", err, rollbackErr)
+			}
+			return fmt.Errorf("create container: %w (original container restored)", err)
+		}
+		return fmt.Errorf("create container: %w", err)
+	}
+
+	return nil
+}
+
+func (c *Client) createContainerFromInspect(
+	ctx context.Context,
+	insp *container.InspectResponse,
+	imageRef string,
+	envOverrides map[string]string,
+	envRemovals []string,
+) (string, error) {
+	name := strings.TrimPrefix(insp.Name, "/")
+	if name == "" {
+		name = insp.ID[:12]
+	}
+	wasRunning := insp.State != nil && insp.State.Running
 
 	// Build new config
 	createConfig := *insp.Config
@@ -816,7 +866,7 @@ func (c *Client) recreateContainer(ctx context.Context, insp *container.InspectR
 		Name:             name,
 	})
 	if err != nil {
-		return fmt.Errorf("create container: %w", err)
+		return "", err
 	}
 
 	// Connect to additional networks
@@ -833,11 +883,26 @@ func (c *Client) recreateContainer(ctx context.Context, insp *container.InspectR
 	// Preserve the original running state. A stopped container should stay stopped.
 	if wasRunning {
 		if _, err := c.cli.ContainerStart(ctx, createResult.ID, client.ContainerStartOptions{}); err != nil {
-			return fmt.Errorf("start container: %w", err)
+			_, _ = c.cli.ContainerRemove(ctx, createResult.ID, client.ContainerRemoveOptions{Force: true})
+			return "", fmt.Errorf("start container: %w", err)
 		}
 	}
 
-	return nil
+	return createResult.ID, nil
+}
+
+func cloneInspectResponse(src *container.InspectResponse) (*container.InspectResponse, error) {
+	data, err := json.Marshal(src)
+	if err != nil {
+		return nil, err
+	}
+
+	var cloned container.InspectResponse
+	if err := json.Unmarshal(data, &cloned); err != nil {
+		return nil, err
+	}
+
+	return &cloned, nil
 }
 
 // applyEnvChanges builds the final env slice by:

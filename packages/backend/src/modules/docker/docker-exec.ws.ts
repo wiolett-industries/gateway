@@ -2,26 +2,18 @@ import type { WSContext } from 'hono/ws';
 import { container } from '@/container.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { hasScope } from '@/lib/permissions.js';
+import { resolveLiveSessionUser } from '@/modules/auth/live-session-user.js';
 import { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import { NodeRegistryService } from '@/services/node-registry.service.js';
-import { SessionService } from '@/services/session.service.js';
 import type { User } from '@/types.js';
 
 const logger = createChildLogger('DockerExec');
 
-/**
- * Authenticate a session token and return the user if valid.
- * Mirrors the pattern from ai.ws.ts — always resolves live scopes from the group.
- */
-async function authenticateFromToken(token: string): Promise<User | null> {
-  if (token.startsWith('gw_')) return null; // API tokens not allowed for exec
-  const sessionService = container.resolve(SessionService);
-  const session = await sessionService.getSession(token);
-  if (!session?.user) return null;
-
-  const { AuthService } = await import('@/modules/auth/auth.service.js');
-  const authService = container.resolve(AuthService);
-  return authService.getUserById(session.user.id);
+async function authorizeExecAccess(token: string, nodeId: string): Promise<User | null> {
+  const result = await resolveLiveSessionUser(token);
+  const user = result?.user ?? null;
+  if (!user || user.isBlocked) return null;
+  return hasScope(user.scopes, `docker:containers:console:${nodeId}`) ? user : null;
 }
 
 function send(ws: WSContext, msg: Record<string, unknown>): void {
@@ -38,6 +30,7 @@ interface ExecWSState {
   execId: string | null;
   outputHandler: ((data: any) => void) | null;
   keepaliveInterval: ReturnType<typeof setInterval> | null;
+  token: string;
 }
 
 const wsStates = new WeakMap<WSContext, ExecWSState>();
@@ -66,15 +59,12 @@ export function createDockerExecWSHandlers(nodeId: string, containerId: string, 
         execId: null,
         outputHandler: null,
         keepaliveInterval: null,
+        token,
       };
       wsStates.set(ws, state);
 
       state.keepaliveInterval = setInterval(() => {
-        try {
-          ws.send(JSON.stringify({ type: 'pong' }));
-        } catch {
-          if (state.keepaliveInterval) clearInterval(state.keepaliveInterval);
-        }
+        void revalidateExecAccess(ws, state, nodeId, true);
       }, 30_000);
 
       // Authenticate immediately from query token (same as AI WS pattern)
@@ -118,6 +108,7 @@ export function createDockerExecWSHandlers(nodeId: string, containerId: string, 
       }
 
       if (msg.type === 'input' && state.execId) {
+        if (!(await revalidateExecAccess(ws, state, nodeId))) return;
         try {
           const inputData = Buffer.from(msg.data as string, 'base64');
           dispatch.sendExecInput(nodeId, state.execId, inputData);
@@ -128,6 +119,7 @@ export function createDockerExecWSHandlers(nodeId: string, containerId: string, 
       }
 
       if (msg.type === 'resize' && state.execId) {
+        if (!(await revalidateExecAccess(ws, state, nodeId))) return;
         try {
           await dispatch.sendDockerExecCommand(nodeId, 'resize', {
             containerId,
@@ -181,25 +173,10 @@ async function authenticateAndCreateExec(
   dispatch: NodeDispatchService,
   registry: NodeRegistryService
 ): Promise<void> {
-  // Validate session token
-  const user = await authenticateFromToken(token);
+  const user = await authorizeExecAccess(token, nodeId);
   if (!user) {
-    send(ws, { type: 'auth_error', message: 'Invalid or expired token' });
+    send(ws, { type: 'auth_error', message: 'Access revoked or token expired' });
     ws.close(1008, 'Authentication failed');
-    return;
-  }
-
-  // Check docker:exec scope
-  if (!hasScope(user.scopes, `docker:containers:console:${nodeId}`)) {
-    send(ws, { type: 'auth_error', message: 'Missing required scope: docker:exec' });
-    ws.close(1008, 'Insufficient permissions');
-    return;
-  }
-
-  // Check user is not blocked
-  if (user.isBlocked) {
-    send(ws, { type: 'auth_error', message: 'Account is blocked' });
-    ws.close(1008, 'Account blocked');
     return;
   }
 
@@ -301,20 +278,23 @@ async function authenticateAndCreateExec(
 
   // Register handler for live ExecOutput from daemon -> forward to this WS
   const outputHandler = (output: any) => {
-    if (output.data && output.data.length > 0) {
-      const b64 = Buffer.isBuffer(output.data)
-        ? output.data.toString('base64')
-        : Buffer.from(output.data).toString('base64');
-      send(ws, { type: 'output', data: b64 });
-    }
-    if (output.exited) {
-      send(ws, { type: 'exit', exitCode: output.exitCode ?? 0 });
-      try {
-        ws.close(1000, 'Process exited');
-      } catch {
-        /* */
+    void (async () => {
+      if (!(await revalidateExecAccess(ws, state, nodeId))) return;
+      if (output.data && output.data.length > 0) {
+        const b64 = Buffer.isBuffer(output.data)
+          ? output.data.toString('base64')
+          : Buffer.from(output.data).toString('base64');
+        send(ws, { type: 'output', data: b64 });
       }
-    }
+      if (output.exited) {
+        send(ws, { type: 'exit', exitCode: output.exitCode ?? 0 });
+        try {
+          ws.close(1000, 'Process exited');
+        } catch {
+          /* */
+        }
+      }
+    })();
   };
   state.outputHandler = outputHandler;
   registry.registerExecHandler(execId, outputHandler);
@@ -327,4 +307,33 @@ async function authenticateAndCreateExec(
   }
 
   send(ws, { type: 'connected', execId, shell: usedShell, isNew });
+}
+
+async function revalidateExecAccess(
+  ws: WSContext,
+  state: ExecWSState,
+  nodeId: string,
+  emitPong = false
+): Promise<boolean> {
+  const user = await authorizeExecAccess(state.token, nodeId);
+  if (!user) {
+    state.authenticated = false;
+    send(ws, { type: 'auth_error', message: 'Access revoked or token expired' });
+    try {
+      ws.close(1008, 'Authentication failed');
+    } catch {
+      /* */
+    }
+    return false;
+  }
+
+  state.user = user;
+  if (emitPong) {
+    try {
+      ws.send(JSON.stringify({ type: 'pong' }));
+    } catch {
+      if (state.keepaliveInterval) clearInterval(state.keepaliveInterval);
+    }
+  }
+  return true;
 }

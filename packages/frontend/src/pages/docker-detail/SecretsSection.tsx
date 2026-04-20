@@ -14,6 +14,10 @@ export interface SecretRow {
 
 interface SecretsSectionProps {
   canManageSecrets: boolean;
+  saveButtonLabel?: string;
+  onSave?: () => void;
+  saveDisabled?: boolean;
+  isSaving?: boolean;
   secretRows: SecretRow[];
   setSecretRows: React.Dispatch<React.SetStateAction<SecretRow[]>>;
   setDeletedSecretIds: React.Dispatch<React.SetStateAction<Set<string>>>;
@@ -23,6 +27,10 @@ interface SecretsSectionProps {
 
 export function SecretsSection({
   canManageSecrets,
+  saveButtonLabel,
+  onSave,
+  saveDisabled = false,
+  isSaving = false,
   secretRows,
   setSecretRows,
   setDeletedSecretIds,
@@ -72,15 +80,22 @@ export function SecretsSection({
           </div>
         </div>
         {canManageSecrets && (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            onClick={addSecretRow}
-            title="Add secret"
-          >
-            <Plus className="h-3.5 w-3.5" />
-          </Button>
+          <div className="flex items-center gap-2">
+            {onSave && (
+              <Button size="sm" onClick={onSave} disabled={saveDisabled || isSaving}>
+                {saveButtonLabel ?? "Save"}
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={addSecretRow}
+              title="Add secret"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </Button>
+          </div>
         )}
       </div>
 

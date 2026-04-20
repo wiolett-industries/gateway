@@ -2,25 +2,18 @@ import type { WSContext } from 'hono/ws';
 import { container } from '@/container.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { hasScope } from '@/lib/permissions.js';
+import { resolveLiveSessionUser } from '@/modules/auth/live-session-user.js';
 import { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import { NodeRegistryService } from '@/services/node-registry.service.js';
-import { SessionService } from '@/services/session.service.js';
 import type { User } from '@/types.js';
 
 const logger = createChildLogger('DockerLogStream');
 
-/**
- * Authenticate a session token and return the user if valid.
- */
-async function authenticateFromToken(token: string): Promise<User | null> {
-  if (token.startsWith('gw_')) return null; // API tokens not allowed for streaming
-  const sessionService = container.resolve(SessionService);
-  const session = await sessionService.getSession(token);
-  if (!session?.user) return null;
-
-  const { AuthService } = await import('@/modules/auth/auth.service.js');
-  const authService = container.resolve(AuthService);
-  return authService.getUserById(session.user.id);
+async function authorizeLogAccess(token: string, nodeId: string): Promise<User | null> {
+  const result = await resolveLiveSessionUser(token);
+  const user = result?.user ?? null;
+  if (!user || user.isBlocked) return null;
+  return hasScope(user.scopes, `docker:containers:view:${nodeId}`) ? user : null;
 }
 
 function send(ws: WSContext, msg: Record<string, unknown>): void {
@@ -113,11 +106,7 @@ export function createDockerLogStreamWSHandlers(nodeId: string, containerId: str
       wsStates.set(ws, state);
 
       state.keepaliveInterval = setInterval(() => {
-        try {
-          ws.send(JSON.stringify({ type: 'pong' }));
-        } catch {
-          if (state.keepaliveInterval) clearInterval(state.keepaliveInterval);
-        }
+        void revalidateLogAccess(ws, state, token, nodeId, true);
       }, 30_000);
 
       // Authenticate, fetch initial logs, then start follow stream
@@ -133,7 +122,7 @@ export function createDockerLogStreamWSHandlers(nodeId: string, containerId: str
       });
     },
 
-    onMessage(event: MessageEvent, ws: WSContext) {
+    async onMessage(event: MessageEvent, ws: WSContext) {
       const state = wsStates.get(ws);
       if (!state) return;
 
@@ -146,6 +135,7 @@ export function createDockerLogStreamWSHandlers(nodeId: string, containerId: str
         }
         if (msg?.type === 'load_more') {
           if (!state.authenticated || state.loadingMore) return;
+          if (!(await revalidateLogAccess(ws, state, token, nodeId))) return;
           if (!state.oldestTimestamp) {
             send(ws, { type: 'history', lines: [], hasMore: false });
             return;
@@ -210,25 +200,10 @@ async function authenticateAndStartStream(
   dispatch: NodeDispatchService,
   registry: NodeRegistryService
 ): Promise<void> {
-  // Validate session token
-  const user = await authenticateFromToken(token);
+  const user = await authorizeLogAccess(token, nodeId);
   if (!user) {
-    send(ws, { type: 'auth_error', message: 'Invalid or expired token' });
+    send(ws, { type: 'auth_error', message: 'Access revoked or token expired' });
     ws.close(1008, 'Authentication failed');
-    return;
-  }
-
-  // Check docker:view scope
-  if (!hasScope(user.scopes, `docker:containers:view:${nodeId}`)) {
-    send(ws, { type: 'auth_error', message: 'Missing required scope: docker:view' });
-    ws.close(1008, 'Insufficient permissions');
-    return;
-  }
-
-  // Check user is not blocked
-  if (user.isBlocked) {
-    send(ws, { type: 'auth_error', message: 'Account is blocked' });
-    ws.close(1008, 'Account blocked');
     return;
   }
 
@@ -282,13 +257,16 @@ async function authenticateAndStartStream(
   state.handlerKey = handlerKey;
 
   registry.registerLogStreamHandler(handlerKey, (lines: string[], ended?: boolean) => {
-    if (ended) {
-      send(ws, { type: 'logs_ended' });
-      return;
-    }
-    if (lines.length > 0) {
-      send(ws, { type: 'new', lines });
-    }
+    void (async () => {
+      if (!(await revalidateLogAccess(ws, state, token, nodeId))) return;
+      if (ended) {
+        send(ws, { type: 'logs_ended' });
+        return;
+      }
+      if (lines.length > 0) {
+        send(ws, { type: 'new', lines });
+      }
+    })();
   });
 
   // Start follow stream from newest timestamp to avoid duplicates
@@ -367,4 +345,38 @@ async function handleLoadMore(
   } finally {
     state.loadingMore = false;
   }
+}
+
+async function revalidateLogAccess(
+  ws: WSContext,
+  state: LogStreamWSState,
+  token: string,
+  nodeId: string,
+  emitPong = false
+): Promise<boolean> {
+  const user = await authorizeLogAccess(token, nodeId);
+  if (!user) {
+    state.authenticated = false;
+    if (state.handlerKey) {
+      container.resolve(NodeRegistryService).removeLogStreamHandler(state.handlerKey);
+      state.handlerKey = null;
+    }
+    send(ws, { type: 'auth_error', message: 'Access revoked or token expired' });
+    try {
+      ws.close(1008, 'Authentication failed');
+    } catch {
+      /* */
+    }
+    return false;
+  }
+
+  state.user = user;
+  if (emitPong) {
+    try {
+      ws.send(JSON.stringify({ type: 'pong' }));
+    } catch {
+      if (state.keepaliveInterval) clearInterval(state.keepaliveInterval);
+    }
+  }
+  return true;
 }

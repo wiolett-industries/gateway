@@ -34,6 +34,10 @@ export function DockerFilePopout() {
   }, [filePath, containerId]);
 
   useEffect(() => {
+    if (!canUseFiles) {
+      setIsLoading(false);
+      return;
+    }
     if (!nodeId || !containerId || didFetch.current) return;
     didFetch.current = true;
 
@@ -56,7 +60,7 @@ export function DockerFilePopout() {
         setError(err instanceof Error ? err.message : "Failed to read file");
       })
       .finally(() => setIsLoading(false));
-  }, [nodeId, containerId, filePath]);
+  }, [canUseFiles, nodeId, containerId, filePath]);
 
   const fileName = filePath.split("/").pop() || "file";
 

@@ -93,6 +93,7 @@ export function ProxyHosts() {
   const [moveDialogHostId, setMoveDialogHostId] = useState<string | null>(null);
   const [activeDrag, setActiveDrag] = useState<DragEndEvent["active"] | null>(null);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const canManageFolders = hasScope("proxy:edit");
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -316,7 +317,7 @@ export function ProxyHosts() {
             <p className="text-sm text-muted-foreground">{totalHosts} proxy hosts total</p>
           </div>
           <div className="flex items-center gap-2">
-            {hasScope("proxy:edit") && (
+            {canManageFolders && (
               <Button variant="outline" onClick={() => setIsCreatingFolder(true)}>
                 <FolderPlus className="h-4 w-4" />
                 Add Folder
@@ -383,7 +384,7 @@ export function ProxyHosts() {
         />
 
         {/* Inline new folder creation */}
-        {isCreatingFolder && (
+        {canManageFolders && isCreatingFolder && (
           <div className="border border-border bg-card px-3 py-2">
             <InlineFolderEditor
               onSave={handleCreateFolder}
@@ -401,12 +402,88 @@ export function ProxyHosts() {
             </div>
           </div>
         ) : folders.length > 0 || ungroupedHosts.length > 0 ? (
-          <DndContext
-            sensors={sensors}
-            onDragStart={(event) => setActiveDrag(event.active)}
-            onDragEnd={handleDragEnd}
-            onDragCancel={() => setActiveDrag(null)}
-          >
+          canManageFolders ? (
+            <DndContext
+              sensors={sensors}
+              onDragStart={(event) => setActiveDrag(event.active)}
+              onDragEnd={handleDragEnd}
+              onDragCancel={() => setActiveDrag(null)}
+            >
+              <div className="border border-border bg-card">
+                {/* Table header */}
+                <div className="overflow-x-auto">
+                  <table className="w-full" style={{ tableLayout: "fixed" }}>
+                    {colGroup}
+                    {tableHeaders}
+                  </table>
+                </div>
+
+                {/* Folders */}
+                {folders.map((folder) => (
+                  <FolderGroup
+                    key={folder.id}
+                    folder={folder}
+                    depth={0}
+                    expanded={expandedFolderIds.has(folder.id)}
+                    onToggle={() => toggleFolder(folder.id)}
+                    onRename={handleRenameFolder}
+                    onDelete={handleDeleteFolder}
+                    onCreateSubfolder={handleCreateSubfolder}
+                    onToggleHost={handleToggle}
+                    togglingIds={togglingIds}
+                    onMoveHostToFolder={(hostId) => setMoveDialogHostId(hostId)}
+                    expandedFolderIds={expandedFolderIds}
+                    onToggleFolder={toggleFolder}
+                    canManage={canManageFolders}
+                    colGroup={colGroup}
+                  />
+                ))}
+
+                {/* Ungrouped hosts — always visible when folders exist so it's a drop target */}
+                {(folders.length > 0 || ungroupedHosts.length > 0) && (
+                  <UngroupedDropZone>
+                    {folders.length > 0 && (
+                      <div
+                        className={`flex items-center gap-2 px-3 py-2 ${
+                          ungroupedHosts.length > 0 ? "border-b border-border" : ""
+                        }`}
+                      >
+                        <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                          Ungrouped
+                        </span>
+                        <Badge variant="secondary" className="text-xs">
+                          {ungroupedHosts.length}
+                        </Badge>
+                      </div>
+                    )}
+                    {ungroupedHosts.length > 0 && (
+                      <SortableContext
+                        items={ungroupedHosts.map((h) => h.id)}
+                        strategy={verticalListSortingStrategy}
+                      >
+                        <table className="w-full" style={{ tableLayout: "fixed" }}>
+                          {colGroup}
+                          <tbody>
+                            {ungroupedHosts.map((host) => (
+                              <ProxyHostRow
+                                key={host.id}
+                                host={host}
+                                onToggle={handleToggle}
+                                togglingIds={togglingIds}
+                                onMoveToFolder={(hostId) => setMoveDialogHostId(hostId)}
+                              />
+                            ))}
+                          </tbody>
+                        </table>
+                      </SortableContext>
+                    )}
+                  </UngroupedDropZone>
+                )}
+              </div>
+
+              <DragOverlay active={activeDrag} colGroup={colGroup} />
+            </DndContext>
+          ) : (
             <div className="border border-border bg-card">
               {/* Table header */}
               <div className="overflow-x-auto">
@@ -432,7 +509,7 @@ export function ProxyHosts() {
                   onMoveHostToFolder={(hostId) => setMoveDialogHostId(hostId)}
                   expandedFolderIds={expandedFolderIds}
                   onToggleFolder={toggleFolder}
-                  canManage={hasScope("proxy:edit")}
+                  canManage={canManageFolders}
                   colGroup={colGroup}
                 />
               ))}
@@ -455,32 +532,25 @@ export function ProxyHosts() {
                     </div>
                   )}
                   {ungroupedHosts.length > 0 && (
-                    <SortableContext
-                      items={ungroupedHosts.map((h) => h.id)}
-                      strategy={verticalListSortingStrategy}
-                    >
-                      <table className="w-full" style={{ tableLayout: "fixed" }}>
-                        {colGroup}
-                        <tbody>
-                          {ungroupedHosts.map((host) => (
-                            <ProxyHostRow
-                              key={host.id}
-                              host={host}
-                              onToggle={handleToggle}
-                              togglingIds={togglingIds}
-                              onMoveToFolder={(hostId) => setMoveDialogHostId(hostId)}
-                            />
-                          ))}
-                        </tbody>
-                      </table>
-                    </SortableContext>
+                    <table className="w-full" style={{ tableLayout: "fixed" }}>
+                      {colGroup}
+                      <tbody>
+                        {ungroupedHosts.map((host) => (
+                          <ProxyHostRow
+                            key={host.id}
+                            host={host}
+                            onToggle={handleToggle}
+                            togglingIds={togglingIds}
+                            onMoveToFolder={(hostId) => setMoveDialogHostId(hostId)}
+                          />
+                        ))}
+                      </tbody>
+                    </table>
                   )}
                 </UngroupedDropZone>
               )}
             </div>
-
-            <DragOverlay active={activeDrag} colGroup={colGroup} />
-          </DndContext>
+          )
         ) : (
           <EmptyState
             message="No proxy hosts."

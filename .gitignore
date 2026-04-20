@@ -18,3 +18,5 @@ todo.md
 # Go
 packages/daemons/nginx/bin/
 packages/daemons/nginx/nginx-daemon
+
+.memory/memory.db*

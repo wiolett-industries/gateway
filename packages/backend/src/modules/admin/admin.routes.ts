@@ -18,6 +18,10 @@ export const adminRoutes = new OpenAPIHono<AppEnv>();
 
 adminRoutes.use('*', authMiddleware);
 
+function getEffectiveGroupScopes(group: { scopes: string[]; inheritedScopes?: string[] }) {
+  return [...new Set([...(group.scopes ?? []), ...(group.inheritedScopes ?? [])])];
+}
+
 // List all users
 adminRoutes.get('/users', requireScope('admin:users'), async (c) => {
   const authService = container.resolve(AuthService);
@@ -31,7 +35,7 @@ adminRoutes.get('/auth-settings', requireScope('admin:users'), async (c) => {
   const actorScopes = c.get('effectiveScopes') || [];
 
   const [settings, groups] = await Promise.all([authSettingsService.getConfig(), groupService.listGroups()]);
-  const assignableGroups = groups.filter((group) => isScopeSubset(group.scopes as string[], actorScopes));
+  const assignableGroups = groups.filter((group) => isScopeSubset(getEffectiveGroupScopes(group), actorScopes));
 
   return c.json({
     ...settings,
@@ -54,7 +58,7 @@ adminRoutes.put('/auth-settings', requireScope('admin:users'), async (c) => {
 
   if (input.oidcDefaultGroupId) {
     const destGroup = await groupService.getGroup(input.oidcDefaultGroupId);
-    if (!isScopeSubset(destGroup.scopes as string[], actorScopes)) {
+    if (!isScopeSubset(getEffectiveGroupScopes(destGroup), actorScopes)) {
       return c.json(
         { code: 'PRIVILEGE_BOUNDARY', message: 'Cannot assign a group with permissions you do not possess' },
         403
@@ -65,7 +69,7 @@ adminRoutes.put('/auth-settings', requireScope('admin:users'), async (c) => {
   try {
     const updated = await authSettingsService.updateConfig(input);
     const groups = await groupService.listGroups();
-    const assignableGroups = groups.filter((group) => isScopeSubset(group.scopes as string[], actorScopes));
+    const assignableGroups = groups.filter((group) => isScopeSubset(getEffectiveGroupScopes(group), actorScopes));
 
     await auditService.log({
       userId: currentUser.id,
@@ -105,7 +109,7 @@ adminRoutes.post('/users', requireScope('admin:users'), async (c) => {
   const input = CreateUserSchema.parse(body);
 
   const destGroup = await groupService.getGroup(input.groupId);
-  if (!isScopeSubset(destGroup.scopes as string[], actorScopes)) {
+  if (!isScopeSubset(getEffectiveGroupScopes(destGroup), actorScopes)) {
     return c.json(
       { code: 'PRIVILEGE_BOUNDARY', message: 'Cannot assign a group with permissions you do not possess' },
       403
@@ -168,7 +172,7 @@ adminRoutes.patch('/users/:id/group', requireScope('admin:users'), async (c) => 
 
   // Check privilege boundary against DESTINATION group's scopes
   const destGroup = await groupService.getGroup(groupId);
-  if (!isScopeSubset(destGroup.scopes as string[], actorScopes)) {
+  if (!isScopeSubset(getEffectiveGroupScopes(destGroup), actorScopes)) {
     return c.json(
       { code: 'PRIVILEGE_BOUNDARY', message: 'Cannot assign a group with permissions you do not possess' },
       403

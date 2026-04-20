@@ -1,6 +1,6 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
-import { requireScope } from '@/modules/auth/auth.middleware.js';
+import { requireScopeForResource } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import { WebhookTriggerSchema, WebhookUpsertSchema } from './docker-webhook.schemas.js';
 import { DockerWebhookService } from './docker-webhook.service.js';
@@ -11,7 +11,7 @@ export function registerWebhookConfigRoutes(router: OpenAPIHono<AppEnv>) {
   // Get webhook config for a container
   router.get(
     '/nodes/:nodeId/containers/:containerName/webhook',
-    requireScope('docker:containers:webhooks'),
+    requireScopeForResource('docker:containers:webhooks', 'nodeId'),
     async (c) => {
       const service = container.resolve(DockerWebhookService);
       const nodeId = c.req.param('nodeId');
@@ -24,7 +24,7 @@ export function registerWebhookConfigRoutes(router: OpenAPIHono<AppEnv>) {
   // Create or update webhook config
   router.put(
     '/nodes/:nodeId/containers/:containerName/webhook',
-    requireScope('docker:containers:webhooks'),
+    requireScopeForResource('docker:containers:webhooks', 'nodeId'),
     async (c) => {
       const service = container.resolve(DockerWebhookService);
       const nodeId = c.req.param('nodeId');
@@ -39,7 +39,7 @@ export function registerWebhookConfigRoutes(router: OpenAPIHono<AppEnv>) {
   // Delete webhook config
   router.delete(
     '/nodes/:nodeId/containers/:containerName/webhook',
-    requireScope('docker:containers:webhooks'),
+    requireScopeForResource('docker:containers:webhooks', 'nodeId'),
     async (c) => {
       const service = container.resolve(DockerWebhookService);
       const nodeId = c.req.param('nodeId');
@@ -53,7 +53,7 @@ export function registerWebhookConfigRoutes(router: OpenAPIHono<AppEnv>) {
   // Regenerate webhook token
   router.post(
     '/nodes/:nodeId/containers/:containerName/webhook/regenerate',
-    requireScope('docker:containers:webhooks'),
+    requireScopeForResource('docker:containers:webhooks', 'nodeId'),
     async (c) => {
       const service = container.resolve(DockerWebhookService);
       const nodeId = c.req.param('nodeId');

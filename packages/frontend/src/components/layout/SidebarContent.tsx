@@ -148,7 +148,7 @@ export function SidebarContent({
 }: SidebarContentProps) {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, hasScope, hasScopedAccess, logout } = useAuthStore();
+  const { user, hasScope, hasAnyScope, hasScopedAccess, logout } = useAuthStore();
   const { sidebarOpen, toggleSidebar, setCommandPaletteOpen: openPalette } = useUIStore();
 
   const updateAvailable = useUpdateStore((s) => s.status?.updateAvailable ?? false);
@@ -163,6 +163,19 @@ export function SidebarContent({
 
   const sidebarPinnedContainerIds = usePinnedContainersStore((s) => s.sidebarContainerIds);
   const pinnedContainerMeta = usePinnedContainersStore((s) => s.containerMeta);
+  const canViewNodeDetails = useCallback(
+    (nodeId: string) => hasScope("nodes:details") || hasScope(`nodes:details:${nodeId}`),
+    [hasScope]
+  );
+  const canViewProxyDetails = useCallback(
+    (proxyId: string) => hasScope("proxy:view") || hasScope(`proxy:view:${proxyId}`),
+    [hasScope]
+  );
+  const canViewContainerDetails = useCallback(
+    (nodeId: string) =>
+      hasScope("docker:containers:view") || hasScope(`docker:containers:view:${nodeId}`),
+    [hasScope]
+  );
 
   const refetchPinnedNodes = useCallback(() => {
     if (sidebarPinnedIds.length === 0) return;
@@ -170,11 +183,13 @@ export function SidebarContent({
       .listNodes({ limit: 100 })
       .then((r) => {
         const allIds = r.data.map((n) => n.id);
-        setPinnedNodes(r.data.filter((n) => sidebarPinnedIds.includes(n.id)));
+        setPinnedNodes(
+          r.data.filter((n) => sidebarPinnedIds.includes(n.id) && canViewNodeDetails(n.id))
+        );
         usePinnedNodesStore.getState().removeOrphans(allIds);
       })
       .catch(() => {});
-  }, [sidebarPinnedIds]);
+  }, [canViewNodeDetails, sidebarPinnedIds]);
 
   useEffect(() => {
     if (sidebarPinnedIds.length === 0) {
@@ -195,11 +210,15 @@ export function SidebarContent({
       .listProxyHosts({ limit: 100 })
       .then((r) => {
         const allIds = (r.data ?? []).map((p) => p.id);
-        setPinnedProxies((r.data ?? []).filter((p) => sidebarPinnedProxyIds.includes(p.id)));
+        setPinnedProxies(
+          (r.data ?? []).filter(
+            (p) => sidebarPinnedProxyIds.includes(p.id) && canViewProxyDetails(p.id)
+          )
+        );
         usePinnedProxiesStore.getState().removeOrphans(allIds);
       })
       .catch(() => {});
-  }, [sidebarPinnedProxyIds, pinnedProxyRefreshTick]);
+  }, [canViewProxyDetails, sidebarPinnedProxyIds, pinnedProxyRefreshTick]);
 
   // Clean up orphaned pinned containers on mount
   useEffect(() => {
@@ -237,7 +256,23 @@ export function SidebarContent({
     hasScopedAccess("docker:volumes:list") ||
     hasScopedAccess("docker:networks:list") ||
     hasScopedAccess("docker:tasks");
-
+  const canAccessNotifications = hasAnyScope(
+    "notifications:alerts:list",
+    "notifications:alerts:view",
+    "notifications:alerts:create",
+    "notifications:alerts:edit",
+    "notifications:alerts:delete",
+    "notifications:webhooks:list",
+    "notifications:webhooks:view",
+    "notifications:webhooks:create",
+    "notifications:webhooks:edit",
+    "notifications:webhooks:delete",
+    "notifications:deliveries:list",
+    "notifications:deliveries:view",
+    "notifications:view",
+    "notifications:manage"
+  );
+  const canAccessAuthorities = hasAnyScope("pki:ca:list:root", "pki:ca:list:intermediate");
   // Build nav groups with scope + context filtering
   const effectiveGroups = navigationGroups
     .map((group) => {
@@ -248,6 +283,10 @@ export function SidebarContent({
         items: group.items.filter((item) => {
           if (item.href === "/docker") {
             if (!canAccessDocker) return false;
+          } else if (item.href === "/cas") {
+            if (!canAccessAuthorities) return false;
+          } else if (item.href === "/notifications") {
+            if (!canAccessNotifications) return false;
           } else if (item.scope && !hasScope(item.scope)) {
             return false;
           }
@@ -257,7 +296,7 @@ export function SidebarContent({
           if (
             item.href === "/templates" &&
             !hasScope("pki:templates:list") &&
-            !hasScope("docker:templates:list")
+            !hasScope("proxy:list")
           )
             return false;
           return true;
@@ -534,7 +573,7 @@ export function SidebarContent({
                           })}
                           {sidebarPinnedContainerIds.map((cid) => {
                             const meta = pinnedContainerMeta[cid];
-                            if (!meta) return null;
+                            if (!meta || !canViewContainerDetails(meta.nodeId)) return null;
                             const containerPath = `/docker/containers/${meta.nodeId}/${cid}`;
                             const isActive =
                               location.pathname === containerPath ||

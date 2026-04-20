@@ -1,6 +1,6 @@
 import { Award, FileCode, Plus } from "lucide-react";
 import { useRef } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { PageTransition } from "@/components/common/PageTransition";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -38,6 +38,10 @@ export function TemplatesPage() {
     tabParam && visibleTabs.some((t) => t.value === tabParam)
       ? tabParam
       : visibleTabs[0]?.value || "pki";
+
+  if (visibleTabs.length === 0) {
+    return <Navigate to="/" replace />;
+  }
 
   const handleTabChange = (value: string) => {
     navigate(`/templates/${value}`, { replace: true });

@@ -89,7 +89,7 @@ export function DockerLogsPopout() {
   );
 
   const connectWs = useCallback(() => {
-    if (!nodeId || !containerId) return;
+    if (!canViewLogs || !nodeId || !containerId) return;
     if (wsRef.current) {
       wsRef.current.close();
       wsRef.current = null;
@@ -152,10 +152,13 @@ export function DockerLogsPopout() {
       if (!mountedRef.current) return;
       setIsConnecting(false);
     };
-  }, [nodeId, containerId, processLogs]);
+  }, [canViewLogs, nodeId, containerId, processLogs]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: connect once on mount
   useEffect(() => {
+    if (!canViewLogs) {
+      setIsConnecting(false);
+      return;
+    }
     mountedRef.current = true;
     const t = setTimeout(() => {
       if (mountedRef.current) connectWs();
@@ -169,7 +172,7 @@ export function DockerLogsPopout() {
         wsRef.current = null;
       }
     };
-  }, []);
+  }, [canViewLogs, connectWs]);
 
   const loadingMoreRef = useRef(false);
   const hasMoreRef = useRef(true);

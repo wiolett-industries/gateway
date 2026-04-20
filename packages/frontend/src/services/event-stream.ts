@@ -194,8 +194,6 @@ class EventStream {
           api.invalidateCache("admin:users");
         } else if (msg.channel === "docker.registry.changed") {
           api.invalidateCache("req:/api/docker/registries");
-        } else if (msg.channel === "docker.template.changed") {
-          api.invalidateCache("req:/api/docker/templates");
         } else if (msg.channel === "notification.alert-rule.changed") {
           api.invalidateCache("req:/api/notifications/alert-rules");
         } else if (msg.channel === "notification.webhook.changed") {

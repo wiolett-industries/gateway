@@ -111,12 +111,24 @@ export function Notifications() {
   const { tab: tabParam } = useParams<{ tab?: string }>();
   const navigate = useNavigate();
   const { hasAnyScope } = useAuthStore();
-  const canViewAlerts = hasAnyScope(
+  const canReadAlerts = hasAnyScope(
+    "notifications:alerts:list",
+    "notifications:alerts:view",
+    "notifications:view",
+    "notifications:manage"
+  );
+  const canAccessAlerts = hasAnyScope(
     "notifications:alerts:list",
     "notifications:alerts:view",
     "notifications:alerts:create",
     "notifications:alerts:edit",
     "notifications:alerts:delete",
+    "notifications:view",
+    "notifications:manage"
+  );
+  const canReadWebhooks = hasAnyScope(
+    "notifications:webhooks:list",
+    "notifications:webhooks:view",
     "notifications:view",
     "notifications:manage"
   );
@@ -126,7 +138,7 @@ export function Notifications() {
     "notifications:alerts:delete",
     "notifications:manage"
   );
-  const canViewWebhooks = hasAnyScope(
+  const canAccessWebhooks = hasAnyScope(
     "notifications:webhooks:list",
     "notifications:webhooks:view",
     "notifications:webhooks:create",
@@ -148,8 +160,8 @@ export function Notifications() {
     "notifications:manage"
   );
   const visibleTabs = TABS.filter((tab) => {
-    if (tab.value === "alerts") return canViewAlerts;
-    if (tab.value === "webhooks") return canViewWebhooks;
+    if (tab.value === "alerts") return canAccessAlerts;
+    if (tab.value === "webhooks") return canAccessWebhooks;
     if (tab.value === "deliveries") return canViewDeliveries;
     return false;
   });
@@ -206,14 +218,22 @@ export function Notifications() {
             </TabsTrigger>
           ))}
         </TabsList>
-        {canViewAlerts && (
+        {canAccessAlerts && (
           <TabsContent value="alerts" className="mt-4">
-            <AlertsTab canManage={canManageAlerts} openCreateToken={openCreateAlertToken} />
+            <AlertsTab
+              canManage={canManageAlerts}
+              canRead={canReadAlerts}
+              openCreateToken={openCreateAlertToken}
+            />
           </TabsContent>
         )}
-        {canViewWebhooks && (
+        {canAccessWebhooks && (
           <TabsContent value="webhooks" className="mt-4">
-            <WebhooksTab canManage={canManageWebhooks} openCreateToken={openCreateWebhookToken} />
+            <WebhooksTab
+              canManage={canManageWebhooks}
+              canRead={canReadWebhooks}
+              openCreateToken={openCreateWebhookToken}
+            />
           </TabsContent>
         )}
         {canViewDeliveries && (
@@ -229,9 +249,11 @@ export function Notifications() {
 // ── Alerts Tab ──────────────────────────────────────────────────────
 
 function AlertsTab({
+  canRead,
   canManage,
   openCreateToken,
 }: {
+  canRead: boolean;
   canManage: boolean;
   openCreateToken: number;
 }) {
@@ -242,6 +264,11 @@ function AlertsTab({
   const lastHandledCreateToken = useRef(0);
 
   const load = useCallback(async () => {
+    if (!canRead) {
+      setRules([]);
+      setIsLoading(false);
+      return;
+    }
     setIsLoading(true);
     try {
       setRules((await api.listAlertRules({ limit: 100 })).data);
@@ -250,7 +277,7 @@ function AlertsTab({
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [canRead]);
 
   useEffect(() => {
     load();
@@ -332,8 +359,10 @@ function AlertsTab({
                 {rules.map((r) => (
                   <tr
                     key={r.id}
-                    className="hover:bg-accent transition-colors cursor-pointer"
-                    onClick={() => openEdit(r)}
+                    className={
+                      canManage ? "hover:bg-accent transition-colors cursor-pointer" : undefined
+                    }
+                    onClick={canManage ? () => openEdit(r) : undefined}
                   >
                     <td className="p-3">
                       <span className="text-sm font-medium">{r.name}</span>
@@ -1111,9 +1140,11 @@ function AlertDialog({
 // ── Webhooks Tab ────────────────────────────────────────────────────
 
 function WebhooksTab({
+  canRead,
   canManage,
   openCreateToken,
 }: {
+  canRead: boolean;
   canManage: boolean;
   openCreateToken: number;
 }) {
@@ -1124,6 +1155,11 @@ function WebhooksTab({
   const lastHandledCreateToken = useRef(0);
 
   const load = useCallback(async () => {
+    if (!canRead) {
+      setWebhooks([]);
+      setIsLoading(false);
+      return;
+    }
     setIsLoading(true);
     try {
       setWebhooks((await api.listWebhooks({ limit: 100 })).data);
@@ -1132,7 +1168,7 @@ function WebhooksTab({
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [canRead]);
 
   useEffect(() => {
     load();
@@ -1223,8 +1259,10 @@ function WebhooksTab({
                 {webhooks.map((wh) => (
                   <tr
                     key={wh.id}
-                    className="hover:bg-accent transition-colors cursor-pointer"
-                    onClick={() => openEdit(wh)}
+                    className={
+                      canManage ? "hover:bg-accent transition-colors cursor-pointer" : undefined
+                    }
+                    onClick={canManage ? () => openEdit(wh) : undefined}
                   >
                     <td className="p-3">
                       <span className="text-sm font-medium">{wh.name}</span>

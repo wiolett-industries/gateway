@@ -34,9 +34,6 @@ webhookRoutes.get(
   requireAnyScope(
     'notifications:webhooks:list',
     'notifications:webhooks:view',
-    'notifications:webhooks:create',
-    'notifications:webhooks:edit',
-    'notifications:webhooks:delete',
     'notifications:view',
     'notifications:manage'
   ),
@@ -54,9 +51,6 @@ webhookRoutes.get(
   requireAnyScope(
     'notifications:webhooks:view',
     'notifications:webhooks:list',
-    'notifications:webhooks:create',
-    'notifications:webhooks:edit',
-    'notifications:webhooks:delete',
     'notifications:view',
     'notifications:manage'
   ),

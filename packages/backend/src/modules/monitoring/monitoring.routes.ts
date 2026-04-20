@@ -6,7 +6,7 @@ const logger = createChildLogger('MonitoringRoutes');
 
 import { streamSSE } from 'hono/streaming';
 import { container } from '@/container.js';
-import { authMiddleware, requireScope, sessionOnly } from '@/modules/auth/auth.middleware.js';
+import { authMiddleware, requireScope, requireScopeForResource, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import { logRelay, type RelayedLogEntry } from './log-relay.service.js';
 import { MonitoringService } from './monitoring.service.js';
@@ -23,15 +23,31 @@ monitoringRoutes.get('/dashboard', async (c) => {
   const monitoringService = container.resolve(MonitoringService);
   const showSystem = c.req.query('showSystem') === 'true';
   const scopes = c.get('effectiveScopes') || [];
-  if (showSystem && !hasScope(scopes, 'admin:details:certificates')) {
-    return c.json({ code: 'FORBIDDEN', message: 'Insufficient permissions' }, 403);
-  }
-  const stats = await monitoringService.getDashboardStats(showSystem);
-  return c.json({ data: stats });
+  const canViewProxyStats = hasScope(scopes, 'proxy:list');
+  const canViewSslStats = hasScope(scopes, 'ssl:cert:list');
+  const canViewPkiCertStats = hasScope(scopes, 'pki:cert:list');
+  const canViewCaStats = hasScope(scopes, 'pki:ca:list:root');
+  const canViewNodeStats = hasScope(scopes, 'nodes:list');
+  const canViewSystemStats = showSystem && hasScope(scopes, 'admin:details:certificates');
+
+  const stats = await monitoringService.getDashboardStats(canViewSystemStats);
+  return c.json({
+    data: {
+      proxyHosts: canViewProxyStats ? stats.proxyHosts : { total: 0, enabled: 0, online: 0, offline: 0, degraded: 0 },
+      sslCertificates: canViewSslStats ? stats.sslCertificates : { total: 0, active: 0, expiringSoon: 0, expired: 0 },
+      pkiCertificates: canViewPkiCertStats ? stats.pkiCertificates : { total: 0, active: 0, revoked: 0, expired: 0 },
+      cas: canViewCaStats ? stats.cas : { total: 0, active: 0 },
+      nodes: canViewNodeStats ? stats.nodes : { total: 0, online: 0, offline: 0, pending: 0 },
+    },
+  });
 });
 
 // Health overview — all proxy hosts with health status, ordered by severity
 monitoringRoutes.get('/health-status', async (c) => {
+  const scopes = c.get('effectiveScopes') || [];
+  if (!hasScope(scopes, 'proxy:list')) {
+    return c.json({ data: [] });
+  }
   const monitoringService = container.resolve(MonitoringService);
   const overview = await monitoringService.getHealthOverview();
   return c.json({ data: overview });
@@ -39,7 +55,7 @@ monitoringRoutes.get('/health-status', async (c) => {
 
 // Live log streaming via SSE for a specific proxy host
 // Logs are relayed from daemon nodes via gRPC LogStream → logRelay EventEmitter → SSE
-monitoringRoutes.get('/logs/:hostId/stream', async (c) => {
+monitoringRoutes.get('/logs/:hostId/stream', requireScopeForResource('proxy:view', 'hostId'), async (c) => {
   const hostId = c.req.param('hostId');
 
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(hostId)) {

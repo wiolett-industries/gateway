@@ -37,8 +37,9 @@ groupRoutes.post('/', async (c) => {
 
   // Users cannot grant scopes they don't possess
   const userScopes = c.get('effectiveScopes') || [];
-  if (!isScopeSubset(input.scopes, userScopes)) {
-    const disallowed = input.scopes.filter((s) => !userScopes.some((us) => s === us || s.startsWith(`${us}:`)));
+  const effectiveScopes = await groupService.buildEffectiveScopes(input.scopes, input.parentId);
+  if (!isScopeSubset(effectiveScopes, userScopes)) {
+    const disallowed = effectiveScopes.filter((s) => !userScopes.some((us) => s === us || s.startsWith(`${us}:`)));
     return c.json(
       { code: 'SCOPE_NOT_ALLOWED', message: `Cannot grant scopes you do not possess: ${disallowed.join(', ')}` },
       403
@@ -70,10 +71,15 @@ groupRoutes.put('/:id', async (c) => {
   const input = UpdateGroupSchema.parse(body);
 
   // Users cannot grant scopes they don't possess
-  if (input.scopes) {
+  if (input.scopes || input.parentId !== undefined) {
     const userScopes = c.get('effectiveScopes') || [];
-    if (!isScopeSubset(input.scopes, userScopes)) {
-      const disallowed = input.scopes.filter((s) => !userScopes.some((us) => s === us || s.startsWith(`${us}:`)));
+    const existingGroup = await groupService.getGroup(id);
+    const nextScopes = input.scopes ?? existingGroup.scopes;
+    const nextParentId = input.parentId !== undefined ? input.parentId : existingGroup.parentId;
+    const effectiveScopes = await groupService.buildEffectiveScopes(nextScopes, nextParentId);
+
+    if (!isScopeSubset(effectiveScopes, userScopes)) {
+      const disallowed = effectiveScopes.filter((s) => !userScopes.some((us) => s === us || s.startsWith(`${us}:`)));
       return c.json(
         { code: 'SCOPE_NOT_ALLOWED', message: `Cannot grant scopes you do not possess: ${disallowed.join(', ')}` },
         403

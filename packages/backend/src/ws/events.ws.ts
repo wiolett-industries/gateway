@@ -1,10 +1,10 @@
 import type { WSContext } from 'hono/ws';
-import { container } from '@/container.js';
+import { container, TOKENS } from '@/container.js';
+import type { DrizzleClient } from '@/db/client.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { hasScope } from '@/lib/permissions.js';
-import { AuthService } from '@/modules/auth/auth.service.js';
+import { resolveLiveSessionUser, resolveLiveUser } from '@/modules/auth/live-session-user.js';
 import { EventBusService } from '@/services/event-bus.service.js';
-import { SessionService } from '@/services/session.service.js';
 import type { User } from '@/types.js';
 
 const logger = createChildLogger('Events-WebSocket');
@@ -53,12 +53,10 @@ function requiredScopeFor(channel: string): string | null {
   if (channel === 'pki.template.changed') return 'pki:templates:list';
   if (channel === 'nginx.template.changed') return 'proxy:list';
   if (channel === 'docker.registry.changed') return 'docker:registries:list';
-  if (channel === 'docker.template.changed') return 'docker:templates:list';
   if (channel.startsWith('docker.container')) return 'docker:containers:list';
   if (channel.startsWith('docker.image')) return 'docker:images:list';
   if (channel.startsWith('docker.volume')) return 'docker:volumes:list';
   if (channel.startsWith('docker.network')) return 'docker:networks:list';
-  if (channel.startsWith('docker.template')) return 'docker:templates:list';
   if (channel.startsWith('docker.registry')) return 'docker:registries:list';
   if (channel.startsWith('docker.task')) return 'docker:containers:list';
   if (channel.startsWith('docker.webhook')) return 'docker:containers:webhooks';
@@ -121,14 +119,8 @@ function canReceiveChannelPayload(scopes: string[], channel: string, payload: un
 }
 
 async function authenticate(token: string): Promise<{ user: User; scopes: string[] } | null> {
-  if (!token || token.startsWith('gw_')) return null;
-  const sessionService = container.resolve(SessionService);
-  const session = await sessionService.getSession(token);
-  if (!session?.user) return null;
-  const authService = container.resolve(AuthService);
-  const fresh = await authService.getUserById(session.user.id);
-  if (!fresh) return null;
-  return { user: fresh, scopes: fresh.scopes ?? [] };
+  const result = await resolveLiveSessionUser(token);
+  return result ? { user: result.user, scopes: result.effectiveScopes } : null;
 }
 
 function clearAll(state: ConnState) {
@@ -163,8 +155,8 @@ function subscribePerUser(ws: WSContext, state: ConnState) {
   // through the client's explicit subscribe path so we don't double-emit.
   state.permsUnsub = eventBus.subscribe(channel, async (_payload) => {
     try {
-      const authService = container.resolve(AuthService);
-      const fresh = await authService.getUserById(state.user!.id);
+      const db = container.resolve<DrizzleClient>(TOKENS.DrizzleClient);
+      const fresh = await resolveLiveUser(db, state.user!.id);
       if (fresh) {
         state.user = fresh;
         state.scopes = fresh.scopes ?? [];

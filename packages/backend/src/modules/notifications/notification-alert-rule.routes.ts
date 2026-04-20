@@ -46,9 +46,6 @@ alertRuleRoutes.get(
   requireAnyScope(
     'notifications:alerts:list',
     'notifications:alerts:view',
-    'notifications:alerts:create',
-    'notifications:alerts:edit',
-    'notifications:alerts:delete',
     'notifications:view',
     'notifications:manage'
   ),
@@ -66,9 +63,6 @@ alertRuleRoutes.get(
   requireAnyScope(
     'notifications:alerts:view',
     'notifications:alerts:list',
-    'notifications:alerts:create',
-    'notifications:alerts:edit',
-    'notifications:alerts:delete',
     'notifications:view',
     'notifications:manage'
   ),

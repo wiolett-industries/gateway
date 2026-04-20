@@ -1,10 +1,8 @@
-import { eq } from 'drizzle-orm';
 import type { MiddlewareHandler } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { container, TOKENS } from '@/container.js';
 import type { DrizzleClient } from '@/db/client.js';
-import { permissionGroups } from '@/db/schema/index.js';
-import { AuthService } from '@/modules/auth/auth.service.js';
+import { resolveLiveUser } from '@/modules/auth/live-session-user.js';
 import { TokensService } from '@/modules/tokens/tokens.service.js';
 import { SessionService } from '@/services/session.service.js';
 import type { AppEnv } from '@/types.js';
@@ -63,46 +61,17 @@ export const authMiddleware: MiddlewareHandler<AppEnv> = async (c, next) => {
     if (!session) {
       throw new HTTPException(401, { message: 'Invalid or expired session' });
     }
-    let user = session.user;
-
-    // Re-fetch user from DB if session has stale data (pre-migration)
-    if (!user.scopes || !Array.isArray(user.scopes) || !user.groupId) {
-      const authService = container.resolve(AuthService);
-      const freshUser = await authService.getUserById(user.id);
-      if (!freshUser) {
-        throw new HTTPException(401, { message: 'User no longer exists' });
-      }
-      user = freshUser;
-      sessionService.updateSession(credential.value, { user }).catch(() => {});
-    }
-
-    // Always resolve scopes from the live group definition (not session cache)
-    // so group scope changes take effect without re-login.
-    // Walk the parent chain to include inherited scopes.
     const db = container.resolve<DrizzleClient>(TOKENS.DrizzleClient);
-    const allGroups = await db.query.permissionGroups.findMany({
-      columns: { id: true, parentId: true, scopes: true, name: true },
-    });
-    const groupMap = new Map(allGroups.map((g) => [g.id, g]));
-    const group = groupMap.get(user.groupId);
-    const scopeSet = new Set<string>();
-    if (group) {
-      for (const s of (group.scopes as string[]) ?? []) scopeSet.add(s);
-      // Walk parent chain for inherited scopes
-      const visited = new Set<string>([group.id]);
-      let parent = group.parentId ? groupMap.get(group.parentId) : undefined;
-      while (parent && !visited.has(parent.id)) {
-        visited.add(parent.id);
-        for (const s of (parent.scopes as string[]) ?? []) scopeSet.add(s);
-        parent = parent.parentId ? groupMap.get(parent.parentId) : undefined;
-      }
+    const user = await resolveLiveUser(db, session.user.id);
+    if (!user) {
+      throw new HTTPException(401, { message: 'User no longer exists' });
     }
-    const liveScopes = [...scopeSet];
 
-    c.set('user', { ...user, scopes: liveScopes, groupName: group?.name ?? user.groupName });
+    c.set('user', user);
     c.set('sessionId', credential.value);
-    c.set('effectiveScopes', liveScopes);
+    c.set('effectiveScopes', user.scopes);
     c.set('isTokenAuth', false);
+    sessionService.updateSession(credential.value, { user }).catch(() => {});
     sessionService.refreshSession(credential.value, session).catch(() => {});
   }
 
@@ -125,28 +94,16 @@ export const optionalAuthMiddleware: MiddlewareHandler<AppEnv> = async (c, next)
       const sessionService = container.resolve(SessionService);
       const session = await sessionService.getSession(credential.value);
       if (session) {
-        let user = session.user;
-        if (!user.scopes || !Array.isArray(user.scopes) || !user.groupId) {
-          const authService = container.resolve(AuthService);
-          const freshUser = await authService.getUserById(user.id);
-          if (!freshUser) {
-            await sessionService.destroySession(credential.value);
-          } else {
-            user = freshUser;
-            sessionService.updateSession(credential.value, { user }).catch(() => {});
-          }
-        }
-        if (user.groupId) {
-          const db2 = container.resolve<DrizzleClient>(TOKENS.DrizzleClient);
-          const grp = await db2.query.permissionGroups.findFirst({
-            where: eq(permissionGroups.id, user.groupId),
-            columns: { scopes: true, name: true },
-          });
-          const liveScopes = (grp?.scopes as string[]) ?? [];
-          c.set('user', { ...user, scopes: liveScopes, groupName: grp?.name ?? user.groupName });
+        const db2 = container.resolve<DrizzleClient>(TOKENS.DrizzleClient);
+        const user = await resolveLiveUser(db2, session.user.id);
+        if (!user) {
+          await sessionService.destroySession(credential.value);
+        } else {
+          c.set('user', user);
           c.set('sessionId', credential.value);
-          c.set('effectiveScopes', liveScopes);
+          c.set('effectiveScopes', user.scopes);
           c.set('isTokenAuth', false);
+          sessionService.updateSession(credential.value, { user }).catch(() => {});
           sessionService.refreshSession(credential.value, session).catch(() => {});
         }
       }

@@ -549,14 +549,9 @@ Gateway uses a group-based permission system with nested group inheritance. Each
 | docker:registries:edit | Edit/test registries |
 | docker:registries:delete | Remove registries |
 
-### Docker: Templates & Tasks
+### Docker: Tasks
 | Scope | Description |
 |-------|-------------|
-| docker:templates:list | List container templates |
-| docker:templates:view | View template details |
-| docker:templates:create | Create templates |
-| docker:templates:edit | Edit templates |
-| docker:templates:delete | Delete templates |
 | docker:tasks | View background tasks |
 
 ## Built-in Groups

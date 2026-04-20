@@ -103,12 +103,6 @@ export const ALL_SCOPES = [
   'docker:registries:create',
   'docker:registries:edit',
   'docker:registries:delete',
-  // ── Docker: Templates ────────────────────────────────────────────
-  'docker:templates:list',
-  'docker:templates:view',
-  'docker:templates:create',
-  'docker:templates:edit',
-  'docker:templates:delete',
   // ── Docker: Tasks ────────────────────────────────────────────────
   'docker:tasks',
   // ── Notifications ────────────────────────────────────────────────
@@ -290,6 +284,7 @@ export const RESOURCE_SCOPABLE: readonly string[] = [
   'docker:containers:console',
   'docker:containers:files',
   'docker:containers:secrets',
+  'docker:containers:webhooks',
 ];
 
 const ALL_SCOPES_SET = new Set<string>(ALL_SCOPES);

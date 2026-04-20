@@ -2,22 +2,19 @@ import type { WSContext } from 'hono/ws';
 import { container } from '@/container.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { hasScope } from '@/lib/permissions.js';
+import { resolveLiveSessionUser } from '@/modules/auth/live-session-user.js';
 import { DockerManagementService } from '@/modules/docker/docker.service.js';
 import { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import { NodeRegistryService } from '@/services/node-registry.service.js';
-import { SessionService } from '@/services/session.service.js';
 import type { User } from '@/types.js';
 
 const logger = createChildLogger('ComposeLogStream');
 
-async function authenticateFromToken(token: string): Promise<User | null> {
-  if (token.startsWith('gw_')) return null;
-  const sessionService = container.resolve(SessionService);
-  const session = await sessionService.getSession(token);
-  if (!session?.user) return null;
-  const { AuthService } = await import('@/modules/auth/auth.service.js');
-  const authService = container.resolve(AuthService);
-  return authService.getUserById(session.user.id);
+async function authorizeComposeLogAccess(token: string, nodeId: string): Promise<User | null> {
+  const result = await resolveLiveSessionUser(token);
+  const user = result?.user ?? null;
+  if (!user || user.isBlocked) return null;
+  return hasScope(user.scopes, `docker:containers:view:${nodeId}`) ? user : null;
 }
 
 function send(ws: WSContext, msg: Record<string, unknown>): void {
@@ -32,6 +29,7 @@ interface ComposeLogState {
   authenticated: boolean;
   handlerKeys: string[];
   keepaliveInterval: ReturnType<typeof setInterval> | null;
+  token: string;
 }
 
 const wsStates = new WeakMap<WSContext, ComposeLogState>();
@@ -48,15 +46,11 @@ export function createComposeLogsWSHandlers(nodeId: string, project: string, tok
 
   return {
     onOpen(_event: Event, ws: WSContext) {
-      const state: ComposeLogState = { authenticated: false, handlerKeys: [], keepaliveInterval: null };
+      const state: ComposeLogState = { authenticated: false, handlerKeys: [], keepaliveInterval: null, token };
       wsStates.set(ws, state);
 
       state.keepaliveInterval = setInterval(() => {
-        try {
-          ws.send(JSON.stringify({ type: 'pong' }));
-        } catch {
-          if (state.keepaliveInterval) clearInterval(state.keepaliveInterval);
-        }
+        void revalidateComposeLogAccess(ws, state, nodeId, true);
       }, 30_000);
 
       startComposeStream(ws, state, token, nodeId, project, dispatch, registry, dockerService).catch((err) => {
@@ -110,20 +104,10 @@ async function startComposeStream(
   registry: NodeRegistryService,
   dockerService: DockerManagementService
 ): Promise<void> {
-  const user = await authenticateFromToken(token);
+  const user = await authorizeComposeLogAccess(token, nodeId);
   if (!user) {
-    send(ws, { type: 'auth_error', message: 'Invalid token' });
+    send(ws, { type: 'auth_error', message: 'Access revoked or token expired' });
     ws.close(1008, 'Auth failed');
-    return;
-  }
-  if (!hasScope(user.scopes, `docker:containers:view:${nodeId}`)) {
-    send(ws, { type: 'auth_error', message: 'Missing scope' });
-    ws.close(1008, 'Insufficient permissions');
-    return;
-  }
-  if (user.isBlocked) {
-    send(ws, { type: 'auth_error', message: 'Blocked' });
-    ws.close(1008, 'Blocked');
     return;
   }
   state.authenticated = true;
@@ -207,10 +191,13 @@ async function startComposeStream(
     const handlerKey = `${nodeId}:${cid}`;
 
     const handler = (data: any) => {
-      const lines: string[] = Array.isArray(data?.lines) ? data.lines : [];
-      if (lines.length > 0) {
-        send(ws, { type: 'new', lines: lines.map((l: string) => `${service} | ${l}`) });
-      }
+      void (async () => {
+        if (!(await revalidateComposeLogAccess(ws, state, nodeId))) return;
+        const lines: string[] = Array.isArray(data?.lines) ? data.lines : [];
+        if (lines.length > 0) {
+          send(ws, { type: 'new', lines: lines.map((l: string) => `${service} | ${l}`) });
+        }
+      })();
     };
 
     registry.registerLogStreamHandler(handlerKey, handler);
@@ -228,4 +215,31 @@ async function startComposeStream(
   }
 
   logger.info('Compose log stream started', { nodeId, project, containers: composeContainers.length });
+}
+
+async function revalidateComposeLogAccess(
+  ws: WSContext,
+  state: ComposeLogState,
+  nodeId: string,
+  emitPong = false
+): Promise<boolean> {
+  const user = await authorizeComposeLogAccess(state.token, nodeId);
+  if (!user) {
+    state.authenticated = false;
+    send(ws, { type: 'auth_error', message: 'Access revoked or token expired' });
+    try {
+      ws.close(1008, 'Authentication failed');
+    } catch {
+      /* */
+    }
+    return false;
+  }
+  if (emitPong) {
+    try {
+      ws.send(JSON.stringify({ type: 'pong' }));
+    } catch {
+      if (state.keepaliveInterval) clearInterval(state.keepaliveInterval);
+    }
+  }
+  return true;
 }

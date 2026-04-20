@@ -841,7 +841,8 @@ export function SettingsTab({
       </div>
 
       {/* ─── Webhook ─────────────────────────────────────────────── */}
-      {hasScope("docker:containers:webhooks") && (
+      {(hasScope("docker:containers:webhooks") ||
+        hasScope(`docker:containers:webhooks:${nodeId}`)) && (
         <WebhookSection nodeId={nodeId} containerName={containerName} />
       )}
     </div>

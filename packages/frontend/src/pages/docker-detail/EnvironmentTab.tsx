@@ -50,33 +50,45 @@ export function EnvironmentTab({
     setIsLoading(true);
     try {
       const [data, secretsData] = await Promise.all([
-        api.getContainerEnv(nodeId, containerId),
-        api.listDockerSecrets(nodeId, containerId),
+        canEdit ? api.getContainerEnv(nodeId, containerId) : Promise.resolve([]),
+        canManageSecrets ? api.listDockerSecrets(nodeId, containerId) : Promise.resolve([]),
       ]);
-      const parsed = (data ?? []).map((entry: string) => {
-        const idx = entry.indexOf("=");
-        return idx >= 0
-          ? { key: entry.slice(0, idx), value: entry.slice(idx + 1) }
-          : { key: entry, value: "" };
-      });
-      setEnvVars(parsed);
-      setOriginalEnv(data ?? []);
-      setRawText((data ?? []).join("\n"));
 
-      const rows: SecretRow[] = (secretsData ?? []).map((s: DockerSecret) => ({
-        id: s.id,
-        key: s.key,
-        value: s.value,
-        dirty: false,
-      }));
-      setSecretRows(rows);
-      setDeletedSecretIds(new Set());
+      if (canEdit) {
+        const parsed = (data ?? []).map((entry: string) => {
+          const idx = entry.indexOf("=");
+          return idx >= 0
+            ? { key: entry.slice(0, idx), value: entry.slice(idx + 1) }
+            : { key: entry, value: "" };
+        });
+        setEnvVars(parsed);
+        setOriginalEnv(data ?? []);
+        setRawText((data ?? []).join("\n"));
+      } else {
+        setEnvVars([]);
+        setOriginalEnv([]);
+        setRawText("");
+      }
+
+      if (canManageSecrets) {
+        const rows: SecretRow[] = (secretsData ?? []).map((s: DockerSecret) => ({
+          id: s.id,
+          key: s.key,
+          value: s.value,
+          dirty: false,
+        }));
+        setSecretRows(rows);
+        setDeletedSecretIds(new Set());
+      } else {
+        setSecretRows([]);
+        setDeletedSecretIds(new Set());
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to fetch environment");
     } finally {
       setIsLoading(false);
     }
-  }, [nodeId, containerId]);
+  }, [canEdit, canManageSecrets, nodeId, containerId]);
 
   useEffect(() => {
     fetchEnv();
@@ -160,11 +172,13 @@ export function EnvironmentTab({
       : envVars;
 
     const ok = await confirm({
-      title: recreatesRunningContainer ? "Save & Recreate" : "Save",
-      description: recreatesRunningContainer
-        ? "Updating environment variables will recreate the container. The container will experience brief downtime. Continue?"
-        : "Updating environment variables will save the new container configuration. The container will remain stopped. Continue?",
-      confirmLabel: recreatesRunningContainer ? "Recreate" : "Save",
+      title: canEdit ? (recreatesRunningContainer ? "Save & Recreate" : "Save") : "Save Secrets",
+      description: canEdit
+        ? recreatesRunningContainer
+          ? "Updating environment variables will recreate the container. The container will experience brief downtime. Continue?"
+          : "Updating environment variables will save the new container configuration. The container will remain stopped. Continue?"
+        : "Secret changes will be stored, but without environment permission they will only apply after the container is recreated. Continue?",
+      confirmLabel: canEdit ? (recreatesRunningContainer ? "Recreate" : "Save") : "Save",
     });
     if (!ok) return;
 
@@ -190,29 +204,33 @@ export function EnvironmentTab({
         }
       }
 
-      // 2. Save env vars (triggers recreate — backend merges secrets into env)
-      const newEnv: Record<string, string> = {};
-      for (const e of vars) {
-        if (e.key.trim()) newEnv[e.key.trim()] = e.value;
-      }
-      const newKeys = new Set(Object.keys(newEnv));
-      const removeEnv = originalEnv
-        .map((entry) => entry.split("=")[0])
-        .filter((k) => !newKeys.has(k));
+      if (canEdit) {
+        // 2. Save env vars (triggers recreate — backend merges secrets into env)
+        const newEnv: Record<string, string> = {};
+        for (const e of vars) {
+          if (e.key.trim()) newEnv[e.key.trim()] = e.value;
+        }
+        const newKeys = new Set(Object.keys(newEnv));
+        const removeEnv = originalEnv
+          .map((entry) => entry.split("=")[0])
+          .filter((k) => !newKeys.has(k));
 
-      await api.updateContainerEnv(
-        nodeId,
-        containerId,
-        newEnv,
-        removeEnv.length > 0 ? removeEnv : undefined
-      );
-      toast.success(
-        recreatesRunningContainer
-          ? "Environment updated — recreating container"
-          : "Environment updated"
-      );
-      invalidate("containers", "tasks");
-      await Promise.resolve(onRecreating?.());
+        await api.updateContainerEnv(
+          nodeId,
+          containerId,
+          newEnv,
+          removeEnv.length > 0 ? removeEnv : undefined
+        );
+        toast.success(
+          recreatesRunningContainer
+            ? "Environment updated — recreating container"
+            : "Environment updated"
+        );
+        invalidate("containers", "tasks");
+        await Promise.resolve(onRecreating?.());
+      } else {
+        toast.success("Secrets updated — changes will apply on next container recreate");
+      }
       setIsSaving(false);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to update environment");
@@ -286,176 +304,172 @@ export function EnvironmentTab({
   const hasSecretsChanges = deletedSecretIds.size > 0 || secretRows.some((r) => r.dirty);
   const hasChanges = hasEnvChanges || hasSecretsChanges;
 
+  if (!canEdit && !canManageSecrets) {
+    return (
+      <div className="py-12 text-center text-muted-foreground">
+        You don't have permission to access environment variables or secrets.
+      </div>
+    );
+  }
+
   return (
     <div
       className={`${rawMode ? "flex flex-col flex-1 min-h-0" : "pb-6 space-y-4"} ${disabled ? "pointer-events-none opacity-60" : ""}`}
     >
-      <div
-        className={`flex flex-col ${rawMode ? "flex-1 min-h-0" : "border border-border bg-card"}`}
-      >
-        {/* Header */}
+      {canEdit && (
         <div
-          className={`flex items-center justify-between px-4 py-3 shrink-0 ${rawMode ? "bg-card border border-border border-b-0" : "border-b border-border"}`}
+          className={`flex flex-col ${rawMode ? "flex-1 min-h-0" : "border border-border bg-card"}`}
         >
-          <div>
-            <h3 className="text-sm font-semibold">Environment Variables</h3>
-            <p className="text-xs text-muted-foreground">Changes will recreate the container</p>
-          </div>
-          <div className="flex items-center gap-2">
-            {canEdit && !rawMode && (
+          {/* Header */}
+          <div
+            className={`flex items-center justify-between px-4 py-3 shrink-0 ${rawMode ? "bg-card border border-border border-b-0" : "border-b border-border"}`}
+          >
+            <div>
+              <h3 className="text-sm font-semibold">Environment Variables</h3>
+              <p className="text-xs text-muted-foreground">Changes will recreate the container</p>
+            </div>
+            <div className="flex items-center gap-2">
+              {canEdit && !rawMode && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={addVar}
+                  title="Add variable"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                </Button>
+              )}
               <Button
                 variant="ghost"
                 size="icon"
                 className="h-8 w-8"
-                onClick={addVar}
-                title="Add variable"
+                onClick={rawMode ? switchToTable : switchToRaw}
+                title={rawMode ? "Table view" : "Raw view"}
+                disabled={hasErrors}
               >
-                <Plus className="h-3.5 w-3.5" />
+                {rawMode ? <Table2 className="h-3.5 w-3.5" /> : <Code2 className="h-3.5 w-3.5" />}
               </Button>
-            )}
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              onClick={rawMode ? switchToTable : switchToRaw}
-              title={rawMode ? "Table view" : "Raw view"}
-              disabled={hasErrors}
-            >
-              {rawMode ? <Table2 className="h-3.5 w-3.5" /> : <Code2 className="h-3.5 w-3.5" />}
-            </Button>
-            {canEdit && (
-              <Button
-                size="sm"
-                style={{ backgroundColor: "rgb(234 179 8)", color: "#111" }}
-                className="hover:opacity-90 disabled:opacity-50"
-                onClick={handleSave}
-                disabled={isSaving || !hasChanges || hasErrors}
-              >
-                <RotateCcw className="h-3.5 w-3.5" />
-                {recreatesRunningContainer ? "Save & Recreate" : "Save"}
-              </Button>
-            )}
-          </div>
-        </div>
-
-        <AnimatePresence mode="popLayout" initial={false}>
-          {rawMode ? (
-            <motion.div
-              key="raw"
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
-              className="flex-1 min-h-0 flex flex-col"
-            >
-              <CodeEditor
-                value={rawText}
-                onChange={(val) => {
-                  setRawText(val);
-                  setErrorLines(validateRaw(val));
-                }}
-                readOnly={!canEdit}
-                language="env"
-                errorLines={errorLines}
-              />
-            </motion.div>
-          ) : (
-            <motion.div
-              key="table"
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
-            >
-              {envVars.length > 0 && (
-                <div className="grid grid-cols-[1fr_1fr] border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  <div className="px-3 py-2">Key</div>
-                  <div className="px-3 py-2 border-l border-border">Value</div>
-                </div>
+              {canEdit && (
+                <Button
+                  size="sm"
+                  style={{ backgroundColor: "rgb(234 179 8)", color: "#111" }}
+                  className="hover:opacity-90 disabled:opacity-50"
+                  onClick={handleSave}
+                  disabled={isSaving || !hasChanges || hasErrors}
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  {recreatesRunningContainer ? "Save & Recreate" : "Save"}
+                </Button>
               )}
-              <div>
-                {envVars.map((env, idx) => (
-                  <div
-                    key={idx}
-                    className="grid grid-cols-[1fr_1fr] border-b border-border last:border-b-0"
-                  >
-                    {canEdit ? (
-                      <>
+            </div>
+          </div>
+
+          <AnimatePresence mode="popLayout" initial={false}>
+            {rawMode ? (
+              <motion.div
+                key="raw"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
+                className="flex-1 min-h-0 flex flex-col"
+              >
+                <CodeEditor
+                  value={rawText}
+                  onChange={(val) => {
+                    setRawText(val);
+                    setErrorLines(validateRaw(val));
+                  }}
+                  readOnly={!canEdit}
+                  language="env"
+                  errorLines={errorLines}
+                />
+              </motion.div>
+            ) : (
+              <motion.div
+                key="table"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
+              >
+                {envVars.length > 0 && (
+                  <div className="grid grid-cols-[1fr_1fr] border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    <div className="px-3 py-2">Key</div>
+                    <div className="px-3 py-2 border-l border-border">Value</div>
+                  </div>
+                )}
+                <div>
+                  {envVars.map((env, idx) => (
+                    <div
+                      key={idx}
+                      className="grid grid-cols-[1fr_1fr] border-b border-border last:border-b-0"
+                    >
+                      <Input
+                        value={env.key}
+                        onChange={(e) => updateVar(idx, "key", e.target.value)}
+                        className={`h-9 text-xs font-mono border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring ${
+                          duplicateKeyIndices.has(idx) ||
+                          (env.key.trim() && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(env.key.trim()))
+                            ? "bg-red-500/15 text-red-400"
+                            : ""
+                        }`}
+                        placeholder="KEY"
+                      />
+                      <div className="flex items-center border-l border-border">
                         <Input
-                          value={env.key}
-                          onChange={(e) => updateVar(idx, "key", e.target.value)}
-                          className={`h-9 text-xs font-mono border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring ${
-                            duplicateKeyIndices.has(idx) ||
-                            (env.key.trim() && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(env.key.trim()))
-                              ? "bg-red-500/15 text-red-400"
-                              : ""
-                          }`}
-                          placeholder="KEY"
+                          value={env.value}
+                          onChange={(e) => updateVar(idx, "value", e.target.value)}
+                          className="h-9 text-xs font-mono border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring flex-1 min-w-0"
+                          placeholder="value"
                         />
-                        <div className="flex items-center border-l border-border">
-                          <Input
-                            value={env.value}
-                            onChange={(e) => updateVar(idx, "value", e.target.value)}
-                            className="h-9 text-xs font-mono border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring flex-1 min-w-0"
-                            placeholder="value"
-                          />
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-9 w-9 shrink-0 rounded-none border-l border-border"
+                          onClick={() => removeVar(idx)}
+                        >
+                          <Minus className="h-3.5 w-3.5" />
+                        </Button>
+                        {isLast(idx) && (
                           <Button
                             variant="ghost"
                             size="icon"
                             className="h-9 w-9 shrink-0 rounded-none border-l border-border"
-                            onClick={() => removeVar(idx)}
+                            onClick={addVar}
                           >
-                            <Minus className="h-3.5 w-3.5" />
+                            <Plus className="h-3.5 w-3.5" />
                           </Button>
-                          {isLast(idx) && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-9 w-9 shrink-0 rounded-none border-l border-border"
-                              onClick={addVar}
-                            >
-                              <Plus className="h-3.5 w-3.5" />
-                            </Button>
-                          )}
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <span className="px-3 py-2 text-xs md:text-sm font-mono truncate">
-                          {env.key}
-                        </span>
-                        <span className="px-3 py-2 text-xs md:text-sm font-mono text-muted-foreground truncate border-l border-border">
-                          {env.value}
-                        </span>
-                      </>
-                    )}
-                  </div>
-                ))}
-              </div>
-              {envVars.length === 0 && (
-                <div className="flex items-center justify-center py-8">
-                  <p className="text-sm text-muted-foreground">
-                    No environment variables.
-                    {canEdit && (
-                      <>
-                        {" "}
-                        <button onClick={addVar} className="text-foreground hover:underline">
-                          Add one
-                        </button>
-                      </>
-                    )}
-                  </p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              )}
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
+                {envVars.length === 0 && (
+                  <div className="flex items-center justify-center py-8">
+                    <p className="text-sm text-muted-foreground">
+                      No environment variables.{" "}
+                      <button onClick={addVar} className="text-foreground hover:underline">
+                        Add one
+                      </button>
+                    </p>
+                  </div>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      )}
 
       {/* Secrets section — only in table mode */}
-      {!rawMode && (
+      {!rawMode && canManageSecrets && (
         <SecretsSection
           canManageSecrets={canManageSecrets}
+          onSave={!canEdit ? handleSave : undefined}
+          saveButtonLabel="Save"
+          saveDisabled={isSaving || !hasSecretsChanges || hasErrors}
+          isSaving={isSaving}
           secretRows={secretRows}
           setSecretRows={setSecretRows}
           setDeletedSecretIds={setDeletedSecretIds}
