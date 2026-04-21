@@ -165,9 +165,13 @@ export function PostgresExplorer({
   });
 
   const virtualRows = rowVirtualizer.getVirtualItems();
+  const columnMinWidth = 220;
   const gridTemplateColumns = metadata
-    ? `repeat(${metadata.columns.length}, minmax(180px, 1fr))`
+    ? `repeat(${metadata.columns.length}, minmax(${columnMinWidth}px, 1fr))`
     : "";
+  const gridWidth = metadata
+    ? `max(100%, ${metadata.columns.length * columnMinWidth}px)`
+    : "100%";
 
   useEffect(() => {
     if (metadata && sortBy && !metadata.columns.some((column) => column.name === sortBy)) {
@@ -395,7 +399,7 @@ export function PostgresExplorer({
             {metadata.columns.length > 0 && (
               <div
                 className="grid border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wider sticky top-0 bg-card z-10"
-                style={{ gridTemplateColumns, width: "max-content", minWidth: "100%" }}
+                style={{ gridTemplateColumns, width: gridWidth }}
               >
                 {metadata.columns.map((column) => (
                   <div key={column.name} className="border-r border-border last:border-r-0">
@@ -445,8 +449,7 @@ export function PostgresExplorer({
                     style={{
                       transform: `translateY(${virtualRow.start}px)`,
                       gridTemplateColumns,
-                      width: "max-content",
-                      minWidth: "100%",
+                      width: gridWidth,
                     }}
                   >
                     {metadata.columns.map((column, columnIndex) => {
@@ -534,7 +537,7 @@ export function PostgresExplorer({
                   className={`grid border-border bg-emerald-500/5 ${
                     rowIndex === newRows.length - 1 ? "" : "border-b"
                   }`}
-                  style={{ gridTemplateColumns, width: "max-content", minWidth: "100%" }}
+                  style={{ gridTemplateColumns, width: gridWidth }}
                 >
                   {metadata.columns.map((column, columnIndex) => {
                     const isLastColumn = columnIndex === metadata.columns.length - 1;
