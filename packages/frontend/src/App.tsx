@@ -1,6 +1,6 @@
 import { Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { BrowserRouter, Navigate, Route, Routes, useParams } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom";
 import { AppStatusGate } from "@/components/common/AppStatusGate";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { RequireScope } from "@/components/common/RequireScope";
@@ -36,6 +36,7 @@ import { Settings } from "@/pages/Settings";
 import { SSLCertificates } from "@/pages/SSLCertificates";
 import { TemplatesPage } from "@/pages/TemplatesPage";
 import { api } from "@/services/api";
+import { ApiRequestError } from "@/services/api-base";
 import { eventStream } from "@/services/event-stream";
 import { APP_STATUS_STORAGE_KEY, useAppStatusStore } from "@/stores/app-status";
 import { useAuthStore } from "@/stores/auth";
@@ -43,6 +44,74 @@ import { useAuthStore } from "@/stores/auth";
 /** Helper to wrap a page element with a scope guard */
 function scoped(scope: string, element: React.ReactElement) {
   return <RequireScope scope={scope}>{element}</RequireScope>;
+}
+
+function PopoutAuthGate({ children }: { children: React.ReactElement }) {
+  const navigate = useNavigate();
+  const { sessionId, user, isLoading, setUser, setLoading, logout } = useAuthStore();
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (user) {
+      if (isLoading) setLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    if (!sessionId) {
+      if (isLoading) setLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setLoading(true);
+
+    void api
+      .getCurrentUser()
+      .then((freshUser) => {
+        if (cancelled) return;
+        if (freshUser.isBlocked) {
+          setUser(freshUser);
+          navigate("/blocked", { replace: true });
+          return;
+        }
+        setUser(freshUser);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        if (error instanceof ApiRequestError && error.status === 401) {
+          logout();
+          navigate("/login", { replace: true });
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoading, logout, navigate, sessionId, setLoading, setUser, user]);
+
+  if (isLoading && sessionId && !user) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="text-sm text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!sessionId) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return children;
 }
 
 function DockerContainerDetailGuard() {
@@ -331,14 +400,46 @@ export default function App() {
             <Route path="/login" element={<LoginPage />} />
             <Route path="/callback" element={<AuthCallback />} />
             <Route path="/blocked" element={<BlockedPage />} />
-            <Route path="/docker/console/:nodeId/:containerId" element={<DockerConsolePopout />} />
-            <Route path="/docker/logs/:nodeId/:containerId" element={<DockerLogsPopout />} />
-            <Route path="/docker/file/:nodeId/:containerId" element={<DockerFilePopout />} />
+            <Route
+              path="/docker/console/:nodeId/:containerId"
+              element={
+                <PopoutAuthGate>
+                  <DockerConsolePopout />
+                </PopoutAuthGate>
+              }
+            />
+            <Route
+              path="/docker/logs/:nodeId/:containerId"
+              element={
+                <PopoutAuthGate>
+                  <DockerLogsPopout />
+                </PopoutAuthGate>
+              }
+            />
+            <Route
+              path="/docker/file/:nodeId/:containerId"
+              element={
+                <PopoutAuthGate>
+                  <DockerFilePopout />
+                </PopoutAuthGate>
+              }
+            />
             <Route
               path="/docker/compose-logs/:nodeId/:project"
-              element={<DockerComposeLogsPopout />}
+              element={
+                <PopoutAuthGate>
+                  <DockerComposeLogsPopout />
+                </PopoutAuthGate>
+              }
             />
-            <Route path="/nodes/console/:nodeId" element={<NodeConsolePopout />} />
+            <Route
+              path="/nodes/console/:nodeId"
+              element={
+                <PopoutAuthGate>
+                  <NodeConsolePopout />
+                </PopoutAuthGate>
+              }
+            />
             <Route element={<DashboardLayout />}>
               <Route path="/" element={<Dashboard />} />
               <Route path="/proxy-hosts" element={scoped("proxy:list", <ProxyHosts />)} />

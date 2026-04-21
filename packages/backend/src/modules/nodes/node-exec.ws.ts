@@ -23,6 +23,7 @@ interface ExecWSState {
   execId: string | null;
   outputHandler: ((data: any) => void) | null;
   keepaliveInterval: ReturnType<typeof setInterval> | null;
+  outputQueue: Promise<void>;
   token: string;
 }
 
@@ -44,6 +45,7 @@ export function createNodeExecWSHandlers(nodeId: string, shell: string, token: s
         execId: null,
         outputHandler: null,
         keepaliveInterval: null,
+        outputQueue: Promise.resolve(),
         token,
       };
       wsStates.set(ws, state);
@@ -215,7 +217,7 @@ async function authenticateAndCreateExec(
   state.execId = execId;
 
   const outputHandler = (output: any) => {
-    void (async () => {
+    state.outputQueue = state.outputQueue.then(async () => {
       if (!(await revalidateNodeExecAccess(ws, state, nodeId))) return;
       if (output.data && output.data.length > 0) {
         const b64 = Buffer.isBuffer(output.data)
@@ -231,7 +233,9 @@ async function authenticateAndCreateExec(
           /* */
         }
       }
-    })();
+    }).catch((err) => {
+      logger.error('Error forwarding node exec output', { error: err instanceof Error ? err.message : String(err) });
+    });
   };
   state.outputHandler = outputHandler;
   registry.registerExecHandler(execId, outputHandler);

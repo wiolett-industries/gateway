@@ -1,6 +1,7 @@
 import { ExternalLink, Terminal } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { useUIStore } from "@/stores/ui";
 
 interface TerminalConsoleProps {
   /** Factory that creates the WebSocket connection */
@@ -19,6 +20,7 @@ export function TerminalConsole({
   popoutUrl,
   connectLabel,
 }: TerminalConsoleProps) {
+  const resolvedTheme = useUIStore((state) => state.resolvedTheme);
   const termRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<any>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -100,6 +102,21 @@ export function TerminalConsole({
     }, 3000);
   }, []);
 
+  const getTerminalTheme = useCallback(() => {
+    const style = getComputedStyle(document.documentElement);
+    return {
+      background: style.getPropertyValue("--color-card").trim() || "#141414",
+      foreground: style.getPropertyValue("--color-card-foreground").trim() || "#e0e0e0",
+      cursor: style.getPropertyValue("--color-primary").trim() || "#ffffff",
+      cursorAccent:
+        style.getPropertyValue("--color-primary-foreground").trim() || "#0e0e0e",
+      selectionBackground:
+        resolvedTheme === "light" ? "rgba(26, 26, 26, 0.18)" : "rgba(255, 255, 255, 0.22)",
+      selectionInactiveBackground:
+        resolvedTheme === "light" ? "rgba(26, 26, 26, 0.12)" : "rgba(255, 255, 255, 0.14)",
+    };
+  }, [resolvedTheme]);
+
   const connect = useCallback(async () => {
     if (wsRef.current) {
       wsRef.current.close();
@@ -126,10 +143,9 @@ export function TerminalConsole({
     if (!terminalRef.current) {
       const terminal = new Terminal({
         cursorBlink: true,
-        theme: { background: "#0e0e0e", foreground: "#e0e0e0" },
+        theme: getTerminalTheme(),
         fontSize: 14,
         fontFamily: 'Menlo, Monaco, "Courier New", monospace',
-        convertEol: true,
       });
       const fitAddon = new FitAddon();
       terminal.loadAddon(fitAddon);
@@ -173,6 +189,7 @@ export function TerminalConsole({
     }
 
     const terminal = terminalRef.current;
+    terminal.options.theme = getTerminalTheme();
 
     if (!isReconnect.current) {
       gotFirstOutput.current = false;
@@ -251,7 +268,7 @@ export function TerminalConsole({
       isReconnect.current = true;
       scheduleReconnect();
     };
-  }, [scheduleReconnect, wsFactory, connectLabel]);
+  }, [scheduleReconnect, wsFactory, connectLabel, getTerminalTheme]);
 
   connectRef.current = connect;
 
@@ -293,10 +310,17 @@ export function TerminalConsole({
     }
   }, [isPopout, connect]);
 
+  useEffect(() => {
+    if (terminalRef.current) {
+      terminalRef.current.options.theme = getTerminalTheme();
+      fitRef.current?.fit?.();
+    }
+  }, [getTerminalTheme, resolvedTheme]);
+
   if (isPopout) {
     return (
       <div className="relative flex-1 min-h-0">
-        <div className="absolute inset-0 bg-[#0e0e0e] rounded-md border border-border flex flex-col items-center justify-center gap-4">
+        <div className="absolute inset-0 bg-card rounded-md border border-border flex flex-col items-center justify-center gap-4">
           <Terminal className="h-10 w-10 text-muted-foreground/40" />
           <p className="text-sm text-muted-foreground">Console is open in a separate window</p>
           <Button variant="outline" size="sm" onClick={bringBack}>
@@ -311,7 +335,7 @@ export function TerminalConsole({
     <div className="relative flex-1 min-h-0">
       <div
         ref={termRef}
-        className="absolute inset-0 bg-[#0e0e0e] rounded-md overflow-hidden border border-border"
+        className="absolute inset-0 bg-card rounded-md overflow-hidden border border-border"
       />
       {popoutUrl && (
         <div className="absolute right-2.5 bottom-2.5 z-10">

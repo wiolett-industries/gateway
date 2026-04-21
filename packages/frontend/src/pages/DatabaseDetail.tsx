@@ -106,6 +106,12 @@ export function DatabaseDetail() {
   }, [activeTab, database?.type, setActiveTab]);
 
   useEffect(() => {
+    if (liveHealthStatus === "offline" && activeTab === "console") {
+      setActiveTab("overview");
+    }
+  }, [activeTab, liveHealthStatus, setActiveTab]);
+
+  useEffect(() => {
     if (activeTab !== "explorer" || database?.type !== "postgres") {
       setExplorerFocused(false);
     }
@@ -226,6 +232,7 @@ export function DatabaseDetail() {
 
   const isFullHeightTab = activeTab === "explorer" || activeTab === "console";
   const hideDatabaseChrome = explorerFocused && activeTab === "explorer" && database.type === "postgres";
+  const consoleDisabled = liveHealthStatus === "offline";
 
   return (
     <PageTransition>
@@ -278,7 +285,9 @@ export function DatabaseDetail() {
                   </TabsTrigger>
                 ))}
               {(canRead || canWrite || canAdmin) && (
-                <TabsTrigger value="console">Console</TabsTrigger>
+                <TabsTrigger value="console" disabled={consoleDisabled}>
+                  Console
+                </TabsTrigger>
               )}
             </TabsList>
           )}
@@ -312,7 +321,7 @@ export function DatabaseDetail() {
             </TabsContent>
           )}
 
-          {(canRead || canWrite || canAdmin) && (
+          {(canRead || canWrite || canAdmin) && !consoleDisabled && (
             <TabsContent value="console" className="space-y-4 flex flex-col flex-1 min-h-0">
               <DatabaseConsoleTab database={database} />
             </TabsContent>

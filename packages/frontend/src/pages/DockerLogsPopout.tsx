@@ -193,7 +193,7 @@ export function DockerLogsPopout() {
 
   if (!canViewLogs) {
     return (
-      <div className="fixed inset-0 flex items-center justify-center bg-[#0e0e0e] px-4 text-sm text-muted-foreground">
+      <div className="fixed inset-0 flex items-center justify-center bg-background px-4 text-sm text-muted-foreground">
         You don't have permission to access container logs.
       </div>
     );
@@ -203,15 +203,15 @@ export function DockerLogsPopout() {
     <VirtualLogList
       lines={lines}
       keyFn={(_, i) => i}
-      renderLine={(line) => (
-        <div className="whitespace-pre-wrap break-all leading-5 px-4 font-mono text-xs text-gray-300">
+        renderLine={(line) => (
+        <div className="whitespace-pre-wrap break-all leading-5 px-4 font-mono text-xs text-foreground/80">
           <AnsiText text={line as string} />
         </div>
       )}
       onLoadMore={requestMoreLines}
       hasMore={hasMore}
       loadingMore={loadingMore}
-      className="fixed inset-0 overflow-auto bg-[#0e0e0e] py-4"
+      className="fixed inset-0 overflow-auto bg-card py-4"
       emptyState={
         <div className="px-4 font-mono text-xs text-gray-600">
           {isConnecting ? "Connecting to log stream..." : "No logs available"}

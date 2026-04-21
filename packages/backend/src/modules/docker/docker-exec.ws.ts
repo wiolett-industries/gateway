@@ -30,6 +30,7 @@ interface ExecWSState {
   execId: string | null;
   outputHandler: ((data: any) => void) | null;
   keepaliveInterval: ReturnType<typeof setInterval> | null;
+  outputQueue: Promise<void>;
   token: string;
 }
 
@@ -59,6 +60,7 @@ export function createDockerExecWSHandlers(nodeId: string, containerId: string, 
         execId: null,
         outputHandler: null,
         keepaliveInterval: null,
+        outputQueue: Promise.resolve(),
         token,
       };
       wsStates.set(ws, state);
@@ -278,7 +280,7 @@ async function authenticateAndCreateExec(
 
   // Register handler for live ExecOutput from daemon -> forward to this WS
   const outputHandler = (output: any) => {
-    void (async () => {
+    state.outputQueue = state.outputQueue.then(async () => {
       if (!(await revalidateExecAccess(ws, state, nodeId))) return;
       if (output.data && output.data.length > 0) {
         const b64 = Buffer.isBuffer(output.data)
@@ -294,7 +296,9 @@ async function authenticateAndCreateExec(
           /* */
         }
       }
-    })();
+    }).catch((err) => {
+      logger.error('Error forwarding exec output', { error: err instanceof Error ? err.message : String(err) });
+    });
   };
   state.outputHandler = outputHandler;
   registry.registerExecHandler(execId, outputHandler);
