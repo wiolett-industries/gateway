@@ -1,4 +1,4 @@
-import { Plus, RefreshCw } from "lucide-react";
+import { Database as DatabaseIcon, Plus, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -7,7 +7,6 @@ import { PageTransition } from "@/components/common/PageTransition";
 import { SearchFilterBar } from "@/components/common/SearchFilterBar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 import {
   Dialog,
   DialogContent,
@@ -38,6 +37,44 @@ const HEALTH_BADGE: Record<string, "success" | "secondary" | "warning" | "destru
   offline: "destructive",
   unknown: "secondary",
 };
+
+function formatLastCheck(dateStr: string | null): string {
+  if (!dateStr) return "Never";
+  const date = new Date(dateStr);
+  const diff = Date.now() - date.getTime();
+  if (diff < 60_000) return "Just now";
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
+  return date.toLocaleDateString();
+}
+
+function formatHealthLabel(status: DatabaseConnection["healthStatus"]): string {
+  return status.charAt(0).toUpperCase() + status.slice(1);
+}
+
+function DatabaseTagSummary({ tags }: { tags: string[] }) {
+  if (tags.length === 0) return null;
+
+  const primaryTag = tags[0]!;
+  const extraCount = tags.length - 1;
+
+  return (
+    <div className="flex items-center gap-2 shrink-0">
+      <Badge
+        variant="info"
+        className="max-w-[180px] min-w-0 shrink-0 overflow-hidden text-ellipsis whitespace-nowrap text-xs"
+        title={primaryTag}
+      >
+        {primaryTag}
+      </Badge>
+      {extraCount > 0 && (
+        <Badge variant="secondary" className="shrink-0">
+          +{extraCount}
+        </Badge>
+      )}
+    </div>
+  );
+}
 
 export function Databases() {
   const navigate = useNavigate();
@@ -75,48 +112,6 @@ export function Databases() {
   }, [load]);
 
   const canCreate = hasScope("databases:create");
-
-  const columns = useMemo<DataTableColumn<DatabaseConnection>[]>(
-    () => [
-      {
-        key: "name",
-        header: "Connection",
-        width: "minmax(0, 1.3fr)",
-        render: (row) => (
-          <div className="min-w-0">
-            <p className="truncate font-medium">{row.name}</p>
-            <p className="truncate text-xs text-muted-foreground">
-              {row.type === "postgres" ? "Postgres" : "Redis"} · {row.host}:{row.port}
-            </p>
-          </div>
-        ),
-      },
-      {
-        key: "database",
-        header: "Database",
-        width: "minmax(0, 1fr)",
-        render: (row) => <span className="truncate">{row.databaseName || "-"}</span>,
-      },
-      {
-        key: "status",
-        header: "Status",
-        width: "120px",
-        render: (row) => (
-          <Badge variant={HEALTH_BADGE[row.healthStatus] ?? "secondary"} className="capitalize">
-            {row.healthStatus}
-          </Badge>
-        ),
-      },
-      {
-        key: "updated",
-        header: "Last Check",
-        width: "160px",
-        render: (row) =>
-          row.lastHealthCheckAt ? new Date(row.lastHealthCheckAt).toLocaleString() : "Never",
-      },
-    ],
-    []
-  );
 
   const filtered = useMemo(
     () =>
@@ -218,12 +213,45 @@ export function Databases() {
             {...(canCreate ? { actionLabel: "Add Database", onAction: () => setCreateOpen(true) } : {})}
           />
         ) : (
-          <DataTable
-            columns={columns}
-            data={filtered}
-            keyFn={(row) => row.id}
-            onRowClick={(row) => navigate(`/databases/${row.id}/overview`)}
-          />
+          <div className="border border-border rounded-lg bg-card">
+            <div className="divide-y divide-border -mb-px [&>*:last-child]:border-b [&>*:last-child]:border-border">
+              {filtered.map((row) => (
+                <div
+                  key={row.id}
+                  className="flex items-center gap-4 p-4 transition-colors cursor-pointer hover:bg-muted/50"
+                  onClick={() => navigate(`/databases/${row.id}/overview`)}
+                >
+                  <div className="flex items-center justify-center h-10 w-10 rounded-lg bg-muted shrink-0">
+                    <DatabaseIcon className="h-5 w-5 text-muted-foreground" />
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{row.name}</p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {row.host}:{row.port}
+                      {row.databaseName ? ` · ${row.databaseName}` : ""}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Badge variant="secondary" className="text-xs uppercase shrink-0">
+                      {row.type}
+                    </Badge>
+                    <DatabaseTagSummary tags={row.tags} />
+                    <Badge variant="outline" className="text-xs shrink-0">
+                      {formatLastCheck(row.lastHealthCheckAt)}
+                    </Badge>
+                    <Badge
+                      variant={HEALTH_BADGE[row.healthStatus] ?? "secondary"}
+                      className="text-xs shrink-0 uppercase"
+                    >
+                      {formatHealthLabel(row.healthStatus)}
+                    </Badge>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
       </div>
 

@@ -283,7 +283,7 @@ export function LogsTab({
   if (isPopout) {
     return (
       <div className="flex flex-col flex-1 min-h-0 border border-border bg-card">
-        <div className="flex-1 bg-[#0e0e0e] flex flex-col items-center justify-center gap-4">
+        <div className="flex-1 bg-card flex flex-col items-center justify-center gap-4">
           <ScrollText className="h-10 w-10 text-muted-foreground/40" />
           <p className="text-sm text-muted-foreground">Logs are open in a separate window</p>
           <Button variant="outline" size="sm" onClick={bringBack}>
@@ -342,7 +342,7 @@ export function LogsTab({
         onLoadMore={requestMoreLines}
         hasMore={hasMore}
         loadingMore={loadingMore}
-        className="flex-1 min-h-0 overflow-auto bg-[#0e0e0e] py-4"
+        className="flex-1 min-h-0 overflow-auto bg-card py-4"
         emptyState={
           <div className="px-4 font-mono text-xs text-foreground/80">
             {isConnecting ? (

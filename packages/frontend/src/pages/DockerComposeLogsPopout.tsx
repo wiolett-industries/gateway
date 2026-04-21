@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useAuthStore } from "@/stores/auth";
+import { useUIStore } from "@/stores/ui";
 
 const SERVICE_COLORS = [
   "\x1b[36m",
@@ -16,6 +17,7 @@ const SERVICE_COLORS = [
 export function DockerComposeLogsPopout() {
   const { nodeId, project } = useParams<{ nodeId: string; project: string }>();
   const { hasScope } = useAuthStore();
+  const resolvedTheme = useUIStore((state) => state.resolvedTheme);
   const canViewLogs =
     !!nodeId &&
     !!project &&
@@ -34,6 +36,16 @@ export function DockerComposeLogsPopout() {
 
   // Color palette for compose services
   const serviceColorMap = useRef(new Map<string, string>());
+  const getTerminalTheme = useCallback(() => {
+    const style = getComputedStyle(document.documentElement);
+    return {
+      background: style.getPropertyValue("--color-card").trim() || "#141414",
+      foreground: style.getPropertyValue("--color-card-foreground").trim() || "#e0e0e0",
+      cursor: style.getPropertyValue("--color-primary").trim() || "#ffffff",
+      cursorAccent:
+        style.getPropertyValue("--color-primary-foreground").trim() || "#0e0e0e",
+    };
+  }, []);
   const getServiceColor = useCallback((service: string) => {
     if (!serviceColorMap.current.has(service)) {
       serviceColorMap.current.set(
@@ -75,7 +87,7 @@ export function DockerComposeLogsPopout() {
       const terminal = new Terminal({
         cursorBlink: false,
         disableStdin: true,
-        theme: { background: "#0e0e0e", foreground: "#e0e0e0" },
+        theme: getTerminalTheme(),
         fontSize: 13,
         fontFamily: 'Menlo, Monaco, "Courier New", monospace',
         convertEol: true,
@@ -105,6 +117,7 @@ export function DockerComposeLogsPopout() {
     }
 
     const terminal = terminalRef.current;
+    terminal.options.theme = getTerminalTheme();
     terminal.write(`\x1b[90mConnecting to compose project "${project}"...\x1b[0m\r\n`);
 
     const sessionId = useAuthStore.getState().sessionId;
@@ -167,7 +180,7 @@ export function DockerComposeLogsPopout() {
       if (!mountedRef.current) return;
       terminal.write(`\r\n\x1b[31mConnection error.\x1b[0m\r\n`);
     };
-  }, [canViewLogs, getServiceColor, nodeId, project]);
+  }, [canViewLogs, getServiceColor, nodeId, project, getTerminalTheme]);
 
   const didConnect = useRef(false);
   useEffect(() => {
@@ -187,13 +200,19 @@ export function DockerComposeLogsPopout() {
     };
   }, [canViewLogs, connect]);
 
+  useEffect(() => {
+    if (terminalRef.current) {
+      terminalRef.current.options.theme = getTerminalTheme();
+    }
+  }, [getTerminalTheme, resolvedTheme]);
+
   if (!canViewLogs) {
     return (
-      <div className="fixed inset-0 flex items-center justify-center bg-[#0e0e0e] px-4 text-sm text-muted-foreground">
+      <div className="fixed inset-0 flex items-center justify-center bg-background px-4 text-sm text-muted-foreground">
         You don't have permission to access container logs.
       </div>
     );
   }
 
-  return <div ref={termRef} className="fixed inset-0 bg-[#0e0e0e]" style={{ padding: 4 }} />;
+  return <div ref={termRef} className="fixed inset-0 bg-card" style={{ padding: 4 }} />;
 }

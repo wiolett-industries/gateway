@@ -25,6 +25,7 @@ export function DatabaseOverviewTab({
   history,
 }: DatabaseOverviewTabProps) {
   const latest = history.at(-1);
+  const showMonitoring = canViewMonitoring && healthStatus !== "offline";
   const overviewMetrics = useMemo<
     Array<{
       key: string;
@@ -183,7 +184,7 @@ export function DatabaseOverviewTab({
 
   return (
     <div className="space-y-4">
-      {canViewMonitoring &&
+      {showMonitoring &&
         (latest ? (
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             {overviewMetrics.map((metric) => (

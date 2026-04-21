@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
+import { useUIStore } from "@/stores/ui";
 
 interface PopoutTerminalProps {
   /** Factory that creates the WebSocket connection */
@@ -14,6 +15,7 @@ interface PopoutTerminalProps {
  * announcements (heartbeat, close) to coordinate with the parent tab.
  */
 export function PopoutTerminal({ wsFactory, channelKey, title }: PopoutTerminalProps) {
+  const resolvedTheme = useUIStore((state) => state.resolvedTheme);
   const termRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<any>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -62,6 +64,21 @@ export function PopoutTerminal({ wsFactory, channelKey, title }: PopoutTerminalP
     }, 3000);
   }, []);
 
+  const getTerminalTheme = useCallback(() => {
+    const style = getComputedStyle(document.documentElement);
+    return {
+      background: style.getPropertyValue("--color-card").trim() || "#141414",
+      foreground: style.getPropertyValue("--color-card-foreground").trim() || "#e0e0e0",
+      cursor: style.getPropertyValue("--color-primary").trim() || "#ffffff",
+      cursorAccent:
+        style.getPropertyValue("--color-primary-foreground").trim() || "#0e0e0e",
+      selectionBackground:
+        resolvedTheme === "light" ? "rgba(26, 26, 26, 0.18)" : "rgba(255, 255, 255, 0.22)",
+      selectionInactiveBackground:
+        resolvedTheme === "light" ? "rgba(26, 26, 26, 0.12)" : "rgba(255, 255, 255, 0.14)",
+    };
+  }, [resolvedTheme]);
+
   const connect = useCallback(async () => {
     if (wsRef.current) {
       wsRef.current.close();
@@ -87,10 +104,9 @@ export function PopoutTerminal({ wsFactory, channelKey, title }: PopoutTerminalP
     if (!terminalRef.current) {
       const terminal = new Terminal({
         cursorBlink: true,
-        theme: { background: "#0e0e0e", foreground: "#e0e0e0" },
+        theme: getTerminalTheme(),
         fontSize: 14,
         fontFamily: 'Menlo, Monaco, "Courier New", monospace',
-        convertEol: true,
       });
       const fitAddon = new FitAddon();
       terminal.loadAddon(fitAddon);
@@ -132,6 +148,7 @@ export function PopoutTerminal({ wsFactory, channelKey, title }: PopoutTerminalP
     }
 
     const terminal = terminalRef.current;
+    terminal.options.theme = getTerminalTheme();
 
     if (!isReconnect.current) {
       gotFirstOutput.current = false;
@@ -208,7 +225,7 @@ export function PopoutTerminal({ wsFactory, channelKey, title }: PopoutTerminalP
       isReconnect.current = true;
       scheduleReconnect();
     };
-  }, [scheduleReconnect, wsFactory]);
+  }, [scheduleReconnect, wsFactory, getTerminalTheme]);
 
   connectRef.current = connect;
 
@@ -229,5 +246,11 @@ export function PopoutTerminal({ wsFactory, channelKey, title }: PopoutTerminalP
     };
   }, [connect]);
 
-  return <div ref={termRef} className="fixed inset-0 bg-[#0e0e0e]" style={{ padding: 4 }} />;
+  useEffect(() => {
+    if (terminalRef.current) {
+      terminalRef.current.options.theme = getTerminalTheme();
+    }
+  }, [getTerminalTheme, resolvedTheme]);
+
+  return <div ref={termRef} className="fixed inset-0 bg-card" style={{ padding: 4 }} />;
 }
