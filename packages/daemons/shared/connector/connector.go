@@ -2,6 +2,7 @@ package connector
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"math"
 	"math/rand/v2"
@@ -10,13 +11,15 @@ import (
 	"github.com/wiolett/gateway/daemon-shared/auth"
 	pb "github.com/wiolett/gateway/daemon-shared/gatewayv1"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
 )
 
 const (
-	MaxBackoff     = 60 * time.Second
-	InitialBackoff = 1 * time.Second
+	MaxBackoff            = 60 * time.Second
+	InitialBackoff        = 1 * time.Second
+	ConnectAttemptTimeout = 10 * time.Second
 )
 
 type Connector struct {
@@ -33,7 +36,7 @@ func NewConnector(address string, tlsMgr *auth.TLSManager, logger *slog.Logger) 
 	}
 }
 
-// Connect establishes a gRPC connection with mTLS. Blocks until connected or ctx cancelled.
+// Connect creates a gRPC client connection configured for mTLS.
 func (c *Connector) Connect(ctx context.Context) (*grpc.ClientConn, error) {
 	tlsCfg, err := c.TLSMgr.ClientTLSConfig()
 	if err != nil {
@@ -60,11 +63,18 @@ func (c *Connector) ConnectWithRetry(ctx context.Context) (*grpc.ClientConn, err
 	for {
 		conn, err := c.Connect(ctx)
 		if err == nil {
-			return conn, nil
+			attemptCtx, cancel := context.WithTimeout(ctx, ConnectAttemptTimeout)
+			err = waitUntilReady(attemptCtx, conn)
+			cancel()
+			if err == nil {
+				return conn, nil
+			}
+			_ = conn.Close()
 		}
 
 		c.Logger.Warn("connection failed, retrying",
 			"error", err,
+			"attempt_timeout", ConnectAttemptTimeout,
 			"backoff", backoff,
 		)
 
@@ -77,6 +87,29 @@ func (c *Connector) ConnectWithRetry(ctx context.Context) (*grpc.ClientConn, err
 		}
 
 		backoff = time.Duration(math.Min(float64(backoff)*2, float64(MaxBackoff)))
+	}
+}
+
+func waitUntilReady(ctx context.Context, conn *grpc.ClientConn) error {
+	conn.Connect()
+
+	for {
+		state := conn.GetState()
+		switch state {
+		case connectivity.Ready:
+			return nil
+		case connectivity.Idle:
+			conn.Connect()
+		case connectivity.Shutdown:
+			return fmt.Errorf("connection shut down before becoming ready")
+		}
+
+		if !conn.WaitForStateChange(ctx, state) {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			return fmt.Errorf("timed out waiting for connection to become ready")
+		}
 	}
 }
 
