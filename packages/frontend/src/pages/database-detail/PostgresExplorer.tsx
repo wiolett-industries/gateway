@@ -1,5 +1,16 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { ChevronsUpDown, ChevronDown, ChevronUp, Loader2, Minus, Plus, RefreshCw, Save } from "lucide-react";
+import {
+  ChevronsUpDown,
+  ChevronDown,
+  ChevronUp,
+  Loader2,
+  Maximize2,
+  Minimize2,
+  Minus,
+  Plus,
+  RefreshCw,
+  Save,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -30,9 +41,13 @@ import {
 export function PostgresExplorer({
   database,
   canWrite,
+  focused,
+  onToggleFocus,
 }: {
   database: DatabaseConnection;
   canWrite: boolean;
+  focused: boolean;
+  onToggleFocus: () => void;
 }) {
   const [schemas, setSchemas] = useState<string[]>([]);
   const [schema, setSchema] = useState("");
@@ -284,46 +299,50 @@ export function PostgresExplorer({
   };
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 gap-4">
-      <div className="flex flex-wrap items-end gap-3 shrink-0">
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium">Schema</label>
-          <Select value={schema} onValueChange={setSchema}>
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Schema" />
-            </SelectTrigger>
-            <SelectContent>
-              {schemas.map((item) => (
-                <SelectItem key={item} value={item}>
-                  {item}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+    <div className={`flex flex-col flex-1 min-h-0 ${focused ? "gap-0" : "gap-4"}`}>
+      {!focused && (
+        <div className="flex flex-wrap items-end gap-3 shrink-0">
+          <div>
+            <Select value={schema} onValueChange={setSchema}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Schema" />
+              </SelectTrigger>
+              <SelectContent>
+                {schemas.map((item) => (
+                  <SelectItem key={item} value={item}>
+                    {item}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Select value={table} onValueChange={setTable}>
+              <SelectTrigger className="w-[260px]">
+                <SelectValue placeholder="Table" />
+              </SelectTrigger>
+              <SelectContent>
+                {tables.map((item) => (
+                  <SelectItem key={item.name} value={item.name}>
+                    {item.name} ({item.type})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button variant="outline" onClick={() => void refreshRows()} disabled={refreshing}>
+            <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
         </div>
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium">Table</label>
-          <Select value={table} onValueChange={setTable}>
-            <SelectTrigger className="w-[260px]">
-              <SelectValue placeholder="Table" />
-            </SelectTrigger>
-            <SelectContent>
-              {tables.map((item) => (
-                <SelectItem key={item.name} value={item.name}>
-                  {item.name} ({item.type})
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <Button variant="outline" onClick={() => void refreshRows()} disabled={refreshing}>
-          <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
-          Refresh
-        </Button>
-      </div>
+      )}
 
       {metadata ? (
-        <div className="border border-border bg-card overflow-hidden flex flex-col min-h-0 max-h-full">
+        <div
+          className={`border border-border bg-card overflow-hidden flex flex-col min-h-0 max-h-full ${
+            focused ? "border-l-0" : ""
+          }`}
+        >
           <div className="flex items-center justify-between gap-4 px-4 py-3 border-b border-border">
             <div>
               <h3 className="text-sm font-semibold">
@@ -337,6 +356,16 @@ export function PostgresExplorer({
               </p>
             </div>
             <div className="flex items-center gap-2">
+              {totalRows > 40 && (
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={onToggleFocus}
+                  title={focused ? "Collapse explorer" : "Expand explorer"}
+                >
+                  {focused ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+                </Button>
+              )}
               {canWrite && (
                 <Button
                   variant="ghost"
@@ -362,21 +391,21 @@ export function PostgresExplorer({
             </div>
           </div>
 
-          <div ref={explorerScrollRef} className="overflow-auto flex-1 min-h-0">
+          <div ref={explorerScrollRef} className="dashboard-scrollbar overflow-auto flex-1 min-h-0">
             {metadata.columns.length > 0 && (
               <div
                 className="grid border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wider sticky top-0 bg-card z-10"
-                style={{ gridTemplateColumns }}
+                style={{ gridTemplateColumns, width: "max-content", minWidth: "100%" }}
               >
                 {metadata.columns.map((column) => (
                   <div key={column.name} className="border-r border-border last:border-r-0">
                     <button
                       type="button"
-                      className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-muted/40 transition-colors"
+                      className="flex w-full min-w-0 items-center gap-2 px-3 py-2 text-left hover:bg-muted/40 transition-colors"
                       onClick={() => toggleSort(column.name)}
                       title={`Sort by ${column.name}`}
                     >
-                      <span>{column.name}</span>
+                      <span className="min-w-0 truncate">{column.name}</span>
                       {column.isPrimaryKey && (
                         <Badge variant="secondary" className="text-[10px] py-0">
                           PK
@@ -412,10 +441,12 @@ export function PostgresExplorer({
                   <div
                     key={rowKey}
                     ref={rowVirtualizer.measureElement}
-                    className={`absolute inset-x-0 grid ${isLastLoadedRow ? "" : "border-b border-border"}`}
+                    className={`absolute left-0 grid ${isLastLoadedRow ? "" : "border-b border-border"}`}
                     style={{
                       transform: `translateY(${virtualRow.start}px)`,
                       gridTemplateColumns,
+                      width: "max-content",
+                      minWidth: "100%",
                     }}
                   >
                     {metadata.columns.map((column, columnIndex) => {
@@ -503,7 +534,7 @@ export function PostgresExplorer({
                   className={`grid border-border bg-emerald-500/5 ${
                     rowIndex === newRows.length - 1 ? "" : "border-b"
                   }`}
-                  style={{ gridTemplateColumns }}
+                  style={{ gridTemplateColumns, width: "max-content", minWidth: "100%" }}
                 >
                   {metadata.columns.map((column, columnIndex) => {
                     const isLastColumn = columnIndex === metadata.columns.length - 1;

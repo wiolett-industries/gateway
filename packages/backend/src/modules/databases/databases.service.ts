@@ -24,6 +24,7 @@ const DATABASE_HEALTH_HISTORY_MAX_AGE_MS = 7 * 24 * 3600 * 1000;
 
 export type DatabaseType = 'postgres' | 'redis';
 export type DatabaseHealthStatus = 'online' | 'offline' | 'degraded' | 'unknown';
+export type DatabaseOperation = 'connect' | 'query';
 
 export interface PostgresConnectionConfig {
   type: 'postgres';
@@ -69,6 +70,84 @@ export interface DatabaseConnectionView {
   updatedById: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+const DATABASE_CONNECTIVITY_ERROR_CODES = new Set([
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'ENOTFOUND',
+  'EHOSTUNREACH',
+  'ETIMEDOUT',
+  'ENETUNREACH',
+  'EPIPE',
+  'SELF_SIGNED_CERT_IN_CHAIN',
+  'DEPTH_ZERO_SELF_SIGNED_CERT',
+  'CERT_HAS_EXPIRED',
+  'ERR_TLS_CERT_ALTNAME_INVALID',
+]);
+
+const POSTGRES_CONNECTIVITY_CODES = new Set(['3D000']);
+const POSTGRES_QUERY_CODES = new Set(['42601', '42703', '42P01']);
+const REDIS_QUERY_MESSAGES = [/unknown command/i, /wrong number of arguments/i, /wrongtype/i];
+
+export function mapDatabaseDriverError(
+  error: unknown,
+  provider: DatabaseType,
+  operation: DatabaseOperation
+): AppError | null {
+  if (error instanceof AppError) return error;
+  if (!(error instanceof Error)) return null;
+
+  const driverError = error as Error & { code?: string; errno?: string | number };
+  const code =
+    typeof driverError.code === 'string'
+      ? driverError.code
+      : typeof driverError.errno === 'string'
+        ? driverError.errno
+        : undefined;
+  const message = driverError.message || `${provider} ${operation} failed`;
+  const lowerMessage = message.toLowerCase();
+
+  if (
+    (provider === 'postgres' &&
+      (code === '28P01' ||
+        lowerMessage.includes('password authentication failed') ||
+        lowerMessage.includes('no pg_hba.conf entry'))) ||
+    (provider === 'redis' &&
+      (lowerMessage.includes('wrongpass') ||
+        lowerMessage.includes('authentication required') ||
+        lowerMessage.includes('invalid username-password') ||
+        lowerMessage.includes('auth <password> called without any password configured') ||
+        lowerMessage.includes('noauth')))
+  ) {
+    return new AppError(401, 'DATABASE_AUTH_FAILED', message);
+  }
+
+  if (
+    DATABASE_CONNECTIVITY_ERROR_CODES.has(code ?? '') ||
+    (provider === 'postgres' && POSTGRES_CONNECTIVITY_CODES.has(code ?? '')) ||
+    lowerMessage.includes('database does not exist') ||
+    lowerMessage.includes('getaddrinfo') ||
+    lowerMessage.includes('connect timeout') ||
+    lowerMessage.includes('connection terminated unexpectedly') ||
+    lowerMessage.includes('server does not support ssl') ||
+    lowerMessage.includes('self signed certificate') ||
+    lowerMessage.includes('certificate has expired') ||
+    lowerMessage.includes('unable to verify the first certificate') ||
+    lowerMessage.includes('connection is closed')
+  ) {
+    return new AppError(422, 'DATABASE_CONNECTION_FAILED', message);
+  }
+
+  if (
+    operation === 'query' &&
+    ((provider === 'postgres' && POSTGRES_QUERY_CODES.has(code ?? '')) ||
+      (provider === 'redis' && REDIS_QUERY_MESSAGES.some((pattern) => pattern.test(message))))
+  ) {
+    return new AppError(400, 'DATABASE_QUERY_FAILED', message);
+  }
+
+  return null;
 }
 
 function quoteIdent(identifier: string): string {
@@ -676,7 +755,18 @@ export class DatabaseConnectionService {
   async testSavedConnection(id: string, userId: string): Promise<{ ok: true; responseMs: number; status: DatabaseHealthStatus }> {
     const row = await this.getRow(id);
     const config = this.decryptConfig(row.encryptedConfig);
-    const result = await this.testNormalizedConnection(config);
+    let result: { status: DatabaseHealthStatus; responseMs: number };
+    try {
+      result = await this.testNormalizedConnection(config);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Database connection test failed';
+      await this.updateHealth(id, {
+        status: 'offline',
+        lastError: message,
+        forceHistory: true,
+      }).catch(() => {});
+      throw error;
+    }
     const history = this.trimHealthHistory([
       ...((row.healthHistory as DatabaseHealthEntry[] | null) ?? []),
       {
@@ -709,84 +799,87 @@ export class DatabaseConnectionService {
   }
 
   async listPostgresSchemas(id: string) {
-    const pool = await this.getPostgresPool(id);
-    const result = await pool.query<{ schema_name: string }>(
-      `select distinct table_schema as schema_name
-         from information_schema.tables
-       where table_schema not in ('information_schema', 'pg_catalog')
-       order by schema_name asc`
-    );
-    return result.rows.map((row) => row.schema_name);
+    return this.withPostgresPool(id, 'query', async (pool) => {
+      const result = await pool.query<{ schema_name: string }>(
+        `select distinct table_schema as schema_name
+           from information_schema.tables
+         where table_schema not in ('information_schema', 'pg_catalog')
+         order by schema_name asc`
+      );
+      return result.rows.map((row) => row.schema_name);
+    });
   }
 
   async listPostgresTables(id: string, schema: string) {
-    const pool = await this.getPostgresPool(id);
-    const result = await pool.query<{
-      table_name: string;
-      table_type: string;
-    }>(
-      `select table_name, table_type
-         from information_schema.tables
-        where table_schema = $1
-        order by table_name asc`,
-      [schema]
-    );
-    return result.rows.map((row) => ({
-      name: row.table_name,
-      type: row.table_type === 'VIEW' ? 'view' : 'table',
-    }));
+    return this.withPostgresPool(id, 'query', async (pool) => {
+      const result = await pool.query<{
+        table_name: string;
+        table_type: string;
+      }>(
+        `select table_name, table_type
+           from information_schema.tables
+          where table_schema = $1
+          order by table_name asc`,
+        [schema]
+      );
+      return result.rows.map((row) => ({
+        name: row.table_name,
+        type: row.table_type === 'VIEW' ? 'view' : 'table',
+      }));
+    });
   }
 
   async getPostgresTableMetadata(id: string, schema: string, table: string) {
-    const pool = await this.getPostgresPool(id);
-    const columns = await pool.query<{
-      column_name: string;
-      data_type: string;
-      udt_name: string;
-      is_nullable: 'YES' | 'NO';
-      column_default: string | null;
-      is_identity: 'YES' | 'NO';
-      is_generated: 'ALWAYS' | 'NEVER';
-      ordinal_position: number;
-    }>(
-      `select column_name, data_type, udt_name, is_nullable, column_default, is_identity, is_generated, ordinal_position
-         from information_schema.columns
-        where table_schema = $1 and table_name = $2
-        order by ordinal_position asc`,
-      [schema, table]
-    );
-    if (columns.rows.length === 0) {
-      throw new AppError(404, 'TABLE_NOT_FOUND', 'Table or view not found');
-    }
+    return this.withPostgresPool(id, 'query', async (pool) => {
+      const columns = await pool.query<{
+        column_name: string;
+        data_type: string;
+        udt_name: string;
+        is_nullable: 'YES' | 'NO';
+        column_default: string | null;
+        is_identity: 'YES' | 'NO';
+        is_generated: 'ALWAYS' | 'NEVER';
+        ordinal_position: number;
+      }>(
+        `select column_name, data_type, udt_name, is_nullable, column_default, is_identity, is_generated, ordinal_position
+           from information_schema.columns
+          where table_schema = $1 and table_name = $2
+          order by ordinal_position asc`,
+        [schema, table]
+      );
+      if (columns.rows.length === 0) {
+        throw new AppError(404, 'TABLE_NOT_FOUND', 'Table or view not found');
+      }
 
-    const primaryKeys = await pool.query<{ column_name: string }>(
-      `select kcu.column_name
-         from information_schema.table_constraints tc
-         join information_schema.key_column_usage kcu
-           on tc.constraint_name = kcu.constraint_name
-          and tc.table_schema = kcu.table_schema
-        where tc.constraint_type = 'PRIMARY KEY'
-          and tc.table_schema = $1
-          and tc.table_name = $2
-        order by kcu.ordinal_position asc`,
-      [schema, table]
-    );
+      const primaryKeys = await pool.query<{ column_name: string }>(
+        `select kcu.column_name
+           from information_schema.table_constraints tc
+           join information_schema.key_column_usage kcu
+             on tc.constraint_name = kcu.constraint_name
+            and tc.table_schema = kcu.table_schema
+          where tc.constraint_type = 'PRIMARY KEY'
+            and tc.table_schema = $1
+            and tc.table_name = $2
+          order by kcu.ordinal_position asc`,
+        [schema, table]
+      );
 
-    const pkSet = new Set(primaryKeys.rows.map((row) => row.column_name));
-    return {
-      schema,
-      table,
-      columns: columns.rows.map((column) => ({
-        name: column.column_name,
-        dataType: column.data_type,
-        udtName: column.udt_name,
-        nullable: column.is_nullable === 'YES',
-        isPrimaryKey: pkSet.has(column.column_name),
-        hasDefault: column.column_default !== null || column.is_identity === 'YES' || column.is_generated === 'ALWAYS',
-      })),
-      primaryKey: primaryKeys.rows.map((row) => row.column_name),
-      hasPrimaryKey: primaryKeys.rows.length > 0,
-    };
+      const pkSet = new Set(primaryKeys.rows.map((row) => row.column_name));
+      return {
+        schema,
+        table,
+        columns: columns.rows.map((column) => ({
+          name: column.column_name,
+          dataType: column.data_type,
+          udtName: column.udt_name,
+          nullable: column.is_nullable === 'YES',
+          isPrimaryKey: pkSet.has(column.column_name),
+          hasDefault: column.column_default !== null || column.is_identity === 'YES' || column.is_generated === 'ALWAYS',
+        })),
+        primaryKey: primaryKeys.rows.map((row) => row.column_name),
+        hasPrimaryKey: primaryKeys.rows.length > 0,
+      };
+    });
   }
 
   async browsePostgresRows(
@@ -798,28 +891,29 @@ export class DatabaseConnectionService {
     sortBy?: string,
     sortOrder: 'asc' | 'desc' = 'asc'
   ) {
-    const pool = await this.getPostgresPool(id);
-    const metadata = await this.getPostgresTableMetadata(id, schema, table);
-    const schemaSql = quoteIdent(schema);
-    const tableSql = quoteIdent(table);
-    const validColumns = new Set(metadata.columns.map((column) => column.name));
-    const orderColumn =
-      sortBy && validColumns.has(sortBy) ? sortBy : metadata.primaryKey[0] ?? metadata.columns[0]?.name;
-    const orderSql = orderColumn ? `order by ${quoteIdent(orderColumn)} ${sortOrder === 'desc' ? 'desc' : 'asc'}` : '';
-    const [countResult, rowsResult] = await Promise.all([
-      pool.query<{ total: string }>(`select count(*)::text as total from ${schemaSql}.${tableSql}`),
-      pool.query(
-        `select * from ${schemaSql}.${tableSql} ${orderSql} limit $1 offset $2`,
-        [limit, (page - 1) * limit]
-      ),
-    ]);
-    return {
-      metadata,
-      rows: rowsResult.rows,
-      total: Number(countResult.rows[0]?.total ?? 0),
-      page,
-      limit,
-    };
+    return this.withPostgresPool(id, 'query', async (pool) => {
+      const metadata = await this.getPostgresTableMetadata(id, schema, table);
+      const schemaSql = quoteIdent(schema);
+      const tableSql = quoteIdent(table);
+      const validColumns = new Set(metadata.columns.map((column) => column.name));
+      const orderColumn =
+        sortBy && validColumns.has(sortBy) ? sortBy : metadata.primaryKey[0] ?? metadata.columns[0]?.name;
+      const orderSql = orderColumn ? `order by ${quoteIdent(orderColumn)} ${sortOrder === 'desc' ? 'desc' : 'asc'}` : '';
+      const [countResult, rowsResult] = await Promise.all([
+        pool.query<{ total: string }>(`select count(*)::text as total from ${schemaSql}.${tableSql}`),
+        pool.query(
+          `select * from ${schemaSql}.${tableSql} ${orderSql} limit $1 offset $2`,
+          [limit, (page - 1) * limit]
+        ),
+      ]);
+      return {
+        metadata,
+        rows: rowsResult.rows,
+        total: Number(countResult.rows[0]?.total ?? 0),
+        page,
+        limit,
+      };
+    });
   }
 
   async insertPostgresRow(
@@ -829,29 +923,30 @@ export class DatabaseConnectionService {
     values: Record<string, unknown>,
     userId: string
   ) {
-    const pool = await this.getPostgresPool(id);
-    const metadata = await this.getPostgresTableMetadata(id, schema, table);
-    const allowedColumns = metadata.columns.map((column) => column.name).filter((name) => name in values);
-    if (allowedColumns.length === 0) {
-      throw new AppError(400, 'INVALID_ROW', 'At least one column value is required');
-    }
+    return this.withPostgresPool(id, 'query', async (pool) => {
+      const metadata = await this.getPostgresTableMetadata(id, schema, table);
+      const allowedColumns = metadata.columns.map((column) => column.name).filter((name) => name in values);
+      if (allowedColumns.length === 0) {
+        throw new AppError(400, 'INVALID_ROW', 'At least one column value is required');
+      }
 
-    const params = allowedColumns.map((column) => values[column]);
-    const schemaSql = quoteIdent(schema);
-    const tableSql = quoteIdent(table);
-    const sql = `insert into ${schemaSql}.${tableSql} (${allowedColumns.map(quoteIdent).join(', ')})
-      values (${allowedColumns.map((_, index) => `$${index + 1}`).join(', ')})
-      returning *`;
-    const result = await pool.query(sql, params);
-    await this.auditService.log({
-      userId,
-      action: 'database.postgres.row.insert',
-      resourceType: 'database',
-      resourceId: id,
-      details: { schema, table, columns: allowedColumns },
+      const params = allowedColumns.map((column) => values[column]);
+      const schemaSql = quoteIdent(schema);
+      const tableSql = quoteIdent(table);
+      const sql = `insert into ${schemaSql}.${tableSql} (${allowedColumns.map(quoteIdent).join(', ')})
+        values (${allowedColumns.map((_, index) => `$${index + 1}`).join(', ')})
+        returning *`;
+      const result = await pool.query(sql, params);
+      await this.auditService.log({
+        userId,
+        action: 'database.postgres.row.insert',
+        resourceType: 'database',
+        resourceId: id,
+        details: { schema, table, columns: allowedColumns },
+      });
+      this.emitChange(id, 'data.updated', { provider: 'postgres', schema, table });
+      return result.rows[0] ?? null;
     });
-    this.emitChange(id, 'data.updated', { provider: 'postgres', schema, table });
-    return result.rows[0] ?? null;
   }
 
   async updatePostgresRow(
@@ -862,165 +957,170 @@ export class DatabaseConnectionService {
     values: Record<string, unknown>,
     userId: string
   ) {
-    const pool = await this.getPostgresPool(id);
-    const metadata = await this.getPostgresTableMetadata(id, schema, table);
-    if (!metadata.hasPrimaryKey) {
-      throw new AppError(400, 'PRIMARY_KEY_REQUIRED', 'Row updates require a primary key');
-    }
-
-    const keyColumns = metadata.primaryKey;
-    for (const keyColumn of keyColumns) {
-      if (!(keyColumn in primaryKey)) {
-        throw new AppError(400, 'PRIMARY_KEY_REQUIRED', `Missing primary key column "${keyColumn}"`);
+    return this.withPostgresPool(id, 'query', async (pool) => {
+      const metadata = await this.getPostgresTableMetadata(id, schema, table);
+      if (!metadata.hasPrimaryKey) {
+        throw new AppError(400, 'PRIMARY_KEY_REQUIRED', 'Row updates require a primary key');
       }
-    }
 
-    const updateColumns = metadata.columns
-      .map((column) => column.name)
-      .filter((column) => column in values && !keyColumns.includes(column));
-    if (updateColumns.length === 0) {
-      throw new AppError(400, 'INVALID_ROW', 'No editable columns provided');
-    }
+      const keyColumns = metadata.primaryKey;
+      for (const keyColumn of keyColumns) {
+        if (!(keyColumn in primaryKey)) {
+          throw new AppError(400, 'PRIMARY_KEY_REQUIRED', `Missing primary key column "${keyColumn}"`);
+        }
+      }
 
-    const params = [...updateColumns.map((column) => values[column]), ...keyColumns.map((column) => primaryKey[column])];
-    const setSql = updateColumns
-      .map((column, index) => `${quoteIdent(column)} = $${index + 1}`)
-      .join(', ');
-    const whereSql = keyColumns
-      .map((column, index) => `${quoteIdent(column)} = $${updateColumns.length + index + 1}`)
-      .join(' and ');
+      const updateColumns = metadata.columns
+        .map((column) => column.name)
+        .filter((column) => column in values && !keyColumns.includes(column));
+      if (updateColumns.length === 0) {
+        throw new AppError(400, 'INVALID_ROW', 'No editable columns provided');
+      }
 
-    const result = await pool.query(
-      `update ${quoteIdent(schema)}.${quoteIdent(table)}
-          set ${setSql}
-        where ${whereSql}
-      returning *`,
-      params
-    );
-    await this.auditService.log({
-      userId,
-      action: 'database.postgres.row.update',
-      resourceType: 'database',
-      resourceId: id,
-      details: { schema, table, primaryKey: Object.keys(primaryKey), columns: updateColumns },
+      const params = [...updateColumns.map((column) => values[column]), ...keyColumns.map((column) => primaryKey[column])];
+      const setSql = updateColumns
+        .map((column, index) => `${quoteIdent(column)} = $${index + 1}`)
+        .join(', ');
+      const whereSql = keyColumns
+        .map((column, index) => `${quoteIdent(column)} = $${updateColumns.length + index + 1}`)
+        .join(' and ');
+
+      const result = await pool.query(
+        `update ${quoteIdent(schema)}.${quoteIdent(table)}
+            set ${setSql}
+          where ${whereSql}
+        returning *`,
+        params
+      );
+      await this.auditService.log({
+        userId,
+        action: 'database.postgres.row.update',
+        resourceType: 'database',
+        resourceId: id,
+        details: { schema, table, primaryKey: Object.keys(primaryKey), columns: updateColumns },
+      });
+      this.emitChange(id, 'data.updated', { provider: 'postgres', schema, table });
+      return result.rows[0] ?? null;
     });
-    this.emitChange(id, 'data.updated', { provider: 'postgres', schema, table });
-    return result.rows[0] ?? null;
   }
 
   async deletePostgresRow(id: string, schema: string, table: string, primaryKey: Record<string, unknown>, userId: string) {
-    const pool = await this.getPostgresPool(id);
-    const metadata = await this.getPostgresTableMetadata(id, schema, table);
-    if (!metadata.hasPrimaryKey) {
-      throw new AppError(400, 'PRIMARY_KEY_REQUIRED', 'Row deletes require a primary key');
-    }
-    const keyColumns = metadata.primaryKey;
-    for (const keyColumn of keyColumns) {
-      if (!(keyColumn in primaryKey)) {
-        throw new AppError(400, 'PRIMARY_KEY_REQUIRED', `Missing primary key column "${keyColumn}"`);
+    return this.withPostgresPool(id, 'query', async (pool) => {
+      const metadata = await this.getPostgresTableMetadata(id, schema, table);
+      if (!metadata.hasPrimaryKey) {
+        throw new AppError(400, 'PRIMARY_KEY_REQUIRED', 'Row deletes require a primary key');
       }
-    }
-    const params = keyColumns.map((column) => primaryKey[column]);
-    const whereSql = keyColumns.map((column, index) => `${quoteIdent(column)} = $${index + 1}`).join(' and ');
-    await pool.query(`delete from ${quoteIdent(schema)}.${quoteIdent(table)} where ${whereSql}`, params);
-    await this.auditService.log({
-      userId,
-      action: 'database.postgres.row.delete',
-      resourceType: 'database',
-      resourceId: id,
-      details: { schema, table, primaryKey: Object.keys(primaryKey) },
+      const keyColumns = metadata.primaryKey;
+      for (const keyColumn of keyColumns) {
+        if (!(keyColumn in primaryKey)) {
+          throw new AppError(400, 'PRIMARY_KEY_REQUIRED', `Missing primary key column "${keyColumn}"`);
+        }
+      }
+      const params = keyColumns.map((column) => primaryKey[column]);
+      const whereSql = keyColumns.map((column, index) => `${quoteIdent(column)} = $${index + 1}`).join(' and ');
+      await pool.query(`delete from ${quoteIdent(schema)}.${quoteIdent(table)} where ${whereSql}`, params);
+      await this.auditService.log({
+        userId,
+        action: 'database.postgres.row.delete',
+        resourceType: 'database',
+        resourceId: id,
+        details: { schema, table, primaryKey: Object.keys(primaryKey) },
+      });
+      this.emitChange(id, 'data.updated', { provider: 'postgres', schema, table });
+      return { success: true };
     });
-    this.emitChange(id, 'data.updated', { provider: 'postgres', schema, table });
-    return { success: true };
   }
 
   async executePostgresSql(id: string, sqlText: string, userId: string) {
-    const pool = await this.getPostgresPool(id);
-    const statements = splitPostgresStatements(sqlText);
-    const result = await pool.query(sqlText);
-    const results = (Array.isArray(result) ? result : [result]).map((entry) => ({
-      command: entry.command,
-      rowCount: entry.rowCount ?? 0,
-      fields: entry.fields?.map((field: { name: string }) => field.name) ?? [],
-      rows: entry.rows,
-    }));
-    const intent = inferPostgresIntent(sqlText);
-    await this.auditService.log({
-      userId,
-      action: 'database.postgres.query',
-      resourceType: 'database',
-      resourceId: id,
-      details: {
+    return this.withPostgresPool(id, 'query', async (pool) => {
+      const statements = splitPostgresStatements(sqlText);
+      const result = await pool.query(sqlText);
+      const results = (Array.isArray(result) ? result : [result]).map((entry) => ({
+        command: entry.command,
+        rowCount: entry.rowCount ?? 0,
+        fields: entry.fields?.map((field: { name: string }) => field.name) ?? [],
+        rows: entry.rows,
+      }));
+      const intent = inferPostgresIntent(sqlText);
+      await this.auditService.log({
+        userId,
+        action: 'database.postgres.query',
+        resourceType: 'database',
+        resourceId: id,
+        details: {
+          intent,
+          statementCount: statements.length,
+          statementHash: hashPreview(sqlText),
+          statementPreview: sqlText.trim().slice(0, 160),
+        },
+      });
+      this.emitChange(id, 'query.executed', {
+        provider: 'postgres',
         intent,
         statementCount: statements.length,
-        statementHash: hashPreview(sqlText),
-        statementPreview: sqlText.trim().slice(0, 160),
-      },
+      });
+      return { results };
     });
-    this.emitChange(id, 'query.executed', {
-      provider: 'postgres',
-      intent,
-      statementCount: statements.length,
-    });
-    return { results };
   }
 
   async scanRedisKeys(id: string, cursor: number, limit: number, search?: string, type?: string) {
-    const client = await this.getRedisClient(id);
-    const args = [`${cursor}`];
-    if (search) args.push('MATCH', search.includes('*') ? search : `*${search}*`);
-    args.push('COUNT', `${limit}`);
-    if (type) args.push('TYPE', type);
-    const [nextCursor, keys] = (await (client as any).scan(...args)) as [string, string[]];
-    const rows = await Promise.all(
-      keys.map(async (key) => ({
-        key,
-        type: await client.type(key),
-        ttlSeconds: await client.ttl(key),
-      }))
-    );
-    return {
-      cursor: Number(nextCursor),
-      done: nextCursor === '0',
-      keys: rows,
-    };
+    return this.withRedisClient(id, 'query', async (client) => {
+      const args = [`${cursor}`];
+      if (search) args.push('MATCH', search.includes('*') ? search : `*${search}*`);
+      args.push('COUNT', `${limit}`);
+      if (type) args.push('TYPE', type);
+      const [nextCursor, keys] = (await (client as any).scan(...args)) as [string, string[]];
+      const rows = await Promise.all(
+        keys.map(async (key) => ({
+          key,
+          type: await client.type(key),
+          ttlSeconds: await client.ttl(key),
+        }))
+      );
+      return {
+        cursor: Number(nextCursor),
+        done: nextCursor === '0',
+        keys: rows,
+      };
+    });
   }
 
   async getRedisKey(id: string, key: string) {
-    const client = await this.getRedisClient(id);
-    const type = await client.type(key);
-    if (type === 'none') throw new AppError(404, 'KEY_NOT_FOUND', 'Redis key not found');
-    const ttlSeconds = await client.ttl(key);
-    let value: unknown;
-    switch (type) {
-      case 'string':
-        value = await client.get(key);
-        break;
-      case 'hash':
-        value = await client.hgetall(key);
-        break;
-      case 'list':
-        value = await client.lrange(key, 0, -1);
-        break;
-      case 'set':
-        value = await client.smembers(key);
-        break;
-      case 'zset': {
-        const pairs = await client.zrange(key, 0, -1, 'WITHSCORES');
-        value = pairs.reduce<Array<{ member: string; score: number }>>((acc, item, index, list) => {
-          if (index % 2 === 0) acc.push({ member: item, score: Number(list[index + 1] ?? 0) });
-          return acc;
-        }, []);
-        break;
+    return this.withRedisClient(id, 'query', async (client) => {
+      const type = await client.type(key);
+      if (type === 'none') throw new AppError(404, 'KEY_NOT_FOUND', 'Redis key not found');
+      const ttlSeconds = await client.ttl(key);
+      let value: unknown;
+      switch (type) {
+        case 'string':
+          value = await client.get(key);
+          break;
+        case 'hash':
+          value = await client.hgetall(key);
+          break;
+        case 'list':
+          value = await client.lrange(key, 0, -1);
+          break;
+        case 'set':
+          value = await client.smembers(key);
+          break;
+        case 'zset': {
+          const pairs = await client.zrange(key, 0, -1, 'WITHSCORES');
+          value = pairs.reduce<Array<{ member: string; score: number }>>((acc, item, index, list) => {
+            if (index % 2 === 0) acc.push({ member: item, score: Number(list[index + 1] ?? 0) });
+            return acc;
+          }, []);
+          break;
+        }
+        case 'stream':
+          value = await client.xrange(key, '-', '+', 'COUNT', 200);
+          break;
+        default:
+          value = await client.call('DUMP', key);
+          break;
       }
-      case 'stream':
-        value = await client.xrange(key, '-', '+', 'COUNT', 200);
-        break;
-      default:
-        value = await client.call('DUMP', key);
-        break;
-    }
-    return { key, type, ttlSeconds, value };
+      return { key, type, ttlSeconds, value };
+    });
   }
 
   async setRedisKey(
@@ -1031,111 +1131,115 @@ export class DatabaseConnectionService {
     ttlSeconds: number | undefined,
     userId: string
   ) {
-    const client = await this.getRedisClient(id);
-    const multi = client.multi();
-    multi.del(key);
-    switch (valueType) {
-      case 'string':
-        multi.set(key, String(value ?? ''));
-        break;
-      case 'hash':
-        multi.hset(key, value as Record<string, string>);
-        break;
-      case 'list':
-        multi.rpush(key, ...((Array.isArray(value) ? value : []).map((item) => String(item))));
-        break;
-      case 'set':
-        multi.sadd(key, ...((Array.isArray(value) ? value : []).map((item) => String(item))));
-        break;
-      case 'zset': {
-        const members = Array.isArray(value) ? (value as Array<{ member: string; score: number }>) : [];
-        if (members.length > 0) {
-          multi.zadd(
-            key,
-            ...members.flatMap((entry) => [`${entry.score ?? 0}`, `${entry.member ?? ''}`])
-          );
+    return this.withRedisClient(id, 'query', async (client) => {
+      const multi = client.multi();
+      multi.del(key);
+      switch (valueType) {
+        case 'string':
+          multi.set(key, String(value ?? ''));
+          break;
+        case 'hash':
+          multi.hset(key, value as Record<string, string>);
+          break;
+        case 'list':
+          multi.rpush(key, ...((Array.isArray(value) ? value : []).map((item) => String(item))));
+          break;
+        case 'set':
+          multi.sadd(key, ...((Array.isArray(value) ? value : []).map((item) => String(item))));
+          break;
+        case 'zset': {
+          const members = Array.isArray(value) ? (value as Array<{ member: string; score: number }>) : [];
+          if (members.length > 0) {
+            multi.zadd(
+              key,
+              ...members.flatMap((entry) => [`${entry.score ?? 0}`, `${entry.member ?? ''}`])
+            );
+          }
+          break;
         }
-        break;
       }
-    }
-    if (ttlSeconds !== undefined && ttlSeconds >= 0) multi.expire(key, ttlSeconds);
-    await multi.exec();
-    await this.auditService.log({
-      userId,
-      action: 'database.redis.key.set',
-      resourceType: 'database',
-      resourceId: id,
-      details: { key, type: valueType, ttlSeconds },
+      if (ttlSeconds !== undefined && ttlSeconds >= 0) multi.expire(key, ttlSeconds);
+      await multi.exec();
+      await this.auditService.log({
+        userId,
+        action: 'database.redis.key.set',
+        resourceType: 'database',
+        resourceId: id,
+        details: { key, type: valueType, ttlSeconds },
+      });
+      this.emitChange(id, 'data.updated', { provider: 'redis', key, intent: 'write' });
+      return this.getRedisKey(id, key);
     });
-    this.emitChange(id, 'data.updated', { provider: 'redis', key, intent: 'write' });
-    return this.getRedisKey(id, key);
   }
 
   async deleteRedisKey(id: string, key: string, userId: string) {
-    const client = await this.getRedisClient(id);
-    await client.del(key);
-    await this.auditService.log({
-      userId,
-      action: 'database.redis.key.delete',
-      resourceType: 'database',
-      resourceId: id,
-      details: { key },
+    return this.withRedisClient(id, 'query', async (client) => {
+      await client.del(key);
+      await this.auditService.log({
+        userId,
+        action: 'database.redis.key.delete',
+        resourceType: 'database',
+        resourceId: id,
+        details: { key },
+      });
+      this.emitChange(id, 'data.updated', { provider: 'redis', key, intent: 'write' });
+      return { success: true };
     });
-    this.emitChange(id, 'data.updated', { provider: 'redis', key, intent: 'write' });
-    return { success: true };
   }
 
   async expireRedisKey(id: string, key: string, ttlSeconds: number, userId: string) {
-    const client = await this.getRedisClient(id);
-    if (ttlSeconds < 0) {
-      await client.persist(key);
-    } else {
-      await client.expire(key, ttlSeconds);
-    }
-    await this.auditService.log({
-      userId,
-      action: 'database.redis.key.expire',
-      resourceType: 'database',
-      resourceId: id,
-      details: { key, ttlSeconds },
+    return this.withRedisClient(id, 'query', async (client) => {
+      if (ttlSeconds < 0) {
+        await client.persist(key);
+      } else {
+        await client.expire(key, ttlSeconds);
+      }
+      await this.auditService.log({
+        userId,
+        action: 'database.redis.key.expire',
+        resourceType: 'database',
+        resourceId: id,
+        details: { key, ttlSeconds },
+      });
+      this.emitChange(id, 'data.updated', { provider: 'redis', key, intent: 'write' });
+      return this.getRedisKey(id, key);
     });
-    this.emitChange(id, 'data.updated', { provider: 'redis', key, intent: 'write' });
-    return this.getRedisKey(id, key);
   }
 
   async executeRedisCommand(id: string, commandText: string, userId: string) {
-    const client = await this.getRedisClient(id);
-    const commands = splitRedisCommands(commandText);
-    const results = [];
-    const intents = new Set<'read' | 'write' | 'admin'>();
-    for (const command of commands) {
-      const parts = tokenizeRedisCommand(command);
-      const commandName = parts[0]!.toUpperCase();
-      const result = await client.call(parts[0]!, ...parts.slice(1));
-      results.push({ command: commandName, result });
-      intents.add(inferRedisSingleCommandIntent(command));
-    }
-    const intent = intents.has('admin') ? 'admin' : intents.has('write') ? 'write' : 'read';
-    await this.auditService.log({
-      userId,
-      action: 'database.redis.command.execute',
-      resourceType: 'database',
-      resourceId: id,
-      details: {
+    return this.withRedisClient(id, 'query', async (client) => {
+      const commands = splitRedisCommands(commandText);
+      const results = [];
+      const intents = new Set<'read' | 'write' | 'admin'>();
+      for (const command of commands) {
+        const parts = tokenizeRedisCommand(command);
+        const commandName = parts[0]!.toUpperCase();
+        const result = await client.call(parts[0]!, ...parts.slice(1));
+        results.push({ command: commandName, result });
+        intents.add(inferRedisSingleCommandIntent(command));
+      }
+      const intent = intents.has('admin') ? 'admin' : intents.has('write') ? 'write' : 'read';
+      await this.auditService.log({
+        userId,
+        action: 'database.redis.command.execute',
+        resourceType: 'database',
+        resourceId: id,
+        details: {
+          intent,
+          commandCount: commands.length,
+          commands: results.slice(0, 5).map((entry) => entry.command),
+          commandHash: hashPreview(commandText),
+          commandPreview: commandText.slice(0, 160),
+        },
+      });
+      this.emitChange(id, 'query.executed', {
+        provider: 'redis',
         intent,
         commandCount: commands.length,
         commands: results.slice(0, 5).map((entry) => entry.command),
-        commandHash: hashPreview(commandText),
-        commandPreview: commandText.slice(0, 160),
-      },
+      });
+      return { results };
     });
-    this.emitChange(id, 'query.executed', {
-      provider: 'redis',
-      intent,
-      commandCount: commands.length,
-      commands: results.slice(0, 5).map((entry) => entry.command),
-    });
-    return { results };
   }
 
   async getDecryptedConfig(id: string): Promise<DatabaseConnectionConfig> {
@@ -1380,6 +1484,8 @@ export class DatabaseConnectionService {
       });
       try {
         await pool.query('select 1');
+      } catch (error) {
+        this.rethrowDatabaseError(error, 'postgres', 'connect');
       } finally {
         await pool.end().catch(() => {});
       }
@@ -1397,6 +1503,8 @@ export class DatabaseConnectionService {
       try {
         await client.connect();
         await client.ping();
+      } catch (error) {
+        this.rethrowDatabaseError(error, 'redis', 'connect');
       } finally {
         await client.quit().catch(() => client.disconnect());
       }
@@ -1432,6 +1540,12 @@ export class DatabaseConnectionService {
       connectionTimeoutMillis: 15_000,
       ssl: config.sslEnabled ? { rejectUnauthorized: false } : undefined,
     });
+    try {
+      await pool.query('select 1');
+    } catch (error) {
+      await pool.end().catch(() => {});
+      this.rethrowDatabaseError(error, 'postgres', 'connect');
+    }
     this.postgresPools.set(id, pool);
     return pool;
   }
@@ -1452,7 +1566,12 @@ export class DatabaseConnectionService {
       maxRetriesPerRequest: 2,
       tls: config.tlsEnabled ? { rejectUnauthorized: false } : undefined,
     });
-    await client.connect();
+    try {
+      await client.connect();
+    } catch (error) {
+      client.disconnect();
+      this.rethrowDatabaseError(error, 'redis', 'connect');
+    }
     this.redisClients.set(id, client);
     return client;
   }
@@ -1468,6 +1587,38 @@ export class DatabaseConnectionService {
       this.redisClients.delete(id);
       await redisClient.quit().catch(() => redisClient.disconnect());
     }
+  }
+
+  private async withPostgresPool<T>(
+    id: string,
+    operation: DatabaseOperation,
+    run: (pool: pg.Pool) => Promise<T>
+  ): Promise<T> {
+    const pool = await this.getPostgresPool(id);
+    try {
+      return await run(pool);
+    } catch (error) {
+      this.rethrowDatabaseError(error, 'postgres', operation);
+    }
+  }
+
+  private async withRedisClient<T>(
+    id: string,
+    operation: DatabaseOperation,
+    run: (client: Redis) => Promise<T>
+  ): Promise<T> {
+    const client = await this.getRedisClient(id);
+    try {
+      return await run(client);
+    } catch (error) {
+      this.rethrowDatabaseError(error, 'redis', operation);
+    }
+  }
+
+  private rethrowDatabaseError(error: unknown, provider: DatabaseType, operation: DatabaseOperation): never {
+    const mapped = mapDatabaseDriverError(error, provider, operation);
+    if (mapped) throw mapped;
+    throw error;
   }
 
   private trimHealthHistory(history: DatabaseHealthEntry[]): DatabaseHealthEntry[] {

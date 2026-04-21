@@ -130,18 +130,28 @@ databaseRoutes.get('/:id/monitoring/stream', requireScopeForResource('databases:
 
   return streamSSE(c, async (stream) => {
     monitoring.registerClient(databaseId);
-    const [history, details] = await Promise.all([monitoring.getHistory(databaseId), connections.get(databaseId)]);
+    const details = await connections.get(databaseId);
     await stream.writeSSE({
       data: JSON.stringify({
         connected: true,
         databaseId,
-        history,
         healthHistory: details.healthHistory,
         healthStatus: details.healthStatus,
       }),
       event: 'connected',
     });
     await stream.sleep(0);
+
+    void monitoring
+      .getHistory(databaseId)
+      .then((history) => {
+        if (history.length === 0) return;
+        return stream.writeSSE({
+          data: JSON.stringify({ databaseId, history }),
+          event: 'history',
+        });
+      })
+      .catch(() => {});
 
     const onSnapshot = (payload: { databaseId: string; snapshot: unknown }) => {
       if (payload.databaseId !== databaseId) return;
