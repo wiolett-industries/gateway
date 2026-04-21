@@ -124,7 +124,13 @@ adminRoutes.post('/users', requireScope('admin:users'), async (c) => {
       action: 'user.create',
       resourceType: 'user',
       resourceId: createdUser.id,
-      details: { email: createdUser.email, groupId: createdUser.groupId },
+      details: {
+        targetUserId: createdUser.id,
+        targetUserEmail: createdUser.email,
+        targetUserName: createdUser.name,
+        groupId: createdUser.groupId,
+        groupName: createdUser.groupName,
+      },
       ipAddress: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || c.req.header('x-real-ip'),
       userAgent: c.req.header('user-agent'),
     });
@@ -186,7 +192,15 @@ adminRoutes.patch('/users/:id/group', requireScope('admin:users'), async (c) => 
     action: 'user.group_change',
     resourceType: 'user',
     resourceId: userId,
-    details: { newGroupId: groupId },
+    details: {
+      targetUserId: updatedUser.id,
+      targetUserEmail: updatedUser.email,
+      targetUserName: updatedUser.name,
+      previousGroupId: targetUser.groupId,
+      previousGroupName: targetUser.groupName,
+      newGroupId: updatedUser.groupId,
+      newGroupName: updatedUser.groupName,
+    },
     ipAddress: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || c.req.header('x-real-ip'),
     userAgent: c.req.header('user-agent'),
   });
@@ -232,7 +246,12 @@ adminRoutes.patch('/users/:id/block', requireScope('admin:users'), async (c) => 
     action: blocked ? 'user.block' : 'user.unblock',
     resourceType: 'user',
     resourceId: userId,
-    details: { blocked },
+    details: {
+      targetUserId: targetUser.id,
+      targetUserEmail: targetUser.email,
+      targetUserName: targetUser.name,
+      blocked,
+    },
     ipAddress: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || c.req.header('x-real-ip'),
     userAgent: c.req.header('user-agent'),
   });
@@ -272,7 +291,13 @@ adminRoutes.delete('/users/:id', requireScope('admin:users'), async (c) => {
     action: 'user.delete',
     resourceType: 'user',
     resourceId: userId,
-    details: {},
+    details: {
+      targetUserId: targetUser.id,
+      targetUserEmail: targetUser.email,
+      targetUserName: targetUser.name,
+      targetGroupId: targetUser.groupId,
+      targetGroupName: targetUser.groupName,
+    },
     ipAddress: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || c.req.header('x-real-ip'),
     userAgent: c.req.header('user-agent'),
   });

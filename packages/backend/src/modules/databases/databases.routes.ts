@@ -129,8 +129,8 @@ databaseRoutes.get('/:id/monitoring/stream', requireScopeForResource('databases:
   const connections = container.resolve(DatabaseConnectionService);
 
   return streamSSE(c, async (stream) => {
-    monitoring.registerClient(databaseId);
     const details = await connections.get(databaseId);
+    const history = await monitoring.getHistory(databaseId);
     await stream.writeSSE({
       data: JSON.stringify({
         connected: true,
@@ -142,22 +142,19 @@ databaseRoutes.get('/:id/monitoring/stream', requireScopeForResource('databases:
     });
     await stream.sleep(0);
 
-    void monitoring
-      .getHistory(databaseId)
-      .then((history) => {
-        if (history.length === 0) return;
-        return stream.writeSSE({
-          data: JSON.stringify({ databaseId, history }),
-          event: 'history',
-        });
-      })
-      .catch(() => {});
+    if (history.length > 0) {
+      await stream.writeSSE({
+        data: JSON.stringify({ databaseId, history }),
+        event: 'history',
+      });
+    }
 
     const onSnapshot = (payload: { databaseId: string; snapshot: unknown }) => {
       if (payload.databaseId !== databaseId) return;
       stream.writeSSE({ data: JSON.stringify(payload.snapshot), event: 'snapshot' }).catch(() => {});
     };
     monitoring.on('snapshot', onSnapshot);
+    monitoring.registerClient(databaseId);
 
     const keepalive = setInterval(() => {
       stream.writeSSE({ data: '', event: 'ping' }).catch(() => clearInterval(keepalive));
