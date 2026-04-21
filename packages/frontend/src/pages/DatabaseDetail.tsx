@@ -16,6 +16,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useRealtime } from "@/hooks/use-realtime";
 import { useUrlTab } from "@/hooks/use-url-tab";
+import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { usePinnedDatabasesStore } from "@/stores/pinned-databases";
@@ -41,6 +42,7 @@ export function DatabaseDetail() {
   const [pinOpen, setPinOpen] = useState(false);
   const [credentialsOpen, setCredentialsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [explorerFocused, setExplorerFocused] = useState(false);
   const [revealedCredentials, setRevealedCredentials] = useState<Record<string, unknown> | null>(
     null
   );
@@ -104,6 +106,12 @@ export function DatabaseDetail() {
   }, [activeTab, database?.type, setActiveTab]);
 
   useEffect(() => {
+    if (activeTab !== "explorer" || database?.type !== "postgres") {
+      setExplorerFocused(false);
+    }
+  }, [activeTab, database?.type]);
+
+  useEffect(() => {
     if (!database) return;
     setLiveHealthHistory(database.healthHistory ?? []);
     setLiveHealthStatus(database.healthStatus);
@@ -115,9 +123,12 @@ export function DatabaseDetail() {
     const es = api.createDatabaseMonitoringStream(database.id);
     es.addEventListener("connected", (event: MessageEvent) => {
       const message = JSON.parse(event.data);
-      setMonitoringHistory(message.history ?? []);
       setLiveHealthHistory(message.healthHistory ?? database.healthHistory ?? []);
       setLiveHealthStatus(message.healthStatus ?? database.healthStatus);
+    });
+    es.addEventListener("history", (event: MessageEvent) => {
+      const message = JSON.parse(event.data);
+      setMonitoringHistory(message.history ?? []);
     });
     es.addEventListener("snapshot", (event: MessageEvent) => {
       const snapshot = JSON.parse(event.data) as DatabaseMetricSnapshot;
@@ -214,54 +225,63 @@ export function DatabaseDetail() {
   }
 
   const isFullHeightTab = activeTab === "explorer" || activeTab === "console";
+  const hideDatabaseChrome = explorerFocused && activeTab === "explorer" && database.type === "postgres";
 
   return (
     <PageTransition>
       <div
-        className={`h-full p-6 flex flex-col gap-4 ${
-          isFullHeightTab ? "overflow-hidden" : "overflow-y-auto"
-        }`}
+        className={cn(
+          "h-full flex flex-col",
+          isFullHeightTab ? "overflow-hidden" : "overflow-y-auto",
+          hideDatabaseChrome ? "gap-0 p-0" : "gap-4 p-6"
+        )}
       >
-        <DatabaseHeader
-          database={database}
-          healthStatus={liveHealthStatus}
-          canEdit={canEdit}
-          canReveal={canReveal}
-          canDelete={canDelete}
-          onOpenPin={() => setPinOpen(true)}
-          onBack={() => navigate("/databases")}
-          onTest={() => void testConnection()}
-          onOpenSettings={() => setSettingsOpen(true)}
-          onRevealCredentials={() => void revealCredentials()}
-          onRemove={() => void remove()}
-        />
+        {!hideDatabaseChrome && (
+          <>
+            <DatabaseHeader
+              database={database}
+              healthStatus={liveHealthStatus}
+              canEdit={canEdit}
+              canReveal={canReveal}
+              canDelete={canDelete}
+              onOpenPin={() => setPinOpen(true)}
+              onBack={() => navigate("/databases")}
+              onTest={() => void testConnection()}
+              onOpenSettings={() => setSettingsOpen(true)}
+              onRevealCredentials={() => void revealCredentials()}
+              onRemove={() => void remove()}
+            />
 
-        <HealthBars history={liveHealthHistory} currentStatus={liveHealthStatus} />
+            <HealthBars history={liveHealthHistory} currentStatus={liveHealthStatus} />
+          </>
+        )}
 
         <Tabs
           value={activeTab}
           onValueChange={setActiveTab}
           className="flex flex-col flex-1 min-h-0"
         >
-          <TabsList className="shrink-0">
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            {canRead &&
-              (database.type === "postgres" ? (
-                <TabsTrigger value="explorer">Explorer</TabsTrigger>
-              ) : (
-                <TabsTrigger value="explorer" disabled>
-                  <span className="flex items-center gap-2">
-                    Explorer
-                    <Badge variant="secondary" className="text-[10px] py-0.5">
-                      SOON
-                    </Badge>
-                  </span>
-                </TabsTrigger>
-              ))}
-            {(canRead || canWrite || canAdmin) && (
-              <TabsTrigger value="console">Console</TabsTrigger>
-            )}
-          </TabsList>
+          {!hideDatabaseChrome && (
+            <TabsList className="shrink-0">
+              <TabsTrigger value="overview">Overview</TabsTrigger>
+              {canRead &&
+                (database.type === "postgres" ? (
+                  <TabsTrigger value="explorer">Explorer</TabsTrigger>
+                ) : (
+                  <TabsTrigger value="explorer" disabled>
+                    <span className="flex items-center gap-2">
+                      Explorer
+                      <Badge variant="secondary" className="text-[10px] py-0.5">
+                        SOON
+                      </Badge>
+                    </span>
+                  </TabsTrigger>
+                ))}
+              {(canRead || canWrite || canAdmin) && (
+                <TabsTrigger value="console">Console</TabsTrigger>
+              )}
+            </TabsList>
+          )}
 
           <TabsContent value="overview" className="space-y-4">
             <DatabaseOverviewTab
@@ -273,9 +293,17 @@ export function DatabaseDetail() {
           </TabsContent>
 
           {canRead && (
-            <TabsContent value="explorer" className="flex flex-col flex-1 min-h-0">
+            <TabsContent
+              value="explorer"
+              className={cn("flex flex-col flex-1 min-h-0", hideDatabaseChrome && "mt-0")}
+            >
               {database.type === "postgres" ? (
-                <PostgresExplorer database={database} canWrite={canWrite || canAdmin} />
+                <PostgresExplorer
+                  database={database}
+                  canWrite={canWrite || canAdmin}
+                  focused={explorerFocused}
+                  onToggleFocus={() => setExplorerFocused((current) => !current)}
+                />
               ) : (
                 <div className="border border-border bg-card p-8 text-center text-sm text-muted-foreground">
                   Redis explorer is coming soon.

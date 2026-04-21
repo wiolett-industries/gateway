@@ -214,7 +214,11 @@ export function DatabaseOverviewTab({
           <div className="divide-y divide-border -mb-px [&>*:last-child]:border-b [&>*:last-child]:border-border">
             <DetailRow
               label="Endpoint"
-              value={<span className="font-mono">{database.host}:{database.port}</span>}
+              value={
+                <span className="block break-all font-mono">
+                  {database.host}:{database.port}
+                </span>
+              }
             />
             <DetailRow
               label="Target"
