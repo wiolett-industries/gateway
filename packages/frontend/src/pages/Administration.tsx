@@ -1,6 +1,8 @@
-import { useEffect, useMemo } from "react";
+import { Plus } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { PageTransition } from "@/components/common/PageTransition";
+import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useUrlTab } from "@/hooks/use-url-tab";
 import { useAuthStore } from "@/stores/auth";
@@ -12,6 +14,8 @@ type AdministrationTab = "users" | "groups" | "audit";
 
 export function Administration() {
   const { hasScope } = useAuthStore();
+  const [usersCreateRequest, setUsersCreateRequest] = useState(0);
+  const [groupsCreateRequest, setGroupsCreateRequest] = useState(0);
   const canUsers = hasScope("admin:users");
   const canGroups = hasScope("admin:groups");
   const canAudit = hasScope("admin:audit");
@@ -40,17 +44,50 @@ export function Administration() {
     return <Navigate to="/" replace />;
   }
 
+  const tabMeta: Record<
+    AdministrationTab,
+    { title: string; subtitle: string; actionLabel?: string; onAction?: () => void }
+  > = {
+    users: {
+      title: "Users",
+      subtitle: "Manage system users and their assigned permission groups",
+      actionLabel: "Create User",
+      onAction: () => setUsersCreateRequest((value) => value + 1),
+    },
+    groups: {
+      title: "Groups",
+      subtitle: "Manage permission groups and scoped access rules",
+      actionLabel: "Create Group",
+      onAction: () => setGroupsCreateRequest((value) => value + 1),
+    },
+    audit: {
+      title: "Audit Log",
+      subtitle: "Review administrative actions and system activity",
+    },
+  };
+
+  const currentTab = (availableTabs.includes(activeTab as AdministrationTab)
+    ? activeTab
+    : availableTabs[0]) as AdministrationTab;
+  const currentMeta = tabMeta[currentTab];
+
   return (
     <PageTransition>
-      <div className="h-full overflow-y-auto p-6 space-y-4">
-        <div>
-          <h1 className="text-2xl font-bold">Administration</h1>
-          <p className="text-sm text-muted-foreground">
-            Manage users, groups, and audit activity
-          </p>
+      <div className="flex h-full min-h-0 flex-col overflow-hidden p-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold">{currentMeta.title}</h1>
+            <p className="text-sm text-muted-foreground">{currentMeta.subtitle}</p>
+          </div>
+          {currentMeta.actionLabel && currentMeta.onAction ? (
+            <Button onClick={currentMeta.onAction}>
+              <Plus className="h-4 w-4" />
+              {currentMeta.actionLabel}
+            </Button>
+          ) : null}
         </div>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-4 flex min-h-0 flex-1 flex-col">
           <TabsList>
             {canUsers && <TabsTrigger value="users">Users</TabsTrigger>}
             {canGroups && <TabsTrigger value="groups">Groups</TabsTrigger>}
@@ -58,17 +95,17 @@ export function Administration() {
           </TabsList>
 
           {canUsers && (
-            <TabsContent value="users">
-              <AdminUsers embedded />
+            <TabsContent value="users" className="mt-4 flex min-h-0 flex-1 flex-col">
+              <AdminUsers embedded createRequest={usersCreateRequest} />
             </TabsContent>
           )}
           {canGroups && (
-            <TabsContent value="groups">
-              <AdminGroups embedded />
+            <TabsContent value="groups" className="mt-4 flex min-h-0 flex-1 flex-col">
+              <AdminGroups embedded createRequest={groupsCreateRequest} />
             </TabsContent>
           )}
           {canAudit && (
-            <TabsContent value="audit">
+            <TabsContent value="audit" className="mt-4 flex min-h-0 flex-1 flex-col">
               <AuditLog embedded />
             </TabsContent>
           )}

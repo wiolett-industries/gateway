@@ -89,7 +89,13 @@ function buildFinalScopes(baseScopes: string[], resources: Record<string, string
   return result;
 }
 
-export function AdminGroups({ embedded = false }: { embedded?: boolean }) {
+export function AdminGroups({
+  embedded = false,
+  createRequest = 0,
+}: {
+  embedded?: boolean;
+  createRequest?: number;
+}) {
   const navigate = useNavigate();
   const hasScope = useAuthStore((s) => s.hasScope);
   const { cas, fetchCAs } = useCAStore();
@@ -186,6 +192,11 @@ export function AdminGroups({ embedded = false }: { embedded?: boolean }) {
     setScopeSearch("");
     setDialogOpen(true);
   };
+
+  useEffect(() => {
+    if (!embedded || createRequest === 0) return;
+    openCreateDialog();
+  }, [createRequest, embedded]);
 
   const openEditDialog = (group: PermissionGroup) => {
     setEditingGroup(group);
@@ -300,19 +311,21 @@ export function AdminGroups({ embedded = false }: { embedded?: boolean }) {
           embedded ? "h-full overflow-y-auto space-y-4" : "h-full overflow-y-auto p-6 space-y-4"
         }
       >
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h1 className="text-2xl font-bold">Permission Groups</h1>
-            <p className="text-sm text-muted-foreground">
-              {groups.length} group{groups.length !== 1 ? "s" : ""} &middot; Manage scoped access
-              control
-            </p>
+        {!embedded && (
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h1 className="text-2xl font-bold">Permission Groups</h1>
+              <p className="text-sm text-muted-foreground">
+                {groups.length} group{groups.length !== 1 ? "s" : ""} &middot; Manage scoped access
+                control
+              </p>
+            </div>
+            <Button onClick={openCreateDialog}>
+              <Plus className="h-4 w-4" />
+              Create Group
+            </Button>
           </div>
-          <Button onClick={openCreateDialog}>
-            <Plus className="h-4 w-4" />
-            Create Group
-          </Button>
-        </div>
+        )}
 
         {groups.length > 0 ? (
           <div className="border border-border bg-card">

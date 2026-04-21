@@ -42,7 +42,13 @@ function getInitials(name: string | null, email: string): string {
   return email[0].toUpperCase();
 }
 
-export function AdminUsers({ embedded = false }: { embedded?: boolean }) {
+export function AdminUsers({
+  embedded = false,
+  createRequest = 0,
+}: {
+  embedded?: boolean;
+  createRequest?: number;
+}) {
   const navigate = useNavigate();
   const { user: currentUser, hasScope } = useAuthStore();
   const cachedUsers = api.getCached<User[]>("admin:users");
@@ -182,6 +188,11 @@ export function AdminUsers({ embedded = false }: { embedded?: boolean }) {
     }
   };
 
+  useEffect(() => {
+    if (!embedded || createRequest === 0) return;
+    setCreateOpen(true);
+  }, [createRequest, embedded]);
+
   if (isLoading) {
     return <LoadingSpinner />;
   }
@@ -203,19 +214,21 @@ export function AdminUsers({ embedded = false }: { embedded?: boolean }) {
 
   const content = (
     <div className={embedded ? "h-full overflow-y-auto space-y-4" : "h-full overflow-y-auto p-6 space-y-4"}>
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold">Users</h1>
-            <p className="text-sm text-muted-foreground">
-              {users.length} user{users.length !== 1 ? "s" : ""}
-              {summaryParts.length > 0 && <> &middot; {summaryParts.join(", ")}</>}
-            </p>
+        {!embedded && (
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-bold">Users</h1>
+              <p className="text-sm text-muted-foreground">
+                {users.length} user{users.length !== 1 ? "s" : ""}
+                {summaryParts.length > 0 && <> &middot; {summaryParts.join(", ")}</>}
+              </p>
+            </div>
+            <Button onClick={() => setCreateOpen(true)}>
+              <Plus className="h-4 w-4" />
+              Create User
+            </Button>
           </div>
-          <Button onClick={() => setCreateOpen(true)}>
-            <Plus className="h-4 w-4" />
-            Create User
-          </Button>
-        </div>
+        )}
 
         {users.length > 0 ? (
           <div className="border border-border bg-card">
