@@ -171,30 +171,37 @@ export function DockerFolderGroup({
             transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
             className="overflow-hidden"
           >
-            {folder.children.map((child) => (
-              <DockerFolderGroup
-                key={child.id}
-                folder={child}
-                depth={depth + 1}
-                expanded={expandedFolderIds.has(child.id)}
-                onToggle={() => onToggleFolder(child.id)}
-                onRename={onRename}
-                onDelete={onDelete}
-                onRequestCreateSubfolder={onRequestCreateSubfolder}
-                onStart={onStart}
-                onStop={onStop}
-                onRestart={onRestart}
-                actionLoading={actionLoading}
-                onMoveContainerToFolder={onMoveContainerToFolder}
-                expandedFolderIds={expandedFolderIds}
-                onToggleFolder={onToggleFolder}
-                canManage={canManage}
-                canReorganize={canReorganize}
-                canView={canView}
-                showNode={showNode}
-                colGroup={colGroup}
-              />
-            ))}
+            {folder.children.length > 0 && (
+              <SortableContext
+                items={folder.children.map((child) => `docker-folder-${child.id}`)}
+                strategy={verticalListSortingStrategy}
+              >
+                {folder.children.map((child) => (
+                  <DockerFolderGroup
+                    key={child.id}
+                    folder={child}
+                    depth={depth + 1}
+                    expanded={expandedFolderIds.has(child.id)}
+                    onToggle={() => onToggleFolder(child.id)}
+                    onRename={onRename}
+                    onDelete={onDelete}
+                    onRequestCreateSubfolder={onRequestCreateSubfolder}
+                    onStart={onStart}
+                    onStop={onStop}
+                    onRestart={onRestart}
+                    actionLoading={actionLoading}
+                    onMoveContainerToFolder={onMoveContainerToFolder}
+                    expandedFolderIds={expandedFolderIds}
+                    onToggleFolder={onToggleFolder}
+                    canManage={canManage}
+                    canReorganize={canReorganize}
+                    canView={canView}
+                    showNode={showNode}
+                    colGroup={colGroup}
+                  />
+                ))}
+              </SortableContext>
+            )}
 
             {folder.containers.length > 0 &&
               (folder.isSystem ? (

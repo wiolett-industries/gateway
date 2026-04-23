@@ -100,6 +100,34 @@ function collectFoldersWithHosts(nodes: FolderTreeNode[]): string[] {
   return ids;
 }
 
+function applyFolderOrder(
+  nodes: FolderTreeNode[],
+  items: { id: string; sortOrder: number }[]
+): FolderTreeNode[] {
+  const orderMap = new Map(items.map((item) => [item.id, item.sortOrder]));
+
+  const visit = (current: FolderTreeNode[]): FolderTreeNode[] => {
+    const hasTarget = current.some((node) => orderMap.has(node.id));
+    const next = current.map((node) => ({
+      ...node,
+      children: visit(node.children),
+    }));
+
+    if (!hasTarget) return next;
+
+    return [...next].sort((a, b) => {
+      const aOrder = orderMap.get(a.id);
+      const bOrder = orderMap.get(b.id);
+      if (aOrder == null && bOrder == null) return 0;
+      if (aOrder == null) return -1;
+      if (bOrder == null) return 1;
+      return aOrder - bOrder;
+    });
+  };
+
+  return visit(nodes);
+}
+
 export const useFolderStore = create<FolderState>()((set, get) => ({
   ...(() => {
     const initialExpanded = new Set(loadExpandedFolderIds());
@@ -213,8 +241,15 @@ export const useFolderStore = create<FolderState>()((set, get) => ({
   },
 
   reorderFolders: async (items) => {
-    await api.reorderFolders(items);
-    await get().fetchGroupedHosts();
+    const previousFolders = get().folders;
+    set({ folders: applyFolderOrder(previousFolders, items) });
+    try {
+      await api.reorderFolders(items);
+      await get().fetchGroupedHosts();
+    } catch (err) {
+      set({ folders: previousFolders });
+      throw err;
+    }
   },
 
   moveHostsToFolder: async (hostIds, folderId) => {

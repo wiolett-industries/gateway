@@ -53,6 +53,34 @@ function collectFolderIds(nodes: DockerFolderTreeNode[]): string[] {
   return ids;
 }
 
+function applyFolderOrder(
+  nodes: DockerFolderTreeNode[],
+  items: { id: string; sortOrder: number }[]
+): DockerFolderTreeNode[] {
+  const orderMap = new Map(items.map((item) => [item.id, item.sortOrder]));
+
+  const visit = (current: DockerFolderTreeNode[]): DockerFolderTreeNode[] => {
+    const hasTarget = current.some((node) => orderMap.has(node.id));
+    const next = current.map((node) => ({
+      ...node,
+      children: visit(node.children),
+    }));
+
+    if (!hasTarget) return next;
+
+    return [...next].sort((a, b) => {
+      const aOrder = orderMap.get(a.id);
+      const bOrder = orderMap.get(b.id);
+      if (aOrder == null && bOrder == null) return 0;
+      if (aOrder == null) return -1;
+      if (bOrder == null) return 1;
+      return aOrder - bOrder;
+    });
+  };
+
+  return visit(nodes);
+}
+
 export const useDockerFolderStore = create<DockerFolderState>()((set, get) => ({
   ...(() => {
     const initialExpanded = new Set(loadExpandedFolderIds());
@@ -111,8 +139,15 @@ export const useDockerFolderStore = create<DockerFolderState>()((set, get) => ({
   },
 
   reorderFolders: async (items) => {
-    await api.reorderDockerFolders(items);
-    await get().fetchFolders();
+    const previousFolders = get().folders;
+    set({ folders: applyFolderOrder(previousFolders, items) });
+    try {
+      await api.reorderDockerFolders(items);
+      await get().fetchFolders();
+    } catch (err) {
+      set({ folders: previousFolders });
+      throw err;
+    }
   },
 
   moveContainersToFolder: async (items, folderId) => {
