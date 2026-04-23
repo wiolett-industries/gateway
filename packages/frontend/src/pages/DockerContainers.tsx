@@ -1,23 +1,32 @@
 import {
-  Box,
-  CornerDownRight,
-  Layers,
-  Play,
-  Plus,
-  RefreshCw,
-  ScrollText,
-  Square,
-} from "lucide-react";
+  DndContext,
+  type DragEndEvent,
+  PointerSensor,
+  useDroppable,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
+import { FolderCreateDialog } from "@/components/common/FolderCreateDialog";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
 import { SearchFilterBar } from "@/components/common/SearchFilterBar";
+import { DockerDragOverlay } from "@/components/docker/DockerDragOverlay";
+import {
+  DockerFolderGroup,
+  type DockerFolderTreeNodeWithContainers,
+} from "@/components/docker/DockerFolderGroup";
+import {
+  DockerMoveToFolderDialog,
+} from "@/components/docker/DockerMoveToFolderDialog";
+import { type DockerContainerRowData, DockerContainerRow } from "@/components/docker/DockerContainerRow";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 import { RefreshButton } from "@/components/ui/refresh-button";
 import {
   Select,
@@ -26,29 +35,84 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { TruncateStart } from "@/components/ui/truncate-start";
 import { useRealtime } from "@/hooks/use-realtime";
-import { formatCreated } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
+import { useDockerFolderStore } from "@/stores/docker-folders";
 import { useDockerStore } from "@/stores/docker";
-import type { DockerContainer, Node } from "@/types";
+import type { DockerFolderTreeNode, Node } from "@/types";
 import { isNodeIncompatible } from "@/types";
 import { DockerDeployDialog } from "./DockerDeployDialog";
-import { containerDisplayName, STATUS_BADGE } from "./docker-detail/helpers";
+import { containerDisplayName } from "./docker-detail/helpers";
+
+function UngroupedDropZone({ children }: { children: React.ReactNode }) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: "docker-folder-ungrouped",
+    data: { type: "folder", folderId: null, isSystem: false },
+  });
+
+  return (
+    <div ref={setNodeRef} className={isOver ? "bg-accent/30" : ""}>
+      {children}
+    </div>
+  );
+}
+
+function sortContainers(containers: DockerContainerRowData[]) {
+  return [...containers].sort((a, b) => {
+    const aOrder = a.folderSortOrder ?? 0;
+    const bOrder = b.folderSortOrder ?? 0;
+    if (aOrder !== bOrder) return aOrder - bOrder;
+    return containerDisplayName(a.name).localeCompare(containerDisplayName(b.name));
+  });
+}
+
+function attachContainersToFolders(
+  folders: DockerFolderTreeNode[],
+  containers: DockerContainerRowData[]
+): DockerFolderTreeNodeWithContainers[] {
+  const containersByFolder = new Map<string, DockerContainerRowData[]>();
+  for (const container of containers) {
+    if (!container.folderId) continue;
+    const current = containersByFolder.get(container.folderId) ?? [];
+    current.push(container);
+    containersByFolder.set(container.folderId, current);
+  }
+
+  const mapNode = (folder: DockerFolderTreeNode): DockerFolderTreeNodeWithContainers => ({
+    ...folder,
+    containers: sortContainers(containersByFolder.get(folder.id) ?? []),
+    children: folder.children.map(mapNode),
+  });
+
+  return folders.map(mapNode);
+}
+
+function findContainersInFolder(
+  nodes: DockerFolderTreeNodeWithContainers[],
+  folderId: string
+): DockerContainerRowData[] {
+  for (const node of nodes) {
+    if (node.id === folderId) return node.containers;
+    const found = findContainersInFolder(node.children, folderId);
+    if (found.length > 0) return found;
+  }
+  return [];
+}
 
 export function DockerContainers({
   embedded,
   onDeployRef,
+  onCreateFolderRef,
   fixedNodeId,
 }: {
   embedded?: boolean;
   onDeployRef?: (fn: () => void) => void;
+  onCreateFolderRef?: (fn: () => void) => void;
   fixedNodeId?: string;
 } = {}) {
-  const navigate = useNavigate();
   const { hasScope, hasScopedAccess } = useAuthStore();
-  const containers = useDockerStore((s) => s.containers);
+  const containers = useDockerStore((s) => s.containers) as DockerContainerRowData[];
   const selectedNodeId = useDockerStore((s) => s.selectedNodeId);
   const filters = useDockerStore((s) => s.filters);
   const isLoading = useDockerStore((s) => s.isLoading);
@@ -59,43 +123,59 @@ export function DockerContainers({
   const forceFetchContainers = useDockerStore((s) => s.forceFetchContainers);
   const visibleNodeId = fixedNodeId ?? selectedNodeId;
 
-  // Realtime: refetch the list whenever any container on the visible node(s) changes.
-  useRealtime("docker.container.changed", (payload) => {
-    const ev = payload as { nodeId?: string };
-    if (!ev) return;
-    // If we're scoped to a single node, ignore events from other nodes
-    if (visibleNodeId && ev.nodeId && ev.nodeId !== visibleNodeId) return;
-    forceFetchContainers(fixedNodeId);
-  });
-  useRealtime("docker.task.changed", (payload) => {
-    const ev = payload as { nodeId?: string };
-    if (!ev) return;
-    if (visibleNodeId && ev.nodeId && ev.nodeId !== visibleNodeId) return;
-    forceFetchContainers(fixedNodeId);
-  });
+  const {
+    folders,
+    isLoading: foldersLoading,
+    expandedFolderIds,
+    fetchFolders,
+    createFolder,
+    renameFolder,
+    deleteFolder,
+    reorderFolders,
+    moveContainersToFolder,
+    reorderContainers,
+    toggleFolder,
+  } = useDockerFolderStore();
 
   const [searchInput, setSearchInput] = useState(filters.search);
   const [dockerNodes, setDockerNodes] = useState<Node[]>([]);
   const [nodesLoading, setNodesLoading] = useState(true);
-
-  // Action loading states keyed by container id
   const [actionLoading, setActionLoading] = useState<Record<string, string>>({});
-
-  // Deploy dialog state
   const [deployOpen, setDeployOpen] = useState(false);
+  const [createFolderParentId, setCreateFolderParentId] = useState<string | null>(null);
+  const [createFolderOpen, setCreateFolderOpen] = useState(false);
+  const [moveDialogContainer, setMoveDialogContainer] = useState<DockerContainerRowData | null>(null);
+  const [activeDrag, setActiveDrag] = useState<DragEndEvent["active"] | null>(null);
+  const [optimisticContainers, setOptimisticContainers] = useState<DockerContainerRowData[] | null>(null);
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 8 },
+    })
+  );
+
   const openDeploy = useCallback(() => setDeployOpen(true), []);
 
-  // Expose deploy dialog opener to parent
   useEffect(() => {
     onDeployRef?.(openDeploy);
   }, [onDeployRef, openDeploy]);
 
-  // When fixedNodeId is set (e.g. from node detail page), use it directly
   useEffect(() => {
-    if (fixedNodeId) {
-      setSelectedNode(fixedNodeId);
-    }
+    onCreateFolderRef?.(() => {
+      setCreateFolderParentId(null);
+      setCreateFolderOpen(true);
+    });
+  }, [onCreateFolderRef]);
+
+  useEffect(() => {
+    if (fixedNodeId) setSelectedNode(fixedNodeId);
   }, [fixedNodeId, setSelectedNode]);
+
+  useEffect(() => {
+    if (embedded || fixedNodeId) return;
+    return () => {
+      setSelectedNode(null);
+    };
+  }, [embedded, fixedNodeId, setSelectedNode]);
 
   const loadDockerNodes = useCallback(async () => {
     setNodesLoading(true);
@@ -119,27 +199,52 @@ export function DockerContainers({
     void loadDockerNodes();
   }, [embedded, loadDockerNodes]);
 
-  // Fetch containers and auto-refresh every 30s
   useEffect(() => {
-    fetchContainers(fixedNodeId);
-    const interval = setInterval(() => fetchContainers(fixedNodeId), 30_000);
-    return () => clearInterval(interval);
-  }, [fetchContainers, fixedNodeId]);
+    setOptimisticContainers(null);
+  }, [containers]);
 
-  // Sync search input with store filter
+  const refreshData = useCallback(
+    async (force = false) => {
+      if (force) {
+        await forceFetchContainers(fixedNodeId);
+      } else {
+        await fetchContainers(fixedNodeId);
+      }
+      await fetchFolders();
+    },
+    [fetchContainers, fetchFolders, fixedNodeId, forceFetchContainers]
+  );
+
+  useEffect(() => {
+    void refreshData();
+    const interval = setInterval(() => void refreshData(), 30_000);
+    return () => clearInterval(interval);
+  }, [refreshData]);
+
+  useRealtime("docker.container.changed", (payload) => {
+    const ev = payload as { nodeId?: string };
+    if (visibleNodeId && ev.nodeId && ev.nodeId !== visibleNodeId) return;
+    void refreshData(true);
+  });
+  useRealtime("docker.task.changed", (payload) => {
+    const ev = payload as { nodeId?: string };
+    if (visibleNodeId && ev.nodeId && ev.nodeId !== visibleNodeId) return;
+    void refreshData(true);
+  });
+  useRealtime("docker.folder.changed", () => {
+    void fetchFolders();
+  });
+
   const handleSearch = useCallback(() => {
     setFilters({ search: searchInput });
   }, [searchInput, setFilters]);
 
-  // Filter containers based on status and search
+  const visibleContainers = optimisticContainers ?? containers;
+
   const filteredContainers = useMemo(() => {
-    let result = containers;
+    let result = [...visibleContainers];
     if (filters.status !== "all") {
-      if (filters.status === "running") {
-        result = result.filter((c) => c.state === "running");
-      } else if (filters.status === "stopped") {
-        result = result.filter((c) => c.state !== "running");
-      }
+      result = result.filter((c) => (filters.status === "running" ? c.state === "running" : c.state !== "running"));
     }
     if (filters.search) {
       const q = filters.search.toLowerCase();
@@ -150,46 +255,52 @@ export function DockerContainers({
           c.id.toLowerCase().includes(q)
       );
     }
-    // Sort: compose groups together (alphabetically), then standalone
-    result.sort((a, b) => {
-      const pa = a.labels?.["com.docker.compose.project"] ?? "";
-      const pb = b.labels?.["com.docker.compose.project"] ?? "";
-      if (pa && !pb) return -1;
-      if (!pa && pb) return 1;
-      if (pa !== pb) return pa.localeCompare(pb);
-      // Within same compose project, sort by service name
-      const sa = a.labels?.["com.docker.compose.service"] ?? a.name;
-      const sb = b.labels?.["com.docker.compose.service"] ?? b.name;
-      return sa.localeCompare(sb);
-    });
     return result;
-  }, [containers, filters]);
+  }, [filters, visibleContainers]);
 
-  // Compose group metrics
-  const composeGroups = useMemo(() => {
-    const groups = new Map<string, { total: number; running: number; nodeId: string }>();
-    for (const c of filteredContainers) {
-      const project = c.labels?.["com.docker.compose.project"];
-      if (!project) continue;
-      const g = groups.get(project) ?? { total: 0, running: 0, nodeId: (c as any)._nodeId || "" };
-      g.total++;
-      if (c.state === "running") g.running++;
-      groups.set(project, g);
-    }
-    return groups;
-  }, [filteredContainers]);
+  const folderTree = useMemo(
+    () => attachContainersToFolders(folders, filteredContainers),
+    [folders, filteredContainers]
+  );
+
+  const folderIds = useMemo(() => new Set(folders.map((folder) => folder.id)), [folders]);
+  const ungroupedContainers = useMemo(
+    () => sortContainers(filteredContainers.filter((container) => !container.folderId || !folderIds.has(container.folderId))),
+    [filteredContainers, folderIds]
+  );
 
   const hasActiveFilters = filters.search !== "" || filters.status !== "all";
+  const canManageFolders = hasScopedAccess("docker:containers:edit");
+  const canManageRuntime = hasScopedAccess("docker:containers:manage");
+  const showActionsColumn = canManageFolders || canManageRuntime;
+  const showNodeColumn = !fixedNodeId;
 
-  // Container actions
+  const canViewContainer = useCallback(
+    (container: DockerContainerRowData) =>
+      hasScope("docker:containers:view") || hasScope(`docker:containers:view:${container._nodeId}`),
+    [hasScope]
+  );
+
+  const canManageContainer = useCallback(
+    (container: DockerContainerRowData) =>
+      hasScope("docker:containers:manage") || hasScope(`docker:containers:manage:${container._nodeId}`),
+    [hasScope]
+  );
+
+  const canReorganizeContainer = useCallback(
+    (container: DockerContainerRowData) =>
+      !container.folderIsSystem &&
+      (hasScope("docker:containers:edit") || hasScope(`docker:containers:edit:${container._nodeId}`)),
+    [hasScope]
+  );
+
   const doAction = useCallback(
     async (containerId: string, action: string, fn: () => Promise<void>) => {
       setActionLoading((prev) => ({ ...prev, [containerId]: action }));
       try {
         await fn();
         toast.success(`Container ${action} successful`);
-        // Force-fetch bypasses SWR cache; transition polling handles the rest
-        forceFetchContainers(fixedNodeId);
+        await refreshData(true);
       } catch (err) {
         toast.error(err instanceof Error ? err.message : `Failed to ${action} container`);
       } finally {
@@ -200,206 +311,245 @@ export function DockerContainers({
         });
       }
     },
-    [fixedNodeId, forceFetchContainers]
-  );
-
-  const nodeOf = useCallback(
-    (c: DockerContainer) => (c as any)._nodeId || selectedNodeId!,
-    [selectedNodeId]
-  );
-
-  const canManageContainer = useCallback(
-    (container: DockerContainer) => {
-      const containerNodeId = (container as any)._nodeId || selectedNodeId;
-      return (
-        hasScope("docker:containers:manage") ||
-        !!(containerNodeId && hasScope(`docker:containers:manage:${containerNodeId}`))
-      );
-    },
-    [hasScope, selectedNodeId]
+    [refreshData]
   );
 
   const handleStart = useCallback(
-    (c: DockerContainer) => doAction(c.id, "start", () => api.startContainer(nodeOf(c), c.id)),
-    [doAction, nodeOf]
+    (container: DockerContainerRowData) =>
+      doAction(container.id, "start", () => api.startContainer(container._nodeId, container.id)),
+    [doAction]
   );
 
   const handleStop = useCallback(
-    (c: DockerContainer) => doAction(c.id, "stop", () => api.stopContainer(nodeOf(c), c.id)),
-    [doAction, nodeOf]
+    (container: DockerContainerRowData) =>
+      doAction(container.id, "stop", () => api.stopContainer(container._nodeId, container.id)),
+    [doAction]
   );
 
   const handleRestart = useCallback(
-    (c: DockerContainer) => doAction(c.id, "restart", () => api.restartContainer(nodeOf(c), c.id)),
-    [doAction, nodeOf]
+    (container: DockerContainerRowData) =>
+      doAction(container.id, "restart", () => api.restartContainer(container._nodeId, container.id)),
+    [doAction]
   );
 
-  const allContainerColumns: DataTableColumn<DockerContainer>[] = useMemo(
-    () => [
-      {
-        key: "name",
-        header: "Name",
-        width: "minmax(0, 1.2fr)",
-        truncate: true,
-        render: (c) => {
-          const isCompose = !!c.labels?.["com.docker.compose.project"];
-          return (
-            <div className="flex items-center gap-3 min-w-0">
-              {isCompose && (
-                <CornerDownRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-              )}
-              <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-muted shrink-0">
-                <Box className="h-4 w-4 text-muted-foreground" />
-              </div>
-              <div className="min-w-0">
-                <TruncateStart
-                  text={containerDisplayName(c.name)}
-                  className="text-sm font-medium"
-                />
-                <p className="text-xs text-muted-foreground font-mono truncate">
-                  {c.id.slice(0, 12)}
-                </p>
-              </div>
-            </div>
-          );
-        },
-      },
-      {
-        key: "image",
-        header: "Image",
-        width: "minmax(0, 1.4fr)",
-        truncate: true,
-        render: (c) => <TruncateStart text={c.image} className="text-muted-foreground" />,
-      },
-      {
-        key: "node",
-        header: "Node",
-        width: "minmax(0, 0.95fr)",
-        render: (c) => (
-          <div className="min-w-0 flex">
-            <Badge variant="secondary" className="text-xs">
-              {(c as any)._nodeName || "-"}
-            </Badge>
-          </div>
-        ),
-      },
-      {
-        key: "status",
-        header: "Status",
-        width: "8.5rem",
-        render: (c) => (
-          <div className="min-w-0 flex">
-            <Badge
-              variant={STATUS_BADGE[(c as any)._transition ?? c.state] ?? "secondary"}
-              className="text-xs"
-            >
-              {(c as any)._transition ?? c.state}
-            </Badge>
-          </div>
-        ),
-      },
-      {
-        key: "created",
-        header: "Created",
-        width: "8rem",
-        render: (c) => (
-          <span className="text-muted-foreground whitespace-nowrap">
-            {formatCreated(c.created)}
-          </span>
-        ),
-      },
-      {
-        key: "actions",
-        header: "Actions",
-        width: "5.5rem",
-        align: "right" as const,
-        render: (c) => {
-          const loadingAction = actionLoading[c.id];
-          return (
-            <div
-              className="flex items-center gap-0.5 justify-end"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {!canManageContainer(c) ? null : c.state === "running" ? (
-                <>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7"
-                    disabled={!!loadingAction || !!(c as any)._transition}
-                    onClick={() => handleStop(c)}
-                    title="Stop"
-                  >
-                    <Square className="h-3.5 w-3.5" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7"
-                    disabled={!!loadingAction || !!(c as any)._transition}
-                    onClick={() => handleRestart(c)}
-                    title="Restart"
-                  >
-                    <RefreshCw className="h-3.5 w-3.5" />
-                  </Button>
-                </>
-              ) : (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7"
-                  disabled={!!loadingAction || !!(c as any)._transition}
-                  onClick={() => handleStart(c)}
-                  title="Start"
-                >
-                  <Play className="h-3.5 w-3.5" />
-                </Button>
-              )}
-            </div>
-          );
-        },
-      },
-    ],
-    [actionLoading, canManageContainer, handleStop, handleRestart, handleStart]
-  );
-  const containerColumns = allContainerColumns.filter((c) => {
-    if (fixedNodeId && c.key === "node") return false;
-    if (!hasScopedAccess("docker:containers:manage") && c.key === "actions") return false;
-    return true;
-  });
+  const handleCreateFolder = async (name: string) => {
+    try {
+      await createFolder(name, createFolderParentId ?? undefined);
+      toast.success("Folder created");
+      setCreateFolderOpen(false);
+      setCreateFolderParentId(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to create folder");
+    }
+  };
 
-  const canOpenContainer = useCallback(
-    (container: DockerContainer) => {
-      const containerNodeId = (container as any)._nodeId || selectedNodeId;
-      return (
-        hasScope("docker:containers:view") ||
-        !!(containerNodeId && hasScope(`docker:containers:view:${containerNodeId}`))
-      );
+  const handleRenameFolder = async (id: string, name: string) => {
+    try {
+      await renameFolder(id, name);
+      toast.success("Folder renamed");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to rename folder");
+    }
+  };
+
+  const handleDeleteFolder = async (id: string) => {
+    const ok = await confirm({
+      title: "Delete Folder",
+      description: "Are you sure? Containers inside will be moved to ungrouped. Subfolders will be deleted.",
+      confirmLabel: "Delete",
+    });
+    if (!ok) return;
+    try {
+      await deleteFolder(id);
+      toast.success("Folder deleted");
+      await refreshData(true);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to delete folder");
+    }
+  };
+
+  const applyOptimisticMove = useCallback(
+    (container: DockerContainerRowData, folderId: string | null) => {
+      const targetFolder = folderId ? folders.find((folder) => folder.id === folderId) ?? null : null;
+      setOptimisticContainers((current) => {
+        const source = (current ?? containers).map((item) => ({ ...item }));
+        const moving = source.find((item) => item._nodeId === container._nodeId && item.name === container.name);
+        if (!moving) return source;
+
+        const maxSortOrder = source.reduce((max, item) => {
+          if ((item.folderId ?? null) !== folderId) return max;
+          return Math.max(max, item.folderSortOrder ?? 0);
+        }, -1);
+
+        moving.folderId = folderId;
+        moving.folderIsSystem = targetFolder?.isSystem ?? false;
+        moving.folderSortOrder = maxSortOrder + 1;
+        return source;
+      });
     },
-    [hasScope, selectedNodeId]
+    [containers, folders]
+  );
+
+  const applyOptimisticReorder = useCallback(
+    (reordered: DockerContainerRowData[]) => {
+      setOptimisticContainers((current) => {
+        const source = (current ?? containers).map((container) => ({ ...container }));
+        const orderMap = new Map<string, number>(
+          reordered.map((container, index) => [`${container._nodeId}:${container.name}`, index] as const)
+        );
+        for (const container of source) {
+          const key = `${container._nodeId}:${container.name}`;
+          if (orderMap.has(key)) {
+            container.folderSortOrder = orderMap.get(key);
+          }
+        }
+        return source;
+      });
+    },
+    [containers]
+  );
+
+  const moveContainer = useCallback(
+    async (container: DockerContainerRowData, folderId: string | null) => {
+      applyOptimisticMove(container, folderId);
+      try {
+        await moveContainersToFolder([{ nodeId: container._nodeId, containerName: container.name }], folderId);
+        toast.success("Container moved");
+        await refreshData(true);
+      } catch (err) {
+        setOptimisticContainers(null);
+        toast.error(err instanceof Error ? err.message : "Failed to move container");
+      }
+    },
+    [applyOptimisticMove, moveContainersToFolder, refreshData]
+  );
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    setActiveDrag(null);
+    const { active, over } = event;
+    if (!over) return;
+
+    const activeData = active.data.current;
+    const dropData = over.data.current;
+
+    if (activeData?.type === "folder") {
+      if (dropData?.type !== "folder" || active.id === over.id || dropData.isSystem || activeData.isSystem) return;
+      const findFolderSiblings = (
+        nodes: typeof folders,
+        folderId: string,
+        parentId: string | null = null
+      ): { siblings: typeof folders; parentId: string | null } | null => {
+        for (const node of nodes) {
+          if (node.id === folderId) return { siblings: nodes, parentId };
+          const found = findFolderSiblings(node.children as typeof folders, folderId, node.id);
+          if (found) return found;
+        }
+        return null;
+      };
+      const activeGroup = findFolderSiblings(folders, activeData.folderId as string);
+      const overGroup = findFolderSiblings(folders, dropData.folderId as string);
+      if (!activeGroup || !overGroup || activeGroup.parentId !== overGroup.parentId) return;
+      const oldIndex = activeGroup.siblings.findIndex((folder) => folder.id === activeData.folderId);
+      const newIndex = overGroup.siblings.findIndex((folder) => folder.id === dropData.folderId);
+      if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
+      const reordered = [...activeGroup.siblings];
+      const [moved] = reordered.splice(oldIndex, 1);
+      reordered.splice(newIndex, 0, moved);
+      try {
+        await reorderFolders(reordered.map((folder, index) => ({ id: folder.id, sortOrder: index })));
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to reorder folders");
+      }
+      return;
+    }
+
+    const source = activeData?.container as DockerContainerRowData | undefined;
+    if (!source || source.folderIsSystem) return;
+
+    if (dropData?.type === "folder") {
+      const targetFolderId = dropData.folderId as string | null;
+      if (dropData.isSystem || source.folderId === targetFolderId) return;
+      await moveContainer(source, targetFolderId);
+      return;
+    }
+
+    const overContainer = dropData?.container as DockerContainerRowData | undefined;
+    if (!overContainer || active.id === over.id) return;
+    if (overContainer.folderIsSystem) return;
+
+    if (source.folderId !== overContainer.folderId) {
+      await moveContainer(source, overContainer.folderId ?? null);
+      return;
+    }
+
+    const containersInFolder = source.folderId
+      ? findContainersInFolder(folderTree, source.folderId)
+      : ungroupedContainers;
+    const oldIndex = containersInFolder.findIndex(
+      (container) => container._nodeId === source._nodeId && container.name === source.name
+    );
+    const newIndex = containersInFolder.findIndex(
+      (container) => container._nodeId === overContainer._nodeId && container.name === overContainer.name
+    );
+    if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
+
+    const reordered = [...containersInFolder];
+    const [moved] = reordered.splice(oldIndex, 1);
+    reordered.splice(newIndex, 0, moved);
+    applyOptimisticReorder(reordered);
+
+    try {
+      await reorderContainers(
+        reordered.map((container, index) => ({
+          nodeId: container._nodeId,
+          containerName: container.name,
+          sortOrder: index,
+        }))
+      );
+      await refreshData(true);
+    } catch (err) {
+      setOptimisticContainers(null);
+      toast.error(err instanceof Error ? err.message : "Failed to reorder containers");
+    }
+  };
+
+  const colGroup = (
+    <colgroup>
+      <col style={{ width: "30%" }} />
+      <col style={{ width: showNodeColumn ? "26%" : "34%" }} />
+      {showNodeColumn && <col style={{ width: "14%" }} />}
+      <col style={{ width: "12%" }} />
+      <col style={{ width: "10%" }} />
+      {showActionsColumn && <col style={{ width: "8%" }} />}
+    </colgroup>
   );
 
   const content = (
     <>
-      {/* Header — hidden in embedded mode */}
       {!embedded && (
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-2xl font-bold">Docker Containers</h1>
-              {!isLoading && selectedNodeId && (
-                <Badge variant="secondary">{containers.length}</Badge>
-              )}
+              {!isLoading && visibleNodeId && <Badge variant="secondary">{containers.length}</Badge>}
             </div>
-            <p className="text-sm text-muted-foreground">
-              Manage containers across your Docker nodes
-            </p>
+            <p className="text-sm text-muted-foreground">Manage containers across your Docker nodes</p>
           </div>
           <div className="flex items-center gap-2">
-            {selectedNodeId && (
-              <RefreshButton onClick={() => fetchContainers()} disabled={isLoading} />
+            {visibleNodeId && <RefreshButton onClick={() => void refreshData(true)} disabled={isLoading || foldersLoading} />}
+            {canManageFolders && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setCreateFolderParentId(null);
+                  setCreateFolderOpen(true);
+                }}
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                New Folder
+              </Button>
             )}
-            {hasScope("docker:containers:create") && selectedNodeId && (
+            {hasScope("docker:containers:create") && visibleNodeId && (
               <Button onClick={openDeploy}>
                 <Plus className="h-4 w-4 mr-1" />
                 Deploy Container
@@ -409,12 +559,11 @@ export function DockerContainers({
         </div>
       )}
 
-      {/* Filters */}
       <SearchFilterBar
         search={searchInput}
-        onSearchChange={(v) => {
-          setSearchInput(v);
-          setFilters({ search: v });
+        onSearchChange={(value) => {
+          setSearchInput(value);
+          setFilters({ search: value });
         }}
         onSearchSubmit={handleSearch}
         placeholder="Search containers by name or image..."
@@ -428,7 +577,7 @@ export function DockerContainers({
           <div className="flex items-center gap-3">
             <Select
               value={selectedNodeId ?? "__all__"}
-              onValueChange={(v) => setSelectedNode(v === "__all__" ? null : v)}
+              onValueChange={(value) => setSelectedNode(value === "__all__" ? null : value)}
             >
               <SelectTrigger className="w-48">
                 <SelectValue placeholder="All nodes" />
@@ -436,15 +585,15 @@ export function DockerContainers({
               <SelectContent>
                 <SelectItem value="__all__">All nodes</SelectItem>
                 {(embedded ? useDockerStore.getState().dockerNodes : dockerNodes)
-                  .filter((n) => !isNodeIncompatible(n))
-                  .map((n) => (
-                    <SelectItem key={n.id} value={n.id}>
-                      {n.displayName || n.hostname}
+                  .filter((node) => !isNodeIncompatible(node))
+                  .map((node) => (
+                    <SelectItem key={node.id} value={node.id}>
+                      {node.displayName || node.hostname}
                     </SelectItem>
                   ))}
               </SelectContent>
             </Select>
-            <Select value={filters.status} onValueChange={(v) => setFilters({ status: v })}>
+            <Select value={filters.status} onValueChange={(value) => setFilters({ status: value })}>
               <SelectTrigger className="w-36">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
@@ -467,63 +616,135 @@ export function DockerContainers({
 
       {(selectedNodeId || useDockerStore.getState().dockerNodes.length > 0 || embedded) && (
         <>
-          {/* Container list */}
-          {filteredContainers.length > 0 ? (
-            <DataTable
-              columns={containerColumns}
-              data={filteredContainers}
-              keyFn={(c) => c.id}
-              isRowClickable={canOpenContainer}
-              onRowClick={(c) => {
-                if (!canOpenContainer(c)) return;
-                navigate(`/docker/containers/${(c as any)._nodeId || selectedNodeId}/${c.id}`);
-              }}
-              emptyMessage="No containers found."
-              groupBy={(c) => {
-                const project = c.labels?.["com.docker.compose.project"];
-                if (!project) return null;
-                const g = composeGroups.get(project);
-                return {
-                  key: project,
-                  label: (
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Layers className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span className="text-xs font-medium uppercase tracking-wider">
-                          {project}
-                        </span>
-                      </div>
-                      {g && (
-                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                          <span>
-                            {g.running}/{g.total} running
-                          </span>
-                          <ScrollText className="h-3.5 w-3.5 cursor-pointer hover:text-foreground" />
-                        </div>
-                      )}
-                    </div>
-                  ),
-                };
-              }}
-              onGroupClick={(group) => {
-                // Open compose logs popout
-                const g = composeGroups.get(group.key);
-                if (g?.nodeId) {
-                  window.open(
-                    `/docker/compose-logs/${g.nodeId}/${encodeURIComponent(group.key)}`,
-                    `compose-logs-${group.key}`,
-                    "width=900,height=600"
-                  );
-                }
-              }}
-            />
-          ) : isLoading ? (
+          {isLoading || foldersLoading ? (
             <div className="flex items-center justify-center py-16">
               <div className="flex flex-col items-center gap-3">
                 <LoadingSpinner className="" />
                 <p className="text-sm text-muted-foreground">Loading containers...</p>
               </div>
             </div>
+          ) : filteredContainers.length > 0 || folders.length > 0 ? (
+            <DndContext
+              sensors={sensors}
+              onDragStart={(event) => setActiveDrag(event.active)}
+              onDragEnd={(event) => void handleDragEnd(event)}
+              onDragCancel={() => setActiveDrag(null)}
+            >
+              <div className="border border-border">
+                <table className="w-full" style={{ tableLayout: "fixed" }}>
+                  {colGroup}
+                  <thead className="border-b border-border bg-muted/40">
+                    <tr className="text-left">
+                      <th className="p-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">Name</th>
+                      <th className="p-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">Image</th>
+                      {showNodeColumn && (
+                        <th className="p-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">Node</th>
+                      )}
+                      <th className="p-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">Status</th>
+                      <th className="p-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">Created</th>
+                      {showActionsColumn && (
+                        <th className="p-3 text-xs font-medium uppercase tracking-wider text-muted-foreground text-right">
+                          Actions
+                        </th>
+                      )}
+                    </tr>
+                  </thead>
+                </table>
+
+                {folderTree.map((folder) => (
+                  <DockerFolderGroup
+                    key={folder.id}
+                    folder={folder}
+                    depth={0}
+                    expanded={expandedFolderIds.has(folder.id)}
+                    onToggle={() => toggleFolder(folder.id)}
+                    onRename={handleRenameFolder}
+                    onDelete={handleDeleteFolder}
+                    onRequestCreateSubfolder={(parentId) => {
+                      setCreateFolderParentId(parentId);
+                      setCreateFolderOpen(true);
+                    }}
+                    onStart={handleStart}
+                    onStop={handleStop}
+                    onRestart={handleRestart}
+                    actionLoading={actionLoading}
+                    onMoveContainerToFolder={setMoveDialogContainer}
+                    expandedFolderIds={expandedFolderIds}
+                    onToggleFolder={toggleFolder}
+                    canManage={canManageContainer}
+                    canReorganize={canReorganizeContainer}
+                    canView={canViewContainer}
+                    showNode={showNodeColumn}
+                    colGroup={colGroup}
+                  />
+                ))}
+
+                {(folders.length > 0 || ungroupedContainers.length > 0) && (
+                  <UngroupedDropZone>
+                    {folders.length > 0 && (
+                      <div className={`flex items-center justify-between px-3 py-2 ${ungroupedContainers.length > 0 ? "border-b border-border" : ""}`}>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium">Ungrouped</span>
+                        </div>
+                        <Badge variant="secondary" className="text-xs">
+                          {ungroupedContainers.length}
+                        </Badge>
+                      </div>
+                    )}
+                    {ungroupedContainers.length > 0 &&
+                      (canManageFolders ? (
+                        <SortableContext
+                          items={ungroupedContainers.map((container) => `${container._nodeId}:${container.name}`)}
+                          strategy={verticalListSortingStrategy}
+                        >
+                          <table className="w-full" style={{ tableLayout: "fixed" }}>
+                            {colGroup}
+                            <tbody className="[&_tr:last-child]:border-b-0">
+                              {ungroupedContainers.map((container) => (
+                                <DockerContainerRow
+                                  key={`${container._nodeId}:${container.name}`}
+                                  container={container}
+                                  canView={canViewContainer(container)}
+                                  canManage={canManageContainer(container)}
+                                  canReorganize={canReorganizeContainer(container)}
+                                  showNode={showNodeColumn}
+                                  loadingAction={actionLoading[container.id]}
+                                  onStart={handleStart}
+                                  onStop={handleStop}
+                                  onRestart={handleRestart}
+                                  onMoveToFolder={setMoveDialogContainer}
+                                />
+                              ))}
+                            </tbody>
+                          </table>
+                        </SortableContext>
+                      ) : (
+                        <table className="w-full" style={{ tableLayout: "fixed" }}>
+                          {colGroup}
+                          <tbody className="[&_tr:last-child]:border-b-0">
+                            {ungroupedContainers.map((container) => (
+                              <DockerContainerRow
+                                key={`${container._nodeId}:${container.name}`}
+                                container={container}
+                                canView={canViewContainer(container)}
+                                canManage={canManageContainer(container)}
+                                canReorganize={canReorganizeContainer(container)}
+                                showNode={showNodeColumn}
+                                loadingAction={actionLoading[container.id]}
+                                onStart={handleStart}
+                                onStop={handleStop}
+                                onRestart={handleRestart}
+                                onMoveToFolder={setMoveDialogContainer}
+                              />
+                            ))}
+                          </tbody>
+                        </table>
+                      ))}
+                  </UngroupedDropZone>
+                )}
+              </div>
+              <DockerDragOverlay active={activeDrag} colGroup={colGroup} />
+            </DndContext>
           ) : (
             <EmptyState
               message="No containers found on this node."
@@ -539,13 +760,39 @@ export function DockerContainers({
         </>
       )}
 
-      {/* Deploy Container Dialog */}
+      <DockerMoveToFolderDialog
+        open={!!moveDialogContainer}
+        onOpenChange={(open) => {
+          if (!open) setMoveDialogContainer(null);
+        }}
+        folders={folders}
+        currentFolderId={moveDialogContainer?.folderId ?? null}
+        onMove={(folderId) => {
+          if (moveDialogContainer) void moveContainer(moveDialogContainer, folderId);
+        }}
+      />
+
+      <FolderCreateDialog
+        open={createFolderOpen}
+        onOpenChange={(open) => {
+          setCreateFolderOpen(open);
+          if (!open) setCreateFolderParentId(null);
+        }}
+        title={createFolderParentId ? "Create Subfolder" : "Create Folder"}
+        description={
+          createFolderParentId
+            ? "Enter a name for the new subfolder."
+            : "Enter a name for the new folder."
+        }
+        onCreate={handleCreateFolder}
+      />
+
       <DockerDeployDialog
         open={deployOpen}
         onOpenChange={setDeployOpen}
         nodeId={selectedNodeId || undefined}
         dockerNodes={dockerNodes}
-        onDeployed={() => fetchContainers()}
+        onDeployed={() => void refreshData(true)}
       />
     </>
   );

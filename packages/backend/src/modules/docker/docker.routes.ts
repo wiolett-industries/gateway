@@ -2,6 +2,7 @@ import { OpenAPIHono } from '@hono/zod-openapi';
 import { authMiddleware, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import { registerContainerRoutes } from './docker-container.routes.js';
+import { registerDockerFolderRoutes } from './docker-folder.routes.js';
 import { registerImageRoutes } from './docker-image.routes.js';
 import { registerNetworkRoutes } from './docker-network.routes.js';
 import { registerRegistryRoutes } from './docker-registry.routes.js';
@@ -16,6 +17,7 @@ dockerRoutes.use('*', sessionOnly);
 
 // Register all route groups
 registerWebhookConfigRoutes(dockerRoutes);
+registerDockerFolderRoutes(dockerRoutes);
 registerContainerRoutes(dockerRoutes);
 registerImageRoutes(dockerRoutes);
 registerVolumeRoutes(dockerRoutes);

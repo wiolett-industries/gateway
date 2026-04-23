@@ -7,6 +7,7 @@ import type { EventBusService } from '@/services/event-bus.service.js';
 import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import type { NodeRegistryService } from '@/services/node-registry.service.js';
 import type { DockerEnvironmentService } from './docker-environment.service.js';
+import type { DockerFolderService } from './docker-folder.service.js';
 import {
   validateContainerRuntimeLimits,
   type ContainerRuntimeConfig,
@@ -42,6 +43,7 @@ export class DockerManagementService {
   private taskService?: DockerTaskService;
   private environmentService?: DockerEnvironmentService;
   private secretService?: DockerSecretService;
+  private folderService?: DockerFolderService;
   private eventBus?: EventBusService;
 
   constructor(
@@ -61,6 +63,10 @@ export class DockerManagementService {
 
   setSecretService(secretService: DockerSecretService) {
     this.secretService = secretService;
+  }
+
+  setFolderService(folderService: DockerFolderService) {
+    this.folderService = folderService;
   }
 
   setEventBus(eventBus: EventBusService) {
@@ -388,12 +394,27 @@ export class DockerManagementService {
     await this.validateDockerNode(nodeId);
     const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'list');
     const containers = this.parseResult(result);
+    const folderAssignments =
+      Array.isArray(containers) && this.folderService
+        ? await this.folderService.syncNodeContainers(nodeId, containers as any[])
+        : [];
+    const folderByName = new Map(folderAssignments.map((item) => [item.containerName, item]));
     // Inject transition states into the list (looked up by name, not ID,
     // so the badge survives recreate/update which assigns a new ID).
-    if (Array.isArray(containers) && this.containerTransitions.size > 0) {
+    if (Array.isArray(containers)) {
       for (const c of containers) {
         const cName = ((c.name ?? c.Name ?? '') as string).replace(/^\//, '');
         if (!cName) continue;
+        const folder = folderByName.get(cName);
+        if (folder) {
+          c.folderId = folder.folderId;
+          c.folderIsSystem = folder.folderIsSystem;
+          c.folderSortOrder = folder.sortOrder;
+        } else {
+          c.folderId = null;
+          c.folderIsSystem = false;
+          c.folderSortOrder = 0;
+        }
         const transition = this.getTransition(nodeId, cName);
         if (transition) c._transition = transition;
       }
@@ -555,6 +576,9 @@ export class DockerManagementService {
       resourceId: containerId,
       details: { nodeId, force },
     });
+    if (this.folderService) {
+      await this.folderService.deleteContainerAssignment(nodeId, name);
+    }
     this.emitContainer(nodeId, name, containerId, 'removed');
   }
 
@@ -574,6 +598,9 @@ export class DockerManagementService {
     }
     if (this.environmentService) {
       await this.environmentService.rename(nodeId, oldName, newName);
+    }
+    if (this.folderService) {
+      await this.folderService.renameContainerAssignment(nodeId, oldName, newName);
     }
     await this.auditService.log({
       action: 'docker.container.rename',

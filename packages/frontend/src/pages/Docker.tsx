@@ -1,4 +1,4 @@
-import { Box, HardDrive, Layers, ListTodo, Network, Plus } from "lucide-react";
+import { Box, FolderPlus, HardDrive, Layers, ListTodo, Network, Plus } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -38,6 +38,7 @@ export function Docker() {
   const isLoading = useDockerStore((s) => s.isLoading);
 
   const deployContainerRef = useRef<(() => void) | null>(null);
+  const createFolderRef = useRef<(() => void) | null>(null);
   const pullImageRef = useRef<(() => void) | null>(null);
   const createVolumeRef = useRef<(() => void) | null>(null);
   const createNetworkRef = useRef<(() => void) | null>(null);
@@ -105,12 +106,22 @@ export function Docker() {
   const renderActions = () => {
     switch (activeTab) {
       case "containers":
-        return hasScope("docker:containers:create") ? (
-          <Button onClick={() => deployContainerRef.current?.()}>
-            <Plus className="h-4 w-4 mr-1" />
-            Deploy
-          </Button>
-        ) : null;
+        return (
+          <>
+            {hasScopedAccess("docker:containers:edit") && (
+              <Button variant="outline" onClick={() => createFolderRef.current?.()}>
+                <FolderPlus className="h-4 w-4 mr-1" />
+                New Folder
+              </Button>
+            )}
+            {hasScope("docker:containers:create") && (
+              <Button onClick={() => deployContainerRef.current?.()}>
+                <Plus className="h-4 w-4 mr-1" />
+                Deploy
+              </Button>
+            )}
+          </>
+        );
       case "images":
         return hasScope("docker:images:pull") ? (
           <Button onClick={() => pullImageRef.current?.()}>
@@ -174,6 +185,9 @@ export function Docker() {
               embedded
               onDeployRef={(fn) => {
                 deployContainerRef.current = fn;
+              }}
+              onCreateFolderRef={(fn) => {
+                createFolderRef.current = fn;
               }}
             />
           </TabsContent>

@@ -1460,6 +1460,23 @@ export interface GroupedProxyHostsResponse {
   totalHosts: number;
 }
 
+export interface DockerContainerFolder {
+  id: string;
+  name: string;
+  parentId: string | null;
+  sortOrder: number;
+  depth: number;
+  isSystem: boolean;
+  nodeId: string | null;
+  composeProject: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DockerFolderTreeNode extends DockerContainerFolder {
+  children: DockerFolderTreeNode[];
+}
+
 // Nginx Config Template Types
 export interface TemplateVariableDef {
   name: string;
@@ -1697,6 +1714,9 @@ export interface DockerContainer {
   created: number;
   ports: DockerPort[];
   labels?: Record<string, string>;
+  folderId?: string | null;
+  folderIsSystem?: boolean;
+  folderSortOrder?: number;
   // Stats (from health report, optional)
   cpuPercent?: number;
   memoryUsage?: number;

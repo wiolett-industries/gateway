@@ -19,6 +19,7 @@ import { AuditService } from '@/modules/audit/audit.service.js';
 import { AuthService } from '@/modules/auth/auth.service.js';
 import { AuthSettingsService } from '@/modules/auth/auth.settings.service.js';
 import { DockerManagementService } from '@/modules/docker/docker.service.js';
+import { DockerFolderService } from '@/modules/docker/docker-folder.service.js';
 import { DockerEnvironmentService } from '@/modules/docker/docker-environment.service.js';
 import { DockerRegistryService } from '@/modules/docker/docker-registry.service.js';
 import { DockerSecretService } from '@/modules/docker/docker-secret.service.js';
@@ -212,6 +213,9 @@ export async function initializeContainer(): Promise<void> {
   const dockerManagementService = new DockerManagementService(db, auditService, nodeDispatch, nodeRegistry);
   container.registerInstance(DockerManagementService, dockerManagementService);
 
+  const dockerFolderService = new DockerFolderService(db, auditService);
+  container.registerInstance(DockerFolderService, dockerFolderService);
+
   const dockerRegistryService = new DockerRegistryService(db, auditService, cryptoService, nodeDispatch);
   container.registerInstance(DockerRegistryService, dockerRegistryService);
 
@@ -235,7 +239,9 @@ export async function initializeContainer(): Promise<void> {
   dockerManagementService.setTaskService(dockerTaskService);
   dockerManagementService.setEnvironmentService(dockerEnvironmentService);
   dockerManagementService.setSecretService(dockerSecretService);
+  dockerManagementService.setFolderService(dockerFolderService);
   dockerManagementService.setEventBus(eventBus);
+  dockerFolderService.setEventBus(eventBus);
   dockerTaskService.setEventBus(eventBus);
   dockerWebhookService.setEventBus(eventBus);
   authService.setEventBus(eventBus);

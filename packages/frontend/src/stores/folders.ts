@@ -38,6 +38,7 @@ interface FolderState {
   createFolder: (name: string, parentId?: string) => Promise<ProxyHostFolder>;
   renameFolder: (id: string, name: string) => Promise<void>;
   deleteFolder: (id: string) => Promise<void>;
+  reorderFolders: (items: { id: string; sortOrder: number }[]) => Promise<void>;
 
   // Host movement
   moveHostsToFolder: (hostIds: string[], folderId: string | null) => Promise<void>;
@@ -208,6 +209,11 @@ export const useFolderStore = create<FolderState>()((set, get) => ({
       saveExpandedFolderIds(next);
       return { expandedFolderIds: new Set(next), savedExpandedFolderIds: next };
     });
+    await get().fetchGroupedHosts();
+  },
+
+  reorderFolders: async (items) => {
+    await api.reorderFolders(items);
     await get().fetchGroupedHosts();
   },
 
