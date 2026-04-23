@@ -6,6 +6,7 @@ import {
   ChevronRight,
   Folder,
   FolderPlus,
+  Lock,
   MoreVertical,
   Pencil,
   Trash2,
@@ -20,36 +21,44 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { FolderTreeNode } from "@/types";
-import { InlineFolderEditor } from "./InlineFolderEditor";
-import { ProxyHostRow } from "./ProxyHostRow";
+import { InlineFolderEditor } from "@/components/proxy/InlineFolderEditor";
+import type { DockerFolderTreeNode } from "@/types";
+import { DockerContainerRow, type DockerContainerRowData } from "./DockerContainerRow";
 
-interface FolderGroupProps {
-  folder: FolderTreeNode;
+export interface DockerFolderTreeNodeWithContainers extends DockerFolderTreeNode {
+  containers: DockerContainerRowData[];
+  children: DockerFolderTreeNodeWithContainers[];
+}
+
+interface DockerFolderGroupProps {
+  folder: DockerFolderTreeNodeWithContainers;
   depth: number;
   expanded: boolean;
   onToggle: () => void;
   onRename: (id: string, name: string) => void;
   onDelete: (id: string) => void;
   onRequestCreateSubfolder: (parentId: string) => void;
-  onToggleHost: (id: string, currentEnabled: boolean) => void;
-  togglingIds: Set<string>;
-  onMoveHostToFolder: (hostId: string) => void;
+  onStart: (container: DockerContainerRowData) => void;
+  onStop: (container: DockerContainerRowData) => void;
+  onRestart: (container: DockerContainerRowData) => void;
+  actionLoading: Record<string, string>;
+  onMoveContainerToFolder: (container: DockerContainerRowData) => void;
   expandedFolderIds: Set<string>;
   onToggleFolder: (id: string) => void;
-  canManage: boolean;
+  canManage: (container: DockerContainerRowData) => boolean;
+  canReorganize: (container: DockerContainerRowData) => boolean;
+  canView: (container: DockerContainerRowData) => boolean;
+  showNode: boolean;
   colGroup: React.ReactNode;
 }
 
-function countAllHosts(folder: FolderTreeNode): number {
-  let count = folder.hosts.length;
-  for (const child of folder.children) {
-    count += countAllHosts(child);
-  }
+function countAllContainers(folder: DockerFolderTreeNodeWithContainers): number {
+  let count = folder.containers.length;
+  for (const child of folder.children) count += countAllContainers(child);
   return count;
 }
 
-export function FolderGroup({
+export function DockerFolderGroup({
   folder,
   depth,
   expanded,
@@ -57,31 +66,34 @@ export function FolderGroup({
   onRename,
   onDelete,
   onRequestCreateSubfolder,
-  onToggleHost,
-  togglingIds,
-  onMoveHostToFolder,
+  onStart,
+  onStop,
+  onRestart,
+  actionLoading,
+  onMoveContainerToFolder,
   expandedFolderIds,
   onToggleFolder,
   canManage,
+  canReorganize,
+  canView,
+  showNode,
   colGroup,
-}: FolderGroupProps) {
+}: DockerFolderGroupProps) {
   const [isRenaming, setIsRenaming] = useState(false);
   const { attributes, listeners, setNodeRef, transform, isDragging } = useSortable({
-    id: `folder-${folder.id}`,
-    data: { type: "folder", folderId: folder.id, folder },
-    disabled: !canManage,
+    id: `docker-folder-${folder.id}`,
+    data: { type: "folder", folderId: folder.id, isSystem: folder.isSystem, folder },
+    disabled: folder.isSystem,
   });
   const style = {
     transform: CSS.Transform.toString(transform),
     transition: isDragging ? undefined : "none",
     opacity: isDragging ? 0.3 : 1,
   };
-
-  const totalHosts = countAllHosts(folder);
+  const totalContainers = countAllContainers(folder);
 
   return (
     <div ref={setNodeRef} style={style}>
-      {/* Folder header */}
       <div
         className="flex items-center gap-2 py-2 px-3 cursor-pointer hover:bg-accent transition-colors border-b border-border"
         style={{ paddingLeft: `${depth * 24 + 12}px` }}
@@ -93,6 +105,7 @@ export function FolderGroup({
           {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
         </button>
         <Folder className="h-4 w-4 text-muted-foreground shrink-0" />
+        {folder.isSystem && <Lock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
 
         {isRenaming ? (
           <div onClick={(e) => e.stopPropagation()}>
@@ -110,10 +123,16 @@ export function FolderGroup({
         )}
 
         <Badge variant="secondary" className="text-xs ml-1">
-          {totalHosts}
+          {totalContainers}
         </Badge>
 
-        {canManage && !isRenaming && (
+        {folder.isSystem && folder.composeProject && (
+          <Badge variant="outline" className="text-xs">
+            COMPOSE
+          </Badge>
+        )}
+
+        {!folder.isSystem && !isRenaming && (
           <div className="ml-auto" onClick={(e) => e.stopPropagation()}>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -143,7 +162,6 @@ export function FolderGroup({
         )}
       </div>
 
-      {/* Expanded content */}
       <AnimatePresence initial={false}>
         {expanded && (
           <motion.div
@@ -153,9 +171,8 @@ export function FolderGroup({
             transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
             className="overflow-hidden"
           >
-            {/* Child folders */}
             {folder.children.map((child) => (
-              <FolderGroup
+              <DockerFolderGroup
                 key={child.id}
                 folder={child}
                 depth={depth + 1}
@@ -164,55 +181,71 @@ export function FolderGroup({
                 onRename={onRename}
                 onDelete={onDelete}
                 onRequestCreateSubfolder={onRequestCreateSubfolder}
-                onToggleHost={onToggleHost}
-                togglingIds={togglingIds}
-                onMoveHostToFolder={onMoveHostToFolder}
+                onStart={onStart}
+                onStop={onStop}
+                onRestart={onRestart}
+                actionLoading={actionLoading}
+                onMoveContainerToFolder={onMoveContainerToFolder}
                 expandedFolderIds={expandedFolderIds}
                 onToggleFolder={onToggleFolder}
                 canManage={canManage}
+                canReorganize={canReorganize}
+                canView={canView}
+                showNode={showNode}
                 colGroup={colGroup}
               />
             ))}
 
-            {/* Hosts in this folder */}
-            {folder.hosts.length > 0 &&
-              (canManage ? (
+            {folder.containers.length > 0 &&
+              (folder.isSystem ? (
+                <table className="w-full" style={{ tableLayout: "fixed" }}>
+                  {colGroup}
+                  <tbody>
+                    {folder.containers.map((container) => (
+                      <DockerContainerRow
+                        key={`${container._nodeId}:${container.name}`}
+                        container={container}
+                        depth={depth + 1}
+                        canView={canView(container)}
+                        canManage={canManage(container)}
+                        canReorganize={canReorganize(container)}
+                        showNode={showNode}
+                        loadingAction={actionLoading[container.id]}
+                        onStart={onStart}
+                        onStop={onStop}
+                        onRestart={onRestart}
+                        onMoveToFolder={onMoveContainerToFolder}
+                      />
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
                 <SortableContext
-                  items={folder.hosts.map((h) => h.id)}
+                  items={folder.containers.map((container) => `${container._nodeId}:${container.name}`)}
                   strategy={verticalListSortingStrategy}
                 >
                   <table className="w-full" style={{ tableLayout: "fixed" }}>
                     {colGroup}
                     <tbody>
-                      {folder.hosts.map((host) => (
-                        <ProxyHostRow
-                          key={host.id}
-                          host={host}
-                          depth={depth + 1}
-                          onToggle={onToggleHost}
-                          togglingIds={togglingIds}
-                          onMoveToFolder={onMoveHostToFolder}
+                      {folder.containers.map((container) => (
+                        <DockerContainerRow
+                          key={`${container._nodeId}:${container.name}`}
+                          container={container}
+                        depth={depth + 1}
+                        canView={canView(container)}
+                        canManage={canManage(container)}
+                        canReorganize={canReorganize(container)}
+                        showNode={showNode}
+                          loadingAction={actionLoading[container.id]}
+                          onStart={onStart}
+                          onStop={onStop}
+                          onRestart={onRestart}
+                          onMoveToFolder={onMoveContainerToFolder}
                         />
                       ))}
                     </tbody>
                   </table>
                 </SortableContext>
-              ) : (
-                <table className="w-full" style={{ tableLayout: "fixed" }}>
-                  {colGroup}
-                  <tbody>
-                    {folder.hosts.map((host) => (
-                      <ProxyHostRow
-                        key={host.id}
-                        host={host}
-                        depth={depth + 1}
-                        onToggle={onToggleHost}
-                        togglingIds={togglingIds}
-                        onMoveToFolder={onMoveHostToFolder}
-                      />
-                    ))}
-                  </tbody>
-                </table>
               ))}
           </motion.div>
         )}

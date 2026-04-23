@@ -49,7 +49,7 @@ export function ProxyHostRow({
   const { hasScope } = useAuthStore();
   const canViewHost = hasScope("proxy:view") || hasScope(`proxy:view:${host.id}`);
   const canEditHost = hasScope("proxy:edit") || hasScope(`proxy:edit:${host.id}`);
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useSortable({
     id: host.id,
     data: { type: "host", host },
     disabled: isOverlay || !canEditHost,
@@ -57,7 +57,7 @@ export function ProxyHostRow({
 
   const style = {
     transform: CSS.Transform.toString(transform),
-    transition,
+    transition: isDragging ? undefined : "none",
     opacity: isDragging ? 0.3 : 1,
   };
 

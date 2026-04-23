@@ -22,6 +22,8 @@ import type {
   DNSChallenge,
   DnsStatus,
   DockerContainer,
+  DockerContainerFolder,
+  DockerFolderTreeNode,
   DockerImage,
   DockerNetwork,
   DockerRegistry,
@@ -733,6 +735,60 @@ class ApiClient extends ApiClientBase {
     return this.request<void>("/proxy-host-folders/move-hosts", {
       method: "POST",
       body: JSON.stringify({ hostIds, folderId }),
+    });
+  }
+
+  // ── Docker Folders ─────────────────────────────────────────────
+
+  async listDockerFolders(): Promise<DockerFolderTreeNode[]> {
+    return this.unwrapData(this.request<{ data: DockerFolderTreeNode[] }>("/docker/folders"));
+  }
+
+  async createDockerFolder(data: { name: string; parentId?: string }): Promise<DockerContainerFolder> {
+    return this.unwrapData(
+      this.request<{ data: DockerContainerFolder }>("/docker/folders", {
+        method: "POST",
+        body: JSON.stringify(data),
+      })
+    );
+  }
+
+  async updateDockerFolder(id: string, data: { name: string }): Promise<DockerContainerFolder> {
+    return this.unwrapData(
+      this.request<{ data: DockerContainerFolder }>(`/docker/folders/${id}`, {
+        method: "PUT",
+        body: JSON.stringify(data),
+      })
+    );
+  }
+
+  async deleteDockerFolder(id: string): Promise<void> {
+    return this.request<void>(`/docker/folders/${id}`, { method: "DELETE" });
+  }
+
+  async reorderDockerFolders(items: { id: string; sortOrder: number }[]): Promise<void> {
+    return this.request<void>("/docker/folders/reorder", {
+      method: "PUT",
+      body: JSON.stringify({ items }),
+    });
+  }
+
+  async moveDockerContainersToFolder(
+    items: Array<{ nodeId: string; containerName: string }>,
+    folderId: string | null
+  ): Promise<void> {
+    return this.request<void>("/docker/folders/move-containers", {
+      method: "POST",
+      body: JSON.stringify({ items, folderId }),
+    });
+  }
+
+  async reorderDockerContainers(
+    items: Array<{ nodeId: string; containerName: string; sortOrder: number }>
+  ): Promise<void> {
+    return this.request<void>("/docker/folders/reorder-containers", {
+      method: "PUT",
+      body: JSON.stringify({ items }),
     });
   }
 

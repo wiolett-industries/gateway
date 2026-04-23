@@ -78,6 +78,20 @@
       "when": 1776961200000,
       "tag": "0010_alert_metric_target",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1776988800000,
+      "tag": "0011_docker_container_folders",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1776992400000,
+      "tag": "0012_docker_ungrouped_order",
+      "breakpoints": true
     }
   ]
 }

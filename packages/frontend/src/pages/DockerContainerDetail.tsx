@@ -94,13 +94,21 @@ export function DockerContainerDetail() {
   const invalidate = useDockerStore((s) => s.invalidate);
   const setSelectedNode = useDockerStore((s) => s.setSelectedNode);
   const storeNodeId = useDockerStore((s) => s.selectedNodeId);
+  const previousNodeIdRef = useRef<string | null>(null);
 
-  // Ensure the store knows which node we're on (needed for invalidate to work)
+  // Temporarily scope store-backed invalidation to this node while the detail page is mounted,
+  // then restore the previous list filter on unmount.
   useEffect(() => {
-    if (nodeId && nodeId !== storeNodeId) {
+    previousNodeIdRef.current = storeNodeId;
+
+    if (nodeId) {
       setSelectedNode(nodeId);
     }
-  }, [nodeId, storeNodeId, setSelectedNode]);
+
+    return () => {
+      setSelectedNode(previousNodeIdRef.current);
+    };
+  }, [nodeId, setSelectedNode]);
   const [container, setContainer] = useState<InspectData | null>(null);
   const containerRef = useRef<InspectData | null>(null);
 
