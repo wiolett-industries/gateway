@@ -25,10 +25,13 @@ export const notificationAlertRules = pgTable(
 
     // Threshold fields (null for event rules)
     metric: varchar('metric', { length: 100 }), // 'cpu', 'memory', 'disk', 'days_until_expiry'
+    metricTarget: varchar('metric_target', { length: 255 }),
     operator: varchar('operator', { length: 5 }), // '>' | '>=' | '<' | '<='
     thresholdValue: doublePrecision('threshold_value'),
     durationSeconds: integer('duration_seconds').default(0),
+    fireThresholdPercent: integer('fire_threshold_percent').notNull().default(100),
     resolveAfterSeconds: integer('resolve_after_seconds').default(60),
+    resolveThresholdPercent: integer('resolve_threshold_percent').notNull().default(100),
 
     // Event fields (null for threshold rules)
     eventPattern: varchar('event_pattern', { length: 255 }), // 'offline', 'stopped', 'oom_killed', etc.

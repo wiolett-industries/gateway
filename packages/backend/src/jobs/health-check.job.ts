@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import { proxyHosts } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
+import type { NotificationEvaluatorService } from '@/modules/notifications/notification-evaluator.service.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
 
 const logger = createChildLogger('HealthCheckJob');
@@ -21,11 +22,16 @@ interface HealthEntry {
 
 export class HealthCheckJob {
   private eventBus?: EventBusService;
+  private evaluator?: NotificationEvaluatorService;
 
   constructor(private readonly db: DrizzleClient) {}
 
   setEventBus(bus: EventBusService) {
     this.eventBus = bus;
+  }
+
+  setEvaluator(evaluator: NotificationEvaluatorService) {
+    this.evaluator = evaluator;
   }
 
   async run(): Promise<void> {
@@ -88,6 +94,17 @@ export class HealthCheckJob {
             healthHistory: history,
           })
           .where(eq(proxyHosts.id, host.id));
+
+        await this.evaluator?.observeStatefulEvent(
+          'proxy',
+          newStatus === 'online' ? 'health.online' : newStatus === 'offline' ? 'health.offline' : 'health.degraded',
+          {
+            type: 'proxy',
+            id: host.id,
+            name: host.domainNames?.[0] ?? host.id,
+          },
+          { health_status: newStatus }
+        );
 
         // Log status transitions and publish event
         if (previousStatus !== newStatus) {

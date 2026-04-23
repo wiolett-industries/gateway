@@ -64,6 +64,20 @@
       "when": 1776729600000,
       "tag": "0008_late_size_limit",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1776902400000,
+      "tag": "0009_ratio_alert_windows",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1776961200000,
+      "tag": "0010_alert_metric_target",
+      "breakpoints": true
     }
   ]
 }

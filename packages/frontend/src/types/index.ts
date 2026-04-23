@@ -323,13 +323,22 @@ export interface AlertRule {
   name: string;
   enabled: boolean;
   type: "threshold" | "event";
-  category: "node" | "container" | "proxy" | "certificate";
+  category:
+    | "node"
+    | "container"
+    | "proxy"
+    | "certificate"
+    | "database_postgres"
+    | "database_redis";
   severity: "info" | "warning" | "critical";
   metric: string | null;
+  metricTarget: string | null;
   operator: string | null;
   thresholdValue: number | null;
   durationSeconds: number;
+  fireThresholdPercent: number;
   resolveAfterSeconds: number;
+  resolveThresholdPercent: number;
   eventPattern: string | null;
   resourceIds: string[];
   messageTemplate: string | null;
@@ -395,7 +404,7 @@ export interface AlertCategoryDef {
     defaultOperator: string;
     defaultValue: number;
   }>;
-  events: Array<{ id: string; label: string; defaultSeverity: string }>;
+  events: Array<{ id: string; label: string; defaultSeverity: string; supportsThreshold?: boolean }>;
   variables: Array<{ name: string; description: string }>;
 }
 

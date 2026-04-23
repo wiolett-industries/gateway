@@ -45,6 +45,7 @@ export interface EventDefinition {
   id: string;
   label: string;
   defaultSeverity: Severity;
+  supportsThreshold?: boolean;
 }
 
 export interface CategoryDefinition {
@@ -66,8 +67,8 @@ export const ALERT_CATEGORIES: CategoryDefinition[] = [
       { id: 'disk', label: 'Disk Usage (%)', unit: '%', defaultOperator: '>', defaultValue: 85 },
     ],
     events: [
-      { id: 'offline', label: 'Node Offline', defaultSeverity: 'critical' },
-      { id: 'online', label: 'Node Online', defaultSeverity: 'info' },
+      { id: 'offline', label: 'Node Offline', defaultSeverity: 'critical', supportsThreshold: true },
+      { id: 'online', label: 'Node Online', defaultSeverity: 'info', supportsThreshold: true },
     ],
     variables: [
       { name: '{{resource.name}}', description: 'Node hostname' },
@@ -113,9 +114,9 @@ export const ALERT_CATEGORIES: CategoryDefinition[] = [
     label: 'Proxy Host',
     metrics: [],
     events: [
-      { id: 'health.offline', label: 'Health Offline', defaultSeverity: 'critical' },
-      { id: 'health.degraded', label: 'Health Degraded', defaultSeverity: 'warning' },
-      { id: 'health.online', label: 'Health Online', defaultSeverity: 'info' },
+      { id: 'health.offline', label: 'Health Offline', defaultSeverity: 'critical', supportsThreshold: true },
+      { id: 'health.degraded', label: 'Health Degraded', defaultSeverity: 'warning', supportsThreshold: true },
+      { id: 'health.online', label: 'Health Online', defaultSeverity: 'info', supportsThreshold: true },
       { id: 'created', label: 'Proxy Created', defaultSeverity: 'info' },
       { id: 'deleted', label: 'Proxy Deleted', defaultSeverity: 'info' },
     ],
@@ -160,9 +161,9 @@ export const ALERT_CATEGORIES: CategoryDefinition[] = [
       },
     ],
     events: [
-      { id: 'health.offline', label: 'Database Offline', defaultSeverity: 'critical' },
-      { id: 'health.degraded', label: 'Database Degraded', defaultSeverity: 'warning' },
-      { id: 'health.online', label: 'Database Online', defaultSeverity: 'info' },
+      { id: 'health.offline', label: 'Database Offline', defaultSeverity: 'critical', supportsThreshold: true },
+      { id: 'health.degraded', label: 'Database Degraded', defaultSeverity: 'warning', supportsThreshold: true },
+      { id: 'health.online', label: 'Database Online', defaultSeverity: 'info', supportsThreshold: true },
     ],
     variables: [
       { name: '{{resource.name}}', description: 'Database connection name' },
@@ -182,9 +183,9 @@ export const ALERT_CATEGORIES: CategoryDefinition[] = [
       { id: 'memory_pct', label: 'Memory Usage (%)', unit: '%', defaultOperator: '>', defaultValue: 90 },
     ],
     events: [
-      { id: 'health.offline', label: 'Database Offline', defaultSeverity: 'critical' },
-      { id: 'health.degraded', label: 'Database Degraded', defaultSeverity: 'warning' },
-      { id: 'health.online', label: 'Database Online', defaultSeverity: 'info' },
+      { id: 'health.offline', label: 'Database Offline', defaultSeverity: 'critical', supportsThreshold: true },
+      { id: 'health.degraded', label: 'Database Degraded', defaultSeverity: 'warning', supportsThreshold: true },
+      { id: 'health.online', label: 'Database Online', defaultSeverity: 'info', supportsThreshold: true },
     ],
     variables: [
       { name: '{{resource.name}}', description: 'Database connection name' },
@@ -199,6 +200,10 @@ export const ALERT_CATEGORIES: CategoryDefinition[] = [
 ];
 
 export const CATEGORY_MAP = new Map(ALERT_CATEGORIES.map((c) => [c.id, c]));
+
+export function eventSupportsThreshold(category: AlertCategory, eventId: string): boolean {
+  return CATEGORY_MAP.get(category)?.events.some((event) => event.id === eventId && event.supportsThreshold) ?? false;
+}
 
 // ── EventBus → Notification Event Mapping ─────────────────────────────
 
@@ -361,7 +366,8 @@ export const EVENT_BUS_MAPPINGS: Record<string, EventMapping[]> = {
 export function extractMetricFromHealthReport(
   category: string,
   metric: string,
-  healthData: any
+  healthData: any,
+  metricTarget?: string | null
 ): { values: Array<{ resourceId: string; value: number }> } | null {
   if (category === 'node') {
     switch (metric) {
@@ -382,10 +388,16 @@ export function extractMetricFromHealthReport(
           const free = healthData.diskFreeBytes ?? healthData.disk_free_bytes;
           const total = healthData.diskTotalBytes ?? healthData.disk_total_bytes;
           if (typeof free !== 'number' || typeof total !== 'number' || total === 0) return null;
+          if (metricTarget && metricTarget !== '/') return null;
           return { values: [{ resourceId: '/', value: ((total - free) / total) * 100 }] };
         }
+        const normalizedTarget = metricTarget?.trim() || null;
+        const filteredMounts = normalizedTarget
+          ? mounts.filter((m: any) => (m.mountPoint ?? m.mount_point ?? '/') === normalizedTarget)
+          : mounts;
+        if (filteredMounts.length === 0) return null;
         return {
-          values: mounts.map((m: any) => ({
+          values: filteredMounts.map((m: any) => ({
             resourceId: m.mountPoint ?? m.mount_point ?? '/',
             value: m.usagePercent ?? m.usage_percent ?? 0,
           })),
@@ -447,4 +459,51 @@ export function evaluateThreshold(value: number, operator: string, threshold: nu
     default:
       return false;
   }
+}
+
+export interface WindowProbeSample {
+  timestamp: number;
+  breached: boolean;
+}
+
+export interface WindowRatioEvaluation {
+  hasCoverage: boolean;
+  sampleCount: number;
+  matchingSamples: number;
+  ratioPercent: number;
+  thresholdMet: boolean;
+}
+
+export function evaluateWindowRatio(
+  samples: WindowProbeSample[],
+  targetState: 'breach' | 'clear',
+  thresholdPercent: number,
+  windowMs: number,
+  now = Date.now()
+): WindowRatioEvaluation {
+  if (samples.length === 0) {
+    return {
+      hasCoverage: windowMs === 0,
+      sampleCount: 0,
+      matchingSamples: 0,
+      ratioPercent: 0,
+      thresholdMet: false,
+    };
+  }
+
+  const sorted = [...samples].sort((a, b) => a.timestamp - b.timestamp);
+  const oldestTimestamp = sorted[0]?.timestamp ?? now;
+  const hasCoverage = windowMs === 0 || oldestTimestamp <= now - windowMs;
+  const matchingSamples = sorted.filter((sample) =>
+    targetState === 'breach' ? sample.breached : !sample.breached
+  ).length;
+  const ratioPercent = (matchingSamples / sorted.length) * 100;
+
+  return {
+    hasCoverage,
+    sampleCount: sorted.length,
+    matchingSamples,
+    ratioPercent,
+    thresholdMet: hasCoverage && ratioPercent >= thresholdPercent,
+  };
 }

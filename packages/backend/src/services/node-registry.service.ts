@@ -6,6 +6,7 @@ import { nodes } from '@/db/schema/index.js';
 import type { NodeHealthReport, NodeStatsReport } from '@/db/schema/nodes.js';
 import type { CommandResult, DaemonMessage, GatewayCommand } from '@/grpc/generated/types.js';
 import { createChildLogger } from '@/lib/logger.js';
+import type { NotificationEvaluatorService } from '@/modules/notifications/notification-evaluator.service.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
 
 const logger = createChildLogger('NodeRegistry');
@@ -44,8 +45,25 @@ export class NodeRegistryService {
   constructor(private db: DrizzleClient) {}
 
   private eventBus?: EventBusService;
+  private evaluator?: NotificationEvaluatorService;
   setEventBus(bus: EventBusService) {
     this.eventBus = bus;
+  }
+
+  setEvaluator(evaluator: NotificationEvaluatorService) {
+    this.evaluator = evaluator;
+  }
+
+  private observeNodeState(nodeId: string, state: 'online' | 'offline', hostname?: string) {
+    this.evaluator
+      ?.observeStatefulEvent('node', state, { type: 'node', id: nodeId, name: hostname ?? nodeId }, { hostname })
+      .catch((error) => {
+        logger.debug('Node stateful event observation failed', {
+          nodeId,
+          state,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
   }
 
   publishNodeChanged(nodeId: string, status: string, hostname?: string) {
@@ -160,6 +178,7 @@ export class NodeRegistryService {
 
     logger.info('Node registered', { nodeId, type, hostname });
     this.eventBus?.publish('node.changed', { id: nodeId, action: 'updated', status: 'online', hostname });
+    this.observeNodeState(nodeId, 'online', hostname);
   }
 
   async deregister(nodeId: string, commandStream?: ServerDuplexStream<DaemonMessage, GatewayCommand>): Promise<void> {
@@ -191,6 +210,7 @@ export class NodeRegistryService {
       status: 'offline',
       hostname: node.hostname,
     });
+    this.observeNodeState(nodeId, 'offline', node.hostname);
   }
 
   getNode(nodeId: string): ConnectedNode | undefined {
@@ -325,6 +345,7 @@ export class NodeRegistryService {
             status: 'offline',
             hostname: dbNode.hostname,
           });
+          this.observeNodeState(dbNode.id, 'offline', dbNode.hostname ?? undefined);
         }
       }
     }
@@ -358,6 +379,7 @@ export class NodeRegistryService {
             status: 'offline',
             hostname: node.hostname,
           });
+          this.observeNodeState(node.nodeId, 'offline', node.hostname);
           logger.warn('Marked connected node offline (missed health reports)', {
             nodeId: node.nodeId,
             elapsedMs: elapsed,

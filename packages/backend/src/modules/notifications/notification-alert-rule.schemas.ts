@@ -30,10 +30,13 @@ export const CreateAlertRuleSchema = z
 
     // Threshold
     metric: z.string().max(100).optional(),
+    metricTarget: z.string().max(255).nullable().optional(),
     operator: z.enum(['>', '>=', '<', '<=']).optional(),
     thresholdValue: z.number().optional(),
     durationSeconds: z.number().int().min(0).default(0),
+    fireThresholdPercent: z.number().int().min(0).max(100).default(100),
     resolveAfterSeconds: z.number().int().min(0).default(60),
+    resolveThresholdPercent: z.number().int().min(0).max(100).default(100),
 
     // Event
     eventPattern: z.string().max(255).optional(),
@@ -76,10 +79,13 @@ export const UpdateAlertRuleSchema = z.object({
   enabled: z.boolean().optional(),
   severity: z.enum(['info', 'warning', 'critical']).optional(),
   metric: z.string().max(100).optional(),
+  metricTarget: z.string().max(255).nullable().optional(),
   operator: z.enum(['>', '>=', '<', '<=']).optional(),
   thresholdValue: z.number().optional(),
   durationSeconds: z.number().int().min(0).optional(),
+  fireThresholdPercent: z.number().int().min(0).max(100).optional(),
   resolveAfterSeconds: z.number().int().min(0).optional(),
+  resolveThresholdPercent: z.number().int().min(0).max(100).optional(),
   eventPattern: z.string().max(255).optional(),
   resourceIds: z.array(z.string()).optional(),
   messageTemplate: z.string().max(4096).optional(),
