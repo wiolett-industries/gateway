@@ -231,6 +231,7 @@ export const ToggleProxyHostSchema = z.object({
 export const ValidateAdvancedConfigSchema = z.object({
   snippet: z.string().min(1).max(100000),
   mode: z.enum(['advanced', 'raw']).optional().default('advanced'),
+  proxyHostId: z.string().optional(),
 });
 
 // ---------------------------------------------------------------------------

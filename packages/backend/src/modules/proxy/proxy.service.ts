@@ -104,14 +104,14 @@ export class ProxyService {
   // Create
   // -----------------------------------------------------------------------
 
-  async createProxyHost(input: CreateProxyHostInput, userId: string) {
+  async createProxyHost(input: CreateProxyHostInput, userId: string, bypassAdvancedValidation = false) {
     // 0. Require a node assignment
     if (!input.nodeId) {
       throw new AppError(400, 'NODE_REQUIRED', 'A node must be selected for the proxy host');
     }
 
     // 0b. Validate advanced config if provided
-    if (input.advancedConfig) {
+    if (input.advancedConfig && !bypassAdvancedValidation) {
       const validation = this.configGenerator.validateAdvancedConfig(input.advancedConfig);
       if (!validation.valid) {
         throw new AppError(
@@ -217,9 +217,9 @@ export class ProxyService {
   // Update
   // -----------------------------------------------------------------------
 
-  async updateProxyHost(id: string, input: UpdateProxyHostInput, userId: string) {
+  async updateProxyHost(id: string, input: UpdateProxyHostInput, userId: string, bypassAdvancedValidation = false) {
     // 0. Validate advanced config if provided
-    if (input.advancedConfig) {
+    if (input.advancedConfig && !bypassAdvancedValidation) {
       const validation = this.configGenerator.validateAdvancedConfig(input.advancedConfig);
       if (!validation.valid) {
         throw new AppError(
@@ -653,7 +653,11 @@ export class ProxyService {
   // Validate advanced config snippet
   // -----------------------------------------------------------------------
 
-  async validateAdvancedConfig(snippet: string, rawMode = false) {
+  async validateAdvancedConfig(snippet: string, rawMode = false, bypassAdvancedValidation = false) {
+    if (!rawMode && bypassAdvancedValidation) {
+      return { valid: true, errors: [] };
+    }
+
     // Basic static checks first
     const staticResult = this.configGenerator.validateAdvancedConfig(snippet, rawMode);
     if (!staticResult.valid) return staticResult;

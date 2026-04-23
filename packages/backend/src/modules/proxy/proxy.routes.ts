@@ -45,10 +45,11 @@ proxyRoutes.post('/', requireScope('proxy:create'), async (c) => {
   if (input.advancedConfig && !hasScope(scopes, 'proxy:advanced')) {
     throw new AppError(403, 'FORBIDDEN', 'Advanced config requires proxy:advanced scope');
   }
+  const bypassAdvancedValidation = hasScope(scopes, 'proxy:advanced:bypass');
   if (input.rawConfigEnabled && !hasScope(scopes, 'proxy:raw:toggle')) {
     throw new AppError(403, 'FORBIDDEN', 'Enabling raw mode requires proxy:raw:toggle scope');
   }
-  const host = await proxyService.createProxyHost(input, user.id);
+  const host = await proxyService.createProxyHost(input, user.id, bypassAdvancedValidation);
   return c.json({ data: host }, 201);
 });
 
@@ -60,9 +61,10 @@ proxyRoutes.put('/:id', requireScopeForResource('proxy:edit', 'id'), async (c) =
   const body = await c.req.json();
   const input = UpdateProxyHostSchema.parse(body);
   const scopes = c.get('effectiveScopes') || [];
-  if (input.advancedConfig && !hasScope(scopes, 'proxy:advanced')) {
+  if (input.advancedConfig && !hasScope(scopes, `proxy:advanced:${id}`)) {
     throw new AppError(403, 'FORBIDDEN', 'Advanced config requires proxy:advanced scope');
   }
+  const bypassAdvancedValidation = hasScope(scopes, `proxy:advanced:bypass:${id}`);
   if (input.rawConfigEnabled !== undefined) {
     if (!hasScope(scopes, `proxy:raw:toggle:${id}`) && !hasScope(scopes, 'proxy:raw:toggle')) {
       throw new AppError(403, 'FORBIDDEN', 'Toggling raw mode requires proxy:raw:toggle scope');
@@ -73,7 +75,7 @@ proxyRoutes.put('/:id', requireScopeForResource('proxy:edit', 'id'), async (c) =
       throw new AppError(403, 'FORBIDDEN', 'Writing raw config requires proxy:raw:write scope');
     }
   }
-  const host = await proxyService.updateProxyHost(id, input, user.id);
+  const host = await proxyService.updateProxyHost(id, input, user.id, bypassAdvancedValidation);
   return c.json({ data: host });
 });
 
@@ -106,10 +108,22 @@ proxyRoutes.get('/:id/rendered-config', requireScopeForResource('proxy:raw:read'
 });
 
 // Validate advanced config snippet
-proxyRoutes.post('/validate-config', requireScope('proxy:advanced'), async (c) => {
+proxyRoutes.post('/validate-config', async (c) => {
   const proxyService = container.resolve(ProxyService);
+  const scopes = c.get('effectiveScopes') || [];
   const body = await c.req.json();
-  const { snippet, mode } = ValidateAdvancedConfigSchema.parse(body);
-  const result = await proxyService.validateAdvancedConfig(snippet, mode === 'raw');
+  const { snippet, mode, proxyHostId } = ValidateAdvancedConfigSchema.parse(body);
+
+  const advancedScope = proxyHostId ? `proxy:advanced:${proxyHostId}` : 'proxy:advanced';
+  if (!hasScope(scopes, advancedScope)) {
+    throw new AppError(403, 'FORBIDDEN', 'Advanced config requires proxy:advanced scope');
+  }
+
+  const bypassScope = proxyHostId ? `proxy:advanced:bypass:${proxyHostId}` : 'proxy:advanced:bypass';
+  const result = await proxyService.validateAdvancedConfig(
+    snippet,
+    mode === 'raw',
+    mode === 'advanced' && hasScope(scopes, bypassScope)
+  );
   return c.json({ data: result });
 });

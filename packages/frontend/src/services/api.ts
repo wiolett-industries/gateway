@@ -648,12 +648,13 @@ class ApiClient extends ApiClientBase {
 
   async validateProxyConfig(
     snippet: string,
-    mode: "advanced" | "raw" = "advanced"
+    mode: "advanced" | "raw" = "advanced",
+    proxyHostId?: string
   ): Promise<{ valid: boolean; errors: string[] }> {
     return this.unwrapData(
       this.request<{ data: { valid: boolean; errors: string[] } }>("/proxy-hosts/validate-config", {
         method: "POST",
-        body: JSON.stringify({ snippet, mode }),
+        body: JSON.stringify({ snippet, mode, proxyHostId }),
       })
     );
   }

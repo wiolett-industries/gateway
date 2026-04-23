@@ -38,6 +38,7 @@ export const ALL_SCOPES = [
   'proxy:raw:write',
   'proxy:raw:toggle',
   'proxy:advanced',
+  'proxy:advanced:bypass',
   // ── SSL Certificates ─────────────────────────────────────────────
   'ssl:cert:list',
   'ssl:cert:view',
@@ -277,6 +278,7 @@ export const RESOURCE_SCOPABLE: readonly string[] = [
   'proxy:edit',
   'proxy:delete',
   'proxy:advanced',
+  'proxy:advanced:bypass',
   'proxy:raw:read',
   'proxy:raw:write',
   'proxy:raw:toggle',

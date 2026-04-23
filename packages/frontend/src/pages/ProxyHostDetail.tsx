@@ -390,7 +390,8 @@ export function ProxyHostDetail() {
       const configToValidate = isRawMode ? rawConfig : advancedConfig;
       const result = await api.validateProxyConfig(
         configToValidate,
-        isRawMode ? "raw" : "advanced"
+        isRawMode ? "raw" : "advanced",
+        id
       );
 
       if (result.valid) {
@@ -729,7 +730,7 @@ export function ProxyHostDetail() {
                 onValidate={handleValidate}
                 onSaveAdvanced={handleSaveAdvanced}
                 isSavingAdvanced={isSavingAdvanced}
-                canManage={hasScope("proxy:advanced")}
+                canManage={!!id && hasScope(`proxy:advanced:${id}`)}
               />
             </TabsContent>
           )}
@@ -748,7 +749,7 @@ export function ProxyHostDetail() {
               onValidate={handleValidate}
               onSaveRaw={handleSaveRaw}
               onRefreshRendered={loadRenderedConfig}
-              canManage={hasScope("proxy:advanced")}
+              canManage={!!id && hasScope(`proxy:advanced:${id}`)}
             />
           </TabsContent>
 
