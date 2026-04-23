@@ -1,6 +1,6 @@
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import {
   ChevronDown,
   ChevronRight,
@@ -162,101 +162,100 @@ export function DockerFolderGroup({
         )}
       </div>
 
-      <AnimatePresence initial={false}>
-        {expanded && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
-            className="overflow-hidden"
+      <motion.div
+        initial={false}
+        animate={{
+          height: expanded ? "auto" : 0,
+          opacity: expanded ? 1 : 0,
+        }}
+        transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
+        className="overflow-hidden"
+        aria-hidden={!expanded}
+      >
+        {folder.children.length > 0 && (
+          <SortableContext
+            items={folder.children.map((child) => `docker-folder-${child.id}`)}
+            strategy={verticalListSortingStrategy}
           >
-            {folder.children.length > 0 && (
-              <SortableContext
-                items={folder.children.map((child) => `docker-folder-${child.id}`)}
-                strategy={verticalListSortingStrategy}
-              >
-                {folder.children.map((child) => (
-                  <DockerFolderGroup
-                    key={child.id}
-                    folder={child}
+            {folder.children.map((child) => (
+              <DockerFolderGroup
+                key={child.id}
+                folder={child}
+                depth={depth + 1}
+                expanded={expandedFolderIds.has(child.id)}
+                onToggle={() => onToggleFolder(child.id)}
+                onRename={onRename}
+                onDelete={onDelete}
+                onRequestCreateSubfolder={onRequestCreateSubfolder}
+                onStart={onStart}
+                onStop={onStop}
+                onRestart={onRestart}
+                actionLoading={actionLoading}
+                onMoveContainerToFolder={onMoveContainerToFolder}
+                expandedFolderIds={expandedFolderIds}
+                onToggleFolder={onToggleFolder}
+                canManage={canManage}
+                canReorganize={canReorganize}
+                canView={canView}
+                showNode={showNode}
+                colGroup={colGroup}
+              />
+            ))}
+          </SortableContext>
+        )}
+
+        {folder.containers.length > 0 &&
+          (folder.isSystem ? (
+            <table className="w-full" style={{ tableLayout: "fixed" }}>
+              {colGroup}
+              <tbody>
+                {folder.containers.map((container) => (
+                  <DockerContainerRow
+                    key={`${container._nodeId}:${container.name}`}
+                    container={container}
                     depth={depth + 1}
-                    expanded={expandedFolderIds.has(child.id)}
-                    onToggle={() => onToggleFolder(child.id)}
-                    onRename={onRename}
-                    onDelete={onDelete}
-                    onRequestCreateSubfolder={onRequestCreateSubfolder}
+                    canView={canView(container)}
+                    canManage={canManage(container)}
+                    canReorganize={canReorganize(container)}
+                    showNode={showNode}
+                    loadingAction={actionLoading[container.id]}
                     onStart={onStart}
                     onStop={onStop}
                     onRestart={onRestart}
-                    actionLoading={actionLoading}
-                    onMoveContainerToFolder={onMoveContainerToFolder}
-                    expandedFolderIds={expandedFolderIds}
-                    onToggleFolder={onToggleFolder}
-                    canManage={canManage}
-                    canReorganize={canReorganize}
-                    canView={canView}
-                    showNode={showNode}
-                    colGroup={colGroup}
+                    onMoveToFolder={onMoveContainerToFolder}
                   />
                 ))}
-              </SortableContext>
-            )}
-
-            {folder.containers.length > 0 &&
-              (folder.isSystem ? (
-                <table className="w-full" style={{ tableLayout: "fixed" }}>
-                  {colGroup}
-                  <tbody>
-                    {folder.containers.map((container) => (
-                      <DockerContainerRow
-                        key={`${container._nodeId}:${container.name}`}
-                        container={container}
-                        depth={depth + 1}
-                        canView={canView(container)}
-                        canManage={canManage(container)}
-                        canReorganize={canReorganize(container)}
-                        showNode={showNode}
-                        loadingAction={actionLoading[container.id]}
-                        onStart={onStart}
-                        onStop={onStop}
-                        onRestart={onRestart}
-                        onMoveToFolder={onMoveContainerToFolder}
-                      />
-                    ))}
-                  </tbody>
-                </table>
-              ) : (
-                <SortableContext
-                  items={folder.containers.map((container) => `${container._nodeId}:${container.name}`)}
-                  strategy={verticalListSortingStrategy}
-                >
-                  <table className="w-full" style={{ tableLayout: "fixed" }}>
-                    {colGroup}
-                    <tbody>
-                      {folder.containers.map((container) => (
-                        <DockerContainerRow
-                          key={`${container._nodeId}:${container.name}`}
-                          container={container}
-                        depth={depth + 1}
-                        canView={canView(container)}
-                        canManage={canManage(container)}
-                        canReorganize={canReorganize(container)}
-                        showNode={showNode}
-                          loadingAction={actionLoading[container.id]}
-                          onStart={onStart}
-                          onStop={onStop}
-                          onRestart={onRestart}
-                          onMoveToFolder={onMoveContainerToFolder}
-                        />
-                      ))}
-                    </tbody>
-                  </table>
-                </SortableContext>
-              ))}
-          </motion.div>
-        )}
-      </AnimatePresence>
+              </tbody>
+            </table>
+          ) : (
+            <SortableContext
+              items={folder.containers.map((container) => `${container._nodeId}:${container.name}`)}
+              strategy={verticalListSortingStrategy}
+            >
+              <table className="w-full" style={{ tableLayout: "fixed" }}>
+                {colGroup}
+                <tbody>
+                  {folder.containers.map((container) => (
+                    <DockerContainerRow
+                      key={`${container._nodeId}:${container.name}`}
+                      container={container}
+                      depth={depth + 1}
+                      canView={canView(container)}
+                      canManage={canManage(container)}
+                      canReorganize={canReorganize(container)}
+                      showNode={showNode}
+                      loadingAction={actionLoading[container.id]}
+                      onStart={onStart}
+                      onStop={onStop}
+                      onRestart={onRestart}
+                      onMoveToFolder={onMoveContainerToFolder}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </SortableContext>
+          ))}
+      </motion.div>
     </div>
   );
 }

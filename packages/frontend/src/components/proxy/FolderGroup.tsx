@@ -1,6 +1,6 @@
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import {
   ChevronDown,
   ChevronRight,
@@ -143,87 +143,85 @@ export function FolderGroup({
         )}
       </div>
 
-      {/* Expanded content */}
-      <AnimatePresence initial={false}>
-        {expanded && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
-            className="overflow-hidden"
+      <motion.div
+        initial={false}
+        animate={{
+          height: expanded ? "auto" : 0,
+          opacity: expanded ? 1 : 0,
+        }}
+        transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
+        className="overflow-hidden"
+        aria-hidden={!expanded}
+      >
+        {/* Child folders */}
+        {folder.children.length > 0 && (
+          <SortableContext
+            items={folder.children.map((child) => `folder-${child.id}`)}
+            strategy={verticalListSortingStrategy}
           >
-            {/* Child folders */}
-            {folder.children.length > 0 && (
-              <SortableContext
-                items={folder.children.map((child) => `folder-${child.id}`)}
-                strategy={verticalListSortingStrategy}
-              >
-                {folder.children.map((child) => (
-                  <FolderGroup
-                    key={child.id}
-                    folder={child}
+            {folder.children.map((child) => (
+              <FolderGroup
+                key={child.id}
+                folder={child}
+                depth={depth + 1}
+                expanded={expandedFolderIds.has(child.id)}
+                onToggle={() => onToggleFolder(child.id)}
+                onRename={onRename}
+                onDelete={onDelete}
+                onRequestCreateSubfolder={onRequestCreateSubfolder}
+                onToggleHost={onToggleHost}
+                togglingIds={togglingIds}
+                onMoveHostToFolder={onMoveHostToFolder}
+                expandedFolderIds={expandedFolderIds}
+                onToggleFolder={onToggleFolder}
+                canManage={canManage}
+                colGroup={colGroup}
+              />
+            ))}
+          </SortableContext>
+        )}
+
+        {/* Hosts in this folder */}
+        {folder.hosts.length > 0 &&
+          (canManage ? (
+            <SortableContext
+              items={folder.hosts.map((h) => h.id)}
+              strategy={verticalListSortingStrategy}
+            >
+              <table className="w-full" style={{ tableLayout: "fixed" }}>
+                {colGroup}
+                <tbody>
+                  {folder.hosts.map((host) => (
+                    <ProxyHostRow
+                      key={host.id}
+                      host={host}
+                      depth={depth + 1}
+                      onToggle={onToggleHost}
+                      togglingIds={togglingIds}
+                      onMoveToFolder={onMoveHostToFolder}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </SortableContext>
+          ) : (
+            <table className="w-full" style={{ tableLayout: "fixed" }}>
+              {colGroup}
+              <tbody>
+                {folder.hosts.map((host) => (
+                  <ProxyHostRow
+                    key={host.id}
+                    host={host}
                     depth={depth + 1}
-                    expanded={expandedFolderIds.has(child.id)}
-                    onToggle={() => onToggleFolder(child.id)}
-                    onRename={onRename}
-                    onDelete={onDelete}
-                    onRequestCreateSubfolder={onRequestCreateSubfolder}
-                    onToggleHost={onToggleHost}
+                    onToggle={onToggleHost}
                     togglingIds={togglingIds}
-                    onMoveHostToFolder={onMoveHostToFolder}
-                    expandedFolderIds={expandedFolderIds}
-                    onToggleFolder={onToggleFolder}
-                    canManage={canManage}
-                    colGroup={colGroup}
+                    onMoveToFolder={onMoveHostToFolder}
                   />
                 ))}
-              </SortableContext>
-            )}
-
-            {/* Hosts in this folder */}
-            {folder.hosts.length > 0 &&
-              (canManage ? (
-                <SortableContext
-                  items={folder.hosts.map((h) => h.id)}
-                  strategy={verticalListSortingStrategy}
-                >
-                  <table className="w-full" style={{ tableLayout: "fixed" }}>
-                    {colGroup}
-                    <tbody>
-                      {folder.hosts.map((host) => (
-                        <ProxyHostRow
-                          key={host.id}
-                          host={host}
-                          depth={depth + 1}
-                          onToggle={onToggleHost}
-                          togglingIds={togglingIds}
-                          onMoveToFolder={onMoveHostToFolder}
-                        />
-                      ))}
-                    </tbody>
-                  </table>
-                </SortableContext>
-              ) : (
-                <table className="w-full" style={{ tableLayout: "fixed" }}>
-                  {colGroup}
-                  <tbody>
-                    {folder.hosts.map((host) => (
-                      <ProxyHostRow
-                        key={host.id}
-                        host={host}
-                        depth={depth + 1}
-                        onToggle={onToggleHost}
-                        togglingIds={togglingIds}
-                        onMoveToFolder={onMoveHostToFolder}
-                      />
-                    ))}
-                  </tbody>
-                </table>
-              ))}
-          </motion.div>
-        )}
-      </AnimatePresence>
+              </tbody>
+            </table>
+          ))}
+      </motion.div>
     </div>
   );
 }
