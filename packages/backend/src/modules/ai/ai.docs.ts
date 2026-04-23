@@ -454,6 +454,7 @@ Gateway uses a group-based permission system with nested group inheritance. Each
 | proxy:raw:write | Write raw nginx config (resource-scopable) |
 | proxy:raw:toggle | Enable/disable raw config mode (resource-scopable) |
 | proxy:advanced | Edit advanced nginx snippets (resource-scopable) |
+| proxy:advanced:bypass | Bypass advanced nginx snippet restrictions (resource-scopable) |
 
 ### SSL Certificates
 | Scope | Description |

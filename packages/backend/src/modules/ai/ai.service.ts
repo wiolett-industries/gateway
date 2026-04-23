@@ -406,12 +406,15 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
         );
       case 'update_proxy_host': {
         const { proxyHostId, advancedConfig: _ac, ...updateFields } = a;
-        if (_ac && !hasScope(user.scopes, 'proxy:advanced')) {
+        if (_ac && !hasScope(user.scopes, `proxy:advanced:${proxyHostId}`)) {
           throw new Error('Advanced config requires proxy:advanced scope');
         }
+        const bypassAdvancedValidation = hasScope(user.scopes, `proxy:advanced:bypass:${proxyHostId}`);
         const fields =
-          _ac && hasScope(user.scopes, 'proxy:advanced') ? { ...updateFields, advancedConfig: _ac } : updateFields;
-        return this.proxyService.updateProxyHost(proxyHostId, fields, user.id);
+          _ac && hasScope(user.scopes, `proxy:advanced:${proxyHostId}`)
+            ? { ...updateFields, advancedConfig: _ac }
+            : updateFields;
+        return this.proxyService.updateProxyHost(proxyHostId, fields, user.id, bypassAdvancedValidation);
       }
       case 'delete_proxy_host':
         await this.proxyService.deleteProxyHost(a.proxyHostId, user.id);

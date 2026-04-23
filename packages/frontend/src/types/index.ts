@@ -417,6 +417,7 @@ export const RESOURCE_SCOPABLE_SCOPES = [
   "proxy:edit",
   "proxy:delete",
   "proxy:advanced",
+  "proxy:advanced:bypass",
   "proxy:raw:read",
   "proxy:raw:write",
   "proxy:raw:toggle",
@@ -606,6 +607,12 @@ export const TOKEN_SCOPES = [
     value: "proxy:advanced",
     label: "Advanced Proxy Config",
     desc: "Use advanced proxy configuration",
+    group: "Proxy Hosts",
+  },
+  {
+    value: "proxy:advanced:bypass",
+    label: "Bypass Advanced Config Restrictions",
+    desc: "Save unrestricted advanced nginx snippets",
     group: "Proxy Hosts",
   },
   {
