@@ -159,6 +159,13 @@ export const ALERT_CATEGORIES: CategoryDefinition[] = [
         defaultOperator: '>',
         defaultValue: 90,
       },
+      {
+        id: 'database_size_mb',
+        label: 'Database Size (MB)',
+        unit: 'MB',
+        defaultOperator: '>',
+        defaultValue: 1024,
+      },
     ],
     events: [
       { id: 'health.offline', label: 'Database Offline', defaultSeverity: 'critical', supportsThreshold: true },

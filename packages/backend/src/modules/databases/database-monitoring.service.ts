@@ -278,6 +278,7 @@ export class DatabaseMonitoringService extends EventEmitter {
         read_blocks_per_sec: readBlocksPerSec,
         write_blocks_per_sec: writeBlocksPerSec,
         database_size_bytes: Number(dbSizeResult.rows[0]?.database_size ?? 0),
+        database_size_mb: Number(dbSizeResult.rows[0]?.database_size ?? 0) / (1024 * 1024),
         xact_total: xactTotal,
         blocks_read_total: blocksReadTotal,
         blocks_written_total: blocksWrittenTotal,
