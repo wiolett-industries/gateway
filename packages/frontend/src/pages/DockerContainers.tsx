@@ -651,33 +651,40 @@ export function DockerContainers({
                   </thead>
                 </table>
 
-                {folderTree.map((folder) => (
-                  <DockerFolderGroup
-                    key={folder.id}
-                    folder={folder}
-                    depth={0}
-                    expanded={expandedFolderIds.has(folder.id)}
-                    onToggle={() => toggleFolder(folder.id)}
-                    onRename={handleRenameFolder}
-                    onDelete={handleDeleteFolder}
-                    onRequestCreateSubfolder={(parentId) => {
-                      setCreateFolderParentId(parentId);
-                      setCreateFolderOpen(true);
-                    }}
-                    onStart={handleStart}
-                    onStop={handleStop}
-                    onRestart={handleRestart}
-                    actionLoading={actionLoading}
-                    onMoveContainerToFolder={setMoveDialogContainer}
-                    expandedFolderIds={expandedFolderIds}
-                    onToggleFolder={toggleFolder}
-                    canManage={canManageContainer}
-                    canReorganize={canReorganizeContainer}
-                    canView={canViewContainer}
-                    showNode={showNodeColumn}
-                    colGroup={colGroup}
-                  />
-                ))}
+                {folderTree.length > 0 && (
+                  <SortableContext
+                    items={folderTree.map((folder) => `docker-folder-${folder.id}`)}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    {folderTree.map((folder) => (
+                      <DockerFolderGroup
+                        key={folder.id}
+                        folder={folder}
+                        depth={0}
+                        expanded={expandedFolderIds.has(folder.id)}
+                        onToggle={() => toggleFolder(folder.id)}
+                        onRename={handleRenameFolder}
+                        onDelete={handleDeleteFolder}
+                        onRequestCreateSubfolder={(parentId) => {
+                          setCreateFolderParentId(parentId);
+                          setCreateFolderOpen(true);
+                        }}
+                        onStart={handleStart}
+                        onStop={handleStop}
+                        onRestart={handleRestart}
+                        actionLoading={actionLoading}
+                        onMoveContainerToFolder={setMoveDialogContainer}
+                        expandedFolderIds={expandedFolderIds}
+                        onToggleFolder={toggleFolder}
+                        canManage={canManageContainer}
+                        canReorganize={canReorganizeContainer}
+                        canView={canViewContainer}
+                        showNode={showNodeColumn}
+                        colGroup={colGroup}
+                      />
+                    ))}
+                  </SortableContext>
+                )}
 
                 {(folders.length > 0 || ungroupedContainers.length > 0) && (
                   <UngroupedDropZone>

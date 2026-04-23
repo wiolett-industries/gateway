@@ -447,28 +447,35 @@ export function ProxyHosts() {
                 </div>
 
                 {/* Folders */}
-                {folders.map((folder) => (
-                  <FolderGroup
-                    key={folder.id}
-                    folder={folder}
-                    depth={0}
-                    expanded={expandedFolderIds.has(folder.id)}
-                    onToggle={() => toggleFolder(folder.id)}
-                    onRename={handleRenameFolder}
-                    onDelete={handleDeleteFolder}
-                    onRequestCreateSubfolder={(parentId) => {
-                      setCreateFolderParentId(parentId);
-                      setCreateFolderOpen(true);
-                    }}
-                    onToggleHost={handleToggle}
-                    togglingIds={togglingIds}
-                    onMoveHostToFolder={(hostId) => setMoveDialogHostId(hostId)}
-                    expandedFolderIds={expandedFolderIds}
-                    onToggleFolder={toggleFolder}
-                    canManage={canManageFolders}
-                    colGroup={colGroup}
-                  />
-                ))}
+                {folders.length > 0 && (
+                  <SortableContext
+                    items={folders.map((folder) => `folder-${folder.id}`)}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    {folders.map((folder) => (
+                      <FolderGroup
+                        key={folder.id}
+                        folder={folder}
+                        depth={0}
+                        expanded={expandedFolderIds.has(folder.id)}
+                        onToggle={() => toggleFolder(folder.id)}
+                        onRename={handleRenameFolder}
+                        onDelete={handleDeleteFolder}
+                        onRequestCreateSubfolder={(parentId) => {
+                          setCreateFolderParentId(parentId);
+                          setCreateFolderOpen(true);
+                        }}
+                        onToggleHost={handleToggle}
+                        togglingIds={togglingIds}
+                        onMoveHostToFolder={(hostId) => setMoveDialogHostId(hostId)}
+                        expandedFolderIds={expandedFolderIds}
+                        onToggleFolder={toggleFolder}
+                        canManage={canManageFolders}
+                        colGroup={colGroup}
+                      />
+                    ))}
+                  </SortableContext>
+                )}
 
                 {/* Ungrouped hosts — always visible when folders exist so it's a drop target */}
                 {(folders.length > 0 || ungroupedHosts.length > 0) && (
@@ -525,28 +532,35 @@ export function ProxyHosts() {
               </div>
 
               {/* Folders */}
-              {folders.map((folder) => (
-                <FolderGroup
-                  key={folder.id}
-                  folder={folder}
-                  depth={0}
-                  expanded={expandedFolderIds.has(folder.id)}
-                  onToggle={() => toggleFolder(folder.id)}
-                  onRename={handleRenameFolder}
-                  onDelete={handleDeleteFolder}
-                  onRequestCreateSubfolder={(parentId) => {
-                    setCreateFolderParentId(parentId);
-                    setCreateFolderOpen(true);
-                  }}
-                  onToggleHost={handleToggle}
-                  togglingIds={togglingIds}
-                  onMoveHostToFolder={(hostId) => setMoveDialogHostId(hostId)}
-                  expandedFolderIds={expandedFolderIds}
-                  onToggleFolder={toggleFolder}
-                  canManage={canManageFolders}
-                  colGroup={colGroup}
-                />
-              ))}
+              {folders.length > 0 && (
+                <SortableContext
+                  items={folders.map((folder) => `folder-${folder.id}`)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  {folders.map((folder) => (
+                    <FolderGroup
+                      key={folder.id}
+                      folder={folder}
+                      depth={0}
+                      expanded={expandedFolderIds.has(folder.id)}
+                      onToggle={() => toggleFolder(folder.id)}
+                      onRename={handleRenameFolder}
+                      onDelete={handleDeleteFolder}
+                      onRequestCreateSubfolder={(parentId) => {
+                        setCreateFolderParentId(parentId);
+                        setCreateFolderOpen(true);
+                      }}
+                      onToggleHost={handleToggle}
+                      togglingIds={togglingIds}
+                      onMoveHostToFolder={(hostId) => setMoveDialogHostId(hostId)}
+                      expandedFolderIds={expandedFolderIds}
+                      onToggleFolder={toggleFolder}
+                      canManage={canManageFolders}
+                      colGroup={colGroup}
+                    />
+                  ))}
+                </SortableContext>
+              )}
 
               {/* Ungrouped hosts — always visible when folders exist so it's a drop target */}
               {(folders.length > 0 || ungroupedHosts.length > 0) && (

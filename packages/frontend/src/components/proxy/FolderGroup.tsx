@@ -154,25 +154,32 @@ export function FolderGroup({
             className="overflow-hidden"
           >
             {/* Child folders */}
-            {folder.children.map((child) => (
-              <FolderGroup
-                key={child.id}
-                folder={child}
-                depth={depth + 1}
-                expanded={expandedFolderIds.has(child.id)}
-                onToggle={() => onToggleFolder(child.id)}
-                onRename={onRename}
-                onDelete={onDelete}
-                onRequestCreateSubfolder={onRequestCreateSubfolder}
-                onToggleHost={onToggleHost}
-                togglingIds={togglingIds}
-                onMoveHostToFolder={onMoveHostToFolder}
-                expandedFolderIds={expandedFolderIds}
-                onToggleFolder={onToggleFolder}
-                canManage={canManage}
-                colGroup={colGroup}
-              />
-            ))}
+            {folder.children.length > 0 && (
+              <SortableContext
+                items={folder.children.map((child) => `folder-${child.id}`)}
+                strategy={verticalListSortingStrategy}
+              >
+                {folder.children.map((child) => (
+                  <FolderGroup
+                    key={child.id}
+                    folder={child}
+                    depth={depth + 1}
+                    expanded={expandedFolderIds.has(child.id)}
+                    onToggle={() => onToggleFolder(child.id)}
+                    onRename={onRename}
+                    onDelete={onDelete}
+                    onRequestCreateSubfolder={onRequestCreateSubfolder}
+                    onToggleHost={onToggleHost}
+                    togglingIds={togglingIds}
+                    onMoveHostToFolder={onMoveHostToFolder}
+                    expandedFolderIds={expandedFolderIds}
+                    onToggleFolder={onToggleFolder}
+                    canManage={canManage}
+                    colGroup={colGroup}
+                  />
+                ))}
+              </SortableContext>
+            )}
 
             {/* Hosts in this folder */}
             {folder.hosts.length > 0 &&
