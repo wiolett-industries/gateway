@@ -107,6 +107,14 @@ const STEP_ANIMATION = {
   transition: { duration: 0.2, ease: [0.25, 0.1, 0.25, 1] as const },
 };
 
+const ROOT_DISK_TARGET = "/";
+
+type AlertResourceOption = {
+  id: string;
+  label: string;
+  diskOptions?: Array<{ id: string; label: string }>;
+};
+
 export function Notifications() {
   const { tab: tabParam } = useParams<{ tab?: string }>();
   const navigate = useNavigate();
@@ -372,8 +380,10 @@ function AlertsTab({
                     </td>
                     <td className="p-3 text-sm text-muted-foreground">
                       {r.type === "threshold"
-                        ? `${r.metric} ${r.operator} ${r.thresholdValue}${r.durationSeconds ? ` for ${Math.round(r.durationSeconds / 60)}m` : ""}`
-                        : (r.eventPattern ?? "—")}
+                        ? `${r.metric}${r.metricTarget ? ` (${r.metricTarget === ROOT_DISK_TARGET ? "Root Disk" : r.metricTarget})` : ""} ${r.operator} ${r.thresholdValue} • fire ${r.fireThresholdPercent}% in ${Math.round(r.durationSeconds / 60)}m • resolve ${r.resolveThresholdPercent}% in ${Math.round(r.resolveAfterSeconds / 60)}m`
+                        : r.durationSeconds > 0 || r.resolveAfterSeconds > 0
+                          ? `${r.eventPattern ?? "—"} • fire ${r.fireThresholdPercent}% in ${Math.round(r.durationSeconds / 60)}m • resolve ${r.resolveThresholdPercent}% in ${Math.round(r.resolveAfterSeconds / 60)}m`
+                          : (r.eventPattern ?? "—")}
                     </td>
                     <td className="p-3 text-sm text-muted-foreground">
                       {r.resourceIds.length === 0 ? "All" : `${r.resourceIds.length} selected`}
@@ -451,9 +461,7 @@ function AlertDialog({
   const [categories, setCategories] = useState<AlertCategoryDef[]>([]);
   const [webhooks, setWebhooks] = useState<NotificationWebhook[]>([]);
   const [webhooksLoading, setWebhooksLoading] = useState(false);
-  const [availableResources, setAvailableResources] = useState<
-    Array<{ id: string; label: string }>
-  >([]);
+  const [availableResources, setAvailableResources] = useState<AlertResourceOption[]>([]);
   const [resourceSearch, setResourceSearch] = useState("");
   const [webhookSearch, setWebhookSearch] = useState("");
   const editorRef = useRef<TemplateEditorHandle>(null); // retained for cheatsheet click-to-insert (future)
@@ -465,10 +473,13 @@ function AlertDialog({
   const [type, setType] = useState<string>("threshold");
   const [severity, setSeverity] = useState<string>("warning");
   const [metric, setMetric] = useState("");
+  const [metricTarget, setMetricTarget] = useState(ROOT_DISK_TARGET);
   const [operator, setOperator] = useState(">");
   const [thresholdValue, setThresholdValue] = useState("");
   const [durationMinutes, setDurationMinutes] = useState("0");
+  const [fireThresholdPercent, setFireThresholdPercent] = useState("100");
   const [resolveAfterMinutes, setResolveAfterMinutes] = useState("1");
+  const [resolveThresholdPercent, setResolveThresholdPercent] = useState("100");
   const [eventPattern, setEventPattern] = useState("");
   const [resourceIds, setResourceIds] = useState<string[]>([]);
   const [scopeEnabled, setScopeEnabled] = useState(false);
@@ -486,12 +497,15 @@ function AlertDialog({
     setType(rule?.type ?? "threshold");
     setSeverity(rule?.severity ?? "warning");
     setMetric(rule?.metric ?? "");
+    setMetricTarget(rule?.metricTarget ?? ROOT_DISK_TARGET);
     setOperator(rule?.operator ?? ">");
     setThresholdValue(String(rule?.thresholdValue ?? ""));
     setDurationMinutes(String(rule?.durationSeconds ? Math.round(rule.durationSeconds / 60) : 0));
+    setFireThresholdPercent(String(rule?.fireThresholdPercent ?? 100));
     setResolveAfterMinutes(
       String(rule?.resolveAfterSeconds != null ? Math.round(rule.resolveAfterSeconds / 60) : 1)
     );
+    setResolveThresholdPercent(String(rule?.resolveThresholdPercent ?? 100));
     setEventPattern(rule?.eventPattern ?? "");
     setResourceIds(rule?.resourceIds ?? []);
     setScopeEnabled(!!rule && rule.resourceIds.length > 0);
@@ -524,6 +538,13 @@ function AlertDialog({
           response.data.map((node) => ({
             id: node.id,
             label: node.displayName || node.hostname,
+            diskOptions: [
+              { id: ROOT_DISK_TARGET, label: "Root Disk" },
+              ...(((node.lastHealthReport?.diskMounts ?? []) as Array<{ mountPoint: string }>)
+                .map((mount) => mount.mountPoint)
+                .filter((mountPoint) => mountPoint && mountPoint !== ROOT_DISK_TARGET)
+                .map((mountPoint) => ({ id: mountPoint, label: mountPoint })) ?? []),
+            ],
           }))
         );
         return;
@@ -600,6 +621,7 @@ function AlertDialog({
   const cat = categories.find((c) => c.id === category);
   const firstMetric = cat?.metrics[0];
   const firstEvent = cat?.events[0];
+  const selectedEventDef = cat?.events.find((event) => event.id === eventPattern);
 
   // Auto-fix type and set defaults when category changes (skip in edit mode on first load)
   useEffect(() => {
@@ -671,6 +693,29 @@ function AlertDialog({
     [webhookSearch, webhooks]
   );
 
+  const canSelectNodeDiskTarget =
+    type === "threshold" &&
+    category === "node" &&
+    metric === "disk" &&
+    scopeEnabled &&
+    resourceIds.length === 1;
+
+  const selectedScopedNode = useMemo(
+    () => availableResources.find((resource) => resource.id === resourceIds[0]),
+    [availableResources, resourceIds]
+  );
+
+  const diskTargetOptions = useMemo(
+    () => selectedScopedNode?.diskOptions ?? [{ id: ROOT_DISK_TARGET, label: "Root Disk" }],
+    [selectedScopedNode]
+  );
+
+  useEffect(() => {
+    if (!diskTargetOptions.some((option) => option.id === metricTarget)) {
+      setMetricTarget(ROOT_DISK_TARGET);
+    }
+  }, [diskTargetOptions, metricTarget]);
+
   const canProceedFromStep1 = () => {
     if (!name.trim()) return false;
     if (type === "threshold" && (!metric || !thresholdValue)) return false;
@@ -692,9 +737,9 @@ function AlertDialog({
       toast.error("Invalid cooldown value");
       return;
     }
-    if (type === "threshold") {
+    if (type === "threshold" || (type === "event" && selectedEventDef?.supportsThreshold)) {
       const tv = Number(thresholdValue);
-      if (Number.isNaN(tv)) {
+      if (type === "threshold" && Number.isNaN(tv)) {
         toast.error("Invalid threshold value");
         return;
       }
@@ -703,9 +748,19 @@ function AlertDialog({
         toast.error("Invalid duration value");
         return;
       }
+      const firePct = Number(fireThresholdPercent);
+      if (Number.isNaN(firePct) || firePct < 0 || firePct > 100) {
+        toast.error("Invalid fire threshold value");
+        return;
+      }
       const res = Number(resolveAfterMinutes);
       if (Number.isNaN(res) || res < 0) {
         toast.error("Invalid resolve-after value");
+        return;
+      }
+      const resolvePct = Number(resolveThresholdPercent);
+      if (Number.isNaN(resolvePct) || resolvePct < 0 || resolvePct > 100) {
+        toast.error("Invalid resolve threshold value");
         return;
       }
     }
@@ -724,14 +779,25 @@ function AlertDialog({
       };
       if (type === "threshold") {
         data.metric = metric;
+        data.metricTarget = canSelectNodeDiskTarget ? metricTarget : null;
         data.operator = operator;
         data.thresholdValue = Number(thresholdValue);
         data.durationSeconds = Number(durationMinutes) * 60;
+        data.fireThresholdPercent = Number(fireThresholdPercent);
         data.resolveAfterSeconds = Number(resolveAfterMinutes) * 60;
+        data.resolveThresholdPercent = Number(resolveThresholdPercent);
       } else {
         data.eventPattern = eventPattern;
-        data.durationSeconds = 0;
-        data.resolveAfterSeconds = 0;
+        data.durationSeconds = selectedEventDef?.supportsThreshold ? Number(durationMinutes) * 60 : 0;
+        data.fireThresholdPercent = selectedEventDef?.supportsThreshold
+          ? Number(fireThresholdPercent)
+          : 100;
+        data.resolveAfterSeconds = selectedEventDef?.supportsThreshold
+          ? Number(resolveAfterMinutes) * 60
+          : 0;
+        data.resolveThresholdPercent = selectedEventDef?.supportsThreshold
+          ? Number(resolveThresholdPercent)
+          : 100;
       }
       if (isEdit) {
         await api.updateAlertRule(rule!.id, data);
@@ -902,22 +968,33 @@ function AlertDialog({
                 )}
                 {type === "threshold" && (
                   <div className="grid grid-cols-2 gap-4">
-                    {category !== "certificate" && (
-                      <div className="space-y-1.5">
-                        <label className="text-sm font-medium">Fire after (minutes)</label>
-                        <Input
-                          type="number"
-                          min="0"
-                          value={durationMinutes}
-                          onChange={(e) => setDurationMinutes(e.target.value)}
-                        />
-                        <p className="text-xs text-muted-foreground">
-                          Must exceed threshold for this long. 0 = instant.
-                        </p>
-                      </div>
-                    )}
                     <div className="space-y-1.5">
-                      <label className="text-sm font-medium">Resolve after (minutes)</label>
+                      <label className="text-sm font-medium">Fire window (minutes)</label>
+                      <Input
+                        type="number"
+                        min="0"
+                        value={durationMinutes}
+                        onChange={(e) => setDurationMinutes(e.target.value)}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Observation window used for firing. 0 = immediate.
+                      </p>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-medium">Fire threshold (%)</label>
+                      <Input
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={fireThresholdPercent}
+                        onChange={(e) => setFireThresholdPercent(e.target.value)}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Alert fires when breached probes reach this share of the fire window.
+                      </p>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-medium">Resolve window (minutes)</label>
                       <Input
                         type="number"
                         min="0"
@@ -925,12 +1002,23 @@ function AlertDialog({
                         onChange={(e) => setResolveAfterMinutes(e.target.value)}
                       />
                       <p className="text-xs text-muted-foreground">
-                        Must stay below threshold before resolving.
+                        Observation window used for resolving.
                       </p>
                     </div>
-                    <div
-                      className={`space-y-1.5${category !== "certificate" ? " col-span-2" : ""}`}
-                    >
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-medium">Resolve threshold (%)</label>
+                      <Input
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={resolveThresholdPercent}
+                        onChange={(e) => setResolveThresholdPercent(e.target.value)}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Alert resolves when clear probes reach this share of the resolve window.
+                      </p>
+                    </div>
+                    <div className="space-y-1.5 col-span-2">
                       <label className="text-sm font-medium">Cooldown (seconds)</label>
                       <Input
                         type="number"
@@ -945,34 +1033,115 @@ function AlertDialog({
                 )}
 
                 {type === "event" && cat && (
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <label className="text-sm font-medium">Event</label>
-                      <Select value={eventPattern} onValueChange={setEventPattern}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {cat.events.map((e) => (
-                            <SelectItem key={e.id} value={e.id}>
-                              {e.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                  selectedEventDef?.supportsThreshold ? (
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1.5 col-span-2">
+                        <label className="text-sm font-medium">Event</label>
+                        <Select value={eventPattern} onValueChange={setEventPattern}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {cat.events.map((e) => (
+                              <SelectItem key={e.id} value={e.id}>
+                                {e.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-sm font-medium">Fire window (minutes)</label>
+                        <Input
+                          type="number"
+                          min="0"
+                          value={durationMinutes}
+                          onChange={(e) => setDurationMinutes(e.target.value)}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Observation window used to confirm this stateful event.
+                        </p>
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-sm font-medium">Fire threshold (%)</label>
+                        <Input
+                          type="number"
+                          min="0"
+                          max="100"
+                          value={fireThresholdPercent}
+                          onChange={(e) => setFireThresholdPercent(e.target.value)}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Alert fires when the event state is observed this often in the fire window.
+                        </p>
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-sm font-medium">Resolve window (minutes)</label>
+                        <Input
+                          type="number"
+                          min="0"
+                          value={resolveAfterMinutes}
+                          onChange={(e) => setResolveAfterMinutes(e.target.value)}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Observation window used to confirm the state has cleared.
+                        </p>
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-sm font-medium">Resolve threshold (%)</label>
+                        <Input
+                          type="number"
+                          min="0"
+                          max="100"
+                          value={resolveThresholdPercent}
+                          onChange={(e) => setResolveThresholdPercent(e.target.value)}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Alert resolves when clear observations reach this share of the resolve window.
+                        </p>
+                      </div>
+                      <div className="space-y-1.5 col-span-2">
+                        <label className="text-sm font-medium">Cooldown (seconds)</label>
+                        <Input
+                          type="number"
+                          value={cooldownSeconds}
+                          onChange={(e) => setCooldownSeconds(e.target.value)}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Won't re-fire within this period.
+                        </p>
+                      </div>
                     </div>
-                    <div className="space-y-1.5">
-                      <label className="text-sm font-medium">Cooldown (seconds)</label>
-                      <Input
-                        type="number"
-                        value={cooldownSeconds}
-                        onChange={(e) => setCooldownSeconds(e.target.value)}
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Won't re-fire within this period.
-                      </p>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-sm font-medium">Event</label>
+                        <Select value={eventPattern} onValueChange={setEventPattern}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {cat.events.map((e) => (
+                              <SelectItem key={e.id} value={e.id}>
+                                {e.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-sm font-medium">Cooldown (seconds)</label>
+                        <Input
+                          type="number"
+                          value={cooldownSeconds}
+                          onChange={(e) => setCooldownSeconds(e.target.value)}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Won't re-fire within this period.
+                        </p>
+                      </div>
                     </div>
-                  </div>
+                  )
                 )}
               </motion.div>
             )}
@@ -1039,6 +1208,33 @@ function AlertDialog({
                     </div>
                   </div>
                 </div>
+
+                {type === "threshold" && category === "node" && metric === "disk" && (
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">Disk To Watch</label>
+                    <Select
+                      value={metricTarget}
+                      onValueChange={setMetricTarget}
+                      disabled={!canSelectNodeDiskTarget}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {diskTargetOptions.map((option) => (
+                          <SelectItem key={option.id} value={option.id}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      {canSelectNodeDiskTarget
+                        ? "Choose which disk mount on the selected node should trigger this alert."
+                        : "Select exactly one node above to watch a specific disk. Otherwise the alert evaluates all disks."}
+                    </p>
+                  </div>
+                )}
 
                 {/* Webhooks */}
                 <div className="space-y-1.5">

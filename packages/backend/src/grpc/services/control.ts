@@ -323,6 +323,16 @@ export function createControlHandlers(deps: GrpcServerDeps) {
               evaluator.evaluateHealthReport(nodeId, healthData).catch((err) => {
                 logger.error('Alert evaluation failed', { nodeId, error: (err as Error).message });
               });
+              evaluator
+                .observeStatefulEvent(
+                  'node',
+                  'online',
+                  { type: 'node', id: nodeId, name: connectedNode?.hostname ?? nodeId },
+                  { hostname: connectedNode?.hostname ?? nodeId }
+                )
+                .catch((err) => {
+                  logger.error('Stateful event observation failed', { nodeId, error: (err as Error).message });
+                });
             } catch (resolveErr) {
               logger.error('Evaluator resolve failed', { error: (resolveErr as Error).message });
             }

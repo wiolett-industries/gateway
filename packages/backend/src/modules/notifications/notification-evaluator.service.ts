@@ -7,10 +7,13 @@ import type { EventBusService } from '@/services/event-bus.service.js';
 import type { NodeRegistryService } from '@/services/node-registry.service.js';
 import {
   EVENT_BUS_MAPPINGS,
+  eventSupportsThreshold,
   extractMetricFromDatabaseSnapshot,
   evaluateThreshold,
+  evaluateWindowRatio,
   extractMetricFromHealthReport,
   type Severity,
+  type WindowProbeSample,
 } from './notification.constants.js';
 import type { NotificationAlertRuleService } from './notification-alert-rule.service.js';
 import type { NotificationDispatcherService } from './notification-dispatcher.service.js';
@@ -20,6 +23,7 @@ import type { NotificationWebhookService } from './notification-webhook.service.
 const logger = createChildLogger('NotificationEvaluator');
 
 const METRIC_BUFFER_TTL = 1800;
+const WINDOW_TRIM_PADDING_MS = 60_000;
 
 export class NotificationEvaluatorService {
   private eventBus?: EventBusService;
@@ -87,7 +91,7 @@ export class NotificationEvaluatorService {
         }
       }
 
-      const extraction = extractMetricFromHealthReport(rule.category, rule.metric, healthData);
+      const extraction = extractMetricFromHealthReport(rule.category, rule.metric, healthData, rule.metricTarget);
       if (!extraction) {
         logger.debug('No metric extraction', { ruleId: rule.id, category: rule.category, metric: rule.metric });
         continue;
@@ -123,9 +127,14 @@ export class NotificationEvaluatorService {
           resourceId: compositeResourceId,
         });
 
+        await this.recordProbeOutcome(
+          rule.id,
+          compositeResourceId,
+          breached,
+          Math.max(rule.durationSeconds ?? 0, rule.resolveAfterSeconds ?? 0) * 1000
+        );
+
         if (breached) {
-          // Reset resolve window — metric is back above threshold
-          if (this.redis) await this.redis.del(`notif:resolve:${rule.id}:${compositeResourceId}`).catch(() => {});
           await this.handleThresholdBreach(rule, compositeResourceId, value, nodeId, resourceId);
         } else {
           await this.handleThresholdClear(rule, compositeResourceId, value);
@@ -156,8 +165,13 @@ export class NotificationEvaluatorService {
         if (Number.isNaN(value)) continue;
 
         const breached = evaluateThreshold(value, rule.operator, rule.thresholdValue);
+        await this.recordProbeOutcome(
+          rule.id,
+          resourceId,
+          breached,
+          Math.max(rule.durationSeconds ?? 0, rule.resolveAfterSeconds ?? 0) * 1000
+        );
         if (breached) {
-          if (this.redis) await this.redis.del(`notif:resolve:${rule.id}:${resourceId}`).catch(() => {});
           await this.handleThresholdBreach(rule, resourceId, value, snapshot.databaseId, snapshot.name);
         } else {
           await this.handleThresholdClear(rule, resourceId, value);
@@ -175,52 +189,32 @@ export class NotificationEvaluatorService {
   ): Promise<void> {
     const durationMs = (rule.durationSeconds ?? 0) * 1000;
 
-    // Duration must be >= 30s for the sliding window to work (health reports arrive every 5-30s).
-    // Shorter durations fire immediately like duration=0.
-    if (durationMs >= 30_000 && this.redis) {
-      const redisKey = `notif:threshold:${rule.id}:${compositeResourceId}`;
-      const now = Date.now();
+    if (durationMs > 0 && this.redis) {
+      const evaluation = await this.evaluateRatioWindow(
+        rule.id,
+        compositeResourceId,
+        durationMs,
+        rule.fireThresholdPercent ?? 100,
+        'breach'
+      );
 
-      await this.redis.zadd(redisKey, now, `${now}:${currentValue}`);
-      await this.redis.expire(redisKey, METRIC_BUFFER_TTL);
-
-      const cutoff = now - durationMs - 60_000;
-      await this.redis.zremrangebyscore(redisKey, '-inf', cutoff);
-
-      const windowStart = now - durationMs;
-      const samples = await this.redis.zrangebyscore(redisKey, windowStart, '+inf');
-
-      if (samples.length === 0) {
-        logger.debug('Duration check: no samples in window', { ruleId: rule.id, durationMs });
+      if (!evaluation?.hasCoverage) {
+        logger.debug('Fire ratio window has insufficient coverage', { ruleId: rule.id, durationMs });
         return;
       }
 
-      const oldestSample = Number.parseInt(samples[0].split(':')[0], 10);
-      const elapsed = now - oldestSample;
-      if (elapsed < durationMs * 0.8) {
-        logger.debug('Duration check: not enough time elapsed', {
+      if (!evaluation.thresholdMet) {
+        logger.debug('Fire ratio threshold not met', {
           ruleId: rule.id,
-          elapsed,
-          required: durationMs * 0.8,
-          samples: samples.length,
+          sampleCount: evaluation.sampleCount,
+          matchingSamples: evaluation.matchingSamples,
+          ratioPercent: Math.round(evaluation.ratioPercent * 100) / 100,
+          thresholdPercent: rule.fireThresholdPercent ?? 100,
         });
         return;
       }
-
-      const allBreach = samples.every((s) => {
-        const val = Number.parseFloat(s.split(':').slice(1).join(':'));
-        if (Number.isNaN(val)) return false;
-        return evaluateThreshold(val, rule.operator, rule.thresholdValue);
-      });
-
-      if (!allBreach) {
-        logger.debug('Duration check: not all samples breach', { ruleId: rule.id, samples: samples.length });
-        return;
-      }
-
-      logger.debug('Duration check passed', { ruleId: rule.id, samples: samples.length, elapsed });
     } else if (durationMs > 0 && !this.redis) {
-      logger.debug('Duration check skipped: no Redis', { ruleId: rule.id });
+      logger.debug('Fire ratio window skipped: no Redis', { ruleId: rule.id });
     }
 
     const existingState = await this.getActiveAlertState(rule.id, rule.category, compositeResourceId);
@@ -249,41 +243,32 @@ export class NotificationEvaluatorService {
 
     const resolveMs = (rule.resolveAfterSeconds ?? 60) * 1000;
 
-    // Require metric to stay below threshold for resolveAfterSeconds before resolving
-    if (resolveMs >= 30_000 && this.redis) {
-      const redisKey = `notif:resolve:${rule.id}:${compositeResourceId}`;
-      const now = Date.now();
+    if (resolveMs > 0 && this.redis) {
+      const evaluation = await this.evaluateRatioWindow(
+        rule.id,
+        compositeResourceId,
+        resolveMs,
+        rule.resolveThresholdPercent ?? 100,
+        'clear'
+      );
 
-      await this.redis.zadd(redisKey, now, `${now}:${currentValue}`);
-      await this.redis.expire(redisKey, METRIC_BUFFER_TTL);
-
-      const cutoff = now - resolveMs - 60_000;
-      await this.redis.zremrangebyscore(redisKey, '-inf', cutoff);
-
-      const windowStart = now - resolveMs;
-      const samples = await this.redis.zrangebyscore(redisKey, windowStart, '+inf');
-
-      if (samples.length === 0) return;
-
-      const oldestSample = Number.parseInt(samples[0].split(':')[0], 10);
-      if (now - oldestSample < resolveMs * 0.8) {
-        logger.debug('Resolve delay: not enough time below threshold', {
-          ruleId: rule.id,
-          elapsed: now - oldestSample,
-          required: resolveMs * 0.8,
-          samples: samples.length,
-        });
+      if (!evaluation?.hasCoverage) {
+        logger.debug('Resolve ratio window has insufficient coverage', { ruleId: rule.id, resolveMs });
         return;
       }
 
-      // All samples in window must be below threshold
-      const allClear = samples.every((s) => {
-        const val = Number.parseFloat(s.split(':').slice(1).join(':'));
-        if (Number.isNaN(val)) return false;
-        return !evaluateThreshold(val, rule.operator, rule.thresholdValue);
-      });
-
-      if (!allClear) return;
+      if (!evaluation.thresholdMet) {
+        logger.debug('Resolve ratio threshold not met', {
+          ruleId: rule.id,
+          sampleCount: evaluation.sampleCount,
+          matchingSamples: evaluation.matchingSamples,
+          ratioPercent: Math.round(evaluation.ratioPercent * 100) / 100,
+          thresholdPercent: rule.resolveThresholdPercent ?? 100,
+        });
+        return;
+      }
+    } else if (resolveMs > 0 && !this.redis) {
+      logger.debug('Resolve ratio window skipped: no Redis', { ruleId: rule.id });
     }
 
     const firedAt = existingState.firedAt;
@@ -306,10 +291,60 @@ export class NotificationEvaluatorService {
       fired_duration: firedDurationSec,
     });
 
-    // Clear the resolve window buffer after successful DB write
-    if (this.redis) {
-      await this.redis.del(`notif:resolve:${rule.id}:${compositeResourceId}`).catch(() => {});
-    }
+  }
+
+  private getProbeOutcomeKey(ruleId: string, compositeResourceId: string): string {
+    return `notif:threshold:outcomes:${ruleId}:${compositeResourceId}`;
+  }
+
+  private async recordProbeOutcome(
+    ruleId: string,
+    compositeResourceId: string,
+    breached: boolean,
+    windowMs: number
+  ): Promise<void> {
+    if (!this.redis) return;
+
+    const now = Date.now();
+    const redisKey = this.getProbeOutcomeKey(ruleId, compositeResourceId);
+    await this.redis.zadd(redisKey, now, `${now}:${breached ? 1 : 0}`);
+    await this.redis.expire(redisKey, METRIC_BUFFER_TTL);
+
+    const trimWindowMs = Math.max(windowMs, 0);
+    const cutoff = now - trimWindowMs - WINDOW_TRIM_PADDING_MS;
+    await this.redis.zremrangebyscore(redisKey, '-inf', cutoff);
+  }
+
+  private parseProbeOutcomeSamples(samples: string[]): WindowProbeSample[] {
+    return samples.flatMap((sample) => {
+      const [timestampRaw, breachedRaw] = sample.split(':');
+      const timestamp = Number.parseInt(timestampRaw ?? '', 10);
+      if (!Number.isFinite(timestamp)) return [];
+      return [{ timestamp, breached: breachedRaw === '1' }];
+    });
+  }
+
+  private async evaluateRatioWindow(
+    ruleId: string,
+    compositeResourceId: string,
+    windowMs: number,
+    thresholdPercent: number,
+    targetState: 'breach' | 'clear'
+  ) {
+    if (!this.redis) return null;
+
+    const now = Date.now();
+    const redisKey = this.getProbeOutcomeKey(ruleId, compositeResourceId);
+    const windowStart = now - windowMs;
+    const samples = await this.redis.zrangebyscore(redisKey, windowStart, '+inf');
+
+    return evaluateWindowRatio(
+      this.parseProbeOutcomeSamples(samples),
+      targetState,
+      thresholdPercent,
+      windowMs,
+      now
+    );
   }
 
   // ── EventBus Event Handling ─────────────────────────────────────────
@@ -336,6 +371,10 @@ export class NotificationEvaluatorService {
           if (!rule.resourceIds.includes(resource.id)) continue;
         }
 
+        if (eventSupportsThreshold(rule.category, rule.eventPattern)) {
+          continue;
+        }
+
         // For events, check cooldown based on last notification time (not persistent firing state)
         if (await this.isEventInCooldown(rule.id, resource.type, resource.id, rule.cooldownSeconds)) continue;
 
@@ -344,6 +383,78 @@ export class NotificationEvaluatorService {
           event: mapping.eventId,
         });
       }
+    }
+  }
+
+  async observeStatefulEvent(
+    category: string,
+    currentState: string,
+    resource: { type: string; id: string; name?: string },
+    context: Record<string, unknown> = {}
+  ): Promise<void> {
+    const eventRules = await this.getEventRules();
+
+    for (const rule of eventRules) {
+      if (rule.category !== category) continue;
+      if (!eventSupportsThreshold(rule.category, rule.eventPattern)) continue;
+      if (rule.resourceIds?.length > 0 && !rule.resourceIds.includes(resource.id)) continue;
+
+      const active = rule.eventPattern === currentState;
+      await this.recordProbeOutcome(
+        rule.id,
+        resource.id,
+        active,
+        Math.max(rule.durationSeconds ?? 0, rule.resolveAfterSeconds ?? 0) * 1000
+      );
+
+      const existingState = await this.getActiveAlertState(rule.id, resource.type, resource.id);
+
+      if (active) {
+        const durationMs = (rule.durationSeconds ?? 0) * 1000;
+        if (durationMs > 0 && this.redis) {
+          const evaluation = await this.evaluateRatioWindow(
+            rule.id,
+            resource.id,
+            durationMs,
+            rule.fireThresholdPercent ?? 100,
+            'breach'
+          );
+          if (!evaluation?.hasCoverage || !evaluation.thresholdMet) continue;
+        } else if (durationMs > 0 && !this.redis) {
+          continue;
+        }
+
+        if (existingState) continue;
+
+        await this.fireAlert(rule, resource.type, resource.id, resource.name ?? resource.id, {
+          ...context,
+          event: rule.eventPattern,
+          current_state: currentState,
+        });
+        continue;
+      }
+
+      if (!existingState) continue;
+
+      const resolveMs = (rule.resolveAfterSeconds ?? 60) * 1000;
+      if (resolveMs > 0 && this.redis) {
+        const evaluation = await this.evaluateRatioWindow(
+          rule.id,
+          resource.id,
+          resolveMs,
+          rule.resolveThresholdPercent ?? 100,
+          'clear'
+        );
+        if (!evaluation?.hasCoverage || !evaluation.thresholdMet) continue;
+      } else if (resolveMs > 0 && !this.redis) {
+        continue;
+      }
+
+      await this.resolveAlert(existingState.id, rule, resource.type, resource.id, resource.name, {
+        ...context,
+        event: rule.eventPattern,
+        current_state: currentState,
+      });
     }
   }
 

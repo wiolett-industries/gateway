@@ -421,6 +421,7 @@ export async function initializeContainer(): Promise<void> {
   );
   notifEvaluatorService.setEventBus(eventBus);
   databaseMonitoringService.setEvaluator(notifEvaluatorService);
+  nodeRegistry.setEvaluator(notifEvaluatorService);
   notifEvaluatorService.start();
   container.registerInstance(NotificationEvaluatorService, notifEvaluatorService);
 
@@ -438,6 +439,7 @@ export async function initializeContainer(): Promise<void> {
   acmeRenewalJob.setEventBus(eventBus);
   const healthCheckJob = new HealthCheckJob(db);
   healthCheckJob.setEventBus(eventBus);
+  healthCheckJob.setEvaluator(notifEvaluatorService);
   const expiryAlertJob = new ExpiryAlertJob(db, alertService, env.EXPIRY_WARNING_DAYS, env.EXPIRY_CRITICAL_DAYS);
   expiryAlertJob.setEventBus(eventBus);
 

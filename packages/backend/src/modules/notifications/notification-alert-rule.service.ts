@@ -88,10 +88,13 @@ export class NotificationAlertRuleService {
         category: input.category,
         severity: input.severity,
         metric: input.metric ?? null,
+        metricTarget: input.metricTarget ?? null,
         operator: input.operator ?? null,
         thresholdValue: input.thresholdValue ?? null,
         durationSeconds: input.durationSeconds,
+        fireThresholdPercent: input.fireThresholdPercent,
         resolveAfterSeconds: input.resolveAfterSeconds,
+        resolveThresholdPercent: input.resolveThresholdPercent,
         eventPattern: input.eventPattern ?? null,
         resourceIds: input.resourceIds,
         messageTemplate: input.messageTemplate ?? null,
@@ -121,10 +124,13 @@ export class NotificationAlertRuleService {
     if (input.enabled !== undefined) updates.enabled = input.enabled;
     if (input.severity !== undefined) updates.severity = input.severity;
     if (input.metric !== undefined) updates.metric = input.metric;
+    if (input.metricTarget !== undefined) updates.metricTarget = input.metricTarget;
     if (input.operator !== undefined) updates.operator = input.operator;
     if (input.thresholdValue !== undefined) updates.thresholdValue = input.thresholdValue;
     if (input.durationSeconds !== undefined) updates.durationSeconds = input.durationSeconds;
+    if (input.fireThresholdPercent !== undefined) updates.fireThresholdPercent = input.fireThresholdPercent;
     if (input.resolveAfterSeconds !== undefined) updates.resolveAfterSeconds = input.resolveAfterSeconds;
+    if (input.resolveThresholdPercent !== undefined) updates.resolveThresholdPercent = input.resolveThresholdPercent;
     if (input.eventPattern !== undefined) updates.eventPattern = input.eventPattern;
     if (input.resourceIds !== undefined) updates.resourceIds = input.resourceIds;
     if (input.messageTemplate !== undefined) updates.messageTemplate = input.messageTemplate;

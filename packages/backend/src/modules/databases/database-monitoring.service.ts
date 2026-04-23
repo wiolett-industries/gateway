@@ -119,15 +119,34 @@ export class DatabaseMonitoringService extends EventEmitter {
         lastError: snapshot.status === 'offline' ? 'Database is unreachable' : null,
       });
       await this.evaluator?.evaluateDatabaseSnapshot(snapshot);
+      await this.evaluator?.observeStatefulEvent(
+        snapshot.type === 'postgres' ? 'database_postgres' : 'database_redis',
+        snapshot.status === 'online'
+          ? 'health.online'
+          : snapshot.status === 'degraded'
+            ? 'health.degraded'
+            : 'health.offline',
+        { type: 'database', id: databaseId, name: connection.name },
+        { health_status: snapshot.status }
+      );
       this.emit('snapshot', { databaseId, snapshot });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Monitoring failed';
       logger.debug('Database monitoring poll failed', { databaseId, error: message });
+      const connection = await this.databaseService.get(databaseId).catch(() => null);
       await this.databaseService.updateHealth(databaseId, {
         status: 'offline',
         lastError: message,
         forceHistory: true,
       });
+      if (connection) {
+        await this.evaluator?.observeStatefulEvent(
+          connection.type === 'postgres' ? 'database_postgres' : 'database_redis',
+          'health.offline',
+          { type: 'database', id: databaseId, name: connection.name },
+          { health_status: 'offline', error: message }
+        );
+      }
     }
   }
 

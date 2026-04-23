@@ -794,7 +794,7 @@ The notification system sends HTTP webhook notifications when alert conditions a
 Each alert rule defines:
 - **Category**: node, container, proxy, or certificate
 - **Type**: threshold (metric breaches a value) or event (something happens)
-- **Threshold fields** (for threshold type): metric, operator (>, >=, <, <=), thresholdValue, durationSeconds (how long metric must breach before firing), resolveAfterSeconds (how long metric must stay below threshold before resolving, default 60s)
+- **Threshold fields** (for threshold type): metric, metricTarget (optional sub-target such as a specific node disk mount), operator (>, >=, <, <=), thresholdValue, durationSeconds (fire observation window), fireThresholdPercent (percent of probes in that window that must breach), resolveAfterSeconds (resolve observation window, default 60s), resolveThresholdPercent (percent of probes in that window that must be clear)
 - **Event fields** (for event type): eventPattern (offline, stopped, oom_killed, etc.)
 - **Scope**: resourceIds — specific nodes/containers/certs to monitor (empty = all)
 - **Severity**: info, warning, critical
