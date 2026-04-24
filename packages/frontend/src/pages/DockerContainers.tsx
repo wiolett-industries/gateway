@@ -115,7 +115,7 @@ export function DockerContainers({
   const containers = useDockerStore((s) => s.containers) as DockerContainerRowData[];
   const selectedNodeId = useDockerStore((s) => s.selectedNodeId);
   const filters = useDockerStore((s) => s.filters);
-  const isLoading = useDockerStore((s) => s.isLoading);
+  const isLoading = useDockerStore((s) => s.loading.containers);
   const setSelectedNode = useDockerStore((s) => s.setSelectedNode);
   const setFilters = useDockerStore((s) => s.setFilters);
   const resetFilters = useDockerStore((s) => s.resetFilters);
@@ -205,12 +205,10 @@ export function DockerContainers({
 
   const refreshData = useCallback(
     async (force = false) => {
-      if (force) {
-        await forceFetchContainers(fixedNodeId);
-      } else {
-        await fetchContainers(fixedNodeId);
-      }
-      await fetchFolders();
+      await Promise.all([
+        force ? forceFetchContainers(fixedNodeId) : fetchContainers(fixedNodeId),
+        fetchFolders(),
+      ]);
     },
     [fetchContainers, fetchFolders, fixedNodeId, forceFetchContainers]
   );

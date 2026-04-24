@@ -37,6 +37,8 @@ const defaultFilters: CertificateFilters = {
   caId: "all",
 };
 
+let fetchCertificatesRequestId = 0;
+
 export const useCertificatesStore = create<CertificatesState>()((set, get) => ({
   certificates: [],
   selectedCertificate: null,
@@ -49,6 +51,7 @@ export const useCertificatesStore = create<CertificatesState>()((set, get) => ({
   totalPages: 0,
 
   fetchCertificates: async () => {
+    const requestId = ++fetchCertificatesRequestId;
     const { filters, page, limit } = get();
     const showSystem =
       useUIStore.getState().showSystemCertificates &&
@@ -87,6 +90,7 @@ export const useCertificatesStore = create<CertificatesState>()((set, get) => ({
         caId: filters.caId !== "all" ? filters.caId : undefined,
         showSystem,
       });
+      if (requestId !== fetchCertificatesRequestId) return;
       if (isDefault) api.setCache(cacheKey, response);
       set({
         certificates: response.data || [],
@@ -95,6 +99,7 @@ export const useCertificatesStore = create<CertificatesState>()((set, get) => ({
         isLoading: false,
       });
     } catch (err) {
+      if (requestId !== fetchCertificatesRequestId) return;
       const message = err instanceof Error ? err.message : "Failed to fetch certificates";
       set({ error: message, isLoading: false });
     }

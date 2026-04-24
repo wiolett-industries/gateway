@@ -128,6 +128,8 @@ function applyFolderOrder(
   return visit(nodes);
 }
 
+let fetchGroupedHostsRequestId = 0;
+
 export const useFolderStore = create<FolderState>()((set, get) => ({
   ...(() => {
     const initialExpanded = new Set(loadExpandedFolderIds());
@@ -144,6 +146,7 @@ export const useFolderStore = create<FolderState>()((set, get) => ({
   filters: { ...defaultFilters },
 
   fetchGroupedHosts: async () => {
+    const requestId = ++fetchGroupedHostsRequestId;
     const { filters } = get();
     const isDefaultFilters =
       !filters.search && filters.type === "all" && filters.healthStatus === "all";
@@ -171,6 +174,7 @@ export const useFolderStore = create<FolderState>()((set, get) => ({
         type: filters.type !== "all" ? filters.type : undefined,
         healthStatus: filters.healthStatus !== "all" ? filters.healthStatus : undefined,
       });
+      if (requestId !== fetchGroupedHostsRequestId) return;
       if (isDefaultFilters) api.setCache("proxy:grouped", response);
       set((state) => {
         let expandedFolderIds = state.expandedFolderIds;
@@ -192,6 +196,7 @@ export const useFolderStore = create<FolderState>()((set, get) => ({
         };
       });
     } catch (err) {
+      if (requestId !== fetchGroupedHostsRequestId) return;
       const message = err instanceof Error ? err.message : "Failed to fetch proxy hosts";
       set({ error: message, isLoading: false });
     }

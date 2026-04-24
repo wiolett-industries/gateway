@@ -47,7 +47,8 @@ export function DockerImages({
 } = {}) {
   const navigate = useNavigate();
   const { hasScope } = useAuthStore();
-  const { images, selectedNodeId, isLoading, setSelectedNode, fetchImages } = useDockerStore();
+  const { images, selectedNodeId, setSelectedNode, fetchImages } = useDockerStore();
+  const isLoading = useDockerStore((s) => s.loading.images);
   const visibleNodeId = fixedNodeId ?? selectedNodeId;
 
   const [dockerNodes, setDockerNodes] = useState<Node[]>([]);
@@ -466,7 +467,10 @@ export function DockerImages({
         <DataTable
           columns={imageColumns}
           data={filteredImages}
-          keyFn={(img: any) => img.id ?? img.Id ?? ""}
+          keyFn={(img: any) => {
+            const tags = img.repoTags ?? img.RepoTags ?? [];
+            return `${img._nodeId ?? selectedNodeId ?? "node"}:${img.id ?? img.Id ?? ""}:${tags.join("|")}`;
+          }}
           emptyMessage="No images found."
         />
       ) : isLoading ? (

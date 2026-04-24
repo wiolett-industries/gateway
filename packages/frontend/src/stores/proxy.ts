@@ -39,6 +39,8 @@ const defaultFilters: ProxyHostFilters = {
   enabled: "all",
 };
 
+let fetchProxyHostsRequestId = 0;
+
 export const useProxyStore = create<ProxyState>()((set, get) => ({
   proxyHosts: [],
   selectedProxyHost: null,
@@ -51,6 +53,7 @@ export const useProxyStore = create<ProxyState>()((set, get) => ({
   totalPages: 0,
 
   fetchProxyHosts: async () => {
+    const requestId = ++fetchProxyHostsRequestId;
     const { filters, page, limit } = get();
     set({ isLoading: true, error: null });
     try {
@@ -62,6 +65,7 @@ export const useProxyStore = create<ProxyState>()((set, get) => ({
         healthStatus: filters.healthStatus !== "all" ? filters.healthStatus : undefined,
         enabled: filters.enabled !== "all" ? filters.enabled === "enabled" : undefined,
       });
+      if (requestId !== fetchProxyHostsRequestId) return;
       set({
         proxyHosts: response.data || [],
         total: response.pagination?.total ?? 0,
@@ -69,6 +73,7 @@ export const useProxyStore = create<ProxyState>()((set, get) => ({
         isLoading: false,
       });
     } catch (err) {
+      if (requestId !== fetchProxyHostsRequestId) return;
       const message = err instanceof Error ? err.message : "Failed to fetch proxy hosts";
       set({ error: message, isLoading: false });
     }

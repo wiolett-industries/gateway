@@ -204,18 +204,12 @@ export class ApiClientBase {
     const url = endpoint.startsWith("/auth") ? endpoint : `${API_BASE}${endpoint}`;
     const method = (options.method || "GET").toUpperCase();
 
-    // For GET requests: return cached data if fresh, refresh in background
+    // For GET requests, update the shared cache but return the network result
+    // to the caller. Stores already read cache explicitly when they want an
+    // instant stale value; returning cached data here makes refresh actions
+    // look successful while leaving the UI stale.
     if (method === "GET") {
       const cacheKey = `req:${url}`;
-      const cached = this.getCached<T>(cacheKey);
-      if (cached !== undefined) {
-        // Refresh in background
-        this.fetchRaw<T>(url, options, { suppressGlobalStatus: true })
-          .then((data) => this.setCache(cacheKey, data))
-          .catch(() => {});
-        return cached;
-      }
-      // No cache — fetch and cache
       const data = await this.fetchRaw<T>(url, options);
       this.setCache(cacheKey, data);
       return data;

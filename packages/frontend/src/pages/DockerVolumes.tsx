@@ -51,7 +51,8 @@ export function DockerVolumes({
 } = {}) {
   const navigate = useNavigate();
   const { hasScope } = useAuthStore();
-  const { volumes, selectedNodeId, isLoading, setSelectedNode, fetchVolumes } = useDockerStore();
+  const { volumes, selectedNodeId, setSelectedNode, fetchVolumes } = useDockerStore();
+  const isLoading = useDockerStore((s) => s.loading.volumes);
   const visibleNodeId = fixedNodeId ?? selectedNodeId;
 
   const [dockerNodes, setDockerNodes] = useState<Node[]>([]);
@@ -369,7 +370,7 @@ export function DockerVolumes({
         <DataTable
           columns={volumeColumns}
           data={filteredVolumes}
-          keyFn={(v) => v.name}
+          keyFn={(v) => `${(v as any)._nodeId ?? selectedNodeId ?? "node"}:${v.name}`}
           emptyMessage="No volumes found."
         />
       ) : isLoading ? (

@@ -35,7 +35,7 @@ export function Docker() {
   const fetchImages = useDockerStore((s) => s.fetchImages);
   const fetchVolumes = useDockerStore((s) => s.fetchVolumes);
   const fetchNetworks = useDockerStore((s) => s.fetchNetworks);
-  const isLoading = useDockerStore((s) => s.isLoading);
+  const loading = useDockerStore((s) => s.loading);
 
   const deployContainerRef = useRef<(() => void) | null>(null);
   const createFolderRef = useRef<(() => void) | null>(null);
@@ -48,6 +48,18 @@ export function Docker() {
     tabParam && visibleTabs.some((t) => t.value === tabParam)
       ? tabParam
       : visibleTabs[0]?.value || "containers";
+  const activeTabLoading =
+    activeTab === "containers"
+      ? loading.containers
+      : activeTab === "images"
+        ? loading.images
+        : activeTab === "volumes"
+          ? loading.volumes
+          : activeTab === "networks"
+            ? loading.networks
+            : activeTab === "tasks"
+              ? loading.tasks
+              : false;
 
   // Fetch docker nodes on mount, store in zustand for multi-node fetching
   useEffect(() => {
@@ -160,7 +172,7 @@ export function Docker() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <RefreshButton onClick={handleRefresh} disabled={isLoading} />
+            <RefreshButton onClick={handleRefresh} disabled={activeTabLoading} />
             {renderActions()}
           </div>
         </div>

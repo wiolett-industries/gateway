@@ -51,6 +51,8 @@ const defaultFilters: SSLCertFilters = {
   status: "active",
 };
 
+let fetchSSLCertificatesRequestId = 0;
+
 export const useSSLStore = create<SSLState>()((set, get) => ({
   certificates: [],
   selectedCert: null,
@@ -63,6 +65,7 @@ export const useSSLStore = create<SSLState>()((set, get) => ({
   totalPages: 0,
 
   fetchCertificates: async () => {
+    const requestId = ++fetchSSLCertificatesRequestId;
     const { filters, page, limit } = get();
     const showSystem =
       useUIStore.getState().showSystemCertificates &&
@@ -96,6 +99,7 @@ export const useSSLStore = create<SSLState>()((set, get) => ({
         status: filters.status !== "all" ? filters.status : undefined,
         showSystem,
       });
+      if (requestId !== fetchSSLCertificatesRequestId) return;
       if (isDefault) api.setCache(cacheKey, response);
       set({
         certificates: response.data || [],
@@ -104,6 +108,7 @@ export const useSSLStore = create<SSLState>()((set, get) => ({
         isLoading: false,
       });
     } catch (err) {
+      if (requestId !== fetchSSLCertificatesRequestId) return;
       const message = err instanceof Error ? err.message : "Failed to fetch SSL certificates";
       set({ error: message, isLoading: false });
     }
