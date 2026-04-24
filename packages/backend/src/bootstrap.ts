@@ -11,6 +11,7 @@ import { HousekeepingJob } from '@/jobs/housekeeping.job.js';
 import { NotificationRetryJob } from '@/jobs/notification-retry.job.js';
 import { UpdateCheckJob } from '@/jobs/update-check.job.js';
 import { logger } from '@/lib/logger.js';
+import { LICENSE_HEARTBEAT_INTERVAL_MS } from '@/modules/license/license.types.js';
 import { AccessListService } from '@/modules/access-lists/access-list.service.js';
 import { AIService } from '@/modules/ai/ai.service.js';
 import { AISettingsService } from '@/modules/ai/ai.settings.service.js';
@@ -31,6 +32,7 @@ import { DatabaseConnectionService } from '@/modules/databases/databases.service
 import { detectPublicIP, initDnsResolver } from '@/modules/domains/dns.utils.js';
 import { DomainsService } from '@/modules/domains/domain.service.js';
 import { GroupService } from '@/modules/groups/group.service.js';
+import { LicenseService } from '@/modules/license/license.service.js';
 import { MonitoringService } from '@/modules/monitoring/monitoring.service.js';
 import { NginxConfigService } from '@/modules/monitoring/nginx-config.service.js';
 import { NginxStatsService } from '@/modules/monitoring/nginx-stats.service.js';
@@ -361,6 +363,9 @@ export async function initializeContainer(): Promise<void> {
   const updateService = new UpdateService(db, dockerService, env);
   container.registerInstance(UpdateService, updateService);
 
+  const licenseService = new LicenseService(db, cryptoService, env);
+  container.registerInstance(LicenseService, licenseService);
+
   const daemonUpdateService = new DaemonUpdateService(db, env);
   daemonUpdateService.setEventBus(eventBus);
   container.registerInstance(DaemonUpdateService, daemonUpdateService);
@@ -466,6 +471,7 @@ export async function initializeContainer(): Promise<void> {
 
   const updateCheckJob = new UpdateCheckJob(updateService);
   scheduler.registerInterval('update-check', env.UPDATE_CHECK_INTERVAL_HOURS * 3_600_000, () => updateCheckJob.run());
+  scheduler.registerInterval('license-heartbeat', LICENSE_HEARTBEAT_INTERVAL_MS, () => licenseService.heartbeat());
 
   const daemonUpdateCheckJob = new DaemonUpdateCheckJob(daemonUpdateService);
   scheduler.registerInterval('daemon-update-check', env.UPDATE_CHECK_INTERVAL_HOURS * 3_600_000, () =>
@@ -483,6 +489,14 @@ export async function initializeContainer(): Promise<void> {
   // Notification webhook retry job (every 30 seconds)
   const notifRetryJob = new NotificationRetryJob(notifDeliveryService, notifDispatcherService);
   scheduler.registerInterval('notification-retry', 30000, () => notifRetryJob.run());
+
+  setTimeout(() => {
+    licenseService.heartbeat().catch((error) => {
+      logger.warn('Initial license heartbeat failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+  }, 1000);
 
   logger.info('Dependency injection container initialized');
 }

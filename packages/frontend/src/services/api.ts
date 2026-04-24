@@ -42,6 +42,7 @@ import type {
   HousekeepingStats,
   IssueCertFromCSRRequest,
   IssueCertificateRequest,
+  LicenseStatusView,
   LinkInternalCertRequest,
   NginxProcessInfo,
   NginxTemplate,
@@ -1472,6 +1473,33 @@ class ApiClient extends ApiClientBase {
         `/system/daemon-updates/${nodeId}`,
         { method: "POST" }
       )
+    );
+  }
+
+  // ── License ─────────────────────────────────────────────────────
+
+  async getLicenseStatus(): Promise<LicenseStatusView> {
+    return this.unwrapData(this.request<{ data: LicenseStatusView }>("/system/license/status"));
+  }
+
+  async activateLicense(licenseKey: string): Promise<LicenseStatusView> {
+    return this.unwrapData(
+      this.request<{ data: LicenseStatusView }>("/system/license/activate", {
+        method: "POST",
+        body: JSON.stringify({ licenseKey }),
+      })
+    );
+  }
+
+  async checkLicense(): Promise<LicenseStatusView> {
+    return this.unwrapData(
+      this.request<{ data: LicenseStatusView }>("/system/license/check", { method: "POST" })
+    );
+  }
+
+  async clearLicenseKey(): Promise<LicenseStatusView> {
+    return this.unwrapData(
+      this.request<{ data: LicenseStatusView }>("/system/license/key", { method: "DELETE" })
     );
   }
 

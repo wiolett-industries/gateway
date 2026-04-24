@@ -30,6 +30,7 @@ import { databaseRoutes } from '@/modules/databases/databases.routes.js';
 import { domainRoutes } from '@/modules/domains/domain.routes.js';
 import { groupRoutes } from '@/modules/groups/group.routes.js';
 import { housekeepingRoutes } from '@/modules/housekeeping/housekeeping.routes.js';
+import { licenseRoutes } from '@/modules/license/license.routes.js';
 import { monitoringRoutes } from '@/modules/monitoring/monitoring.routes.js';
 import { createNodeExecWSHandlers } from '@/modules/nodes/node-exec.ws.js';
 import { nodesRoutes } from '@/modules/nodes/nodes.routes.js';
@@ -127,6 +128,7 @@ export function createApp() {
   app.route('/api/access-lists', accessListRoutes);
   app.route('/api/monitoring', monitoringRoutes);
   app.route('/api/setup', setupRoutes);
+  app.route('/api/system/license', licenseRoutes);
   app.route('/api/system', systemRoutes);
   app.route('/api/housekeeping', housekeepingRoutes);
   app.route('/api/notifications', notificationRoutes);
