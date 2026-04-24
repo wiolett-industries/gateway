@@ -594,6 +594,13 @@ func (c *Client) LiveUpdateContainer(ctx context.Context, id string, configJSON 
 	}
 	if params.NanoCPUs != nil {
 		resources.NanoCPUs = *params.NanoCPUs
+		if *params.NanoCPUs > 0 {
+			resources.CPUPeriod = 100000
+			resources.CPUQuota = *params.NanoCPUs / 10000
+		} else {
+			resources.CPUPeriod = 0
+			resources.CPUQuota = 0
+		}
 		hasResources = true
 	}
 	if params.CpuShares != nil {
@@ -756,6 +763,13 @@ func (c *Client) RecreateWithConfig(ctx context.Context, id string, configJSON s
 	}
 	if params.NanoCPUs != nil {
 		insp.HostConfig.NanoCPUs = *params.NanoCPUs
+		if *params.NanoCPUs > 0 {
+			insp.HostConfig.CPUPeriod = 100000
+			insp.HostConfig.CPUQuota = *params.NanoCPUs / 10000
+		} else {
+			insp.HostConfig.CPUPeriod = 0
+			insp.HostConfig.CPUQuota = 0
+		}
 	}
 	if params.CpuShares != nil {
 		insp.HostConfig.CPUShares = *params.CpuShares

@@ -8,6 +8,14 @@ type ConfigToken =
   | { type: 'blockClose'; line: number };
 
 export class ConfigValidatorService {
+  private static readonly HANDLEBARS_EXPR_RE = /{{{[\s\S]*?}}}|{{[\s\S]*?}}/g;
+
+  private static stripHandlebarsExpressions(snippet: string): string {
+    return snippet.replace(ConfigValidatorService.HANDLEBARS_EXPR_RE, (match) =>
+      match.replace(/[^\n]/g, ' ')
+    );
+  }
+
   /**
    * Directives that must never appear anywhere in user-supplied advanced config snippets.
    * Each entry is checked as a case-insensitive prefix of a trimmed line.
@@ -155,6 +163,9 @@ export class ConfigValidatorService {
    */
   validate(snippet: string, rawMode = false): { valid: boolean; errors: string[] } {
     const errors: string[] = [];
+    const nginxSnippet = rawMode
+      ? snippet
+      : ConfigValidatorService.stripHandlebarsExpressions(snippet);
 
     // 1. Null byte check
     if (snippet.includes('\0')) {
@@ -170,7 +181,7 @@ export class ConfigValidatorService {
     // 3. Forbidden directives (skip in raw mode — user controls the entire config)
     const lines = snippet.split('\n');
     if (!rawMode) {
-      const tokens = ConfigValidatorService.tokenize(snippet);
+      const tokens = ConfigValidatorService.tokenize(nginxSnippet);
       const blockStack: Array<{ type: 'location'; root: boolean } | { type: 'other' }> = [];
 
       for (const token of tokens) {
@@ -224,9 +235,9 @@ export class ConfigValidatorService {
 
     // 5. Balanced braces
     let braceDepth = 0;
-    for (let i = 0; i < snippet.length; i++) {
-      if (snippet[i] === '{') braceDepth++;
-      if (snippet[i] === '}') braceDepth--;
+    for (let i = 0; i < nginxSnippet.length; i++) {
+      if (nginxSnippet[i] === '{') braceDepth++;
+      if (nginxSnippet[i] === '}') braceDepth--;
       if (braceDepth < 0) {
         errors.push('Unbalanced curly braces: unexpected closing brace');
         break;

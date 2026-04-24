@@ -406,7 +406,18 @@ export function ProxyHostDetail() {
     } finally {
       setIsSavingTemplate(false);
     }
-  }, [id, nginxTemplateId, normalizeTemplateVariables, templateVariables]);
+  }, [
+    host,
+    id,
+    nginxTemplateId,
+    normalizeTemplateVariables,
+    templateForwardHost,
+    templateForwardPort,
+    templateForwardScheme,
+    templateRedirectStatusCode,
+    templateRedirectUrl,
+    templateVariables,
+  ]);
 
   // ── Save custom config ────────────────────────────────────────
   const handleSaveCustom = async () => {

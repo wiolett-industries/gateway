@@ -670,6 +670,19 @@ export class ProxyService {
       return staticResult;
     }
 
+    try {
+      this.nginxTemplateService.previewWithSampleData(snippet);
+    } catch (err) {
+      return {
+        valid: false,
+        errors: [
+          err instanceof Error
+            ? `Template rendering error: ${err.message}`
+            : 'Template rendering error',
+        ],
+      };
+    }
+
     return staticResult;
   }
 

@@ -241,6 +241,8 @@ export class DockerManagementService {
       memorySwap:
         hostConfig.MemorySwap === -1 ? -1 : (this.normalizeNonNegativeNumber(hostConfig.MemorySwap) ?? 0),
       nanoCPUs: this.normalizeNonNegativeNumber(hostConfig.NanoCPUs) ?? 0,
+      cpuQuota: this.normalizeNonNegativeNumber(hostConfig.CPUQuota) ?? 0,
+      cpuPeriod: this.normalizeNonNegativeNumber(hostConfig.CPUPeriod) ?? 0,
     };
   }
 

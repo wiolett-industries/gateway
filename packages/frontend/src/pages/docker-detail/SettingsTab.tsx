@@ -42,6 +42,19 @@ function parseOptionalNumber(value: string): number | null {
   return Number.isFinite(parsed) ? parsed : Number.NaN;
 }
 
+function deriveCurrentNanoCPUs(hostConfig: Record<string, any>): number {
+  const nanoCPUs = Number(hostConfig.NanoCPUs ?? 0);
+  if (Number.isFinite(nanoCPUs) && nanoCPUs > 0) return nanoCPUs;
+
+  const cpuQuota = Number(hostConfig.CPUQuota ?? 0);
+  const cpuPeriod = Number(hostConfig.CPUPeriod ?? 0);
+  if (Number.isFinite(cpuQuota) && Number.isFinite(cpuPeriod) && cpuQuota > 0 && cpuPeriod > 0) {
+    return Math.round((cpuQuota / cpuPeriod) * 1e9);
+  }
+
+  return 0;
+}
+
 // ── Component ────────────────────────────────────────────────────
 
 export function SettingsTab({
@@ -74,7 +87,7 @@ export function SettingsTab({
   const currentMaxRetries = hostConfig.RestartPolicy?.MaximumRetryCount ?? 0;
   const currentMemory = hostConfig.Memory ?? 0;
   const currentMemSwap = hostConfig.MemorySwap ?? 0;
-  const currentNanoCPUs = hostConfig.NanoCPUs ?? 0;
+  const currentNanoCPUs = deriveCurrentNanoCPUs(hostConfig as Record<string, any>);
   const currentCpuShares = hostConfig.CpuShares ?? 0;
   const currentPidsLimit = hostConfig.PidsLimit ?? 0;
 
@@ -313,7 +326,7 @@ export function SettingsTab({
     const memBytes = memoryMB ? Number(memoryMB) * 1048576 : 0;
     const swapOnly = memSwapMB === "-1" ? -1 : memSwapMB ? Number(memSwapMB) * 1048576 : 0;
     const combinedSwap =
-      swapOnly === -1 ? -1 : swapOnly > 0 ? memBytes + swapOnly : memBytes > 0 ? memBytes * 2 : 0;
+      swapOnly === -1 ? -1 : memBytes > 0 ? memBytes + Math.max(0, swapOnly) : 0;
     if (memBytes !== currentMemory || combinedSwap !== currentMemSwap) {
       payload.memoryLimit = memBytes;
       payload.memorySwap = combinedSwap;
