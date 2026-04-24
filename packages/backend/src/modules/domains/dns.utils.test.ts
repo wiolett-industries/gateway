@@ -20,7 +20,7 @@ describe('computeDnsStatus', () => {
   });
 
   it('marks DNS valid when records match any configured IPv4', async () => {
-    await detectPublicIP('198.51.100.10,198.51.100.11');
+    await detectPublicIP('198.51.100.10,198.51.100.11', '2001:db8::10');
 
     const status = computeDnsStatus(
       makeRecords({
@@ -32,7 +32,7 @@ describe('computeDnsStatus', () => {
   });
 
   it('marks DNS valid when records match any configured IPv6', async () => {
-    await detectPublicIP(undefined, '2001:db8::10,2001:db8::11');
+    await detectPublicIP('198.51.100.10', '2001:db8::10,2001:db8::11');
 
     const status = computeDnsStatus(
       makeRecords({
