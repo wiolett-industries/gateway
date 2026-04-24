@@ -17,6 +17,8 @@ import type { LinkInternalCertInput, RequestACMECertInput, SSLCertListQuery, Upl
 
 const logger = createChildLogger('SSLService');
 
+type DNSChallenge = { domain: string; recordName: string; recordValue: string };
+
 export class SSLService {
   constructor(
     private readonly db: DrizzleClient,
@@ -148,6 +150,8 @@ export class SSLService {
         acmeChallengeType: 'dns-01',
         acmeAccountKey: dns01AcmeAccountKeyBlob,
         acmeOrderUrl: result.orderUrl,
+        acmePendingOperation: 'issue',
+        acmePendingChallenges: result.challenges,
         autoRenew: input.autoRenew,
         status: 'pending',
         createdById: userId,
@@ -185,12 +189,20 @@ export class SSLService {
     });
 
     if (!cert) throw new AppError(404, 'SSL_CERT_NOT_FOUND', 'SSL certificate not found');
-    if (cert.status !== 'pending')
-      throw new AppError(400, 'NOT_PENDING', 'Certificate is not pending DNS verification');
     if (cert.acmeChallengeType !== 'dns-01')
       throw new AppError(400, 'NOT_DNS01', 'Certificate is not a DNS-01 challenge');
     if (!cert.acmeAccountKey || !cert.acmeOrderUrl) {
       throw new AppError(400, 'MISSING_ACME_STATE', 'Missing ACME state data for verification');
+    }
+    const pendingOperation = cert.acmePendingOperation ?? (cert.status === 'pending' ? 'issue' : null);
+    if (pendingOperation !== 'issue' && pendingOperation !== 'renewal') {
+      throw new AppError(400, 'NOT_PENDING', 'Certificate is not pending DNS verification');
+    }
+    if (pendingOperation === 'issue' && cert.status !== 'pending' && cert.status !== 'error') {
+      throw new AppError(400, 'NOT_PENDING', 'Certificate is not pending DNS verification');
+    }
+    if (pendingOperation === 'renewal' && cert.status !== 'active' && cert.status !== 'error') {
+      throw new AppError(400, 'CERT_NOT_RENEWABLE', 'Certificate is not in a renewable state');
     }
 
     try {
@@ -225,7 +237,11 @@ export class SSLService {
           notBefore: result.notBefore,
           notAfter: result.notAfter,
           status: 'active',
+          lastRenewedAt: pendingOperation === 'renewal' ? new Date() : cert.lastRenewedAt,
+          renewalError: null,
           acmeOrderUrl: null, // Clear order URL after completion
+          acmePendingOperation: null,
+          acmePendingChallenges: null,
           updatedAt: new Date(),
         })
         .where(eq(sslCertificates.id, certId));
@@ -254,13 +270,14 @@ export class SSLService {
 
       await this.auditService.log({
         userId,
-        action: 'ssl.acme_dns01_verify',
+        action: pendingOperation === 'renewal' ? 'ssl.acme_dns01_renew_verify' : 'ssl.acme_dns01_verify',
         resourceType: 'ssl_certificate',
         resourceId: certId,
         details: { domains: cert.domainNames },
       });
 
-      logger.info('ACME DNS-01 certificate verified and issued', { certId, domains: cert.domainNames });
+      logger.info('ACME DNS-01 certificate verified', { certId, domains: cert.domainNames, pendingOperation });
+      this.emitCert(certId, pendingOperation === 'renewal' ? 'renewed' : 'created', cert.name);
 
       const updated = await this.db.query.sslCertificates.findFirst({
         where: eq(sslCertificates.id, certId),
@@ -269,16 +286,26 @@ export class SSLService {
       return this.sanitizeCert(updated!);
     } catch (error) {
       if (error instanceof AppError) throw error;
-      // ACME verification itself failed — cert is not valid
       const message = error instanceof Error ? error.message : 'Unknown verification error';
-      await this.db
-        .update(sslCertificates)
-        .set({
-          status: 'error',
-          renewalError: message,
-          updatedAt: new Date(),
-        })
-        .where(eq(sslCertificates.id, certId));
+      if (pendingOperation === 'renewal') {
+        await this.db
+          .update(sslCertificates)
+          .set({
+            renewalError: `Renewal failed: ${message}`,
+            updatedAt: new Date(),
+          })
+          .where(eq(sslCertificates.id, certId));
+        this.emitCert(certId, 'renewal_failed', cert.name);
+      } else {
+        await this.db
+          .update(sslCertificates)
+          .set({
+            status: 'error',
+            renewalError: message,
+            updatedAt: new Date(),
+          })
+          .where(eq(sslCertificates.id, certId));
+      }
 
       throw new AppError(400, 'DNS01_VERIFICATION_FAILED', `DNS-01 verification failed: ${message}`);
     }
@@ -477,11 +504,8 @@ export class SSLService {
         const renewIsStaging = cert.acmeProvider === 'letsencrypt-staging';
         result = await this.acmeService.requestCertHTTP01(cert.domainNames, renewIsStaging);
       } else {
-        throw new AppError(
-          400,
-          'DNS01_NO_AUTO_RENEW',
-          'DNS-01 certificates cannot be automatically renewed. Use the ACME request flow again.'
-        );
+        const dnsRenewal = await this.startDNS01Renewal(cert, userId);
+        return dnsRenewal;
       }
 
       // Encrypt private key
@@ -499,6 +523,9 @@ export class SSLService {
         status: 'active',
         lastRenewedAt: new Date(),
         renewalError: null,
+        acmeOrderUrl: null,
+        acmePendingOperation: null,
+        acmePendingChallenges: null,
         updatedAt: new Date(),
       };
 
@@ -554,6 +581,50 @@ export class SSLService {
 
       throw new AppError(500, 'RENEWAL_FAILED', `Certificate renewal failed: ${message}`);
     }
+  }
+
+  private async startDNS01Renewal(cert: typeof sslCertificates.$inferSelect, userId: string) {
+    const renewIsStaging = cert.acmeProvider === 'letsencrypt-staging';
+    const result = await this.acmeService.requestCertDNS01Start(cert.domainNames, renewIsStaging);
+
+    const acmeKeyEncrypted = this.cryptoService.encryptPrivateKey(result.accountKey);
+    const acmeAccountKeyBlob = JSON.stringify({
+      encrypted: acmeKeyEncrypted.encryptedPrivateKey,
+      encryptedDek: acmeKeyEncrypted.encryptedDek,
+      dekIv: acmeKeyEncrypted.dekIv,
+    });
+
+    await this.db
+      .update(sslCertificates)
+      .set({
+        acmeAccountKey: acmeAccountKeyBlob,
+        acmeOrderUrl: result.orderUrl,
+        acmePendingOperation: 'renewal',
+        acmePendingChallenges: result.challenges,
+        renewalError: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(sslCertificates.id, cert.id));
+
+    await this.auditService.log({
+      userId,
+      action: 'ssl.acme_dns01_renew_start',
+      resourceType: 'ssl_certificate',
+      resourceId: cert.id,
+      details: { domains: cert.domainNames, challengeType: 'dns-01' },
+    });
+
+    logger.info('ACME DNS-01 renewal challenge started', { certId: cert.id, domains: cert.domainNames });
+
+    const updated = await this.db.query.sslCertificates.findFirst({
+      where: eq(sslCertificates.id, cert.id),
+    });
+
+    return {
+      certificate: this.sanitizeCert(updated!),
+      status: 'pending_dns_verification' as const,
+      challenges: result.challenges as DNSChallenge[],
+    };
   }
 
   // ---------------------------------------------------------------------------

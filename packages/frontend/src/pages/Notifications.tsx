@@ -108,12 +108,35 @@ const STEP_ANIMATION = {
 };
 
 const ROOT_DISK_TARGET = "/";
+const CERTIFICATE_EXPIRY_METRIC = "days_until_expiry";
 
 type AlertResourceOption = {
   id: string;
   label: string;
   diskOptions?: Array<{ id: string; label: string }>;
 };
+
+function isCertificateExpiryRule(rule: AlertRule) {
+  return (
+    rule.type === "threshold" &&
+    rule.category === "certificate" &&
+    rule.metric === CERTIFICATE_EXPIRY_METRIC
+  );
+}
+
+function formatAlertCondition(rule: AlertRule) {
+  if (isCertificateExpiryRule(rule)) {
+    return `Days until expiry ${rule.operator} ${rule.thresholdValue}`;
+  }
+
+  if (rule.type === "threshold") {
+    return `${rule.metric}${rule.metricTarget ? ` (${rule.metricTarget === ROOT_DISK_TARGET ? "Root Disk" : rule.metricTarget})` : ""} ${rule.operator} ${rule.thresholdValue} • fire ${rule.fireThresholdPercent}% in ${Math.round(rule.durationSeconds / 60)}m • resolve ${rule.resolveThresholdPercent}% in ${Math.round(rule.resolveAfterSeconds / 60)}m`;
+  }
+
+  return rule.durationSeconds > 0 || rule.resolveAfterSeconds > 0
+    ? `${rule.eventPattern ?? "—"} • fire ${rule.fireThresholdPercent}% in ${Math.round(rule.durationSeconds / 60)}m • resolve ${rule.resolveThresholdPercent}% in ${Math.round(rule.resolveAfterSeconds / 60)}m`
+    : (rule.eventPattern ?? "—");
+}
 
 export function Notifications() {
   const { tab: tabParam } = useParams<{ tab?: string }>();
@@ -379,11 +402,7 @@ function AlertsTab({
                       <Badge variant="secondary">{r.category}</Badge>
                     </td>
                     <td className="p-3 text-sm text-muted-foreground">
-                      {r.type === "threshold"
-                        ? `${r.metric}${r.metricTarget ? ` (${r.metricTarget === ROOT_DISK_TARGET ? "Root Disk" : r.metricTarget})` : ""} ${r.operator} ${r.thresholdValue} • fire ${r.fireThresholdPercent}% in ${Math.round(r.durationSeconds / 60)}m • resolve ${r.resolveThresholdPercent}% in ${Math.round(r.resolveAfterSeconds / 60)}m`
-                        : r.durationSeconds > 0 || r.resolveAfterSeconds > 0
-                          ? `${r.eventPattern ?? "—"} • fire ${r.fireThresholdPercent}% in ${Math.round(r.durationSeconds / 60)}m • resolve ${r.resolveThresholdPercent}% in ${Math.round(r.resolveAfterSeconds / 60)}m`
-                          : (r.eventPattern ?? "—")}
+                      {formatAlertCondition(r)}
                     </td>
                     <td className="p-3 text-sm text-muted-foreground">
                       {r.resourceIds.length === 0 ? "All" : `${r.resourceIds.length} selected`}
@@ -622,6 +641,17 @@ function AlertDialog({
   const firstMetric = cat?.metrics[0];
   const firstEvent = cat?.events[0];
   const selectedEventDef = cat?.events.find((event) => event.id === eventPattern);
+  const isCertificateExpiryThreshold =
+    type === "threshold" && category === "certificate" && metric === CERTIFICATE_EXPIRY_METRIC;
+  const applyMetricDefaults = (metricDef: NonNullable<typeof firstMetric>) => {
+    setMetric(metricDef.id);
+    setOperator(metricDef.defaultOperator);
+    setThresholdValue(String(metricDef.defaultValue));
+    setDurationMinutes(String(Math.round((metricDef.defaultDurationSeconds ?? 0) / 60)));
+    setFireThresholdPercent("100");
+    setResolveAfterMinutes(String(Math.round((metricDef.defaultResolveAfterSeconds ?? 60) / 60)));
+    setResolveThresholdPercent("100");
+  };
 
   // Auto-fix type and set defaults when category changes (skip in edit mode on first load)
   useEffect(() => {
@@ -644,9 +674,7 @@ function AlertDialog({
     }
     // Set defaults for the effective type
     if (effectiveType === "threshold" && firstMetric) {
-      setMetric(firstMetric.id);
-      setOperator(firstMetric.defaultOperator);
-      setThresholdValue(String(firstMetric.defaultValue));
+      applyMetricDefaults(firstMetric);
     }
     if (effectiveType === "event" && firstEvent) {
       setEventPattern(firstEvent.id);
@@ -657,9 +685,7 @@ function AlertDialog({
   useEffect(() => {
     if (isEdit || !cat) return;
     if (type === "threshold" && firstMetric && !cat.metrics.some((m) => m.id === metric)) {
-      setMetric(firstMetric.id);
-      setOperator(firstMetric.defaultOperator);
-      setThresholdValue(String(firstMetric.defaultValue));
+      applyMetricDefaults(firstMetric);
     }
     if (type === "event" && firstEvent && !cat.events.some((event) => event.id === eventPattern)) {
       setEventPattern(firstEvent.id);
@@ -732,7 +758,7 @@ function AlertDialog({
       toast.error("Select at least one resource, or disable scope restriction");
       return;
     }
-    const cooldownNum = Number(cooldownSeconds);
+    const cooldownNum = isCertificateExpiryThreshold ? 0 : Number(cooldownSeconds);
     if (Number.isNaN(cooldownNum) || cooldownNum < 0) {
       toast.error("Invalid cooldown value");
       return;
@@ -743,22 +769,22 @@ function AlertDialog({
         toast.error("Invalid threshold value");
         return;
       }
-      const dur = Number(durationMinutes);
+      const dur = isCertificateExpiryThreshold ? 0 : Number(durationMinutes);
       if (Number.isNaN(dur) || dur < 0) {
         toast.error("Invalid duration value");
         return;
       }
-      const firePct = Number(fireThresholdPercent);
+      const firePct = isCertificateExpiryThreshold ? 100 : Number(fireThresholdPercent);
       if (Number.isNaN(firePct) || firePct < 0 || firePct > 100) {
         toast.error("Invalid fire threshold value");
         return;
       }
-      const res = Number(resolveAfterMinutes);
+      const res = isCertificateExpiryThreshold ? 0 : Number(resolveAfterMinutes);
       if (Number.isNaN(res) || res < 0) {
         toast.error("Invalid resolve-after value");
         return;
       }
-      const resolvePct = Number(resolveThresholdPercent);
+      const resolvePct = isCertificateExpiryThreshold ? 100 : Number(resolveThresholdPercent);
       if (Number.isNaN(resolvePct) || resolvePct < 0 || resolvePct > 100) {
         toast.error("Invalid resolve threshold value");
         return;
@@ -782,10 +808,12 @@ function AlertDialog({
         data.metricTarget = canSelectNodeDiskTarget ? metricTarget : null;
         data.operator = operator;
         data.thresholdValue = Number(thresholdValue);
-        data.durationSeconds = Number(durationMinutes) * 60;
-        data.fireThresholdPercent = Number(fireThresholdPercent);
-        data.resolveAfterSeconds = Number(resolveAfterMinutes) * 60;
-        data.resolveThresholdPercent = Number(resolveThresholdPercent);
+        data.durationSeconds = isCertificateExpiryThreshold ? 0 : Number(durationMinutes) * 60;
+        data.fireThresholdPercent = isCertificateExpiryThreshold ? 100 : Number(fireThresholdPercent);
+        data.resolveAfterSeconds = isCertificateExpiryThreshold ? 0 : Number(resolveAfterMinutes) * 60;
+        data.resolveThresholdPercent = isCertificateExpiryThreshold
+          ? 100
+          : Number(resolveThresholdPercent);
       } else {
         data.eventPattern = eventPattern;
         data.durationSeconds = selectedEventDef?.supportsThreshold ? Number(durationMinutes) * 60 : 0;
@@ -903,7 +931,14 @@ function AlertDialog({
                   <div className="grid grid-cols-3 gap-4">
                     <div className="space-y-1.5">
                       <label className="text-sm font-medium">Metric</label>
-                      <Select value={metric} onValueChange={setMetric}>
+                      <Select
+                        value={metric}
+                        onValueChange={(value) => {
+                          const nextMetric = cat.metrics.find((m) => m.id === value);
+                          if (nextMetric) applyMetricDefaults(nextMetric);
+                          else setMetric(value);
+                        }}
+                      >
                         <SelectTrigger>
                           <SelectValue />
                         </SelectTrigger>
@@ -966,7 +1001,7 @@ function AlertDialog({
                     </div>
                   </div>
                 )}
-                {type === "threshold" && (
+                {type === "threshold" && !isCertificateExpiryThreshold && (
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1.5">
                       <label className="text-sm font-medium">Fire window (minutes)</label>

@@ -6,9 +6,17 @@ import { EmptyState } from "@/components/common/EmptyState";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
 import { SearchFilterBar } from "@/components/common/SearchFilterBar";
+import { DNSChallengeVerification } from "@/components/ssl/DNSChallengeVerification";
 import { SSLCertificateCreateDialog } from "@/components/ssl/SSLCertificateCreateDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,7 +35,7 @@ import { cn, daysUntil, formatDate, hoursUntil } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth";
 import { useSSLStore } from "@/stores/ssl";
 import { useUIStore } from "@/stores/ui";
-import type { SSLCertStatus, SSLCertType } from "@/types";
+import type { DNSChallenge, SSLCertStatus, SSLCertType } from "@/types";
 
 const typeOptions: { value: SSLCertType | "all"; label: string }[] = [
   { value: "all", label: "All types" },
@@ -100,9 +108,17 @@ export function SSLCertificates() {
     setPage,
     resetFilters,
     renewCert,
+    completeDNSVerify,
     deleteCert,
   } = useSSLStore();
   const [searchInput, setSearchInput] = useState(filters.search);
+  const [pendingRenewal, setPendingRenewal] = useState<{
+    certId: string;
+    certName: string;
+    operation: "issue" | "renewal";
+    challenges: DNSChallenge[];
+  } | null>(null);
+  const [isVerifyingRenewal, setIsVerifyingRenewal] = useState(false);
 
   useEffect(() => {
     void showSystemCertificates;
@@ -122,10 +138,56 @@ export function SSLCertificates() {
 
   const handleRenew = async (id: string) => {
     try {
-      await renewCert(id);
-      toast.success("Certificate renewal initiated");
+      const result = await renewCert(id);
+      if ("certificate" in result && result.status === "pending_dns_verification") {
+        setPendingRenewal({
+          certId: result.certificate.id,
+          certName: result.certificate.name,
+          operation: "renewal",
+          challenges: result.challenges ?? [],
+        });
+        toast.success("DNS renewal challenge created. Add the TXT records, then verify.");
+        return;
+      }
+      toast.success("Certificate renewed");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to renew certificate");
+    }
+  };
+
+  const handleContinueDNSRenewal = (cert: {
+    id: string;
+    name: string;
+    acmePendingOperation: "issue" | "renewal" | null;
+    acmePendingChallenges: DNSChallenge[] | null;
+  }) => {
+    if (!cert.acmePendingChallenges?.length) {
+      toast.error("No pending DNS challenges found for this certificate");
+      return;
+    }
+    setPendingRenewal({
+      certId: cert.id,
+      certName: cert.name,
+      operation: cert.acmePendingOperation ?? "issue",
+      challenges: cert.acmePendingChallenges,
+    });
+  };
+
+  const handleVerifyRenewal = async () => {
+    if (!pendingRenewal) return;
+    setIsVerifyingRenewal(true);
+    try {
+      await completeDNSVerify(pendingRenewal.certId);
+      toast.success(
+        pendingRenewal.operation === "renewal"
+          ? "DNS verification complete. Certificate renewed."
+          : "DNS verification complete. Certificate issued."
+      );
+      setPendingRenewal(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "DNS verification failed");
+    } finally {
+      setIsVerifyingRenewal(false);
     }
   };
 
@@ -249,12 +311,20 @@ export function SSLCertificates() {
                     const expDays = cert.notAfter ? daysUntil(cert.notAfter) : null;
                     const supportsAutoRenew =
                       cert.type === "acme" && cert.acmeChallengeType !== "dns-01" && cert.autoRenew;
+                    const hasPendingDNSVerification =
+                      (cert.acmePendingOperation === "issue" ||
+                        cert.acmePendingOperation === "renewal") &&
+                      (cert.acmePendingChallenges?.length ?? 0) > 0;
+                    const canContinueDNSVerification =
+                      hasScope("ssl:cert:issue") && hasPendingDNSVerification;
                     const canRenewCert =
                       hasScope("ssl:cert:issue") &&
                       cert.type === "acme" &&
-                      cert.acmeChallengeType !== "dns-01";
+                      Boolean(cert.notAfter) &&
+                      (cert.status === "active" || cert.status === "error") &&
+                      !hasPendingDNSVerification;
                     const canDeleteCert = !cert.isSystem && hasScope("ssl:cert:delete");
-                    const hasActions = canRenewCert || canDeleteCert;
+                    const hasActions = canContinueDNSVerification || canRenewCert || canDeleteCert;
                     return (
                       <tr key={cert.id} className="hover:bg-accent transition-colors">
                         <td className="p-3">
@@ -330,8 +400,16 @@ export function SSLCertificates() {
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
+                                {canContinueDNSVerification && (
+                                  <DropdownMenuItem onClick={() => handleContinueDNSRenewal(cert)}>
+                                    <RefreshCw className="h-4 w-4" />
+                                    Continue Verification
+                                  </DropdownMenuItem>
+                                )}
                                 {canRenewCert && (
-                                  <DropdownMenuItem onClick={() => handleRenew(cert.id)}>
+                                  <DropdownMenuItem
+                                    onClick={() => handleRenew(cert.id)}
+                                  >
                                     <RefreshCw className="h-4 w-4" />
                                     Renew
                                   </DropdownMenuItem>
@@ -405,6 +483,33 @@ export function SSLCertificates() {
         onOpenChange={setCreateDialogOpen}
         onCreated={fetchCertificates}
       />
+      <Dialog open={!!pendingRenewal} onOpenChange={(open) => !open && setPendingRenewal(null)}>
+        <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {pendingRenewal?.operation === "renewal" ? "Verify DNS Renewal" : "Verify DNS Issue"}
+            </DialogTitle>
+            <DialogDescription>{pendingRenewal?.certName}</DialogDescription>
+          </DialogHeader>
+          {pendingRenewal && (
+            <DNSChallengeVerification
+              challenges={pendingRenewal.challenges}
+              onVerify={handleVerifyRenewal}
+              isVerifying={isVerifyingRenewal}
+              title={
+                pendingRenewal.operation === "renewal"
+                  ? "DNS Renewal Records"
+                  : "DNS Challenge Records"
+              }
+              description={
+                pendingRenewal.operation === "renewal"
+                  ? "Add or confirm these DNS TXT records, then verify to replace the existing certificate in place."
+                  : "Add or confirm these DNS TXT records, then verify to issue the certificate."
+              }
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </PageTransition>
   );
 }

@@ -39,6 +39,8 @@ export interface MetricDefinition {
   unit: string;
   defaultOperator: string;
   defaultValue: number;
+  defaultDurationSeconds?: number;
+  defaultResolveAfterSeconds?: number;
 }
 
 export interface EventDefinition {
@@ -131,7 +133,17 @@ export const ALERT_CATEGORIES: CategoryDefinition[] = [
   {
     id: 'certificate',
     label: 'Certificate',
-    metrics: [],
+    metrics: [
+      {
+        id: 'days_until_expiry',
+        label: 'Days Until Expiry',
+        unit: 'days',
+        defaultOperator: '<=',
+        defaultValue: 14,
+        defaultDurationSeconds: 0,
+        defaultResolveAfterSeconds: 0,
+      },
+    ],
     events: [
       { id: 'issued', label: 'Certificate Issued', defaultSeverity: 'info' },
       { id: 'renewed', label: 'Certificate Renewed', defaultSeverity: 'info' },

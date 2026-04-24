@@ -459,7 +459,9 @@ export async function initializeContainer(): Promise<void> {
 
   scheduler.register('acme-renewal', env.ACME_RENEWAL_CRON, () => acmeRenewalJob.run());
   scheduler.registerInterval('health-check', env.HEALTH_CHECK_INTERVAL_SECONDS * 1000, () => healthCheckJob.run());
-  scheduler.register('expiry-alerts', env.EXPIRY_CHECK_CRON, () => expiryAlertJob.run());
+  scheduler.register('expiry-alerts', env.EXPIRY_CHECK_CRON, async () => {
+    await Promise.all([expiryAlertJob.run(), notifEvaluatorService.evaluateCertificateExpiry()]);
+  });
 
   const updateCheckJob = new UpdateCheckJob(updateService);
   scheduler.registerInterval('update-check', env.UPDATE_CHECK_INTERVAL_HOURS * 3_600_000, () => updateCheckJob.run());
