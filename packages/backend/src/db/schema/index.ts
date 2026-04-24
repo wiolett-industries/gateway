@@ -10,6 +10,7 @@ export * from './docker-container-folder-assignments.js';
 export * from './docker-container-folders.js';
 export * from './docker-env-vars.js';
 export * from './docker-registries.js';
+export * from './docker-runtime-settings.js';
 export * from './docker-secrets.js';
 export * from './docker-tasks.js';
 export * from './docker-webhooks.js';

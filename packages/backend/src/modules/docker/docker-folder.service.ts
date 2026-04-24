@@ -405,13 +405,6 @@ export class DockerFolderService {
       .where(and(eq(dockerContainerFolders.nodeId, nodeId), eq(dockerContainerFolders.isSystem, true)));
 
     const activeProjects = [...composeGroups.keys()];
-    const staleSystemFolders = existingSystemFolders.filter(
-      (folder) => folder.composeProject && !activeProjects.includes(folder.composeProject)
-    );
-    if (staleSystemFolders.length > 0) {
-      await this.db.delete(dockerContainerFolders).where(inArray(dockerContainerFolders.id, staleSystemFolders.map((f) => f.id)));
-    }
-
     const systemFoldersByProject = new Map<string, FolderRow>();
     for (const folder of existingSystemFolders) {
       if (folder.composeProject && activeProjects.includes(folder.composeProject)) {
@@ -435,19 +428,6 @@ export class DockerFolderService {
         })
         .returning();
       systemFoldersByProject.set(project, created);
-    }
-
-    if (activeNames.length === 0) {
-      await this.db.delete(dockerContainerFolderAssignments).where(eq(dockerContainerFolderAssignments.nodeId, nodeId));
-    } else {
-      await this.db
-        .delete(dockerContainerFolderAssignments)
-        .where(
-          and(
-            eq(dockerContainerFolderAssignments.nodeId, nodeId),
-            notInArray(dockerContainerFolderAssignments.containerName, activeNames)
-          )
-        );
     }
 
     for (const [project, group] of composeGroups.entries()) {
@@ -474,6 +454,37 @@ export class DockerFolderService {
               updatedAt: new Date(),
             },
           });
+      }
+    }
+
+    const staleSystemFolders = existingSystemFolders.filter(
+      (folder) => folder.composeProject && !activeProjects.includes(folder.composeProject)
+    );
+    if (staleSystemFolders.length > 0) {
+      const assignmentRows = await this.db
+        .select({
+          folderId: dockerContainerFolderAssignments.folderId,
+        })
+        .from(dockerContainerFolderAssignments)
+        .where(
+          and(
+            eq(dockerContainerFolderAssignments.nodeId, nodeId),
+            inArray(
+              dockerContainerFolderAssignments.folderId,
+              staleSystemFolders.map((folder) => folder.id)
+            )
+          )
+        );
+      const folderIdsWithAssignments = new Set(
+        assignmentRows.map((row) => row.folderId).filter((id): id is string => !!id)
+      );
+      const removableFolderIds = staleSystemFolders
+        .filter((folder) => !folderIdsWithAssignments.has(folder.id))
+        .map((folder) => folder.id);
+      if (removableFolderIds.length > 0) {
+        await this.db
+          .delete(dockerContainerFolders)
+          .where(inArray(dockerContainerFolders.id, removableFolderIds));
       }
     }
 

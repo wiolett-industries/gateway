@@ -22,6 +22,7 @@ import { DockerManagementService } from '@/modules/docker/docker.service.js';
 import { DockerFolderService } from '@/modules/docker/docker-folder.service.js';
 import { DockerEnvironmentService } from '@/modules/docker/docker-environment.service.js';
 import { DockerRegistryService } from '@/modules/docker/docker-registry.service.js';
+import { DockerRuntimeSettingsService } from '@/modules/docker/docker-runtime-settings.service.js';
 import { DockerSecretService } from '@/modules/docker/docker-secret.service.js';
 import { DockerTaskService } from '@/modules/docker/docker-task.service.js';
 import { DockerWebhookService } from '@/modules/docker/docker-webhook.service.js';
@@ -225,6 +226,9 @@ export async function initializeContainer(): Promise<void> {
   const dockerEnvironmentService = new DockerEnvironmentService(db, cryptoService);
   container.registerInstance(DockerEnvironmentService, dockerEnvironmentService);
 
+  const dockerRuntimeSettingsService = new DockerRuntimeSettingsService(db);
+  container.registerInstance(DockerRuntimeSettingsService, dockerRuntimeSettingsService);
+
   const dockerTaskService = new DockerTaskService(db);
   container.registerInstance(DockerTaskService, dockerTaskService);
   const dockerWebhookService = new DockerWebhookService(
@@ -238,6 +242,7 @@ export async function initializeContainer(): Promise<void> {
 
   dockerManagementService.setTaskService(dockerTaskService);
   dockerManagementService.setEnvironmentService(dockerEnvironmentService);
+  dockerManagementService.setRuntimeSettingsService(dockerRuntimeSettingsService);
   dockerManagementService.setSecretService(dockerSecretService);
   dockerManagementService.setFolderService(dockerFolderService);
   dockerManagementService.setEventBus(eventBus);

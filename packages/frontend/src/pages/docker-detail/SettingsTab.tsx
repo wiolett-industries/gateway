@@ -377,12 +377,13 @@ export function SettingsTab({
         return;
       }
 
-      if (recreatesRunningContainer) {
-        await api.liveUpdateContainer(nodeId, containerId, payload);
-        toast.success("Settings applied (no restart needed)");
-      } else {
-        await api.recreateWithConfig(nodeId, containerId, payload);
-        toast.success("Container runtime configuration saved");
+      await api.liveUpdateContainer(nodeId, containerId, payload);
+      toast.success(
+        recreatesRunningContainer
+          ? "Settings applied (no restart needed)"
+          : "Container runtime configuration saved"
+      );
+      if (!recreatesRunningContainer) {
         invalidate("containers", "tasks");
         await Promise.resolve(onRecreating?.());
       }
