@@ -236,7 +236,8 @@ export async function initializeContainer(): Promise<void> {
     dockerManagementService,
     dockerTaskService,
     auditService,
-    nodeDispatch
+    nodeDispatch,
+    dockerRegistryService
   );
   container.registerInstance(DockerWebhookService, dockerWebhookService);
 
