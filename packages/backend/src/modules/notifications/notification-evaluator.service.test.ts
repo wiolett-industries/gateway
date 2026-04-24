@@ -20,7 +20,26 @@ const BASE_RULE = {
   webhookIds: [],
 };
 
-function createEvaluator(certs: any[], rules = [BASE_RULE]) {
+const BASE_EVENT_RULE = {
+  id: 'event-rule-1',
+  name: 'Node Offline',
+  enabled: true,
+  type: 'event',
+  category: 'node',
+  severity: 'critical',
+  metric: null,
+  operator: null,
+  thresholdValue: null,
+  durationSeconds: 0,
+  fireThresholdPercent: 100,
+  resolveAfterSeconds: 0,
+  resolveThresholdPercent: 100,
+  eventPattern: 'offline',
+  resourceIds: [],
+  webhookIds: [],
+};
+
+function createEvaluator(certs: any[], thresholdRules = [BASE_RULE], eventRules: any[] = []) {
   const states: any[] = [];
   const db = {
     query: {
@@ -41,8 +60,8 @@ function createEvaluator(certs: any[], rules = [BASE_RULE]) {
   const evaluator = new NotificationEvaluatorService(
     db as any,
     {
-      getEnabledThresholdRules: async () => rules,
-      getEnabledEventRules: async () => [],
+      getEnabledThresholdRules: async () => thresholdRules,
+      getEnabledEventRules: async () => eventRules,
     } as any,
     { getRawByIds: async () => [] } as any,
     { dispatch: async () => undefined } as any,
@@ -165,6 +184,48 @@ describe('NotificationEvaluatorService certificate expiry evaluation', () => {
       status: 'resolved',
       context: {
         resolution_reason: 'certificate_inactive_or_deleted',
+      },
+    });
+  });
+});
+
+describe('NotificationEvaluatorService stateful event evaluation', () => {
+  it('fires a stateful event rule when the observed state matches', async () => {
+    const { evaluator, states } = createEvaluator([], [], [BASE_EVENT_RULE]);
+
+    await evaluator.observeStatefulEvent(
+      'node',
+      'offline',
+      { type: 'node', id: 'node-1', name: 'worker-1' },
+      { hostname: 'worker-1' }
+    );
+
+    expect(states).toHaveLength(1);
+    expect(states[0]).toMatchObject({
+      ruleId: 'event-rule-1',
+      resourceType: 'node',
+      resourceId: 'node-1',
+      status: 'firing',
+      context: {
+        event: 'offline',
+        current_state: 'offline',
+        hostname: 'worker-1',
+      },
+    });
+  });
+
+  it('resolves a stateful event rule when the observed state clears', async () => {
+    const { evaluator, states } = createEvaluator([], [], [BASE_EVENT_RULE]);
+
+    await evaluator.observeStatefulEvent('node', 'offline', { type: 'node', id: 'node-1', name: 'worker-1' });
+    await evaluator.observeStatefulEvent('node', 'online', { type: 'node', id: 'node-1', name: 'worker-1' });
+
+    expect(states).toHaveLength(1);
+    expect(states[0]).toMatchObject({
+      status: 'resolved',
+      context: {
+        event: 'offline',
+        current_state: 'online',
       },
     });
   });
