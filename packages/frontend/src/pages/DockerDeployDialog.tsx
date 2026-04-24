@@ -135,14 +135,16 @@ export function DockerDeployDialog({
     if (!deployNodeId || !deployImage.trim()) return;
     setDeploying(true);
     try {
+      let imageRef = deployImage.trim();
       // Auto-pull if image not available locally
-      const isLocal = deployLocalImages.includes(deployImage.trim());
+      const isLocal = deployLocalImages.includes(imageRef);
       if (!isLocal) {
-        toast.info(`Pulling "${deployImage.trim()}"...`);
-        await api.pullImage(deployNodeId, deployImage.trim());
+        toast.info(`Pulling "${imageRef}"...`);
+        const pullResult = await api.pullImageSync(deployNodeId, imageRef);
+        imageRef = pullResult.imageRef;
       }
       const config: ContainerCreateConfig = {
-        image: deployImage.trim(),
+        image: imageRef,
         restartPolicy: deployRestart,
       };
       if (deployName.trim()) config.name = deployName.trim();

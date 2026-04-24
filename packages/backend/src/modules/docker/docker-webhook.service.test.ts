@@ -1,0 +1,69 @@
+import { describe, expect, it, vi } from 'vitest';
+import { DockerWebhookService } from './docker-webhook.service.js';
+
+describe('DockerWebhookService', () => {
+  function createService() {
+    const docker = {
+      inspectContainer: vi.fn().mockResolvedValue({
+        Config: {
+          Image: 'registry.example.com/team/app:old',
+        },
+        HostConfig: {},
+        NetworkingConfig: {},
+      }),
+      requireNoTransition: vi.fn(),
+      setTransition: vi.fn(),
+      emitTransition: vi.fn(),
+      clearTransition: vi.fn(),
+      recreateWithConfig: vi.fn().mockResolvedValue({}),
+    };
+
+    const tasks = {
+      create: vi.fn().mockResolvedValue({ id: 'task-1' }),
+      update: vi.fn().mockResolvedValue({}),
+    };
+
+    const dispatch = {
+      sendDockerImageCommand: vi.fn().mockResolvedValue({ success: true }),
+    };
+
+    const registry = {
+      resolveAuthForImagePull: vi.fn().mockResolvedValue({
+        url: 'registry.example.com',
+        authJson: 'encoded-auth',
+      }),
+    };
+
+    const service = new DockerWebhookService(
+      {} as never,
+      docker as never,
+      tasks as never,
+      { log: vi.fn().mockResolvedValue({}) } as never,
+      dispatch as never,
+      registry as never
+    );
+    vi.spyOn(service, 'getByContainer').mockResolvedValue(null as never);
+
+    return { dispatch, docker, registry, service };
+  }
+
+  it('passes resolved registry auth to webhook image pulls', async () => {
+    const { dispatch, registry, service } = createService();
+
+    await service.triggerUpdate({
+      nodeId: 'node-1',
+      containerId: 'container-1',
+      containerName: 'app',
+      tag: 'new',
+      webhookId: 'webhook-1',
+    });
+
+    expect(registry.resolveAuthForImagePull).toHaveBeenCalledWith('node-1', 'registry.example.com/team/app:new');
+    expect(dispatch.sendDockerImageCommand).toHaveBeenCalledWith(
+      'node-1',
+      'pull',
+      { imageRef: 'registry.example.com/team/app:new', registryAuthJson: 'encoded-auth' },
+      600000
+    );
+  });
+});

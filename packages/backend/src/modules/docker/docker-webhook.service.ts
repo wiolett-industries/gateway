@@ -7,6 +7,7 @@ import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
 import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
+import type { DockerRegistryService } from './docker-registry.service.js';
 import type { DockerManagementService } from './docker.service.js';
 import type { DockerTaskService } from './docker-task.service.js';
 
@@ -20,7 +21,8 @@ export class DockerWebhookService {
     private docker: DockerManagementService,
     private tasks: DockerTaskService,
     private audit: AuditService,
-    private dispatch: NodeDispatchService
+    private dispatch: NodeDispatchService,
+    private registry: DockerRegistryService
   ) {}
 
   setEventBus(bus: EventBusService) {
@@ -164,7 +166,13 @@ export class DockerWebhookService {
 
     try {
       // Synchronous pull — validates the image exists
-      const pullResult = await this.dispatch.sendDockerImageCommand(nodeId, 'pull', { imageRef: targetRef }, 600000);
+      const registryAuth = await this.registry.resolveAuthForImagePull(nodeId, targetRef);
+      const pullPayload: { imageRef: string; registryAuthJson?: string } = { imageRef: targetRef };
+      if (registryAuth) {
+        pullPayload.registryAuthJson = registryAuth.authJson;
+      }
+
+      const pullResult = await this.dispatch.sendDockerImageCommand(nodeId, 'pull', pullPayload, 600000);
       if (!pullResult.success) {
         throw new AppError(400, 'PULL_FAILED', pullResult.error || `Failed to pull ${targetRef}`);
       }
