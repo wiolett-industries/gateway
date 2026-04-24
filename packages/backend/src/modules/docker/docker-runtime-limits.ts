@@ -10,6 +10,8 @@ export interface ContainerRuntimeConfig {
   memoryLimit?: number;
   memorySwap?: number;
   nanoCPUs?: number;
+  cpuQuota?: number;
+  cpuPeriod?: number;
 }
 
 function formatBytes(bytes: number): string {
@@ -24,12 +26,20 @@ export function validateContainerRuntimeLimits(
   current: ContainerRuntimeConfig,
   capacity: NodeRuntimeCapacity
 ) {
+  const deriveNanoCPUs = (config: ContainerRuntimeConfig) => {
+    if ((config.nanoCPUs ?? 0) > 0) return config.nanoCPUs ?? 0;
+    if ((config.cpuQuota ?? 0) > 0 && (config.cpuPeriod ?? 0) > 0) {
+      return Math.round(((config.cpuQuota ?? 0) / (config.cpuPeriod ?? 1)) * 1e9);
+    }
+    return 0;
+  };
+
   const touchesCpu = next.nanoCPUs !== undefined;
   const touchesMemory = next.memoryLimit !== undefined;
   const touchesSwap = next.memorySwap !== undefined;
   const effectiveMemoryLimit = next.memoryLimit ?? current.memoryLimit ?? 0;
   const effectiveMemorySwap = next.memorySwap ?? current.memorySwap ?? 0;
-  const effectiveNanoCPUs = next.nanoCPUs ?? current.nanoCPUs ?? 0;
+  const effectiveNanoCPUs = deriveNanoCPUs(next) || deriveNanoCPUs(current);
 
   if (touchesCpu && capacity.cpuCores && effectiveNanoCPUs > capacity.cpuCores * 1e9) {
     throw new AppError(

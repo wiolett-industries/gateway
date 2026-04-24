@@ -502,7 +502,11 @@ export class NginxTemplateService {
 
   renderTemplate(content: string, host: ProxyHostConfig): string {
     const template = this.compileTemplate(content);
-    const context = this.buildContext(host);
+    const baseContext = this.buildBaseContext(host);
+    const context = {
+      ...baseContext,
+      advancedConfig: host.advancedConfig ? this.renderTemplateString(host.advancedConfig, baseContext) : null,
+    };
     return template(context);
   }
 
@@ -537,8 +541,7 @@ export class NginxTemplateService {
   }
 
   previewWithSampleData(content: string): string {
-    const template = this.compileTemplate(content);
-    return template(SAMPLE_CONTEXT);
+    return this.renderTemplateString(content, SAMPLE_CONTEXT);
   }
 
   // -----------------------------------------------------------------------
@@ -557,7 +560,12 @@ export class NginxTemplateService {
     }
   }
 
-  private buildContext(host: ProxyHostConfig): Record<string, unknown> {
+  private renderTemplateString(content: string, context: Record<string, unknown>): string {
+    const template = this.compileTemplate(content);
+    return template(context);
+  }
+
+  private buildBaseContext(host: ProxyHostConfig): Record<string, unknown> {
     const serverNames = host.domainNames.map((d) => d.replace(DANGEROUS_CHARS, '')).join(' ');
     const sanitizedHost = host.forwardHost ? host.forwardHost.replace(DANGEROUS_CHARS, '') : '';
     const upstream = `${host.forwardScheme}://${sanitizedHost}:${host.forwardPort}`;
@@ -590,7 +598,6 @@ export class NginxTemplateService {
       customHeaders: host.customHeaders,
       customRewrites: host.customRewrites,
       accessList: host.accessList,
-      advancedConfig: host.advancedConfig,
       logPath: `${NGINX_LOGS_PREFIX}/proxy-${host.id}`,
       // Merge custom template variables (sanitized — user-defined values override defaults)
       ...this.sanitizeTemplateVariables(host.templateVariables ?? {}),

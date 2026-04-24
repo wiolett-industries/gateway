@@ -54,6 +54,19 @@ import { OverviewTab } from "./docker-detail/OverviewTab";
 import { SettingsTab } from "./docker-detail/SettingsTab";
 import { StatsTab } from "./docker-detail/StatsTab";
 
+function deriveCurrentNanoCPUs(hostConfig: Record<string, any>): number {
+  const nanoCPUs = Number(hostConfig.NanoCPUs ?? 0);
+  if (Number.isFinite(nanoCPUs) && nanoCPUs > 0) return nanoCPUs;
+
+  const cpuQuota = Number(hostConfig.CPUQuota ?? 0);
+  const cpuPeriod = Number(hostConfig.CPUPeriod ?? 0);
+  if (Number.isFinite(cpuQuota) && Number.isFinite(cpuPeriod) && cpuQuota > 0 && cpuPeriod > 0) {
+    return Math.round((cpuQuota / cpuPeriod) * 1e9);
+  }
+
+  return 0;
+}
+
 // ── Main Page ────────────────────────────────────────────────────
 
 export function DockerContainerDetail() {
@@ -203,7 +216,7 @@ export function DockerContainerDetail() {
           restartPolicy: beforeHostConfig.RestartPolicy ?? {},
           memory: beforeHostConfig.Memory ?? 0,
           memorySwap: beforeHostConfig.MemorySwap ?? 0,
-          nanoCPUs: beforeHostConfig.NanoCPUs ?? 0,
+          nanoCPUs: deriveCurrentNanoCPUs(beforeHostConfig),
           cpuShares: beforeHostConfig.CpuShares ?? 0,
           pidsLimit: beforeHostConfig.PidsLimit ?? 0,
           transition: (before as any)?._transition ?? null,
@@ -240,7 +253,7 @@ export function DockerContainerDetail() {
           restartPolicy: nextHostConfig.RestartPolicy ?? {},
           memory: nextHostConfig.Memory ?? 0,
           memorySwap: nextHostConfig.MemorySwap ?? 0,
-          nanoCPUs: nextHostConfig.NanoCPUs ?? 0,
+          nanoCPUs: deriveCurrentNanoCPUs(nextHostConfig),
           cpuShares: nextHostConfig.CpuShares ?? 0,
           pidsLimit: nextHostConfig.PidsLimit ?? 0,
           transition: (next as any)?._transition ?? null,

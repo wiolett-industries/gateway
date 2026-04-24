@@ -112,4 +112,19 @@ describe('validateContainerRuntimeLimits', () => {
       )
     ).not.toThrow();
   });
+
+  it('uses current CPU quota/period when NanoCPUs is not populated', () => {
+    expect(() =>
+      validateContainerRuntimeLimits(
+        {
+          memoryLimit: 2 * 1024 * 1024 * 1024,
+        },
+        {
+          cpuQuota: 150000,
+          cpuPeriod: 100000,
+        },
+        capacity
+      )
+    ).not.toThrow();
+  });
 });
