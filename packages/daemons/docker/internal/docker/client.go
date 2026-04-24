@@ -593,14 +593,7 @@ func (c *Client) LiveUpdateContainer(ctx context.Context, id string, configJSON 
 		hasResources = true
 	}
 	if params.NanoCPUs != nil {
-		resources.NanoCPUs = *params.NanoCPUs
-		if *params.NanoCPUs > 0 {
-			resources.CPUPeriod = 100000
-			resources.CPUQuota = *params.NanoCPUs / 10000
-		} else {
-			resources.CPUPeriod = 0
-			resources.CPUQuota = 0
-		}
+		applyNanoCPULimit(&resources, *params.NanoCPUs)
 		hasResources = true
 	}
 	if params.CpuShares != nil {
@@ -762,14 +755,7 @@ func (c *Client) RecreateWithConfig(ctx context.Context, id string, configJSON s
 		insp.HostConfig.MemorySwap = *params.MemorySwap
 	}
 	if params.NanoCPUs != nil {
-		insp.HostConfig.NanoCPUs = *params.NanoCPUs
-		if *params.NanoCPUs > 0 {
-			insp.HostConfig.CPUPeriod = 100000
-			insp.HostConfig.CPUQuota = *params.NanoCPUs / 10000
-		} else {
-			insp.HostConfig.CPUPeriod = 0
-			insp.HostConfig.CPUQuota = 0
-		}
+		applyNanoCPULimit(&insp.HostConfig.Resources, *params.NanoCPUs)
 	}
 	if params.CpuShares != nil {
 		insp.HostConfig.CPUShares = *params.CpuShares
@@ -788,6 +774,12 @@ func (c *Client) RecreateWithConfig(ctx context.Context, id string, configJSON s
 	}
 
 	return c.recreateContainer(ctx, &insp, imageRef, params.Env, params.RemoveEnv, rollbackSnapshot)
+}
+
+func applyNanoCPULimit(resources *container.Resources, nanoCPUs int64) {
+	resources.NanoCPUs = nanoCPUs
+	resources.CPUPeriod = 0
+	resources.CPUQuota = 0
 }
 
 // recreateContainer stops, removes, and recreates a container with the given
