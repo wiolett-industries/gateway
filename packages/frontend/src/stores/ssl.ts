@@ -3,10 +3,10 @@ import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useUIStore } from "@/stores/ui";
 import type {
-  DNSChallenge,
   LinkInternalCertRequest,
   RequestACMECertRequest,
   SSLCertificate,
+  SSLCertificateOperationResult,
   SSLCertStatus,
   SSLCertType,
   UploadCertRequest,
@@ -34,10 +34,10 @@ interface SSLState {
   clearSelected: () => void;
   requestACME: (
     data: RequestACMECertRequest
-  ) => Promise<SSLCertificate | { challenges: DNSChallenge[] }>;
+  ) => Promise<SSLCertificateOperationResult>;
   uploadCert: (data: UploadCertRequest) => Promise<SSLCertificate>;
   linkInternal: (data: LinkInternalCertRequest) => Promise<SSLCertificate>;
-  renewCert: (id: string) => Promise<SSLCertificate>;
+  renewCert: (id: string) => Promise<SSLCertificate | SSLCertificateOperationResult>;
   deleteCert: (id: string) => Promise<void>;
   completeDNSVerify: (id: string) => Promise<SSLCertificate>;
   setFilters: (filters: Partial<SSLCertFilters>) => void;
@@ -144,12 +144,13 @@ export const useSSLStore = create<SSLState>()((set, get) => ({
   },
 
   renewCert: async (id: string) => {
-    const cert = await api.renewSSLCert(id);
+    const result = await api.renewSSLCert(id);
+    const cert = "certificate" in result ? result.certificate : result;
     set((state) => ({
       certificates: state.certificates.map((c) => (c.id === id ? cert : c)),
       selectedCert: state.selectedCert?.id === id ? cert : state.selectedCert,
     }));
-    return cert;
+    return result;
   },
 
   deleteCert: async (id: string) => {

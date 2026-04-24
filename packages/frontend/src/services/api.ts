@@ -19,7 +19,6 @@ import type {
   DaemonUpdateStatus,
   DatabaseConnection,
   DashboardStats,
-  DNSChallenge,
   DnsStatus,
   DockerContainer,
   DockerContainerFolder,
@@ -55,6 +54,7 @@ import type {
   RequestACMECertRequest,
   RedisKeyRecord,
   SSLCertificate,
+  SSLCertificateOperationResult,
   SSLCertStatus,
   SSLCertType,
   Template,
@@ -903,9 +903,9 @@ class ApiClient extends ApiClientBase {
 
   async requestACMECert(
     data: RequestACMECertRequest
-  ): Promise<SSLCertificate | { challenges: DNSChallenge[] }> {
+  ): Promise<SSLCertificateOperationResult> {
     return this.unwrapData(
-      this.request<{ data: SSLCertificate | { challenges: DNSChallenge[] } }>(
+      this.request<{ data: SSLCertificateOperationResult }>(
         "/ssl-certificates/acme",
         {
           method: "POST",
@@ -933,9 +933,12 @@ class ApiClient extends ApiClientBase {
     );
   }
 
-  async renewSSLCert(id: string): Promise<SSLCertificate> {
+  async renewSSLCert(id: string): Promise<SSLCertificate | SSLCertificateOperationResult> {
     return this.unwrapData(
-      this.request<{ data: SSLCertificate }>(`/ssl-certificates/${id}/renew`, { method: "POST" })
+      this.request<{ data: SSLCertificate | SSLCertificateOperationResult }>(
+        `/ssl-certificates/${id}/renew`,
+        { method: "POST" }
+      )
     );
   }
 

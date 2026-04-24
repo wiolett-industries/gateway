@@ -1,4 +1,4 @@
-import { CheckCircle, Copy, Minus, Plus, Upload } from "lucide-react";
+import { Minus, Plus, Upload } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { DomainAutocompleteInput } from "@/components/domains/DomainAutocompleteInput";
@@ -21,6 +21,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api } from "@/services/api";
 import type { ACMEChallengeType, DNSChallenge } from "@/types";
+import { DNSChallengeVerification } from "./DNSChallengeVerification";
 
 interface SSLCertificateCreateDialogProps {
   open: boolean;
@@ -105,15 +106,9 @@ export function SSLCertificateCreateDialog({
         provider: acmeProvider,
         autoRenew: true,
       });
-      if ("challenges" in result && result.challenges) {
+      if (result.status === "pending_dns_verification" && result.challenges) {
         setDnsChallenges(result.challenges as DNSChallenge[]);
-        if (
-          "certificate" in result &&
-          result.certificate &&
-          typeof (result.certificate as any).id === "string"
-        ) {
-          setPendingCertId((result.certificate as any).id);
-        }
+        setPendingCertId(result.certificate.id);
         toast.success("DNS challenge records created. Please add them to your DNS.");
       } else {
         toast.success("Certificate requested successfully");
@@ -220,62 +215,11 @@ export function SSLCertificateCreateDialog({
           <TabsContent value="acme">
             <div className="space-y-4">
               {dnsChallenges ? (
-                <div className="space-y-4">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="h-5 w-5 text-amber-500" />
-                    <h3 className="text-sm font-semibold">DNS Challenge Records</h3>
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    Add the following DNS TXT records to verify domain ownership, then click Verify.
-                  </p>
-                  <div className="border border-border divide-y divide-border">
-                    {dnsChallenges.map((challenge, i) => (
-                      <div key={i} className="p-3 space-y-1">
-                        <p className="text-xs text-muted-foreground">
-                          Domain:{" "}
-                          <span className="font-medium text-foreground">{challenge.domain}</span>
-                        </p>
-                        <div className="flex items-center gap-2">
-                          <p className="text-xs text-muted-foreground">Record Name:</p>
-                          <code className="text-xs font-mono bg-muted px-1.5 py-0.5">
-                            {challenge.recordName}
-                          </code>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6"
-                            onClick={() => {
-                              navigator.clipboard.writeText(challenge.recordName);
-                              toast.success("Copied");
-                            }}
-                          >
-                            <Copy className="h-3 w-3" />
-                          </Button>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <p className="text-xs text-muted-foreground">Record Value:</p>
-                          <code className="text-xs font-mono bg-muted px-1.5 py-0.5 break-all">
-                            {challenge.recordValue}
-                          </code>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6"
-                            onClick={() => {
-                              navigator.clipboard.writeText(challenge.recordValue);
-                              toast.success("Copied");
-                            }}
-                          >
-                            <Copy className="h-3 w-3" />
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <Button onClick={handleVerifyDNS} disabled={isVerifying}>
-                    {isVerifying ? "Verifying..." : "Verify DNS"}
-                  </Button>
-                </div>
+                <DNSChallengeVerification
+                  challenges={dnsChallenges}
+                  onVerify={handleVerifyDNS}
+                  isVerifying={isVerifying}
+                />
               ) : (
                 <div className="space-y-4">
                   <div className="space-y-2">

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { evaluateWindowRatio, eventSupportsThreshold } from './notification.constants.js';
+import { ALERT_CATEGORIES, evaluateWindowRatio, eventSupportsThreshold } from './notification.constants.js';
 
 describe('evaluateWindowRatio', () => {
   it('requires full window coverage before threshold can pass', () => {
@@ -89,5 +89,19 @@ describe('evaluateWindowRatio', () => {
     expect(eventSupportsThreshold('database_postgres', 'health.online')).toBe(true);
     expect(eventSupportsThreshold('container', 'started')).toBe(false);
     expect(eventSupportsThreshold('certificate', 'issued')).toBe(false);
+  });
+
+  it('defines certificate days-until-expiry as an immediate threshold metric', () => {
+    const certificateCategory = ALERT_CATEGORIES.find((category) => category.id === 'certificate');
+    const metric = certificateCategory?.metrics.find((m) => m.id === 'days_until_expiry');
+
+    expect(metric).toMatchObject({
+      label: 'Days Until Expiry',
+      unit: 'days',
+      defaultOperator: '<=',
+      defaultValue: 14,
+      defaultDurationSeconds: 0,
+      defaultResolveAfterSeconds: 0,
+    });
   });
 });

@@ -403,6 +403,8 @@ export interface AlertCategoryDef {
     unit: string;
     defaultOperator: string;
     defaultValue: number;
+    defaultDurationSeconds?: number;
+    defaultResolveAfterSeconds?: number;
   }>;
   events: Array<{ id: string; label: string; defaultSeverity: string; supportsThreshold?: boolean }>;
   variables: Array<{ name: string; description: string }>;
@@ -1254,6 +1256,8 @@ export interface SSLCertificate {
   domainNames: string[];
   acmeProvider: string | null;
   acmeChallengeType: ACMEChallengeType | null;
+  acmePendingOperation: "issue" | "renewal" | null;
+  acmePendingChallenges: DNSChallenge[] | null;
   internalCertId: string | null;
   notBefore: string | null;
   notAfter: string | null;
@@ -1528,6 +1532,12 @@ export interface DNSChallenge {
   domain: string;
   recordName: string;
   recordValue: string;
+}
+
+export interface SSLCertificateOperationResult {
+  certificate: SSLCertificate;
+  status: "issued" | "pending_dns_verification";
+  challenges?: DNSChallenge[];
 }
 
 // ── Nginx Monitoring ──────────────────────────────────────────────

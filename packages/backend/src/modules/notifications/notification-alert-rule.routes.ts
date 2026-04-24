@@ -23,6 +23,16 @@ function invalidateCache() {
   }
 }
 
+function triggerCertificateExpiryEvaluation(rule: { category: string; type: string; metric: string | null }) {
+  if (rule.category !== 'certificate' || rule.type !== 'threshold' || rule.metric !== 'days_until_expiry') return;
+  try {
+    const evaluator = container.resolve(NotificationEvaluatorService);
+    void evaluator.evaluateCertificateExpiry().catch(() => {});
+  } catch {
+    /* not yet registered */
+  }
+}
+
 // GET /categories — list alert categories with their metrics, events, and variables
 alertRuleRoutes.get(
   '/categories',
@@ -80,6 +90,7 @@ alertRuleRoutes.post('/', requireAnyScope('notifications:alerts:create', 'notifi
   const user = c.get('user')!;
   const rule = await service.create(body, user.id);
   invalidateCache();
+  triggerCertificateExpiryEvaluation(rule);
   return c.json({ data: rule }, 201);
 });
 
@@ -90,6 +101,7 @@ alertRuleRoutes.put('/:id', requireAnyScope('notifications:alerts:edit', 'notifi
   const user = c.get('user')!;
   const rule = await service.update(c.req.param('id'), body, user.id);
   invalidateCache();
+  triggerCertificateExpiryEvaluation(rule);
   return c.json({ data: rule });
 });
 

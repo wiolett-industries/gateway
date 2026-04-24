@@ -1,6 +1,6 @@
 import { and, desc, eq } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
-import { notificationAlertStates } from '@/db/schema/index.js';
+import { notificationAlertStates, sslCertificates } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
 import type { CacheService, RedisClient } from '@/services/cache.service.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
@@ -24,6 +24,7 @@ const logger = createChildLogger('NotificationEvaluator');
 
 const METRIC_BUFFER_TTL = 1800;
 const WINDOW_TRIM_PADDING_MS = 60_000;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 export class NotificationEvaluatorService {
   private eventBus?: EventBusService;
@@ -177,6 +178,181 @@ export class NotificationEvaluatorService {
           await this.handleThresholdClear(rule, resourceId, value);
         }
       }
+    }
+  }
+
+  async evaluateCertificateExpiry(now = new Date()): Promise<void> {
+    const rules = (await this.getThresholdRules()).filter(
+      (rule) => rule.category === 'certificate' && rule.metric === 'days_until_expiry'
+    );
+    if (rules.length === 0) return;
+
+    const certs = await this.db
+      .select({
+        id: sslCertificates.id,
+        name: sslCertificates.name,
+        domainNames: sslCertificates.domainNames,
+        notAfter: sslCertificates.notAfter,
+      })
+      .from(sslCertificates)
+      .where(eq(sslCertificates.status, 'active'));
+
+    const activeCerts = certs.filter((cert) => cert.notAfter);
+    const activeCertIds = new Set(activeCerts.map((cert) => cert.id));
+
+    for (const rule of rules) {
+      const scopedIds = new Set((rule.resourceIds ?? []) as string[]);
+
+      for (const cert of activeCerts) {
+        if (scopedIds.size > 0 && !scopedIds.has(cert.id)) continue;
+
+        const notAfter = cert.notAfter!;
+        const daysUntilExpiry = Math.ceil((notAfter.getTime() - now.getTime()) / DAY_MS);
+        const breached = evaluateThreshold(daysUntilExpiry, rule.operator, rule.thresholdValue);
+
+        await this.recordProbeOutcome(
+          rule.id,
+          cert.id,
+          breached,
+          Math.max(rule.durationSeconds ?? 0, rule.resolveAfterSeconds ?? 0) * 1000
+        );
+
+        if (breached) {
+          await this.handleCertificateThresholdBreach(rule, cert, daysUntilExpiry);
+        } else {
+          await this.handleCertificateThresholdClear(rule, cert, daysUntilExpiry);
+        }
+      }
+
+      await this.resolveStaleCertificateStates(rule, activeCertIds);
+    }
+  }
+
+  private async handleCertificateThresholdBreach(
+    rule: any,
+    cert: {
+      id: string;
+      name: string;
+      domainNames: string[];
+      notAfter: Date | null;
+    },
+    daysUntilExpiry: number
+  ): Promise<void> {
+    const durationMs = (rule.durationSeconds ?? 0) * 1000;
+
+    if (durationMs > 0 && this.redis) {
+      const evaluation = await this.evaluateRatioWindow(
+        rule.id,
+        cert.id,
+        durationMs,
+        rule.fireThresholdPercent ?? 100,
+        'breach'
+      );
+      if (!evaluation?.hasCoverage || !evaluation.thresholdMet) return;
+    } else if (durationMs > 0 && !this.redis) {
+      logger.debug('Certificate expiry fire window skipped: no Redis', { ruleId: rule.id });
+      return;
+    }
+
+    const existingState = await this.getActiveAlertState(rule.id, 'certificate', cert.id);
+    if (existingState) return;
+
+    await this.fireAlert(rule, 'certificate', cert.id, cert.name || cert.domainNames.join(', ') || cert.id, {
+      value: daysUntilExpiry,
+      days_until_expiry: daysUntilExpiry,
+      expiry_date: cert.notAfter?.toISOString(),
+      threshold: rule.thresholdValue,
+      operator: rule.operator,
+      metric: rule.metric,
+      duration: rule.durationSeconds ?? 0,
+    });
+  }
+
+  private async handleCertificateThresholdClear(
+    rule: any,
+    cert: {
+      id: string;
+      name: string;
+      domainNames: string[];
+      notAfter: Date | null;
+    },
+    daysUntilExpiry: number
+  ): Promise<void> {
+    const existingState = await this.getActiveAlertState(rule.id, 'certificate', cert.id);
+    if (!existingState) return;
+
+    const resolveMs = (rule.resolveAfterSeconds ?? 60) * 1000;
+
+    if (resolveMs > 0 && this.redis) {
+      const evaluation = await this.evaluateRatioWindow(
+        rule.id,
+        cert.id,
+        resolveMs,
+        rule.resolveThresholdPercent ?? 100,
+        'clear'
+      );
+      if (!evaluation?.hasCoverage || !evaluation.thresholdMet) return;
+    } else if (resolveMs > 0 && !this.redis) {
+      logger.debug('Certificate expiry resolve window skipped: no Redis', { ruleId: rule.id });
+      return;
+    }
+
+    const firedAt = existingState.firedAt;
+    const firedDurationSec = firedAt ? Math.round((Date.now() - firedAt.getTime()) / 1000) : 0;
+
+    await this.resolveAlert(
+      existingState.id,
+      rule,
+      'certificate',
+      cert.id,
+      cert.name || cert.domainNames.join(', ') || cert.id,
+      {
+        value: daysUntilExpiry,
+        days_until_expiry: daysUntilExpiry,
+        expiry_date: cert.notAfter?.toISOString(),
+        threshold: rule.thresholdValue,
+        operator: rule.operator,
+        metric: rule.metric,
+        duration: rule.durationSeconds ?? 0,
+        fired_at: firedAt?.toISOString(),
+        fired_duration: firedDurationSec,
+      }
+    );
+  }
+
+  private async resolveStaleCertificateStates(rule: any, activeCertIds: Set<string>): Promise<void> {
+    const states = await this.db
+      .select()
+      .from(notificationAlertStates)
+      .where(
+        and(
+          eq(notificationAlertStates.ruleId, rule.id),
+          eq(notificationAlertStates.resourceType, 'certificate'),
+          eq(notificationAlertStates.status, 'firing')
+        )
+      );
+    const scopedIds = new Set((rule.resourceIds ?? []) as string[]);
+
+    for (const state of states) {
+      const stillActive = activeCertIds.has(state.resourceId);
+      const stillInScope = scopedIds.size === 0 || scopedIds.has(state.resourceId);
+      if (stillActive && stillInScope) continue;
+
+      const firedAt = state.firedAt;
+      const firedDurationSec = firedAt ? Math.round((Date.now() - firedAt.getTime()) / 1000) : 0;
+
+      await this.resolveAlert(state.id, rule, 'certificate', state.resourceId, state.resourceId, {
+        value: null,
+        days_until_expiry: null,
+        expiry_date: null,
+        threshold: rule.thresholdValue,
+        operator: rule.operator,
+        metric: rule.metric,
+        duration: rule.durationSeconds ?? 0,
+        fired_at: firedAt?.toISOString(),
+        fired_duration: firedDurationSec,
+        resolution_reason: stillActive ? 'out_of_scope' : 'certificate_inactive_or_deleted',
+      });
     }
   }
 
@@ -383,6 +559,10 @@ export class NotificationEvaluatorService {
           event: mapping.eventId,
         });
       }
+    }
+
+    if (channel === 'ssl.cert.changed') {
+      await this.evaluateCertificateExpiry();
     }
   }
 
