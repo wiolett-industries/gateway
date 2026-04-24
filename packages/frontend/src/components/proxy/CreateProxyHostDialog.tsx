@@ -242,6 +242,11 @@ export function CreateProxyHostDialog({
     [nginxTemplateList, type]
   );
 
+  const selectedNode = useMemo(
+    () => nodes.find((node) => node.id === nodeId) ?? null,
+    [nodeId, nodes]
+  );
+
   // Validation
   const isStep1Valid = nodeId !== "" && domainNames.some((d) => d.trim() !== "");
 
@@ -403,7 +408,22 @@ export function CreateProxyHostDialog({
                   onValueChange={(v) => setNodeId(v === "__none__" ? "" : v)}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Select a node..." />
+                    {selectedNode ? (
+                      <div className="flex min-w-0 items-center gap-3 pr-2">
+                        <span className="min-w-0 flex-1 truncate">{selectedNode.hostname}</span>
+                        <Badge variant="secondary" className="shrink-0 text-xs capitalize">
+                          {selectedNode.type}
+                        </Badge>
+                        <Badge
+                          variant={nodeStatusVariant(selectedNode.status)}
+                          className="shrink-0 text-xs capitalize"
+                        >
+                          {selectedNode.status}
+                        </Badge>
+                      </div>
+                    ) : (
+                      <SelectValue placeholder="Select a node..." />
+                    )}
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__none__" disabled>
