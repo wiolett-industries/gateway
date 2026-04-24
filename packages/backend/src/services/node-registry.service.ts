@@ -384,17 +384,23 @@ export class NodeRegistryService {
             nodeId: node.nodeId,
             elapsedMs: elapsed,
           });
+        } else if (dbRow?.status === 'offline') {
+          this.observeNodeState(node.nodeId, 'offline', node.hostname);
         }
       }
     }
 
     // 2. Disconnected nodes — keep recording offline entries (same as proxy health check job)
     const connectedIds = this.getConnectedNodeIds();
-    const offlineNodes = await this.db.select({ id: nodes.id }).from(nodes).where(eq(nodes.status, 'offline'));
+    const offlineNodes = await this.db
+      .select({ id: nodes.id, hostname: nodes.hostname })
+      .from(nodes)
+      .where(eq(nodes.status, 'offline'));
 
     for (const dbNode of offlineNodes) {
       if (!connectedIds.includes(dbNode.id)) {
         await this.recordOfflineStatus(dbNode.id);
+        this.observeNodeState(dbNode.id, 'offline', dbNode.hostname ?? undefined);
       }
     }
   }
