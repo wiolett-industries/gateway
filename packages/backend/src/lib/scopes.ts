@@ -71,6 +71,9 @@ export const ALL_SCOPES = [
   'admin:update',
   'admin:housekeeping',
   'admin:alerts',
+  // ── Licensing ────────────────────────────────────────────────────
+  'license:view',
+  'license:manage',
   // ── Features ─────────────────────────────────────────────────────
   'feat:ai:use',
   'feat:ai:configure',
@@ -183,6 +186,8 @@ export const OPERATOR_SCOPES: readonly string[] = [
   'feat:ai:use',
   // Admin (alerts only)
   'admin:alerts',
+  // Licensing
+  'license:view',
   // Docker
   'docker:containers:list',
   'docker:containers:view',

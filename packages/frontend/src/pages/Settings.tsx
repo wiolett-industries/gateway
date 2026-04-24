@@ -13,6 +13,7 @@ import { ApiTokensSection } from "./settings/ApiTokensSection";
 import { AuthProvisioningSection } from "./settings/AuthProvisioningSection";
 import { DockerRegistriesSection } from "./settings/DockerRegistriesSection";
 import { HousekeepingSection } from "./settings/HousekeepingSection";
+import { LicenseSection } from "./settings/LicenseSection";
 import { UpdateSection } from "./settings/UpdateSection";
 
 export function Settings() {
@@ -36,6 +37,8 @@ export function Settings() {
   const canConfigAI = hasScope("feat:ai:configure");
   const canManageRegistries = hasScope("docker:registries:list");
   const canViewSystemCertificates = hasScope("admin:details:certificates");
+  const canViewLicense = hasScope("license:view");
+  const canManageLicense = hasScope("license:manage");
 
   useEffect(() => {
     api
@@ -196,8 +199,13 @@ export function Settings() {
         {/* Housekeeping */}
         {canHousekeep && <HousekeepingSection />}
 
-        {/* Update + About */}
-        <UpdateSection canUpdate={canUpdate} />
+        <div className={`grid grid-cols-1 gap-4 ${canViewLicense ? "xl:grid-cols-2" : ""}`}>
+          {/* Update + About */}
+          <UpdateSection canUpdate={canUpdate} />
+
+          {/* License */}
+          {canViewLicense && <LicenseSection canManage={canManageLicense} />}
+        </div>
 
         <p className="text-center text-xs text-muted-foreground">
           Powered by{" "}

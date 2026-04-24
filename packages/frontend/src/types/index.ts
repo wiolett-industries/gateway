@@ -1657,6 +1657,37 @@ export interface UpdateStatus {
   lastCheckedAt: string | null;
 }
 
+export type LicenseTier = "community" | "homelab" | "enterprise";
+
+export type LicenseStatus =
+  | "community"
+  | "valid"
+  | "valid_with_warning"
+  | "unreachable_grace_expired"
+  | "invalid"
+  | "expired"
+  | "revoked"
+  | "replaced";
+
+export interface LicenseStatusView {
+  status: LicenseStatus;
+  tier: LicenseTier;
+  licensed: boolean;
+  hasKey: boolean;
+  keyLast4: string | null;
+  licenseName: string | null;
+  installationId: string;
+  installationName: string;
+  expiresAt: string | null;
+  lastCheckedAt: string | null;
+  lastValidAt: string | null;
+  graceUntil: string | null;
+  activeInstallationId: string | null;
+  activeInstallationName: string | null;
+  errorMessage: string | null;
+  serverUrl: string;
+}
+
 // Housekeeping
 export interface HousekeepingConfig {
   enabled: boolean;

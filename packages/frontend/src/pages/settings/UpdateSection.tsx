@@ -4,6 +4,7 @@ import ReactDOM from "react-dom";
 import Markdown from "react-markdown";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
+import { DetailRow } from "@/components/common/DetailRow";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -12,27 +13,6 @@ import { useUpdateStore } from "@/stores/update";
 
 interface UpdateSectionProps {
   canUpdate: boolean;
-}
-
-function InfoRow({
-  label,
-  value,
-  capitalize = false,
-  custom,
-}: {
-  label: string;
-  value?: string;
-  capitalize?: boolean;
-  custom?: React.ReactNode;
-}) {
-  return (
-    <div className="flex items-start justify-between gap-4">
-      <span className="text-sm text-muted-foreground">{label}</span>
-      {custom || (
-        <span className={`text-sm font-medium ${capitalize ? "capitalize" : ""}`}>{value}</span>
-      )}
-    </div>
-  );
 }
 
 export function UpdateSection({ canUpdate }: UpdateSectionProps) {
@@ -121,9 +101,9 @@ export function UpdateSection({ canUpdate }: UpdateSectionProps) {
               )}
             </div>
           </div>
-          <div className="p-4 space-y-3">
-            <InfoRow label="Current version" value={updateStatus.currentVersion} />
-            <InfoRow label="New version" value={updateStatus.latestVersion} />
+          <div className="divide-y divide-border -mb-px [&>*:last-child]:border-b [&>*:last-child]:border-border">
+            <DetailRow label="Current version" value={updateStatus.currentVersion} />
+            <DetailRow label="New version" value={updateStatus.latestVersion} />
           </div>
         </div>
       )}
@@ -146,7 +126,7 @@ export function UpdateSection({ canUpdate }: UpdateSectionProps) {
             </Button>
           )}
         </div>
-        <div className="p-4 space-y-4">
+        <div className="border-b border-border p-4">
           <div className="flex items-center gap-4">
             <img src="/android-chrome-192x192.png" alt="Gateway" className="h-10 w-10" />
             <div>
@@ -156,11 +136,13 @@ export function UpdateSection({ canUpdate }: UpdateSectionProps) {
               </p>
             </div>
           </div>
-          <div className="space-y-3">
-            <InfoRow label="Version" value={updateStatus?.currentVersion ?? "..."} />
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Status</span>
-              {updateStatus?.updateAvailable ? (
+        </div>
+        <div className="divide-y divide-border -mb-px [&>*:last-child]:border-b [&>*:last-child]:border-border">
+          <DetailRow label="Version" value={updateStatus?.currentVersion ?? "..."} />
+          <DetailRow
+            label="Status"
+            value={
+              updateStatus?.updateAvailable ? (
                 <Badge variant="warning" className="text-xs">
                   Update available
                 </Badge>
@@ -168,15 +150,15 @@ export function UpdateSection({ canUpdate }: UpdateSectionProps) {
                 <Badge variant="success" className="text-xs">
                   Up to date
                 </Badge>
-              )}
-            </div>
-            {updateStatus?.lastCheckedAt && (
-              <InfoRow
-                label="Last checked"
-                value={new Date(updateStatus.lastCheckedAt).toLocaleString()}
-              />
-            )}
-          </div>
+              )
+            }
+          />
+          {updateStatus?.lastCheckedAt && (
+            <DetailRow
+              label="Last checked"
+              value={new Date(updateStatus.lastCheckedAt).toLocaleString()}
+            />
+          )}
         </div>
       </div>
 
