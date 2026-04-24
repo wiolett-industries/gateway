@@ -55,50 +55,67 @@ function shouldAutoApprove(toolName: string): boolean {
 }
 
 function invalidateStore(storeName: string): void {
-  // Clear API client cache for the affected resource
-  api.invalidateCache(storeName === "ca" ? "cas" : storeName);
-
   switch (storeName) {
     case "ca":
-      api.invalidateCache("cas");
-      api.invalidateCache("dashboard");
+      api.invalidateCache("req:/api/cas");
+      api.invalidateCache("cas:list:");
+      api.invalidateCache("req:/api/monitoring/dashboard");
+      api.invalidateCache("dashboard:stats:");
       useCAStore.getState().fetchCAs();
       break;
     case "certificates":
-      api.invalidateCache("certificates");
-      api.invalidateCache("dashboard");
+      api.invalidateCache("req:/api/certificates");
+      api.invalidateCache("certificates:list:");
+      api.invalidateCache("req:/api/monitoring/dashboard");
+      api.invalidateCache("dashboard:stats:");
       useCertificatesStore.getState().fetchCertificates();
       break;
     case "ssl":
-      api.invalidateCache("ssl");
-      api.invalidateCache("dashboard");
+      api.invalidateCache("req:/api/ssl-certificates");
+      api.invalidateCache("ssl:list:");
+      api.invalidateCache("req:/api/monitoring/dashboard");
+      api.invalidateCache("dashboard:stats:");
       useSSLStore.getState().fetchCertificates();
       break;
     case "proxy":
-      api.invalidateCache("proxy");
-      api.invalidateCache("dashboard");
+      api.invalidateCache("req:/api/proxy-hosts");
+      api.invalidateCache("req:/api/proxy-host-folders/grouped");
+      api.invalidateCache("proxy:grouped");
+      api.invalidateCache("req:/api/domains");
+      api.invalidateCache("domains:list");
+      api.invalidateCache("req:/api/monitoring/dashboard");
+      api.invalidateCache("req:/api/monitoring/health-status");
+      api.invalidateCache("dashboard:stats:");
+      api.invalidateCache("dashboard:health");
       useProxyStore.getState().fetchProxyHosts();
       useFolderStore.getState().fetchGroupedHosts();
       break;
     case "templates":
+      api.invalidateCache("req:/api/templates");
       api.invalidateCache("templates");
       break;
     case "domains":
+      api.invalidateCache("req:/api/domains");
       api.invalidateCache("domains");
       break;
     case "accessLists":
-      api.invalidateCache("access");
+      api.invalidateCache("req:/api/access-lists");
+      api.invalidateCache("access-lists:list");
       break;
     case "nodes":
-      api.invalidateCache("nodes");
-      api.invalidateCache("dashboard");
+      api.invalidateCache("req:/api/nodes");
+      api.invalidateCache("req:/api/monitoring/dashboard");
+      api.invalidateCache("dashboard:stats:");
       useNodesStore.getState().fetchNodes();
       break;
     case "groups":
-      api.invalidateCache("admin");
+      api.invalidateCache("req:/api/admin/groups");
+      api.invalidateCache("req:/api/admin/users");
+      api.invalidateCache("admin:users");
       break;
     case "users":
-      api.invalidateCache("admin");
+      api.invalidateCache("req:/api/admin/users");
+      api.invalidateCache("admin:users");
       break;
     case "containers":
       useDockerStore.getState().invalidate("containers");

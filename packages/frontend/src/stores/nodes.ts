@@ -27,6 +27,8 @@ interface NodesState {
   invalidate: () => void;
 }
 
+let fetchNodesRequestId = 0;
+
 export const useNodesStore = create<NodesState>()((set, get) => ({
   nodes: [],
   isLoading: true,
@@ -39,6 +41,7 @@ export const useNodesStore = create<NodesState>()((set, get) => ({
   refreshTick: 0,
 
   fetchNodes: async () => {
+    const requestId = ++fetchNodesRequestId;
     const { filters, page, limit } = get();
     const hasData = get().nodes.length > 0;
     set({ isLoading: !hasData, error: null });
@@ -50,6 +53,7 @@ export const useNodesStore = create<NodesState>()((set, get) => ({
         page,
         limit,
       });
+      if (requestId !== fetchNodesRequestId) return;
       set({
         nodes: result.data,
         total: result.total,
@@ -57,6 +61,7 @@ export const useNodesStore = create<NodesState>()((set, get) => ({
         isLoading: false,
       });
     } catch (err) {
+      if (requestId !== fetchNodesRequestId) return;
       set({
         error: err instanceof Error ? err.message : "Failed to fetch nodes",
         isLoading: false,

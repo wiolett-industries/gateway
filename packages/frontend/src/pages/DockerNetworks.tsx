@@ -46,7 +46,8 @@ export function DockerNetworks({
 } = {}) {
   const navigate = useNavigate();
   const { hasScope } = useAuthStore();
-  const { networks, selectedNodeId, isLoading, setSelectedNode, fetchNetworks } = useDockerStore();
+  const { networks, selectedNodeId, setSelectedNode, fetchNetworks } = useDockerStore();
+  const isLoading = useDockerStore((s) => s.loading.networks);
   const visibleNodeId = fixedNodeId ?? selectedNodeId;
 
   const [dockerNodes, setDockerNodes] = useState<Node[]>([]);
@@ -396,7 +397,7 @@ export function DockerNetworks({
         <DataTable
           columns={networkColumns}
           data={filteredNetworks}
-          keyFn={(net) => net.id}
+          keyFn={(net) => `${(net as any)._nodeId ?? selectedNodeId ?? "node"}:${net.id}`}
           emptyMessage="No networks found."
         />
       ) : isLoading ? (

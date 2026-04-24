@@ -1,4 +1,3 @@
-import { waitFor } from "@testing-library/react";
 import { ApiClientBase, type ApiRequestError, DEFAULT_CACHE_TTL } from "@/services/api-base";
 import { useAppStatusStore } from "@/stores/app-status";
 
@@ -13,7 +12,7 @@ class TestApiClient extends ApiClientBase {
 }
 
 describe("ApiClientBase", () => {
-  it("returns cached GET data immediately and refreshes it in the background", async () => {
+  it("returns fresh GET data and updates the shared cache", async () => {
     const client = new TestApiClient();
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
@@ -31,13 +30,11 @@ describe("ApiClientBase", () => {
       );
 
     expect(await client.getThing()).toEqual({ value: 1 });
-    expect(await client.getThing()).toEqual({ value: 1 });
+    expect(await client.getThing()).toEqual({ value: 2 });
 
-    await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(2);
-      expect(client.getCached<{ value: number }>("req:/api/thing", DEFAULT_CACHE_TTL)).toEqual({
-        value: 2,
-      });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(client.getCached<{ value: number }>("req:/api/thing", DEFAULT_CACHE_TTL)).toEqual({
+      value: 2,
     });
   });
 

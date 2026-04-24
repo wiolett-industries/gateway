@@ -81,6 +81,8 @@ function applyFolderOrder(
   return visit(nodes);
 }
 
+let fetchDockerFoldersRequestId = 0;
+
 export const useDockerFolderStore = create<DockerFolderState>()((set, get) => ({
   ...(() => {
     const initialExpanded = new Set(loadExpandedFolderIds());
@@ -94,15 +96,18 @@ export const useDockerFolderStore = create<DockerFolderState>()((set, get) => ({
   error: null,
 
   fetchFolders: async () => {
+    const requestId = ++fetchDockerFoldersRequestId;
     set({ isLoading: get().folders.length === 0, error: null });
     try {
       const folders = await api.listDockerFolders();
+      if (requestId !== fetchDockerFoldersRequestId) return;
       set((state) => ({
         folders,
         isLoading: false,
         expandedFolderIds: new Set(state.savedExpandedFolderIds),
       }));
     } catch (err) {
+      if (requestId !== fetchDockerFoldersRequestId) return;
       const message = err instanceof Error ? err.message : "Failed to fetch Docker folders";
       set({ error: message, isLoading: false });
     }
