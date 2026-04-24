@@ -7,9 +7,13 @@ export interface NodeRuntimeCapacity {
 }
 
 export interface ContainerRuntimeConfig {
+  restartPolicy?: 'no' | 'always' | 'unless-stopped' | 'on-failure';
+  maxRetries?: number;
   memoryLimit?: number;
   memorySwap?: number;
   nanoCPUs?: number;
+  cpuShares?: number;
+  pidsLimit?: number;
   cpuQuota?: number;
   cpuPeriod?: number;
 }

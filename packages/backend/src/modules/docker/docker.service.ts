@@ -8,6 +8,7 @@ import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import type { NodeRegistryService } from '@/services/node-registry.service.js';
 import type { DockerEnvironmentService } from './docker-environment.service.js';
 import type { DockerFolderService } from './docker-folder.service.js';
+import type { DockerRuntimeSettingsService } from './docker-runtime-settings.service.js';
 import {
   validateContainerRuntimeLimits,
   type ContainerRuntimeConfig,
@@ -42,6 +43,7 @@ export class DockerManagementService {
 
   private taskService?: DockerTaskService;
   private environmentService?: DockerEnvironmentService;
+  private runtimeSettingsService?: DockerRuntimeSettingsService;
   private secretService?: DockerSecretService;
   private folderService?: DockerFolderService;
   private eventBus?: EventBusService;
@@ -59,6 +61,10 @@ export class DockerManagementService {
 
   setEnvironmentService(environmentService: DockerEnvironmentService) {
     this.environmentService = environmentService;
+  }
+
+  setRuntimeSettingsService(runtimeSettingsService: DockerRuntimeSettingsService) {
+    this.runtimeSettingsService = runtimeSettingsService;
   }
 
   setSecretService(secretService: DockerSecretService) {
@@ -244,6 +250,118 @@ export class DockerManagementService {
       cpuQuota: this.normalizeNonNegativeNumber(hostConfig.CPUQuota) ?? 0,
       cpuPeriod: this.normalizeNonNegativeNumber(hostConfig.CPUPeriod) ?? 0,
     };
+  }
+
+  private extractRuntimeConfig(config: Record<string, unknown>): ContainerRuntimeConfig {
+    return {
+      restartPolicy:
+        typeof config.restartPolicy === 'string' ? (config.restartPolicy as ContainerRuntimeConfig['restartPolicy']) : undefined,
+      maxRetries: typeof config.maxRetries === 'number' ? config.maxRetries : undefined,
+      memoryLimit: typeof config.memoryLimit === 'number' ? config.memoryLimit : undefined,
+      memorySwap: typeof config.memorySwap === 'number' ? config.memorySwap : undefined,
+      nanoCPUs: typeof config.nanoCPUs === 'number' ? config.nanoCPUs : undefined,
+      cpuShares: typeof config.cpuShares === 'number' ? config.cpuShares : undefined,
+      pidsLimit: typeof config.pidsLimit === 'number' ? config.pidsLimit : undefined,
+    };
+  }
+
+  private normalizeRuntimeConfig(config: ContainerRuntimeConfig): ContainerRuntimeConfig {
+    const normalized: ContainerRuntimeConfig = {};
+    if (config.restartPolicy && config.restartPolicy !== 'no') {
+      normalized.restartPolicy = config.restartPolicy;
+    }
+    if ((config.maxRetries ?? 0) > 0) {
+      normalized.maxRetries = config.maxRetries;
+    }
+    if ((config.memoryLimit ?? 0) > 0) {
+      normalized.memoryLimit = config.memoryLimit;
+    }
+    if (config.memorySwap === -1 || (config.memorySwap ?? 0) > 0) {
+      normalized.memorySwap = config.memorySwap;
+    }
+    if ((config.nanoCPUs ?? 0) > 0) {
+      normalized.nanoCPUs = config.nanoCPUs;
+    }
+    if ((config.cpuShares ?? 0) > 0) {
+      normalized.cpuShares = config.cpuShares;
+    }
+    if ((config.pidsLimit ?? 0) > 0) {
+      normalized.pidsLimit = config.pidsLimit;
+    }
+    return normalized;
+  }
+
+  private mergeRuntimeConfig(base: ContainerRuntimeConfig, patch: ContainerRuntimeConfig): ContainerRuntimeConfig {
+    return this.normalizeRuntimeConfig({
+      restartPolicy: patch.restartPolicy ?? base.restartPolicy,
+      maxRetries: patch.maxRetries ?? base.maxRetries,
+      memoryLimit: patch.memoryLimit ?? base.memoryLimit,
+      memorySwap: patch.memorySwap ?? base.memorySwap,
+      nanoCPUs: patch.nanoCPUs ?? base.nanoCPUs,
+      cpuShares: patch.cpuShares ?? base.cpuShares,
+      pidsLimit: patch.pidsLimit ?? base.pidsLimit,
+    });
+  }
+
+  private async persistRuntimeSettings(
+    nodeId: string,
+    containerName: string,
+    patch: Record<string, unknown>
+  ): Promise<ContainerRuntimeConfig | null> {
+    if (!this.runtimeSettingsService) return null;
+
+    const incoming = this.extractRuntimeConfig(patch);
+    if (Object.values(incoming).every((value) => value === undefined)) {
+      return await this.runtimeSettingsService.get(nodeId, containerName);
+    }
+
+    const existing = (await this.runtimeSettingsService.get(nodeId, containerName)) ?? {};
+    const merged = this.mergeRuntimeConfig(existing, incoming);
+    await this.runtimeSettingsService.replace(nodeId, containerName, merged);
+    return Object.keys(merged).length > 0 ? merged : null;
+  }
+
+  private async applyPersistedRuntimeSettingsToConfig(
+    nodeId: string,
+    containerName: string,
+    config: Record<string, unknown>
+  ): Promise<Record<string, unknown>> {
+    const persisted = await this.persistRuntimeSettings(nodeId, containerName, config);
+    if (!persisted) return config;
+    return { ...persisted, ...config };
+  }
+
+  private applyRuntimeSettingsToInspect(
+    inspect: Record<string, any>,
+    config: ContainerRuntimeConfig | null
+  ): Record<string, any> {
+    if (!config) return inspect;
+    const hostConfig = { ...(inspect.HostConfig ?? {}) } as Record<string, any>;
+
+    if (config.restartPolicy) {
+      hostConfig.RestartPolicy = {
+        ...(hostConfig.RestartPolicy ?? {}),
+        Name: config.restartPolicy,
+        MaximumRetryCount:
+          config.restartPolicy === 'on-failure' ? config.maxRetries ?? 0 : 0,
+      };
+    }
+    if (config.memoryLimit !== undefined) hostConfig.Memory = config.memoryLimit;
+    if (config.memorySwap !== undefined) hostConfig.MemorySwap = config.memorySwap;
+    if (config.nanoCPUs !== undefined) {
+      hostConfig.NanoCPUs = config.nanoCPUs;
+      if (config.nanoCPUs > 0) {
+        hostConfig.CPUPeriod = 100000;
+        hostConfig.CPUQuota = Math.round(config.nanoCPUs / 10000);
+      } else {
+        hostConfig.CPUPeriod = 0;
+        hostConfig.CPUQuota = 0;
+      }
+    }
+    if (config.cpuShares !== undefined) hostConfig.CpuShares = config.cpuShares;
+    if (config.pidsLimit !== undefined) hostConfig.PidsLimit = config.pidsLimit;
+
+    return { ...inspect, HostConfig: hostConfig };
   }
 
   private async validateRuntimeResourceConfig(
@@ -443,6 +561,12 @@ export class DockerManagementService {
       }
       const transition = cName ? this.getTransition(nodeId, cName) : undefined;
       if (transition) data._transition = transition;
+      if (this.runtimeSettingsService && cName) {
+        const persistedRuntime = await this.runtimeSettingsService.get(nodeId, cName);
+        if (persistedRuntime) {
+          return this.applyRuntimeSettingsToInspect(data, persistedRuntime);
+        }
+      }
     }
     return data;
   }
@@ -490,6 +614,17 @@ export class DockerManagementService {
     await this.validateDockerNode(nodeId);
     const name = await this.resolveContainerName(nodeId, containerId);
     this.requireNoTransition(nodeId, name);
+    if (this.runtimeSettingsService) {
+      const persistedRuntime = await this.runtimeSettingsService.get(nodeId, name);
+      if (persistedRuntime) {
+        await this.validateRuntimeResourceConfig(nodeId, containerId, persistedRuntime as Record<string, unknown>);
+        const updateResult = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'live_update', {
+          containerId,
+          configJson: JSON.stringify(persistedRuntime),
+        });
+        this.parseResult(updateResult);
+      }
+    }
     const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'start', { containerId });
     this.parseResult(result);
     await this.auditService.log({
@@ -531,6 +666,17 @@ export class DockerManagementService {
     this.setTransition(nodeId, name, 'restarting');
     this.emitTransition(nodeId, name, containerId, 'restarting');
     const task = await this.createTask(nodeId, containerId, name, 'restart');
+    if (this.runtimeSettingsService) {
+      const persistedRuntime = await this.runtimeSettingsService.get(nodeId, name);
+      if (persistedRuntime) {
+        await this.validateRuntimeResourceConfig(nodeId, containerId, persistedRuntime as Record<string, unknown>);
+        const updateResult = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'live_update', {
+          containerId,
+          configJson: JSON.stringify(persistedRuntime),
+        });
+        this.parseResult(updateResult);
+      }
+    }
     const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'restart', {
       containerId,
       timeoutSeconds: timeout,
@@ -581,6 +727,9 @@ export class DockerManagementService {
     if (this.folderService) {
       await this.folderService.deleteContainerAssignment(nodeId, name);
     }
+    if (this.runtimeSettingsService) {
+      await this.runtimeSettingsService.delete(nodeId, name);
+    }
     this.emitContainer(nodeId, name, containerId, 'removed');
   }
 
@@ -600,6 +749,9 @@ export class DockerManagementService {
     }
     if (this.environmentService) {
       await this.environmentService.rename(nodeId, oldName, newName);
+    }
+    if (this.runtimeSettingsService) {
+      await this.runtimeSettingsService.rename(nodeId, oldName, newName);
     }
     if (this.folderService) {
       await this.folderService.renameContainerAssignment(nodeId, oldName, newName);
@@ -637,6 +789,9 @@ export class DockerManagementService {
     if (this.environmentService) {
       await this.environmentService.copy(nodeId, sourceName, name);
     }
+    if (this.runtimeSettingsService) {
+      await this.runtimeSettingsService.copy(nodeId, sourceName, name);
+    }
     if (this.secretService) {
       await this.secretService.copySecrets(nodeId, sourceName, name, userId);
     }
@@ -669,6 +824,7 @@ export class DockerManagementService {
         config.env = { ...(this.normalizeEnvRecord(config.env) || {}), ...secrets };
       }
     }
+    config = await this.applyPersistedRuntimeSettingsToConfig(nodeId, name, config);
     const hasImageChange = typeof config.tag === 'string' && config.tag.length > 0;
     this.requireNoTransition(nodeId, name);
     this.setTransition(nodeId, name, 'updating');
@@ -746,12 +902,17 @@ export class DockerManagementService {
     await this.validateDockerNode(nodeId);
     const name = await this.resolveContainerName(nodeId, containerId);
     this.requireNoTransition(nodeId, name);
-    await this.validateRuntimeResourceConfig(nodeId, containerId, config);
-    const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'live_update', {
-      containerId,
-      configJson: JSON.stringify(config),
-    });
-    this.parseResult(result);
+    await this.persistRuntimeSettings(nodeId, name, config);
+    const inspect = await this.inspectContainer(nodeId, containerId);
+    const state = (inspect?.State?.Status ?? '') as string;
+    if (state === 'running') {
+      await this.validateRuntimeResourceConfig(nodeId, containerId, config);
+      const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'live_update', {
+        containerId,
+        configJson: JSON.stringify(config),
+      });
+      this.parseResult(result);
+    }
     await this.auditService.log({
       action: 'docker.container.live_update',
       userId,
@@ -766,6 +927,7 @@ export class DockerManagementService {
     const name = await this.resolveContainerName(nodeId, containerId);
     const expectedState = await this.resolveExpectedRecreateState(nodeId, containerId);
     this.requireNoTransition(nodeId, name);
+    config = await this.applyPersistedRuntimeSettingsToConfig(nodeId, name, config);
     await this.validateRuntimeResourceConfig(nodeId, containerId, config);
     this.setTransition(nodeId, name, 'recreating');
     this.emitTransition(nodeId, name, containerId, 'recreating');
