@@ -512,10 +512,13 @@ export class NotificationEvaluatorService {
     const now = Date.now();
     const redisKey = this.getProbeOutcomeKey(ruleId, compositeResourceId);
     const windowStart = now - windowMs;
-    const samples = await this.redis.zrangebyscore(redisKey, windowStart, '+inf');
+    const samples = await this.redis.zrangebyscore(redisKey, windowStart - WINDOW_TRIM_PADDING_MS, '+inf');
+    const parsedSamples = this.parseProbeOutcomeSamples(samples).sort((a, b) => a.timestamp - b.timestamp);
+    const preWindowAnchor = parsedSamples.filter((sample) => sample.timestamp < windowStart).at(-1);
+    const windowSamples = parsedSamples.filter((sample) => sample.timestamp >= windowStart);
 
     return evaluateWindowRatio(
-      this.parseProbeOutcomeSamples(samples),
+      preWindowAnchor ? [preWindowAnchor, ...windowSamples] : windowSamples,
       targetState,
       thresholdPercent,
       windowMs,
