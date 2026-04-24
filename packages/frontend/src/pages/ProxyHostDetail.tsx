@@ -22,6 +22,7 @@ import { usePinnedProxiesStore } from "@/stores/pinned-proxies";
 import type {
   AccessList,
   CustomHeader,
+  ForwardScheme,
   NginxTemplate,
   ProxyHost,
   RewriteRule,
@@ -90,6 +91,11 @@ export function ProxyHostDetail() {
   const [templateVariables, setTemplateVariables] = useState<
     Record<string, string | number | boolean>
   >({});
+  const [templateForwardScheme, setTemplateForwardScheme] = useState<ForwardScheme>("http");
+  const [templateForwardHost, setTemplateForwardHost] = useState("");
+  const [templateForwardPort, setTemplateForwardPort] = useState(80);
+  const [templateRedirectUrl, setTemplateRedirectUrl] = useState("");
+  const [templateRedirectStatusCode, setTemplateRedirectStatusCode] = useState(301);
   const [isSavingTemplate, setIsSavingTemplate] = useState(false);
 
   // Advanced tab state
@@ -127,6 +133,11 @@ export function ProxyHostDetail() {
         setHealthCheckSlowThreshold(data.healthCheckSlowThreshold ?? 3);
         setNginxTemplateId(data.nginxTemplateId || "");
         setTemplateVariables(data.templateVariables || {});
+        setTemplateForwardScheme(data.forwardScheme || "http");
+        setTemplateForwardHost(data.forwardHost || "");
+        setTemplateForwardPort(data.forwardPort || 80);
+        setTemplateRedirectUrl(data.redirectUrl || "");
+        setTemplateRedirectStatusCode(data.redirectStatusCode || 301);
         setAdvancedConfig(data.advancedConfig || "");
         setRawConfig(data.rawConfig || "");
       } catch (err) {
@@ -312,10 +323,29 @@ export function ProxyHostDetail() {
     const nextVars = nginxTemplateId
       ? normalizeTemplateVariables(nginxTemplateId, templateVariables)
       : {};
-    return (
+    const builtinsChanged =
+      (host.type === "proxy" &&
+        (host.forwardScheme !== templateForwardScheme ||
+          (host.forwardHost || "") !== templateForwardHost ||
+          (host.forwardPort || 80) !== templateForwardPort)) ||
+      (host.type === "redirect" &&
+        ((host.redirectUrl || "") !== templateRedirectUrl ||
+          (host.redirectStatusCode || 301) !== templateRedirectStatusCode));
+
+    return builtinsChanged || (
       currentId !== nginxTemplateId || JSON.stringify(currentVars) !== JSON.stringify(nextVars)
     );
-  }, [host, nginxTemplateId, normalizeTemplateVariables, templateVariables]);
+  }, [
+    host,
+    nginxTemplateId,
+    normalizeTemplateVariables,
+    templateForwardHost,
+    templateForwardPort,
+    templateForwardScheme,
+    templateRedirectStatusCode,
+    templateRedirectUrl,
+    templateVariables,
+  ]);
 
   const handleTemplateSelectionChange = useCallback(
     (value: string) => {
@@ -348,10 +378,28 @@ export function ProxyHostDetail() {
       const updated = await api.updateProxyHost(id, {
         nginxTemplateId: nginxTemplateId || null,
         templateVariables: vars,
+        ...(host?.type === "proxy"
+          ? {
+              forwardScheme: templateForwardScheme,
+              forwardHost: templateForwardHost,
+              forwardPort: templateForwardPort,
+            }
+          : {}),
+        ...(host?.type === "redirect"
+          ? {
+              redirectUrl: templateRedirectUrl,
+              redirectStatusCode: templateRedirectStatusCode,
+            }
+          : {}),
       });
       setHost(updated);
       setNginxTemplateId(updated.nginxTemplateId || "");
       setTemplateVariables(updated.templateVariables || {});
+      setTemplateForwardScheme(updated.forwardScheme || "http");
+      setTemplateForwardHost(updated.forwardHost || "");
+      setTemplateForwardPort(updated.forwardPort || 80);
+      setTemplateRedirectUrl(updated.redirectUrl || "");
+      setTemplateRedirectStatusCode(updated.redirectStatusCode || 301);
       toast.success("Template settings updated");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to update template settings");
@@ -699,6 +747,16 @@ export function ProxyHostDetail() {
                 selectedTemplate={selectedTemplate}
                 templateVariables={templateVariables}
                 onTemplateVariableChange={handleTemplateVariableChange}
+                templateForwardScheme={templateForwardScheme}
+                setTemplateForwardScheme={setTemplateForwardScheme}
+                templateForwardHost={templateForwardHost}
+                setTemplateForwardHost={setTemplateForwardHost}
+                templateForwardPort={templateForwardPort}
+                setTemplateForwardPort={setTemplateForwardPort}
+                templateRedirectUrl={templateRedirectUrl}
+                setTemplateRedirectUrl={setTemplateRedirectUrl}
+                templateRedirectStatusCode={templateRedirectStatusCode}
+                setTemplateRedirectStatusCode={setTemplateRedirectStatusCode}
                 onSaveTemplateSettings={handleSaveTemplateSettings}
                 isSavingTemplate={isSavingTemplate}
                 hasTemplateSettingsChanged={hasTemplateSettingsChanged}
