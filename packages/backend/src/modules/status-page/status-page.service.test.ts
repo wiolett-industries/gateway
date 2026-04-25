@@ -141,6 +141,7 @@ describe('StatusPageService settings validation', () => {
         nodeId: '22222222-2222-4222-8222-222222222222',
         sslCertificateId: '33333333-3333-4333-8333-333333333333',
         nginxTemplateId: null,
+        upstreamUrl: null,
       },
       USER_ID
     );
@@ -176,7 +177,37 @@ describe('StatusPageService settings validation', () => {
         nodeId: '22222222-2222-4222-8222-222222222222',
         sslCertificateId: null,
         nginxTemplateId: '44444444-4444-4444-8444-444444444444',
+        upstreamUrl: null,
       },
+      USER_ID
+    );
+  });
+
+  it('applies a custom upstream URL for the system proxy host', async () => {
+    const proxyService = { upsertStatusPageSystemHost: vi.fn().mockResolvedValue({ id: 'proxy-status' }) };
+    const service = createService(
+      dbForSettings({
+        id: '22222222-2222-4222-8222-222222222222',
+        type: 'nginx',
+        status: 'online',
+      }),
+      proxyService
+    );
+
+    await service.updateSettings(
+      {
+        enabled: true,
+        domain: 'status.example.com',
+        nodeId: '22222222-2222-4222-8222-222222222222',
+        upstreamUrl: 'http://172.16.20.60:3000',
+      },
+      USER_ID
+    );
+
+    expect(proxyService.upsertStatusPageSystemHost).toHaveBeenCalledWith(
+      expect.objectContaining({
+        upstreamUrl: 'http://172.16.20.60:3000',
+      }),
       USER_ID
     );
   });

@@ -1526,6 +1526,7 @@ export interface StatusPageConfig {
   nodeId: string | null;
   sslCertificateId: string | null;
   proxyTemplateId: string | null;
+  upstreamUrl: string | null;
   proxyHostId: string | null;
   publicIncidentLimit: number;
   recentIncidentDays: number;

@@ -47,6 +47,7 @@ const DEFAULT_CONFIG: StatusPageConfig = {
   nodeId: null,
   sslCertificateId: null,
   proxyTemplateId: null,
+  upstreamUrl: null,
   proxyHostId: null,
   publicIncidentLimit: 25,
   recentIncidentDays: 14,
@@ -158,90 +159,117 @@ export function StatusPageSection({ nodesList }: StatusPageSectionProps) {
         </div>
       </div>
 
-      <div className="grid gap-4 p-4 md:grid-cols-2 xl:grid-cols-4">
-        <Field label="Domain">
-          <Input
-            value={config.domain}
-            disabled={!canManage}
-            placeholder="status.example.com"
-            onChange={(event) => setConfig((prev) => ({ ...prev, domain: event.target.value }))}
-            onBlur={() => updateConfig({ domain: config.domain })}
-          />
-        </Field>
-        <Field label="Nginx node">
-          <Select
-            value={config.nodeId ?? ""}
-            disabled={!canManage || config.enabled || savingSettings}
-            onValueChange={(nodeId) => updateConfig({ nodeId })}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Select an online nginx node" />
-            </SelectTrigger>
-            <SelectContent>
-              {onlineNginxNodes.map((node) => (
-                <SelectItem key={node.id} value={node.id}>
-                  {node.displayName || node.hostname}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-        <Field label="SSL certificate">
-          <Select
-            value={config.sslCertificateId ?? "__none__"}
-            disabled={!canManage}
-            onValueChange={(sslCertificateId) =>
-              updateConfig({
-                sslCertificateId: sslCertificateId === "__none__" ? null : sslCertificateId,
-              })
-            }
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__none__">No certificate</SelectItem>
-              {sslCerts
-                .filter((cert) => cert.status === "active")
-                .map((cert) => (
-                  <SelectItem key={cert.id} value={cert.id}>
-                    {cert.name}
+      <div className="space-y-4 p-4">
+        <div className="grid gap-4 md:grid-cols-2">
+          <Field label="Domain">
+            <Input
+              value={config.domain}
+              disabled={!canManage}
+              placeholder="status.example.com"
+              onChange={(event) => setConfig((prev) => ({ ...prev, domain: event.target.value }))}
+              onBlur={() => updateConfig({ domain: config.domain })}
+            />
+          </Field>
+          <Field label="Gateway upstream URL">
+            <Input
+              value={config.upstreamUrl ?? ""}
+              disabled={!canManage}
+              placeholder="http://172.16.20.60:3000"
+              onChange={(event) =>
+                setConfig((prev) => ({ ...prev, upstreamUrl: event.target.value }))
+              }
+              onBlur={() =>
+                updateConfig({
+                  upstreamUrl: config.upstreamUrl?.trim() ? config.upstreamUrl.trim() : null,
+                })
+              }
+            />
+          </Field>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <Field label="Nginx node">
+            <Select
+              value={config.nodeId ?? ""}
+              disabled={!canManage || config.enabled || savingSettings}
+              onValueChange={(nodeId) => updateConfig({ nodeId })}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select an online nginx node" />
+              </SelectTrigger>
+              <SelectContent>
+                {onlineNginxNodes.map((node) => (
+                  <SelectItem key={node.id} value={node.id}>
+                    {node.displayName || node.hostname}
                   </SelectItem>
                 ))}
-            </SelectContent>
-          </Select>
-        </Field>
-        <Field label="Proxy template">
-          <Select
-            value={config.proxyTemplateId ?? "__default__"}
-            disabled={!canManage}
-            onValueChange={(proxyTemplateId) =>
-              updateConfig({
-                proxyTemplateId: proxyTemplateId === "__default__" ? null : proxyTemplateId,
-              })
-            }
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__default__">Default template</SelectItem>
-              {proxyTemplates.map((template) => (
-                <SelectItem key={template.id} value={template.id}>
-                  {template.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label="SSL certificate">
+            <Select
+              value={config.sslCertificateId ?? "__none__"}
+              disabled={!canManage}
+              onValueChange={(sslCertificateId) =>
+                updateConfig({
+                  sslCertificateId: sslCertificateId === "__none__" ? null : sslCertificateId,
+                })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">No certificate</SelectItem>
+                {sslCerts
+                  .filter((cert) => cert.status === "active")
+                  .map((cert) => (
+                    <SelectItem key={cert.id} value={cert.id}>
+                      {cert.name}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label="Proxy template" className="md:col-span-2 xl:col-span-1">
+            <Select
+              value={config.proxyTemplateId ?? "__default__"}
+              disabled={!canManage}
+              onValueChange={(proxyTemplateId) =>
+                updateConfig({
+                  proxyTemplateId: proxyTemplateId === "__default__" ? null : proxyTemplateId,
+                })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__default__">Default template</SelectItem>
+                {proxyTemplates.map((template) => (
+                  <SelectItem key={template.id} value={template.id}>
+                    {template.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+        </div>
       </div>
     </div>
   );
 }
 
-export function Field({ label, children }: { label: string; children: React.ReactNode }) {
+export function Field({
+  label,
+  children,
+  className = "",
+}: {
+  label: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
   return (
-    <label className="block space-y-1">
+    <label className={`block space-y-1 ${className}`}>
       <span className="text-xs font-medium text-muted-foreground">{label}</span>
       {children}
     </label>

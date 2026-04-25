@@ -76,6 +76,7 @@ const DEFAULT_CONFIG: StatusPageConfig = {
   nodeId: null,
   sslCertificateId: null,
   proxyTemplateId: null,
+  upstreamUrl: null,
   proxyHostId: null,
   publicIncidentLimit: 25,
   recentIncidentDays: 14,

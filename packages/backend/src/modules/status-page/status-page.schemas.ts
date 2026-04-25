@@ -1,6 +1,18 @@
 import { z } from 'zod';
 
 const domainNameRegex = /^([a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/;
+const upstreamUrlSchema = z
+  .string()
+  .trim()
+  .url()
+  .refine((value) => {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  }, 'Upstream URL must use http or https')
+  .refine((value) => {
+    const url = new URL(value);
+    return url.pathname === '/' && !url.search && !url.hash;
+  }, 'Upstream URL must not include path, query, or hash');
 
 export const StatusPageSettingsSchema = z.object({
   enabled: z.boolean().optional(),
@@ -10,6 +22,7 @@ export const StatusPageSettingsSchema = z.object({
   nodeId: z.string().uuid().optional().nullable(),
   sslCertificateId: z.string().uuid().optional().nullable(),
   proxyTemplateId: z.string().uuid().optional().nullable(),
+  upstreamUrl: upstreamUrlSchema.optional().nullable().or(z.literal('')),
   publicIncidentLimit: z.number().int().min(1).max(100).optional(),
   recentIncidentDays: z.number().int().min(1).max(365).optional(),
   autoDegradedEnabled: z.boolean().optional(),
