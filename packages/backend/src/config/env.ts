@@ -1,5 +1,8 @@
 import { z } from 'zod';
 
+const rateLimitWindowSchema = z.coerce.number().int().positive();
+const rateLimitMaxSchema = z.coerce.number().int().positive();
+
 const envSchema = z.object({
   // Server
   PORT: z.coerce.number().default(3000),
@@ -19,8 +22,17 @@ const envSchema = z.object({
   OIDC_SCOPES: z.string().default('openid email profile'),
 
   // Rate limiting
-  RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60000),
-  RATE_LIMIT_MAX_REQUESTS: z.coerce.number().default(20000),
+  RATE_LIMIT_WINDOW_MS: rateLimitWindowSchema.default(60000),
+  RATE_LIMIT_MAX_REQUESTS: rateLimitMaxSchema.default(1200),
+  RATE_LIMIT_AUTH_MAX_REQUESTS: rateLimitMaxSchema.default(120),
+  RATE_LIMIT_AUTH_LOGIN_MAX_REQUESTS: rateLimitMaxSchema.default(20),
+  RATE_LIMIT_AUTH_CALLBACK_MAX_REQUESTS: rateLimitMaxSchema.default(60),
+  RATE_LIMIT_SETUP_MAX_REQUESTS: rateLimitMaxSchema.default(20),
+  RATE_LIMIT_PUBLIC_STATUS_MAX_REQUESTS: rateLimitMaxSchema.default(600),
+  RATE_LIMIT_PUBLIC_WEBHOOK_MAX_REQUESTS: rateLimitMaxSchema.default(60),
+  RATE_LIMIT_PKI_MAX_REQUESTS: rateLimitMaxSchema.default(600),
+  RATE_LIMIT_STREAM_MAX_REQUESTS: rateLimitMaxSchema.default(120),
+  RATE_LIMIT_AI_WS_MAX_REQUESTS: rateLimitMaxSchema.default(30),
 
   // Session
   SESSION_EXPIRY: z.coerce.number().default(2592000), // 30 days
