@@ -7,6 +7,15 @@ import { useAuthStore } from "@/stores/auth";
 
 const CHANNEL_PREFIX = "docker-logs:";
 
+function isTerminalLogError(message: string): boolean {
+  const lower = message.toLowerCase();
+  return (
+    lower.includes("no such container") ||
+    lower.includes("not found") ||
+    lower.includes("access denied")
+  );
+}
+
 function hasTimestamp(line: string): boolean {
   return /^\d{4}-\d{2}-\d{2}[T ]/.test(line) || /^\d{2}:\d{2}:\d{2}/.test(line);
 }
@@ -28,6 +37,7 @@ export function DockerLogsPopout() {
   const mountedRef = useRef(true);
   const channelRef = useRef<BroadcastChannel | null>(null);
   const authFailedRef = useRef(false);
+  const terminalErrorRef = useRef(false);
 
   // BroadcastChannel
   useEffect(() => {
@@ -103,6 +113,7 @@ export function DockerLogsPopout() {
     const ws = api.createLogStreamWebSocket(nodeId, containerId, 200);
     wsRef.current = ws;
     authFailedRef.current = false;
+    terminalErrorRef.current = false;
 
     ws.onmessage = (evt) => {
       if (!mountedRef.current) return;
@@ -123,6 +134,7 @@ export function DockerLogsPopout() {
           });
         } else if (msg.type === "auth_error") {
           authFailedRef.current = true;
+          terminalErrorRef.current = true;
           setIsConnecting(false);
           setHasMore(false);
           setLoadingMore(false);
@@ -131,6 +143,20 @@ export function DockerLogsPopout() {
             ws.close(1008, "Authentication failed");
           } catch {
             /* */
+          }
+        } else if (msg.type === "error") {
+          const message = msg.message || "Log stream error";
+          terminalErrorRef.current = isTerminalLogError(message);
+          setIsConnecting(false);
+          if (terminalErrorRef.current) {
+            setHasMore(false);
+            setLoadingMore(false);
+            setLines([message]);
+            try {
+              ws.close(1011, "Terminal log stream error");
+            } catch {
+              /* */
+            }
           }
         }
       } catch {
@@ -141,7 +167,7 @@ export function DockerLogsPopout() {
     ws.onclose = () => {
       wsRef.current = null;
       if (!mountedRef.current) return;
-      if (authFailedRef.current) return;
+      if (authFailedRef.current || terminalErrorRef.current) return;
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
       reconnectTimer.current = setTimeout(() => {
         if (mountedRef.current) connectWs();
