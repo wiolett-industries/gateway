@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm';
 import { nodes } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
 import type { EnrollRequest, EnrollResponse, RenewCertRequest, RenewCertResponse } from '../generated/types.js';
+import { extractNodeIdFromCert } from '../interceptors/auth.js';
 import type { GrpcServerDeps } from '../server.js';
 
 const logger = createChildLogger('GrpcEnrollment');
@@ -88,6 +89,20 @@ export function createEnrollmentHandlers(deps: GrpcServerDeps) {
       try {
         const req = call.request;
         logger.info('Certificate renewal request', { nodeId: req.nodeId });
+
+        const certNodeId = extractNodeIdFromCert(call as any);
+        if (!certNodeId) {
+          callback({ code: 16, message: 'mTLS client certificate is required for certificate renewal' });
+          return;
+        }
+        if (certNodeId !== req.nodeId) {
+          logger.warn('Certificate renewal rejected: cert CN does not match requested nodeId', {
+            certNodeId,
+            requestedNodeId: req.nodeId,
+          });
+          callback({ code: 7, message: 'Client certificate does not match requested node' });
+          return;
+        }
 
         // Verify the caller is authenticated — must be a registered (non-pending) node
         const [node] = await deps.db.select().from(nodes).where(eq(nodes.id, req.nodeId)).limit(1);

@@ -6,6 +6,8 @@ import { TOKENS } from '@/container.js';
 import type { DrizzleClient } from '@/db/client.js';
 import { permissionGroups, users } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
+import { canManageUser, isScopeSubset } from '@/lib/permissions.js';
+import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { CacheService } from '@/services/cache.service.js';
 import type { SessionService } from '@/services/session.service.js';
@@ -417,6 +419,43 @@ export class AuthService {
     this.emitUser(userId, 'updated');
     this.emitPermissions(userId, mapped.scopes, groupId);
     return mapped;
+  }
+
+  async assertCanUpdateUserGroup(
+    actorUserId: string,
+    actorScopes: string[],
+    userId: string,
+    groupId: string
+  ): Promise<User> {
+    if (userId === actorUserId) {
+      throw new AppError(400, 'SELF_DEMOTION', 'Cannot change your own group');
+    }
+
+    const targetUser = await this.getUserById(userId);
+    if (!targetUser) {
+      throw new AppError(404, 'NOT_FOUND', 'User not found');
+    }
+
+    if (targetUser.oidcSubject.startsWith('system:')) {
+      throw new AppError(403, 'SYSTEM_USER', 'Cannot modify the system user');
+    }
+
+    const denyReason = canManageUser(actorScopes, targetUser.scopes);
+    if (denyReason) {
+      throw new AppError(403, 'PRIVILEGE_BOUNDARY', denyReason);
+    }
+
+    const groupMap = await fetchGroupScopeMap(this.db);
+    if (!groupMap.has(groupId)) {
+      throw new AppError(404, 'NOT_FOUND', 'Permission group not found');
+    }
+
+    const destScopes = computeEffectiveGroupAccess(groupId, groupMap).scopes;
+    if (!isScopeSubset(destScopes, actorScopes)) {
+      throw new AppError(403, 'PRIVILEGE_BOUNDARY', 'Cannot assign a group with permissions you do not possess');
+    }
+
+    return targetUser;
   }
 
   async blockUser(userId: string): Promise<User> {

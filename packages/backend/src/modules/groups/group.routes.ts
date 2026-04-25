@@ -1,6 +1,5 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
-import { isScopeSubset } from '@/lib/permissions.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
 import { authMiddleware, requireScope } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
@@ -35,16 +34,8 @@ groupRoutes.post('/', async (c) => {
   const body = await c.req.json();
   const input = CreateGroupSchema.parse(body);
 
-  // Users cannot grant scopes they don't possess
   const userScopes = c.get('effectiveScopes') || [];
-  const effectiveScopes = await groupService.buildEffectiveScopes(input.scopes, input.parentId);
-  if (!isScopeSubset(effectiveScopes, userScopes)) {
-    const disallowed = effectiveScopes.filter((s) => !userScopes.some((us) => s === us || s.startsWith(`${us}:`)));
-    return c.json(
-      { code: 'SCOPE_NOT_ALLOWED', message: `Cannot grant scopes you do not possess: ${disallowed.join(', ')}` },
-      403
-    );
-  }
+  await groupService.assertCanCreateGroup(input, userScopes);
 
   const group = await groupService.createGroup(input);
 
@@ -70,22 +61,8 @@ groupRoutes.put('/:id', async (c) => {
   const body = await c.req.json();
   const input = UpdateGroupSchema.parse(body);
 
-  // Users cannot grant scopes they don't possess
-  if (input.scopes || input.parentId !== undefined) {
-    const userScopes = c.get('effectiveScopes') || [];
-    const existingGroup = await groupService.getGroup(id);
-    const nextScopes = input.scopes ?? existingGroup.scopes;
-    const nextParentId = input.parentId !== undefined ? input.parentId : existingGroup.parentId;
-    const effectiveScopes = await groupService.buildEffectiveScopes(nextScopes, nextParentId);
-
-    if (!isScopeSubset(effectiveScopes, userScopes)) {
-      const disallowed = effectiveScopes.filter((s) => !userScopes.some((us) => s === us || s.startsWith(`${us}:`)));
-      return c.json(
-        { code: 'SCOPE_NOT_ALLOWED', message: `Cannot grant scopes you do not possess: ${disallowed.join(', ')}` },
-        403
-      );
-    }
-  }
+  const userScopes = c.get('effectiveScopes') || [];
+  await groupService.assertCanUpdateGroup(id, input, userScopes);
 
   const group = await groupService.updateGroup(id, input);
 
