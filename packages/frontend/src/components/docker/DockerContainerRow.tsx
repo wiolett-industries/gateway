@@ -116,11 +116,11 @@ export function DockerContainerRow({
           {(container as any)._transition ?? container.state}
         </Badge>
       </td>
-      <td className="p-3 text-muted-foreground whitespace-nowrap">
+      <td className="p-3 pr-4 text-sm text-muted-foreground whitespace-nowrap tabular-nums">
         {formatCreated(container.created)}
       </td>
       {(canManage || canReorganize) && (
-        <td className="p-3 text-right" onClick={(e) => e.stopPropagation()}>
+        <td className="p-3 pl-3 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
           <div className="flex items-center gap-1 justify-end">
             {container.state === "running" ? (
               <>

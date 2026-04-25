@@ -48,6 +48,7 @@ interface DockerFolderGroupProps {
   canManage: (container: DockerContainerRowData) => boolean;
   canReorganize: (container: DockerContainerRowData) => boolean;
   canView: (container: DockerContainerRowData) => boolean;
+  canManageFolders: boolean;
   showNode: boolean;
   colGroup: React.ReactNode;
 }
@@ -76,6 +77,7 @@ export function DockerFolderGroup({
   canManage,
   canReorganize,
   canView,
+  canManageFolders,
   showNode,
   colGroup,
 }: DockerFolderGroupProps) {
@@ -83,7 +85,7 @@ export function DockerFolderGroup({
   const { attributes, listeners, setNodeRef, transform, isDragging } = useSortable({
     id: `docker-folder-${folder.id}`,
     data: { type: "folder", folderId: folder.id, isSystem: folder.isSystem, folder },
-    disabled: folder.isSystem,
+    disabled: folder.isSystem || !canManageFolders,
   });
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -132,7 +134,7 @@ export function DockerFolderGroup({
           </Badge>
         )}
 
-        {!folder.isSystem && !isRenaming && (
+        {canManageFolders && !folder.isSystem && !isRenaming && (
           <div className="ml-auto" onClick={(e) => e.stopPropagation()}>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -197,6 +199,7 @@ export function DockerFolderGroup({
                 canManage={canManage}
                 canReorganize={canReorganize}
                 canView={canView}
+                canManageFolders={canManageFolders}
                 showNode={showNode}
                 colGroup={colGroup}
               />
