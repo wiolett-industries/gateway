@@ -89,6 +89,14 @@ function attachContainersToFolders(
   return folders.map(mapNode);
 }
 
+function pruneEmptyFolders(
+  folders: DockerFolderTreeNodeWithContainers[]
+): DockerFolderTreeNodeWithContainers[] {
+  return folders
+    .map((folder) => ({ ...folder, children: pruneEmptyFolders(folder.children) }))
+    .filter((folder) => folder.containers.length > 0 || folder.children.length > 0);
+}
+
 function findContainersInFolder(
   nodes: DockerFolderTreeNodeWithContainers[],
   folderId: string
@@ -273,9 +281,13 @@ export function DockerContainers({
     return result;
   }, [filters, visibleContainers]);
 
-  const folderTree = useMemo(
+  const rawFolderTree = useMemo(
     () => attachContainersToFolders(folders, filteredContainers),
     [folders, filteredContainers]
+  );
+  const folderTree = useMemo(
+    () => (fixedNodeId ? pruneEmptyFolders(rawFolderTree) : rawFolderTree),
+    [fixedNodeId, rawFolderTree]
   );
 
   const folderIds = useMemo(() => new Set(folders.map((folder) => folder.id)), [folders]);
@@ -290,7 +302,7 @@ export function DockerContainers({
   );
 
   const hasActiveFilters = filters.search !== "" || filters.status !== "all";
-  const canManageFolders = hasScopedAccess("docker:containers:edit");
+  const canManageFolders = !fixedNodeId && hasScopedAccess("docker:containers:edit");
   const canManageRuntime = hasScopedAccess("docker:containers:manage");
   const showActionsColumn = canManageFolders || canManageRuntime;
   const showNodeColumn = !fixedNodeId;
@@ -310,10 +322,11 @@ export function DockerContainers({
 
   const canReorganizeContainer = useCallback(
     (container: DockerContainerRowData) =>
+      !fixedNodeId &&
       !container.folderIsSystem &&
       (hasScope("docker:containers:edit") ||
         hasScope(`docker:containers:edit:${container._nodeId}`)),
-    [hasScope]
+    [fixedNodeId, hasScope]
   );
 
   const doAction = useCallback(
@@ -460,6 +473,7 @@ export function DockerContainers({
 
   const handleDragEnd = async (event: DragEndEvent) => {
     setActiveDrag(null);
+    if (!canManageFolders) return;
     const { active, over } = event;
     if (!over) return;
 
@@ -560,12 +574,12 @@ export function DockerContainers({
 
   const colGroup = (
     <colgroup>
-      <col style={{ width: "30%" }} />
-      <col style={{ width: showNodeColumn ? "26%" : "34%" }} />
+      <col style={{ width: showNodeColumn ? "30%" : "34%" }} />
+      <col style={{ width: showNodeColumn ? "24%" : "32%" }} />
       {showNodeColumn && <col style={{ width: "14%" }} />}
       <col style={{ width: "12%" }} />
-      <col style={{ width: "10%" }} />
-      {showActionsColumn && <col style={{ width: "8%" }} />}
+      <col style={{ width: showActionsColumn ? "7rem" : "9rem" }} />
+      {showActionsColumn && <col style={{ width: "7.5rem" }} />}
     </colgroup>
   );
 
@@ -676,7 +690,7 @@ export function DockerContainers({
               <p className="text-sm text-muted-foreground">Loading containers...</p>
             </div>
           </div>
-        ) : filteredContainers.length > 0 || folders.length > 0 ? (
+        ) : filteredContainers.length > 0 || folderTree.length > 0 ? (
           <DndContext
             sensors={sensors}
             onDragStart={(event) => setActiveDrag(event.active)}
@@ -742,6 +756,7 @@ export function DockerContainers({
                       canManage={canManageContainer}
                       canReorganize={canReorganizeContainer}
                       canView={canViewContainer}
+                      canManageFolders={canManageFolders}
                       showNode={showNodeColumn}
                       colGroup={colGroup}
                     />
@@ -749,22 +764,22 @@ export function DockerContainers({
                 </SortableContext>
               )}
 
-              {(folders.length > 0 || ungroupedContainers.length > 0) && (
-                <UngroupedDropZone>
-                  {folders.length > 0 && (
-                    <div
-                      className={`flex items-center justify-between px-3 py-2 ${ungroupedContainers.length > 0 ? "border-b border-border" : ""}`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium">Ungrouped</span>
+              {(folderTree.length > 0 || ungroupedContainers.length > 0) &&
+                (canManageFolders ? (
+                  <UngroupedDropZone>
+                    {folderTree.length > 0 && (
+                      <div
+                        className={`flex items-center justify-between px-3 py-2 ${ungroupedContainers.length > 0 ? "border-b border-border" : ""}`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium">Ungrouped</span>
+                        </div>
+                        <Badge variant="secondary" className="text-xs">
+                          {ungroupedContainers.length}
+                        </Badge>
                       </div>
-                      <Badge variant="secondary" className="text-xs">
-                        {ungroupedContainers.length}
-                      </Badge>
-                    </div>
-                  )}
-                  {ungroupedContainers.length > 0 &&
-                    (canManageFolders ? (
+                    )}
+                    {ungroupedContainers.length > 0 && (
                       <SortableContext
                         items={ungroupedContainers.map(
                           (container) => `${container._nodeId}:${container.name}`
@@ -792,7 +807,21 @@ export function DockerContainers({
                           </tbody>
                         </table>
                       </SortableContext>
-                    ) : (
+                    )}
+                  </UngroupedDropZone>
+                ) : (
+                  <>
+                    {folderTree.length > 0 && ungroupedContainers.length > 0 && (
+                      <div className="flex items-center justify-between border-b border-border px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium">Ungrouped</span>
+                        </div>
+                        <Badge variant="secondary" className="text-xs">
+                          {ungroupedContainers.length}
+                        </Badge>
+                      </div>
+                    )}
+                    {ungroupedContainers.length > 0 && (
                       <table className="w-full" style={{ tableLayout: "fixed" }}>
                         {colGroup}
                         <tbody className="[&_tr:last-child]:border-b-0">
@@ -802,7 +831,7 @@ export function DockerContainers({
                               container={container}
                               canView={canViewContainer(container)}
                               canManage={canManageContainer(container)}
-                              canReorganize={canReorganizeContainer(container)}
+                              canReorganize={false}
                               showNode={showNodeColumn}
                               loadingAction={actionLoading[container.id]}
                               onStart={handleStart}
@@ -813,9 +842,9 @@ export function DockerContainers({
                           ))}
                         </tbody>
                       </table>
-                    ))}
-                </UngroupedDropZone>
-              )}
+                    )}
+                  </>
+                ))}
             </div>
             <DockerDragOverlay active={activeDrag} colGroup={colGroup} />
           </DndContext>

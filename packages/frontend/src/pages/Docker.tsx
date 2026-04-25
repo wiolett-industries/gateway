@@ -30,6 +30,7 @@ export function Docker() {
   const { hasScope, hasScopedAccess } = useAuthStore();
   const selectedNodeId = useDockerStore((s) => s.selectedNodeId);
   const dockerNodes = useDockerStore((s) => s.dockerNodes);
+  const setSelectedNode = useDockerStore((s) => s.setSelectedNode);
   const setDockerNodes = useDockerStore((s) => s.setDockerNodes);
   const fetchContainers = useDockerStore((s) => s.fetchContainers);
   const fetchImages = useDockerStore((s) => s.fetchImages);
@@ -60,6 +61,10 @@ export function Docker() {
             : activeTab === "tasks"
               ? loading.tasks
               : false;
+
+  useEffect(() => {
+    setSelectedNode(null);
+  }, [setSelectedNode]);
 
   // Fetch docker nodes on mount, store in zustand for multi-node fetching
   useEffect(() => {
@@ -168,7 +173,7 @@ export function Docker() {
 
   return (
     <PageTransition>
-      <div className="h-full flex flex-col p-6 gap-4">
+      <div className="h-full overflow-y-auto flex flex-col p-6 gap-4">
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-2 shrink-0">
           <div>
