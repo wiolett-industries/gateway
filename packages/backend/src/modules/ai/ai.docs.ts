@@ -685,6 +685,7 @@ Gateway can store and operate external Postgres and Redis connections directly f
   api: `# Gateway REST API
 
 Gateway provides a full REST API for programmatic access to all features. API tokens allow external scripts, CI/CD pipelines, and integrations to interact with Gateway without a browser session.
+AI assistant access and AI configuration are browser-user-only and cannot be delegated to API tokens.
 
 ## Creating an API Token
 1. Go to **Settings** page → **API Tokens** section

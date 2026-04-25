@@ -1140,6 +1140,10 @@ export const TOKEN_SCOPES = [
   },
 ] as const;
 
+export const API_TOKEN_SCOPES = TOKEN_SCOPES.filter(
+  (scope) => scope.value !== "feat:ai:use" && scope.value !== "feat:ai:configure"
+);
+
 export interface ApiToken {
   id: string;
   name: string;

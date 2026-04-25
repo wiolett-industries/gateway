@@ -23,7 +23,7 @@ interface PendingApproval {
 
 interface WSConnectionState {
   user: User | null;
-  sessionToken: string | null;
+  sessionId: string | null;
   authenticated: boolean;
   currentAbortController: AbortController | null;
   currentRequestId: string | null;
@@ -39,11 +39,9 @@ function send(ws: WSContext, msg: WSServerMessage): void {
   }
 }
 
-async function authenticateFromToken(token: string): Promise<User | null> {
-  // API tokens cannot access AI — sessions only
-  if (token.startsWith('gw_')) return null;
+async function authenticateFromSession(sessionId: string): Promise<User | null> {
   const sessionService = container.resolve(SessionService);
-  const session = await sessionService.getSession(token);
+  const session = await sessionService.getSession(sessionId);
   if (!session?.user) return null;
 
   // Always resolve live scopes from the group (not stale session cache)
@@ -91,7 +89,7 @@ export function createWSHandlers() {
     onOpen(_event: Event, ws: WSContext) {
       const state: WSConnectionState = {
         user: null,
-        sessionToken: null,
+        sessionId: null,
         authenticated: false,
         currentAbortController: null,
         currentRequestId: null,
@@ -138,8 +136,8 @@ export function createWSHandlers() {
       }
 
       // Re-validate session on each message to catch role changes
-      if (state.sessionToken) {
-        const freshUser = await authenticateFromToken(state.sessionToken);
+      if (state.sessionId) {
+        const freshUser = await authenticateFromSession(state.sessionId);
         if (!freshUser || !canUseAI(freshUser.scopes)) {
           send(ws, { type: 'auth_error', message: 'Session expired or role changed' });
           try {
@@ -308,13 +306,13 @@ export function createWSHandlers() {
  * Authenticate and initialize a WS connection from the session cookie.
  * Called during the WS upgrade / onOpen.
  */
-export async function authenticateWSConnection(ws: WSContext, token: string): Promise<boolean> {
+export async function authenticateWSConnection(ws: WSContext, sessionId: string): Promise<boolean> {
   const state = wsStates.get(ws);
   if (!state) return false;
 
-  const user = await authenticateFromToken(token);
+  const user = await authenticateFromSession(sessionId);
   if (!user) {
-    send(ws, { type: 'auth_error', message: 'Invalid or expired token' });
+    send(ws, { type: 'auth_error', message: 'Invalid or expired session' });
     return false;
   }
 
@@ -331,7 +329,7 @@ export async function authenticateWSConnection(ws: WSContext, token: string): Pr
   }
 
   state.user = user;
-  state.sessionToken = token;
+  state.sessionId = sessionId;
   state.authenticated = true;
   send(ws, { type: 'auth_ok', userId: user.id });
   return true;
