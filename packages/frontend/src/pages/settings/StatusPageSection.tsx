@@ -30,6 +30,7 @@ import type {
   StatusPageConfig,
   StatusPageIncident,
   StatusPageIncidentSeverity,
+  StatusPageProxyTemplateOption,
   StatusPageServiceItem,
   StatusPageSourceType,
 } from "@/types";
@@ -45,6 +46,7 @@ const DEFAULT_CONFIG: StatusPageConfig = {
   domain: "",
   nodeId: null,
   sslCertificateId: null,
+  proxyTemplateId: null,
   proxyHostId: null,
   publicIncidentLimit: 25,
   recentIncidentDays: 14,
@@ -77,6 +79,7 @@ export function StatusPageSection({ nodesList }: StatusPageSectionProps) {
   const canManage = hasScope("status-page:manage");
   const [config, setConfig] = useState<StatusPageConfig>(DEFAULT_CONFIG);
   const [sslCerts, setSslCerts] = useState<SSLCertificate[]>([]);
+  const [proxyTemplates, setProxyTemplates] = useState<StatusPageProxyTemplateOption[]>([]);
   const [savingSettings, setSavingSettings] = useState(false);
 
   const onlineNginxNodes = useMemo(
@@ -93,16 +96,28 @@ export function StatusPageSection({ nodesList }: StatusPageSectionProps) {
     }
   }, []);
 
+  const loadProxyTemplates = useCallback(async () => {
+    try {
+      setProxyTemplates(await api.listStatusPageProxyTemplates());
+    } catch {
+      setProxyTemplates([]);
+    }
+  }, []);
+
   useEffect(() => {
     loadStatusPage();
+    loadProxyTemplates();
     api
       .listSSLCertificates({ limit: 100 })
       .then((res) => setSslCerts(res.data ?? []))
       .catch(() => {});
-  }, [loadStatusPage]);
+  }, [loadProxyTemplates, loadStatusPage]);
 
   useRealtime("status-page.changed", () => {
     loadStatusPage();
+  });
+  useRealtime("nginx.template.changed", () => {
+    loadProxyTemplates();
   });
 
   const updateConfig = async (patch: Partial<StatusPageConfig>) => {
@@ -143,7 +158,7 @@ export function StatusPageSection({ nodesList }: StatusPageSectionProps) {
         </div>
       </div>
 
-      <div className="grid gap-4 p-4 xl:grid-cols-3">
+      <div className="grid gap-4 p-4 md:grid-cols-2 xl:grid-cols-4">
         <Field label="Domain">
           <Input
             value={config.domain}
@@ -156,7 +171,7 @@ export function StatusPageSection({ nodesList }: StatusPageSectionProps) {
         <Field label="Nginx node">
           <Select
             value={config.nodeId ?? ""}
-            disabled={!canManage}
+            disabled={!canManage || config.enabled || savingSettings}
             onValueChange={(nodeId) => updateConfig({ nodeId })}
           >
             <SelectTrigger>
@@ -193,6 +208,29 @@ export function StatusPageSection({ nodesList }: StatusPageSectionProps) {
                     {cert.name}
                   </SelectItem>
                 ))}
+            </SelectContent>
+          </Select>
+        </Field>
+        <Field label="Proxy template">
+          <Select
+            value={config.proxyTemplateId ?? "__default__"}
+            disabled={!canManage}
+            onValueChange={(proxyTemplateId) =>
+              updateConfig({
+                proxyTemplateId: proxyTemplateId === "__default__" ? null : proxyTemplateId,
+              })
+            }
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__default__">Default template</SelectItem>
+              {proxyTemplates.map((template) => (
+                <SelectItem key={template.id} value={template.id}>
+                  {template.name}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </Field>

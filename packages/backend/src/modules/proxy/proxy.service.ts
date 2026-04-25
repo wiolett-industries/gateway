@@ -50,6 +50,7 @@ export interface StatusPageSystemHostInput {
   domain: string;
   nodeId: string;
   sslCertificateId?: string | null;
+  nginxTemplateId?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -694,7 +695,7 @@ export class ProxyService {
       rawConfigEnabled: false,
       accessListId: null,
       folderId: null,
-      nginxTemplateId: null,
+      nginxTemplateId: input.nginxTemplateId ?? null,
       templateVariables: {},
       nodeId: input.nodeId,
       healthCheckEnabled: false,
@@ -802,23 +803,14 @@ export class ProxyService {
     });
     if (!existing) return null;
 
-    const [updated] = await this.db
-      .update(proxyHosts)
-      .set({ enabled: false, updatedAt: new Date() })
-      .where(eq(proxyHosts.id, existing.id))
-      .returning();
-
     try {
       await this.removeConfigFromNode(existing.id, existing.nodeId);
+      await this.db.delete(proxyHosts).where(eq(proxyHosts.id, existing.id));
     } catch (error) {
       logger.error('Failed to remove status page system proxy host config', {
         hostId: existing.id,
         error,
       });
-      await this.db
-        .update(proxyHosts)
-        .set({ enabled: existing.enabled, updatedAt: existing.updatedAt })
-        .where(eq(proxyHosts.id, existing.id));
       throw new AppError(
         500,
         'NGINX_CONFIG_FAILED',
@@ -833,8 +825,8 @@ export class ProxyService {
       resourceId: existing.id,
       details: { systemKind: 'status_page' },
     });
-    this.emitHost(existing.id, 'updated', existing.domainNames?.[0]);
-    return updated;
+    this.emitHost(existing.id, 'deleted', existing.domainNames?.[0]);
+    return existing;
   }
 
   // -----------------------------------------------------------------------

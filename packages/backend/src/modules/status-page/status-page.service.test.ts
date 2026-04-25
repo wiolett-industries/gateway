@@ -30,6 +30,26 @@ function dbForSettings(node: any, cert: any = null) {
       settings: { findFirst: vi.fn().mockResolvedValue(null) },
       nodes: { findFirst: vi.fn().mockResolvedValue(node) },
       sslCertificates: { findFirst: vi.fn().mockResolvedValue(cert) },
+      nginxTemplates: { findFirst: vi.fn().mockResolvedValue(null) },
+    },
+    insert: (table: unknown) => ({
+      values: (value: unknown) => ({
+        onConflictDoUpdate: vi.fn().mockImplementation(async () => {
+          expect(table).toBe(settings);
+          return value;
+        }),
+      }),
+    }),
+  };
+}
+
+function dbForSettingsConfig(config: Record<string, unknown>, node: any = null) {
+  return {
+    query: {
+      settings: { findFirst: vi.fn().mockResolvedValue({ value: config }) },
+      nodes: { findFirst: vi.fn().mockResolvedValue(node) },
+      sslCertificates: { findFirst: vi.fn().mockResolvedValue(null) },
+      nginxTemplates: { findFirst: vi.fn().mockResolvedValue(null) },
     },
     insert: (table: unknown) => ({
       values: (value: unknown) => ({
@@ -120,10 +140,79 @@ describe('StatusPageService settings validation', () => {
         domain: 'status.example.com',
         nodeId: '22222222-2222-4222-8222-222222222222',
         sslCertificateId: '33333333-3333-4333-8333-333333333333',
+        nginxTemplateId: null,
       },
       USER_ID
     );
     expect(config.proxyHostId).toBe('proxy-status');
+  });
+
+  it('validates and applies a custom proxy template for the system proxy host', async () => {
+    const proxyService = { upsertStatusPageSystemHost: vi.fn().mockResolvedValue({ id: 'proxy-status' }) };
+    const db = dbForSettings({
+      id: '22222222-2222-4222-8222-222222222222',
+      type: 'nginx',
+      status: 'online',
+    });
+    db.query.nginxTemplates.findFirst = vi.fn().mockResolvedValue({
+      id: '44444444-4444-4444-8444-444444444444',
+      type: 'proxy',
+    });
+    const service = createService(db, proxyService);
+
+    await service.updateSettings(
+      {
+        enabled: true,
+        domain: 'status.example.com',
+        nodeId: '22222222-2222-4222-8222-222222222222',
+        proxyTemplateId: '44444444-4444-4444-8444-444444444444',
+      },
+      USER_ID
+    );
+
+    expect(proxyService.upsertStatusPageSystemHost).toHaveBeenCalledWith(
+      {
+        domain: 'status.example.com',
+        nodeId: '22222222-2222-4222-8222-222222222222',
+        sslCertificateId: null,
+        nginxTemplateId: '44444444-4444-4444-8444-444444444444',
+      },
+      USER_ID
+    );
+  });
+
+  it('removes the system proxy host reference when disabled', async () => {
+    const proxyService = { disableStatusPageSystemHost: vi.fn().mockResolvedValue({ id: 'proxy-status' }) };
+    const service = createService(
+      dbForSettingsConfig({
+        enabled: true,
+        domain: 'status.example.com',
+        nodeId: '22222222-2222-4222-8222-222222222222',
+        proxyHostId: 'proxy-status',
+      }),
+      proxyService
+    );
+
+    const config = await service.updateSettings({ enabled: false }, USER_ID);
+
+    expect(proxyService.disableStatusPageSystemHost).toHaveBeenCalledWith(USER_ID);
+    expect(config.enabled).toBe(false);
+    expect(config.proxyHostId).toBeNull();
+  });
+
+  it('rejects moving an enabled status page to another nginx node', async () => {
+    const service = createService(
+      dbForSettingsConfig({
+        enabled: true,
+        domain: 'status.example.com',
+        nodeId: '22222222-2222-4222-8222-222222222222',
+        proxyHostId: 'proxy-status',
+      })
+    );
+
+    await expect(
+      service.updateSettings({ nodeId: '55555555-5555-4555-8555-555555555555' }, USER_ID)
+    ).rejects.toMatchObject({ code: 'STATUS_PAGE_NODE_CHANGE_REQUIRES_DISABLE' });
   });
 });
 

@@ -1525,6 +1525,7 @@ export interface StatusPageConfig {
   domain: string;
   nodeId: string | null;
   sslCertificateId: string | null;
+  proxyTemplateId: string | null;
   proxyHostId: string | null;
   publicIncidentLimit: number;
   recentIncidentDays: number;
@@ -1532,6 +1533,11 @@ export interface StatusPageConfig {
   autoOutageEnabled: boolean;
   autoDegradedSeverity: StatusPageIncidentSeverity;
   autoOutageSeverity: StatusPageIncidentSeverity;
+}
+
+export interface StatusPageProxyTemplateOption {
+  id: string;
+  name: string;
 }
 
 export interface StatusPageServiceItem {

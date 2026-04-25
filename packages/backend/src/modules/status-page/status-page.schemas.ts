@@ -9,6 +9,7 @@ export const StatusPageSettingsSchema = z.object({
   domain: z.string().trim().toLowerCase().regex(domainNameRegex, 'Invalid domain name').optional().or(z.literal('')),
   nodeId: z.string().uuid().optional().nullable(),
   sslCertificateId: z.string().uuid().optional().nullable(),
+  proxyTemplateId: z.string().uuid().optional().nullable(),
   publicIncidentLimit: z.number().int().min(1).max(100).optional(),
   recentIncidentDays: z.number().int().min(1).max(365).optional(),
   autoDegradedEnabled: z.boolean().optional(),

@@ -2,6 +2,7 @@ import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import {
   databaseConnections,
+  nginxTemplates,
   nodes,
   proxyHosts,
   settings,
@@ -38,6 +39,7 @@ export interface StatusPageConfig {
   domain: string;
   nodeId: string | null;
   sslCertificateId: string | null;
+  proxyTemplateId: string | null;
   proxyHostId: string | null;
   publicIncidentLimit: number;
   recentIncidentDays: number;
@@ -88,6 +90,7 @@ const DEFAULT_CONFIG: StatusPageConfig = {
   domain: '',
   nodeId: null,
   sslCertificateId: null,
+  proxyTemplateId: null,
   proxyHostId: null,
   publicIncidentLimit: 25,
   recentIncidentDays: 14,
@@ -192,7 +195,20 @@ export class StatusPageService {
       domain: input.domain !== undefined ? input.domain.trim().toLowerCase() : previous.domain,
       nodeId: input.nodeId === undefined ? previous.nodeId : input.nodeId,
       sslCertificateId: input.sslCertificateId === undefined ? previous.sslCertificateId : input.sslCertificateId,
+      proxyTemplateId: input.proxyTemplateId === undefined ? previous.proxyTemplateId : input.proxyTemplateId,
     };
+
+    if (next.proxyTemplateId) {
+      await this.validateProxyTemplate(next.proxyTemplateId);
+    }
+
+    if (previous.enabled && next.enabled && input.nodeId !== undefined && input.nodeId !== previous.nodeId) {
+      throw new AppError(
+        400,
+        'STATUS_PAGE_NODE_CHANGE_REQUIRES_DISABLE',
+        'Disable the status page before moving it to another nginx node'
+      );
+    }
 
     if (next.enabled) {
       await this.validateEnabledConfig(next);
@@ -201,12 +217,14 @@ export class StatusPageService {
           domain: next.domain,
           nodeId: next.nodeId!,
           sslCertificateId: next.sslCertificateId,
+          nginxTemplateId: next.proxyTemplateId,
         },
         userId
       );
       next.proxyHostId = systemHost.id;
     } else if (previous.enabled) {
       await this.proxyService.disableStatusPageSystemHost(userId);
+      next.proxyHostId = null;
     }
 
     await this.db
@@ -218,10 +236,26 @@ export class StatusPageService {
       userId,
       action: 'status_page.settings_update',
       resourceType: 'status_page',
-      details: { enabled: next.enabled, domain: next.domain, nodeId: next.nodeId },
+      details: {
+        enabled: next.enabled,
+        domain: next.domain,
+        nodeId: next.nodeId,
+        proxyTemplateId: next.proxyTemplateId,
+      },
     });
     this.emit('settings_updated');
     return next;
+  }
+
+  async listProxyTemplates() {
+    return this.db
+      .select({
+        id: nginxTemplates.id,
+        name: nginxTemplates.name,
+      })
+      .from(nginxTemplates)
+      .where(eq(nginxTemplates.type, 'proxy'))
+      .orderBy(asc(nginxTemplates.name));
   }
 
   private async validateEnabledConfig(config: StatusPageConfig): Promise<void> {
@@ -249,6 +283,18 @@ export class StatusPageService {
           'Selected SSL certificate does not cover the domain'
         );
       }
+    }
+  }
+
+  private async validateProxyTemplate(templateId: string): Promise<void> {
+    const template = await this.db.query.nginxTemplates.findFirst({
+      where: eq(nginxTemplates.id, templateId),
+    });
+    if (!template) {
+      throw new AppError(400, 'STATUS_PAGE_TEMPLATE_INVALID', 'Selected proxy template was not found');
+    }
+    if (template.type !== 'proxy') {
+      throw new AppError(400, 'STATUS_PAGE_TEMPLATE_INVALID', 'Selected proxy template must be a proxy template');
     }
   }
 

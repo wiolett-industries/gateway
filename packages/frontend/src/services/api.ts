@@ -63,6 +63,7 @@ import type {
   StatusPageIncident,
   StatusPageIncidentUpdate,
   StatusPageIncidentUpdateStatus,
+  StatusPageProxyTemplateOption,
   StatusPageServiceItem,
   StatusPageSourceType,
   Template,
@@ -709,6 +710,12 @@ class ApiClient extends ApiClientBase {
         method: "PUT",
         body: JSON.stringify(data),
       })
+    );
+  }
+
+  async listStatusPageProxyTemplates(): Promise<StatusPageProxyTemplateOption[]> {
+    return this.unwrapData(
+      this.request<{ data: StatusPageProxyTemplateOption[] }>("/status-page/proxy-templates")
     );
   }
 
