@@ -10,6 +10,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json ./
 # Copy package.json files for all packages
 COPY packages/backend/package.json packages/backend/
 COPY packages/frontend/package.json packages/frontend/
+COPY packages/status-page/package.json packages/status-page/
 
 # Install all dependencies
 RUN pnpm install --frozen-lockfile || pnpm install
@@ -19,6 +20,12 @@ FROM base AS frontend-builder
 
 COPY packages/frontend/ packages/frontend/
 RUN pnpm --filter frontend build
+
+# ── Build public status page ────────────────────────────────────────
+FROM base AS status-page-builder
+
+COPY packages/status-page/ packages/status-page/
+RUN pnpm --filter status-page build
 
 # ── Build backend ───────────────────────────────────────────────────
 FROM base AS backend-builder
@@ -49,6 +56,9 @@ COPY proto/ ./proto/
 
 # Copy frontend build into public/ for the backend to serve
 COPY --from=frontend-builder /app/packages/frontend/dist ./public
+
+# Copy public status page build into status-public/
+COPY --from=status-page-builder /app/packages/status-page/dist ./status-public
 
 ENV NODE_ENV=production
 ENV PORT=3000

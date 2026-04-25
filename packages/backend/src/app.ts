@@ -9,6 +9,7 @@ import { requestId } from 'hono/request-id';
 import { secureHeaders } from 'hono/secure-headers';
 
 import { getEnv, isDevelopment } from '@/config/env.js';
+import { container } from '@/container.js';
 import { auditContextMiddleware } from '@/middleware/audit-context.js';
 import { errorHandler } from '@/middleware/error-handler.js';
 import { loggerMiddleware } from '@/middleware/logger.js';
@@ -21,12 +22,12 @@ import { alertRoutes } from '@/modules/audit/alert.routes.js';
 import { auditRoutes } from '@/modules/audit/audit.routes.js';
 import { requireActiveUser } from '@/modules/auth/auth.middleware.js';
 import { authRoutes } from '@/modules/auth/auth.routes.js';
+import { databaseRoutes } from '@/modules/databases/databases.routes.js';
 import { dockerRoutes } from '@/modules/docker/docker.routes.js';
 import { createComposeLogsWSHandlers } from '@/modules/docker/docker-compose-logs.ws.js';
 import { createDockerExecWSHandlers } from '@/modules/docker/docker-exec.ws.js';
 import { createDockerLogStreamWSHandlers } from '@/modules/docker/docker-logs.ws.js';
 import { dockerWebhookTriggerRoutes } from '@/modules/docker/docker-webhook.routes.js';
-import { databaseRoutes } from '@/modules/databases/databases.routes.js';
 import { domainRoutes } from '@/modules/domains/domain.routes.js';
 import { groupRoutes } from '@/modules/groups/group.routes.js';
 import { housekeepingRoutes } from '@/modules/housekeeping/housekeeping.routes.js';
@@ -44,10 +45,22 @@ import { nginxTemplateRoutes } from '@/modules/proxy/nginx-template.routes.js';
 import { proxyRoutes } from '@/modules/proxy/proxy.routes.js';
 import { setupRoutes } from '@/modules/setup/setup.routes.js';
 import { sslRoutes } from '@/modules/ssl/ssl.routes.js';
+import { publicStatusPageRoutes, statusPageRoutes } from '@/modules/status-page/status-page.routes.js';
+import { StatusPageService } from '@/modules/status-page/status-page.service.js';
 import { systemRoutes } from '@/modules/system/system.routes.js';
 import { tokensRoutes } from '@/modules/tokens/tokens.routes.js';
 import type { AppEnv } from '@/types.js';
 import { authenticateEventsConnection, createEventsWSHandlers } from '@/ws/events.ws.js';
+
+const STATUS_PREVIEW_PREFIX = '/_status-preview';
+
+async function isStatusHostRequest(hostHeader: string | undefined): Promise<boolean> {
+  try {
+    return await container.resolve(StatusPageService).isStatusHost(hostHeader);
+  } catch {
+    return false;
+  }
+}
 
 export function createApp() {
   const app = new OpenAPIHono<AppEnv>();
@@ -101,8 +114,37 @@ export function createApp() {
     });
   });
 
+  app.use('*', async (c, next) => {
+    const statusHost = await isStatusHostRequest(c.req.header('host'));
+    if (!statusHost) {
+      await next();
+      return;
+    }
+
+    const path = new URL(c.req.url).pathname;
+    if (path === '/api/public/status-page') {
+      await next();
+      return;
+    }
+
+    if (
+      path.startsWith('/api/') ||
+      path.startsWith('/auth/') ||
+      path.startsWith('/pki/') ||
+      path.startsWith('/docs') ||
+      path === '/openapi.json' ||
+      path === '/health' ||
+      path.startsWith(STATUS_PREVIEW_PREFIX)
+    ) {
+      return c.notFound();
+    }
+
+    await next();
+  });
+
   // Public PKI endpoints (no auth) — CRL, OCSP, CA cert download
   app.route('/pki', publicPkiRoutes);
+  app.route('/api/public/status-page', publicStatusPageRoutes);
 
   // Auth routes
   app.route('/auth', authRoutes);
@@ -128,6 +170,7 @@ export function createApp() {
   app.route('/api/access-lists', accessListRoutes);
   app.route('/api/monitoring', monitoringRoutes);
   app.route('/api/setup', setupRoutes);
+  app.route('/api/status-page', statusPageRoutes);
   app.route('/api/system/license', licenseRoutes);
   app.route('/api/system', systemRoutes);
   app.route('/api/housekeeping', housekeepingRoutes);
@@ -272,6 +315,43 @@ export function createApp() {
   );
 
   // In production, serve the frontend SPA
+  const statusPublicDir = resolve(process.cwd(), 'status-public');
+  if (existsSync(statusPublicDir)) {
+    const statusStaticFiles = serveStatic({ root: './status-public' });
+    const statusIndexFile = serveStatic({ path: './status-public/index.html' });
+
+    app.use(
+      `${STATUS_PREVIEW_PREFIX}/*`,
+      serveStatic({
+        root: './status-public',
+        rewriteRequestPath: (path) => path.replace(STATUS_PREVIEW_PREFIX, '') || '/',
+      })
+    );
+    app.get(STATUS_PREVIEW_PREFIX, serveStatic({ path: './status-public/index.html' }));
+    app.get(`${STATUS_PREVIEW_PREFIX}/*`, serveStatic({ path: './status-public/index.html' }));
+
+    app.use('/*', async (c, next) => {
+      if (!(await isStatusHostRequest(c.req.header('host')))) {
+        await next();
+        return;
+      }
+
+      const path = new URL(c.req.url).pathname;
+      if (path.startsWith('/assets/') || /\.[a-zA-Z0-9]+$/.test(path)) {
+        let missed = false;
+        const response = await statusStaticFiles(c, async () => {
+          missed = true;
+        });
+        return missed ? c.notFound() : response;
+      }
+      let missed = false;
+      const response = await statusIndexFile(c, async () => {
+        missed = true;
+      });
+      return missed ? c.notFound() : response;
+    });
+  }
+
   const publicDir = resolve(process.cwd(), 'public');
   if (existsSync(publicDir)) {
     // Serve static assets (JS, CSS, images, etc.)

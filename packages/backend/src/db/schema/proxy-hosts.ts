@@ -112,6 +112,7 @@ export const proxyHosts = pgTable(
 
     // System flag — locked hosts cannot be deleted (e.g. management proxy)
     isSystem: boolean('is_system').notNull().default(false),
+    systemKind: varchar('system_kind', { length: 50 }),
 
     // Metadata
     createdById: uuid('created_by_id')
@@ -126,5 +127,6 @@ export const proxyHosts = pgTable(
     folderIdx: index('proxy_host_folder_idx').on(table.folderId),
     createdByIdx: index('proxy_host_created_by_idx').on(table.createdById),
     nodeIdx: index('proxy_host_node_idx').on(table.nodeId),
+    systemKindIdx: index('proxy_host_system_kind_idx').on(table.systemKind),
   })
 );

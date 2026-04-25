@@ -6,8 +6,9 @@
   "scripts": {
     "dev": "nx run backend:dev",
     "dev:frontend": "nx run frontend:dev",
-    "dev:all": "nx run-many -t dev -p backend frontend --parallel",
-    "build": "nx run-many -t build -p backend frontend",
+    "dev:status-page": "nx run status-page:dev",
+    "dev:all": "nx run-many -t dev -p backend frontend status-page --parallel",
+    "build": "nx run-many -t build -p backend frontend status-page",
     "build:all": "pnpm run build && pnpm run build:daemon",
     "build:backend": "nx run backend:build",
     "build:frontend": "nx run frontend:build",
