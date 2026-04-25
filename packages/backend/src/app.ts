@@ -13,7 +13,18 @@ import { container } from '@/container.js';
 import { auditContextMiddleware } from '@/middleware/audit-context.js';
 import { errorHandler } from '@/middleware/error-handler.js';
 import { loggerMiddleware } from '@/middleware/logger.js';
-import { rateLimitMiddleware } from '@/middleware/rate-limit.js';
+import {
+  aiWebSocketRateLimitMiddleware,
+  authCallbackRateLimitMiddleware,
+  authLoginRateLimitMiddleware,
+  authRateLimitMiddleware,
+  pkiRateLimitMiddleware,
+  publicStatusRateLimitMiddleware,
+  publicWebhookRateLimitMiddleware,
+  rateLimitMiddleware,
+  setupRateLimitMiddleware,
+  streamRateLimitMiddleware,
+} from '@/middleware/rate-limit.js';
 import { accessListRoutes } from '@/modules/access-lists/access-list.routes.js';
 import { adminRoutes } from '@/modules/admin/admin.routes.js';
 import { aiRoutes } from '@/modules/ai/ai.routes.js';
@@ -99,6 +110,19 @@ export function createApp() {
   // Rate limiting for API and public PKI routes
   app.use('/api/*', rateLimitMiddleware);
   app.use('/pki/*', rateLimitMiddleware);
+  app.use('/auth/*', authRateLimitMiddleware);
+  app.use('/auth/login', authLoginRateLimitMiddleware);
+  app.use('/auth/callback', authCallbackRateLimitMiddleware);
+  app.use('/pki/*', pkiRateLimitMiddleware);
+  app.use('/api/public/status-page', publicStatusRateLimitMiddleware);
+  app.use('/api/webhooks/docker/*', publicWebhookRateLimitMiddleware);
+  app.use('/api/setup/*', setupRateLimitMiddleware);
+  app.use('/api/ai/ws', aiWebSocketRateLimitMiddleware);
+  app.use('/api/events', streamRateLimitMiddleware);
+  app.use('/api/docker/nodes/:nodeId/containers/:containerId/exec', streamRateLimitMiddleware);
+  app.use('/api/nodes/:nodeId/exec', streamRateLimitMiddleware);
+  app.use('/api/docker/nodes/:nodeId/containers/:containerId/logs/stream', streamRateLimitMiddleware);
+  app.use('/api/docker/nodes/:nodeId/compose/:project/logs/stream', streamRateLimitMiddleware);
 
   // Safely no-ops when user is not set (unauthenticated); route-level authMiddleware handles 401
   app.use('/api/*', requireActiveUser);
