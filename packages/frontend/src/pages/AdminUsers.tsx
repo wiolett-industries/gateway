@@ -213,11 +213,7 @@ export function AdminUsers({
   if (blockedCount > 0) summaryParts.push(`${blockedCount} blocked`);
 
   const content = (
-    <div
-      className={
-        embedded ? "h-full overflow-y-auto space-y-4" : "h-full overflow-y-auto p-6 space-y-4"
-      }
-    >
+    <div className={embedded ? "space-y-4" : "h-full overflow-y-auto p-6 space-y-4"}>
       {!embedded && (
         <div className="flex items-start justify-between gap-4">
           <div>

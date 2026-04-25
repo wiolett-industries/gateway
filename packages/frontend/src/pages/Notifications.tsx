@@ -101,6 +101,8 @@ const STATUS_BADGE: Record<string, "success" | "destructive" | "warning" | "seco
   pending: "secondary",
 };
 
+const DELIVERY_PAGE_SIZE = 100;
+
 const STEP_ANIMATION = {
   initial: { opacity: 0, y: 8 },
   animate: { opacity: 1, y: 0 },
@@ -226,8 +228,16 @@ export function Notifications() {
     }
   }, [activeTab, navigate, tabParam, visibleTabs]);
 
+  const usesFillLayout = activeTab === "deliveries";
+
   return (
-    <div className="flex flex-col gap-6 p-6">
+    <div
+      className={
+        usesFillLayout
+          ? "h-full flex flex-col overflow-hidden p-6 gap-6"
+          : "h-full overflow-y-auto p-6 space-y-6"
+      }
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="text-2xl font-semibold">Notifications</h1>
@@ -240,6 +250,7 @@ export function Notifications() {
       <Tabs
         value={activeTab}
         onValueChange={(v) => navigate(`/notifications/${v}`, { replace: true })}
+        className={`flex flex-col ${usesFillLayout ? "flex-1 min-h-0" : ""}`}
       >
         <TabsList>
           {visibleTabs.map((t) => (
@@ -268,7 +279,10 @@ export function Notifications() {
           </TabsContent>
         )}
         {canViewDeliveries && (
-          <TabsContent value="deliveries" className="mt-4">
+          <TabsContent
+            value="deliveries"
+            className="mt-4 flex flex-col flex-1 min-h-0 overflow-hidden"
+          >
             <DeliveryLogTab refreshToken={refreshDeliveriesToken} />
           </TabsContent>
         )}
@@ -1930,44 +1944,88 @@ function WebhookDialog({
 function DeliveryLogTab({ refreshToken }: { refreshToken: number }) {
   const [deliveries, setDeliveries] = useState<WebhookDelivery[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [detail, setDetail] = useState<WebhookDelivery | null>(null);
+  const pageRef = useRef(0);
+  const requestIdRef = useRef(0);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
 
-  const load = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      setDeliveries(
-        (
-          await api.listDeliveries({
-            limit: 100,
-            status: statusFilter !== "all" ? statusFilter : undefined,
-          })
-        ).data
-      );
-    } catch {
-      toast.error("Failed to load deliveries");
-    } finally {
-      setIsLoading(false);
+  const fetchPage = useCallback(
+    async (resetTo: WebhookDelivery[] | null) => {
+      const nextPage = resetTo ? 1 : pageRef.current + 1;
+      const requestId = ++requestIdRef.current;
+      if (resetTo) {
+        setIsLoading(true);
+        setHasMore(true);
+      } else {
+        setLoadingMore(true);
+      }
+      try {
+        const result = await api.listDeliveries({
+          page: nextPage,
+          limit: DELIVERY_PAGE_SIZE,
+          status: statusFilter !== "all" ? statusFilter : undefined,
+        });
+        if (requestId !== requestIdRef.current) return;
+        const fetched = result.data || [];
+        const totalPages = result.totalPages ?? 1;
+        pageRef.current = nextPage;
+        setDeliveries((prev) => (resetTo ? fetched : [...prev, ...fetched]));
+        setHasMore(nextPage < totalPages);
+      } catch {
+        toast.error("Failed to load deliveries");
+      } finally {
+        if (requestId === requestIdRef.current) {
+          setIsLoading(false);
+          setLoadingMore(false);
+        }
+      }
+    },
+    [statusFilter]
+  );
+
+  useEffect(() => {
+    pageRef.current = 0;
+    fetchPage([]);
+  }, [fetchPage]);
+
+  useEffect(() => {
+    if (refreshToken > 0) {
+      pageRef.current = 0;
+      void fetchPage([]);
     }
-  }, [statusFilter]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  useEffect(() => {
-    if (refreshToken > 0) void load();
-  }, [load, refreshToken]);
+  }, [fetchPage, refreshToken]);
 
   useRealtime("alert.fired", () => {
-    load();
+    pageRef.current = 0;
+    void fetchPage([]);
   });
 
   useRealtime("alert.resolved", () => {
-    load();
+    pageRef.current = 0;
+    void fetchPage([]);
   });
+
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    const root = scrollRef.current;
+    if (!sentinel || !root) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && hasMore && !loadingMore && !isLoading) {
+          void fetchPage(null);
+        }
+      },
+      { root, rootMargin: "400px" }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [fetchPage, hasMore, loadingMore, isLoading]);
 
   const sIcon = (s: string) => {
     if (s === "success") return <CheckCircle2 className="h-4 w-4 text-emerald-500" />;
@@ -1991,10 +2049,10 @@ function DeliveryLogTab({ refreshToken }: { refreshToken: number }) {
     );
   }, [deliveries, search]);
 
-  if (isLoading) return <LoadingSpinner />;
+  if (isLoading && deliveries.length === 0) return <LoadingSpinner />;
 
   return (
-    <div className="space-y-4 min-w-0">
+    <div className="flex flex-col flex-1 min-h-0 min-w-0 gap-4">
       <SearchFilterBar
         placeholder="Search by webhook, event, severity, or HTTP status..."
         search={searchInput}
@@ -2020,11 +2078,11 @@ function DeliveryLogTab({ refreshToken }: { refreshToken: number }) {
           </Select>
         }
       />
-      {filteredDeliveries.length === 0 ? (
+      {deliveries.length === 0 ? (
         <EmptyState message="No deliveries yet. Delivery attempts will appear here when alerts fire." />
       ) : (
-        <div className="min-w-0 border border-border bg-card">
-          <div className="overflow-x-auto -mb-px">
+        <div className="min-w-0 flex-1 min-h-0 border border-border bg-card">
+          <div ref={scrollRef} className="h-full overflow-auto -mb-px">
             <table className="w-full min-w-[56rem]">
               <thead>
                 <tr className="border-b border-border text-left">
@@ -2039,51 +2097,77 @@ function DeliveryLogTab({ refreshToken }: { refreshToken: number }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {filteredDeliveries.map((d) => (
-                  <tr
-                    key={d.id}
-                    className="hover:bg-accent transition-colors cursor-pointer"
-                    onClick={() => setDetail(d)}
-                  >
-                    <td className="p-3">{sIcon(d.status)}</td>
-                    <td className="p-3">
-                      <span className="text-sm font-medium">
-                        {d.webhookName ?? d.webhookId.slice(0, 8)}
-                      </span>
-                    </td>
-                    <td className="p-3">
-                      <span className="text-sm font-mono text-muted-foreground">{d.eventType}</span>
-                    </td>
-                    <td className="p-3">
-                      <Badge variant={SEV_BADGE[d.severity] ?? "secondary"}>{d.severity}</Badge>
-                    </td>
-                    <td className="p-3">
-                      {d.responseStatus ? (
-                        <Badge variant={d.responseStatus < 300 ? "success" : "destructive"}>
-                          {d.responseStatus}
-                        </Badge>
-                      ) : (
-                        <span className="text-sm text-muted-foreground">—</span>
-                      )}
-                    </td>
-                    <td className="p-3">
-                      <span className="text-sm text-muted-foreground">
-                        {d.responseTimeMs != null ? `${d.responseTimeMs}ms` : "—"}
-                      </span>
-                    </td>
-                    <td className="p-3">
-                      <span className="text-sm text-muted-foreground">
-                        {d.attempt}/{d.maxAttempts}
-                      </span>
-                    </td>
-                    <td className="p-3">
-                      <span className="text-xs text-muted-foreground">
-                        {new Date(d.createdAt).toLocaleString()}
-                      </span>
+                {filteredDeliveries.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="p-6 text-center text-sm text-muted-foreground">
+                      No deliveries match the current search.
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  filteredDeliveries.map((d) => (
+                    <tr
+                      key={d.id}
+                      className="hover:bg-accent transition-colors cursor-pointer"
+                      onClick={() => setDetail(d)}
+                    >
+                      <td className="p-3">{sIcon(d.status)}</td>
+                      <td className="p-3">
+                        <span className="text-sm font-medium">
+                          {d.webhookName ?? d.webhookId.slice(0, 8)}
+                        </span>
+                      </td>
+                      <td className="p-3">
+                        <span className="text-sm font-mono text-muted-foreground">
+                          {d.eventType}
+                        </span>
+                      </td>
+                      <td className="p-3">
+                        <Badge variant={SEV_BADGE[d.severity] ?? "secondary"}>{d.severity}</Badge>
+                      </td>
+                      <td className="p-3">
+                        {d.responseStatus ? (
+                          <Badge variant={d.responseStatus < 300 ? "success" : "destructive"}>
+                            {d.responseStatus}
+                          </Badge>
+                        ) : (
+                          <span className="text-sm text-muted-foreground">—</span>
+                        )}
+                      </td>
+                      <td className="p-3">
+                        <span className="text-sm text-muted-foreground">
+                          {d.responseTimeMs != null ? `${d.responseTimeMs}ms` : "—"}
+                        </span>
+                      </td>
+                      <td className="p-3">
+                        <span className="text-sm text-muted-foreground">
+                          {d.attempt}/{d.maxAttempts}
+                        </span>
+                      </td>
+                      <td className="p-3">
+                        <span className="text-xs text-muted-foreground">
+                          {new Date(d.createdAt).toLocaleString()}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
+              <tfoot>
+                <tr>
+                  <td colSpan={8}>
+                    <div
+                      ref={sentinelRef}
+                      className="py-4 text-center text-xs text-muted-foreground"
+                    >
+                      {loadingMore
+                        ? "Loading more..."
+                        : !hasMore && deliveries.length > 0
+                          ? "End of log"
+                          : ""}
+                    </div>
+                  </td>
+                </tr>
+              </tfoot>
             </table>
           </div>
         </div>

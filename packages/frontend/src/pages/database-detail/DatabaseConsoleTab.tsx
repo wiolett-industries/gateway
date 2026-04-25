@@ -100,7 +100,7 @@ export function DatabaseConsoleTab({ database }: { database: DatabaseConnection 
 
   return (
     <>
-      <div className="flex flex-col flex-1 min-h-0">
+      <div className="flex flex-col flex-1 min-h-0 overflow-y-auto">
         <div className="border border-border bg-card overflow-hidden flex flex-col flex-1 min-h-0">
           <div className="flex items-center justify-between gap-4 px-4 py-3 bg-card border-b border-border shrink-0">
             <div>
@@ -125,7 +125,7 @@ export function DatabaseConsoleTab({ database }: { database: DatabaseConnection 
             value={input}
             onChange={setInput}
             language={database.type === "postgres" ? "sql" : "plain"}
-            minHeight="240px"
+            minHeight="0px"
             className="border-0 flex-1 min-h-0"
           />
         </div>
