@@ -230,9 +230,11 @@ export function DatabaseDetail() {
     <PageTransition>
       <div
         className={cn(
-          "h-full flex flex-col",
-          isFullHeightTab ? "overflow-hidden" : "overflow-y-auto",
-          hideDatabaseChrome ? "gap-0 p-0" : "gap-4 p-6"
+          hideDatabaseChrome
+            ? "h-full flex flex-col overflow-hidden gap-0 p-0"
+            : isFullHeightTab
+              ? "h-full flex flex-col overflow-hidden gap-4 p-6"
+              : "h-full overflow-y-auto p-6 space-y-4"
         )}
       >
         {!hideDatabaseChrome && (
@@ -258,7 +260,7 @@ export function DatabaseDetail() {
         <Tabs
           value={activeTab}
           onValueChange={setActiveTab}
-          className="flex flex-col flex-1 min-h-0"
+          className={cn("flex flex-col", isFullHeightTab && "flex-1 min-h-0")}
         >
           {!hideDatabaseChrome && (
             <TabsList className="shrink-0">
@@ -314,7 +316,10 @@ export function DatabaseDetail() {
           )}
 
           {(canRead || canWrite || canAdmin) && !consoleDisabled && (
-            <TabsContent value="console" className="space-y-4 flex flex-col flex-1 min-h-0">
+            <TabsContent
+              value="console"
+              className="space-y-4 flex flex-col flex-1 min-h-0 overflow-hidden"
+            >
               <DatabaseConsoleTab database={database} />
             </TabsContent>
           )}

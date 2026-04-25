@@ -6,15 +6,11 @@ import {
   FileText,
   Globe,
   Globe2,
-  HardDrive,
-  Layers,
   LayoutDashboard,
-  ListTodo,
   Lock,
   LogOut,
   Monitor,
   Moon,
-  Network,
   PanelLeft,
   Plus,
   ScrollText,
@@ -316,34 +312,10 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       scope: "pki:templates:list",
     },
     {
-      label: "Docker Containers",
+      label: "Docker",
       icon: Box,
-      action: () => navigate("/docker/containers"),
+      action: () => navigate("/docker"),
       scope: "docker:containers:list",
-    },
-    {
-      label: "Docker Images",
-      icon: Layers,
-      action: () => navigate("/docker/images"),
-      scope: "docker:images:list",
-    },
-    {
-      label: "Docker Volumes",
-      icon: HardDrive,
-      action: () => navigate("/docker/volumes"),
-      scope: "docker:volumes:list",
-    },
-    {
-      label: "Docker Networks",
-      icon: Network,
-      action: () => navigate("/docker/networks"),
-      scope: "docker:networks:list",
-    },
-    {
-      label: "Docker Tasks",
-      icon: ListTodo,
-      action: () => navigate("/docker/tasks"),
-      scope: "docker:tasks",
     },
     {
       label: "Databases",
@@ -658,56 +630,76 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 
             {/* Actions */}
             {filteredActions.length > 0 && (
-              <CommandGroup heading="Actions">
-                {filteredActions.map((item) => (
-                  <CommandItem
-                    key={item.label}
-                    value={item.label}
-                    onSelect={() => handleSelect(item.action)}
-                  >
-                    <item.icon className="mr-2 h-4 w-4" />
-                    {item.label}
-                    {item.shortcut && <CommandShortcut>{item.shortcut}</CommandShortcut>}
-                  </CommandItem>
-                ))}
-              </CommandGroup>
+              <>
+                {filteredNav.length > 0 && <CommandSeparator />}
+                <CommandGroup heading="Actions">
+                  {filteredActions.map((item) => (
+                    <CommandItem
+                      key={item.label}
+                      value={item.label}
+                      onSelect={() => handleSelect(item.action)}
+                    >
+                      <item.icon className="mr-2 h-4 w-4" />
+                      {item.label}
+                      {item.shortcut && <CommandShortcut>{item.shortcut}</CommandShortcut>}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </>
             )}
 
             {/* Theme */}
             {themeItems.length > 0 && (
-              <CommandGroup heading="Theme">
-                {themeItems.map((item) => (
-                  <CommandItem
-                    key={item.label}
-                    value={item.label}
-                    onSelect={() => handleSelect(item.action)}
-                  >
-                    <item.icon className="mr-2 h-4 w-4" />
-                    {item.label.replace(" theme", "")}
-                    {item.active && <CommandShortcut>✓</CommandShortcut>}
-                  </CommandItem>
-                ))}
-              </CommandGroup>
+              <>
+                {(filteredNav.length > 0 || filteredActions.length > 0) && <CommandSeparator />}
+                <CommandGroup heading="Theme">
+                  {themeItems.map((item) => (
+                    <CommandItem
+                      key={item.label}
+                      value={item.label}
+                      onSelect={() => handleSelect(item.action)}
+                    >
+                      <item.icon className="mr-2 h-4 w-4" />
+                      {item.label.replace(" theme", "")}
+                      {item.active && <CommandShortcut>✓</CommandShortcut>}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </>
             )}
 
             {/* Account */}
             {showLogout && (
-              <CommandGroup heading="Account">
-                <CommandItem value="log out" onSelect={() => handleSelect(handleLogout)}>
-                  <LogOut className="mr-2 h-4 w-4" />
-                  Log out
-                </CommandItem>
-              </CommandGroup>
+              <>
+                {(filteredNav.length > 0 ||
+                  filteredActions.length > 0 ||
+                  themeItems.length > 0) && <CommandSeparator />}
+                <CommandGroup heading="Account">
+                  <CommandItem value="log out" onSelect={() => handleSelect(handleLogout)}>
+                    <LogOut className="mr-2 h-4 w-4" />
+                    Log out
+                  </CommandItem>
+                </CommandGroup>
+              </>
             )}
 
             {/* Ask AI fallback */}
             {askAIFallback && (
-              <CommandGroup heading="No results">
-                <CommandItem value="ask-ai" onSelect={() => handleSelect(() => askAI(searchQuery))}>
-                  <Sparkles className="mr-2 h-4 w-4" />
-                  Ask AI: "{searchQuery}"
-                </CommandItem>
-              </CommandGroup>
+              <>
+                {(filteredNav.length > 0 ||
+                  filteredActions.length > 0 ||
+                  themeItems.length > 0 ||
+                  showLogout) && <CommandSeparator />}
+                <CommandGroup heading="No results">
+                  <CommandItem
+                    value="ask-ai"
+                    onSelect={() => handleSelect(() => askAI(searchQuery))}
+                  >
+                    <Sparkles className="mr-2 h-4 w-4" />
+                    Ask AI: "{searchQuery}"
+                  </CommandItem>
+                </CommandGroup>
+              </>
             )}
           </>
         )}

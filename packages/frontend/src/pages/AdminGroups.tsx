@@ -306,11 +306,7 @@ export function AdminGroups({
 
   const content = (
     <>
-      <div
-        className={
-          embedded ? "h-full overflow-y-auto space-y-4" : "h-full overflow-y-auto p-6 space-y-4"
-        }
-      >
+      <div className={embedded ? "space-y-4" : "h-full overflow-y-auto p-6 space-y-4"}>
         {!embedded && (
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>

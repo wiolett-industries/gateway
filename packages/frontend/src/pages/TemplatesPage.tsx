@@ -73,7 +73,7 @@ export function TemplatesPage() {
 
   return (
     <PageTransition>
-      <div className="h-full flex flex-col p-6 gap-4">
+      <div className="h-full overflow-y-auto p-6 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2 shrink-0">
           <div>
             <h1 className="text-2xl font-bold">Templates</h1>
@@ -84,11 +84,7 @@ export function TemplatesPage() {
           <div className="flex items-center gap-2">{renderActions()}</div>
         </div>
 
-        <Tabs
-          value={activeTab}
-          onValueChange={handleTabChange}
-          className="flex flex-col flex-1 min-h-0"
-        >
+        <Tabs value={activeTab} onValueChange={handleTabChange} className="flex flex-col">
           <TabsList className="shrink-0">
             {visibleTabs.map((tab) => (
               <TabsTrigger key={tab.value} value={tab.value} className="gap-1.5">
@@ -98,7 +94,7 @@ export function TemplatesPage() {
             ))}
           </TabsList>
 
-          <TabsContent value="pki" className="flex flex-col flex-1 min-h-0">
+          <TabsContent value="pki">
             <Templates
               embedded
               onCreateRef={(fn) => {
@@ -106,7 +102,7 @@ export function TemplatesPage() {
               }}
             />
           </TabsContent>
-          <TabsContent value="nginx" className="flex flex-col flex-1 min-h-0">
+          <TabsContent value="nginx">
             <NginxTemplates
               embedded
               onCreateRef={(fn) => {

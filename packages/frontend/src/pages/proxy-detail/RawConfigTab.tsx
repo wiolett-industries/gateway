@@ -38,6 +38,7 @@ export function RawConfigTab({
       <div className="flex-1 min-h-0 flex flex-col relative">
         <CodeEditor
           value={rawConfig}
+          minHeight="0px"
           onChange={(val) => {
             setRawConfig(val);
             setEditorErrorLines([]);
@@ -65,7 +66,7 @@ export function RawConfigTab({
 
   return (
     <div className="flex-1 min-h-0 flex flex-col relative">
-      <CodeEditor value={renderedConfig} onChange={() => {}} readOnly />
+      <CodeEditor value={renderedConfig} onChange={() => {}} readOnly minHeight="0px" />
       <Button
         variant="outline"
         size="sm"

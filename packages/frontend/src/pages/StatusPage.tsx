@@ -370,7 +370,6 @@ export function StatusPage() {
         <Tabs
           value={activeTab}
           onValueChange={(value) => navigate(`/status-page/${value}`, { replace: true })}
-          className="space-y-4"
         >
           <TabsList className="shrink-0">
             {TABS.map((tab) => (
@@ -615,7 +614,7 @@ function SettingsTab({
               }
             />
           </div>
-          <div className="flex items-center justify-between gap-4 border-b border-border px-4 py-3">
+          <div className="flex items-center justify-between gap-4 px-4 py-3 xl:border-b xl:border-border">
             <div>
               <p className="text-sm font-medium">Outage incident severity</p>
               <p className="mt-0.5 text-xs text-muted-foreground">

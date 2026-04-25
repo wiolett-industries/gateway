@@ -229,7 +229,7 @@ export function DashboardLayout() {
     const handleKeyUp = (e: KeyboardEvent) => {
       if (e.key === "Shift" && !e.metaKey && !e.ctrlKey && !e.altKey) {
         const now = Date.now();
-        if (now - lastShiftUp < 400) {
+        if (now - lastShiftUp < 280) {
           lastShiftUp = 0;
           setCommandPaletteOpen(true);
         } else {

@@ -274,11 +274,22 @@ export function AdminNodeDetail() {
     node.daemonVersion ?? "unknown",
     nodeUpdating ? "updating" : "stable",
   ].join(":");
+  const usesFillLayout =
+    activeTab === "configuration" ||
+    activeTab === "daemon-logs" ||
+    activeTab === "nginx-logs" ||
+    activeTab === "console";
 
   return (
     <PageTransition>
       <div
-        className={`h-full p-6 flex flex-col gap-4 ${activeTab === "configuration" || activeTab === "daemon-logs" || activeTab === "nginx-logs" || activeTab === "console" ? "overflow-hidden" : "overflow-y-auto"}`}
+        className={
+          usesFillLayout
+            ? "h-full p-6 flex flex-col gap-4 overflow-hidden"
+            : activeTab === "containers"
+              ? "h-full overflow-y-auto px-6 pt-6 pb-3 space-y-4"
+              : "h-full overflow-y-auto p-6 space-y-4"
+        }
       >
         {/* Header — matches ProxyHostDetail pattern */}
         <div className="flex flex-wrap items-center justify-between gap-2 shrink-0">
@@ -360,7 +371,7 @@ export function AdminNodeDetail() {
         <Tabs
           value={activeTab}
           onValueChange={setActiveTab}
-          className="flex flex-col flex-1 min-h-0"
+          className={`flex flex-col ${usesFillLayout ? "flex-1 min-h-0" : ""}`}
         >
           <TabsList className="shrink-0">
             <TabsTrigger value="details">Details</TabsTrigger>
@@ -411,7 +422,7 @@ export function AdminNodeDetail() {
             </div>
           )}
 
-          <div className="relative flex flex-col flex-1 min-h-0">
+          <div className={usesFillLayout ? "relative flex flex-col flex-1 min-h-0" : "relative"}>
             {nonInteractiveWhileUpdating && (
               <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/85 backdrop-blur-sm">
                 <div className="border border-border bg-card px-6 py-4 text-center">
@@ -422,7 +433,7 @@ export function AdminNodeDetail() {
                 </div>
               </div>
             )}
-            <TabsContent key={detailsTabRefreshKey} value="details" className="pb-6">
+            <TabsContent key={detailsTabRefreshKey} value="details">
               <NodeDetailsTab
                 node={node}
                 daemonUpdate={daemonUpdate}
@@ -431,7 +442,7 @@ export function AdminNodeDetail() {
               />
             </TabsContent>
             {!isNodeIncompatible(node) && (
-              <TabsContent value="monitoring" className="pb-6">
+              <TabsContent value="monitoring">
                 {activeTab === "monitoring" && (
                   <NodeMonitoringTab
                     nodeId={node.id}
@@ -461,18 +472,18 @@ export function AdminNodeDetail() {
             )}
             {!isNodeIncompatible(node) && node.type === "docker" && (
               <>
-                <TabsContent value="containers" className="flex flex-col flex-1 min-h-0">
+                <TabsContent value="containers">
                   {activeTab === "containers" && (
                     <DockerContainers embedded fixedNodeId={node.id} />
                   )}
                 </TabsContent>
-                <TabsContent value="images" className="flex flex-col flex-1 min-h-0">
+                <TabsContent value="images">
                   {activeTab === "images" && <DockerImages embedded fixedNodeId={node.id} />}
                 </TabsContent>
-                <TabsContent value="volumes" className="flex flex-col flex-1 min-h-0">
+                <TabsContent value="volumes">
                   {activeTab === "volumes" && <DockerVolumes embedded fixedNodeId={node.id} />}
                 </TabsContent>
-                <TabsContent value="networks" className="flex flex-col flex-1 min-h-0">
+                <TabsContent value="networks">
                   {activeTab === "networks" && <DockerNetworks embedded fixedNodeId={node.id} />}
                 </TabsContent>
               </>

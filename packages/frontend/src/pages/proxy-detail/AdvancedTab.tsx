@@ -27,6 +27,7 @@ export function AdvancedTab({
     <div className="flex-1 min-h-0 flex flex-col relative">
       <CodeEditor
         value={advancedConfig}
+        minHeight="0px"
         onChange={(val) => {
           setAdvancedConfig(val);
           setEditorErrorLines([]);

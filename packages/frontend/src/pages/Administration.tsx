@@ -70,10 +70,17 @@ export function Administration() {
     availableTabs.includes(activeTab as AdministrationTab) ? activeTab : availableTabs[0]
   ) as AdministrationTab;
   const currentMeta = tabMeta[currentTab];
+  const usesFillLayout = currentTab === "audit";
 
   return (
     <PageTransition>
-      <div className="flex h-full min-h-0 flex-col overflow-hidden p-6">
+      <div
+        className={
+          usesFillLayout
+            ? "flex h-full min-h-0 flex-col overflow-hidden p-6"
+            : "h-full overflow-y-auto p-6 space-y-4"
+        }
+      >
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold">{currentMeta.title}</h1>
@@ -90,7 +97,7 @@ export function Administration() {
         <Tabs
           value={activeTab}
           onValueChange={setActiveTab}
-          className="mt-4 flex min-h-0 flex-1 flex-col"
+          className={`flex flex-col ${usesFillLayout ? "mt-4 min-h-0 flex-1" : ""}`}
         >
           <TabsList>
             {canUsers && <TabsTrigger value="users">Users</TabsTrigger>}
@@ -99,12 +106,12 @@ export function Administration() {
           </TabsList>
 
           {canUsers && (
-            <TabsContent value="users" className="mt-4 flex min-h-0 flex-1 flex-col">
+            <TabsContent value="users" className="mt-4">
               <AdminUsers embedded createRequest={usersCreateRequest} />
             </TabsContent>
           )}
           {canGroups && (
-            <TabsContent value="groups" className="mt-4 flex min-h-0 flex-1 flex-col">
+            <TabsContent value="groups" className="mt-4">
               <AdminGroups embedded createRequest={groupsCreateRequest} />
             </TabsContent>
           )}

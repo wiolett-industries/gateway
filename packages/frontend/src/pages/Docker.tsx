@@ -49,6 +49,7 @@ export function Docker() {
     tabParam && visibleTabs.some((t) => t.value === tabParam)
       ? tabParam
       : visibleTabs[0]?.value || "containers";
+  const usesFillLayout = activeTab === "tasks";
   const activeTabLoading =
     activeTab === "containers"
       ? loading.containers
@@ -173,7 +174,15 @@ export function Docker() {
 
   return (
     <PageTransition>
-      <div className="h-full overflow-y-auto flex flex-col p-6 gap-4">
+      <div
+        className={
+          usesFillLayout
+            ? "h-full overflow-hidden flex flex-col p-6 gap-4"
+            : activeTab === "containers"
+              ? "h-full overflow-y-auto px-6 pt-6 pb-3 space-y-4"
+              : "h-full overflow-y-auto p-6 space-y-4"
+        }
+      >
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-2 shrink-0">
           <div>
@@ -192,7 +201,7 @@ export function Docker() {
         <Tabs
           value={activeTab}
           onValueChange={handleTabChange}
-          className="flex flex-col flex-1 min-h-0"
+          className={`flex flex-col ${usesFillLayout ? "flex-1 min-h-0" : ""}`}
         >
           <TabsList className="shrink-0">
             {visibleTabs.map((tab) => (
@@ -203,7 +212,7 @@ export function Docker() {
             ))}
           </TabsList>
 
-          <TabsContent value="containers" className="flex flex-col flex-1 min-h-0">
+          <TabsContent value="containers">
             <DockerContainers
               embedded
               onDeployRef={(fn) => {
@@ -214,7 +223,7 @@ export function Docker() {
               }}
             />
           </TabsContent>
-          <TabsContent value="images" className="flex flex-col flex-1 min-h-0">
+          <TabsContent value="images">
             <DockerImages
               embedded
               onPullRef={(fn) => {
@@ -222,7 +231,7 @@ export function Docker() {
               }}
             />
           </TabsContent>
-          <TabsContent value="volumes" className="flex flex-col flex-1 min-h-0">
+          <TabsContent value="volumes">
             <DockerVolumes
               embedded
               onCreateRef={(fn) => {
@@ -230,7 +239,7 @@ export function Docker() {
               }}
             />
           </TabsContent>
-          <TabsContent value="networks" className="flex flex-col flex-1 min-h-0">
+          <TabsContent value="networks">
             <DockerNetworks
               embedded
               onCreateRef={(fn) => {
