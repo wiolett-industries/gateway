@@ -37,6 +37,8 @@ export function NodeDetailsTab({
   const h: NodeHealthReport | null = node.liveHealthReport ?? node.lastHealthReport;
   const caps = (node.capabilities ?? {}) as Record<string, unknown>;
   const nodeUpdating = isNodeUpdating(node);
+  const canTriggerDaemonUpdate =
+    node.status === "online" && node.isConnected && caps.versionMismatch !== true;
   const updateTargetVersion = getNodeUpdateTargetVersion(node);
   const resourcesRef = useRef<HTMLDivElement>(null);
   const [resourcesHeight, setResourcesHeight] = useState(0);
@@ -155,7 +157,12 @@ export function NodeDetailsTab({
                 style={{ backgroundColor: "rgb(234 179 8)", color: "#111" }}
                 className="hover:opacity-90 disabled:opacity-50"
                 onClick={handleDaemonUpdate}
-                disabled={isUpdating}
+                disabled={isUpdating || !canTriggerDaemonUpdate}
+                title={
+                  canTriggerDaemonUpdate
+                    ? undefined
+                    : "Daemon update requires a connected compatible node"
+                }
               >
                 <ArrowUpCircle className="h-3.5 w-3.5" />
                 Update to {daemonUpdate.latestVersion}
