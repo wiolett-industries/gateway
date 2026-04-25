@@ -7,10 +7,10 @@ import type { EventBusService } from '@/services/event-bus.service.js';
 import type { NodeRegistryService } from '@/services/node-registry.service.js';
 import {
   EVENT_BUS_MAPPINGS,
-  eventSupportsThreshold,
-  extractMetricFromDatabaseSnapshot,
   evaluateThreshold,
   evaluateWindowRatio,
+  eventSupportsThreshold,
+  extractMetricFromDatabaseSnapshot,
   extractMetricFromHealthReport,
   type Severity,
   type WindowProbeSample,
@@ -466,7 +466,6 @@ export class NotificationEvaluatorService {
       fired_at: firedAt?.toISOString(),
       fired_duration: firedDurationSec,
     });
-
   }
 
   private getProbeOutcomeKey(ruleId: string, compositeResourceId: string): string {

@@ -34,4 +34,3 @@ licenseRoutes.delete('/key', requireScope('license:manage'), async (c) => {
   const service = container.resolve(LicenseService);
   return c.json({ data: await service.clearKey() });
 });
-

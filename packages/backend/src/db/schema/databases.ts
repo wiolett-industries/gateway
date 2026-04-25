@@ -1,15 +1,4 @@
-import {
-  boolean,
-  index,
-  integer,
-  jsonb,
-  pgEnum,
-  pgTable,
-  text,
-  timestamp,
-  uuid,
-  varchar,
-} from 'drizzle-orm/pg-core';
+import { boolean, index, integer, jsonb, pgEnum, pgTable, text, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
 import { users } from './users.js';
 
 export const databaseTypeEnum = pgEnum('database_type', ['postgres', 'redis']);

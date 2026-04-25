@@ -3,21 +3,19 @@ import { count, desc, eq, ilike, inArray, or, type SQL } from 'drizzle-orm';
 import Redis from 'ioredis';
 import pg from 'pg';
 import type { DrizzleClient } from '@/db/client.js';
-import { databaseConnections, type DatabaseHealthEntry } from '@/db/schema/index.js';
+import { type DatabaseHealthEntry, databaseConnections } from '@/db/schema/index.js';
 import { buildWhere } from '@/lib/utils.js';
-import { createChildLogger } from '@/lib/logger.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
+import type { CryptoService } from '@/services/crypto.service.js';
+import type { EventBusService } from '@/services/event-bus.service.js';
+import type { PaginatedResponse } from '@/types.js';
 import type {
   CreateDatabaseConnectionInput,
   DatabaseListQuery,
   UpdateDatabaseConnectionInput,
 } from './databases.schemas.js';
-import type { EventBusService } from '@/services/event-bus.service.js';
-import type { CryptoService } from '@/services/crypto.service.js';
-import type { PaginatedResponse } from '@/types.js';
 
-const logger = createChildLogger('DatabaseConnectionService');
 const { Pool } = pg;
 const DATABASE_HEALTH_HISTORY_MIN_INTERVAL_MS = 30_000;
 const DATABASE_HEALTH_HISTORY_MAX_AGE_MS = 7 * 24 * 3600 * 1000;
@@ -613,7 +611,8 @@ export class DatabaseConnectionService {
   }
 
   async create(input: CreateDatabaseConnectionInput, userId: string): Promise<DatabaseConnectionView> {
-    const normalized = input.type === 'postgres' ? this.normalizePostgres(input.config) : this.normalizeRedis(input.config);
+    const normalized =
+      input.type === 'postgres' ? this.normalizePostgres(input.config) : this.normalizeRedis(input.config);
     const testResult = await this.testNormalizedConnection(normalized);
     const encryptedConfig = this.encryptConfig(normalized);
     const [row] = await this.db
@@ -661,7 +660,9 @@ export class DatabaseConnectionService {
     const existing = await this.getRow(id);
     const currentConfig = this.decryptConfig(existing.encryptedConfig);
     const nextPassword =
-      input.config && 'password' in input.config ? input.config.password ?? currentConfig.password : currentConfig.password;
+      input.config && 'password' in input.config
+        ? (input.config.password ?? currentConfig.password)
+        : currentConfig.password;
     const mergedConfig =
       currentConfig.type === 'postgres'
         ? this.normalizePostgres({
@@ -702,9 +703,9 @@ export class DatabaseConnectionService {
         tags: input.tags ?? (existing.tags as string[]),
         manualSizeLimitMb:
           existing.type === 'postgres'
-            ? (input.manualSizeLimitMb === undefined
-                ? existing.manualSizeLimitMb
-                : (input.manualSizeLimitMb ?? null))
+            ? input.manualSizeLimitMb === undefined
+              ? existing.manualSizeLimitMb
+              : (input.manualSizeLimitMb ?? null)
             : null,
         host: mergedConfig.host,
         port: mergedConfig.port,
@@ -752,7 +753,10 @@ export class DatabaseConnectionService {
     this.emitChange(id, 'deleted', { name: existing.name, type: existing.type });
   }
 
-  async testSavedConnection(id: string, userId: string): Promise<{ ok: true; responseMs: number; status: DatabaseHealthStatus }> {
+  async testSavedConnection(
+    id: string,
+    userId: string
+  ): Promise<{ ok: true; responseMs: number; status: DatabaseHealthStatus }> {
     const row = await this.getRow(id);
     const config = this.decryptConfig(row.encryptedConfig);
     let result: { status: DatabaseHealthStatus; responseMs: number };
@@ -794,7 +798,12 @@ export class DatabaseConnectionService {
       resourceId: id,
       details: { name: row.name, type: row.type, responseMs: result.responseMs, status: result.status },
     });
-    this.emitChange(id, 'tested', { name: row.name, type: row.type, healthStatus: result.status, responseMs: result.responseMs });
+    this.emitChange(id, 'tested', {
+      name: row.name,
+      type: row.type,
+      healthStatus: result.status,
+      responseMs: result.responseMs,
+    });
     return { ok: true, responseMs: result.responseMs, status: result.status };
   }
 
@@ -874,7 +883,8 @@ export class DatabaseConnectionService {
           udtName: column.udt_name,
           nullable: column.is_nullable === 'YES',
           isPrimaryKey: pkSet.has(column.column_name),
-          hasDefault: column.column_default !== null || column.is_identity === 'YES' || column.is_generated === 'ALWAYS',
+          hasDefault:
+            column.column_default !== null || column.is_identity === 'YES' || column.is_generated === 'ALWAYS',
         })),
         primaryKey: primaryKeys.rows.map((row) => row.column_name),
         hasPrimaryKey: primaryKeys.rows.length > 0,
@@ -897,14 +907,16 @@ export class DatabaseConnectionService {
       const tableSql = quoteIdent(table);
       const validColumns = new Set(metadata.columns.map((column) => column.name));
       const orderColumn =
-        sortBy && validColumns.has(sortBy) ? sortBy : metadata.primaryKey[0] ?? metadata.columns[0]?.name;
-      const orderSql = orderColumn ? `order by ${quoteIdent(orderColumn)} ${sortOrder === 'desc' ? 'desc' : 'asc'}` : '';
+        sortBy && validColumns.has(sortBy) ? sortBy : (metadata.primaryKey[0] ?? metadata.columns[0]?.name);
+      const orderSql = orderColumn
+        ? `order by ${quoteIdent(orderColumn)} ${sortOrder === 'desc' ? 'desc' : 'asc'}`
+        : '';
       const [countResult, rowsResult] = await Promise.all([
         pool.query<{ total: string }>(`select count(*)::text as total from ${schemaSql}.${tableSql}`),
-        pool.query(
-          `select * from ${schemaSql}.${tableSql} ${orderSql} limit $1 offset $2`,
-          [limit, (page - 1) * limit]
-        ),
+        pool.query(`select * from ${schemaSql}.${tableSql} ${orderSql} limit $1 offset $2`, [
+          limit,
+          (page - 1) * limit,
+        ]),
       ]);
       return {
         metadata,
@@ -916,13 +928,7 @@ export class DatabaseConnectionService {
     });
   }
 
-  async insertPostgresRow(
-    id: string,
-    schema: string,
-    table: string,
-    values: Record<string, unknown>,
-    userId: string
-  ) {
+  async insertPostgresRow(id: string, schema: string, table: string, values: Record<string, unknown>, userId: string) {
     return this.withPostgresPool(id, 'query', async (pool) => {
       const metadata = await this.getPostgresTableMetadata(id, schema, table);
       const allowedColumns = metadata.columns.map((column) => column.name).filter((name) => name in values);
@@ -977,10 +983,11 @@ export class DatabaseConnectionService {
         throw new AppError(400, 'INVALID_ROW', 'No editable columns provided');
       }
 
-      const params = [...updateColumns.map((column) => values[column]), ...keyColumns.map((column) => primaryKey[column])];
-      const setSql = updateColumns
-        .map((column, index) => `${quoteIdent(column)} = $${index + 1}`)
-        .join(', ');
+      const params = [
+        ...updateColumns.map((column) => values[column]),
+        ...keyColumns.map((column) => primaryKey[column]),
+      ];
+      const setSql = updateColumns.map((column, index) => `${quoteIdent(column)} = $${index + 1}`).join(', ');
       const whereSql = keyColumns
         .map((column, index) => `${quoteIdent(column)} = $${updateColumns.length + index + 1}`)
         .join(' and ');
@@ -1004,7 +1011,13 @@ export class DatabaseConnectionService {
     });
   }
 
-  async deletePostgresRow(id: string, schema: string, table: string, primaryKey: Record<string, unknown>, userId: string) {
+  async deletePostgresRow(
+    id: string,
+    schema: string,
+    table: string,
+    primaryKey: Record<string, unknown>,
+    userId: string
+  ) {
     return this.withPostgresPool(id, 'query', async (pool) => {
       const metadata = await this.getPostgresTableMetadata(id, schema, table);
       if (!metadata.hasPrimaryKey) {
@@ -1142,18 +1155,15 @@ export class DatabaseConnectionService {
           multi.hset(key, value as Record<string, string>);
           break;
         case 'list':
-          multi.rpush(key, ...((Array.isArray(value) ? value : []).map((item) => String(item))));
+          multi.rpush(key, ...(Array.isArray(value) ? value : []).map((item) => String(item)));
           break;
         case 'set':
-          multi.sadd(key, ...((Array.isArray(value) ? value : []).map((item) => String(item))));
+          multi.sadd(key, ...(Array.isArray(value) ? value : []).map((item) => String(item)));
           break;
         case 'zset': {
           const members = Array.isArray(value) ? (value as Array<{ member: string; score: number }>) : [];
           if (members.length > 0) {
-            multi.zadd(
-              key,
-              ...members.flatMap((entry) => [`${entry.score ?? 0}`, `${entry.member ?? ''}`])
-            );
+            multi.zadd(key, ...members.flatMap((entry) => [`${entry.score ?? 0}`, `${entry.member ?? ''}`]));
           }
           break;
         }
@@ -1265,9 +1275,7 @@ export class DatabaseConnectionService {
     const nowIso = now.toISOString();
     const existingHistory = (row.healthHistory as DatabaseHealthEntry[] | null) ?? [];
     const lastRecordedAt =
-      existingHistory.length > 0
-        ? new Date(existingHistory[existingHistory.length - 1]!.ts).getTime()
-        : 0;
+      existingHistory.length > 0 ? new Date(existingHistory[existingHistory.length - 1]!.ts).getTime() : 0;
 
     const shouldWriteHistory =
       patch.forceHistory ||
@@ -1305,7 +1313,12 @@ export class DatabaseConnectionService {
       });
     }
     if (row.healthStatus !== patch.status) {
-      const action = patch.status === 'online' ? 'health.online' : patch.status === 'degraded' ? 'health.degraded' : 'health.offline';
+      const action =
+        patch.status === 'online'
+          ? 'health.online'
+          : patch.status === 'degraded'
+            ? 'health.degraded'
+            : 'health.offline';
       this.emitChange(id, action, { name: row.name, type: row.type, healthStatus: patch.status, sampledAt: nowIso });
     }
   }
@@ -1402,11 +1415,16 @@ export class DatabaseConnectionService {
       database = database ?? decodeURIComponent(url.pathname.replace(/^\//, ''));
       username = username ?? decodeURIComponent(url.username);
       password = config.password ?? decodeURIComponent(url.password);
-      sslEnabled = config.sslEnabled ?? ['require', 'verify-full', 'verify-ca'].includes(url.searchParams.get('sslmode') ?? '');
+      sslEnabled =
+        config.sslEnabled ?? ['require', 'verify-full', 'verify-ca'].includes(url.searchParams.get('sslmode') ?? '');
     }
 
     if (!host || !port || !database || !username) {
-      throw new AppError(400, 'INVALID_DATABASE_CONFIG', 'Postgres connections require host, port, database, username, and password');
+      throw new AppError(
+        400,
+        'INVALID_DATABASE_CONFIG',
+        'Postgres connections require host, port, database, username, and password'
+      );
     }
     if (password === undefined || password === null) {
       throw new AppError(400, 'INVALID_DATABASE_CONFIG', 'Postgres password is required');
@@ -1468,7 +1486,9 @@ export class DatabaseConnectionService {
     };
   }
 
-  private async testNormalizedConnection(config: DatabaseConnectionConfig): Promise<{ status: DatabaseHealthStatus; responseMs: number }> {
+  private async testNormalizedConnection(
+    config: DatabaseConnectionConfig
+  ): Promise<{ status: DatabaseHealthStatus; responseMs: number }> {
     const started = Date.now();
     if (config.type === 'postgres') {
       const pool = new Pool({
@@ -1520,7 +1540,9 @@ export class DatabaseConnectionService {
       return `${protocol}://${encodeURIComponent(config.username)}:${encodeURIComponent(config.password)}@${config.host}:${config.port}/${encodeURIComponent(config.database)}${sslMode}`;
     }
     const protocol = config.tlsEnabled ? 'rediss' : 'redis';
-    const auth = config.username ? `${encodeURIComponent(config.username)}:${encodeURIComponent(config.password)}` : `:${encodeURIComponent(config.password)}`;
+    const auth = config.username
+      ? `${encodeURIComponent(config.username)}:${encodeURIComponent(config.password)}`
+      : `:${encodeURIComponent(config.password)}`;
     return `${protocol}://${auth}@${config.host}:${config.port}/${config.db}`;
   }
 

@@ -37,7 +37,13 @@ export const CreateDatabaseConnectionSchema = z.discriminatedUnion('type', [
     name: nameSchema,
     description: optionalTextSchema,
     tags: tagsSchema,
-    manualSizeLimitMb: z.number().int().positive().max(1024 * 1024).optional().nullable(),
+    manualSizeLimitMb: z
+      .number()
+      .int()
+      .positive()
+      .max(1024 * 1024)
+      .optional()
+      .nullable(),
     type: z.literal('postgres'),
     config: postgresConnectionFields,
   }),
@@ -55,7 +61,13 @@ export const UpdateDatabaseConnectionSchema = z
     name: nameSchema.optional(),
     description: optionalTextSchema,
     tags: tagsSchema,
-    manualSizeLimitMb: z.number().int().positive().max(1024 * 1024).optional().nullable(),
+    manualSizeLimitMb: z
+      .number()
+      .int()
+      .positive()
+      .max(1024 * 1024)
+      .optional()
+      .nullable(),
     config: z
       .object({
         connectionString: z.string().trim().min(1).max(4096).optional(),

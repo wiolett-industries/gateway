@@ -7,8 +7,8 @@ import { apiTokens } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { boundScopes } from '@/lib/permissions.js';
 import { AppError } from '@/middleware/error-handler.js';
-import { resolveLiveUser } from '@/modules/auth/live-session-user.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
+import { resolveLiveUser } from '@/modules/auth/live-session-user.js';
 import type { User } from '@/types.js';
 import type { CreateTokenInput } from './tokens.schemas.js';
 

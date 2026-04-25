@@ -235,23 +235,13 @@ describe('NotificationEvaluatorService ratio window evaluation', () => {
   it('uses a pre-window sample as coverage anchor for jittered polling intervals', async () => {
     const { evaluator } = createEvaluator([]);
     const now = 1_000_000;
-    const zrangebyscore = async () => [
-      `${now - 60_002}:1`,
-      `${now - 30_000}:1`,
-      `${now}:1`,
-    ];
+    const zrangebyscore = async () => [`${now - 60_002}:1`, `${now - 30_000}:1`, `${now}:1`];
     (evaluator as any).redis = { zrangebyscore };
 
     const originalNow = Date.now;
     Date.now = () => now;
     try {
-      const result = await (evaluator as any).evaluateRatioWindow(
-        'rule-1',
-        'node-1',
-        60_000,
-        100,
-        'breach'
-      );
+      const result = await (evaluator as any).evaluateRatioWindow('rule-1', 'node-1', 60_000, 100, 'breach');
 
       expect(result).toMatchObject({
         hasCoverage: true,
