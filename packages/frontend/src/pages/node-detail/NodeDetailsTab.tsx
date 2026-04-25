@@ -22,12 +22,14 @@ interface NodeDetailsTabProps {
     available: boolean;
     latestVersion: string | null;
   };
-  refreshDaemonUpdateStatus: () => Promise<void>;
+  refreshNode: () => Promise<void>;
+  refreshDaemonUpdateStatus: (options?: { force?: boolean }) => Promise<void>;
 }
 
 export function NodeDetailsTab({
   node,
   daemonUpdate,
+  refreshNode,
   refreshDaemonUpdateStatus,
 }: NodeDetailsTabProps) {
   const navigate = useNavigate();
@@ -91,7 +93,7 @@ export function NodeDetailsTab({
     try {
       await api.triggerDaemonUpdate(node.id);
       toast.success("Daemon update triggered — the node will restart shortly");
-      await refreshDaemonUpdateStatus();
+      await Promise.all([refreshNode(), refreshDaemonUpdateStatus({ force: true })]);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to trigger update");
     } finally {

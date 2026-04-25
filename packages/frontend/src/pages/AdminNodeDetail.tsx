@@ -158,14 +158,17 @@ export function AdminNodeDetail() {
     [id, navigate]
   );
 
-  const loadDaemonUpdateStatus = useCallback(async () => {
-    if (!id || !hasScope("admin:update")) return;
-    try {
-      await fetchDaemonUpdates();
-    } catch {
-      // ignore
-    }
-  }, [fetchDaemonUpdates, hasScope, id]);
+  const loadDaemonUpdateStatus = useCallback(
+    async (options?: { force?: boolean }) => {
+      if (!id || !hasScope("admin:update")) return;
+      try {
+        await fetchDaemonUpdates(options);
+      } catch {
+        // ignore
+      }
+    },
+    [fetchDaemonUpdates, hasScope, id]
+  );
 
   useEffect(() => {
     if (!visibleTabs.includes(activeTab)) {
@@ -191,7 +194,7 @@ export function AdminNodeDetail() {
       return;
     }
     loadNode(true);
-    void loadDaemonUpdateStatus();
+    void loadDaemonUpdateStatus({ force: true });
   });
 
   useEffect(() => {
@@ -417,6 +420,7 @@ export function AdminNodeDetail() {
               <NodeDetailsTab
                 node={node}
                 daemonUpdate={daemonUpdate}
+                refreshNode={() => loadNode(true)}
                 refreshDaemonUpdateStatus={loadDaemonUpdateStatus}
               />
             </TabsContent>
