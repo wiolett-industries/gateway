@@ -1,0 +1,27 @@
+{
+  "name": "status-page",
+  "root": "packages/status-page",
+  "sourceRoot": "packages/status-page/src",
+  "targets": {
+    "build": {
+      "command": "pnpm --filter status-page build",
+      "inputs": [
+        "{projectRoot}/src/**/*",
+        "{projectRoot}/tsconfig.json",
+        "{projectRoot}/vite.config.*",
+        "{projectRoot}/index.html",
+        "{projectRoot}/package.json"
+      ],
+      "outputs": ["{projectRoot}/dist"],
+      "cache": true
+    },
+    "dev": {
+      "command": "pnpm --filter status-page dev",
+      "cache": false
+    },
+    "preview": {
+      "command": "pnpm --filter status-page preview",
+      "cache": false
+    }
+  }
+}

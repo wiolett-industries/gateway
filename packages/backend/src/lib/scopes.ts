@@ -134,6 +134,13 @@ export const ALL_SCOPES = [
   'notifications:deliveries:view',
   'notifications:view',
   'notifications:manage',
+  // ── Status Page ──────────────────────────────────────────────────
+  'status-page:view',
+  'status-page:manage',
+  'status-page:incidents:create',
+  'status-page:incidents:update',
+  'status-page:incidents:resolve',
+  'status-page:incidents:delete',
 ] as const;
 
 export type Scope = (typeof ALL_SCOPES)[number];

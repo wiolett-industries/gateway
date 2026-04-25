@@ -323,13 +323,7 @@ export interface AlertRule {
   name: string;
   enabled: boolean;
   type: "threshold" | "event";
-  category:
-    | "node"
-    | "container"
-    | "proxy"
-    | "certificate"
-    | "database_postgres"
-    | "database_redis";
+  category: "node" | "container" | "proxy" | "certificate" | "database_postgres" | "database_redis";
   severity: "info" | "warning" | "critical";
   metric: string | null;
   metricTarget: string | null;
@@ -406,7 +400,12 @@ export interface AlertCategoryDef {
     defaultDurationSeconds?: number;
     defaultResolveAfterSeconds?: number;
   }>;
-  events: Array<{ id: string; label: string; defaultSeverity: string; supportsThreshold?: boolean }>;
+  events: Array<{
+    id: string;
+    label: string;
+    defaultSeverity: string;
+    supportsThreshold?: boolean;
+  }>;
   variables: Array<{ name: string; description: string }>;
 }
 
@@ -872,6 +871,43 @@ export const TOKEN_SCOPES = [
     desc: "Full management access to alerts, webhooks, and deliveries",
     group: "Notifications",
   },
+  // Status Page
+  {
+    value: "status-page:view",
+    label: "View Status Page",
+    desc: "View status page configuration, exposed services, incidents, and preview",
+    group: "Status Page",
+  },
+  {
+    value: "status-page:manage",
+    label: "Manage Status Page",
+    desc: "Edit status page settings and exposed services",
+    group: "Status Page",
+  },
+  {
+    value: "status-page:incidents:create",
+    label: "Create Incidents",
+    desc: "Create manual incidents and promote automatic incidents",
+    group: "Status Page",
+  },
+  {
+    value: "status-page:incidents:update",
+    label: "Update Incidents",
+    desc: "Edit incident details and post incident timeline updates",
+    group: "Status Page",
+  },
+  {
+    value: "status-page:incidents:resolve",
+    label: "Resolve Incidents",
+    desc: "Resolve active status page incidents",
+    group: "Status Page",
+  },
+  {
+    value: "status-page:incidents:delete",
+    label: "Delete Past Incidents",
+    desc: "Delete resolved status page incidents",
+    group: "Status Page",
+  },
   // Features
   {
     value: "feat:ai:use",
@@ -1236,6 +1272,7 @@ export interface ProxyHost {
   lastHealthCheckAt: string | null;
   healthHistory?: Array<{ ts: string; status: string; responseMs?: number; slow?: boolean }>;
   isSystem?: boolean;
+  systemKind?: string | null;
   createdById: string;
   createdAt: string;
   updatedAt: string;
@@ -1462,6 +1499,112 @@ export interface GroupedProxyHostsResponse {
   folders: FolderTreeNode[];
   ungroupedHosts: ProxyHost[];
   totalHosts: number;
+}
+
+// Status Page
+export type StatusPageSourceType = "node" | "proxy_host" | "database";
+export type StatusPageServiceStatus = "operational" | "degraded" | "outage" | "unknown";
+export type StatusPageIncidentSeverity = "info" | "warning" | "critical";
+export type StatusPageIncidentStatus = "active" | "resolved";
+export type StatusPageIncidentType = "automatic" | "manual";
+export type StatusPageIncidentUpdateStatus =
+  | "update"
+  | "investigating"
+  | "identified"
+  | "monitoring"
+  | "resolved";
+
+export interface StatusPageConfig {
+  enabled: boolean;
+  title: string;
+  description: string;
+  domain: string;
+  nodeId: string | null;
+  sslCertificateId: string | null;
+  proxyHostId: string | null;
+  publicIncidentLimit: number;
+  recentIncidentDays: number;
+  autoDegradedEnabled: boolean;
+  autoOutageEnabled: boolean;
+  autoDegradedSeverity: StatusPageIncidentSeverity;
+  autoOutageSeverity: StatusPageIncidentSeverity;
+}
+
+export interface StatusPageServiceItem {
+  id: string;
+  sourceType: StatusPageSourceType;
+  sourceId: string;
+  publicName: string;
+  publicDescription: string | null;
+  publicGroup: string | null;
+  sortOrder: number;
+  enabled: boolean;
+  createThresholdSeconds: number;
+  resolveThresholdSeconds: number;
+  lastEvaluatedStatus: string;
+  unhealthySince: string | null;
+  healthySince: string | null;
+  createdAt: string;
+  updatedAt: string;
+  source: { label: string; status: StatusPageServiceStatus; rawStatus: string } | null;
+  currentStatus: StatusPageServiceStatus;
+  broken: boolean;
+}
+
+export interface StatusPageIncidentUpdate {
+  id: string;
+  incidentId?: string;
+  status: StatusPageIncidentUpdateStatus;
+  message: string;
+  createdAt: string;
+}
+
+export interface StatusPageIncident {
+  id: string;
+  title: string;
+  message: string;
+  severity: StatusPageIncidentSeverity;
+  status: StatusPageIncidentStatus;
+  type: StatusPageIncidentType;
+  autoManaged: boolean;
+  affectedServiceIds: string[];
+  startedAt: string;
+  resolvedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  updates: StatusPageIncidentUpdate[];
+}
+
+export interface PublicStatusPageDto {
+  title: string;
+  description: string;
+  generatedAt: string;
+  overallStatus: "operational" | "degraded" | "outage";
+  services: Array<{
+    id: string;
+    name: string;
+    description: string | null;
+    group: string | null;
+    status: StatusPageServiceStatus;
+    healthHistory: Array<{ ts: string; status: StatusPageServiceStatus }>;
+  }>;
+  incidents: Array<{
+    id: string;
+    title: string;
+    message: string;
+    severity: StatusPageIncidentSeverity;
+    status: StatusPageIncidentStatus;
+    type: StatusPageIncidentType;
+    startedAt: string;
+    resolvedAt: string | null;
+    affectedServiceIds: string[];
+    updates: Array<{
+      id: string;
+      status: StatusPageIncidentUpdateStatus;
+      message: string;
+      createdAt: string;
+    }>;
+  }>;
 }
 
 export interface DockerContainerFolder {

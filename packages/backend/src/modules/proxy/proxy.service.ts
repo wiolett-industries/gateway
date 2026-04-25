@@ -1,4 +1,5 @@
 import { and, count, desc, eq, ilike, sql } from 'drizzle-orm';
+import { getEnv } from '@/config/env.js';
 import type { DrizzleClient } from '@/db/client.js';
 import { accessLists } from '@/db/schema/access-lists.js';
 import { certificates } from '@/db/schema/certificates.js';
@@ -43,6 +44,12 @@ interface CertPaths {
   sslCertPath: string | null;
   sslKeyPath: string | null;
   sslChainPath: string | null;
+}
+
+export interface StatusPageSystemHostInput {
+  domain: string;
+  nodeId: string;
+  sslCertificateId?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -235,6 +242,7 @@ export class ProxyService {
       where: eq(proxyHosts.id, id),
     });
     if (!existing) throw new AppError(404, 'PROXY_HOST_NOT_FOUND', 'Proxy host not found');
+    if (existing.isSystem) throw new AppError(403, 'SYSTEM_HOST', 'System proxy hosts cannot be edited');
 
     this.assertSslPrerequisites({
       sslEnabled: input.sslEnabled ?? existing.sslEnabled,
@@ -364,6 +372,7 @@ export class ProxyService {
       where: eq(proxyHosts.id, id),
     });
     if (!host) throw new AppError(404, 'PROXY_HOST_NOT_FOUND', 'Proxy host not found');
+    if (host.isSystem) throw new AppError(404, 'PROXY_HOST_NOT_FOUND', 'Proxy host not found');
 
     // Resolve relations
     const sslCert = host.sslCertificateId
@@ -418,7 +427,7 @@ export class ProxyService {
   // -----------------------------------------------------------------------
 
   async listProxyHosts(query: ProxyHostListQuery): Promise<PaginatedResponse<ProxyHostRow>> {
-    const conditions = [];
+    const conditions = [eq(proxyHosts.isSystem, false)];
 
     if (query.type) {
       conditions.push(eq(proxyHosts.type, query.type));
@@ -643,10 +652,189 @@ export class ProxyService {
       where: eq(proxyHosts.id, id),
     });
     if (!host) throw new AppError(404, 'PROXY_HOST_NOT_FOUND', 'Proxy host not found');
+    if (host.isSystem) throw new AppError(403, 'SYSTEM_HOST', 'System proxy host config cannot be rendered here');
 
     const certPaths = await this.resolveCertPaths(host);
     const accessList = await this.resolveAccessList(host.accessListId);
     return this.buildNginxConfig(host, certPaths, accessList);
+  }
+
+  // -----------------------------------------------------------------------
+  // Internal system host management
+  // -----------------------------------------------------------------------
+
+  async upsertStatusPageSystemHost(input: StatusPageSystemHostInput, userId: string): Promise<ProxyHostRow> {
+    const existing = await this.db.query.proxyHosts.findFirst({
+      where: eq(proxyHosts.systemKind, 'status_page'),
+    });
+    const sslEnabled = !!input.sslCertificateId;
+    const data = {
+      type: 'proxy' as const,
+      domainNames: [input.domain],
+      enabled: true,
+      forwardHost: '127.0.0.1',
+      forwardPort: getEnv().PORT,
+      forwardScheme: 'http' as const,
+      sslEnabled,
+      sslForced: sslEnabled,
+      http2Support: true,
+      websocketSupport: false,
+      sslCertificateId: input.sslCertificateId ?? null,
+      internalCertificateId: null,
+      redirectUrl: null,
+      redirectStatusCode: 301,
+      customHeaders: [],
+      cacheEnabled: false,
+      cacheOptions: null,
+      rateLimitEnabled: false,
+      rateLimitOptions: null,
+      customRewrites: [],
+      advancedConfig: null,
+      rawConfig: null,
+      rawConfigEnabled: false,
+      accessListId: null,
+      folderId: null,
+      nginxTemplateId: null,
+      templateVariables: {},
+      nodeId: input.nodeId,
+      healthCheckEnabled: false,
+      healthCheckUrl: '/',
+      healthCheckInterval: 30,
+      healthCheckExpectedStatus: null,
+      healthCheckExpectedBody: null,
+      healthCheckBodyMatchMode: 'includes' as const,
+      healthCheckSlowThreshold: 3,
+      healthStatus: 'disabled' as const,
+      isSystem: true,
+      systemKind: 'status_page',
+      updatedAt: new Date(),
+    };
+
+    const createdNew = !existing;
+    const [host] = existing
+      ? await this.db.update(proxyHosts).set(data).where(eq(proxyHosts.id, existing.id)).returning()
+      : await this.db
+          .insert(proxyHosts)
+          .values({
+            ...data,
+            createdById: userId,
+          })
+          .returning();
+
+    try {
+      const certPaths = await this.resolveCertPaths(host);
+      const config = await this.buildNginxConfig(host, certPaths, null);
+      await this.applyConfigToNode(host.id, config, host.nodeId);
+    } catch (error) {
+      logger.error('Failed to apply status page system proxy host config', {
+        hostId: host.id,
+        error,
+      });
+      if (createdNew) {
+        await this.db.delete(proxyHosts).where(eq(proxyHosts.id, host.id));
+      } else if (existing) {
+        await this.db
+          .update(proxyHosts)
+          .set({
+            type: existing.type,
+            domainNames: existing.domainNames,
+            enabled: existing.enabled,
+            forwardHost: existing.forwardHost,
+            forwardPort: existing.forwardPort,
+            forwardScheme: existing.forwardScheme,
+            sslEnabled: existing.sslEnabled,
+            sslForced: existing.sslForced,
+            http2Support: existing.http2Support,
+            websocketSupport: existing.websocketSupport,
+            sslCertificateId: existing.sslCertificateId,
+            internalCertificateId: existing.internalCertificateId,
+            redirectUrl: existing.redirectUrl,
+            redirectStatusCode: existing.redirectStatusCode,
+            customHeaders: existing.customHeaders,
+            cacheEnabled: existing.cacheEnabled,
+            cacheOptions: existing.cacheOptions,
+            rateLimitEnabled: existing.rateLimitEnabled,
+            rateLimitOptions: existing.rateLimitOptions,
+            customRewrites: existing.customRewrites,
+            advancedConfig: existing.advancedConfig,
+            rawConfig: existing.rawConfig,
+            rawConfigEnabled: existing.rawConfigEnabled,
+            accessListId: existing.accessListId,
+            folderId: existing.folderId,
+            nginxTemplateId: existing.nginxTemplateId,
+            templateVariables: existing.templateVariables,
+            nodeId: existing.nodeId,
+            healthCheckEnabled: existing.healthCheckEnabled,
+            healthCheckUrl: existing.healthCheckUrl,
+            healthCheckInterval: existing.healthCheckInterval,
+            healthCheckExpectedStatus: existing.healthCheckExpectedStatus,
+            healthCheckExpectedBody: existing.healthCheckExpectedBody,
+            healthCheckBodyMatchMode: existing.healthCheckBodyMatchMode,
+            healthCheckSlowThreshold: existing.healthCheckSlowThreshold,
+            healthStatus: existing.healthStatus,
+            isSystem: existing.isSystem,
+            systemKind: existing.systemKind,
+            updatedAt: existing.updatedAt,
+          })
+          .where(eq(proxyHosts.id, existing.id));
+      }
+      throw new AppError(
+        500,
+        'NGINX_CONFIG_FAILED',
+        `Failed to apply status page proxy config: ${error instanceof Error ? error.message : 'unknown error'}`
+      );
+    }
+
+    await this.auditService.log({
+      userId,
+      action: existing ? 'proxy_host.system_update' : 'proxy_host.system_create',
+      resourceType: 'proxy_host',
+      resourceId: host.id,
+      details: { systemKind: 'status_page', domain: input.domain, nodeId: input.nodeId },
+    });
+    this.emitHost(host.id, 'updated', input.domain);
+    return host;
+  }
+
+  async disableStatusPageSystemHost(userId: string): Promise<ProxyHostRow | null> {
+    const existing = await this.db.query.proxyHosts.findFirst({
+      where: eq(proxyHosts.systemKind, 'status_page'),
+    });
+    if (!existing) return null;
+
+    const [updated] = await this.db
+      .update(proxyHosts)
+      .set({ enabled: false, updatedAt: new Date() })
+      .where(eq(proxyHosts.id, existing.id))
+      .returning();
+
+    try {
+      await this.removeConfigFromNode(existing.id, existing.nodeId);
+    } catch (error) {
+      logger.error('Failed to remove status page system proxy host config', {
+        hostId: existing.id,
+        error,
+      });
+      await this.db
+        .update(proxyHosts)
+        .set({ enabled: existing.enabled, updatedAt: existing.updatedAt })
+        .where(eq(proxyHosts.id, existing.id));
+      throw new AppError(
+        500,
+        'NGINX_CONFIG_FAILED',
+        `Failed to disable status page proxy config: ${error instanceof Error ? error.message : 'unknown error'}`
+      );
+    }
+
+    await this.auditService.log({
+      userId,
+      action: 'proxy_host.system_disable',
+      resourceType: 'proxy_host',
+      resourceId: existing.id,
+      details: { systemKind: 'status_page' },
+    });
+    this.emitHost(existing.id, 'updated', existing.domainNames?.[0]);
+    return updated;
   }
 
   // -----------------------------------------------------------------------
@@ -675,11 +863,7 @@ export class ProxyService {
     } catch (err) {
       return {
         valid: false,
-        errors: [
-          err instanceof Error
-            ? `Template rendering error: ${err.message}`
-            : 'Template rendering error',
-        ],
+        errors: [err instanceof Error ? `Template rendering error: ${err.message}` : 'Template rendering error'],
       };
     }
 

@@ -336,7 +336,7 @@ export class FolderService {
       .orderBy(asc(proxyHostFolders.depth), asc(proxyHostFolders.sortOrder));
 
     // 2. Fetch all hosts (with optional filters)
-    const conditions = [];
+    const conditions = [eq(proxyHosts.isSystem, false)];
     if (query.type) {
       conditions.push(eq(proxyHosts.type, query.type));
     }
@@ -400,6 +400,14 @@ export class FolderService {
       if (!folder) throw new AppError(404, 'FOLDER_NOT_FOUND', 'Target folder not found');
     }
 
+    const selectedHosts = await this.db
+      .select({ id: proxyHosts.id, isSystem: proxyHosts.isSystem })
+      .from(proxyHosts)
+      .where(inArray(proxyHosts.id, input.hostIds));
+    if (selectedHosts.some((host) => host.isSystem)) {
+      throw new AppError(403, 'SYSTEM_HOST', 'System proxy hosts cannot be moved');
+    }
+
     await this.db
       .update(proxyHosts)
       .set({ folderId: input.folderId, updatedAt: new Date() })
@@ -425,6 +433,19 @@ export class FolderService {
   // -----------------------------------------------------------------------
 
   async reorderHosts(input: ReorderHostsInput) {
+    const selectedHosts = await this.db
+      .select({ id: proxyHosts.id, isSystem: proxyHosts.isSystem })
+      .from(proxyHosts)
+      .where(
+        inArray(
+          proxyHosts.id,
+          input.items.map((item) => item.id)
+        )
+      );
+    if (selectedHosts.some((host) => host.isSystem)) {
+      throw new AppError(403, 'SYSTEM_HOST', 'System proxy hosts cannot be reordered');
+    }
+
     for (const item of input.items) {
       await this.db
         .update(proxyHosts)

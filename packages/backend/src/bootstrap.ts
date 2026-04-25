@@ -11,7 +11,6 @@ import { HousekeepingJob } from '@/jobs/housekeeping.job.js';
 import { NotificationRetryJob } from '@/jobs/notification-retry.job.js';
 import { UpdateCheckJob } from '@/jobs/update-check.job.js';
 import { logger } from '@/lib/logger.js';
-import { LICENSE_HEARTBEAT_INTERVAL_MS } from '@/modules/license/license.types.js';
 import { AccessListService } from '@/modules/access-lists/access-list.service.js';
 import { AIService } from '@/modules/ai/ai.service.js';
 import { AISettingsService } from '@/modules/ai/ai.settings.service.js';
@@ -19,20 +18,21 @@ import { AlertService } from '@/modules/audit/alert.service.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
 import { AuthService } from '@/modules/auth/auth.service.js';
 import { AuthSettingsService } from '@/modules/auth/auth.settings.service.js';
+import { DatabaseMonitoringService } from '@/modules/databases/database-monitoring.service.js';
+import { DatabaseConnectionService } from '@/modules/databases/databases.service.js';
 import { DockerManagementService } from '@/modules/docker/docker.service.js';
-import { DockerFolderService } from '@/modules/docker/docker-folder.service.js';
 import { DockerEnvironmentService } from '@/modules/docker/docker-environment.service.js';
+import { DockerFolderService } from '@/modules/docker/docker-folder.service.js';
 import { DockerRegistryService } from '@/modules/docker/docker-registry.service.js';
 import { DockerRuntimeSettingsService } from '@/modules/docker/docker-runtime-settings.service.js';
 import { DockerSecretService } from '@/modules/docker/docker-secret.service.js';
 import { DockerTaskService } from '@/modules/docker/docker-task.service.js';
 import { DockerWebhookService } from '@/modules/docker/docker-webhook.service.js';
-import { DatabaseMonitoringService } from '@/modules/databases/database-monitoring.service.js';
-import { DatabaseConnectionService } from '@/modules/databases/databases.service.js';
 import { detectPublicIP, initDnsResolver } from '@/modules/domains/dns.utils.js';
 import { DomainsService } from '@/modules/domains/domain.service.js';
 import { GroupService } from '@/modules/groups/group.service.js';
 import { LicenseService } from '@/modules/license/license.service.js';
+import { LICENSE_HEARTBEAT_INTERVAL_MS } from '@/modules/license/license.types.js';
 import { MonitoringService } from '@/modules/monitoring/monitoring.service.js';
 import { NginxConfigService } from '@/modules/monitoring/nginx-config.service.js';
 import { NginxStatsService } from '@/modules/monitoring/nginx-stats.service.js';
@@ -55,6 +55,8 @@ import { ProxyService } from '@/modules/proxy/proxy.service.js';
 import { SetupService } from '@/modules/setup/setup.service.js';
 import { ACMEService } from '@/modules/ssl/acme.service.js';
 import { SSLService } from '@/modules/ssl/ssl.service.js';
+import { StatusIncidentEvaluatorService } from '@/modules/status-page/status-incident-evaluator.service.js';
+import { StatusPageService } from '@/modules/status-page/status-page.service.js';
 import { TokensService } from '@/modules/tokens/tokens.service.js';
 import { CacheService, createRedisClient } from '@/services/cache.service.js';
 import { ConfigValidatorService } from '@/services/config-validator.service.js';
@@ -280,6 +282,10 @@ export async function initializeContainer(): Promise<void> {
   proxyService.setEventBus(eventBus);
   container.registerInstance(ProxyService, proxyService);
 
+  const statusPageService = new StatusPageService(db, proxyService, auditService);
+  statusPageService.setEventBus(eventBus);
+  container.registerInstance(StatusPageService, statusPageService);
+
   const acmeService = new ACMEService(env.ACME_EMAIL, env.ACME_STAGING);
   // Wire ACME HTTP-01 challenge callbacks to deploy/remove via daemon.
   // Looks up which node(s) serve the requested domains, falling back to default node.
@@ -485,6 +491,10 @@ export async function initializeContainer(): Promise<void> {
   // Stale node detection (every 60 seconds) + missed health report detection (every 30 seconds)
   scheduler.registerInterval('stale-node-check', 60000, () => nodeRegistry.markStaleNodesOffline());
   scheduler.registerInterval('node-health-record', 30000, () => nodeRegistry.recordHealthChecks());
+
+  const statusIncidentEvaluator = new StatusIncidentEvaluatorService(db, statusPageService);
+  container.registerInstance(StatusIncidentEvaluatorService, statusIncidentEvaluator);
+  scheduler.registerInterval('status-page-incidents', 30000, () => statusIncidentEvaluator.run());
 
   // Notification webhook retry job (every 30 seconds)
   const notifRetryJob = new NotificationRetryJob(notifDeliveryService, notifDispatcherService);

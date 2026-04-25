@@ -1,0 +1,69 @@
+import { z } from 'zod';
+
+const domainNameRegex = /^([a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/;
+
+export const StatusPageSettingsSchema = z.object({
+  enabled: z.boolean().optional(),
+  title: z.string().min(1).max(120).optional(),
+  description: z.string().max(500).optional(),
+  domain: z.string().trim().toLowerCase().regex(domainNameRegex, 'Invalid domain name').optional().or(z.literal('')),
+  nodeId: z.string().uuid().optional().nullable(),
+  sslCertificateId: z.string().uuid().optional().nullable(),
+  publicIncidentLimit: z.number().int().min(1).max(100).optional(),
+  recentIncidentDays: z.number().int().min(1).max(365).optional(),
+  autoDegradedEnabled: z.boolean().optional(),
+  autoOutageEnabled: z.boolean().optional(),
+  autoDegradedSeverity: z.enum(['info', 'warning', 'critical']).optional(),
+  autoOutageSeverity: z.enum(['info', 'warning', 'critical']).optional(),
+});
+
+export const CreateStatusPageServiceSchema = z.object({
+  sourceType: z.enum(['node', 'proxy_host', 'database']),
+  sourceId: z.string().uuid(),
+  publicName: z.string().min(1).max(255),
+  publicDescription: z.string().max(1000).optional().nullable(),
+  publicGroup: z.string().max(255).optional().nullable(),
+  sortOrder: z.number().int().min(0).max(100000).optional(),
+  enabled: z.boolean().optional(),
+  createThresholdSeconds: z.number().int().min(30).max(86400).optional(),
+  resolveThresholdSeconds: z.number().int().min(30).max(86400).optional(),
+});
+
+export const UpdateStatusPageServiceSchema = CreateStatusPageServiceSchema.partial().omit({
+  sourceType: true,
+  sourceId: true,
+});
+
+export const CreateStatusPageIncidentSchema = z.object({
+  title: z.string().min(1).max(255),
+  message: z.string().min(1).max(5000),
+  severity: z.enum(['info', 'warning', 'critical']).default('warning'),
+  affectedServiceIds: z.array(z.string().uuid()).default([]),
+  startedAt: z.string().datetime().optional(),
+});
+
+export const UpdateStatusPageIncidentSchema = z.object({
+  title: z.string().min(1).max(255).optional(),
+  message: z.string().min(1).max(5000).optional(),
+  severity: z.enum(['info', 'warning', 'critical']).optional(),
+  affectedServiceIds: z.array(z.string().uuid()).optional(),
+  status: z.enum(['active', 'resolved']).optional(),
+  autoManaged: z.boolean().optional(),
+});
+
+export const CreateStatusPageIncidentUpdateSchema = z.object({
+  message: z.string().min(1).max(5000),
+  status: z.enum(['update', 'investigating', 'identified', 'monitoring', 'resolved']).default('update'),
+});
+
+export const IncidentListQuerySchema = z.object({
+  status: z.enum(['active', 'resolved', 'all']).optional().default('all'),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+});
+
+export type StatusPageSettingsInput = z.infer<typeof StatusPageSettingsSchema>;
+export type CreateStatusPageServiceInput = z.infer<typeof CreateStatusPageServiceSchema>;
+export type UpdateStatusPageServiceInput = z.infer<typeof UpdateStatusPageServiceSchema>;
+export type CreateStatusPageIncidentInput = z.infer<typeof CreateStatusPageIncidentSchema>;
+export type UpdateStatusPageIncidentInput = z.infer<typeof UpdateStatusPageIncidentSchema>;
+export type CreateStatusPageIncidentUpdateInput = z.infer<typeof CreateStatusPageIncidentUpdateSchema>;

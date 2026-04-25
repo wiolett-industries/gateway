@@ -1,0 +1,388 @@
+import { describe, expect, it, vi } from 'vitest';
+import {
+  databaseConnections,
+  nodes,
+  proxyHosts,
+  settings,
+  statusPageIncidents,
+  statusPageServices,
+} from '@/db/schema/index.js';
+import { AppError } from '@/middleware/error-handler.js';
+import { StatusPageService } from './status-page.service.js';
+
+const USER_ID = '11111111-1111-4111-8111-111111111111';
+
+function createService(db: any, proxyService: any = {}) {
+  return new StatusPageService(
+    db,
+    {
+      upsertStatusPageSystemHost: vi.fn().mockResolvedValue({ id: 'proxy-status' }),
+      disableStatusPageSystemHost: vi.fn().mockResolvedValue(null),
+      ...proxyService,
+    },
+    { log: vi.fn().mockResolvedValue(undefined) } as any
+  );
+}
+
+function dbForSettings(node: any, cert: any = null) {
+  return {
+    query: {
+      settings: { findFirst: vi.fn().mockResolvedValue(null) },
+      nodes: { findFirst: vi.fn().mockResolvedValue(node) },
+      sslCertificates: { findFirst: vi.fn().mockResolvedValue(cert) },
+    },
+    insert: (table: unknown) => ({
+      values: (value: unknown) => ({
+        onConflictDoUpdate: vi.fn().mockImplementation(async () => {
+          expect(table).toBe(settings);
+          return value;
+        }),
+      }),
+    }),
+  };
+}
+
+describe('StatusPageService settings validation', () => {
+  it('rejects enabling without an online nginx node', async () => {
+    const service = createService(dbForSettings(null));
+
+    await expect(
+      service.updateSettings(
+        {
+          enabled: true,
+          domain: 'status.example.com',
+          nodeId: '22222222-2222-4222-8222-222222222222',
+        },
+        USER_ID
+      )
+    ).rejects.toBeInstanceOf(AppError);
+  });
+
+  it('rejects an active certificate that does not cover the status domain', async () => {
+    const service = createService(
+      dbForSettings(
+        {
+          id: '22222222-2222-4222-8222-222222222222',
+          type: 'nginx',
+          status: 'online',
+        },
+        {
+          id: '33333333-3333-4333-8333-333333333333',
+          status: 'active',
+          domainNames: ['other.example.com'],
+        }
+      )
+    );
+
+    await expect(
+      service.updateSettings(
+        {
+          enabled: true,
+          domain: 'status.example.com',
+          nodeId: '22222222-2222-4222-8222-222222222222',
+          sslCertificateId: '33333333-3333-4333-8333-333333333333',
+        },
+        USER_ID
+      )
+    ).rejects.toBeInstanceOf(AppError);
+  });
+
+  it('creates the system proxy host when the enabled config is valid', async () => {
+    const proxyService = { upsertStatusPageSystemHost: vi.fn().mockResolvedValue({ id: 'proxy-status' }) };
+    const service = createService(
+      dbForSettings(
+        {
+          id: '22222222-2222-4222-8222-222222222222',
+          type: 'nginx',
+          status: 'online',
+        },
+        {
+          id: '33333333-3333-4333-8333-333333333333',
+          status: 'active',
+          domainNames: ['*.example.com'],
+        }
+      ),
+      proxyService
+    );
+
+    const config = await service.updateSettings(
+      {
+        enabled: true,
+        domain: 'status.example.com',
+        nodeId: '22222222-2222-4222-8222-222222222222',
+        sslCertificateId: '33333333-3333-4333-8333-333333333333',
+      },
+      USER_ID
+    );
+
+    expect(proxyService.upsertStatusPageSystemHost).toHaveBeenCalledWith(
+      {
+        domain: 'status.example.com',
+        nodeId: '22222222-2222-4222-8222-222222222222',
+        sslCertificateId: '33333333-3333-4333-8333-333333333333',
+      },
+      USER_ID
+    );
+    expect(config.proxyHostId).toBe('proxy-status');
+  });
+});
+
+describe('StatusPageService safe DTO', () => {
+  it('does not expose source identifiers or internal upstream fields', async () => {
+    const historyTs = new Date().toISOString();
+    const serviceRows = [
+      {
+        id: '44444444-4444-4444-8444-444444444444',
+        sourceType: 'proxy_host',
+        sourceId: '55555555-5555-4555-8555-555555555555',
+        publicName: 'Website',
+        publicDescription: 'Public website',
+        publicGroup: 'Edge',
+        sortOrder: 0,
+        enabled: true,
+      },
+    ];
+    const proxyRows = [
+      {
+        id: '55555555-5555-4555-8555-555555555555',
+        isSystem: false,
+        domainNames: ['internal.example.test'],
+        forwardHost: '10.0.0.2',
+        forwardPort: 8080,
+        healthStatus: 'online',
+        healthHistory: [{ ts: historyTs, status: 'online', responseMs: 12, slow: true }],
+      },
+    ];
+    const db = {
+      query: {
+        settings: {
+          findFirst: vi.fn().mockResolvedValue({
+            value: { enabled: true, title: 'Status', description: '', domain: 'status.example.com' },
+          }),
+        },
+        statusPageServices: { findMany: vi.fn().mockResolvedValue(serviceRows) },
+        statusPageIncidents: { findMany: vi.fn().mockResolvedValue([]) },
+        statusPageIncidentUpdates: { findMany: vi.fn().mockResolvedValue([]) },
+      },
+      select: () => ({
+        from: (table: unknown) => ({
+          where: async () => {
+            if (table === nodes) return [];
+            if (table === proxyHosts) return proxyRows;
+            if (table === databaseConnections) return [];
+            if (table === statusPageServices) return serviceRows;
+            return [];
+          },
+        }),
+      }),
+    };
+
+    const dto = await createService(db).getPublicDto();
+    const serialized = JSON.stringify(dto);
+
+    expect(dto?.services[0]).toMatchObject({
+      id: '44444444-4444-4444-8444-444444444444',
+      name: 'Website',
+      status: 'operational',
+      healthHistory: [{ ts: historyTs, status: 'operational', slow: true }],
+    });
+    expect(serialized).not.toContain('55555555-5555-4555-8555-555555555555');
+    expect(serialized).not.toContain('10.0.0.2');
+    expect(serialized).not.toContain('8080');
+    expect(serialized).not.toContain('internal.example.test');
+  });
+
+  it('uses recent node health history for node-backed service status', async () => {
+    const historyTs = new Date().toISOString();
+    const serviceRows = [
+      {
+        id: '44444444-4444-4444-8444-444444444444',
+        sourceType: 'node',
+        sourceId: '22222222-2222-4222-8222-222222222222',
+        publicName: 'Nginx',
+        publicDescription: null,
+        publicGroup: null,
+        sortOrder: 0,
+        enabled: true,
+      },
+    ];
+    const nodeRows = [
+      {
+        id: '22222222-2222-4222-8222-222222222222',
+        displayName: 'nginx',
+        hostname: 'daemon-nginx',
+        status: 'online',
+        healthHistory: [{ ts: historyTs, status: 'degraded' }],
+      },
+    ];
+    const db = {
+      query: {
+        settings: {
+          findFirst: vi.fn().mockResolvedValue({
+            value: { enabled: true, title: 'Status', description: '', domain: 'status.example.com' },
+          }),
+        },
+        statusPageServices: { findMany: vi.fn().mockResolvedValue(serviceRows) },
+        statusPageIncidents: { findMany: vi.fn().mockResolvedValue([]) },
+        statusPageIncidentUpdates: { findMany: vi.fn().mockResolvedValue([]) },
+      },
+      select: () => ({
+        from: (table: unknown) => ({
+          where: async () => {
+            if (table === nodes) return nodeRows;
+            if (table === proxyHosts) return [];
+            if (table === databaseConnections) return [];
+            if (table === statusPageServices) return serviceRows;
+            return [];
+          },
+        }),
+      }),
+    };
+
+    const dto = await createService(db).getPublicDto();
+
+    expect(dto?.services[0]).toMatchObject({
+      name: 'Nginx',
+      status: 'degraded',
+      healthHistory: [{ ts: historyTs, status: 'degraded' }],
+    });
+  });
+
+  it('does not expose incidents that only affect hidden services', async () => {
+    const publicServiceId = '44444444-4444-4444-8444-444444444444';
+    const hiddenServiceId = '99999999-9999-4999-8999-999999999999';
+    const serviceRows = [
+      {
+        id: publicServiceId,
+        sourceType: 'proxy_host',
+        sourceId: '55555555-5555-4555-8555-555555555555',
+        publicName: 'Website',
+        publicDescription: null,
+        publicGroup: null,
+        sortOrder: 0,
+        enabled: true,
+      },
+    ];
+    const proxyRows = [
+      {
+        id: '55555555-5555-4555-8555-555555555555',
+        isSystem: false,
+        domainNames: ['internal.example.test'],
+        healthStatus: 'online',
+        healthHistory: [],
+      },
+    ];
+    const incidentRows = [
+      {
+        id: '66666666-6666-4666-8666-666666666666',
+        title: 'Hidden database outage',
+        message: 'This should not be public',
+        severity: 'critical',
+        status: 'active',
+        type: 'manual',
+        affectedServiceIds: [hiddenServiceId],
+        startedAt: new Date(),
+        resolvedAt: null,
+      },
+      {
+        id: '77777777-7777-4777-8777-777777777777',
+        title: 'Public website issue',
+        message: 'This should be public',
+        severity: 'warning',
+        status: 'active',
+        type: 'manual',
+        affectedServiceIds: [publicServiceId, hiddenServiceId],
+        startedAt: new Date(),
+        resolvedAt: null,
+      },
+      {
+        id: '88888888-8888-4888-8888-888888888888',
+        title: 'General maintenance',
+        message: 'Global incident',
+        severity: 'info',
+        status: 'active',
+        type: 'manual',
+        affectedServiceIds: [],
+        startedAt: new Date(),
+        resolvedAt: null,
+      },
+    ];
+    const db = {
+      query: {
+        settings: {
+          findFirst: vi.fn().mockResolvedValue({
+            value: { enabled: true, title: 'Status', description: '', domain: 'status.example.com' },
+          }),
+        },
+        statusPageServices: { findMany: vi.fn().mockResolvedValue(serviceRows) },
+        statusPageIncidents: { findMany: vi.fn().mockResolvedValue(incidentRows) },
+        statusPageIncidentUpdates: { findMany: vi.fn().mockResolvedValue([]) },
+      },
+      select: () => ({
+        from: (table: unknown) => ({
+          where: async () => {
+            if (table === nodes) return [];
+            if (table === proxyHosts) return proxyRows;
+            if (table === databaseConnections) return [];
+            if (table === statusPageServices) return serviceRows;
+            return [];
+          },
+        }),
+      }),
+    };
+
+    const dto = await createService(db).getPublicDto();
+
+    expect(dto?.incidents.map((incident) => incident.title)).toEqual([
+      'Public website issue',
+      'General maintenance',
+    ]);
+    expect(dto?.incidents[0].affectedServiceIds).toEqual([publicServiceId]);
+    expect(JSON.stringify(dto)).not.toContain(hiddenServiceId);
+    expect(JSON.stringify(dto)).not.toContain('This should not be public');
+  });
+});
+
+describe('StatusPageService incident deletion', () => {
+  it('rejects deleting active incidents', async () => {
+    const service = createService({
+      query: {
+        statusPageIncidents: {
+          findFirst: vi.fn().mockResolvedValue({
+            id: '66666666-6666-4666-8666-666666666666',
+            status: 'active',
+            severity: 'critical',
+            type: 'manual',
+          }),
+        },
+      },
+    });
+
+    await expect(
+      service.deleteIncident('66666666-6666-4666-8666-666666666666', USER_ID)
+    ).rejects.toBeInstanceOf(AppError);
+  });
+
+  it('deletes resolved incidents', async () => {
+    const where = vi.fn().mockResolvedValue(undefined);
+    const deleteMock = vi.fn().mockReturnValue({ where });
+    const service = createService({
+      query: {
+        statusPageIncidents: {
+          findFirst: vi.fn().mockResolvedValue({
+            id: '77777777-7777-4777-8777-777777777777',
+            status: 'resolved',
+            severity: 'info',
+            type: 'automatic',
+          }),
+        },
+      },
+      delete: deleteMock,
+    });
+
+    await service.deleteIncident('77777777-7777-4777-8777-777777777777', USER_ID);
+
+    expect(deleteMock).toHaveBeenCalledWith(statusPageIncidents);
+    expect(where).toHaveBeenCalledOnce();
+  });
+});

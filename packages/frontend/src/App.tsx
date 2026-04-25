@@ -34,6 +34,7 @@ import { ProxyHostDetail } from "@/pages/ProxyHostDetail";
 import { ProxyHosts } from "@/pages/ProxyHosts";
 import { Settings } from "@/pages/Settings";
 import { SSLCertificates } from "@/pages/SSLCertificates";
+import { StatusPage } from "@/pages/StatusPage";
 import { TemplatesPage } from "@/pages/TemplatesPage";
 import { api } from "@/services/api";
 import { ApiRequestError } from "@/services/api-base";
@@ -470,6 +471,7 @@ export default function App() {
                 element={scoped("admin:audit", <Navigate to="/administration/audit" replace />)}
               />
               <Route path="/notifications/:tab?" element={<NotificationsPageGuard />} />
+              <Route path="/status-page/:tab?" element={scoped("status-page:view", <StatusPage />)} />
               <Route path="/databases" element={<DatabasesPageGuard />} />
               <Route path="/databases/:id/:tab?" element={<DatabaseDetailGuard />} />
               <Route path="/settings" element={<Settings />} />

@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowUpCircle,
   Award,
+  Activity,
   Bell,
   Box,
   Database,
@@ -38,6 +39,7 @@ import { ResizeHandle } from "@/components/ui/resize-handle";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useRealtime } from "@/hooks/use-realtime";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
@@ -68,6 +70,7 @@ interface NavItem {
   icon: React.ElementType;
   scope?: string;
   matchTabs?: boolean;
+  requiresStatusPageEnabled?: boolean;
 }
 
 interface NavGroup {
@@ -126,6 +129,14 @@ const navigationGroups: NavGroup[] = [
         scope: "notifications:view",
         matchTabs: true,
       },
+      {
+        name: "Status Page",
+        href: "/status-page",
+        icon: Activity,
+        scope: "status-page:view",
+        matchTabs: true,
+        requiresStatusPageEnabled: true,
+      },
       { name: "Administration", href: "/administration", icon: Users, matchTabs: true },
       { name: "Settings", href: "/settings", icon: Settings },
     ],
@@ -163,6 +174,7 @@ export function SidebarContent({
   const sidebarPinnedIds = usePinnedNodesStore((s) => s.sidebarNodeIds);
   const pinnedRefreshTick = usePinnedNodesStore((s) => s.refreshTick);
   const [pinnedNodes, setPinnedNodes] = useState<Node[]>([]);
+  const [statusPageEnabled, setStatusPageEnabled] = useState(false);
 
   const sidebarPinnedProxyIds = usePinnedProxiesStore((s) => s.sidebarProxyIds);
   const pinnedProxyRefreshTick = usePinnedProxiesStore((s) => s.refreshTick);
@@ -191,6 +203,25 @@ export function SidebarContent({
       hasScope("databases:view") || hasScope(`databases:view:${databaseId}`),
     [hasScope]
   );
+
+  const refetchStatusPageEnabled = useCallback(() => {
+    if (!hasScope("status-page:view")) {
+      setStatusPageEnabled(false);
+      return;
+    }
+    api
+      .getStatusPageSettings()
+      .then((settings) => setStatusPageEnabled(settings.enabled))
+      .catch(() => setStatusPageEnabled(false));
+  }, [hasScope]);
+
+  useEffect(() => {
+    refetchStatusPageEnabled();
+  }, [refetchStatusPageEnabled]);
+
+  useRealtime("status-page.changed", () => {
+    refetchStatusPageEnabled();
+  });
 
   const refetchPinnedNodes = useCallback(() => {
     if (sidebarPinnedIds.length === 0) return;
@@ -341,6 +372,8 @@ export function SidebarContent({
             if (!canAccessAuthorities) return false;
           } else if (item.href === "/notifications") {
             if (!canAccessNotifications) return false;
+          } else if (item.requiresStatusPageEnabled && !statusPageEnabled) {
+            return false;
           } else if (item.href === "/administration") {
             if (!hasAnyScope("admin:audit", "admin:users", "admin:groups")) return false;
           } else if (item.scope) {
@@ -428,7 +461,9 @@ export function SidebarContent({
                     size="icon"
                     className={cn(
                       "h-8 w-8",
-                      location.pathname === item.href && "bg-sidebar-accent"
+                      (location.pathname === item.href ||
+                        (item.matchTabs && location.pathname.startsWith(`${item.href}/`))) &&
+                        "bg-sidebar-accent"
                     )}
                     onClick={() => navigate(item.href)}
                   >

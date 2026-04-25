@@ -17,8 +17,8 @@ import type {
   CreateProxyHostRequest,
   CreateRootCARequest,
   DaemonUpdateStatus,
-  DatabaseConnection,
   DashboardStats,
+  DatabaseConnection,
   DnsStatus,
   DockerContainer,
   DockerContainerFolder,
@@ -48,16 +48,23 @@ import type {
   NginxTemplate,
   PaginatedResponse,
   PermissionGroup,
+  PostgresTableMetadata,
   ProxyHost,
   ProxyHostFolder,
   ProxyHostType,
-  PostgresTableMetadata,
-  RequestACMECertRequest,
+  PublicStatusPageDto,
   RedisKeyRecord,
+  RequestACMECertRequest,
   SSLCertificate,
   SSLCertificateOperationResult,
   SSLCertStatus,
   SSLCertType,
+  StatusPageConfig,
+  StatusPageIncident,
+  StatusPageIncidentUpdate,
+  StatusPageIncidentUpdateStatus,
+  StatusPageServiceItem,
+  StatusPageSourceType,
   Template,
   TemplateVariableDef,
   UpdateDomainRequest,
@@ -687,6 +694,146 @@ class ApiClient extends ApiClientBase {
     );
   }
 
+  // ── Status Page ─────────────────────────────────────────────────
+
+  async getStatusPageSettings(): Promise<StatusPageConfig> {
+    return this.unwrapData(this.request<{ data: StatusPageConfig }>("/status-page/settings"));
+  }
+
+  async updateStatusPageSettings(data: Partial<StatusPageConfig>): Promise<StatusPageConfig> {
+    return this.unwrapData(
+      this.request<{ data: StatusPageConfig }>("/status-page/settings", {
+        method: "PUT",
+        body: JSON.stringify(data),
+      })
+    );
+  }
+
+  async listStatusPageServices(): Promise<StatusPageServiceItem[]> {
+    return this.unwrapData(
+      this.request<{ data: StatusPageServiceItem[] }>("/status-page/services")
+    );
+  }
+
+  async createStatusPageService(data: {
+    sourceType: StatusPageSourceType;
+    sourceId: string;
+    publicName: string;
+    publicDescription?: string | null;
+    publicGroup?: string | null;
+    sortOrder?: number;
+    enabled?: boolean;
+    createThresholdSeconds?: number;
+    resolveThresholdSeconds?: number;
+  }): Promise<StatusPageServiceItem> {
+    return this.unwrapData(
+      this.request<{ data: StatusPageServiceItem }>("/status-page/services", {
+        method: "POST",
+        body: JSON.stringify(data),
+      })
+    );
+  }
+
+  async updateStatusPageService(
+    id: string,
+    data: Partial<Omit<StatusPageServiceItem, "id" | "sourceType" | "sourceId">>
+  ): Promise<StatusPageServiceItem> {
+    return this.unwrapData(
+      this.request<{ data: StatusPageServiceItem }>(`/status-page/services/${id}`, {
+        method: "PUT",
+        body: JSON.stringify(data),
+      })
+    );
+  }
+
+  async deleteStatusPageService(id: string): Promise<void> {
+    await this.request<void>(`/status-page/services/${id}`, { method: "DELETE" });
+  }
+
+  async listStatusPageIncidents(params?: {
+    status?: "active" | "resolved" | "all";
+    limit?: number;
+  }): Promise<StatusPageIncident[]> {
+    const searchParams = new URLSearchParams();
+    if (params?.status) searchParams.set("status", params.status);
+    if (params?.limit) searchParams.set("limit", String(params.limit));
+    const query = searchParams.toString();
+    return this.unwrapData(
+      this.request<{ data: StatusPageIncident[] }>(
+        `/status-page/incidents${query ? `?${query}` : ""}`
+      )
+    );
+  }
+
+  async createStatusPageIncident(data: {
+    title: string;
+    message: string;
+    severity: "info" | "warning" | "critical";
+    affectedServiceIds: string[];
+  }): Promise<StatusPageIncident> {
+    return this.unwrapData(
+      this.request<{ data: StatusPageIncident }>("/status-page/incidents", {
+        method: "POST",
+        body: JSON.stringify(data),
+      })
+    );
+  }
+
+  async updateStatusPageIncident(
+    id: string,
+    data: Partial<
+      Pick<
+        StatusPageIncident,
+        "title" | "message" | "severity" | "affectedServiceIds" | "status" | "autoManaged"
+      >
+    >
+  ): Promise<StatusPageIncident> {
+    return this.unwrapData(
+      this.request<{ data: StatusPageIncident }>(`/status-page/incidents/${id}`, {
+        method: "PUT",
+        body: JSON.stringify(data),
+      })
+    );
+  }
+
+  async deleteStatusPageIncident(id: string): Promise<void> {
+    await this.request<void>(`/status-page/incidents/${id}`, { method: "DELETE" });
+  }
+
+  async resolveStatusPageIncident(id: string): Promise<StatusPageIncident> {
+    return this.unwrapData(
+      this.request<{ data: StatusPageIncident }>(`/status-page/incidents/${id}/resolve`, {
+        method: "POST",
+      })
+    );
+  }
+
+  async promoteStatusPageIncident(id: string): Promise<StatusPageIncident> {
+    return this.unwrapData(
+      this.request<{ data: StatusPageIncident }>(`/status-page/incidents/${id}/promote`, {
+        method: "POST",
+      })
+    );
+  }
+
+  async createStatusPageIncidentUpdate(
+    id: string,
+    data: { message: string; status?: StatusPageIncidentUpdateStatus }
+  ): Promise<StatusPageIncidentUpdate> {
+    const update = await this.unwrapData(
+      this.request<{ data: StatusPageIncidentUpdate }>(`/status-page/incidents/${id}/updates`, {
+        method: "POST",
+        body: JSON.stringify(data),
+      })
+    );
+    this.invalidateCache("req:/api/status-page/incidents");
+    return update;
+  }
+
+  async getStatusPagePreview(): Promise<PublicStatusPageDto> {
+    return this.unwrapData(this.request<{ data: PublicStatusPageDto }>("/status-page/preview"));
+  }
+
   async createFolder(data: { name: string; parentId?: string }): Promise<ProxyHostFolder> {
     return this.unwrapData(
       this.request<{ data: ProxyHostFolder }>("/proxy-host-folders", {
@@ -745,7 +892,10 @@ class ApiClient extends ApiClientBase {
     return this.unwrapData(this.request<{ data: DockerFolderTreeNode[] }>("/docker/folders"));
   }
 
-  async createDockerFolder(data: { name: string; parentId?: string }): Promise<DockerContainerFolder> {
+  async createDockerFolder(data: {
+    name: string;
+    parentId?: string;
+  }): Promise<DockerContainerFolder> {
     return this.unwrapData(
       this.request<{ data: DockerContainerFolder }>("/docker/folders", {
         method: "POST",
@@ -902,17 +1052,12 @@ class ApiClient extends ApiClientBase {
     return this.unwrapData(this.request<{ data: SSLCertificate }>(`/ssl-certificates/${id}`));
   }
 
-  async requestACMECert(
-    data: RequestACMECertRequest
-  ): Promise<SSLCertificateOperationResult> {
+  async requestACMECert(data: RequestACMECertRequest): Promise<SSLCertificateOperationResult> {
     return this.unwrapData(
-      this.request<{ data: SSLCertificateOperationResult }>(
-        "/ssl-certificates/acme",
-        {
-          method: "POST",
-          body: JSON.stringify(data),
-        }
-      )
+      this.request<{ data: SSLCertificateOperationResult }>("/ssl-certificates/acme", {
+        method: "POST",
+        body: JSON.stringify(data),
+      })
     );
   }
 
@@ -1172,7 +1317,9 @@ class ApiClient extends ApiClientBase {
   ): Promise<PostgresTableMetadata> {
     const query = new URLSearchParams({ schema, table }).toString();
     return this.unwrapData(
-      this.request<{ data: PostgresTableMetadata }>(`/databases/${id}/postgres/table-metadata?${query}`)
+      this.request<{ data: PostgresTableMetadata }>(
+        `/databases/${id}/postgres/table-metadata?${query}`
+      )
     );
   }
 
@@ -1310,7 +1457,10 @@ class ApiClient extends ApiClientBase {
     );
   }
 
-  async setRedisKey(id: string, data: Record<string, unknown>): Promise<{
+  async setRedisKey(
+    id: string,
+    data: Record<string, unknown>
+  ): Promise<{
     key: string;
     type: string;
     ttlSeconds: number;

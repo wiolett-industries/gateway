@@ -14,6 +14,7 @@ import { AuthProvisioningSection } from "./settings/AuthProvisioningSection";
 import { DockerRegistriesSection } from "./settings/DockerRegistriesSection";
 import { HousekeepingSection } from "./settings/HousekeepingSection";
 import { LicenseSection } from "./settings/LicenseSection";
+import { StatusPageSection } from "./settings/StatusPageSection";
 import { UpdateSection } from "./settings/UpdateSection";
 
 export function Settings() {
@@ -39,6 +40,7 @@ export function Settings() {
   const canViewSystemCertificates = hasScope("admin:details:certificates");
   const canViewLicense = hasScope("license:view");
   const canManageLicense = hasScope("license:manage");
+  const canViewStatusPage = hasScope("status-page:view");
 
   useEffect(() => {
     api
@@ -196,6 +198,9 @@ export function Settings() {
         {/* Docker Registries */}
         {canManageRegistries && <DockerRegistriesSection nodesList={nodesList} />}
 
+        {/* Status Page */}
+        {canViewStatusPage && <StatusPageSection nodesList={nodesList} />}
+
         {/* Housekeeping */}
         {canHousekeep && <HousekeepingSection />}
 
@@ -215,7 +220,7 @@ export function Settings() {
             rel="noopener noreferrer"
             className="text-foreground hover:underline"
           >
-            Wiolett
+            Wiolett Industries
           </a>
         </p>
       </div>
