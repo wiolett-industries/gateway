@@ -5,6 +5,43 @@ const logger = createChildLogger('GrpcAuth');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+function getPeerCertificateSocket(call: unknown): {
+  authorized?: boolean;
+  authorizationError?: unknown;
+  getPeerCertificate: (detailed?: boolean) => unknown;
+} | null {
+  const seen = new Set<unknown>();
+  const keys = ['handler', 'http2Stream', 'call', 'nextCall', 'stream', 'session', 'socket'];
+
+  function visit(value: unknown, depth: number): ReturnType<typeof getPeerCertificateSocket> {
+    if (!value || typeof value !== 'object' || seen.has(value) || depth < 0) {
+      return null;
+    }
+    seen.add(value);
+
+    const candidate = value as {
+      getPeerCertificate?: unknown;
+      authorized?: boolean;
+      authorizationError?: unknown;
+    };
+    if (typeof candidate.getPeerCertificate === 'function') {
+      return candidate as {
+        authorized?: boolean;
+        authorizationError?: unknown;
+        getPeerCertificate: (detailed?: boolean) => unknown;
+      };
+    }
+
+    for (const key of keys) {
+      const found = visit((value as Record<string, unknown>)[key], depth - 1);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  return visit(call, 8);
+}
+
 /**
  * Extract the authenticated node ID from a gRPC call's mTLS client certificate.
  *
@@ -21,28 +58,30 @@ export function extractNodeIdFromCert(
   call: ServerDuplexStream<unknown, unknown> | ServerUnaryCall<unknown, unknown>
 ): string | null {
   try {
-    // @grpc/grpc-js exposes the TLS socket via internal handler chain.
-    // The peer certificate is accessible through the HTTP/2 session's socket.
-    const handler = (call as any).handler;
-    const stream = handler?.http2Stream ?? (call as any).call?.stream;
-    const session = stream?.session;
-    const socket = session?.socket;
+    // grpc-js exposes the peer certificate via getAuthContext(), but the TLS
+    // authorization flag only lives on the underlying socket. Walk the known
+    // call chain shapes because unary and bidi stream objects differ.
+    const socket = getPeerCertificateSocket(call);
+    const authContext =
+      typeof (call as { getAuthContext?: unknown }).getAuthContext === 'function' ? call.getAuthContext() : {};
+    const authCert = (authContext as { sslPeerCertificate?: unknown }).sslPeerCertificate;
+    const peerCert = authCert ?? socket?.getPeerCertificate(false);
 
-    if (!socket || typeof socket.getPeerCertificate !== 'function') {
-      return null;
-    }
-
-    if (socket.authorized === false) {
+    if (socket?.authorized === false) {
       logger.warn('Client cert is not authorized', { authorizationError: socket.authorizationError });
       return null;
     }
 
-    const peerCert = socket.getPeerCertificate(false);
-    if (!peerCert?.subject) {
+    if (!peerCert || typeof peerCert !== 'object') {
       return null;
     }
 
-    const cn = peerCert.subject.CN;
+    const subject = (peerCert as { subject?: { CN?: unknown } }).subject;
+    if (!subject) {
+      return null;
+    }
+
+    const cn = subject.CN;
     if (!cn || typeof cn !== 'string') {
       return null;
     }
