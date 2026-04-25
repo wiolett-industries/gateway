@@ -147,8 +147,12 @@ class ApiClient extends ApiClientBase {
   }
 
   async logout(): Promise<void> {
-    await this.request<void>("/auth/logout", { method: "POST" });
-    useAuthStore.getState().logout();
+    try {
+      await this.request<void>("/auth/logout", { method: "POST" });
+    } finally {
+      this.clearCsrfToken();
+      useAuthStore.getState().logout();
+    }
   }
 
   getLoginUrl(): string {
@@ -516,10 +520,9 @@ class ApiClient extends ApiClientBase {
   }
 
   createNodeMonitoringStream(nodeId: string): EventSource {
-    const sessionId = useAuthStore.getState().sessionId;
-    const params = new URLSearchParams();
-    if (sessionId) params.set("token", sessionId);
-    return new EventSource(`${API_BASE}/nodes/${nodeId}/monitoring/stream?${params}`);
+    return new EventSource(`${API_BASE}/nodes/${nodeId}/monitoring/stream`, {
+      withCredentials: true,
+    });
   }
 
   async getNodeNginxConfig(nodeId: string): Promise<string> {
@@ -1159,10 +1162,9 @@ class ApiClient extends ApiClientBase {
   // ── SSE (Live Logs) ────────────────────────────────────────────
 
   createLogStream(hostId: string): EventSource {
-    const sessionId = useAuthStore.getState().sessionId;
-    const params = new URLSearchParams();
-    if (sessionId) params.set("token", sessionId);
-    return new EventSource(`${API_BASE}/monitoring/logs/${hostId}/stream?${params}`);
+    return new EventSource(`${API_BASE}/monitoring/logs/${hostId}/stream`, {
+      withCredentials: true,
+    });
   }
 
   // ── Domains ────────────────────────────────────────────────────
@@ -1289,10 +1291,9 @@ class ApiClient extends ApiClientBase {
   }
 
   createDatabaseMonitoringStream(id: string): EventSource {
-    const sessionId = useAuthStore.getState().sessionId;
-    const params = new URLSearchParams();
-    if (sessionId) params.set("token", sessionId);
-    return new EventSource(`${API_BASE}/databases/${id}/monitoring/stream?${params}`);
+    return new EventSource(`${API_BASE}/databases/${id}/monitoring/stream`, {
+      withCredentials: true,
+    });
   }
 
   async listPostgresSchemas(id: string): Promise<string[]> {
@@ -1559,10 +1560,9 @@ class ApiClient extends ApiClientBase {
   }
 
   createNginxStatsStream(): EventSource {
-    const sessionId = useAuthStore.getState().sessionId;
-    const params = new URLSearchParams();
-    if (sessionId) params.set("token", sessionId);
-    return new EventSource(`${API_BASE}/monitoring/nginx/stats/stream?${params}`);
+    return new EventSource(`${API_BASE}/monitoring/nginx/stats/stream`, {
+      withCredentials: true,
+    });
   }
 
   // ── System / Updates ──────────────────────────────────────────────
@@ -2153,18 +2153,16 @@ class ApiClient extends ApiClientBase {
   // ── Docker Exec WebSocket ─────────────────────────────────────────
 
   createExecWebSocket(nodeId: string, containerId: string, shell = "/bin/sh"): WebSocket {
-    const sessionId = useAuthStore.getState().sessionId;
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const url = `${proto}//${window.location.host}/api/docker/nodes/${nodeId}/containers/${containerId}/exec?token=${sessionId}&shell=${encodeURIComponent(shell)}`;
+    const url = `${proto}//${window.location.host}/api/docker/nodes/${nodeId}/containers/${containerId}/exec?shell=${encodeURIComponent(shell)}`;
     return new WebSocket(url);
   }
 
   // ── Node Console WebSocket ─────────────────────────────────────
 
   createNodeExecWebSocket(nodeId: string, shell = "auto"): WebSocket {
-    const sessionId = useAuthStore.getState().sessionId;
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const url = `${proto}//${window.location.host}/api/nodes/${nodeId}/exec?token=${sessionId}&shell=${encodeURIComponent(shell)}`;
+    const url = `${proto}//${window.location.host}/api/nodes/${nodeId}/exec?shell=${encodeURIComponent(shell)}`;
     return new WebSocket(url);
   }
 
@@ -2222,9 +2220,8 @@ class ApiClient extends ApiClientBase {
   // ── Docker Log Stream WebSocket ─────────────────────────────────
 
   createLogStreamWebSocket(nodeId: string, containerId: string, tail = 100): WebSocket {
-    const sessionId = useAuthStore.getState().sessionId;
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const url = `${proto}//${window.location.host}/api/docker/nodes/${nodeId}/containers/${containerId}/logs/stream?token=${sessionId}&tail=${tail}`;
+    const url = `${proto}//${window.location.host}/api/docker/nodes/${nodeId}/containers/${containerId}/logs/stream?tail=${tail}`;
     return new WebSocket(url);
   }
   // ── Notification Alert Rules ──────────────────────────────────────

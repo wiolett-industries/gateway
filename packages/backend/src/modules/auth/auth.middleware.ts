@@ -1,4 +1,5 @@
-import type { MiddlewareHandler } from 'hono';
+import type { Context, MiddlewareHandler } from 'hono';
+import { getCookie } from 'hono/cookie';
 import { HTTPException } from 'hono/http-exception';
 import { container, TOKENS } from '@/container.js';
 import type { DrizzleClient } from '@/db/client.js';
@@ -8,15 +9,12 @@ import { SessionService } from '@/services/session.service.js';
 import type { AppEnv } from '@/types.js';
 
 const SESSION_COOKIE_NAME = 'session_id';
+const CSRF_HEADER_NAME = 'X-CSRF-Token';
+const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
-function extractCredential(c: {
-  req: { header: (name: string) => string | undefined; query: (name: string) => string | undefined };
-  cookie?: (name: string) => string | undefined;
-}): { type: 'session' | 'apitoken'; value: string } | null {
-  if (c.cookie) {
-    const cookieSession = c.cookie(SESSION_COOKIE_NAME);
-    if (cookieSession) return { type: 'session', value: cookieSession };
-  }
+function extractCredential(c: Context<AppEnv>): { type: 'session' | 'apitoken'; value: string } | null {
+  const cookieSession = getCookie(c, SESSION_COOKIE_NAME);
+  if (cookieSession) return { type: 'session', value: cookieSession };
 
   const authHeader = c.req.header('Authorization');
   if (authHeader?.startsWith('Bearer ')) {
@@ -24,19 +22,13 @@ function extractCredential(c: {
     if (value.startsWith('gw_')) {
       return { type: 'apitoken', value };
     }
-    return { type: 'session', value };
-  }
-
-  // Query param fallback for SSE (EventSource can't set headers)
-  const queryToken = c.req.query('token');
-  if (queryToken) {
-    if (queryToken.startsWith('gw_')) {
-      return { type: 'apitoken', value: queryToken };
-    }
-    return { type: 'session', value: queryToken };
   }
 
   return null;
+}
+
+function requiresCsrf(method: string): boolean {
+  return UNSAFE_METHODS.has(method.toUpperCase());
 }
 
 export const authMiddleware: MiddlewareHandler<AppEnv> = async (c, next) => {
@@ -60,6 +52,12 @@ export const authMiddleware: MiddlewareHandler<AppEnv> = async (c, next) => {
     const session = await sessionService.getSession(credential.value);
     if (!session) {
       throw new HTTPException(401, { message: 'Invalid or expired session' });
+    }
+    if (
+      requiresCsrf(c.req.method) &&
+      !(await sessionService.validateCsrfToken(credential.value, c.req.header(CSRF_HEADER_NAME), session))
+    ) {
+      throw new HTTPException(403, { message: 'Invalid CSRF token' });
     }
     const db = container.resolve<DrizzleClient>(TOKENS.DrizzleClient);
     const user = await resolveLiveUser(db, session.user.id);
@@ -185,4 +183,4 @@ export const sessionOnly: MiddlewareHandler<AppEnv> = async (c, next) => {
   await next();
 };
 
-export { SESSION_COOKIE_NAME };
+export { CSRF_HEADER_NAME, SESSION_COOKIE_NAME };

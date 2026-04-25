@@ -31,7 +31,7 @@ import { aiRoutes } from '@/modules/ai/ai.routes.js';
 import { authenticateWSConnection, createWSHandlers } from '@/modules/ai/ai.ws.js';
 import { alertRoutes } from '@/modules/audit/alert.routes.js';
 import { auditRoutes } from '@/modules/audit/audit.routes.js';
-import { requireActiveUser } from '@/modules/auth/auth.middleware.js';
+import { requireActiveUser, SESSION_COOKIE_NAME } from '@/modules/auth/auth.middleware.js';
 import { authRoutes } from '@/modules/auth/auth.routes.js';
 import { databaseRoutes } from '@/modules/databases/databases.routes.js';
 import { dockerRoutes } from '@/modules/docker/docker.routes.js';
@@ -64,6 +64,34 @@ import type { AppEnv } from '@/types.js';
 import { authenticateEventsConnection, createEventsWSHandlers } from '@/ws/events.ws.js';
 
 const STATUS_PREVIEW_PREFIX = '/_status-preview';
+
+function getCookieValue(cookieHeader: string | undefined, name: string): string {
+  if (!cookieHeader) return '';
+  for (const part of cookieHeader.split(';')) {
+    const [rawKey, ...rawValue] = part.trim().split('=');
+    if (rawKey === name) return rawValue.join('=');
+  }
+  return '';
+}
+
+function isAllowedWebSocketOrigin(origin: string | undefined): boolean {
+  if (!origin) return false;
+  try {
+    const requestOrigin = new URL(origin).origin;
+    const appOrigin = new URL(getEnv().APP_URL).origin;
+    if (requestOrigin === appOrigin) return true;
+    return (
+      isDevelopment() && (requestOrigin.startsWith('http://localhost') || requestOrigin.startsWith('http://127.0.0.1'))
+    );
+  } catch {
+    return false;
+  }
+}
+
+function getWebSocketSessionId(cookieHeader: string | undefined, origin: string | undefined): string {
+  if (!isAllowedWebSocketOrigin(origin)) return '';
+  return getCookieValue(cookieHeader, SESSION_COOKIE_NAME);
+}
 
 async function isStatusHostRequest(hostHeader: string | undefined): Promise<boolean> {
   try {
@@ -101,7 +129,7 @@ export function createApp() {
       },
       credentials: true,
       allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowHeaders: ['Content-Type', 'Authorization', 'X-Request-ID'],
+      allowHeaders: ['Content-Type', 'Authorization', 'X-Request-ID', 'X-CSRF-Token'],
       exposeHeaders: ['X-Request-ID'],
       maxAge: 86400,
     })
@@ -206,12 +234,12 @@ export function createApp() {
   app.get(
     '/api/ai/ws',
     upgradeWebSocket((c) => {
-      const token = c.req.query('token') || '';
+      const sessionId = getWebSocketSessionId(c.req.header('cookie'), c.req.header('origin'));
       return {
         onOpen(event, ws) {
           wsHandlers.onOpen(event, ws);
           // Authenticate after connection opens
-          authenticateWSConnection(ws, token).catch(() => {
+          authenticateWSConnection(ws, sessionId).catch(() => {
             try {
               ws.close();
             } catch {
@@ -233,8 +261,8 @@ export function createApp() {
       const nodeId = c.req.param('nodeId') ?? '';
       const containerId = c.req.param('containerId') ?? '';
       const shell = c.req.query('shell') || '/bin/sh';
-      const token = c.req.query('token') || '';
-      return createDockerExecWSHandlers(nodeId, containerId, shell, token);
+      const sessionId = getWebSocketSessionId(c.req.header('cookie'), c.req.header('origin'));
+      return createDockerExecWSHandlers(nodeId, containerId, shell, sessionId);
     })
   );
 
@@ -244,8 +272,8 @@ export function createApp() {
     upgradeWebSocket((c) => {
       const nodeId = c.req.param('nodeId') ?? '';
       const shell = c.req.query('shell') || 'auto';
-      const token = c.req.query('token') || '';
-      return createNodeExecWSHandlers(nodeId, shell, token);
+      const sessionId = getWebSocketSessionId(c.req.header('cookie'), c.req.header('origin'));
+      return createNodeExecWSHandlers(nodeId, shell, sessionId);
     })
   );
 
@@ -256,8 +284,8 @@ export function createApp() {
       const nodeId = c.req.param('nodeId') ?? '';
       const containerId = c.req.param('containerId') ?? '';
       const tail = Number(c.req.query('tail')) || 100;
-      const token = c.req.query('token') || '';
-      return createDockerLogStreamWSHandlers(nodeId, containerId, tail, token);
+      const sessionId = getWebSocketSessionId(c.req.header('cookie'), c.req.header('origin'));
+      return createDockerLogStreamWSHandlers(nodeId, containerId, tail, sessionId);
     })
   );
 
@@ -266,11 +294,11 @@ export function createApp() {
   app.get(
     '/api/events',
     upgradeWebSocket((c) => {
-      const token = c.req.query('token') || '';
+      const sessionId = getWebSocketSessionId(c.req.header('cookie'), c.req.header('origin'));
       return {
         onOpen(event, ws) {
           eventsHandlers.onOpen(event, ws);
-          authenticateEventsConnection(ws, token).catch(() => {
+          authenticateEventsConnection(ws, sessionId).catch(() => {
             try {
               ws.close();
             } catch {
@@ -291,8 +319,8 @@ export function createApp() {
     upgradeWebSocket((c) => {
       const nodeId = c.req.param('nodeId') ?? '';
       const project = decodeURIComponent(c.req.param('project') ?? '');
-      const token = c.req.query('token') || '';
-      return createComposeLogsWSHandlers(nodeId, project, token);
+      const sessionId = getWebSocketSessionId(c.req.header('cookie'), c.req.header('origin'));
+      return createComposeLogsWSHandlers(nodeId, project, sessionId);
     })
   );
 
@@ -303,7 +331,7 @@ export function createApp() {
       title: 'Gateway API',
       version: '1.0.0',
       description:
-        'Self-hosted certificate manager and reverse proxy gateway API.\n\n## Authentication\n\nThis API uses session-based authentication via OIDC. After logging in through `/auth/login`, include the session ID as a Bearer token in the Authorization header.\n\nAlternatively, use API tokens for programmatic access.\n\n## Public PKI Endpoints\n\nCRL and OCSP endpoints under `/pki/` are unauthenticated and publicly accessible.',
+        'Self-hosted certificate manager and reverse proxy gateway API.\n\n## Authentication\n\nBrowser sessions authenticate through the HttpOnly `session_id` cookie set by OIDC login. Cookie-authenticated mutating requests must include `X-CSRF-Token` from `/auth/csrf`.\n\nAPI tokens use `Authorization: Bearer gw_...` for programmatic access.\n\n## Public PKI Endpoints\n\nCRL and OCSP endpoints under `/pki/` are unauthenticated and publicly accessible.',
     },
     servers: [
       {

@@ -62,13 +62,12 @@ export function statusBadge(status: string) {
   return "secondary";
 }
 
-export function getStatusPreviewUrl(sessionId: string | null) {
+export function getStatusPreviewUrl() {
   if (!import.meta.env.DEV) return "/_status-preview/";
   const url = new URL(window.location.href);
   url.port = "5174";
   url.pathname = "/_status-preview/";
   url.search = "";
-  if (sessionId) url.searchParams.set("token", sessionId);
   url.hash = "";
   return url.toString();
 }

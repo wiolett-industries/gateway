@@ -3,8 +3,9 @@ import { deleteCookie, setCookie } from 'hono/cookie';
 import { getEnv, isDevelopment } from '@/config/env.js';
 import { container } from '@/container.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
+import { SessionService } from '@/services/session.service.js';
 import type { AppEnv } from '@/types.js';
-import { authMiddleware, SESSION_COOKIE_NAME } from './auth.middleware.js';
+import { authMiddleware, SESSION_COOKIE_NAME, sessionOnly } from './auth.middleware.js';
 import { AuthService } from './auth.service.js';
 
 export const authRoutes = new OpenAPIHono<AppEnv>();
@@ -106,7 +107,6 @@ authRoutes.openapi(callbackRoute, async (c) => {
       }
     }
     const redirectUrl = new URL('/callback', baseUrl);
-    redirectUrl.searchParams.set('session', result.sessionId);
     return c.redirect(redirectUrl.toString(), 302);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Authentication failed';
@@ -118,6 +118,22 @@ authRoutes.openapi(callbackRoute, async (c) => {
     });
     return c.json({ code: 'AUTH_ERROR', message }, 400);
   }
+});
+
+// CSRF token for cookie-authenticated browser mutations
+authRoutes.use('/csrf', authMiddleware);
+authRoutes.use('/csrf', sessionOnly);
+authRoutes.get('/csrf', async (c) => {
+  const sessionId = c.get('sessionId');
+  if (!sessionId) {
+    return c.json({ code: 'AUTH_ERROR', message: 'Not a session-based login' }, 400);
+  }
+  const sessionService = container.resolve(SessionService);
+  const csrfToken = await sessionService.ensureCsrfToken(sessionId);
+  if (!csrfToken) {
+    return c.json({ code: 'AUTH_ERROR', message: 'Invalid or expired session' }, 401);
+  }
+  return c.json({ csrfToken });
 });
 
 // Logout

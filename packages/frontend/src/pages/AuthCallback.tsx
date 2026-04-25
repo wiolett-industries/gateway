@@ -12,7 +12,6 @@ export function AuthCallback() {
 
   useEffect(() => {
     const handleCallback = async () => {
-      const sessionId = searchParams.get("session");
       const errorParam = searchParams.get("error");
 
       if (errorParam) {
@@ -20,18 +19,9 @@ export function AuthCallback() {
         return;
       }
 
-      if (!sessionId) {
-        setError("No session token received");
-        return;
-      }
-
       try {
-        // Store the session ID first so API calls include it
-        useAuthStore.getState().setSessionId(sessionId);
-
-        // Fetch the current user
         const user = await api.getCurrentUser();
-        login(user, sessionId);
+        login(user);
         navigate("/", { replace: true });
       } catch (err) {
         const message = err instanceof Error ? err.message : "Authentication failed";

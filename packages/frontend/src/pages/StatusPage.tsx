@@ -137,7 +137,7 @@ function affectedServices(incident: StatusPageIncident, services: StatusPageServ
 export function StatusPage() {
   const { tab: tabParam } = useParams<{ tab?: string }>();
   const navigate = useNavigate();
-  const { hasScope, sessionId } = useAuthStore();
+  const { hasScope } = useAuthStore();
   const canView = hasScope("status-page:view");
   const canManage = hasScope("status-page:manage");
   const canCreateIncidents = hasScope("status-page:incidents:create");
@@ -306,9 +306,7 @@ export function StatusPage() {
       <div className="flex flex-wrap items-center gap-2">
         <Button
           variant="outline"
-          onClick={() =>
-            window.open(getStatusPreviewUrl(sessionId), "_blank", "noopener,noreferrer")
-          }
+          onClick={() => window.open(getStatusPreviewUrl(), "_blank", "noopener,noreferrer")}
         >
           <Eye className="h-4 w-4" />
           Preview

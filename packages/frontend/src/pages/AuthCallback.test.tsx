@@ -8,30 +8,31 @@ import { makeUser } from "@/test/fixtures";
 import { renderWithRouter } from "@/test/render";
 
 describe("AuthCallback", () => {
-  it("stores the session and redirects after a successful callback", async () => {
+  it("loads the current user and redirects after a successful callback", async () => {
     vi.spyOn(api, "getCurrentUser").mockResolvedValue(makeUser({ scopes: ["nodes:list"] }));
 
     renderWithRouter(<AuthCallback />, {
       path: "/callback",
-      route: "/callback?session=session-123",
+      route: "/callback",
       extraRoutes: <Route path="/" element={<div>Dashboard Home</div>} />,
     });
 
     expect(await screen.findByText("Dashboard Home")).toBeInTheDocument();
 
     await waitFor(() => {
-      expect(useAuthStore.getState().sessionId).toBe("session-123");
       expect(useAuthStore.getState().isAuthenticated).toBe(true);
     });
   });
 
-  it("shows an error when no session token is provided", async () => {
+  it("shows an error when the current user request fails", async () => {
+    vi.spyOn(api, "getCurrentUser").mockRejectedValue(new Error("Invalid or expired session"));
+
     renderWithRouter(<AuthCallback />, {
       path: "/callback",
       route: "/callback",
     });
 
     expect(await screen.findByText("Authentication Failed")).toBeInTheDocument();
-    expect(screen.getByText("No session token received")).toBeInTheDocument();
+    expect(screen.getByText("Invalid or expired session")).toBeInTheDocument();
   });
 });

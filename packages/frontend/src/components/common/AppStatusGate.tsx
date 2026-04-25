@@ -2,7 +2,6 @@ import { AlertTriangle, RotateCw, ServerCrash } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useAppStatusStore } from "@/stores/app-status";
-import { useAuthStore } from "@/stores/auth";
 
 function MaintenanceScreen() {
   const setMaintenanceActive = useAppStatusStore((s) => s.setMaintenanceActive);
@@ -55,7 +54,6 @@ function MaintenanceScreen() {
 function GatewayUpdatingScreen() {
   const targetVersion = useAppStatusStore((s) => s.gatewayUpdatingTargetVersion);
   const clearGatewayUpdating = useAppStatusStore((s) => s.clearGatewayUpdating);
-  const sessionId = useAuthStore((s) => s.sessionId);
 
   useEffect(() => {
     let seenUnavailable = false;
@@ -68,12 +66,10 @@ function GatewayUpdatingScreen() {
           return;
         }
 
-        if (sessionId && targetVersion) {
+        if (targetVersion) {
           const versionResponse = await fetch("/api/system/version", {
             cache: "no-store",
-            headers: {
-              Authorization: `Bearer ${sessionId}`,
-            },
+            credentials: "include",
           });
           if (versionResponse.ok) {
             const payload = (await versionResponse.json()) as {
@@ -101,7 +97,7 @@ function GatewayUpdatingScreen() {
     }, 3000);
 
     return () => window.clearInterval(interval);
-  }, [clearGatewayUpdating, sessionId, targetVersion]);
+  }, [clearGatewayUpdating, targetVersion]);
 
   return (
     <div className="fixed inset-0 z-[205] flex min-h-screen items-center justify-center bg-background px-4">

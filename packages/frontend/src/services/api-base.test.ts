@@ -40,9 +40,16 @@ describe("ApiClientBase", () => {
 
   it("invalidates cached GET entries after a mutation", async () => {
     const client = new TestApiClient();
-    vi.spyOn(globalThis, "fetch")
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(
         new Response(JSON.stringify({ value: 1 }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ csrfToken: "csrf-token" }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         })
@@ -55,6 +62,37 @@ describe("ApiClientBase", () => {
     await client.updateThing();
 
     expect(client.getCached("req:/api/thing")).toBeUndefined();
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      "/api/thing",
+      expect.objectContaining({
+        credentials: "include",
+        headers: expect.any(Headers),
+      })
+    );
+    const headers = (fetchMock.mock.calls[2]?.[1] as RequestInit | undefined)?.headers as Headers;
+    expect(headers.get("X-CSRF-Token")).toBe("csrf-token");
+  });
+
+  it("sends cookie credentials and no session Authorization header", async () => {
+    const client = new TestApiClient();
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify({ value: 1 }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+
+    await client.getThing();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/thing",
+      expect.objectContaining({
+        credentials: "include",
+        headers: expect.any(Headers),
+      })
+    );
+    const headers = (fetchMock.mock.calls[0]?.[1] as RequestInit | undefined)?.headers as Headers;
+    expect(headers.has("Authorization")).toBe(false);
   });
 
   it("does not enter maintenance mode for ordinary 5xx API responses", async () => {

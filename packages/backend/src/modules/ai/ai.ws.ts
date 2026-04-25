@@ -305,7 +305,7 @@ export function createWSHandlers() {
 }
 
 /**
- * Authenticate and initialize a WS connection from the query token.
+ * Authenticate and initialize a WS connection from the session cookie.
  * Called during the WS upgrade / onOpen.
  */
 export async function authenticateWSConnection(ws: WSContext, token: string): Promise<boolean> {

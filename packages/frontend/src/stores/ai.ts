@@ -218,8 +218,7 @@ export const useAIStore = create<AIState>()((set, get) => ({
   pendingApprovalToolCallId: null,
 
   connect: async () => {
-    const sessionId = useAuthStore.getState().sessionId;
-    if (!sessionId) return false;
+    if (!useAuthStore.getState().user) return false;
     if (wsClient?.isConnected) {
       set({ isConnected: true });
       return true;
@@ -238,7 +237,7 @@ export const useAIStore = create<AIState>()((set, get) => ({
       if (!connected) set({ isStreaming: false });
     });
 
-    const ok = await wsClient.connect(sessionId);
+    const ok = await wsClient.connect();
     return ok;
   },
 

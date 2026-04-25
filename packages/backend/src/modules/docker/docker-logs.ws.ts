@@ -81,7 +81,7 @@ const wsStates = new WeakMap<WSContext, LogStreamWSState>();
  * Create WebSocket handlers for Docker container log streaming.
  *
  * New unified flow:
- * 1. Client connects with ?token=<session>&tail=200
+ * 1. Client connects with the session cookie and ?tail=200
  * 2. onOpen authenticates, fetches initial logs (non-follow), sends them as { type: "initial" }
  * 3. Then starts follow stream — new lines arrive as { type: "new" }
  * 4. Client sends { type: "load_more" } — backend fetches 200 older lines with until=<oldest_ts>,

@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto';
 import { nanoid } from 'nanoid';
 import { injectable } from 'tsyringe';
 import { getEnv } from '@/config/env.js';
@@ -62,6 +63,30 @@ export class SessionService {
     const remainingTtl = Math.max(1, Math.floor((session.expiresAt - Date.now()) / 1000));
 
     await this.cache.set(`${SESSION_PREFIX}${sessionId}`, updatedSession, remainingTtl);
+  }
+
+  async ensureCsrfToken(sessionId: string, session?: SessionData | null): Promise<string | null> {
+    const resolved = session ?? (await this.getSession(sessionId));
+    if (!resolved) return null;
+    if (resolved.csrfToken) return resolved.csrfToken;
+
+    const csrfToken = nanoid(32);
+    await this.updateSession(sessionId, { csrfToken });
+    return csrfToken;
+  }
+
+  async validateCsrfToken(
+    sessionId: string,
+    token: string | undefined,
+    session?: SessionData | null
+  ): Promise<boolean> {
+    if (!token) return false;
+    const csrfToken = await this.ensureCsrfToken(sessionId, session);
+    if (!csrfToken) return false;
+
+    const expected = Buffer.from(csrfToken);
+    const received = Buffer.from(token);
+    return expected.length === received.length && timingSafeEqual(expected, received);
   }
 
   async refreshSession(sessionId: string, session?: SessionData | null): Promise<boolean> {

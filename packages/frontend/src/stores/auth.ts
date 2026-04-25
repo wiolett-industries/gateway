@@ -1,5 +1,4 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
 import type { User } from "@/types";
 
 /**
@@ -18,79 +17,60 @@ function scopeMatches(scopes: string[], requiredScope: string): boolean {
 
 interface AuthState {
   user: User | null;
-  sessionId: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
 
   setUser: (user: User | null) => void;
-  setSessionId: (sessionId: string | null) => void;
   setLoading: (loading: boolean) => void;
-  login: (user: User, sessionId: string) => void;
+  login: (user: User) => void;
   logout: () => void;
   hasScope: (scope: string) => boolean;
   hasScopedAccess: (scopeBase: string) => boolean;
   hasAnyScope: (...scopes: string[]) => boolean;
 }
 
-export const useAuthStore = create<AuthState>()(
-  persist(
-    (set, get) => ({
-      user: null,
-      sessionId: null,
-      isAuthenticated: false,
-      isLoading: true,
+export const useAuthStore = create<AuthState>()((set, get) => ({
+  user: null,
+  isAuthenticated: false,
+  isLoading: true,
 
-      setUser: (user) =>
-        set({
-          user,
-          isAuthenticated: !!user,
-        }),
-
-      setSessionId: (sessionId) => set({ sessionId }),
-
-      setLoading: (isLoading) => set({ isLoading }),
-
-      login: (user, sessionId) =>
-        set({
-          user,
-          sessionId,
-          isAuthenticated: true,
-          isLoading: false,
-        }),
-
-      logout: () =>
-        set({
-          user: null,
-          sessionId: null,
-          isAuthenticated: false,
-          isLoading: false,
-        }),
-
-      hasScope: (scope) => {
-        const user = get().user;
-        if (!user) return false;
-        return scopeMatches(user.scopes, scope);
-      },
-
-      hasScopedAccess: (scopeBase) => {
-        const user = get().user;
-        if (!user) return false;
-        return user.scopes.some(
-          (scope) => scope === scopeBase || scope.startsWith(`${scopeBase}:`)
-        );
-      },
-
-      hasAnyScope: (...scopes) => {
-        const user = get().user;
-        if (!user) return false;
-        return scopes.some((s) => scopeMatches(user.scopes, s));
-      },
+  setUser: (user) =>
+    set({
+      user,
+      isAuthenticated: !!user,
     }),
-    {
-      name: "gateway-auth",
-      partialize: (state) => ({
-        sessionId: state.sessionId,
-      }),
-    }
-  )
-);
+
+  setLoading: (isLoading) => set({ isLoading }),
+
+  login: (user) =>
+    set({
+      user,
+      isAuthenticated: true,
+      isLoading: false,
+    }),
+
+  logout: () =>
+    set({
+      user: null,
+      isAuthenticated: false,
+      isLoading: false,
+    }),
+
+  hasScope: (scope) => {
+    const user = get().user;
+    if (!user) return false;
+    return scopeMatches(user.scopes, scope);
+  },
+
+  hasScopedAccess: (scopeBase) => {
+    const user = get().user;
+    if (!user) return false;
+    return user.scopes.some((scope) => scope === scopeBase || scope.startsWith(`${scopeBase}:`));
+  },
+
+  hasAnyScope: (...scopes) => {
+    const user = get().user;
+    if (!user) return false;
+    return scopes.some((s) => scopeMatches(user.scopes, s));
+  },
+}));

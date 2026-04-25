@@ -9,7 +9,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { VirtualLogList } from "@/components/ui/virtual-log-list";
-import { useAuthStore } from "@/stores/auth";
 
 interface LogEntry {
   timestamp: string;
@@ -59,13 +58,14 @@ export function NodeLogsTab({ nodeId, nodeStatus }: NodeLogsTabProps) {
     if (nodeStatus !== "online") return;
     if (esRef.current) esRef.current.close();
 
-    const sessionId = useAuthStore.getState().sessionId;
     const params = new URLSearchParams();
-    if (sessionId) params.set("token", sessionId);
     if (levelFilter !== "all") params.set("level", levelFilter);
     if (debouncedSearch) params.set("search", debouncedSearch);
 
-    const es = new EventSource(`/api/nodes/${nodeId}/logs?${params}`);
+    const query = params.toString();
+    const es = new EventSource(`/api/nodes/${nodeId}/logs${query ? `?${query}` : ""}`, {
+      withCredentials: true,
+    });
     esRef.current = es;
 
     es.addEventListener("connected", () => setLogs([]));

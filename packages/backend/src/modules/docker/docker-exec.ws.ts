@@ -40,7 +40,7 @@ const wsStates = new WeakMap<WSContext, ExecWSState>();
  * Create WebSocket handlers for Docker exec terminal sessions.
  *
  * Flow (persistent sessions):
- * 1. Client connects with ?token=<session>&shell=<shell>
+ * 1. Client connects with the session cookie and ?shell=<shell>
  * 2. onOpen authenticates and asks daemon to create-or-reuse exec for this container
  * 3. Daemon creates a new exec OR reuses existing; sends buffered output first on reuse
  * 4. Daemon streams ExecOutput back; backend forwards to WebSocket
@@ -69,7 +69,7 @@ export function createDockerExecWSHandlers(nodeId: string, containerId: string, 
         void revalidateExecAccess(ws, state, nodeId, true);
       }, 30_000);
 
-      // Authenticate immediately from query token (same as AI WS pattern)
+      // Authenticate immediately from the session cookie.
       authenticateAndCreateExec(ws, state, token, nodeId, containerId, shell, dispatch, registry).catch((err) => {
         logger.error('Auth/exec creation failed', { error: err instanceof Error ? err.message : String(err) });
         try {

@@ -1,5 +1,4 @@
 import { api } from "@/services/api";
-import { useAuthStore } from "@/stores/auth";
 
 type EventHandler = (payload: unknown) => void;
 
@@ -92,14 +91,8 @@ class EventStream {
   }
 
   private openSocket() {
-    const sessionId = useAuthStore.getState().sessionId;
-    if (!sessionId) {
-      // Defer until logged in
-      this.scheduleReconnect();
-      return;
-    }
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const url = `${proto}//${window.location.host}/api/events?token=${encodeURIComponent(sessionId)}`;
+    const url = `${proto}//${window.location.host}/api/events`;
     const ws = new WebSocket(url);
     this.ws = ws;
 

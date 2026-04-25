@@ -8,12 +8,6 @@ vi.mock("@/services/api", () => ({
   },
 }));
 
-vi.mock("@/stores/auth", () => ({
-  useAuthStore: {
-    getState: () => ({ sessionId: "session-123" }),
-  },
-}));
-
 vi.mock("@/stores/nodes", () => ({
   useNodesStore: {
     getState: () => ({ invalidate: invalidateNodes }),

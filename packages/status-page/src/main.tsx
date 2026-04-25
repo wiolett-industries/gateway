@@ -39,7 +39,6 @@ interface PublicStatusPageDto {
   }>;
 }
 
-const PREVIEW_SESSION_TOKEN = new URLSearchParams(window.location.search).get("token");
 const MAX_BARS = 192;
 const BAR_WIDTH = 6;
 const BUCKET_MS = 5 * 60 * 1000;
@@ -51,10 +50,7 @@ function endpoint() {
 }
 
 async function fetchStatus(): Promise<PublicStatusPageDto> {
-  const headers: HeadersInit = PREVIEW_SESSION_TOKEN
-    ? { Authorization: `Bearer ${PREVIEW_SESSION_TOKEN}` }
-    : {};
-  const response = await fetch(endpoint(), { cache: "no-store", credentials: "include", headers });
+  const response = await fetch(endpoint(), { cache: "no-store", credentials: "include" });
   if (!response.ok) throw new Error("Status page unavailable");
   const body = (await response.json()) as { data: PublicStatusPageDto };
   return body.data;
@@ -161,12 +157,6 @@ function App() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (PREVIEW_SESSION_TOKEN) {
-      const cleanUrl = new URL(window.location.href);
-      cleanUrl.searchParams.delete("token");
-      window.history.replaceState(null, "", cleanUrl.toString());
-    }
-
     let cancelled = false;
     const load = () => {
       fetchStatus()

@@ -17,6 +17,7 @@ export interface SessionData {
   user: User;
   accessToken: string;
   refreshToken?: string;
+  csrfToken?: string;
   createdAt: number;
   expiresAt: number;
 }

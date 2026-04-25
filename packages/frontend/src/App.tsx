@@ -49,19 +49,12 @@ function scoped(scope: string, element: React.ReactElement) {
 
 function PopoutAuthGate({ children }: { children: React.ReactElement }) {
   const navigate = useNavigate();
-  const { sessionId, user, isLoading, setUser, setLoading, logout } = useAuthStore();
+  const { user, isLoading, setUser, setLoading, logout } = useAuthStore();
 
   useEffect(() => {
     let cancelled = false;
 
     if (user) {
-      if (isLoading) setLoading(false);
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    if (!sessionId) {
       if (isLoading) setLoading(false);
       return () => {
         cancelled = true;
@@ -95,9 +88,9 @@ function PopoutAuthGate({ children }: { children: React.ReactElement }) {
     return () => {
       cancelled = true;
     };
-  }, [isLoading, logout, navigate, sessionId, setLoading, setUser, user]);
+  }, [isLoading, logout, navigate, setLoading, setUser, user]);
 
-  if (isLoading && sessionId && !user) {
+  if (isLoading && !user) {
     return (
       <div className="flex h-screen items-center justify-center">
         <div className="flex flex-col items-center gap-4">
@@ -108,7 +101,7 @@ function PopoutAuthGate({ children }: { children: React.ReactElement }) {
     );
   }
 
-  if (!sessionId) {
+  if (!user) {
     return <Navigate to="/login" replace />;
   }
 
@@ -259,7 +252,6 @@ function AdministrationPageGuard() {
 }
 
 function RealtimeBridge() {
-  const sessionId = useAuthStore((s) => s.sessionId);
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
   const logout = useAuthStore((s) => s.logout);
@@ -268,12 +260,12 @@ function RealtimeBridge() {
   const clearGatewayUpdating = useAppStatusStore((s) => s.clearGatewayUpdating);
 
   useEffect(() => {
-    if (sessionId) {
+    if (user) {
       eventStream.start();
       return () => eventStream.stop();
     }
     return;
-  }, [sessionId]);
+  }, [user]);
 
   // Live permission updates: refresh the local user (and thus scopes) whenever
   // the server says this user's permissions changed.
@@ -292,12 +284,12 @@ function RealtimeBridge() {
   // Keep node-related views in sync by activating the shared node.changed
   // invalidation path in the event stream singleton.
   useEffect(() => {
-    if (!sessionId || !canListNodes) return;
+    if (!user || !canListNodes) return;
     return eventStream.subscribe("node.changed", () => {});
-  }, [sessionId, canListNodes]);
+  }, [user, canListNodes]);
 
   useEffect(() => {
-    if (!sessionId) return;
+    if (!user) return;
     return eventStream.subscribe("system.update.changed", (payload) => {
       const ev = payload as { updating?: boolean; targetVersion?: string | null } | undefined;
       if (ev?.updating) {
@@ -306,7 +298,7 @@ function RealtimeBridge() {
         clearGatewayUpdating();
       }
     });
-  }, [clearGatewayUpdating, sessionId, setGatewayUpdatingActive]);
+  }, [clearGatewayUpdating, user, setGatewayUpdatingActive]);
 
   return null;
 }
@@ -319,6 +311,8 @@ export default function App() {
   const clearGatewayUpdating = useAppStatusStore((s) => s.clearGatewayUpdating);
 
   useEffect(() => {
+    localStorage.removeItem("gateway-auth");
+
     let cancelled = false;
 
     const checkHealth = async () => {
