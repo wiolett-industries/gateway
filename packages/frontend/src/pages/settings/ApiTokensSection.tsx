@@ -17,7 +17,7 @@ import { formatDate, formatRelativeDate } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useCAStore } from "@/stores/ca";
 import type { DatabaseConnection, Node, ProxyHost, User } from "@/types";
-import { type ApiToken, RESOURCE_SCOPABLE_SCOPES, TOKEN_SCOPES } from "@/types";
+import { API_TOKEN_SCOPES, type ApiToken, RESOURCE_SCOPABLE_SCOPES } from "@/types";
 
 interface ApiTokensSectionProps {
   user: User | null;
@@ -167,7 +167,7 @@ export function ApiTokensSection({
           <div>
             <h2 className="font-semibold">API Tokens</h2>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Granular tokens for programmatic access
+              Granular tokens for programmatic access. AI is available to users only.
             </p>
           </div>
           <Button size="sm" onClick={openTokenCreate}>
@@ -290,8 +290,8 @@ export function ApiTokensSection({
                   <ScopeList
                     scopes={
                       editingToken
-                        ? TOKEN_SCOPES.filter((s) => selectedScopes.includes(s.value))
-                        : TOKEN_SCOPES.filter((s) => {
+                        ? API_TOKEN_SCOPES.filter((s) => selectedScopes.includes(s.value))
+                        : API_TOKEN_SCOPES.filter((s) => {
                             const userScopes = user?.scopes ?? [];
                             return userScopes.some(
                               (us) => us === s.value || us.startsWith(s.value)

@@ -145,6 +145,11 @@ export const ALL_SCOPES = [
 
 export type Scope = (typeof ALL_SCOPES)[number];
 
+export const USER_ONLY_SCOPES = ['feat:ai:use', 'feat:ai:configure'] as const;
+const USER_ONLY_SCOPE_SET = new Set<string>(USER_ONLY_SCOPES);
+
+export const API_TOKEN_SCOPES = ALL_SCOPES.filter((scope) => !USER_ONLY_SCOPE_SET.has(scope));
+
 /** System-admin group: every scope including admin:system (protected) */
 export const SYSTEM_ADMIN_SCOPES: readonly string[] = [...ALL_SCOPES];
 
@@ -347,6 +352,11 @@ export function extractBaseScope(scope: string): string {
 /** Check if a scope string has a valid base scope */
 export function isValidBaseScope(scope: string): boolean {
   return ALL_SCOPES_SET.has(extractBaseScope(scope));
+}
+
+/** Check whether a scope may be delegated to an API token */
+export function isApiTokenScope(scope: string): boolean {
+  return isValidBaseScope(scope) && !USER_ONLY_SCOPE_SET.has(extractBaseScope(scope));
 }
 
 /** Check if a scope string is a resource-scoped variant */

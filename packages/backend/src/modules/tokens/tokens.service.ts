@@ -6,6 +6,7 @@ import type { DrizzleClient } from '@/db/client.js';
 import { apiTokens } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { boundScopes } from '@/lib/permissions.js';
+import { isApiTokenScope } from '@/lib/scopes.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import { resolveLiveUser } from '@/modules/auth/live-session-user.js';
@@ -54,7 +55,7 @@ export class TokensService {
       id: token.id,
       name: token.name,
       tokenPrefix: token.tokenPrefix,
-      scopes: token.scopes,
+      scopes: token.scopes.filter(isApiTokenScope),
       lastUsedAt: token.lastUsedAt?.toISOString() ?? null,
       createdAt: token.createdAt.toISOString(),
       token: raw,
@@ -70,7 +71,7 @@ export class TokensService {
       id: t.id,
       name: t.name,
       tokenPrefix: t.tokenPrefix,
-      scopes: t.scopes,
+      scopes: t.scopes.filter(isApiTokenScope),
       lastUsedAt: t.lastUsedAt?.toISOString() ?? null,
       createdAt: t.createdAt.toISOString(),
     }));
@@ -134,7 +135,7 @@ export class TokensService {
 
     return {
       user,
-      scopes: boundScopes(token.scopes || [], user.scopes),
+      scopes: boundScopes(token.scopes || [], user.scopes).filter(isApiTokenScope),
     };
   }
 

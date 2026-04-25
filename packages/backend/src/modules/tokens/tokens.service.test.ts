@@ -100,4 +100,23 @@ describe('TokensService.validateToken', () => {
     expect(result?.user.scopes).toEqual(['nodes:list', 'status-page:manage']);
     expect(result?.scopes).toEqual(['status-page:manage']);
   });
+
+  it('filters user-only AI scopes from existing tokens', async () => {
+    const db = createDb({
+      userGroupId: 'admin-group',
+      tokenScopes: ['feat:ai:use', 'feat:ai:configure', 'nodes:list'],
+      groups: [
+        {
+          id: 'admin-group',
+          name: 'admin',
+          parentId: null,
+          scopes: ['feat:ai:use', 'feat:ai:configure', 'nodes:list'],
+        },
+      ],
+    });
+
+    const result = await createService(db).validateToken('gw_test_token');
+
+    expect(result?.scopes).toEqual(['nodes:list']);
+  });
 });
