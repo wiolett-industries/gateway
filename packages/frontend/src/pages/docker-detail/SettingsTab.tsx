@@ -22,6 +22,7 @@ import type { InspectData } from "./helpers";
 import { LabelsSection } from "./LabelsSection";
 import { type PortMapping, PortMappingsSection } from "./PortMappingsSection";
 import { RuntimeSection } from "./RuntimeSection";
+import { buildRuntimePayloadFromForm, type RuntimeFormValues } from "./runtime-payload";
 import { type MountEntry, VolumeMountsSection } from "./VolumeMountsSection";
 
 function normalizeDockerNetwork(network: DockerNetwork | Record<string, unknown>): DockerNetwork {
@@ -115,7 +116,7 @@ export function SettingsTab({
   const [nodeDetail, setNodeDetail] = useState<NodeDetail | null>(null);
 
   // Baseline snapshot — updated after successful live apply
-  const baselineRef = useRef({
+  const baselineRef = useRef<RuntimeFormValues>({
     restartPolicy: currentRestartPolicy,
     maxRetries: String(currentMaxRetries),
     memoryMB: initMem,
@@ -313,48 +314,19 @@ export function SettingsTab({
   }, [cpuCount, memSwapMB, memoryMB, runtimeCapacity]);
 
   const buildRuntimePayload = useCallback(() => {
-    const payload: Record<string, unknown> = {};
-    if (restartPolicy !== currentRestartPolicy) payload.restartPolicy = restartPolicy;
-    if (restartPolicy === "on-failure" && Number(maxRetries) !== currentMaxRetries) {
-      payload.maxRetries = Number(maxRetries) || 0;
-    }
-    const memBytes = memoryMB ? Number(memoryMB) * 1048576 : 0;
-    const swapOnly = memSwapMB === "-1" ? -1 : memSwapMB ? Number(memSwapMB) * 1048576 : 0;
-    const combinedSwap = swapOnly === -1 ? -1 : memBytes > 0 ? memBytes + Math.max(0, swapOnly) : 0;
-    if (memBytes !== currentMemory || combinedSwap !== currentMemSwap) {
-      payload.memoryLimit = memBytes;
-      payload.memorySwap = combinedSwap;
-    }
-    const nanos = cpuCount ? Math.round(Number(cpuCount) * 1e9) : 0;
-    if (nanos !== currentNanoCPUs) payload.nanoCPUs = nanos;
-    const shares = cpuShares ? Number(cpuShares) : 0;
-    if (shares !== currentCpuShares) payload.cpuShares = shares;
-    const pids = pidsLimit ? Number(pidsLimit) : 0;
-    if (pids !== currentPidsLimit) payload.pidsLimit = pids;
-
-    if (Object.keys(payload).length === 0) {
-      return null;
-    }
-    if (!("restartPolicy" in payload)) {
-      payload.restartPolicy = restartPolicy;
-    }
-    return payload;
-  }, [
-    restartPolicy,
-    currentRestartPolicy,
-    maxRetries,
-    currentMaxRetries,
-    memoryMB,
-    memSwapMB,
-    currentMemory,
-    currentMemSwap,
-    cpuCount,
-    currentNanoCPUs,
-    cpuShares,
-    currentCpuShares,
-    pidsLimit,
-    currentPidsLimit,
-  ]);
+    return buildRuntimePayloadFromForm(
+      {
+        restartPolicy,
+        maxRetries,
+        memoryMB,
+        memSwapMB,
+        cpuCount,
+        cpuShares,
+        pidsLimit,
+      },
+      baselineRef.current
+    );
+  }, [restartPolicy, maxRetries, memoryMB, memSwapMB, cpuCount, cpuShares, pidsLimit]);
 
   // ── Live update handler ──
   const handleLiveUpdate = useCallback(async () => {
