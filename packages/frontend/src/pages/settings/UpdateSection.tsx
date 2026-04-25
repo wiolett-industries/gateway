@@ -58,7 +58,10 @@ export function UpdateSection({ canUpdate }: UpdateSectionProps) {
     <>
       {/* Update available */}
       {updateStatus?.updateAvailable && updateStatus.latestVersion && (
-        <div className="border bg-card" style={{ borderColor: "rgb(234 179 8 / 0.6)" }}>
+        <div
+          className="border bg-card xl:col-span-2"
+          style={{ borderColor: "rgb(234 179 8 / 0.6)" }}
+        >
           <div className="flex items-center justify-between border-b border-border p-4">
             <div>
               <h2 className="font-semibold" style={{ color: "rgb(234 179 8)" }}>
