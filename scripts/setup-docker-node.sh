@@ -292,6 +292,10 @@ detect_docker_systemd_unit() {
     return 1
 }
 
+docker_group_exists() {
+    getent group docker >/dev/null 2>&1
+}
+
 docker_repo_distro_family() {
     case "$OS_ID" in
         ubuntu) echo "ubuntu" ;;
@@ -688,9 +692,11 @@ else
         die "User '$RUN_USER' does not exist. Create it first or choose a different user."
     fi
     RUN_GROUP=$(id -gn "$RUN_USER" 2>/dev/null)
-    if ! groups "$RUN_USER" 2>/dev/null | grep -qw docker; then
+    if docker_group_exists && ! groups "$RUN_USER" 2>/dev/null | grep -qw docker; then
         warn "User '$RUN_USER' is not in the 'docker' group. Adding it now."
         usermod -aG docker "$RUN_USER" >>"$LOG_FILE" 2>&1 || true
+    elif ! docker_group_exists; then
+        warn "Docker group was not found. docker-daemon will run without SupplementaryGroups=docker."
     fi
 fi
 
@@ -834,6 +840,7 @@ start_daemon() {
         local docker_after="network-online.target"
         local docker_wants="network-online.target"
         local docker_requires=""
+        local supplementary_groups=""
         if [[ -n "$DOCKER_SYSTEMD_UNIT" ]]; then
             docker_after="${docker_after} ${DOCKER_SYSTEMD_UNIT}"
             docker_wants="${docker_wants} ${DOCKER_SYSTEMD_UNIT}"
@@ -842,6 +849,9 @@ start_daemon() {
             warn "Docker is reachable, but no systemd Docker unit was detected. docker-daemon will start without a Docker service dependency."
         else
             warn "No systemd Docker unit was detected. docker-daemon will start without a Docker service dependency."
+        fi
+        if docker_group_exists; then
+            supplementary_groups="SupplementaryGroups=docker"
         fi
 
         cat > /etc/systemd/system/docker-daemon.service <<UNIT
@@ -859,7 +869,7 @@ ExecStart=/usr/local/bin/docker-daemon run
 Restart=always
 RestartSec=5
 LimitNOFILE=65536
-SupplementaryGroups=docker
+${supplementary_groups}
 
 [Install]
 WantedBy=multi-user.target
