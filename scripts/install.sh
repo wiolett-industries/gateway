@@ -18,6 +18,7 @@ OS_ID=""
 OS_ID_LIKE=""
 OS_VERSION_CODENAME=""
 DOCKER_USE_SUDO=0
+DOCKER_SYSTEMD_UNIT=""
 
 # Non-interactive config (set via flags or env vars)
 OPT_DOMAIN="${GATEWAY_DOMAIN:-}"
@@ -157,6 +158,28 @@ detect_docker_access() {
         return 0
     fi
 
+    return 1
+}
+
+systemd_unit_exists() {
+    local unit="$1"
+    local output
+    if systemctl cat "$unit" >/dev/null 2>&1; then
+        return 0
+    fi
+    output="$(systemctl list-unit-files --type=service --no-legend "$unit" 2>/dev/null || true)"
+    [[ "$output" == "$unit "* || "$output" == "$unit"$'\t'* ]]
+}
+
+detect_docker_systemd_unit() {
+    local unit
+    for unit in docker.service snap.docker.dockerd.service; do
+        if systemd_unit_exists "$unit"; then
+            DOCKER_SYSTEMD_UNIT="$unit"
+            return 0
+        fi
+    done
+    DOCKER_SYSTEMD_UNIT=""
     return 1
 }
 
@@ -409,8 +432,17 @@ ensure_docker_service_running() {
 
     info "Starting Docker service..."
     if command -v systemctl &>/dev/null; then
-        run_privileged_quiet systemctl enable --now containerd || true
-        run_privileged_quiet systemctl enable --now docker
+        if detect_docker_systemd_unit; then
+            if [ "$DOCKER_SYSTEMD_UNIT" = "docker.service" ]; then
+                run_privileged_quiet systemctl enable --now containerd || true
+                run_privileged_quiet systemctl enable --now "$DOCKER_SYSTEMD_UNIT"
+            else
+                run_privileged_quiet systemctl start "$DOCKER_SYSTEMD_UNIT"
+            fi
+        else
+            run_privileged_quiet systemctl enable --now containerd || true
+            run_privileged_quiet systemctl enable --now docker
+        fi
     elif command -v service &>/dev/null; then
         run_privileged_quiet service containerd start || true
         run_privileged_quiet service docker start
@@ -426,7 +458,11 @@ ensure_docker_service_running() {
     done
 
     if command -v systemctl &>/dev/null; then
-        run_privileged_quiet systemctl status docker --no-pager >>"$LOG_FILE" 2>&1 || true
+        if detect_docker_systemd_unit; then
+            run_privileged_quiet systemctl status "$DOCKER_SYSTEMD_UNIT" --no-pager >>"$LOG_FILE" 2>&1 || true
+        else
+            run_privileged_quiet systemctl status docker --no-pager >>"$LOG_FILE" 2>&1 || true
+        fi
         run_privileged_quiet systemctl status containerd --no-pager >>"$LOG_FILE" 2>&1 || true
     elif command -v service &>/dev/null; then
         run_privileged_quiet service docker status >>"$LOG_FILE" 2>&1 || true
