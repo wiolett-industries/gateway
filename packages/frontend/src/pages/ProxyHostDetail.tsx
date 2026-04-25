@@ -332,8 +332,10 @@ export function ProxyHostDetail() {
         ((host.redirectUrl || "") !== templateRedirectUrl ||
           (host.redirectStatusCode || 301) !== templateRedirectStatusCode));
 
-    return builtinsChanged || (
-      currentId !== nginxTemplateId || JSON.stringify(currentVars) !== JSON.stringify(nextVars)
+    return (
+      builtinsChanged ||
+      currentId !== nginxTemplateId ||
+      JSON.stringify(currentVars) !== JSON.stringify(nextVars)
     );
   }, [
     host,

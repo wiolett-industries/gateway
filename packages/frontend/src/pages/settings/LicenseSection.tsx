@@ -1,5 +1,5 @@
 import { ClipboardCopy, KeyRound, Loader2, RefreshCw, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { DetailRow } from "@/components/common/DetailRow";
@@ -116,7 +116,7 @@ export function LicenseSection({ canManage }: LicenseSectionProps) {
   const [licenseKey, setLicenseKey] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const loadStatus = async () => {
+  const loadStatus = useCallback(async () => {
     try {
       setStatus(await api.getLicenseStatus());
     } catch (err) {
@@ -124,11 +124,11 @@ export function LicenseSection({ canManage }: LicenseSectionProps) {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     loadStatus();
-  }, []);
+  }, [loadStatus]);
 
   const handleCheck = async () => {
     setChecking(true);
@@ -229,7 +229,6 @@ export function LicenseSection({ canManage }: LicenseSectionProps) {
           />
           <DetailRow label="Last checked" value={formatDate(status.lastCheckedAt)} />
         </div>
-
       </div>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

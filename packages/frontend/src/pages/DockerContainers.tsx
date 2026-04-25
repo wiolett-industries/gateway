@@ -8,7 +8,7 @@ import {
 } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { Plus } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
@@ -16,15 +16,16 @@ import { FolderCreateDialog } from "@/components/common/FolderCreateDialog";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
 import { SearchFilterBar } from "@/components/common/SearchFilterBar";
+import {
+  DockerContainerRow,
+  type DockerContainerRowData,
+} from "@/components/docker/DockerContainerRow";
 import { DockerDragOverlay } from "@/components/docker/DockerDragOverlay";
 import {
   DockerFolderGroup,
   type DockerFolderTreeNodeWithContainers,
 } from "@/components/docker/DockerFolderGroup";
-import {
-  DockerMoveToFolderDialog,
-} from "@/components/docker/DockerMoveToFolderDialog";
-import { type DockerContainerRowData, DockerContainerRow } from "@/components/docker/DockerContainerRow";
+import { DockerMoveToFolderDialog } from "@/components/docker/DockerMoveToFolderDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { RefreshButton } from "@/components/ui/refresh-button";
@@ -38,8 +39,8 @@ import {
 import { useRealtime } from "@/hooks/use-realtime";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
-import { useDockerFolderStore } from "@/stores/docker-folders";
 import { useDockerStore } from "@/stores/docker";
+import { useDockerFolderStore } from "@/stores/docker-folders";
 import type { DockerFolderTreeNode, Node } from "@/types";
 import { isNodeIncompatible } from "@/types";
 import { DockerDeployDialog } from "./DockerDeployDialog";
@@ -113,6 +114,7 @@ export function DockerContainers({
 } = {}) {
   const { hasScope, hasScopedAccess } = useAuthStore();
   const containers = useDockerStore((s) => s.containers) as DockerContainerRowData[];
+  const previousContainersRef = useRef(containers);
   const selectedNodeId = useDockerStore((s) => s.selectedNodeId);
   const filters = useDockerStore((s) => s.filters);
   const isLoading = useDockerStore((s) => s.loading.containers);
@@ -144,9 +146,13 @@ export function DockerContainers({
   const [deployOpen, setDeployOpen] = useState(false);
   const [createFolderParentId, setCreateFolderParentId] = useState<string | null>(null);
   const [createFolderOpen, setCreateFolderOpen] = useState(false);
-  const [moveDialogContainer, setMoveDialogContainer] = useState<DockerContainerRowData | null>(null);
+  const [moveDialogContainer, setMoveDialogContainer] = useState<DockerContainerRowData | null>(
+    null
+  );
   const [activeDrag, setActiveDrag] = useState<DragEndEvent["active"] | null>(null);
-  const [optimisticContainers, setOptimisticContainers] = useState<DockerContainerRowData[] | null>(null);
+  const [optimisticContainers, setOptimisticContainers] = useState<DockerContainerRowData[] | null>(
+    null
+  );
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 8 },
@@ -200,6 +206,8 @@ export function DockerContainers({
   }, [embedded, loadDockerNodes]);
 
   useEffect(() => {
+    if (previousContainersRef.current === containers) return;
+    previousContainersRef.current = containers;
     setOptimisticContainers(null);
   }, [containers]);
 
@@ -242,7 +250,9 @@ export function DockerContainers({
   const filteredContainers = useMemo(() => {
     let result = [...visibleContainers];
     if (filters.status !== "all") {
-      result = result.filter((c) => (filters.status === "running" ? c.state === "running" : c.state !== "running"));
+      result = result.filter((c) =>
+        filters.status === "running" ? c.state === "running" : c.state !== "running"
+      );
     }
     if (filters.search) {
       const q = filters.search.toLowerCase();
@@ -263,7 +273,12 @@ export function DockerContainers({
 
   const folderIds = useMemo(() => new Set(folders.map((folder) => folder.id)), [folders]);
   const ungroupedContainers = useMemo(
-    () => sortContainers(filteredContainers.filter((container) => !container.folderId || !folderIds.has(container.folderId))),
+    () =>
+      sortContainers(
+        filteredContainers.filter(
+          (container) => !container.folderId || !folderIds.has(container.folderId)
+        )
+      ),
     [filteredContainers, folderIds]
   );
 
@@ -281,14 +296,16 @@ export function DockerContainers({
 
   const canManageContainer = useCallback(
     (container: DockerContainerRowData) =>
-      hasScope("docker:containers:manage") || hasScope(`docker:containers:manage:${container._nodeId}`),
+      hasScope("docker:containers:manage") ||
+      hasScope(`docker:containers:manage:${container._nodeId}`),
     [hasScope]
   );
 
   const canReorganizeContainer = useCallback(
     (container: DockerContainerRowData) =>
       !container.folderIsSystem &&
-      (hasScope("docker:containers:edit") || hasScope(`docker:containers:edit:${container._nodeId}`)),
+      (hasScope("docker:containers:edit") ||
+        hasScope(`docker:containers:edit:${container._nodeId}`)),
     [hasScope]
   );
 
@@ -326,7 +343,9 @@ export function DockerContainers({
 
   const handleRestart = useCallback(
     (container: DockerContainerRowData) =>
-      doAction(container.id, "restart", () => api.restartContainer(container._nodeId, container.id)),
+      doAction(container.id, "restart", () =>
+        api.restartContainer(container._nodeId, container.id)
+      ),
     [doAction]
   );
 
@@ -353,7 +372,8 @@ export function DockerContainers({
   const handleDeleteFolder = async (id: string) => {
     const ok = await confirm({
       title: "Delete Folder",
-      description: "Are you sure? Containers inside will be moved to ungrouped. Subfolders will be deleted.",
+      description:
+        "Are you sure? Containers inside will be moved to ungrouped. Subfolders will be deleted.",
       confirmLabel: "Delete",
     });
     if (!ok) return;
@@ -368,10 +388,14 @@ export function DockerContainers({
 
   const applyOptimisticMove = useCallback(
     (container: DockerContainerRowData, folderId: string | null) => {
-      const targetFolder = folderId ? folders.find((folder) => folder.id === folderId) ?? null : null;
+      const targetFolder = folderId
+        ? (folders.find((folder) => folder.id === folderId) ?? null)
+        : null;
       setOptimisticContainers((current) => {
         const source = (current ?? containers).map((item) => ({ ...item }));
-        const moving = source.find((item) => item._nodeId === container._nodeId && item.name === container.name);
+        const moving = source.find(
+          (item) => item._nodeId === container._nodeId && item.name === container.name
+        );
         if (!moving) return source;
 
         const maxSortOrder = source.reduce((max, item) => {
@@ -393,7 +417,9 @@ export function DockerContainers({
       setOptimisticContainers((current) => {
         const source = (current ?? containers).map((container) => ({ ...container }));
         const orderMap = new Map<string, number>(
-          reordered.map((container, index) => [`${container._nodeId}:${container.name}`, index] as const)
+          reordered.map(
+            (container, index) => [`${container._nodeId}:${container.name}`, index] as const
+          )
         );
         for (const container of source) {
           const key = `${container._nodeId}:${container.name}`;
@@ -411,7 +437,10 @@ export function DockerContainers({
     async (container: DockerContainerRowData, folderId: string | null) => {
       applyOptimisticMove(container, folderId);
       try {
-        await moveContainersToFolder([{ nodeId: container._nodeId, containerName: container.name }], folderId);
+        await moveContainersToFolder(
+          [{ nodeId: container._nodeId, containerName: container.name }],
+          folderId
+        );
         toast.success("Container moved");
         await refreshData(true);
       } catch (err) {
@@ -431,7 +460,13 @@ export function DockerContainers({
     const dropData = over.data.current;
 
     if (activeData?.type === "folder") {
-      if (dropData?.type !== "folder" || active.id === over.id || dropData.isSystem || activeData.isSystem) return;
+      if (
+        dropData?.type !== "folder" ||
+        active.id === over.id ||
+        dropData.isSystem ||
+        activeData.isSystem
+      )
+        return;
       const findFolderSiblings = (
         nodes: typeof folders,
         folderId: string,
@@ -447,14 +482,18 @@ export function DockerContainers({
       const activeGroup = findFolderSiblings(folders, activeData.folderId as string);
       const overGroup = findFolderSiblings(folders, dropData.folderId as string);
       if (!activeGroup || !overGroup || activeGroup.parentId !== overGroup.parentId) return;
-      const oldIndex = activeGroup.siblings.findIndex((folder) => folder.id === activeData.folderId);
+      const oldIndex = activeGroup.siblings.findIndex(
+        (folder) => folder.id === activeData.folderId
+      );
       const newIndex = overGroup.siblings.findIndex((folder) => folder.id === dropData.folderId);
       if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
       const reordered = [...activeGroup.siblings];
       const [moved] = reordered.splice(oldIndex, 1);
       reordered.splice(newIndex, 0, moved);
       try {
-        await reorderFolders(reordered.map((folder, index) => ({ id: folder.id, sortOrder: index })));
+        await reorderFolders(
+          reordered.map((folder, index) => ({ id: folder.id, sortOrder: index }))
+        );
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Failed to reorder folders");
       }
@@ -487,7 +526,8 @@ export function DockerContainers({
       (container) => container._nodeId === source._nodeId && container.name === source.name
     );
     const newIndex = containersInFolder.findIndex(
-      (container) => container._nodeId === overContainer._nodeId && container.name === overContainer.name
+      (container) =>
+        container._nodeId === overContainer._nodeId && container.name === overContainer.name
     );
     if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
 
@@ -529,12 +569,21 @@ export function DockerContainers({
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-2xl font-bold">Docker Containers</h1>
-              {!isLoading && visibleNodeId && <Badge variant="secondary">{containers.length}</Badge>}
+              {!isLoading && visibleNodeId && (
+                <Badge variant="secondary">{containers.length}</Badge>
+              )}
             </div>
-            <p className="text-sm text-muted-foreground">Manage containers across your Docker nodes</p>
+            <p className="text-sm text-muted-foreground">
+              Manage containers across your Docker nodes
+            </p>
           </div>
           <div className="flex items-center gap-2">
-            {visibleNodeId && <RefreshButton onClick={() => void refreshData(true)} disabled={isLoading || foldersLoading} />}
+            {visibleNodeId && (
+              <RefreshButton
+                onClick={() => void refreshData(true)}
+                disabled={isLoading || foldersLoading}
+              />
+            )}
             {canManageFolders && (
               <Button
                 variant="outline"
@@ -612,118 +661,109 @@ export function DockerContainers({
           <EmptyState message="No Docker nodes registered. Add a Docker node from the Nodes page to get started." />
         )}
 
-      {(selectedNodeId || useDockerStore.getState().dockerNodes.length > 0 || embedded) && (
-        <>
-          {isLoading || foldersLoading ? (
-            <div className="flex items-center justify-center py-16">
-              <div className="flex flex-col items-center gap-3">
-                <LoadingSpinner className="" />
-                <p className="text-sm text-muted-foreground">Loading containers...</p>
-              </div>
+      {(selectedNodeId || useDockerStore.getState().dockerNodes.length > 0 || embedded) &&
+        (isLoading || foldersLoading ? (
+          <div className="flex items-center justify-center py-16">
+            <div className="flex flex-col items-center gap-3">
+              <LoadingSpinner className="" />
+              <p className="text-sm text-muted-foreground">Loading containers...</p>
             </div>
-          ) : filteredContainers.length > 0 || folders.length > 0 ? (
-            <DndContext
-              sensors={sensors}
-              onDragStart={(event) => setActiveDrag(event.active)}
-              onDragEnd={(event) => void handleDragEnd(event)}
-              onDragCancel={() => setActiveDrag(null)}
-            >
-              <div className="border border-border">
-                <table className="w-full" style={{ tableLayout: "fixed" }}>
-                  {colGroup}
-                  <thead className="border-b border-border bg-muted/40">
-                    <tr className="text-left">
-                      <th className="p-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">Name</th>
-                      <th className="p-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">Image</th>
-                      {showNodeColumn && (
-                        <th className="p-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">Node</th>
-                      )}
-                      <th className="p-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">Status</th>
-                      <th className="p-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">Created</th>
-                      {showActionsColumn && (
-                        <th className="p-3 text-xs font-medium uppercase tracking-wider text-muted-foreground text-right">
-                          Actions
-                        </th>
-                      )}
-                    </tr>
-                  </thead>
-                </table>
-
-                {folderTree.length > 0 && (
-                  <SortableContext
-                    items={folderTree.map((folder) => `docker-folder-${folder.id}`)}
-                    strategy={verticalListSortingStrategy}
-                  >
-                    {folderTree.map((folder) => (
-                      <DockerFolderGroup
-                        key={folder.id}
-                        folder={folder}
-                        depth={0}
-                        expanded={expandedFolderIds.has(folder.id)}
-                        onToggle={() => toggleFolder(folder.id)}
-                        onRename={handleRenameFolder}
-                        onDelete={handleDeleteFolder}
-                        onRequestCreateSubfolder={(parentId) => {
-                          setCreateFolderParentId(parentId);
-                          setCreateFolderOpen(true);
-                        }}
-                        onStart={handleStart}
-                        onStop={handleStop}
-                        onRestart={handleRestart}
-                        actionLoading={actionLoading}
-                        onMoveContainerToFolder={setMoveDialogContainer}
-                        expandedFolderIds={expandedFolderIds}
-                        onToggleFolder={toggleFolder}
-                        canManage={canManageContainer}
-                        canReorganize={canReorganizeContainer}
-                        canView={canViewContainer}
-                        showNode={showNodeColumn}
-                        colGroup={colGroup}
-                      />
-                    ))}
-                  </SortableContext>
-                )}
-
-                {(folders.length > 0 || ungroupedContainers.length > 0) && (
-                  <UngroupedDropZone>
-                    {folders.length > 0 && (
-                      <div className={`flex items-center justify-between px-3 py-2 ${ungroupedContainers.length > 0 ? "border-b border-border" : ""}`}>
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium">Ungrouped</span>
-                        </div>
-                        <Badge variant="secondary" className="text-xs">
-                          {ungroupedContainers.length}
-                        </Badge>
-                      </div>
+          </div>
+        ) : filteredContainers.length > 0 || folders.length > 0 ? (
+          <DndContext
+            sensors={sensors}
+            onDragStart={(event) => setActiveDrag(event.active)}
+            onDragEnd={(event) => void handleDragEnd(event)}
+            onDragCancel={() => setActiveDrag(null)}
+          >
+            <div className="border border-border">
+              <table className="w-full" style={{ tableLayout: "fixed" }}>
+                {colGroup}
+                <thead className="border-b border-border bg-muted/40">
+                  <tr className="text-left">
+                    <th className="p-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                      Name
+                    </th>
+                    <th className="p-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                      Image
+                    </th>
+                    {showNodeColumn && (
+                      <th className="p-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                        Node
+                      </th>
                     )}
-                    {ungroupedContainers.length > 0 &&
-                      (canManageFolders ? (
-                        <SortableContext
-                          items={ungroupedContainers.map((container) => `${container._nodeId}:${container.name}`)}
-                          strategy={verticalListSortingStrategy}
-                        >
-                          <table className="w-full" style={{ tableLayout: "fixed" }}>
-                            {colGroup}
-                            <tbody className="[&_tr:last-child]:border-b-0">
-                              {ungroupedContainers.map((container) => (
-                                <DockerContainerRow
-                                  key={`${container._nodeId}:${container.name}`}
-                                  container={container}
-                                  canView={canViewContainer(container)}
-                                  canManage={canManageContainer(container)}
-                                  canReorganize={canReorganizeContainer(container)}
-                                  showNode={showNodeColumn}
-                                  loadingAction={actionLoading[container.id]}
-                                  onStart={handleStart}
-                                  onStop={handleStop}
-                                  onRestart={handleRestart}
-                                  onMoveToFolder={setMoveDialogContainer}
-                                />
-                              ))}
-                            </tbody>
-                          </table>
-                        </SortableContext>
-                      ) : (
+                    <th className="p-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                      Status
+                    </th>
+                    <th className="p-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                      Created
+                    </th>
+                    {showActionsColumn && (
+                      <th className="p-3 text-xs font-medium uppercase tracking-wider text-muted-foreground text-right">
+                        Actions
+                      </th>
+                    )}
+                  </tr>
+                </thead>
+              </table>
+
+              {folderTree.length > 0 && (
+                <SortableContext
+                  items={folderTree.map((folder) => `docker-folder-${folder.id}`)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  {folderTree.map((folder) => (
+                    <DockerFolderGroup
+                      key={folder.id}
+                      folder={folder}
+                      depth={0}
+                      expanded={expandedFolderIds.has(folder.id)}
+                      onToggle={() => toggleFolder(folder.id)}
+                      onRename={handleRenameFolder}
+                      onDelete={handleDeleteFolder}
+                      onRequestCreateSubfolder={(parentId) => {
+                        setCreateFolderParentId(parentId);
+                        setCreateFolderOpen(true);
+                      }}
+                      onStart={handleStart}
+                      onStop={handleStop}
+                      onRestart={handleRestart}
+                      actionLoading={actionLoading}
+                      onMoveContainerToFolder={setMoveDialogContainer}
+                      expandedFolderIds={expandedFolderIds}
+                      onToggleFolder={toggleFolder}
+                      canManage={canManageContainer}
+                      canReorganize={canReorganizeContainer}
+                      canView={canViewContainer}
+                      showNode={showNodeColumn}
+                      colGroup={colGroup}
+                    />
+                  ))}
+                </SortableContext>
+              )}
+
+              {(folders.length > 0 || ungroupedContainers.length > 0) && (
+                <UngroupedDropZone>
+                  {folders.length > 0 && (
+                    <div
+                      className={`flex items-center justify-between px-3 py-2 ${ungroupedContainers.length > 0 ? "border-b border-border" : ""}`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium">Ungrouped</span>
+                      </div>
+                      <Badge variant="secondary" className="text-xs">
+                        {ungroupedContainers.length}
+                      </Badge>
+                    </div>
+                  )}
+                  {ungroupedContainers.length > 0 &&
+                    (canManageFolders ? (
+                      <SortableContext
+                        items={ungroupedContainers.map(
+                          (container) => `${container._nodeId}:${container.name}`
+                        )}
+                        strategy={verticalListSortingStrategy}
+                      >
                         <table className="w-full" style={{ tableLayout: "fixed" }}>
                           {colGroup}
                           <tbody className="[&_tr:last-child]:border-b-0">
@@ -744,26 +784,46 @@ export function DockerContainers({
                             ))}
                           </tbody>
                         </table>
-                      ))}
-                  </UngroupedDropZone>
-                )}
-              </div>
-              <DockerDragOverlay active={activeDrag} colGroup={colGroup} />
-            </DndContext>
-          ) : (
-            <EmptyState
-              message="No containers found on this node."
-              hasActiveFilters={hasActiveFilters}
-              onReset={() => {
-                setSearchInput("");
-                resetFilters();
-              }}
-              actionLabel={hasScope("docker:containers:create") ? "Deploy a container" : undefined}
-              onAction={hasScope("docker:containers:create") ? () => openDeploy() : undefined}
-            />
-          )}
-        </>
-      )}
+                      </SortableContext>
+                    ) : (
+                      <table className="w-full" style={{ tableLayout: "fixed" }}>
+                        {colGroup}
+                        <tbody className="[&_tr:last-child]:border-b-0">
+                          {ungroupedContainers.map((container) => (
+                            <DockerContainerRow
+                              key={`${container._nodeId}:${container.name}`}
+                              container={container}
+                              canView={canViewContainer(container)}
+                              canManage={canManageContainer(container)}
+                              canReorganize={canReorganizeContainer(container)}
+                              showNode={showNodeColumn}
+                              loadingAction={actionLoading[container.id]}
+                              onStart={handleStart}
+                              onStop={handleStop}
+                              onRestart={handleRestart}
+                              onMoveToFolder={setMoveDialogContainer}
+                            />
+                          ))}
+                        </tbody>
+                      </table>
+                    ))}
+                </UngroupedDropZone>
+              )}
+            </div>
+            <DockerDragOverlay active={activeDrag} colGroup={colGroup} />
+          </DndContext>
+        ) : (
+          <EmptyState
+            message="No containers found on this node."
+            hasActiveFilters={hasActiveFilters}
+            onReset={() => {
+              setSearchInput("");
+              resetFilters();
+            }}
+            actionLabel={hasScope("docker:containers:create") ? "Deploy a container" : undefined}
+            onAction={hasScope("docker:containers:create") ? () => openDeploy() : undefined}
+          />
+        ))}
 
       <DockerMoveToFolderDialog
         open={!!moveDialogContainer}

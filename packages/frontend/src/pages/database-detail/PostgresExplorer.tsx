@@ -1,7 +1,7 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
-  ChevronsUpDown,
   ChevronDown,
+  ChevronsUpDown,
   ChevronUp,
   Loader2,
   Maximize2,
@@ -34,8 +34,8 @@ import {
   isPendingRowValid,
   POSTGRES_EXPLORER_PAGE_SIZE,
   stringifyCell,
-  valuesEqual,
   VIRTUAL_ROW_HEIGHT,
+  valuesEqual,
 } from "./shared";
 
 export function PostgresExplorer({
@@ -151,7 +151,7 @@ export function PostgresExplorer({
     if (node.scrollHeight <= node.clientHeight + 1) {
       void loadMoreRows();
     }
-  }, [hasMoreRows, loadingMoreRows, loadMoreRows, rows.length]);
+  }, [hasMoreRows, loadingMoreRows, loadMoreRows]);
 
   const rowVirtualizer = useVirtualizer({
     count: rows.length,
@@ -169,9 +169,7 @@ export function PostgresExplorer({
   const gridTemplateColumns = metadata
     ? `repeat(${metadata.columns.length}, minmax(${columnMinWidth}px, 1fr))`
     : "";
-  const gridWidth = metadata
-    ? `max(100%, ${metadata.columns.length * columnMinWidth}px)`
-    : "100%";
+  const gridWidth = metadata ? `max(100%, ${metadata.columns.length * columnMinWidth}px)` : "100%";
 
   useEffect(() => {
     if (metadata && sortBy && !metadata.columns.some((column) => column.name === sortBy)) {
@@ -201,10 +199,7 @@ export function PostgresExplorer({
   const emptyPendingRowCount = pendingRowStates.filter((state) => state === "empty").length;
   const dirtyCount = editedRowCount + validPendingRows.length;
   const canSaveChanges =
-    !saving &&
-    dirtyCount > 0 &&
-    invalidPendingRowCount === 0 &&
-    emptyPendingRowCount === 0;
+    !saving && dirtyCount > 0 && invalidPendingRowCount === 0 && emptyPendingRowCount === 0;
 
   const updateDraftRow = (
     row: Record<string, unknown>,
@@ -367,7 +362,11 @@ export function PostgresExplorer({
                   onClick={onToggleFocus}
                   title={focused ? "Collapse explorer" : "Expand explorer"}
                 >
-                  {focused ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+                  {focused ? (
+                    <Minimize2 className="h-3.5 w-3.5" />
+                  ) : (
+                    <Maximize2 className="h-3.5 w-3.5" />
+                  )}
                 </Button>
               )}
               {canWrite && (
@@ -506,9 +505,7 @@ export function PostgresExplorer({
                           <div key={column.name} className="border-r border-border last:border-r-0">
                             <Input
                               value={stringifyCell(draft[column.name])}
-                              onChange={(event) =>
-                                updateDraftRow(row, column, event.target.value)
-                              }
+                              onChange={(event) => updateDraftRow(row, column, event.target.value)}
                               className="h-9 text-xs font-mono border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
                             />
                           </div>
@@ -551,9 +548,7 @@ export function PostgresExplorer({
                         >
                           <Input
                             value={stringifyCell(newRow[column.name])}
-                            onChange={(event) =>
-                              updateNewRow(rowIndex, column, event.target.value)
-                            }
+                            onChange={(event) => updateNewRow(rowIndex, column, event.target.value)}
                             className={`h-9 text-xs font-mono border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring flex-1 min-w-0 ${
                               pendingRowStates[rowIndex] === "invalid" &&
                               !column.nullable &&

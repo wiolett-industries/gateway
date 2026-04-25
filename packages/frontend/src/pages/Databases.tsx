@@ -26,9 +26,9 @@ import { useAuthStore } from "@/stores/auth";
 import type { DatabaseConnection } from "@/types";
 import {
   buildDatabasePayload,
+  type DatabaseConnectionDraft,
   DatabaseConnectionForm,
   draftFromConnection,
-  type DatabaseConnectionDraft,
 } from "./database-detail/DatabaseConnectionForm";
 
 const HEALTH_BADGE: Record<string, "success" | "secondary" | "warning" | "destructive"> = {
@@ -174,7 +174,10 @@ export function Databases() {
           }}
           filters={
             <>
-              <Select value={typeFilter} onValueChange={(value) => setTypeFilter(value as typeof typeFilter)}>
+              <Select
+                value={typeFilter}
+                onValueChange={(value) => setTypeFilter(value as typeof typeFilter)}
+              >
                 <SelectTrigger className="w-[180px]">
                   <SelectValue placeholder="Type" />
                 </SelectTrigger>
@@ -210,7 +213,9 @@ export function Databases() {
         ) : filtered.length === 0 ? (
           <EmptyState
             message="No databases. Add a Postgres or Redis connection to manage it through Gateway."
-            {...(canCreate ? { actionLabel: "Add Database", onAction: () => setCreateOpen(true) } : {})}
+            {...(canCreate
+              ? { actionLabel: "Add Database", onAction: () => setCreateOpen(true) }
+              : {})}
           />
         ) : (
           <div className="border border-border rounded-lg bg-card">

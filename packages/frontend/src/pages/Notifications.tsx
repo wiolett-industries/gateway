@@ -401,9 +401,7 @@ function AlertsTab({
                     <td className="p-3">
                       <Badge variant="secondary">{r.category}</Badge>
                     </td>
-                    <td className="p-3 text-sm text-muted-foreground">
-                      {formatAlertCondition(r)}
-                    </td>
+                    <td className="p-3 text-sm text-muted-foreground">{formatAlertCondition(r)}</td>
                     <td className="p-3 text-sm text-muted-foreground">
                       {r.resourceIds.length === 0 ? "All" : `${r.resourceIds.length} selected`}
                     </td>
@@ -643,7 +641,7 @@ function AlertDialog({
   const selectedEventDef = cat?.events.find((event) => event.id === eventPattern);
   const isCertificateExpiryThreshold =
     type === "threshold" && category === "certificate" && metric === CERTIFICATE_EXPIRY_METRIC;
-  const applyMetricDefaults = (metricDef: NonNullable<typeof firstMetric>) => {
+  const applyMetricDefaults = useCallback((metricDef: NonNullable<typeof firstMetric>) => {
     setMetric(metricDef.id);
     setOperator(metricDef.defaultOperator);
     setThresholdValue(String(metricDef.defaultValue));
@@ -651,7 +649,7 @@ function AlertDialog({
     setFireThresholdPercent("100");
     setResolveAfterMinutes(String(Math.round((metricDef.defaultResolveAfterSeconds ?? 60) / 60)));
     setResolveThresholdPercent("100");
-  };
+  }, []);
 
   // Auto-fix type and set defaults when category changes (skip in edit mode on first load)
   useEffect(() => {
@@ -679,7 +677,7 @@ function AlertDialog({
     if (effectiveType === "event" && firstEvent) {
       setEventPattern(firstEvent.id);
     }
-  }, [cat, firstEvent, firstMetric, isEdit, type]);
+  }, [applyMetricDefaults, cat, firstEvent, firstMetric, isEdit, type]);
 
   // Reset metric/event defaults when type changes within same category
   useEffect(() => {
@@ -690,7 +688,7 @@ function AlertDialog({
     if (type === "event" && firstEvent && !cat.events.some((event) => event.id === eventPattern)) {
       setEventPattern(firstEvent.id);
     }
-  }, [cat, eventPattern, firstEvent, firstMetric, isEdit, metric, type]);
+  }, [applyMetricDefaults, cat, eventPattern, firstEvent, firstMetric, isEdit, metric, type]);
 
   const toggleResource = (id: string) =>
     setResourceIds((prev) => (prev.includes(id) ? prev.filter((r) => r !== id) : [...prev, id]));
@@ -809,14 +807,20 @@ function AlertDialog({
         data.operator = operator;
         data.thresholdValue = Number(thresholdValue);
         data.durationSeconds = isCertificateExpiryThreshold ? 0 : Number(durationMinutes) * 60;
-        data.fireThresholdPercent = isCertificateExpiryThreshold ? 100 : Number(fireThresholdPercent);
-        data.resolveAfterSeconds = isCertificateExpiryThreshold ? 0 : Number(resolveAfterMinutes) * 60;
+        data.fireThresholdPercent = isCertificateExpiryThreshold
+          ? 100
+          : Number(fireThresholdPercent);
+        data.resolveAfterSeconds = isCertificateExpiryThreshold
+          ? 0
+          : Number(resolveAfterMinutes) * 60;
         data.resolveThresholdPercent = isCertificateExpiryThreshold
           ? 100
           : Number(resolveThresholdPercent);
       } else {
         data.eventPattern = eventPattern;
-        data.durationSeconds = selectedEventDef?.supportsThreshold ? Number(durationMinutes) * 60 : 0;
+        data.durationSeconds = selectedEventDef?.supportsThreshold
+          ? Number(durationMinutes) * 60
+          : 0;
         data.fireThresholdPercent = selectedEventDef?.supportsThreshold
           ? Number(fireThresholdPercent)
           : 100;
@@ -1067,8 +1071,9 @@ function AlertDialog({
                   </div>
                 )}
 
-                {type === "event" && cat && (
-                  selectedEventDef?.supportsThreshold ? (
+                {type === "event" &&
+                  cat &&
+                  (selectedEventDef?.supportsThreshold ? (
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-1.5 col-span-2">
                         <label className="text-sm font-medium">Event</label>
@@ -1107,7 +1112,8 @@ function AlertDialog({
                           onChange={(e) => setFireThresholdPercent(e.target.value)}
                         />
                         <p className="text-xs text-muted-foreground">
-                          Alert fires when the event state is observed this often in the fire window.
+                          Alert fires when the event state is observed this often in the fire
+                          window.
                         </p>
                       </div>
                       <div className="space-y-1.5">
@@ -1132,7 +1138,8 @@ function AlertDialog({
                           onChange={(e) => setResolveThresholdPercent(e.target.value)}
                         />
                         <p className="text-xs text-muted-foreground">
-                          Alert resolves when clear observations reach this share of the resolve window.
+                          Alert resolves when clear observations reach this share of the resolve
+                          window.
                         </p>
                       </div>
                       <div className="space-y-1.5 col-span-2">
@@ -1176,8 +1183,7 @@ function AlertDialog({
                         </p>
                       </div>
                     </div>
-                  )
-                )}
+                  ))}
               </motion.div>
             )}
 

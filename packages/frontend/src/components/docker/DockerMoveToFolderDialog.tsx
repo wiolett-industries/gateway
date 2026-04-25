@@ -81,7 +81,9 @@ export function DockerMoveToFolderDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Move to Folder</DialogTitle>
-          <DialogDescription>Select a destination folder or move to root (ungrouped).</DialogDescription>
+          <DialogDescription>
+            Select a destination folder or move to root (ungrouped).
+          </DialogDescription>
         </DialogHeader>
         <div className="border border-border max-h-64 overflow-y-auto">
           <button

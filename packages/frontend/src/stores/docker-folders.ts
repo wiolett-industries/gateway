@@ -14,7 +14,10 @@ interface DockerFolderState {
   renameFolder: (id: string, name: string) => Promise<void>;
   deleteFolder: (id: string) => Promise<void>;
   reorderFolders: (items: { id: string; sortOrder: number }[]) => Promise<void>;
-  moveContainersToFolder: (items: Array<{ nodeId: string; containerName: string }>, folderId: string | null) => Promise<void>;
+  moveContainersToFolder: (
+    items: Array<{ nodeId: string; containerName: string }>,
+    folderId: string | null
+  ) => Promise<void>;
   reorderContainers: (
     items: Array<{ nodeId: string; containerName: string; sortOrder: number }>
   ) => Promise<void>;
@@ -40,7 +43,10 @@ function loadExpandedFolderIds(): string[] {
 function saveExpandedFolderIds(ids: Set<string>) {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(EXPANDED_DOCKER_FOLDERS_STORAGE_KEY, JSON.stringify(Array.from(ids)));
+    window.localStorage.setItem(
+      EXPANDED_DOCKER_FOLDERS_STORAGE_KEY,
+      JSON.stringify(Array.from(ids))
+    );
   } catch {}
 }
 

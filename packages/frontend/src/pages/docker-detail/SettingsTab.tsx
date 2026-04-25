@@ -4,7 +4,6 @@ import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { formatBytes } from "@/lib/utils";
 import {
   Select,
   SelectContent,
@@ -14,6 +13,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { useRealtime } from "@/hooks/use-realtime";
+import { formatBytes } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
@@ -297,12 +297,7 @@ export function SettingsTab({
       runtimeCapacity.maxSwapBytes && runtimeCapacity.maxSwapBytes > 0
         ? runtimeCapacity.maxSwapBytes / 1048576
         : null;
-    if (
-      maxSwapMB &&
-      parsedSwapMB !== null &&
-      parsedSwapMB !== -1 &&
-      parsedSwapMB > maxSwapMB
-    ) {
+    if (maxSwapMB && parsedSwapMB !== null && parsedSwapMB !== -1 && parsedSwapMB > maxSwapMB) {
       return `Swap cannot exceed node swap (${formatBytes(runtimeCapacity.maxSwapBytes ?? 0)}).`;
     }
 
@@ -325,8 +320,7 @@ export function SettingsTab({
     }
     const memBytes = memoryMB ? Number(memoryMB) * 1048576 : 0;
     const swapOnly = memSwapMB === "-1" ? -1 : memSwapMB ? Number(memSwapMB) * 1048576 : 0;
-    const combinedSwap =
-      swapOnly === -1 ? -1 : memBytes > 0 ? memBytes + Math.max(0, swapOnly) : 0;
+    const combinedSwap = swapOnly === -1 ? -1 : memBytes > 0 ? memBytes + Math.max(0, swapOnly) : 0;
     if (memBytes !== currentMemory || combinedSwap !== currentMemSwap) {
       payload.memoryLimit = memBytes;
       payload.memorySwap = combinedSwap;
@@ -717,7 +711,9 @@ export function SettingsTab({
                 className="hover:opacity-90 disabled:opacity-50"
                 onClick={handleRecreate}
                 disabled={
-                  recreateLoading || !hasRecreateChanges || (hasRuntimeChanges && !!runtimeValidationError)
+                  recreateLoading ||
+                  !hasRecreateChanges ||
+                  (hasRuntimeChanges && !!runtimeValidationError)
                 }
               >
                 <RotateCcw className="h-3.5 w-3.5" />

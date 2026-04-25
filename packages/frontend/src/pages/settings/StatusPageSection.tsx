@@ -122,86 +122,83 @@ export function StatusPageSection({ nodesList }: StatusPageSectionProps) {
   };
 
   return (
-    <>
-      <div className="border border-border bg-card">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border p-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="font-semibold">Status Page</h2>
-              <Badge variant={config.enabled ? "success" : "secondary"}>
-                {config.enabled ? "Enabled" : "Disabled"}
-              </Badge>
-            </div>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Enable the public status page and configure its custom domain
-            </p>
-          </div>
+    <div className="border border-border bg-card">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border p-4">
+        <div>
           <div className="flex items-center gap-2">
-            <Switch
-              checked={config.enabled}
-              disabled={!canManage || savingSettings}
-              onChange={(enabled) => updateConfig({ enabled })}
-            />
+            <h2 className="font-semibold">Status Page</h2>
+            <Badge variant={config.enabled ? "success" : "secondary"}>
+              {config.enabled ? "Enabled" : "Disabled"}
+            </Badge>
           </div>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Enable the public status page and configure its custom domain
+          </p>
         </div>
+        <div className="flex items-center gap-2">
+          <Switch
+            checked={config.enabled}
+            disabled={!canManage || savingSettings}
+            onChange={(enabled) => updateConfig({ enabled })}
+          />
+        </div>
+      </div>
 
-        <div className="grid gap-4 p-4 xl:grid-cols-3">
-          <Field label="Domain">
-            <Input
-              value={config.domain}
-              disabled={!canManage}
-              placeholder="status.example.com"
-              onChange={(event) => setConfig((prev) => ({ ...prev, domain: event.target.value }))}
-              onBlur={() => updateConfig({ domain: config.domain })}
-            />
-          </Field>
-          <Field label="Nginx node">
-            <Select
-              value={config.nodeId ?? ""}
-              disabled={!canManage}
-              onValueChange={(nodeId) => updateConfig({ nodeId })}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select an online nginx node" />
-              </SelectTrigger>
-              <SelectContent>
-                {onlineNginxNodes.map((node) => (
-                  <SelectItem key={node.id} value={node.id}>
-                    {node.displayName || node.hostname}
+      <div className="grid gap-4 p-4 xl:grid-cols-3">
+        <Field label="Domain">
+          <Input
+            value={config.domain}
+            disabled={!canManage}
+            placeholder="status.example.com"
+            onChange={(event) => setConfig((prev) => ({ ...prev, domain: event.target.value }))}
+            onBlur={() => updateConfig({ domain: config.domain })}
+          />
+        </Field>
+        <Field label="Nginx node">
+          <Select
+            value={config.nodeId ?? ""}
+            disabled={!canManage}
+            onValueChange={(nodeId) => updateConfig({ nodeId })}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select an online nginx node" />
+            </SelectTrigger>
+            <SelectContent>
+              {onlineNginxNodes.map((node) => (
+                <SelectItem key={node.id} value={node.id}>
+                  {node.displayName || node.hostname}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+        <Field label="SSL certificate">
+          <Select
+            value={config.sslCertificateId ?? "__none__"}
+            disabled={!canManage}
+            onValueChange={(sslCertificateId) =>
+              updateConfig({
+                sslCertificateId: sslCertificateId === "__none__" ? null : sslCertificateId,
+              })
+            }
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none__">No certificate</SelectItem>
+              {sslCerts
+                .filter((cert) => cert.status === "active")
+                .map((cert) => (
+                  <SelectItem key={cert.id} value={cert.id}>
+                    {cert.name}
                   </SelectItem>
                 ))}
-              </SelectContent>
-            </Select>
-          </Field>
-          <Field label="SSL certificate">
-            <Select
-              value={config.sslCertificateId ?? "__none__"}
-              disabled={!canManage}
-              onValueChange={(sslCertificateId) =>
-                updateConfig({
-                  sslCertificateId: sslCertificateId === "__none__" ? null : sslCertificateId,
-                })
-              }
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__none__">No certificate</SelectItem>
-                {sslCerts
-                  .filter((cert) => cert.status === "active")
-                  .map((cert) => (
-                    <SelectItem key={cert.id} value={cert.id}>
-                      {cert.name}
-                    </SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
-          </Field>
-        </div>
-
+            </SelectContent>
+          </Select>
+        </Field>
       </div>
-    </>
+    </div>
   );
 }
 

@@ -123,10 +123,7 @@ function incidentUpdateMarkerClass(status: StatusPageIncidentUpdateStatus) {
 
 function IncidentUpdateMarker({ status }: { status: StatusPageIncidentUpdateStatus }) {
   return (
-    <span
-      aria-hidden="true"
-      className={`block h-2 w-2 ${incidentUpdateMarkerClass(status)}`}
-    />
+    <span aria-hidden="true" className={`block h-2 w-2 ${incidentUpdateMarkerClass(status)}`} />
   );
 }
 
@@ -309,7 +306,9 @@ export function StatusPage() {
       <div className="flex flex-wrap items-center gap-2">
         <Button
           variant="outline"
-          onClick={() => window.open(getStatusPreviewUrl(sessionId), "_blank", "noopener,noreferrer")}
+          onClick={() =>
+            window.open(getStatusPreviewUrl(sessionId), "_blank", "noopener,noreferrer")
+          }
         >
           <Eye className="h-4 w-4" />
           Preview
@@ -357,7 +356,12 @@ export function StatusPage() {
               Enable it and configure the domain in Settings before publishing services or
               incidents.
             </p>
-            <Button variant="outline" size="sm" className="mt-3" onClick={() => navigate("/settings")}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-3"
+              onClick={() => navigate("/settings")}
+            >
               Open Settings
             </Button>
           </div>
@@ -461,12 +465,10 @@ function SettingsTab({
   onSave: (patch: Partial<StatusPageConfig>) => void;
 }) {
   const disabled = !canManage || saving;
-  const setSeverity =
-    (key: "autoDegradedSeverity" | "autoOutageSeverity") =>
-    (value: string) => {
-      const severity = value as StatusPageIncidentSeverity;
-      onConfigChange((prev) => ({ ...prev, [key]: severity }));
-    };
+  const setSeverity = (key: "autoDegradedSeverity" | "autoOutageSeverity") => (value: string) => {
+    const severity = value as StatusPageIncidentSeverity;
+    onConfigChange((prev) => ({ ...prev, [key]: severity }));
+  };
 
   const saveSettings = () => {
     onSave({
@@ -741,11 +743,13 @@ function IncidentsTab({
     <div className="space-y-3">
       {incidents.map((incident) => {
         const affected = affectedServices(incident, services);
-        const canPromoteIncident = canCreate && incident.type === "automatic" && incident.autoManaged;
+        const canPromoteIncident =
+          canCreate && incident.type === "automatic" && incident.autoManaged;
         const canResolveIncident = canResolve && incident.status === "active";
         const canDeleteIncident = canDelete && incident.status === "resolved";
         const hasPrimaryActions = canPromoteIncident || canUpdate;
-        const hasActions = canPromoteIncident || canUpdate || canResolveIncident || canDeleteIncident;
+        const hasActions =
+          canPromoteIncident || canUpdate || canResolveIncident || canDeleteIncident;
         const events = incident.updates?.length
           ? incident.updates
           : [
@@ -875,7 +879,10 @@ function IncidentsTab({
                   const displayStatus = displayIncidentUpdateStatus(incident, update, index);
                   const showConnector = index < events.length - 1 || incident.status === "active";
                   return (
-                    <div key={update.id} className="relative grid grid-cols-[22px_minmax(0,1fr)] gap-3">
+                    <div
+                      key={update.id}
+                      className="relative grid grid-cols-[22px_minmax(0,1fr)] gap-3"
+                    >
                       {showConnector && (
                         <span
                           className={`absolute left-[10px] top-[19px] w-px bg-border ${
@@ -883,9 +890,7 @@ function IncidentsTab({
                           }`}
                         />
                       )}
-                      <span
-                        className="relative top-[-3px] z-10 flex h-[22px] w-[22px] items-center justify-center"
-                      >
+                      <span className="relative top-[-3px] z-10 flex h-[22px] w-[22px] items-center justify-center">
                         <IncidentUpdateMarker status={displayStatus} />
                       </span>
                       <div className="min-w-0">

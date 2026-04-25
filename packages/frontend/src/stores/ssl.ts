@@ -32,9 +32,7 @@ interface SSLState {
   fetchCertificates: () => Promise<void>;
   selectCertificate: (id: string) => Promise<void>;
   clearSelected: () => void;
-  requestACME: (
-    data: RequestACMECertRequest
-  ) => Promise<SSLCertificateOperationResult>;
+  requestACME: (data: RequestACMECertRequest) => Promise<SSLCertificateOperationResult>;
   uploadCert: (data: UploadCertRequest) => Promise<SSLCertificate>;
   linkInternal: (data: LinkInternalCertRequest) => Promise<SSLCertificate>;
   renewCert: (id: string) => Promise<SSLCertificate | SSLCertificateOperationResult>;

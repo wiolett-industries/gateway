@@ -471,7 +471,10 @@ export default function App() {
                 element={scoped("admin:audit", <Navigate to="/administration/audit" replace />)}
               />
               <Route path="/notifications/:tab?" element={<NotificationsPageGuard />} />
-              <Route path="/status-page/:tab?" element={scoped("status-page:view", <StatusPage />)} />
+              <Route
+                path="/status-page/:tab?"
+                element={scoped("status-page:view", <StatusPage />)}
+              />
               <Route path="/databases" element={<DatabasesPageGuard />} />
               <Route path="/databases/:id/:tab?" element={<DatabaseDetailGuard />} />
               <Route path="/settings" element={<Settings />} />

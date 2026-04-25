@@ -97,7 +97,7 @@ export function DataTable<T>({
   // size cache so estimates re-pick the correct kind on group transitions.
   useEffect(() => {
     virtualizer.measure();
-  }, [items, virtualizer]);
+  }, [virtualizer]);
 
   if (data.length === 0) {
     return (

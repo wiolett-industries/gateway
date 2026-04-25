@@ -1,7 +1,6 @@
 import { Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { formatBytes } from "@/lib/utils";
 import {
   Select,
   SelectContent,
@@ -9,6 +8,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { formatBytes } from "@/lib/utils";
 
 interface RuntimeSectionProps {
   canEdit: boolean;
@@ -61,7 +61,8 @@ export function RuntimeSection({
   liveLoading,
   onApply,
 }: RuntimeSectionProps) {
-  const maxMemoryMB = maxMemoryBytes && maxMemoryBytes > 0 ? Math.floor(maxMemoryBytes / 1048576) : null;
+  const maxMemoryMB =
+    maxMemoryBytes && maxMemoryBytes > 0 ? Math.floor(maxMemoryBytes / 1048576) : null;
   const maxSwapMB = maxSwapBytes && maxSwapBytes > 0 ? Math.floor(maxSwapBytes / 1048576) : null;
 
   return (
@@ -148,7 +149,9 @@ export function RuntimeSection({
               max={maxMemoryMB ?? undefined}
             />
             {maxMemoryBytes && maxMemoryBytes > 0 && (
-              <p className="text-[11px] text-muted-foreground">Max: {formatBytes(maxMemoryBytes)}</p>
+              <p className="text-[11px] text-muted-foreground">
+                Max: {formatBytes(maxMemoryBytes)}
+              </p>
             )}
           </div>
           <div className="space-y-1.5">

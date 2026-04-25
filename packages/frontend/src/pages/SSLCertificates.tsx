@@ -407,9 +407,7 @@ export function SSLCertificates() {
                                   </DropdownMenuItem>
                                 )}
                                 {canRenewCert && (
-                                  <DropdownMenuItem
-                                    onClick={() => handleRenew(cert.id)}
-                                  >
+                                  <DropdownMenuItem onClick={() => handleRenew(cert.id)}>
                                     <RefreshCw className="h-4 w-4" />
                                     Renew
                                   </DropdownMenuItem>
