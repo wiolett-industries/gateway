@@ -252,6 +252,7 @@ function AdministrationPageGuard() {
 }
 
 function RealtimeBridge() {
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
   const logout = useAuthStore((s) => s.logout);
@@ -260,12 +261,12 @@ function RealtimeBridge() {
   const clearGatewayUpdating = useAppStatusStore((s) => s.clearGatewayUpdating);
 
   useEffect(() => {
-    if (user) {
+    if (isAuthenticated) {
       eventStream.start();
       return () => eventStream.stop();
     }
     return;
-  }, [user]);
+  }, [isAuthenticated]);
 
   // Live permission updates: refresh the local user (and thus scopes) whenever
   // the server says this user's permissions changed.

@@ -104,21 +104,24 @@ export function AdminNodes() {
   const daemonUpdates = useDaemonUpdatesStore((s) => s.statuses);
   const fetchDaemonUpdates = useDaemonUpdatesStore((s) => s.fetchDaemonUpdates);
 
-  const loadDaemonUpdates = useCallback(async () => {
-    if (!hasScope("admin:update")) return;
-    try {
-      await fetchDaemonUpdates();
-    } catch {
-      // ignore
-    }
-  }, [fetchDaemonUpdates, hasScope]);
+  const loadDaemonUpdates = useCallback(
+    async (options?: { force?: boolean }) => {
+      if (!hasScope("admin:update")) return;
+      try {
+        await fetchDaemonUpdates(options);
+      } catch {
+        // ignore
+      }
+    },
+    [fetchDaemonUpdates, hasScope]
+  );
 
   useEffect(() => {
     fetchNodes();
   }, [fetchNodes]);
 
   useRealtime("node.changed", () => {
-    void loadDaemonUpdates();
+    void loadDaemonUpdates({ force: true });
   });
 
   // Fetch daemon update statuses
