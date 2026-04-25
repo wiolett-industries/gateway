@@ -481,13 +481,7 @@ export function DockerContainers({
     const dropData = over.data.current;
 
     if (activeData?.type === "folder") {
-      if (
-        dropData?.type !== "folder" ||
-        active.id === over.id ||
-        dropData.isSystem ||
-        activeData.isSystem
-      )
-        return;
+      if (dropData?.type !== "folder" || active.id === over.id) return;
       const findFolderSiblings = (
         nodes: typeof folders,
         folderId: string,
@@ -738,8 +732,8 @@ export function DockerContainers({
                       key={folder.id}
                       folder={folder}
                       depth={0}
-                      expanded={expandedFolderIds.has(folder.id)}
-                      onToggle={() => toggleFolder(folder.id)}
+                      expanded={fixedNodeId ? true : expandedFolderIds.has(folder.id)}
+                      onToggle={fixedNodeId ? () => {} : () => toggleFolder(folder.id)}
                       onRename={handleRenameFolder}
                       onDelete={handleDeleteFolder}
                       onRequestCreateSubfolder={(parentId) => {
@@ -757,6 +751,7 @@ export function DockerContainers({
                       canReorganize={canReorganizeContainer}
                       canView={canViewContainer}
                       canManageFolders={canManageFolders}
+                      collapsible={!fixedNodeId}
                       showNode={showNodeColumn}
                       colGroup={colGroup}
                     />

@@ -43,6 +43,7 @@ type DockerResource = "containers" | "images" | "volumes" | "networks" | "tasks"
 
 interface DockerState {
   containers: DockerContainer[];
+  containersByScope: Record<string, DockerContainer[]>;
   images: DockerImage[];
   volumes: DockerVolume[];
   networks: DockerNetwork[];
@@ -72,6 +73,12 @@ interface DockerState {
   fetchRegistries: () => Promise<void>;
 
   invalidate: (...resources: DockerResource[]) => Promise<void>;
+}
+
+const GLOBAL_DOCKER_SCOPE = "__global__";
+
+function dockerContainerScope(nodeId: string | null | undefined) {
+  return nodeId ?? GLOBAL_DOCKER_SCOPE;
 }
 
 async function fetchAllNodes<T>(
@@ -127,6 +134,7 @@ function loadingState(
 
 export const useDockerStore = create<DockerState>()((set, get) => ({
   containers: [],
+  containersByScope: {},
   images: [],
   volumes: [],
   networks: [],
@@ -139,7 +147,11 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
   isLoading: false,
 
   setSelectedNode: (nodeId) => {
-    set({ selectedNodeId: nodeId });
+    const scope = dockerContainerScope(nodeId);
+    set((state) => ({
+      selectedNodeId: nodeId,
+      containers: state.containersByScope[scope] ?? [],
+    }));
   },
 
   setDockerNodes: (nodes) =>
@@ -161,7 +173,12 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
     const requestId = ++dockerRequestIds.containers;
     const { selectedNodeId, dockerNodes } = get();
     const effectiveNodeId = nodeIdOverride ?? selectedNodeId;
-    set((state) => loadingState(state.loading, "containers", get().containers.length === 0));
+    const scope = dockerContainerScope(effectiveNodeId);
+    const cached = get().containersByScope[scope];
+    set((state) => ({
+      containers: cached ?? [],
+      ...loadingState(state.loading, "containers", !cached),
+    }));
     try {
       if (effectiveNodeId) {
         const data = await api.listDockerContainers(effectiveNodeId);
@@ -174,6 +191,7 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
         if (requestId !== dockerRequestIds.containers) return;
         set((state) => ({
           containers: items,
+          containersByScope: { ...state.containersByScope, [scope]: items },
           ...loadingState(state.loading, "containers", false),
         }));
       } else {
@@ -185,6 +203,7 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
         if (requestId !== dockerRequestIds.containers) return;
         set((state) => ({
           containers: items,
+          containersByScope: { ...state.containersByScope, [scope]: items },
           ...loadingState(state.loading, "containers", false),
         }));
       }
@@ -198,6 +217,12 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
     const requestId = ++dockerRequestIds.containers;
     const { selectedNodeId, dockerNodes } = get();
     const effectiveNodeId = nodeIdOverride ?? selectedNodeId;
+    const scope = dockerContainerScope(effectiveNodeId);
+    const cached = get().containersByScope[scope];
+    set((state) => ({
+      containers: cached ?? [],
+      ...loadingState(state.loading, "containers", !cached),
+    }));
     try {
       if (effectiveNodeId) {
         const data = await api.listDockerContainers(effectiveNodeId, true);
@@ -210,6 +235,7 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
         if (requestId !== dockerRequestIds.containers) return;
         set((state) => ({
           containers: items,
+          containersByScope: { ...state.containersByScope, [scope]: items },
           ...loadingState(state.loading, "containers", false),
         }));
       } else {
@@ -221,6 +247,7 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
         if (requestId !== dockerRequestIds.containers) return;
         set((state) => ({
           containers: items,
+          containersByScope: { ...state.containersByScope, [scope]: items },
           ...loadingState(state.loading, "containers", false),
         }));
       }
