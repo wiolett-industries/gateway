@@ -7,8 +7,8 @@ import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
 import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
-import type { DockerRegistryService } from './docker-registry.service.js';
 import type { DockerManagementService } from './docker.service.js';
+import type { DockerRegistryService } from './docker-registry.service.js';
 import type { DockerTaskService } from './docker-task.service.js';
 
 const logger = createChildLogger('DockerWebhookService');

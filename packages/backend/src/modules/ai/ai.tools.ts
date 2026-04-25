@@ -1403,7 +1403,11 @@ export const AI_TOOLS: AIToolDefinition[] = [
         databaseId: { type: 'string', description: 'Database connection UUID' },
         key: { type: 'string', description: 'Redis key name' },
         type: { type: 'string', enum: ['string', 'hash', 'list', 'set', 'zset'], description: 'Redis value type' },
-        value: { type: 'object', description: 'Value payload. Use a JSON string for string type, object for hash, array for list/set, array of {member,score} for zset.' },
+        value: {
+          type: 'object',
+          description:
+            'Value payload. Use a JSON string for string type, object for hash, array for list/set, array of {member,score} for zset.',
+        },
         ttlSeconds: { type: 'number', description: 'Optional TTL in seconds' },
       },
       required: ['databaseId', 'key', 'type', 'value'],
@@ -1483,7 +1487,10 @@ export const AI_TOOLS: AIToolDefinition[] = [
         },
         severity: { type: 'string', enum: ['info', 'warning', 'critical'], description: 'Alert severity' },
         metric: { type: 'string', description: 'For threshold: metric name (cpu, memory, disk, days_until_expiry)' },
-        metricTarget: { type: 'string', description: 'For threshold: optional sub-target like a specific disk mount point' },
+        metricTarget: {
+          type: 'string',
+          description: 'For threshold: optional sub-target like a specific disk mount point',
+        },
         operator: { type: 'string', enum: ['>', '>=', '<', '<='], description: 'For threshold: comparison operator' },
         thresholdValue: { type: 'number', description: 'For threshold: threshold value' },
         durationSeconds: {
@@ -1492,7 +1499,8 @@ export const AI_TOOLS: AIToolDefinition[] = [
         },
         fireThresholdPercent: {
           type: 'number',
-          description: 'For threshold: percent of probes in the fire window that must breach before firing (default 100)',
+          description:
+            'For threshold: percent of probes in the fire window that must breach before firing (default 100)',
         },
         resolveAfterSeconds: {
           type: 'number',
@@ -1500,7 +1508,8 @@ export const AI_TOOLS: AIToolDefinition[] = [
         },
         resolveThresholdPercent: {
           type: 'number',
-          description: 'For threshold: percent of probes in the resolve window that must be clear before resolving (default 100)',
+          description:
+            'For threshold: percent of probes in the resolve window that must be clear before resolving (default 100)',
         },
         eventPattern: { type: 'string', description: 'For event: event pattern (offline, stopped, oom_killed, etc.)' },
         resourceIds: {

@@ -1,13 +1,12 @@
 import { EventEmitter } from 'node:events';
-import type Redis from 'ioredis';
 import { createChildLogger } from '@/lib/logger.js';
-import type { CacheService } from '@/services/cache.service.js';
 import type { NotificationEvaluatorService } from '@/modules/notifications/notification-evaluator.service.js';
-import {
-  type DatabaseConnectionConfig,
-  type DatabaseHealthStatus,
+import type { CacheService } from '@/services/cache.service.js';
+import type {
+  DatabaseConnectionConfig,
   DatabaseConnectionService,
-  type DatabaseType,
+  DatabaseHealthStatus,
+  DatabaseType,
 } from './databases.service.js';
 
 const logger = createChildLogger('DatabaseMonitoringService');
@@ -85,7 +84,9 @@ export class DatabaseMonitoringService extends EventEmitter {
             }
           })
           .catch((error) => {
-            logger.warn('Background database polling failed', { error: error instanceof Error ? error.message : String(error) });
+            logger.warn('Background database polling failed', {
+              error: error instanceof Error ? error.message : String(error),
+            });
           });
       }, 10_000);
     }, 5000);
@@ -94,7 +95,10 @@ export class DatabaseMonitoringService extends EventEmitter {
   private startPolling(databaseId: string) {
     if (this.pollIntervals.has(databaseId)) return;
     void this.pollOnce(databaseId);
-    this.pollIntervals.set(databaseId, setInterval(() => void this.pollOnce(databaseId), 5000));
+    this.pollIntervals.set(
+      databaseId,
+      setInterval(() => void this.pollOnce(databaseId), 5000)
+    );
   }
 
   private stopPolling(databaseId: string) {
@@ -108,9 +112,10 @@ export class DatabaseMonitoringService extends EventEmitter {
     try {
       const connection = await this.databaseService.get(databaseId);
       const config = await this.databaseService.getDecryptedConfig(databaseId);
-      const snapshot = config.type === 'postgres'
-        ? await this.collectPostgresSnapshot(databaseId, connection.name, config)
-        : await this.collectRedisSnapshot(databaseId, connection.name, config);
+      const snapshot =
+        config.type === 'postgres'
+          ? await this.collectPostgresSnapshot(databaseId, connection.name)
+          : await this.collectRedisSnapshot(databaseId, connection.name, config);
 
       await this.pushHistory(snapshot);
       await this.databaseService.updateHealth(databaseId, {
@@ -164,11 +169,7 @@ export class DatabaseMonitoringService extends EventEmitter {
     return history.at(-1) ?? null;
   }
 
-  private async collectPostgresSnapshot(
-    databaseId: string,
-    name: string,
-    config: Extract<DatabaseConnectionConfig, { type: 'postgres' }>
-  ): Promise<DatabaseMetricSnapshot> {
+  private async collectPostgresSnapshot(databaseId: string, name: string): Promise<DatabaseMetricSnapshot> {
     const pool = await this.databaseService.getPostgresPool(databaseId);
     const started = Date.now();
     const previousSnapshot = await this.getLatestSnapshot(databaseId);
@@ -234,27 +235,19 @@ export class DatabaseMonitoringService extends EventEmitter {
     const blocksHitTotal = Number(dbSizeResult.rows[0]?.blks_hit ?? 0);
     const blocksWrittenTotal = Number(bgwriterResult.rows[0]?.blocks_written ?? 0);
     const cacheHitRatio =
-      blocksReadTotal + blocksHitTotal > 0
-        ? (blocksHitTotal / (blocksReadTotal + blocksHitTotal)) * 100
-        : null;
+      blocksReadTotal + blocksHitTotal > 0 ? (blocksHitTotal / (blocksReadTotal + blocksHitTotal)) * 100 : null;
     const previousAt = previousSnapshot ? Date.parse(previousSnapshot.timestamp) : null;
     const elapsedSeconds =
-      previousAt && Number.isFinite(previousAt)
-        ? Math.max((Date.now() - previousAt) / 1000, 1)
-        : null;
+      previousAt && Number.isFinite(previousAt) ? Math.max((Date.now() - previousAt) / 1000, 1) : null;
     const previousXactTotal = Number(previousSnapshot?.metrics.xact_total ?? 0);
     const previousBlocksReadTotal = Number(previousSnapshot?.metrics.blocks_read_total ?? 0);
     const previousBlocksWrittenTotal = Number(previousSnapshot?.metrics.blocks_written_total ?? 0);
     const transactionRate =
       elapsedSeconds != null ? Math.max(0, (xactTotal - previousXactTotal) / elapsedSeconds) : null;
     const readBlocksPerSec =
-      elapsedSeconds != null
-        ? Math.max(0, (blocksReadTotal - previousBlocksReadTotal) / elapsedSeconds)
-        : null;
+      elapsedSeconds != null ? Math.max(0, (blocksReadTotal - previousBlocksReadTotal) / elapsedSeconds) : null;
     const writeBlocksPerSec =
-      elapsedSeconds != null
-        ? Math.max(0, (blocksWrittenTotal - previousBlocksWrittenTotal) / elapsedSeconds)
-        : null;
+      elapsedSeconds != null ? Math.max(0, (blocksWrittenTotal - previousBlocksWrittenTotal) / elapsedSeconds) : null;
     const status: DatabaseHealthStatus = responseMs >= 1000 ? 'degraded' : 'online';
     return {
       timestamp: new Date().toISOString(),

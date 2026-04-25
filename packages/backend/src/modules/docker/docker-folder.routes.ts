@@ -6,8 +6,8 @@ import type { AppEnv } from '@/types.js';
 import {
   CreateDockerFolderSchema,
   MoveDockerContainersToFolderSchema,
-  ReorderDockerFoldersSchema,
   ReorderDockerContainersSchema,
+  ReorderDockerFoldersSchema,
   UpdateDockerFolderSchema,
 } from './docker-folder.schemas.js';
 import { DockerFolderService } from './docker-folder.service.js';
@@ -44,7 +44,11 @@ export function registerDockerFolderRoutes(router: OpenAPIHono<AppEnv>) {
 
   router.put('/folders/reorder', async (c) => {
     const scopes = c.get('effectiveScopes') || [];
-    requireAnyDockerScope(scopes, 'docker:containers:edit', 'Reordering Docker folders requires docker:containers:edit');
+    requireAnyDockerScope(
+      scopes,
+      'docker:containers:edit',
+      'Reordering Docker folders requires docker:containers:edit'
+    );
     const user = c.get('user')!;
     const body = await c.req.json();
     const input = ReorderDockerFoldersSchema.parse(body);
@@ -95,7 +99,11 @@ export function registerDockerFolderRoutes(router: OpenAPIHono<AppEnv>) {
     const input = MoveDockerContainersToFolderSchema.parse(body);
     for (const item of input.items) {
       if (!hasScope(scopes, `docker:containers:edit:${item.nodeId}`)) {
-        throw new AppError(403, 'FORBIDDEN', 'Moving containers between Docker folders requires docker:containers:edit');
+        throw new AppError(
+          403,
+          'FORBIDDEN',
+          'Moving containers between Docker folders requires docker:containers:edit'
+        );
       }
     }
     const service = container.resolve(DockerFolderService);

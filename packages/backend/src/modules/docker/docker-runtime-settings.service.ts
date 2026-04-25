@@ -1,9 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
-import {
-  dockerRuntimeSettings,
-  type DockerRuntimeSettingsConfig,
-} from '@/db/schema/index.js';
+import { type DockerRuntimeSettingsConfig, dockerRuntimeSettings } from '@/db/schema/index.js';
 
 export class DockerRuntimeSettingsService {
   constructor(private db: DrizzleClient) {}
@@ -12,22 +9,13 @@ export class DockerRuntimeSettingsService {
     const [row] = await this.db
       .select()
       .from(dockerRuntimeSettings)
-      .where(
-        and(
-          eq(dockerRuntimeSettings.nodeId, nodeId),
-          eq(dockerRuntimeSettings.containerName, containerName)
-        )
-      )
+      .where(and(eq(dockerRuntimeSettings.nodeId, nodeId), eq(dockerRuntimeSettings.containerName, containerName)))
       .limit(1);
 
     return (row?.config ?? null) as DockerRuntimeSettingsConfig | null;
   }
 
-  async replace(
-    nodeId: string,
-    containerName: string,
-    config: DockerRuntimeSettingsConfig
-  ): Promise<void> {
+  async replace(nodeId: string, containerName: string, config: DockerRuntimeSettingsConfig): Promise<void> {
     if (Object.keys(config).length === 0) {
       await this.delete(nodeId, containerName);
       return;
@@ -46,12 +34,7 @@ export class DockerRuntimeSettingsService {
     await this.db
       .update(dockerRuntimeSettings)
       .set({ containerName: toName, updatedAt: new Date() })
-      .where(
-        and(
-          eq(dockerRuntimeSettings.nodeId, nodeId),
-          eq(dockerRuntimeSettings.containerName, fromName)
-        )
-      );
+      .where(and(eq(dockerRuntimeSettings.nodeId, nodeId), eq(dockerRuntimeSettings.containerName, fromName)));
   }
 
   async copy(nodeId: string, fromName: string, toName: string): Promise<void> {
@@ -63,11 +46,6 @@ export class DockerRuntimeSettingsService {
   async delete(nodeId: string, containerName: string): Promise<void> {
     await this.db
       .delete(dockerRuntimeSettings)
-      .where(
-        and(
-          eq(dockerRuntimeSettings.nodeId, nodeId),
-          eq(dockerRuntimeSettings.containerName, containerName)
-        )
-      );
+      .where(and(eq(dockerRuntimeSettings.nodeId, nodeId), eq(dockerRuntimeSettings.containerName, containerName)));
   }
 }

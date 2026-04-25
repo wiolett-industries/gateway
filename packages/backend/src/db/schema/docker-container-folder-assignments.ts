@@ -16,10 +16,7 @@ export const dockerContainerFolderAssignments = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
-    nodeNameIdx: uniqueIndex('docker_container_folder_assignment_node_name_idx').on(
-      table.nodeId,
-      table.containerName
-    ),
+    nodeNameIdx: uniqueIndex('docker_container_folder_assignment_node_name_idx').on(table.nodeId, table.containerName),
     folderIdx: index('docker_container_folder_assignment_folder_idx').on(table.folderId, table.sortOrder),
   })
 );

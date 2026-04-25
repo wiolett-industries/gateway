@@ -333,10 +333,7 @@ describe('StatusPageService safe DTO', () => {
 
     const dto = await createService(db).getPublicDto();
 
-    expect(dto?.incidents.map((incident) => incident.title)).toEqual([
-      'Public website issue',
-      'General maintenance',
-    ]);
+    expect(dto?.incidents.map((incident) => incident.title)).toEqual(['Public website issue', 'General maintenance']);
     expect(dto?.incidents[0].affectedServiceIds).toEqual([publicServiceId]);
     expect(JSON.stringify(dto)).not.toContain(hiddenServiceId);
     expect(JSON.stringify(dto)).not.toContain('This should not be public');
@@ -358,9 +355,9 @@ describe('StatusPageService incident deletion', () => {
       },
     });
 
-    await expect(
-      service.deleteIncident('66666666-6666-4666-8666-666666666666', USER_ID)
-    ).rejects.toBeInstanceOf(AppError);
+    await expect(service.deleteIncident('66666666-6666-4666-8666-666666666666', USER_ID)).rejects.toBeInstanceOf(
+      AppError
+    );
   });
 
   it('deletes resolved incidents', async () => {

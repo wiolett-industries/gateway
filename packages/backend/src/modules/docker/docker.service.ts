@@ -8,12 +8,12 @@ import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import type { NodeRegistryService } from '@/services/node-registry.service.js';
 import type { DockerEnvironmentService } from './docker-environment.service.js';
 import type { DockerFolderService } from './docker-folder.service.js';
-import type { DockerRuntimeSettingsService } from './docker-runtime-settings.service.js';
 import {
-  validateContainerRuntimeLimits,
   type ContainerRuntimeConfig,
   type NodeRuntimeCapacity,
+  validateContainerRuntimeLimits,
 } from './docker-runtime-limits.js';
+import type { DockerRuntimeSettingsService } from './docker-runtime-settings.service.js';
 import type { DockerSecretService } from './docker-secret.service.js';
 import type { DockerTaskService } from './docker-task.service.js';
 
@@ -244,8 +244,7 @@ export class DockerManagementService {
 
     return {
       memoryLimit: this.normalizeNonNegativeNumber(hostConfig.Memory) ?? 0,
-      memorySwap:
-        hostConfig.MemorySwap === -1 ? -1 : (this.normalizeNonNegativeNumber(hostConfig.MemorySwap) ?? 0),
+      memorySwap: hostConfig.MemorySwap === -1 ? -1 : (this.normalizeNonNegativeNumber(hostConfig.MemorySwap) ?? 0),
       nanoCPUs: this.normalizeNonNegativeNumber(hostConfig.NanoCPUs) ?? 0,
       cpuQuota: this.normalizeNonNegativeNumber(hostConfig.CPUQuota) ?? 0,
       cpuPeriod: this.normalizeNonNegativeNumber(hostConfig.CPUPeriod) ?? 0,
@@ -255,7 +254,9 @@ export class DockerManagementService {
   private extractRuntimeConfig(config: Record<string, unknown>): ContainerRuntimeConfig {
     return {
       restartPolicy:
-        typeof config.restartPolicy === 'string' ? (config.restartPolicy as ContainerRuntimeConfig['restartPolicy']) : undefined,
+        typeof config.restartPolicy === 'string'
+          ? (config.restartPolicy as ContainerRuntimeConfig['restartPolicy'])
+          : undefined,
       maxRetries: typeof config.maxRetries === 'number' ? config.maxRetries : undefined,
       memoryLimit: typeof config.memoryLimit === 'number' ? config.memoryLimit : undefined,
       memorySwap: typeof config.memorySwap === 'number' ? config.memorySwap : undefined,
@@ -342,8 +343,7 @@ export class DockerManagementService {
       hostConfig.RestartPolicy = {
         ...(hostConfig.RestartPolicy ?? {}),
         Name: config.restartPolicy,
-        MaximumRetryCount:
-          config.restartPolicy === 'on-failure' ? config.maxRetries ?? 0 : 0,
+        MaximumRetryCount: config.restartPolicy === 'on-failure' ? (config.maxRetries ?? 0) : 0,
       };
     }
     if (config.memoryLimit !== undefined) hostConfig.Memory = config.memoryLimit;
@@ -364,14 +364,9 @@ export class DockerManagementService {
     return { ...inspect, HostConfig: hostConfig };
   }
 
-  private async validateRuntimeResourceConfig(
-    nodeId: string,
-    containerId: string,
-    config: Record<string, unknown>
-  ) {
+  private async validateRuntimeResourceConfig(nodeId: string, containerId: string, config: Record<string, unknown>) {
     const resourceConfig: ContainerRuntimeConfig = {
-      memoryLimit:
-        typeof config.memoryLimit === 'number' ? config.memoryLimit : undefined,
+      memoryLimit: typeof config.memoryLimit === 'number' ? config.memoryLimit : undefined,
       memorySwap: typeof config.memorySwap === 'number' ? config.memorySwap : undefined,
       nanoCPUs: typeof config.nanoCPUs === 'number' ? config.nanoCPUs : undefined,
     };

@@ -11,9 +11,7 @@ export class ConfigValidatorService {
   private static readonly HANDLEBARS_EXPR_RE = /{{{[\s\S]*?}}}|{{[\s\S]*?}}/g;
 
   private static stripHandlebarsExpressions(snippet: string): string {
-    return snippet.replace(ConfigValidatorService.HANDLEBARS_EXPR_RE, (match) =>
-      match.replace(/[^\n]/g, ' ')
-    );
+    return snippet.replace(ConfigValidatorService.HANDLEBARS_EXPR_RE, (match) => match.replace(/[^\n]/g, ' '));
   }
 
   /**
@@ -56,11 +54,7 @@ export class ConfigValidatorService {
 
   private static readonly LOCATION_OPEN_RE = /^location\b(?<rest>.*)$/i;
 
-  private static readonly ROOT_LOCATION_PATTERNS: readonly RegExp[] = [
-    /^\/$/,
-    /^=\s*\/$/,
-    /^\^~\s*\/$/,
-  ];
+  private static readonly ROOT_LOCATION_PATTERNS: readonly RegExp[] = [/^\/$/, /^=\s*\/$/, /^\^~\s*\/$/];
 
   private static isRootLocation(rest: string): boolean {
     const normalized = rest.trim().replace(/\s+/g, ' ');
@@ -163,9 +157,7 @@ export class ConfigValidatorService {
    */
   validate(snippet: string, rawMode = false): { valid: boolean; errors: string[] } {
     const errors: string[] = [];
-    const nginxSnippet = rawMode
-      ? snippet
-      : ConfigValidatorService.stripHandlebarsExpressions(snippet);
+    const nginxSnippet = rawMode ? snippet : ConfigValidatorService.stripHandlebarsExpressions(snippet);
 
     // 1. Null byte check
     if (snippet.includes('\0')) {

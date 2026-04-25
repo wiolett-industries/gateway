@@ -4,8 +4,8 @@ import {
   index,
   integer,
   pgTable,
-  uniqueIndex,
   timestamp,
+  uniqueIndex,
   uuid,
   varchar,
 } from 'drizzle-orm/pg-core';

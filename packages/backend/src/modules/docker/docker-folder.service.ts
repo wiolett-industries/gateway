@@ -1,19 +1,17 @@
-import { and, asc, desc, eq, inArray, isNull, notInArray } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import { dockerContainerFolderAssignments, dockerContainerFolders } from '@/db/schema/index.js';
-import { createChildLogger } from '@/lib/logger.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
 import type {
   CreateDockerFolderInput,
   MoveDockerContainersToFolderInput,
-  ReorderDockerFoldersInput,
   ReorderDockerContainersInput,
+  ReorderDockerFoldersInput,
   UpdateDockerFolderInput,
 } from './docker-folder.schemas.js';
 
-const logger = createChildLogger('DockerFolderService');
 const MAX_DEPTH = 2;
 const SYSTEM_USER_ID = '00000000-0000-0000-0000-000000000000';
 
@@ -48,14 +46,6 @@ function getComposeProject(container: DockerContainerLike): string | null {
 
 function getComposeService(container: DockerContainerLike): string | null {
   return getContainerLabels(container)['com.docker.compose.service'] ?? null;
-}
-
-function sortComposeContainers(containers: DockerContainerLike[]): DockerContainerLike[] {
-  return [...containers].sort((a, b) => {
-    const sa = getComposeService(a) ?? getContainerName(a);
-    const sb = getComposeService(b) ?? getContainerName(b);
-    return sa.localeCompare(sb);
-  });
 }
 
 export class DockerFolderService {
@@ -177,7 +167,12 @@ export class DockerFolderService {
     const folders = await this.db
       .select()
       .from(dockerContainerFolders)
-      .where(inArray(dockerContainerFolders.id, input.items.map((item) => item.id)));
+      .where(
+        inArray(
+          dockerContainerFolders.id,
+          input.items.map((item) => item.id)
+        )
+      );
 
     if (folders.length !== input.items.length) {
       throw new AppError(404, 'FOLDER_NOT_FOUND', 'One or more folders were not found');
@@ -263,7 +258,9 @@ export class DockerFolderService {
         const maxSort = await this.db
           .select({ sortOrder: dockerContainerFolderAssignments.sortOrder })
           .from(dockerContainerFolderAssignments)
-          .where(and(eq(dockerContainerFolderAssignments.nodeId, nodeId), isNull(dockerContainerFolderAssignments.folderId)))
+          .where(
+            and(eq(dockerContainerFolderAssignments.nodeId, nodeId), isNull(dockerContainerFolderAssignments.folderId))
+          )
           .orderBy(desc(dockerContainerFolderAssignments.sortOrder))
           .limit(1);
         let nextSortOrder = maxSort.length > 0 ? maxSort[0].sortOrder + 1 : 0;
@@ -278,10 +275,7 @@ export class DockerFolderService {
               sortOrder: nextSortOrder++,
             })
             .onConflictDoUpdate({
-              target: [
-                dockerContainerFolderAssignments.nodeId,
-                dockerContainerFolderAssignments.containerName,
-              ],
+              target: [dockerContainerFolderAssignments.nodeId, dockerContainerFolderAssignments.containerName],
               set: {
                 folderId: null,
                 sortOrder: nextSortOrder - 1,
@@ -309,10 +303,7 @@ export class DockerFolderService {
             sortOrder: nextSortOrder++,
           })
           .onConflictDoUpdate({
-            target: [
-              dockerContainerFolderAssignments.nodeId,
-              dockerContainerFolderAssignments.containerName,
-            ],
+            target: [dockerContainerFolderAssignments.nodeId, dockerContainerFolderAssignments.containerName],
             set: {
               folderId: targetFolder.id,
               sortOrder: nextSortOrder - 1,
@@ -390,7 +381,6 @@ export class DockerFolderService {
       }))
       .filter((container) => container.name !== '');
 
-    const activeNames = normalized.map((container) => container.name);
     const composeGroups = new Map<string, Array<{ name: string; service: string | null }>>();
     for (const container of normalized) {
       if (!container.project) continue;
@@ -444,10 +434,7 @@ export class DockerFolderService {
             sortOrder: index,
           })
           .onConflictDoUpdate({
-            target: [
-              dockerContainerFolderAssignments.nodeId,
-              dockerContainerFolderAssignments.containerName,
-            ],
+            target: [dockerContainerFolderAssignments.nodeId, dockerContainerFolderAssignments.containerName],
             set: {
               folderId: folder.id,
               sortOrder: index,
@@ -482,9 +469,7 @@ export class DockerFolderService {
         .filter((folder) => !folderIdsWithAssignments.has(folder.id))
         .map((folder) => folder.id);
       if (removableFolderIds.length > 0) {
-        await this.db
-          .delete(dockerContainerFolders)
-          .where(inArray(dockerContainerFolders.id, removableFolderIds));
+        await this.db.delete(dockerContainerFolders).where(inArray(dockerContainerFolders.id, removableFolderIds));
       }
     }
 
@@ -546,7 +531,9 @@ export class DockerFolderService {
       );
   }
 
-  private async getAssignmentsForRefs(items: Array<{ nodeId: string; containerName: string }>): Promise<AssignmentRow[]> {
+  private async getAssignmentsForRefs(
+    items: Array<{ nodeId: string; containerName: string }>
+  ): Promise<AssignmentRow[]> {
     const byNode = new Map<string, string[]>();
     for (const item of items) {
       const list = byNode.get(item.nodeId) ?? [];

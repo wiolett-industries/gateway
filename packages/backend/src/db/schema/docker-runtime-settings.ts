@@ -1,4 +1,4 @@
-import { bigint, index, jsonb, pgTable, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
+import { index, jsonb, pgTable, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
 import { nodes } from './nodes.js';
 
 export interface DockerRuntimeSettingsConfig {

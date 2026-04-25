@@ -280,25 +280,27 @@ async function authenticateAndCreateExec(
 
   // Register handler for live ExecOutput from daemon -> forward to this WS
   const outputHandler = (output: any) => {
-    state.outputQueue = state.outputQueue.then(async () => {
-      if (!(await revalidateExecAccess(ws, state, nodeId))) return;
-      if (output.data && output.data.length > 0) {
-        const b64 = Buffer.isBuffer(output.data)
-          ? output.data.toString('base64')
-          : Buffer.from(output.data).toString('base64');
-        send(ws, { type: 'output', data: b64 });
-      }
-      if (output.exited) {
-        send(ws, { type: 'exit', exitCode: output.exitCode ?? 0 });
-        try {
-          ws.close(1000, 'Process exited');
-        } catch {
-          /* */
+    state.outputQueue = state.outputQueue
+      .then(async () => {
+        if (!(await revalidateExecAccess(ws, state, nodeId))) return;
+        if (output.data && output.data.length > 0) {
+          const b64 = Buffer.isBuffer(output.data)
+            ? output.data.toString('base64')
+            : Buffer.from(output.data).toString('base64');
+          send(ws, { type: 'output', data: b64 });
         }
-      }
-    }).catch((err) => {
-      logger.error('Error forwarding exec output', { error: err instanceof Error ? err.message : String(err) });
-    });
+        if (output.exited) {
+          send(ws, { type: 'exit', exitCode: output.exitCode ?? 0 });
+          try {
+            ws.close(1000, 'Process exited');
+          } catch {
+            /* */
+          }
+        }
+      })
+      .catch((err) => {
+        logger.error('Error forwarding exec output', { error: err instanceof Error ? err.message : String(err) });
+      });
   };
   state.outputHandler = outputHandler;
   registry.registerExecHandler(execId, outputHandler);

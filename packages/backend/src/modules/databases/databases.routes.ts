@@ -1,9 +1,9 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { streamSSE } from 'hono/streaming';
 import { container } from '@/container.js';
-import { authMiddleware, requireScope, requireScopeForResource, sessionOnly } from '@/modules/auth/auth.middleware.js';
-import { AppError } from '@/middleware/error-handler.js';
 import { hasScope } from '@/lib/permissions.js';
+import { AppError } from '@/middleware/error-handler.js';
+import { authMiddleware, requireScope, requireScopeForResource, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import { TokensService } from '@/modules/tokens/tokens.service.js';
 import type { AppEnv } from '@/types.js';
 import { DatabaseMonitoringService } from './database-monitoring.service.js';
@@ -23,17 +23,6 @@ import {
 import { DatabaseConnectionService, inferPostgresIntent, inferRedisIntent } from './databases.service.js';
 
 export const databaseRoutes = new OpenAPIHono<AppEnv>();
-
-const DATABASE_ACCESS_SCOPE_BASES = [
-  'databases:list',
-  'databases:view',
-  'databases:edit',
-  'databases:delete',
-  'databases:query:read',
-  'databases:query:write',
-  'databases:query:admin',
-  'databases:credentials:reveal',
-] as const;
 
 function getListAccessibleDatabaseIds(scopes: string[]): string[] {
   const ids = new Set<string>();
@@ -117,11 +106,15 @@ databaseRoutes.post('/:id/test', requireScopeForResource('databases:edit', 'id')
   return c.json({ data });
 });
 
-databaseRoutes.get('/:id/reveal-credentials', requireScopeForResource('databases:credentials:reveal', 'id'), async (c) => {
-  const service = container.resolve(DatabaseConnectionService);
-  const data = await service.revealCredentials(c.req.param('id'));
-  return c.json({ data });
-});
+databaseRoutes.get(
+  '/:id/reveal-credentials',
+  requireScopeForResource('databases:credentials:reveal', 'id'),
+  async (c) => {
+    const service = container.resolve(DatabaseConnectionService);
+    const data = await service.revealCredentials(c.req.param('id'));
+    return c.json({ data });
+  }
+);
 
 databaseRoutes.get('/:id/monitoring/stream', requireScopeForResource('databases:view', 'id'), async (c) => {
   const databaseId = c.req.param('id');
@@ -246,7 +239,14 @@ databaseRoutes.patch('/:id/postgres/rows', requireScopeForResource('databases:vi
   const schema = BrowsePostgresRowsQuerySchema.pick({ schema: true, table: true }).parse(body);
   const primaryKey = PostgresObjectSchema.parse(body.primaryKey ?? {});
   const values = PostgresObjectSchema.parse(body.values ?? {});
-  const data = await service.updatePostgresRow(c.req.param('id'), schema.schema, schema.table, primaryKey, values, user.id);
+  const data = await service.updatePostgresRow(
+    c.req.param('id'),
+    schema.schema,
+    schema.table,
+    primaryKey,
+    values,
+    user.id
+  );
   return c.json({ data });
 });
 

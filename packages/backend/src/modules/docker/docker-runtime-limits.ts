@@ -71,15 +71,10 @@ export function validateContainerRuntimeLimits(
 
   if (effectiveMemorySwap !== -1 && effectiveMemorySwap > 0) {
     if (effectiveMemorySwap < effectiveMemoryLimit) {
-      throw new AppError(
-        400,
-        'INVALID_RESOURCE_LIMIT',
-        'Memory+swap limit cannot be lower than the memory limit'
-      );
+      throw new AppError(400, 'INVALID_RESOURCE_LIMIT', 'Memory+swap limit cannot be lower than the memory limit');
     }
 
-    const maxCombinedMemoryAndSwap =
-      (capacity.memoryBytes ?? 0) + Math.max(capacity.swapBytes ?? 0, 0);
+    const maxCombinedMemoryAndSwap = (capacity.memoryBytes ?? 0) + Math.max(capacity.swapBytes ?? 0, 0);
     if (maxCombinedMemoryAndSwap > 0 && effectiveMemorySwap > maxCombinedMemoryAndSwap) {
       throw new AppError(
         400,

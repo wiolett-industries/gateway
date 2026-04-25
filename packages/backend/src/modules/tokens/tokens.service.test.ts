@@ -77,9 +77,7 @@ describe('TokensService.validateToken', () => {
     const db = createDb({
       userGroupId: 'limited-group',
       tokenScopes: ['nodes:details'],
-      groups: [
-        { id: 'limited-group', name: 'limited', parentId: null, scopes: ['nodes:details:node-1'] },
-      ],
+      groups: [{ id: 'limited-group', name: 'limited', parentId: null, scopes: ['nodes:details:node-1'] }],
     });
 
     const result = await createService(db).validateToken('gw_test_token');

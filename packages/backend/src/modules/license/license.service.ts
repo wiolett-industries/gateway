@@ -7,10 +7,10 @@ import { settings } from '@/db/schema/settings.js';
 import { createChildLogger } from '@/lib/logger.js';
 import type { CryptoService } from '@/services/crypto.service.js';
 import {
-  LICENSE_OFFLINE_GRACE_DAYS,
-  LICENSE_SERVER_URL,
   type CachedLicenseState,
   type EncryptedLicenseKey,
+  LICENSE_OFFLINE_GRACE_DAYS,
+  LICENSE_SERVER_URL,
   type LicenseServerResponse,
   type LicenseStatus,
   type LicenseStatusView,
@@ -62,7 +62,7 @@ export class LicenseService {
       };
     }
 
-    if (cached && !Object.prototype.hasOwnProperty.call(cached, 'licenseName')) {
+    if (cached && !Object.hasOwn(cached, 'licenseName')) {
       return this.checkNow();
     }
 
@@ -177,10 +177,10 @@ export class LicenseService {
       licenseName: response.licenseName ?? null,
       expiresAt: response.expiresAt ?? null,
       lastCheckedAt: now,
-      lastValidAt: response.status === 'valid' ? now : (await this.getCachedState())?.lastValidAt ?? null,
+      lastValidAt: response.status === 'valid' ? now : ((await this.getCachedState())?.lastValidAt ?? null),
       activeInstallationId: response.activeInstallationId ?? null,
       activeInstallationName: response.activeInstallationName ?? null,
-      errorMessage: response.status === 'valid' ? null : response.message ?? fallbackError ?? status,
+      errorMessage: response.status === 'valid' ? null : (response.message ?? fallbackError ?? status),
     });
   }
 
@@ -249,7 +249,9 @@ export class LicenseService {
     }
   }
 
-  private statusFromServer(response: LicenseServerResponse): Exclude<LicenseStatus, 'community' | 'valid_with_warning' | 'unreachable_grace_expired'> {
+  private statusFromServer(
+    response: LicenseServerResponse
+  ): Exclude<LicenseStatus, 'community' | 'valid_with_warning' | 'unreachable_grace_expired'> {
     return response.status;
   }
 

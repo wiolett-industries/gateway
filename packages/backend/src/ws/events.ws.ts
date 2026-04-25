@@ -135,8 +135,7 @@ function canReceiveChannelPayload(scopes: string[], channel: string, payload: un
     const databaseId = (payload as { id?: string } | undefined)?.id;
     return (
       DATABASE_CHANNEL_SCOPE_BASES.some((base) => hasScope(scopes, base)) ||
-      !!(databaseId &&
-        DATABASE_CHANNEL_SCOPE_BASES.some((base) => hasScope(scopes, `${base}:${databaseId}`)))
+      !!(databaseId && DATABASE_CHANNEL_SCOPE_BASES.some((base) => hasScope(scopes, `${base}:${databaseId}`)))
     );
   }
   return true;
