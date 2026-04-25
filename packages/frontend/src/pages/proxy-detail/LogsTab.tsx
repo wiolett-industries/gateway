@@ -8,7 +8,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useAuthStore } from "@/stores/auth";
 
 interface NginxLogEntry {
   hostId: string;
@@ -67,11 +66,9 @@ export function LogsTab({ hostId }: { hostId: string }) {
   useEffect(() => {
     if (esRef.current) esRef.current.close();
 
-    const sessionId = useAuthStore.getState().sessionId;
-    const params = new URLSearchParams();
-    if (sessionId) params.set("token", sessionId);
-
-    const es = new EventSource(`/api/monitoring/logs/${hostId}/stream?${params}`);
+    const es = new EventSource(`/api/monitoring/logs/${hostId}/stream`, {
+      withCredentials: true,
+    });
     esRef.current = es;
 
     es.addEventListener("connected", () => setLogs([]));

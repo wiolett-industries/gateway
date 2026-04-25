@@ -117,9 +117,8 @@ export function DockerComposeLogsPopout() {
     terminal.options.theme = getTerminalTheme();
     terminal.write(`\x1b[90mConnecting to compose project "${project}"...\x1b[0m\r\n`);
 
-    const sessionId = useAuthStore.getState().sessionId;
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const url = `${proto}//${window.location.host}/api/docker/nodes/${nodeId}/compose/${encodeURIComponent(project)}/logs/stream?token=${sessionId}`;
+    const url = `${proto}//${window.location.host}/api/docker/nodes/${nodeId}/compose/${encodeURIComponent(project)}/logs/stream`;
     const ws = new WebSocket(url);
     wsRef.current = ws;
     authFailedRef.current = false;

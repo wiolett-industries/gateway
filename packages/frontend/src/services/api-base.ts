@@ -48,6 +48,7 @@ function getRetryAfterSeconds(response: Response): number {
 
 export class ApiClientBase {
   protected cache = new Map<string, CacheEntry>();
+  private csrfToken: string | null = null;
 
   /** Get cached data if fresh enough. */
   getCached<T>(key: string, ttl = DEFAULT_CACHE_TTL): T | undefined {
@@ -97,16 +98,50 @@ export class ApiClientBase {
   }
 
   protected getHeaders(): HeadersInit {
-    const headers: HeadersInit = {
+    return {
       "Content-Type": "application/json",
     };
+  }
 
-    const sessionId = useAuthStore.getState().sessionId;
-    if (sessionId) {
-      headers.Authorization = `Bearer ${sessionId}`;
+  clearCsrfToken(): void {
+    this.csrfToken = null;
+  }
+
+  private async getCsrfToken(): Promise<string> {
+    if (this.csrfToken) return this.csrfToken;
+
+    const response = await fetch("/auth/csrf", {
+      cache: "no-store",
+      credentials: "include",
+      headers: this.getHeaders(),
+    });
+
+    if (response.status === 401) {
+      useAuthStore.getState().logout();
+      window.location.href = "/login";
+      throw new ApiRequestError("Session expired", {
+        status: response.status,
+        code: "UNAUTHORIZED",
+      });
     }
 
-    return headers;
+    if (!response.ok) {
+      throw new ApiRequestError("Unable to prepare request", {
+        status: response.status,
+        code: "CSRF_TOKEN_UNAVAILABLE",
+      });
+    }
+
+    const body = (await response.json()) as { csrfToken?: string };
+    if (!body.csrfToken) {
+      throw new ApiRequestError("Unable to prepare request", {
+        status: response.status,
+        code: "CSRF_TOKEN_UNAVAILABLE",
+      });
+    }
+
+    this.csrfToken = body.csrfToken;
+    return body.csrfToken;
   }
 
   protected async fetchRaw<T>(
@@ -115,14 +150,21 @@ export class ApiClientBase {
     { suppressGlobalStatus = false }: { suppressGlobalStatus?: boolean } = {}
   ): Promise<T> {
     let response: Response;
+    const method = (options.method || "GET").toUpperCase();
+    const headers = new Headers(this.getHeaders());
+    if (options.headers) {
+      new Headers(options.headers).forEach((value, key) => headers.set(key, value));
+    }
+
+    if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+      headers.set("X-CSRF-Token", await this.getCsrfToken());
+    }
 
     try {
       response = await fetch(url, {
         ...options,
-        headers: {
-          ...this.getHeaders(),
-          ...options.headers,
-        },
+        credentials: "include",
+        headers,
       });
     } catch {
       if (!suppressGlobalStatus) {
@@ -159,6 +201,7 @@ export class ApiClientBase {
       }
 
       if (response.status === 401) {
+        this.clearCsrfToken();
         useAuthStore.getState().logout();
         window.location.href = "/login";
         throw new ApiRequestError("Session expired", {
@@ -169,6 +212,9 @@ export class ApiClientBase {
 
       if (response.status === 403) {
         const body = await response.json().catch(() => ({ message: "" }));
+        if (body.message === "Invalid CSRF token") {
+          this.clearCsrfToken();
+        }
         if (body.message === "Account is blocked") {
           window.location.href = "/blocked";
           throw new ApiRequestError("Account is blocked", {

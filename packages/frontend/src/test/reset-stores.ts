@@ -12,7 +12,6 @@ export function resetTestStores() {
 
   useAuthStore.setState({
     user: null,
-    sessionId: null,
     isAuthenticated: false,
     isLoading: true,
   });

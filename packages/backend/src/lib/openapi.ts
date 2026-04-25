@@ -46,7 +46,7 @@ export const securitySchemes = {
   bearerAuth: {
     type: 'http' as const,
     scheme: 'bearer',
-    description: 'Bearer token (session ID or API token)',
+    description: 'API token (`gw_...`) for programmatic access. Browser sessions use the HttpOnly session cookie.',
   },
 };
 

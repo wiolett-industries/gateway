@@ -17,7 +17,6 @@ export class AIWebSocketClient {
   private pongTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempts = 0;
-  private sessionId: string | null = null;
   private _isConnected = false;
   private intentionalClose = false;
 
@@ -25,8 +24,7 @@ export class AIWebSocketClient {
     return this._isConnected;
   }
 
-  connect(sessionId: string): Promise<boolean> {
-    this.sessionId = sessionId;
+  connect(): Promise<boolean> {
     this.reconnectAttempts = 0;
     this.intentionalClose = false;
     return this.doConnect();
@@ -37,7 +35,7 @@ export class AIWebSocketClient {
       this.cleanupSocket();
 
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const url = `${protocol}//${window.location.host}/api/ai/ws?token=${encodeURIComponent(this.sessionId || "")}`;
+      const url = `${protocol}//${window.location.host}/api/ai/ws`;
 
       try {
         this.ws = new WebSocket(url);
