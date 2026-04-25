@@ -4,12 +4,7 @@ import { DetailRow } from "@/components/common/DetailRow";
 import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/ui/stat-card";
 import type { DatabaseConnection, DatabaseMetricSnapshot } from "@/types";
-import {
-  formatHealthStatusLabel,
-  formatMetricValue,
-  HEALTH_BADGE,
-  METRIC_COLORS,
-} from "./shared";
+import { formatHealthStatusLabel, formatMetricValue, HEALTH_BADGE, METRIC_COLORS } from "./shared";
 
 interface DatabaseOverviewTabProps {
   database: DatabaseConnection;
@@ -68,12 +63,7 @@ export function DatabaseOverviewTab({
         {
           key: "total_connections",
           label: "Connections",
-          value:
-            total == null
-              ? "-"
-              : max && max > 0
-                ? `${total} / ${max}`
-                : `${total}`,
+          value: total == null ? "-" : max && max > 0 ? `${total} / ${max}` : `${total}`,
           history: history.map((item) => item.metrics.total_connections_pct ?? 0),
           progress: pct == null ? undefined : { percent: pct },
           sparklineMax: 100,
@@ -246,7 +236,10 @@ export function DatabaseOverviewTab({
                 </Badge>
               }
             />
-            <DetailRow label="Provider" value={<span className="capitalize">{database.type}</span>} />
+            <DetailRow
+              label="Provider"
+              value={<span className="capitalize">{database.type}</span>}
+            />
             <DetailRow
               label="Last Check"
               value={

@@ -121,7 +121,7 @@ export function DockerContainerDetail() {
     return () => {
       setSelectedNode(previousNodeIdRef.current);
     };
-  }, [nodeId, setSelectedNode]);
+  }, [nodeId, setSelectedNode, storeNodeId]);
   const [container, setContainer] = useState<InspectData | null>(null);
   const containerRef = useRef<InspectData | null>(null);
 

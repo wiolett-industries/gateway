@@ -1,13 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -171,9 +166,7 @@ const AUDIT_RESOURCE_OPTIONS = [
 ] as const;
 
 function formatAuditToken(value: string): string {
-  return value
-    .replace(/[._-]+/g, " ")
-    .replace(/\b\w/g, (char) => char.toUpperCase());
+  return value.replace(/[._-]+/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 const columns: DataTableColumn<AuditLogEntry>[] = [
@@ -237,7 +230,10 @@ export function AuditLog({ embedded = false }: { embedded?: boolean }) {
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   const actionOptions = useMemo(
-    () => Array.from(new Set([...AUDIT_ACTION_OPTIONS, ...entries.map((entry) => entry.action)])).sort(),
+    () =>
+      Array.from(
+        new Set([...AUDIT_ACTION_OPTIONS, ...entries.map((entry) => entry.action)])
+      ).sort(),
     [entries]
   );
   const resourceOptions = useMemo(
@@ -309,7 +305,13 @@ export function AuditLog({ embedded = false }: { embedded?: boolean }) {
 
   const content = (
     <>
-      <div className={embedded ? "h-full space-y-4 flex flex-col min-h-0" : "h-full p-6 space-y-4 flex flex-col min-h-0"}>
+      <div
+        className={
+          embedded
+            ? "h-full space-y-4 flex flex-col min-h-0"
+            : "h-full p-6 space-y-4 flex flex-col min-h-0"
+        }
+      >
         {!embedded && (
           <div>
             <h1 className="text-2xl font-bold">Audit Log</h1>

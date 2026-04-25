@@ -33,7 +33,9 @@ export interface DatabaseConnectionDraft {
   hasStoredPassword?: boolean;
 }
 
-export function draftFromConnection(connection?: DatabaseConnection | null): DatabaseConnectionDraft {
+export function draftFromConnection(
+  connection?: DatabaseConnection | null
+): DatabaseConnectionDraft {
   if (!connection) {
     return {
       name: "",
@@ -60,7 +62,8 @@ export function draftFromConnection(connection?: DatabaseConnection | null): Dat
       name: connection.name,
       description: connection.description ?? "",
       tags: connection.tags.join(", "),
-      manualSizeLimitMb: connection.manualSizeLimitMb != null ? String(connection.manualSizeLimitMb) : "",
+      manualSizeLimitMb:
+        connection.manualSizeLimitMb != null ? String(connection.manualSizeLimitMb) : "",
       type: "postgres",
       connectionString: "",
       host: config.host,
@@ -110,7 +113,9 @@ export function buildDatabasePayload(draft: DatabaseConnectionDraft): Record<str
         draft.manualSizeLimitMb.trim() === "" ? null : Number(draft.manualSizeLimitMb),
       type: "postgres",
       config: {
-        ...(draft.connectionString.trim() ? { connectionString: draft.connectionString.trim() } : {}),
+        ...(draft.connectionString.trim()
+          ? { connectionString: draft.connectionString.trim() }
+          : {}),
         ...(draft.host.trim() ? { host: draft.host.trim() } : {}),
         ...(draft.port.trim() ? { port: Number(draft.port) } : {}),
         ...(draft.database.trim() ? { database: draft.database.trim() } : {}),
@@ -149,8 +154,10 @@ export function DatabaseConnectionForm({
   disableType?: boolean;
   mode?: "full" | "metadata";
 }) {
-  const set = <K extends keyof DatabaseConnectionDraft>(key: K, value: DatabaseConnectionDraft[K]) =>
-    onChange({ ...draft, [key]: value });
+  const set = <K extends keyof DatabaseConnectionDraft>(
+    key: K,
+    value: DatabaseConnectionDraft[K]
+  ) => onChange({ ...draft, [key]: value });
   const metadataOnly = mode === "metadata";
 
   return (
@@ -261,7 +268,9 @@ export function DatabaseConnectionForm({
                 <label className="text-sm font-medium">Password</label>
                 <Input
                   type="password"
-                  placeholder={draft.hasStoredPassword ? "Leave blank to keep current password" : ""}
+                  placeholder={
+                    draft.hasStoredPassword ? "Leave blank to keep current password" : ""
+                  }
                   value={draft.password}
                   onChange={(e) => set("password", e.target.value)}
                 />
@@ -278,9 +287,14 @@ export function DatabaseConnectionForm({
             <div className="flex items-center justify-between gap-4 border border-border bg-card px-3 py-2.5">
               <div>
                 <p className="text-sm font-medium">TLS / SSL</p>
-                <p className="text-xs text-muted-foreground">Require TLS for the Postgres connection</p>
+                <p className="text-xs text-muted-foreground">
+                  Require TLS for the Postgres connection
+                </p>
               </div>
-              <Switch checked={draft.sslEnabled} onChange={(checked) => set("sslEnabled", checked)} />
+              <Switch
+                checked={draft.sslEnabled}
+                onChange={(checked) => set("sslEnabled", checked)}
+              />
             </div>
           )}
         </>
@@ -303,7 +317,9 @@ export function DatabaseConnectionForm({
                 <label className="text-sm font-medium">Password</label>
                 <Input
                   type="password"
-                  placeholder={draft.hasStoredPassword ? "Leave blank to keep current password" : ""}
+                  placeholder={
+                    draft.hasStoredPassword ? "Leave blank to keep current password" : ""
+                  }
                   value={draft.password}
                   onChange={(e) => set("password", e.target.value)}
                 />
@@ -322,7 +338,10 @@ export function DatabaseConnectionForm({
                 <p className="text-sm font-medium">TLS</p>
                 <p className="text-xs text-muted-foreground">Use TLS when connecting to Redis</p>
               </div>
-              <Switch checked={draft.tlsEnabled} onChange={(checked) => set("tlsEnabled", checked)} />
+              <Switch
+                checked={draft.tlsEnabled}
+                onChange={(checked) => set("tlsEnabled", checked)}
+              />
             </div>
           )}
         </>

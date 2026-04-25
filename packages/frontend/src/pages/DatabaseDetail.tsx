@@ -5,12 +5,7 @@ import { confirm } from "@/components/common/ConfirmDialog";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
 import { Badge } from "@/components/ui/badge";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { HealthBars } from "@/components/ui/health-bars";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -24,8 +19,8 @@ import type { DatabaseConnection, DatabaseMetricSnapshot } from "@/types";
 import { DatabaseConsoleTab } from "./database-detail/DatabaseConsoleTab";
 import { DatabaseHeader } from "./database-detail/DatabaseHeader";
 import { DatabaseOverviewTab } from "./database-detail/DatabaseOverviewTab";
-import { PostgresExplorer } from "./database-detail/PostgresExplorer";
 import { DatabaseSettingsTab } from "./database-detail/DatabaseSettingsTab";
+import { PostgresExplorer } from "./database-detail/PostgresExplorer";
 
 export function DatabaseDetail() {
   const { id } = useParams<{ id: string; tab?: string }>();
@@ -33,9 +28,9 @@ export function DatabaseDetail() {
   const { hasScope } = useAuthStore();
   const [database, setDatabase] = useState<DatabaseConnection | null>(null);
   const [loading, setLoading] = useState(true);
-  const [liveHealthHistory, setLiveHealthHistory] = useState<
-    DatabaseConnection["healthHistory"]
-  >([]);
+  const [liveHealthHistory, setLiveHealthHistory] = useState<DatabaseConnection["healthHistory"]>(
+    []
+  );
   const [liveHealthStatus, setLiveHealthStatus] =
     useState<DatabaseConnection["healthStatus"]>("unknown");
   const [monitoringHistory, setMonitoringHistory] = useState<DatabaseMetricSnapshot[]>([]);
@@ -50,10 +45,7 @@ export function DatabaseDetail() {
   const { isPinnedSidebar, toggleSidebar } = usePinnedDatabasesStore();
 
   const canEdit = !!(id && (hasScope("databases:edit") || hasScope(`databases:edit:${id}`)));
-  const canDelete = !!(
-    id &&
-    (hasScope("databases:delete") || hasScope(`databases:delete:${id}`))
-  );
+  const canDelete = !!(id && (hasScope("databases:delete") || hasScope(`databases:delete:${id}`)));
   const canRead = !!(
     id &&
     (hasScope("databases:query:read") || hasScope(`databases:query:read:${id}`))
@@ -68,8 +60,7 @@ export function DatabaseDetail() {
   );
   const canReveal = !!(
     id &&
-    (hasScope("databases:credentials:reveal") ||
-      hasScope(`databases:credentials:reveal:${id}`))
+    (hasScope("databases:credentials:reveal") || hasScope(`databases:credentials:reveal:${id}`))
   );
   const canViewMonitoring = !!(
     id &&
@@ -231,7 +222,8 @@ export function DatabaseDetail() {
   }
 
   const isFullHeightTab = activeTab === "explorer" || activeTab === "console";
-  const hideDatabaseChrome = explorerFocused && activeTab === "explorer" && database.type === "postgres";
+  const hideDatabaseChrome =
+    explorerFocused && activeTab === "explorer" && database.type === "postgres";
   const consoleDisabled = liveHealthStatus === "offline";
 
   return (

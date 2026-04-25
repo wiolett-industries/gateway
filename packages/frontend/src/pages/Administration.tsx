@@ -66,9 +66,9 @@ export function Administration() {
     },
   };
 
-  const currentTab = (availableTabs.includes(activeTab as AdministrationTab)
-    ? activeTab
-    : availableTabs[0]) as AdministrationTab;
+  const currentTab = (
+    availableTabs.includes(activeTab as AdministrationTab) ? activeTab : availableTabs[0]
+  ) as AdministrationTab;
   const currentMeta = tabMeta[currentTab];
 
   return (
@@ -87,7 +87,11 @@ export function Administration() {
           ) : null}
         </div>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-4 flex min-h-0 flex-1 flex-col">
+        <Tabs
+          value={activeTab}
+          onValueChange={setActiveTab}
+          className="mt-4 flex min-h-0 flex-1 flex-col"
+        >
           <TabsList>
             {canUsers && <TabsTrigger value="users">Users</TabsTrigger>}
             {canGroups && <TabsTrigger value="groups">Groups</TabsTrigger>}

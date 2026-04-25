@@ -1,8 +1,8 @@
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  Activity,
   ArrowUpCircle,
   Award,
-  Activity,
   Bell,
   Box,
   Database,
@@ -199,8 +199,7 @@ export function SidebarContent({
     [hasScope]
   );
   const canViewDatabaseDetails = useCallback(
-    (databaseId: string) =>
-      hasScope("databases:view") || hasScope(`databases:view:${databaseId}`),
+    (databaseId: string) => hasScope("databases:view") || hasScope(`databases:view:${databaseId}`),
     [hasScope]
   );
 
@@ -353,8 +352,7 @@ export function SidebarContent({
     "notifications:view",
     "notifications:manage"
   );
-  const canAccessDatabases =
-    hasScopedAccess("databases:list");
+  const canAccessDatabases = hasScopedAccess("databases:list");
   const canAccessAuthorities = hasAnyScope("pki:ca:list:root", "pki:ca:list:intermediate");
   // Build nav groups with scope + context filtering
   const effectiveGroups = navigationGroups
@@ -776,7 +774,6 @@ export function SidebarContent({
                   </nav>
                 </div>
               ))}
-
             </ScrollArea>
 
             <Separator />

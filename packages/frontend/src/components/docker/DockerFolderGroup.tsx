@@ -12,6 +12,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useState } from "react";
+import { InlineFolderEditor } from "@/components/proxy/InlineFolderEditor";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,7 +22,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { InlineFolderEditor } from "@/components/proxy/InlineFolderEditor";
 import type { DockerFolderTreeNode } from "@/types";
 import { DockerContainerRow, type DockerContainerRowData } from "./DockerContainerRow";
 

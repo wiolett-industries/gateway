@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useAuthStore } from "@/stores/auth";
-import { useUIStore } from "@/stores/ui";
 
 const SERVICE_COLORS = [
   "\x1b[36m",
@@ -17,7 +16,6 @@ const SERVICE_COLORS = [
 export function DockerComposeLogsPopout() {
   const { nodeId, project } = useParams<{ nodeId: string; project: string }>();
   const { hasScope } = useAuthStore();
-  const resolvedTheme = useUIStore((state) => state.resolvedTheme);
   const canViewLogs =
     !!nodeId &&
     !!project &&
@@ -42,8 +40,7 @@ export function DockerComposeLogsPopout() {
       background: style.getPropertyValue("--color-card").trim() || "#141414",
       foreground: style.getPropertyValue("--color-card-foreground").trim() || "#e0e0e0",
       cursor: style.getPropertyValue("--color-primary").trim() || "#ffffff",
-      cursorAccent:
-        style.getPropertyValue("--color-primary-foreground").trim() || "#0e0e0e",
+      cursorAccent: style.getPropertyValue("--color-primary-foreground").trim() || "#0e0e0e",
     };
   }, []);
   const getServiceColor = useCallback((service: string) => {
@@ -204,7 +201,7 @@ export function DockerComposeLogsPopout() {
     if (terminalRef.current) {
       terminalRef.current.options.theme = getTerminalTheme();
     }
-  }, [getTerminalTheme, resolvedTheme]);
+  }, [getTerminalTheme]);
 
   if (!canViewLogs) {
     return (

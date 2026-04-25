@@ -13,8 +13,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { TruncateStart } from "@/components/ui/truncate-start";
 import { formatCreated } from "@/lib/utils";
+import { containerDisplayName, STATUS_BADGE } from "@/pages/docker-detail/helpers";
 import type { DockerContainer } from "@/types";
-import { STATUS_BADGE, containerDisplayName } from "@/pages/docker-detail/helpers";
 
 export interface DockerContainerRowData extends DockerContainer {
   _nodeId: string;
@@ -88,8 +88,13 @@ export function DockerContainerRow({
             <Box className="h-4 w-4 text-muted-foreground" />
           </div>
           <div className="min-w-0">
-            <TruncateStart text={containerDisplayName(container.name)} className="text-sm font-medium" />
-            <p className="text-xs text-muted-foreground font-mono truncate">{container.id.slice(0, 12)}</p>
+            <TruncateStart
+              text={containerDisplayName(container.name)}
+              className="text-sm font-medium"
+            />
+            <p className="text-xs text-muted-foreground font-mono truncate">
+              {container.id.slice(0, 12)}
+            </p>
           </div>
         </div>
       </td>
@@ -111,7 +116,9 @@ export function DockerContainerRow({
           {(container as any)._transition ?? container.state}
         </Badge>
       </td>
-      <td className="p-3 text-muted-foreground whitespace-nowrap">{formatCreated(container.created)}</td>
+      <td className="p-3 text-muted-foreground whitespace-nowrap">
+        {formatCreated(container.created)}
+      </td>
       {(canManage || canReorganize) && (
         <td className="p-3 text-right" onClick={(e) => e.stopPropagation()}>
           <div className="flex items-center gap-1 justify-end">
@@ -159,11 +166,17 @@ export function DockerContainerRow({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => navigate(`/docker/containers/${container._nodeId}/${container.id}`)}>
+                  <DropdownMenuItem
+                    onClick={() =>
+                      navigate(`/docker/containers/${container._nodeId}/${container.id}`)
+                    }
+                  >
                     Open
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => onMoveToFolder(container)}>Move to folder...</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onMoveToFolder(container)}>
+                    Move to folder...
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             )}

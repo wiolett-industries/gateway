@@ -203,7 +203,7 @@ export function DockerLogsPopout() {
     <VirtualLogList
       lines={lines}
       keyFn={(_, i) => i}
-        renderLine={(line) => (
+      renderLine={(line) => (
         <div className="whitespace-pre-wrap break-all leading-5 px-4 font-mono text-xs text-foreground/80">
           <AnsiText text={line as string} />
         </div>

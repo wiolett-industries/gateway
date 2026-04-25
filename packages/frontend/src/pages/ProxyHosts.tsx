@@ -211,7 +211,9 @@ export function ProxyHosts() {
       const overGroup = findFolderSiblings(folders, overData.folderId as string);
       if (!activeGroup || !overGroup || activeGroup.parentId !== overGroup.parentId) return;
 
-      const oldIndex = activeGroup.siblings.findIndex((folder) => folder.id === activeData.folderId);
+      const oldIndex = activeGroup.siblings.findIndex(
+        (folder) => folder.id === activeData.folderId
+      );
       const newIndex = overGroup.siblings.findIndex((folder) => folder.id === overData.folderId);
       if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
 
@@ -220,7 +222,9 @@ export function ProxyHosts() {
       reordered.splice(newIndex, 0, moved);
 
       try {
-        await reorderFolders(reordered.map((folder, index) => ({ id: folder.id, sortOrder: index })));
+        await reorderFolders(
+          reordered.map((folder, index) => ({ id: folder.id, sortOrder: index }))
+        );
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Failed to reorder folders");
       }

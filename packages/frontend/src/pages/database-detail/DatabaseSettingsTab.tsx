@@ -6,9 +6,9 @@ import { api } from "@/services/api";
 import type { DatabaseConnection } from "@/types";
 import {
   buildDatabasePayload,
+  type DatabaseConnectionDraft,
   DatabaseConnectionForm,
   draftFromConnection,
-  type DatabaseConnectionDraft,
 } from "./DatabaseConnectionForm";
 
 export function DatabaseSettingsTab({

@@ -28,7 +28,10 @@ export function DockerDragOverlay({ active, colGroup }: DockerDragOverlayProps) 
           </Badge>
         </div>
       ) : container ? (
-        <table className="w-full bg-card border border-border shadow-lg opacity-95" style={{ tableLayout: "fixed" }}>
+        <table
+          className="w-full bg-card border border-border shadow-lg opacity-95"
+          style={{ tableLayout: "fixed" }}
+        >
           {colGroup}
           <tbody>
             <DockerContainerRow

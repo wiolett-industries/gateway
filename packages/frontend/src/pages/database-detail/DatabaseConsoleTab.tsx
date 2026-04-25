@@ -4,12 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { CodeEditor } from "@/components/ui/code-editor";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { api } from "@/services/api";
 import type { DatabaseConnection } from "@/types";
 import { stringifyCell, VIRTUAL_RESULT_ROW_HEIGHT } from "./shared";
@@ -43,14 +38,16 @@ export function DatabaseConsoleTab({ database }: { database: DatabaseConnection 
     typeof result === "object" &&
     "results" in result &&
     Array.isArray((result as { results: unknown[] }).results)
-      ? (result as {
-          results: Array<{
-            command: string;
-            rowCount: number;
-            fields: string[];
-            rows: Record<string, unknown>[];
-          }>;
-        }).results
+      ? (
+          result as {
+            results: Array<{
+              command: string;
+              rowCount: number;
+              fields: string[];
+              rows: Record<string, unknown>[];
+            }>;
+          }
+        ).results
       : null;
 
   const tableResult =
@@ -111,7 +108,8 @@ export function DatabaseConsoleTab({ database }: { database: DatabaseConnection 
                 {database.type === "postgres" ? "SQL Console" : "Redis Command Console"}
               </h3>
               <p className="text-xs text-muted-foreground">
-                Run one or more {database.type === "postgres" ? "SQL statements" : "Redis commands"}.
+                Run one or more {database.type === "postgres" ? "SQL statements" : "Redis commands"}
+                .
               </p>
             </div>
             <Button size="sm" onClick={() => void execute()} disabled={running}>
@@ -203,7 +201,10 @@ export function DatabaseConsoleTab({ database }: { database: DatabaseConnection 
           ) : postgresResults ? (
             <div className="flex-1 min-h-0 overflow-auto space-y-4">
               {postgresResults.map((entry, index) => (
-                <div key={`${entry.command}-${index}`} className="border border-border bg-card overflow-hidden">
+                <div
+                  key={`${entry.command}-${index}`}
+                  className="border border-border bg-card overflow-hidden"
+                >
                   <div className="flex items-center justify-between gap-4 border-b border-border px-4 py-3">
                     <div>
                       <h4 className="text-sm font-semibold">Statement {index + 1}</h4>
@@ -252,7 +253,10 @@ export function DatabaseConsoleTab({ database }: { database: DatabaseConnection 
           ) : redisResults ? (
             <div className="flex-1 min-h-0 overflow-auto space-y-4">
               {redisResults.map((entry, index) => (
-                <div key={`${entry.command}-${index}`} className="border border-border bg-card overflow-hidden">
+                <div
+                  key={`${entry.command}-${index}`}
+                  className="border border-border bg-card overflow-hidden"
+                >
                   <div className="border-b border-border px-4 py-3">
                     <h4 className="text-sm font-semibold">Command {index + 1}</h4>
                     <p className="text-xs text-muted-foreground">{entry.command}</p>

@@ -364,20 +364,14 @@ export function SettingsTab({
                         </Select>
                       ) : variable.type === "number" ? (
                         <NumericInput
-                          value={Number(
-                            templateVariables[variable.name] ?? variable.default ?? 0
-                          )}
+                          value={Number(templateVariables[variable.name] ?? variable.default ?? 0)}
                           onChange={(value) => onTemplateVariableChange(variable.name, value)}
                           className="h-9 text-xs border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
                         />
                       ) : (
                         <Input
-                          value={String(
-                            templateVariables[variable.name] ?? variable.default ?? ""
-                          )}
-                          onChange={(e) =>
-                            onTemplateVariableChange(variable.name, e.target.value)
-                          }
+                          value={String(templateVariables[variable.name] ?? variable.default ?? "")}
+                          onChange={(e) => onTemplateVariableChange(variable.name, e.target.value)}
                           placeholder={
                             variable.default !== undefined ? String(variable.default) : ""
                           }

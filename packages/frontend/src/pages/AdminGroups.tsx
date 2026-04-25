@@ -182,7 +182,7 @@ export function AdminGroups({
       .catch(() => {});
   });
 
-  const openCreateDialog = () => {
+  const openCreateDialog = useCallback(() => {
     setEditingGroup(null);
     setFormName("");
     setFormDescription("");
@@ -191,12 +191,12 @@ export function AdminGroups({
     setFormResources({});
     setScopeSearch("");
     setDialogOpen(true);
-  };
+  }, []);
 
   useEffect(() => {
     if (!embedded || createRequest === 0) return;
     openCreateDialog();
-  }, [createRequest, embedded]);
+  }, [createRequest, embedded, openCreateDialog]);
 
   const openEditDialog = (group: PermissionGroup) => {
     setEditingGroup(group);

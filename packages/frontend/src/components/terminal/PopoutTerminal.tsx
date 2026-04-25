@@ -70,8 +70,7 @@ export function PopoutTerminal({ wsFactory, channelKey, title }: PopoutTerminalP
       background: style.getPropertyValue("--color-card").trim() || "#141414",
       foreground: style.getPropertyValue("--color-card-foreground").trim() || "#e0e0e0",
       cursor: style.getPropertyValue("--color-primary").trim() || "#ffffff",
-      cursorAccent:
-        style.getPropertyValue("--color-primary-foreground").trim() || "#0e0e0e",
+      cursorAccent: style.getPropertyValue("--color-primary-foreground").trim() || "#0e0e0e",
       selectionBackground:
         resolvedTheme === "light" ? "rgba(26, 26, 26, 0.18)" : "rgba(255, 255, 255, 0.22)",
       selectionInactiveBackground:
@@ -250,7 +249,7 @@ export function PopoutTerminal({ wsFactory, channelKey, title }: PopoutTerminalP
     if (terminalRef.current) {
       terminalRef.current.options.theme = getTerminalTheme();
     }
-  }, [getTerminalTheme, resolvedTheme]);
+  }, [getTerminalTheme]);
 
   return <div ref={termRef} className="fixed inset-0 bg-card" style={{ padding: 4 }} />;
 }
