@@ -101,7 +101,7 @@ export function UpdateSection({ canUpdate }: UpdateSectionProps) {
               )}
             </div>
           </div>
-          <div className="divide-y divide-border -mb-px [&>*:last-child]:border-b [&>*:last-child]:border-border">
+          <div className="divide-y divide-border">
             <DetailRow label="Current version" value={updateStatus.currentVersion} />
             <DetailRow label="New version" value={updateStatus.latestVersion} />
           </div>
