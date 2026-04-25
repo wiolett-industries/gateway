@@ -32,6 +32,11 @@ export function extractNodeIdFromCert(
       return null;
     }
 
+    if (socket.authorized === false) {
+      logger.warn('Client cert is not authorized', { authorizationError: socket.authorizationError });
+      return null;
+    }
+
     const peerCert = socket.getPeerCertificate(false);
     if (!peerCert?.subject) {
       return null;

@@ -431,47 +431,61 @@ export function AdminNodeDetail() {
             </TabsContent>
             {!isNodeIncompatible(node) && (
               <TabsContent value="monitoring" className="pb-6">
-                <NodeMonitoringTab nodeId={node.id} nodeStatus={node.status} nodeType={node.type} />
+                {activeTab === "monitoring" && (
+                  <NodeMonitoringTab
+                    nodeId={node.id}
+                    nodeStatus={node.status}
+                    nodeType={node.type}
+                  />
+                )}
               </TabsContent>
             )}
             {!isNodeIncompatible(node) && node.type === "nginx" && canViewNodeConfig && (
               <TabsContent value="configuration" className="flex flex-col flex-1 min-h-0">
-                <NodeConfigTab
-                  nodeId={node.id}
-                  nodeStatus={node.status}
-                  actionLocked={nodeUpdating}
-                />
+                {activeTab === "configuration" && (
+                  <NodeConfigTab
+                    nodeId={node.id}
+                    nodeStatus={node.status}
+                    actionLocked={nodeUpdating}
+                  />
+                )}
               </TabsContent>
             )}
             {!isNodeIncompatible(node) && node.type === "nginx" && canViewNodeLogs && (
               <TabsContent value="nginx-logs" className="flex flex-col flex-1 min-h-0">
-                <NodeNginxLogsTab nodeId={node.id} nodeStatus={node.status} />
+                {activeTab === "nginx-logs" && (
+                  <NodeNginxLogsTab nodeId={node.id} nodeStatus={node.status} />
+                )}
               </TabsContent>
             )}
             {!isNodeIncompatible(node) && node.type === "docker" && (
               <>
                 <TabsContent value="containers" className="flex flex-col flex-1 min-h-0">
-                  <DockerContainers embedded fixedNodeId={node.id} />
+                  {activeTab === "containers" && (
+                    <DockerContainers embedded fixedNodeId={node.id} />
+                  )}
                 </TabsContent>
                 <TabsContent value="images" className="flex flex-col flex-1 min-h-0">
-                  <DockerImages embedded fixedNodeId={node.id} />
+                  {activeTab === "images" && <DockerImages embedded fixedNodeId={node.id} />}
                 </TabsContent>
                 <TabsContent value="volumes" className="flex flex-col flex-1 min-h-0">
-                  <DockerVolumes embedded fixedNodeId={node.id} />
+                  {activeTab === "volumes" && <DockerVolumes embedded fixedNodeId={node.id} />}
                 </TabsContent>
                 <TabsContent value="networks" className="flex flex-col flex-1 min-h-0">
-                  <DockerNetworks embedded fixedNodeId={node.id} />
+                  {activeTab === "networks" && <DockerNetworks embedded fixedNodeId={node.id} />}
                 </TabsContent>
               </>
             )}
             {!isNodeIncompatible(node) && node.status === "online" && canUseNodeConsole && (
               <TabsContent value="console" className="flex flex-col flex-1 min-h-0">
-                <NodeConsoleTab nodeId={node.id} />
+                {activeTab === "console" && <NodeConsoleTab nodeId={node.id} />}
               </TabsContent>
             )}
             {canViewNodeLogs && (
               <TabsContent value="daemon-logs" className="flex flex-col flex-1 min-h-0">
-                <NodeLogsTab nodeId={node.id} nodeStatus={node.status} />
+                {activeTab === "daemon-logs" && (
+                  <NodeLogsTab nodeId={node.id} nodeStatus={node.status} />
+                )}
               </TabsContent>
             )}
           </div>
