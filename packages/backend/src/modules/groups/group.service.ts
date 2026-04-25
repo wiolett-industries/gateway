@@ -4,11 +4,16 @@ import { TOKENS } from '@/container.js';
 import type { DrizzleClient } from '@/db/client.js';
 import { permissionGroups, users } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
+import { hasScope, isScopeSubset } from '@/lib/permissions.js';
 import { AppError } from '@/middleware/error-handler.js';
 import { computeEffectiveGroupAccess, fetchGroupScopeMap } from '@/modules/auth/live-session-user.js';
 import type { CreateGroupInput, UpdateGroupInput } from './group.schemas.js';
 
 const logger = createChildLogger('GroupService');
+
+function disallowedScopes(effectiveScopes: string[], actorScopes: string[]) {
+  return effectiveScopes.filter((scope) => !hasScope(actorScopes, scope));
+}
 
 @injectable()
 export class GroupService {
@@ -69,6 +74,34 @@ export class GroupService {
 
     const parentScopes = await this.getEffectiveScopesForGroupId(parentId);
     return [...new Set([...directScopes, ...parentScopes])];
+  }
+
+  async assertCanCreateGroup(input: CreateGroupInput, actorScopes: string[]): Promise<void> {
+    const effectiveScopes = await this.buildEffectiveScopes(input.scopes, input.parentId);
+    if (!isScopeSubset(effectiveScopes, actorScopes)) {
+      throw new AppError(
+        403,
+        'SCOPE_NOT_ALLOWED',
+        `Cannot grant scopes you do not possess: ${disallowedScopes(effectiveScopes, actorScopes).join(', ')}`
+      );
+    }
+  }
+
+  async assertCanUpdateGroup(id: string, input: UpdateGroupInput, actorScopes: string[]): Promise<void> {
+    if (input.scopes === undefined && input.parentId === undefined) return;
+
+    const existingGroup = await this.getGroup(id);
+    const nextScopes = input.scopes ?? existingGroup.scopes;
+    const nextParentId = input.parentId !== undefined ? input.parentId : existingGroup.parentId;
+    const effectiveScopes = await this.buildEffectiveScopes(nextScopes, nextParentId);
+
+    if (!isScopeSubset(effectiveScopes, actorScopes)) {
+      throw new AppError(
+        403,
+        'SCOPE_NOT_ALLOWED',
+        `Cannot grant scopes you do not possess: ${disallowedScopes(effectiveScopes, actorScopes).join(', ')}`
+      );
+    }
   }
 
   async listGroups() {

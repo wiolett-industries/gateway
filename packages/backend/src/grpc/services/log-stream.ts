@@ -12,16 +12,22 @@ export function createLogStreamHandlers(deps: GrpcServerDeps) {
     StreamLogs(stream: ServerDuplexStream<LogStreamMessage, LogStreamControl>) {
       // Identify the node from its mTLS client certificate
       const nodeId = extractNodeIdFromCert(stream as any);
-      logger.debug('Log stream opened', { nodeId: nodeId ?? 'unknown' });
+      if (!nodeId) {
+        logger.warn('Log stream rejected: missing verified mTLS client certificate');
+        stream.end();
+        return;
+      }
+      logger.debug('Log stream opened', { nodeId });
 
       // Associate the log stream with the connected node in the registry
-      if (nodeId) {
-        const connectedNode = deps.registry.getNode(nodeId);
-        if (connectedNode) {
-          connectedNode.logStream = stream as any;
-          logger.debug('Log stream associated with node', { nodeId });
-        }
+      const connectedNode = deps.registry.getNode(nodeId);
+      if (!connectedNode) {
+        logger.warn('Log stream rejected: node is not connected', { nodeId });
+        stream.end();
+        return;
       }
+      connectedNode.logStream = stream as any;
+      logger.debug('Log stream associated with node', { nodeId });
 
       stream.on('data', (msg: LogStreamMessage) => {
         if (msg.subscribeAck) {

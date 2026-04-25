@@ -151,7 +151,6 @@ adminRoutes.post('/users', requireScope('admin:users'), async (c) => {
 // Update user group
 adminRoutes.patch('/users/:id/group', requireScope('admin:users'), async (c) => {
   const authService = container.resolve(AuthService);
-  const groupService = container.resolve(GroupService);
   const auditService = container.resolve(AuditService);
   const currentUser = c.get('user')!;
   const actorScopes = c.get('effectiveScopes') || [];
@@ -159,31 +158,7 @@ adminRoutes.patch('/users/:id/group', requireScope('admin:users'), async (c) => 
   const body = await c.req.json();
   const { groupId } = UpdateUserGroupSchema.parse(body);
 
-  if (userId === currentUser.id) {
-    return c.json({ code: 'SELF_DEMOTION', message: 'Cannot change your own group' }, 400);
-  }
-
-  // Check privilege boundary against target's CURRENT scopes
-  const targetUser = await authService.getUserById(userId);
-  if (!targetUser) {
-    return c.json({ code: 'NOT_FOUND', message: 'User not found' }, 404);
-  }
-  if (targetUser.oidcSubject.startsWith('system:')) {
-    return c.json({ code: 'SYSTEM_USER', message: 'Cannot modify the system user' }, 403);
-  }
-  const denyReason = canManageUser(actorScopes, targetUser.scopes);
-  if (denyReason) {
-    return c.json({ code: 'PRIVILEGE_BOUNDARY', message: denyReason }, 403);
-  }
-
-  // Check privilege boundary against DESTINATION group's scopes
-  const destGroup = await groupService.getGroup(groupId);
-  if (!isScopeSubset(getEffectiveGroupScopes(destGroup), actorScopes)) {
-    return c.json(
-      { code: 'PRIVILEGE_BOUNDARY', message: 'Cannot assign a group with permissions you do not possess' },
-      403
-    );
-  }
+  const targetUser = await authService.assertCanUpdateUserGroup(currentUser.id, actorScopes, userId, groupId);
 
   const updatedUser = await authService.updateUserGroup(userId, groupId);
 

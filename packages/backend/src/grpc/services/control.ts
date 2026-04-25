@@ -31,7 +31,14 @@ export function createControlHandlers(deps: GrpcServerDeps) {
 
             // Verify mTLS cert CN matches claimed nodeId (prevents node impersonation)
             const certNodeId = extractNodeIdFromCert(stream as any);
-            if (certNodeId && certNodeId !== nodeId) {
+            if (!certNodeId) {
+              logger.error('Node registration rejected: missing verified mTLS client certificate', {
+                claimedNodeId: nodeId,
+              });
+              stream.end();
+              return;
+            }
+            if (certNodeId !== nodeId) {
               logger.error('Node ID mismatch: cert CN does not match claimed nodeId', {
                 certNodeId,
                 claimedNodeId: nodeId,

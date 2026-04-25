@@ -28,6 +28,23 @@ import { AI_TOOLS, getOpenAITools, isDestructiveTool, TOOL_STORE_INVALIDATION_MA
 import type { ChatMessage, PageContext, ToolExecutionResult, WSServerMessage } from './ai.types.js';
 
 const logger = createChildLogger('AIService');
+const SENSITIVE_TOOL_ARG_RE =
+  /(?:password|passwd|secret|signingsecret|privatekey|private_key|token|authorization|cookie|apikey|api_key|clientsecret|client_secret|refresh)/i;
+
+function redactToolArgs(value: unknown, depth = 0): unknown {
+  if (value === null || typeof value !== 'object') return value;
+  if (depth > 8) return '[REDACTED_DEPTH_LIMIT]';
+
+  if (Array.isArray(value)) {
+    return value.map((item) => redactToolArgs(item, depth + 1));
+  }
+
+  const redacted: Record<string, unknown> = {};
+  for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+    redacted[key] = SENSITIVE_TOOL_ARG_RE.test(key) ? '[REDACTED]' : redactToolArgs(nested, depth + 1);
+  }
+  return redacted;
+}
 
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
@@ -266,6 +283,7 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
     try {
       const result = await this.executeToolInternal(user, toolName, args);
       const invalidateStores = TOOL_STORE_INVALIDATION_MAP[toolName] || [];
+      const redactedArgs = redactToolArgs(args);
 
       // Audit log for mutating tools
       if (toolDef.destructive || invalidateStores.length > 0) {
@@ -281,14 +299,14 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
             args.templateId ||
             args.userId ||
             '') as string,
-          details: { ai_initiated: true, arguments: args },
+          details: { ai_initiated: true, arguments: redactedArgs },
         });
       }
 
       return { result, invalidateStores };
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Tool execution failed';
-      logger.error(`Tool execution failed: ${toolName}`, { error: err, args });
+      logger.error(`Tool execution failed: ${toolName}`, { error: err, args: redactToolArgs(args) });
       return { error: message, invalidateStores: [] };
     }
   }
@@ -518,19 +536,36 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
       case 'list_groups':
         return this.groupService.listGroups();
       case 'create_group':
+        await this.groupService.assertCanCreateGroup(
+          {
+            name: a.name,
+            description: a.description,
+            scopes: a.scopes,
+            parentId: a.parentId,
+          },
+          user.scopes
+        );
         return this.groupService.createGroup({
           name: a.name,
           description: a.description,
           scopes: a.scopes,
           parentId: a.parentId,
         });
-      case 'update_group':
+      case 'update_group': {
+        const input = {
+          name: a.name,
+          description: a.description,
+          scopes: a.scopes,
+          parentId: a.parentId,
+        };
+        await this.groupService.assertCanUpdateGroup(a.groupId, input, user.scopes);
         return this.groupService.updateGroup(a.groupId, {
           name: a.name,
           description: a.description,
           scopes: a.scopes,
           parentId: a.parentId,
         });
+      }
       case 'delete_group':
         await this.groupService.deleteGroup(a.groupId);
         return { success: true };
@@ -547,6 +582,7 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
         if (targetUser.oidcSubject.startsWith('system:')) {
           throw new Error('Cannot modify the system user');
         }
+        await this.authService.assertCanUpdateUserGroup(user.id, user.scopes, a.userId, a.groupId);
         const updated = await this.authService.updateUserGroup(a.userId, a.groupId);
         await container.resolve(SessionService).destroyAllUserSessions(a.userId);
         return updated;
@@ -687,14 +723,7 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
         return this.databaseService.getRedisKey(a.databaseId, a.key);
       case 'set_redis_key':
         this.ensureDatabaseScope(user, 'databases:query:write', a.databaseId);
-        return this.databaseService.setRedisKey(
-          a.databaseId,
-          a.key,
-          a.type,
-          a.value,
-          a.ttlSeconds,
-          user.id
-        );
+        return this.databaseService.setRedisKey(a.databaseId, a.key, a.type, a.value, a.ttlSeconds, user.id);
       case 'execute_redis_command':
         this.ensureDatabaseScope(user, 'databases:query:admin', a.databaseId);
         return this.databaseService.executeRedisCommand(a.databaseId, a.command, user.id);
