@@ -36,6 +36,30 @@ function resolveProtoPath() {
 
 const PROTO_PATH = resolveProtoPath();
 
+class StaticCertificateProvider {
+  constructor(
+    private readonly caCertificate: Buffer,
+    private readonly certificate: Buffer,
+    private readonly privateKey: Buffer
+  ) {}
+
+  addCaCertificateListener(listener: (update: { caCertificate: Buffer } | null) => void) {
+    listener({ caCertificate: this.caCertificate });
+  }
+
+  removeCaCertificateListener() {
+    // Static certificates do not retain listeners.
+  }
+
+  addIdentityCertificateListener(listener: (update: { certificate: Buffer; privateKey: Buffer } | null) => void) {
+    listener({ certificate: this.certificate, privateKey: this.privateKey });
+  }
+
+  removeIdentityCertificateListener() {
+    // Static certificates do not retain listeners.
+  }
+}
+
 export interface GrpcServerDeps {
   registry: NodeRegistryService;
   dispatch: NodeDispatchService;
@@ -96,7 +120,12 @@ export async function startGrpcServer(
       logger.warn('Could not load system CA cert for mTLS', { error: (err as Error).message });
     }
 
-    credentials = grpc.ServerCredentials.createSsl(caCert, [{ cert_chain: cert, private_key: key }], false);
+    if (caCert) {
+      const provider = new StaticCertificateProvider(caCert, cert, key);
+      credentials = (grpc.experimental as any).createCertificateProviderServerCredentials(provider, provider, false);
+    } else {
+      credentials = grpc.ServerCredentials.createSsl(null, [{ cert_chain: cert, private_key: key }], false);
+    }
     logger.info('gRPC server using TLS');
   } else {
     credentials = grpc.ServerCredentials.createInsecure();
