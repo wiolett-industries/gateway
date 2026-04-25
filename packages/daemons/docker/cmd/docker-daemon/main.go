@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/wiolett/gateway/daemon-shared/lifecycle"
@@ -106,17 +108,19 @@ func setupLogger(level, format string) *slog.Logger {
 
 func runInstall() {
 	if len(os.Args) < 4 {
-		fmt.Fprintf(os.Stderr, "Usage: docker-daemon install --gateway <address> --token <token>\n")
+		fmt.Fprintf(os.Stderr, "Usage: docker-daemon install --gateway <address> --token <token> [--docker-socket <host>]\n")
 		os.Exit(1)
 	}
 
-	var address, token string
+	var address, token, dockerSocket string
 	for i := 2; i < len(os.Args)-1; i++ {
 		switch os.Args[i] {
 		case "--gateway":
 			address = os.Args[i+1]
 		case "--token":
 			token = os.Args[i+1]
+		case "--docker-socket":
+			dockerSocket = os.Args[i+1]
 		}
 	}
 
@@ -127,6 +131,9 @@ func runInstall() {
 
 	configDir := "/etc/docker-daemon"
 	configPath := configDir + "/config.yaml"
+	if dockerSocket == "" {
+		dockerSocket = detectDockerSocket()
+	}
 
 	if err := os.MkdirAll(configDir, 0755); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to create config dir: %v\n", err)
@@ -147,9 +154,9 @@ log_level: "info"
 log_format: "json"
 
 docker:
-  socket: "unix:///var/run/docker.sock"
+  socket: %q
   allowlist: ["*"]
-`, address, token)
+`, address, token, dockerSocket)
 
 	if err := os.WriteFile(configPath, []byte(configContent), 0600); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to write config: %v\n", err)
@@ -159,11 +166,43 @@ docker:
 	fmt.Printf("Config written to %s\n", configPath)
 
 	// Create systemd service unit
-	serviceContent := `[Unit]
+	serviceContent := dockerDaemonSystemdUnit()
+	servicePath := "/etc/systemd/system/docker-daemon.service"
+	if err := os.WriteFile(servicePath, []byte(serviceContent), 0644); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to write systemd unit: %v\n", err)
+		fmt.Println("You can start the daemon manually: docker-daemon run")
+	} else {
+		fmt.Printf("Systemd service written to %s\n", servicePath)
+		fmt.Println("Enable and start: systemctl enable --now docker-daemon")
+	}
+}
+
+func detectDockerSocket() string {
+	out, err := exec.Command("docker", "context", "inspect", "--format", "{{.Endpoints.docker.Host}}").Output()
+	if err == nil {
+		host := strings.TrimSpace(string(out))
+		if host != "" && host != "<no value>" {
+			return host
+		}
+	}
+	return "unix:///var/run/docker.sock"
+}
+
+func dockerDaemonSystemdUnit() string {
+	unit := detectDockerSystemdUnit()
+	after := "network-online.target"
+	wants := "network-online.target"
+	requires := ""
+	if unit != "" {
+		after += " " + unit
+		wants += " " + unit
+		requires = fmt.Sprintf("Requires=%s\n", unit)
+	}
+	return fmt.Sprintf(`[Unit]
 Description=Gateway Docker Daemon
-After=network-online.target docker.service
-Wants=network-online.target
-Requires=docker.service
+After=%s
+Wants=%s
+%s
 
 [Service]
 Type=simple
@@ -174,13 +213,31 @@ Environment=DOCKER_DAEMON_CONFIG=/etc/docker-daemon/config.yaml
 
 [Install]
 WantedBy=multi-user.target
-`
-	servicePath := "/etc/systemd/system/docker-daemon.service"
-	if err := os.WriteFile(servicePath, []byte(serviceContent), 0644); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to write systemd unit: %v\n", err)
-		fmt.Println("You can start the daemon manually: docker-daemon run")
-	} else {
-		fmt.Printf("Systemd service written to %s\n", servicePath)
-		fmt.Println("Enable and start: systemctl enable --now docker-daemon")
+`, after, wants, requires)
+}
+
+func detectDockerSystemdUnit() string {
+	for _, unit := range []string{"docker.service", "snap.docker.dockerd.service"} {
+		if systemdUnitExists(unit) {
+			return unit
+		}
 	}
+	return ""
+}
+
+func systemdUnitExists(unit string) bool {
+	if err := exec.Command("systemctl", "cat", unit).Run(); err == nil {
+		return true
+	}
+	out, err := exec.Command("systemctl", "list-unit-files", "--type=service", "--no-legend", unit).Output()
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) > 0 && fields[0] == unit {
+			return true
+		}
+	}
+	return false
 }

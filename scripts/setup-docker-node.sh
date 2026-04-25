@@ -43,6 +43,8 @@ NO_LOGO=0
 APT_UPDATED=0
 OS_VERSION_CODENAME=""
 DOCKER_USE_SUDO=0
+DOCKER_SYSTEMD_UNIT=""
+DOCKER_SOCKET="unix:///var/run/docker.sock"
 RESOLVED_DAEMON_VERSION=""
 EXISTING_INSTALL=0
 EXISTING_VERSION=""
@@ -249,12 +251,44 @@ docker_run() {
 detect_docker_access() {
     if docker info >/dev/null 2>&1; then
         DOCKER_USE_SUDO=0
+        detect_docker_socket
         return 0
     fi
     if command_exists sudo && sudo docker info >/dev/null 2>&1; then
         DOCKER_USE_SUDO=1
+        detect_docker_socket
         return 0
     fi
+    return 1
+}
+
+detect_docker_socket() {
+    local host
+    host="$(docker_run context inspect --format '{{.Endpoints.docker.Host}}' 2>/dev/null || true)"
+    if [[ -n "$host" && "$host" != "<no value>" ]]; then
+        DOCKER_SOCKET="$host"
+    fi
+}
+
+systemd_unit_exists() {
+    local unit="$1"
+    local output
+    if systemctl cat "$unit" >/dev/null 2>&1; then
+        return 0
+    fi
+    output="$(systemctl list-unit-files --type=service --no-legend "$unit" 2>/dev/null || true)"
+    [[ "$output" == "$unit "* || "$output" == "$unit"$'\t'* ]]
+}
+
+detect_docker_systemd_unit() {
+    local unit
+    for unit in docker.service snap.docker.dockerd.service; do
+        if systemd_unit_exists "$unit"; then
+            DOCKER_SYSTEMD_UNIT="$unit"
+            return 0
+        fi
+    done
+    DOCKER_SYSTEMD_UNIT=""
     return 1
 }
 
@@ -356,8 +390,17 @@ ensure_docker_running() {
     fi
     log "Starting Docker service..."
     if has_systemd; then
-        run_privileged_quiet systemctl enable --now containerd || true
-        run_privileged_quiet systemctl enable --now docker
+        if detect_docker_systemd_unit; then
+            if [[ "$DOCKER_SYSTEMD_UNIT" == "docker.service" ]]; then
+                run_privileged_quiet systemctl enable --now containerd || true
+                run_privileged_quiet systemctl enable --now "$DOCKER_SYSTEMD_UNIT"
+            else
+                run_privileged_quiet systemctl start "$DOCKER_SYSTEMD_UNIT"
+            fi
+        else
+            run_privileged_quiet systemctl enable --now containerd || true
+            run_privileged_quiet systemctl enable --now docker
+        fi
     elif has_openrc; then
         run_privileged_quiet rc-update add containerd default || true
         run_privileged_quiet rc-service containerd start || true
@@ -778,7 +821,7 @@ enroll_daemon() {
     fi
 
     log "Writing config and enrolling with Gateway..."
-    "$target" install --gateway "$GATEWAY_ADDR" --token "$ENROLL_TOKEN"
+    "$target" install --gateway "$GATEWAY_ADDR" --token "$ENROLL_TOKEN" --docker-socket "$DOCKER_SOCKET"
     ok "Config written to /etc/docker-daemon/config.yaml"
 }
 
@@ -787,12 +830,26 @@ start_daemon() {
     log "Enabling and starting docker-daemon..."
 
     if has_systemd; then
+        detect_docker_systemd_unit || true
+        local docker_after="network-online.target"
+        local docker_wants="network-online.target"
+        local docker_requires=""
+        if [[ -n "$DOCKER_SYSTEMD_UNIT" ]]; then
+            docker_after="${docker_after} ${DOCKER_SYSTEMD_UNIT}"
+            docker_wants="${docker_wants} ${DOCKER_SYSTEMD_UNIT}"
+            docker_requires="Requires=${DOCKER_SYSTEMD_UNIT}"
+        elif detect_docker_access; then
+            warn "Docker is reachable, but no systemd Docker unit was detected. docker-daemon will start without a Docker service dependency."
+        else
+            warn "No systemd Docker unit was detected. docker-daemon will start without a Docker service dependency."
+        fi
+
         cat > /etc/systemd/system/docker-daemon.service <<UNIT
 [Unit]
 Description=Gateway Docker Daemon
-After=network-online.target docker.service
-Wants=network-online.target
-Requires=docker.service
+After=${docker_after}
+Wants=${docker_wants}
+${docker_requires}
 
 [Service]
 Type=simple
