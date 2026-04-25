@@ -56,19 +56,27 @@ export function NodeDetailsTab({
     let cancelled = false;
     const load = async () => {
       if (node.type === "nginx") {
+        if (node.status !== "online" || !node.isConnected) {
+          setProxyHosts([]);
+          return;
+        }
         try {
           const resp = await api.listProxyHosts({ nodeId: node.id, limit: 100 });
           if (!cancelled) setProxyHosts(resp.data ?? []);
         } catch {
-          // optional
+          if (!cancelled) setProxyHosts([]);
         }
       }
       if (node.type === "docker") {
+        if (node.status !== "online" || !node.isConnected) {
+          setDockerContainers([]);
+          return;
+        }
         try {
           const data = await api.listDockerContainers(node.id);
           if (!cancelled) setDockerContainers(data ?? []);
         } catch {
-          // optional
+          if (!cancelled) setDockerContainers([]);
         }
       }
     };
@@ -76,7 +84,7 @@ export function NodeDetailsTab({
     return () => {
       cancelled = true;
     };
-  }, [node.id, node.type]);
+  }, [node.id, node.isConnected, node.status, node.type]);
 
   const handleDaemonUpdate = async () => {
     setIsUpdating(true);

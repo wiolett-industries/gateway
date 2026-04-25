@@ -29,9 +29,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useRealtime } from "@/hooks/use-realtime";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
+import { useDaemonUpdatesStore } from "@/stores/daemon-updates";
 import { useNodesStore } from "@/stores/nodes";
 import { usePinnedNodesStore } from "@/stores/pinned-nodes";
-import type { DaemonUpdateStatus, NodeStatus } from "@/types";
+import type { NodeStatus } from "@/types";
 import { effectiveNodeStatus, isNodeIncompatible, isNodeUpdating } from "@/types";
 
 const NODE_TYPES = [
@@ -100,24 +101,23 @@ export function AdminNodes() {
   const [enrollToken, setEnrollToken] = useState<string | null>(null);
   const [enrolling, setEnrolling] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
-  const [daemonUpdates, setDaemonUpdates] = useState<DaemonUpdateStatus[]>([]);
+  const daemonUpdates = useDaemonUpdatesStore((s) => s.statuses);
+  const fetchDaemonUpdates = useDaemonUpdatesStore((s) => s.fetchDaemonUpdates);
 
   const loadDaemonUpdates = useCallback(async () => {
     if (!hasScope("admin:update")) return;
     try {
-      const data = await api.getDaemonUpdates();
-      setDaemonUpdates(data);
+      await fetchDaemonUpdates();
     } catch {
       // ignore
     }
-  }, [hasScope]);
+  }, [fetchDaemonUpdates, hasScope]);
 
   useEffect(() => {
     fetchNodes();
   }, [fetchNodes]);
 
   useRealtime("node.changed", () => {
-    fetchNodes();
     void loadDaemonUpdates();
   });
 

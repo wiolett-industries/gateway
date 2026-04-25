@@ -187,7 +187,9 @@ export function DockerContainers({
     setNodesLoading(true);
     try {
       const r = await api.listNodes({ type: "docker", limit: 100 });
-      const compatible = r.data.filter((n) => n.status === "online" && !isNodeIncompatible(n));
+      const compatible = r.data.filter(
+        (n) => n.status === "online" && n.isConnected && !isNodeIncompatible(n)
+      );
       setDockerNodes(compatible);
       useDockerStore.getState().setDockerNodes(compatible);
     } catch {
@@ -222,10 +224,15 @@ export function DockerContainers({
   );
 
   useEffect(() => {
+    if (embedded && !fixedNodeId) {
+      void fetchFolders();
+      return;
+    }
+    if (!embedded && !fixedNodeId && nodesLoading) return;
     void refreshData();
     const interval = setInterval(() => void refreshData(), 30_000);
     return () => clearInterval(interval);
-  }, [refreshData]);
+  }, [embedded, fetchFolders, fixedNodeId, nodesLoading, refreshData]);
 
   useRealtime("docker.container.changed", (payload) => {
     const ev = payload as { nodeId?: string };

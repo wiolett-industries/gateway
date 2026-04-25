@@ -8,6 +8,15 @@ import { api } from "@/services/api";
 
 const CHANNEL_PREFIX = "docker-logs:";
 
+function isTerminalLogError(message: string): boolean {
+  const lower = message.toLowerCase();
+  return (
+    lower.includes("no such container") ||
+    lower.includes("not found") ||
+    lower.includes("access denied")
+  );
+}
+
 // Detect if a log line already starts with a timestamp
 function hasTimestamp(line: string): boolean {
   return /^\d{4}-\d{2}-\d{2}[T ]/.test(line) || /^\d{2}:\d{2}:\d{2}/.test(line);
@@ -32,6 +41,7 @@ export function LogsTab({
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
+  const terminalErrorRef = useRef(false);
 
   // ── Popout tracking via BroadcastChannel ──
   const [isPopout, setIsPopout] = useState(false);
@@ -133,6 +143,7 @@ export function LogsTab({
     setLines([]);
     setHasMore(true);
     setLoadingMore(false);
+    terminalErrorRef.current = false;
 
     const ws = api.createLogStreamWebSocket(nodeId, containerId, 200);
     wsRef.current = ws;
@@ -160,9 +171,14 @@ export function LogsTab({
         } else if (msg.type === "logs_ended") {
           // Stream ended — will auto-reconnect via onclose handler
         } else if (msg.type === "error" || msg.type === "auth_error") {
-          toast.error(msg.message || "Log stream error");
+          const message = msg.message || "Log stream error";
+          terminalErrorRef.current = msg.type === "auth_error" || isTerminalLogError(message);
+          toast.error(message);
           setWsConnected(false);
           setIsConnecting(false);
+          if (terminalErrorRef.current) {
+            setHasMore(false);
+          }
         }
       } catch {
         // ignore non-JSON messages
@@ -173,6 +189,7 @@ export function LogsTab({
       wsRef.current = null;
       if (!mountedRef.current) return;
       setWsConnected(false);
+      if (terminalErrorRef.current) return;
       // Don't auto-reconnect if popout is active — the popout-closes effect handles it
       if (isPopoutRef.current) return;
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current);

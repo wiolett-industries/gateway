@@ -113,7 +113,9 @@ export function DockerVolumes({
 
     try {
       const r = await api.listNodes({ type: "docker", limit: 100 });
-      const onlineNodes = r.data.filter((n) => n.status === "online" && !isNodeIncompatible(n));
+      const onlineNodes = r.data.filter(
+        (n) => n.status === "online" && n.isConnected && !isNodeIncompatible(n)
+      );
       setDockerNodes(onlineNodes);
       useDockerStore.getState().setDockerNodes(onlineNodes);
     } catch {

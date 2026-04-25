@@ -66,28 +66,34 @@ export function Docker() {
     api
       .listNodes({ type: "docker", limit: 100 })
       .then((r) => {
-        setDockerNodes(r.data.filter((n) => n.status === "online" && !isNodeIncompatible(n)));
+        setDockerNodes(
+          r.data.filter((n) => n.status === "online" && n.isConnected && !isNodeIncompatible(n))
+        );
       })
       .catch(() => toast.error("Failed to load Docker nodes"));
   }, [setDockerNodes]);
 
   useEffect(() => {
     if (!selectedNodeId && dockerNodes.length === 0) return;
-    void selectedNodeId;
-    switch (activeTab) {
-      case "containers":
-        void fetchContainers();
-        break;
-      case "images":
-        void fetchImages();
-        break;
-      case "volumes":
-        void fetchVolumes();
-        break;
-      case "networks":
-        void fetchNetworks();
-        break;
-    }
+    const refreshActiveTab = () => {
+      switch (activeTab) {
+        case "containers":
+          void fetchContainers();
+          break;
+        case "images":
+          void fetchImages();
+          break;
+        case "volumes":
+          void fetchVolumes();
+          break;
+        case "networks":
+          void fetchNetworks();
+          break;
+      }
+    };
+    refreshActiveTab();
+    const interval = setInterval(refreshActiveTab, 30_000);
+    return () => clearInterval(interval);
   }, [
     activeTab,
     dockerNodes.length,

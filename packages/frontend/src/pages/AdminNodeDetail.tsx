@@ -29,7 +29,7 @@ import { useUrlTab } from "@/hooks/use-url-tab";
 import { api } from "@/services/api";
 import { ApiRequestError } from "@/services/api-base";
 import { useAuthStore } from "@/stores/auth";
-import { useNodesStore } from "@/stores/nodes";
+import { useDaemonUpdatesStore } from "@/stores/daemon-updates";
 import { usePinnedNodesStore } from "@/stores/pinned-nodes";
 import type { NodeDetail } from "@/types";
 import {
@@ -68,7 +68,6 @@ export function AdminNodeDetail() {
 
   const [node, setNode] = useState<NodeDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const nodeRefreshTick = useNodesStore((s) => s.refreshTick);
 
   const [activeTab, setActiveTab] = useUrlTab(
     [
@@ -92,10 +91,9 @@ export function AdminNodeDetail() {
   const [renameName, setRenameName] = useState("");
   const [renaming, setRenaming] = useState(false);
   const [checkingUpdates, setCheckingUpdates] = useState(false);
-  const [daemonUpdate, setDaemonUpdate] = useState<{
-    available: boolean;
-    latestVersion: string | null;
-  }>({ available: false, latestVersion: null });
+  const daemonUpdates = useDaemonUpdatesStore((s) => s.statuses);
+  const fetchDaemonUpdates = useDaemonUpdatesStore((s) => s.fetchDaemonUpdates);
+  const setDaemonUpdates = useDaemonUpdatesStore((s) => s.setDaemonUpdates);
 
   // Pin dialog
   const [pinOpen, setPinOpen] = useState(false);
@@ -111,6 +109,16 @@ export function AdminNodeDetail() {
     hasScope("nodes:config:view") ||
     hasScope("nodes:config:edit");
   const isCompatibleNode = !!node && !isNodeIncompatible(node);
+  const daemonUpdate = useMemo(() => {
+    if (!id || !node) return { available: false, latestVersion: null };
+    const typeStatus = daemonUpdates.find((status) => status.daemonType === node.type);
+    const nodeStatus = typeStatus?.nodes.find((status) => status.nodeId === id);
+    return {
+      available: !!(nodeStatus?.updateAvailable && typeStatus?.latestVersion),
+      latestVersion:
+        nodeStatus?.updateAvailable && typeStatus?.latestVersion ? typeStatus.latestVersion : null,
+    };
+  }, [daemonUpdates, id, node]);
   const visibleTabs = useMemo(
     () => [
       "details",
@@ -151,21 +159,13 @@ export function AdminNodeDetail() {
   );
 
   const loadDaemonUpdateStatus = useCallback(async () => {
-    if (!id || !node || !hasScope("admin:update")) return;
+    if (!id || !hasScope("admin:update")) return;
     try {
-      const statuses = await api.getDaemonUpdates();
-      const typeStatus = statuses.find((status) => status.daemonType === node.type);
-      const nodeStatus = typeStatus?.nodes.find((status) => status.nodeId === id);
-
-      if (nodeStatus?.updateAvailable && typeStatus?.latestVersion) {
-        setDaemonUpdate({ available: true, latestVersion: typeStatus.latestVersion });
-      } else {
-        setDaemonUpdate({ available: false, latestVersion: null });
-      }
+      await fetchDaemonUpdates();
     } catch {
       // ignore
     }
-  }, [hasScope, id, node]);
+  }, [fetchDaemonUpdates, hasScope, id]);
 
   useEffect(() => {
     if (!visibleTabs.includes(activeTab)) {
@@ -178,14 +178,6 @@ export function AdminNodeDetail() {
     const interval = setInterval(() => loadNode(true), 30000);
     return () => clearInterval(interval);
   }, [loadNode]);
-
-  // Refetch on live node.changed events (triggered by RealtimeBridge → store invalidation)
-  useEffect(() => {
-    if (nodeRefreshTick > 0) {
-      loadNode(true);
-      void loadDaemonUpdateStatus();
-    }
-  }, [nodeRefreshTick, loadNode, loadDaemonUpdateStatus]);
 
   useEffect(() => {
     void loadDaemonUpdateStatus();
@@ -249,14 +241,13 @@ export function AdminNodeDetail() {
     setCheckingUpdates(true);
     try {
       const statuses = await api.checkDaemonUpdates();
+      setDaemonUpdates(statuses);
       const typeStatus = statuses.find((status) => status.daemonType === node.type);
       const nodeStatus = typeStatus?.nodes.find((status) => status.nodeId === node.id);
 
       if (nodeStatus?.updateAvailable && typeStatus?.latestVersion) {
-        setDaemonUpdate({ available: true, latestVersion: typeStatus.latestVersion });
         toast.info(`Update available: ${typeStatus.latestVersion}`);
       } else {
-        setDaemonUpdate({ available: false, latestVersion: null });
         toast.success("Node daemon is already up to date");
       }
     } catch (err) {

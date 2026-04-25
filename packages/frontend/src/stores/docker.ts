@@ -87,6 +87,11 @@ async function fetchAllNodes<T>(
     })
   );
 
+  const failed = results.find((result) => result.status === "rejected");
+  if (failed?.status === "rejected") {
+    throw failed.reason instanceof Error ? failed.reason : new Error("Failed to fetch Docker data");
+  }
+
   return results.flatMap((result) => (result.status === "fulfilled" ? result.value : []));
 }
 
@@ -139,7 +144,9 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
 
   setDockerNodes: (nodes) =>
     set({
-      dockerNodes: nodes.filter((n) => n.status === "online" && !isNodeIncompatible(n)),
+      dockerNodes: nodes.filter(
+        (n) => n.status === "online" && n.isConnected && !isNodeIncompatible(n)
+      ),
     }),
 
   setFilters: (newFilters) => {
