@@ -130,7 +130,7 @@ export const requireActiveUser: MiddlewareHandler<AppEnv> = async (c, next) => {
  * Unified scope-based permission middleware.
  * Fires for BOTH session users and API token users.
  * Session users' scopes come from their permission group.
- * Token users' scopes come from the token itself.
+ * Token users' scopes are bounded by both the token and the owner's current group.
  */
 export function requireScope(scope: string): MiddlewareHandler<AppEnv> {
   return async (c, next) => {

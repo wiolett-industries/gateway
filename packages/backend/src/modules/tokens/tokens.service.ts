@@ -3,9 +3,11 @@ import { and, eq } from 'drizzle-orm';
 import { inject, injectable } from 'tsyringe';
 import { TOKENS } from '@/container.js';
 import type { DrizzleClient } from '@/db/client.js';
-import { apiTokens, permissionGroups, users } from '@/db/schema/index.js';
+import { apiTokens } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
+import { boundScopes } from '@/lib/permissions.js';
 import { AppError } from '@/middleware/error-handler.js';
+import { resolveLiveUser } from '@/modules/auth/live-session-user.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { User } from '@/types.js';
 import type { CreateTokenInput } from './tokens.schemas.js';
@@ -125,31 +127,14 @@ export class TokensService {
       .execute()
       .catch((err) => logger.error('Failed to update lastUsedAt', { err }));
 
-    const user = await this.db.query.users.findFirst({
-      where: eq(users.id, token.userId),
-    });
+    const user = await resolveLiveUser(this.db, token.userId);
 
     if (!user) return null;
     if (user.isBlocked) return null;
 
-    // Fetch the user's group for populating the User object
-    const group = await this.db.query.permissionGroups.findFirst({
-      where: eq(permissionGroups.id, user.groupId),
-    });
-
     return {
-      user: {
-        id: user.id,
-        oidcSubject: user.oidcSubject,
-        email: user.email,
-        name: user.name,
-        avatarUrl: user.avatarUrl,
-        groupId: user.groupId,
-        groupName: group?.name ?? 'unknown',
-        scopes: (group?.scopes as string[]) ?? [],
-        isBlocked: user.isBlocked,
-      },
-      scopes: token.scopes || [],
+      user,
+      scopes: boundScopes(token.scopes || [], user.scopes),
     };
   }
 
