@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { canManageUser, canUseAI, hasAllScopes, hasAnyScope, hasScope, isScopeSubset } from './permissions.js';
+import {
+  boundScopes,
+  canManageUser,
+  canUseAI,
+  hasAllScopes,
+  hasAnyScope,
+  hasScope,
+  isScopeSubset,
+} from './permissions.js';
 
 describe('Scope-based permissions', () => {
   describe('hasScope', () => {
@@ -73,6 +81,31 @@ describe('Scope-based permissions', () => {
 
     it('non-subset fails', () => {
       expect(isScopeSubset(['admin:users'], ['cert:read', 'cert:issue'])).toBe(false);
+    });
+  });
+
+  describe('boundScopes', () => {
+    it('keeps exact scopes granted by both sides', () => {
+      expect(boundScopes(['admin:users', 'nodes:list'], ['admin:users', 'nodes:list'])).toEqual([
+        'admin:users',
+        'nodes:list',
+      ]);
+    });
+
+    it('downgrades a broad token to the current resource-scoped user permission', () => {
+      expect(boundScopes(['nodes:details'], ['nodes:details:node-1'])).toEqual(['nodes:details:node-1']);
+    });
+
+    it('keeps a resource-scoped token when the current user still has the broad permission', () => {
+      expect(boundScopes(['nodes:details:node-1'], ['nodes:details'])).toEqual(['nodes:details:node-1']);
+    });
+
+    it('removes delegated scopes no longer granted by the current user', () => {
+      expect(boundScopes(['admin:users', 'nodes:details:node-1'], ['nodes:list'])).toEqual([]);
+    });
+
+    it('does not merge different resource scopes', () => {
+      expect(boundScopes(['nodes:details:node-1'], ['nodes:details:node-2'])).toEqual([]);
     });
   });
 

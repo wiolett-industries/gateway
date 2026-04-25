@@ -38,6 +38,27 @@ export function isScopeSubset(requestedScopes: string[], allowedScopes: string[]
 }
 
 /**
+ * Bound delegated scopes by the principal's current scopes.
+ *
+ * This is not a simple array intersection because scopes are hierarchical:
+ * a broad token scope plus a resource-scoped user scope should still allow
+ * that specific resource, and vice versa.
+ */
+export function boundScopes(delegatedScopes: string[], principalScopes: string[]): string[] {
+  const bounded = new Set<string>();
+
+  for (const scope of delegatedScopes) {
+    if (hasScope(principalScopes, scope)) bounded.add(scope);
+  }
+
+  for (const scope of principalScopes) {
+    if (hasScope(delegatedScopes, scope)) bounded.add(scope);
+  }
+
+  return [...bounded];
+}
+
+/**
  * Check if actor can manage target based on scope containment.
  * Returns null if allowed, or an error message string if denied.
  *
