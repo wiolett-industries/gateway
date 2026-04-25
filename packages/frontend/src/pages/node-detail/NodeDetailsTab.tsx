@@ -26,6 +26,10 @@ interface NodeDetailsTabProps {
   refreshDaemonUpdateStatus: (options?: { force?: boolean }) => Promise<void>;
 }
 
+function normalizeVersion(version: string | null | undefined): string {
+  return (version ?? "").replace(/^v/, "");
+}
+
 export function NodeDetailsTab({
   node,
   daemonUpdate,
@@ -36,6 +40,7 @@ export function NodeDetailsTab({
   const [proxyHosts, setProxyHosts] = useState<ProxyHost[]>([]);
   const [dockerContainers, setDockerContainers] = useState<DockerContainer[]>([]);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [pendingUpdateTarget, setPendingUpdateTarget] = useState<string | null>(null);
   const h: NodeHealthReport | null = node.liveHealthReport ?? node.lastHealthReport;
   const caps = (node.capabilities ?? {}) as Record<string, unknown>;
   const nodeUpdating = isNodeUpdating(node);
@@ -53,6 +58,15 @@ export function NodeDetailsTab({
     ro.observe(resourcesRef.current);
     return () => ro.disconnect();
   }, []);
+
+  useEffect(() => {
+    if (!pendingUpdateTarget) return;
+    const current = normalizeVersion(node.daemonVersion);
+    const target = normalizeVersion(pendingUpdateTarget);
+    if ((target && current === target) || !daemonUpdate.available) {
+      setPendingUpdateTarget(null);
+    }
+  }, [daemonUpdate.available, node.daemonVersion, pendingUpdateTarget]);
 
   useEffect(() => {
     let cancelled = false;
@@ -90,8 +104,10 @@ export function NodeDetailsTab({
 
   const handleDaemonUpdate = async () => {
     setIsUpdating(true);
+    const targetVersion = daemonUpdate.latestVersion;
     try {
       await api.triggerDaemonUpdate(node.id);
+      if (targetVersion) setPendingUpdateTarget(targetVersion);
       toast.success("Daemon update triggered — the node will restart shortly");
       await Promise.all([refreshNode(), refreshDaemonUpdateStatus({ force: true })]);
     } catch (err) {
@@ -161,7 +177,7 @@ export function NodeDetailsTab({
         <div className="border border-border bg-card">
           <div className="flex items-center justify-between border-b border-border p-4">
             <h2 className="font-semibold">Runtime</h2>
-            {!nodeUpdating && daemonUpdate.available && (
+            {!nodeUpdating && daemonUpdate.available && !pendingUpdateTarget && (
               <Button
                 size="sm"
                 style={{ backgroundColor: "rgb(234 179 8)", color: "#111" }}
