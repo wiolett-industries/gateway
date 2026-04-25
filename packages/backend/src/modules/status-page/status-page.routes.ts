@@ -25,6 +25,11 @@ statusPageRoutes.get('/settings', requireScope('status-page:view'), async (c) =>
   return c.json({ data: await service.getConfig() });
 });
 
+statusPageRoutes.get('/proxy-templates', requireScope('status-page:view'), async (c) => {
+  const service = container.resolve(StatusPageService);
+  return c.json({ data: await service.listProxyTemplates() });
+});
+
 statusPageRoutes.put('/settings', requireScope('status-page:manage'), async (c) => {
   const service = container.resolve(StatusPageService);
   const user = c.get('user')!;
