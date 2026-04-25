@@ -61,11 +61,16 @@ export class NodesService {
       .limit(query.limit)
       .offset(offset);
 
-    // Enrich with live connection status
-    const enriched = rows.map((row) => ({
-      ...row,
-      isConnected: !!this.registry.getNode(row.id),
-    }));
+    // Enrich with live connection status. The registry is authoritative for
+    // command availability; DB status can lag until stale-node cleanup runs.
+    const enriched = rows.map((row) => {
+      const isConnected = !!this.registry.getNode(row.id);
+      return {
+        ...row,
+        status: row.status === 'online' && !isConnected ? 'offline' : row.status,
+        isConnected,
+      };
+    });
 
     return {
       data: enriched,
@@ -84,10 +89,12 @@ export class NodesService {
     }
 
     const connectedNode = this.registry.getNode(id);
+    const isConnected = !!connectedNode;
 
     return {
       ...node,
-      isConnected: !!connectedNode,
+      status: node.status === 'online' && !isConnected ? 'offline' : node.status,
+      isConnected,
       liveHealthReport: connectedNode?.lastHealthReport ?? null,
       liveStatsReport: connectedNode?.lastStatsReport ?? null,
     };
