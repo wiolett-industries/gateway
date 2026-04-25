@@ -40,6 +40,7 @@ export interface StatusPageConfig {
   nodeId: string | null;
   sslCertificateId: string | null;
   proxyTemplateId: string | null;
+  upstreamUrl: string | null;
   proxyHostId: string | null;
   publicIncidentLimit: number;
   recentIncidentDays: number;
@@ -91,6 +92,7 @@ const DEFAULT_CONFIG: StatusPageConfig = {
   nodeId: null,
   sslCertificateId: null,
   proxyTemplateId: null,
+  upstreamUrl: null,
   proxyHostId: null,
   publicIncidentLimit: 25,
   recentIncidentDays: 14,
@@ -196,6 +198,8 @@ export class StatusPageService {
       nodeId: input.nodeId === undefined ? previous.nodeId : input.nodeId,
       sslCertificateId: input.sslCertificateId === undefined ? previous.sslCertificateId : input.sslCertificateId,
       proxyTemplateId: input.proxyTemplateId === undefined ? previous.proxyTemplateId : input.proxyTemplateId,
+      upstreamUrl:
+        input.upstreamUrl === undefined ? previous.upstreamUrl : input.upstreamUrl ? input.upstreamUrl.trim() : null,
     };
 
     if (next.proxyTemplateId) {
@@ -218,6 +222,7 @@ export class StatusPageService {
           nodeId: next.nodeId!,
           sslCertificateId: next.sslCertificateId,
           nginxTemplateId: next.proxyTemplateId,
+          upstreamUrl: next.upstreamUrl,
         },
         userId
       );
@@ -241,6 +246,7 @@ export class StatusPageService {
         domain: next.domain,
         nodeId: next.nodeId,
         proxyTemplateId: next.proxyTemplateId,
+        upstreamUrl: next.upstreamUrl,
       },
     });
     this.emit('settings_updated');

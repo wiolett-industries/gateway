@@ -51,6 +51,33 @@ export interface StatusPageSystemHostInput {
   nodeId: string;
   sslCertificateId?: string | null;
   nginxTemplateId?: string | null;
+  upstreamUrl?: string | null;
+}
+
+function getStatusPageUpstream(upstreamUrl: string | null | undefined): {
+  host: string;
+  port: number;
+  scheme: 'http' | 'https';
+} {
+  const env = getEnv();
+  if (!upstreamUrl) {
+    return { host: '127.0.0.1', port: env.PORT, scheme: 'http' };
+  }
+
+  const url = new URL(upstreamUrl);
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new AppError(400, 'STATUS_PAGE_UPSTREAM_INVALID', 'Status page upstream must use http or https');
+  }
+  if (url.pathname !== '/' || url.search || url.hash) {
+    throw new AppError(
+      400,
+      'STATUS_PAGE_UPSTREAM_INVALID',
+      'Status page upstream must not include path, query, or hash'
+    );
+  }
+  const scheme = url.protocol === 'https:' ? 'https' : 'http';
+  const port = url.port ? Number(url.port) : scheme === 'https' ? 443 : 80;
+  return { host: url.hostname, port, scheme };
 }
 
 // ---------------------------------------------------------------------------
@@ -669,13 +696,14 @@ export class ProxyService {
       where: eq(proxyHosts.systemKind, 'status_page'),
     });
     const sslEnabled = !!input.sslCertificateId;
+    const upstream = getStatusPageUpstream(input.upstreamUrl);
     const data = {
       type: 'proxy' as const,
       domainNames: [input.domain],
       enabled: true,
-      forwardHost: '127.0.0.1',
-      forwardPort: getEnv().PORT,
-      forwardScheme: 'http' as const,
+      forwardHost: upstream.host,
+      forwardPort: upstream.port,
+      forwardScheme: upstream.scheme,
       sslEnabled,
       sslForced: sslEnabled,
       http2Support: true,
