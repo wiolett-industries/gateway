@@ -44,7 +44,7 @@ class StaticCertificateProvider {
   ) {}
 
   addCaCertificateListener(listener: (update: { caCertificate: Buffer } | null) => void) {
-    listener({ caCertificate: this.caCertificate });
+    setImmediate(() => listener({ caCertificate: this.caCertificate }));
   }
 
   removeCaCertificateListener() {
@@ -52,7 +52,7 @@ class StaticCertificateProvider {
   }
 
   addIdentityCertificateListener(listener: (update: { certificate: Buffer; privateKey: Buffer } | null) => void) {
-    listener({ certificate: this.certificate, privateKey: this.privateKey });
+    setImmediate(() => listener({ certificate: this.certificate, privateKey: this.privateKey }));
   }
 
   removeIdentityCertificateListener() {
