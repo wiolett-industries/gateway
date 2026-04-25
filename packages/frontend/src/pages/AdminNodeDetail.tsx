@@ -268,6 +268,12 @@ export function AdminNodeDetail() {
 
   const updateTargetVersion = getNodeUpdateTargetVersion(node);
   const nodeState = nodeUpdating ? "updating" : effectiveNodeStatus(node);
+  const detailsTabRefreshKey = [
+    "details",
+    node.id,
+    node.daemonVersion ?? "unknown",
+    nodeUpdating ? "updating" : "stable",
+  ].join(":");
 
   return (
     <PageTransition>
@@ -416,7 +422,7 @@ export function AdminNodeDetail() {
                 </div>
               </div>
             )}
-            <TabsContent value="details" className="pb-6">
+            <TabsContent key={detailsTabRefreshKey} value="details" className="pb-6">
               <NodeDetailsTab
                 node={node}
                 daemonUpdate={daemonUpdate}
