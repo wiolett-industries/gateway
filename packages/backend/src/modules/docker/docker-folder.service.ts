@@ -178,14 +178,6 @@ export class DockerFolderService {
       throw new AppError(404, 'FOLDER_NOT_FOUND', 'One or more folders were not found');
     }
 
-    if (folders.some((folder) => folder.isSystem)) {
-      throw new AppError(
-        400,
-        'SYSTEM_FOLDER_LOCKED',
-        'Protected compose deployment folders cannot be reordered manually'
-      );
-    }
-
     const parentIds = [...new Set(folders.map((folder) => folder.parentId ?? null))];
     if (parentIds.length > 1) {
       throw new AppError(400, 'INVALID_REORDER', 'Folders can only be reordered within the same parent');

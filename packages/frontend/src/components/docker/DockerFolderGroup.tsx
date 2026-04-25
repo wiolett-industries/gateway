@@ -49,6 +49,7 @@ interface DockerFolderGroupProps {
   canReorganize: (container: DockerContainerRowData) => boolean;
   canView: (container: DockerContainerRowData) => boolean;
   canManageFolders: boolean;
+  collapsible?: boolean;
   showNode: boolean;
   colGroup: React.ReactNode;
 }
@@ -78,6 +79,7 @@ export function DockerFolderGroup({
   canReorganize,
   canView,
   canManageFolders,
+  collapsible = true,
   showNode,
   colGroup,
 }: DockerFolderGroupProps) {
@@ -85,7 +87,7 @@ export function DockerFolderGroup({
   const { attributes, listeners, setNodeRef, transform, isDragging } = useSortable({
     id: `docker-folder-${folder.id}`,
     data: { type: "folder", folderId: folder.id, isSystem: folder.isSystem, folder },
-    disabled: folder.isSystem || !canManageFolders,
+    disabled: !canManageFolders,
   });
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -97,15 +99,21 @@ export function DockerFolderGroup({
   return (
     <div ref={setNodeRef} style={style}>
       <div
-        className="flex items-center gap-2 py-2 px-3 cursor-pointer hover:bg-accent transition-colors border-b border-border"
+        className={`flex min-h-[53px] items-center gap-2 px-3 py-2 transition-colors border-b border-border ${
+          collapsible ? "cursor-pointer hover:bg-accent" : ""
+        }`}
         style={{ paddingLeft: `${depth * 24 + 12}px` }}
-        onClick={onToggle}
+        onClick={collapsible ? onToggle : undefined}
         {...attributes}
         {...listeners}
       >
-        <button type="button" className="text-muted-foreground shrink-0">
-          {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-        </button>
+        {collapsible ? (
+          <button type="button" className="text-muted-foreground shrink-0">
+            {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+          </button>
+        ) : (
+          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground opacity-40" />
+        )}
         <Folder className="h-4 w-4 text-muted-foreground shrink-0" />
         {folder.isSystem && <Lock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
 
@@ -184,7 +192,7 @@ export function DockerFolderGroup({
                 key={child.id}
                 folder={child}
                 depth={depth + 1}
-                expanded={expandedFolderIds.has(child.id)}
+                expanded={collapsible ? expandedFolderIds.has(child.id) : true}
                 onToggle={() => onToggleFolder(child.id)}
                 onRename={onRename}
                 onDelete={onDelete}
@@ -200,6 +208,7 @@ export function DockerFolderGroup({
                 canReorganize={canReorganize}
                 canView={canView}
                 canManageFolders={canManageFolders}
+                collapsible={collapsible}
                 showNode={showNode}
                 colGroup={colGroup}
               />
