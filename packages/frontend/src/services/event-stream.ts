@@ -37,6 +37,8 @@ class EventStream {
   private openTimer: ReturnType<typeof setTimeout> | null = null;
   private connected = false;
   private listeners = new Set<(connected: boolean) => void>();
+  private nodeChangedTimer: ReturnType<typeof setTimeout> | null = null;
+  private pendingNodeChangedPayload: unknown;
 
   start() {
     this.refCount++;
@@ -67,6 +69,11 @@ class EventStream {
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
+    }
+    if (this.nodeChangedTimer) {
+      clearTimeout(this.nodeChangedTimer);
+      this.nodeChangedTimer = null;
+      this.pendingNodeChangedPayload = undefined;
     }
     if (this.ws) {
       const dying = this.ws;
@@ -120,19 +127,15 @@ class EventStream {
       if (msg.type === "event" && msg.channel) {
         // Direct store invalidation for node status changes
         if (msg.channel === "node.changed") {
-          api.invalidateCache("req:/api/nodes");
-          import("@/stores/nodes")
-            .then((m) => m.useNodesStore.getState().invalidate())
-            .catch(() => {});
-          import("@/stores/pinned-nodes")
-            .then((m) => m.usePinnedNodesStore.getState().invalidate())
-            .catch(() => {});
           const payload = msg.payload as { action?: string; id?: string } | undefined;
+          const immediate = payload?.action === "deleted";
+          this.scheduleNodeChanged(msg.payload, immediate);
           if (payload?.action === "deleted" && payload.id) {
             import("@/stores/pinned-nodes")
               .then((m) => m.usePinnedNodesStore.getState().removePin(payload.id!))
               .catch(() => {});
           }
+          return;
         } else if (msg.channel === "domain.changed") {
           api.invalidateCache("req:/api/domains");
           api.invalidateCache("domains:list");
@@ -211,16 +214,7 @@ class EventStream {
           api.invalidateCache("req:/api/notifications/deliveries");
         }
 
-        const set = this.handlers.get(msg.channel);
-        if (set) {
-          for (const fn of set) {
-            try {
-              fn(msg.payload);
-            } catch {
-              /* handler error */
-            }
-          }
-        }
+        this.dispatch(msg.channel, msg.payload);
       } else if (msg.type === "subscribed" && Array.isArray(msg.channels)) {
         for (const ch of msg.channels) this.wireSubs.add(ch);
       }
@@ -237,6 +231,50 @@ class EventStream {
     ws.onerror = () => {
       // The close handler will fire next; nothing to do here.
     };
+  }
+
+  private dispatch(channel: string, payload: unknown) {
+    const set = this.handlers.get(channel);
+    if (!set) return;
+    for (const fn of set) {
+      try {
+        fn(payload);
+      } catch {
+        /* handler error */
+      }
+    }
+  }
+
+  private invalidateNodeStores() {
+    api.invalidateCache("req:/api/nodes");
+    import("@/stores/nodes").then((m) => m.useNodesStore.getState().invalidate()).catch(() => {});
+    import("@/stores/pinned-nodes")
+      .then((m) => m.usePinnedNodesStore.getState().invalidate())
+      .catch(() => {});
+  }
+
+  private scheduleNodeChanged(payload: unknown, immediate: boolean) {
+    this.pendingNodeChangedPayload = payload;
+    if (immediate) {
+      if (this.nodeChangedTimer) {
+        clearTimeout(this.nodeChangedTimer);
+        this.nodeChangedTimer = null;
+      }
+      this.flushNodeChanged();
+      return;
+    }
+    if (this.nodeChangedTimer) return;
+    this.nodeChangedTimer = setTimeout(() => {
+      this.nodeChangedTimer = null;
+      this.flushNodeChanged();
+    }, 750);
+  }
+
+  private flushNodeChanged() {
+    const payload = this.pendingNodeChangedPayload;
+    this.pendingNodeChangedPayload = undefined;
+    this.invalidateNodeStores();
+    this.dispatch("node.changed", payload);
   }
 
   private scheduleReconnect() {

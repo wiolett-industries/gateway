@@ -59,6 +59,9 @@ describe("eventStream", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.useFakeTimers();
+    invalidateCache.mockClear();
+    invalidateNodes.mockClear();
+    invalidatePinnedNodes.mockClear();
     MockWebSocket.instances = [];
     vi.stubGlobal("WebSocket", MockWebSocket);
   });
@@ -81,7 +84,6 @@ describe("eventStream", () => {
     const socket = MockWebSocket.instances[0];
     expect(socket).toBeDefined();
     socket.open();
-    vi.useRealTimers();
 
     expect(socket.sent).toContain(
       JSON.stringify({ type: "subscribe", channels: ["node.changed"] })
@@ -89,12 +91,57 @@ describe("eventStream", () => {
 
     const payload = { id: "node-1", status: "offline" };
     socket.emit({ type: "event", channel: "node.changed", payload });
+    await vi.advanceTimersByTimeAsync(750);
     await vi.dynamicImportSettled();
 
     expect(invalidateCache).toHaveBeenCalledWith("req:/api/nodes");
     expect(invalidateNodes).toHaveBeenCalledTimes(1);
     expect(invalidatePinnedNodes).toHaveBeenCalledTimes(1);
     expect(handler).toHaveBeenCalledWith(payload);
+
+    unsubscribe();
+  });
+
+  it("coalesces noisy node.changed events before refetching", async () => {
+    const { eventStream } = await import("@/services/event-stream");
+    const handler = vi.fn();
+
+    const unsubscribe = eventStream.subscribe("node.changed", handler);
+    eventStream.start();
+    vi.runAllTimers();
+
+    const socket = MockWebSocket.instances[0];
+    if (!socket) throw new Error("Expected websocket");
+    socket.open();
+
+    socket.emit({
+      type: "event",
+      channel: "node.changed",
+      payload: { id: "node-1", status: "online" },
+    });
+    socket.emit({
+      type: "event",
+      channel: "node.changed",
+      payload: { id: "node-1", status: "offline" },
+    });
+    socket.emit({
+      type: "event",
+      channel: "node.changed",
+      payload: { id: "node-1", status: "online" },
+    });
+
+    await vi.advanceTimersByTimeAsync(749);
+    await vi.dynamicImportSettled();
+    expect(handler).not.toHaveBeenCalled();
+    expect(invalidateNodes).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1);
+    await vi.dynamicImportSettled();
+
+    expect(invalidateNodes).toHaveBeenCalledTimes(1);
+    expect(invalidatePinnedNodes).toHaveBeenCalledTimes(1);
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(handler).toHaveBeenCalledWith({ id: "node-1", status: "online" });
 
     unsubscribe();
   });

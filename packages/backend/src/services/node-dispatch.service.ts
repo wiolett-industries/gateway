@@ -383,6 +383,9 @@ export class NodeDispatchService {
     targetVersion: string,
     checksum: string
   ): Promise<CommandResult> {
+    if (!this.registry.getNode(nodeId)) {
+      throw new AppError(409, 'NODE_NOT_CONNECTED', 'Node is not connected');
+    }
     return this.registry.sendCommand(nodeId, {
       updateDaemon: { downloadUrl, targetVersion, checksum },
     });
