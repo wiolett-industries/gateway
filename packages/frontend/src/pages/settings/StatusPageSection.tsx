@@ -24,6 +24,7 @@ import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import type {
   DatabaseConnection,
+  DockerContainer,
   Node,
   ProxyHost,
   SSLCertificate,
@@ -38,6 +39,8 @@ import type {
 interface StatusPageSectionProps {
   nodesList: Node[];
 }
+
+type ServiceSourceType = StatusPageSourceType | "docker";
 
 const DEFAULT_CONFIG: StatusPageConfig = {
   enabled: false,
@@ -284,6 +287,7 @@ export function ServiceDialog({
   nodes,
   proxies,
   databases,
+  dockerTargets = [],
   onSaved,
 }: {
   open: boolean;
@@ -293,9 +297,10 @@ export function ServiceDialog({
   nodes: Node[];
   proxies: ProxyHost[];
   databases: DatabaseConnection[];
+  dockerTargets?: DockerContainer[];
   onSaved: () => void;
 }) {
-  const [sourceType, setSourceType] = useState<StatusPageSourceType>("proxy_host");
+  const [sourceType, setSourceType] = useState<ServiceSourceType>("proxy_host");
   const [sourceId, setSourceId] = useState("");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -306,7 +311,9 @@ export function ServiceDialog({
 
   useEffect(() => {
     if (!open) return;
-    setSourceType(service?.sourceType ?? "proxy_host");
+    setSourceType(
+      service?.sourceType?.startsWith("docker_") ? "docker" : (service?.sourceType ?? "proxy_host")
+    );
     setSourceId(service?.sourceId ?? "");
     setName(service?.publicName ?? "");
     setDescription(service?.publicDescription ?? "");
@@ -317,19 +324,35 @@ export function ServiceDialog({
   }, [open, service]);
 
   const sourceOptions = useMemo(() => {
+    const exposed = new Set(
+      services.filter((item) => item.id !== service?.id).map((item) => item.sourceId)
+    );
     if (sourceType === "node") {
       return nodes.map((node) => ({ id: node.id, label: node.displayName || node.hostname }));
     }
     if (sourceType === "database") {
       return databases.map((database) => ({ id: database.id, label: database.name }));
     }
-    const exposed = new Set(
-      services.filter((item) => item.id !== service?.id).map((item) => item.sourceId)
-    );
+    if (sourceType === "docker") {
+      return dockerTargets.flatMap((item) => {
+        if (item.kind === "deployment") {
+          if (!item.deploymentId || !item.healthCheckEnabled || exposed.has(item.deploymentId)) {
+            return [];
+          }
+          return [
+            { id: `docker_deployment:${item.deploymentId}`, label: `Deployment: ${item.name}` },
+          ];
+        }
+        if (!item.healthCheckId || !item.healthCheckEnabled || exposed.has(item.healthCheckId)) {
+          return [];
+        }
+        return [{ id: `docker_container:${item.healthCheckId}`, label: `Container: ${item.name}` }];
+      });
+    }
     return proxies
       .filter((proxy) => proxy.healthCheckEnabled && !proxy.isSystem && !exposed.has(proxy.id))
       .map((proxy) => ({ id: proxy.id, label: proxy.domainNames[0] || proxy.id }));
-  }, [databases, nodes, proxies, service?.id, services, sourceType]);
+  }, [databases, dockerTargets, nodes, proxies, service?.id, services, sourceType]);
 
   const save = async () => {
     try {
@@ -345,7 +368,13 @@ export function ServiceDialog({
         await api.updateStatusPageService(service.id, payload);
         toast.success("Exposed service updated");
       } else {
-        await api.createStatusPageService({ ...payload, sourceType, sourceId });
+        const [resolvedSourceType, ...resolvedSourceIdParts] =
+          sourceType === "docker" ? sourceId.split(":") : [sourceType, sourceId];
+        await api.createStatusPageService({
+          ...payload,
+          sourceType: resolvedSourceType as StatusPageSourceType,
+          sourceId: resolvedSourceIdParts.join(":"),
+        });
         toast.success("Service exposed");
       }
       onOpenChange(false);
@@ -368,7 +397,7 @@ export function ServiceDialog({
                 <Select
                   value={sourceType}
                   onValueChange={(value) => {
-                    setSourceType(value as StatusPageSourceType);
+                    setSourceType(value as ServiceSourceType);
                     setSourceId("");
                   }}
                 >
@@ -379,6 +408,7 @@ export function ServiceDialog({
                     <SelectItem value="node">Node</SelectItem>
                     <SelectItem value="proxy_host">Proxy Host</SelectItem>
                     <SelectItem value="database">Database</SelectItem>
+                    <SelectItem value="docker">Docker</SelectItem>
                   </SelectContent>
                 </Select>
               </Field>

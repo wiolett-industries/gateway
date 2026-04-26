@@ -32,7 +32,7 @@ export const StatusPageSettingsSchema = z.object({
 });
 
 export const CreateStatusPageServiceSchema = z.object({
-  sourceType: z.enum(['node', 'proxy_host', 'database']),
+  sourceType: z.enum(['node', 'proxy_host', 'database', 'docker_container', 'docker_deployment']),
   sourceId: z.string().uuid(),
   publicName: z.string().min(1).max(255),
   publicDescription: z.string().max(1000).optional().nullable(),

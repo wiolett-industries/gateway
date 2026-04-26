@@ -207,6 +207,11 @@ class EventStream {
             if (removedId) {
               usePinnedContainersStore.getState().removePin(removedId);
             }
+          } else if (msg.channel === "docker.deployment.changed") {
+            const payload = msg.payload as { action?: string; deploymentId?: string } | undefined;
+            if (payload?.deploymentId && ["deleted", "removed"].includes(payload.action ?? "")) {
+              usePinnedContainersStore.getState().removePin(payload.deploymentId);
+            }
           }
         } else if (msg.channel.startsWith("alert.")) {
           api.invalidateCache("req:/api/notifications/deliveries");

@@ -94,9 +94,12 @@ export const ALERT_CATEGORIES: CategoryDefinition[] = [
       { id: 'memory', label: 'Memory Usage (%)', unit: '%', defaultOperator: '>', defaultValue: 90 },
     ],
     events: [
-      { id: 'stopped', label: 'Container Stopped', defaultSeverity: 'warning' },
+      { id: 'stopped', label: 'Container Stopped', defaultSeverity: 'warning', supportsThreshold: true },
       { id: 'started', label: 'Container Started', defaultSeverity: 'info' },
-      { id: 'exited', label: 'Container Exited', defaultSeverity: 'warning' },
+      { id: 'exited', label: 'Container Exited', defaultSeverity: 'warning', supportsThreshold: true },
+      { id: 'health.offline', label: 'Health Offline', defaultSeverity: 'critical', supportsThreshold: true },
+      { id: 'health.degraded', label: 'Health Degraded', defaultSeverity: 'warning', supportsThreshold: true },
+      { id: 'health.online', label: 'Health Online', defaultSeverity: 'info', supportsThreshold: true },
     ],
     variables: [
       { name: '{{resource.name}}', description: 'Container name' },
@@ -105,6 +108,8 @@ export const ALERT_CATEGORIES: CategoryDefinition[] = [
       { name: '{{threshold}}', description: 'Configured threshold' },
       { name: '{{metric}}', description: 'Metric name (cpu, memory)' },
       { name: '{{node_name}}', description: 'Node hosting this container' },
+      { name: '{{health_status}}', description: 'HTTP health status' },
+      { name: '{{nodeId}}', description: 'Docker node ID' },
       { name: '{{severity}}', description: 'Alert severity' },
       { name: '{{alert_name}}', description: 'Alert rule name' },
       { name: '{{fired_at}}', description: 'When the alert started firing' },
@@ -333,6 +338,41 @@ export const EVENT_BUS_MAPPINGS: Record<string, EventMapping[]> = {
       extractData: (p) => ({ nodeId: p.nodeId }),
     },
   ],
+  'docker.health.changed': [
+    {
+      category: 'container',
+      eventId: 'health.offline',
+      match: (p) => p.action === 'health.offline',
+      extractResource: (p) => ({
+        type: p.resourceType ?? (p.target === 'deployment' ? 'docker_deployment' : 'docker_container'),
+        id: p.target === 'deployment' ? p.deploymentId : p.containerName,
+        name: p.name ?? p.containerName ?? p.deploymentId,
+      }),
+      extractData: (p) => ({ health_status: p.health_status ?? p.healthStatus, nodeId: p.nodeId }),
+    },
+    {
+      category: 'container',
+      eventId: 'health.degraded',
+      match: (p) => p.action === 'health.degraded',
+      extractResource: (p) => ({
+        type: p.resourceType ?? (p.target === 'deployment' ? 'docker_deployment' : 'docker_container'),
+        id: p.target === 'deployment' ? p.deploymentId : p.containerName,
+        name: p.name ?? p.containerName ?? p.deploymentId,
+      }),
+      extractData: (p) => ({ health_status: p.health_status ?? p.healthStatus, nodeId: p.nodeId }),
+    },
+    {
+      category: 'container',
+      eventId: 'health.online',
+      match: (p) => p.action === 'health.online',
+      extractResource: (p) => ({
+        type: p.resourceType ?? (p.target === 'deployment' ? 'docker_deployment' : 'docker_container'),
+        id: p.target === 'deployment' ? p.deploymentId : p.containerName,
+        name: p.name ?? p.containerName ?? p.deploymentId,
+      }),
+      extractData: (p) => ({ health_status: p.health_status ?? p.healthStatus, nodeId: p.nodeId }),
+    },
+  ],
   'database.changed': [
     {
       category: 'database_postgres',
@@ -428,17 +468,18 @@ export function extractMetricFromHealthReport(
   if (category === 'container') {
     const stats: any[] = healthData.containerStats ?? healthData.container_stats ?? [];
     if (!Array.isArray(stats)) return null;
+    const metricStats = stats.filter((s: any) => s.metricsAvailable !== false && s.metrics_available !== false);
     switch (metric) {
       case 'cpu':
         return {
-          values: stats.map((s: any) => ({
+          values: metricStats.map((s: any) => ({
             resourceId: s.name ?? s.containerId ?? '',
             value: s.cpuPercent ?? s.cpu_percent ?? 0,
           })),
         };
       case 'memory':
         return {
-          values: stats.map((s: any) => {
+          values: metricStats.map((s: any) => {
             const used = s.memoryUsageBytes ?? s.memory_usage_bytes ?? 0;
             const limit = s.memoryLimitBytes ?? s.memory_limit_bytes ?? 0;
             return {

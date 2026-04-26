@@ -34,6 +34,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { HealthBars } from "@/components/ui/health-bars";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -44,6 +45,7 @@ import { ApiRequestError } from "@/services/api-base";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
 import { usePinnedContainersStore } from "@/stores/pinned-containers";
+import type { DockerHealthCheck } from "@/types";
 import { ConfigTab } from "./docker-detail/ConfigTab";
 import { ConsoleTab } from "./docker-detail/ConsoleTab";
 import { EnvironmentTab } from "./docker-detail/EnvironmentTab";
@@ -124,6 +126,7 @@ export function DockerContainerDetail() {
   }, [nodeId, setSelectedNode, storeNodeId]);
   const [container, setContainer] = useState<InspectData | null>(null);
   const containerRef = useRef<InspectData | null>(null);
+  const [healthCheck, setHealthCheck] = useState<DockerHealthCheck | null>(null);
 
   const [activeTab, setActiveTab] = useUrlTab(
     ["overview", "logs", "console", "files", "stats", "environment", "settings", "config"],
@@ -272,6 +275,22 @@ export function DockerContainerDetail() {
   // Realtime: refetch on any container.changed event for this container's name.
   // Also handle the recreate ID migration for every open tab.
   const containerName = ((container?.Name ?? "") as string).replace(/^\//, "");
+
+  const fetchHealthCheck = useCallback(async () => {
+    if (!nodeId || !containerName) return;
+
+    try {
+      const next = await api.getContainerHealthCheck(nodeId, containerName);
+      setHealthCheck(next);
+    } catch {
+      setHealthCheck(null);
+    }
+  }, [containerName, nodeId]);
+
+  useEffect(() => {
+    void fetchHealthCheck();
+  }, [fetchHealthCheck]);
+
   useRealtime("docker.container.changed", (payload) => {
     const ev = payload as {
       nodeId?: string;
@@ -303,6 +322,19 @@ export function DockerContainerDetail() {
       return;
     }
     void fetchContainer(true);
+  });
+
+  useRealtime("docker.health.changed", (payload) => {
+    const ev = payload as {
+      nodeId?: string;
+      target?: string;
+      containerName?: string;
+    };
+    if (ev.nodeId !== nodeId || ev.target !== "container" || ev.containerName !== containerName) {
+      return;
+    }
+
+    void fetchHealthCheck();
   });
 
   const currentTransition = container?._transition as string | undefined;
@@ -555,6 +587,13 @@ export function DockerContainerDetail() {
           </div>
         </div>
 
+        {healthCheck?.enabled && (
+          <HealthBars
+            history={healthCheck.healthHistory}
+            currentStatus={healthCheck.healthStatus}
+          />
+        )}
+
         {/* Tabs */}
         <Tabs
           value={activeTab}
@@ -647,6 +686,7 @@ export function DockerContainerDetail() {
                 data={container}
                 onRecreating={refreshAfterMutation}
                 onRefresh={refreshAfterMutation}
+                onHealthCheckSaved={setHealthCheck}
                 transition={transition}
               />
             </TabsContent>

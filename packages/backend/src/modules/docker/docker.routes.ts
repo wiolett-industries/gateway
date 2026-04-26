@@ -4,6 +4,7 @@ import type { AppEnv } from '@/types.js';
 import { registerContainerRoutes } from './docker-container.routes.js';
 import { registerDockerDeploymentRoutes } from './docker-deployment.routes.js';
 import { registerDockerFolderRoutes } from './docker-folder.routes.js';
+import { registerDockerHealthCheckRoutes } from './docker-health-check.routes.js';
 import { registerImageRoutes } from './docker-image.routes.js';
 import { registerNetworkRoutes } from './docker-network.routes.js';
 import { registerRegistryRoutes } from './docker-registry.routes.js';
@@ -19,6 +20,7 @@ dockerRoutes.use('*', sessionOnly);
 // Register all route groups
 registerWebhookConfigRoutes(dockerRoutes);
 registerDockerDeploymentRoutes(dockerRoutes);
+registerDockerHealthCheckRoutes(dockerRoutes);
 registerDockerFolderRoutes(dockerRoutes);
 registerContainerRoutes(dockerRoutes);
 registerImageRoutes(dockerRoutes);

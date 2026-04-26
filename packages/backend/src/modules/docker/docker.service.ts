@@ -1,15 +1,18 @@
 import { and, eq } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import { dockerDeployments, nodes } from '@/db/schema/index.js';
+import { createChildLogger } from '@/lib/logger.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
+import type { NotificationEvaluatorService } from '@/modules/notifications/notification-evaluator.service.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
 import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import type { NodeRegistryService } from '@/services/node-registry.service.js';
-import type { DockerEnvironmentService } from './docker-environment.service.js';
 import type { DockerDeploymentService } from './docker-deployment.service.js';
 import { DOCKER_DEPLOYMENT_MANAGED_LABEL } from './docker-deployment.service.js';
+import type { DockerEnvironmentService } from './docker-environment.service.js';
 import type { DockerFolderService } from './docker-folder.service.js';
+import type { DockerHealthCheckService } from './docker-health-check.service.js';
 import {
   type ContainerRuntimeConfig,
   type NodeRuntimeCapacity,
@@ -18,6 +21,8 @@ import {
 import type { DockerRuntimeSettingsService } from './docker-runtime-settings.service.js';
 import type { DockerSecretService } from './docker-secret.service.js';
 import type { DockerTaskService } from './docker-task.service.js';
+
+const logger = createChildLogger('DockerManagementService');
 
 export type ContainerTransition = 'creating' | 'stopping' | 'restarting' | 'killing' | 'recreating' | 'updating';
 
@@ -49,7 +54,9 @@ export class DockerManagementService {
   private secretService?: DockerSecretService;
   private folderService?: DockerFolderService;
   private deploymentService?: DockerDeploymentService;
+  private healthCheckService?: DockerHealthCheckService;
   private eventBus?: EventBusService;
+  private evaluator?: NotificationEvaluatorService;
 
   constructor(
     private db: DrizzleClient,
@@ -82,8 +89,16 @@ export class DockerManagementService {
     this.deploymentService = deploymentService;
   }
 
+  setHealthCheckService(healthCheckService: DockerHealthCheckService) {
+    this.healthCheckService = healthCheckService;
+  }
+
   setEventBus(eventBus: EventBusService) {
     this.eventBus = eventBus;
+  }
+
+  setEvaluator(evaluator: NotificationEvaluatorService) {
+    this.evaluator = evaluator;
   }
 
   private emitContainer(
@@ -94,10 +109,57 @@ export class DockerManagementService {
     extra?: Record<string, unknown>
   ) {
     this.eventBus?.publish('docker.container.changed', { nodeId, name, id, action, ...(extra || {}) });
+    this.observeContainerLifecycle(nodeId, name, id, action, extra);
   }
 
   emitTransition(nodeId: string, name: string, id: string, transition: ContainerTransition) {
     this.eventBus?.publish('docker.container.changed', { nodeId, name, id, action: 'transitioning', transition });
+  }
+
+  private observeContainerLifecycle(
+    nodeId: string,
+    name: string,
+    id: string,
+    action: ContainerAction,
+    extra?: Record<string, unknown>
+  ) {
+    const state = this.lifecycleStateForAction(action);
+    if (!state) return;
+
+    const observedPatterns = state === 'started' || state === 'removed' ? ['stopped', 'exited'] : [state];
+    this.evaluator
+      ?.observeStatefulEvent(
+        'container',
+        state,
+        { type: 'container', id: name || id, name: name || id },
+        { nodeId, containerId: id, action, ...(extra || {}) },
+        observedPatterns
+      )
+      .catch((error) => {
+        logger.debug('Container lifecycle stateful event observation failed', {
+          nodeId,
+          containerId: id,
+          action,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+  }
+
+  private lifecycleStateForAction(action: ContainerAction): 'started' | 'stopped' | 'exited' | 'removed' | null {
+    switch (action) {
+      case 'started':
+      case 'restarted':
+      case 'recreated':
+        return 'started';
+      case 'stopped':
+        return 'stopped';
+      case 'killed':
+        return 'exited';
+      case 'removed':
+        return 'removed';
+      default:
+        return null;
+    }
   }
 
   private emitImage(nodeId: string, ref: string, action: 'pulled' | 'removed' | 'pruned') {
@@ -551,6 +613,13 @@ export class DockerManagementService {
     // so the badge survives recreate/update which assigns a new ID).
     if (Array.isArray(containers)) {
       const visibleContainers = containers.filter((c: any) => !this.isManagedDeploymentInternal(c));
+      const containerHealth =
+        this.healthCheckService && visibleContainers.length > 0
+          ? await this.healthCheckService.getRowsForContainers(
+              nodeId,
+              visibleContainers.map((c: any) => ((c.name ?? c.Name ?? '') as string).replace(/^\//, '')).filter(Boolean)
+            )
+          : new Map();
       for (const c of visibleContainers) {
         const cName = ((c.name ?? c.Name ?? '') as string).replace(/^\//, '');
         if (!cName) continue;
@@ -566,9 +635,22 @@ export class DockerManagementService {
         }
         const transition = this.getTransition(nodeId, cName);
         if (transition) c._transition = transition;
+        const health = containerHealth.get(cName);
+        if (health) {
+          c.healthCheckId = health.id;
+          c.healthCheckEnabled = health.enabled;
+          c.healthStatus = health.healthStatus;
+          c.lastHealthCheckAt = health.lastHealthCheckAt;
+          c.healthHistory = health.healthHistory ?? [];
+        }
       }
       if (this.deploymentService) {
         const deploymentRows = await this.deploymentService.syntheticRows(nodeId);
+        const deploymentHealth = this.healthCheckService
+          ? await this.healthCheckService.getRowsForDeployments(
+              deploymentRows.map((deployment: any) => deployment.deploymentId ?? deployment.id)
+            )
+          : new Map();
         if (this.folderService && deploymentRows.length > 0) {
           const placements = await this.folderService.getPlacementsForRefs(
             deploymentRows.map((deployment: any) => ({
@@ -584,6 +666,15 @@ export class DockerManagementService {
             deployment.folderIsSystem = placement.folderIsSystem;
             deployment.folderSortOrder = placement.sortOrder;
           }
+        }
+        for (const deployment of deploymentRows as any[]) {
+          const health = deploymentHealth.get(deployment.deploymentId ?? deployment.id);
+          if (!health) continue;
+          deployment.healthCheckId = health.id;
+          deployment.healthCheckEnabled = health.enabled;
+          deployment.healthStatus = health.healthStatus;
+          deployment.lastHealthCheckAt = health.lastHealthCheckAt;
+          deployment.healthHistory = health.healthHistory ?? [];
         }
         visibleContainers.push(...deploymentRows);
       }

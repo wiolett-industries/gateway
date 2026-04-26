@@ -173,6 +173,32 @@ export function DashboardLayout() {
           ? `Container: ${name} / ${tab.charAt(0).toUpperCase() + tab.slice(1)}`
           : `Container: ${name}`;
       }
+      // Deployment detail: /docker/deployments/:nodeId/:deploymentId
+      const deploymentMatch = path.match(/^\/docker\/deployments\/([^/]+)\/([^/]+)/);
+      if (deploymentMatch) {
+        const [, nodeId, deploymentId] = deploymentMatch;
+        const tab = path.split("/")[5];
+        const formatLabel = (name: string) =>
+          tab
+            ? `Deployment: ${name} / ${tab.charAt(0).toUpperCase() + tab.slice(1)}`
+            : `Deployment: ${name}`;
+        const cached = useDockerStore
+          .getState()
+          .containers.find(
+            (item) =>
+              item.kind === "deployment" &&
+              (item.deploymentId === deploymentId || item.id === deploymentId)
+          );
+
+        api
+          .getDockerDeployment(nodeId, deploymentId)
+          .then((deployment) => {
+            useUIStore.getState().addRecentPage(path, formatLabel(deployment.name));
+          })
+          .catch(() => {});
+
+        return formatLabel(cached?.name || deploymentId.slice(0, 8));
+      }
       // Proxy host detail: /proxy-hosts/:id
       const proxyMatch = path.match(/^\/proxy-hosts\/([0-9a-f-]{36})/);
       if (proxyMatch) {

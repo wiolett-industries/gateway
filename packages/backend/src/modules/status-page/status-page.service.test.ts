@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   databaseConnections,
+  dockerDeployments,
+  dockerHealthChecks,
   nodes,
   proxyHosts,
   settings,
@@ -501,5 +503,71 @@ describe('StatusPageService incident deletion', () => {
 
     expect(deleteMock).toHaveBeenCalledWith(statusPageIncidents);
     expect(where).toHaveBeenCalledOnce();
+  });
+});
+
+describe('StatusPageService Docker sources', () => {
+  it('resolves Docker container and deployment health sources', async () => {
+    const containerServiceId = '11111111-1111-4111-8111-111111111112';
+    const deploymentServiceId = '11111111-1111-4111-8111-111111111113';
+    const containerCheckId = '22222222-2222-4222-8222-222222222222';
+    const deploymentId = '33333333-3333-4333-8333-333333333333';
+    const serviceRows = [
+      {
+        id: containerServiceId,
+        sourceType: 'docker_container',
+        sourceId: containerCheckId,
+      },
+      {
+        id: deploymentServiceId,
+        sourceType: 'docker_deployment',
+        sourceId: deploymentId,
+      },
+    ];
+    const containerCheck = {
+      id: containerCheckId,
+      target: 'container',
+      containerName: 'api',
+      healthStatus: 'online',
+      healthHistory: [{ ts: new Date().toISOString(), status: 'online' }],
+    };
+    const deploymentCheck = {
+      id: '44444444-4444-4444-8444-444444444444',
+      target: 'deployment',
+      deploymentId,
+      healthStatus: 'degraded',
+      healthHistory: [{ ts: new Date().toISOString(), status: 'degraded' }],
+    };
+    const deployment = {
+      id: deploymentId,
+      name: 'web',
+    };
+    const db = {
+      select: () => ({
+        from: (table: unknown) => ({
+          where: async () => {
+            if (table === nodes) return [];
+            if (table === proxyHosts) return [];
+            if (table === databaseConnections) return [];
+            if (table === dockerHealthChecks) return [containerCheck, deploymentCheck];
+            if (table === dockerDeployments) return [deployment];
+            return [];
+          },
+        }),
+      }),
+    };
+
+    const sources = await createService(db).resolveSources(serviceRows as never);
+
+    expect(sources.get(containerServiceId)).toMatchObject({
+      label: 'api',
+      rawStatus: 'online',
+      status: 'operational',
+    });
+    expect(sources.get(deploymentServiceId)).toMatchObject({
+      label: 'web',
+      rawStatus: 'degraded',
+      status: 'degraded',
+    });
   });
 });

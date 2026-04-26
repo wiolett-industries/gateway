@@ -25,6 +25,10 @@ interface ContainerStats {
   pids: number;
 }
 
+function hasAvailableMetrics(raw: Record<string, any>) {
+  return raw.metricsAvailable !== false && raw.metrics_available !== false;
+}
+
 function normalizeStats(raw: Record<string, any>): ContainerStats {
   return {
     cpuPercent: raw.cpuPercent ?? raw.cpu_percent ?? 0,
@@ -36,6 +40,10 @@ function normalizeStats(raw: Record<string, any>): ContainerStats {
     blockWriteBytes: raw.blockWriteBytes ?? raw.block_write_bytes ?? 0,
     pids: raw.pids ?? 0,
   };
+}
+
+function hasMemoryStats(stats: ContainerStats | null): stats is ContainerStats {
+  return !!stats && (stats.memoryUsageBytes > 0 || stats.memoryLimitBytes > 0);
 }
 
 export function StatsTab({
@@ -69,7 +77,9 @@ export function StatsTab({
   const pushStats = useCallback((s: ContainerStats) => {
     setCurrent(s);
     setCpuHist((prev) => [...prev.slice(-(MAX_HISTORY - 1)), s.cpuPercent]);
-    setMemHist((prev) => [...prev.slice(-(MAX_HISTORY - 1)), s.memoryUsageBytes]);
+    if (hasMemoryStats(s)) {
+      setMemHist((prev) => [...prev.slice(-(MAX_HISTORY - 1)), s.memoryUsageBytes]);
+    }
     setPidsHist((prev) => [...prev.slice(-(MAX_HISTORY - 1)), s.pids]);
 
     const pc = prevCountersRef.current;
@@ -120,7 +130,7 @@ export function StatsTab({
         for (let i = 0; i < history.length; i++) {
           const s = normalizeStats(history[i] as any);
           cpus.push(s.cpuPercent);
-          mems.push(s.memoryUsageBytes);
+          if (hasMemoryStats(s)) mems.push(s.memoryUsageBytes);
           pidsList.push(s.pids);
           if (i > 0) {
             rxD.push(Math.max(0, s.networkRxBytes - pRx));
@@ -154,7 +164,9 @@ export function StatsTab({
     const findContainerStats = (snapshot: any): ContainerStats | null => {
       const stats = snapshot?.health?.containerStats as any[] | undefined;
       if (!stats) return null;
-      const match = stats.find((s: any) => (s.containerId ?? s.container_id) === containerId);
+      const match = stats.find(
+        (s: any) => (s.containerId ?? s.container_id) === containerId && hasAvailableMetrics(s)
+      );
       return match ? normalizeStats(match) : null;
     };
 
@@ -228,6 +240,7 @@ export function StatsTab({
   const blockWrite = current?.blockWriteBytes ?? 0;
   const pids = current?.pids ?? 0;
   const memPercent = memLimit > 0 ? (memUsage / memLimit) * 100 : 0;
+  const memoryAvailable = hasMemoryStats(current);
 
   // Filter out TTY column from process list
   const ttIdx = processes?.Titles?.findIndex((t) => t === "TTY" || t === "TT") ?? -1;
@@ -249,54 +262,58 @@ export function StatsTab({
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
             <StatCard
               label="CPU"
-              value={`${cpuPercent.toFixed(1)}%`}
+              value={current ? `${cpuPercent.toFixed(1)}%` : "N/A"}
               icon={Cpu}
               history={cpuHist}
               sparklineMax={100}
               color="#3b82f6"
-              progress={{ percent: cpuPercent }}
+              progress={current ? { percent: cpuPercent } : undefined}
             />
             <StatCard
               label="Memory"
-              value={formatBytes(memUsage)}
+              value={memoryAvailable ? formatBytes(memUsage) : "N/A"}
               icon={MemoryStick}
               history={memHist}
-              sparklineMax={memLimit || undefined}
+              sparklineMax={memoryAvailable ? memLimit || undefined : undefined}
               color="#8b5cf6"
-              progress={{ percent: memPercent }}
-              subtitle={`${memPercent.toFixed(0)}% of ${formatBytes(memLimit)}`}
+              progress={memoryAvailable ? { percent: memPercent } : undefined}
+              subtitle={
+                memoryAvailable
+                  ? `${memPercent.toFixed(0)}% of ${formatBytes(memLimit)}`
+                  : "Unavailable from Docker stats"
+              }
             />
             <StatCard
               label="Network RX"
-              value={formatBytes(netRx)}
+              value={current ? formatBytes(netRx) : "N/A"}
               icon={ArrowDownToLine}
               history={netRxHist}
               color="#22c55e"
             />
             <StatCard
               label="Network TX"
-              value={formatBytes(netTx)}
+              value={current ? formatBytes(netTx) : "N/A"}
               icon={ArrowUpFromLine}
               history={netTxHist}
               color="#f59e0b"
             />
             <StatCard
               label="Disk Read"
-              value={formatBytes(blockRead)}
+              value={current ? formatBytes(blockRead) : "N/A"}
               icon={HardDrive}
               history={diskReadHist}
               color="#06b6d4"
             />
             <StatCard
               label="Disk Write"
-              value={formatBytes(blockWrite)}
+              value={current ? formatBytes(blockWrite) : "N/A"}
               icon={HardDrive}
               history={diskWriteHist}
               color="#f43f5e"
             />
             <StatCard
               label="PIDs"
-              value={String(pids)}
+              value={current ? String(pids) : "N/A"}
               icon={Users}
               history={pidsHist}
               color="#64748b"

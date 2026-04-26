@@ -2,6 +2,7 @@ import { Check, Copy, Plus, RefreshCw, RotateCcw, Unplug } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
+import { DockerHealthCheckSection } from "@/components/docker/DockerHealthCheckSection";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -17,7 +18,7 @@ import { formatBytes } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
-import type { DockerNetwork, DockerWebhook, NodeDetail } from "@/types";
+import type { DockerHealthCheck, DockerNetwork, DockerWebhook, NodeDetail } from "@/types";
 import type { InspectData } from "./helpers";
 import { LabelsSection } from "./LabelsSection";
 import { type PortMapping, PortMappingsSection } from "./PortMappingsSection";
@@ -64,6 +65,7 @@ export function SettingsTab({
   data,
   onRecreating,
   onRefresh,
+  onHealthCheckSaved,
   transition,
 }: {
   nodeId: string;
@@ -71,6 +73,7 @@ export function SettingsTab({
   data: InspectData;
   onRecreating?: () => void | Promise<void>;
   onRefresh?: () => void | Promise<void>;
+  onHealthCheckSaved?: (healthCheck: DockerHealthCheck) => void;
   transition?: string;
 }) {
   const { hasScope } = useAuthStore();
@@ -800,6 +803,17 @@ export function SettingsTab({
         setLabels={setLabels}
         labelsChanged={labelsChanged}
         inputCell={inputCell}
+      />
+
+      <DockerHealthCheckSection
+        nodeId={nodeId}
+        target="container"
+        containerName={containerName}
+        disabled={!canEdit}
+        onSaved={(healthCheck) => {
+          onHealthCheckSaved?.(healthCheck);
+          invalidate("containers");
+        }}
       />
 
       {/* ─── Networks ─────────────────────────────────────────────── */}

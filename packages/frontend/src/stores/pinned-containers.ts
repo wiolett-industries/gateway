@@ -3,22 +3,26 @@ import { persist } from "zustand/middleware";
 import { useDockerStore } from "@/stores/docker";
 import type { DockerContainer } from "@/types";
 
+type PinnedContainerMeta = {
+  nodeId: string;
+  name: string;
+  state?: string;
+  kind?: "container" | "deployment";
+};
+
 interface PinnedContainersState {
   dashboardContainerIds: string[];
   sidebarContainerIds: string[];
-  /** Maps containerId → { nodeId, name, state } for sidebar display */
-  containerMeta: Record<string, { nodeId: string; name: string; state?: string }>;
+  /** Maps container/deployment ID → metadata for sidebar display */
+  containerMeta: Record<string, PinnedContainerMeta>;
   refreshTick: number;
   toggleDashboard: (containerId: string) => void;
-  toggleSidebar: (
-    containerId: string,
-    meta?: { nodeId: string; name: string; state?: string }
-  ) => void;
+  toggleSidebar: (containerId: string, meta?: PinnedContainerMeta) => void;
   removePin: (containerId: string) => void;
   isPinnedDashboard: (containerId: string) => boolean;
   isPinnedSidebar: (containerId: string) => boolean;
   /** Update display name / state (e.g. after rename or status change) */
-  updateMeta: (containerId: string, meta: { nodeId: string; name: string; state?: string }) => void;
+  updateMeta: (containerId: string, meta: PinnedContainerMeta) => void;
   /** Migrate a pin from an old container ID to a new one (e.g. after recreation) */
   migrateId: (oldId: string, newId: string) => void;
   /** Remove IDs that no longer exist */
@@ -142,11 +146,18 @@ useDockerStore.subscribe((state) => {
     if (!pinnedIds.has(c.id)) continue;
     const existing = pinned.containerMeta[c.id];
     const effectiveState = (c as any)._transition ?? c.state;
-    if (existing && (existing.state !== effectiveState || existing.name !== c.name)) {
+    const effectiveKind = c.kind === "deployment" ? "deployment" : (existing?.kind ?? "container");
+    if (
+      existing &&
+      (existing.state !== effectiveState ||
+        existing.name !== c.name ||
+        existing.kind !== effectiveKind)
+    ) {
       usePinnedContainersStore.getState().updateMeta(c.id, {
         ...existing,
         name: c.name || existing.name,
         state: effectiveState,
+        kind: effectiveKind,
       });
     }
   }

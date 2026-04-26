@@ -1506,7 +1506,12 @@ export interface GroupedProxyHostsResponse {
 }
 
 // Status Page
-export type StatusPageSourceType = "node" | "proxy_host" | "database";
+export type StatusPageSourceType =
+  | "node"
+  | "proxy_host"
+  | "database"
+  | "docker_container"
+  | "docker_deployment";
 export type StatusPageServiceStatus = "operational" | "degraded" | "outage" | "unknown";
 export type StatusPageIncidentSeverity = "info" | "warning" | "critical";
 export type StatusPageIncidentStatus = "active" | "resolved";
@@ -1914,6 +1919,11 @@ export interface DockerContainer {
   activeSlot?: "blue" | "green";
   primaryRoute?: { hostPort: number; containerPort: number } | null;
   activeSlotContainerId?: string | null;
+  healthCheckId?: string | null;
+  healthCheckEnabled?: boolean;
+  healthStatus?: "online" | "offline" | "degraded" | "unknown" | "disabled";
+  lastHealthCheckAt?: string | null;
+  healthHistory?: Array<{ ts: string; status: string; responseMs?: number; slow?: boolean }>;
   folderId?: string | null;
   folderIsSystem?: boolean;
   folderSortOrder?: number;
@@ -1924,6 +1934,39 @@ export interface DockerContainer {
   memoryLimit?: number;
   networkRx?: number;
   networkTx?: number;
+}
+
+export interface DockerHealthRouteOption {
+  id: string;
+  scheme: "http" | "https";
+  hostPort: number;
+  containerPort: number;
+  label: string;
+  isPrimary?: boolean;
+}
+
+export interface DockerHealthCheck {
+  id: string | null;
+  target: "container" | "deployment";
+  nodeId: string;
+  containerName: string | null;
+  deploymentId: string | null;
+  enabled: boolean;
+  scheme: "http" | "https";
+  hostPort: number | null;
+  containerPort: number | null;
+  path: string;
+  statusMin: number;
+  statusMax: number;
+  expectedBody: string | null;
+  bodyMatchMode: "includes" | "exact" | "starts_with" | "ends_with";
+  intervalSeconds: number;
+  timeoutSeconds: number;
+  slowThreshold: number;
+  healthStatus: "online" | "offline" | "degraded" | "unknown" | "disabled";
+  lastHealthCheckAt: string | null;
+  healthHistory: Array<{ ts: string; status: string; responseMs?: number; slow?: boolean }>;
+  routeOptions: DockerHealthRouteOption[];
 }
 
 export interface DockerDeploymentRoute {
@@ -1996,6 +2039,7 @@ export interface DockerDeployment {
   slots: DockerDeploymentSlot[];
   releases: DockerDeploymentRelease[];
   webhook?: DockerWebhook | null;
+  healthCheck?: DockerHealthCheck | null;
   _transition?: string;
   createdAt: string;
   updatedAt: string;

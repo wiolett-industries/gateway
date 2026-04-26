@@ -24,6 +24,7 @@ import type {
   DockerContainerFolder,
   DockerDeployment,
   DockerFolderTreeNode,
+  DockerHealthCheck,
   DockerImage,
   DockerNetwork,
   DockerRegistry,
@@ -1854,6 +1855,78 @@ class ApiClient extends ApiClientBase {
     await this.request<void>(`/docker/nodes/${nodeId}/deployments/${deploymentId}`, {
       method: "DELETE",
     });
+  }
+
+  async getContainerHealthCheck(nodeId: string, containerName: string): Promise<DockerHealthCheck> {
+    return this.unwrapData(
+      this.request<{ data: DockerHealthCheck }>(
+        `/docker/nodes/${nodeId}/containers/${encodeURIComponent(containerName)}/health-check`
+      )
+    );
+  }
+
+  async updateContainerHealthCheck(
+    nodeId: string,
+    containerName: string,
+    data: Partial<DockerHealthCheck>
+  ): Promise<DockerHealthCheck> {
+    return this.unwrapData(
+      this.request<{ data: DockerHealthCheck }>(
+        `/docker/nodes/${nodeId}/containers/${encodeURIComponent(containerName)}/health-check`,
+        { method: "PUT", body: JSON.stringify(data) }
+      )
+    );
+  }
+
+  async testContainerHealthCheck(
+    nodeId: string,
+    containerName: string,
+    data: Partial<DockerHealthCheck>
+  ): Promise<{ ok: boolean; status: string; httpStatus?: number; responseMs?: number }> {
+    return this.unwrapData(
+      this.request<{
+        data: { ok: boolean; status: string; httpStatus?: number; responseMs?: number };
+      }>(
+        `/docker/nodes/${nodeId}/containers/${encodeURIComponent(containerName)}/health-check/test`,
+        { method: "POST", body: JSON.stringify(data) }
+      )
+    );
+  }
+
+  async getDeploymentHealthCheck(nodeId: string, deploymentId: string): Promise<DockerHealthCheck> {
+    return this.unwrapData(
+      this.request<{ data: DockerHealthCheck }>(
+        `/docker/nodes/${nodeId}/deployments/${deploymentId}/health-check`
+      )
+    );
+  }
+
+  async updateDeploymentHealthCheck(
+    nodeId: string,
+    deploymentId: string,
+    data: Partial<DockerHealthCheck>
+  ): Promise<DockerHealthCheck> {
+    return this.unwrapData(
+      this.request<{ data: DockerHealthCheck }>(
+        `/docker/nodes/${nodeId}/deployments/${deploymentId}/health-check`,
+        { method: "PUT", body: JSON.stringify(data) }
+      )
+    );
+  }
+
+  async testDeploymentHealthCheck(
+    nodeId: string,
+    deploymentId: string,
+    data: Partial<DockerHealthCheck>
+  ): Promise<{ ok: boolean; status: string; httpStatus?: number; responseMs?: number }> {
+    return this.unwrapData(
+      this.request<{
+        data: { ok: boolean; status: string; httpStatus?: number; responseMs?: number };
+      }>(`/docker/nodes/${nodeId}/deployments/${deploymentId}/health-check/test`, {
+        method: "POST",
+        body: JSON.stringify(data),
+      })
+    );
   }
 
   async startContainer(nodeId: string, containerId: string): Promise<void> {

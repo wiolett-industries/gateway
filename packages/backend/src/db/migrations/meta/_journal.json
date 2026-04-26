@@ -134,6 +134,13 @@
       "when": 1777222800000,
       "tag": "0018_docker_deployment_slot_config",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1777226400000,
+      "tag": "0019_docker_health_checks",
+      "breakpoints": true
     }
   ]
 }

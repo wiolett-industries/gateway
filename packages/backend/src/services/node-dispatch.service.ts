@@ -187,7 +187,7 @@ export class NodeDispatchService {
     } = {},
     timeoutMs?: number
   ): Promise<CommandResult> {
-    if (!['list', 'inspect', 'stats', 'top'].includes(action)) {
+    if (!['list', 'inspect', 'stats', 'top', 'http_probe'].includes(action)) {
       await this.assertNodeMutable(nodeId);
     }
     return this.registry.sendCommand(

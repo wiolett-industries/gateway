@@ -1,7 +1,13 @@
 import { boolean, index, integer, jsonb, pgEnum, pgTable, text, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
 import { users } from './users.js';
 
-export const statusPageSourceTypeEnum = pgEnum('status_page_source_type', ['node', 'proxy_host', 'database']);
+export const statusPageSourceTypeEnum = pgEnum('status_page_source_type', [
+  'node',
+  'proxy_host',
+  'database',
+  'docker_container',
+  'docker_deployment',
+]);
 export const statusPageIncidentSeverityEnum = pgEnum('status_page_incident_severity', ['info', 'warning', 'critical']);
 export const statusPageIncidentStatusEnum = pgEnum('status_page_incident_status', ['active', 'resolved']);
 export const statusPageIncidentTypeEnum = pgEnum('status_page_incident_type', ['automatic', 'manual']);

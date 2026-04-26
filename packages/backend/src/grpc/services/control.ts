@@ -18,6 +18,69 @@ const lastRecordedTs = new Map<string, number>();
 const HEALTH_HISTORY_MIN_INTERVAL_MS = 30_000; // one entry per 30s
 const MAX_HEALTH_HISTORY_AGE_MS = 7 * 24 * 3600 * 1000; // 7 days
 
+interface DockerContainerStateSnapshot {
+  containerId: string;
+  name?: string;
+  state?: string;
+}
+
+export interface DockerContainerStateDiff {
+  containerId: string;
+  name?: string;
+  state: string;
+}
+
+function containerStateDiff(containerId: string, state: string, name?: string): DockerContainerStateDiff {
+  return name ? { containerId, name, state } : { containerId, state };
+}
+
+function hasDockerMetricSample(container: any) {
+  const state = String(container.state ?? container.State ?? '').toLowerCase();
+  if (state !== 'running') return false;
+  return [
+    container.memoryUsageBytes ?? container.memory_usage_bytes,
+    container.memoryLimitBytes ?? container.memory_limit_bytes,
+    container.networkRxBytes ?? container.network_rx_bytes,
+    container.networkTxBytes ?? container.network_tx_bytes,
+    container.blockReadBytes ?? container.block_read_bytes,
+    container.blockWriteBytes ?? container.block_write_bytes,
+    container.pids,
+  ].some((value) => Number(value ?? 0) > 0);
+}
+
+export function diffDockerContainerStateReports(
+  previousContainerStats: DockerContainerStateSnapshot[],
+  nextContainerStats: DockerContainerStateSnapshot[]
+): DockerContainerStateDiff[] {
+  const previousById = new Map<string, DockerContainerStateSnapshot>(
+    previousContainerStats
+      .filter((container) => container.containerId)
+      .map((container) => [String(container.containerId), container])
+  );
+  const nextById = new Map<string, DockerContainerStateSnapshot>(
+    nextContainerStats
+      .filter((container) => container.containerId)
+      .map((container) => [String(container.containerId), container])
+  );
+  const nextNames = new Set(nextContainerStats.map((container) => container.name).filter(Boolean));
+  const changes: DockerContainerStateDiff[] = [];
+
+  for (const [containerId, nextContainer] of nextById) {
+    const previousContainer = previousById.get(containerId);
+    if (!previousContainer || previousContainer.state !== nextContainer.state) {
+      changes.push(containerStateDiff(containerId, nextContainer.state ?? 'unknown', nextContainer.name));
+    }
+  }
+
+  for (const [containerId, previousContainer] of previousById) {
+    if (nextById.has(containerId)) continue;
+    if (previousContainer.name && nextNames.has(previousContainer.name)) continue;
+    changes.push(containerStateDiff(containerId, 'exited', previousContainer.name));
+  }
+
+  return changes;
+}
+
 export function createControlHandlers(deps: GrpcServerDeps) {
   return {
     CommandStream(stream: ServerDuplexStream<DaemonMessage, GatewayCommand>) {
@@ -285,6 +348,7 @@ export function createControlHandlers(deps: GrpcServerDeps) {
                       blockReadBytes: Number(c.blockReadBytes ?? 0),
                       blockWriteBytes: Number(c.blockWriteBytes ?? 0),
                       pids: c.pids ?? 0,
+                      metricsAvailable: hasDockerMetricSample(c),
                     })),
                   }
                 : {}),
@@ -299,29 +363,16 @@ export function createControlHandlers(deps: GrpcServerDeps) {
               : [];
 
             if (connectedNode?.type === 'docker') {
-              const previousById = new Map<string, any>(
-                previousContainerStats.map((container: any) => [String(container.containerId), container])
-              );
-              const nextById = new Map<string, any>(
-                nextContainerStats.map((container: any) => [String(container.containerId), container])
-              );
-
-              for (const [containerId, nextContainer] of nextById) {
-                const previousContainer = previousById.get(containerId);
-                if (!previousContainer || previousContainer.state !== nextContainer.state) {
-                  deps.registry.publishDockerContainerChanged(
-                    nodeId,
-                    containerId,
-                    nextContainer.name,
-                    nextContainer.state
-                  );
-                }
+              const nextContainerIds = new Set(nextContainerStats.map((container: any) => String(container.containerId)));
+              for (const change of diffDockerContainerStateReports(previousContainerStats, nextContainerStats)) {
+                deps.registry.publishDockerContainerChanged(nodeId, change.containerId, change.name, change.state, {
+                  observe: !nextContainerIds.has(change.containerId),
+                });
               }
 
-              for (const [containerId, previousContainer] of previousById) {
-                if (!nextById.has(containerId)) {
-                  deps.registry.publishDockerContainerChanged(nodeId, containerId, previousContainer.name, 'exited');
-                }
+              for (const container of nextContainerStats) {
+                if (!container.containerId) continue;
+                deps.registry.observeDockerContainerState(nodeId, container.containerId, container.name, container.state);
               }
             }
 

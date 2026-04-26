@@ -24,6 +24,7 @@ import { DockerManagementService } from '@/modules/docker/docker.service.js';
 import { DockerDeploymentService } from '@/modules/docker/docker-deployment.service.js';
 import { DockerEnvironmentService } from '@/modules/docker/docker-environment.service.js';
 import { DockerFolderService } from '@/modules/docker/docker-folder.service.js';
+import { DockerHealthCheckService } from '@/modules/docker/docker-health-check.service.js';
 import { DockerRegistryService } from '@/modules/docker/docker-registry.service.js';
 import { DockerRuntimeSettingsService } from '@/modules/docker/docker-runtime-settings.service.js';
 import { DockerSecretService } from '@/modules/docker/docker-secret.service.js';
@@ -246,6 +247,8 @@ export async function initializeContainer(): Promise<void> {
     dockerSecretService
   );
   container.registerInstance(DockerDeploymentService, dockerDeploymentService);
+  const dockerHealthCheckService = new DockerHealthCheckService(db, nodeDispatch);
+  container.registerInstance(DockerHealthCheckService, dockerHealthCheckService);
   const dockerWebhookService = new DockerWebhookService(
     db,
     dockerManagementService,
@@ -267,6 +270,9 @@ export async function initializeContainer(): Promise<void> {
   dockerFolderService.setEventBus(eventBus);
   dockerTaskService.setEventBus(eventBus);
   dockerDeploymentService.setEventBus(eventBus);
+  dockerHealthCheckService.setEventBus(eventBus);
+  dockerDeploymentService.setHealthCheckService(dockerHealthCheckService);
+  dockerManagementService.setHealthCheckService(dockerHealthCheckService);
   dockerWebhookService.setEventBus(eventBus);
   authService.setEventBus(eventBus);
   templatesService.setEventBus(eventBus);
@@ -457,6 +463,8 @@ export async function initializeContainer(): Promise<void> {
     nodeRegistry
   );
   notifEvaluatorService.setEventBus(eventBus);
+  dockerManagementService.setEvaluator(notifEvaluatorService);
+  dockerHealthCheckService.setEvaluator(notifEvaluatorService);
   databaseMonitoringService.setEvaluator(notifEvaluatorService);
   nodeRegistry.setEvaluator(notifEvaluatorService);
   notifEvaluatorService.start();
@@ -485,6 +493,7 @@ export async function initializeContainer(): Promise<void> {
 
   scheduler.register('acme-renewal', env.ACME_RENEWAL_CRON, () => acmeRenewalJob.run());
   scheduler.registerInterval('health-check', env.HEALTH_CHECK_INTERVAL_SECONDS * 1000, () => healthCheckJob.run());
+  scheduler.registerInterval('docker-health-check', 10000, () => dockerHealthCheckService.runDueChecks());
   scheduler.register('expiry-alerts', env.EXPIRY_CHECK_CRON, async () => {
     await Promise.all([expiryAlertJob.run(), notifEvaluatorService.evaluateCertificateExpiry()]);
   });

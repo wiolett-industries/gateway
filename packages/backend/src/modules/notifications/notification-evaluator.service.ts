@@ -572,13 +572,16 @@ export class NotificationEvaluatorService {
     category: string,
     currentState: string,
     resource: { type: string; id: string; name?: string },
-    context: Record<string, unknown> = {}
+    context: Record<string, unknown> = {},
+    observedPatterns?: string[]
   ): Promise<void> {
     const eventRules = await this.getEventRules();
+    const observedPatternSet = observedPatterns ? new Set(observedPatterns) : null;
 
     for (const rule of eventRules) {
       if (rule.category !== category) continue;
       if (!eventSupportsThreshold(rule.category, rule.eventPattern)) continue;
+      if (observedPatternSet && !observedPatternSet.has(rule.eventPattern)) continue;
       if (rule.resourceIds?.length > 0 && !rule.resourceIds.includes(resource.id)) continue;
 
       const active = rule.eventPattern === currentState;
