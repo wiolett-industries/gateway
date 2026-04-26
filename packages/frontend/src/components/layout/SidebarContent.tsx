@@ -7,6 +7,7 @@ import {
   Box,
   Database,
   FileText,
+  GitBranch,
   Globe,
   Globe2,
   LayoutDashboard,
@@ -701,14 +702,18 @@ export function SidebarContent({
                           {sidebarPinnedContainerIds.map((cid) => {
                             const meta = pinnedContainerMeta[cid];
                             if (!meta || !canViewContainerDetails(meta.nodeId)) return null;
-                            const containerPath = `/docker/containers/${meta.nodeId}/${cid}`;
+                            const isDeployment = meta.kind === "deployment";
+                            const containerPath = isDeployment
+                              ? `/docker/deployments/${meta.nodeId}/${cid}`
+                              : `/docker/containers/${meta.nodeId}/${cid}`;
                             const isActive =
                               location.pathname === containerPath ||
                               location.pathname.startsWith(`${containerPath}/`);
+                            const Icon = isDeployment ? GitBranch : Box;
                             return (
                               <Link
                                 key={cid}
-                                to={`/docker/containers/${meta.nodeId}/${cid}`}
+                                to={containerPath}
                                 onClick={onNavigate}
                                 className={cn(
                                   "flex items-center gap-3 px-3 py-2 text-sm transition-colors whitespace-nowrap overflow-hidden",
@@ -717,7 +722,7 @@ export function SidebarContent({
                                     : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                                 )}
                               >
-                                <Box className="h-4 w-4 shrink-0" />
+                                <Icon className="h-4 w-4 shrink-0" />
                                 <span className="truncate">{meta.name}</span>
                                 <span
                                   className={cn(

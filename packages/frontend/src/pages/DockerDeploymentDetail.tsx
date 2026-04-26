@@ -4,9 +4,9 @@ import {
   ClipboardCopy,
   Code2,
   EllipsisVertical,
+  Pin,
   Play,
   RotateCcw,
-  Save,
   Settings,
   Skull,
   Square,
@@ -19,9 +19,11 @@ import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { DetailRow } from "@/components/common/DetailRow";
 import { PageTransition } from "@/components/common/PageTransition";
+import { DockerHealthCheckSection } from "@/components/docker/DockerHealthCheckSection";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CodeEditor } from "@/components/ui/code-editor";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,23 +31,20 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { HealthBars } from "@/components/ui/health-bars";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useRealtime } from "@/hooks/use-realtime";
 import { useUrlTab } from "@/hooks/use-url-tab";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
+import { usePinnedContainersStore } from "@/stores/pinned-containers";
 import type {
   DockerDeployment,
   DockerDeploymentRelease,
   DockerDeploymentSlot,
+  DockerHealthCheck,
   DockerWebhook,
 } from "@/types";
 import { ConsoleTab } from "./docker-detail/ConsoleTab";
@@ -210,6 +209,8 @@ export function DockerDeploymentDetail() {
   const [webhook, setWebhook] = useState<DockerWebhook | null>(null);
   const [loading, setLoading] = useState(true);
   const [action, setAction] = useState<string | null>(null);
+  const [pinOpen, setPinOpen] = useState(false);
+  const { isPinnedSidebar, toggleSidebar, updateMeta } = usePinnedContainersStore();
 
   const [activeTab, setActiveTab] = useUrlTab(
     ["overview", "logs", "console", "files", "stats", "environment", "slots", "settings", "config"],
@@ -224,6 +225,14 @@ export function DockerDeploymentDetail() {
       const next = await api.getDockerDeployment(nodeId, deploymentId);
       setDeployment(next);
       setWebhook(next.webhook ?? null);
+      if (usePinnedContainersStore.getState().isPinnedSidebar(deploymentId)) {
+        updateMeta(deploymentId, {
+          nodeId,
+          name: next.name,
+          state: next._transition ?? next.status,
+          kind: "deployment",
+        });
+      }
 
       const slot = getActiveSlot(next);
       if (slot?.containerId) {
@@ -240,7 +249,7 @@ export function DockerDeploymentDetail() {
     } finally {
       setLoading(false);
     }
-  }, [deploymentId, navigate, nodeId]);
+  }, [deploymentId, navigate, nodeId, updateMeta]);
 
   useEffect(() => {
     void load();
@@ -284,6 +293,23 @@ export function DockerDeploymentDetail() {
       setDeployment((current) =>
         current ? { ...current, _transition: event.transition } : current
       );
+      return;
+    }
+
+    void load();
+  });
+
+  useRealtime("docker.health.changed", (payload) => {
+    const event = payload as {
+      nodeId?: string;
+      deploymentId?: string;
+      target?: string;
+    };
+    if (
+      event.nodeId !== nodeId ||
+      event.target !== "deployment" ||
+      event.deploymentId !== deploymentId
+    ) {
       return;
     }
 
@@ -395,6 +421,7 @@ export function DockerDeploymentDetail() {
     if (!ok) return;
     await runAction("remove", async () => {
       await api.deleteDockerDeployment(nodeId, deployment.id);
+      usePinnedContainersStore.getState().removePin(deployment.id);
       toast.success("Deployment removed");
       navigate("/docker");
     });
@@ -434,6 +461,9 @@ export function DockerDeploymentDetail() {
           </div>
 
           <div className="flex items-center gap-2">
+            <Button variant="outline" size="icon" onClick={() => setPinOpen(true)}>
+              <Pin className="h-4 w-4" />
+            </Button>
             {isStopped && canManage && (
               <Button
                 variant="outline"
@@ -547,6 +577,13 @@ export function DockerDeploymentDetail() {
           </div>
         </div>
 
+        {deployment.healthCheck?.enabled && (
+          <HealthBars
+            history={deployment.healthCheck.healthHistory}
+            currentStatus={deployment.healthCheck.healthStatus}
+          />
+        )}
+
         <Tabs
           value={activeTab}
           onValueChange={setActiveTab}
@@ -652,6 +689,9 @@ export function DockerDeploymentDetail() {
                 action={action}
                 webhook={webhook}
                 setWebhook={setWebhook}
+                onHealthCheckSaved={(healthCheck) =>
+                  setDeployment((current) => (current ? { ...current, healthCheck } : current))
+                }
                 runAction={runAction}
               />
             </TabsContent>
@@ -661,6 +701,33 @@ export function DockerDeploymentDetail() {
           </TabsContent>
         </Tabs>
       </div>
+      <Dialog open={pinOpen} onOpenChange={setPinOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Pin Deployment</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium">Add to sidebar</p>
+                <p className="text-xs text-muted-foreground">Quick access link in the sidebar</p>
+              </div>
+              <Switch
+                checked={isPinnedSidebar(deployment.id)}
+                onChange={() => {
+                  toggleSidebar(deployment.id, {
+                    nodeId,
+                    name: deployment.name,
+                    state: deployment._transition ?? deployment.status,
+                    kind: "deployment",
+                  });
+                  usePinnedContainersStore.getState().invalidate();
+                }}
+              />
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </PageTransition>
   );
 }
@@ -912,6 +979,7 @@ function DeploymentSettings({
   action,
   webhook,
   setWebhook,
+  onHealthCheckSaved,
   runAction,
 }: {
   deployment: DockerDeployment;
@@ -919,6 +987,7 @@ function DeploymentSettings({
   action: string | null;
   webhook: DockerWebhook | null;
   setWebhook: (webhook: DockerWebhook | null) => void;
+  onHealthCheckSaved: (healthCheck: DockerHealthCheck) => void;
   runAction: (name: string, fn: () => Promise<void>) => Promise<void>;
 }) {
   const initialEntrypoint = useMemo(
@@ -958,7 +1027,7 @@ function DeploymentSettings({
   const [workingDir, setWorkingDir] = useState(initialWorkingDir);
   const [user, setUser] = useState(initialUser);
   const [ports, setPorts] = useState<PortMapping[]>(initialPorts);
-  const [readinessRouteIndex, setReadinessRouteIndex] = useState(initialReadinessRouteIndex);
+  const [readinessRouteIndex] = useState(initialReadinessRouteIndex);
   const [mounts, setMounts] = useState<MountEntry[]>(initialMounts);
   const [labels, setLabels] = useState<Array<{ key: string; value: string }>>(initialLabels);
   const [restartPolicy, setRestartPolicy] = useState(
@@ -971,15 +1040,6 @@ function DeploymentSettings({
   const [cpuCount, setCpuCount] = useState(runtime.cpuCount ? String(runtime.cpuCount) : "");
   const [cpuShares, setCpuShares] = useState(runtime.cpuShares ? String(runtime.cpuShares) : "");
   const [pidsLimit, setPidsLimit] = useState(runtime.pidsLimit ? String(runtime.pidsLimit) : "");
-  const [healthPath, setHealthPath] = useState(deployment.healthConfig.path);
-  const [statusMin, setStatusMin] = useState(String(deployment.healthConfig.statusMin));
-  const [statusMax, setStatusMax] = useState(String(deployment.healthConfig.statusMax));
-  const [intervalSeconds, setIntervalSeconds] = useState(
-    String(deployment.healthConfig.intervalSeconds)
-  );
-  const [timeoutSeconds, setTimeoutSeconds] = useState(
-    String(deployment.healthConfig.timeoutSeconds)
-  );
   const [drainSeconds, setDrainSeconds] = useState(String(deployment.drainSeconds));
   const inputCell =
     "h-9 text-xs font-mono border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring";
@@ -993,10 +1053,12 @@ function DeploymentSettings({
   const portsChanged = JSON.stringify(ports) !== JSON.stringify(initialPorts);
   const selectedReadinessRouteIndex =
     ports.length > 0 ? Math.min(readinessRouteIndex, ports.length - 1) : 0;
-  const readinessRouteChanged = selectedReadinessRouteIndex !== initialReadinessRouteIndex;
   const mountsChanged = JSON.stringify(mounts) !== JSON.stringify(initialMounts);
   const labelsChanged = JSON.stringify(labels) !== JSON.stringify(initialLabels);
-  const settingsChanged = executionChanged || portsChanged || mountsChanged || labelsChanged;
+  const drainChanged = drainSeconds !== String(deployment.drainSeconds);
+  const settingsChanged =
+    executionChanged || portsChanged || mountsChanged || labelsChanged || drainChanged;
+  const executionCardChanged = executionChanged || drainChanged;
   const runtimeChanged =
     restartPolicy !== (deployment.desiredConfig.restartPolicy ?? "unless-stopped") ||
     maxRetries !== String(runtime.maxRetries ?? 0) ||
@@ -1005,14 +1067,6 @@ function DeploymentSettings({
     cpuCount !== (runtime.cpuCount ? String(runtime.cpuCount) : "") ||
     cpuShares !== (runtime.cpuShares ? String(runtime.cpuShares) : "") ||
     pidsLimit !== (runtime.pidsLimit ? String(runtime.pidsLimit) : "");
-  const healthChanged =
-    healthPath !== deployment.healthConfig.path ||
-    statusMin !== String(deployment.healthConfig.statusMin) ||
-    statusMax !== String(deployment.healthConfig.statusMax) ||
-    intervalSeconds !== String(deployment.healthConfig.intervalSeconds) ||
-    timeoutSeconds !== String(deployment.healthConfig.timeoutSeconds) ||
-    drainSeconds !== String(deployment.drainSeconds) ||
-    readinessRouteChanged;
 
   return (
     <div className="space-y-6 pb-6">
@@ -1055,7 +1109,7 @@ function DeploymentSettings({
 
         <div
           className="border bg-card overflow-hidden"
-          style={executionChanged ? { borderColor: "rgb(234 179 8)" } : undefined}
+          style={executionCardChanged ? { borderColor: "rgb(234 179 8)" } : undefined}
         >
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <div>
@@ -1090,6 +1144,7 @@ function DeploymentSettings({
                         containerPort: Number(port.containerPort),
                         isPrimary: index === selectedReadinessRouteIndex,
                       })),
+                    drainSeconds: Number(drainSeconds),
                   });
                   toast.success("Service configuration updated");
                 })
@@ -1100,14 +1155,25 @@ function DeploymentSettings({
             </Button>
           </div>
           <div className="p-4 space-y-4">
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Image</label>
-              <Input
-                className="h-8 text-xs font-mono"
-                value={image}
-                onChange={(e) => setImage(e.target.value)}
-                placeholder="nginx:alpine"
-              />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Image</label>
+                <Input
+                  className="h-8 text-xs font-mono"
+                  value={image}
+                  onChange={(e) => setImage(e.target.value)}
+                  placeholder="nginx:alpine"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Drain Seconds</label>
+                <Input
+                  className="h-8 text-xs"
+                  inputMode="numeric"
+                  value={drainSeconds}
+                  onChange={(event) => setDrainSeconds(event.target.value)}
+                />
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
@@ -1180,129 +1246,14 @@ function DeploymentSettings({
         inputCell={inputCell}
       />
 
-      <div
-        className="border border-border bg-card overflow-hidden"
-        style={healthChanged ? { borderColor: "rgb(234 179 8)" } : undefined}
-      >
-        <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <div>
-            <h3 className="text-sm font-semibold">Health Check</h3>
-            <p className="text-xs text-muted-foreground">Saved to deployment configuration</p>
-          </div>
-          <Button
-            size="sm"
-            disabled={!!action || !healthChanged}
-            onClick={() =>
-              runAction("update-health", async () => {
-                await api.updateDockerDeployment(nodeId, deployment.id, {
-                  health: {
-                    ...deployment.healthConfig,
-                    path: healthPath || "/",
-                    statusMin: Number(statusMin),
-                    statusMax: Number(statusMax),
-                    intervalSeconds: Number(intervalSeconds),
-                    timeoutSeconds: Number(timeoutSeconds),
-                  },
-                  drainSeconds: Number(drainSeconds),
-                  routes: ports
-                    .filter((port) => port.hostPort && port.containerPort)
-                    .map((port, index) => ({
-                      hostPort: Number(port.hostPort),
-                      containerPort: Number(port.containerPort),
-                      isPrimary: index === selectedReadinessRouteIndex,
-                    })),
-                });
-                toast.success("Health settings updated");
-              })
-            }
-          >
-            <Save className="h-3.5 w-3.5" />
-            Save
-          </Button>
-        </div>
-        <div className="p-4 space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Readiness Route</label>
-              <Select
-                value={String(selectedReadinessRouteIndex)}
-                onValueChange={(value) => setReadinessRouteIndex(Number(value))}
-                disabled={ports.length === 0}
-              >
-                <SelectTrigger className="h-8 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {ports.map((port, index) => (
-                    <SelectItem key={index} value={String(index)}>
-                      <span className="inline-flex items-center">
-                        {port.hostPort || "-"}
-                        <ArrowRight className="mx-1.5 h-3.5 w-3.5" />
-                        {port.containerPort || "-"}
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Health Path</label>
-              <Input
-                className="h-8 text-xs"
-                value={healthPath}
-                onChange={(e) => setHealthPath(e.target.value)}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Status Min</label>
-              <Input
-                className="h-8 text-xs"
-                inputMode="numeric"
-                value={statusMin}
-                onChange={(e) => setStatusMin(e.target.value)}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Status Max</label>
-              <Input
-                className="h-8 text-xs"
-                inputMode="numeric"
-                value={statusMax}
-                onChange={(e) => setStatusMax(e.target.value)}
-              />
-            </div>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Interval Seconds</label>
-              <Input
-                className="h-8 text-xs"
-                inputMode="numeric"
-                value={intervalSeconds}
-                onChange={(e) => setIntervalSeconds(e.target.value)}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Timeout Seconds</label>
-              <Input
-                className="h-8 text-xs"
-                inputMode="numeric"
-                value={timeoutSeconds}
-                onChange={(e) => setTimeoutSeconds(e.target.value)}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Drain Seconds</label>
-              <Input
-                className="h-8 text-xs"
-                inputMode="numeric"
-                value={drainSeconds}
-                onChange={(e) => setDrainSeconds(e.target.value)}
-              />
-            </div>
-          </div>
-        </div>
-      </div>
+      <DockerHealthCheckSection
+        nodeId={nodeId}
+        target="deployment"
+        deploymentId={deployment.id}
+        initialHealthCheck={deployment.healthCheck ?? null}
+        disabled={!!action}
+        onSaved={onHealthCheckSaved}
+      />
 
       <WebhookSection
         nodeId={nodeId}

@@ -18,8 +18,9 @@ import (
 )
 
 // StatsCollector periodically collects per-container resource usage from the
-// Docker stats API. Stats are stored in a map keyed by container ID and can
-// be retrieved via GetStats for inclusion in health reports.
+// Docker stats API. Running containers include live metrics; non-running
+// containers are still reported with zero metrics so the gateway can observe
+// lifecycle state continuously.
 type StatsCollector struct {
 	client    *Client
 	allowlist *AllowlistChecker
@@ -68,7 +69,7 @@ func (sc *StatsCollector) GetStats() []*pb.ContainerStats {
 	return result
 }
 
-// collect gathers stats from all running containers filtered by the allowlist.
+// collect gathers stats from all containers filtered by the allowlist.
 func (sc *StatsCollector) collect(ctx context.Context) {
 	containers, err := sc.client.ListContainers(ctx)
 	if err != nil {
@@ -76,19 +77,32 @@ func (sc *StatsCollector) collect(ctx context.Context) {
 		return
 	}
 
-	// Filter by allowlist and only collect stats for running containers
+	// Filter by allowlist. Only running containers have Docker stats, but
+	// stopped/exited containers still need state samples for alert windows.
 	containers = sc.allowlist.Filter(containers)
 
 	newStats := make(map[string]*pb.ContainerStats, len(containers))
 
 	for _, ctr := range containers {
 		if ctr.State != "running" {
+			newStats[ctr.ID] = &pb.ContainerStats{
+				ContainerId: ctr.ID,
+				Name:        ctr.Name,
+				Image:       ctr.Image,
+				State:       ctr.State,
+			}
 			continue
 		}
 
 		stat, err := sc.collectOne(ctx, ctr.ID)
 		if err != nil {
 			sc.logger.Debug("stats: collect failed", "container", ctr.Name, "error", err)
+			newStats[ctr.ID] = &pb.ContainerStats{
+				ContainerId: ctr.ID,
+				Name:        ctr.Name,
+				Image:       ctr.Image,
+				State:       ctr.State,
+			}
 			continue
 		}
 

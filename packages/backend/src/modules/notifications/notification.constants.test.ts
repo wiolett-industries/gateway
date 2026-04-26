@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { ALERT_CATEGORIES, evaluateWindowRatio, eventSupportsThreshold } from './notification.constants.js';
+import {
+  ALERT_CATEGORIES,
+  evaluateWindowRatio,
+  eventSupportsThreshold,
+  extractMetricFromHealthReport,
+} from './notification.constants.js';
 
 describe('evaluateWindowRatio', () => {
   it('requires full window coverage before threshold can pass', () => {
@@ -87,6 +92,10 @@ describe('evaluateWindowRatio', () => {
     expect(eventSupportsThreshold('node', 'offline')).toBe(true);
     expect(eventSupportsThreshold('proxy', 'health.degraded')).toBe(true);
     expect(eventSupportsThreshold('database_postgres', 'health.online')).toBe(true);
+    expect(eventSupportsThreshold('container', 'stopped')).toBe(true);
+    expect(eventSupportsThreshold('container', 'exited')).toBe(true);
+    expect(eventSupportsThreshold('container', 'health.offline')).toBe(true);
+    expect(eventSupportsThreshold('container', 'health.online')).toBe(true);
     expect(eventSupportsThreshold('container', 'started')).toBe(false);
     expect(eventSupportsThreshold('certificate', 'issued')).toBe(false);
   });
@@ -103,5 +112,16 @@ describe('evaluateWindowRatio', () => {
       defaultDurationSeconds: 0,
       defaultResolveAfterSeconds: 0,
     });
+  });
+
+  it('skips Docker container state-only rows for metric extraction', () => {
+    const result = extractMetricFromHealthReport('container', 'cpu', {
+      containerStats: [
+        { name: 'web', state: 'running', cpuPercent: 0, metricsAvailable: false },
+        { name: 'api', state: 'running', cpuPercent: 42, metricsAvailable: true },
+      ],
+    });
+
+    expect(result).toEqual({ values: [{ resourceId: 'api', value: 42 }] });
   });
 });

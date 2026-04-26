@@ -137,6 +137,18 @@ export function DockerContainerRow({
           {(container as any)._transition ?? container.state}
         </Badge>
       </td>
+      <td className="p-3">
+        <Badge
+          variant={
+            STATUS_BADGE[
+              container.healthCheckEnabled ? (container.healthStatus ?? "unknown") : "disabled"
+            ] ?? "secondary"
+          }
+          className="text-xs"
+        >
+          {container.healthCheckEnabled ? (container.healthStatus ?? "unknown") : "disabled"}
+        </Badge>
+      </td>
       <td className="p-3 pr-4 text-sm text-muted-foreground whitespace-nowrap tabular-nums">
         {formatCreated(container.created)}
       </td>

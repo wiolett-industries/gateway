@@ -66,11 +66,59 @@ export class NodeRegistryService {
       });
   }
 
+  observeDockerContainerState(nodeId: string, id: string, name?: string, state?: string) {
+    const normalizedState = this.normalizeDockerContainerState(state);
+    if (!normalizedState) return;
+
+    const resourceId = name || id;
+    const observedPatterns =
+      normalizedState === 'started' || normalizedState === 'removed' ? ['stopped', 'exited'] : [normalizedState];
+
+    this.evaluator
+      ?.observeStatefulEvent(
+        'container',
+        normalizedState,
+        { type: 'container', id: resourceId, name: name ?? id },
+        { nodeId, containerId: id, state },
+        observedPatterns
+      )
+      .catch((error) => {
+        logger.debug('Docker container stateful event observation failed', {
+          nodeId,
+          containerId: id,
+          state,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+  }
+
+  private normalizeDockerContainerState(state?: string): 'started' | 'stopped' | 'exited' | 'removed' | null {
+    switch (state?.toLowerCase()) {
+      case 'running':
+        return 'started';
+      case 'stopped':
+        return 'stopped';
+      case 'exited':
+      case 'dead':
+        return 'exited';
+      case 'removed':
+        return 'removed';
+      default:
+        return null;
+    }
+  }
+
   publishNodeChanged(nodeId: string, status: string, hostname?: string) {
     this.eventBus?.publish('node.changed', { id: nodeId, action: 'updated', status, hostname });
   }
 
-  publishDockerContainerChanged(nodeId: string, id: string, name?: string, state?: string) {
+  publishDockerContainerChanged(
+    nodeId: string,
+    id: string,
+    name?: string,
+    state?: string,
+    options: { observe?: boolean } = {}
+  ) {
     this.eventBus?.publish('docker.container.changed', {
       nodeId,
       id,
@@ -78,6 +126,9 @@ export class NodeRegistryService {
       action: 'updated',
       state,
     });
+    if (options.observe !== false) {
+      this.observeDockerContainerState(nodeId, id, name, state);
+    }
   }
 
   registerExecHandler(execId: string, handler: (data: any) => void) {

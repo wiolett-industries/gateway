@@ -229,6 +229,53 @@ describe('NotificationEvaluatorService stateful event evaluation', () => {
       },
     });
   });
+
+  it('only evaluates the observed stateful event patterns when provided', async () => {
+    const stoppedRule = {
+      ...BASE_EVENT_RULE,
+      id: 'event-rule-stopped',
+      name: 'Container Stopped',
+      category: 'container',
+      eventPattern: 'stopped',
+    };
+    const exitedRule = {
+      ...BASE_EVENT_RULE,
+      id: 'event-rule-exited',
+      name: 'Container Exited',
+      category: 'container',
+      eventPattern: 'exited',
+    };
+    const { evaluator, states } = createEvaluator([], [], [stoppedRule, exitedRule]);
+    const resource = { type: 'container', id: 'nginx', name: 'nginx' };
+
+    await evaluator.observeStatefulEvent('container', 'stopped', resource, { nodeId: 'node-1' }, ['stopped']);
+    await evaluator.observeStatefulEvent('container', 'exited', resource, { nodeId: 'node-1' }, ['exited']);
+
+    expect(states).toHaveLength(2);
+    expect(states).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ ruleId: 'event-rule-stopped', status: 'firing' }),
+        expect.objectContaining({ ruleId: 'event-rule-exited', status: 'firing' }),
+      ])
+    );
+
+    await evaluator.observeStatefulEvent('container', 'started', resource, { nodeId: 'node-1' }, ['stopped', 'exited']);
+
+    expect(states).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          ruleId: 'event-rule-stopped',
+          status: 'resolved',
+          context: expect.objectContaining({ current_state: 'started' }),
+        }),
+        expect.objectContaining({
+          ruleId: 'event-rule-exited',
+          status: 'resolved',
+          context: expect.objectContaining({ current_state: 'started' }),
+        }),
+      ])
+    );
+  });
 });
 
 describe('NotificationEvaluatorService ratio window evaluation', () => {

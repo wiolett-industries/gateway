@@ -419,6 +419,21 @@ func (p *DockerPlugin) handleContainerCommand(cmd *pb.DockerContainerCommand, re
 		}
 		result.Detail = string(data)
 
+	case "http_probe":
+		if cmd.ConfigJson == "" {
+			result.Success = false
+			result.Error = "config_json is required for http_probe"
+			return
+		}
+		data, err := p.client.HTTPProbe(ctx, cmd.ConfigJson)
+		if err != nil {
+			result.Success = false
+			result.Error = err.Error()
+			return
+		}
+		detail, _ := json.Marshal(data)
+		result.Detail = string(detail)
+
 	case "live_update":
 		if cmd.ContainerId == "" || cmd.ConfigJson == "" {
 			result.Success = false

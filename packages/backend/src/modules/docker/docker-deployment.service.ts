@@ -2,30 +2,31 @@ import { randomUUID } from 'node:crypto';
 import { and, desc, eq, ne } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import {
-  dockerDeploymentReleases,
-  dockerDeploymentRoutes,
-  dockerDeployments,
-  dockerDeploymentSlots,
-  dockerWebhooks,
-  nodes,
   type DockerDeploymentDesiredConfig,
   type DockerDeploymentHealthConfig,
   type DockerDeploymentSlot,
+  dockerDeploymentReleases,
+  dockerDeploymentRoutes,
+  dockerDeploymentSlots,
+  dockerDeployments,
+  dockerWebhooks,
+  nodes,
 } from '@/db/schema/index.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
 import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import type { NodeRegistryService } from '@/services/node-registry.service.js';
-import type { DockerRegistryService } from './docker-registry.service.js';
-import type { DockerSecretService } from './docker-secret.service.js';
-import type { DockerTaskService } from './docker-task.service.js';
 import type {
   DockerDeploymentCreateInput,
   DockerDeploymentDeployInput,
   DockerDeploymentSwitchInput,
   DockerDeploymentUpdateInput,
 } from './docker-deployment.schemas.js';
+import type { DockerHealthCheckDto, DockerHealthCheckService } from './docker-health-check.service.js';
+import type { DockerRegistryService } from './docker-registry.service.js';
+import type { DockerSecretService } from './docker-secret.service.js';
+import type { DockerTaskService } from './docker-task.service.js';
 
 export const DOCKER_DEPLOYMENT_MANAGED_LABEL = 'wiolett.gateway.deployment.managed';
 export const DOCKER_DEPLOYMENT_ID_LABEL = 'wiolett.gateway.deployment.id';
@@ -52,6 +53,7 @@ export interface DockerDeploymentDetail extends DeploymentRow {
   slots: DeploymentSlotRow[];
   releases: DeploymentReleaseRow[];
   webhook?: typeof dockerWebhooks.$inferSelect | null;
+  healthCheck?: DockerHealthCheckDto | null;
   _transition?: DeploymentTransition;
 }
 
@@ -124,6 +126,7 @@ function imageWithTag(image: string, tag?: string) {
 
 export class DockerDeploymentService {
   private eventBus?: EventBusService;
+  private healthCheckService?: DockerHealthCheckService;
   private deploymentTransitions = new Map<string, DeploymentTransition>();
 
   constructor(
@@ -138,6 +141,10 @@ export class DockerDeploymentService {
 
   setEventBus(bus: EventBusService) {
     this.eventBus = bus;
+  }
+
+  setHealthCheckService(service: DockerHealthCheckService) {
+    this.healthCheckService = service;
   }
 
   private emit(action: string, deploymentId: string, nodeId: string, extra?: Record<string, unknown>) {
@@ -163,7 +170,10 @@ export class DockerDeploymentService {
     }
   }
 
-  private setTransition(deployment: Pick<DockerDeploymentDetail, 'id' | 'nodeId' | 'name'>, transition: DeploymentTransition) {
+  private setTransition(
+    deployment: Pick<DockerDeploymentDetail, 'id' | 'nodeId' | 'name'>,
+    transition: DeploymentTransition
+  ) {
     this.deploymentTransitions.set(this.transitionKey(deployment.nodeId, deployment.id), transition);
     this.eventBus?.publish('docker.deployment.changed', {
       action: 'transitioning',
@@ -263,7 +273,8 @@ export class DockerDeploymentService {
       this.db.select().from(dockerWebhooks).where(eq(dockerWebhooks.deploymentId, deploymentId)).limit(1),
     ]);
 
-    const detail = { ...deployment, routes, slots, releases, webhook: webhookRows[0] ?? null };
+    const healthCheck = await this.healthCheckService?.getDeployment(nodeId, deploymentId).catch(() => null);
+    const detail = { ...deployment, routes, slots, releases, webhook: webhookRows[0] ?? null, healthCheck };
     const transition = this.getTransition(nodeId, deploymentId);
     return transition ? { ...detail, _transition: transition } : detail;
   }
@@ -318,6 +329,11 @@ export class DockerDeploymentService {
       activeSlot: deployment.activeSlot,
       primaryRoute: primary ? { hostPort: primary.hostPort, containerPort: primary.containerPort } : null,
       activeSlotContainerId: active?.containerId ?? null,
+      healthCheckId: deployment.healthCheck?.id ?? null,
+      healthCheckEnabled: deployment.healthCheck?.enabled ?? false,
+      healthStatus: deployment.healthCheck?.healthStatus ?? 'unknown',
+      lastHealthCheckAt: deployment.healthCheck?.lastHealthCheckAt ?? null,
+      healthHistory: deployment.healthCheck?.healthHistory ?? [],
       folderId: null,
       folderIsSystem: false,
       folderSortOrder: 0,
@@ -398,6 +414,7 @@ export class DockerDeploymentService {
         },
       ]);
     });
+    await this.healthCheckService?.ensureDeploymentDefault(nodeId, id);
 
     const registryAuth = await this.registry.resolveAuthForImagePull(nodeId, input.image);
     const daemonDesiredConfig = await this.desiredConfigWithSecrets(nodeId, id, desiredConfig);
@@ -542,6 +559,7 @@ export class DockerDeploymentService {
         );
       }
     });
+    await this.healthCheckService?.alignDeploymentHealthCheck(nodeId, deploymentId);
     this.emit('updated', deploymentId, nodeId);
     return this.loadDeployment(nodeId, deploymentId);
   }
@@ -634,13 +652,18 @@ export class DockerDeploymentService {
     deploymentId: string,
     input: DockerDeploymentSwitchInput,
     userId: string | null,
-    releaseContext?: { releaseId?: string; image?: string; source?: string; desiredConfig?: DockerDeploymentDesiredConfig }
+    releaseContext?: {
+      releaseId?: string;
+      image?: string;
+      source?: string;
+      desiredConfig?: DockerDeploymentDesiredConfig;
+    }
   ) {
     await this.validateDockerNode(nodeId);
     const deployment = await this.loadDeployment(nodeId, deploymentId);
     const managesTransition = !releaseContext;
     const target = deployment.slots.find((slot) => slot.slot === input.slot);
-    if (!target || !target.containerName) throw new AppError(404, 'SLOT_NOT_FOUND', 'Slot does not exist');
+    if (!target?.containerName) throw new AppError(404, 'SLOT_NOT_FOUND', 'Slot does not exist');
     if (managesTransition) {
       this.requireDeploymentIdle(deployment);
       this.setTransition(deployment, 'switching');

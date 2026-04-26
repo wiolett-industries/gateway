@@ -606,10 +606,11 @@ export function DockerContainers({
 
   const colGroup = (
     <colgroup>
-      <col style={{ width: showNodeColumn ? "30%" : "34%" }} />
-      <col style={{ width: showNodeColumn ? "24%" : "32%" }} />
-      {showNodeColumn && <col style={{ width: "14%" }} />}
+      <col style={{ width: showNodeColumn ? "28%" : "32%" }} />
+      <col style={{ width: showNodeColumn ? "22%" : "29%" }} />
+      {showNodeColumn && <col style={{ width: "13%" }} />}
       <col style={{ width: "12%" }} />
+      <col style={{ width: "10rem" }} />
       <col style={{ width: showActionsColumn ? "7rem" : "9rem" }} />
       {showActionsColumn && <col style={{ width: "7.5rem" }} />}
     </colgroup>
@@ -747,6 +748,9 @@ export function DockerContainers({
                     )}
                     <th className="p-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
                       Status
+                    </th>
+                    <th className="p-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                      Health
                     </th>
                     <th className="p-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
                       Created

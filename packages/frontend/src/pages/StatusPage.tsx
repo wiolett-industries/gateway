@@ -46,6 +46,7 @@ import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import type {
   DatabaseConnection,
+  DockerContainer,
   Node,
   ProxyHost,
   StatusPageConfig,
@@ -85,6 +86,18 @@ const DEFAULT_CONFIG: StatusPageConfig = {
   autoDegradedSeverity: "warning",
   autoOutageSeverity: "critical",
 };
+
+function normalizeDockerTarget(item: DockerContainer, node: Node): DockerContainer {
+  const normalized: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(item as unknown as Record<string, unknown>)) {
+    normalized[key.charAt(0).toLowerCase() + key.slice(1)] = value;
+  }
+  return {
+    ...normalized,
+    _nodeId: node.id,
+    _nodeName: node.displayName || node.hostname,
+  } as unknown as DockerContainer;
+}
 
 function incidentStatusLabel(status: StatusPageIncidentUpdateStatus) {
   return {
@@ -154,6 +167,7 @@ export function StatusPage() {
   const [nodes, setNodes] = useState<Node[]>([]);
   const [proxies, setProxies] = useState<ProxyHost[]>([]);
   const [databases, setDatabases] = useState<DatabaseConnection[]>([]);
+  const [dockerTargets, setDockerTargets] = useState<DockerContainer[]>([]);
   const [loading, setLoading] = useState(true);
   const [savingConfig, setSavingConfig] = useState(false);
   const [serviceOpen, setServiceOpen] = useState(false);
@@ -161,6 +175,21 @@ export function StatusPage() {
   const [incidentOpen, setIncidentOpen] = useState(false);
   const [editingIncident, setEditingIncident] = useState<StatusPageIncident | null>(null);
   const [updateIncident, setUpdateIncident] = useState<StatusPageIncident | null>(null);
+
+  const loadSourceOptions = useCallback(async () => {
+    const nodeRows = await api.listNodes({ limit: 100 }).then((res) => res.data ?? []);
+    setNodes(nodeRows);
+    const dockerNodes = nodeRows.filter((node) => node.type === "docker");
+    const dockerResults = await Promise.allSettled(
+      dockerNodes.map(async (node) => {
+        const rows = await api.listDockerContainers(node.id);
+        return rows.map((row) => normalizeDockerTarget(row, node));
+      })
+    );
+    setDockerTargets(
+      dockerResults.flatMap((result) => (result.status === "fulfilled" ? result.value : []))
+    );
+  }, []);
 
   const loadStatusPage = useCallback(async () => {
     try {
@@ -182,14 +211,23 @@ export function StatusPage() {
   useEffect(() => {
     loadStatusPage();
     Promise.all([
-      api.listNodes({ limit: 100 }).then((res) => setNodes(res.data ?? [])),
+      loadSourceOptions(),
       api.listProxyHosts({ limit: 100 }).then((res) => setProxies(res.data ?? [])),
       api.listDatabases({ limit: 200 }).then((res) => setDatabases(res.data ?? [])),
     ]).catch(() => {});
-  }, [loadStatusPage]);
+  }, [loadSourceOptions, loadStatusPage]);
 
   useRealtime("status-page.changed", () => {
     loadStatusPage();
+  });
+  useRealtime("docker.container.changed", () => {
+    loadSourceOptions().catch(() => {});
+  });
+  useRealtime("docker.deployment.changed", () => {
+    loadSourceOptions().catch(() => {});
+  });
+  useRealtime("docker.health.changed", () => {
+    loadSourceOptions().catch(() => {});
   });
 
   useEffect(() => {
@@ -429,6 +467,7 @@ export function StatusPage() {
           nodes={nodes}
           proxies={proxies}
           databases={databases}
+          dockerTargets={dockerTargets}
           onSaved={loadStatusPage}
         />
         <IncidentDialog

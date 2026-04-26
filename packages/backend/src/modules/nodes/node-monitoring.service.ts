@@ -75,6 +75,7 @@ export class NodeMonitoringService extends EventEmitter {
     // Store per-container stats in Redis for sparkline history
     if (this.cache && health?.containerStats) {
       for (const stat of health.containerStats as any[]) {
+        if (stat.metricsAvailable === false || stat.metrics_available === false) continue;
         const cid = stat.containerId ?? stat.container_id;
         if (!cid) continue;
         const key = CONTAINER_STATS_KEY_PREFIX + cid;

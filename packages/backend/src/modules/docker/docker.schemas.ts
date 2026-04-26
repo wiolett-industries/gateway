@@ -192,6 +192,28 @@ export const SecretUpdateSchema = z.object({
   value: z.string(),
 });
 
+// ─── Gateway HTTP health checks ──────────────────────────────────────
+
+export const DockerHealthCheckUpsertSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+    scheme: z.enum(['http', 'https']).default('http'),
+    hostPort: z.number().int().min(1).max(65535).nullable().optional(),
+    containerPort: z.number().int().min(1).max(65535).nullable().optional(),
+    path: z.string().min(1).max(500).default('/'),
+    statusMin: z.number().int().min(100).max(599).default(200),
+    statusMax: z.number().int().min(100).max(599).default(399),
+    expectedBody: z.string().max(5000).nullable().optional(),
+    bodyMatchMode: z.enum(['includes', 'exact', 'starts_with', 'ends_with']).default('includes'),
+    intervalSeconds: z.number().int().min(5).max(86400).default(30),
+    timeoutSeconds: z.number().int().min(1).max(120).default(5),
+    slowThreshold: z.number().int().min(1).max(120000).default(1000),
+  })
+  .refine((value) => value.statusMin <= value.statusMax, {
+    message: 'Minimum healthy status cannot be greater than maximum status',
+    path: ['statusMin'],
+  });
+
 // ─── Type exports ─────────────────────────────────────────────────────
 
 export type ContainerCreateInput = z.infer<typeof ContainerCreateSchema>;
@@ -205,3 +227,4 @@ export type RegistryUpdateInput = z.infer<typeof RegistryUpdateSchema>;
 export type TemplateCreateInput = z.infer<typeof TemplateCreateSchema>;
 export type TemplateUpdateInput = z.infer<typeof TemplateUpdateSchema>;
 export type TemplateDeployInput = z.infer<typeof TemplateDeploySchema>;
+export type DockerHealthCheckUpsertInput = z.infer<typeof DockerHealthCheckUpsertSchema>;

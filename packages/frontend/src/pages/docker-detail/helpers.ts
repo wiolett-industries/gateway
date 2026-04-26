@@ -20,6 +20,11 @@ export const STATUS_BADGE: Record<
   rolling_back: "warning",
   removing: "warning",
   created: "secondary",
+  online: "success",
+  degraded: "warning",
+  offline: "destructive",
+  unknown: "secondary",
+  disabled: "secondary",
 };
 
 export function containerDisplayName(name: string): string {

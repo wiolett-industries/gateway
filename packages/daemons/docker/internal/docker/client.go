@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"net/netip"
 	"strconv"
 	"strings"
@@ -24,6 +25,26 @@ import (
 type Client struct {
 	cli    *client.Client
 	logger *slog.Logger
+}
+
+type HTTPProbeConfig struct {
+	Scheme         string `json:"scheme"`
+	HostPort       uint16 `json:"hostPort"`
+	Path           string `json:"path"`
+	StatusMin      int    `json:"statusMin"`
+	StatusMax      int    `json:"statusMax"`
+	ExpectedBody   string `json:"expectedBody"`
+	BodyMatchMode  string `json:"bodyMatchMode"`
+	TimeoutSeconds int    `json:"timeoutSeconds"`
+	SlowThreshold  int64  `json:"slowThreshold"`
+}
+
+type HTTPProbeResult struct {
+	OK         bool   `json:"ok"`
+	Status     string `json:"status"`
+	HTTPStatus int    `json:"httpStatus,omitempty"`
+	ResponseMs int64  `json:"responseMs,omitempty"`
+	Error      string `json:"error,omitempty"`
 }
 
 // ContainerInfo holds summary information about a container.
@@ -471,6 +492,89 @@ func (c *Client) CreateContainer(ctx context.Context, configJSON string) (string
 	}
 
 	return result.ID, cfg.Name, nil
+}
+
+func (c *Client) HTTPProbe(ctx context.Context, configJSON string) (HTTPProbeResult, error) {
+	var cfg HTTPProbeConfig
+	if err := json.Unmarshal([]byte(configJSON), &cfg); err != nil {
+		return HTTPProbeResult{}, fmt.Errorf("parse http probe config: %w", err)
+	}
+	if cfg.Scheme == "" {
+		cfg.Scheme = "http"
+	}
+	if cfg.Path == "" {
+		cfg.Path = "/"
+	}
+	if !strings.HasPrefix(cfg.Path, "/") {
+		cfg.Path = "/" + cfg.Path
+	}
+	if cfg.StatusMin == 0 {
+		cfg.StatusMin = 200
+	}
+	if cfg.StatusMax == 0 {
+		cfg.StatusMax = 399
+	}
+	if cfg.TimeoutSeconds <= 0 {
+		cfg.TimeoutSeconds = 5
+	}
+
+	url := fmt.Sprintf("%s://127.0.0.1:%d%s", cfg.Scheme, cfg.HostPort, cfg.Path)
+	probeCtx, cancel := context.WithTimeout(ctx, time.Duration(cfg.TimeoutSeconds)*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	req, err := http.NewRequestWithContext(probeCtx, http.MethodGet, url, nil)
+	if err != nil {
+		return HTTPProbeResult{}, err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	responseMs := time.Since(start).Milliseconds()
+	if err != nil {
+		return HTTPProbeResult{OK: false, Status: "offline", ResponseMs: responseMs, Error: err.Error()}, nil
+	}
+	defer resp.Body.Close()
+
+	passed := resp.StatusCode >= cfg.StatusMin && resp.StatusCode <= cfg.StatusMax
+	if passed && cfg.ExpectedBody != "" {
+		bodyBytes, readErr := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
+		if readErr != nil {
+			return HTTPProbeResult{
+				OK:         false,
+				Status:     "offline",
+				HTTPStatus: resp.StatusCode,
+				ResponseMs: responseMs,
+				Error:      readErr.Error(),
+			}, nil
+		}
+		passed = httpProbeBodyMatches(string(bodyBytes), cfg.ExpectedBody, cfg.BodyMatchMode)
+	}
+
+	status := "offline"
+	if passed {
+		status = "online"
+		if cfg.SlowThreshold > 0 && responseMs >= cfg.SlowThreshold {
+			status = "degraded"
+		}
+	}
+	return HTTPProbeResult{
+		OK:         passed,
+		Status:     status,
+		HTTPStatus: resp.StatusCode,
+		ResponseMs: responseMs,
+	}, nil
+}
+
+func httpProbeBodyMatches(body string, expected string, mode string) bool {
+	switch mode {
+	case "exact":
+		return body == expected
+	case "starts_with":
+		return strings.HasPrefix(body, expected)
+	case "ends_with":
+		return strings.HasSuffix(body, expected)
+	default:
+		return strings.Contains(body, expected)
+	}
 }
 
 // DuplicateContainer inspects a source container and creates a new one with the

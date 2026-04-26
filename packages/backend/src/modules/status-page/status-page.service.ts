@@ -2,6 +2,8 @@ import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import {
   databaseConnections,
+  dockerDeployments,
+  dockerHealthChecks,
   nginxTemplates,
   nodes,
   proxyHosts,
@@ -414,6 +416,27 @@ export class StatusPageService {
       }
       return;
     }
+    if (sourceType === 'docker_container') {
+      const check = await this.db.query.dockerHealthChecks.findFirst({ where: eq(dockerHealthChecks.id, sourceId) });
+      if (!check || check.target !== 'container') {
+        throw new AppError(404, 'DOCKER_HEALTH_CHECK_NOT_FOUND', 'Docker container health check not found');
+      }
+      if (!check.enabled) {
+        throw new AppError(400, 'DOCKER_HEALTH_CHECK_REQUIRED', 'Docker container health checks must be enabled');
+      }
+      return;
+    }
+    if (sourceType === 'docker_deployment') {
+      const deployment = await this.db.query.dockerDeployments.findFirst({ where: eq(dockerDeployments.id, sourceId) });
+      if (!deployment) throw new AppError(404, 'DOCKER_DEPLOYMENT_NOT_FOUND', 'Docker deployment not found');
+      const check = await this.db.query.dockerHealthChecks.findFirst({
+        where: and(eq(dockerHealthChecks.target, 'deployment'), eq(dockerHealthChecks.deploymentId, sourceId)),
+      });
+      if (!check?.enabled) {
+        throw new AppError(400, 'DOCKER_HEALTH_CHECK_REQUIRED', 'Docker deployment health checks must be enabled');
+      }
+      return;
+    }
     const database = await this.db.query.databaseConnections.findFirst({ where: eq(databaseConnections.id, sourceId) });
     if (!database) throw new AppError(404, 'DATABASE_NOT_FOUND', 'Database not found');
   }
@@ -686,25 +709,52 @@ export class StatusPageService {
     const nodeIds = rows.filter((row) => row.sourceType === 'node').map((row) => row.sourceId);
     const proxyIds = rows.filter((row) => row.sourceType === 'proxy_host').map((row) => row.sourceId);
     const databaseIds = rows.filter((row) => row.sourceType === 'database').map((row) => row.sourceId);
+    const dockerContainerCheckIds = rows
+      .filter((row) => row.sourceType === 'docker_container')
+      .map((row) => row.sourceId);
+    const dockerDeploymentIds = rows.filter((row) => row.sourceType === 'docker_deployment').map((row) => row.sourceId);
 
-    const [nodeRows, proxyRows, databaseRows] = await Promise.all([
-      nodeIds.length
-        ? this.db.select().from(nodes).where(inArray(nodes.id, nodeIds))
-        : Promise.resolve([] as Array<typeof nodes.$inferSelect>),
-      proxyIds.length
-        ? this.db
-            .select()
-            .from(proxyHosts)
-            .where(and(inArray(proxyHosts.id, proxyIds), eq(proxyHosts.isSystem, false)))
-        : Promise.resolve([] as Array<typeof proxyHosts.$inferSelect>),
-      databaseIds.length
-        ? this.db.select().from(databaseConnections).where(inArray(databaseConnections.id, databaseIds))
-        : Promise.resolve([] as Array<typeof databaseConnections.$inferSelect>),
-    ]);
+    const [nodeRows, proxyRows, databaseRows, dockerContainerChecks, dockerDeploymentsRows, dockerDeploymentChecks] =
+      await Promise.all([
+        nodeIds.length
+          ? this.db.select().from(nodes).where(inArray(nodes.id, nodeIds))
+          : Promise.resolve([] as Array<typeof nodes.$inferSelect>),
+        proxyIds.length
+          ? this.db
+              .select()
+              .from(proxyHosts)
+              .where(and(inArray(proxyHosts.id, proxyIds), eq(proxyHosts.isSystem, false)))
+          : Promise.resolve([] as Array<typeof proxyHosts.$inferSelect>),
+        databaseIds.length
+          ? this.db.select().from(databaseConnections).where(inArray(databaseConnections.id, databaseIds))
+          : Promise.resolve([] as Array<typeof databaseConnections.$inferSelect>),
+        dockerContainerCheckIds.length
+          ? this.db.select().from(dockerHealthChecks).where(inArray(dockerHealthChecks.id, dockerContainerCheckIds))
+          : Promise.resolve([] as Array<typeof dockerHealthChecks.$inferSelect>),
+        dockerDeploymentIds.length
+          ? this.db.select().from(dockerDeployments).where(inArray(dockerDeployments.id, dockerDeploymentIds))
+          : Promise.resolve([] as Array<typeof dockerDeployments.$inferSelect>),
+        dockerDeploymentIds.length
+          ? this.db
+              .select()
+              .from(dockerHealthChecks)
+              .where(
+                and(
+                  eq(dockerHealthChecks.target, 'deployment'),
+                  inArray(dockerHealthChecks.deploymentId, dockerDeploymentIds)
+                )
+              )
+          : Promise.resolve([] as Array<typeof dockerHealthChecks.$inferSelect>),
+      ]);
 
     const byNode = new Map(nodeRows.map((row) => [row.id, row]));
     const byProxy = new Map(proxyRows.map((row) => [row.id, row]));
     const byDatabase = new Map(databaseRows.map((row) => [row.id, row]));
+    const byDockerContainerCheck = new Map(dockerContainerChecks.map((row) => [row.id, row]));
+    const byDockerDeployment = new Map(dockerDeploymentsRows.map((row) => [row.id, row]));
+    const byDockerDeploymentCheck = new Map(
+      dockerDeploymentChecks.flatMap((row) => (row.deploymentId ? [[row.deploymentId, row] as const] : []))
+    );
 
     for (const row of rows) {
       if (row.sourceType === 'node') {
@@ -726,11 +776,30 @@ export class StatusPageService {
           status: mapStatus(source.healthStatus),
           history: source.healthHistory ?? [],
         });
-      } else {
+      } else if (row.sourceType === 'database') {
         const source = byDatabase.get(row.sourceId);
         if (!source) continue;
         result.set(row.id, {
           label: source.name,
+          rawStatus: source.healthStatus,
+          status: mapStatus(source.healthStatus),
+          history: source.healthHistory ?? [],
+        });
+      } else if (row.sourceType === 'docker_container') {
+        const source = byDockerContainerCheck.get(row.sourceId);
+        if (!source) continue;
+        result.set(row.id, {
+          label: source.containerName ?? source.id,
+          rawStatus: source.healthStatus,
+          status: mapStatus(source.healthStatus),
+          history: source.healthHistory ?? [],
+        });
+      } else if (row.sourceType === 'docker_deployment') {
+        const deployment = byDockerDeployment.get(row.sourceId);
+        const source = byDockerDeploymentCheck.get(row.sourceId);
+        if (!deployment || !source) continue;
+        result.set(row.id, {
+          label: deployment.name,
           rawStatus: source.healthStatus,
           status: mapStatus(source.healthStatus),
           history: source.healthHistory ?? [],
