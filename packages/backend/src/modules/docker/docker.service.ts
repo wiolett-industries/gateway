@@ -1,12 +1,14 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
-import { nodes } from '@/db/schema/index.js';
+import { dockerDeployments, nodes } from '@/db/schema/index.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
 import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import type { NodeRegistryService } from '@/services/node-registry.service.js';
 import type { DockerEnvironmentService } from './docker-environment.service.js';
+import type { DockerDeploymentService } from './docker-deployment.service.js';
+import { DOCKER_DEPLOYMENT_MANAGED_LABEL } from './docker-deployment.service.js';
 import type { DockerFolderService } from './docker-folder.service.js';
 import {
   type ContainerRuntimeConfig,
@@ -46,6 +48,7 @@ export class DockerManagementService {
   private runtimeSettingsService?: DockerRuntimeSettingsService;
   private secretService?: DockerSecretService;
   private folderService?: DockerFolderService;
+  private deploymentService?: DockerDeploymentService;
   private eventBus?: EventBusService;
 
   constructor(
@@ -73,6 +76,10 @@ export class DockerManagementService {
 
   setFolderService(folderService: DockerFolderService) {
     this.folderService = folderService;
+  }
+
+  setDeploymentService(deploymentService: DockerDeploymentService) {
+    this.deploymentService = deploymentService;
   }
 
   setEventBus(eventBus: EventBusService) {
@@ -115,11 +122,20 @@ export class DockerManagementService {
     if (this.getTransition(nodeId, name)) {
       throw new AppError(409, 'NAME_IN_USE', `A container named "${name}" is currently being modified on this node`);
     }
+    const [deployment] = await this.db
+      .select({ id: dockerDeployments.id })
+      .from(dockerDeployments)
+      .where(and(eq(dockerDeployments.nodeId, nodeId), eq(dockerDeployments.name, name)))
+      .limit(1);
+    if (deployment) {
+      throw new AppError(409, 'NAME_IN_USE', `A deployment named "${name}" already exists on this node`);
+    }
     try {
       const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'list');
       const containers = this.parseResult(result);
       if (Array.isArray(containers)) {
         const collision = containers.some((c: any) => {
+          if (this.isManagedDeploymentInternal(c)) return false;
           const cName = ((c.name ?? c.Name ?? '') as string).replace(/^\//, '');
           return cName === name;
         });
@@ -186,6 +202,23 @@ export class DockerManagementService {
       return data?.State?.Status === 'running' ? 'running' : 'created';
     } catch {
       return 'running';
+    }
+  }
+
+  private isManagedDeploymentInternal(data: any): boolean {
+    const labels = data?.Config?.Labels ?? data?.Labels ?? data?.labels ?? {};
+    return labels?.[DOCKER_DEPLOYMENT_MANAGED_LABEL] === 'true';
+  }
+
+  private async assertNotManagedDeploymentInternal(nodeId: string, containerId: string) {
+    const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'inspect', { containerId });
+    const data = this.parseResult(result);
+    if (this.isManagedDeploymentInternal(data)) {
+      throw new AppError(
+        409,
+        'MANAGED_DEPLOYMENT_CONTAINER',
+        'This container is managed by a blue/green deployment. Use deployment actions instead.'
+      );
     }
   }
 
@@ -517,7 +550,8 @@ export class DockerManagementService {
     // Inject transition states into the list (looked up by name, not ID,
     // so the badge survives recreate/update which assigns a new ID).
     if (Array.isArray(containers)) {
-      for (const c of containers) {
+      const visibleContainers = containers.filter((c: any) => !this.isManagedDeploymentInternal(c));
+      for (const c of visibleContainers) {
         const cName = ((c.name ?? c.Name ?? '') as string).replace(/^\//, '');
         if (!cName) continue;
         const folder = folderByName.get(cName);
@@ -533,6 +567,27 @@ export class DockerManagementService {
         const transition = this.getTransition(nodeId, cName);
         if (transition) c._transition = transition;
       }
+      if (this.deploymentService) {
+        const deploymentRows = await this.deploymentService.syntheticRows(nodeId);
+        if (this.folderService && deploymentRows.length > 0) {
+          const placements = await this.folderService.getPlacementsForRefs(
+            deploymentRows.map((deployment: any) => ({
+              nodeId,
+              containerName: deployment.name,
+            }))
+          );
+          const placementByName = new Map(placements.map((placement) => [placement.containerName, placement]));
+          for (const deployment of deploymentRows as any[]) {
+            const placement = placementByName.get(deployment.name);
+            if (!placement) continue;
+            deployment.folderId = placement.folderId;
+            deployment.folderIsSystem = placement.folderIsSystem;
+            deployment.folderSortOrder = placement.sortOrder;
+          }
+        }
+        visibleContainers.push(...deploymentRows);
+      }
+      return visibleContainers;
     }
     return containers;
   }
@@ -607,6 +662,7 @@ export class DockerManagementService {
 
   async startContainer(nodeId: string, containerId: string, userId: string) {
     await this.validateDockerNode(nodeId);
+    await this.assertNotManagedDeploymentInternal(nodeId, containerId);
     const name = await this.resolveContainerName(nodeId, containerId);
     this.requireNoTransition(nodeId, name);
     if (this.runtimeSettingsService) {
@@ -634,6 +690,7 @@ export class DockerManagementService {
 
   async stopContainer(nodeId: string, containerId: string, timeout: number, userId: string) {
     await this.validateDockerNode(nodeId);
+    await this.assertNotManagedDeploymentInternal(nodeId, containerId);
     const name = await this.resolveContainerName(nodeId, containerId);
     this.requireNoTransition(nodeId, name);
     this.setTransition(nodeId, name, 'stopping');
@@ -656,6 +713,7 @@ export class DockerManagementService {
 
   async restartContainer(nodeId: string, containerId: string, timeout: number, userId: string) {
     await this.validateDockerNode(nodeId);
+    await this.assertNotManagedDeploymentInternal(nodeId, containerId);
     const name = await this.resolveContainerName(nodeId, containerId);
     this.requireNoTransition(nodeId, name);
     this.setTransition(nodeId, name, 'restarting');
@@ -689,6 +747,7 @@ export class DockerManagementService {
 
   async killContainer(nodeId: string, containerId: string, signal: string, userId: string) {
     await this.validateDockerNode(nodeId);
+    await this.assertNotManagedDeploymentInternal(nodeId, containerId);
     const name = await this.resolveContainerName(nodeId, containerId);
     this.requireNoTransition(nodeId, name);
     this.setTransition(nodeId, name, 'killing');
@@ -708,6 +767,7 @@ export class DockerManagementService {
 
   async removeContainer(nodeId: string, containerId: string, force: boolean, userId: string) {
     await this.validateDockerNode(nodeId);
+    await this.assertNotManagedDeploymentInternal(nodeId, containerId);
     const name = await this.resolveContainerName(nodeId, containerId);
     this.requireNoTransition(nodeId, name);
     const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'remove', { containerId, force });
@@ -730,6 +790,7 @@ export class DockerManagementService {
 
   async renameContainer(nodeId: string, containerId: string, newName: string, userId: string) {
     await this.validateDockerNode(nodeId);
+    await this.assertNotManagedDeploymentInternal(nodeId, containerId);
     const oldName = await this.resolveContainerName(nodeId, containerId);
     this.requireNoTransition(nodeId, oldName);
     await this.assertNameAvailable(nodeId, newName);
@@ -763,6 +824,7 @@ export class DockerManagementService {
 
   async duplicateContainer(nodeId: string, containerId: string, name: string, userId: string) {
     await this.validateDockerNode(nodeId);
+    await this.assertNotManagedDeploymentInternal(nodeId, containerId);
     const sourceName = await this.resolveContainerName(nodeId, containerId);
     this.requireNoTransition(nodeId, sourceName);
     await this.assertNameAvailable(nodeId, name);
@@ -805,6 +867,7 @@ export class DockerManagementService {
 
   async updateContainer(nodeId: string, containerId: string, config: Record<string, unknown>, userId: string) {
     await this.validateDockerNode(nodeId);
+    await this.assertNotManagedDeploymentInternal(nodeId, containerId);
     const name = await this.resolveContainerName(nodeId, containerId);
     const expectedState = await this.resolveExpectedRecreateState(nodeId, containerId);
     if (this.environmentService) {
@@ -862,6 +925,7 @@ export class DockerManagementService {
 
   async getContainerEnv(nodeId: string, containerId: string) {
     await this.validateDockerNode(nodeId);
+    await this.assertNotManagedDeploymentInternal(nodeId, containerId);
     const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'inspect', { containerId });
     const inspect = this.parseResult(result);
     const allEnv: string[] = inspect?.Config?.Env || [];
@@ -895,6 +959,7 @@ export class DockerManagementService {
 
   async liveUpdateContainer(nodeId: string, containerId: string, config: Record<string, unknown>, userId: string) {
     await this.validateDockerNode(nodeId);
+    await this.assertNotManagedDeploymentInternal(nodeId, containerId);
     const name = await this.resolveContainerName(nodeId, containerId);
     this.requireNoTransition(nodeId, name);
     await this.persistRuntimeSettings(nodeId, name, config);
@@ -919,6 +984,7 @@ export class DockerManagementService {
 
   async recreateWithConfig(nodeId: string, containerId: string, config: Record<string, unknown>, userId: string) {
     await this.validateDockerNode(nodeId);
+    await this.assertNotManagedDeploymentInternal(nodeId, containerId);
     const name = await this.resolveContainerName(nodeId, containerId);
     const expectedState = await this.resolveExpectedRecreateState(nodeId, containerId);
     this.requireNoTransition(nodeId, name);
@@ -986,6 +1052,7 @@ export class DockerManagementService {
     userId: string
   ) {
     await this.validateDockerNode(nodeId);
+    await this.assertNotManagedDeploymentInternal(nodeId, containerId);
     const name = await this.resolveContainerName(nodeId, containerId);
     const expectedState = await this.resolveExpectedRecreateState(nodeId, containerId);
     this.requireNoTransition(nodeId, name);

@@ -122,6 +122,9 @@ export function createControlHandlers(deps: GrpcServerDeps) {
                   ...((msg.register as any).dockerVersion
                     ? { dockerVersion: (msg.register as any).dockerVersion }
                     : {}),
+                  ...(msg.register.capabilities?.includes('docker_deployments_v1')
+                    ? { dockerDeploymentsV1: true, capabilities: msg.register.capabilities }
+                    : {}),
                   cpuModel: msg.register.cpuModel || undefined,
                   cpuCores: msg.register.cpuCores || undefined,
                   architecture: msg.register.architecture || undefined,

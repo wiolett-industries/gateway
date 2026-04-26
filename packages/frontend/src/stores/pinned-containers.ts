@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { useDockerStore } from "@/stores/docker";
 import type { DockerContainer } from "@/types";
 
 interface PinnedContainersState {
@@ -129,26 +130,24 @@ export const usePinnedContainersStore = create<PinnedContainersState>()(
 
 // Sync pinned container meta when docker store containers update
 let prevContainers: DockerContainer[] = [];
-import("@/stores/docker").then(({ useDockerStore }) => {
-  useDockerStore.subscribe((state) => {
-    if (state.containers === prevContainers) return;
-    prevContainers = state.containers;
+useDockerStore.subscribe((state) => {
+  if (state.containers === prevContainers) return;
+  prevContainers = state.containers;
 
-    const pinned = usePinnedContainersStore.getState();
-    const pinnedIds = new Set([...pinned.sidebarContainerIds, ...pinned.dashboardContainerIds]);
-    if (pinnedIds.size === 0) return;
+  const pinned = usePinnedContainersStore.getState();
+  const pinnedIds = new Set([...pinned.sidebarContainerIds, ...pinned.dashboardContainerIds]);
+  if (pinnedIds.size === 0) return;
 
-    for (const c of state.containers) {
-      if (!pinnedIds.has(c.id)) continue;
-      const existing = pinned.containerMeta[c.id];
-      const effectiveState = (c as any)._transition ?? c.state;
-      if (existing && (existing.state !== effectiveState || existing.name !== c.name)) {
-        usePinnedContainersStore.getState().updateMeta(c.id, {
-          ...existing,
-          name: c.name || existing.name,
-          state: effectiveState,
-        });
-      }
+  for (const c of state.containers) {
+    if (!pinnedIds.has(c.id)) continue;
+    const existing = pinned.containerMeta[c.id];
+    const effectiveState = (c as any)._transition ?? c.state;
+    if (existing && (existing.state !== effectiveState || existing.name !== c.name)) {
+      usePinnedContainersStore.getState().updateMeta(c.id, {
+        ...existing,
+        name: c.name || existing.name,
+        state: effectiveState,
+      });
     }
-  });
+  }
 });

@@ -1909,15 +1909,96 @@ export interface DockerContainer {
   created: number;
   ports: DockerPort[];
   labels?: Record<string, string>;
+  kind?: "container" | "deployment";
+  deploymentId?: string;
+  activeSlot?: "blue" | "green";
+  primaryRoute?: { hostPort: number; containerPort: number } | null;
+  activeSlotContainerId?: string | null;
   folderId?: string | null;
   folderIsSystem?: boolean;
   folderSortOrder?: number;
+  _transition?: string;
   // Stats (from health report, optional)
   cpuPercent?: number;
   memoryUsage?: number;
   memoryLimit?: number;
   networkRx?: number;
   networkTx?: number;
+}
+
+export interface DockerDeploymentRoute {
+  id: string;
+  deploymentId: string;
+  hostPort: number;
+  containerPort: number;
+  isPrimary: boolean;
+}
+
+export interface DockerDeploymentDesiredConfig {
+  image: string;
+  env?: Record<string, string>;
+  restartPolicy?: string;
+  [key: string]: unknown;
+}
+
+export interface DockerDeploymentSlot {
+  id: string;
+  deploymentId: string;
+  slot: "blue" | "green";
+  containerId: string | null;
+  containerName: string;
+  image: string | null;
+  desiredConfig?: DockerDeploymentDesiredConfig | null;
+  status: string;
+  health: string;
+  drainingUntil: string | null;
+  updatedAt: string;
+}
+
+export interface DockerDeploymentRelease {
+  id: string;
+  deploymentId: string;
+  fromSlot: "blue" | "green" | null;
+  toSlot: "blue" | "green" | null;
+  image: string | null;
+  triggerSource: string;
+  taskId: string | null;
+  status: string;
+  error: string | null;
+  createdAt: string;
+  completedAt: string | null;
+}
+
+export interface DockerDeploymentHealthConfig {
+  path: string;
+  statusMin: number;
+  statusMax: number;
+  timeoutSeconds: number;
+  intervalSeconds: number;
+  successThreshold: number;
+  startupGraceSeconds: number;
+  deployTimeoutSeconds: number;
+}
+
+export interface DockerDeployment {
+  id: string;
+  nodeId: string;
+  name: string;
+  desiredConfig: DockerDeploymentDesiredConfig;
+  activeSlot: "blue" | "green";
+  status: string;
+  routerName: string;
+  routerImage: string;
+  networkName: string;
+  healthConfig: DockerDeploymentHealthConfig;
+  drainSeconds: number;
+  routes: DockerDeploymentRoute[];
+  slots: DockerDeploymentSlot[];
+  releases: DockerDeploymentRelease[];
+  webhook?: DockerWebhook | null;
+  _transition?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface DockerImage {

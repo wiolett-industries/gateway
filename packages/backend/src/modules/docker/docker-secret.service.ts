@@ -66,10 +66,10 @@ export class DockerSecretService {
   /**
    * Update an existing secret's value.
    */
-  async update(id: string, nodeId: string, value: string, userId: string) {
+  async update(id: string, nodeId: string, value: string, userId: string, expectedContainerName?: string) {
     const [existing] = await this.db.select().from(dockerSecrets).where(eq(dockerSecrets.id, id)).limit(1);
     if (!existing) throw new AppError(404, 'NOT_FOUND', 'Secret not found');
-    if (existing.nodeId !== nodeId) {
+    if (existing.nodeId !== nodeId || (expectedContainerName && existing.containerName !== expectedContainerName)) {
       throw new AppError(404, 'NOT_FOUND', 'Secret not found');
     }
 
@@ -96,10 +96,10 @@ export class DockerSecretService {
   /**
    * Delete a secret.
    */
-  async delete(id: string, nodeId: string, userId: string) {
+  async delete(id: string, nodeId: string, userId: string, expectedContainerName?: string) {
     const [existing] = await this.db.select().from(dockerSecrets).where(eq(dockerSecrets.id, id)).limit(1);
     if (!existing) throw new AppError(404, 'NOT_FOUND', 'Secret not found');
-    if (existing.nodeId !== nodeId) {
+    if (existing.nodeId !== nodeId || (expectedContainerName && existing.containerName !== expectedContainerName)) {
       throw new AppError(404, 'NOT_FOUND', 'Secret not found');
     }
 

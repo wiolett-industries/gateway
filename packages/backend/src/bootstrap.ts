@@ -21,6 +21,7 @@ import { AuthSettingsService } from '@/modules/auth/auth.settings.service.js';
 import { DatabaseMonitoringService } from '@/modules/databases/database-monitoring.service.js';
 import { DatabaseConnectionService } from '@/modules/databases/databases.service.js';
 import { DockerManagementService } from '@/modules/docker/docker.service.js';
+import { DockerDeploymentService } from '@/modules/docker/docker-deployment.service.js';
 import { DockerEnvironmentService } from '@/modules/docker/docker-environment.service.js';
 import { DockerFolderService } from '@/modules/docker/docker-folder.service.js';
 import { DockerRegistryService } from '@/modules/docker/docker-registry.service.js';
@@ -235,13 +236,24 @@ export async function initializeContainer(): Promise<void> {
 
   const dockerTaskService = new DockerTaskService(db);
   container.registerInstance(DockerTaskService, dockerTaskService);
+  const dockerDeploymentService = new DockerDeploymentService(
+    db,
+    auditService,
+    nodeDispatch,
+    dockerRegistryService,
+    dockerTaskService,
+    nodeRegistry,
+    dockerSecretService
+  );
+  container.registerInstance(DockerDeploymentService, dockerDeploymentService);
   const dockerWebhookService = new DockerWebhookService(
     db,
     dockerManagementService,
     dockerTaskService,
     auditService,
     nodeDispatch,
-    dockerRegistryService
+    dockerRegistryService,
+    dockerDeploymentService
   );
   container.registerInstance(DockerWebhookService, dockerWebhookService);
 
@@ -251,8 +263,10 @@ export async function initializeContainer(): Promise<void> {
   dockerManagementService.setSecretService(dockerSecretService);
   dockerManagementService.setFolderService(dockerFolderService);
   dockerManagementService.setEventBus(eventBus);
+  dockerManagementService.setDeploymentService(dockerDeploymentService);
   dockerFolderService.setEventBus(eventBus);
   dockerTaskService.setEventBus(eventBus);
+  dockerDeploymentService.setEventBus(eventBus);
   dockerWebhookService.setEventBus(eventBus);
   authService.setEventBus(eventBus);
   templatesService.setEventBus(eventBus);

@@ -21,6 +21,7 @@ interface PortMappingsSectionProps {
   setPorts: React.Dispatch<React.SetStateAction<PortMapping[]>>;
   portsChanged: boolean;
   inputCell: string;
+  showProtocol?: boolean;
 }
 
 export function PortMappingsSection({
@@ -29,12 +30,20 @@ export function PortMappingsSection({
   setPorts,
   portsChanged,
   inputCell,
+  showProtocol = true,
 }: PortMappingsSectionProps) {
   const addPort = () =>
     setPorts((p) => [...p, { hostPort: "", containerPort: "", protocol: "tcp" }]);
   const removePort = (i: number) => setPorts((p) => p.filter((_, idx) => idx !== i));
   const updatePort = (i: number, field: keyof PortMapping, val: string) =>
     setPorts((p) => p.map((entry, idx) => (idx === i ? { ...entry, [field]: val } : entry)));
+  const gridColumns = showProtocol
+    ? canEdit
+      ? "grid-cols-[1fr_1fr_100px_36px]"
+      : "grid-cols-[1fr_1fr_100px]"
+    : canEdit
+      ? "grid-cols-[1fr_1fr_36px]"
+      : "grid-cols-[1fr_1fr]";
 
   return (
     <div
@@ -56,19 +65,16 @@ export function PortMappingsSection({
       {ports.length > 0 ? (
         <>
           <div
-            className={`grid ${canEdit ? "grid-cols-[1fr_1fr_100px_36px]" : "grid-cols-[1fr_1fr_100px]"} border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wider`}
+            className={`grid ${gridColumns} border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wider`}
           >
             <div className="px-3 py-2">Host Port</div>
             <div className="px-3 py-2 border-l border-border">Container Port</div>
-            <div className="px-3 py-2 border-l border-border">Protocol</div>
+            {showProtocol && <div className="px-3 py-2 border-l border-border">Protocol</div>}
             {canEdit && <div />}
           </div>
           <div>
             {ports.map((p, i) => (
-              <div
-                key={i}
-                className={`grid ${canEdit ? "grid-cols-[1fr_1fr_100px_36px]" : "grid-cols-[1fr_1fr_100px]"} border-b border-border last:border-b-0`}
-              >
+              <div key={i} className={`grid ${gridColumns} border-b border-border last:border-b-0`}>
                 <Input
                   type="number"
                   className={inputCell}
@@ -87,21 +93,23 @@ export function PortMappingsSection({
                     disabled={!canEdit}
                   />
                 </div>
-                <div className="border-l border-border">
-                  <Select
-                    value={p.protocol}
-                    onValueChange={(v) => updatePort(i, "protocol", v)}
-                    disabled={!canEdit}
-                  >
-                    <SelectTrigger className="h-9 text-xs border-0 rounded-none shadow-none focus:ring-1 focus:ring-inset focus:ring-ring">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="tcp">TCP</SelectItem>
-                      <SelectItem value="udp">UDP</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                {showProtocol && (
+                  <div className="border-l border-border">
+                    <Select
+                      value={p.protocol}
+                      onValueChange={(v) => updatePort(i, "protocol", v)}
+                      disabled={!canEdit}
+                    >
+                      <SelectTrigger className="h-9 text-xs border-0 rounded-none shadow-none focus:ring-1 focus:ring-inset focus:ring-ring">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="tcp">TCP</SelectItem>
+                        <SelectItem value="udp">UDP</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
                 {canEdit && (
                   <Button
                     variant="ghost"

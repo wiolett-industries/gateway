@@ -82,6 +82,7 @@ message RegisterMessage {
   string architecture = 10;
   string kernel_version = 11;
   string daemon_type = 12;       // "nginx", "monitoring", etc.
+  repeated string capabilities = 13;
 }
 
 message CommandResult {
@@ -193,6 +194,7 @@ message GatewayCommand {
     ExecInput exec_input = 26;
     NodeExecCommand node_exec = 27;
     UpdateDaemonCommand update_daemon = 28;
+    DockerDeploymentCommand docker_deployment = 29;
   }
 }
 
@@ -330,6 +332,14 @@ message DockerNetworkCommand {
   string driver = 4;
   string subnet = 5;
   string gateway_addr = 6;
+}
+
+message DockerDeploymentCommand {
+  string action = 1;
+  string deployment_id = 2;
+  string slot = 3;
+  string config_json = 4;
+  bool force = 5;
 }
 
 message DockerExecCommand {

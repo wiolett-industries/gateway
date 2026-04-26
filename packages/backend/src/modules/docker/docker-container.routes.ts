@@ -1,5 +1,6 @@
 import type { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
+import { AppError } from '@/middleware/error-handler.js';
 import { requireScopeForResource } from '@/modules/auth/auth.middleware.js';
 import { TokensService } from '@/modules/tokens/tokens.service.js';
 import type { AppEnv } from '@/types.js';
@@ -22,10 +23,20 @@ import {
 import { DockerManagementService } from './docker.service.js';
 import { DockerSecretService } from './docker-secret.service.js';
 
+const DOCKER_DEPLOYMENT_MANAGED_LABEL = 'wiolett.gateway.deployment.managed';
+
 /** Resolve container name from container ID via inspect */
 async function resolveContainerName(nodeId: string, containerId: string): Promise<string> {
   const dockerService = container.resolve(DockerManagementService);
   const inspect = await dockerService.inspectContainer(nodeId, containerId);
+  const labels = inspect?.Config?.Labels ?? {};
+  if (labels?.[DOCKER_DEPLOYMENT_MANAGED_LABEL] === 'true') {
+    throw new AppError(
+      409,
+      'MANAGED_DEPLOYMENT_CONTAINER',
+      'This container is managed by a blue/green deployment. Use deployment actions instead.'
+    );
+  }
   const name = (inspect?.Name ?? '').replace(/^\//, '');
   if (!name) throw new Error('Could not resolve container name');
   return name;

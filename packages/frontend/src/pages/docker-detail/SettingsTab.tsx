@@ -946,8 +946,34 @@ export function SettingsTab({
 
 // ── Webhook Section ──────────────────────────────────────────────
 
-function WebhookSection({ nodeId, containerName }: { nodeId: string; containerName: string }) {
-  const [webhook, setWebhook] = useState<DockerWebhook | null>(null);
+type WebhookSectionProps =
+  | {
+      nodeId: string;
+      target?: "container";
+      containerName: string;
+      deploymentId?: never;
+      initialWebhook?: never;
+      onWebhookChange?: never;
+      disabled?: boolean;
+    }
+  | {
+      nodeId: string;
+      target: "deployment";
+      deploymentId: string;
+      containerName?: never;
+      initialWebhook?: DockerWebhook | null;
+      onWebhookChange?: (webhook: DockerWebhook | null) => void;
+      disabled?: boolean;
+    };
+
+export function WebhookSection(props: WebhookSectionProps) {
+  const isDeployment = props.target === "deployment";
+  const nodeId = props.nodeId;
+  const targetName = isDeployment ? props.deploymentId : props.containerName;
+  const onWebhookChange = isDeployment ? props.onWebhookChange : undefined;
+  const [webhook, setWebhookState] = useState<DockerWebhook | null>(
+    isDeployment ? (props.initialWebhook ?? null) : null
+  );
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
   const [copiedCurl, setCopiedCurl] = useState(false);
@@ -956,9 +982,21 @@ function WebhookSection({ nodeId, containerName }: { nodeId: string; containerNa
   const [cleanupEnabled, setCleanupEnabled] = useState(false);
   const [retentionCount, setRetentionCount] = useState("2");
 
+  const setWebhook = useCallback(
+    (next: DockerWebhook | null) => {
+      setWebhookState(next);
+      if (isDeployment) {
+        onWebhookChange?.(next);
+      }
+    },
+    [isDeployment, onWebhookChange]
+  );
+
   const fetchWebhook = useCallback(async () => {
     try {
-      const data = await api.getContainerWebhook(nodeId, containerName);
+      const data = isDeployment
+        ? await api.getDeploymentWebhook(nodeId, targetName)
+        : await api.getContainerWebhook(nodeId, targetName);
       setWebhook(data);
       if (data) {
         setCleanupEnabled(data.cleanupEnabled);
@@ -969,7 +1007,7 @@ function WebhookSection({ nodeId, containerName }: { nodeId: string; containerNa
     } finally {
       setLoading(false);
     }
-  }, [nodeId, containerName]);
+  }, [isDeployment, nodeId, setWebhook, targetName]);
 
   useEffect(() => {
     fetchWebhook();
@@ -977,7 +1015,12 @@ function WebhookSection({ nodeId, containerName }: { nodeId: string; containerNa
 
   useRealtime("docker.webhook.changed", (payload: unknown) => {
     const p = payload as Record<string, unknown>;
-    if (p.nodeId === nodeId && p.containerName === containerName) {
+    if (
+      p.nodeId === nodeId &&
+      (isDeployment
+        ? p.deploymentId === targetName || p.targetId === targetName
+        : p.containerName === targetName)
+    ) {
       fetchWebhook();
     }
   });
@@ -991,7 +1034,9 @@ function WebhookSection({ nodeId, containerName }: { nodeId: string; containerNa
 
   const handleEnable = async () => {
     try {
-      const data = await api.upsertContainerWebhook(nodeId, containerName, {});
+      const data = isDeployment
+        ? await api.upsertDeploymentWebhook(nodeId, targetName, {})
+        : await api.upsertContainerWebhook(nodeId, targetName, {});
       setWebhook(data);
       setCleanupEnabled(data.cleanupEnabled);
       setRetentionCount(String(data.retentionCount));
@@ -1004,13 +1049,15 @@ function WebhookSection({ nodeId, containerName }: { nodeId: string; containerNa
   const autoSave = useCallback(
     async (patch: { cleanupEnabled?: boolean; retentionCount?: number }) => {
       try {
-        const data = await api.upsertContainerWebhook(nodeId, containerName, patch);
+        const data = isDeployment
+          ? await api.upsertDeploymentWebhook(nodeId, targetName, patch)
+          : await api.upsertContainerWebhook(nodeId, targetName, patch);
         setWebhook(data);
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Failed to save");
       }
     },
-    [nodeId, containerName]
+    [isDeployment, nodeId, setWebhook, targetName]
   );
 
   const handleCleanupToggle = useCallback(
@@ -1039,7 +1086,9 @@ function WebhookSection({ nodeId, containerName }: { nodeId: string; containerNa
     });
     if (!ok) return;
     try {
-      const data = await api.regenerateWebhookToken(nodeId, containerName);
+      const data = isDeployment
+        ? await api.regenerateDeploymentWebhookToken(nodeId, targetName)
+        : await api.regenerateWebhookToken(nodeId, targetName);
       setWebhook(data);
       toast.success("Webhook URL regenerated");
     } catch (err) {
@@ -1057,7 +1106,11 @@ function WebhookSection({ nodeId, containerName }: { nodeId: string; containerNa
     });
     if (!ok) return;
     try {
-      await api.deleteContainerWebhook(nodeId, containerName);
+      if (isDeployment) {
+        await api.deleteDeploymentWebhook(nodeId, targetName);
+      } else {
+        await api.deleteContainerWebhook(nodeId, targetName);
+      }
       setWebhook(null);
       toast.success("Webhook disabled");
     } catch (err) {
@@ -1094,10 +1147,10 @@ function WebhookSection({ nodeId, containerName }: { nodeId: string; containerNa
         <div>
           <h3 className="text-sm font-semibold">Webhook</h3>
           <p className="text-xs text-muted-foreground">
-            Trigger container updates from CI pipelines
+            Trigger {isDeployment ? "deployment" : "container"} updates from CI pipelines
           </p>
         </div>
-        <Switch checked={!!webhook} onChange={handleToggle} />
+        <Switch checked={!!webhook} onChange={handleToggle} disabled={props.disabled} />
       </div>
 
       {webhook && (

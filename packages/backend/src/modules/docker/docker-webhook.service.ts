@@ -8,6 +8,7 @@ import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
 import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import type { DockerManagementService } from './docker.service.js';
+import type { DockerDeploymentService } from './docker-deployment.service.js';
 import type { DockerRegistryService } from './docker-registry.service.js';
 import type { DockerTaskService } from './docker-task.service.js';
 
@@ -22,7 +23,8 @@ export class DockerWebhookService {
     private tasks: DockerTaskService,
     private audit: AuditService,
     private dispatch: NodeDispatchService,
-    private registry: DockerRegistryService
+    private registry: DockerRegistryService,
+    private deployments?: DockerDeploymentService
   ) {}
 
   setEventBus(bus: EventBusService) {
@@ -35,13 +37,28 @@ export class DockerWebhookService {
     const [row] = await this.db
       .select()
       .from(dockerWebhooks)
-      .where(and(eq(dockerWebhooks.nodeId, nodeId), eq(dockerWebhooks.containerName, containerName)))
+      .where(
+        and(
+          eq(dockerWebhooks.nodeId, nodeId),
+          eq(dockerWebhooks.containerName, containerName),
+          eq(dockerWebhooks.targetType, 'container')
+        )
+      )
       .limit(1);
     return row ?? null;
   }
 
   async getByToken(token: string) {
     const [row] = await this.db.select().from(dockerWebhooks).where(eq(dockerWebhooks.token, token)).limit(1);
+    return row ?? null;
+  }
+
+  async getByDeployment(deploymentId: string) {
+    const [row] = await this.db
+      .select()
+      .from(dockerWebhooks)
+      .where(and(eq(dockerWebhooks.deploymentId, deploymentId), eq(dockerWebhooks.targetType, 'deployment')))
+      .limit(1);
     return row ?? null;
   }
 
@@ -72,6 +89,7 @@ export class DockerWebhookService {
       .values({
         nodeId,
         containerName,
+        targetType: 'container',
         cleanupEnabled: input.cleanupEnabled ?? false,
         retentionCount: input.retentionCount ?? 2,
       })
@@ -239,6 +257,25 @@ export class DockerWebhookService {
     const message = `Updating ${containerName} to ${targetRef}`;
     logger.info(message, { nodeId, containerId, webhookId });
     return { taskId: task.id, message };
+  }
+
+  async triggerWebhookToken(token: string, tag?: string, userId?: string) {
+    const webhook = await this.getByToken(token);
+    if (!webhook || !webhook.enabled) {
+      throw new AppError(404, 'NOT_FOUND', 'Webhook not found');
+    }
+    if (webhook.targetType === 'deployment') {
+      if (!this.deployments) throw new AppError(500, 'DEPLOYMENTS_UNAVAILABLE', 'Deployment service unavailable');
+      return this.deployments.triggerWebhook(webhook.id, tag);
+    }
+    return this.triggerUpdate({
+      nodeId: webhook.nodeId,
+      containerName: webhook.containerName,
+      containerId: webhook.containerName,
+      tag,
+      userId,
+      webhookId: webhook.id,
+    });
   }
 
   // ─── Image cleanup ────────────────────────────────────────────────

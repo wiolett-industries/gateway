@@ -1,4 +1,8 @@
 import { api } from "@/services/api";
+import { useNodesStore } from "@/stores/nodes";
+import { usePinnedContainersStore } from "@/stores/pinned-containers";
+import { usePinnedNodesStore } from "@/stores/pinned-nodes";
+import { usePinnedProxiesStore } from "@/stores/pinned-proxies";
 
 type EventHandler = (payload: unknown) => void;
 
@@ -131,9 +135,7 @@ class EventStream {
           const immediate = payload?.action === "deleted";
           this.scheduleNodeChanged(msg.payload, immediate);
           if (payload?.action === "deleted" && payload.id) {
-            import("@/stores/pinned-nodes")
-              .then((m) => m.usePinnedNodesStore.getState().removePin(payload.id!))
-              .catch(() => {});
+            usePinnedNodesStore.getState().removePin(payload.id);
           }
           return;
         } else if (msg.channel === "domain.changed") {
@@ -168,9 +170,7 @@ class EventStream {
           api.invalidateCache("dashboard:health");
           const payload = msg.payload as { action?: string; id?: string } | undefined;
           if (payload?.action === "deleted" && payload.id) {
-            import("@/stores/pinned-proxies")
-              .then((m) => m.usePinnedProxiesStore.getState().removePin(payload.id!))
-              .catch(() => {});
+            usePinnedProxiesStore.getState().removePin(payload.id);
           }
         } else if (msg.channel === "pki.template.changed") {
           api.invalidateCache("req:/api/templates");
@@ -205,9 +205,7 @@ class EventStream {
             const removedId =
               payload?.action === "removed" ? (payload.id ?? payload.oldId) : undefined;
             if (removedId) {
-              import("@/stores/pinned-containers")
-                .then((m) => m.usePinnedContainersStore.getState().removePin(removedId))
-                .catch(() => {});
+              usePinnedContainersStore.getState().removePin(removedId);
             }
           }
         } else if (msg.channel.startsWith("alert.")) {
@@ -247,10 +245,8 @@ class EventStream {
 
   private invalidateNodeStores() {
     api.invalidateCache("req:/api/nodes");
-    import("@/stores/nodes").then((m) => m.useNodesStore.getState().invalidate()).catch(() => {});
-    import("@/stores/pinned-nodes")
-      .then((m) => m.usePinnedNodesStore.getState().invalidate())
-      .catch(() => {});
+    useNodesStore.getState().invalidate();
+    usePinnedNodesStore.getState().invalidate();
   }
 
   private scheduleNodeChanged(payload: unknown, immediate: boolean) {

@@ -330,8 +330,24 @@ export function DockerContainers({
   );
 
   const doAction = useCallback(
-    async (containerId: string, action: string, fn: () => Promise<void>) => {
+    async (container: DockerContainerRowData, action: string, fn: () => Promise<void>) => {
+      const transitionByAction: Record<string, string> = {
+        start: "starting",
+        stop: "stopping",
+        restart: "restarting",
+      };
+      const transition = transitionByAction[action];
+      const containerId = container.id;
       setActionLoading((prev) => ({ ...prev, [containerId]: action }));
+      if (transition) {
+        setOptimisticContainers((current) =>
+          (current ?? containers).map((item) =>
+            item._nodeId === container._nodeId && item.id === container.id
+              ? { ...item, _transition: transition }
+              : item
+          )
+        );
+      }
       try {
         await fn();
         toast.success(`Container ${action} successful`);
@@ -346,26 +362,48 @@ export function DockerContainers({
         });
       }
     },
-    [refreshData]
+    [containers, refreshData]
   );
 
   const handleStart = useCallback(
     (container: DockerContainerRowData) =>
-      doAction(container.id, "start", () => api.startContainer(container._nodeId, container.id)),
+      doAction(container, "start", async () => {
+        if (container.kind === "deployment") {
+          await api.startDockerDeployment(
+            container._nodeId,
+            container.deploymentId ?? container.id
+          );
+          return;
+        }
+        await api.startContainer(container._nodeId, container.id);
+      }),
     [doAction]
   );
 
   const handleStop = useCallback(
     (container: DockerContainerRowData) =>
-      doAction(container.id, "stop", () => api.stopContainer(container._nodeId, container.id)),
+      doAction(container, "stop", async () => {
+        if (container.kind === "deployment") {
+          await api.stopDockerDeployment(container._nodeId, container.deploymentId ?? container.id);
+          return;
+        }
+        await api.stopContainer(container._nodeId, container.id);
+      }),
     [doAction]
   );
 
   const handleRestart = useCallback(
     (container: DockerContainerRowData) =>
-      doAction(container.id, "restart", () =>
-        api.restartContainer(container._nodeId, container.id)
-      ),
+      doAction(container, "restart", async () => {
+        if (container.kind === "deployment") {
+          await api.restartDockerDeployment(
+            container._nodeId,
+            container.deploymentId ?? container.id
+          );
+          return;
+        }
+        await api.restartContainer(container._nodeId, container.id);
+      }),
     [doAction]
   );
 
@@ -461,7 +499,7 @@ export function DockerContainers({
           [{ nodeId: container._nodeId, containerName: container.name }],
           folderId
         );
-        toast.success("Container moved");
+        toast.success(container.kind === "deployment" ? "Deployment moved" : "Container moved");
         await refreshData(true);
       } catch (err) {
         setOptimisticContainers(null);

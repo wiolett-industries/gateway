@@ -23,6 +23,7 @@ import { Docker } from "@/pages/Docker";
 import { DockerComposeLogsPopout } from "@/pages/DockerComposeLogsPopout";
 import { DockerConsolePopout } from "@/pages/DockerConsolePopout";
 import { DockerContainerDetail } from "@/pages/DockerContainerDetail";
+import { DockerDeploymentDetail } from "@/pages/DockerDeploymentDetail";
 import { DockerFilePopout } from "@/pages/DockerFilePopout";
 import { DockerLogsPopout } from "@/pages/DockerLogsPopout";
 import { Domains } from "@/pages/Domains";
@@ -120,6 +121,20 @@ function DockerContainerDetailGuard() {
   }
 
   return <DockerContainerDetail />;
+}
+
+function DockerDeploymentDetailGuard() {
+  const { nodeId } = useParams<{ nodeId: string }>();
+  const hasScope = useAuthStore((s) => s.hasScope);
+
+  if (
+    !hasScope("docker:containers:view") &&
+    !(nodeId && hasScope(`docker:containers:view:${nodeId}`))
+  ) {
+    return <Navigate to="/" replace />;
+  }
+
+  return <DockerDeploymentDetail />;
 }
 
 function ProxyHostDetailGuard() {
@@ -487,6 +502,10 @@ export default function App() {
               <Route
                 path="/docker/containers/:nodeId/:containerId/:tab?"
                 element={<DockerContainerDetailGuard />}
+              />
+              <Route
+                path="/docker/deployments/:nodeId/:deploymentId/:tab?"
+                element={<DockerDeploymentDetailGuard />}
               />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />

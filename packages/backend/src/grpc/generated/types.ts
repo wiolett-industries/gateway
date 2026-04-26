@@ -64,6 +64,7 @@ export interface RegisterMessage {
   architecture: string;
   kernelVersion: string;
   daemonType: string;
+  capabilities: string[];
 }
 
 export interface CommandResult {
@@ -161,6 +162,7 @@ export interface GatewayCommand {
   dockerImage?: DockerImageCommand;
   dockerVolume?: DockerVolumeCommand;
   dockerNetwork?: DockerNetworkCommand;
+  dockerDeployment?: DockerDeploymentCommand;
   dockerExec?: DockerExecCommand;
   dockerFile?: DockerFileCommand;
   dockerConfigPush?: DockerConfigPushCommand;
@@ -288,6 +290,14 @@ export interface DockerNetworkCommand {
   driver: string;
   subnet: string;
   gatewayAddr: string;
+}
+
+export interface DockerDeploymentCommand {
+  action: string;
+  deploymentId: string;
+  slot: string;
+  configJson: string;
+  force: boolean;
 }
 
 export interface DockerExecCommand {

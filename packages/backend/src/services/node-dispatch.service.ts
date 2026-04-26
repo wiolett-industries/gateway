@@ -268,6 +268,29 @@ export class NodeDispatchService {
     );
   }
 
+  async sendDockerDeploymentCommand(
+    nodeId: string,
+    action: string,
+    options: {
+      deploymentId?: string;
+      slot?: string;
+      configJson?: string;
+      force?: boolean;
+    } = {},
+    timeoutMs?: number
+  ): Promise<CommandResult> {
+    if (action !== 'inspect') {
+      await this.assertNodeMutable(nodeId);
+    }
+    return this.registry.sendCommand(
+      nodeId,
+      {
+        dockerDeployment: { action, ...options } as any,
+      },
+      timeoutMs
+    );
+  }
+
   async sendDockerExecCommand(
     nodeId: string,
     action: string,
