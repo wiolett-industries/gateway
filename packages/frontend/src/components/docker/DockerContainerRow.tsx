@@ -1,6 +1,6 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Box, MoreVertical, Play, RefreshCw, Square } from "lucide-react";
+import { Box, GitBranch, MoreVertical, Play, RefreshCw, Square } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -64,7 +64,15 @@ export function DockerContainerRow({
   };
 
   const handleRowClick = () => {
-    if (!isDragging && canView) navigate(`/docker/containers/${container._nodeId}/${container.id}`);
+    if (!isDragging && canView) {
+      if (container.kind === "deployment") {
+        navigate(
+          `/docker/deployments/${container._nodeId}/${container.deploymentId ?? container.id}`
+        );
+        return;
+      }
+      navigate(`/docker/containers/${container._nodeId}/${container.id}`);
+    }
   };
 
   return (
@@ -85,15 +93,28 @@ export function DockerContainerRow({
       <td className="p-3" style={{ paddingLeft: `${depth * 24 + 12}px` }}>
         <div className="flex items-center gap-3 min-w-0">
           <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-muted shrink-0">
-            <Box className="h-4 w-4 text-muted-foreground" />
+            {container.kind === "deployment" ? (
+              <GitBranch className="h-4 w-4 text-muted-foreground" />
+            ) : (
+              <Box className="h-4 w-4 text-muted-foreground" />
+            )}
           </div>
           <div className="min-w-0">
-            <TruncateStart
-              text={containerDisplayName(container.name)}
-              className="text-sm font-medium"
-            />
+            <div className="flex items-center gap-2 min-w-0">
+              <TruncateStart
+                text={containerDisplayName(container.name)}
+                className="text-sm font-medium"
+              />
+              {container.kind === "deployment" && (
+                <Badge variant="outline" className="text-[10px] h-5 shrink-0">
+                  Deployment
+                </Badge>
+              )}
+            </div>
             <p className="text-xs text-muted-foreground font-mono truncate">
-              {container.id.slice(0, 12)}
+              {container.kind === "deployment"
+                ? `active ${container.activeSlot ?? "-"}`
+                : container.id.slice(0, 12)}
             </p>
           </div>
         </div>
@@ -168,7 +189,11 @@ export function DockerContainerRow({
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem
                     onClick={() =>
-                      navigate(`/docker/containers/${container._nodeId}/${container.id}`)
+                      navigate(
+                        container.kind === "deployment"
+                          ? `/docker/deployments/${container._nodeId}/${container.deploymentId ?? container.id}`
+                          : `/docker/containers/${container._nodeId}/${container.id}`
+                      )
                     }
                   >
                     Open

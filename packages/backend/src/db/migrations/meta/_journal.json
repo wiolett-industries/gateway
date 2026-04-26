@@ -120,6 +120,20 @@
       "when": 1777053600000,
       "tag": "0016_status_page_incident_updates",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1777149600000,
+      "tag": "0017_docker_deployments",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1777222800000,
+      "tag": "0018_docker_deployment_slot_config",
+      "breakpoints": true
     }
   ]
 }

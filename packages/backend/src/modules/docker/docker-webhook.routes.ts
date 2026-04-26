@@ -89,6 +89,11 @@ dockerWebhookTriggerRoutes.post('/:token', async (c) => {
     // Empty body or invalid JSON — that's fine, will re-pull current tag
   }
 
+  if (webhook.targetType === 'deployment') {
+    const data = await service.triggerWebhookToken(token, tag);
+    return c.json({ data });
+  }
+
   // We need the container ID to trigger the update.
   // List containers on the node and find by name.
   const { DockerManagementService } = await import('./docker.service.js');

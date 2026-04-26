@@ -1,6 +1,7 @@
 import { Copy, Key, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { confirm } from "@/components/common/ConfirmDialog";
 import { ScopeList } from "@/components/common/ScopeList";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -144,7 +145,6 @@ export function ApiTokensSection({
   };
 
   const handleRevokeToken = async (token: ApiToken) => {
-    const { confirm } = await import("@/components/common/ConfirmDialog");
     const ok = await confirm({
       title: "Revoke Token",
       description: `Are you sure you want to revoke "${token.name}"? This action cannot be undone.`,

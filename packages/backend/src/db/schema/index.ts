@@ -8,6 +8,7 @@ export * from './certificates.js';
 export * from './databases.js';
 export * from './docker-container-folder-assignments.js';
 export * from './docker-container-folders.js';
+export * from './docker-deployments.js';
 export * from './docker-env-vars.js';
 export * from './docker-registries.js';
 export * from './docker-runtime-settings.js';

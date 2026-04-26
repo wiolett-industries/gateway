@@ -22,6 +22,7 @@ import type {
   DnsStatus,
   DockerContainer,
   DockerContainerFolder,
+  DockerDeployment,
   DockerFolderTreeNode,
   DockerImage,
   DockerNetwork,
@@ -1723,6 +1724,138 @@ class ApiClient extends ApiClientBase {
     );
   }
 
+  async listDockerDeployments(nodeId: string): Promise<DockerDeployment[]> {
+    return this.unwrapData(
+      this.request<{ data: DockerDeployment[] }>(`/docker/nodes/${nodeId}/deployments`)
+    );
+  }
+
+  async getDockerDeployment(nodeId: string, deploymentId: string): Promise<DockerDeployment> {
+    return this.unwrapData(
+      this.request<{ data: DockerDeployment }>(
+        `/docker/nodes/${nodeId}/deployments/${deploymentId}`
+      )
+    );
+  }
+
+  async createDockerDeployment(
+    nodeId: string,
+    config: Record<string, unknown>
+  ): Promise<DockerDeployment> {
+    return this.unwrapData(
+      this.request<{ data: DockerDeployment }>(`/docker/nodes/${nodeId}/deployments`, {
+        method: "POST",
+        body: JSON.stringify(config),
+      })
+    );
+  }
+
+  async updateDockerDeployment(
+    nodeId: string,
+    deploymentId: string,
+    config: Record<string, unknown>
+  ): Promise<DockerDeployment> {
+    return this.unwrapData(
+      this.request<{ data: DockerDeployment }>(
+        `/docker/nodes/${nodeId}/deployments/${deploymentId}`,
+        { method: "PUT", body: JSON.stringify(config) }
+      )
+    );
+  }
+
+  async deployDockerDeployment(
+    nodeId: string,
+    deploymentId: string,
+    config: { image?: string; tag?: string; env?: Record<string, string> }
+  ): Promise<DockerDeployment> {
+    return this.unwrapData(
+      this.request<{ data: DockerDeployment }>(
+        `/docker/nodes/${nodeId}/deployments/${deploymentId}/deploy`,
+        { method: "POST", body: JSON.stringify(config) }
+      )
+    );
+  }
+
+  async switchDockerDeployment(
+    nodeId: string,
+    deploymentId: string,
+    slot: "blue" | "green",
+    force = false
+  ): Promise<DockerDeployment> {
+    return this.unwrapData(
+      this.request<{ data: DockerDeployment }>(
+        `/docker/nodes/${nodeId}/deployments/${deploymentId}/switch`,
+        { method: "POST", body: JSON.stringify({ slot, force }) }
+      )
+    );
+  }
+
+  async rollbackDockerDeployment(
+    nodeId: string,
+    deploymentId: string,
+    force = false
+  ): Promise<DockerDeployment> {
+    return this.unwrapData(
+      this.request<{ data: DockerDeployment }>(
+        `/docker/nodes/${nodeId}/deployments/${deploymentId}/rollback`,
+        { method: "POST", body: JSON.stringify({ force }) }
+      )
+    );
+  }
+
+  async stopDockerDeploymentSlot(
+    nodeId: string,
+    deploymentId: string,
+    slot: "blue" | "green"
+  ): Promise<void> {
+    await this.request<void>(
+      `/docker/nodes/${nodeId}/deployments/${deploymentId}/slots/${slot}/stop`,
+      { method: "POST" }
+    );
+  }
+
+  async startDockerDeployment(nodeId: string, deploymentId: string): Promise<DockerDeployment> {
+    return this.unwrapData(
+      this.request<{ data: DockerDeployment }>(
+        `/docker/nodes/${nodeId}/deployments/${deploymentId}/start`,
+        { method: "POST" }
+      )
+    );
+  }
+
+  async stopDockerDeployment(nodeId: string, deploymentId: string): Promise<DockerDeployment> {
+    return this.unwrapData(
+      this.request<{ data: DockerDeployment }>(
+        `/docker/nodes/${nodeId}/deployments/${deploymentId}/stop`,
+        { method: "POST" }
+      )
+    );
+  }
+
+  async restartDockerDeployment(nodeId: string, deploymentId: string): Promise<DockerDeployment> {
+    return this.unwrapData(
+      this.request<{ data: DockerDeployment }>(
+        `/docker/nodes/${nodeId}/deployments/${deploymentId}/restart`,
+        { method: "POST" }
+      )
+    );
+  }
+
+  async killDockerDeployment(nodeId: string, deploymentId: string): Promise<DockerDeployment> {
+    return this.unwrapData(
+      this.request<{ data: DockerDeployment }>(
+        `/docker/nodes/${nodeId}/deployments/${deploymentId}/kill`,
+        { method: "POST" }
+      )
+    );
+  }
+
+  async deleteDockerDeployment(nodeId: string, deploymentId: string): Promise<void> {
+    await this.request<void>(`/docker/nodes/${nodeId}/deployments/${deploymentId}`, {
+      method: "DELETE",
+    });
+  }
+
   async startContainer(nodeId: string, containerId: string): Promise<void> {
     await this.request<void>(`/docker/nodes/${nodeId}/containers/${containerId}/start`, {
       method: "POST",
@@ -1928,6 +2061,58 @@ class ApiClient extends ApiClientBase {
 
   async deleteDockerSecret(nodeId: string, containerId: string, secretId: string): Promise<void> {
     await this.request(`/docker/nodes/${nodeId}/containers/${containerId}/secrets/${secretId}`, {
+      method: "DELETE",
+    });
+  }
+
+  async listDockerDeploymentSecrets(nodeId: string, deploymentId: string): Promise<DockerSecret[]> {
+    return this.unwrapData(
+      this.request<{ data: DockerSecret[] }>(
+        `/docker/nodes/${nodeId}/deployments/${deploymentId}/secrets`
+      )
+    );
+  }
+
+  async createDockerDeploymentSecret(
+    nodeId: string,
+    deploymentId: string,
+    key: string,
+    value: string
+  ): Promise<DockerSecret> {
+    return this.unwrapData(
+      this.request<{ data: DockerSecret }>(
+        `/docker/nodes/${nodeId}/deployments/${deploymentId}/secrets`,
+        {
+          method: "POST",
+          body: JSON.stringify({ key, value }),
+        }
+      )
+    );
+  }
+
+  async updateDockerDeploymentSecret(
+    nodeId: string,
+    deploymentId: string,
+    secretId: string,
+    value: string
+  ): Promise<DockerSecret> {
+    return this.unwrapData(
+      this.request<{ data: DockerSecret }>(
+        `/docker/nodes/${nodeId}/deployments/${deploymentId}/secrets/${secretId}`,
+        {
+          method: "PUT",
+          body: JSON.stringify({ value }),
+        }
+      )
+    );
+  }
+
+  async deleteDockerDeploymentSecret(
+    nodeId: string,
+    deploymentId: string,
+    secretId: string
+  ): Promise<void> {
+    await this.request(`/docker/nodes/${nodeId}/deployments/${deploymentId}/secrets/${secretId}`, {
       method: "DELETE",
     });
   }
@@ -2206,6 +2391,44 @@ class ApiClient extends ApiClientBase {
     return this.unwrapData(
       this.request<{ data: DockerWebhook }>(
         `/docker/nodes/${nodeId}/containers/${encodeURIComponent(containerName)}/webhook/regenerate`,
+        { method: "POST" }
+      )
+    );
+  }
+
+  async getDeploymentWebhook(nodeId: string, deploymentId: string): Promise<DockerWebhook | null> {
+    const result = await this.request<{ data: DockerWebhook | null }>(
+      `/docker/nodes/${nodeId}/deployments/${deploymentId}/webhook`
+    );
+    return result.data;
+  }
+
+  async upsertDeploymentWebhook(
+    nodeId: string,
+    deploymentId: string,
+    input: { cleanupEnabled?: boolean; retentionCount?: number }
+  ): Promise<DockerWebhook> {
+    return this.unwrapData(
+      this.request<{ data: DockerWebhook }>(
+        `/docker/nodes/${nodeId}/deployments/${deploymentId}/webhook`,
+        { method: "PUT", body: JSON.stringify(input) }
+      )
+    );
+  }
+
+  async deleteDeploymentWebhook(nodeId: string, deploymentId: string): Promise<void> {
+    await this.request<void>(`/docker/nodes/${nodeId}/deployments/${deploymentId}/webhook`, {
+      method: "DELETE",
+    });
+  }
+
+  async regenerateDeploymentWebhookToken(
+    nodeId: string,
+    deploymentId: string
+  ): Promise<DockerWebhook> {
+    return this.unwrapData(
+      this.request<{ data: DockerWebhook }>(
+        `/docker/nodes/${nodeId}/deployments/${deploymentId}/webhook/regenerate`,
         { method: "POST" }
       )
     );

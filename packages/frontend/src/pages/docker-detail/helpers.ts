@@ -9,11 +9,16 @@ export const STATUS_BADGE: Record<
   stopped: "secondary",
   paused: "warning",
   dead: "destructive",
+  starting: "warning",
   restarting: "warning",
   stopping: "warning",
   recreating: "warning",
   updating: "warning",
   killing: "warning",
+  deploying: "warning",
+  switching: "warning",
+  rolling_back: "warning",
+  removing: "warning",
   created: "secondary",
 };
 

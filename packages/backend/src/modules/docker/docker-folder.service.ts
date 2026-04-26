@@ -364,6 +364,29 @@ export class DockerFolderService {
     this.emitLayoutChanged('containers_reordered');
   }
 
+  async getPlacementsForRefs(items: Array<{ nodeId: string; containerName: string }>) {
+    const assignmentRows = await this.getAssignmentsForRefs(items);
+    if (assignmentRows.length === 0) return [];
+
+    const folderIds = assignmentRows.map((row) => row.folderId).filter((id): id is string => !!id);
+    const folders =
+      folderIds.length > 0
+        ? await this.db
+            .select({ id: dockerContainerFolders.id, isSystem: dockerContainerFolders.isSystem })
+            .from(dockerContainerFolders)
+            .where(inArray(dockerContainerFolders.id, [...new Set(folderIds)]))
+        : [];
+    const folderById = new Map(folders.map((folder) => [folder.id, folder]));
+
+    return assignmentRows.map((row) => ({
+      nodeId: row.nodeId,
+      containerName: row.containerName,
+      folderId: row.folderId,
+      folderIsSystem: row.folderId ? (folderById.get(row.folderId)?.isSystem ?? false) : false,
+      sortOrder: row.sortOrder,
+    }));
+  }
+
   async syncNodeContainers(nodeId: string, containers: DockerContainerLike[]) {
     const normalized = containers
       .map((container) => ({

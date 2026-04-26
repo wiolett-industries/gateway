@@ -1,5 +1,6 @@
 import { boolean, integer, pgTable, text, timestamp, unique, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import { nodes } from './nodes.js';
+import { dockerDeployments } from './docker-deployments.js';
 
 export const dockerWebhooks = pgTable(
   'docker_webhooks',
@@ -9,6 +10,8 @@ export const dockerWebhooks = pgTable(
       .notNull()
       .references(() => nodes.id, { onDelete: 'cascade' }),
     containerName: text('container_name').notNull(),
+    targetType: text('target_type').$type<'container' | 'deployment'>().notNull().default('container'),
+    deploymentId: uuid('deployment_id').references(() => dockerDeployments.id, { onDelete: 'cascade' }),
     token: uuid('token').notNull().defaultRandom(),
     enabled: boolean('enabled').notNull().default(true),
     cleanupEnabled: boolean('cleanup_enabled').notNull().default(false),

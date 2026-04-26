@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Code2, Minus, Plus, RotateCcw, Table2 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { Button } from "@/components/ui/button";
@@ -18,12 +18,16 @@ export function EnvironmentTab({
   containerState,
   disabled,
   onRecreating,
+  serviceEnv,
+  onSaveServiceEnv,
 }: {
   nodeId: string;
   containerId: string;
   containerState?: string;
   disabled?: boolean;
   onRecreating?: () => void | Promise<void>;
+  serviceEnv?: Record<string, string>;
+  onSaveServiceEnv?: (env: Record<string, string>) => Promise<void>;
 }) {
   const { hasScope } = useAuthStore();
   const invalidate = useDockerStore((s) => s.invalidate);
@@ -45,10 +49,37 @@ export function EnvironmentTab({
   const canManageSecrets =
     hasScope("docker:containers:secrets") || hasScope(`docker:containers:secrets:${nodeId}`);
   const recreatesRunningContainer = containerState === "running";
+  const isServiceEnv = !!onSaveServiceEnv;
+  const serviceEnvSignature = useMemo(() => JSON.stringify(serviceEnv ?? {}), [serviceEnv]);
 
   const fetchEnv = useCallback(async () => {
-    setIsLoading(true);
+    setIsLoading((current) => (isServiceEnv ? current : true));
     try {
+      if (isServiceEnv) {
+        const secretsData = canManageSecrets
+          ? await api.listDockerDeploymentSecrets(nodeId, containerId)
+          : [];
+        const serviceEnvRecord = JSON.parse(serviceEnvSignature) as Record<string, string>;
+        const entries = Object.entries(serviceEnvRecord).map(([key, value]) => `${key}=${value}`);
+        const parsed = entries.map((entry) => {
+          const idx = entry.indexOf("=");
+          return { key: entry.slice(0, idx), value: entry.slice(idx + 1) };
+        });
+        setEnvVars(parsed);
+        setOriginalEnv(entries);
+        setRawText(entries.join("\n"));
+        setSecretRows(
+          (secretsData ?? []).map((s: DockerSecret) => ({
+            id: s.id,
+            key: s.key,
+            value: s.value,
+            dirty: false,
+          }))
+        );
+        setDeletedSecretIds(new Set());
+        return;
+      }
+
       const [data, secretsData] = await Promise.all([
         canEdit ? api.getContainerEnv(nodeId, containerId) : Promise.resolve([]),
         canManageSecrets ? api.listDockerSecrets(nodeId, containerId) : Promise.resolve([]),
@@ -88,7 +119,7 @@ export function EnvironmentTab({
     } finally {
       setIsLoading(false);
     }
-  }, [canEdit, canManageSecrets, nodeId, containerId]);
+  }, [canEdit, canManageSecrets, nodeId, containerId, isServiceEnv, serviceEnvSignature]);
 
   useEffect(() => {
     fetchEnv();
@@ -172,13 +203,27 @@ export function EnvironmentTab({
       : envVars;
 
     const ok = await confirm({
-      title: canEdit ? (recreatesRunningContainer ? "Save & Recreate" : "Save") : "Save Secrets",
-      description: canEdit
-        ? recreatesRunningContainer
-          ? "Updating environment variables will recreate the container. The container will experience brief downtime. Continue?"
-          : "Updating environment variables will save the new container configuration. The container will remain stopped. Continue?"
-        : "Secret changes will be stored, but without environment permission they will only apply after the container is recreated. Continue?",
-      confirmLabel: canEdit ? (recreatesRunningContainer ? "Recreate" : "Save") : "Save",
+      title: onSaveServiceEnv
+        ? "Save Environment"
+        : canEdit
+          ? recreatesRunningContainer
+            ? "Save & Recreate"
+            : "Save"
+          : "Save Secrets",
+      description: onSaveServiceEnv
+        ? "Environment changes will be saved to the deployment and apply on the next deploy."
+        : canEdit
+          ? recreatesRunningContainer
+            ? "Updating environment variables will recreate the container. The container will experience brief downtime. Continue?"
+            : "Updating environment variables will save the new container configuration. The container will remain stopped. Continue?"
+          : "Secret changes will be stored, but without environment permission they will only apply after the container is recreated. Continue?",
+      confirmLabel: onSaveServiceEnv
+        ? "Save"
+        : canEdit
+          ? recreatesRunningContainer
+            ? "Recreate"
+            : "Save"
+          : "Save",
     });
     if (!ok) return;
 
@@ -189,19 +234,50 @@ export function EnvironmentTab({
       if (hasSecretsChanges) {
         // Delete removed secrets
         for (const id of deletedSecretIds) {
-          await api.deleteDockerSecret(nodeId, containerId, id);
+          if (onSaveServiceEnv) {
+            await api.deleteDockerDeploymentSecret(nodeId, containerId, id);
+          } else {
+            await api.deleteDockerSecret(nodeId, containerId, id);
+          }
         }
         // Create/update secrets
         for (const row of secretRows) {
           if (!row.key.trim() || !row.dirty) continue;
           if (row.id) {
             // Existing secret with new value
-            await api.updateDockerSecret(nodeId, containerId, row.id, row.value);
+            if (onSaveServiceEnv) {
+              await api.updateDockerDeploymentSecret(nodeId, containerId, row.id, row.value);
+            } else {
+              await api.updateDockerSecret(nodeId, containerId, row.id, row.value);
+            }
           } else {
             // New secret
-            await api.createDockerSecret(nodeId, containerId, row.key.trim(), row.value);
+            if (onSaveServiceEnv) {
+              await api.createDockerDeploymentSecret(
+                nodeId,
+                containerId,
+                row.key.trim(),
+                row.value
+              );
+            } else {
+              await api.createDockerSecret(nodeId, containerId, row.key.trim(), row.value);
+            }
           }
         }
+        const refreshedSecrets = onSaveServiceEnv
+          ? await api.listDockerDeploymentSecrets(nodeId, containerId)
+          : canManageSecrets
+            ? await api.listDockerSecrets(nodeId, containerId)
+            : [];
+        setSecretRows(
+          refreshedSecrets.map((s: DockerSecret) => ({
+            id: s.id,
+            key: s.key,
+            value: s.value,
+            dirty: false,
+          }))
+        );
+        setDeletedSecretIds(new Set());
       }
 
       if (canEdit) {
@@ -209,6 +285,15 @@ export function EnvironmentTab({
         const newEnv: Record<string, string> = {};
         for (const e of vars) {
           if (e.key.trim()) newEnv[e.key.trim()] = e.value;
+        }
+        if (onSaveServiceEnv) {
+          await onSaveServiceEnv(newEnv);
+          const entries = Object.entries(newEnv).map(([key, value]) => `${key}=${value}`);
+          setOriginalEnv(entries);
+          setRawText(entries.join("\n"));
+          toast.success("Environment updated");
+          setIsSaving(false);
+          return;
         }
         const newKeys = new Set(Object.keys(newEnv));
         const removeEnv = originalEnv
@@ -326,7 +411,11 @@ export function EnvironmentTab({
           >
             <div>
               <h3 className="text-sm font-semibold">Environment Variables</h3>
-              <p className="text-xs text-muted-foreground">Changes will recreate the container</p>
+              <p className="text-xs text-muted-foreground">
+                {onSaveServiceEnv
+                  ? "Saved to deployment configuration"
+                  : "Changes will recreate the container"}
+              </p>
             </div>
             <div className="flex items-center gap-2">
               {canEdit && !rawMode && (
@@ -359,7 +448,11 @@ export function EnvironmentTab({
                   disabled={isSaving || !hasChanges || hasErrors}
                 >
                   <RotateCcw className="h-3.5 w-3.5" />
-                  {recreatesRunningContainer ? "Save & Recreate" : "Save"}
+                  {onSaveServiceEnv
+                    ? "Save"
+                    : recreatesRunningContainer
+                      ? "Save & Recreate"
+                      : "Save"}
                 </Button>
               )}
             </div>

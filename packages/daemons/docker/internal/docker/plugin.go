@@ -116,6 +116,7 @@ func (p *DockerPlugin) BuildRegisterMessage(nodeID string) *pb.RegisterMessage {
 		// Store docker version in the NginxVersion field as a capability hint.
 		// The gateway uses DaemonType to interpret this field correctly.
 		NginxVersion: p.version,
+		Capabilities: []string{"docker_deployments_v1"},
 	}
 }
 
@@ -135,6 +136,9 @@ func (p *DockerPlugin) HandleCommand(cmd *pb.GatewayCommand) *pb.CommandResult {
 
 	case *pb.GatewayCommand_DockerNetwork:
 		p.handleNetworkCommand(payload.DockerNetwork, result)
+
+	case *pb.GatewayCommand_DockerDeployment:
+		p.handleDeploymentCommand(payload.DockerDeployment, result)
 
 	case *pb.GatewayCommand_DockerExec:
 		p.handleExecCommand(payload.DockerExec, result)

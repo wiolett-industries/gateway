@@ -1,3 +1,4 @@
+import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -20,11 +21,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
 import type { ContainerCreateConfig, Node } from "@/types";
 import { isNodeIncompatible } from "@/types";
+
+const tabContentTransition = { duration: 0.2, ease: [0.25, 0.1, 0.25, 1] as const };
 
 interface DockerDeployDialogProps {
   open: boolean;
@@ -54,6 +58,11 @@ export function DockerDeployDialog({
   const [deployName, setDeployName] = useState("");
   const [deployRestart, setDeployRestart] = useState("no");
   const [deploying, setDeploying] = useState(false);
+  const [deployMode, setDeployMode] = useState<"container" | "deployment">("container");
+  const [routeHostPort, setRouteHostPort] = useState("8080");
+  const [routeContainerPort, setRouteContainerPort] = useState("80");
+  const [healthPath, setHealthPath] = useState("/");
+  const [drainSeconds, setDrainSeconds] = useState("30");
 
   // Reset form state when dialog opens
   useEffect(() => {
@@ -62,6 +71,11 @@ export function DockerDeployDialog({
       setDeployImage("");
       setDeployName("");
       setDeployRestart("no");
+      setDeployMode("container");
+      setRouteHostPort("8080");
+      setRouteContainerPort("80");
+      setHealthPath("/");
+      setDrainSeconds("30");
     }
   }, [open, nodeId]);
 
@@ -129,10 +143,12 @@ export function DockerDeployDialog({
     setDeployImage("");
     setDeployName("");
     setDeployRestart("no");
+    setDeployMode("container");
   };
 
   const handleDeploy = async () => {
     if (!deployNodeId || !deployImage.trim()) return;
+    if (deployMode === "deployment" && !deployName.trim()) return;
     setDeploying(true);
     try {
       let imageRef = deployImage.trim();
@@ -143,19 +159,49 @@ export function DockerDeployDialog({
         const pullResult = await api.pullImageSync(deployNodeId, imageRef);
         imageRef = pullResult.imageRef;
       }
-      const config: ContainerCreateConfig = {
-        image: imageRef,
-        restartPolicy: deployRestart,
-      };
-      if (deployName.trim()) config.name = deployName.trim();
-      const result = await api.createContainer(deployNodeId, config);
-      toast.success("Container deployed");
-      closeDeploy();
-      const newId = (result as any)?.id ?? (result as any)?.Id;
-      onDeployed?.(newId);
-      if (newId) navigate(`/docker/containers/${deployNodeId}/${newId}`);
+      if (deployMode === "deployment") {
+        const deployment = await api.createDockerDeployment(deployNodeId, {
+          name: deployName.trim(),
+          image: imageRef,
+          restartPolicy: deployRestart === "no" ? "unless-stopped" : deployRestart,
+          routes: [
+            {
+              hostPort: Number(routeHostPort),
+              containerPort: Number(routeContainerPort),
+              isPrimary: true,
+            },
+          ],
+          health: {
+            path: healthPath || "/",
+            statusMin: 200,
+            statusMax: 399,
+            timeoutSeconds: 5,
+            intervalSeconds: 5,
+            successThreshold: 2,
+            startupGraceSeconds: 5,
+            deployTimeoutSeconds: 300,
+          },
+          drainSeconds: Number(drainSeconds) || 0,
+        });
+        toast.success("Deployment created");
+        closeDeploy();
+        onDeployed?.(deployment.id);
+        navigate(`/docker/deployments/${deployNodeId}/${deployment.id}`);
+      } else {
+        const config: ContainerCreateConfig = {
+          image: imageRef,
+          restartPolicy: deployRestart,
+        };
+        if (deployName.trim()) config.name = deployName.trim();
+        const result = await api.createContainer(deployNodeId, config);
+        toast.success("Container deployed");
+        closeDeploy();
+        const newId = (result as any)?.id ?? (result as any)?.Id;
+        onDeployed?.(newId);
+        if (newId) navigate(`/docker/containers/${deployNodeId}/${newId}`);
+      }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to deploy container");
+      toast.error(err instanceof Error ? err.message : "Failed to deploy");
     } finally {
       setDeploying(false);
     }
@@ -172,11 +218,21 @@ export function DockerDeployDialog({
     <Dialog open={open} onOpenChange={closeDeploy}>
       <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Deploy Container</DialogTitle>
-          <DialogDescription>Create and start a new container.</DialogDescription>
+          <DialogTitle>Deploy</DialogTitle>
+          <DialogDescription>Create a container or a blue/green deployment.</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
+          <Tabs
+            value={deployMode}
+            onValueChange={(value) => setDeployMode(value as "container" | "deployment")}
+          >
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="container">Container</TabsTrigger>
+              <TabsTrigger value="deployment">Blue/green</TabsTrigger>
+            </TabsList>
+          </Tabs>
+
           {/* Node */}
           <div>
             <label className="text-sm font-medium">
@@ -251,15 +307,80 @@ export function DockerDeployDialog({
           {/* Container name */}
           <div>
             <label className="text-sm font-medium">
-              Container Name <span className="text-muted-foreground font-normal">(optional)</span>
+              {deployMode === "deployment" ? "Deployment Name" : "Container Name"}{" "}
+              {deployMode === "container" && (
+                <span className="text-muted-foreground font-normal">(optional)</span>
+              )}
             </label>
             <Input
               className="mt-1"
               value={deployName}
               onChange={(e) => setDeployName(e.target.value)}
-              placeholder="my-container"
+              placeholder={deployMode === "deployment" ? "my-app" : "my-container"}
             />
           </div>
+
+          <AnimatePresence initial={false}>
+            {deployMode === "deployment" && (
+              <motion.div
+                key="blue-green-fields"
+                className="overflow-hidden"
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={tabContentTransition}
+              >
+                <motion.div
+                  className="space-y-4"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 8 }}
+                  transition={tabContentTransition}
+                >
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-sm font-medium">Host Port</label>
+                      <Input
+                        className="mt-1"
+                        inputMode="numeric"
+                        value={routeHostPort}
+                        onChange={(e) => setRouteHostPort(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium">Container Port</label>
+                      <Input
+                        className="mt-1"
+                        inputMode="numeric"
+                        value={routeContainerPort}
+                        onChange={(e) => setRouteContainerPort(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-sm font-medium">Health Path</label>
+                      <Input
+                        className="mt-1"
+                        value={healthPath}
+                        onChange={(e) => setHealthPath(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium">Drain Seconds</label>
+                      <Input
+                        className="mt-1"
+                        inputMode="numeric"
+                        value={drainSeconds}
+                        onChange={(e) => setDrainSeconds(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* Restart policy */}
           <div>
@@ -284,7 +405,13 @@ export function DockerDeployDialog({
           </Button>
           <Button
             onClick={handleDeploy}
-            disabled={deploying || !deployImage.trim() || !deployNodeId}
+            disabled={
+              deploying ||
+              !deployImage.trim() ||
+              !deployNodeId ||
+              (deployMode === "deployment" &&
+                (!deployName.trim() || !Number(routeHostPort) || !Number(routeContainerPort)))
+            }
           >
             {deploying ? "Deploying..." : "Deploy"}
           </Button>
