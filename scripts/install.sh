@@ -54,6 +54,7 @@ SETUP_WITH_DOMAIN=0
 APP_MEM_LIMIT=""
 PG_MEM_LIMIT=""
 REDIS_MEM_LIMIT=""
+CLICKHOUSE_MEM_LIMIT=""
 
 # ── Colors & Tags ─────────────────────────────────────────────────────
 BRAND_MINT='\033[38;2;140;176;132m'
@@ -546,19 +547,22 @@ apply_resource_profile() {
             APP_MEM_LIMIT="1g"
             PG_MEM_LIMIT="512m"
             REDIS_MEM_LIMIT="256m"
+            CLICKHOUSE_MEM_LIMIT="1g"
             ;;
         medium)
             APP_MEM_LIMIT="2g"
             PG_MEM_LIMIT="1g"
             REDIS_MEM_LIMIT="512m"
+            CLICKHOUSE_MEM_LIMIT="2g"
             ;;
         large)
             APP_MEM_LIMIT="4g"
             PG_MEM_LIMIT="2g"
             REDIS_MEM_LIMIT="1g"
+            CLICKHOUSE_MEM_LIMIT="4g"
             ;;
         custom)
-            # Caller must set APP_MEM_LIMIT, PG_MEM_LIMIT, REDIS_MEM_LIMIT
+            # Caller must set APP_MEM_LIMIT, PG_MEM_LIMIT, REDIS_MEM_LIMIT, CLICKHOUSE_MEM_LIMIT
             ;;
         *)
             warn "Unknown resource profile '${profile}', defaulting to medium."
@@ -656,7 +660,7 @@ gather_config() {
         info "Mode: $([ "$SETUP_WITH_DOMAIN" -eq 1 ] && echo "domain + nginx" || echo "direct access")"
         [ "$SETUP_WITH_DOMAIN" -eq 1 ] && info "Domain: ${DOMAIN}"
         [ -n "$OIDC_ISSUER" ] && info "OIDC issuer: ${OIDC_ISSUER}" || warn "OIDC not configured. Set OIDC_* variables in .env before starting."
-        info "Resource profile: ${OPT_RESOURCE_PROFILE} (app=${APP_MEM_LIMIT}, pg=${PG_MEM_LIMIT}, redis=${REDIS_MEM_LIMIT})"
+        info "Resource profile: ${OPT_RESOURCE_PROFILE} (app=${APP_MEM_LIMIT}, pg=${PG_MEM_LIMIT}, redis=${REDIS_MEM_LIMIT}, clickhouse=${CLICKHOUSE_MEM_LIMIT})"
         return
     fi
 
@@ -723,9 +727,9 @@ gather_config() {
 
     # Resource profile
     echo -e "  ${BRAND_MINT}Resource profile:${NC}"
-    echo -e "  ${GRAY}  1) Small  — App: 1GB, Postgres: 512MB, Redis: 256MB${NC}"
-    echo -e "  ${GRAY}  2) Medium — App: 2GB, Postgres: 1GB,   Redis: 512MB  [default]${NC}"
-    echo -e "  ${GRAY}  3) Large  — App: 4GB, Postgres: 2GB,   Redis: 1GB${NC}"
+    echo -e "  ${GRAY}  1) Small  — App: 1GB, Postgres: 512MB, Redis: 256MB, ClickHouse: 1GB${NC}"
+    echo -e "  ${GRAY}  2) Medium — App: 2GB, Postgres: 1GB,   Redis: 512MB, ClickHouse: 2GB  [default]${NC}"
+    echo -e "  ${GRAY}  3) Large  — App: 4GB, Postgres: 2GB,   Redis: 1GB,   ClickHouse: 4GB${NC}"
     echo -e "  ${GRAY}  4) Custom — Enter limits manually${NC}"
     echo ""
     local profile_choice
@@ -738,11 +742,12 @@ gather_config() {
             APP_MEM_LIMIT=$(prompt_input "App memory limit (e.g. 2g, 512m)" "2g")
             PG_MEM_LIMIT=$(prompt_input "Postgres memory limit" "1g")
             REDIS_MEM_LIMIT=$(prompt_input "Redis memory limit" "512m")
+            CLICKHOUSE_MEM_LIMIT=$(prompt_input "ClickHouse memory limit" "2g")
             ;;
         *) apply_resource_profile "medium" ;;
     esac
 
-    info "Resources: app=${APP_MEM_LIMIT}, postgres=${PG_MEM_LIMIT}, redis=${REDIS_MEM_LIMIT}"
+    info "Resources: app=${APP_MEM_LIMIT}, postgres=${PG_MEM_LIMIT}, redis=${REDIS_MEM_LIMIT}, clickhouse=${CLICKHOUSE_MEM_LIMIT}"
 
     echo ""
 
@@ -772,11 +777,13 @@ generate_secrets() {
     PKI_MASTER_KEY=$(openssl rand -hex 32)
     SESSION_SECRET=$(openssl rand -hex 32)
     DB_PASSWORD=$(openssl rand -hex 16)
+    CLICKHOUSE_PASSWORD=$(openssl rand -hex 16)
     SETUP_TOKEN=$(openssl rand -hex 32)
 
     info "PKI Master Key generated"
     info "Session secret generated"
     info "Database password generated"
+    info "ClickHouse password generated"
     info "Setup token generated"
 
     # Build gRPC TLS SANs (domain + public IP so external daemons can connect)
@@ -818,6 +825,29 @@ DATABASE_URL=postgres://gateway:${DB_PASSWORD}@postgres:5432/gateway
 
 # Redis
 REDIS_URL=redis://redis:6379
+
+# ClickHouse (external structured logging)
+CLICKHOUSE_URL=http://clickhouse:8123
+CLICKHOUSE_USERNAME=gateway
+CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
+CLICKHOUSE_DATABASE=gateway_logs
+CLICKHOUSE_LOGS_TABLE=logs
+CLICKHOUSE_REQUEST_TIMEOUT_MS=5000
+
+# Logging ingest guardrails
+LOGGING_INGEST_MAX_BODY_BYTES=1048576
+LOGGING_INGEST_MAX_BATCH_SIZE=500
+LOGGING_INGEST_MAX_MESSAGE_BYTES=16384
+LOGGING_INGEST_MAX_LABELS=32
+LOGGING_INGEST_MAX_FIELDS=64
+LOGGING_INGEST_MAX_KEY_LENGTH=100
+LOGGING_INGEST_MAX_VALUE_BYTES=8192
+LOGGING_INGEST_MAX_JSON_DEPTH=5
+LOGGING_RATE_LIMIT_WINDOW_SECONDS=60
+LOGGING_GLOBAL_REQUESTS_PER_WINDOW=600
+LOGGING_GLOBAL_EVENTS_PER_WINDOW=60000
+LOGGING_TOKEN_REQUESTS_PER_WINDOW=300
+LOGGING_TOKEN_EVENTS_PER_WINDOW=10000
 
 # OIDC Authentication
 OIDC_ISSUER=${OIDC_ISSUER}
@@ -886,6 +916,63 @@ ENVEOF
     fi
 }
 
+ensure_clickhouse_env() {
+    [ -f .env ] || return
+
+    local clickhouse_password
+    clickhouse_password=$(openssl rand -hex 16)
+
+    local additions=""
+    grep -q '^CLICKHOUSE_URL=' .env || additions="${additions}
+CLICKHOUSE_URL=http://clickhouse:8123"
+    grep -q '^CLICKHOUSE_USERNAME=' .env || additions="${additions}
+CLICKHOUSE_USERNAME=gateway"
+    grep -q '^CLICKHOUSE_PASSWORD=' .env || additions="${additions}
+CLICKHOUSE_PASSWORD=${clickhouse_password}"
+    grep -q '^CLICKHOUSE_DATABASE=' .env || additions="${additions}
+CLICKHOUSE_DATABASE=gateway_logs"
+    grep -q '^CLICKHOUSE_LOGS_TABLE=' .env || additions="${additions}
+CLICKHOUSE_LOGS_TABLE=logs"
+    grep -q '^CLICKHOUSE_REQUEST_TIMEOUT_MS=' .env || additions="${additions}
+CLICKHOUSE_REQUEST_TIMEOUT_MS=5000"
+    grep -q '^LOGGING_INGEST_MAX_BODY_BYTES=' .env || additions="${additions}
+LOGGING_INGEST_MAX_BODY_BYTES=1048576"
+    grep -q '^LOGGING_INGEST_MAX_BATCH_SIZE=' .env || additions="${additions}
+LOGGING_INGEST_MAX_BATCH_SIZE=500"
+    grep -q '^LOGGING_INGEST_MAX_MESSAGE_BYTES=' .env || additions="${additions}
+LOGGING_INGEST_MAX_MESSAGE_BYTES=16384"
+    grep -q '^LOGGING_INGEST_MAX_LABELS=' .env || additions="${additions}
+LOGGING_INGEST_MAX_LABELS=32"
+    grep -q '^LOGGING_INGEST_MAX_FIELDS=' .env || additions="${additions}
+LOGGING_INGEST_MAX_FIELDS=64"
+    grep -q '^LOGGING_INGEST_MAX_KEY_LENGTH=' .env || additions="${additions}
+LOGGING_INGEST_MAX_KEY_LENGTH=100"
+    grep -q '^LOGGING_INGEST_MAX_VALUE_BYTES=' .env || additions="${additions}
+LOGGING_INGEST_MAX_VALUE_BYTES=8192"
+    grep -q '^LOGGING_INGEST_MAX_JSON_DEPTH=' .env || additions="${additions}
+LOGGING_INGEST_MAX_JSON_DEPTH=5"
+    grep -q '^LOGGING_RATE_LIMIT_WINDOW_SECONDS=' .env || additions="${additions}
+LOGGING_RATE_LIMIT_WINDOW_SECONDS=60"
+    grep -q '^LOGGING_GLOBAL_REQUESTS_PER_WINDOW=' .env || additions="${additions}
+LOGGING_GLOBAL_REQUESTS_PER_WINDOW=600"
+    grep -q '^LOGGING_GLOBAL_EVENTS_PER_WINDOW=' .env || additions="${additions}
+LOGGING_GLOBAL_EVENTS_PER_WINDOW=60000"
+    grep -q '^LOGGING_TOKEN_REQUESTS_PER_WINDOW=' .env || additions="${additions}
+LOGGING_TOKEN_REQUESTS_PER_WINDOW=300"
+    grep -q '^LOGGING_TOKEN_EVENTS_PER_WINDOW=' .env || additions="${additions}
+LOGGING_TOKEN_EVENTS_PER_WINDOW=10000"
+
+    if [ -n "$additions" ]; then
+        backup_if_exists ".env"
+        {
+            echo ""
+            echo "# ClickHouse (external structured logging)"
+            printf "%s\n" "$additions" | sed '/^$/d'
+        } >> .env
+        info "Added ClickHouse logging defaults to .env"
+    fi
+}
+
 # ── Compose logging block helper ─────────────────────────────────────
 _compose_logging() {
     if [[ "$OPT_LOG_ROTATION" =~ ^[yY]$ ]]; then
@@ -932,6 +1019,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      clickhouse:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/health || exit 1"]
       interval: 10s
@@ -971,9 +1060,32 @@ ${logging_block}
       retries: 5
 ${logging_block}
 
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_DB: \${CLICKHOUSE_DATABASE:-gateway_logs}
+      CLICKHOUSE_USER: \${CLICKHOUSE_USERNAME:-gateway}
+      CLICKHOUSE_PASSWORD: \${CLICKHOUSE_PASSWORD:-gateway}
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    mem_limit: ${CLICKHOUSE_MEM_LIMIT}
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "clickhouse-client --user \"\$\${CLICKHOUSE_USER:-gateway}\" --password \"\$\${CLICKHOUSE_PASSWORD:-gateway}\" --query 'SELECT 1'",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+${logging_block}
+
 volumes:
   postgres_data:
   redis_data:
+  clickhouse_data:
 COMPOSEEOF
     else
         # Without domain: expose :3000 externally + gRPC
@@ -995,6 +1107,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      clickhouse:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/health || exit 1"]
       interval: 10s
@@ -1034,9 +1148,32 @@ ${logging_block}
       retries: 5
 ${logging_block}
 
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_DB: \${CLICKHOUSE_DATABASE:-gateway_logs}
+      CLICKHOUSE_USER: \${CLICKHOUSE_USERNAME:-gateway}
+      CLICKHOUSE_PASSWORD: \${CLICKHOUSE_PASSWORD:-gateway}
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    mem_limit: ${CLICKHOUSE_MEM_LIMIT}
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "clickhouse-client --user \"\$\${CLICKHOUSE_USER:-gateway}\" --password \"\$\${CLICKHOUSE_PASSWORD:-gateway}\" --query 'SELECT 1'",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+${logging_block}
+
 volumes:
   postgres_data:
   redis_data:
+  clickhouse_data:
 COMPOSEEOF
     fi
 
@@ -1650,6 +1787,7 @@ main() {
                 apply_resource_profile "medium"
             fi
             title "Writing Files"
+            ensure_clickhouse_env
             write_compose
             if [[ "$OPT_SKIP_START" -eq 0 ]]; then
                 start_services

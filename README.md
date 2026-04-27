@@ -95,6 +95,12 @@ Gateway combines a full PKI (Certificate Authority) infrastructure with a revers
 - Expiry alerts and notifications
 - In-app gateway self-update and per-daemon remote updates
 
+**External Logging** *(optional)*
+- ClickHouse-backed structured log ingestion for external services
+- UI-managed environments, schemas, retention, ingest tokens, and search
+- Dedicated `gwl_` write-only ingest tokens separate from normal Gateway API tokens
+- Strict severity enum, payload limits, per-token/environment/global rate limits, and partial batch acceptance
+
 ## Quick Start
 
 ### Prerequisites
@@ -142,13 +148,14 @@ curl -sSL https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/scripts/install.
 
 ## Architecture
 
-Gateway runs as three Docker containers plus Go daemons on managed hosts:
+Gateway runs as four Docker containers plus Go daemons on managed hosts:
 
 | Service | Image / Binary | Purpose |
 |---------|---------------|---------|
 | **app** | `gateway` | Node.js backend + React frontend (Hono) |
 | **postgres** | `postgres:16-alpine` | Database |
 | **redis** | `redis:7-alpine` | Session cache, rate limiting |
+| **clickhouse** | external / optional | Structured external log storage |
 | **nginx-daemon** | Go binary on host | Manages host-native nginx via gRPC |
 | **docker-daemon** | Go binary on host | Manages Docker containers via gRPC |
 | **monitoring-daemon** | Go binary on host | Reports system metrics via gRPC |
@@ -172,6 +179,54 @@ Gateway runs as three Docker containers plus Go daemons on managed hosts:
 ```
 
 All daemons connect outbound to the Gateway over gRPC with mTLS — no inbound ports needed on nodes for management. Each daemon type is independently versioned and released.
+
+## External Logging
+
+Logging is disabled unless `CLICKHOUSE_URL` is set. When disabled, `GET /api/logging/status` returns `enabled: false`, other logging actions return `LOGGING_DISABLED`, and the frontend hides the Logging section. If ClickHouse is configured but unavailable, environment metadata remains manageable while ingest and search return `LOGGING_UNAVAILABLE`.
+
+Required ClickHouse settings:
+
+```env
+CLICKHOUSE_URL=http://clickhouse:8123
+CLICKHOUSE_USERNAME=gateway
+CLICKHOUSE_PASSWORD=<strong-password>
+CLICKHOUSE_DATABASE=gateway_logs
+CLICKHOUSE_LOGS_TABLE=logs
+```
+
+Gateway creates one shared ClickHouse table for all logging environments. Schema modes are:
+
+- `reject`: reject only invalid log entries in a batch when unknown or invalid keys are present.
+- `strip`: remove unknown custom labels/fields and accept the remaining event.
+- `loose`: keep sanitized unknown custom labels/fields.
+
+Single ingest:
+
+```bash
+curl -H "Authorization: Bearer gwl_xxx" \
+  -H "Content-Type: application/json" \
+  -X POST http://localhost:3000/api/logging/ingest \
+  -d '{"severity":"info","message":"hello from curl","service":"demo"}'
+```
+
+Batch ingest:
+
+```bash
+curl -H "Authorization: Bearer gwl_xxx" \
+  -H "Content-Type: application/json" \
+  -X POST http://localhost:3000/api/logging/ingest/batch \
+  -d '{"logs":[{"severity":"info","message":"started","service":"api"},{"severity":"error","message":"failed","service":"api","fields":{"statusCode":500}}]}'
+```
+
+Search:
+
+```bash
+curl -H "Content-Type: application/json" \
+  -X POST http://localhost:3000/api/logging/environments/<environment-id>/search \
+  -d '{"from":"2026-04-27T00:00:00.000Z","to":"2026-04-27T23:59:59.999Z","severities":["error","fatal"],"message":"failed","limit":100}'
+```
+
+No SDK is included yet; the HTTP API response shapes are intended to be stable for a later SDK.
 
 ## Adding Nodes
 

@@ -78,6 +78,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   // Lazy-loaded entities
   const [nodes, setNodes] = useState<Node[]>([]);
   const [proxyHosts, setProxyHosts] = useState<ProxyHost[]>([]);
+  const [loggingEnabled, setLoggingEnabled] = useState(false);
 
   useEffect(() => {
     if (!open) {
@@ -93,6 +94,10 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       .listProxyHosts({ limit: 100 })
       .then((r) => setProxyHosts(r.data ?? []))
       .catch(() => {});
+    api
+      .getLoggingStatus()
+      .then((status) => setLoggingEnabled(status.enabled))
+      .catch(() => setLoggingEnabled(false));
     // Containers are preloaded on app startup via DashboardLayout
   }, [open]);
 
@@ -324,6 +329,12 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       scope: "databases:list",
     },
     {
+      label: "Logging",
+      icon: ScrollText,
+      action: () => navigate("/logging"),
+      scope: "logs:read",
+    },
+    {
       label: "Nodes",
       icon: Server,
       shortcut: "⌘9",
@@ -352,6 +363,12 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     if (!i.scope) return true;
     if (i.label === "Authorities") {
       return hasAnyScope("pki:ca:list:root", "pki:ca:list:intermediate");
+    }
+    if (i.label === "Logging") {
+      return (
+        loggingEnabled &&
+        hasAnyScope("logs:environments:list", "logs:environments:view", "logs:read", "logs:manage")
+      );
     }
     if (i.scope.startsWith("docker:") || i.scope.startsWith("databases:")) {
       return hasScopedAccess(i.scope);

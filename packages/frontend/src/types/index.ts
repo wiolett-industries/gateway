@@ -49,6 +49,124 @@ export interface AuthProvisioningSettings {
   availableGroups: AuthProvisioningGroupOption[];
 }
 
+export type LoggingSchemaMode = "loose" | "strip" | "reject";
+export type LoggingSeverity = "trace" | "debug" | "info" | "warn" | "error" | "fatal";
+export type LoggingFieldType = "string" | "number" | "boolean" | "datetime" | "json";
+
+export interface LoggingFieldDefinition {
+  key: string;
+  location: "label" | "field";
+  type: LoggingFieldType;
+  required: boolean;
+  description?: string;
+}
+
+export interface LoggingEnvironment {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  enabled: boolean;
+  schemaId: string | null;
+  schemaName: string | null;
+  schemaMode: LoggingSchemaMode;
+  retentionDays: number;
+  rateLimitRequestsPerWindow: number | null;
+  rateLimitEventsPerWindow: number | null;
+  fieldSchema: LoggingFieldDefinition[];
+  createdById: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LoggingSchema {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  schemaMode: LoggingSchemaMode;
+  fieldSchema: LoggingFieldDefinition[];
+  createdById: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LoggingIngestToken {
+  id: string;
+  environmentId: string;
+  name: string;
+  tokenPrefix: string;
+  enabled: boolean;
+  lastUsedAt: string | null;
+  expiresAt: string | null;
+  createdById: string | null;
+  createdAt: string;
+  token?: string;
+}
+
+export interface LoggingSearchRequest {
+  from?: string;
+  to?: string;
+  severities?: LoggingSeverity[];
+  services?: string[];
+  sources?: string[];
+  message?: string;
+  traceId?: string;
+  spanId?: string;
+  requestId?: string;
+  labels?: Record<string, string>;
+  fields?: Record<string, { op: string; value: unknown }>;
+  limit?: number;
+  cursor?: string | null;
+}
+
+export interface LoggingSearchResult {
+  eventId: string;
+  timestamp: string;
+  ingestedAt: string;
+  environmentId: string;
+  severity: LoggingSeverity;
+  message: string;
+  service: string;
+  source: string;
+  traceId: string;
+  spanId: string;
+  requestId: string;
+  labels: Record<string, string>;
+  fields: Record<string, unknown>;
+}
+
+export interface LoggingFacets {
+  services: string[];
+  sources: string[];
+  severities: Array<{ severity: LoggingSeverity; count: number }>;
+  labels: Record<string, string[]>;
+}
+
+export interface LoggingFeatureStatus {
+  enabled: boolean;
+  available: boolean;
+  reason?: string | null;
+  config?: {
+    database: string;
+    table: string;
+    requestTimeoutMs: number;
+    ingestMaxBodyBytes: number;
+    ingestMaxBatchSize: number;
+    ingestMaxMessageBytes: number;
+    ingestMaxLabels: number;
+    ingestMaxFields: number;
+    ingestMaxKeyLength: number;
+    ingestMaxValueBytes: number;
+    ingestMaxJsonDepth: number;
+    rateLimitWindowSeconds: number;
+    globalRequestsPerWindow: number;
+    globalEventsPerWindow: number;
+    tokenRequestsPerWindow: number;
+    tokenEventsPerWindow: number;
+  };
+}
+
 // Nodes
 export type NodeType = "nginx" | "bastion" | "monitoring" | "docker";
 export type NodeStatus = "pending" | "online" | "offline" | "error";
@@ -460,6 +578,13 @@ export const RESOURCE_SCOPABLE_SCOPES = [
   "databases:query:write",
   "databases:query:admin",
   "databases:credentials:reveal",
+  "logs:environments:view",
+  "logs:environments:edit",
+  "logs:environments:delete",
+  "logs:tokens:list",
+  "logs:tokens:create",
+  "logs:tokens:delete",
+  "logs:read",
 ] as const;
 
 // API Token / Group scopes
@@ -1145,6 +1270,66 @@ export const TOKEN_SCOPES = [
     label: "Reveal Database Credentials",
     desc: "Reveal saved database credentials and connection strings",
     group: "Databases",
+  },
+  {
+    value: "logs:environments:list",
+    label: "List Logging Environments",
+    desc: "List external logging environments",
+    group: "Logging",
+  },
+  {
+    value: "logs:environments:view",
+    label: "View Logging Environments",
+    desc: "View logging environment settings",
+    group: "Logging",
+  },
+  {
+    value: "logs:environments:create",
+    label: "Create Logging Environments",
+    desc: "Create logging environments",
+    group: "Logging",
+  },
+  {
+    value: "logs:environments:edit",
+    label: "Edit Logging Environments",
+    desc: "Edit logging environments and schemas",
+    group: "Logging",
+  },
+  {
+    value: "logs:environments:delete",
+    label: "Delete Logging Environments",
+    desc: "Delete logging environments",
+    group: "Logging",
+  },
+  {
+    value: "logs:tokens:list",
+    label: "List Logging Tokens",
+    desc: "List logging ingest tokens",
+    group: "Logging",
+  },
+  {
+    value: "logs:tokens:create",
+    label: "Create Logging Tokens",
+    desc: "Create logging ingest tokens",
+    group: "Logging",
+  },
+  {
+    value: "logs:tokens:delete",
+    label: "Delete Logging Tokens",
+    desc: "Revoke logging ingest tokens",
+    group: "Logging",
+  },
+  {
+    value: "logs:read",
+    label: "Read Logs",
+    desc: "Search and inspect external logs",
+    group: "Logging",
+  },
+  {
+    value: "logs:manage",
+    label: "Manage Logging",
+    desc: "Full access to external logging",
+    group: "Logging",
   },
 ] as const;
 

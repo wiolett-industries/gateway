@@ -2,6 +2,13 @@ import { z } from 'zod';
 
 const rateLimitWindowSchema = z.coerce.number().int().positive();
 const rateLimitMaxSchema = z.coerce.number().int().positive();
+const optionalClickHouseUrlSchema = z
+  .string()
+  .optional()
+  .default('')
+  .refine((value) => value === '' || z.string().url().safeParse(value).success, {
+    message: 'CLICKHOUSE_URL must be a URL when provided',
+  });
 
 const envSchema = z.object({
   // Server
@@ -13,6 +20,29 @@ const envSchema = z.object({
 
   // Redis
   REDIS_URL: z.string().url(),
+
+  // Optional external logging storage
+  CLICKHOUSE_URL: optionalClickHouseUrlSchema,
+  CLICKHOUSE_USERNAME: z.string().default('default'),
+  CLICKHOUSE_PASSWORD: z.string().default(''),
+  CLICKHOUSE_DATABASE: z.string().default('gateway_logs'),
+  CLICKHOUSE_LOGS_TABLE: z.string().default('logs'),
+  CLICKHOUSE_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
+
+  // External logging ingest guardrails
+  LOGGING_INGEST_MAX_BODY_BYTES: z.coerce.number().int().positive().default(1_048_576),
+  LOGGING_INGEST_MAX_BATCH_SIZE: z.coerce.number().int().positive().default(500),
+  LOGGING_INGEST_MAX_MESSAGE_BYTES: z.coerce.number().int().positive().default(16_384),
+  LOGGING_INGEST_MAX_LABELS: z.coerce.number().int().positive().default(32),
+  LOGGING_INGEST_MAX_FIELDS: z.coerce.number().int().positive().default(64),
+  LOGGING_INGEST_MAX_KEY_LENGTH: z.coerce.number().int().positive().default(100),
+  LOGGING_INGEST_MAX_VALUE_BYTES: z.coerce.number().int().positive().default(8192),
+  LOGGING_INGEST_MAX_JSON_DEPTH: z.coerce.number().int().positive().default(5),
+  LOGGING_RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().positive().default(60),
+  LOGGING_GLOBAL_REQUESTS_PER_WINDOW: z.coerce.number().int().positive().default(600),
+  LOGGING_GLOBAL_EVENTS_PER_WINDOW: z.coerce.number().int().positive().default(60_000),
+  LOGGING_TOKEN_REQUESTS_PER_WINDOW: z.coerce.number().int().positive().default(300),
+  LOGGING_TOKEN_EVENTS_PER_WINDOW: z.coerce.number().int().positive().default(10_000),
 
   // OIDC
   OIDC_ISSUER: z.string().url(),

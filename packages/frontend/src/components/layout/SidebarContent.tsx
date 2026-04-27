@@ -15,6 +15,7 @@ import {
   LogOut,
   PanelLeft,
   PanelLeftClose,
+  ScrollText,
   Search,
   Server,
   Settings,
@@ -72,6 +73,7 @@ interface NavItem {
   scope?: string;
   matchTabs?: boolean;
   requiresStatusPageEnabled?: boolean;
+  requiresLoggingEnabled?: boolean;
 }
 
 interface NavGroup {
@@ -114,6 +116,14 @@ const navigationGroups: NavGroup[] = [
         href: "/databases",
         icon: Database,
         scope: "databases:list",
+      },
+      {
+        name: "Logging",
+        href: "/logging",
+        icon: ScrollText,
+        scope: "logs:read",
+        matchTabs: true,
+        requiresLoggingEnabled: true,
       },
       { name: "Nodes", href: "/nodes", icon: Server, scope: "nodes:list" },
     ],
@@ -176,6 +186,7 @@ export function SidebarContent({
   const pinnedRefreshTick = usePinnedNodesStore((s) => s.refreshTick);
   const [pinnedNodes, setPinnedNodes] = useState<Node[]>([]);
   const [statusPageEnabled, setStatusPageEnabled] = useState(false);
+  const [loggingEnabled, setLoggingEnabled] = useState(false);
 
   const sidebarPinnedProxyIds = usePinnedProxiesStore((s) => s.sidebarProxyIds);
   const pinnedProxyRefreshTick = usePinnedProxiesStore((s) => s.refreshTick);
@@ -354,7 +365,17 @@ export function SidebarContent({
     "notifications:manage"
   );
   const canAccessDatabases = hasScopedAccess("databases:list");
+  const canAccessLogging =
+    loggingEnabled &&
+    hasAnyScope("logs:environments:list", "logs:environments:view", "logs:read", "logs:manage");
   const canAccessAuthorities = hasAnyScope("pki:ca:list:root", "pki:ca:list:intermediate");
+
+  useEffect(() => {
+    api
+      .getLoggingStatus()
+      .then((status) => setLoggingEnabled(status.enabled))
+      .catch(() => setLoggingEnabled(false));
+  }, []);
   // Build nav groups with scope + context filtering
   const effectiveGroups = navigationGroups
     .map((group) => {
@@ -367,6 +388,8 @@ export function SidebarContent({
             if (!canAccessDocker) return false;
           } else if (item.href === "/databases") {
             if (!canAccessDatabases) return false;
+          } else if (item.href === "/logging") {
+            if (!canAccessLogging) return false;
           } else if (item.href === "/cas") {
             if (!canAccessAuthorities) return false;
           } else if (item.href === "/notifications") {
@@ -377,7 +400,9 @@ export function SidebarContent({
             if (!hasAnyScope("admin:audit", "admin:users", "admin:groups")) return false;
           } else if (item.scope) {
             const isResourceScoped =
-              item.scope.startsWith("docker:") || item.scope.startsWith("databases:");
+              item.scope.startsWith("docker:") ||
+              item.scope.startsWith("databases:") ||
+              item.scope.startsWith("logs:");
             if (isResourceScoped ? !hasScopedAccess(item.scope) : !hasScope(item.scope)) {
               return false;
             }

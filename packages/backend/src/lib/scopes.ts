@@ -135,6 +135,17 @@ export const ALL_SCOPES = [
   'notifications:deliveries:view',
   'notifications:view',
   'notifications:manage',
+  // ── External Logging ─────────────────────────────────────────────
+  'logs:environments:list',
+  'logs:environments:view',
+  'logs:environments:create',
+  'logs:environments:edit',
+  'logs:environments:delete',
+  'logs:tokens:list',
+  'logs:tokens:create',
+  'logs:tokens:delete',
+  'logs:read',
+  'logs:manage',
   // ── Status Page ──────────────────────────────────────────────────
   'status-page:view',
   'status-page:manage',
@@ -233,6 +244,13 @@ export const OPERATOR_SCOPES: readonly string[] = [
   'notifications:deliveries:view',
   'notifications:view',
   'notifications:manage',
+  // Logging
+  'logs:environments:list',
+  'logs:environments:view',
+  'logs:tokens:list',
+  'logs:tokens:create',
+  'logs:tokens:delete',
+  'logs:read',
 ];
 
 /** Viewer group: read-only scopes */
@@ -263,6 +281,10 @@ export const VIEWER_SCOPES: readonly string[] = [
   'notifications:deliveries:list',
   'notifications:deliveries:view',
   'notifications:view',
+  // Logging
+  'logs:environments:list',
+  'logs:environments:view',
+  'logs:read',
 ];
 
 /** Built-in group definitions (order matters for display — most privileged first) */
@@ -335,6 +357,14 @@ export const RESOURCE_SCOPABLE: readonly string[] = [
   'databases:query:write',
   'databases:query:admin',
   'databases:credentials:reveal',
+  // Logging
+  'logs:environments:view',
+  'logs:environments:edit',
+  'logs:environments:delete',
+  'logs:tokens:list',
+  'logs:tokens:create',
+  'logs:tokens:delete',
+  'logs:read',
 ];
 
 const ALL_SCOPES_SET = new Set<string>(ALL_SCOPES);

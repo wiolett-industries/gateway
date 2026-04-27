@@ -27,6 +27,7 @@ import { DockerDeploymentDetail } from "@/pages/DockerDeploymentDetail";
 import { DockerFilePopout } from "@/pages/DockerFilePopout";
 import { DockerLogsPopout } from "@/pages/DockerLogsPopout";
 import { Domains } from "@/pages/Domains";
+import { Logging } from "@/pages/Logging";
 import { LoginPage } from "@/pages/Login";
 import { NginxTemplateEdit } from "@/pages/NginxTemplateEdit";
 import { NodeConsolePopout } from "@/pages/NodeConsolePopout";
@@ -254,6 +255,43 @@ function NotificationsPageGuard() {
   }
 
   return <Notifications />;
+}
+
+function LoggingPageGuard() {
+  const [enabled, setEnabled] = useState<boolean | null>(null);
+  const hasAnyScope = useAuthStore((s) => s.hasAnyScope);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .getLoggingStatus()
+      .then((status) => {
+        if (!cancelled) setEnabled(status.enabled);
+      })
+      .catch(() => {
+        if (!cancelled) setEnabled(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (enabled === null) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (
+    !enabled ||
+    !hasAnyScope("logs:environments:list", "logs:environments:view", "logs:read", "logs:manage")
+  ) {
+    return <Navigate to="/" replace />;
+  }
+
+  return <Logging />;
 }
 
 function AdministrationPageGuard() {
@@ -487,6 +525,7 @@ export default function App() {
               />
               <Route path="/databases" element={<DatabasesPageGuard />} />
               <Route path="/databases/:id/:tab?" element={<DatabaseDetailGuard />} />
+              <Route path="/logging/:section?/:id?/:tab?" element={<LoggingPageGuard />} />
               <Route path="/settings" element={<Settings />} />
               <Route
                 path="/admin/users"

@@ -17,6 +17,7 @@ export * from './docker-secrets.js';
 export * from './docker-tasks.js';
 export * from './docker-webhooks.js';
 export * from './domains.js';
+export * from './logging.js';
 export * from './nginx-templates.js';
 export * from './nodes.js';
 export * from './notification-alert-rules.js';

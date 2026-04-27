@@ -29,6 +29,20 @@ export interface AppEnv {
     effectiveScopes?: string[];
     isTokenAuth?: boolean;
     requestId: string;
+    loggingIngest?: {
+      tokenId: string;
+      environmentId: string;
+      tokenPrefix: string;
+      environment: {
+        id: string;
+        enabled: boolean;
+        schemaMode: 'loose' | 'strip' | 'reject';
+        retentionDays: number;
+        fieldSchema: import('@/db/schema/index.js').LoggingFieldDefinition[];
+        rateLimitRequestsPerWindow: number | null;
+        rateLimitEventsPerWindow: number | null;
+      };
+    };
   };
 }
 

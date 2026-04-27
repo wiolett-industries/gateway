@@ -21,6 +21,7 @@ import { TOKENS } from '@/container.js';
 import { startGrpcServer, stopGrpcServer } from '@/grpc/server.js';
 import { logger } from '@/lib/logger.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
+import { LoggingClickHouseService } from '@/modules/logging/logging-clickhouse.service.js';
 import { CAService } from '@/modules/pki/ca.service.js';
 import type { RedisClient } from '@/services/cache.service.js';
 import { CryptoService } from '@/services/crypto.service.js';
@@ -112,6 +113,14 @@ async function main() {
         await stopGrpcServer();
       } catch (err) {
         logger.error('Failed to stop gRPC server', { err });
+      }
+
+      try {
+        const clickHouse = container.resolve(LoggingClickHouseService);
+        await clickHouse.close();
+        logger.info('ClickHouse connection closed');
+      } catch (err) {
+        logger.error('Failed to close ClickHouse', { err });
       }
 
       try {

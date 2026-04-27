@@ -35,6 +35,15 @@ import { DomainsService } from '@/modules/domains/domain.service.js';
 import { GroupService } from '@/modules/groups/group.service.js';
 import { LicenseService } from '@/modules/license/license.service.js';
 import { LICENSE_HEARTBEAT_INTERVAL_MS } from '@/modules/license/license.types.js';
+import { LoggingClickHouseService } from '@/modules/logging/logging-clickhouse.service.js';
+import { LoggingEnvironmentService } from '@/modules/logging/logging-environment.service.js';
+import { LoggingFeatureService } from '@/modules/logging/logging-feature.service.js';
+import { LoggingIngestService } from '@/modules/logging/logging-ingest.service.js';
+import { LoggingRateLimitService } from '@/modules/logging/logging-rate-limit.service.js';
+import { LoggingSchemaService } from '@/modules/logging/logging-schema.service.js';
+import { LoggingSearchService } from '@/modules/logging/logging-search.service.js';
+import { LoggingTokenService } from '@/modules/logging/logging-token.service.js';
+import { LoggingValidationService } from '@/modules/logging/logging-validation.service.js';
 import { MonitoringService } from '@/modules/monitoring/monitoring.service.js';
 import { NginxConfigService } from '@/modules/monitoring/nginx-config.service.js';
 import { NginxStatsService } from '@/modules/monitoring/nginx-stats.service.js';
@@ -391,6 +400,46 @@ export async function initializeContainer(): Promise<void> {
 
   const licenseService = new LicenseService(db, cryptoService, env);
   container.registerInstance(LicenseService, licenseService);
+
+  const loggingFeatureService = new LoggingFeatureService(env);
+  container.registerInstance(LoggingFeatureService, loggingFeatureService);
+  const loggingClickHouseService = new LoggingClickHouseService(env);
+  container.registerInstance(LoggingClickHouseService, loggingClickHouseService);
+  if (loggingClickHouseService.isConfigured()) {
+    try {
+      await loggingClickHouseService.ensureSchema();
+      const available = await loggingClickHouseService.ping();
+      if (available) {
+        loggingFeatureService.markAvailable();
+      } else {
+        loggingFeatureService.markUnavailable('ClickHouse ping failed');
+      }
+    } catch (error) {
+      loggingFeatureService.markUnavailable(
+        error instanceof Error ? error.message : 'ClickHouse initialization failed'
+      );
+      logger.warn('External logging ClickHouse initialization failed', { error });
+    }
+  }
+  const loggingEnvironmentService = new LoggingEnvironmentService(db, auditService, {
+    requests: env.LOGGING_GLOBAL_REQUESTS_PER_WINDOW,
+    events: env.LOGGING_GLOBAL_EVENTS_PER_WINDOW,
+  });
+  loggingEnvironmentService.setEventBus(eventBus);
+  container.registerInstance(LoggingEnvironmentService, loggingEnvironmentService);
+  const loggingTokenService = new LoggingTokenService(db, auditService);
+  container.registerInstance(LoggingTokenService, loggingTokenService);
+  const loggingSchemaService = new LoggingSchemaService(db, auditService);
+  container.registerInstance(LoggingSchemaService, loggingSchemaService);
+  const loggingValidationService = new LoggingValidationService(env);
+  container.registerInstance(LoggingValidationService, loggingValidationService);
+  const loggingRateLimitService = new LoggingRateLimitService(redis, env);
+  container.registerInstance(LoggingRateLimitService, loggingRateLimitService);
+  const loggingIngestService = new LoggingIngestService(loggingValidationService, loggingClickHouseService);
+  loggingIngestService.setEventBus(eventBus);
+  container.registerInstance(LoggingIngestService, loggingIngestService);
+  const loggingSearchService = new LoggingSearchService(loggingEnvironmentService, loggingClickHouseService);
+  container.registerInstance(LoggingSearchService, loggingSearchService);
 
   const daemonUpdateService = new DaemonUpdateService(db, env);
   daemonUpdateService.setEventBus(eventBus);

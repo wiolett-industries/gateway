@@ -1,4 +1,4 @@
-# Development infrastructure — postgres, redis
+# Development infrastructure — postgres, redis, clickhouse
 # Backend and frontend run locally via pnpm dev:all
 # Nginx is managed by the daemon on the host (or skipped in dev)
 #
@@ -39,6 +39,30 @@ services:
       timeout: 5s
       retries: 5
 
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: gateway-clickhouse-dev
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    environment:
+      CLICKHOUSE_DB: gateway_logs
+      CLICKHOUSE_USER: gateway
+      CLICKHOUSE_PASSWORD: dev
+    volumes:
+      - clickhouse_dev_data:/var/lib/clickhouse
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "clickhouse-client --user gateway --password dev --query 'SELECT 1'",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
 volumes:
   postgres_dev_data:
   redis_dev_data:
+  clickhouse_dev_data:

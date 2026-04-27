@@ -12,6 +12,25 @@ services:
       - PORT=3000
       - DATABASE_URL=postgres://gateway:${DB_PASSWORD}@postgres:5432/gateway
       - REDIS_URL=redis://redis:6379
+      - CLICKHOUSE_URL=${CLICKHOUSE_URL-http://clickhouse:8123}
+      - CLICKHOUSE_USERNAME=${CLICKHOUSE_USERNAME:-gateway}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-gateway}
+      - CLICKHOUSE_DATABASE=${CLICKHOUSE_DATABASE:-gateway_logs}
+      - CLICKHOUSE_LOGS_TABLE=${CLICKHOUSE_LOGS_TABLE:-logs}
+      - CLICKHOUSE_REQUEST_TIMEOUT_MS=${CLICKHOUSE_REQUEST_TIMEOUT_MS:-5000}
+      - LOGGING_INGEST_MAX_BODY_BYTES=${LOGGING_INGEST_MAX_BODY_BYTES:-1048576}
+      - LOGGING_INGEST_MAX_BATCH_SIZE=${LOGGING_INGEST_MAX_BATCH_SIZE:-500}
+      - LOGGING_INGEST_MAX_MESSAGE_BYTES=${LOGGING_INGEST_MAX_MESSAGE_BYTES:-16384}
+      - LOGGING_INGEST_MAX_LABELS=${LOGGING_INGEST_MAX_LABELS:-32}
+      - LOGGING_INGEST_MAX_FIELDS=${LOGGING_INGEST_MAX_FIELDS:-64}
+      - LOGGING_INGEST_MAX_KEY_LENGTH=${LOGGING_INGEST_MAX_KEY_LENGTH:-100}
+      - LOGGING_INGEST_MAX_VALUE_BYTES=${LOGGING_INGEST_MAX_VALUE_BYTES:-8192}
+      - LOGGING_INGEST_MAX_JSON_DEPTH=${LOGGING_INGEST_MAX_JSON_DEPTH:-5}
+      - LOGGING_RATE_LIMIT_WINDOW_SECONDS=${LOGGING_RATE_LIMIT_WINDOW_SECONDS:-60}
+      - LOGGING_GLOBAL_REQUESTS_PER_WINDOW=${LOGGING_GLOBAL_REQUESTS_PER_WINDOW:-600}
+      - LOGGING_GLOBAL_EVENTS_PER_WINDOW=${LOGGING_GLOBAL_EVENTS_PER_WINDOW:-60000}
+      - LOGGING_TOKEN_REQUESTS_PER_WINDOW=${LOGGING_TOKEN_REQUESTS_PER_WINDOW:-300}
+      - LOGGING_TOKEN_EVENTS_PER_WINDOW=${LOGGING_TOKEN_EVENTS_PER_WINDOW:-10000}
       - OIDC_ISSUER=${OIDC_ISSUER}
       - OIDC_CLIENT_ID=${OIDC_CLIENT_ID}
       - OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET}
@@ -52,6 +71,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      clickhouse:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health || exit 1"]
       interval: 10s
@@ -86,6 +107,27 @@ services:
       timeout: 5s
       retries: 5
 
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_DB: ${CLICKHOUSE_DATABASE:-gateway_logs}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USERNAME:-gateway}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-gateway}
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "clickhouse-client --user \"$${CLICKHOUSE_USER:-gateway}\" --password \"$${CLICKHOUSE_PASSWORD:-gateway}\" --query 'SELECT 1'",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
 volumes:
   postgres_data:
   redis_data:
+  clickhouse_data:

@@ -5,16 +5,18 @@ import { Button } from "./button";
 export function RefreshButton({
   onClick,
   disabled,
+  minDurationMs = 3000,
 }: {
   onClick: () => void | Promise<void>;
   disabled?: boolean;
+  minDurationMs?: number;
 }) {
   const [spinning, setSpinning] = useState(false);
 
   const handleClick = async () => {
     if (spinning || disabled) return;
     setSpinning(true);
-    const minDelay = new Promise((r) => setTimeout(r, 3000));
+    const minDelay = new Promise((r) => setTimeout(r, minDurationMs));
     try {
       await Promise.all([onClick(), minDelay]);
     } finally {
@@ -29,7 +31,7 @@ export function RefreshButton({
         style={
           spinning
             ? {
-                animation: "refresh-spin 3s linear infinite",
+                animation: `refresh-spin ${minDurationMs}ms linear infinite`,
               }
             : undefined
         }
