@@ -58,6 +58,8 @@ const DEFAULT_CONFIG: StatusPageConfig = {
   autoOutageEnabled: true,
   autoDegradedSeverity: "warning",
   autoOutageSeverity: "critical",
+  autoCreateThresholdSeconds: 600,
+  autoResolveThresholdSeconds: 60,
 };
 
 export function statusBadge(status: string) {
@@ -288,6 +290,7 @@ export function ServiceDialog({
   proxies,
   databases,
   dockerTargets = [],
+  sourceOptionsLoading = false,
   onSaved,
 }: {
   open: boolean;
@@ -298,6 +301,7 @@ export function ServiceDialog({
   proxies: ProxyHost[];
   databases: DatabaseConnection[];
   dockerTargets?: DockerContainer[];
+  sourceOptionsLoading?: boolean;
   onSaved: () => void;
 }) {
   const [sourceType, setSourceType] = useState<ServiceSourceType>("proxy_host");
@@ -305,8 +309,6 @@ export function ServiceDialog({
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [group, setGroup] = useState("");
-  const [createThreshold, setCreateThreshold] = useState(600);
-  const [resolveThreshold, setResolveThreshold] = useState(60);
   const [enabled, setEnabled] = useState(true);
 
   useEffect(() => {
@@ -318,8 +320,6 @@ export function ServiceDialog({
     setName(service?.publicName ?? "");
     setDescription(service?.publicDescription ?? "");
     setGroup(service?.publicGroup ?? "");
-    setCreateThreshold(service?.createThresholdSeconds ?? 600);
-    setResolveThreshold(service?.resolveThresholdSeconds ?? 60);
     setEnabled(service?.enabled ?? true);
   }, [open, service]);
 
@@ -360,8 +360,6 @@ export function ServiceDialog({
         publicName: name.trim(),
         publicDescription: description.trim() || null,
         publicGroup: group.trim() || null,
-        createThresholdSeconds: createThreshold,
-        resolveThresholdSeconds: resolveThreshold,
         enabled,
       };
       if (service) {
@@ -413,9 +411,15 @@ export function ServiceDialog({
                 </Select>
               </Field>
               <Field label="Source">
-                <Select value={sourceId} onValueChange={setSourceId}>
+                <Select
+                  value={sourceId}
+                  onValueChange={setSourceId}
+                  disabled={sourceOptionsLoading}
+                >
                   <SelectTrigger>
-                    <SelectValue placeholder="Select source" />
+                    <SelectValue
+                      placeholder={sourceOptionsLoading ? "Loading sources..." : "Select source"}
+                    />
                   </SelectTrigger>
                   <SelectContent>
                     {sourceOptions.map((option) => (
@@ -437,22 +441,6 @@ export function ServiceDialog({
           <Field label="Group">
             <Input value={group} onChange={(event) => setGroup(event.target.value)} />
           </Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Create threshold seconds">
-              <Input
-                type="number"
-                value={createThreshold}
-                onChange={(event) => setCreateThreshold(Number(event.target.value))}
-              />
-            </Field>
-            <Field label="Resolve threshold seconds">
-              <Input
-                type="number"
-                value={resolveThreshold}
-                onChange={(event) => setResolveThreshold(Number(event.target.value))}
-              />
-            </Field>
-          </div>
           <div className="flex items-center justify-between border border-border p-3">
             <span className="text-sm font-medium">Visible on public page</span>
             <Switch checked={enabled} onChange={setEnabled} />

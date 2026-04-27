@@ -29,6 +29,8 @@ export const StatusPageSettingsSchema = z.object({
   autoOutageEnabled: z.boolean().optional(),
   autoDegradedSeverity: z.enum(['info', 'warning', 'critical']).optional(),
   autoOutageSeverity: z.enum(['info', 'warning', 'critical']).optional(),
+  autoCreateThresholdSeconds: z.number().int().min(30).max(86400).optional(),
+  autoResolveThresholdSeconds: z.number().int().min(30).max(86400).optional(),
 });
 
 export const CreateStatusPageServiceSchema = z.object({

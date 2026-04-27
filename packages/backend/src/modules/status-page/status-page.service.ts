@@ -50,6 +50,8 @@ export interface StatusPageConfig {
   autoOutageEnabled: boolean;
   autoDegradedSeverity: 'info' | 'warning' | 'critical';
   autoOutageSeverity: 'info' | 'warning' | 'critical';
+  autoCreateThresholdSeconds: number;
+  autoResolveThresholdSeconds: number;
 }
 
 export interface PublicStatusPageDto {
@@ -102,6 +104,8 @@ const DEFAULT_CONFIG: StatusPageConfig = {
   autoOutageEnabled: true,
   autoDegradedSeverity: 'warning',
   autoOutageSeverity: 'critical',
+  autoCreateThresholdSeconds: 600,
+  autoResolveThresholdSeconds: 60,
 };
 
 function normalizeHost(host: string | undefined): string {
@@ -239,6 +243,17 @@ export class StatusPageService {
       .values({ key: CONFIG_KEY, value: next, updatedAt: new Date() })
       .onConflictDoUpdate({ target: settings.key, set: { value: next, updatedAt: new Date() } });
 
+    if (input.autoCreateThresholdSeconds !== undefined || input.autoResolveThresholdSeconds !== undefined) {
+      const thresholdUpdate: Partial<typeof statusPageServices.$inferInsert> = { updatedAt: new Date() };
+      if (input.autoCreateThresholdSeconds !== undefined) {
+        thresholdUpdate.createThresholdSeconds = input.autoCreateThresholdSeconds;
+      }
+      if (input.autoResolveThresholdSeconds !== undefined) {
+        thresholdUpdate.resolveThresholdSeconds = input.autoResolveThresholdSeconds;
+      }
+      await this.db.update(statusPageServices).set(thresholdUpdate).where(sql`true`);
+    }
+
     await this.auditService.log({
       userId,
       action: 'status_page.settings_update',
@@ -249,6 +264,8 @@ export class StatusPageService {
         nodeId: next.nodeId,
         proxyTemplateId: next.proxyTemplateId,
         upstreamUrl: next.upstreamUrl,
+        autoCreateThresholdSeconds: next.autoCreateThresholdSeconds,
+        autoResolveThresholdSeconds: next.autoResolveThresholdSeconds,
       },
     });
     this.emit('settings_updated');
@@ -325,6 +342,7 @@ export class StatusPageService {
 
   async createService(input: CreateStatusPageServiceInput, userId: string) {
     await this.validateServiceSource(input.sourceType, input.sourceId);
+    const config = await this.getConfig();
     const [row] = await this.db
       .insert(statusPageServices)
       .values({
@@ -335,8 +353,8 @@ export class StatusPageService {
         publicGroup: input.publicGroup ?? null,
         sortOrder: input.sortOrder ?? 0,
         enabled: input.enabled ?? true,
-        createThresholdSeconds: input.createThresholdSeconds ?? 600,
-        resolveThresholdSeconds: input.resolveThresholdSeconds ?? 60,
+        createThresholdSeconds: input.createThresholdSeconds ?? config.autoCreateThresholdSeconds,
+        resolveThresholdSeconds: input.resolveThresholdSeconds ?? config.autoResolveThresholdSeconds,
         createdById: userId,
         updatedById: userId,
       })

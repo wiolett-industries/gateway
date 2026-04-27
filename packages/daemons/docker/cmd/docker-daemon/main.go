@@ -189,20 +189,20 @@ func detectDockerSocket() string {
 }
 
 func dockerDaemonSystemdUnit() string {
-	unit := detectDockerSystemdUnit()
+	return dockerDaemonSystemdUnitForDockerUnit(detectDockerSystemdUnit())
+}
+
+func dockerDaemonSystemdUnitForDockerUnit(unit string) string {
 	after := "network-online.target"
 	wants := "network-online.target"
-	requires := ""
 	if unit != "" {
 		after += " " + unit
 		wants += " " + unit
-		requires = fmt.Sprintf("Requires=%s\n", unit)
 	}
 	return fmt.Sprintf(`[Unit]
 Description=Gateway Docker Daemon
 After=%s
 Wants=%s
-%s
 
 [Service]
 Type=simple
@@ -213,7 +213,7 @@ Environment=DOCKER_DAEMON_CONFIG=/etc/docker-daemon/config.yaml
 
 [Install]
 WantedBy=multi-user.target
-`, after, wants, requires)
+`, after, wants)
 }
 
 func detectDockerSystemdUnit() string {

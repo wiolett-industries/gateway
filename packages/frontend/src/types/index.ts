@@ -1547,6 +1547,8 @@ export interface StatusPageConfig {
   autoOutageEnabled: boolean;
   autoDegradedSeverity: StatusPageIncidentSeverity;
   autoOutageSeverity: StatusPageIncidentSeverity;
+  autoCreateThresholdSeconds: number;
+  autoResolveThresholdSeconds: number;
 }
 
 export interface StatusPageProxyTemplateOption {
