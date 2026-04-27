@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,7 @@ import type { ContainerCreateConfig, Node } from "@/types";
 import { isNodeIncompatible } from "@/types";
 
 const tabContentTransition = { duration: 0.2, ease: [0.25, 0.1, 0.25, 1] as const };
+const EMPTY_DOCKER_NODES: Node[] = [];
 
 interface DockerDeployDialogProps {
   open: boolean;
@@ -45,7 +46,7 @@ export function DockerDeployDialog({
   open,
   onOpenChange,
   nodeId,
-  dockerNodes = [],
+  dockerNodes = EMPTY_DOCKER_NODES,
   onDeployed,
 }: DockerDeployDialogProps) {
   const navigate = useNavigate();
@@ -63,11 +64,17 @@ export function DockerDeployDialog({
   const [routeContainerPort, setRouteContainerPort] = useState("80");
   const [healthPath, setHealthPath] = useState("/");
   const [drainSeconds, setDrainSeconds] = useState("30");
+  const allNodes = useMemo(() => {
+    const storeNodes = useDockerStore.getState().dockerNodes;
+    return storeNodes.length > 0 ? storeNodes : dockerNodes;
+  }, [dockerNodes]);
+  const availableNodes = useMemo(() => allNodes.filter((n) => !isNodeIncompatible(n)), [allNodes]);
 
   // Reset form state when dialog opens
   useEffect(() => {
     if (open) {
-      setDeployNodeId(nodeId || "");
+      const initialNode = nodeId ? allNodes.find((n) => n.id === nodeId) : null;
+      setDeployNodeId(initialNode?.serviceCreationLocked ? "" : nodeId || "");
       setDeployImage("");
       setDeployName("");
       setDeployRestart("no");
@@ -77,7 +84,13 @@ export function DockerDeployDialog({
       setHealthPath("/");
       setDrainSeconds("30");
     }
-  }, [open, nodeId]);
+  }, [allNodes, open, nodeId]);
+
+  useEffect(() => {
+    if (!open || !deployNodeId) return;
+    const selectedNode = allNodes.find((n) => n.id === deployNodeId);
+    if (selectedNode?.serviceCreationLocked) setDeployNodeId("");
+  }, [allNodes, deployNodeId, open]);
 
   // Fetch local images + pullable images from other nodes when deploy node changes
   useEffect(() => {
@@ -148,6 +161,10 @@ export function DockerDeployDialog({
 
   const handleDeploy = async () => {
     if (!deployNodeId || !deployImage.trim()) return;
+    if (allNodes.find((n) => n.id === deployNodeId)?.serviceCreationLocked) {
+      toast.error("Node is locked for new service creation");
+      return;
+    }
     if (deployMode === "deployment" && !deployName.trim()) return;
     setDeploying(true);
     try {
@@ -207,13 +224,6 @@ export function DockerDeployDialog({
     }
   };
 
-  // Resolve available nodes: prefer store nodes, fall back to prop; filter incompatible
-  const allNodes =
-    useDockerStore.getState().dockerNodes.length > 0
-      ? useDockerStore.getState().dockerNodes
-      : dockerNodes;
-  const availableNodes = allNodes.filter((n) => !isNodeIncompatible(n));
-
   return (
     <Dialog open={open} onOpenChange={closeDeploy}>
       <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
@@ -250,7 +260,7 @@ export function DockerDeployDialog({
               </SelectTrigger>
               <SelectContent>
                 {availableNodes.map((n) => (
-                  <SelectItem key={n.id} value={n.id}>
+                  <SelectItem key={n.id} value={n.id} disabled={n.serviceCreationLocked}>
                     {n.displayName || n.hostname}
                   </SelectItem>
                 ))}

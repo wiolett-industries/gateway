@@ -12,7 +12,12 @@ import {
 } from '@/modules/monitoring/log-relay.service.js';
 import type { AppEnv } from '@/types.js';
 import { NodeMonitoringService } from './node-monitoring.service.js';
-import { CreateNodeSchema, NodeListQuerySchema, UpdateNodeSchema } from './nodes.schemas.js';
+import {
+  CreateNodeSchema,
+  NodeListQuerySchema,
+  UpdateNodeSchema,
+  UpdateNodeServiceCreationLockSchema,
+} from './nodes.schemas.js';
 import { NodesService } from './nodes.service.js';
 
 export const nodesRoutes = new OpenAPIHono<AppEnv>();
@@ -55,6 +60,17 @@ nodesRoutes.patch('/:id', requireScopeForResource('nodes:rename', 'id'), async (
   const body = await c.req.json();
   const input = UpdateNodeSchema.parse(body);
   const node = await service.update(id, input, user.id);
+  return c.json({ data: node });
+});
+
+// Lock/unlock top-level service creation on a node.
+nodesRoutes.patch('/:id/service-creation-lock', requireScopeForResource('nodes:lock', 'id'), async (c) => {
+  const service = container.resolve(NodesService);
+  const user = c.get('user')!;
+  const id = c.req.param('id');
+  const body = await c.req.json();
+  const input = UpdateNodeServiceCreationLockSchema.parse(body);
+  const node = await service.updateServiceCreationLock(id, input, user.id);
   return c.json({ data: node });
 });
 

@@ -1,4 +1,4 @@
-import { index, jsonb, pgEnum, pgTable, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
+import { boolean, index, jsonb, pgEnum, pgTable, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
 
 export const nodeTypeEnum = pgEnum('node_type', ['nginx', 'bastion', 'monitoring', 'docker']);
 export const nodeStatusEnum = pgEnum('node_status', ['pending', 'online', 'offline', 'error']);
@@ -80,6 +80,7 @@ export const nodes = pgTable(
     hostname: varchar('hostname', { length: 255 }).notNull(),
     displayName: varchar('display_name', { length: 255 }),
     status: nodeStatusEnum('status').notNull().default('pending'),
+    serviceCreationLocked: boolean('service_creation_locked').notNull().default(false),
 
     // Enrollment
     enrollmentTokenHash: varchar('enrollment_token_hash', { length: 255 }),

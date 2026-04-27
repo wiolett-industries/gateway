@@ -4,6 +4,7 @@ import { dockerDeployments, nodes } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
+import { assertNodeAllowsServiceCreation } from '@/modules/nodes/service-creation-lock.js';
 import type { NotificationEvaluatorService } from '@/modules/notifications/notification-evaluator.service.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
 import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
@@ -713,6 +714,7 @@ export class DockerManagementService {
   }
 
   async createContainer(nodeId: string, config: Record<string, unknown>, userId: string) {
+    await assertNodeAllowsServiceCreation(this.db, nodeId, 'docker');
     await this.validateDockerNode(nodeId);
     const requestedName = (config.name as string | undefined)?.trim();
     if (requestedName) {
@@ -914,6 +916,7 @@ export class DockerManagementService {
   }
 
   async duplicateContainer(nodeId: string, containerId: string, name: string, userId: string) {
+    await assertNodeAllowsServiceCreation(this.db, nodeId, 'docker');
     await this.validateDockerNode(nodeId);
     await this.assertNotManagedDeploymentInternal(nodeId, containerId);
     const sourceName = await this.resolveContainerName(nodeId, containerId);

@@ -62,6 +62,7 @@ export const ALL_SCOPES = [
   'nodes:config:edit',
   'nodes:logs',
   'nodes:console',
+  'nodes:lock',
   // ── Administration ───────────────────────────────────────────────
   'admin:users',
   'admin:groups',

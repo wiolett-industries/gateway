@@ -120,6 +120,7 @@ export interface Node {
   hostname: string;
   displayName: string | null;
   status: NodeStatus;
+  serviceCreationLocked: boolean;
   daemonVersion: string | null;
   osInfo: string | null;
   configVersionHash: string | null;
@@ -429,6 +430,7 @@ export const RESOURCE_SCOPABLE_SCOPES = [
   "nodes:console",
   "nodes:rename",
   "nodes:delete",
+  "nodes:lock",
   "docker:containers:list",
   "docker:containers:view",
   "docker:containers:create",
@@ -713,6 +715,12 @@ export const TOKEN_SCOPES = [
   { value: "nodes:create", label: "Create Nodes", desc: "Enroll new nodes", group: "Nodes" },
   { value: "nodes:rename", label: "Rename Nodes", desc: "Rename nodes", group: "Nodes" },
   { value: "nodes:delete", label: "Delete Nodes", desc: "Remove nodes", group: "Nodes" },
+  {
+    value: "nodes:lock",
+    label: "Lock Service Creation",
+    desc: "Prevent new proxy hosts or containers on selected nodes",
+    group: "Nodes",
+  },
   {
     value: "nodes:config:view",
     label: "View Node Config",

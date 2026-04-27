@@ -14,6 +14,7 @@ import {
 } from '@/db/schema/index.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
+import { assertNodeAllowsServiceCreation } from '@/modules/nodes/service-creation-lock.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
 import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import type { NodeRegistryService } from '@/services/node-registry.service.js';
@@ -347,6 +348,7 @@ export class DockerDeploymentService {
   }
 
   async create(nodeId: string, input: DockerDeploymentCreateInput, userId: string) {
+    await assertNodeAllowsServiceCreation(this.db, nodeId, 'docker');
     await this.validateDockerNode(nodeId);
     normalizeRoutes(input.routes);
     const health = normalizeHealth(input.health);

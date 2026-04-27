@@ -146,6 +146,7 @@ export const CreateProxyHostSchema = z
 
 export const UpdateProxyHostSchema = z.object({
   type: z.enum(['proxy', 'redirect', '404', 'raw']).optional(),
+  nodeId: z.string().uuid().optional(),
   domainNames: z.array(DomainNameSchema).min(1, 'At least one domain name is required').optional(),
 
   forwardHost: z

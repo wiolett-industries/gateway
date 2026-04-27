@@ -91,6 +91,7 @@ export function AdminNodeDetail() {
   const [renameName, setRenameName] = useState("");
   const [renaming, setRenaming] = useState(false);
   const [checkingUpdates, setCheckingUpdates] = useState(false);
+  const [lockSaving, setLockSaving] = useState(false);
   const daemonUpdates = useDaemonUpdatesStore((s) => s.statuses);
   const fetchDaemonUpdates = useDaemonUpdatesStore((s) => s.fetchDaemonUpdates);
   const setDaemonUpdates = useDaemonUpdatesStore((s) => s.setDaemonUpdates);
@@ -109,6 +110,10 @@ export function AdminNodeDetail() {
     hasScope("nodes:config:view") ||
     hasScope("nodes:config:edit");
   const isCompatibleNode = !!node && !isNodeIncompatible(node);
+  const canManageServiceCreationLock =
+    !!node &&
+    (node.type === "nginx" || node.type === "docker") &&
+    (hasScope("nodes:lock") || hasScope(`nodes:lock:${node.id}`));
   const daemonUpdate = useMemo(() => {
     if (!id || !node) return { available: false, latestVersion: null };
     const typeStatus = daemonUpdates.find((status) => status.daemonType === node.type);
@@ -260,6 +265,22 @@ export function AdminNodeDetail() {
     }
   };
 
+  const handleServiceCreationLock = async (serviceCreationLocked: boolean) => {
+    if (!node) return;
+    setLockSaving(true);
+    try {
+      const updated = await api.setNodeServiceCreationLock(node.id, serviceCreationLocked);
+      setNode(updated);
+      toast.success(
+        serviceCreationLocked ? "Service creation locked" : "Service creation unlocked"
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update lock");
+    } finally {
+      setLockSaving(false);
+    }
+  };
+
   if (isLoading || !node) {
     return (
       <div className="flex items-center justify-center py-16 text-muted-foreground">Loading...</div>
@@ -301,6 +322,8 @@ export function AdminNodeDetail() {
               <div className="flex items-center gap-2">
                 <h1 className="text-2xl font-bold">{node.displayName || node.hostname}</h1>
                 <Badge variant={STATUS_BADGE[nodeState] || "secondary"}>{nodeState}</Badge>
+                {(node.type === "nginx" || node.type === "docker") &&
+                  node.serviceCreationLocked && <Badge variant="warning">Locked</Badge>}
               </div>
               <p className="text-sm text-muted-foreground">
                 {node.hostname} &middot; {node.type} &middot;{" "}
@@ -335,14 +358,32 @@ export function AdminNodeDetail() {
                 Rename
               </Button>
             )}
-            {(hasScope("admin:update") || hasScope("nodes:delete")) && (
+            {(hasScope("admin:update") ||
+              hasScope("nodes:delete") ||
+              canManageServiceCreationLock) && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="icon" disabled={checkingUpdates || nodeUpdating}>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    disabled={checkingUpdates || lockSaving || nodeUpdating}
+                  >
                     <EllipsisVertical className="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
+                  {canManageServiceCreationLock && (
+                    <DropdownMenuItem
+                      onClick={() => handleServiceCreationLock(!node.serviceCreationLocked)}
+                      disabled={lockSaving || nodeUpdating}
+                    >
+                      {node.serviceCreationLocked ? "Unlock new services" : "Lock new services"}
+                    </DropdownMenuItem>
+                  )}
+                  {canManageServiceCreationLock &&
+                    (hasScope("admin:update") || hasScope("nodes:delete")) && (
+                      <DropdownMenuSeparator />
+                    )}
                   {hasScope("admin:update") && (
                     <DropdownMenuItem onClick={handleCheckUpdates} disabled={nodeUpdating}>
                       <ArrowUpCircle className="h-3.5 w-3.5 mr-2" />

@@ -22,6 +22,7 @@ export function makeNode(overrides: Partial<Node> = {}): Node {
     hostname: "edge-1",
     displayName: "Edge 1",
     status: "online",
+    serviceCreationLocked: false,
     daemonVersion: "1.0.0",
     osInfo: null,
     configVersionHash: null,
