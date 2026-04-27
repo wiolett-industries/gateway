@@ -10,7 +10,12 @@ import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { DaemonUpdateService } from '@/services/daemon-update.service.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
 import type { NodeRegistryService } from '@/services/node-registry.service.js';
-import type { CreateNodeInput, NodeListQuery, UpdateNodeInput } from './nodes.schemas.js';
+import type {
+  CreateNodeInput,
+  NodeListQuery,
+  UpdateNodeInput,
+  UpdateNodeServiceCreationLockInput,
+} from './nodes.schemas.js';
 
 const logger = createChildLogger('NodesService');
 
@@ -163,6 +168,36 @@ export class NodesService {
     this.emitNode(id, 'updated');
 
     return updated;
+  }
+
+  async updateServiceCreationLock(id: string, input: UpdateNodeServiceCreationLockInput, userId: string) {
+    const [existing] = await this.db.select().from(nodes).where(eq(nodes.id, id)).limit(1);
+
+    if (!existing) {
+      throw new AppError(404, 'NOT_FOUND', 'Node not found');
+    }
+    if (existing.type !== 'nginx' && existing.type !== 'docker') {
+      throw new AppError(400, 'NODE_LOCK_UNSUPPORTED', 'Only nginx and Docker nodes can be locked for service creation');
+    }
+
+    await this.db
+      .update(nodes)
+      .set({
+        serviceCreationLocked: input.serviceCreationLocked,
+        updatedAt: new Date(),
+      })
+      .where(eq(nodes.id, id));
+
+    await this.auditService.log({
+      userId,
+      action: 'node.service_creation_lock',
+      resourceType: 'node',
+      resourceId: id,
+      details: { serviceCreationLocked: input.serviceCreationLocked },
+    });
+    this.emitNode(id, 'updated');
+
+    return this.get(id);
   }
 
   async remove(id: string, userId: string) {

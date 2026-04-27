@@ -9,6 +9,7 @@ import { createChildLogger } from '@/lib/logger.js';
 import { buildWhere, escapeLike } from '@/lib/utils.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
+import { assertNodeAllowsServiceCreation } from '@/modules/nodes/service-creation-lock.js';
 import type { CryptoService } from '@/services/crypto.service.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
 import type { NginxConfigGenerator, ProxyHostConfig } from '@/services/nginx-config-generator.service.js';
@@ -144,6 +145,7 @@ export class ProxyService {
     if (!input.nodeId) {
       throw new AppError(400, 'NODE_REQUIRED', 'A node must be selected for the proxy host');
     }
+    await assertNodeAllowsServiceCreation(this.db, input.nodeId, 'nginx');
 
     // 0b. Validate advanced config if provided
     if (input.advancedConfig && !bypassAdvancedValidation) {
@@ -271,6 +273,9 @@ export class ProxyService {
     });
     if (!existing) throw new AppError(404, 'PROXY_HOST_NOT_FOUND', 'Proxy host not found');
     if (existing.isSystem) throw new AppError(403, 'SYSTEM_HOST', 'System proxy hosts cannot be edited');
+    if (input.nodeId && input.nodeId !== existing.nodeId) {
+      await assertNodeAllowsServiceCreation(this.db, input.nodeId, 'nginx');
+    }
 
     this.assertSslPrerequisites({
       sslEnabled: input.sslEnabled ?? existing.sslEnabled,
@@ -695,6 +700,9 @@ export class ProxyService {
     const existing = await this.db.query.proxyHosts.findFirst({
       where: eq(proxyHosts.systemKind, 'status_page'),
     });
+    if (!existing || existing.nodeId !== input.nodeId) {
+      await assertNodeAllowsServiceCreation(this.db, input.nodeId, 'nginx');
+    }
     const sslEnabled = !!input.sslCertificateId;
     const upstream = getStatusPageUpstream(input.upstreamUrl);
     const data = {

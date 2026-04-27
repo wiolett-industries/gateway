@@ -271,6 +271,12 @@ export function AdminNodes() {
                     <Badge variant="secondary" className="text-xs uppercase shrink-0">
                       {node.type}
                     </Badge>
+                    {(node.type === "nginx" || node.type === "docker") &&
+                      node.serviceCreationLocked && (
+                        <Badge variant="warning" className="text-xs shrink-0">
+                          LOCKED
+                        </Badge>
+                      )}
                     <Badge variant="outline" className="text-xs shrink-0">
                       {formatLastSeen(node.lastSeenAt)}
                     </Badge>

@@ -50,6 +50,7 @@ interface NodeOption {
   hostname: string;
   status: string;
   type: string;
+  serviceCreationLocked: boolean;
 }
 
 const STEP_ANIMATION = {
@@ -203,6 +204,7 @@ export function CreateProxyHostDialog({
             hostname: n.displayName || n.hostname,
             status: n.status,
             type: n.type,
+            serviceCreationLocked: n.serviceCreationLocked,
           }))
         );
         setSslCerts(sslRes.data || []);
@@ -246,9 +248,13 @@ export function CreateProxyHostDialog({
     () => nodes.find((node) => node.id === nodeId) ?? null,
     [nodeId, nodes]
   );
+  const selectedLockedForCreation =
+    !!selectedNode?.serviceCreationLocked &&
+    (!isEditing || selectedNode.id !== (existingHost as any)?.nodeId);
 
   // Validation
-  const isStep1Valid = nodeId !== "" && domainNames.some((d) => d.trim() !== "");
+  const isStep1Valid =
+    nodeId !== "" && !selectedLockedForCreation && domainNames.some((d) => d.trim() !== "");
 
   const isStep2Valid = (() => {
     if (type === "proxy" && !forwardHost.trim()) return false;
@@ -429,22 +435,27 @@ export function CreateProxyHostDialog({
                     <SelectItem value="__none__" disabled>
                       Select a node...
                     </SelectItem>
-                    {nodes.map((node) => (
-                      <SelectItem key={node.id} value={node.id}>
-                        <div className="flex items-center justify-between w-full gap-3">
-                          <span className="min-w-0 truncate">{node.hostname}</span>
-                          <Badge variant="secondary" className="text-xs capitalize">
-                            {node.type}
-                          </Badge>
-                          <Badge
-                            variant={nodeStatusVariant(node.status)}
-                            className="text-xs capitalize"
-                          >
-                            {node.status}
-                          </Badge>
-                        </div>
-                      </SelectItem>
-                    ))}
+                    {nodes.map((node) => {
+                      const lockedForCreation =
+                        node.serviceCreationLocked &&
+                        (!isEditing || node.id !== (existingHost as any)?.nodeId);
+                      return (
+                        <SelectItem key={node.id} value={node.id} disabled={lockedForCreation}>
+                          <div className="flex items-center justify-between w-full gap-3">
+                            <span className="min-w-0 truncate">{node.hostname}</span>
+                            <Badge variant="secondary" className="text-xs capitalize">
+                              {node.type}
+                            </Badge>
+                            <Badge
+                              variant={nodeStatusVariant(node.status)}
+                              className="text-xs capitalize"
+                            >
+                              {node.status}
+                            </Badge>
+                          </div>
+                        </SelectItem>
+                      );
+                    })}
                   </SelectContent>
                 </Select>
               </div>

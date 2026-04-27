@@ -201,7 +201,7 @@ export function StatusPageSection({ nodesList }: StatusPageSectionProps) {
               </SelectTrigger>
               <SelectContent>
                 {onlineNginxNodes.map((node) => (
-                  <SelectItem key={node.id} value={node.id}>
+                  <SelectItem key={node.id} value={node.id} disabled={node.serviceCreationLocked}>
                     {node.displayName || node.hostname}
                   </SelectItem>
                 ))}

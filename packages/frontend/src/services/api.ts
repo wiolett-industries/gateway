@@ -518,6 +518,18 @@ class ApiClient extends ApiClientBase {
     );
   }
 
+  async setNodeServiceCreationLock(
+    id: string,
+    serviceCreationLocked: boolean
+  ): Promise<import("@/types").NodeDetail> {
+    return this.unwrapData(
+      this.request(`/nodes/${id}/service-creation-lock`, {
+        method: "PATCH",
+        body: JSON.stringify({ serviceCreationLocked }),
+      })
+    );
+  }
+
   async deleteNode(id: string): Promise<void> {
     await this.request(`/nodes/${id}`, { method: "DELETE" });
   }
