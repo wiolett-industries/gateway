@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
+import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -85,6 +86,17 @@ const DEFAULT_CONFIG: StatusPageConfig = {
   autoOutageEnabled: true,
   autoDegradedSeverity: "warning",
   autoOutageSeverity: "critical",
+  autoCreateThresholdSeconds: 600,
+  autoResolveThresholdSeconds: 60,
+};
+
+const INCIDENT_UPDATE_DEFAULT_MESSAGES: Record<StatusPageIncidentUpdateStatus, string> = {
+  update:
+    "We are continuing to investigate and will share more information as it becomes available.",
+  investigating: "We are investigating reports of an issue affecting this service.",
+  identified: "We have identified the cause and are working on a fix.",
+  monitoring: "A fix has been applied and we are monitoring recovery.",
+  resolved: "The incident has been resolved and service is operating normally.",
 };
 
 function normalizeDockerTarget(item: DockerContainer, node: Node): DockerContainer {
@@ -169,6 +181,7 @@ export function StatusPage() {
   const [databases, setDatabases] = useState<DatabaseConnection[]>([]);
   const [dockerTargets, setDockerTargets] = useState<DockerContainer[]>([]);
   const [loading, setLoading] = useState(true);
+  const [sourceOptionsLoading, setSourceOptionsLoading] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
   const [serviceOpen, setServiceOpen] = useState(false);
   const [editingService, setEditingService] = useState<StatusPageServiceItem | null>(null);
@@ -177,21 +190,33 @@ export function StatusPage() {
   const [updateIncident, setUpdateIncident] = useState<StatusPageIncident | null>(null);
 
   const loadSourceOptions = useCallback(async () => {
-    const nodeRows = await api.listNodes({ limit: 100 }).then((res) => res.data ?? []);
-    setNodes(nodeRows);
-    const dockerNodes = nodeRows.filter((node) => node.type === "docker");
-    const dockerResults = await Promise.allSettled(
-      dockerNodes.map(async (node) => {
-        const rows = await api.listDockerContainers(node.id);
-        return rows.map((row) => normalizeDockerTarget(row, node));
-      })
-    );
-    setDockerTargets(
-      dockerResults.flatMap((result) => (result.status === "fulfilled" ? result.value : []))
-    );
+    setSourceOptionsLoading(true);
+    try {
+      const nodeRows = await api.listNodes({ limit: 100 }).then((res) => res.data ?? []);
+      setNodes(nodeRows);
+      const dockerNodes = nodeRows.filter((node) => node.type === "docker");
+      const [dockerResults, proxyRows, databaseRows] = await Promise.all([
+        Promise.allSettled(
+          dockerNodes.map(async (node) => {
+            const rows = await api.listDockerContainers(node.id);
+            return rows.map((row) => normalizeDockerTarget(row, node));
+          })
+        ),
+        api.listProxyHosts({ limit: 100 }).then((res) => res.data ?? []),
+        api.listDatabases({ limit: 200 }).then((res) => res.data ?? []),
+      ]);
+      setDockerTargets(
+        dockerResults.flatMap((result) => (result.status === "fulfilled" ? result.value : []))
+      );
+      setProxies(proxyRows);
+      setDatabases(databaseRows);
+    } finally {
+      setSourceOptionsLoading(false);
+    }
   }, []);
 
   const loadStatusPage = useCallback(async () => {
+    setLoading(true);
     try {
       const [settings, serviceRows, incidentRows] = await Promise.all([
         api.getStatusPageSettings(),
@@ -210,24 +235,24 @@ export function StatusPage() {
 
   useEffect(() => {
     loadStatusPage();
-    Promise.all([
-      loadSourceOptions(),
-      api.listProxyHosts({ limit: 100 }).then((res) => setProxies(res.data ?? [])),
-      api.listDatabases({ limit: 200 }).then((res) => setDatabases(res.data ?? [])),
-    ]).catch(() => {});
-  }, [loadSourceOptions, loadStatusPage]);
+  }, [loadStatusPage]);
+
+  useEffect(() => {
+    if (!serviceOpen) return;
+    loadSourceOptions().catch(() => {});
+  }, [loadSourceOptions, serviceOpen]);
 
   useRealtime("status-page.changed", () => {
     loadStatusPage();
   });
   useRealtime("docker.container.changed", () => {
-    loadSourceOptions().catch(() => {});
+    if (serviceOpen) loadSourceOptions().catch(() => {});
   });
   useRealtime("docker.deployment.changed", () => {
-    loadSourceOptions().catch(() => {});
+    if (serviceOpen) loadSourceOptions().catch(() => {});
   });
   useRealtime("docker.health.changed", () => {
-    loadSourceOptions().catch(() => {});
+    if (serviceOpen) loadSourceOptions().catch(() => {});
   });
 
   useEffect(() => {
@@ -420,6 +445,7 @@ export function StatusPage() {
           <TabsContent value="services">
             <ServicesTab
               groupedServices={groupedServices}
+              loading={loading}
               canManage={canManage}
               onEdit={(service) => {
                 setEditingService(service);
@@ -433,6 +459,7 @@ export function StatusPage() {
             <IncidentsTab
               incidents={incidents}
               services={services}
+              loading={loading}
               canCreate={canCreateIncidents}
               canUpdate={canUpdateIncidents}
               canResolve={canResolveIncidents}
@@ -468,6 +495,7 @@ export function StatusPage() {
           proxies={proxies}
           databases={databases}
           dockerTargets={dockerTargets}
+          sourceOptionsLoading={sourceOptionsLoading}
           onSaved={loadStatusPage}
         />
         <IncidentDialog
@@ -518,6 +546,8 @@ function SettingsTab({
       autoOutageEnabled: config.autoOutageEnabled,
       autoDegradedSeverity: config.autoDegradedSeverity,
       autoOutageSeverity: config.autoOutageSeverity,
+      autoCreateThresholdSeconds: config.autoCreateThresholdSeconds,
+      autoResolveThresholdSeconds: config.autoResolveThresholdSeconds,
     });
   };
 
@@ -675,6 +705,38 @@ function SettingsTab({
               </SelectContent>
             </Select>
           </div>
+          <div className="grid gap-4 px-4 py-3 sm:grid-cols-2">
+            <Field label="Create incident after seconds">
+              <Input
+                type="number"
+                min={30}
+                max={86400}
+                value={config.autoCreateThresholdSeconds}
+                disabled={disabled}
+                onChange={(event) =>
+                  onConfigChange((prev) => ({
+                    ...prev,
+                    autoCreateThresholdSeconds: Number(event.target.value),
+                  }))
+                }
+              />
+            </Field>
+            <Field label="Resolve incident after seconds">
+              <Input
+                type="number"
+                min={30}
+                max={86400}
+                value={config.autoResolveThresholdSeconds}
+                disabled={disabled}
+                onChange={(event) =>
+                  onConfigChange((prev) => ({
+                    ...prev,
+                    autoResolveThresholdSeconds: Number(event.target.value),
+                  }))
+                }
+              />
+            </Field>
+          </div>
         </div>
       </div>
     </div>
@@ -683,15 +745,25 @@ function SettingsTab({
 
 function ServicesTab({
   groupedServices,
+  loading,
   canManage,
   onEdit,
   onDelete,
 }: {
   groupedServices: Array<[string, StatusPageServiceItem[]]>;
+  loading: boolean;
   canManage: boolean;
   onEdit: (service: StatusPageServiceItem) => void;
   onDelete: (service: StatusPageServiceItem) => void;
 }) {
+  if (loading && groupedServices.length === 0) {
+    return (
+      <div className="border border-border bg-card py-8">
+        <LoadingSpinner className="py-0" />
+      </div>
+    );
+  }
+
   if (groupedServices.length === 0) {
     return (
       <div className="border border-border bg-card p-4 text-sm text-muted-foreground">
@@ -720,9 +792,7 @@ function ServicesTab({
                     {service.broken && <Badge variant="warning">Source missing</Badge>}
                   </div>
                   <p className="truncate text-xs text-muted-foreground">
-                    {service.source?.label || "Missing source"} · create after{" "}
-                    {service.createThresholdSeconds}s · resolve after{" "}
-                    {service.resolveThresholdSeconds}s
+                    {service.source?.label || "Missing source"}
                   </p>
                 </div>
                 {canManage && (
@@ -747,6 +817,7 @@ function ServicesTab({
 function IncidentsTab({
   incidents,
   services,
+  loading,
   canCreate,
   canUpdate,
   canResolve,
@@ -759,6 +830,7 @@ function IncidentsTab({
 }: {
   incidents: StatusPageIncident[];
   services: StatusPageServiceItem[];
+  loading: boolean;
   canCreate: boolean;
   canUpdate: boolean;
   canResolve: boolean;
@@ -769,6 +841,14 @@ function IncidentsTab({
   onPromote: (incident: StatusPageIncident) => void;
   onDelete: (incident: StatusPageIncident) => void;
 }) {
+  if (loading && incidents.length === 0) {
+    return (
+      <div className="border border-border bg-card py-8">
+        <LoadingSpinner className="py-0" />
+      </div>
+    );
+  }
+
   if (incidents.length === 0) {
     return (
       <div className="border border-border bg-card p-4 text-sm text-muted-foreground">
@@ -967,8 +1047,13 @@ function IncidentUpdateDialog({
   useEffect(() => {
     if (!incident) return;
     setStatus("update");
-    setMessage("");
+    setMessage(INCIDENT_UPDATE_DEFAULT_MESSAGES.update);
   }, [incident]);
+
+  const selectStatus = (nextStatus: StatusPageIncidentUpdateStatus) => {
+    setStatus(nextStatus);
+    setMessage(INCIDENT_UPDATE_DEFAULT_MESSAGES[nextStatus]);
+  };
 
   const save = async () => {
     if (!incident) return;
@@ -995,7 +1080,7 @@ function IncidentUpdateDialog({
           <Field label="Event state">
             <Select
               value={status}
-              onValueChange={(value) => setStatus(value as StatusPageIncidentUpdateStatus)}
+              onValueChange={(value) => selectStatus(value as StatusPageIncidentUpdateStatus)}
             >
               <SelectTrigger>
                 <SelectValue />

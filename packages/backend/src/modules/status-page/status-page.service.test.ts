@@ -247,6 +247,48 @@ describe('StatusPageService settings validation', () => {
       service.updateSettings({ nodeId: '55555555-5555-4555-8555-555555555555' }, USER_ID)
     ).rejects.toMatchObject({ code: 'STATUS_PAGE_NODE_CHANGE_REQUIRES_DISABLE' });
   });
+
+  it('syncs auto-incident thresholds to exposed services', async () => {
+    const serviceThresholdUpdates: unknown[] = [];
+    const db = {
+      query: {
+        settings: { findFirst: vi.fn().mockResolvedValue(null) },
+        nodes: { findFirst: vi.fn().mockResolvedValue(null) },
+        sslCertificates: { findFirst: vi.fn().mockResolvedValue(null) },
+        nginxTemplates: { findFirst: vi.fn().mockResolvedValue(null) },
+      },
+      insert: (table: unknown) => ({
+        values: (value: unknown) => ({
+          onConflictDoUpdate: vi.fn().mockImplementation(async () => {
+            expect(table).toBe(settings);
+            return value;
+          }),
+        }),
+      }),
+      update: (table: unknown) => ({
+        set: (value: unknown) => ({
+          where: vi.fn().mockImplementation(async () => {
+            expect(table).toBe(statusPageServices);
+            serviceThresholdUpdates.push(value);
+          }),
+        }),
+      }),
+    };
+    const service = createService(db);
+
+    const config = await service.updateSettings(
+      { autoCreateThresholdSeconds: 300, autoResolveThresholdSeconds: 120 },
+      USER_ID
+    );
+
+    expect(config.autoCreateThresholdSeconds).toBe(300);
+    expect(config.autoResolveThresholdSeconds).toBe(120);
+    expect(serviceThresholdUpdates).toHaveLength(1);
+    expect(serviceThresholdUpdates[0]).toMatchObject({
+      createThresholdSeconds: 300,
+      resolveThresholdSeconds: 120,
+    });
+  });
 });
 
 describe('StatusPageService safe DTO', () => {

@@ -839,12 +839,10 @@ start_daemon() {
         detect_docker_systemd_unit || true
         local docker_after="network-online.target"
         local docker_wants="network-online.target"
-        local docker_requires=""
         local supplementary_groups=""
         if [[ -n "$DOCKER_SYSTEMD_UNIT" ]]; then
             docker_after="${docker_after} ${DOCKER_SYSTEMD_UNIT}"
             docker_wants="${docker_wants} ${DOCKER_SYSTEMD_UNIT}"
-            docker_requires="Requires=${DOCKER_SYSTEMD_UNIT}"
         elif detect_docker_access; then
             warn "Docker is reachable, but no systemd Docker unit was detected. docker-daemon will start without a Docker service dependency."
         else
@@ -859,7 +857,6 @@ start_daemon() {
 Description=Gateway Docker Daemon
 After=${docker_after}
 Wants=${docker_wants}
-${docker_requires}
 
 [Service]
 Type=simple
