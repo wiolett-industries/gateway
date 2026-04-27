@@ -35,3 +35,38 @@ describe('sanitizeAuditPath', () => {
     );
   });
 });
+
+describe('resolveFallbackAuditTarget', () => {
+  it('maps Docker container actions away from generic route audit actions', () => {
+    expect(
+      __testOnly.resolveFallbackAuditTarget(
+        'POST',
+        '/api/docker/nodes/11111111-1111-4111-8111-111111111111/containers/f4b0d9c82b26/start'
+      )
+    ).toEqual({
+      action: 'docker.container.start',
+      resourceType: 'docker-container',
+      resourceId: 'f4b0d9c82b26',
+    });
+  });
+
+  it('maps Docker health-check routes that do not emit service audit entries', () => {
+    expect(
+      __testOnly.resolveFallbackAuditTarget(
+        'PUT',
+        '/api/docker/nodes/11111111-1111-4111-8111-111111111111/containers/api/health-check'
+      )
+    ).toEqual({
+      action: 'docker.health_check.configure',
+      resourceType: 'docker-health-check',
+      resourceId: 'api',
+    });
+  });
+
+  it('keeps a generic fallback for unknown mutating routes', () => {
+    expect(__testOnly.resolveFallbackAuditTarget('POST', '/api/unknown')).toEqual({
+      action: 'route.post',
+      resourceType: 'http-route',
+    });
+  });
+});

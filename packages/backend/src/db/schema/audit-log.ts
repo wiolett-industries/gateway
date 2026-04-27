@@ -8,7 +8,7 @@ export const auditLog = pgTable(
     userId: uuid('user_id').references(() => users.id),
     action: varchar('action', { length: 100 }).notNull(),
     resourceType: varchar('resource_type', { length: 50 }).notNull(),
-    resourceId: uuid('resource_id'),
+    resourceId: text('resource_id'),
     details: jsonb('details').$type<Record<string, unknown>>(),
     ipAddress: varchar('ip_address', { length: 45 }),
     userAgent: text('user_agent'),

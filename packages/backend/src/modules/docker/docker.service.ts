@@ -1248,14 +1248,12 @@ export class DockerManagementService {
     // Create a task and pull in background (non-blocking)
     const task = await this.createTask(nodeId, '', imageRef, 'pull');
     if (userId) {
-      this.auditService
-        .log({
-          action: 'docker.image.pull',
-          userId,
-          resourceType: 'docker-image',
-          details: { nodeId, imageRef },
-        })
-        .catch(() => {});
+      await this.auditService.log({
+        action: 'docker.image.pull',
+        userId,
+        resourceType: 'docker-image',
+        details: { nodeId, imageRef },
+      });
     }
 
     // Fire pull in background
