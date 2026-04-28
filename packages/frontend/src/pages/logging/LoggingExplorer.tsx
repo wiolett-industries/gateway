@@ -1,42 +1,32 @@
-import { Plus, Trash2 } from "lucide-react";
-import type React from "react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Info, Search, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { SearchFilterBar } from "@/components/common/SearchFilterBar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
-import { Input } from "@/components/ui/input";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { api } from "@/services/api";
 import type {
   LoggingEnvironment,
-  LoggingFieldDefinition,
+  LoggingMetadata,
   LoggingSearchRequest,
   LoggingSearchResult,
-  LoggingSeverity,
 } from "@/types";
 import { LoggingEventDetailsDialog } from "./LoggingEventDetailsDialog";
-
-const SEVERITIES: LoggingSeverity[] = ["trace", "debug", "info", "warn", "error", "fatal"];
-const FIELD_OPERATORS = ["eq", "contains", "gt", "gte", "lt", "lte"] as const;
-const TIME_RANGES = [
-  { label: "All time", value: "all", ms: null },
-  { label: "15 minutes", value: "15m", ms: 15 * 60 * 1000 },
-  { label: "1 hour", value: "1h", ms: 60 * 60 * 1000 },
-  { label: "6 hours", value: "6h", ms: 6 * 60 * 60 * 1000 },
-  { label: "24 hours", value: "24h", ms: 24 * 60 * 60 * 1000 },
-] as const;
-const DEFAULT_TIME_RANGE = "all";
-
-type LabelFilter = { id: string; key: string; value: string };
-type FieldFilter = { id: string; key: string; op: string; value: string };
+import {
+  applyLoggingQuerySuggestion,
+  applyLoggingStructuredBackspace,
+  getLoggingQuerySuggestions,
+  parseLoggingQuery,
+} from "./logging-query-parser";
+import { loggingSeverityBadgeVariant } from "./logging-severity";
 
 export function LoggingExplorer({
   environment,
@@ -47,89 +37,78 @@ export function LoggingExplorer({
   storageAvailable: boolean;
   refreshKey?: number;
 }) {
-  const [timeRange, setTimeRange] = useState(DEFAULT_TIME_RANGE);
-  const [severity, setSeverity] = useState<"all" | LoggingSeverity>("all");
-  const [message, setMessage] = useState("");
-  const [service, setService] = useState("");
-  const [source, setSource] = useState("");
-  const [traceId, setTraceId] = useState("");
-  const [requestId, setRequestId] = useState("");
-  const [spanId, setSpanId] = useState("");
-  const [labelFilters, setLabelFilters] = useState<LabelFilter[]>([]);
-  const [fieldFilters, setFieldFilters] = useState<FieldFilter[]>([]);
+  const [queryText, setQueryText] = useState("");
+  const [cursorPosition, setCursorPosition] = useState(0);
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  const [rootSuggestionsSuppressed, setRootSuggestionsSuppressed] = useState(false);
+  const [highlightedSuggestion, setHighlightedSuggestion] = useState(0);
+  const [cheatsheetOpen, setCheatsheetOpen] = useState(false);
   const [rows, setRows] = useState<LoggingSearchResult[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [selected, setSelected] = useState<LoggingSearchResult | null>(null);
+  const [metadata, setMetadata] = useState<LoggingMetadata | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const tableScrollRef = useRef<HTMLDivElement>(null);
+  const loadMoreRef = useRef<HTMLDivElement>(null);
 
-  const labelDefinitions = useMemo(
-    () => environment.fieldSchema.filter((field) => field.location === "label"),
-    [environment.fieldSchema]
+  const parsedQuery = useMemo(
+    () => parseLoggingQuery(queryText, environment.fieldSchema),
+    [environment.fieldSchema, queryText]
   );
-  const fieldDefinitions = useMemo(
-    () => environment.fieldSchema.filter((field) => field.location === "field"),
-    [environment.fieldSchema]
+  const suggestions = useMemo(
+    () =>
+      rootSuggestionsSuppressed && queryText.trim() === ""
+        ? []
+        : getLoggingQuerySuggestions({
+            input: queryText,
+            cursor: cursorPosition,
+            metadata,
+            fieldDefinitions: environment.fieldSchema,
+          }),
+    [cursorPosition, environment.fieldSchema, metadata, queryText, rootSuggestionsSuppressed]
   );
+  const showSuggestions = suggestionsOpen && suggestions.length > 0;
+
+  useEffect(() => {
+    void refreshKey;
+    let cancelled = false;
+    void api
+      .getLoggingMetadata(environment.id)
+      .then((result) => {
+        if (!cancelled) setMetadata(result);
+      })
+      .catch(() => {
+        if (!cancelled) setMetadata(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [environment.id, refreshKey]);
 
   const buildQuery = useCallback(
-    (cursor?: string | null): LoggingSearchRequest => {
-      const selectedRange =
-        TIME_RANGES.find((range) => range.value === timeRange) ?? TIME_RANGES[0];
-      const to = selectedRange.ms ? new Date() : null;
-      const from = to && selectedRange.ms ? new Date(to.getTime() - selectedRange.ms) : null;
-      const labels: Record<string, string> = {};
-      for (const filter of labelFilters) {
-        const key = filter.key.trim();
-        const value = filter.value.trim();
-        if (key && value) labels[key] = value;
-      }
-      const fields: NonNullable<LoggingSearchRequest["fields"]> = {};
-      for (const filter of fieldFilters) {
-        const key = filter.key.trim();
-        if (key && filter.value) {
-          fields[key] = {
-            op: filter.op,
-            value: coerceFieldValue(key, filter.value, fieldDefinitions),
-          };
-        }
-      }
-
-      return {
-        from: from?.toISOString(),
-        to: to?.toISOString(),
-        severities: severity === "all" ? undefined : [severity],
-        services: service ? [service] : undefined,
-        sources: source ? [source] : undefined,
-        message: message || undefined,
-        traceId: traceId || undefined,
-        spanId: spanId || undefined,
-        requestId: requestId || undefined,
-        labels: Object.keys(labels).length ? labels : undefined,
-        fields: Object.keys(fields).length ? fields : undefined,
-        limit: 100,
-        cursor,
-      };
-    },
-    [
-      fieldDefinitions,
-      fieldFilters,
-      labelFilters,
-      message,
-      requestId,
-      service,
-      severity,
-      source,
-      spanId,
-      timeRange,
-      traceId,
-    ]
+    (cursor?: string | null): LoggingSearchRequest => ({
+      ...parsedQuery.request,
+      limit: 100,
+      cursor,
+    }),
+    [parsedQuery.request]
   );
 
   const load = useCallback(
     async (cursor?: string | null) => {
       void refreshKey;
       if (!storageAvailable) return;
-      setLoading(true);
+      if (parsedQuery.errors.length > 0 || parsedQuery.incomplete) {
+        if (!cursor) {
+          setRows([]);
+          setNextCursor(null);
+        }
+        return;
+      }
+      if (cursor) setLoadingMore(true);
+      else setLoading(true);
       try {
         const result = await api.searchLogs(environment.id, buildQuery(cursor));
         setRows((current) => (cursor ? [...current, ...result.data] : result.data));
@@ -137,40 +116,82 @@ export function LoggingExplorer({
       } catch (error) {
         toast.error(error instanceof Error ? error.message : "Failed to search logs");
       } finally {
-        setLoading(false);
+        if (cursor) setLoadingMore(false);
+        else setLoading(false);
       }
     },
-    [buildQuery, environment.id, refreshKey, storageAvailable]
+    [
+      buildQuery,
+      environment.id,
+      parsedQuery.errors.length,
+      parsedQuery.incomplete,
+      refreshKey,
+      storageAvailable,
+    ]
   );
 
   useEffect(() => {
-    void load();
+    const timer = window.setTimeout(() => {
+      void load();
+    }, 300);
+    return () => window.clearTimeout(timer);
   }, [load]);
 
-  const reset = () => {
-    setTimeRange(DEFAULT_TIME_RANGE);
-    setSeverity("all");
-    setMessage("");
-    setService("");
-    setSource("");
-    setTraceId("");
-    setRequestId("");
-    setSpanId("");
-    setLabelFilters([]);
-    setFieldFilters([]);
+  useEffect(() => {
+    if (parsedQuery.errors.length > 0 || parsedQuery.incomplete) {
+      setRows([]);
+      setNextCursor(null);
+    }
+  }, [parsedQuery.errors.length, parsedQuery.incomplete]);
+
+  useEffect(() => {
+    const sentinel = loadMoreRef.current;
+    const root = tableScrollRef.current;
+    if (!sentinel || !root || !nextCursor) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && !loading && !loadingMore) {
+          void load(nextCursor);
+        }
+      },
+      { root, rootMargin: "320px" }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [load, loading, loadingMore, nextCursor]);
+
+  const applySuggestion = (replacement: string, incomplete = false, noSpace = false) => {
+    const next = applyLoggingQuerySuggestion(queryText, cursorPosition, replacement, { noSpace });
+    setQueryText(next.value);
+    setCursorPosition(next.cursor);
+    setSuggestionsOpen(incomplete);
+    setHighlightedSuggestion(0);
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+      inputRef.current?.setSelectionRange(next.cursor, next.cursor);
+    });
   };
 
-  const hasActiveFilters =
-    timeRange !== DEFAULT_TIME_RANGE ||
-    severity !== "all" ||
-    !!message ||
-    !!service ||
-    !!source ||
-    !!traceId ||
-    !!requestId ||
-    !!spanId ||
-    labelFilters.length > 0 ||
-    fieldFilters.length > 0;
+  const applyHighlightedSuggestion = () => {
+    const suggestion = suggestions[highlightedSuggestion] ?? suggestions[0];
+    if (!suggestion) return false;
+    applySuggestion(suggestion.replacement, suggestion.incomplete, suggestion.noSpace);
+    return true;
+  };
+
+  const applyStructuredBackspace = () => {
+    const next = applyLoggingStructuredBackspace(queryText, cursorPosition);
+    if (!next) return false;
+    setQueryText(next.value);
+    setCursorPosition(next.cursor);
+    setSuggestionsOpen(true);
+    setHighlightedSuggestion(0);
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+      inputRef.current?.setSelectionRange(next.cursor, next.cursor);
+    });
+    return true;
+  };
 
   const columns: DataTableColumn<LoggingSearchResult>[] = [
     {
@@ -188,13 +209,7 @@ export function LoggingExplorer({
       header: "Severity",
       width: "96px",
       render: (row) => (
-        <Badge
-          variant={
-            row.severity === "error" || row.severity === "fatal" ? "destructive" : "secondary"
-          }
-        >
-          {row.severity}
-        </Badge>
+        <Badge variant={loggingSeverityBadgeVariant(row.severity)}>{row.severity}</Badge>
       ),
     },
     {
@@ -230,97 +245,184 @@ export function LoggingExplorer({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
-      <SearchFilterBar
-        placeholder="Search message text..."
-        search={message}
-        onSearchChange={setMessage}
-        onSearchSubmit={() => void load()}
-        hasActiveFilters={hasActiveFilters}
-        onReset={reset}
-        filters={
-          <div className="flex w-full flex-col gap-3">
-            <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
-              <FilterSelect label="Time" value={timeRange} onValueChange={setTimeRange}>
-                {TIME_RANGES.map((range) => (
-                  <SelectItem key={range.value} value={range.value}>
-                    {range.label}
-                  </SelectItem>
-                ))}
-              </FilterSelect>
-              <FilterSelect
-                label="Severity"
-                value={severity}
-                onValueChange={(value) => setSeverity(value as typeof severity)}
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="relative min-w-[20rem] flex-1">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              ref={inputRef}
+              placeholder="Search logs"
+              value={queryText}
+              onBlur={() =>
+                window.setTimeout(() => {
+                  setSuggestionsOpen(false);
+                  setRootSuggestionsSuppressed(false);
+                }, 120)
+              }
+              onChange={(event) => {
+                const nextValue = event.target.value;
+                const wasCleared = queryText.trim() !== "" && nextValue.trim() === "";
+                setQueryText(event.target.value);
+                setCursorPosition(event.target.selectionStart ?? event.target.value.length);
+                setRootSuggestionsSuppressed(wasCleared);
+                setSuggestionsOpen(true);
+                setHighlightedSuggestion(0);
+              }}
+              onFocus={(event) => {
+                setCursorPosition(event.currentTarget.selectionStart ?? queryText.length);
+                setSuggestionsOpen(true);
+                setHighlightedSuggestion(0);
+              }}
+              onClick={(event) => {
+                setCursorPosition(event.currentTarget.selectionStart ?? queryText.length);
+                setSuggestionsOpen(true);
+                setHighlightedSuggestion(0);
+              }}
+              onKeyUp={(event) => {
+                setCursorPosition(event.currentTarget.selectionStart ?? queryText.length);
+                if (event.key !== "ArrowDown" && event.key !== "ArrowUp") {
+                  setHighlightedSuggestion(0);
+                }
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "ArrowDown" && showSuggestions) {
+                  event.preventDefault();
+                  setHighlightedSuggestion((current) => (current + 1) % suggestions.length);
+                } else if (event.key === "ArrowUp" && showSuggestions) {
+                  event.preventDefault();
+                  setHighlightedSuggestion(
+                    (current) => (current - 1 + suggestions.length) % suggestions.length
+                  );
+                } else if (event.key === "Enter") {
+                  if (showSuggestions && applyHighlightedSuggestion()) {
+                    event.preventDefault();
+                    return;
+                  }
+                  setSuggestionsOpen(false);
+                  void load();
+                } else if (event.key === "Escape") {
+                  setSuggestionsOpen(false);
+                } else if (event.key === "Tab" && showSuggestions) {
+                  event.preventDefault();
+                  applyHighlightedSuggestion();
+                } else if (
+                  event.key === "Backspace" &&
+                  !event.metaKey &&
+                  !event.ctrlKey &&
+                  !event.altKey &&
+                  event.currentTarget.selectionStart === event.currentTarget.selectionEnd &&
+                  applyStructuredBackspace()
+                ) {
+                  event.preventDefault();
+                }
+              }}
+              className="pl-9 pr-9"
+            />
+            {queryText && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="absolute right-0 top-1/2 -translate-y-1/2"
+                onClick={() => {
+                  setQueryText("");
+                  setRows([]);
+                  setRootSuggestionsSuppressed(true);
+                  setSuggestionsOpen(false);
+                  inputRef.current?.focus();
+                }}
               >
-                <SelectItem value="all">All severities</SelectItem>
-                {SEVERITIES.map((item) => (
-                  <SelectItem key={item} value={item}>
-                    {item}
-                  </SelectItem>
+                <X className="h-4 w-4" />
+              </Button>
+            )}
+            {showSuggestions && (
+              <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-30 overflow-hidden rounded-md border border-border bg-popover shadow-md">
+                {suggestions.map((suggestion, index) => (
+                  <button
+                    key={`${suggestion.replacement}:${suggestion.detail ?? ""}`}
+                    type="button"
+                    className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-muted ${
+                      index === highlightedSuggestion ? "bg-muted" : ""
+                    }`}
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                      applySuggestion(
+                        suggestion.replacement,
+                        suggestion.incomplete,
+                        suggestion.noSpace
+                      );
+                    }}
+                    onMouseEnter={() => setHighlightedSuggestion(index)}
+                  >
+                    <span className="min-w-0 truncate">{suggestion.label}</span>
+                    {suggestion.detail && (
+                      <span className="shrink-0 text-xs text-muted-foreground">
+                        {suggestion.detail}
+                      </span>
+                    )}
+                  </button>
                 ))}
-              </FilterSelect>
-              <FilterInput label="Service" value={service} onChange={setService} />
-              <FilterInput label="Source" value={source} onChange={setSource} />
-              <FilterInput label="Trace ID" value={traceId} onChange={setTraceId} />
-              <FilterInput label="Request ID" value={requestId} onChange={setRequestId} />
-              <FilterInput label="Span ID" value={spanId} onChange={setSpanId} />
-            </div>
-            <FilterRows
-              title="Label filters"
-              definitions={labelDefinitions}
-              rows={labelFilters}
-              onAdd={() =>
-                setLabelFilters((current) => [
-                  ...current,
-                  { id: crypto.randomUUID(), key: "", value: "" },
-                ])
-              }
-              onRemove={(id) =>
-                setLabelFilters((current) => current.filter((row) => row.id !== id))
-              }
-              onChange={(id, patch) =>
-                setLabelFilters((current) =>
-                  current.map((row) => (row.id === id ? { ...row, ...patch } : row))
-                )
-              }
-            />
-            <FieldFilterRows
-              definitions={fieldDefinitions}
-              rows={fieldFilters}
-              onAdd={() =>
-                setFieldFilters((current) => [
-                  ...current,
-                  { id: crypto.randomUUID(), key: "", op: "eq", value: "" },
-                ])
-              }
-              onRemove={(id) =>
-                setFieldFilters((current) => current.filter((row) => row.id !== id))
-              }
-              onChange={(id, patch) =>
-                setFieldFilters((current) =>
-                  current.map((row) => (row.id === id ? { ...row, ...patch } : row))
-                )
-              }
-            />
+              </div>
+            )}
           </div>
-        }
-      />
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-xs text-muted-foreground">{rows.length} events</p>
+          <div className="flex shrink-0 items-center">
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => setCheatsheetOpen(true)}
+            >
+              <Info className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+        {parsedQuery.chips.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {parsedQuery.chips.map((chip) => (
+              <Badge
+                key={chip.key}
+                variant={
+                  chip.tone === "danger"
+                    ? "destructive"
+                    : chip.tone === "muted"
+                      ? "outline"
+                      : "secondary"
+                }
+                className="normal-case"
+              >
+                {chip.label}
+              </Badge>
+            ))}
+          </div>
+        )}
       </div>
+
       <DataTable
         columns={columns}
         data={rows}
         keyFn={(row) => row.eventId}
         onRowClick={setSelected}
-        emptyMessage={loading ? "Searching logs..." : "No logs found."}
+        emptyMessage={
+          parsedQuery.errors.length > 0
+            ? "Fix the query syntax to search logs."
+            : parsedQuery.incomplete
+              ? "Complete the query to search logs."
+              : loading
+                ? "Searching logs..."
+                : "No logs found."
+        }
         horizontalScroll
+        scrollRef={tableScrollRef}
         footer={
           nextCursor ? (
-            <div className="border-t border-border p-3">
-              <Button variant="outline" onClick={() => void load(nextCursor)} disabled={loading}>
-                Load More
-              </Button>
+            <div
+              ref={loadMoreRef}
+              className="border-t border-border p-3 text-center text-xs text-muted-foreground"
+            >
+              {loadingMore ? "Loading older logs..." : "Scroll to load older logs"}
+            </div>
+          ) : rows.length > 0 ? (
+            <div className="border-t border-border p-3 text-center text-xs text-muted-foreground">
+              End of log history
             </div>
           ) : null
         }
@@ -329,194 +431,63 @@ export function LoggingExplorer({
         event={selected}
         onOpenChange={(open) => !open && setSelected(null)}
       />
+      <LoggingQueryCheatsheet open={cheatsheetOpen} onOpenChange={setCheatsheetOpen} />
     </div>
   );
 }
 
-function FilterInput({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <label className="block space-y-1">
-      <span className="text-xs font-medium text-muted-foreground">{label}</span>
-      <Input value={value} onChange={(event) => onChange(event.target.value)} />
-    </label>
-  );
-}
+const QUERY_CHEATSHEET = [
+  { syntax: "text", description: "Message contains text" },
+  { syntax: '"payment failed"', description: "Message contains exact phrase" },
+  { syntax: "~payment", description: "Message starts with text" },
+  { syntax: "payment~", description: "Message ends with text" },
+  { syntax: "+region=eu", description: "Label equals value" },
+  { syntax: "+region=(eu|us)", description: "Label value OR group" },
+  { syntax: "*statusCode>=500", description: "Field comparison" },
+  { syntax: "!warn", description: "Severity" },
+  { syntax: "!(warn|error)", description: "Severity OR group" },
+  { syntax: "^billing-api", description: "Service" },
+  { syntax: ">worker-1", description: "Source" },
+  { syntax: "$trace #span %request", description: "Trace, span, request IDs" },
+  { syntax: "@15m", description: "Last 15 minutes" },
+  { syntax: "@30m..15m", description: "From 30m ago through 15m ago" },
+  { syntax: "-term", description: "Exclude a term or filter" },
+  { syntax: "(a|b)", description: "Group OR conditions" },
+];
 
-function FilterSelect({
-  label,
-  value,
-  onValueChange,
-  children,
+function LoggingQueryCheatsheet({
+  open,
+  onOpenChange,
 }: {
-  label: string;
-  value: string;
-  onValueChange: (value: string) => void;
-  children: React.ReactNode;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }) {
   return (
-    <label className="block space-y-1">
-      <span className="text-xs font-medium text-muted-foreground">{label}</span>
-      <Select value={value} onValueChange={onValueChange}>
-        <SelectTrigger>
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>{children}</SelectContent>
-      </Select>
-    </label>
-  );
-}
-
-function FilterRows({
-  title,
-  definitions,
-  rows,
-  onAdd,
-  onRemove,
-  onChange,
-}: {
-  title: string;
-  definitions: LoggingFieldDefinition[];
-  rows: LabelFilter[];
-  onAdd: () => void;
-  onRemove: (id: string) => void;
-  onChange: (id: string, patch: Partial<LabelFilter>) => void;
-}) {
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <p className="text-xs font-medium text-muted-foreground">{title}</p>
-        <Button variant="outline" size="sm" onClick={onAdd}>
-          <Plus className="h-3.5 w-3.5" />
-          Add
-        </Button>
-      </div>
-      {rows.map((row) => (
-        <div
-          key={row.id}
-          className="grid gap-2 md:grid-cols-[minmax(180px,1fr)_minmax(220px,2fr)_40px]"
-        >
-          <KeyInput
-            value={row.key}
-            definitions={definitions}
-            onChange={(key) => onChange(row.id, { key })}
-          />
-          <Input
-            value={row.value}
-            placeholder="Value"
-            onChange={(event) => onChange(row.id, { value: event.target.value })}
-          />
-          <Button variant="ghost" size="icon" onClick={() => onRemove(row.id)}>
-            <Trash2 className="h-4 w-4" />
-          </Button>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function FieldFilterRows({
-  definitions,
-  rows,
-  onAdd,
-  onRemove,
-  onChange,
-}: {
-  definitions: LoggingFieldDefinition[];
-  rows: FieldFilter[];
-  onAdd: () => void;
-  onRemove: (id: string) => void;
-  onChange: (id: string, patch: Partial<FieldFilter>) => void;
-}) {
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <p className="text-xs font-medium text-muted-foreground">Field filters</p>
-        <Button variant="outline" size="sm" onClick={onAdd}>
-          <Plus className="h-3.5 w-3.5" />
-          Add
-        </Button>
-      </div>
-      {rows.map((row) => (
-        <div
-          key={row.id}
-          className="grid gap-2 md:grid-cols-[minmax(180px,1fr)_130px_minmax(220px,2fr)_40px]"
-        >
-          <KeyInput
-            value={row.key}
-            definitions={definitions}
-            onChange={(key) => onChange(row.id, { key })}
-          />
-          <Select value={row.op} onValueChange={(op) => onChange(row.id, { op })}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {FIELD_OPERATORS.map((op) => (
-                <SelectItem key={op} value={op}>
-                  {op}
-                </SelectItem>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[80vh] max-w-2xl overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Log Query Cheatsheet</DialogTitle>
+          <DialogDescription>Compact search syntax for filtering log events.</DialogDescription>
+        </DialogHeader>
+        <div className="overflow-hidden rounded-md border border-border">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-border bg-muted/50">
+                <th className="px-3 py-1.5 text-left font-medium">Syntax</th>
+                <th className="px-3 py-1.5 text-left font-medium">Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              {QUERY_CHEATSHEET.map((item) => (
+                <tr key={item.syntax} className="border-b border-border last:border-b-0">
+                  <td className="px-3 py-1.5 font-mono text-purple-400">{item.syntax}</td>
+                  <td className="px-3 py-1.5 text-muted-foreground">{item.description}</td>
+                </tr>
               ))}
-            </SelectContent>
-          </Select>
-          <Input
-            value={row.value}
-            placeholder="Value"
-            onChange={(event) => onChange(row.id, { value: event.target.value })}
-          />
-          <Button variant="ghost" size="icon" onClick={() => onRemove(row.id)}>
-            <Trash2 className="h-4 w-4" />
-          </Button>
+            </tbody>
+          </table>
         </div>
-      ))}
-    </div>
+      </DialogContent>
+    </Dialog>
   );
-}
-
-function KeyInput({
-  value,
-  definitions,
-  onChange,
-}: {
-  value: string;
-  definitions: LoggingFieldDefinition[];
-  onChange: (value: string) => void;
-}) {
-  if (definitions.length === 0) {
-    return (
-      <Input value={value} placeholder="Key" onChange={(event) => onChange(event.target.value)} />
-    );
-  }
-  return (
-    <Select
-      value={value || "__custom"}
-      onValueChange={(key) => onChange(key === "__custom" ? "" : key)}
-    >
-      <SelectTrigger>
-        <SelectValue placeholder="Key" />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value="__custom">Custom key</SelectItem>
-        {definitions.map((definition) => (
-          <SelectItem key={definition.key} value={definition.key}>
-            {definition.key}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
-}
-
-function coerceFieldValue(key: string, value: string, definitions: LoggingFieldDefinition[]) {
-  const definition = definitions.find((item) => item.key === key);
-  if (definition?.type === "number") return Number(value);
-  if (definition?.type === "boolean") return value === "true";
-  return value;
 }

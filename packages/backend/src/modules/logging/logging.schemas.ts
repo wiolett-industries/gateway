@@ -108,9 +108,82 @@ export const LoggingBatchSchema = z.object({
 });
 
 const fieldFilterSchema = z.object({
-  op: z.enum(['eq', 'contains', 'gt', 'gte', 'lt', 'lte']),
+  op: z.enum(['eq', 'neq', 'contains', 'gt', 'gte', 'lt', 'lte']),
   value: z.unknown(),
 });
+
+type LoggingSearchExpressionInput =
+  | { type: 'and' | 'or'; children: LoggingSearchExpressionInput[] }
+  | { type: 'not'; child: LoggingSearchExpressionInput }
+  | { type: 'text'; value: string; match?: 'contains' | 'startsWith' | 'endsWith' }
+  | { type: 'label'; key: string; op: 'exists' | 'eq' | 'neq'; value?: string }
+  | { type: 'field'; key: string; op: 'eq' | 'neq' | 'contains' | 'gt' | 'gte' | 'lt' | 'lte'; value?: unknown }
+  | { type: 'severity'; op: 'eq' | 'gt' | 'gte' | 'lt' | 'lte'; value: string }
+  | { type: 'service' | 'source' | 'traceId' | 'spanId' | 'requestId'; op: 'eq' | 'neq'; value: string };
+
+const loggingSearchExpressionSchema: z.ZodType<LoggingSearchExpressionInput> = z.lazy(() =>
+  z.discriminatedUnion('type', [
+    z.object({
+      type: z.literal('and'),
+      children: z.array(loggingSearchExpressionSchema).min(1).max(32),
+    }),
+    z.object({
+      type: z.literal('or'),
+      children: z.array(loggingSearchExpressionSchema).min(1).max(32),
+    }),
+    z.object({
+      type: z.literal('not'),
+      child: loggingSearchExpressionSchema,
+    }),
+    z.object({
+      type: z.literal('text'),
+      value: z.string().trim().min(1).max(1000),
+      match: z.enum(['contains', 'startsWith', 'endsWith']).default('contains').optional(),
+    }),
+    z.object({
+      type: z.literal('label'),
+      key: keySchema,
+      op: z.enum(['exists', 'eq', 'neq']),
+      value: z.string().trim().max(8192).optional(),
+    }),
+    z.object({
+      type: z.literal('field'),
+      key: keySchema,
+      op: z.enum(['eq', 'neq', 'contains', 'gt', 'gte', 'lt', 'lte']),
+      value: z.any(),
+    }),
+    z.object({
+      type: z.literal('severity'),
+      op: z.enum(['eq', 'gt', 'gte', 'lt', 'lte']),
+      value: z.enum(LOGGING_SEVERITIES as [string, ...string[]]),
+    }),
+    z.object({
+      type: z.literal('service'),
+      op: z.enum(['eq', 'neq']),
+      value: z.string().trim().min(1).max(255),
+    }),
+    z.object({
+      type: z.literal('source'),
+      op: z.enum(['eq', 'neq']),
+      value: z.string().trim().min(1).max(255),
+    }),
+    z.object({
+      type: z.literal('traceId'),
+      op: z.enum(['eq', 'neq']),
+      value: z.string().trim().min(1).max(255),
+    }),
+    z.object({
+      type: z.literal('spanId'),
+      op: z.enum(['eq', 'neq']),
+      value: z.string().trim().min(1).max(255),
+    }),
+    z.object({
+      type: z.literal('requestId'),
+      op: z.enum(['eq', 'neq']),
+      value: z.string().trim().min(1).max(255),
+    }),
+  ])
+);
 
 export const LoggingSearchSchema = z.object({
   from: z.string().datetime().optional(),
@@ -122,11 +195,13 @@ export const LoggingSearchSchema = z.object({
   services: z.array(z.string().trim().max(255)).max(50).optional(),
   sources: z.array(z.string().trim().max(255)).max(50).optional(),
   message: z.string().trim().max(1000).optional(),
+  messageMatch: z.enum(['contains', 'startsWith', 'endsWith']).default('contains').optional(),
   traceId: z.string().trim().max(255).optional(),
   spanId: z.string().trim().max(255).optional(),
   requestId: z.string().trim().max(255).optional(),
   labels: z.record(z.string().trim().max(8192)).optional(),
   fields: z.record(fieldFilterSchema).optional(),
+  expression: loggingSearchExpressionSchema.optional(),
   limit: z.number().int().min(1).max(500).default(100),
   cursor: z.string().nullable().optional(),
 });

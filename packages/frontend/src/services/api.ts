@@ -50,6 +50,7 @@ import type {
   LoggingFacets,
   LoggingFeatureStatus,
   LoggingIngestToken,
+  LoggingMetadata,
   LoggingSchema,
   LoggingSearchRequest,
   LoggingSearchResult,
@@ -1441,6 +1442,12 @@ class ApiClient extends ApiClientBase {
       this.request<{ data: LoggingFacets }>(
         `/logging/environments/${environmentId}/facets${qs ? `?${qs}` : ""}`
       )
+    );
+  }
+
+  async getLoggingMetadata(environmentId: string): Promise<LoggingMetadata> {
+    return this.unwrapData(
+      this.request<{ data: LoggingMetadata }>(`/logging/environments/${environmentId}/metadata`)
     );
   }
 

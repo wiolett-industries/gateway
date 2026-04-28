@@ -22,6 +22,7 @@ import { startGrpcServer, stopGrpcServer } from '@/grpc/server.js';
 import { logger } from '@/lib/logger.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
 import { LoggingClickHouseService } from '@/modules/logging/logging-clickhouse.service.js';
+import { LoggingMetadataService } from '@/modules/logging/logging-metadata.service.js';
 import { CAService } from '@/modules/pki/ca.service.js';
 import type { RedisClient } from '@/services/cache.service.js';
 import { CryptoService } from '@/services/crypto.service.js';
@@ -113,6 +114,14 @@ async function main() {
         await stopGrpcServer();
       } catch (err) {
         logger.error('Failed to stop gRPC server', { err });
+      }
+
+      try {
+        const metadata = container.resolve(LoggingMetadataService);
+        await metadata.close();
+        logger.info('Logging metadata queue flushed');
+      } catch (err) {
+        logger.error('Failed to flush logging metadata queue', { err });
       }
 
       try {

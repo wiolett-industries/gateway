@@ -1,0 +1,33 @@
+{
+  "name": "logging-sdk",
+  "root": "packages/logging-sdk",
+  "sourceRoot": "packages/logging-sdk/src",
+  "targets": {
+    "build": {
+      "command": "pnpm --filter @wiolett/gateway-logger build",
+      "inputs": ["{projectRoot}/src/**/*", "{projectRoot}/tsconfig.json", "{projectRoot}/package.json"],
+      "outputs": ["{projectRoot}/dist"],
+      "cache": true
+    },
+    "test": {
+      "command": "pnpm --filter @wiolett/gateway-logger test",
+      "inputs": ["{projectRoot}/src/**/*", "{projectRoot}/vitest.config.*", "{projectRoot}/package.json"],
+      "cache": true
+    },
+    "lint": {
+      "command": "pnpm --filter @wiolett/gateway-logger lint",
+      "inputs": [
+        "{projectRoot}/src/**/*",
+        "{projectRoot}/biome.json",
+        "{projectRoot}/package.json",
+        "{projectRoot}/vitest.config.*"
+      ],
+      "cache": true
+    },
+    "typecheck": {
+      "command": "pnpm --filter @wiolett/gateway-logger typecheck",
+      "inputs": ["{projectRoot}/src/**/*", "{projectRoot}/tsconfig.json"],
+      "cache": true
+    }
+  }
+}

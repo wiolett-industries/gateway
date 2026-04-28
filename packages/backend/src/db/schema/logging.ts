@@ -1,4 +1,15 @@
-import { boolean, index, integer, jsonb, pgTable, text, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
+import {
+  boolean,
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+  varchar,
+} from 'drizzle-orm/pg-core';
 import { users } from './users.js';
 
 export type LoggingSchemaMode = 'loose' | 'strip' | 'reject';
@@ -75,5 +86,31 @@ export const loggingIngestTokens = pgTable(
   (table) => ({
     envIdx: index('logging_token_env_idx').on(table.environmentId),
     hashIdx: index('logging_token_hash_idx').on(table.tokenHash),
+  })
+);
+
+export const loggingMetadata = pgTable(
+  'logging_metadata',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    environmentId: uuid('environment_id')
+      .notNull()
+      .references(() => loggingEnvironments.id, { onDelete: 'cascade' }),
+    kind: varchar('kind', { length: 40 }).notNull(),
+    key: varchar('key', { length: 255 }).notNull(),
+    value: text('value').notNull().default(''),
+    count: integer('count').notNull().default(0),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    uniqueIdx: uniqueIndex('logging_metadata_unique_idx').on(table.environmentId, table.kind, table.key, table.value),
+    envKindIdx: index('logging_metadata_env_kind_idx').on(table.environmentId, table.kind),
+    envKindKeyValueIdx: index('logging_metadata_env_kind_key_value_idx').on(
+      table.environmentId,
+      table.kind,
+      table.key,
+      table.value
+    ),
   })
 );

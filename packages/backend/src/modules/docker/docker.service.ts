@@ -14,6 +14,7 @@ import { DOCKER_DEPLOYMENT_MANAGED_LABEL } from './docker-deployment.service.js'
 import type { DockerEnvironmentService } from './docker-environment.service.js';
 import type { DockerFolderService } from './docker-folder.service.js';
 import type { DockerHealthCheckService } from './docker-health-check.service.js';
+import type { DockerRegistryService } from './docker-registry.service.js';
 import {
   type ContainerRuntimeConfig,
   type NodeRuntimeCapacity,
@@ -56,6 +57,7 @@ export class DockerManagementService {
   private folderService?: DockerFolderService;
   private deploymentService?: DockerDeploymentService;
   private healthCheckService?: DockerHealthCheckService;
+  private registryService?: DockerRegistryService;
   private eventBus?: EventBusService;
   private evaluator?: NotificationEvaluatorService;
 
@@ -92,6 +94,10 @@ export class DockerManagementService {
 
   setHealthCheckService(healthCheckService: DockerHealthCheckService) {
     this.healthCheckService = healthCheckService;
+  }
+
+  setRegistryService(registryService: DockerRegistryService) {
+    this.registryService = registryService;
   }
 
   setEventBus(eventBus: EventBusService) {
@@ -1076,7 +1082,13 @@ export class DockerManagementService {
     });
   }
 
-  async recreateWithConfig(nodeId: string, containerId: string, config: Record<string, unknown>, userId: string) {
+  async recreateWithConfig(
+    nodeId: string,
+    containerId: string,
+    config: Record<string, unknown>,
+    userId: string,
+    options?: { skipImagePull?: boolean }
+  ) {
     await this.validateDockerNode(nodeId);
     await this.assertNotManagedDeploymentInternal(nodeId, containerId);
     const name = await this.resolveContainerName(nodeId, containerId);
@@ -1106,6 +1118,10 @@ export class DockerManagementService {
     }
 
     try {
+      if (!options?.skipImagePull) {
+        await this.pullRecreateImage(nodeId, config);
+      }
+
       const result = await this.nodeDispatch.sendDockerContainerCommand(
         nodeId,
         'recreate',
@@ -1136,6 +1152,35 @@ export class DockerManagementService {
       }
       throw err;
     }
+  }
+
+  private async pullRecreateImage(nodeId: string, config: Record<string, unknown>) {
+    const imageRef = typeof config.image === 'string' ? config.image.trim() : '';
+    if (!imageRef) return;
+
+    let finalImageRef = imageRef;
+    let registryAuth: string | undefined;
+    const auth = await this.registryService?.resolveAuthForImagePull(nodeId, imageRef);
+    if (auth) {
+      registryAuth = auth.authJson;
+      if (!this.hasRegistryHost(imageRef)) {
+        finalImageRef = `${auth.url}/${imageRef}`;
+      }
+    }
+
+    const result = await this.nodeDispatch.sendDockerImageCommand(
+      nodeId,
+      'pull',
+      { imageRef: finalImageRef, registryAuthJson: registryAuth },
+      DockerManagementService.LONG_DOCKER_OPERATION_TIMEOUT_MS
+    );
+    this.parseResult(result);
+    config.image = finalImageRef;
+  }
+
+  private hasRegistryHost(imageRef: string) {
+    const firstSegment = imageRef.split('/')[0] ?? '';
+    return firstSegment === 'localhost' || firstSegment.includes('.') || firstSegment.includes(':');
   }
 
   async updateContainerEnv(

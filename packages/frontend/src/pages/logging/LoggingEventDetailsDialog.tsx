@@ -1,6 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { LoggingSearchResult } from "@/types";
+import { loggingSeverityBadgeVariant } from "./logging-severity";
 
 export function LoggingEventDetailsDialog({
   event,
@@ -18,7 +19,7 @@ export function LoggingEventDetailsDialog({
         {event && (
           <div className="space-y-4">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline">{event.severity}</Badge>
+              <Badge variant={loggingSeverityBadgeVariant(event.severity)}>{event.severity}</Badge>
               <span className="text-sm text-muted-foreground">
                 {new Date(event.timestamp).toLocaleString()}
               </span>

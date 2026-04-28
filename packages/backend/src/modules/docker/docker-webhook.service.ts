@@ -213,7 +213,9 @@ export class DockerWebhookService {
     const config = buildRecreateConfig(inspectData as Record<string, unknown>, targetRef);
 
     try {
-      await this.docker.recreateWithConfig(nodeId, containerId, config, userId ?? (null as any));
+      await this.docker.recreateWithConfig(nodeId, containerId, config, userId ?? (null as any), {
+        skipImagePull: true,
+      });
     } catch (err) {
       await this.tasks
         .update(task.id, {
@@ -261,7 +263,7 @@ export class DockerWebhookService {
 
   async triggerWebhookToken(token: string, tag?: string, userId?: string) {
     const webhook = await this.getByToken(token);
-    if (!webhook || !webhook.enabled) {
+    if (!webhook?.enabled) {
       throw new AppError(404, 'NOT_FOUND', 'Webhook not found');
     }
     if (webhook.targetType === 'deployment') {

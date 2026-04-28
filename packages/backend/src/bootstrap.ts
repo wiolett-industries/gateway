@@ -39,6 +39,7 @@ import { LoggingClickHouseService } from '@/modules/logging/logging-clickhouse.s
 import { LoggingEnvironmentService } from '@/modules/logging/logging-environment.service.js';
 import { LoggingFeatureService } from '@/modules/logging/logging-feature.service.js';
 import { LoggingIngestService } from '@/modules/logging/logging-ingest.service.js';
+import { LoggingMetadataService } from '@/modules/logging/logging-metadata.service.js';
 import { LoggingRateLimitService } from '@/modules/logging/logging-rate-limit.service.js';
 import { LoggingSchemaService } from '@/modules/logging/logging-schema.service.js';
 import { LoggingSearchService } from '@/modules/logging/logging-search.service.js';
@@ -234,6 +235,7 @@ export async function initializeContainer(): Promise<void> {
 
   const dockerRegistryService = new DockerRegistryService(db, auditService, cryptoService, nodeDispatch);
   container.registerInstance(DockerRegistryService, dockerRegistryService);
+  dockerManagementService.setRegistryService(dockerRegistryService);
 
   const dockerSecretService = new DockerSecretService(db, auditService, cryptoService);
   container.registerInstance(DockerSecretService, dockerSecretService);
@@ -435,7 +437,13 @@ export async function initializeContainer(): Promise<void> {
   container.registerInstance(LoggingValidationService, loggingValidationService);
   const loggingRateLimitService = new LoggingRateLimitService(redis, env);
   container.registerInstance(LoggingRateLimitService, loggingRateLimitService);
-  const loggingIngestService = new LoggingIngestService(loggingValidationService, loggingClickHouseService);
+  const loggingMetadataService = new LoggingMetadataService(db);
+  container.registerInstance(LoggingMetadataService, loggingMetadataService);
+  const loggingIngestService = new LoggingIngestService(
+    loggingValidationService,
+    loggingClickHouseService,
+    loggingMetadataService
+  );
   loggingIngestService.setEventBus(eventBus);
   container.registerInstance(LoggingIngestService, loggingIngestService);
   const loggingSearchService = new LoggingSearchService(loggingEnvironmentService, loggingClickHouseService);

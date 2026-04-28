@@ -512,12 +512,17 @@ export function PostgresExplorer({
                         );
                       }
 
+                      const value = stringifyCell(draft[column.name]);
                       return (
-                        <div key={column.name} className="border-r border-border last:border-r-0">
-                          <div className="px-3 py-2 text-xs font-mono whitespace-pre-wrap break-words min-h-9">
-                            {stringifyCell(draft[column.name]) || (
-                              <span className="text-muted-foreground">NULL</span>
-                            )}
+                        <div
+                          key={column.name}
+                          className="min-w-0 border-r border-border last:border-r-0"
+                        >
+                          <div
+                            className="min-h-9 min-w-0 overflow-hidden truncate whitespace-nowrap px-3 py-2 font-mono text-xs"
+                            title={value || "NULL"}
+                          >
+                            {value || <span className="text-muted-foreground">NULL</span>}
                           </div>
                         </div>
                       );

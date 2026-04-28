@@ -226,7 +226,32 @@ curl -H "Content-Type: application/json" \
   -d '{"from":"2026-04-27T00:00:00.000Z","to":"2026-04-27T23:59:59.999Z","severities":["error","fatal"],"message":"failed","limit":100}'
 ```
 
-No SDK is included yet; the HTTP API response shapes are intended to be stable for a later SDK.
+TypeScript SDK:
+
+```ts
+import { createGatewayLogger } from "@wiolett/gateway-logger";
+
+const logger = createGatewayLogger({
+  endpoint: "https://gateway.example.com",
+  token: process.env.GATEWAY_LOGGING_TOKEN!,
+  service: "billing-api",
+  source: "worker-1",
+  labels: { app: "billing", region: "eu" },
+  fields: { version: "2.4.1" },
+});
+
+const trace = logger.createTrace({ requestId: "req_123" });
+trace.info("Payment started");
+trace.error("Payment capture failed", {
+  labels: { provider: "stripe" },
+  fields: { statusCode: 502, durationMs: 1834 },
+});
+
+await logger.flush();
+await logger.close();
+```
+
+`gwl_` ingest tokens are write-only server-side secrets. Do not expose them in browser code.
 
 ## Adding Nodes
 

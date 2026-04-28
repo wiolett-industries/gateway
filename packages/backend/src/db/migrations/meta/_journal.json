@@ -169,6 +169,13 @@
       "when": 1777294800000,
       "tag": "0023_logging_schemas",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1777298400000,
+      "tag": "0024_logging_metadata",
+      "breakpoints": true
     }
   ]
 }

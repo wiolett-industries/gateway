@@ -111,14 +111,34 @@ export interface LoggingSearchRequest {
   services?: string[];
   sources?: string[];
   message?: string;
+  messageMatch?: "contains" | "startsWith" | "endsWith";
   traceId?: string;
   spanId?: string;
   requestId?: string;
   labels?: Record<string, string>;
   fields?: Record<string, { op: string; value: unknown }>;
+  expression?: LoggingSearchExpression;
   limit?: number;
   cursor?: string | null;
 }
+
+export type LoggingSearchExpression =
+  | { type: "and" | "or"; children: LoggingSearchExpression[] }
+  | { type: "not"; child: LoggingSearchExpression }
+  | { type: "text"; value: string; match?: "contains" | "startsWith" | "endsWith" }
+  | { type: "label"; key: string; op: "exists" | "eq" | "neq"; value?: string }
+  | {
+      type: "field";
+      key: string;
+      op: "eq" | "neq" | "contains" | "gt" | "gte" | "lt" | "lte";
+      value: unknown;
+    }
+  | { type: "severity"; op: "eq" | "gt" | "gte" | "lt" | "lte"; value: LoggingSeverity }
+  | {
+      type: "service" | "source" | "traceId" | "spanId" | "requestId";
+      op: "eq" | "neq";
+      value: string;
+    };
 
 export interface LoggingSearchResult {
   eventId: string;
@@ -141,6 +161,14 @@ export interface LoggingFacets {
   sources: string[];
   severities: Array<{ severity: LoggingSeverity; count: number }>;
   labels: Record<string, string[]>;
+}
+
+export interface LoggingMetadata {
+  services: string[];
+  sources: string[];
+  labelKeys: string[];
+  fieldKeys: string[];
+  labelValues: Record<string, string[]>;
 }
 
 export interface LoggingFeatureStatus {

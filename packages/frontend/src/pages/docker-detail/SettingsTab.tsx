@@ -432,18 +432,6 @@ export function SettingsTab({
         return;
       }
 
-      // If the image tag changed, pull the new image first to validate it exists
-      if (imageTagChanged) {
-        const newRef = `${parsedImageName}:${imageTag}`;
-        try {
-          await api.pullImageSync(nodeId, newRef);
-        } catch {
-          toast.error(`Failed to pull image ${newRef} — check the tag is valid`);
-          setRecreateLoading(false);
-          return;
-        }
-      }
-
       const payload: Record<string, unknown> = {};
 
       // Include new image if tag changed

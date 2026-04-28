@@ -1,5 +1,6 @@
 import type { EventBusService } from '@/services/event-bus.service.js';
 import type { LoggingClickHouseService } from './logging-clickhouse.service.js';
+import type { LoggingMetadataService } from './logging-metadata.service.js';
 import type { LoggingValidationError, LoggingValidationService } from './logging-validation.service.js';
 
 export interface LoggingIngestResult {
@@ -13,7 +14,8 @@ export class LoggingIngestService {
 
   constructor(
     private readonly validation: LoggingValidationService,
-    private readonly storage: LoggingClickHouseService
+    private readonly storage: LoggingClickHouseService,
+    private readonly metadata: LoggingMetadataService
   ) {}
 
   setEventBus(eventBus: EventBusService): void {
@@ -41,6 +43,7 @@ export class LoggingIngestService {
     });
     if (result.rows.length > 0) {
       await this.storage.insertLogs(result.rows);
+      this.metadata.enqueue(params.environment.id, result.rows);
       this.eventBus?.publish('logging.logs.ingested', {
         environmentId: params.environment.id,
         accepted: result.rows.length,

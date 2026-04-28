@@ -1,6 +1,6 @@
 import type { LoggingFieldDefinition } from '@/db/schema/index.js';
 import { AppError } from '@/middleware/error-handler.js';
-import type { LoggingSearchRequest } from './logging-storage.types.js';
+import { type LoggingSearchExpression, type LoggingSearchRequest, SEVERITY_NUMBER } from './logging-storage.types.js';
 
 const IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
@@ -43,6 +43,7 @@ export function buildSearchQuery(params: {
   const tableName = `${quoteClickHouseIdentifier(params.database)}.${quoteClickHouseIdentifier(params.table)}`;
   const where = ['EnvironmentId = {environmentId: UUID}'];
   const queryParams: Record<string, unknown> = { environmentId: params.environmentId };
+  const paramIndex = { value: 1000 };
   const cursor = parseCursor(params.query.cursor);
 
   if (params.query.from) {
@@ -66,8 +67,19 @@ export function buildSearchQuery(params: {
     queryParams.sources = params.query.sources;
   }
   if (params.query.message) {
-    where.push('positionCaseInsensitive(Message, {message: String}) > 0');
+    where.push(buildMessageClause('Message', 'message', params.query.messageMatch ?? 'contains'));
     queryParams.message = params.query.message;
+  }
+  if (params.query.expression) {
+    where.push(
+      buildExpressionClause({
+        expression: params.query.expression,
+        queryParams,
+        index: paramIndex,
+        fieldSchema: params.fieldSchema,
+        schemaMode: params.schemaMode,
+      })
+    );
   }
   for (const attr of ['traceId', 'spanId', 'requestId'] as const) {
     if (params.query[attr]) {
@@ -129,6 +141,98 @@ export function buildSearchQuery(params: {
   };
 }
 
+function buildExpressionClause(params: {
+  expression: LoggingSearchExpression;
+  queryParams: Record<string, unknown>;
+  index: { value: number };
+  fieldSchema: LoggingFieldDefinition[];
+  schemaMode: 'loose' | 'strip' | 'reject';
+}): string {
+  const { expression, queryParams, index, fieldSchema, schemaMode } = params;
+  if (expression.type === 'and' || expression.type === 'or') {
+    const children = expression.children
+      .map((child) => buildExpressionClause({ expression: child, queryParams, index, fieldSchema, schemaMode }))
+      .filter(Boolean);
+    if (children.length === 0) return '1';
+    return `(${children.join(expression.type === 'and' ? ' AND ' : ' OR ')})`;
+  }
+  if (expression.type === 'not') {
+    return `(NOT ${buildExpressionClause({ expression: expression.child, queryParams, index, fieldSchema, schemaMode })})`;
+  }
+  const id = index.value++;
+  if (expression.type === 'text') {
+    const valueName = `exprText${id}`;
+    queryParams[valueName] = expression.value;
+    return buildMessageClause('Message', valueName, expression.match ?? 'contains');
+  }
+  if (expression.type === 'label') {
+    const keyName = `exprLabelKey${id}`;
+    const valueName = `exprLabelValue${id}`;
+    queryParams[keyName] = expression.key;
+    if (expression.op === 'exists') return `mapContains(Labels, {${keyName}: String})`;
+    queryParams[valueName] = expression.value ?? '';
+    const comparison = expression.op === 'neq' ? '!=' : '=';
+    return `(mapContains(Labels, {${keyName}: String}) AND Labels[{${keyName}: String}] ${comparison} {${valueName}: String})`;
+  }
+  if (expression.type === 'field') {
+    const definition = fieldSchema.find((field) => field.location === 'field' && field.key === expression.key);
+    if (!definition && schemaMode !== 'loose') {
+      throw new AppError(400, 'UNKNOWN_FIELD', `Unknown logging field filter: ${expression.key}`);
+    }
+    const bucket: string[] = [];
+    addFieldFilter(
+      bucket,
+      queryParams,
+      id,
+      expression.key,
+      definition?.type ?? inferFilterType(expression.value),
+      expression.op,
+      expression.value
+    );
+    return bucket[0] ?? '1';
+  }
+  if (expression.type === 'severity') {
+    const valueName = `exprSeverity${id}`;
+    if (expression.op === 'eq') {
+      queryParams[valueName] = expression.value;
+      return `Severity = {${valueName}: String}`;
+    }
+    queryParams[valueName] = SEVERITY_NUMBER[expression.value];
+    return `SeverityNumber ${opToSql(expression.op, ['gt', 'gte', 'lt', 'lte'])} {${valueName}: UInt8}`;
+  }
+  if (
+    expression.type === 'service' ||
+    expression.type === 'source' ||
+    expression.type === 'traceId' ||
+    expression.type === 'spanId' ||
+    expression.type === 'requestId'
+  ) {
+    const valueName = `exprAttr${id}`;
+    queryParams[valueName] = expression.value;
+    const column = expressionColumn(expression.type);
+    return `${column} ${expression.op === 'neq' ? '!=' : '='} {${valueName}: String}`;
+  }
+  throw new AppError(400, 'INVALID_LOGGING_QUERY', 'Invalid logging search expression');
+}
+
+function expressionColumn(type: 'service' | 'source' | 'traceId' | 'spanId' | 'requestId'): string {
+  return (
+    {
+      service: 'Service',
+      source: 'Source',
+      traceId: 'TraceId',
+      spanId: 'SpanId',
+      requestId: 'RequestId',
+    } as const
+  )[type];
+}
+
+function buildMessageClause(column: string, valueName: string, match: 'contains' | 'startsWith' | 'endsWith'): string {
+  if (match === 'startsWith') return `startsWith(lower(${column}), lower({${valueName}: String}))`;
+  if (match === 'endsWith') return `endsWith(lower(${column}), lower({${valueName}: String}))`;
+  return `positionCaseInsensitive(${column}, {${valueName}: String}) > 0`;
+}
+
 function addFieldFilter(
   where: string[],
   queryParams: Record<string, unknown>,
@@ -147,6 +251,8 @@ function addFieldFilter(
       where.push(`positionCaseInsensitive(FieldStrings[{${keyName}: String}], {${valueName}: String}) > 0`);
     } else if (op === 'eq') {
       where.push(`FieldStrings[{${keyName}: String}] = {${valueName}: String}`);
+    } else if (op === 'neq') {
+      where.push(`FieldStrings[{${keyName}: String}] != {${valueName}: String}`);
     } else {
       throw new AppError(400, 'INVALID_FIELD_OPERATOR', 'Invalid string field operator');
     }
@@ -154,19 +260,20 @@ function addFieldFilter(
     return;
   }
   if (type === 'number') {
-    const opSql = opToSql(op, ['eq', 'gt', 'gte', 'lt', 'lte']);
+    const opSql = opToSql(op, ['eq', 'neq', 'gt', 'gte', 'lt', 'lte']);
     where.push(`FieldNumbers[{${keyName}: String}] ${opSql} {${valueName}: Float64}`);
     queryParams[valueName] = Number(value);
     return;
   }
   if (type === 'boolean') {
-    if (op !== 'eq') throw new AppError(400, 'INVALID_FIELD_OPERATOR', 'Invalid boolean field operator');
-    where.push(`FieldBooleans[{${keyName}: String}] = {${valueName}: UInt8}`);
+    if (op !== 'eq' && op !== 'neq')
+      throw new AppError(400, 'INVALID_FIELD_OPERATOR', 'Invalid boolean field operator');
+    where.push(`FieldBooleans[{${keyName}: String}] ${op === 'neq' ? '!=' : '='} {${valueName}: UInt8}`);
     queryParams[valueName] = value === true ? 1 : 0;
     return;
   }
   if (type === 'datetime') {
-    const opSql = opToSql(op, ['eq', 'gt', 'gte', 'lt', 'lte']);
+    const opSql = opToSql(op, ['eq', 'neq', 'gt', 'gte', 'lt', 'lte']);
     where.push(`FieldDatetimes[{${keyName}: String}] ${opSql} {${valueName}: DateTime64(3)}`);
     queryParams[valueName] = normalizeDateTime(String(value));
   }
@@ -174,7 +281,7 @@ function addFieldFilter(
 
 function opToSql(op: string, allowed: string[]): string {
   if (!allowed.includes(op)) throw new AppError(400, 'INVALID_FIELD_OPERATOR', 'Invalid field operator');
-  return ({ eq: '=', gt: '>', gte: '>=', lt: '<', lte: '<=' } as Record<string, string>)[op]!;
+  return ({ eq: '=', neq: '!=', gt: '>', gte: '>=', lt: '<', lte: '<=' } as Record<string, string>)[op]!;
 }
 
 function inferFilterType(value: unknown): 'string' | 'number' | 'boolean' {

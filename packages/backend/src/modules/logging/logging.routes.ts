@@ -18,6 +18,7 @@ import { LoggingEnvironmentService } from './logging-environment.service.js';
 import { LoggingFeatureService } from './logging-feature.service.js';
 import { LoggingIngestService } from './logging-ingest.service.js';
 import { loggingIngestAuthMiddleware } from './logging-ingest-auth.middleware.js';
+import { LoggingMetadataService } from './logging-metadata.service.js';
 import { LoggingRateLimitService } from './logging-rate-limit.service.js';
 import { LoggingSchemaService } from './logging-schema.service.js';
 import { LoggingSearchService } from './logging-search.service.js';
@@ -159,6 +160,12 @@ loggingRoutes.get('/environments/:id/facets', requireLoggingResourceScope('logs:
   const service = container.resolve(LoggingSearchService);
   const input = LoggingFacetsQuerySchema.parse(c.req.query());
   const data = await service.facets(c.req.param('id'), input);
+  return c.json({ data });
+});
+
+loggingRoutes.get('/environments/:id/metadata', requireLoggingResourceScope('logs:read'), async (c) => {
+  const service = container.resolve(LoggingMetadataService);
+  const data = await service.get(c.req.param('id'));
   return c.json({ data });
 });
 
