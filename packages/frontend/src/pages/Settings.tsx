@@ -189,7 +189,7 @@ export function Settings() {
           databasesList={databasesList}
         />
 
-        {/* Authentication */}
+        {/* Gateway settings */}
         {canManageUsers && <AuthProvisioningSection />}
 
         {/* AI Assistant */}

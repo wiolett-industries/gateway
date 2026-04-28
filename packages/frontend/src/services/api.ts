@@ -427,6 +427,7 @@ class ApiClient extends ApiClientBase {
   async updateAuthProvisioningSettings(data: {
     oidcAutoCreateUsers?: boolean;
     oidcDefaultGroupId?: string;
+    mcpServerEnabled?: boolean;
   }): Promise<AuthProvisioningSettings> {
     return this.request<AuthProvisioningSettings>("/admin/auth-settings", {
       method: "PUT",

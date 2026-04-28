@@ -19,7 +19,7 @@ export const getAuthSettingsRoute = appRoute({
   method: 'get',
   path: '/auth-settings',
   tags: ['Admin'],
-  summary: 'Get authentication provisioning settings',
+  summary: 'Get Gateway settings',
   responses: okJson(UnknownDataResponseSchema),
 });
 
@@ -27,7 +27,7 @@ export const updateAuthSettingsRoute = appRoute({
   method: 'put',
   path: '/auth-settings',
   tags: ['Admin'],
-  summary: 'Update authentication provisioning settings',
+  summary: 'Update Gateway settings',
   request: jsonBody(UpdateAuthProvisioningSettingsSchema),
   responses: okJson(UnknownDataResponseSchema),
 });

@@ -15,13 +15,14 @@ export function AuthProvisioningSection() {
   const [settings, setSettings] = useState<AuthProvisioningSettings | null>(null);
   const [isSavingAutoCreate, setIsSavingAutoCreate] = useState(false);
   const [isSavingGroup, setIsSavingGroup] = useState(false);
+  const [isSavingMcp, setIsSavingMcp] = useState(false);
 
   const load = useCallback(async () => {
     try {
       const settingsData = await api.getAuthProvisioningSettings();
       setSettings(settingsData);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to load authentication settings");
+      toast.error(err instanceof Error ? err.message : "Failed to load Gateway settings");
     }
   }, []);
 
@@ -43,10 +44,10 @@ export function AuthProvisioningSection() {
     try {
       const updated = await api.updateAuthProvisioningSettings({ oidcAutoCreateUsers: checked });
       setSettings(updated);
-      toast.success("Authentication settings updated");
+      toast.success("Gateway settings updated");
     } catch (err) {
       setSettings(previous);
-      toast.error(err instanceof Error ? err.message : "Failed to update authentication settings");
+      toast.error(err instanceof Error ? err.message : "Failed to update Gateway settings");
     } finally {
       setIsSavingAutoCreate(false);
     }
@@ -69,14 +70,31 @@ export function AuthProvisioningSection() {
     }
   };
 
+  const handleToggleMcpServer = async (checked: boolean) => {
+    if (!settings) return;
+    setIsSavingMcp(true);
+    const previous = settings;
+    setSettings({ ...settings, mcpServerEnabled: checked });
+    try {
+      const updated = await api.updateAuthProvisioningSettings({ mcpServerEnabled: checked });
+      setSettings(updated);
+      toast.success("MCP server setting updated");
+    } catch (err) {
+      setSettings(previous);
+      toast.error(err instanceof Error ? err.message : "Failed to update MCP server setting");
+    } finally {
+      setIsSavingMcp(false);
+    }
+  };
+
   if (!settings) return null;
 
   return (
     <div className="border border-border bg-card">
       <div className="border-b border-border p-4">
-        <h2 className="font-semibold">Authentication</h2>
+        <h2 className="font-semibold">Gateway settings</h2>
         <p className="text-xs text-muted-foreground mt-0.5">
-          Control how new OIDC sign-ins are provisioned
+          Configure sign-in provisioning and external control-plane access
         </p>
       </div>
       <div className="divide-y divide-border">
@@ -118,6 +136,19 @@ export function AuthProvisioningSection() {
               </SelectContent>
             </Select>
           </div>
+        </div>
+        <div className="flex items-center justify-between gap-4 px-4 py-3">
+          <div>
+            <p className="text-sm font-medium">Enable MCP server</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Allow scoped Gateway API tokens with mcp:use to access the remote MCP endpoint
+            </p>
+          </div>
+          <Switch
+            checked={settings.mcpServerEnabled}
+            disabled={isSavingMcp}
+            onChange={handleToggleMcpServer}
+          />
         </div>
       </div>
     </div>

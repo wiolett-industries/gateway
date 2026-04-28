@@ -1,7 +1,10 @@
 import { Hono } from 'hono';
+import { HTTPException } from 'hono/http-exception';
+import { container } from '@/container.js';
 import type { AppEnv } from '@/types.js';
 import { mcpAuthMiddleware } from './mcp-auth.middleware.js';
 import { createMcpServer } from './mcp-server.factory.js';
+import { McpSettingsService } from './mcp-settings.service.js';
 
 export const mcpRoutes = new Hono<AppEnv>();
 
@@ -21,6 +24,14 @@ function methodNotAllowed() {
     }
   );
 }
+
+mcpRoutes.use('*', async (_c, next) => {
+  const enabled = await container.resolve(McpSettingsService).isEnabled();
+  if (!enabled) {
+    throw new HTTPException(404, { message: 'MCP server is disabled' });
+  }
+  await next();
+});
 
 mcpRoutes.use('*', mcpAuthMiddleware);
 

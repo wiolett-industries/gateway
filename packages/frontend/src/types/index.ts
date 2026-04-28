@@ -46,6 +46,7 @@ export interface AuthProvisioningGroupOption {
 export interface AuthProvisioningSettings {
   oidcAutoCreateUsers: boolean;
   oidcDefaultGroupId: string;
+  mcpServerEnabled: boolean;
   availableGroups: AuthProvisioningGroupOption[];
 }
 

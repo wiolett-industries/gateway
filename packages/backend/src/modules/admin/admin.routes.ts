@@ -13,6 +13,7 @@ import { authMiddleware, requireScope } from '@/modules/auth/auth.middleware.js'
 import { AuthService } from '@/modules/auth/auth.service.js';
 import { AuthSettingsService } from '@/modules/auth/auth.settings.service.js';
 import { GroupService } from '@/modules/groups/group.service.js';
+import { McpSettingsService } from '@/modules/mcp/mcp-settings.service.js';
 import type { AppEnv } from '@/types.js';
 import {
   createAdminUserRoute,
@@ -41,14 +42,20 @@ adminRoutes.openapi({ ...listAdminUsersRoute, middleware: requireScope('admin:us
 
 adminRoutes.openapi({ ...getAuthSettingsRoute, middleware: requireScope('admin:users') }, async (c) => {
   const authSettingsService = container.resolve(AuthSettingsService);
+  const mcpSettingsService = container.resolve(McpSettingsService);
   const groupService = container.resolve(GroupService);
   const actorScopes = c.get('effectiveScopes') || [];
 
-  const [settings, groups] = await Promise.all([authSettingsService.getConfig(), groupService.listGroups()]);
+  const [settings, mcpSettings, groups] = await Promise.all([
+    authSettingsService.getConfig(),
+    mcpSettingsService.getConfig(),
+    groupService.listGroups(),
+  ]);
   const assignableGroups = groups.filter((group) => isScopeSubset(getEffectiveGroupScopes(group), actorScopes));
 
   return c.json({
     ...settings,
+    mcpServerEnabled: mcpSettings.serverEnabled,
     availableGroups: assignableGroups.map((group) => ({
       id: group.id,
       name: group.name,
@@ -59,6 +66,7 @@ adminRoutes.openapi({ ...getAuthSettingsRoute, middleware: requireScope('admin:u
 
 adminRoutes.openapi({ ...updateAuthSettingsRoute, middleware: requireScope('admin:users') }, async (c) => {
   const authSettingsService = container.resolve(AuthSettingsService);
+  const mcpSettingsService = container.resolve(McpSettingsService);
   const groupService = container.resolve(GroupService);
   const auditService = container.resolve(AuditService);
   const currentUser = c.get('user')!;
@@ -77,7 +85,10 @@ adminRoutes.openapi({ ...updateAuthSettingsRoute, middleware: requireScope('admi
   }
 
   try {
-    const updated = await authSettingsService.updateConfig(input);
+    const [updated, mcpSettings] = await Promise.all([
+      authSettingsService.updateConfig(input),
+      mcpSettingsService.updateConfig({ serverEnabled: input.mcpServerEnabled }),
+    ]);
     const groups = await groupService.listGroups();
     const assignableGroups = groups.filter((group) => isScopeSubset(getEffectiveGroupScopes(group), actorScopes));
 
@@ -93,6 +104,7 @@ adminRoutes.openapi({ ...updateAuthSettingsRoute, middleware: requireScope('admi
 
     return c.json({
       ...updated,
+      mcpServerEnabled: mcpSettings.serverEnabled,
       availableGroups: assignableGroups.map((group) => ({
         id: group.id,
         name: group.name,

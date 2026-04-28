@@ -1,7 +1,7 @@
 import 'reflect-metadata';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { container } from '@/container.js';
 import { AIService } from '@/modules/ai/ai.service.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
@@ -9,6 +9,7 @@ import { MonitoringService } from '@/modules/monitoring/monitoring.service.js';
 import { TokensService } from '@/modules/tokens/tokens.service.js';
 import type { AppEnv, User } from '@/types.js';
 import { mcpRoutes } from './mcp.routes.js';
+import { McpSettingsService } from './mcp-settings.service.js';
 
 type JsonRecord = Record<string, any>;
 
@@ -51,6 +52,12 @@ function registerToken(scopes: string[] | null) {
   } as unknown as TokensService);
 }
 
+function registerMcpSettings(enabled = true) {
+  container.registerInstance(McpSettingsService, {
+    isEnabled: vi.fn().mockResolvedValue(enabled),
+  } as unknown as McpSettingsService);
+}
+
 function mcpHeaders(token = 'gw_valid') {
   return {
     Authorization: `Bearer ${token}`,
@@ -72,11 +79,28 @@ async function mcpRequest(method: string, params: Record<string, unknown> = {}, 
   };
 }
 
+beforeEach(() => {
+  registerMcpSettings(true);
+});
+
 afterEach(() => {
   container.reset();
 });
 
 describe('MCP route authentication', () => {
+  it('rejects requests when the MCP server is disabled', async () => {
+    registerMcpSettings(false);
+
+    const response = await createApp().request('/api/mcp', {
+      method: 'POST',
+      headers: mcpHeaders(),
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+    });
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ message: 'MCP server is disabled' });
+  });
+
   it('rejects missing auth', async () => {
     const response = await createApp().request('/api/mcp', { method: 'POST' });
 

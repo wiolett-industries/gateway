@@ -17,6 +17,7 @@ export const UpdateBlockSchema = z.object({
 export const UpdateAuthProvisioningSettingsSchema = z.object({
   oidcAutoCreateUsers: z.boolean().optional(),
   oidcDefaultGroupId: z.string().uuid().optional(),
+  mcpServerEnabled: z.boolean().optional(),
 });
 
 export type UpdateUserGroupInput = z.infer<typeof UpdateUserGroupSchema>;

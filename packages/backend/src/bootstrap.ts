@@ -45,6 +45,7 @@ import { LoggingSchemaService } from '@/modules/logging/logging-schema.service.j
 import { LoggingSearchService } from '@/modules/logging/logging-search.service.js';
 import { LoggingTokenService } from '@/modules/logging/logging-token.service.js';
 import { LoggingValidationService } from '@/modules/logging/logging-validation.service.js';
+import { McpSettingsService } from '@/modules/mcp/mcp-settings.service.js';
 import { MonitoringService } from '@/modules/monitoring/monitoring.service.js';
 import { NginxConfigService } from '@/modules/monitoring/nginx-config.service.js';
 import { NginxStatsService } from '@/modules/monitoring/nginx-stats.service.js';
@@ -121,6 +122,9 @@ export async function initializeContainer(): Promise<void> {
 
   const authSettingsService = new AuthSettingsService(db);
   container.registerInstance(AuthSettingsService, authSettingsService);
+
+  const mcpSettingsService = new McpSettingsService(db);
+  container.registerInstance(McpSettingsService, mcpSettingsService);
 
   const auditService = new AuditService(db);
   container.registerInstance(AuditService, auditService);
