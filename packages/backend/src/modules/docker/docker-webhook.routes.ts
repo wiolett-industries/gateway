@@ -1,7 +1,15 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
+import { openApiValidationHook } from '@/lib/openapi.js';
 import { requireScopeForResource } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
+import {
+  deleteContainerWebhookRoute,
+  getContainerWebhookRoute,
+  regenerateContainerWebhookRoute,
+  triggerDockerWebhookRoute,
+  upsertContainerWebhookRoute,
+} from './docker.docs.js';
 import { WebhookTriggerSchema, WebhookUpsertSchema } from './docker-webhook.schemas.js';
 import { DockerWebhookService } from './docker-webhook.service.js';
 
@@ -9,26 +17,24 @@ import { DockerWebhookService } from './docker-webhook.service.js';
 
 export function registerWebhookConfigRoutes(router: OpenAPIHono<AppEnv>) {
   // Get webhook config for a container
-  router.get(
-    '/nodes/:nodeId/containers/:containerName/webhook',
-    requireScopeForResource('docker:containers:webhooks', 'nodeId'),
+  router.openapi(
+    { ...getContainerWebhookRoute, middleware: requireScopeForResource('docker:containers:webhooks', 'nodeId') },
     async (c) => {
       const service = container.resolve(DockerWebhookService);
-      const nodeId = c.req.param('nodeId');
-      const containerName = decodeURIComponent(c.req.param('containerName'));
+      const nodeId = c.req.param('nodeId')!;
+      const containerName = decodeURIComponent(c.req.param('containerName')!);
       const data = await service.getByContainer(nodeId, containerName);
       return c.json({ data });
     }
   );
 
   // Create or update webhook config
-  router.put(
-    '/nodes/:nodeId/containers/:containerName/webhook',
-    requireScopeForResource('docker:containers:webhooks', 'nodeId'),
+  router.openapi(
+    { ...upsertContainerWebhookRoute, middleware: requireScopeForResource('docker:containers:webhooks', 'nodeId') },
     async (c) => {
       const service = container.resolve(DockerWebhookService);
-      const nodeId = c.req.param('nodeId');
-      const containerName = decodeURIComponent(c.req.param('containerName'));
+      const nodeId = c.req.param('nodeId')!;
+      const containerName = decodeURIComponent(c.req.param('containerName')!);
       const body = WebhookUpsertSchema.parse(await c.req.json());
       const user = c.get('user')!;
       const data = await service.upsert(nodeId, containerName, body, user.id);
@@ -37,13 +43,12 @@ export function registerWebhookConfigRoutes(router: OpenAPIHono<AppEnv>) {
   );
 
   // Delete webhook config
-  router.delete(
-    '/nodes/:nodeId/containers/:containerName/webhook',
-    requireScopeForResource('docker:containers:webhooks', 'nodeId'),
+  router.openapi(
+    { ...deleteContainerWebhookRoute, middleware: requireScopeForResource('docker:containers:webhooks', 'nodeId') },
     async (c) => {
       const service = container.resolve(DockerWebhookService);
-      const nodeId = c.req.param('nodeId');
-      const containerName = decodeURIComponent(c.req.param('containerName'));
+      const nodeId = c.req.param('nodeId')!;
+      const containerName = decodeURIComponent(c.req.param('containerName')!);
       const user = c.get('user')!;
       await service.remove(nodeId, containerName, user.id);
       return c.json({ success: true });
@@ -51,13 +56,12 @@ export function registerWebhookConfigRoutes(router: OpenAPIHono<AppEnv>) {
   );
 
   // Regenerate webhook token
-  router.post(
-    '/nodes/:nodeId/containers/:containerName/webhook/regenerate',
-    requireScopeForResource('docker:containers:webhooks', 'nodeId'),
+  router.openapi(
+    { ...regenerateContainerWebhookRoute, middleware: requireScopeForResource('docker:containers:webhooks', 'nodeId') },
     async (c) => {
       const service = container.resolve(DockerWebhookService);
-      const nodeId = c.req.param('nodeId');
-      const containerName = decodeURIComponent(c.req.param('containerName'));
+      const nodeId = c.req.param('nodeId')!;
+      const containerName = decodeURIComponent(c.req.param('containerName')!);
       const user = c.get('user')!;
       const data = await service.regenerateToken(nodeId, containerName, user.id);
       return c.json({ data });
@@ -67,11 +71,11 @@ export function registerWebhookConfigRoutes(router: OpenAPIHono<AppEnv>) {
 
 // ─── Trigger route (public — token IS the auth) ────────────────────
 
-export const dockerWebhookTriggerRoutes = new OpenAPIHono<AppEnv>();
+export const dockerWebhookTriggerRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
 
-dockerWebhookTriggerRoutes.post('/:token', async (c) => {
+dockerWebhookTriggerRoutes.openapi(triggerDockerWebhookRoute, async (c) => {
   const service = container.resolve(DockerWebhookService);
-  const token = c.req.param('token');
+  const token = c.req.param('token')!;
 
   // Look up webhook by token
   const webhook = await service.getByToken(token);

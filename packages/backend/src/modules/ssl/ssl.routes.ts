@@ -1,8 +1,19 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
+import { openApiValidationHook } from '@/lib/openapi.js';
 import { hasScope } from '@/lib/permissions.js';
 import { authMiddleware, requireScope, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
+import {
+  deleteSslCertificateRoute,
+  getSslCertificateRoute,
+  linkInternalSslCertificateRoute,
+  listSslCertificatesRoute,
+  renewSslCertificateRoute,
+  requestAcmeCertificateRoute,
+  uploadSslCertificateRoute,
+  verifyDnsSslCertificateRoute,
+} from './ssl.docs.js';
 import {
   LinkInternalCertSchema,
   RequestACMECertSchema,
@@ -11,13 +22,13 @@ import {
 } from './ssl.schemas.js';
 import { SSLService } from './ssl.service.js';
 
-export const sslRoutes = new OpenAPIHono<AppEnv>();
+export const sslRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
 
 sslRoutes.use('*', authMiddleware);
 sslRoutes.use('*', sessionOnly);
 
 // List SSL certificates (paginated, filterable)
-sslRoutes.get('/', requireScope('ssl:cert:list'), async (c) => {
+sslRoutes.openapi({ ...listSslCertificatesRoute, middleware: requireScope('ssl:cert:list') }, async (c) => {
   const sslService = container.resolve(SSLService);
   const query = SSLCertListQuerySchema.parse({
     page: c.req.query('page'),
@@ -36,15 +47,15 @@ sslRoutes.get('/', requireScope('ssl:cert:list'), async (c) => {
 });
 
 // Get SSL certificate detail
-sslRoutes.get('/:id', requireScope('ssl:cert:view'), async (c) => {
+sslRoutes.openapi({ ...getSslCertificateRoute, middleware: requireScope('ssl:cert:view') }, async (c) => {
   const sslService = container.resolve(SSLService);
-  const id = c.req.param('id');
+  const id = c.req.param('id')!;
   const cert = await sslService.getCert(id);
   return c.json({ data: cert });
 });
 
 // Request ACME certificate
-sslRoutes.post('/acme', requireScope('ssl:cert:issue'), async (c) => {
+sslRoutes.openapi({ ...requestAcmeCertificateRoute, middleware: requireScope('ssl:cert:issue') }, async (c) => {
   const sslService = container.resolve(SSLService);
   const user = c.get('user')!;
   const body = await c.req.json();
@@ -54,7 +65,7 @@ sslRoutes.post('/acme', requireScope('ssl:cert:issue'), async (c) => {
 });
 
 // Upload certificate
-sslRoutes.post('/upload', requireScope('ssl:cert:issue'), async (c) => {
+sslRoutes.openapi({ ...uploadSslCertificateRoute, middleware: requireScope('ssl:cert:issue') }, async (c) => {
   const sslService = container.resolve(SSLService);
   const user = c.get('user')!;
   const body = await c.req.json();
@@ -64,7 +75,7 @@ sslRoutes.post('/upload', requireScope('ssl:cert:issue'), async (c) => {
 });
 
 // Link internal CA certificate
-sslRoutes.post('/internal', requireScope('ssl:cert:issue'), async (c) => {
+sslRoutes.openapi({ ...linkInternalSslCertificateRoute, middleware: requireScope('ssl:cert:issue') }, async (c) => {
   const sslService = container.resolve(SSLService);
   const user = c.get('user')!;
   const body = await c.req.json();
@@ -74,28 +85,28 @@ sslRoutes.post('/internal', requireScope('ssl:cert:issue'), async (c) => {
 });
 
 // Manual renew
-sslRoutes.post('/:id/renew', requireScope('ssl:cert:issue'), async (c) => {
+sslRoutes.openapi({ ...renewSslCertificateRoute, middleware: requireScope('ssl:cert:issue') }, async (c) => {
   const sslService = container.resolve(SSLService);
   const user = c.get('user')!;
-  const id = c.req.param('id');
+  const id = c.req.param('id')!;
   const cert = await sslService.renewCert(id, user.id);
   return c.json({ data: cert });
 });
 
 // Complete DNS-01 verification
-sslRoutes.post('/:id/dns-verify', requireScope('ssl:cert:issue'), async (c) => {
+sslRoutes.openapi({ ...verifyDnsSslCertificateRoute, middleware: requireScope('ssl:cert:issue') }, async (c) => {
   const sslService = container.resolve(SSLService);
   const user = c.get('user')!;
-  const id = c.req.param('id');
+  const id = c.req.param('id')!;
   const cert = await sslService.completeDNS01Verification(id, user.id);
   return c.json({ data: cert });
 });
 
 // Delete SSL certificate
-sslRoutes.delete('/:id', requireScope('ssl:cert:delete'), async (c) => {
+sslRoutes.openapi({ ...deleteSslCertificateRoute, middleware: requireScope('ssl:cert:delete') }, async (c) => {
   const sslService = container.resolve(SSLService);
   const user = c.get('user')!;
-  const id = c.req.param('id');
+  const id = c.req.param('id')!;
   await sslService.deleteCert(id, user.id);
   return c.body(null, 204);
 });

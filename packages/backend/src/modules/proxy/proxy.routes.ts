@@ -1,9 +1,20 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
+import { openApiValidationHook } from '@/lib/openapi.js';
 import { hasScope } from '@/lib/permissions.js';
 import { AppError } from '@/middleware/error-handler.js';
 import { authMiddleware, requireScope, requireScopeForResource, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
+import {
+  createProxyHostRoute,
+  deleteProxyHostRoute,
+  getProxyHostRoute,
+  listProxyHostsRoute,
+  renderedProxyConfigRoute,
+  toggleProxyHostRoute,
+  updateProxyHostRoute,
+  validateProxyConfigRoute,
+} from './proxy.docs.js';
 import {
   CreateProxyHostSchema,
   ProxyHostListQuerySchema,
@@ -13,34 +24,29 @@ import {
 } from './proxy.schemas.js';
 import { ProxyService } from './proxy.service.js';
 
-export const proxyRoutes = new OpenAPIHono<AppEnv>();
+export const proxyRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
 
 proxyRoutes.use('*', authMiddleware);
 proxyRoutes.use('*', sessionOnly);
 
-// List proxy hosts
-proxyRoutes.get('/', requireScope('proxy:list'), async (c) => {
+proxyRoutes.openapi({ ...listProxyHostsRoute, middleware: requireScope('proxy:list') }, async (c) => {
   const proxyService = container.resolve(ProxyService);
-  const rawQuery = c.req.query();
-  const query = ProxyHostListQuerySchema.parse(rawQuery);
+  const query = ProxyHostListQuerySchema.parse(c.req.query());
   const result = await proxyService.listProxyHosts(query);
   return c.json(result);
 });
 
-// Get proxy host detail
-proxyRoutes.get('/:id', requireScopeForResource('proxy:view', 'id'), async (c) => {
+proxyRoutes.openapi({ ...getProxyHostRoute, middleware: requireScopeForResource('proxy:view', 'id') }, async (c) => {
   const proxyService = container.resolve(ProxyService);
-  const id = c.req.param('id');
+  const id = c.req.param('id')!;
   const host = await proxyService.getProxyHost(id);
   return c.json({ data: host });
 });
 
-// Create proxy host
-proxyRoutes.post('/', requireScope('proxy:create'), async (c) => {
+proxyRoutes.openapi({ ...createProxyHostRoute, middleware: requireScope('proxy:create') }, async (c) => {
   const proxyService = container.resolve(ProxyService);
   const user = c.get('user')!;
-  const body = await c.req.json();
-  const input = CreateProxyHostSchema.parse(body);
+  const input = CreateProxyHostSchema.parse(await c.req.json());
   const scopes = c.get('effectiveScopes') || [];
   if (input.advancedConfig && !hasScope(scopes, 'proxy:advanced')) {
     throw new AppError(403, 'FORBIDDEN', 'Advanced config requires proxy:advanced scope');
@@ -53,13 +59,11 @@ proxyRoutes.post('/', requireScope('proxy:create'), async (c) => {
   return c.json({ data: host }, 201);
 });
 
-// Update proxy host
-proxyRoutes.put('/:id', requireScopeForResource('proxy:edit', 'id'), async (c) => {
+proxyRoutes.openapi({ ...updateProxyHostRoute, middleware: requireScopeForResource('proxy:edit', 'id') }, async (c) => {
   const proxyService = container.resolve(ProxyService);
   const user = c.get('user')!;
-  const id = c.req.param('id');
-  const body = await c.req.json();
-  const input = UpdateProxyHostSchema.parse(body);
+  const id = c.req.param('id')!;
+  const input = UpdateProxyHostSchema.parse(await c.req.json());
   const scopes = c.get('effectiveScopes') || [];
   if (input.advancedConfig && !hasScope(scopes, `proxy:advanced:${id}`)) {
     throw new AppError(403, 'FORBIDDEN', 'Advanced config requires proxy:advanced scope');
@@ -79,40 +83,40 @@ proxyRoutes.put('/:id', requireScopeForResource('proxy:edit', 'id'), async (c) =
   return c.json({ data: host });
 });
 
-// Delete proxy host
-proxyRoutes.delete('/:id', requireScopeForResource('proxy:delete', 'id'), async (c) => {
-  const proxyService = container.resolve(ProxyService);
-  const user = c.get('user')!;
-  const id = c.req.param('id');
-  await proxyService.deleteProxyHost(id, user.id);
-  return c.body(null, 204);
-});
+proxyRoutes.openapi(
+  { ...deleteProxyHostRoute, middleware: requireScopeForResource('proxy:delete', 'id') },
+  async (c) => {
+    const proxyService = container.resolve(ProxyService);
+    const user = c.get('user')!;
+    const id = c.req.param('id')!;
+    await proxyService.deleteProxyHost(id, user.id);
+    return c.body(null, 204);
+  }
+);
 
-// Toggle proxy host enabled/disabled
-proxyRoutes.post('/:id/toggle', requireScopeForResource('proxy:edit', 'id'), async (c) => {
+proxyRoutes.openapi({ ...toggleProxyHostRoute, middleware: requireScopeForResource('proxy:edit', 'id') }, async (c) => {
   const proxyService = container.resolve(ProxyService);
   const user = c.get('user')!;
-  const id = c.req.param('id');
-  const body = await c.req.json();
-  const { enabled } = ToggleProxyHostSchema.parse(body);
+  const id = c.req.param('id')!;
+  const { enabled } = ToggleProxyHostSchema.parse(await c.req.json());
   const host = await proxyService.toggleProxyHost(id, enabled, user.id);
   return c.json({ data: host });
 });
 
-// Get rendered nginx config for a host
-proxyRoutes.get('/:id/rendered-config', requireScopeForResource('proxy:raw:read', 'id'), async (c) => {
-  const proxyService = container.resolve(ProxyService);
-  const id = c.req.param('id');
-  const rendered = await proxyService.getRenderedConfig(id);
-  return c.json({ data: { rendered } });
-});
+proxyRoutes.openapi(
+  { ...renderedProxyConfigRoute, middleware: requireScopeForResource('proxy:raw:read', 'id') },
+  async (c) => {
+    const proxyService = container.resolve(ProxyService);
+    const id = c.req.param('id')!;
+    const rendered = await proxyService.getRenderedConfig(id);
+    return c.json({ data: { rendered } });
+  }
+);
 
-// Validate advanced config snippet
-proxyRoutes.post('/validate-config', async (c) => {
+proxyRoutes.openapi(validateProxyConfigRoute, async (c) => {
   const proxyService = container.resolve(ProxyService);
   const scopes = c.get('effectiveScopes') || [];
-  const body = await c.req.json();
-  const { snippet, mode, proxyHostId } = ValidateAdvancedConfigSchema.parse(body);
+  const { snippet, mode, proxyHostId } = ValidateAdvancedConfigSchema.parse(await c.req.json());
 
   const advancedScope = proxyHostId ? `proxy:advanced:${proxyHostId}` : 'proxy:advanced';
   if (!hasScope(scopes, advancedScope)) {

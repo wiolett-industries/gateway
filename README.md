@@ -1,10 +1,10 @@
 # Gateway
 
-Self-hosted certificate manager, reverse proxy, and Docker container management platform.
+Self-hosted infrastructure control plane.
 
 > **Note:** The primary source of this project is [Wiolett GitLab](https://gitlab.wiolett.net/wiolett/gateway). The [GitHub repository](https://github.com/wiolett-industries/gateway) is a mirror for public visibility. Issues, feature requests, and pull requests are welcome on [GitHub](https://github.com/wiolett-industries/gateway/issues).
 
-Gateway combines a full PKI (Certificate Authority) infrastructure with a reverse proxy manager and Docker container management platform. Issue and manage TLS certificates, configure proxy hosts, handle SSL termination, deploy and manage Docker containers across multiple hosts, collect system metrics, and monitor everything from a single interface.
+Gateway is a self-hosted control plane for managing nodes, reverse proxies, Docker workloads, certificates, databases, logging, monitoring, status pages, notifications, and operational automation.
 
 ## Screenshots
 

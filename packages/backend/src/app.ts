@@ -4,12 +4,15 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import { createNodeWebSocket } from '@hono/node-ws';
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { apiReference } from '@scalar/hono-api-reference';
+import type { MiddlewareHandler } from 'hono';
 import { cors } from 'hono/cors';
+import { HTTPException } from 'hono/http-exception';
 import { requestId } from 'hono/request-id';
 import { secureHeaders } from 'hono/secure-headers';
 
 import { getEnv, isDevelopment } from '@/config/env.js';
 import { container } from '@/container.js';
+import { tags as openApiTags, openApiValidationHook, securitySchemes } from '@/lib/openapi.js';
 import { auditContextMiddleware } from '@/middleware/audit-context.js';
 import { errorHandler } from '@/middleware/error-handler.js';
 import { loggerMiddleware } from '@/middleware/logger.js';
@@ -31,7 +34,7 @@ import { aiRoutes } from '@/modules/ai/ai.routes.js';
 import { authenticateWSConnection, createWSHandlers } from '@/modules/ai/ai.ws.js';
 import { alertRoutes } from '@/modules/audit/alert.routes.js';
 import { auditRoutes } from '@/modules/audit/audit.routes.js';
-import { requireActiveUser, SESSION_COOKIE_NAME } from '@/modules/auth/auth.middleware.js';
+import { authMiddleware, requireActiveUser, SESSION_COOKIE_NAME } from '@/modules/auth/auth.middleware.js';
 import { authRoutes } from '@/modules/auth/auth.routes.js';
 import { databaseRoutes } from '@/modules/databases/databases.routes.js';
 import { dockerRoutes } from '@/modules/docker/docker.routes.js';
@@ -65,6 +68,14 @@ import type { AppEnv } from '@/types.js';
 import { authenticateEventsConnection, createEventsWSHandlers } from '@/ws/events.ws.js';
 
 const STATUS_PREVIEW_PREFIX = '/_status-preview';
+
+const requireAnyEffectiveScope: MiddlewareHandler<AppEnv> = async (c, next) => {
+  const scopes = c.get('effectiveScopes') ?? [];
+  if (scopes.length === 0) {
+    throw new HTTPException(403, { message: 'At least one permission scope is required' });
+  }
+  await next();
+};
 
 function getCookieValue(cookieHeader: string | undefined, name: string): string {
   if (!cookieHeader) return '';
@@ -103,7 +114,7 @@ async function isStatusHostRequest(hostHeader: string | undefined): Promise<bool
 }
 
 export function createApp() {
-  const app = new OpenAPIHono<AppEnv>();
+  const app = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
 
   // WebSocket support for AI assistant
   const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app: app as any });
@@ -327,13 +338,15 @@ export function createApp() {
   );
 
   // OpenAPI documentation
-  app.doc('/openapi.json', {
+  app.openAPIRegistry.registerComponent('securitySchemes', 'bearerAuth', securitySchemes.bearerAuth as any);
+  app.use('/openapi.json', authMiddleware, requireActiveUser, requireAnyEffectiveScope);
+  app.doc31('/openapi.json', {
     openapi: '3.1.0',
     info: {
       title: 'Gateway API',
       version: '1.0.0',
       description:
-        'Self-hosted certificate manager and reverse proxy gateway API.\n\n## Authentication\n\nBrowser sessions authenticate through the HttpOnly `session_id` cookie set by OIDC login. Cookie-authenticated mutating requests must include `X-CSRF-Token` from `/auth/csrf`.\n\nAPI tokens use `Authorization: Bearer gw_...` for programmatic access.\n\n## Public PKI Endpoints\n\nCRL and OCSP endpoints under `/pki/` are unauthenticated and publicly accessible.',
+        'Gateway is a self-hosted control plane for managing nodes, reverse proxies, Docker workloads, certificates, databases, logging, monitoring, status pages, notifications, and operational automation.\n\n## Authentication\n\nBrowser sessions authenticate through the HttpOnly `session_id` cookie set by OIDC login. Cookie-authenticated mutating requests must include `X-CSRF-Token` from `/auth/csrf`.\n\nAPI tokens use `Authorization: Bearer gw_...` for programmatic access.\n\n## Public PKI Endpoints\n\nCRL and OCSP endpoints under `/pki/` are unauthenticated and publicly accessible.',
     },
     servers: [
       {
@@ -341,24 +354,12 @@ export function createApp() {
         description: 'Development server',
       },
     ],
-    tags: [
-      { name: 'Authentication', description: 'User authentication via OIDC' },
-      { name: 'Certificate Authorities', description: 'CA creation and management' },
-      { name: 'Certificates', description: 'Certificate issuance, revocation, and export' },
-      { name: 'Templates', description: 'Certificate template management' },
-      { name: 'PKI', description: 'Public PKI endpoints (CRL, OCSP)' },
-      { name: 'Audit', description: 'Audit log' },
-      { name: 'Alerts', description: 'Expiry alerts and notifications' },
-      { name: 'Tokens', description: 'API token management' },
-      { name: 'Admin', description: 'User administration' },
-      { name: 'Proxy Hosts', description: 'Reverse proxy host management' },
-      { name: 'SSL Certificates', description: 'SSL/TLS certificate management (ACME, upload, internal)' },
-      { name: 'Access Lists', description: 'IP access control and basic authentication lists' },
-      { name: 'Monitoring', description: 'Dashboard stats, health checks, and log streaming' },
-    ],
+    tags: openApiTags,
   });
 
   // Scalar API Reference UI
+  app.use('/docs', authMiddleware, requireActiveUser, requireAnyEffectiveScope);
+  app.use('/docs/*', authMiddleware, requireActiveUser, requireAnyEffectiveScope);
   app.get(
     '/docs',
     apiReference({

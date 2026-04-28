@@ -1,8 +1,19 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
+import { openApiValidationHook } from '@/lib/openapi.js';
 import { authMiddleware, requireScope, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import type { AppEnv } from '@/types.js';
+import {
+  cloneNginxTemplateRoute,
+  createNginxTemplateRoute,
+  deleteNginxTemplateRoute,
+  getNginxTemplateRoute,
+  listNginxTemplatesRoute,
+  previewNginxTemplateRoute,
+  testNginxTemplateRoute,
+  updateNginxTemplateRoute,
+} from './nginx-template.docs.js';
 import {
   CreateNginxTemplateSchema,
   PreviewNginxTemplateSchema,
@@ -10,28 +21,28 @@ import {
 } from './nginx-template.schemas.js';
 import { NginxTemplateService } from './nginx-template.service.js';
 
-export const nginxTemplateRoutes = new OpenAPIHono<AppEnv>();
+export const nginxTemplateRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
 
 nginxTemplateRoutes.use('*', authMiddleware);
 nginxTemplateRoutes.use('*', sessionOnly);
 
 // List all nginx templates
-nginxTemplateRoutes.get('/', requireScope('proxy:list'), async (c) => {
+nginxTemplateRoutes.openapi({ ...listNginxTemplatesRoute, middleware: requireScope('proxy:list') }, async (c) => {
   const service = container.resolve(NginxTemplateService);
   const templates = await service.listTemplates();
   return c.json({ data: templates });
 });
 
 // Get single template
-nginxTemplateRoutes.get('/:id', requireScope('proxy:list'), async (c) => {
+nginxTemplateRoutes.openapi({ ...getNginxTemplateRoute, middleware: requireScope('proxy:list') }, async (c) => {
   const service = container.resolve(NginxTemplateService);
-  const id = c.req.param('id');
+  const id = c.req.param('id')!;
   const template = await service.getTemplate(id);
   return c.json({ data: template });
 });
 
 // Create template
-nginxTemplateRoutes.post('/', requireScope('proxy:edit'), async (c) => {
+nginxTemplateRoutes.openapi({ ...createNginxTemplateRoute, middleware: requireScope('proxy:edit') }, async (c) => {
   const service = container.resolve(NginxTemplateService);
   const user = c.get('user')!;
   const body = await c.req.json();
@@ -41,10 +52,10 @@ nginxTemplateRoutes.post('/', requireScope('proxy:edit'), async (c) => {
 });
 
 // Update template
-nginxTemplateRoutes.put('/:id', requireScope('proxy:edit'), async (c) => {
+nginxTemplateRoutes.openapi({ ...updateNginxTemplateRoute, middleware: requireScope('proxy:edit') }, async (c) => {
   const service = container.resolve(NginxTemplateService);
   const user = c.get('user')!;
-  const id = c.req.param('id');
+  const id = c.req.param('id')!;
   const body = await c.req.json();
   const input = UpdateNginxTemplateSchema.parse(body);
   const template = await service.updateTemplate(id, input, user.id);
@@ -52,25 +63,25 @@ nginxTemplateRoutes.put('/:id', requireScope('proxy:edit'), async (c) => {
 });
 
 // Delete template
-nginxTemplateRoutes.delete('/:id', requireScope('proxy:delete'), async (c) => {
+nginxTemplateRoutes.openapi({ ...deleteNginxTemplateRoute, middleware: requireScope('proxy:delete') }, async (c) => {
   const service = container.resolve(NginxTemplateService);
   const user = c.get('user')!;
-  const id = c.req.param('id');
+  const id = c.req.param('id')!;
   await service.deleteTemplate(id, user.id);
   return c.body(null, 204);
 });
 
 // Clone template
-nginxTemplateRoutes.post('/:id/clone', requireScope('proxy:edit'), async (c) => {
+nginxTemplateRoutes.openapi({ ...cloneNginxTemplateRoute, middleware: requireScope('proxy:edit') }, async (c) => {
   const service = container.resolve(NginxTemplateService);
   const user = c.get('user')!;
-  const id = c.req.param('id');
+  const id = c.req.param('id')!;
   const clone = await service.cloneTemplate(id, user.id);
   return c.json({ data: clone }, 201);
 });
 
 // Preview template with sample or real host data
-nginxTemplateRoutes.post('/preview', requireScope('proxy:list'), async (c) => {
+nginxTemplateRoutes.openapi({ ...previewNginxTemplateRoute, middleware: requireScope('proxy:list') }, async (c) => {
   const service = container.resolve(NginxTemplateService);
   const body = await c.req.json();
   const input = PreviewNginxTemplateSchema.parse(body);
@@ -116,7 +127,7 @@ nginxTemplateRoutes.post('/preview', requireScope('proxy:list'), async (c) => {
 });
 
 // Test template — render + send to daemon for nginx -t (test_only mode)
-nginxTemplateRoutes.post('/test', requireScope('proxy:edit'), async (c) => {
+nginxTemplateRoutes.openapi({ ...testNginxTemplateRoute, middleware: requireScope('proxy:edit') }, async (c) => {
   const service = container.resolve(NginxTemplateService);
   const nodeDispatch = container.resolve(NodeDispatchService);
   const body = await c.req.json();

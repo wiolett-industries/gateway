@@ -1,36 +1,39 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
-import { z } from 'zod';
 import { container } from '@/container.js';
+import { openApiValidationHook } from '@/lib/openapi.js';
 import { authMiddleware, requireScope, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
+import {
+  ActivateLicenseSchema,
+  activateLicenseRoute,
+  checkLicenseRoute,
+  clearLicenseRoute,
+  licenseStatusRoute,
+} from './license.docs.js';
 import { LicenseService } from './license.service.js';
 
-export const licenseRoutes = new OpenAPIHono<AppEnv>();
+export const licenseRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
 
 licenseRoutes.use('*', authMiddleware);
 licenseRoutes.use('*', sessionOnly);
 
-const ActivateSchema = z.object({
-  licenseKey: z.string().min(1),
-});
-
-licenseRoutes.get('/status', requireScope('license:view'), async (c) => {
+licenseRoutes.openapi({ ...licenseStatusRoute, middleware: requireScope('license:view') }, async (c) => {
   const service = container.resolve(LicenseService);
   return c.json({ data: await service.getStatus() });
 });
 
-licenseRoutes.post('/activate', requireScope('license:manage'), async (c) => {
-  const body = ActivateSchema.parse(await c.req.json());
+licenseRoutes.openapi({ ...activateLicenseRoute, middleware: requireScope('license:manage') }, async (c) => {
+  const body = ActivateLicenseSchema.parse(await c.req.json());
   const service = container.resolve(LicenseService);
   return c.json({ data: await service.activateKey(body.licenseKey) });
 });
 
-licenseRoutes.post('/check', requireScope('license:manage'), async (c) => {
+licenseRoutes.openapi({ ...checkLicenseRoute, middleware: requireScope('license:manage') }, async (c) => {
   const service = container.resolve(LicenseService);
   return c.json({ data: await service.checkNow() });
 });
 
-licenseRoutes.delete('/key', requireScope('license:manage'), async (c) => {
+licenseRoutes.openapi({ ...clearLicenseRoute, middleware: requireScope('license:manage') }, async (c) => {
   const service = container.resolve(LicenseService);
   return c.json({ data: await service.clearKey() });
 });

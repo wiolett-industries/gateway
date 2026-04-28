@@ -135,7 +135,7 @@ export function UpdateSection({ canUpdate }: UpdateSectionProps) {
             <div>
               <p className="text-sm font-semibold">Gateway</p>
               <p className="text-xs text-muted-foreground">
-                Self-hosted certificate manager and reverse proxy gateway
+                Self-hosted infrastructure control plane
               </p>
             </div>
           </div>

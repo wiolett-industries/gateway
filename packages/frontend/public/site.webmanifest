@@ -1,7 +1,7 @@
 {
   "name": "Wiolett Gateway",
   "short_name": "Gateway",
-  "description": "Self-hosted certificate manager and reverse proxy gateway",
+  "description": "Self-hosted infrastructure control plane",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0f172a",

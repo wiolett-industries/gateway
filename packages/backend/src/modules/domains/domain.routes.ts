@@ -1,18 +1,29 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
+import { openApiValidationHook } from '@/lib/openapi.js';
 import { authMiddleware, requireScope, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import { SSLService } from '@/modules/ssl/ssl.service.js';
 import type { AppEnv } from '@/types.js';
+import {
+  checkDomainDnsRoute,
+  createDomainRoute,
+  deleteDomainRoute,
+  getDomainRoute,
+  issueDomainCertificateRoute,
+  listDomainsRoute,
+  searchDomainsRoute,
+  updateDomainRoute,
+} from './domain.docs.js';
 import { CreateDomainSchema, DomainListQuerySchema, UpdateDomainSchema } from './domain.schemas.js';
 import { DomainsService } from './domain.service.js';
 
-export const domainRoutes = new OpenAPIHono<AppEnv>();
+export const domainRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
 
 domainRoutes.use('*', authMiddleware);
 domainRoutes.use('*', sessionOnly);
 
 // List domains (paginated)
-domainRoutes.get('/', requireScope('proxy:list'), async (c) => {
+domainRoutes.openapi({ ...listDomainsRoute, middleware: requireScope('proxy:list') }, async (c) => {
   const domainsService = container.resolve(DomainsService);
   const query = DomainListQuerySchema.parse({
     page: c.req.query('page'),
@@ -25,7 +36,7 @@ domainRoutes.get('/', requireScope('proxy:list'), async (c) => {
 });
 
 // Autocomplete search (must be before /:id)
-domainRoutes.get('/search', requireScope('proxy:list'), async (c) => {
+domainRoutes.openapi({ ...searchDomainsRoute, middleware: requireScope('proxy:list') }, async (c) => {
   const domainsService = container.resolve(DomainsService);
   const q = c.req.query('q') || '';
   if (q.length < 1) return c.json({ data: [] });
@@ -34,10 +45,10 @@ domainRoutes.get('/search', requireScope('proxy:list'), async (c) => {
 });
 
 // Get domain detail with usage
-domainRoutes.get('/:id', requireScope('proxy:list'), async (c) => {
+domainRoutes.openapi({ ...getDomainRoute, middleware: requireScope('proxy:list') }, async (c) => {
   const domainsService = container.resolve(DomainsService);
   try {
-    const domain = await domainsService.getDomain(c.req.param('id'));
+    const domain = await domainsService.getDomain(c.req.param('id')!);
     return c.json({ data: domain });
   } catch {
     return c.json({ code: 'NOT_FOUND', message: 'Domain not found' }, 404);
@@ -45,7 +56,7 @@ domainRoutes.get('/:id', requireScope('proxy:list'), async (c) => {
 });
 
 // Create domain
-domainRoutes.post('/', requireScope('proxy:edit'), async (c) => {
+domainRoutes.openapi({ ...createDomainRoute, middleware: requireScope('proxy:edit') }, async (c) => {
   const user = c.get('user')!;
   const body = await c.req.json();
   const input = CreateDomainSchema.parse(body);
@@ -63,13 +74,13 @@ domainRoutes.post('/', requireScope('proxy:edit'), async (c) => {
 });
 
 // Update domain
-domainRoutes.put('/:id', requireScope('proxy:edit'), async (c) => {
+domainRoutes.openapi({ ...updateDomainRoute, middleware: requireScope('proxy:edit') }, async (c) => {
   const user = c.get('user')!;
   const body = await c.req.json();
   const input = UpdateDomainSchema.parse(body);
   const domainsService = container.resolve(DomainsService);
   try {
-    const domain = await domainsService.updateDomain(c.req.param('id'), input, user.id);
+    const domain = await domainsService.updateDomain(c.req.param('id')!, input, user.id);
     return c.json({ data: domain });
   } catch {
     return c.json({ code: 'NOT_FOUND', message: 'Domain not found' }, 404);
@@ -77,11 +88,11 @@ domainRoutes.put('/:id', requireScope('proxy:edit'), async (c) => {
 });
 
 // Delete domain
-domainRoutes.delete('/:id', requireScope('proxy:delete'), async (c) => {
+domainRoutes.openapi({ ...deleteDomainRoute, middleware: requireScope('proxy:delete') }, async (c) => {
   const user = c.get('user')!;
   const domainsService = container.resolve(DomainsService);
   try {
-    await domainsService.deleteDomain(c.req.param('id'), user.id);
+    await domainsService.deleteDomain(c.req.param('id')!, user.id);
     return c.json({ data: { success: true } });
   } catch {
     return c.json({ code: 'NOT_FOUND', message: 'Domain not found' }, 404);
@@ -89,10 +100,10 @@ domainRoutes.delete('/:id', requireScope('proxy:delete'), async (c) => {
 });
 
 // Manual DNS check
-domainRoutes.post('/:id/check-dns', requireScope('proxy:edit'), async (c) => {
+domainRoutes.openapi({ ...checkDomainDnsRoute, middleware: requireScope('proxy:edit') }, async (c) => {
   const domainsService = container.resolve(DomainsService);
   try {
-    const domain = await domainsService.checkDns(c.req.param('id'));
+    const domain = await domainsService.checkDns(c.req.param('id')!);
     return c.json({ data: domain });
   } catch {
     return c.json({ code: 'NOT_FOUND', message: 'Domain not found' }, 404);
@@ -100,14 +111,14 @@ domainRoutes.post('/:id/check-dns', requireScope('proxy:edit'), async (c) => {
 });
 
 // Issue ACME cert for domain
-domainRoutes.post('/:id/issue-cert', requireScope('proxy:edit'), async (c) => {
+domainRoutes.openapi({ ...issueDomainCertificateRoute, middleware: requireScope('proxy:edit') }, async (c) => {
   const user = c.get('user')!;
   const domainsService = container.resolve(DomainsService);
   const sslService = container.resolve(SSLService);
 
   let domainRow: Awaited<ReturnType<DomainsService['getDomain']>> | undefined;
   try {
-    domainRow = await domainsService.getDomain(c.req.param('id'));
+    domainRow = await domainsService.getDomain(c.req.param('id')!);
   } catch {
     return c.json({ code: 'NOT_FOUND', message: 'Domain not found' }, 404);
   }

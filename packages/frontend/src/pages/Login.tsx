@@ -27,9 +27,7 @@ export function LoginPage() {
             <img src="/android-chrome-192x192.png" alt="Gateway" className="h-10 w-10" />
             <h1 className="text-3xl font-bold tracking-tight text-foreground">Gateway</h1>
           </div>
-          <p className="text-sm text-muted-foreground">
-            Certificate manager and reverse proxy gateway
-          </p>
+          <p className="text-sm text-muted-foreground">Self-hosted infrastructure control plane</p>
         </div>
 
         <div className="space-y-4">

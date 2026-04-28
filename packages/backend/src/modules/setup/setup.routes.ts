@@ -1,15 +1,17 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { Hono } from 'hono';
+import { OpenAPIHono } from '@hono/zod-openapi';
 import { getEnv } from '@/config/env.js';
 import { container } from '@/container.js';
 import { createChildLogger } from '@/lib/logger.js';
+import { openApiValidationHook } from '@/lib/openapi.js';
 import { NodesService } from '@/modules/nodes/nodes.service.js';
 import type { AppEnv } from '@/types.js';
+import { setupEnrollNodeRoute, setupManagementSslRoute, setupManagementSslUploadRoute } from './setup.docs.js';
 import { SetupService } from './setup.service.js';
 
 const logger = createChildLogger('SetupRoutes');
 
-export const setupRoutes = new Hono<AppEnv>();
+export const setupRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
 
 function verifySetupToken(authHeader: string | undefined): boolean {
   const env = getEnv();
@@ -33,7 +35,7 @@ function verifySetupToken(authHeader: string | undefined): boolean {
  * Protected by SETUP_TOKEN (not session auth).
  * Idempotent — safe to call multiple times.
  */
-setupRoutes.post('/management-ssl', async (c) => {
+setupRoutes.openapi(setupManagementSslRoute, async (c) => {
   if (!verifySetupToken(c.req.header('Authorization'))) {
     return c.json({ error: 'Invalid or missing setup token' }, 401);
   }
@@ -70,7 +72,7 @@ setupRoutes.post('/management-ssl', async (c) => {
  * Protected by SETUP_TOKEN (not session auth).
  * Used by install.sh to auto-enroll the local daemon.
  */
-setupRoutes.post('/enroll-node', async (c) => {
+setupRoutes.openapi(setupEnrollNodeRoute, async (c) => {
   if (!verifySetupToken(c.req.header('Authorization'))) {
     return c.json({ error: 'Invalid or missing setup token' }, 401);
   }
@@ -97,7 +99,7 @@ setupRoutes.post('/enroll-node', async (c) => {
  * Bootstrap with a BYO (bring-your-own) certificate.
  * Accepts PEM cert + key directly.
  */
-setupRoutes.post('/management-ssl-upload', async (c) => {
+setupRoutes.openapi(setupManagementSslUploadRoute, async (c) => {
   if (!verifySetupToken(c.req.header('Authorization'))) {
     return c.json({ error: 'Invalid or missing setup token' }, 401);
   }

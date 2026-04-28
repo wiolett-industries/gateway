@@ -1,5 +1,6 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { createChildLogger } from '@/lib/logger.js';
+import { openApiValidationHook } from '@/lib/openapi.js';
 import { hasScope } from '@/lib/permissions.js';
 
 const logger = createChildLogger('MonitoringRoutes');
@@ -9,17 +10,28 @@ import { container } from '@/container.js';
 import { authMiddleware, requireScope, requireScopeForResource, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import { logRelay, type RelayedLogEntry } from './log-relay.service.js';
+import {
+  dashboardStatsRoute,
+  healthStatusRoute,
+  nginxAvailableRoute,
+  nginxConfigRoute,
+  nginxInfoRoute,
+  nginxStatsStreamRoute,
+  proxyLogStreamRoute,
+  testNginxConfigRoute,
+  updateNginxConfigRoute,
+} from './monitoring.docs.js';
 import { MonitoringService } from './monitoring.service.js';
 import { NginxConfigService } from './nginx-config.service.js';
 import { NginxStatsService } from './nginx-stats.service.js';
 
-export const monitoringRoutes = new OpenAPIHono<AppEnv>();
+export const monitoringRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
 
 monitoringRoutes.use('*', authMiddleware);
 monitoringRoutes.use('*', sessionOnly);
 
 // Dashboard stats — aggregate counts for proxy hosts, SSL certs, PKI certs, CAs
-monitoringRoutes.get('/dashboard', async (c) => {
+monitoringRoutes.openapi(dashboardStatsRoute, async (c) => {
   const monitoringService = container.resolve(MonitoringService);
   const showSystem = c.req.query('showSystem') === 'true';
   const scopes = c.get('effectiveScopes') || [];
@@ -43,7 +55,7 @@ monitoringRoutes.get('/dashboard', async (c) => {
 });
 
 // Health overview — all proxy hosts with health status, ordered by severity
-monitoringRoutes.get('/health-status', async (c) => {
+monitoringRoutes.openapi(healthStatusRoute, async (c) => {
   const scopes = c.get('effectiveScopes') || [];
   if (!hasScope(scopes, 'proxy:list')) {
     return c.json({ data: [] });
@@ -55,51 +67,54 @@ monitoringRoutes.get('/health-status', async (c) => {
 
 // Live log streaming via SSE for a specific proxy host
 // Logs are relayed from daemon nodes via gRPC LogStream → logRelay EventEmitter → SSE
-monitoringRoutes.get('/logs/:hostId/stream', requireScopeForResource('proxy:view', 'hostId'), async (c) => {
-  const hostId = c.req.param('hostId');
+monitoringRoutes.openapi(
+  { ...proxyLogStreamRoute, middleware: requireScopeForResource('proxy:view', 'hostId') },
+  async (c) => {
+    const hostId = c.req.param('hostId')!;
 
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(hostId)) {
-    return c.json({ code: 'INVALID_ID', message: 'Invalid host ID' }, 400);
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(hostId)) {
+      return c.json({ code: 'INVALID_ID', message: 'Invalid host ID' }, 400);
+    }
+
+    return streamSSE(c, async (stream) => {
+      await stream.writeSSE({
+        data: JSON.stringify({ connected: true, hostId }),
+        event: 'connected',
+      });
+
+      // Subscribe to log entries for this host
+      const onLog = (entry: RelayedLogEntry) => {
+        if (entry.hostId === hostId) {
+          stream.writeSSE({ data: JSON.stringify(entry), event: 'log' }).catch(() => {});
+        }
+      };
+      logRelay.on('log', onLog);
+
+      const keepalive = setInterval(() => {
+        stream.writeSSE({ data: '', event: 'ping' }).catch(() => clearInterval(keepalive));
+      }, 30_000);
+
+      stream.onAbort(() => {
+        clearInterval(keepalive);
+        logRelay.off('log', onLog);
+      });
+
+      await new Promise(() => {});
+    });
   }
-
-  return streamSSE(c, async (stream) => {
-    await stream.writeSSE({
-      data: JSON.stringify({ connected: true, hostId }),
-      event: 'connected',
-    });
-
-    // Subscribe to log entries for this host
-    const onLog = (entry: RelayedLogEntry) => {
-      if (entry.hostId === hostId) {
-        stream.writeSSE({ data: JSON.stringify(entry), event: 'log' }).catch(() => {});
-      }
-    };
-    logRelay.on('log', onLog);
-
-    const keepalive = setInterval(() => {
-      stream.writeSSE({ data: '', event: 'ping' }).catch(() => clearInterval(keepalive));
-    }, 30_000);
-
-    stream.onAbort(() => {
-      clearInterval(keepalive);
-      logRelay.off('log', onLog);
-    });
-
-    await new Promise(() => {});
-  });
-});
+);
 
 // ── Nginx Management ────────────────────────────────────────────────
 
 // Check if nginx container is reachable (any authenticated user)
-monitoringRoutes.get('/nginx/available', async (c) => {
+monitoringRoutes.openapi(nginxAvailableRoute, async (c) => {
   const nginxStatsService = container.resolve(NginxStatsService);
   const available = await nginxStatsService.isAvailable();
   return c.json({ data: { available } });
 });
 
 // Nginx process info
-monitoringRoutes.get('/nginx/info', requireScope('proxy:list'), async (c) => {
+monitoringRoutes.openapi({ ...nginxInfoRoute, middleware: requireScope('proxy:list') }, async (c) => {
   const nginxStatsService = container.resolve(NginxStatsService);
   try {
     const info = await nginxStatsService.getProcessInfo();
@@ -110,7 +125,7 @@ monitoringRoutes.get('/nginx/info', requireScope('proxy:list'), async (c) => {
 });
 
 // Live nginx stats SSE stream
-monitoringRoutes.get('/nginx/stats/stream', requireScope('proxy:list'), async (c) => {
+monitoringRoutes.openapi({ ...nginxStatsStreamRoute, middleware: requireScope('proxy:list') }, async (c) => {
   const nginxStatsService = container.resolve(NginxStatsService);
 
   return streamSSE(c, async (stream) => {
@@ -174,14 +189,14 @@ monitoringRoutes.get('/nginx/stats/stream', requireScope('proxy:list'), async (c
 });
 
 // Read global nginx.conf
-monitoringRoutes.get('/nginx/config', requireScope('proxy:list'), async (c) => {
+monitoringRoutes.openapi({ ...nginxConfigRoute, middleware: requireScope('proxy:list') }, async (c) => {
   const nginxConfigService = container.resolve(NginxConfigService);
   const content = await nginxConfigService.getGlobalConfig();
   return c.json({ data: { content } });
 });
 
 // Update global nginx.conf
-monitoringRoutes.put('/nginx/config', requireScope('proxy:edit'), async (c) => {
+monitoringRoutes.openapi({ ...updateNginxConfigRoute, middleware: requireScope('proxy:edit') }, async (c) => {
   const body = await c.req.json<{ content: string }>();
   if (!body.content || typeof body.content !== 'string') {
     return c.json({ code: 'INVALID_BODY', message: 'content is required' }, 400);
@@ -195,7 +210,7 @@ monitoringRoutes.put('/nginx/config', requireScope('proxy:edit'), async (c) => {
 });
 
 // Test current nginx config
-monitoringRoutes.post('/nginx/config/test', requireScope('proxy:edit'), async (c) => {
+monitoringRoutes.openapi({ ...testNginxConfigRoute, middleware: requireScope('proxy:edit') }, async (c) => {
   const nginxConfigService = container.resolve(NginxConfigService);
   const result = await nginxConfigService.testConfig();
   return c.json({ data: result });

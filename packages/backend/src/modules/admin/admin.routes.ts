@@ -1,5 +1,6 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
+import { openApiValidationHook } from '@/lib/openapi.js';
 import { canManageUser, isScopeSubset } from '@/lib/permissions.js';
 import {
   CreateUserSchema,
@@ -13,8 +14,17 @@ import { AuthService } from '@/modules/auth/auth.service.js';
 import { AuthSettingsService } from '@/modules/auth/auth.settings.service.js';
 import { GroupService } from '@/modules/groups/group.service.js';
 import type { AppEnv } from '@/types.js';
+import {
+  createAdminUserRoute,
+  deleteAdminUserRoute,
+  getAuthSettingsRoute,
+  listAdminUsersRoute,
+  updateAuthSettingsRoute,
+  updateUserBlockRoute,
+  updateUserGroupRoute,
+} from './admin.docs.js';
 
-export const adminRoutes = new OpenAPIHono<AppEnv>();
+export const adminRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
 
 adminRoutes.use('*', authMiddleware);
 
@@ -23,13 +33,13 @@ function getEffectiveGroupScopes(group: { scopes: string[]; inheritedScopes?: st
 }
 
 // List all users
-adminRoutes.get('/users', requireScope('admin:users'), async (c) => {
+adminRoutes.openapi({ ...listAdminUsersRoute, middleware: requireScope('admin:users') }, async (c) => {
   const authService = container.resolve(AuthService);
   const userList = await authService.listUsers();
   return c.json(userList);
 });
 
-adminRoutes.get('/auth-settings', requireScope('admin:users'), async (c) => {
+adminRoutes.openapi({ ...getAuthSettingsRoute, middleware: requireScope('admin:users') }, async (c) => {
   const authSettingsService = container.resolve(AuthSettingsService);
   const groupService = container.resolve(GroupService);
   const actorScopes = c.get('effectiveScopes') || [];
@@ -47,7 +57,7 @@ adminRoutes.get('/auth-settings', requireScope('admin:users'), async (c) => {
   });
 });
 
-adminRoutes.put('/auth-settings', requireScope('admin:users'), async (c) => {
+adminRoutes.openapi({ ...updateAuthSettingsRoute, middleware: requireScope('admin:users') }, async (c) => {
   const authSettingsService = container.resolve(AuthSettingsService);
   const groupService = container.resolve(GroupService);
   const auditService = container.resolve(AuditService);
@@ -99,7 +109,7 @@ adminRoutes.put('/auth-settings', requireScope('admin:users'), async (c) => {
 });
 
 // Create user before first login
-adminRoutes.post('/users', requireScope('admin:users'), async (c) => {
+adminRoutes.openapi({ ...createAdminUserRoute, middleware: requireScope('admin:users') }, async (c) => {
   const authService = container.resolve(AuthService);
   const groupService = container.resolve(GroupService);
   const auditService = container.resolve(AuditService);
@@ -149,12 +159,12 @@ adminRoutes.post('/users', requireScope('admin:users'), async (c) => {
 });
 
 // Update user group
-adminRoutes.patch('/users/:id/group', requireScope('admin:users'), async (c) => {
+adminRoutes.openapi({ ...updateUserGroupRoute, middleware: requireScope('admin:users') }, async (c) => {
   const authService = container.resolve(AuthService);
   const auditService = container.resolve(AuditService);
   const currentUser = c.get('user')!;
   const actorScopes = c.get('effectiveScopes') || [];
-  const userId = c.req.param('id');
+  const userId = c.req.param('id')!;
   const body = await c.req.json();
   const { groupId } = UpdateUserGroupSchema.parse(body);
 
@@ -184,12 +194,12 @@ adminRoutes.patch('/users/:id/group', requireScope('admin:users'), async (c) => 
 });
 
 // Block / unblock user
-adminRoutes.patch('/users/:id/block', requireScope('admin:users'), async (c) => {
+adminRoutes.openapi({ ...updateUserBlockRoute, middleware: requireScope('admin:users') }, async (c) => {
   const authService = container.resolve(AuthService);
   const auditService = container.resolve(AuditService);
   const currentUser = c.get('user')!;
   const actorScopes = c.get('effectiveScopes') || [];
-  const userId = c.req.param('id');
+  const userId = c.req.param('id')!;
   const body = await c.req.json();
   const { blocked } = UpdateBlockSchema.parse(body);
 
@@ -235,12 +245,12 @@ adminRoutes.patch('/users/:id/block', requireScope('admin:users'), async (c) => 
 });
 
 // Delete user
-adminRoutes.delete('/users/:id', requireScope('admin:users'), async (c) => {
+adminRoutes.openapi({ ...deleteAdminUserRoute, middleware: requireScope('admin:users') }, async (c) => {
   const authService = container.resolve(AuthService);
   const auditService = container.resolve(AuditService);
   const currentUser = c.get('user')!;
   const actorScopes = c.get('effectiveScopes') || [];
-  const userId = c.req.param('id');
+  const userId = c.req.param('id')!;
 
   if (userId === currentUser.id) {
     return c.json({ code: 'SELF_DELETE', message: 'Cannot delete your own account' }, 400);

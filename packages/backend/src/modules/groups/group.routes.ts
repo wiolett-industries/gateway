@@ -1,33 +1,35 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
+import { openApiValidationHook } from '@/lib/openapi.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
 import { authMiddleware, requireScope } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
+import { createGroupRoute, deleteGroupRoute, getGroupRoute, listGroupsRoute, updateGroupRoute } from './group.docs.js';
 import { CreateGroupSchema, UpdateGroupSchema } from './group.schemas.js';
 import { GroupService } from './group.service.js';
 
-export const groupRoutes = new OpenAPIHono<AppEnv>();
+export const groupRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
 
 groupRoutes.use('*', authMiddleware);
 groupRoutes.use('*', requireScope('admin:groups'));
 
 // List all groups
-groupRoutes.get('/', async (c) => {
+groupRoutes.openapi(listGroupsRoute, async (c) => {
   const groupService = container.resolve(GroupService);
   const groups = await groupService.listGroups();
   return c.json(groups);
 });
 
 // Get single group
-groupRoutes.get('/:id', async (c) => {
+groupRoutes.openapi(getGroupRoute, async (c) => {
   const groupService = container.resolve(GroupService);
-  const id = c.req.param('id');
+  const id = c.req.param('id')!;
   const group = await groupService.getGroup(id);
   return c.json(group);
 });
 
 // Create custom group
-groupRoutes.post('/', async (c) => {
+groupRoutes.openapi(createGroupRoute, async (c) => {
   const groupService = container.resolve(GroupService);
   const auditService = container.resolve(AuditService);
   const user = c.get('user')!;
@@ -53,11 +55,11 @@ groupRoutes.post('/', async (c) => {
 });
 
 // Update custom group
-groupRoutes.put('/:id', async (c) => {
+groupRoutes.openapi(updateGroupRoute, async (c) => {
   const groupService = container.resolve(GroupService);
   const auditService = container.resolve(AuditService);
   const user = c.get('user')!;
-  const id = c.req.param('id');
+  const id = c.req.param('id')!;
   const body = await c.req.json();
   const input = UpdateGroupSchema.parse(body);
 
@@ -80,11 +82,11 @@ groupRoutes.put('/:id', async (c) => {
 });
 
 // Delete custom group
-groupRoutes.delete('/:id', async (c) => {
+groupRoutes.openapi(deleteGroupRoute, async (c) => {
   const groupService = container.resolve(GroupService);
   const auditService = container.resolve(AuditService);
   const user = c.get('user')!;
-  const id = c.req.param('id');
+  const id = c.req.param('id')!;
 
   // getGroup will throw 404 if not found, and deleteGroup will throw if built-in or has members
   const group = await groupService.getGroup(id);

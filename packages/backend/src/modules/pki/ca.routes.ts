@@ -1,11 +1,23 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
+import { openApiValidationHook } from '@/lib/openapi.js';
 import { hasScope } from '@/lib/permissions.js';
 import { sanitizeFilename } from '@/lib/utils.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
 import { authMiddleware, requireAnyScope, requireScope } from '@/modules/auth/auth.middleware.js';
 import { CryptoService } from '@/services/crypto.service.js';
 import type { AppEnv } from '@/types.js';
+import {
+  createIntermediateCARoute,
+  createOCSPResponderRoute,
+  createRootCARoute,
+  deleteCARoute,
+  exportCAKeyRoute,
+  getCARoute,
+  listCAsRoute,
+  revokeCARoute,
+  updateCARoute,
+} from './ca.docs.js';
 import {
   CreateIntermediateCASchema,
   CreateRootCASchema,
@@ -16,35 +28,41 @@ import {
 import { CAService } from './ca.service.js';
 import { ExportService } from './export.service.js';
 
-export const caRoutes = new OpenAPIHono<AppEnv>();
+export const caRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
 
 caRoutes.use('*', authMiddleware);
 
 // List CAs (tree)
-caRoutes.get('/', requireAnyScope('pki:ca:list:root', 'pki:ca:list:intermediate'), async (c) => {
-  const caService = container.resolve(CAService);
-  const showSystem = c.req.query('showSystem') === 'true';
-  const scopes = c.get('effectiveScopes') || [];
-  if (showSystem && !hasScope(scopes, 'admin:details:certificates')) {
-    return c.json({ code: 'FORBIDDEN', message: 'Insufficient permissions' }, 403);
+caRoutes.openapi(
+  { ...listCAsRoute, middleware: requireAnyScope('pki:ca:list:root', 'pki:ca:list:intermediate') },
+  async (c) => {
+    const caService = container.resolve(CAService);
+    const showSystem = c.req.query('showSystem') === 'true';
+    const scopes = c.get('effectiveScopes') || [];
+    if (showSystem && !hasScope(scopes, 'admin:details:certificates')) {
+      return c.json({ code: 'FORBIDDEN', message: 'Insufficient permissions' }, 403);
+    }
+    const tree = await caService.getCATree(showSystem);
+    return c.json(tree);
   }
-  const tree = await caService.getCATree(showSystem);
-  return c.json(tree);
-});
+);
 
 // Get CA detail
-caRoutes.get('/:id', requireAnyScope('pki:ca:view:root', 'pki:ca:view:intermediate'), async (c) => {
-  const caService = container.resolve(CAService);
-  const scopes = c.get('effectiveScopes') || [];
-  const id = c.req.param('id');
-  const ca = await caService.getCA(id, {
-    includeSystem: hasScope(scopes, 'admin:details:certificates'),
-  });
-  return c.json(ca);
-});
+caRoutes.openapi(
+  { ...getCARoute, middleware: requireAnyScope('pki:ca:view:root', 'pki:ca:view:intermediate') },
+  async (c) => {
+    const caService = container.resolve(CAService);
+    const scopes = c.get('effectiveScopes') || [];
+    const id = c.req.param('id')!;
+    const ca = await caService.getCA(id, {
+      includeSystem: hasScope(scopes, 'admin:details:certificates'),
+    });
+    return c.json(ca);
+  }
+);
 
 // Create root CA (admin only)
-caRoutes.post('/', requireScope('pki:ca:create:root'), async (c) => {
+caRoutes.openapi({ ...createRootCARoute, middleware: requireScope('pki:ca:create:root') }, async (c) => {
   const caService = container.resolve(CAService);
   const user = c.get('user')!;
   const body = await c.req.json();
@@ -54,21 +72,24 @@ caRoutes.post('/', requireScope('pki:ca:create:root'), async (c) => {
 });
 
 // Create intermediate CA (admin only)
-caRoutes.post('/:id/intermediate', requireScope('pki:ca:create:intermediate'), async (c) => {
-  const caService = container.resolve(CAService);
-  const user = c.get('user')!;
-  const parentId = c.req.param('id');
-  const body = await c.req.json();
-  const input = CreateIntermediateCASchema.parse(body);
-  const ca = await caService.createIntermediateCA(parentId, input, user.id);
-  return c.json(ca, 201);
-});
+caRoutes.openapi(
+  { ...createIntermediateCARoute, middleware: requireScope('pki:ca:create:intermediate') },
+  async (c) => {
+    const caService = container.resolve(CAService);
+    const user = c.get('user')!;
+    const parentId = c.req.param('id')!;
+    const body = await c.req.json();
+    const input = CreateIntermediateCASchema.parse(body);
+    const ca = await caService.createIntermediateCA(parentId, input, user.id);
+    return c.json(ca, 201);
+  }
+);
 
 // Update CA settings (admin only)
-caRoutes.put('/:id', requireScope('pki:ca:create:root'), async (c) => {
+caRoutes.openapi({ ...updateCARoute, middleware: requireScope('pki:ca:create:root') }, async (c) => {
   const caService = container.resolve(CAService);
   const user = c.get('user')!;
-  const id = c.req.param('id');
+  const id = c.req.param('id')!;
   const body = await c.req.json();
   const input = UpdateCASchema.parse(body);
   const ca = await caService.updateCA(id, input, user.id);
@@ -76,33 +97,39 @@ caRoutes.put('/:id', requireScope('pki:ca:create:root'), async (c) => {
 });
 
 // Revoke CA (admin only)
-caRoutes.post('/:id/revoke', requireAnyScope('pki:ca:revoke:root', 'pki:ca:revoke:intermediate'), async (c) => {
-  const caService = container.resolve(CAService);
-  const user = c.get('user')!;
-  const id = c.req.param('id');
-  const body = await c.req.json();
-  const { reason } = RevokeCASchema.parse(body);
-  await caService.revokeCA(id, reason, user.id);
-  return c.json({ message: 'CA revoked' });
-});
+caRoutes.openapi(
+  { ...revokeCARoute, middleware: requireAnyScope('pki:ca:revoke:root', 'pki:ca:revoke:intermediate') },
+  async (c) => {
+    const caService = container.resolve(CAService);
+    const user = c.get('user')!;
+    const id = c.req.param('id')!;
+    const body = await c.req.json();
+    const { reason } = RevokeCASchema.parse(body);
+    await caService.revokeCA(id, reason, user.id);
+    return c.json({ message: 'CA revoked' });
+  }
+);
 
 // Delete CA (admin only)
-caRoutes.delete('/:id', requireAnyScope('pki:ca:revoke:root', 'pki:ca:revoke:intermediate'), async (c) => {
-  const caService = container.resolve(CAService);
-  const user = c.get('user')!;
-  const id = c.req.param('id');
-  await caService.deleteCA(id, user.id);
-  return c.body(null, 204);
-});
+caRoutes.openapi(
+  { ...deleteCARoute, middleware: requireAnyScope('pki:ca:revoke:root', 'pki:ca:revoke:intermediate') },
+  async (c) => {
+    const caService = container.resolve(CAService);
+    const user = c.get('user')!;
+    const id = c.req.param('id')!;
+    await caService.deleteCA(id, user.id);
+    return c.body(null, 204);
+  }
+);
 
 // Export CA private key (admin only)
-caRoutes.post('/:id/export-key', requireScope('pki:ca:create:root'), async (c) => {
+caRoutes.openapi({ ...exportCAKeyRoute, middleware: requireScope('pki:ca:create:root') }, async (c) => {
   const caService = container.resolve(CAService);
   const _cryptoService = container.resolve(CryptoService);
   const exportService = container.resolve(ExportService);
   const auditService = container.resolve(AuditService);
   const user = c.get('user')!;
-  const id = c.req.param('id');
+  const id = c.req.param('id')!;
   const body = await c.req.json();
   const { passphrase } = ExportCAKeySchema.parse(body);
 
@@ -127,6 +154,6 @@ caRoutes.post('/:id/export-key', requireScope('pki:ca:create:root'), async (c) =
 });
 
 // Generate OCSP responder cert (admin only)
-caRoutes.post('/:id/ocsp-responder', requireScope('pki:ca:create:root'), async (c) => {
+caRoutes.openapi({ ...createOCSPResponderRoute, middleware: requireScope('pki:ca:create:root') }, async (c) => {
   return c.json({ code: 'OCSP_DISABLED', message: 'OCSP responder is currently disabled' }, 501);
 });

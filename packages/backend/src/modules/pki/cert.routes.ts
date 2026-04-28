@@ -1,11 +1,21 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
+import { openApiValidationHook } from '@/lib/openapi.js';
 import { hasScope } from '@/lib/permissions.js';
 import { sanitizeFilename } from '@/lib/utils.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
 import { authMiddleware, requireScope } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import { CAService } from './ca.service.js';
+import {
+  certificateChainRoute,
+  exportCertificateRoute,
+  getCertificateRoute,
+  issueCertificateFromCSRRoute,
+  issueCertificateRoute,
+  listCertificatesRoute,
+  revokeCertificateRoute,
+} from './cert.docs.js';
 import {
   CertificateListQuerySchema,
   ExportCertificateQuerySchema,
@@ -18,12 +28,12 @@ import { CRLService } from './crl.service.js';
 import { ExportService } from './export.service.js';
 import { OCSPService } from './ocsp.service.js';
 
-export const certRoutes = new OpenAPIHono<AppEnv>();
+export const certRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
 
 certRoutes.use('*', authMiddleware);
 
 // List certificates (paginated, filterable)
-certRoutes.get('/', requireScope('pki:cert:list'), async (c) => {
+certRoutes.openapi({ ...listCertificatesRoute, middleware: requireScope('pki:cert:list') }, async (c) => {
   const certService = container.resolve(CertService);
   const query = CertificateListQuerySchema.parse({
     caId: c.req.query('caId'),
@@ -45,10 +55,10 @@ certRoutes.get('/', requireScope('pki:cert:list'), async (c) => {
 });
 
 // Get certificate detail
-certRoutes.get('/:id', requireScope('pki:cert:view'), async (c) => {
+certRoutes.openapi({ ...getCertificateRoute, middleware: requireScope('pki:cert:view') }, async (c) => {
   const certService = container.resolve(CertService);
   const scopes = c.get('effectiveScopes') || [];
-  const id = c.req.param('id');
+  const id = c.req.param('id')!;
   const cert = await certService.getCertificate(id, {
     includeSystem: hasScope(scopes, 'admin:details:certificates'),
   });
@@ -56,7 +66,7 @@ certRoutes.get('/:id', requireScope('pki:cert:view'), async (c) => {
 });
 
 // Issue certificate (server-side key generation)
-certRoutes.post('/', requireScope('pki:cert:issue'), async (c) => {
+certRoutes.openapi({ ...issueCertificateRoute, middleware: requireScope('pki:cert:issue') }, async (c) => {
   const certService = container.resolve(CertService);
   const user = c.get('user')!;
   const body = await c.req.json();
@@ -66,7 +76,7 @@ certRoutes.post('/', requireScope('pki:cert:issue'), async (c) => {
 });
 
 // Issue certificate from CSR
-certRoutes.post('/from-csr', requireScope('pki:cert:issue'), async (c) => {
+certRoutes.openapi({ ...issueCertificateFromCSRRoute, middleware: requireScope('pki:cert:issue') }, async (c) => {
   const certService = container.resolve(CertService);
   const user = c.get('user')!;
   const body = await c.req.json();
@@ -76,12 +86,12 @@ certRoutes.post('/from-csr', requireScope('pki:cert:issue'), async (c) => {
 });
 
 // Revoke certificate
-certRoutes.post('/:id/revoke', requireScope('pki:cert:revoke'), async (c) => {
+certRoutes.openapi({ ...revokeCertificateRoute, middleware: requireScope('pki:cert:revoke') }, async (c) => {
   const certService = container.resolve(CertService);
   const crlService = container.resolve(CRLService);
   const _ocspService = container.resolve(OCSPService);
   const user = c.get('user')!;
-  const id = c.req.param('id');
+  const id = c.req.param('id')!;
   const body = await c.req.json();
   const { reason } = RevokeCertificateSchema.parse(body);
 
@@ -94,13 +104,13 @@ certRoutes.post('/:id/revoke', requireScope('pki:cert:revoke'), async (c) => {
 });
 
 // Export certificate
-certRoutes.post('/:id/export', requireScope('pki:cert:export'), async (c) => {
+certRoutes.openapi({ ...exportCertificateRoute, middleware: requireScope('pki:cert:export') }, async (c) => {
   const certService = container.resolve(CertService);
   const exportService = container.resolve(ExportService);
   const auditService = container.resolve(AuditService);
   const user = c.get('user')!;
   const scopes = c.get('effectiveScopes') || [];
-  const id = c.req.param('id');
+  const id = c.req.param('id')!;
   const body = await c.req.json();
   const { format, passphrase } = ExportCertificateQuerySchema.parse(body);
 
@@ -181,11 +191,11 @@ certRoutes.post('/:id/export', requireScope('pki:cert:export'), async (c) => {
 });
 
 // Download certificate chain
-certRoutes.get('/:id/chain', requireScope('pki:cert:view'), async (c) => {
+certRoutes.openapi({ ...certificateChainRoute, middleware: requireScope('pki:cert:view') }, async (c) => {
   const certService = container.resolve(CertService);
   const caService = container.resolve(CAService);
   const exportService = container.resolve(ExportService);
-  const id = c.req.param('id');
+  const id = c.req.param('id')!;
 
   const scopes = c.get('effectiveScopes') || [];
   const includeSystem = hasScope(scopes, 'admin:details:certificates');

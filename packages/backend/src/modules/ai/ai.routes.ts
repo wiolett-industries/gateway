@@ -1,32 +1,34 @@
-import { Hono } from 'hono';
+import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
+import { openApiValidationHook } from '@/lib/openapi.js';
 import { authMiddleware, requireScope, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
+import { aiStatusRoute, getAiConfigRoute, listAiToolsRoute, updateAiConfigRoute } from './ai.openapi.js';
 import { AIConfigUpdateSchema } from './ai.schemas.js';
 import { AISettingsService } from './ai.settings.service.js';
 import { AI_TOOLS } from './ai.tools.js';
 
-export const aiRoutes = new Hono<AppEnv>();
+export const aiRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
 
 aiRoutes.use('*', authMiddleware);
 aiRoutes.use('*', sessionOnly);
 
 // GET /api/ai/status — check if AI features are enabled (any authenticated user)
-aiRoutes.get('/status', async (c) => {
+aiRoutes.openapi(aiStatusRoute, async (c) => {
   const settingsService = container.resolve(AISettingsService);
   const enabled = await settingsService.isEnabled();
   return c.json({ enabled });
 });
 
 // GET /api/ai/config — full config for admin display (admin only)
-aiRoutes.get('/config', requireScope('feat:ai:configure'), async (c) => {
+aiRoutes.openapi({ ...getAiConfigRoute, middleware: requireScope('feat:ai:configure') }, async (c) => {
   const settingsService = container.resolve(AISettingsService);
   const config = await settingsService.getConfigForAdmin();
   return c.json({ data: config });
 });
 
 // PUT /api/ai/config — update config (admin only)
-aiRoutes.put('/config', requireScope('feat:ai:configure'), async (c) => {
+aiRoutes.openapi({ ...updateAiConfigRoute, middleware: requireScope('feat:ai:configure') }, async (c) => {
   const body = AIConfigUpdateSchema.safeParse(await c.req.json());
   if (!body.success) {
     return c.json({ code: 'VALIDATION_ERROR', message: body.error.message }, 400);
@@ -38,7 +40,7 @@ aiRoutes.put('/config', requireScope('feat:ai:configure'), async (c) => {
 });
 
 // GET /api/ai/tools — list all tool definitions grouped by category (admin only)
-aiRoutes.get('/tools', requireScope('feat:ai:configure'), async (c) => {
+aiRoutes.openapi({ ...listAiToolsRoute, middleware: requireScope('feat:ai:configure') }, async (c) => {
   const grouped: Record<
     string,
     Array<{ name: string; description: string; destructive: boolean; requiredScope: string }>

@@ -1,16 +1,18 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
+import { openApiValidationHook } from '@/lib/openapi.js';
 import { sanitizeFilename } from '@/lib/utils.js';
 import type { AppEnv } from '@/types.js';
 import { CAService } from './ca.service.js';
 import { CRLService } from './crl.service.js';
+import { publicCaCertificateRoute, publicCrlRoute, publicOcspGetRoute, publicOcspPostRoute } from './public.docs.js';
 
-export const publicPkiRoutes = new OpenAPIHono<AppEnv>();
+export const publicPkiRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
 
 // Download CRL (DER format, no auth required)
-publicPkiRoutes.get('/crl/:caId', async (c) => {
+publicPkiRoutes.openapi(publicCrlRoute, async (c) => {
   const crlService = container.resolve(CRLService);
-  const caId = c.req.param('caId');
+  const caId = c.req.param('caId')!;
 
   try {
     const crlDer = await crlService.getCRL(caId);
@@ -27,19 +29,19 @@ publicPkiRoutes.get('/crl/:caId', async (c) => {
 });
 
 // OCSP responder (POST — application/ocsp-request)
-publicPkiRoutes.post('/ocsp/:caId', async (c) => {
+publicPkiRoutes.openapi(publicOcspPostRoute, async (c) => {
   return c.json({ code: 'OCSP_DISABLED', message: 'OCSP responder is currently disabled' }, 501);
 });
 
 // OCSP responder (GET — base64-encoded request in URL)
-publicPkiRoutes.get('/ocsp/:caId/:encodedRequest', async (c) => {
+publicPkiRoutes.openapi(publicOcspGetRoute, async (c) => {
   return c.json({ code: 'OCSP_DISABLED', message: 'OCSP responder is currently disabled' }, 501);
 });
 
 // Download CA certificate (PEM, no auth required)
-publicPkiRoutes.get('/ca/:caId/cert', async (c) => {
+publicPkiRoutes.openapi(publicCaCertificateRoute, async (c) => {
   const caService = container.resolve(CAService);
-  const caId = c.req.param('caId');
+  const caId = c.req.param('caId')!;
 
   try {
     const ca = await caService.getCA(caId);

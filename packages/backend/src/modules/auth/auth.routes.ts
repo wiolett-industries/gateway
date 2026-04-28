@@ -2,13 +2,15 @@ import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import { deleteCookie, setCookie } from 'hono/cookie';
 import { getEnv, isDevelopment } from '@/config/env.js';
 import { container } from '@/container.js';
+import { openApiValidationHook } from '@/lib/openapi.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
 import { SessionService } from '@/services/session.service.js';
 import type { AppEnv } from '@/types.js';
+import { csrfTokenRoute, currentUserRoute, logoutRoute } from './auth.docs.js';
 import { authMiddleware, SESSION_COOKIE_NAME, sessionOnly } from './auth.middleware.js';
 import { AuthService } from './auth.service.js';
 
-export const authRoutes = new OpenAPIHono<AppEnv>();
+export const authRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
 
 const ErrorSchema = z.object({
   code: z.string(),
@@ -123,7 +125,7 @@ authRoutes.openapi(callbackRoute, async (c) => {
 // CSRF token for cookie-authenticated browser mutations
 authRoutes.use('/csrf', authMiddleware);
 authRoutes.use('/csrf', sessionOnly);
-authRoutes.get('/csrf', async (c) => {
+authRoutes.openapi(csrfTokenRoute, async (c) => {
   const sessionId = c.get('sessionId');
   if (!sessionId) {
     return c.json({ code: 'AUTH_ERROR', message: 'Not a session-based login' }, 400);
@@ -138,7 +140,7 @@ authRoutes.get('/csrf', async (c) => {
 
 // Logout
 authRoutes.use('/logout', authMiddleware);
-authRoutes.post('/logout', async (c) => {
+authRoutes.openapi(logoutRoute, async (c) => {
   const sessionId = c.get('sessionId');
   if (!sessionId) {
     return c.json({ message: 'Not a session-based login' }, 400);
@@ -159,7 +161,7 @@ authRoutes.post('/logout', async (c) => {
 
 // Get current user
 authRoutes.use('/me', authMiddleware);
-authRoutes.get('/me', async (c) => {
+authRoutes.openapi(currentUserRoute, async (c) => {
   const sessionUser = c.get('user')!;
   const authService = container.resolve(AuthService);
   const user = await authService.getUserById(sessionUser.id);

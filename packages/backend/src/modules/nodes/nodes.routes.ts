@@ -1,6 +1,7 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { streamSSE } from 'hono/streaming';
 import { container } from '@/container.js';
+import { openApiValidationHook } from '@/lib/openapi.js';
 import { hasScope } from '@/lib/permissions.js';
 import { authMiddleware, requireScope, requireScopeForResource, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import {
@@ -13,6 +14,20 @@ import {
 import type { AppEnv } from '@/types.js';
 import { NodeMonitoringService } from './node-monitoring.service.js';
 import {
+  createNodeRoute,
+  deleteNodeRoute,
+  getNodeConfigRoute,
+  getNodeRoute,
+  listNodesRoute,
+  nodeDaemonLogsRoute,
+  nodeMonitoringStreamRoute,
+  nodeNginxLogsRoute,
+  testNodeConfigRoute,
+  updateNodeConfigRoute,
+  updateNodeRoute,
+  updateNodeServiceCreationLockRoute,
+} from './nodes.docs.js';
+import {
   CreateNodeSchema,
   NodeListQuerySchema,
   UpdateNodeSchema,
@@ -20,65 +35,58 @@ import {
 } from './nodes.schemas.js';
 import { NodesService } from './nodes.service.js';
 
-export const nodesRoutes = new OpenAPIHono<AppEnv>();
+export const nodesRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
 
 nodesRoutes.use('*', authMiddleware);
 nodesRoutes.use('*', sessionOnly);
 
-// List nodes
-nodesRoutes.get('/', requireScope('nodes:list'), async (c) => {
+nodesRoutes.openapi({ ...listNodesRoute, middleware: requireScope('nodes:list') }, async (c) => {
   const service = container.resolve(NodesService);
-  const rawQuery = c.req.query();
-  const query = NodeListQuerySchema.parse(rawQuery);
+  const query = NodeListQuerySchema.parse(c.req.query());
   const result = await service.list(query);
   return c.json(result);
 });
 
-// Get node detail
-nodesRoutes.get('/:id', requireScopeForResource('nodes:details', 'id'), async (c) => {
+nodesRoutes.openapi({ ...getNodeRoute, middleware: requireScopeForResource('nodes:details', 'id') }, async (c) => {
   const service = container.resolve(NodesService);
-  const id = c.req.param('id');
+  const id = c.req.param('id')!;
   const node = await service.get(id);
   return c.json({ data: node });
 });
 
-// Create node (generates enrollment token)
-nodesRoutes.post('/', requireScope('nodes:create'), async (c) => {
+nodesRoutes.openapi({ ...createNodeRoute, middleware: requireScope('nodes:create') }, async (c) => {
   const service = container.resolve(NodesService);
   const user = c.get('user')!;
-  const body = await c.req.json();
-  const input = CreateNodeSchema.parse(body);
+  const input = CreateNodeSchema.parse(await c.req.json());
   const result = await service.create(input, user.id);
   return c.json({ data: result }, 201);
 });
 
-// Update node (display name)
-nodesRoutes.patch('/:id', requireScopeForResource('nodes:rename', 'id'), async (c) => {
+nodesRoutes.openapi({ ...updateNodeRoute, middleware: requireScopeForResource('nodes:rename', 'id') }, async (c) => {
   const service = container.resolve(NodesService);
   const user = c.get('user')!;
-  const id = c.req.param('id');
-  const body = await c.req.json();
-  const input = UpdateNodeSchema.parse(body);
+  const id = c.req.param('id')!;
+  const input = UpdateNodeSchema.parse(await c.req.json());
   const node = await service.update(id, input, user.id);
   return c.json({ data: node });
 });
 
-// Lock/unlock top-level service creation on a node.
-nodesRoutes.patch('/:id/service-creation-lock', requireScopeForResource('nodes:lock', 'id'), async (c) => {
-  const service = container.resolve(NodesService);
-  const user = c.get('user')!;
-  const id = c.req.param('id');
-  const body = await c.req.json();
-  const input = UpdateNodeServiceCreationLockSchema.parse(body);
-  const node = await service.updateServiceCreationLock(id, input, user.id);
-  return c.json({ data: node });
-});
+nodesRoutes.openapi(
+  { ...updateNodeServiceCreationLockRoute, middleware: requireScopeForResource('nodes:lock', 'id') },
+  async (c) => {
+    const service = container.resolve(NodesService);
+    const user = c.get('user')!;
+    const id = c.req.param('id')!;
+    const input = UpdateNodeServiceCreationLockSchema.parse(await c.req.json());
+    const node = await service.updateServiceCreationLock(id, input, user.id);
+    return c.json({ data: node });
+  }
+);
 
-// Delete node
-nodesRoutes.delete('/:id', requireScopeForResource('nodes:delete', 'id'), async (c) => {
+nodesRoutes.openapi({ ...deleteNodeRoute, middleware: requireScopeForResource('nodes:delete', 'id') }, async (c) => {
   const service = container.resolve(NodesService);
   const user = c.get('user')!;
-  const id = c.req.param('id');
+  const id = c.req.param('id')!;
   await service.remove(id, user.id);
   return c.json({ success: true });
 });
@@ -86,7 +94,7 @@ nodesRoutes.delete('/:id', requireScopeForResource('nodes:delete', 'id'), async 
 // Helper: check node type is nginx before nginx-specific operations
 async function requireNginxNode(c: any): Promise<boolean> {
   const service = container.resolve(NodesService);
-  const id = c.req.param('id');
+  const id = c.req.param('id')!;
   try {
     const node = await service.get(id);
     if (node.type !== 'nginx') {
@@ -99,101 +107,111 @@ async function requireNginxNode(c: any): Promise<boolean> {
   }
 }
 
-// Read node's global nginx config
-nodesRoutes.get('/:id/config', requireScopeForResource('nodes:config:view', 'id'), async (c) => {
-  if (!(await requireNginxNode(c))) return c.body(null);
-  const { NodeDispatchService } = await import('@/services/node-dispatch.service.js');
-  const dispatch = container.resolve(NodeDispatchService);
-  const nodeId = c.req.param('id');
-  const result = await dispatch.readGlobalConfig(nodeId);
-  if (!result.success) {
-    return c.json({ code: 'DISPATCH_ERROR', message: result.error || 'Failed to read config' }, 502);
+nodesRoutes.openapi(
+  { ...getNodeConfigRoute, middleware: requireScopeForResource('nodes:config:view', 'id') },
+  async (c) => {
+    if (!(await requireNginxNode(c))) return c.body(null);
+    const { NodeDispatchService } = await import('@/services/node-dispatch.service.js');
+    const dispatch = container.resolve(NodeDispatchService);
+    const nodeId = c.req.param('id')!;
+    const result = await dispatch.readGlobalConfig(nodeId);
+    if (!result.success) {
+      return c.json({ code: 'DISPATCH_ERROR', message: result.error || 'Failed to read config' }, 502);
+    }
+    return c.json({ data: { content: result.detail } });
   }
-  return c.json({ data: { content: result.detail } });
-});
+);
 
-// Update node's global nginx config
-nodesRoutes.put('/:id/config', requireScopeForResource('nodes:config:edit', 'id'), async (c) => {
-  if (!(await requireNginxNode(c))) return c.body(null);
-  const { NodeDispatchService } = await import('@/services/node-dispatch.service.js');
-  const dispatch = container.resolve(NodeDispatchService);
-  const nodeId = c.req.param('id');
-  const body = await c.req.json<{ content: string }>();
-  if (!body.content || typeof body.content !== 'string') {
-    return c.json({ code: 'INVALID_BODY', message: 'content is required' }, 400);
+nodesRoutes.openapi(
+  { ...updateNodeConfigRoute, middleware: requireScopeForResource('nodes:config:edit', 'id') },
+  async (c) => {
+    if (!(await requireNginxNode(c))) return c.body(null);
+    const { NodeDispatchService } = await import('@/services/node-dispatch.service.js');
+    const dispatch = container.resolve(NodeDispatchService);
+    const nodeId = c.req.param('id')!;
+    const body = await c.req.json<{ content: string }>();
+    if (!body.content || typeof body.content !== 'string') {
+      return c.json({ code: 'INVALID_BODY', message: 'content is required' }, 400);
+    }
+    if (body.content.length > 1_048_576) {
+      return c.json({ data: { valid: false, error: 'Config exceeds 1MB limit' } }, 422);
+    }
+    const result = await dispatch.updateGlobalConfig(nodeId, body.content, '');
+    if (!result.success) {
+      return c.json({ data: { valid: false, error: result.error } }, 422);
+    }
+    return c.json({ data: { valid: true } });
   }
-  if (body.content.length > 1_048_576) {
-    return c.json({ data: { valid: false, error: 'Config exceeds 1MB limit' } }, 422);
-  }
-  const result = await dispatch.updateGlobalConfig(nodeId, body.content, '');
-  if (!result.success) {
-    return c.json({ data: { valid: false, error: result.error } }, 422);
-  }
-  return c.json({ data: { valid: true } });
-});
+);
 
 // Test node's nginx config on the target node daemon.
 // Do not run a backend-local nginx -t first, because node configs can contain
 // valid host-specific includes/paths that do not exist inside the Gateway container.
-nodesRoutes.post('/:id/config/test', requireScopeForResource('nodes:config:edit', 'id'), async (c) => {
-  if (!(await requireNginxNode(c))) return c.body(null);
-  const { NodeDispatchService } = await import('@/services/node-dispatch.service.js');
-  const dispatch = container.resolve(NodeDispatchService);
-  const nodeId = c.req.param('id');
-  await c.req.json<{ content?: string }>().catch(() => ({}) as { content?: string });
+nodesRoutes.openapi(
+  { ...testNodeConfigRoute, middleware: requireScopeForResource('nodes:config:edit', 'id') },
+  async (c) => {
+    if (!(await requireNginxNode(c))) return c.body(null);
+    const { NodeDispatchService } = await import('@/services/node-dispatch.service.js');
+    const dispatch = container.resolve(NodeDispatchService);
+    const nodeId = c.req.param('id')!;
+    await c.req.json<{ content?: string }>().catch(() => ({}) as { content?: string });
 
-  // Remote test via daemon (tests the deployed config in the node environment)
-  const result = await dispatch.testConfig(nodeId);
-  return c.json({ data: { valid: result.success, error: result.error || undefined } });
-});
+    // Remote test via daemon (tests the deployed config in the node environment)
+    const result = await dispatch.testConfig(nodeId);
+    return c.json({ data: { valid: result.success, error: result.error || undefined } });
+  }
+);
 
 // Node monitoring SSE stream — real-time health + stats at 5s intervals
-nodesRoutes.get('/:id/monitoring/stream', requireScopeForResource('nodes:details', 'id'), async (c) => {
-  const nodeId = c.req.param('id');
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(nodeId)) {
-    return c.json({ code: 'INVALID_ID', message: 'Invalid node ID' }, 400);
+nodesRoutes.openapi(
+  { ...nodeMonitoringStreamRoute, middleware: requireScopeForResource('nodes:details', 'id') },
+  async (c) => {
+    const nodeId = c.req.param('id')!;
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(nodeId)) {
+      return c.json({ code: 'INVALID_ID', message: 'Invalid node ID' }, 400);
+    }
+
+    const monitoringService = container.resolve(NodeMonitoringService);
+
+    return streamSSE(c, async (stream) => {
+      monitoringService.registerClient(nodeId);
+
+      const history = monitoringService.getHistory(nodeId);
+      await stream.writeSSE({
+        data: JSON.stringify({ connected: true, nodeId, history }),
+        event: 'connected',
+      });
+      await stream.sleep(0);
+
+      let _running = true;
+
+      const onSnapshot = (data: { nodeId: string; snapshot: any }) => {
+        if (data.nodeId === nodeId) {
+          stream.writeSSE({ data: JSON.stringify(data.snapshot), event: 'snapshot' }).catch(() => {});
+        }
+      };
+      monitoringService.on('snapshot', onSnapshot);
+
+      const keepalive = setInterval(() => {
+        stream.writeSSE({ data: '', event: 'ping' }).catch(() => clearInterval(keepalive));
+      }, 30_000);
+
+      stream.onAbort(() => {
+        _running = false;
+        clearInterval(keepalive);
+        monitoringService.off('snapshot', onSnapshot);
+        monitoringService.unregisterClient(nodeId);
+      });
+
+      await new Promise(() => {});
+    });
   }
-
-  const monitoringService = container.resolve(NodeMonitoringService);
-
-  return streamSSE(c, async (stream) => {
-    monitoringService.registerClient(nodeId);
-
-    const history = monitoringService.getHistory(nodeId);
-    await stream.writeSSE({
-      data: JSON.stringify({ connected: true, nodeId, history }),
-      event: 'connected',
-    });
-    await stream.sleep(0);
-
-    let _running = true;
-
-    const onSnapshot = (data: { nodeId: string; snapshot: any }) => {
-      if (data.nodeId === nodeId) {
-        stream.writeSSE({ data: JSON.stringify(data.snapshot), event: 'snapshot' }).catch(() => {});
-      }
-    };
-    monitoringService.on('snapshot', onSnapshot);
-
-    const keepalive = setInterval(() => {
-      stream.writeSSE({ data: '', event: 'ping' }).catch(() => clearInterval(keepalive));
-    }, 30_000);
-
-    stream.onAbort(() => {
-      _running = false;
-      clearInterval(keepalive);
-      monitoringService.off('snapshot', onSnapshot);
-      monitoringService.unregisterClient(nodeId);
-    });
-
-    await new Promise(() => {});
-  });
-});
+);
 
 // Daemon logs SSE stream for a specific node
 // Query params: ?level=info,warn,error  &search=keyword
-nodesRoutes.get('/:id/logs', requireScopeForResource('nodes:logs', 'id'), async (c) => {
-  const nodeId = c.req.param('id');
+nodesRoutes.openapi({ ...nodeDaemonLogsRoute, middleware: requireScopeForResource('nodes:logs', 'id') }, async (c) => {
+  const nodeId = c.req.param('id')!;
   const levelFilter =
     c.req
       .query('level')
@@ -251,9 +269,9 @@ nodesRoutes.get('/:id/logs', requireScopeForResource('nodes:logs', 'id'), async 
 
 // Nginx access logs SSE stream for all hosts on a node
 // Query params: ?search=keyword&status=2xx,4xx,5xx
-nodesRoutes.get('/:id/nginx-logs', requireScopeForResource('nodes:logs', 'id'), async (c) => {
+nodesRoutes.openapi({ ...nodeNginxLogsRoute, middleware: requireScopeForResource('nodes:logs', 'id') }, async (c) => {
   if (!(await requireNginxNode(c))) return c.body(null);
-  const nodeId = c.req.param('id');
+  const nodeId = c.req.param('id')!;
   const searchFilter = c.req.query('search')?.toLowerCase() ?? '';
   const statusFilter =
     c.req

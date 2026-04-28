@@ -1,25 +1,33 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
+import { openApiValidationHook } from '@/lib/openapi.js';
 import { authMiddleware, requireScope } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
+import {
+  createTemplateRoute,
+  deleteTemplateRoute,
+  getTemplateRoute,
+  listTemplatesRoute,
+  updateTemplateRoute,
+} from './templates.docs.js';
 import { CreateTemplateSchema, UpdateTemplateSchema } from './templates.schemas.js';
 import { TemplatesService } from './templates.service.js';
 
-export const templateRoutes = new OpenAPIHono<AppEnv>();
+export const templateRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
 
 templateRoutes.use('*', authMiddleware);
 
 // List templates
-templateRoutes.get('/', requireScope('pki:templates:list'), async (c) => {
+templateRoutes.openapi({ ...listTemplatesRoute, middleware: requireScope('pki:templates:list') }, async (c) => {
   const templatesService = container.resolve(TemplatesService);
   const templates = await templatesService.listTemplates();
   return c.json(templates);
 });
 
 // Get template detail
-templateRoutes.get('/:id', requireScope('pki:templates:view'), async (c) => {
+templateRoutes.openapi({ ...getTemplateRoute, middleware: requireScope('pki:templates:view') }, async (c) => {
   const templatesService = container.resolve(TemplatesService);
-  const id = c.req.param('id');
+  const id = c.req.param('id')!;
   const template = await templatesService.getTemplate(id);
   if (!template) {
     return c.json({ code: 'TEMPLATE_NOT_FOUND', message: 'Template not found' }, 404);
@@ -28,7 +36,7 @@ templateRoutes.get('/:id', requireScope('pki:templates:view'), async (c) => {
 });
 
 // Create template (admin only)
-templateRoutes.post('/', requireScope('pki:templates:create'), async (c) => {
+templateRoutes.openapi({ ...createTemplateRoute, middleware: requireScope('pki:templates:create') }, async (c) => {
   const templatesService = container.resolve(TemplatesService);
   const user = c.get('user')!;
   const body = await c.req.json();
@@ -38,9 +46,9 @@ templateRoutes.post('/', requireScope('pki:templates:create'), async (c) => {
 });
 
 // Update template (admin only)
-templateRoutes.patch('/:id', requireScope('pki:templates:edit'), async (c) => {
+templateRoutes.openapi({ ...updateTemplateRoute, middleware: requireScope('pki:templates:edit') }, async (c) => {
   const templatesService = container.resolve(TemplatesService);
-  const id = c.req.param('id');
+  const id = c.req.param('id')!;
   const body = await c.req.json();
   const input = UpdateTemplateSchema.parse(body);
   const template = await templatesService.updateTemplate(id, input);
@@ -48,9 +56,9 @@ templateRoutes.patch('/:id', requireScope('pki:templates:edit'), async (c) => {
 });
 
 // Delete template (admin only)
-templateRoutes.delete('/:id', requireScope('pki:templates:delete'), async (c) => {
+templateRoutes.openapi({ ...deleteTemplateRoute, middleware: requireScope('pki:templates:delete') }, async (c) => {
   const templatesService = container.resolve(TemplatesService);
-  const id = c.req.param('id');
+  const id = c.req.param('id')!;
   await templatesService.deleteTemplate(id);
   return c.body(null, 204);
 });
