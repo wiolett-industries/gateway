@@ -28,6 +28,10 @@ export interface AppEnv {
     sessionId?: string;
     effectiveScopes?: string[];
     isTokenAuth?: boolean;
+    mcpAuth?: {
+      tokenId: string;
+      tokenPrefix: string;
+    };
     requestId: string;
     loggingIngest?: {
       tokenId: string;

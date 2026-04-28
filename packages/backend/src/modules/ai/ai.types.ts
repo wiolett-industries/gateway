@@ -111,3 +111,10 @@ export interface ToolExecutionResult {
   error?: string;
   invalidateStores: string[];
 }
+
+export interface ToolExecutionOptions {
+  source?: 'ai' | 'mcp';
+  scopes?: string[];
+  tokenId?: string;
+  tokenPrefix?: string;
+}

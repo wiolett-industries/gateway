@@ -112,7 +112,9 @@ export class TokensService {
     });
   }
 
-  async validateToken(rawToken: string): Promise<{ user: User; scopes: string[] } | null> {
+  async validateToken(
+    rawToken: string
+  ): Promise<{ user: User; scopes: string[]; tokenId: string; tokenPrefix: string } | null> {
     const tokenHash = hashToken(rawToken);
 
     const token = await this.db.query.apiTokens.findFirst({
@@ -136,6 +138,8 @@ export class TokensService {
     return {
       user,
       scopes: boundScopes(token.scopes || [], user.scopes).filter(isApiTokenScope),
+      tokenId: token.id,
+      tokenPrefix: token.tokenPrefix,
     };
   }
 

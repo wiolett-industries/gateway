@@ -47,6 +47,7 @@ import { groupRoutes } from '@/modules/groups/group.routes.js';
 import { housekeepingRoutes } from '@/modules/housekeeping/housekeeping.routes.js';
 import { licenseRoutes } from '@/modules/license/license.routes.js';
 import { loggingRoutes } from '@/modules/logging/logging.routes.js';
+import { mcpRoutes } from '@/modules/mcp/mcp.routes.js';
 import { monitoringRoutes } from '@/modules/monitoring/monitoring.routes.js';
 import { createNodeExecWSHandlers } from '@/modules/nodes/node-exec.ws.js';
 import { nodesRoutes } from '@/modules/nodes/nodes.routes.js';
@@ -241,6 +242,7 @@ export function createApp() {
   app.route('/api/notifications', notificationRoutes);
   app.route('/api/logging', loggingRoutes);
   app.route('/api/ai', aiRoutes);
+  app.route('/api/mcp', mcpRoutes);
 
   // AI WebSocket endpoint
   const wsHandlers = createWSHandlers();
@@ -346,7 +348,7 @@ export function createApp() {
       title: 'Gateway API',
       version: '1.0.0',
       description:
-        'Gateway is a self-hosted control plane for managing nodes, reverse proxies, Docker workloads, certificates, databases, logging, monitoring, status pages, notifications, and operational automation.\n\n## Authentication\n\nBrowser sessions authenticate through the HttpOnly `session_id` cookie set by OIDC login. Cookie-authenticated mutating requests must include `X-CSRF-Token` from `/auth/csrf`.\n\nAPI tokens use `Authorization: Bearer gw_...` for programmatic access.\n\n## Public PKI Endpoints\n\nCRL and OCSP endpoints under `/pki/` are unauthenticated and publicly accessible.',
+        'Gateway is a self-hosted control plane for managing nodes, reverse proxies, Docker workloads, certificates, databases, logging, monitoring, status pages, notifications, and operational automation.\n\n## Authentication\n\nBrowser sessions authenticate through the HttpOnly `session_id` cookie set by OIDC login. Cookie-authenticated mutating requests must include `X-CSRF-Token` from `/auth/csrf`.\n\nAPI tokens use `Authorization: Bearer gw_...` for programmatic access.\n\n## Remote MCP\n\n`POST /api/mcp` exposes Gateway through stateless Streamable HTTP MCP for API-token clients. It accepts only scoped `gw_...` API tokens, not browser cookies or `gwl_...` logging ingest tokens.\n\n## Public PKI Endpoints\n\nCRL and OCSP endpoints under `/pki/` are unauthenticated and publicly accessible.',
     },
     servers: [
       {

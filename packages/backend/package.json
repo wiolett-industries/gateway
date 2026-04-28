@@ -20,12 +20,13 @@
     "db:studio": "node --import tsx node_modules/drizzle-kit/bin.cjs studio"
   },
   "dependencies": {
+    "@clickhouse/client": "^1.13.0",
     "@grpc/grpc-js": "^1.14.3",
     "@grpc/proto-loader": "^0.8.0",
     "@hono/node-server": "^1.13.7",
     "@hono/node-ws": "^1.3.0",
     "@hono/zod-openapi": "^0.18.4",
-    "@clickhouse/client": "^1.13.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@peculiar/asn1-ocsp": "^2.3.13",
     "@peculiar/asn1-schema": "^2.3.13",
     "@peculiar/asn1-x509": "^2.3.13",
@@ -47,7 +48,7 @@
     "reflect-metadata": "^0.2.2",
     "tsyringe": "^4.8.0",
     "winston": "^3.17.0",
-    "zod": "^3.24.1"
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.9",

@@ -25,7 +25,13 @@ import type { User } from '@/types.js';
 import { DOC_TOPIC_SCOPES, getInternalDocumentation, INTERNAL_DOCS } from './ai.docs.js';
 import type { AISettingsService } from './ai.settings.service.js';
 import { AI_TOOLS, getOpenAITools, isDestructiveTool, TOOL_STORE_INVALIDATION_MAP } from './ai.tools.js';
-import type { ChatMessage, PageContext, ToolExecutionResult, WSServerMessage } from './ai.types.js';
+import type {
+  ChatMessage,
+  PageContext,
+  ToolExecutionOptions,
+  ToolExecutionResult,
+  WSServerMessage,
+} from './ai.types.js';
 
 const logger = createChildLogger('AIService');
 const SENSITIVE_TOOL_ARG_RE =
@@ -44,6 +50,28 @@ function redactToolArgs(value: unknown, depth = 0): unknown {
     redacted[key] = SENSITIVE_TOOL_ARG_RE.test(key) ? '[REDACTED]' : redactToolArgs(nested, depth + 1);
   }
   return redacted;
+}
+
+function getToolResourceId(args: Record<string, unknown>): string {
+  return String(
+    args.caId ||
+      args.certificateId ||
+      args.proxyHostId ||
+      args.domainId ||
+      args.accessListId ||
+      args.templateId ||
+      args.userId ||
+      args.nodeId ||
+      args.containerId ||
+      args.databaseId ||
+      args.ruleId ||
+      args.webhookId ||
+      ''
+  );
+}
+
+function isMutatingTool(toolDef: { destructive: boolean; invalidateStores: string[] }): boolean {
+  return toolDef.destructive || toolDef.invalidateStores.length > 0;
 }
 
 function estimateTokens(text: string): number {
@@ -266,40 +294,57 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
     return parts.join('\n');
   }
 
-  async executeTool(user: User, toolName: string, args: Record<string, unknown>): Promise<ToolExecutionResult> {
+  async executeTool(
+    user: User,
+    toolName: string,
+    args: Record<string, unknown>,
+    options: ToolExecutionOptions = {}
+  ): Promise<ToolExecutionResult> {
     const toolDef = AI_TOOLS.find((t) => t.name === toolName);
     if (!toolDef) {
       return { error: `Unknown tool: ${toolName}`, invalidateStores: [] };
     }
 
+    const executionUser = options.scopes ? { ...user, scopes: options.scopes } : user;
+
     // Permission check — tools with empty requiredScope are blocked (must be explicit)
-    if (!toolDef.requiredScope || !hasScope(user.scopes, toolDef.requiredScope)) {
+    if (!toolDef.requiredScope || !hasScope(executionUser.scopes, toolDef.requiredScope)) {
       return {
         error: `PERMISSION_DENIED: You do not have the "${toolDef.requiredScope || 'unknown'}" scope required for this action. Tell the user they lack this permission and suggest contacting an administrator. Do NOT ask follow-up questions or retry.`,
         invalidateStores: [],
       };
     }
 
+    const source = options.source ?? 'ai';
+    const shouldAudit = isMutatingTool(toolDef);
+    const redactedArgs = redactToolArgs(args);
+    const auditBase = {
+      userId: user.id,
+      resourceType: toolDef.category.toLowerCase().replace(/\s+/g, '_'),
+      resourceId: getToolResourceId(args),
+    };
+
     try {
-      const result = await this.executeToolInternal(user, toolName, args);
+      const result = await this.executeToolInternal(executionUser, toolName, args);
       const invalidateStores = TOOL_STORE_INVALIDATION_MAP[toolName] || [];
-      const redactedArgs = redactToolArgs(args);
 
       // Audit log for mutating tools
-      if (toolDef.destructive || invalidateStores.length > 0) {
+      if (shouldAudit) {
         await this.auditService.log({
-          userId: user.id,
-          action: `ai.${toolName}`,
-          resourceType: toolDef.category.toLowerCase().replace(/\s+/g, '_'),
-          resourceId: (args.caId ||
-            args.certificateId ||
-            args.proxyHostId ||
-            args.domainId ||
-            args.accessListId ||
-            args.templateId ||
-            args.userId ||
-            '') as string,
-          details: { ai_initiated: true, arguments: redactedArgs },
+          ...auditBase,
+          action: `${source}.${toolName}`,
+          details:
+            source === 'mcp'
+              ? {
+                  source: 'mcp',
+                  success: true,
+                  tokenId: options.tokenId,
+                  tokenPrefix: options.tokenPrefix,
+                  toolName,
+                  category: toolDef.category,
+                  arguments: redactedArgs,
+                }
+              : { ai_initiated: true, arguments: redactedArgs },
         });
       }
 
@@ -307,6 +352,22 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Tool execution failed';
       logger.error(`Tool execution failed: ${toolName}`, { error: err, args: redactToolArgs(args) });
+      if (source === 'mcp' && shouldAudit) {
+        await this.auditService.log({
+          ...auditBase,
+          action: `mcp.${toolName}`,
+          details: {
+            source: 'mcp',
+            success: false,
+            error: message,
+            tokenId: options.tokenId,
+            tokenPrefix: options.tokenPrefix,
+            toolName,
+            category: toolDef.category,
+            arguments: redactedArgs,
+          },
+        });
+      }
       return { error: message, invalidateStores: [] };
     }
   }

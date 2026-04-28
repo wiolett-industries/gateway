@@ -1082,6 +1082,12 @@ export const TOKEN_SCOPES = [
     desc: "Configure AI settings and providers",
     group: "Features",
   },
+  {
+    value: "mcp:use",
+    label: "Use MCP",
+    desc: "Allow API tokens to access the remote MCP server",
+    group: "Features",
+  },
   // Docker: Containers
   {
     value: "docker:containers:list",

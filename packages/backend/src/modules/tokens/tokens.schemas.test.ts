@@ -17,7 +17,7 @@ describe('CreateTokenSchema', () => {
   it('allows non-AI scopes for API tokens', () => {
     const result = CreateTokenSchema.safeParse({
       name: 'CI token',
-      scopes: ['nodes:list'],
+      scopes: ['nodes:list', 'mcp:use'],
     });
 
     expect(result.success).toBe(true);

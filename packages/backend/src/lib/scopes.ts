@@ -78,6 +78,7 @@ export const ALL_SCOPES = [
   // ── Features ─────────────────────────────────────────────────────
   'feat:ai:use',
   'feat:ai:configure',
+  'mcp:use',
   // ── Docker: Containers ───────────────────────────────────────────
   'docker:containers:list',
   'docker:containers:view',
@@ -208,6 +209,7 @@ export const OPERATOR_SCOPES: readonly string[] = [
   'nodes:rename',
   // Features
   'feat:ai:use',
+  'mcp:use',
   // Admin (alerts only)
   'admin:alerts',
   // Licensing
