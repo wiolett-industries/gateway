@@ -25,7 +25,7 @@ import type {
   DockerDeploymentUpdateInput,
 } from './docker-deployment.schemas.js';
 import type { DockerHealthCheckDto, DockerHealthCheckService } from './docker-health-check.service.js';
-import type { DockerRegistryService } from './docker-registry.service.js';
+import type { DockerRegistryAuthCandidate, DockerRegistryService } from './docker-registry.service.js';
 import type { DockerSecretService } from './docker-secret.service.js';
 import type { DockerTaskService } from './docker-task.service.js';
 
@@ -204,6 +204,26 @@ export class DockerDeploymentService {
     } catch {
       return result.detail;
     }
+  }
+
+  private isRegistryRetryableError(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error);
+    return /pull access denied|repository does not exist|insufficient_scope|authorization|authentication|no basic auth|denied/i.test(
+      message
+    );
+  }
+
+  private desiredConfigForRegistryAttempt(
+    desiredConfig: DockerDeploymentDesiredConfig,
+    registryAuth: DockerRegistryAuthCandidate | null
+  ): DockerDeploymentDesiredConfig {
+    if (!registryAuth || this.hasRegistryHost(desiredConfig.image)) return desiredConfig;
+    return { ...desiredConfig, image: `${registryAuth.url}/${desiredConfig.image}` };
+  }
+
+  private hasRegistryHost(imageRef: string) {
+    const firstSegment = imageRef.split('/')[0] ?? '';
+    return firstSegment === 'localhost' || firstSegment.includes('.') || firstSegment.includes(':');
   }
 
   private async validateDockerNode(nodeId: string, requireCapability = true) {
@@ -418,41 +438,63 @@ export class DockerDeploymentService {
     });
     await this.healthCheckService?.ensureDeploymentDefault(nodeId, id);
 
-    const registryAuth = await this.registry.resolveAuthForImagePull(nodeId, input.image);
     const daemonDesiredConfig = await this.desiredConfigWithSecrets(nodeId, id, desiredConfig);
-    const payload = {
-      deploymentId: id,
-      name: input.name,
-      activeSlot: 'blue',
-      routerName,
-      routerImage: input.routerImage,
-      networkName,
-      slots: { blue: blueName, green: greenName },
-      routes: input.routes,
-      health,
-      desiredConfig: daemonDesiredConfig,
-      registryAuthJson: registryAuth?.authJson,
-      labels: this.internalLabels(id, 'app', 'blue'),
-    };
+    const registryAuthCandidates = await this.registry.resolveAuthCandidatesForImagePull(
+      nodeId,
+      input.image,
+      input.registryId
+    );
+    const registryAttempts = registryAuthCandidates.length ? registryAuthCandidates : [null];
 
     try {
-      const result = await this.dispatch.sendDockerDeploymentCommand(nodeId, 'create', {
-        deploymentId: id,
-        slot: 'blue',
-        configJson: JSON.stringify(payload),
-      });
-      const data = this.parseResult(result) ?? {};
+      let data: any = null;
+      let successfulRegistryId: string | undefined;
+      let deployedDesiredConfig = daemonDesiredConfig;
+      for (const registryAuth of registryAttempts) {
+        const attemptDesiredConfig = this.desiredConfigForRegistryAttempt(daemonDesiredConfig, registryAuth);
+        const payload = {
+          deploymentId: id,
+          name: input.name,
+          activeSlot: 'blue',
+          routerName,
+          routerImage: input.routerImage,
+          networkName,
+          slots: { blue: blueName, green: greenName },
+          routes: input.routes,
+          health,
+          desiredConfig: attemptDesiredConfig,
+          registryAuthJson: registryAuth?.authJson,
+          labels: this.internalLabels(id, 'app', 'blue'),
+        };
+
+        try {
+          const result = await this.dispatch.sendDockerDeploymentCommand(nodeId, 'create', {
+            deploymentId: id,
+            slot: 'blue',
+            configJson: JSON.stringify(payload),
+          });
+          data = this.parseResult(result) ?? {};
+          successfulRegistryId = registryAuth?.registryId;
+          deployedDesiredConfig = attemptDesiredConfig;
+          break;
+        } catch (err) {
+          if (registryAuth === registryAttempts.at(-1) || !this.isRegistryRetryableError(err)) {
+            throw err;
+          }
+        }
+      }
+      await this.registry.rememberImageRegistry(nodeId, deployedDesiredConfig.image, successfulRegistryId);
       await this.db.transaction(async (tx) => {
         await tx
           .update(dockerDeployments)
-          .set({ status: 'ready', updatedAt: new Date() })
+          .set({ status: 'ready', desiredConfig: deployedDesiredConfig, updatedAt: new Date() })
           .where(eq(dockerDeployments.id, id));
         await tx
           .update(dockerDeploymentSlots)
           .set({
             containerId: data.blueContainerId ?? data.containerId ?? null,
-            image: input.image,
-            desiredConfig,
+            image: deployedDesiredConfig.image,
+            desiredConfig: deployedDesiredConfig,
             status: 'running',
             health: 'healthy',
             updatedAt: new Date(),
@@ -462,8 +504,8 @@ export class DockerDeploymentService {
           .update(dockerDeploymentSlots)
           .set({
             containerId: data.greenContainerId ?? null,
-            image: input.image,
-            desiredConfig,
+            image: deployedDesiredConfig.image,
+            desiredConfig: deployedDesiredConfig,
             status: 'created',
             health: 'unknown',
             updatedAt: new Date(),
@@ -472,7 +514,7 @@ export class DockerDeploymentService {
         await tx.insert(dockerDeploymentReleases).values({
           deploymentId: id,
           toSlot: 'blue',
-          image: input.image,
+          image: deployedDesiredConfig.image,
           triggerSource: 'create',
           status: 'succeeded',
           createdById: userId,
@@ -619,6 +661,7 @@ export class DockerDeploymentService {
         releaseId: release.id,
         image: targetImage,
         source,
+        registryId: input.registryId,
       });
       await this.tasks.update(task.id, {
         status: 'succeeded',
@@ -658,6 +701,7 @@ export class DockerDeploymentService {
       releaseId?: string;
       image?: string;
       source?: string;
+      registryId?: string;
       desiredConfig?: DockerDeploymentDesiredConfig;
     }
   ) {
@@ -677,27 +721,47 @@ export class DockerDeploymentService {
       image: releaseContext?.image ?? deployment.desiredConfig.image,
     };
     const daemonDesiredConfig = await this.desiredConfigWithSecrets(nodeId, deploymentId, desiredConfig);
-    const registryAuth = await this.registry.resolveAuthForImagePull(nodeId, daemonDesiredConfig.image);
+    const registryAuthCandidates = await this.registry.resolveAuthCandidatesForImagePull(
+      nodeId,
+      daemonDesiredConfig.image,
+      releaseContext?.registryId
+    );
+    const registryAttempts = registryAuthCandidates.length ? registryAuthCandidates : [null];
     let data: any;
+    let successfulDesiredConfig = daemonDesiredConfig;
     try {
-      const result = await this.dispatch.sendDockerDeploymentCommand(
-        nodeId,
-        'switch',
-        {
-          deploymentId,
-          slot: input.slot,
-          configJson: JSON.stringify({
-            deployment,
-            activeSlot: input.slot,
-            routes: deployment.routes,
-            force: input.force,
-            desiredConfig: daemonDesiredConfig,
-            registryAuthJson: registryAuth?.authJson,
-          }),
-        },
-        (deployment.healthConfig.deployTimeoutSeconds + 30) * 1000
-      );
-      data = this.parseResult(result) ?? {};
+      let successfulRegistryId: string | undefined;
+      for (const registryAuth of registryAttempts) {
+        const attemptDesiredConfig = this.desiredConfigForRegistryAttempt(daemonDesiredConfig, registryAuth);
+        try {
+          const result = await this.dispatch.sendDockerDeploymentCommand(
+            nodeId,
+            'switch',
+            {
+              deploymentId,
+              slot: input.slot,
+              configJson: JSON.stringify({
+                deployment,
+                activeSlot: input.slot,
+                routes: deployment.routes,
+                force: input.force,
+                desiredConfig: attemptDesiredConfig,
+                registryAuthJson: registryAuth?.authJson,
+              }),
+            },
+            (deployment.healthConfig.deployTimeoutSeconds + 30) * 1000
+          );
+          data = this.parseResult(result) ?? {};
+          successfulRegistryId = registryAuth?.registryId;
+          successfulDesiredConfig = attemptDesiredConfig;
+          break;
+        } catch (err) {
+          if (registryAuth === registryAttempts.at(-1) || !this.isRegistryRetryableError(err)) {
+            throw err;
+          }
+        }
+      }
+      await this.registry.rememberImageRegistry(nodeId, successfulDesiredConfig.image, successfulRegistryId);
     } catch (err) {
       this.emit('failed', deploymentId, nodeId, { action: 'switch', error: err instanceof Error ? err.message : err });
       if (managesTransition) this.clearTransition(deployment);
@@ -713,7 +777,7 @@ export class DockerDeploymentService {
           .set({
             activeSlot: input.slot,
             status: 'ready',
-            desiredConfig: releaseContext?.desiredConfig ?? deployment.desiredConfig,
+            desiredConfig: successfulDesiredConfig,
             updatedAt: new Date(),
             updatedById: userId,
           })
@@ -722,8 +786,8 @@ export class DockerDeploymentService {
           .update(dockerDeploymentSlots)
           .set({
             containerId: data.containerId ?? target.containerId,
-            image: daemonDesiredConfig.image,
-            desiredConfig,
+            image: successfulDesiredConfig.image,
+            desiredConfig: successfulDesiredConfig,
             status: 'running',
             health: 'healthy',
             drainingUntil: null,
@@ -737,14 +801,14 @@ export class DockerDeploymentService {
         if (releaseContext?.releaseId) {
           await tx
             .update(dockerDeploymentReleases)
-            .set({ status: 'succeeded', completedAt: new Date() })
+            .set({ image: successfulDesiredConfig.image, status: 'succeeded', completedAt: new Date() })
             .where(eq(dockerDeploymentReleases.id, releaseContext.releaseId));
         } else {
           await tx.insert(dockerDeploymentReleases).values({
             deploymentId,
             fromSlot: previous,
             toSlot: input.slot,
-            image: daemonDesiredConfig.image,
+            image: successfulDesiredConfig.image,
             triggerSource: releaseContext?.source ?? 'switch',
             status: 'succeeded',
             createdById: userId,

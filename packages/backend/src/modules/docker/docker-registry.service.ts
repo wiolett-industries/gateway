@@ -1,6 +1,6 @@
-import { desc, eq, or } from 'drizzle-orm';
+import { and, desc, eq, or } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
-import { dockerRegistries } from '@/db/schema/index.js';
+import { dockerImageRegistryMappings, dockerRegistries } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { buildWhere } from '@/lib/utils.js';
 import { AppError } from '@/middleware/error-handler.js';
@@ -10,6 +10,12 @@ import type { EventBusService } from '@/services/event-bus.service.js';
 import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
 
 const logger = createChildLogger('DockerRegistryService');
+
+export interface DockerRegistryAuthCandidate {
+  registryId: string;
+  url: string;
+  authJson: string;
+}
 
 export class DockerRegistryService {
   private eventBus?: EventBusService;
@@ -326,9 +332,46 @@ export class DockerRegistryService {
    * Get base64-encoded Docker auth JSON for a registry (for image pull).
    * Returns the registry URL and auth string, or null if not found.
    */
-  async getAuthForPull(registryId: string): Promise<{ url: string; authJson: string } | null> {
+  async getAuthForPull(registryId: string): Promise<DockerRegistryAuthCandidate | null> {
     const [row] = await this.db.select().from(dockerRegistries).where(eq(dockerRegistries.id, registryId)).limit(1);
-    if (!row?.username || !row.encryptedPassword) return null;
+    return row ? this.authCandidateFromRegistry(row) : null;
+  }
+
+  async rememberImageRegistry(nodeId: string, imageRef: string, registryId?: string | null): Promise<void> {
+    if (!registryId) return;
+    const imageRepository = this.extractImageRepository(imageRef);
+    if (!imageRepository) return;
+
+    try {
+      await this.db
+        .insert(dockerImageRegistryMappings)
+        .values({ nodeId, imageRepository, registryId })
+        .onConflictDoUpdate({
+          target: [dockerImageRegistryMappings.nodeId, dockerImageRegistryMappings.imageRepository],
+          set: { registryId, updatedAt: new Date() },
+        });
+    } catch (error) {
+      logger.warn('Failed to remember Docker image registry mapping', {
+        nodeId,
+        imageRepository,
+        registryId,
+        error,
+      });
+    }
+  }
+
+  extractImageRepository(imageRef: string): string {
+    const withoutDigest = imageRef.trim().split('@')[0] ?? '';
+    const lastSlash = withoutDigest.lastIndexOf('/');
+    const lastColon = withoutDigest.lastIndexOf(':');
+    if (lastColon > lastSlash) {
+      return withoutDigest.slice(0, lastColon);
+    }
+    return withoutDigest;
+  }
+
+  private authCandidateFromRegistry(row: typeof dockerRegistries.$inferSelect): DockerRegistryAuthCandidate | null {
+    if (!row.username || !row.encryptedPassword) return null;
     const password = this.decryptPassword(row.encryptedPassword);
     const authJson = Buffer.from(
       JSON.stringify({
@@ -337,7 +380,7 @@ export class DockerRegistryService {
         serveraddress: row.url,
       })
     ).toString('base64');
-    return { url: row.url.replace(/^https?:\/\//, '').replace(/\/+$/, ''), authJson };
+    return { registryId: row.id, url: row.url.replace(/^https?:\/\//, '').replace(/\/+$/, ''), authJson };
   }
 
   /**
@@ -349,32 +392,66 @@ export class DockerRegistryService {
     nodeId: string,
     imageRef: string,
     registryId?: string
-  ): Promise<{ url: string; authJson: string } | null> {
+  ): Promise<DockerRegistryAuthCandidate | null> {
+    const [auth] = await this.resolveAuthCandidatesForImagePull(nodeId, imageRef, registryId);
+    return auth ?? null;
+  }
+
+  async resolveAuthCandidatesForImagePull(
+    nodeId: string,
+    imageRef: string,
+    registryId?: string
+  ): Promise<DockerRegistryAuthCandidate[]> {
     if (registryId) {
-      return this.getAuthForPull(registryId);
+      const auth = await this.getAuthForPull(registryId);
+      return auth ? [auth] : [];
     }
 
+    const imageRepository = this.extractImageRepository(imageRef);
     const imageRegistryHost = this.extractRegistryHostFromImageRef(imageRef);
-    if (!imageRegistryHost) return null;
 
     const rows = await this.db
       .select()
       .from(dockerRegistries)
       .where(or(eq(dockerRegistries.scope, 'global'), eq(dockerRegistries.nodeId, nodeId)));
 
-    const match = rows.find((row) => this.normalizeRegistryHost(row.url) === imageRegistryHost);
-    if (!match?.username || !match.encryptedPassword) return null;
+    const candidates: DockerRegistryAuthCandidate[] = [];
+    const mappedRegistryId = await this.resolveMappedRegistryId(nodeId, imageRepository);
+    if (mappedRegistryId) {
+      const mapped = rows.find((row) => row.id === mappedRegistryId);
+      const auth = mapped ? this.authCandidateFromRegistry(mapped) : null;
+      if (auth) candidates.push(auth);
+    }
 
-    const password = this.decryptPassword(match.encryptedPassword);
-    const authJson = Buffer.from(
-      JSON.stringify({
-        username: match.username,
-        password,
-        serveraddress: match.url,
-      })
-    ).toString('base64');
+    if (!imageRegistryHost) return candidates;
 
-    return { url: this.normalizeRegistryHost(match.url), authJson };
+    const seen = new Set(candidates.map((candidate) => candidate.registryId));
+    for (const row of rows
+      .filter((row) => this.normalizeRegistryHost(row.url) === imageRegistryHost)
+      .filter((row) => !seen.has(row.id))) {
+      const auth = this.authCandidateFromRegistry(row);
+      if (!auth) continue;
+      candidates.push({ ...auth, url: this.normalizeRegistryHost(row.url) });
+      seen.add(row.id);
+    }
+
+    return candidates;
+  }
+
+  private async resolveMappedRegistryId(nodeId: string, imageRepository: string): Promise<string | null> {
+    if (!imageRepository) return null;
+    const [row] = await this.db
+      .select({ registryId: dockerImageRegistryMappings.registryId })
+      .from(dockerImageRegistryMappings)
+      .where(
+        and(
+          eq(dockerImageRegistryMappings.nodeId, nodeId),
+          eq(dockerImageRegistryMappings.imageRepository, imageRepository)
+        )
+      )
+      .limit(1);
+
+    return row?.registryId ?? null;
   }
 
   private decryptPassword(encryptedJson: string): string {

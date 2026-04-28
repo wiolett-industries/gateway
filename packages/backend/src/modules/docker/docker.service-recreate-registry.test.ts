@@ -29,7 +29,7 @@ function createService(dispatch: {
 }
 
 describe('DockerManagementService recreate registry auth', () => {
-  it('pulls a changed recreate image with resolved private registry credentials', async () => {
+  it('tries matching private registry credentials until a recreate image pull succeeds', async () => {
     const inspect = {
       Id: 'container-1',
       Name: '/app',
@@ -49,29 +49,60 @@ describe('DockerManagementService recreate registry auth', () => {
         }
         return { success: false, error: `unexpected action ${action}` };
       }),
-      sendDockerImageCommand: vi.fn().mockResolvedValue({ success: true, detail: 'registry.example.com/team/app:new' }),
+      sendDockerImageCommand: vi.fn(async (_nodeId: string, _action: string, payload: Record<string, unknown>) => {
+        if (payload.registryAuthJson === 'stazion-auth') {
+          return { success: true, detail: 'registry.example.com/team/app:new' };
+        }
+        return { success: false, error: 'pull access denied' };
+      }),
     };
     const service = createService(dispatch);
     const registry = {
-      resolveAuthForImagePull: vi.fn().mockResolvedValue({
-        url: 'registry.example.com',
-        authJson: 'encoded-auth',
-      }),
+      resolveAuthCandidatesForImagePull: vi.fn().mockResolvedValue([
+        {
+          registryId: 'registry-generic',
+          url: 'registry.example.com',
+          authJson: 'generic-auth',
+        },
+        {
+          registryId: 'registry-stazion',
+          url: 'registry.example.com',
+          authJson: 'stazion-auth',
+        },
+      ]),
+      rememberImageRegistry: vi.fn().mockResolvedValue(undefined),
     };
     service.setRegistryService(registry as never);
 
     await service.recreateWithConfig('node-1', 'container-1', { image: 'registry.example.com/team/app:new' }, 'user-1');
 
-    expect(registry.resolveAuthForImagePull).toHaveBeenCalledWith('node-1', 'registry.example.com/team/app:new');
-    expect(dispatch.sendDockerImageCommand).toHaveBeenCalledWith(
+    expect(registry.resolveAuthCandidatesForImagePull).toHaveBeenCalledWith(
+      'node-1',
+      'registry.example.com/team/app:new',
+      undefined
+    );
+    expect(dispatch.sendDockerImageCommand).toHaveBeenNthCalledWith(
+      1,
       'node-1',
       'pull',
-      { imageRef: 'registry.example.com/team/app:new', registryAuthJson: 'encoded-auth' },
+      { imageRef: 'registry.example.com/team/app:new', registryAuthJson: 'generic-auth' },
+      600000
+    );
+    expect(dispatch.sendDockerImageCommand).toHaveBeenNthCalledWith(
+      2,
+      'node-1',
+      'pull',
+      { imageRef: 'registry.example.com/team/app:new', registryAuthJson: 'stazion-auth' },
       600000
     );
     const recreateCall = dispatch.sendDockerContainerCommand.mock.calls.find((call) => call[1] === 'recreate');
     expect(JSON.parse((recreateCall?.[2] as { configJson: string }).configJson)).toMatchObject({
       image: 'registry.example.com/team/app:new',
     });
+    expect(registry.rememberImageRegistry).toHaveBeenCalledWith(
+      'node-1',
+      'registry.example.com/team/app:new',
+      'registry-stazion'
+    );
   });
 });

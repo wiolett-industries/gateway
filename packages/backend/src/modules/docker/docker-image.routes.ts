@@ -25,7 +25,7 @@ export function registerImageRoutes(router: OpenAPIHono<AppEnv>) {
     const user = c.get('user')!;
     const body = await c.req.json();
     const { imageRef, registryId } = body;
-    ImagePullSchema.parse({ imageRef });
+    ImagePullSchema.parse({ imageRef, registryId });
 
     // Resolve registry credentials and prefix image ref if using private registry
     let finalImageRef = imageRef;
@@ -34,12 +34,12 @@ export function registerImageRoutes(router: OpenAPIHono<AppEnv>) {
     if (auth) {
       registryAuth = auth.authJson;
       // Prefix image ref with registry URL if not already prefixed
-      if (!imageRef.includes('/') || !imageRef.split('/')[0].includes('.')) {
+      if (!hasRegistryHost(imageRef)) {
         finalImageRef = `${auth.url}/${imageRef}`;
       }
     }
 
-    const data = await service.pullImage(nodeId, finalImageRef, registryAuth, user.id);
+    const data = await service.pullImage(nodeId, finalImageRef, registryAuth, user.id, auth?.registryId);
     return c.json({ data });
   });
 
@@ -49,14 +49,14 @@ export function registerImageRoutes(router: OpenAPIHono<AppEnv>) {
     const nodeId = c.req.param('nodeId');
     const body = await c.req.json();
     const { imageRef, registryId } = body;
-    ImagePullSchema.parse({ imageRef });
+    ImagePullSchema.parse({ imageRef, registryId });
 
     let finalImageRef = imageRef;
     let registryAuth: string | undefined;
     const auth = await registryService.resolveAuthForImagePull(nodeId, imageRef, registryId);
     if (auth) {
       registryAuth = auth.authJson;
-      if (!imageRef.includes('/') || !imageRef.split('/')[0].includes('.')) {
+      if (!hasRegistryHost(imageRef)) {
         finalImageRef = `${auth.url}/${imageRef}`;
       }
     }
@@ -72,6 +72,7 @@ export function registerImageRoutes(router: OpenAPIHono<AppEnv>) {
     if (!result.success) {
       return c.json({ error: result.error || `Failed to pull ${finalImageRef}` }, 400);
     }
+    await registryService.rememberImageRegistry(nodeId, finalImageRef, auth?.registryId);
     return c.json({ data: { success: true, imageRef: finalImageRef } });
   });
 
@@ -98,4 +99,9 @@ export function registerImageRoutes(router: OpenAPIHono<AppEnv>) {
     const data = await service.pruneImages(nodeId, user.id);
     return c.json({ data });
   });
+}
+
+function hasRegistryHost(imageRef: string) {
+  const firstSegment = imageRef.split('/')[0] ?? '';
+  return firstSegment === 'localhost' || firstSegment.includes('.') || firstSegment.includes(':');
 }

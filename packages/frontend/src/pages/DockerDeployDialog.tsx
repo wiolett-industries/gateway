@@ -25,7 +25,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
-import type { ContainerCreateConfig, Node } from "@/types";
+import type { ContainerCreateConfig, DockerRegistry, Node } from "@/types";
 import { isNodeIncompatible } from "@/types";
 
 const tabContentTransition = { duration: 0.2, ease: [0.25, 0.1, 0.25, 1] as const };
@@ -54,6 +54,8 @@ export function DockerDeployDialog({
 
   const [deployNodeId, setDeployNodeId] = useState<string>("");
   const [deployImage, setDeployImage] = useState("");
+  const [deployRegistryId, setDeployRegistryId] = useState("");
+  const [registries, setRegistries] = useState<DockerRegistry[]>([]);
   const [deployLocalImages, setDeployLocalImages] = useState<string[]>([]);
   const [deployPullableImages, setDeployPullableImages] = useState<string[]>([]);
   const [deployName, setDeployName] = useState("");
@@ -69,6 +71,13 @@ export function DockerDeployDialog({
     return storeNodes.length > 0 ? storeNodes : dockerNodes;
   }, [dockerNodes]);
   const availableNodes = useMemo(() => allNodes.filter((n) => !isNodeIncompatible(n)), [allNodes]);
+  const availableRegistries = useMemo(
+    () =>
+      registries.filter(
+        (registry) => registry.scope === "global" || registry.nodeId === deployNodeId
+      ),
+    [deployNodeId, registries]
+  );
 
   // Reset form state when dialog opens
   useEffect(() => {
@@ -76,6 +85,7 @@ export function DockerDeployDialog({
       const initialNode = nodeId ? allNodes.find((n) => n.id === nodeId) : null;
       setDeployNodeId(initialNode?.serviceCreationLocked ? "" : nodeId || "");
       setDeployImage("");
+      setDeployRegistryId("");
       setDeployName("");
       setDeployRestart("no");
       setDeployMode("container");
@@ -85,6 +95,17 @@ export function DockerDeployDialog({
       setDrainSeconds("30");
     }
   }, [allNodes, open, nodeId]);
+
+  useEffect(() => {
+    if (!open || !hasScope("docker:registries:list")) {
+      setRegistries([]);
+      return;
+    }
+    api
+      .listDockerRegistries()
+      .then(setRegistries)
+      .catch(() => setRegistries([]));
+  }, [hasScope, open]);
 
   useEffect(() => {
     if (!open || !deployNodeId) return;
@@ -173,13 +194,18 @@ export function DockerDeployDialog({
       const isLocal = deployLocalImages.includes(imageRef);
       if (!isLocal) {
         toast.info(`Pulling "${imageRef}"...`);
-        const pullResult = await api.pullImageSync(deployNodeId, imageRef);
+        const pullResult = await api.pullImageSync(
+          deployNodeId,
+          imageRef,
+          deployRegistryId || undefined
+        );
         imageRef = pullResult.imageRef;
       }
       if (deployMode === "deployment") {
         const deployment = await api.createDockerDeployment(deployNodeId, {
           name: deployName.trim(),
           image: imageRef,
+          registryId: deployRegistryId || undefined,
           restartPolicy: deployRestart === "no" ? "unless-stopped" : deployRestart,
           routes: [
             {
@@ -207,6 +233,7 @@ export function DockerDeployDialog({
       } else {
         const config: ContainerCreateConfig = {
           image: imageRef,
+          registryId: deployRegistryId || undefined,
           restartPolicy: deployRestart,
         };
         if (deployName.trim()) config.name = deployName.trim();
@@ -253,6 +280,7 @@ export function DockerDeployDialog({
               onValueChange={(v) => {
                 setDeployNodeId(v);
                 setDeployImage("");
+                setDeployRegistryId("");
               }}
             >
               <SelectTrigger className="mt-1">
@@ -262,6 +290,29 @@ export function DockerDeployDialog({
                 {availableNodes.map((n) => (
                   <SelectItem key={n.id} value={n.id} disabled={n.serviceCreationLocked}>
                     {n.displayName || n.hostname}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Registry */}
+          <div>
+            <label className="text-sm font-medium">Registry</label>
+            <Select
+              value={deployRegistryId || "__default__"}
+              onValueChange={(v) => setDeployRegistryId(v === "__default__" ? "" : v)}
+              disabled={!deployNodeId}
+            >
+              <SelectTrigger className="mt-1">
+                <SelectValue placeholder={!deployNodeId ? "Select a node first" : "Docker Hub"} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__default__">Docker Hub</SelectItem>
+                {availableRegistries.map((registry) => (
+                  <SelectItem key={registry.id} value={registry.id}>
+                    {registry.name} ({registry.url})
+                    {registry.scope === "node" ? " · this node" : ""}
                   </SelectItem>
                 ))}
               </SelectContent>

@@ -48,6 +48,7 @@ export const DockerDeploymentDesiredConfigSchema = z.object({
 export const DockerDeploymentCreateSchema = z.object({
   name: DockerDeploymentNameSchema,
   image: z.string().min(1),
+  registryId: z.string().uuid().optional(),
   routes: z.array(DockerDeploymentRouteSchema).min(1),
   health: DockerDeploymentHealthSchema.default({}),
   drainSeconds: z.number().int().min(0).max(3600).default(30),
@@ -74,6 +75,7 @@ export const DockerDeploymentUpdateSchema = z.object({
 export const DockerDeploymentDeploySchema = z.object({
   image: z.string().min(1).optional(),
   tag: z.string().min(1).optional(),
+  registryId: z.string().uuid().optional(),
   env: z.record(z.string()).optional(),
 });
 

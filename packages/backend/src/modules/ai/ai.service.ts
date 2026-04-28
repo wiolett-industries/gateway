@@ -665,12 +665,6 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
         const lastSlash = currentImage.lastIndexOf('/');
         const imageName = lastColon > lastSlash ? currentImage.slice(0, lastColon) : currentImage;
         const targetRef = `${imageName}:${a.imageTag}`;
-        // Pull the new image first (sync)
-        const { NodeDispatchService: NDS } = await import('@/services/node-dispatch.service.js');
-        const dispatch = container.resolve(NDS);
-        const pullResult = await dispatch.sendDockerImageCommand(a.nodeId, 'pull', { imageRef: targetRef }, 600000);
-        if (!pullResult.success) return { error: `Failed to pull ${targetRef}: ${pullResult.error}` };
-        // Recreate with new image
         await this.dockerService.recreateWithConfig(a.nodeId, a.containerId, { image: targetRef }, user.id);
         return { success: true, message: `Container updating to ${targetRef}` };
       }

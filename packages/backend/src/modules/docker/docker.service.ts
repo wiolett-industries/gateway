@@ -14,7 +14,7 @@ import { DOCKER_DEPLOYMENT_MANAGED_LABEL } from './docker-deployment.service.js'
 import type { DockerEnvironmentService } from './docker-environment.service.js';
 import type { DockerFolderService } from './docker-folder.service.js';
 import type { DockerHealthCheckService } from './docker-health-check.service.js';
-import type { DockerRegistryService } from './docker-registry.service.js';
+import type { DockerRegistryAuthCandidate, DockerRegistryService } from './docker-registry.service.js';
 import {
   type ContainerRuntimeConfig,
   type NodeRuntimeCapacity,
@@ -722,6 +722,8 @@ export class DockerManagementService {
   async createContainer(nodeId: string, config: Record<string, unknown>, userId: string) {
     await assertNodeAllowsServiceCreation(this.db, nodeId, 'docker');
     await this.validateDockerNode(nodeId);
+    const registryId = typeof config.registryId === 'string' ? config.registryId : null;
+    delete config.registryId;
     const requestedName = (config.name as string | undefined)?.trim();
     if (requestedName) {
       await this.assertNameAvailable(nodeId, requestedName);
@@ -729,6 +731,9 @@ export class DockerManagementService {
     }
     let data: any;
     try {
+      if (registryId) {
+        await this.pullConfigImage(nodeId, config, registryId);
+      }
       const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'create', {
         configJson: JSON.stringify(config),
       });
@@ -752,6 +757,9 @@ export class DockerManagementService {
       if (env) {
         await this.environmentService.replace(nodeId, createdName, env);
       }
+    }
+    if (typeof config.image === 'string') {
+      await this.registryService?.rememberImageRegistry?.(nodeId, config.image, registryId);
     }
     if (requestedName && newId) {
       this.emitContainer(nodeId, requestedName, newId, 'created');
@@ -1119,7 +1127,7 @@ export class DockerManagementService {
 
     try {
       if (!options?.skipImagePull) {
-        await this.pullRecreateImage(nodeId, config);
+        await this.pullConfigImage(nodeId, config);
       }
 
       const result = await this.nodeDispatch.sendDockerContainerCommand(
@@ -1154,28 +1162,38 @@ export class DockerManagementService {
     }
   }
 
-  private async pullRecreateImage(nodeId: string, config: Record<string, unknown>) {
+  private async pullConfigImage(nodeId: string, config: Record<string, unknown>, registryId?: string) {
     const imageRef = typeof config.image === 'string' ? config.image.trim() : '';
     if (!imageRef) return;
 
-    let finalImageRef = imageRef;
-    let registryAuth: string | undefined;
-    const auth = await this.registryService?.resolveAuthForImagePull(nodeId, imageRef);
-    if (auth) {
-      registryAuth = auth.authJson;
-      if (!this.hasRegistryHost(imageRef)) {
+    const authCandidates =
+      (await this.registryService?.resolveAuthCandidatesForImagePull(nodeId, imageRef, registryId)) ?? [];
+    const pullCandidates: Array<DockerRegistryAuthCandidate | null> = authCandidates.length ? authCandidates : [null];
+    let lastError: unknown;
+
+    for (const auth of pullCandidates) {
+      let finalImageRef = imageRef;
+      if (auth && !this.hasRegistryHost(imageRef)) {
         finalImageRef = `${auth.url}/${imageRef}`;
+      }
+
+      try {
+        const result = await this.nodeDispatch.sendDockerImageCommand(
+          nodeId,
+          'pull',
+          { imageRef: finalImageRef, registryAuthJson: auth?.authJson },
+          DockerManagementService.LONG_DOCKER_OPERATION_TIMEOUT_MS
+        );
+        this.parseResult(result);
+        config.image = finalImageRef;
+        await this.registryService?.rememberImageRegistry?.(nodeId, finalImageRef, auth?.registryId);
+        return;
+      } catch (err) {
+        lastError = err;
       }
     }
 
-    const result = await this.nodeDispatch.sendDockerImageCommand(
-      nodeId,
-      'pull',
-      { imageRef: finalImageRef, registryAuthJson: registryAuth },
-      DockerManagementService.LONG_DOCKER_OPERATION_TIMEOUT_MS
-    );
-    this.parseResult(result);
-    config.image = finalImageRef;
+    throw lastError instanceof Error ? lastError : new AppError(502, 'DISPATCH_ERROR', `Failed to pull ${imageRef}`);
   }
 
   private hasRegistryHost(imageRef: string) {
@@ -1287,7 +1305,7 @@ export class DockerManagementService {
     return this.parseResult(result);
   }
 
-  async pullImage(nodeId: string, imageRef: string, registryAuth?: string, userId?: string) {
+  async pullImage(nodeId: string, imageRef: string, registryAuth?: string, userId?: string, registryId?: string) {
     await this.validateDockerNode(nodeId);
 
     // Create a task and pull in background (non-blocking)
@@ -1309,7 +1327,7 @@ export class DockerManagementService {
         { imageRef, registryAuthJson: registryAuth },
         DockerManagementService.LONG_DOCKER_OPERATION_TIMEOUT_MS
       )
-      .then((result) => {
+      .then(async (result) => {
         try {
           this.parseResult(result);
         } catch (err) {
@@ -1329,6 +1347,7 @@ export class DockerManagementService {
             .update(task.id, { status: 'succeeded', progress: `Pulled ${imageRef}`, completedAt: new Date() })
             .catch(() => {});
         }
+        await this.registryService?.rememberImageRegistry?.(nodeId, imageRef, registryId);
         this.emitImage(nodeId, imageRef, 'pulled');
       })
       .catch((err) => {

@@ -13,6 +13,7 @@ const ContainerNameSchema = z
 // Container create
 export const ContainerCreateSchema = z.object({
   image: z.string().min(1),
+  registryId: z.string().uuid().optional(),
   name: ContainerNameSchema.optional(),
   ports: z
     .array(

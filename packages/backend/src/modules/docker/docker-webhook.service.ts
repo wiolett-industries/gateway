@@ -184,15 +184,22 @@ export class DockerWebhookService {
 
     try {
       // Synchronous pull — validates the image exists
-      const registryAuth = await this.registry.resolveAuthForImagePull(nodeId, targetRef);
-      const pullPayload: { imageRef: string; registryAuthJson?: string } = { imageRef: targetRef };
-      if (registryAuth) {
-        pullPayload.registryAuthJson = registryAuth.authJson;
-      }
+      const registryAuthCandidates = await this.registry.resolveAuthCandidatesForImagePull(nodeId, targetRef);
+      const registryAttempts = registryAuthCandidates.length ? registryAuthCandidates : [null];
+      for (const registryAuth of registryAttempts) {
+        const pullPayload: { imageRef: string; registryAuthJson?: string } = { imageRef: targetRef };
+        if (registryAuth) {
+          pullPayload.registryAuthJson = registryAuth.authJson;
+        }
 
-      const pullResult = await this.dispatch.sendDockerImageCommand(nodeId, 'pull', pullPayload, 600000);
-      if (!pullResult.success) {
-        throw new AppError(400, 'PULL_FAILED', pullResult.error || `Failed to pull ${targetRef}`);
+        const pullResult = await this.dispatch.sendDockerImageCommand(nodeId, 'pull', pullPayload, 600000);
+        if (pullResult.success) {
+          await this.registry.rememberImageRegistry(nodeId, targetRef, registryAuth?.registryId);
+          break;
+        }
+        if (registryAuth === registryAttempts.at(-1) || !isRegistryRetryablePullError(pullResult.error)) {
+          throw new AppError(400, 'PULL_FAILED', pullResult.error || `Failed to pull ${targetRef}`);
+        }
       }
     } catch (err) {
       this.docker.clearTransition(nodeId, containerName);
@@ -379,6 +386,12 @@ function normalizeImageName(name: string): string {
     .replace(/^docker\.io\//, '')
     .replace(/^index\.docker\.io\//, '')
     .replace(/^library\//, '');
+}
+
+function isRegistryRetryablePullError(error?: string): boolean {
+  return /pull access denied|repository does not exist|insufficient_scope|authorization|authentication|no basic auth|denied/i.test(
+    error ?? ''
+  );
 }
 
 /** Build a recreate config from inspect data, overriding the image. */

@@ -2339,6 +2339,7 @@ export interface FileEntry {
 
 export interface ContainerCreateConfig {
   image: string;
+  registryId?: string;
   name?: string;
   ports?: Array<{ hostPort: number; containerPort: number; protocol?: string }>;
   volumes?: Array<{
