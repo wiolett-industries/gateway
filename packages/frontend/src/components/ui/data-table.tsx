@@ -24,6 +24,7 @@ interface DataTableProps<T> {
   keyFn: (row: T) => string;
   onRowClick?: (row: T) => void;
   isRowClickable?: (row: T) => boolean;
+  emptyContent?: ReactNode;
   emptyMessage?: string;
   /** Ref for scroll container (for infinite scroll sentinel) */
   scrollRef?: React.RefObject<HTMLDivElement | null>;
@@ -50,6 +51,7 @@ export function DataTable<T>({
   keyFn,
   onRowClick,
   isRowClickable,
+  emptyContent,
   emptyMessage = "No data.",
   scrollRef,
   footer,
@@ -102,7 +104,7 @@ export function DataTable<T>({
   if (data.length === 0) {
     return (
       <div className="border border-border rounded-lg bg-card flex items-center justify-center py-16">
-        <p className="text-sm text-muted-foreground">{emptyMessage}</p>
+        {emptyContent ?? <p className="text-sm text-muted-foreground">{emptyMessage}</p>}
       </div>
     );
   }

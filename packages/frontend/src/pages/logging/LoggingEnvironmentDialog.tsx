@@ -8,7 +8,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
 import type { LoggingEnvironment } from "@/types";
 
 function slugify(value: string) {
@@ -33,7 +32,6 @@ export function LoggingEnvironmentDialog({
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [description, setDescription] = useState("");
-  const [enabled, setEnabled] = useState(true);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -41,7 +39,6 @@ export function LoggingEnvironmentDialog({
     setName(environment?.name ?? "");
     setSlug(environment?.slug ?? "");
     setDescription(environment?.description ?? "");
-    setEnabled(environment?.enabled ?? true);
   }, [environment, open]);
 
   const save = async () => {
@@ -51,7 +48,6 @@ export function LoggingEnvironmentDialog({
         name,
         slug: slug || slugify(name),
         description: description || null,
-        enabled,
         schemaMode: environment?.schemaMode ?? "loose",
         retentionDays: environment?.retentionDays ?? 30,
         fieldSchema: environment?.fieldSchema ?? [],
@@ -86,10 +82,6 @@ export function LoggingEnvironmentDialog({
           <label className="block space-y-1">
             <span className="text-sm font-medium">Description</span>
             <Input value={description} onChange={(event) => setDescription(event.target.value)} />
-          </label>
-          <label className="flex items-center justify-between rounded-md border border-border p-3">
-            <span className="text-sm font-medium">Enabled</span>
-            <Switch checked={enabled} onChange={setEnabled} />
           </label>
         </div>
         <DialogFooter>

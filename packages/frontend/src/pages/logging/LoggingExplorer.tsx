@@ -1,4 +1,4 @@
-import { Info, Search, X } from "lucide-react";
+import { Info, Loader2, Search, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -47,6 +47,7 @@ export function LoggingExplorer({
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [selected, setSelected] = useState<LoggingSearchResult | null>(null);
   const [metadata, setMetadata] = useState<LoggingMetadata | null>(null);
+  const [searchPending, setSearchPending] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -99,11 +100,15 @@ export function LoggingExplorer({
   const load = useCallback(
     async (cursor?: string | null) => {
       void refreshKey;
-      if (!storageAvailable) return;
+      if (!storageAvailable) {
+        if (!cursor) setSearchPending(false);
+        return;
+      }
       if (parsedQuery.errors.length > 0 || parsedQuery.incomplete) {
         if (!cursor) {
           setRows([]);
           setNextCursor(null);
+          setSearchPending(false);
         }
         return;
       }
@@ -117,7 +122,10 @@ export function LoggingExplorer({
         toast.error(error instanceof Error ? error.message : "Failed to search logs");
       } finally {
         if (cursor) setLoadingMore(false);
-        else setLoading(false);
+        else {
+          setLoading(false);
+          setSearchPending(false);
+        }
       }
     },
     [
@@ -131,18 +139,28 @@ export function LoggingExplorer({
   );
 
   useEffect(() => {
+    if (!storageAvailable || parsedQuery.errors.length > 0 || parsedQuery.incomplete) {
+      setSearchPending(false);
+      return;
+    }
+    setSearchPending(true);
     const timer = window.setTimeout(() => {
       void load();
     }, 300);
     return () => window.clearTimeout(timer);
-  }, [load]);
+  }, [load, parsedQuery.errors.length, parsedQuery.incomplete, storageAvailable]);
 
   useEffect(() => {
     if (parsedQuery.errors.length > 0 || parsedQuery.incomplete) {
       setRows([]);
       setNextCursor(null);
+      setSearchPending(false);
     }
   }, [parsedQuery.errors.length, parsedQuery.incomplete]);
+
+  const searchInProgress = searchPending || loading;
+  const showSearchLoader =
+    searchInProgress && parsedQuery.errors.length === 0 && !parsedQuery.incomplete;
 
   useEffect(() => {
     const sentinel = loadMoreRef.current;
@@ -401,12 +419,23 @@ export function LoggingExplorer({
         data={rows}
         keyFn={(row) => row.eventId}
         onRowClick={setSelected}
+        emptyContent={
+          showSearchLoader ? (
+            <div
+              role="status"
+              className="flex items-center gap-2 text-sm text-muted-foreground"
+            >
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span>Searching logs...</span>
+            </div>
+          ) : undefined
+        }
         emptyMessage={
           parsedQuery.errors.length > 0
             ? "Fix the query syntax to search logs."
             : parsedQuery.incomplete
               ? "Complete the query to search logs."
-              : loading
+              : searchInProgress
                 ? "Searching logs..."
                 : "No logs found."
         }

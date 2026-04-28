@@ -23,6 +23,7 @@ import {
 import type { DockerRuntimeSettingsService } from './docker-runtime-settings.service.js';
 import type { DockerSecretService } from './docker-secret.service.js';
 import type { DockerTaskService } from './docker-task.service.js';
+import type { DockerWebhookService } from './docker-webhook.service.js';
 
 const logger = createChildLogger('DockerManagementService');
 
@@ -58,6 +59,7 @@ export class DockerManagementService {
   private deploymentService?: DockerDeploymentService;
   private healthCheckService?: DockerHealthCheckService;
   private registryService?: DockerRegistryService;
+  private webhookService?: DockerWebhookService;
   private eventBus?: EventBusService;
   private evaluator?: NotificationEvaluatorService;
 
@@ -98,6 +100,10 @@ export class DockerManagementService {
 
   setRegistryService(registryService: DockerRegistryService) {
     this.registryService = registryService;
+  }
+
+  setWebhookService(webhookService: DockerWebhookService) {
+    this.webhookService = webhookService;
   }
 
   setEventBus(eventBus: EventBusService) {
@@ -1095,7 +1101,7 @@ export class DockerManagementService {
     containerId: string,
     config: Record<string, unknown>,
     userId: string,
-    options?: { skipImagePull?: boolean }
+    options?: { skipImagePull?: boolean; skipWebhookCleanup?: boolean }
   ) {
     await this.validateDockerNode(nodeId);
     await this.assertNotManagedDeploymentInternal(nodeId, containerId);
@@ -1144,6 +1150,9 @@ export class DockerManagementService {
         resourceId: containerId,
         details: { nodeId },
       });
+      if (!options?.skipWebhookCleanup && typeof config.image === 'string') {
+        this.webhookService?.scheduleCleanupForRecreate(nodeId, name, config.image).catch(() => {});
+      }
 
       this.watchRecreateByName(nodeId, name, containerId, task?.id, 'Container recreated', expectedState);
       return data;

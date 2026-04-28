@@ -4,6 +4,7 @@ import { vi } from "vitest";
 import { api } from "@/services/api";
 import { renderWithRouter } from "@/test/render";
 import type { LoggingEnvironment } from "@/types";
+import { LoggingExplorer } from "./LoggingExplorer";
 import { LoggingSchemaEditor } from "./LoggingSchemaEditor";
 import { LoggingTokenPanel } from "./LoggingTokenPanel";
 
@@ -19,6 +20,8 @@ vi.mock("@/services/api", () => ({
     listLoggingTokens: vi.fn(),
     createLoggingToken: vi.fn(),
     deleteLoggingToken: vi.fn(),
+    getLoggingMetadata: vi.fn(),
+    searchLogs: vi.fn(),
   },
 }));
 
@@ -89,5 +92,23 @@ describe("Logging UI", () => {
     await waitFor(() => {
       expect(screen.getByText(/gwl_abcdef0123456789/)).toBeInTheDocument();
     });
+  });
+
+  it("shows log search loading state before the debounced request starts", async () => {
+    vi.mocked(api.getLoggingMetadata).mockResolvedValue({
+      services: [],
+      sources: [],
+      labelKeys: [],
+      fieldKeys: [],
+      labelValues: {},
+    });
+    vi.mocked(api.searchLogs).mockReturnValue(new Promise(() => {}));
+
+    renderWithRouter(<LoggingExplorer environment={environment} storageAvailable />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Searching logs...")).toBeInTheDocument();
+    });
+    expect(screen.getByRole("status")).toBeInTheDocument();
   });
 });

@@ -222,6 +222,7 @@ export class DockerWebhookService {
     try {
       await this.docker.recreateWithConfig(nodeId, containerId, config, userId ?? (null as any), {
         skipImagePull: true,
+        skipWebhookCleanup: true,
       });
     } catch (err) {
       await this.tasks
@@ -288,6 +289,23 @@ export class DockerWebhookService {
   }
 
   // ─── Image cleanup ────────────────────────────────────────────────
+
+  async scheduleCleanupForRecreate(nodeId: string, containerName: string, imageRef: string | undefined) {
+    const image = imageRef?.trim();
+    if (!image) return;
+
+    const { imageName } = parseImageRef(image);
+    try {
+      await this.scheduleCleanup(nodeId, containerName, imageName);
+    } catch (err) {
+      logger.warn('Image cleanup scheduling failed', {
+        nodeId,
+        containerName,
+        imageName,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
 
   private async scheduleCleanup(nodeId: string, containerName: string, imageName: string) {
     const webhook = await this.getByContainer(nodeId, containerName);

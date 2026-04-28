@@ -270,6 +270,7 @@ export async function initializeContainer(): Promise<void> {
     dockerDeploymentService
   );
   container.registerInstance(DockerWebhookService, dockerWebhookService);
+  dockerManagementService.setWebhookService(dockerWebhookService);
 
   dockerManagementService.setTaskService(dockerTaskService);
   dockerManagementService.setEnvironmentService(dockerEnvironmentService);
