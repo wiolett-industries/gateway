@@ -1,5 +1,5 @@
 import { Copy, Key, Plus, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { ScopeList } from "@/components/common/ScopeList";
@@ -17,7 +17,7 @@ import { Input } from "@/components/ui/input";
 import { formatDate, formatRelativeDate } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useCAStore } from "@/stores/ca";
-import type { DatabaseConnection, Node, ProxyHost, User } from "@/types";
+import type { DatabaseConnection, LoggingSchema, Node, ProxyHost, User } from "@/types";
 import { API_TOKEN_SCOPES, type ApiToken, RESOURCE_SCOPABLE_SCOPES } from "@/types";
 
 interface ApiTokensSectionProps {
@@ -25,6 +25,7 @@ interface ApiTokensSectionProps {
   nodesList: Node[];
   proxyHostsList: ProxyHost[];
   databasesList: DatabaseConnection[];
+  loggingSchemasList: LoggingSchema[];
 }
 
 export function ApiTokensSection({
@@ -32,6 +33,7 @@ export function ApiTokensSection({
   nodesList,
   proxyHostsList,
   databasesList,
+  loggingSchemasList,
 }: ApiTokensSectionProps) {
   const { cas } = useCAStore();
   const [tokens, setTokens] = useState<ApiToken[]>([]);
@@ -43,6 +45,19 @@ export function ApiTokensSection({
   const [isCreating, setIsCreating] = useState(false);
   const [tokenScopeSearch, setTokenScopeSearch] = useState("");
   const [editingToken, setEditingToken] = useState<ApiToken | null>(null);
+  const userScopes = useMemo(() => user?.scopes ?? [], [user?.scopes]);
+  const allowedResourceIdsByScope = useMemo(() => {
+    const result: Record<string, string[]> = {};
+    for (const scope of RESOURCE_SCOPABLE_SCOPES) {
+      if (userScopes.includes(scope)) continue;
+      const prefix = `${scope}:`;
+      const ids = userScopes
+        .filter((candidate) => candidate.startsWith(prefix))
+        .map((candidate) => candidate.slice(prefix.length));
+      if (ids.length > 0) result[scope] = [...new Set(ids)];
+    }
+    return result;
+  }, [userScopes]);
 
   const loadTokens = useCallback(async () => {
     try {
@@ -106,9 +121,21 @@ export function ApiTokensSection({
   };
 
   const toggleScope = (scope: string) => {
-    setSelectedScopes((prev) =>
-      prev.includes(scope) ? prev.filter((s) => s !== scope) : [...prev, scope]
-    );
+    setSelectedScopes((prev) => {
+      if (prev.includes(scope)) {
+        setResourceScopes((resources) => {
+          const next = { ...resources };
+          delete next[scope];
+          return next;
+        });
+        return prev.filter((s) => s !== scope);
+      }
+      const allowedResourceIds = allowedResourceIdsByScope[scope];
+      if (allowedResourceIds?.length) {
+        setResourceScopes((resources) => ({ ...resources, [scope]: allowedResourceIds }));
+      }
+      return [...prev, scope];
+    });
   };
 
   const handleCreateToken = async () => {
@@ -123,6 +150,9 @@ export function ApiTokensSection({
         for (const resId of resources) {
           finalScopes.push(`${scope}:${resId}`);
         }
+      } else if (allowedResourceIdsByScope[scope]?.length) {
+        toast.error(`Select at least one resource for ${scope}`);
+        return;
       } else {
         finalScopes.push(scope);
       }
@@ -292,9 +322,8 @@ export function ApiTokensSection({
                       editingToken
                         ? API_TOKEN_SCOPES.filter((s) => selectedScopes.includes(s.value))
                         : API_TOKEN_SCOPES.filter((s) => {
-                            const userScopes = user?.scopes ?? [];
                             return userScopes.some(
-                              (us) => us === s.value || us.startsWith(s.value)
+                              (us) => us === s.value || us.startsWith(`${s.value}:`)
                             );
                           })
                     }
@@ -317,7 +346,9 @@ export function ApiTokensSection({
                     nodes={nodesList}
                     proxyHosts={proxyHostsList}
                     databases={databasesList}
+                    loggingSchemas={loggingSchemasList}
                     restrictableScopes={RESOURCE_SCOPABLE_SCOPES}
+                    allowedResourceIds={allowedResourceIdsByScope}
                   />
                   <div className="border-t border-border px-3 py-2">
                     <p className="text-xs text-muted-foreground">

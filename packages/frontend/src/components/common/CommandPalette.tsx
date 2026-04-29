@@ -69,7 +69,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const [search, setSearch] = useState("");
-  const { hasScope, hasAnyScope, hasScopedAccess, logout } = useAuthStore();
+  const { user, hasScope, hasAnyScope, hasScopedAccess, logout } = useAuthStore();
   const { cas } = useCAStore();
   const { setTheme, theme, toggleSidebar } = useUIStore();
   const recentPages = useUIStore((s) => s.recentPages);
@@ -365,9 +365,19 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       return hasAnyScope("pki:ca:list:root", "pki:ca:list:intermediate");
     }
     if (i.label === "Logging") {
+      const hasResourceScopedSchemaView =
+        user?.scopes.some((scope) => scope.startsWith("logs:schemas:view:")) ?? false;
       return (
         loggingEnabled &&
-        hasAnyScope("logs:environments:list", "logs:environments:view", "logs:read", "logs:manage")
+        (hasAnyScope(
+          "logs:environments:list",
+          "logs:environments:view",
+          "logs:schemas:list",
+          "logs:schemas:create",
+          "logs:read",
+          "logs:manage"
+        ) ||
+          hasResourceScopedSchemaView)
       );
     }
     if (i.scope.startsWith("docker:") || i.scope.startsWith("databases:")) {

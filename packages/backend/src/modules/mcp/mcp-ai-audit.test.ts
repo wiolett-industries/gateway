@@ -17,9 +17,11 @@ const USER: User = {
 
 function createService({
   nodesService,
+  databaseService = {},
   auditService,
 }: {
   nodesService: { list?: ReturnType<typeof vi.fn>; create?: ReturnType<typeof vi.fn> };
+  databaseService?: Record<string, ReturnType<typeof vi.fn>>;
   auditService: { log: ReturnType<typeof vi.fn> };
 }) {
   return new AIService(
@@ -37,7 +39,7 @@ function createService({
     {} as never,
     nodesService as never,
     {} as never,
-    {} as never,
+    databaseService as never,
     {} as never
   );
 }
@@ -131,5 +133,30 @@ describe('AIService MCP audit behavior', () => {
         details: { ai_initiated: true, arguments: { hostname: 'node-1', type: 'docker' } },
       })
     );
+  });
+
+  it('requires database view scope in addition to query scope before executing database tools', async () => {
+    const auditService = { log: vi.fn().mockResolvedValue(undefined) };
+    const databaseService = {
+      executePostgresSql: vi.fn().mockResolvedValue({ rows: [{ ok: true }] }),
+    };
+    const service = createService({ nodesService: {}, databaseService, auditService });
+
+    const denied = await service.executeTool({ ...USER, scopes: ['databases:query:read'] }, 'query_postgres_read', {
+      databaseId: 'db-1',
+      sql: 'select 1',
+    });
+
+    expect(denied.error).toContain('PERMISSION_DENIED: Missing required scope databases:view:db-1');
+    expect(databaseService.executePostgresSql).not.toHaveBeenCalled();
+
+    const allowed = await service.executeTool(
+      { ...USER, scopes: ['databases:view', 'databases:query:read'] },
+      'query_postgres_read',
+      { databaseId: 'db-1', sql: 'select 1' }
+    );
+
+    expect(allowed.error).toBeUndefined();
+    expect(databaseService.executePostgresSql).toHaveBeenCalledWith('db-1', 'select 1', USER.id);
   });
 });

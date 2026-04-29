@@ -404,7 +404,12 @@ Automated cleanup tasks, configurable in Settings.
   - ACME Challenges: clean up old validation tokens.
   - Docker Prune: remove unused Docker images.
 - Can be triggered manually from Settings page.
-- Run history tracked (last N runs with per-category results).`,
+- Run history tracked (last N runs with per-category results).
+
+## Permissions
+- \`housekeeping:view\` — read config, stats, and run history.
+- \`housekeeping:run\` — trigger a manual run.
+- \`housekeeping:configure\` — edit config and schedule.`,
 
   permissions: `# Permissions & Scopes
 
@@ -496,14 +501,33 @@ Gateway uses a group-based permission system with nested group inheritance. Each
 | admin:audit | View audit log |
 | admin:system | System-level administration (protected) |
 | admin:update | Apply system updates |
-| admin:housekeeping | Configure housekeeping tasks |
 | admin:alerts | View and manage alerts |
+
+### Gateway Settings
+| Scope | Description |
+|-------|-------------|
+| settings:gateway:view | View sign-in provisioning and MCP server settings |
+| settings:gateway:edit | Edit sign-in provisioning and MCP server settings |
+
+### Housekeeping
+| Scope | Description |
+|-------|-------------|
+| housekeeping:view | View housekeeping config, stats, and history |
+| housekeeping:run | Run housekeeping manually |
+| housekeeping:configure | Edit housekeeping config and schedule |
+
+### Licensing
+| Scope | Description |
+|-------|-------------|
+| license:view | View license state |
+| license:manage | Activate, update, or remove the license |
 
 ### Features
 | Scope | Description |
 |-------|-------------|
 | feat:ai:use | Access the AI assistant |
 | feat:ai:configure | Configure AI assistant settings |
+| mcp:use | Access the remote MCP server with a Gateway API token |
 
 ### Docker: Containers
 | Scope | Description |
@@ -555,12 +579,54 @@ Gateway uses a group-based permission system with nested group inheritance. Each
 |-------|-------------|
 | docker:tasks | View background tasks |
 
+### Databases
+| Scope | Description |
+|-------|-------------|
+| databases:list | List saved database connections |
+| databases:view | View database connection details (resource-scopable) |
+| databases:create | Create saved database connections |
+| databases:edit | Edit saved database connections (resource-scopable) |
+| databases:delete | Delete saved database connections (resource-scopable) |
+| databases:query:read | Run read-only queries; AI/MCP database tools also require databases:view for the same database |
+| databases:query:write | Run write queries; AI/MCP database tools also require databases:view for the same database |
+| databases:query:admin | Run admin queries; AI/MCP database tools also require databases:view for the same database |
+| databases:credentials:reveal | Reveal saved database credentials (resource-scopable) |
+
+### Logging
+| Scope | Description |
+|-------|-------------|
+| logs:environments:list | List logging environments |
+| logs:environments:view | View logging environments (resource-scopable) |
+| logs:environments:create | Create logging environments |
+| logs:environments:edit | Edit logging environments (resource-scopable) |
+| logs:environments:delete | Delete logging environments (resource-scopable) |
+| logs:tokens:list | List ingest tokens (resource-scopable by environment) |
+| logs:tokens:create | Create ingest tokens (resource-scopable by environment) |
+| logs:tokens:delete | Delete ingest tokens (resource-scopable by environment) |
+| logs:schemas:list | List logging schemas |
+| logs:schemas:view | View logging schemas (resource-scopable by schema ID) |
+| logs:schemas:create | Create logging schemas |
+| logs:schemas:edit | Edit logging schemas (resource-scopable by schema ID) |
+| logs:schemas:delete | Delete logging schemas (resource-scopable by schema ID) |
+| logs:read | Search and inspect logs (resource-scopable by environment) |
+| logs:manage | Logging-wide override |
+
+### Status Page
+| Scope | Description |
+|-------|-------------|
+| status-page:view | View status page config, services, incidents, and preview |
+| status-page:manage | Edit status page settings and exposed services |
+| status-page:incidents:create | Create or promote incidents |
+| status-page:incidents:update | Edit incidents and post updates |
+| status-page:incidents:resolve | Resolve active incidents |
+| status-page:incidents:delete | Delete incidents |
+
 ## Built-in Groups
 
 | Group | Description |
 |-------|-------------|
 | system-admin | Full access including admin:system |
-| admin | All scopes except admin:system |
+| admin | Curated broad access, excluding admin:system, settings:gateway:edit, housekeeping:configure, and Docker registry create/edit/delete defaults |
 | operator | Operational access — PKI, proxy, SSL, ACL, nodes, Docker containers, AI |
 | viewer | Read-only — list/view scopes for PKI, proxy, SSL, Docker containers |
 
@@ -639,7 +705,7 @@ Gateway can store and operate external Postgres and Redis connections directly f
 
 ## Permissions
 - \`databases:list\`, \`databases:view\`, \`databases:create\`, \`databases:edit\`, \`databases:delete\`
-- \`databases:query:read\`, \`databases:query:write\`, \`databases:query:admin\`
+- \`databases:query:read\`, \`databases:query:write\`, \`databases:query:admin\`; AI/MCP query tools also require \`databases:view\` on the same database.
 - \`databases:credentials:reveal\`
 - Most database scopes are resource-scopable by database ID, so access can be limited per saved connection.
 
@@ -661,7 +727,7 @@ Gateway can store and operate external Postgres and Redis connections directly f
 
 ## SQL Console
 - One or more SQL statements can be executed per request.
-- Read, write, and admin statements are separated by permissions: \`databases:query:read\`, \`databases:query:write\`, and \`databases:query:admin\`.
+- Read, write, and admin statements are separated by permissions: \`databases:query:read\`, \`databases:query:write\`, and \`databases:query:admin\`. AI/MCP execution also requires \`databases:view\` for the target saved connection.
 
 ## Monitoring
 - Health is based on connectivity and latency.
@@ -676,7 +742,7 @@ Gateway can store and operate external Postgres and Redis connections directly f
 
 ## Command Console
 - One or more Redis commands can be executed per request.
-- Read, write, and admin commands are permission-gated by \`databases:query:read\`, \`databases:query:write\`, and \`databases:query:admin\`.
+- Read, write, and admin commands are permission-gated by \`databases:query:read\`, \`databases:query:write\`, and \`databases:query:admin\`. AI/MCP execution also requires \`databases:view\` for the target saved connection.
 
 ## Monitoring
 - Health is based on connectivity and latency.
@@ -685,7 +751,7 @@ Gateway can store and operate external Postgres and Redis connections directly f
   api: `# Gateway REST API
 
 Gateway provides a full REST API for programmatic access to all features. API tokens allow external scripts, CI/CD pipelines, and integrations to interact with Gateway without a browser session.
-AI assistant access and AI configuration are browser-user-only and cannot be delegated to API tokens.
+AI assistant access, AI configuration, and the protected \`admin:system\` scope cannot be delegated to API tokens. MCP access requires a Gateway API token with \`mcp:use\` plus the scopes for the tools being called.
 
 ## Creating an API Token
 1. Go to **Settings** page → **API Tokens** section
@@ -874,17 +940,20 @@ Available in all templates:
 - \`{{#if (gt value 95)}}🔥 CRITICAL{{else}}⚠️ Warning{{/if}}: {{alert_name}}\`
 
 ## API Endpoints
-- \`GET /api/notifications/alert-rules\` — list rules (notifications:view)
-- \`POST /api/notifications/alert-rules\` — create rule (notifications:manage)
-- \`PUT /api/notifications/alert-rules/:id\` — update rule (notifications:manage)
-- \`DELETE /api/notifications/alert-rules/:id\` — delete rule (notifications:manage)
+- \`GET /api/notifications/alert-rules\` — list rules (notifications:alerts:list or notifications:manage)
+- \`GET /api/notifications/alert-rules/:id\` — view rule (notifications:alerts:view or notifications:manage)
+- \`POST /api/notifications/alert-rules\` — create rule (notifications:alerts:create or notifications:manage)
+- \`PUT /api/notifications/alert-rules/:id\` — update rule (notifications:alerts:edit or notifications:manage)
+- \`DELETE /api/notifications/alert-rules/:id\` — delete rule (notifications:alerts:delete or notifications:manage)
 - \`GET /api/notifications/alert-rules/categories\` — list categories with metrics/events/variables
-- \`GET /api/notifications/webhooks\` — list webhooks (notifications:view)
-- \`POST /api/notifications/webhooks\` — create webhook (notifications:manage)
-- \`PUT /api/notifications/webhooks/:id\` — update webhook (notifications:manage)
-- \`DELETE /api/notifications/webhooks/:id\` — delete webhook (notifications:manage)
+- \`GET /api/notifications/webhooks\` — list webhooks (notifications:webhooks:list or notifications:manage)
+- \`GET /api/notifications/webhooks/:id\` — view webhook (notifications:webhooks:view or notifications:manage)
+- \`POST /api/notifications/webhooks\` — create webhook (notifications:webhooks:create or notifications:manage)
+- \`PUT /api/notifications/webhooks/:id\` — update webhook (notifications:webhooks:edit or notifications:manage)
+- \`DELETE /api/notifications/webhooks/:id\` — delete webhook (notifications:webhooks:delete or notifications:manage)
 - \`POST /api/notifications/webhooks/:id/test\` — send test delivery
-- \`GET /api/notifications/deliveries\` — list delivery log (notifications:view)
+- \`GET /api/notifications/deliveries\` — list delivery log (notifications:deliveries:list or notifications:manage)
+- \`GET /api/notifications/deliveries/:id\` — view delivery log entry (notifications:deliveries:view or notifications:manage)
 - \`GET /api/notifications/deliveries/stats\` — delivery statistics`,
 };
 
@@ -905,7 +974,7 @@ export const DOC_TOPIC_SCOPES: Record<string, string> = {
   databases: 'databases:list',
   postgres: 'databases:view',
   redis: 'databases:view',
-  housekeeping: 'admin:housekeeping',
+  housekeeping: 'housekeeping:view',
   permissions: 'feat:ai:use',
   api: 'feat:ai:use',
   notifications: 'notifications:view',

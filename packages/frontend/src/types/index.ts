@@ -558,11 +558,12 @@ export interface AlertCategoryDef {
 }
 
 export const RESOURCE_SCOPABLE_SCOPES = [
+  "pki:ca:create:intermediate",
   "pki:cert:issue",
   "pki:cert:revoke",
   "pki:cert:export",
-  "pki:ca:create:intermediate",
   "proxy:view",
+  "proxy:create",
   "proxy:edit",
   "proxy:delete",
   "proxy:advanced",
@@ -570,6 +571,13 @@ export const RESOURCE_SCOPABLE_SCOPES = [
   "proxy:raw:read",
   "proxy:raw:write",
   "proxy:raw:toggle",
+  "ssl:cert:view",
+  "ssl:cert:delete",
+  "ssl:cert:revoke",
+  "ssl:cert:export",
+  "acl:view",
+  "acl:edit",
+  "acl:delete",
   "nodes:details",
   "nodes:config:view",
   "nodes:config:edit",
@@ -613,6 +621,9 @@ export const RESOURCE_SCOPABLE_SCOPES = [
   "logs:tokens:list",
   "logs:tokens:create",
   "logs:tokens:delete",
+  "logs:schemas:view",
+  "logs:schemas:edit",
+  "logs:schemas:delete",
   "logs:read",
 ] as const;
 
@@ -937,16 +948,55 @@ export const TOKEN_SCOPES = [
     group: "Administration",
   },
   {
-    value: "admin:housekeeping",
-    label: "Housekeeping",
-    desc: "Run housekeeping tasks",
-    group: "Administration",
-  },
-  {
     value: "admin:alerts",
     label: "Manage Alerts",
     desc: "View and manage alerts",
     group: "Administration",
+  },
+  // Gateway Settings
+  {
+    value: "settings:gateway:view",
+    label: "View Gateway Settings",
+    desc: "View sign-in provisioning and external control-plane settings",
+    group: "Gateway Settings",
+  },
+  {
+    value: "settings:gateway:edit",
+    label: "Edit Gateway Settings",
+    desc: "Edit sign-in provisioning and external control-plane settings",
+    group: "Gateway Settings",
+  },
+  // Housekeeping
+  {
+    value: "housekeeping:view",
+    label: "View Housekeeping",
+    desc: "View housekeeping configuration, stats, and run history",
+    group: "Housekeeping",
+  },
+  {
+    value: "housekeeping:run",
+    label: "Run Housekeeping",
+    desc: "Manually run housekeeping tasks",
+    group: "Housekeeping",
+  },
+  {
+    value: "housekeeping:configure",
+    label: "Configure Housekeeping",
+    desc: "Edit housekeeping configuration and schedule",
+    group: "Housekeeping",
+  },
+  // Licensing
+  {
+    value: "license:view",
+    label: "View License",
+    desc: "View Gateway license status and entitlement details",
+    group: "Licensing",
+  },
+  {
+    value: "license:manage",
+    label: "Manage License",
+    desc: "Activate, update, or remove the Gateway license",
+    group: "Licensing",
   },
   // Notifications
   {
@@ -1355,6 +1405,36 @@ export const TOKEN_SCOPES = [
     group: "Logging",
   },
   {
+    value: "logs:schemas:list",
+    label: "List Logging Schemas",
+    desc: "List reusable logging schemas",
+    group: "Logging",
+  },
+  {
+    value: "logs:schemas:view",
+    label: "View Logging Schemas",
+    desc: "View reusable logging schema details",
+    group: "Logging",
+  },
+  {
+    value: "logs:schemas:create",
+    label: "Create Logging Schemas",
+    desc: "Create reusable logging schemas",
+    group: "Logging",
+  },
+  {
+    value: "logs:schemas:edit",
+    label: "Edit Logging Schemas",
+    desc: "Edit reusable logging schemas",
+    group: "Logging",
+  },
+  {
+    value: "logs:schemas:delete",
+    label: "Delete Logging Schemas",
+    desc: "Delete reusable logging schemas",
+    group: "Logging",
+  },
+  {
     value: "logs:read",
     label: "Read Logs",
     desc: "Search and inspect external logs",
@@ -1369,7 +1449,14 @@ export const TOKEN_SCOPES = [
 ] as const;
 
 export const API_TOKEN_SCOPES = TOKEN_SCOPES.filter(
-  (scope) => scope.value !== "feat:ai:use" && scope.value !== "feat:ai:configure"
+  (scope) =>
+    scope.value !== "feat:ai:use" &&
+    scope.value !== "feat:ai:configure" &&
+    scope.value !== "admin:system"
+);
+
+export const GROUP_ASSIGNABLE_SCOPES = TOKEN_SCOPES.filter(
+  (scope) => scope.value !== "admin:system"
 );
 
 export interface ApiToken {

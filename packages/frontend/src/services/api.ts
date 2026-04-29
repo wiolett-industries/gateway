@@ -1375,6 +1375,10 @@ class ApiClient extends ApiClientBase {
     );
   }
 
+  async getLoggingSchema(id: string): Promise<LoggingSchema> {
+    return this.unwrapData(this.request<{ data: LoggingSchema }>(`/logging/schemas/${id}`));
+  }
+
   async createLoggingSchema(data: Partial<LoggingSchema>): Promise<LoggingSchema> {
     return this.unwrapData(
       this.request<{ data: LoggingSchema }>("/logging/schemas", {

@@ -8,7 +8,7 @@ import {
   Trash2,
   Users,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
@@ -37,8 +37,8 @@ import { useRealtime } from "@/hooks/use-realtime";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useCAStore } from "@/stores/ca";
-import type { DatabaseConnection, Node, PermissionGroup, ProxyHost } from "@/types";
-import { RESOURCE_SCOPABLE_SCOPES, TOKEN_SCOPES } from "@/types";
+import type { DatabaseConnection, LoggingSchema, Node, PermissionGroup, ProxyHost } from "@/types";
+import { GROUP_ASSIGNABLE_SCOPES, RESOURCE_SCOPABLE_SCOPES } from "@/types";
 
 /**
  * Parse a scopes array into base selections + resource map.
@@ -89,6 +89,40 @@ function buildFinalScopes(baseScopes: string[], resources: Record<string, string
   return result;
 }
 
+function scopeMatches(scopes: string[], requiredScope: string): boolean {
+  if (scopes.includes(requiredScope)) return true;
+  const parts = requiredScope.split(":");
+  for (let i = parts.length - 1; i >= 1; i--) {
+    const prefix = parts.slice(0, i).join(":");
+    if (scopes.includes(prefix)) return true;
+  }
+  return false;
+}
+
+function isScopeSubset(requestedScopes: string[], allowedScopes: string[]): boolean {
+  return requestedScopes.every((scope) => scopeMatches(allowedScopes, scope));
+}
+
+function getGroupEffectiveScopes(group: PermissionGroup): string[] {
+  return [...new Set([...group.scopes, ...(group.inheritedScopes ?? [])])];
+}
+
+function findMissingRequiredResourceSelection(
+  baseScopes: string[],
+  resources: Record<string, string[]>,
+  allowedResourceIdsByScope: Record<string, string[]>
+): string | null {
+  for (const scope of baseScopes) {
+    if (
+      (allowedResourceIdsByScope[scope]?.length ?? 0) > 0 &&
+      (resources[scope]?.length ?? 0) === 0
+    ) {
+      return scope;
+    }
+  }
+  return null;
+}
+
 export function AdminGroups({
   embedded = false,
   createRequest = 0,
@@ -97,11 +131,12 @@ export function AdminGroups({
   createRequest?: number;
 }) {
   const navigate = useNavigate();
-  const hasScope = useAuthStore((s) => s.hasScope);
+  const { user, hasScope } = useAuthStore();
   const { cas, fetchCAs } = useCAStore();
   const [nodesList, setNodesList] = useState<Node[]>([]);
   const [proxyHostsList, setProxyHostsList] = useState<ProxyHost[]>([]);
   const [databasesList, setDatabasesList] = useState<DatabaseConnection[]>([]);
+  const [loggingSchemasList, setLoggingSchemasList] = useState<LoggingSchema[]>([]);
   const [groups, setGroups] = useState<PermissionGroup[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -113,6 +148,43 @@ export function AdminGroups({
   const [formResources, setFormResources] = useState<Record<string, string[]>>({});
   const [scopeSearch, setScopeSearch] = useState("");
   const [saving, setSaving] = useState(false);
+  const userScopes = useMemo(() => user?.scopes ?? [], [user?.scopes]);
+  const allowedResourceIdsByScope = useMemo(() => {
+    const result: Record<string, string[]> = {};
+    for (const scope of RESOURCE_SCOPABLE_SCOPES) {
+      if (userScopes.includes(scope)) continue;
+      const prefix = `${scope}:`;
+      const ids = userScopes
+        .filter((candidate) => candidate.startsWith(prefix))
+        .map((candidate) => candidate.slice(prefix.length));
+      if (ids.length > 0) result[scope] = [...new Set(ids)];
+    }
+    return result;
+  }, [userScopes]);
+  const assignableScopes = useMemo(
+    () =>
+      GROUP_ASSIGNABLE_SCOPES.filter((scope) =>
+        userScopes.some(
+          (userScope) => userScope === scope.value || userScope.startsWith(`${scope.value}:`)
+        )
+      ),
+    [userScopes]
+  );
+  const canManageGroup = useCallback(
+    (group: PermissionGroup) => isScopeSubset(getGroupEffectiveScopes(group), userScopes),
+    [userScopes]
+  );
+  const availableParentGroups = useMemo(
+    () =>
+      groups.filter(
+        (group) =>
+          group.id !== editingGroup?.id &&
+          !group.parentId &&
+          !getGroupEffectiveScopes(group).includes("admin:system") &&
+          isScopeSubset(getGroupEffectiveScopes(group), userScopes)
+      ),
+    [editingGroup?.id, groups, userScopes]
+  );
 
   useEffect(() => {
     if (!hasScope("admin:groups")) {
@@ -147,7 +219,20 @@ export function AdminGroups({
       .listDatabases({ limit: 200 })
       .then((r) => setDatabasesList(r.data ?? []))
       .catch(() => {});
-  }, [fetchGroups, fetchCAs]);
+    if (
+      userScopes.some(
+        (scope) =>
+          scope === "logs:schemas:list" ||
+          scope === "logs:manage" ||
+          scope.startsWith("logs:schemas:view:")
+      )
+    ) {
+      api
+        .listLoggingSchemas()
+        .then(setLoggingSchemasList)
+        .catch(() => {});
+    }
+  }, [fetchGroups, fetchCAs, userScopes]);
 
   useRealtime("group.changed", () => {
     fetchGroups();
@@ -211,6 +296,16 @@ export function AdminGroups({
   };
 
   const handleSave = async () => {
+    const missingResourceScope = findMissingRequiredResourceSelection(
+      formBaseScopes,
+      formResources,
+      allowedResourceIdsByScope
+    );
+    if (missingResourceScope) {
+      toast.error(`Select at least one resource for ${missingResourceScope}`);
+      return;
+    }
+
     const finalScopes = buildFinalScopes(formBaseScopes, formResources);
     if (!formName.trim() || finalScopes.length === 0) {
       toast.error("Name and at least one scope are required");
@@ -270,6 +365,10 @@ export function AdminGroups({
           return next;
         });
         return prev.filter((s) => s !== scope);
+      }
+      const allowedResourceIds = allowedResourceIdsByScope[scope];
+      if (allowedResourceIds?.length) {
+        setFormResources((resources) => ({ ...resources, [scope]: allowedResourceIds }));
       }
       return [...prev, scope];
     });
@@ -334,6 +433,7 @@ export function AdminGroups({
                     group={group}
                     allGroups={groups}
                     depth={0}
+                    canManageGroup={canManageGroup}
                     onEdit={openEditDialog}
                     onDelete={handleDelete}
                   />
@@ -390,14 +490,12 @@ export function AdminGroups({
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="__none__">None</SelectItem>
-                      {groups
-                        .filter((g) => g.id !== editingGroup?.id && !g.parentId)
-                        .map((g) => (
-                          <SelectItem key={g.id} value={g.id}>
-                            {g.name}
-                            {g.isBuiltin ? " (built-in)" : ""}
-                          </SelectItem>
-                        ))}
+                      {availableParentGroups.map((g) => (
+                        <SelectItem key={g.id} value={g.id}>
+                          {g.name}
+                          {g.isBuiltin ? " (built-in)" : ""}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                   <p className="text-xs text-muted-foreground mt-1">
@@ -415,7 +513,7 @@ export function AdminGroups({
                 className="border-0 border-b border-border rounded-none h-9 text-sm focus-visible:ring-0"
               />
               <ScopeList
-                scopes={TOKEN_SCOPES}
+                scopes={assignableScopes}
                 search={scopeSearch}
                 selected={formBaseScopes}
                 onToggle={toggleScope}
@@ -425,7 +523,9 @@ export function AdminGroups({
                 nodes={nodesList}
                 proxyHosts={proxyHostsList}
                 databases={databasesList}
+                loggingSchemas={loggingSchemasList}
                 restrictableScopes={RESOURCE_SCOPABLE_SCOPES}
+                allowedResourceIds={allowedResourceIdsByScope}
                 inheritedScopes={inheritedScopes}
                 inheritedFromName={groups.find((g) => g.id === formParentId)?.name}
               />
@@ -458,16 +558,19 @@ function GroupRow({
   group,
   allGroups,
   depth,
+  canManageGroup,
   onEdit,
   onDelete,
 }: {
   group: PermissionGroup;
   allGroups: PermissionGroup[];
   depth: number;
+  canManageGroup: (g: PermissionGroup) => boolean;
   onEdit: (g: PermissionGroup) => void;
   onDelete: (g: PermissionGroup) => void;
 }) {
   const children = allGroups.filter((g) => g.parentId === group.id);
+  const canManage = canManageGroup(group);
 
   return (
     <>
@@ -512,10 +615,28 @@ function GroupRow({
         </div>
         {!group.isBuiltin && (
           <div className="flex items-center gap-1 shrink-0">
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onEdit(group)}>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              disabled={!canManage}
+              title={
+                !canManage ? "Cannot edit groups with permissions you do not possess" : undefined
+              }
+              onClick={() => canManage && onEdit(group)}
+            >
               <Pencil className="h-4 w-4" />
             </Button>
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onDelete(group)}>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              disabled={!canManage}
+              title={
+                !canManage ? "Cannot delete groups with permissions you do not possess" : undefined
+              }
+              onClick={() => canManage && onDelete(group)}
+            >
               <Trash2 className="h-4 w-4" />
             </Button>
           </div>
@@ -527,6 +648,7 @@ function GroupRow({
           group={child}
           allGroups={allGroups}
           depth={depth + 1}
+          canManageGroup={canManageGroup}
           onEdit={onEdit}
           onDelete={onDelete}
         />

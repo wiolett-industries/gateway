@@ -365,9 +365,19 @@ export function SidebarContent({
     "notifications:manage"
   );
   const canAccessDatabases = hasScopedAccess("databases:list");
+  const hasResourceScopedSchemaView =
+    user?.scopes.some((scope) => scope.startsWith("logs:schemas:view:")) ?? false;
   const canAccessLogging =
     loggingEnabled &&
-    hasAnyScope("logs:environments:list", "logs:environments:view", "logs:read", "logs:manage");
+    (hasAnyScope(
+      "logs:environments:list",
+      "logs:environments:view",
+      "logs:schemas:list",
+      "logs:schemas:create",
+      "logs:read",
+      "logs:manage"
+    ) ||
+      hasResourceScopedSchemaView);
   const canAccessAuthorities = hasAnyScope("pki:ca:list:root", "pki:ca:list:intermediate");
 
   useEffect(() => {

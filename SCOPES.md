@@ -1,187 +1,157 @@
 # Permission Scopes
 
-All scopes follow the naming convention `domain:resource:action[:qualifier]`.
+All scopes follow `domain:resource:action[:qualifier]`. Resource-scopable scopes may be limited with a resource suffix, for example `logs:schemas:view:<schemaId>`.
 
-Scopes marked **Yes** in the "Restrictable" column can be limited to a specific resource (e.g. `docker:containers:view:node-uuid` restricts view to that node only).
-
-## Builtin Groups
+## Built-in Groups
 
 | Group | Description |
 |-------|-------------|
-| **system-admin** | All 82 scopes including `admin:system` |
-| **admin** | All scopes except `admin:system` |
-| **operator** | Operational access (PKI, proxy, SSL, ACL, nodes, Docker containers, AI) |
-| **viewer** | Read-only access (list + view scopes only) |
+| `system-admin` | All 136 scopes, including protected `admin:system`. |
+| `admin` | Curated broad access; excludes `admin:system`, `settings:gateway:edit`, `housekeeping:configure`, and Docker registry create/edit/delete defaults. |
+| `operator` | Operational access for day-to-day PKI, proxy, SSL, ACL, node, Docker container, database, notification, and logging read/query work. |
+| `viewer` | Read-only list/view access. |
 
----
+## Scope List
 
-## PKI: Certificate Authorities
+| Scope | Resource-scopable |
+|-------|-------------------|
+| `pki:ca:list:root` |  |
+| `pki:ca:list:intermediate` |  |
+| `pki:ca:view:root` |  |
+| `pki:ca:view:intermediate` |  |
+| `pki:ca:create:root` |  |
+| `pki:ca:create:intermediate` | Yes |
+| `pki:ca:revoke:root` |  |
+| `pki:ca:revoke:intermediate` |  |
+| `pki:cert:list` |  |
+| `pki:cert:view` |  |
+| `pki:cert:issue` | Yes |
+| `pki:cert:revoke` | Yes |
+| `pki:cert:export` | Yes |
+| `pki:templates:list` |  |
+| `pki:templates:view` |  |
+| `pki:templates:create` |  |
+| `pki:templates:edit` |  |
+| `pki:templates:delete` |  |
+| `proxy:list` |  |
+| `proxy:view` | Yes |
+| `proxy:create` | Yes |
+| `proxy:edit` | Yes |
+| `proxy:delete` | Yes |
+| `proxy:raw:read` | Yes |
+| `proxy:raw:write` | Yes |
+| `proxy:raw:toggle` | Yes |
+| `proxy:advanced` | Yes |
+| `proxy:advanced:bypass` | Yes |
+| `ssl:cert:list` |  |
+| `ssl:cert:view` | Yes |
+| `ssl:cert:issue` |  |
+| `ssl:cert:delete` | Yes |
+| `ssl:cert:revoke` | Yes |
+| `ssl:cert:export` | Yes |
+| `acl:list` |  |
+| `acl:view` | Yes |
+| `acl:create` |  |
+| `acl:edit` | Yes |
+| `acl:delete` | Yes |
+| `nodes:list` |  |
+| `nodes:details` | Yes |
+| `nodes:create` |  |
+| `nodes:rename` | Yes |
+| `nodes:delete` | Yes |
+| `nodes:config:view` | Yes |
+| `nodes:config:edit` | Yes |
+| `nodes:logs` | Yes |
+| `nodes:console` | Yes |
+| `nodes:lock` | Yes |
+| `admin:users` |  |
+| `admin:groups` |  |
+| `admin:audit` |  |
+| `admin:system` |  |
+| `admin:details:certificates` |  |
+| `admin:update` |  |
+| `admin:alerts` |  |
+| `settings:gateway:view` |  |
+| `settings:gateway:edit` |  |
+| `housekeeping:view` |  |
+| `housekeeping:run` |  |
+| `housekeeping:configure` |  |
+| `license:view` |  |
+| `license:manage` |  |
+| `feat:ai:use` |  |
+| `feat:ai:configure` |  |
+| `mcp:use` |  |
+| `docker:containers:list` | Yes |
+| `docker:containers:view` | Yes |
+| `docker:containers:create` | Yes |
+| `docker:containers:edit` | Yes |
+| `docker:containers:manage` | Yes |
+| `docker:containers:environment` | Yes |
+| `docker:containers:delete` | Yes |
+| `docker:containers:console` | Yes |
+| `docker:containers:files` | Yes |
+| `docker:containers:secrets` | Yes |
+| `docker:containers:webhooks` | Yes |
+| `docker:images:list` | Yes |
+| `docker:images:pull` | Yes |
+| `docker:images:delete` | Yes |
+| `docker:volumes:list` | Yes |
+| `docker:volumes:create` | Yes |
+| `docker:volumes:delete` | Yes |
+| `docker:networks:list` | Yes |
+| `docker:networks:create` | Yes |
+| `docker:networks:edit` | Yes |
+| `docker:networks:delete` | Yes |
+| `docker:registries:list` |  |
+| `docker:registries:create` |  |
+| `docker:registries:edit` |  |
+| `docker:registries:delete` |  |
+| `docker:tasks` |  |
+| `databases:list` | Yes |
+| `databases:view` | Yes |
+| `databases:create` |  |
+| `databases:edit` | Yes |
+| `databases:delete` | Yes |
+| `databases:query:read` | Yes |
+| `databases:query:write` | Yes |
+| `databases:query:admin` | Yes |
+| `databases:credentials:reveal` | Yes |
+| `notifications:alerts:list` |  |
+| `notifications:alerts:view` |  |
+| `notifications:alerts:create` |  |
+| `notifications:alerts:edit` |  |
+| `notifications:alerts:delete` |  |
+| `notifications:webhooks:list` |  |
+| `notifications:webhooks:view` |  |
+| `notifications:webhooks:create` |  |
+| `notifications:webhooks:edit` |  |
+| `notifications:webhooks:delete` |  |
+| `notifications:deliveries:list` |  |
+| `notifications:deliveries:view` |  |
+| `notifications:view` |  |
+| `notifications:manage` |  |
+| `logs:environments:list` |  |
+| `logs:environments:view` | Yes |
+| `logs:environments:create` |  |
+| `logs:environments:edit` | Yes |
+| `logs:environments:delete` | Yes |
+| `logs:tokens:list` | Yes |
+| `logs:tokens:create` | Yes |
+| `logs:tokens:delete` | Yes |
+| `logs:schemas:list` |  |
+| `logs:schemas:view` | Yes |
+| `logs:schemas:create` |  |
+| `logs:schemas:edit` | Yes |
+| `logs:schemas:delete` | Yes |
+| `logs:read` | Yes |
+| `logs:manage` |  |
+| `status-page:view` |  |
+| `status-page:manage` |  |
+| `status-page:incidents:create` |  |
+| `status-page:incidents:update` |  |
+| `status-page:incidents:resolve` |  |
+| `status-page:incidents:delete` |  |
 
-| Scope | Description | Restrictable |
-|-------|-------------|---|
-| `pki:ca:list:root` | List root certificate authorities | |
-| `pki:ca:list:intermediate` | List intermediate certificate authorities | |
-| `pki:ca:view:root` | View root CA details, keys, and OCSP config | |
-| `pki:ca:view:intermediate` | View intermediate CA details | |
-| `pki:ca:create:root` | Create new root certificate authorities | |
-| `pki:ca:create:intermediate` | Create intermediate CAs under a root | Yes |
-| `pki:ca:revoke:root` | Revoke and delete root CAs | |
-| `pki:ca:revoke:intermediate` | Revoke and delete intermediate CAs | |
+## API Token Delegation
 
-## PKI: Certificates
-
-| Scope | Description | Restrictable |
-|-------|-------------|---|
-| `pki:cert:list` | List issued certificates | |
-| `pki:cert:view` | View certificate details and chain | |
-| `pki:cert:issue` | Issue new certificates from a CA | Yes |
-| `pki:cert:revoke` | Revoke issued certificates | Yes |
-| `pki:cert:export` | Export certificates and private keys | Yes |
-
-## PKI: Certificate Templates
-
-| Scope | Description | Restrictable |
-|-------|-------------|---|
-| `pki:templates:list` | List certificate templates | |
-| `pki:templates:view` | View certificate template details | |
-| `pki:templates:create` | Create certificate templates | |
-| `pki:templates:edit` | Edit certificate templates | |
-| `pki:templates:delete` | Delete certificate templates | |
-
-## Proxy Hosts
-
-| Scope | Description | Restrictable |
-|-------|-------------|---|
-| `proxy:list` | List and search proxy hosts | |
-| `proxy:view` | View proxy host details | Yes |
-| `proxy:create` | Create new proxy hosts | Yes |
-| `proxy:edit` | Edit proxy host configuration | Yes |
-| `proxy:delete` | Delete proxy hosts | Yes |
-| `proxy:raw:read` | View raw nginx configuration | Yes |
-| `proxy:raw:write` | Edit raw nginx configuration | Yes |
-| `proxy:raw:toggle` | Switch between managed and raw config mode | Yes |
-| `proxy:advanced` | Use advanced proxy configuration options | Yes |
-
-## SSL Certificates
-
-| Scope | Description | Restrictable |
-|-------|-------------|---|
-| `ssl:cert:list` | List SSL certificates | |
-| `ssl:cert:view` | View SSL certificate details | Yes |
-| `ssl:cert:issue` | Provision ACME or upload SSL certificates | |
-| `ssl:cert:delete` | Delete SSL certificates | Yes |
-| `ssl:cert:revoke` | Revoke SSL certificates | Yes |
-| `ssl:cert:export` | Export SSL certificates | Yes |
-
-## Access Control Lists
-
-| Scope | Description | Restrictable |
-|-------|-------------|---|
-| `acl:list` | List access control lists | |
-| `acl:view` | View access list details | Yes |
-| `acl:create` | Create access control lists | |
-| `acl:edit` | Edit access control lists | Yes |
-| `acl:delete` | Delete access control lists | Yes |
-
-## Nodes
-
-| Scope | Description | Restrictable |
-|-------|-------------|---|
-| `nodes:list` | List managed nodes (supports type filter: `nodes:list:docker`) | |
-| `nodes:details` | View node details and monitoring data | Yes |
-| `nodes:create` | Enroll new nodes (supports type filter: `nodes:create:docker`) | |
-| `nodes:rename` | Rename nodes | Yes |
-| `nodes:delete` | Remove nodes | Yes |
-| `nodes:config:view` | View node nginx configuration | Yes |
-| `nodes:config:edit` | Edit node nginx configuration | Yes |
-| `nodes:logs` | View node daemon and nginx logs | Yes |
-| `nodes:console` | Open interactive shell on nodes | Yes |
-
-## Administration
-
-| Scope | Description | Restrictable |
-|-------|-------------|---|
-| `admin:users` | Create, edit, and delete users | |
-| `admin:groups` | Create, edit, and delete permission groups | |
-| `admin:audit` | View the audit log | |
-| `admin:system` | System-level administration (protected, cannot be removed from system-admin) | |
-| `admin:details:certificates` | View internal system PKI and SSL certificates in read-only mode | |
-| `admin:update` | Check for and apply updates | |
-| `admin:housekeeping` | Run housekeeping tasks (prune, cleanup) | |
-| `admin:alerts` | View and manage alerts | |
-
-## Features
-
-| Scope | Description | Restrictable |
-|-------|-------------|---|
-| `feat:ai:use` | Use the AI assistant | |
-| `feat:ai:configure` | Configure AI settings and providers | |
-
-## Docker: Containers
-
-| Scope | Description | Restrictable |
-|-------|-------------|---|
-| `docker:containers:list` | List Docker containers (restrict to node: `:nodeId`) | |
-| `docker:containers:view` | View container details, logs, stats, and processes | Yes |
-| `docker:containers:create` | Create and duplicate containers | |
-| `docker:containers:edit` | Edit container settings (rename, update, live-update) | Yes |
-| `docker:containers:manage` | Start, stop, restart, kill, and recreate containers | Yes |
-| `docker:containers:environment` | Modify container environment variables | Yes |
-| `docker:containers:delete` | Remove containers | Yes |
-| `docker:containers:console` | Open interactive console (exec) in containers | Yes |
-| `docker:containers:files` | Browse and edit files inside containers | Yes |
-| `docker:containers:secrets` | View decrypted secret values and manage secrets | Yes |
-
-## Docker: Images
-
-| Scope | Description | Restrictable |
-|-------|-------------|---|
-| `docker:images:list` | List Docker images on a node | |
-| `docker:images:pull` | Pull Docker images from registries | |
-| `docker:images:delete` | Remove and prune Docker images | |
-
-## Docker: Volumes
-
-| Scope | Description | Restrictable |
-|-------|-------------|---|
-| `docker:volumes:list` | List Docker volumes | |
-| `docker:volumes:create` | Create Docker volumes | |
-| `docker:volumes:delete` | Remove Docker volumes | |
-
-## Docker: Networks
-
-| Scope | Description | Restrictable |
-|-------|-------------|---|
-| `docker:networks:list` | List Docker networks | |
-| `docker:networks:create` | Create Docker networks | |
-| `docker:networks:edit` | Connect and disconnect containers from networks | |
-| `docker:networks:delete` | Remove Docker networks | |
-
-## Docker: Registries
-
-| Scope | Description | Restrictable |
-|-------|-------------|---|
-| `docker:registries:list` | List Docker registries in settings | |
-| `docker:registries:create` | Add Docker registries | |
-| `docker:registries:edit` | Edit Docker registry settings and test connections | |
-| `docker:registries:delete` | Remove Docker registries | |
-
-## Docker: Templates
-
-| Scope | Description | Restrictable |
-|-------|-------------|---|
-| `docker:templates:list` | List Docker templates | |
-| `docker:templates:view` | View Docker template details | |
-| `docker:templates:create` | Create Docker templates | |
-| `docker:templates:edit` | Edit Docker templates | |
-| `docker:templates:delete` | Delete Docker templates | |
-
-## Docker: Tasks
-
-| Scope | Description | Restrictable |
-|-------|-------------|---|
-| `docker:tasks` | View Docker task progress (filtered to accessible nodes) | |
-
----
-
-**Total: 83 scopes**
+API tokens cannot be granted `feat:ai:use`, `feat:ai:configure`, or `admin:system`. `admin:system` remains a protected user/group scope for system administrator shielding.

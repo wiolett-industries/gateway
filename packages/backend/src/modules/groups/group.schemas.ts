@@ -1,10 +1,11 @@
 import { z } from 'zod';
-import { BUILTIN_GROUP_NAMES, isValidBaseScope } from '@/lib/scopes.js';
+import { BUILTIN_GROUP_NAMES, extractBaseScope, isValidBaseScope } from '@/lib/scopes.js';
 
 const scopeString = z
   .string()
   .regex(/^[a-z][a-z0-9-]*:[a-z][a-z0-9-]*(:[a-zA-Z0-9-]+)*$/, 'Invalid scope format')
-  .refine(isValidBaseScope, 'Unrecognized base scope');
+  .refine(isValidBaseScope, 'Unrecognized base scope')
+  .refine((scope) => extractBaseScope(scope) !== 'admin:system', 'admin:system cannot be assigned to custom groups');
 
 export const CreateGroupSchema = z.object({
   name: z

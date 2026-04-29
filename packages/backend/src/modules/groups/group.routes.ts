@@ -87,6 +87,9 @@ groupRoutes.openapi(deleteGroupRoute, async (c) => {
   const auditService = container.resolve(AuditService);
   const user = c.get('user')!;
   const id = c.req.param('id')!;
+  const userScopes = c.get('effectiveScopes') || [];
+
+  await groupService.assertCanDeleteGroup(id, userScopes);
 
   // getGroup will throw 404 if not found, and deleteGroup will throw if built-in or has members
   const group = await groupService.getGroup(id);

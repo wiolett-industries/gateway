@@ -1,4 +1,4 @@
-import type { CA, DatabaseConnection, Node, ProxyHost } from "@/types";
+import type { CA, DatabaseConnection, LoggingSchema, Node, ProxyHost } from "@/types";
 
 interface ScopeItem {
   value: string;
@@ -30,7 +30,9 @@ interface ScopeListProps {
   nodes?: Node[];
   proxyHosts?: ProxyHost[];
   databases?: DatabaseConnection[];
+  loggingSchemas?: LoggingSchema[];
   restrictableScopes?: readonly string[];
+  allowedResourceIds?: Record<string, string[]>;
   /** Inherited scopes from parent group — shown as read-only checked at bottom */
   inheritedScopes?: string[];
   inheritedFromName?: string;
@@ -81,8 +83,12 @@ function getResourceOptions(
   cas?: CA[],
   nodes?: Node[],
   proxyHosts?: ProxyHost[],
-  databases?: DatabaseConnection[]
+  databases?: DatabaseConnection[],
+  loggingSchemas?: LoggingSchema[]
 ): ResourceOption[] {
+  if (scope.startsWith("logs:schemas:")) {
+    return (loggingSchemas ?? []).map((schema) => ({ id: schema.id, label: schema.name }));
+  }
   if (scope.startsWith("databases:")) {
     return (databases ?? []).map((database) => ({
       id: database.id,
@@ -114,6 +120,8 @@ function getResourceLabel(scope: string): string {
   if (scope.startsWith("nodes:")) return "Restrict to specific nodes (leave unchecked for all):";
   if (scope.startsWith("proxy:"))
     return "Restrict to specific proxy hosts (leave unchecked for all):";
+  if (scope.startsWith("logs:schemas:"))
+    return "Restrict to specific logging schemas (leave unchecked for all):";
   return "Restrict to specific CAs (leave unchecked for all):";
 }
 
@@ -128,7 +136,9 @@ export function ScopeList({
   nodes,
   proxyHosts,
   databases,
+  loggingSchemas,
   restrictableScopes,
+  allowedResourceIds,
   inheritedScopes,
   inheritedFromName,
   readOnly,
@@ -161,7 +171,9 @@ export function ScopeList({
             nodes={nodes}
             proxyHosts={proxyHosts}
             databases={databases}
+            loggingSchemas={loggingSchemas}
             restrictableScopes={restrictableScopes}
+            allowedResourceIds={allowedResourceIds}
             inheritedFromName={inheritedFromName}
           />
         ))}
@@ -182,7 +194,9 @@ export function ScopeList({
             nodes={nodes}
             proxyHosts={proxyHosts}
             databases={databases}
+            loggingSchemas={loggingSchemas}
             restrictableScopes={restrictableScopes}
+            allowedResourceIds={allowedResourceIds}
             inheritedFromName={inheritedFromName}
           />
         ))}
@@ -219,7 +233,9 @@ export function ScopeList({
                 nodes={nodes}
                 proxyHosts={proxyHosts}
                 databases={databases}
+                loggingSchemas={loggingSchemas}
                 restrictableScopes={restrictableScopes}
+                allowedResourceIds={allowedResourceIds}
                 inheritedFromName={inheritedFromName}
               />
             ))}
@@ -244,7 +260,9 @@ function ScopeRow({
   nodes,
   proxyHosts,
   databases,
+  loggingSchemas,
   restrictableScopes,
+  allowedResourceIds,
   inheritedFromName,
 }: {
   scope: ScopeItem;
@@ -260,7 +278,9 @@ function ScopeRow({
   nodes?: Node[];
   proxyHosts?: ProxyHost[];
   databases?: DatabaseConnection[];
+  loggingSchemas?: LoggingSchema[];
   restrictableScopes?: readonly string[];
+  allowedResourceIds?: Record<string, string[]>;
   inheritedFromName?: string;
 }) {
   const isRestrictable = restrictableScopes?.includes(scope.value) ?? false;
@@ -269,9 +289,17 @@ function ScopeRow({
   const inheritedSet = new Set(inheritedSelectedIds);
   const combinedSelectedIds = [...new Set([...inheritedSelectedIds, ...selectedIds])];
   const baseResourceOptions = isRestrictable
-    ? getResourceOptions(scope.value, cas, nodes, proxyHosts, databases)
+    ? getResourceOptions(scope.value, cas, nodes, proxyHosts, databases, loggingSchemas)
     : [];
-  const resourceOptions = [...baseResourceOptions];
+  const allowedIds = allowedResourceIds?.[scope.value];
+  const resourceOptions = allowedIds
+    ? baseResourceOptions.filter((opt) => allowedIds.includes(opt.id))
+    : [...baseResourceOptions];
+  for (const allowedId of allowedIds ?? []) {
+    if (!resourceOptions.some((opt) => opt.id === allowedId)) {
+      resourceOptions.push({ id: allowedId, label: allowedId });
+    }
+  }
   for (const selectedId of combinedSelectedIds) {
     if (!resourceOptions.some((opt) => opt.id === selectedId)) {
       resourceOptions.push({ id: selectedId, label: selectedId });

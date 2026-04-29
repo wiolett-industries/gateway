@@ -34,7 +34,7 @@ export function DockerRegistriesSection({ nodesList }: DockerRegistriesSectionPr
   const canCreateRegistry = hasScope("docker:registries:create");
   const canEditRegistry = hasScope("docker:registries:edit");
   const canDeleteRegistry = hasScope("docker:registries:delete");
-  const canTestRegistry = canCreateRegistry || canEditRegistry;
+  const canTestRegistry = canEditRegistry;
   const [registries, setRegistries] = useState<DockerRegistry[]>([]);
   const [regDialogOpen, setRegDialogOpen] = useState(false);
   const [regEditId, setRegEditId] = useState<string | null>(null);
@@ -110,17 +110,19 @@ export function DockerRegistriesSection({ nodesList }: DockerRegistriesSectionPr
         toast.success("Registry updated");
       } else {
         if (!canCreateRegistry) return;
-        const testResult = await api.testRegistryDirect({
-          url: regUrl.trim(),
-          username: regUsername.trim() || undefined,
-          password: regPassword || undefined,
-        });
-        if (!testResult.ok) {
-          toast.error(
-            `Connection test failed: ${testResult.error || "could not connect to registry"}`
-          );
-          setRegSaving(false);
-          return;
+        if (canTestRegistry) {
+          const testResult = await api.testRegistryDirect({
+            url: regUrl.trim(),
+            username: regUsername.trim() || undefined,
+            password: regPassword || undefined,
+          });
+          if (!testResult.ok) {
+            toast.error(
+              `Connection test failed: ${testResult.error || "could not connect to registry"}`
+            );
+            setRegSaving(false);
+            return;
+          }
         }
         await api.createRegistry(payload);
         toast.success("Registry added");

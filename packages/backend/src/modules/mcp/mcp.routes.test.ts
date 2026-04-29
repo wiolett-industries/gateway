@@ -249,6 +249,17 @@ describe('MCP tools', () => {
       }
     );
   });
+
+  it('uses corrected granular scopes when listing template and access-list tools', async () => {
+    registerToken(['mcp:use', 'pki:templates:create', 'pki:templates:delete', 'acl:create']);
+
+    const { body } = await mcpRequest('tools/list');
+    const names = body.result.tools.map((tool: { name: string }) => tool.name);
+
+    expect(names).toContain('create_template');
+    expect(names).toContain('delete_template');
+    expect(names).toContain('create_access_list');
+  });
 });
 
 describe('MCP resources and prompts', () => {

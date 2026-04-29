@@ -70,8 +70,14 @@ export const ALL_SCOPES = [
   'admin:system',
   'admin:details:certificates',
   'admin:update',
-  'admin:housekeeping',
   'admin:alerts',
+  // ── Gateway Settings ─────────────────────────────────────────────
+  'settings:gateway:view',
+  'settings:gateway:edit',
+  // ── Housekeeping ─────────────────────────────────────────────────
+  'housekeeping:view',
+  'housekeeping:run',
+  'housekeeping:configure',
   // ── Licensing ────────────────────────────────────────────────────
   'license:view',
   'license:manage',
@@ -145,6 +151,11 @@ export const ALL_SCOPES = [
   'logs:tokens:list',
   'logs:tokens:create',
   'logs:tokens:delete',
+  'logs:schemas:list',
+  'logs:schemas:view',
+  'logs:schemas:create',
+  'logs:schemas:edit',
+  'logs:schemas:delete',
   'logs:read',
   'logs:manage',
   // ── Status Page ──────────────────────────────────────────────────
@@ -159,15 +170,161 @@ export const ALL_SCOPES = [
 export type Scope = (typeof ALL_SCOPES)[number];
 
 export const USER_ONLY_SCOPES = ['feat:ai:use', 'feat:ai:configure'] as const;
-const USER_ONLY_SCOPE_SET = new Set<string>(USER_ONLY_SCOPES);
+const NON_API_TOKEN_SCOPE_SET = new Set<string>([...USER_ONLY_SCOPES, 'admin:system']);
 
-export const API_TOKEN_SCOPES = ALL_SCOPES.filter((scope) => !USER_ONLY_SCOPE_SET.has(scope));
+export const API_TOKEN_SCOPES = ALL_SCOPES.filter((scope) => !NON_API_TOKEN_SCOPE_SET.has(scope));
 
 /** System-admin group: every scope including admin:system (protected) */
 export const SYSTEM_ADMIN_SCOPES: readonly string[] = [...ALL_SCOPES];
 
-/** Admin group: all scopes EXCEPT admin:system (cannot shield themselves from system-admins) */
-export const ADMIN_SCOPES: readonly string[] = ALL_SCOPES.filter((s) => s !== 'admin:system');
+/** Admin group: curated broad access, without system protection or sensitive platform defaults. */
+export const ADMIN_SCOPES: readonly string[] = [
+  // PKI
+  'pki:ca:list:root',
+  'pki:ca:list:intermediate',
+  'pki:ca:view:root',
+  'pki:ca:view:intermediate',
+  'pki:ca:create:root',
+  'pki:ca:create:intermediate',
+  'pki:ca:revoke:root',
+  'pki:ca:revoke:intermediate',
+  'pki:cert:list',
+  'pki:cert:view',
+  'pki:cert:issue',
+  'pki:cert:revoke',
+  'pki:cert:export',
+  'pki:templates:list',
+  'pki:templates:view',
+  'pki:templates:create',
+  'pki:templates:edit',
+  'pki:templates:delete',
+  // Proxy
+  'proxy:list',
+  'proxy:view',
+  'proxy:create',
+  'proxy:edit',
+  'proxy:delete',
+  'proxy:raw:read',
+  'proxy:raw:write',
+  'proxy:raw:toggle',
+  'proxy:advanced',
+  'proxy:advanced:bypass',
+  // SSL
+  'ssl:cert:list',
+  'ssl:cert:view',
+  'ssl:cert:issue',
+  'ssl:cert:delete',
+  'ssl:cert:revoke',
+  'ssl:cert:export',
+  // ACL
+  'acl:list',
+  'acl:view',
+  'acl:create',
+  'acl:edit',
+  'acl:delete',
+  // Nodes
+  'nodes:list',
+  'nodes:details',
+  'nodes:create',
+  'nodes:rename',
+  'nodes:delete',
+  'nodes:config:view',
+  'nodes:config:edit',
+  'nodes:logs',
+  'nodes:console',
+  'nodes:lock',
+  // Admin
+  'admin:users',
+  'admin:groups',
+  'admin:audit',
+  'admin:details:certificates',
+  'admin:update',
+  'admin:alerts',
+  // Gateway settings
+  'settings:gateway:view',
+  // Licensing
+  'license:view',
+  'license:manage',
+  // Features
+  'feat:ai:use',
+  'feat:ai:configure',
+  'mcp:use',
+  // Docker
+  'docker:containers:list',
+  'docker:containers:view',
+  'docker:containers:create',
+  'docker:containers:edit',
+  'docker:containers:manage',
+  'docker:containers:environment',
+  'docker:containers:delete',
+  'docker:containers:console',
+  'docker:containers:files',
+  'docker:containers:secrets',
+  'docker:containers:webhooks',
+  'docker:images:list',
+  'docker:images:pull',
+  'docker:images:delete',
+  'docker:volumes:list',
+  'docker:volumes:create',
+  'docker:volumes:delete',
+  'docker:networks:list',
+  'docker:networks:create',
+  'docker:networks:edit',
+  'docker:networks:delete',
+  'docker:registries:list',
+  'docker:tasks',
+  // Databases
+  'databases:list',
+  'databases:view',
+  'databases:create',
+  'databases:edit',
+  'databases:delete',
+  'databases:query:read',
+  'databases:query:write',
+  'databases:query:admin',
+  'databases:credentials:reveal',
+  // Notifications
+  'notifications:alerts:list',
+  'notifications:alerts:view',
+  'notifications:alerts:create',
+  'notifications:alerts:edit',
+  'notifications:alerts:delete',
+  'notifications:webhooks:list',
+  'notifications:webhooks:view',
+  'notifications:webhooks:create',
+  'notifications:webhooks:edit',
+  'notifications:webhooks:delete',
+  'notifications:deliveries:list',
+  'notifications:deliveries:view',
+  'notifications:view',
+  'notifications:manage',
+  // Logging
+  'logs:environments:list',
+  'logs:environments:view',
+  'logs:environments:create',
+  'logs:environments:edit',
+  'logs:environments:delete',
+  'logs:tokens:list',
+  'logs:tokens:create',
+  'logs:tokens:delete',
+  'logs:schemas:list',
+  'logs:schemas:view',
+  'logs:schemas:create',
+  'logs:schemas:edit',
+  'logs:schemas:delete',
+  'logs:read',
+  'logs:manage',
+  // Status Page
+  'status-page:view',
+  'status-page:manage',
+  'status-page:incidents:create',
+  'status-page:incidents:update',
+  'status-page:incidents:resolve',
+  'status-page:incidents:delete',
+  // Housekeeping
+  'housekeeping:view',
+  'housekeeping:run',
+];
 
 /** Operator group: operational + management scopes */
 export const OPERATOR_SCOPES: readonly string[] = [
@@ -249,6 +406,8 @@ export const OPERATOR_SCOPES: readonly string[] = [
   // Logging
   'logs:environments:list',
   'logs:environments:view',
+  'logs:schemas:list',
+  'logs:schemas:view',
   'logs:tokens:list',
   'logs:tokens:create',
   'logs:tokens:delete',
@@ -286,6 +445,8 @@ export const VIEWER_SCOPES: readonly string[] = [
   // Logging
   'logs:environments:list',
   'logs:environments:view',
+  'logs:schemas:list',
+  'logs:schemas:view',
   'logs:read',
 ];
 
@@ -338,10 +499,14 @@ export const RESOURCE_SCOPABLE: readonly string[] = [
   'nodes:config:view',
   'nodes:config:edit',
   'nodes:logs',
+  'nodes:console',
   'nodes:rename',
   'nodes:delete',
+  'nodes:lock',
   // Docker containers
+  'docker:containers:list',
   'docker:containers:view',
+  'docker:containers:create',
   'docker:containers:edit',
   'docker:containers:manage',
   'docker:containers:environment',
@@ -350,6 +515,19 @@ export const RESOURCE_SCOPABLE: readonly string[] = [
   'docker:containers:files',
   'docker:containers:secrets',
   'docker:containers:webhooks',
+  // Docker images
+  'docker:images:list',
+  'docker:images:pull',
+  'docker:images:delete',
+  // Docker volumes
+  'docker:volumes:list',
+  'docker:volumes:create',
+  'docker:volumes:delete',
+  // Docker networks
+  'docker:networks:list',
+  'docker:networks:create',
+  'docker:networks:edit',
+  'docker:networks:delete',
   // Databases
   'databases:list',
   'databases:view',
@@ -366,6 +544,9 @@ export const RESOURCE_SCOPABLE: readonly string[] = [
   'logs:tokens:list',
   'logs:tokens:create',
   'logs:tokens:delete',
+  'logs:schemas:view',
+  'logs:schemas:edit',
+  'logs:schemas:delete',
   'logs:read',
 ];
 
@@ -389,7 +570,7 @@ export function isValidBaseScope(scope: string): boolean {
 
 /** Check whether a scope may be delegated to an API token */
 export function isApiTokenScope(scope: string): boolean {
-  return isValidBaseScope(scope) && !USER_ONLY_SCOPE_SET.has(extractBaseScope(scope));
+  return isValidBaseScope(scope) && !NON_API_TOKEN_SCOPE_SET.has(extractBaseScope(scope));
 }
 
 /** Check if a scope string is a resource-scoped variant */

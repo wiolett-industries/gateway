@@ -183,6 +183,13 @@
       "when": 1777391413000,
       "tag": "0025_docker_image_registry_mappings",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1777410000000,
+      "tag": "0026_permission_scope_cleanup",
+      "breakpoints": true
     }
   ]
 }

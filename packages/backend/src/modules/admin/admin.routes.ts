@@ -40,7 +40,7 @@ adminRoutes.openapi({ ...listAdminUsersRoute, middleware: requireScope('admin:us
   return c.json(userList);
 });
 
-adminRoutes.openapi({ ...getAuthSettingsRoute, middleware: requireScope('admin:users') }, async (c) => {
+adminRoutes.openapi({ ...getAuthSettingsRoute, middleware: requireScope('settings:gateway:view') }, async (c) => {
   const authSettingsService = container.resolve(AuthSettingsService);
   const mcpSettingsService = container.resolve(McpSettingsService);
   const groupService = container.resolve(GroupService);
@@ -64,7 +64,7 @@ adminRoutes.openapi({ ...getAuthSettingsRoute, middleware: requireScope('admin:u
   });
 });
 
-adminRoutes.openapi({ ...updateAuthSettingsRoute, middleware: requireScope('admin:users') }, async (c) => {
+adminRoutes.openapi({ ...updateAuthSettingsRoute, middleware: requireScope('settings:gateway:edit') }, async (c) => {
   const authSettingsService = container.resolve(AuthSettingsService);
   const mcpSettingsService = container.resolve(McpSettingsService);
   const groupService = container.resolve(GroupService);

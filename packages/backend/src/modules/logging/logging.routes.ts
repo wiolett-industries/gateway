@@ -122,25 +122,30 @@ loggingRoutes.openapi(
   }
 );
 
-loggingRoutes.openapi(
-  { ...listLoggingSchemasRoute, middleware: requireLoggingScope('logs:environments:list') },
-  async (c) => {
-    const service = container.resolve(LoggingSchemaService);
-    const data = await service.list({ search: c.req.query('search') });
+loggingRoutes.openapi({ ...listLoggingSchemasRoute, middleware: requireLoggingSchemaListScope() }, async (c) => {
+  const service = container.resolve(LoggingSchemaService);
+  const scopes = c.get('effectiveScopes') ?? [];
+  const data = await service.list({ search: c.req.query('search') });
+  if (TokensService.hasScope(scopes, 'logs:schemas:list') || TokensService.hasScope(scopes, 'logs:manage')) {
     return c.json({ data });
   }
-);
-
-loggingRoutes.openapi({ ...createLoggingSchemaRoute, middleware: requireLoggingScope('logs:manage') }, async (c) => {
-  const service = container.resolve(LoggingSchemaService);
-  const user = c.get('user')!;
-  const input = CreateLoggingSchemaSchema.parse(await c.req.json());
-  const data = await service.create(input, user.id);
-  return c.json({ data }, 201);
+  const visibleIds = resourceScopedIds(scopes, 'logs:schemas:view');
+  return c.json({ data: data.filter((schema) => visibleIds.has(schema.id)) });
 });
 
 loggingRoutes.openapi(
-  { ...getLoggingSchemaRoute, middleware: requireLoggingScope('logs:environments:view') },
+  { ...createLoggingSchemaRoute, middleware: requireLoggingScope('logs:schemas:create') },
+  async (c) => {
+    const service = container.resolve(LoggingSchemaService);
+    const user = c.get('user')!;
+    const input = CreateLoggingSchemaSchema.parse(await c.req.json());
+    const data = await service.create(input, user.id);
+    return c.json({ data }, 201);
+  }
+);
+
+loggingRoutes.openapi(
+  { ...getLoggingSchemaRoute, middleware: requireLoggingSchemaScope('logs:schemas:view') },
   async (c) => {
     const service = container.resolve(LoggingSchemaService);
     const data = await service.get(c.req.param('schemaId')!);
@@ -148,20 +153,26 @@ loggingRoutes.openapi(
   }
 );
 
-loggingRoutes.openapi({ ...updateLoggingSchemaRoute, middleware: requireLoggingScope('logs:manage') }, async (c) => {
-  const service = container.resolve(LoggingSchemaService);
-  const user = c.get('user')!;
-  const input = UpdateLoggingSchemaSchema.parse(await c.req.json());
-  const data = await service.update(c.req.param('schemaId')!, input, user.id);
-  return c.json({ data });
-});
+loggingRoutes.openapi(
+  { ...updateLoggingSchemaRoute, middleware: requireLoggingSchemaScope('logs:schemas:edit') },
+  async (c) => {
+    const service = container.resolve(LoggingSchemaService);
+    const user = c.get('user')!;
+    const input = UpdateLoggingSchemaSchema.parse(await c.req.json());
+    const data = await service.update(c.req.param('schemaId')!, input, user.id);
+    return c.json({ data });
+  }
+);
 
-loggingRoutes.openapi({ ...deleteLoggingSchemaRoute, middleware: requireLoggingScope('logs:manage') }, async (c) => {
-  const service = container.resolve(LoggingSchemaService);
-  const user = c.get('user')!;
-  await service.delete(c.req.param('schemaId')!, user.id);
-  return c.body(null, 204);
-});
+loggingRoutes.openapi(
+  { ...deleteLoggingSchemaRoute, middleware: requireLoggingSchemaScope('logs:schemas:delete') },
+  async (c) => {
+    const service = container.resolve(LoggingSchemaService);
+    const user = c.get('user')!;
+    await service.delete(c.req.param('schemaId')!, user.id);
+    return c.body(null, 204);
+  }
+);
 
 loggingRoutes.openapi(
   { ...listLoggingTokensRoute, middleware: requireLoggingResourceScope('logs:tokens:list') },
@@ -245,6 +256,42 @@ function requireLoggingScope(scope: string) {
     const scopes = c.get('effectiveScopes') ?? [];
     if (!TokensService.hasScope(scopes, scope) && !TokensService.hasScope(scopes, 'logs:manage')) {
       throw new AppError(403, 'FORBIDDEN', `Missing required scope: ${scope}`);
+    }
+    await next();
+  };
+}
+
+function resourceScopedIds(scopes: string[], scope: string): Set<string> {
+  const prefix = `${scope}:`;
+  return new Set(
+    scopes.filter((candidate) => candidate.startsWith(prefix)).map((candidate) => candidate.slice(prefix.length))
+  );
+}
+
+function requireLoggingSchemaListScope() {
+  return async (c: any, next: () => Promise<void>) => {
+    const scopes = c.get('effectiveScopes') ?? [];
+    if (
+      !TokensService.hasScope(scopes, 'logs:schemas:list') &&
+      !TokensService.hasScope(scopes, 'logs:manage') &&
+      resourceScopedIds(scopes, 'logs:schemas:view').size === 0
+    ) {
+      throw new AppError(403, 'FORBIDDEN', 'Missing required scope: logs:schemas:list');
+    }
+    await next();
+  };
+}
+
+function requireLoggingSchemaScope(scope: string) {
+  return async (c: any, next: () => Promise<void>) => {
+    const schemaId = c.req.param('schemaId')!;
+    const scopes = c.get('effectiveScopes') ?? [];
+    if (
+      !TokensService.hasScope(scopes, `${scope}:${schemaId}`) &&
+      !TokensService.hasScope(scopes, scope) &&
+      !TokensService.hasScope(scopes, 'logs:manage')
+    ) {
+      throw new AppError(403, 'FORBIDDEN', `Missing required scope: ${scope}:${schemaId}`);
     }
     await next();
   };

@@ -10,7 +10,19 @@ describe('CreateTokenSchema', () => {
 
     expect(result.success).toBe(false);
     expect(result.error?.issues.map((issue) => issue.message)).toContain(
-      'AI scopes are user-only and cannot be granted to API tokens'
+      'One or more scopes cannot be granted to API tokens'
+    );
+  });
+
+  it('rejects admin:system for API tokens', () => {
+    const result = CreateTokenSchema.safeParse({
+      name: 'CI token',
+      scopes: ['nodes:list', 'admin:system'],
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error?.issues.map((issue) => issue.message)).toContain(
+      'One or more scopes cannot be granted to API tokens'
     );
   });
 

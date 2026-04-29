@@ -105,7 +105,7 @@ function isLoggingSchemaDirty(schema: LoggingSchema, draft: Partial<LoggingSchem
 export function Logging() {
   const { section, id, tab } = useParams<{ section?: string; id?: string; tab?: string }>();
   const navigate = useNavigate();
-  const { hasAnyScope } = useAuthStore();
+  const { user, hasAnyScope } = useAuthStore();
   const [status, setStatus] = useState<LoggingFeatureStatus | null>(null);
   const [environments, setEnvironments] = useState<LoggingEnvironment[]>([]);
   const [schemas, setSchemas] = useState<LoggingSchema[]>([]);
@@ -117,16 +117,52 @@ export function Logging() {
 
   const isEnvironmentDetail = section === "environments" && !!id;
   const isSchemaDetail = section === "schemas" && !!id;
-  const topTab =
+  const canAccessEnvironments = hasAnyScope(
+    "logs:environments:list",
+    "logs:environments:view",
+    "logs:read",
+    "logs:manage"
+  );
+  const hasResourceScopedSchemaView = useMemo(
+    () => user?.scopes.some((scope) => scope.startsWith("logs:schemas:view:")) ?? false,
+    [user?.scopes]
+  );
+  const canListSchemas =
+    hasAnyScope("logs:schemas:list", "logs:manage") || hasResourceScopedSchemaView;
+  const canAccessSchemas = canListSchemas || hasAnyScope("logs:schemas:create");
+  const canViewSchemaDetails = hasAnyScope("logs:schemas:list", "logs:schemas:view", "logs:manage");
+  const canViewSelectedSchema =
+    isSchemaDetail &&
+    !!id &&
+    hasAnyScope("logs:schemas:view", `logs:schemas:view:${id}`, "logs:manage");
+  const canAccessLoggingSettings = canAccessEnvironments || canAccessSchemas;
+  const visibleTopTabs = useMemo(
+    () =>
+      TOP_TABS.filter((item) => {
+        if (item.value === "environments") return canAccessEnvironments;
+        if (item.value === "schemas") return canAccessSchemas;
+        return canAccessLoggingSettings;
+      }),
+    [canAccessEnvironments, canAccessLoggingSettings, canAccessSchemas]
+  );
+  const defaultTopTab = canAccessEnvironments
+    ? "environments"
+    : canAccessSchemas
+      ? "schemas"
+      : "settings";
+  const requestedTopTab =
     TOP_TABS.some((item) => item.value === section) && !isEnvironmentDetail && !isSchemaDetail
       ? section!
-      : "environments";
+      : defaultTopTab;
+  const topTab = visibleTopTabs.some((item) => item.value === requestedTopTab)
+    ? requestedTopTab
+    : defaultTopTab;
   const activeEnvironmentTab = ENV_TABS.includes(tab as any) ? tab! : "logs";
   const selectedEnvironment = environments.find((environment) => environment.id === id) ?? null;
   const selectedSchema = schemas.find((schema) => schema.id === id) ?? null;
 
   const canCreateEnvironment = hasAnyScope("logs:environments:create", "logs:manage");
-  const canManage = hasAnyScope("logs:manage");
+  const canCreateSchema = hasAnyScope("logs:schemas:create", "logs:manage");
   const canEditEnvironment =
     !!selectedEnvironment &&
     hasAnyScope(
@@ -155,14 +191,24 @@ export function Logging() {
       `logs:tokens:delete:${selectedEnvironment.id}`,
       "logs:manage"
     );
+  const canEditSchema =
+    !!selectedSchema &&
+    hasAnyScope("logs:schemas:edit", `logs:schemas:edit:${selectedSchema.id}`, "logs:manage");
+  const canDeleteSchema =
+    !!selectedSchema &&
+    hasAnyScope("logs:schemas:delete", `logs:schemas:delete:${selectedSchema.id}`, "logs:manage");
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const [featureStatus, environmentList, schemaList] = await Promise.all([
         api.getLoggingStatus(),
-        api.listLoggingEnvironments(),
-        api.listLoggingSchemas(),
+        canAccessEnvironments ? api.listLoggingEnvironments() : Promise.resolve([]),
+        canListSchemas
+          ? api.listLoggingSchemas()
+          : canViewSelectedSchema
+            ? api.getLoggingSchema(id).then((schema) => [schema])
+            : Promise.resolve([]),
       ]);
       setStatus(featureStatus);
       setEnvironments(environmentList);
@@ -172,7 +218,7 @@ export function Logging() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [canAccessEnvironments, canListSchemas, canViewSelectedSchema, id]);
 
   useEffect(() => {
     void load();
@@ -228,7 +274,11 @@ export function Logging() {
     const created = await api.createLoggingSchema(data);
     setSchemas((current) => [...current, created].sort((a, b) => a.name.localeCompare(b.name)));
     toast.success("Logging schema created");
-    navigate(`/logging/schemas/${created.id}`);
+    if (hasAnyScope("logs:schemas:view", `logs:schemas:view:${created.id}`, "logs:manage")) {
+      navigate(`/logging/schemas/${created.id}`);
+    } else {
+      navigate("/logging/schemas");
+    }
   };
 
   const updateSchema = async (schemaId: string, data: Partial<LoggingSchema>) => {
@@ -282,7 +332,8 @@ export function Logging() {
       <LoggingSchemaDetail
         schema={selectedSchema}
         loading={loading}
-        canManage={canManage}
+        canEdit={canEditSchema}
+        canDelete={canDeleteSchema}
         onSave={(patch) => updateSchema(id!, patch)}
         onDelete={async (schema) => {
           const deleted = await deleteSchema(schema);
@@ -313,7 +364,7 @@ export function Logging() {
                 Create Environment
               </Button>
             )}
-            {topTab === "schemas" && canManage && (
+            {topTab === "schemas" && canCreateSchema && (
               <Button onClick={() => setSchemaDialogOpen(true)}>
                 <Plus className="h-4 w-4 mr-1" />
                 Create Schema
@@ -328,7 +379,7 @@ export function Logging() {
           className="flex flex-col"
         >
           <TabsList className="shrink-0">
-            {TOP_TABS.map((item) => (
+            {visibleTopTabs.map((item) => (
               <TabsTrigger key={item.value} value={item.value} className="gap-1.5">
                 <item.icon className="h-3.5 w-3.5" />
                 {item.label}
@@ -353,7 +404,20 @@ export function Logging() {
               schemas={filteredSchemas}
               search={schemaSearch}
               loading={loading}
-              canManage={canManage}
+              canCreate={canCreateSchema}
+              canEdit={(schema) =>
+                hasAnyScope("logs:schemas:edit", `logs:schemas:edit:${schema.id}`, "logs:manage")
+              }
+              canDelete={(schema) =>
+                hasAnyScope(
+                  "logs:schemas:delete",
+                  `logs:schemas:delete:${schema.id}`,
+                  "logs:manage"
+                )
+              }
+              canOpen={(schema) =>
+                canViewSchemaDetails || hasAnyScope(`logs:schemas:view:${schema.id}`)
+              }
               onSearchChange={setSchemaSearch}
               onCreate={() => {
                 setSchemaDialogOpen(true);
@@ -473,7 +537,10 @@ function LoggingSchemasTab({
   schemas,
   search,
   loading,
-  canManage,
+  canCreate,
+  canEdit,
+  canDelete,
+  canOpen,
   onSearchChange,
   onCreate,
   onOpen,
@@ -482,7 +549,10 @@ function LoggingSchemasTab({
   schemas: LoggingSchema[];
   search: string;
   loading: boolean;
-  canManage: boolean;
+  canCreate: boolean;
+  canEdit: (schema: LoggingSchema) => boolean;
+  canDelete: (schema: LoggingSchema) => boolean;
+  canOpen: (schema: LoggingSchema) => boolean;
   onSearchChange: (value: string) => void;
   onCreate: () => void;
   onOpen: (schema: LoggingSchema) => void;
@@ -505,7 +575,7 @@ function LoggingSchemasTab({
       ) : schemas.length === 0 ? (
         <EmptyState
           message="No logging schemas. Create a reusable schema and attach it to environments."
-          {...(canManage ? { actionLabel: "Create Schema", onAction: onCreate } : {})}
+          {...(canCreate ? { actionLabel: "Create Schema", onAction: onCreate } : {})}
         />
       ) : (
         <div className="border border-border rounded-lg bg-card">
@@ -513,8 +583,11 @@ function LoggingSchemasTab({
             {schemas.map((schema) => (
               <div
                 key={schema.id}
-                className="flex cursor-pointer items-center gap-4 p-4 transition-colors hover:bg-muted/50"
-                onClick={() => onOpen(schema)}
+                className={cn(
+                  "flex items-center gap-4 p-4 transition-colors",
+                  canOpen(schema) && "cursor-pointer hover:bg-muted/50"
+                )}
+                onClick={canOpen(schema) ? () => onOpen(schema) : undefined}
               >
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted">
                   <FileJson className="h-5 w-5 text-muted-foreground" />
@@ -536,7 +609,7 @@ function LoggingSchemasTab({
                   <Badge variant="outline" className="text-xs shrink-0">
                     {new Date(schema.updatedAt).toLocaleDateString()}
                   </Badge>
-                  {canManage && (
+                  {(canEdit(schema) || canDelete(schema)) && (
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button
@@ -548,26 +621,30 @@ function LoggingSchemasTab({
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            onOpen(schema);
-                          }}
-                        >
-                          <Settings className="h-3.5 w-3.5 mr-2" />
-                          Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            void onDelete(schema);
-                          }}
-                          className="text-destructive"
-                        >
-                          <Trash2 className="h-3.5 w-3.5 mr-2" />
-                          Delete
-                        </DropdownMenuItem>
+                        {canEdit(schema) && (
+                          <DropdownMenuItem
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              onOpen(schema);
+                            }}
+                          >
+                            <Settings className="h-3.5 w-3.5 mr-2" />
+                            Edit
+                          </DropdownMenuItem>
+                        )}
+                        {canEdit(schema) && canDelete(schema) && <DropdownMenuSeparator />}
+                        {canDelete(schema) && (
+                          <DropdownMenuItem
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void onDelete(schema);
+                            }}
+                            className="text-destructive"
+                          >
+                            <Trash2 className="h-3.5 w-3.5 mr-2" />
+                            Delete
+                          </DropdownMenuItem>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   )}
@@ -584,13 +661,15 @@ function LoggingSchemasTab({
 function LoggingSchemaDetail({
   schema,
   loading,
-  canManage,
+  canEdit,
+  canDelete,
   onSave,
   onDelete,
 }: {
   schema: LoggingSchema | null;
   loading: boolean;
-  canManage: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
   onSave: (patch: Partial<LoggingSchema>) => Promise<void>;
   onDelete: (schema: LoggingSchema) => Promise<boolean>;
 }) {
@@ -653,13 +732,13 @@ function LoggingSchemaDetail({
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {canManage && (
+            {canEdit && (
               <Button disabled={saving || !dirty} onClick={() => void save()}>
                 <Save className="h-4 w-4" />
                 {saving ? "Saving..." : "Save Changes"}
               </Button>
             )}
-            {canManage && (
+            {canDelete && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" size="icon">
@@ -686,21 +765,21 @@ function LoggingSchemaDetail({
               label="Name"
               description="Display name used in schema lists"
               value={draft.name ?? ""}
-              disabled={!canManage}
+              disabled={!canEdit}
               onChange={(name) => setDraft({ ...draft, name })}
             />
             <SettingsTextRow
               label="Slug"
               description="Stable lowercase identifier"
               value={draft.slug ?? ""}
-              disabled={!canManage}
+              disabled={!canEdit}
               onChange={(slug) => setDraft({ ...draft, slug: slugify(slug) })}
             />
             <SettingsTextRow
               label="Description"
               description="Optional operator-facing note"
               value={draft.description ?? ""}
-              disabled={!canManage}
+              disabled={!canEdit}
               onChange={(description) => setDraft({ ...draft, description })}
             />
           </SettingsPanel>
@@ -714,7 +793,7 @@ function LoggingSchemaDetail({
                 </p>
               </div>
               <Select
-                disabled={!canManage}
+                disabled={!canEdit}
                 value={draft.schemaMode ?? schema.schemaMode}
                 onValueChange={(schemaMode) =>
                   setDraft({ ...draft, schemaMode: schemaMode as LoggingSchemaMode })
@@ -738,7 +817,7 @@ function LoggingSchemaDetail({
             schemaMode: draft.schemaMode ?? schema.schemaMode,
             fieldSchema: draft.fieldSchema ?? schema.fieldSchema,
           }}
-          canEdit={canManage}
+          canEdit={canEdit}
           onSave={async (patch) => setDraft((current) => ({ ...current, ...patch }))}
         />
       </div>

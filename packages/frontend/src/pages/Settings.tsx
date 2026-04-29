@@ -7,7 +7,7 @@ import { Switch } from "@/components/ui/switch";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useUIStore } from "@/stores/ui";
-import type { DatabaseConnection, Node, ProxyHost } from "@/types";
+import type { DatabaseConnection, LoggingSchema, Node, ProxyHost } from "@/types";
 import { AIConfigSection } from "./settings/AIConfigSection";
 import { ApiTokensSection } from "./settings/ApiTokensSection";
 import { AuthProvisioningSection } from "./settings/AuthProvisioningSection";
@@ -30,11 +30,15 @@ export function Settings() {
   const [nodesList, setNodesList] = useState<Node[]>([]);
   const [proxyHostsList, setProxyHostsList] = useState<ProxyHost[]>([]);
   const [databasesList, setDatabasesList] = useState<DatabaseConnection[]>([]);
+  const [loggingSchemasList, setLoggingSchemasList] = useState<LoggingSchema[]>([]);
 
   const canUpdate = hasScope("admin:update");
-  const canManageUsers = hasScope("admin:users");
+  const canViewGatewaySettings = hasScope("settings:gateway:view");
+  const canEditGatewaySettings = hasScope("settings:gateway:edit");
   const canUseAI = hasScope("feat:ai:use");
-  const canHousekeep = hasScope("admin:housekeeping");
+  const canViewHousekeeping = hasScope("housekeeping:view");
+  const canRunHousekeeping = hasScope("housekeeping:run");
+  const canConfigureHousekeeping = hasScope("housekeeping:configure");
   const canConfigAI = hasScope("feat:ai:configure");
   const canManageRegistries = hasScope("docker:registries:list");
   const canViewSystemCertificates = hasScope("admin:details:certificates");
@@ -55,7 +59,20 @@ export function Settings() {
       .listDatabases({ limit: 200 })
       .then((r) => setDatabasesList(r.data ?? []))
       .catch(() => {});
-  }, []);
+    if (
+      user?.scopes.some(
+        (scope) =>
+          scope === "logs:schemas:list" ||
+          scope === "logs:manage" ||
+          scope.startsWith("logs:schemas:view:")
+      )
+    ) {
+      api
+        .listLoggingSchemas()
+        .then(setLoggingSchemasList)
+        .catch(() => {});
+    }
+  }, [user?.scopes]);
 
   const handleToggleSystemCertificates = (checked: boolean) => {
     setShowSystemCertificates(checked);
@@ -187,10 +204,11 @@ export function Settings() {
           nodesList={nodesList}
           proxyHostsList={proxyHostsList}
           databasesList={databasesList}
+          loggingSchemasList={loggingSchemasList}
         />
 
         {/* Gateway settings */}
-        {canManageUsers && <AuthProvisioningSection />}
+        {canViewGatewaySettings && <AuthProvisioningSection canEdit={canEditGatewaySettings} />}
 
         {/* AI Assistant */}
         {canConfigAI && <AIConfigSection />}
@@ -202,7 +220,12 @@ export function Settings() {
         {canViewStatusPage && <StatusPageSection nodesList={nodesList} />}
 
         {/* Housekeeping */}
-        {canHousekeep && <HousekeepingSection />}
+        {canViewHousekeeping && (
+          <HousekeepingSection
+            canRun={canRunHousekeeping}
+            canConfigure={canConfigureHousekeeping}
+          />
+        )}
 
         <div className={`grid grid-cols-1 gap-4 ${canViewLicense ? "xl:grid-cols-2" : ""}`}>
           {/* Update + About */}

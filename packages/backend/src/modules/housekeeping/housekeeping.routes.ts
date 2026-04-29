@@ -18,40 +18,45 @@ export const housekeepingRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApi
 
 housekeepingRoutes.use('*', authMiddleware);
 housekeepingRoutes.use('*', sessionOnly);
-housekeepingRoutes.use('*', requireScope('admin:housekeeping'));
 
 // GET /config
-housekeepingRoutes.openapi(getHousekeepingConfigRoute, async (c) => {
-  const service = container.resolve(HousekeepingService);
-  const config = await service.getConfig();
-  return c.json({ data: config });
-});
+housekeepingRoutes.openapi(
+  { ...getHousekeepingConfigRoute, middleware: requireScope('housekeeping:view') },
+  async (c) => {
+    const service = container.resolve(HousekeepingService);
+    const config = await service.getConfig();
+    return c.json({ data: config });
+  }
+);
 
 // PUT /config
-housekeepingRoutes.openapi(updateHousekeepingConfigRoute, async (c) => {
-  const body = await c.req.json();
-  const validated = HousekeepingConfigUpdateSchema.parse(body);
-  const service = container.resolve(HousekeepingService);
-  const config = await service.updateConfig(validated as Parameters<typeof service.updateConfig>[0]);
+housekeepingRoutes.openapi(
+  { ...updateHousekeepingConfigRoute, middleware: requireScope('housekeeping:configure') },
+  async (c) => {
+    const body = await c.req.json();
+    const validated = HousekeepingConfigUpdateSchema.parse(body);
+    const service = container.resolve(HousekeepingService);
+    const config = await service.updateConfig(validated as Parameters<typeof service.updateConfig>[0]);
 
-  // If cron changed, update the scheduler dynamically
-  if (validated.cronExpression) {
-    const scheduler = container.resolve(SchedulerService);
-    scheduler.updateSchedule('housekeeping', validated.cronExpression);
+    // If cron changed, update the scheduler dynamically
+    if (validated.cronExpression) {
+      const scheduler = container.resolve(SchedulerService);
+      scheduler.updateSchedule('housekeeping', validated.cronExpression);
+    }
+
+    return c.json({ data: config });
   }
-
-  return c.json({ data: config });
-});
+);
 
 // GET /stats
-housekeepingRoutes.openapi(housekeepingStatsRoute, async (c) => {
+housekeepingRoutes.openapi({ ...housekeepingStatsRoute, middleware: requireScope('housekeeping:view') }, async (c) => {
   const service = container.resolve(HousekeepingService);
   const stats = await service.getStats();
   return c.json({ data: stats });
 });
 
 // POST /run — manual trigger
-housekeepingRoutes.openapi(runHousekeepingRoute, async (c) => {
+housekeepingRoutes.openapi({ ...runHousekeepingRoute, middleware: requireScope('housekeeping:run') }, async (c) => {
   const user = c.get('user')!;
   const service = container.resolve(HousekeepingService);
   try {
@@ -66,8 +71,11 @@ housekeepingRoutes.openapi(runHousekeepingRoute, async (c) => {
 });
 
 // GET /history
-housekeepingRoutes.openapi(housekeepingHistoryRoute, async (c) => {
-  const service = container.resolve(HousekeepingService);
-  const history = await service.getRunHistory();
-  return c.json({ data: history });
-});
+housekeepingRoutes.openapi(
+  { ...housekeepingHistoryRoute, middleware: requireScope('housekeeping:view') },
+  async (c) => {
+    const service = container.resolve(HousekeepingService);
+    const history = await service.getRunHistory();
+    return c.json({ data: history });
+  }
+);

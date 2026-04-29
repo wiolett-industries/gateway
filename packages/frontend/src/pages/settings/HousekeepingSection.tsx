@@ -15,7 +15,12 @@ import type {
   HousekeepingStats,
 } from "@/types";
 
-export function HousekeepingSection() {
+interface HousekeepingSectionProps {
+  canRun: boolean;
+  canConfigure: boolean;
+}
+
+export function HousekeepingSection({ canRun, canConfigure }: HousekeepingSectionProps) {
   const [hkConfig, setHkConfig] = useState<HousekeepingConfig>({
     enabled: true,
     cronExpression: "0 2 * * *",
@@ -58,6 +63,7 @@ export function HousekeepingSection() {
   }, [loadHousekeeping]);
 
   const updateHkConfig = async (partial: Partial<HousekeepingConfig>) => {
+    if (!canConfigure) return;
     try {
       const updated = await api.updateHousekeepingConfig(partial);
       setHkConfig(updated);
@@ -67,6 +73,7 @@ export function HousekeepingSection() {
   };
 
   const handleRunHousekeeping = async () => {
+    if (!canRun) return;
     setHkRunning(true);
     try {
       const result = await api.runHousekeeping();
@@ -85,6 +92,8 @@ export function HousekeepingSection() {
       setHkRunning(false);
     }
   };
+
+  const controlsDisabled = hkRunning || !canConfigure;
 
   const handleViewHistory = async () => {
     try {
@@ -109,7 +118,7 @@ export function HousekeepingSection() {
           <Switch
             checked={hkConfig.enabled}
             onChange={(v) => updateHkConfig({ enabled: v })}
-            disabled={hkRunning}
+            disabled={controlsDisabled}
           />
         </div>
         <div
@@ -124,12 +133,12 @@ export function HousekeepingSection() {
                   value={hkConfig.cronExpression}
                   onChange={(e) => setHkConfig({ ...hkConfig, cronExpression: e.target.value })}
                   onBlur={() => updateHkConfig({ cronExpression: hkConfig.cronExpression })}
-                  disabled={!hkConfig.enabled || hkRunning}
+                  disabled={!hkConfig.enabled || controlsDisabled}
                 />
                 <Button
                   size="sm"
                   onClick={handleRunHousekeeping}
-                  disabled={hkRunning || !hkConfig.enabled}
+                  disabled={hkRunning || !hkConfig.enabled || !canRun}
                 >
                   {hkRunning ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -154,7 +163,7 @@ export function HousekeepingSection() {
                 updateHkConfig({ nginxLogs: { ...hkConfig.nginxLogs, retentionDays: v } })
               }
               lastResult={hkStats?.lastRun?.categories.find((c) => c.category === "Nginx Logs")}
-              disabled={hkRunning}
+              disabled={controlsDisabled}
             />
             <HousekeepingCard
               label="Audit Log"
@@ -168,7 +177,7 @@ export function HousekeepingSection() {
                 updateHkConfig({ auditLog: { ...hkConfig.auditLog, retentionDays: v } })
               }
               lastResult={hkStats?.lastRun?.categories.find((c) => c.category === "Audit Log")}
-              disabled={hkRunning}
+              disabled={controlsDisabled}
             />
             <HousekeepingCard
               label="Dismissed Alerts"
@@ -188,7 +197,7 @@ export function HousekeepingSection() {
               lastResult={hkStats?.lastRun?.categories.find(
                 (c) => c.category === "Dismissed Alerts"
               )}
-              disabled={hkRunning}
+              disabled={controlsDisabled}
             />
             <HousekeepingCard
               label="Orphaned Certs"
@@ -198,7 +207,7 @@ export function HousekeepingSection() {
               enabled={hkConfig.orphanedCerts.enabled}
               onToggle={(v) => updateHkConfig({ orphanedCerts: { enabled: v } })}
               lastResult={hkStats?.lastRun?.categories.find((c) => c.category === "Orphaned Certs")}
-              disabled={hkRunning}
+              disabled={controlsDisabled}
             />
             <HousekeepingCard
               label="ACME Challenges"
@@ -212,7 +221,7 @@ export function HousekeepingSection() {
               lastResult={hkStats?.lastRun?.categories.find(
                 (c) => c.category === "ACME Challenges"
               )}
-              disabled={hkRunning}
+              disabled={controlsDisabled}
             />
             <HousekeepingCard
               label="Docker Images"
@@ -224,7 +233,7 @@ export function HousekeepingSection() {
               enabled={hkConfig.dockerPrune.enabled}
               onToggle={(v) => updateHkConfig({ dockerPrune: { enabled: v } })}
               lastResult={hkStats?.lastRun?.categories.find((c) => c.category === "Docker Images")}
-              disabled={hkRunning}
+              disabled={controlsDisabled}
             />
           </div>
           <div className="border-t border-border px-4 py-3 flex items-center justify-between">

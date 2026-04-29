@@ -765,22 +765,22 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
         this.ensureDatabaseScope(user, 'databases:view', a.databaseId);
         return this.databaseService.get(a.databaseId);
       case 'query_postgres_read':
-        this.ensureDatabaseScope(user, 'databases:query:read', a.databaseId);
+        this.ensureDatabaseQueryScopes(user, 'databases:query:read', a.databaseId);
         return this.databaseService.executePostgresSql(a.databaseId, a.sql, user.id);
       case 'execute_postgres_sql':
-        this.ensureDatabaseScope(user, 'databases:query:write', a.databaseId);
+        this.ensureDatabaseQueryScopes(user, 'databases:query:write', a.databaseId);
         return this.databaseService.executePostgresSql(a.databaseId, a.sql, user.id);
       case 'browse_redis_keys':
-        this.ensureDatabaseScope(user, 'databases:query:read', a.databaseId);
+        this.ensureDatabaseQueryScopes(user, 'databases:query:read', a.databaseId);
         return this.databaseService.scanRedisKeys(a.databaseId, 0, 100, a.search, a.type);
       case 'get_redis_key':
-        this.ensureDatabaseScope(user, 'databases:query:read', a.databaseId);
+        this.ensureDatabaseQueryScopes(user, 'databases:query:read', a.databaseId);
         return this.databaseService.getRedisKey(a.databaseId, a.key);
       case 'set_redis_key':
-        this.ensureDatabaseScope(user, 'databases:query:write', a.databaseId);
+        this.ensureDatabaseQueryScopes(user, 'databases:query:write', a.databaseId);
         return this.databaseService.setRedisKey(a.databaseId, a.key, a.type, a.value, a.ttlSeconds, user.id);
       case 'execute_redis_command':
-        this.ensureDatabaseScope(user, 'databases:query:admin', a.databaseId);
+        this.ensureDatabaseQueryScopes(user, 'databases:query:admin', a.databaseId);
         return this.databaseService.executeRedisCommand(a.databaseId, a.command, user.id);
 
       // ── Ask Question (handled client-side, backend just passes through) ──
@@ -920,6 +920,11 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
     if (!hasScope(user.scopes, `${baseScope}:${databaseId}`)) {
       throw new Error(`PERMISSION_DENIED: Missing required scope ${baseScope}:${databaseId}`);
     }
+  }
+
+  private ensureDatabaseQueryScopes(user: User, queryScope: string, databaseId: string) {
+    this.ensureDatabaseScope(user, 'databases:view', databaseId);
+    this.ensureDatabaseScope(user, queryScope, databaseId);
   }
 
   private async executeWebSearch(query: string, maxResults: number): Promise<unknown> {

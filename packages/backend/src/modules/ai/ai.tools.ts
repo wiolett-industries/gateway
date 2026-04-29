@@ -228,7 +228,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: true,
     category: 'PKI - Templates',
-    requiredScope: 'pki:templates:edit',
+    requiredScope: 'pki:templates:create',
     invalidateStores: ['templates'],
   },
   {
@@ -243,7 +243,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: true,
     category: 'PKI - Templates',
-    requiredScope: 'pki:templates:edit',
+    requiredScope: 'pki:templates:delete',
     invalidateStores: ['templates'],
   },
 
@@ -588,7 +588,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: true,
     category: 'Access Lists',
-    requiredScope: 'acl:edit',
+    requiredScope: 'acl:create',
     invalidateStores: ['accessLists'],
   },
   {

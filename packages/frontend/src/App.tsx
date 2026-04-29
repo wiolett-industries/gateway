@@ -258,8 +258,33 @@ function NotificationsPageGuard() {
 }
 
 function LoggingPageGuard() {
+  const { section, id } = useParams<{ section?: string; id?: string }>();
   const [enabled, setEnabled] = useState<boolean | null>(null);
+  const user = useAuthStore((s) => s.user);
   const hasAnyScope = useAuthStore((s) => s.hasAnyScope);
+  const canAccessLoggingEnvironments = hasAnyScope(
+    "logs:environments:list",
+    "logs:environments:view",
+    "logs:read",
+    "logs:manage"
+  );
+  const canAccessLoggingSchemaList = hasAnyScope(
+    "logs:schemas:list",
+    "logs:schemas:create",
+    "logs:manage"
+  );
+  const hasResourceScopedSchemaView =
+    user?.scopes.some((scope) => scope.startsWith("logs:schemas:view:")) ?? false;
+  const hasDirectSchemaView =
+    section === "schemas" &&
+    !!id &&
+    hasAnyScope("logs:schemas:view", `logs:schemas:view:${id}`, "logs:manage");
+  const canAccessLogging =
+    canAccessLoggingEnvironments || canAccessLoggingSchemaList || hasResourceScopedSchemaView;
+  const canAccessRequestedRoute =
+    section === "schemas" && !!id
+      ? hasDirectSchemaView || hasAnyScope("logs:schemas:list", "logs:manage")
+      : canAccessLogging;
 
   useEffect(() => {
     let cancelled = false;
@@ -284,10 +309,7 @@ function LoggingPageGuard() {
     );
   }
 
-  if (
-    !enabled ||
-    !hasAnyScope("logs:environments:list", "logs:environments:view", "logs:read", "logs:manage")
-  ) {
+  if (!enabled || !canAccessRequestedRoute) {
     return <Navigate to="/" replace />;
   }
 

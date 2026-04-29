@@ -11,7 +11,11 @@ import { Switch } from "@/components/ui/switch";
 import { api } from "@/services/api";
 import type { AuthProvisioningSettings } from "@/types";
 
-export function AuthProvisioningSection() {
+interface AuthProvisioningSectionProps {
+  canEdit: boolean;
+}
+
+export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProps) {
   const [settings, setSettings] = useState<AuthProvisioningSettings | null>(null);
   const [isSavingAutoCreate, setIsSavingAutoCreate] = useState(false);
   const [isSavingGroup, setIsSavingGroup] = useState(false);
@@ -37,7 +41,7 @@ export function AuthProvisioningSection() {
   );
 
   const handleToggleAutoCreate = async (checked: boolean) => {
-    if (!settings) return;
+    if (!settings || !canEdit) return;
     setIsSavingAutoCreate(true);
     const previous = settings;
     setSettings({ ...settings, oidcAutoCreateUsers: checked });
@@ -54,7 +58,7 @@ export function AuthProvisioningSection() {
   };
 
   const handleChangeGroup = async (groupId: string) => {
-    if (!settings) return;
+    if (!settings || !canEdit) return;
     setIsSavingGroup(true);
     const previous = settings;
     setSettings({ ...settings, oidcDefaultGroupId: groupId });
@@ -71,7 +75,7 @@ export function AuthProvisioningSection() {
   };
 
   const handleToggleMcpServer = async (checked: boolean) => {
-    if (!settings) return;
+    if (!settings || !canEdit) return;
     setIsSavingMcp(true);
     const previous = settings;
     setSettings({ ...settings, mcpServerEnabled: checked });
@@ -107,7 +111,7 @@ export function AuthProvisioningSection() {
           </div>
           <Switch
             checked={settings.oidcAutoCreateUsers}
-            disabled={isSavingAutoCreate}
+            disabled={!canEdit || isSavingAutoCreate}
             onChange={handleToggleAutoCreate}
           />
         </div>
@@ -121,7 +125,7 @@ export function AuthProvisioningSection() {
           <div className="w-64 shrink-0">
             <Select
               value={settings.oidcDefaultGroupId}
-              disabled={isSavingGroup}
+              disabled={!canEdit || isSavingGroup}
               onValueChange={handleChangeGroup}
             >
               <SelectTrigger>
@@ -146,7 +150,7 @@ export function AuthProvisioningSection() {
           </div>
           <Switch
             checked={settings.mcpServerEnabled}
-            disabled={isSavingMcp}
+            disabled={!canEdit || isSavingMcp}
             onChange={handleToggleMcpServer}
           />
         </div>

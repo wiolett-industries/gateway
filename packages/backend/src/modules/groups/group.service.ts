@@ -15,6 +15,12 @@ function disallowedScopes(effectiveScopes: string[], actorScopes: string[]) {
   return effectiveScopes.filter((scope) => !hasScope(actorScopes, scope));
 }
 
+function assertNoProtectedSystemScope(effectiveScopes: string[]) {
+  if (effectiveScopes.includes('admin:system')) {
+    throw new AppError(403, 'SCOPE_NOT_ALLOWED', 'admin:system cannot be assigned to custom groups');
+  }
+}
+
 @injectable()
 export class GroupService {
   constructor(@inject(TOKENS.DrizzleClient) private readonly db: DrizzleClient) {}
@@ -78,6 +84,7 @@ export class GroupService {
 
   async assertCanCreateGroup(input: CreateGroupInput, actorScopes: string[]): Promise<void> {
     const effectiveScopes = await this.buildEffectiveScopes(input.scopes, input.parentId);
+    assertNoProtectedSystemScope(effectiveScopes);
     if (!isScopeSubset(effectiveScopes, actorScopes)) {
       throw new AppError(
         403,
@@ -94,12 +101,33 @@ export class GroupService {
     const nextScopes = input.scopes ?? existingGroup.scopes;
     const nextParentId = input.parentId !== undefined ? input.parentId : existingGroup.parentId;
     const effectiveScopes = await this.buildEffectiveScopes(nextScopes, nextParentId);
+    assertNoProtectedSystemScope(effectiveScopes);
 
     if (!isScopeSubset(effectiveScopes, actorScopes)) {
       throw new AppError(
         403,
         'SCOPE_NOT_ALLOWED',
         `Cannot grant scopes you do not possess: ${disallowedScopes(effectiveScopes, actorScopes).join(', ')}`
+      );
+    }
+  }
+
+  async assertCanDeleteGroup(id: string, actorScopes: string[]): Promise<void> {
+    const groupMap = await fetchGroupScopeMap(this.db);
+    if (!groupMap.has(id)) {
+      throw new AppError(404, 'GROUP_NOT_FOUND', 'Permission group not found');
+    }
+
+    const affectedGroupIds = [id, ...this.collectDescendantGroupIds(id, groupMap)];
+    const affectedScopes = [
+      ...new Set(affectedGroupIds.flatMap((groupId) => computeEffectiveGroupAccess(groupId, groupMap).scopes)),
+    ];
+
+    if (!isScopeSubset(affectedScopes, actorScopes)) {
+      throw new AppError(
+        403,
+        'SCOPE_NOT_ALLOWED',
+        `Cannot delete a group that affects scopes you do not possess: ${disallowedScopes(affectedScopes, actorScopes).join(', ')}`
       );
     }
   }
