@@ -490,7 +490,7 @@ function LoggingQueryCheatsheet({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[80vh] max-w-2xl overflow-y-auto">
+      <DialogContent className="max-h-[80vh] max-w-[calc(100vw-2rem)] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Log Query Cheatsheet</DialogTitle>
           <DialogDescription>Compact search syntax for filtering log events.</DialogDescription>

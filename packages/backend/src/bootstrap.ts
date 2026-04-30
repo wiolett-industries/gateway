@@ -439,10 +439,15 @@ export async function initializeContainer(): Promise<void> {
       logger.warn('External logging ClickHouse initialization failed', { error });
     }
   }
-  const loggingEnvironmentService = new LoggingEnvironmentService(db, auditService, {
-    requests: env.LOGGING_GLOBAL_REQUESTS_PER_WINDOW,
-    events: env.LOGGING_GLOBAL_EVENTS_PER_WINDOW,
-  });
+  const loggingEnvironmentService = new LoggingEnvironmentService(
+    db,
+    auditService,
+    {
+      requests: env.LOGGING_GLOBAL_REQUESTS_PER_WINDOW,
+      events: env.LOGGING_GLOBAL_EVENTS_PER_WINDOW,
+    },
+    loggingClickHouseService
+  );
   loggingEnvironmentService.setEventBus(eventBus);
   container.registerInstance(LoggingEnvironmentService, loggingEnvironmentService);
   const loggingTokenService = new LoggingTokenService(db, auditService);

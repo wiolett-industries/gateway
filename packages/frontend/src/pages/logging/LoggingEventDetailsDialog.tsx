@@ -12,12 +12,12 @@ export function LoggingEventDetailsDialog({
 }) {
   return (
     <Dialog open={!!event} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="grid-rows-[auto,minmax(0,1fr)] max-h-[calc(100vh-6rem)] max-w-[calc(100vw-2rem)] overflow-hidden sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>Log Event</DialogTitle>
         </DialogHeader>
         {event && (
-          <div className="space-y-4">
+          <div className="min-h-0 min-w-0 space-y-4 overflow-y-auto pr-1">
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant={loggingSeverityBadgeVariant(event.severity)}>{event.severity}</Badge>
               <span className="text-sm text-muted-foreground">
@@ -26,7 +26,7 @@ export function LoggingEventDetailsDialog({
               {event.service && <Badge variant="secondary">{event.service}</Badge>}
               {event.source && <Badge variant="secondary">{event.source}</Badge>}
             </div>
-            <pre className="max-h-32 overflow-auto rounded-md bg-muted p-3 text-sm whitespace-pre-wrap">
+            <pre className="max-h-32 max-w-full overflow-auto rounded-md bg-muted p-3 text-sm whitespace-pre-wrap break-words">
               {event.message}
             </pre>
             <div className="grid gap-3 text-sm md:grid-cols-3">
@@ -54,9 +54,9 @@ function Detail({ label, value }: { label: string; value: string }) {
 
 function JsonBlock({ title, value }: { title: string; value: Record<string, unknown> }) {
   return (
-    <div>
+    <div className="min-w-0">
       <h4 className="mb-2 text-sm font-medium">{title}</h4>
-      <pre className="max-h-56 overflow-auto rounded-md bg-muted p-3 text-xs">
+      <pre className="max-h-56 max-w-full overflow-auto rounded-md bg-muted p-3 text-xs">
         {JSON.stringify(value, null, 2)}
       </pre>
     </div>

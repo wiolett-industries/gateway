@@ -83,9 +83,15 @@ describe("Logging UI", () => {
       token: "gwl_abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
     });
 
-    renderWithRouter(<LoggingTokenPanel environment={environment} canCreate canDelete={false} />);
+    renderWithRouter(
+      <LoggingTokenPanel
+        environment={environment}
+        canDelete={false}
+        createDialogOpen
+        onCreateDialogOpenChange={vi.fn()}
+      />
+    );
 
-    fireEvent.click(screen.getByRole("button", { name: /new token/i }));
     fireEvent.change(screen.getByLabelText(/name/i), { target: { value: "demo" } });
     fireEvent.click(screen.getByRole("button", { name: /^create$/i }));
 

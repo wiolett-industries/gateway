@@ -5,6 +5,7 @@ import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
 import type { CreateLoggingEnvironmentInput, UpdateLoggingEnvironmentInput } from './logging.schemas.js';
+import type { LoggingClickHouseService } from './logging-clickhouse.service.js';
 import type { LoggingEnvironmentView } from './logging-storage.types.js';
 
 export class LoggingEnvironmentService {
@@ -13,7 +14,8 @@ export class LoggingEnvironmentService {
   constructor(
     private readonly db: DrizzleClient,
     private readonly auditService: AuditService,
-    private readonly hardCeilings: { requests: number; events: number }
+    private readonly hardCeilings: { requests: number; events: number },
+    private readonly storage?: Pick<LoggingClickHouseService, 'deleteEnvironmentLogs'>
   ) {}
 
   setEventBus(eventBus: EventBusService): void {
@@ -97,6 +99,19 @@ export class LoggingEnvironmentService {
   async delete(id: string, userId: string): Promise<void> {
     const existing = await this.findRaw(id);
     if (!existing) throw new AppError(404, 'LOGGING_ENVIRONMENT_NOT_FOUND', 'Logging environment not found');
+    await this.db
+      .update(loggingEnvironments)
+      .set({ enabled: false, updatedAt: new Date() })
+      .where(eq(loggingEnvironments.id, id));
+    try {
+      await this.storage?.deleteEnvironmentLogs(id);
+    } catch (error) {
+      await this.db
+        .update(loggingEnvironments)
+        .set({ enabled: existing.enabled, updatedAt: new Date() })
+        .where(eq(loggingEnvironments.id, id));
+      throw error;
+    }
     await this.db.delete(loggingEnvironments).where(eq(loggingEnvironments.id, id));
     await this.auditService.log({
       userId,

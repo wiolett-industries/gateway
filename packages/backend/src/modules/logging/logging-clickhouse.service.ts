@@ -107,6 +107,21 @@ export class LoggingClickHouseService {
     }
   }
 
+  async deleteEnvironmentLogs(environmentId: string): Promise<void> {
+    if (!this.client) return;
+    const table = `${quoteClickHouseIdentifier(this.database)}.${quoteClickHouseIdentifier(this.table)}`;
+    try {
+      await this.client.command({
+        query: `ALTER TABLE ${table} DELETE WHERE EnvironmentId = {environmentId: UUID}`,
+        query_params: { environmentId },
+        clickhouse_settings: { mutations_sync: '1' },
+      });
+    } catch (error) {
+      logger.error('ClickHouse environment log cleanup failed', { environmentId, error });
+      throw unavailable();
+    }
+  }
+
   async searchLogs(params: {
     environmentId: string;
     query: LoggingSearchRequest;

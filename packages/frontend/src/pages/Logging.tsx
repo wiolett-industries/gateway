@@ -854,6 +854,7 @@ function LoggingEnvironmentDetail({
   const [settingsDraft, setSettingsDraft] = useState<Partial<LoggingEnvironment>>({});
   const [logsRefreshKey, setLogsRefreshKey] = useState(0);
   const [settingsSaving, setSettingsSaving] = useState(false);
+  const [tokenDialogOpen, setTokenDialogOpen] = useState(false);
 
   useEffect(() => {
     if (!environment) return;
@@ -918,6 +919,12 @@ function LoggingEnvironmentDetail({
                 minDurationMs={1000}
               />
             )}
+            {activeTab === "tokens" && canCreateToken && (
+              <Button onClick={() => setTokenDialogOpen(true)}>
+                <Plus className="h-4 w-4" />
+                New Token
+              </Button>
+            )}
             {activeTab === "settings" && canEdit && (
               <Button
                 disabled={!settingsDirty || settingsSaving}
@@ -971,8 +978,9 @@ function LoggingEnvironmentDetail({
           <TabsContent value="tokens">
             <LoggingTokenPanel
               environment={environment}
-              canCreate={canCreateToken}
               canDelete={canDeleteToken}
+              createDialogOpen={tokenDialogOpen}
+              onCreateDialogOpenChange={setTokenDialogOpen}
             />
           </TabsContent>
           <TabsContent value="settings">
@@ -1394,7 +1402,7 @@ function LoggingSchemaDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="max-w-[calc(100vw-2rem)] sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Create Logging Schema</DialogTitle>
         </DialogHeader>

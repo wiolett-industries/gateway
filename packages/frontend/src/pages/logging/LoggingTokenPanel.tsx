@@ -1,4 +1,4 @@
-import { Copy, Plus, Trash2 } from "lucide-react";
+import { Copy, Key, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
@@ -13,20 +13,22 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { formatDate, formatRelativeDate } from "@/lib/utils";
 import { api } from "@/services/api";
 import type { LoggingEnvironment, LoggingIngestToken } from "@/types";
 
 export function LoggingTokenPanel({
   environment,
-  canCreate,
   canDelete,
+  createDialogOpen,
+  onCreateDialogOpenChange,
 }: {
   environment: LoggingEnvironment;
-  canCreate: boolean;
   canDelete: boolean;
+  createDialogOpen: boolean;
+  onCreateDialogOpenChange: (open: boolean) => void;
 }) {
   const [tokens, setTokens] = useState<LoggingIngestToken[]>([]);
-  const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [createdToken, setCreatedToken] = useState<string | null>(null);
 
@@ -54,6 +56,14 @@ export function LoggingTokenPanel({
     }
   };
 
+  const setCreateDialogOpen = (nextOpen: boolean) => {
+    onCreateDialogOpenChange(nextOpen);
+    if (!nextOpen) {
+      setCreatedToken(null);
+      setName("");
+    }
+  };
+
   const revoke = async (token: LoggingIngestToken) => {
     if (
       !(await confirm({
@@ -69,60 +79,69 @@ export function LoggingTokenPanel({
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h3 className="text-sm font-semibold">Ingest Tokens</h3>
-          <p className="text-xs text-muted-foreground">Write-only tokens for external services</p>
-        </div>
-        {canCreate && (
-          <Button onClick={() => setOpen(true)}>
-            <Plus className="h-4 w-4" /> New Token
-          </Button>
-        )}
+    <div className="border border-border bg-card">
+      <div className="border-b border-border p-4">
+        <h3 className="font-semibold">Ingest Tokens</h3>
+        <p className="text-xs text-muted-foreground">Write-only tokens for external services</p>
       </div>
-      <div className="overflow-hidden rounded-md border border-border">
-        {tokens.length === 0 ? (
-          <div className="p-6 text-sm text-muted-foreground">No ingest tokens.</div>
-        ) : (
-          tokens.map((token) => (
-            <div
-              key={token.id}
-              className="flex flex-wrap items-center gap-3 border-b border-border p-3 last:border-b-0"
-            >
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium">{token.name}</p>
-                <p className="font-mono text-xs text-muted-foreground">{token.tokenPrefix}...</p>
+      <div>
+        {tokens.length > 0 ? (
+          <div className="divide-y divide-border">
+            {tokens.map((token) => (
+              <div key={token.id} className="flex items-center justify-between gap-4 p-4">
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center border border-border bg-muted">
+                    <Key className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="truncate text-sm font-medium">{token.name}</p>
+                      <Badge
+                        variant={token.enabled ? "success" : "secondary"}
+                        className="text-[10px] py-0.5"
+                      >
+                        {token.enabled ? "ENABLED" : "DISABLED"}
+                      </Badge>
+                    </div>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {token.tokenPrefix}... &middot; Created {formatDate(token.createdAt)}
+                      {token.lastUsedAt
+                        ? ` · Last used ${formatRelativeDate(token.lastUsedAt)}`
+                        : " · Never used"}
+                    </p>
+                  </div>
+                </div>
+                {canDelete && (
+                  <Button variant="outline" size="icon" onClick={() => void revoke(token)}>
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
               </div>
-              <Badge variant={token.enabled ? "success" : "secondary"}>
-                {token.enabled ? "Enabled" : "Disabled"}
-              </Badge>
-              <span className="text-xs text-muted-foreground">
-                Last used {token.lastUsedAt ? new Date(token.lastUsedAt).toLocaleString() : "never"}
-              </span>
-              {canDelete && (
-                <Button variant="ghost" size="icon" onClick={() => void revoke(token)}>
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              )}
-            </div>
-          ))
+            ))}
+          </div>
+        ) : (
+          <p className="py-4 text-center text-sm text-muted-foreground">
+            No ingest tokens created yet
+          </p>
         )}
       </div>
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-lg">
+      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+        <DialogContent className="max-w-[calc(100vw-2rem)] sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>Create Ingest Token</DialogTitle>
             <DialogDescription>Generate a write-only token for this environment.</DialogDescription>
           </DialogHeader>
           {createdToken ? (
-            <div className="space-y-3">
+            <div className="min-w-0 space-y-3">
               <p className="text-sm text-muted-foreground">This token is shown once.</p>
-              <div className="flex items-center gap-2 rounded-md border border-border p-2">
-                <code className="min-w-0 flex-1 truncate text-xs">{createdToken}</code>
+              <div className="flex max-w-full min-w-0 items-stretch overflow-hidden border border-border">
+                <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap px-3 py-2 font-mono text-xs">
+                  {createdToken}
+                </code>
                 <Button
                   size="icon"
                   variant="outline"
+                  className="h-auto shrink-0 rounded-none border-y-0 border-r-0"
                   onClick={() => void navigator.clipboard.writeText(createdToken)}
                 >
                   <Copy className="h-4 w-4" />
@@ -139,8 +158,7 @@ export function LoggingTokenPanel({
             <Button
               variant="outline"
               onClick={() => {
-                setOpen(false);
-                setCreatedToken(null);
+                setCreateDialogOpen(false);
               }}
             >
               Close
