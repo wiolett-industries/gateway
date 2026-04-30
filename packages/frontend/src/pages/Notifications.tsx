@@ -2098,8 +2098,8 @@ function DeliveryLogTab({ refreshToken }: { refreshToken: number }) {
       {deliveries.length === 0 ? (
         <EmptyState message="No deliveries yet. Delivery attempts will appear here when alerts fire." />
       ) : (
-        <div className="min-w-0 flex-1 min-h-0 border border-border bg-card">
-          <div ref={scrollRef} className="h-full overflow-auto -mb-px">
+        <div className="min-w-0 border border-border bg-card">
+          <div ref={scrollRef} className="max-h-[calc(100vh-18rem)] overflow-auto -mb-px">
             <table className="w-full min-w-[56rem]">
               <thead>
                 <tr className="border-b border-border text-left">

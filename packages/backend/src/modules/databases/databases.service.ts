@@ -140,6 +140,13 @@ function compactPostgresRows(rows: Record<string, unknown>[], maxRows: number) {
 export type DatabaseType = 'postgres' | 'redis';
 export type DatabaseHealthStatus = 'online' | 'offline' | 'degraded' | 'unknown';
 export type DatabaseOperation = 'connect' | 'query';
+type PostgresRowSearchOperation = 'like' | 'equals' | 'notEquals' | 'greaterThan' | 'lessThan';
+
+interface PostgresRowSearchFilter {
+  column: string;
+  operation: PostgresRowSearchOperation;
+  value: string;
+}
 
 export interface PostgresConnectionConfig {
   type: 'postgres';
@@ -202,7 +209,7 @@ const DATABASE_CONNECTIVITY_ERROR_CODES = new Set([
 ]);
 
 const POSTGRES_CONNECTIVITY_CODES = new Set(['3D000']);
-const POSTGRES_QUERY_CODES = new Set(['42601', '42703', '42P01']);
+const POSTGRES_QUERY_CODES = new Set(['22007', '22P02', '42601', '42703', '42883', '42P01']);
 const REDIS_QUERY_MESSAGES = [/unknown command/i, /wrong number of arguments/i, /wrongtype/i];
 
 export function mapDatabaseDriverError(
@@ -270,6 +277,54 @@ function quoteIdent(identifier: string): string {
     throw new AppError(400, 'INVALID_IDENTIFIER', `Invalid identifier: ${identifier}`);
   }
   return `"${identifier.replace(/"/g, '""')}"`;
+}
+
+const POSTGRES_COLUMN_TYPE_SQL = new Map<string, string>([
+  ['text', 'text'],
+  ['varchar(255)', 'varchar(255)'],
+  ['varchar(1024)', 'varchar(1024)'],
+  ['char(1)', 'char(1)'],
+  ['boolean', 'boolean'],
+  ['smallint', 'smallint'],
+  ['integer', 'integer'],
+  ['bigint', 'bigint'],
+  ['numeric', 'numeric'],
+  ['numeric(12,2)', 'numeric(12,2)'],
+  ['real', 'real'],
+  ['double precision', 'double precision'],
+  ['date', 'date'],
+  ['time', 'time'],
+  ['time with time zone', 'time with time zone'],
+  ['timestamp', 'timestamp'],
+  ['timestamp with time zone', 'timestamp with time zone'],
+  ['uuid', 'uuid'],
+  ['json', 'json'],
+  ['jsonb', 'jsonb'],
+  ['bytea', 'bytea'],
+  ['inet', 'inet'],
+  ['cidr', 'cidr'],
+  ['macaddr', 'macaddr'],
+  ['xml', 'xml'],
+]);
+
+function normalizePostgresColumnType(dataType: string): string {
+  return dataType.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+async function ensurePostgresBaseTable(pool: pg.Pool, schema: string, table: string) {
+  const tableInfo = await pool.query<{ table_type: string }>(
+    `select table_type
+       from information_schema.tables
+      where table_schema = $1 and table_name = $2`,
+    [schema, table]
+  );
+  const tableType = tableInfo.rows[0]?.table_type;
+  if (!tableType) {
+    throw new AppError(404, 'TABLE_NOT_FOUND', 'Table not found');
+  }
+  if (tableType === 'VIEW') {
+    throw new AppError(400, 'VIEW_NOT_EDITABLE', 'Columns cannot be changed for views');
+  }
 }
 
 function maskValue(value: string | null | undefined): string {
@@ -1021,7 +1076,8 @@ export class DatabaseConnectionService {
     page: number,
     limit: number,
     sortBy?: string,
-    sortOrder: 'asc' | 'desc' = 'asc'
+    sortOrder: 'asc' | 'desc' = 'asc',
+    search?: PostgresRowSearchFilter
   ) {
     return this.withPostgresPool(id, 'query', async (pool) => {
       const metadata = await this.getPostgresTableMetadata(id, schema, table);
@@ -1033,12 +1089,33 @@ export class DatabaseConnectionService {
       const orderSql = orderColumn
         ? `order by ${quoteIdent(orderColumn)} ${sortOrder === 'desc' ? 'desc' : 'asc'}`
         : '';
+      const filterColumn = search?.column && validColumns.has(search.column) ? search.column : undefined;
+      const params: unknown[] = [];
+      let whereSql = '';
+      if (filterColumn && search?.value) {
+        const columnSql = quoteIdent(filterColumn);
+        params.push(search.operation === 'like' ? `%${search.value}%` : search.value);
+        const paramSql = `$${params.length}`;
+        const expressionByOperation: Record<PostgresRowSearchOperation, string> = {
+          like: `${columnSql}::text ilike ${paramSql}`,
+          equals: `${columnSql} = ${paramSql}`,
+          notEquals: `${columnSql} <> ${paramSql}`,
+          greaterThan: `${columnSql} > ${paramSql}`,
+          lessThan: `${columnSql} < ${paramSql}`,
+        };
+        whereSql = `where ${expressionByOperation[search.operation]}`;
+      }
+      params.push(limit, (page - 1) * limit);
+      const limitParam = `$${params.length - 1}`;
+      const offsetParam = `$${params.length}`;
       const [countResult, rowsResult] = await Promise.all([
-        pool.query<{ total: string }>(`select count(*)::text as total from ${schemaSql}.${tableSql}`),
-        pool.query(`select * from ${schemaSql}.${tableSql} ${orderSql} limit $1 offset $2`, [
-          limit,
-          (page - 1) * limit,
+        pool.query<{ total: string }>(`select count(*)::text as total from ${schemaSql}.${tableSql} ${whereSql}`, [
+          ...params.slice(0, -2),
         ]),
+        pool.query(
+          `select * from ${schemaSql}.${tableSql} ${whereSql} ${orderSql} limit ${limitParam} offset ${offsetParam}`,
+          params
+        ),
       ]);
       return {
         metadata,
@@ -1166,27 +1243,119 @@ export class DatabaseConnectionService {
     });
   }
 
+  async updatePostgresColumnType(
+    id: string,
+    schema: string,
+    table: string,
+    column: string,
+    dataType: string,
+    userId: string
+  ) {
+    return this.withPostgresPool(id, 'query', async (pool) => {
+      const normalizedType = normalizePostgresColumnType(dataType);
+      const typeSql = POSTGRES_COLUMN_TYPE_SQL.get(normalizedType);
+      if (!typeSql) {
+        throw new AppError(400, 'INVALID_COLUMN_TYPE', 'Unsupported PostgreSQL column data type');
+      }
+
+      await ensurePostgresBaseTable(pool, schema, table);
+      const metadata = await this.getPostgresTableMetadata(id, schema, table);
+      const targetColumn = metadata.columns.find((candidate) => candidate.name === column);
+      if (!targetColumn) {
+        throw new AppError(404, 'COLUMN_NOT_FOUND', 'Column not found');
+      }
+
+      await pool.query(
+        `alter table ${quoteIdent(schema)}.${quoteIdent(table)}
+           alter column ${quoteIdent(column)}
+           type ${typeSql}
+           using ${quoteIdent(column)}::${typeSql}`
+      );
+      await this.auditService.log({
+        userId,
+        action: 'database.postgres.column.type.update',
+        resourceType: 'database',
+        resourceId: id,
+        details: { schema, table, column, from: targetColumn.dataType, to: normalizedType },
+      });
+      this.emitChange(id, 'schema.updated', { provider: 'postgres', schema, table, column });
+      return this.getPostgresTableMetadata(id, schema, table);
+    });
+  }
+
+  async addPostgresColumn(id: string, schema: string, table: string, column: string, dataType: string, userId: string) {
+    return this.withPostgresPool(id, 'query', async (pool) => {
+      const normalizedType = normalizePostgresColumnType(dataType);
+      const typeSql = POSTGRES_COLUMN_TYPE_SQL.get(normalizedType);
+      if (!typeSql) {
+        throw new AppError(400, 'INVALID_COLUMN_TYPE', 'Unsupported PostgreSQL column data type');
+      }
+
+      await ensurePostgresBaseTable(pool, schema, table);
+      await pool.query(
+        `alter table ${quoteIdent(schema)}.${quoteIdent(table)} add column ${quoteIdent(column)} ${typeSql}`
+      );
+      await this.auditService.log({
+        userId,
+        action: 'database.postgres.column.add',
+        resourceType: 'database',
+        resourceId: id,
+        details: { schema, table, column, dataType: normalizedType },
+      });
+      this.emitChange(id, 'schema.updated', { provider: 'postgres', schema, table, column });
+      return this.getPostgresTableMetadata(id, schema, table);
+    });
+  }
+
+  async deletePostgresColumn(id: string, schema: string, table: string, column: string, userId: string) {
+    return this.withPostgresPool(id, 'query', async (pool) => {
+      await ensurePostgresBaseTable(pool, schema, table);
+      const metadata = await this.getPostgresTableMetadata(id, schema, table);
+      const targetColumn = metadata.columns.find((candidate) => candidate.name === column);
+      if (!targetColumn) {
+        throw new AppError(404, 'COLUMN_NOT_FOUND', 'Column not found');
+      }
+
+      await pool.query(`alter table ${quoteIdent(schema)}.${quoteIdent(table)} drop column ${quoteIdent(column)}`);
+      await this.auditService.log({
+        userId,
+        action: 'database.postgres.column.delete',
+        resourceType: 'database',
+        resourceId: id,
+        details: { schema, table, column, dataType: targetColumn.dataType },
+      });
+      this.emitChange(id, 'schema.updated', { provider: 'postgres', schema, table, column });
+      return this.getPostgresTableMetadata(id, schema, table);
+    });
+  }
+
   async executePostgresSql(id: string, sqlText: string, userId: string, options: { maxRows?: number } = {}) {
     return this.withPostgresPool(id, 'query', async (pool) => {
       const maxRows = Math.min(Math.max(Math.trunc(options.maxRows ?? 500), 1), 2000);
       const statements = splitPostgresStatements(sqlText);
       const client = await pool.connect();
-      let result: pg.QueryResult | pg.QueryResult[];
+      const entries: Array<pg.QueryResult & { durationMs: number }> = [];
+      let responseTruncated = statements.length > POSTGRES_RESULT_SET_MAX;
       try {
         await client.query(`SET statement_timeout = ${POSTGRES_QUERY_TIMEOUT_MS}`);
-        result = await client.query(sqlText);
+        for (const [index, statement] of statements.entries()) {
+          const start = Date.now();
+          const entry = await client.query(statement);
+          if (index < POSTGRES_RESULT_SET_MAX) {
+            entries.push({ ...entry, durationMs: Date.now() - start });
+          }
+        }
       } finally {
         await client.query('RESET statement_timeout').catch(() => {});
         client.release();
       }
-      const entries = Array.isArray(result) ? result : [result];
       const results = [];
-      let responseTruncated = entries.length > POSTGRES_RESULT_SET_MAX;
-      for (const entry of entries.slice(0, POSTGRES_RESULT_SET_MAX)) {
+      for (const entry of entries) {
         const compacted = compactPostgresRows(entry.rows, maxRows);
         const next = {
           command: entry.command,
           rowCount: entry.rowCount ?? 0,
+          durationMs: entry.durationMs,
           fields: entry.fields?.map((field: { name: string }) => field.name) ?? [],
           rows: compacted.rows,
           truncated: compacted.truncated,

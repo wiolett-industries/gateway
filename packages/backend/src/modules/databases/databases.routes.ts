@@ -9,10 +9,12 @@ import { TokensService } from '@/modules/tokens/tokens.service.js';
 import type { AppEnv } from '@/types.js';
 import { DatabaseMonitoringService } from './database-monitoring.service.js';
 import {
+  addPostgresColumnRoute,
   browsePostgresRowsRoute,
   createDatabaseConnectionRoute,
   databaseMonitoringStreamRoute,
   deleteDatabaseConnectionRoute,
+  deletePostgresColumnRoute,
   deletePostgresRowRoute,
   deleteRedisKeyRoute,
   executePostgresQueryRoute,
@@ -31,12 +33,15 @@ import {
   setRedisKeyRoute,
   testDatabaseConnectionRoute,
   updateDatabaseConnectionRoute,
+  updatePostgresColumnTypeRoute,
   updatePostgresRowRoute,
 } from './databases.docs.js';
 import {
+  AddPostgresColumnSchema,
   BrowsePostgresRowsQuerySchema,
   CreateDatabaseConnectionSchema,
   DatabaseListQuerySchema,
+  DeletePostgresColumnSchema,
   ExecutePostgresSqlSchema,
   ExecuteRedisCommandSchema,
   PostgresObjectSchema,
@@ -45,6 +50,7 @@ import {
   RedisScanKeysQuerySchema,
   RedisSetKeySchema,
   UpdateDatabaseConnectionSchema,
+  UpdatePostgresColumnTypeSchema,
 } from './databases.schemas.js';
 import { DatabaseConnectionService, inferPostgresIntent, inferRedisIntent } from './databases.service.js';
 
@@ -278,7 +284,14 @@ databaseRoutes.openapi(
       query.page,
       query.limit,
       query.sortBy,
-      query.sortOrder
+      query.sortOrder,
+      query.searchColumn && query.searchOperation && query.searchValue
+        ? {
+            column: query.searchColumn,
+            operation: query.searchOperation,
+            value: query.searchValue,
+          }
+        : undefined
     );
     return c.json({ data });
   }
@@ -330,6 +343,62 @@ databaseRoutes.openapi(
     const schema = BrowsePostgresRowsQuerySchema.pick({ schema: true, table: true }).parse(body);
     const primaryKey = PostgresObjectSchema.parse(body.primaryKey ?? {});
     const data = await service.deletePostgresRow(c.req.param('id')!, schema.schema, schema.table, primaryKey, user.id);
+    return c.json({ data });
+  }
+);
+
+databaseRoutes.openapi(
+  { ...addPostgresColumnRoute, middleware: requireScopeForResource('databases:view', 'id') },
+  async (c) => {
+    ensureAnyDatabaseScope(c, c.req.param('id')!, ['databases:query:write', 'databases:query:admin']);
+    const service = container.resolve(DatabaseConnectionService);
+    const user = c.get('user')!;
+    const input = AddPostgresColumnSchema.parse(await c.req.json());
+    const data = await service.addPostgresColumn(
+      c.req.param('id')!,
+      input.schema,
+      input.table,
+      input.column,
+      input.dataType,
+      user.id
+    );
+    return c.json({ data }, 201);
+  }
+);
+
+databaseRoutes.openapi(
+  { ...deletePostgresColumnRoute, middleware: requireScopeForResource('databases:view', 'id') },
+  async (c) => {
+    ensureAnyDatabaseScope(c, c.req.param('id')!, ['databases:query:write', 'databases:query:admin']);
+    const service = container.resolve(DatabaseConnectionService);
+    const user = c.get('user')!;
+    const input = DeletePostgresColumnSchema.parse(await c.req.json());
+    const data = await service.deletePostgresColumn(
+      c.req.param('id')!,
+      input.schema,
+      input.table,
+      input.column,
+      user.id
+    );
+    return c.json({ data });
+  }
+);
+
+databaseRoutes.openapi(
+  { ...updatePostgresColumnTypeRoute, middleware: requireScopeForResource('databases:view', 'id') },
+  async (c) => {
+    ensureAnyDatabaseScope(c, c.req.param('id')!, ['databases:query:write', 'databases:query:admin']);
+    const service = container.resolve(DatabaseConnectionService);
+    const user = c.get('user')!;
+    const input = UpdatePostgresColumnTypeSchema.parse(await c.req.json());
+    const data = await service.updatePostgresColumnType(
+      c.req.param('id')!,
+      input.schema,
+      input.table,
+      input.column,
+      input.dataType,
+      user.id
+    );
     return c.json({ data });
   }
 );

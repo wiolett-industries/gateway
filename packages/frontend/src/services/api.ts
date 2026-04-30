@@ -1596,6 +1596,9 @@ class ApiClient extends ApiClientBase {
       limit?: number;
       sortBy?: string;
       sortOrder?: "asc" | "desc";
+      searchColumn?: string;
+      searchOperation?: "like" | "equals" | "notEquals" | "greaterThan" | "lessThan";
+      searchValue?: string;
     }
   ): Promise<{
     metadata: PostgresTableMetadata;
@@ -1611,6 +1614,9 @@ class ApiClient extends ApiClientBase {
       limit: String(params.limit ?? 100),
       ...(params.sortBy ? { sortBy: params.sortBy } : {}),
       ...(params.sortOrder ? { sortOrder: params.sortOrder } : {}),
+      ...(params.searchColumn ? { searchColumn: params.searchColumn } : {}),
+      ...(params.searchOperation ? { searchOperation: params.searchOperation } : {}),
+      ...(params.searchValue ? { searchValue: params.searchValue } : {}),
     }).toString();
     return this.unwrapData(
       this.request<{
@@ -1666,6 +1672,50 @@ class ApiClient extends ApiClientBase {
     });
   }
 
+  async updatePostgresColumnType(
+    id: string,
+    schema: string,
+    table: string,
+    column: string,
+    dataType: string
+  ): Promise<PostgresTableMetadata> {
+    return this.unwrapData(
+      this.request<{ data: PostgresTableMetadata }>(`/databases/${id}/postgres/columns/type`, {
+        method: "PATCH",
+        body: JSON.stringify({ schema, table, column, dataType }),
+      })
+    );
+  }
+
+  async addPostgresColumn(
+    id: string,
+    schema: string,
+    table: string,
+    column: string,
+    dataType: string
+  ): Promise<PostgresTableMetadata> {
+    return this.unwrapData(
+      this.request<{ data: PostgresTableMetadata }>(`/databases/${id}/postgres/columns`, {
+        method: "POST",
+        body: JSON.stringify({ schema, table, column, dataType }),
+      })
+    );
+  }
+
+  async deletePostgresColumn(
+    id: string,
+    schema: string,
+    table: string,
+    column: string
+  ): Promise<PostgresTableMetadata> {
+    return this.unwrapData(
+      this.request<{ data: PostgresTableMetadata }>(`/databases/${id}/postgres/columns`, {
+        method: "DELETE",
+        body: JSON.stringify({ schema, table, column }),
+      })
+    );
+  }
+
   async executePostgresSql(
     id: string,
     sql: string
@@ -1673,6 +1723,7 @@ class ApiClient extends ApiClientBase {
     results: Array<{
       command: string;
       rowCount: number;
+      durationMs?: number;
       fields: string[];
       rows: Record<string, unknown>[];
       truncated?: boolean;
@@ -1687,6 +1738,7 @@ class ApiClient extends ApiClientBase {
           results: Array<{
             command: string;
             rowCount: number;
+            durationMs?: number;
             fields: string[];
             rows: Record<string, unknown>[];
             truncated?: boolean;

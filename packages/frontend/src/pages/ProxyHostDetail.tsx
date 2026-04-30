@@ -45,13 +45,26 @@ export function ProxyHostDetail() {
   const { id } = useParams<{ id: string; tab?: string }>();
   const navigate = useNavigate();
   const { hasScope } = useAuthStore();
+  const canViewAdvancedConfig = !!id && hasScope(`proxy:advanced:${id}`);
+  const canViewRawConfig = !!id && hasScope(`proxy:raw:read:${id}`);
+  const canWriteRawConfig = !!id && hasScope(`proxy:raw:write:${id}`);
+  const visibleTabs = useMemo(
+    () => [
+      "details",
+      "settings",
+      ...(canViewAdvancedConfig ? ["advanced"] : []),
+      ...(canViewRawConfig ? ["raw"] : []),
+      "logs",
+    ],
+    [canViewAdvancedConfig, canViewRawConfig]
+  );
 
   const [host, setHost] = useState<ProxyHost | null>(null);
   const [healthHistory, setHealthHistory] = useState<NonNullable<ProxyHost["healthHistory"]>>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const [activeTab, setActiveTab] = useUrlTab(
-    ["details", "settings", "advanced", "raw", "logs"],
+    visibleTabs,
     "details",
     (tab) => `/proxy-hosts/${id}/${tab}`
   );
@@ -597,8 +610,6 @@ export function ProxyHostDetail() {
     healthCheckSlowThreshold,
   ]);
 
-  const visibleTabs = ["details", "settings", "advanced", "raw", "logs"];
-
   // Navigate away from disabled tabs when raw mode changes
   useEffect(() => {
     if (isRawMode && (activeTab === "settings" || activeTab === "advanced")) {
@@ -701,13 +712,17 @@ export function ProxyHostDetail() {
         >
           <TabsList className="shrink-0">
             {visibleTabs.includes("details") && <TabsTrigger value="details">Details</TabsTrigger>}
-            <TabsTrigger value="settings" disabled={isRawMode}>
-              Settings
-            </TabsTrigger>
-            <TabsTrigger value="advanced" disabled={isRawMode}>
-              Advanced
-            </TabsTrigger>
-            <TabsTrigger value="raw">Raw Config</TabsTrigger>
+            {visibleTabs.includes("settings") && (
+              <TabsTrigger value="settings" disabled={isRawMode}>
+                Settings
+              </TabsTrigger>
+            )}
+            {visibleTabs.includes("advanced") && (
+              <TabsTrigger value="advanced" disabled={isRawMode}>
+                Advanced
+              </TabsTrigger>
+            )}
+            {visibleTabs.includes("raw") && <TabsTrigger value="raw">Raw Config</TabsTrigger>}
             <TabsTrigger value="logs">Logs</TabsTrigger>
           </TabsList>
 
@@ -810,22 +825,24 @@ export function ProxyHostDetail() {
           )}
 
           {/* ── Raw Config Tab ─────────────────────────────────── */}
-          <TabsContent value="raw" className="flex flex-col flex-1 min-h-0">
-            <RawConfigTab
-              isRawMode={isRawMode}
-              rawConfig={rawConfig}
-              setRawConfig={setRawConfig}
-              renderedConfig={renderedConfig}
-              isLoadingRaw={isLoadingRaw}
-              isSavingRaw={isSavingRaw}
-              editorErrorLines={editorErrorLines}
-              setEditorErrorLines={setEditorErrorLines}
-              onValidate={handleValidate}
-              onSaveRaw={handleSaveRaw}
-              onRefreshRendered={loadRenderedConfig}
-              canManage={!!id && hasScope(`proxy:advanced:${id}`)}
-            />
-          </TabsContent>
+          {visibleTabs.includes("raw") && (
+            <TabsContent value="raw" className="flex flex-col flex-1 min-h-0">
+              <RawConfigTab
+                isRawMode={isRawMode}
+                rawConfig={rawConfig}
+                setRawConfig={setRawConfig}
+                renderedConfig={renderedConfig}
+                isLoadingRaw={isLoadingRaw}
+                isSavingRaw={isSavingRaw}
+                editorErrorLines={editorErrorLines}
+                setEditorErrorLines={setEditorErrorLines}
+                onValidate={handleValidate}
+                onSaveRaw={handleSaveRaw}
+                onRefreshRendered={loadRenderedConfig}
+                canManage={canWriteRawConfig}
+              />
+            </TabsContent>
+          )}
 
           {/* ── Logs Tab ───────────────────────────────────────── */}
           <TabsContent value="logs" className="flex flex-col flex-1 min-h-0">

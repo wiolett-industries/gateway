@@ -528,6 +528,8 @@ interface CodeEditorProps {
   errorRanges?: Array<{ from: number; to: number }>;
   /** Syntax highlighting language (default: "nginx") */
   language?: "nginx" | "env" | "json" | "plain" | "sql";
+  lineWrapping?: boolean;
+  showLineNumbers?: boolean;
 }
 
 export function CodeEditor({
@@ -540,6 +542,8 @@ export function CodeEditor({
   errorLines = [],
   errorRanges = [],
   language = "nginx",
+  lineWrapping = true,
+  showLineNumbers = true,
 }: CodeEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -556,7 +560,7 @@ export function CodeEditor({
     const state = EditorState.create({
       doc: initialValueRef.current,
       extensions: [
-        lineNumbers(),
+        ...(showLineNumbers ? [lineNumbers()] : []),
         history(),
         bracketMatching(),
         highlightActiveLine(),
@@ -577,7 +581,7 @@ export function CodeEditor({
         ...(language === "json" ? [foldGutter(), keymap.of(foldKeymap)] : []),
         editorTheme,
         highlightStyles,
-        EditorView.lineWrapping,
+        ...(lineWrapping ? [EditorView.lineWrapping] : []),
         EditorState.readOnly.of(readOnly),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
@@ -600,7 +604,7 @@ export function CodeEditor({
       view.destroy();
       viewRef.current = null;
     };
-  }, [readOnly, language]);
+  }, [readOnly, language, lineWrapping, showLineNumbers]);
 
   // Sync external value
   useEffect(() => {

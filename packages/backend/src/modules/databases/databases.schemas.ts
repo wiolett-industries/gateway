@@ -93,9 +93,29 @@ export const BrowsePostgresRowsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(500).default(100),
   sortBy: z.string().trim().min(1).max(255).optional(),
   sortOrder: z.enum(['asc', 'desc']).default('asc'),
+  searchColumn: z.string().trim().min(1).max(255).optional(),
+  searchOperation: z.enum(['like', 'equals', 'notEquals', 'greaterThan', 'lessThan']).optional(),
+  searchValue: z.string().trim().max(1024).optional(),
 });
 
 export const PostgresObjectSchema = z.record(z.string(), z.any());
+
+const PostgresColumnBaseSchema = BrowsePostgresRowsQuerySchema.pick({
+  schema: true,
+  table: true,
+}).extend({
+  column: z.string().trim().min(1).max(255),
+});
+
+export const AddPostgresColumnSchema = PostgresColumnBaseSchema.extend({
+  dataType: z.string().trim().min(1).max(64),
+});
+
+export const UpdatePostgresColumnTypeSchema = PostgresColumnBaseSchema.extend({
+  dataType: z.string().trim().min(1).max(64),
+});
+
+export const DeletePostgresColumnSchema = PostgresColumnBaseSchema;
 
 export const ExecutePostgresSqlSchema = z.object({
   sql: z.string().trim().min(1).max(100_000),

@@ -6,6 +6,7 @@ import type { AppEnv } from '@/types.js';
 
 const mocks = vi.hoisted(() => ({
   authType: 'api-token' as 'api-token' | 'session',
+  scopes: ['proxy:list', 'proxy:create', 'proxy:view:host-1', 'proxy:edit:host-1', 'proxy:advanced:host-1'],
   proxyService: {
     listProxyHosts: vi.fn(),
     getProxyHost: vi.fn(),
@@ -28,13 +29,7 @@ vi.mock('@/container.js', () => ({
 vi.mock('@/modules/auth/auth.middleware.js', () => ({
   authMiddleware: async (c: any, next: () => Promise<void>) => {
     c.set('user', { id: 'user-1' });
-    c.set('effectiveScopes', [
-      'proxy:list',
-      'proxy:create',
-      'proxy:view:host-1',
-      'proxy:edit:host-1',
-      'proxy:advanced:host-1',
-    ]);
+    c.set('effectiveScopes', mocks.scopes);
     c.set('authType', mocks.authType);
     await next();
   },
@@ -83,6 +78,7 @@ function createApp() {
 describe('proxy routes programmatic raw config handling', () => {
   beforeEach(() => {
     mocks.authType = 'api-token';
+    mocks.scopes = ['proxy:list', 'proxy:create', 'proxy:view:host-1', 'proxy:edit:host-1', 'proxy:advanced:host-1'];
     vi.clearAllMocks();
     mocks.proxyService.listProxyHosts.mockResolvedValue({ data: [rawHost], total: 1 });
     mocks.proxyService.getProxyHost.mockResolvedValue(rawHost);
@@ -109,6 +105,20 @@ describe('proxy routes programmatic raw config handling', () => {
 
     expect(detailBody.data).not.toHaveProperty('rawConfig');
     expect(detailBody.data).not.toHaveProperty('rawConfigEnabled');
+  });
+
+  it('redacts raw config from browser detail response without raw read scope', async () => {
+    mocks.authType = 'session';
+    mocks.scopes = ['proxy:view:host-1'];
+
+    const response = await createApp().request('/host-1', {
+      headers: { Authorization: 'Bearer gw_token' },
+    });
+    const body = (await response.json()) as { data: Record<string, unknown> };
+
+    expect(response.status).toBe(200);
+    expect(body.data.rawConfig).toBeNull();
+    expect(body.data.rawConfigEnabled).toBe(true);
   });
 
   it('rejects raw config create and update requests from programmatic auth', async () => {
@@ -149,6 +159,27 @@ describe('proxy routes programmatic raw config handling', () => {
 
     expect(response.status).toBe(403);
     expect(mocks.proxyService.getRenderedConfig).not.toHaveBeenCalled();
+  });
+
+  it('allows browser raw config validation with raw write scope', async () => {
+    mocks.authType = 'session';
+    mocks.scopes = ['proxy:raw:write:host-1'];
+
+    const response = await createApp().request('/validate-config', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer gw_token',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        snippet: 'server {}',
+        mode: 'raw',
+        proxyHostId: 'host-1',
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(mocks.proxyService.validateAdvancedConfig).toHaveBeenCalledWith('server {}', true, false);
   });
 
   it('requires raw write scope when a browser session creates a host with raw config', async () => {

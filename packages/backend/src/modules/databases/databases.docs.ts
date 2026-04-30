@@ -1,9 +1,11 @@
 import { z } from '@hono/zod-openapi';
 import { appRoute, createdJson, IdParamSchema, jsonBody, okJson, UnknownDataResponseSchema } from '@/lib/openapi.js';
 import {
+  AddPostgresColumnSchema,
   BrowsePostgresRowsQuerySchema,
   CreateDatabaseConnectionSchema,
   DatabaseListQuerySchema,
+  DeletePostgresColumnSchema,
   ExecutePostgresSqlSchema,
   ExecuteRedisCommandSchema,
   PostgresObjectSchema,
@@ -12,6 +14,7 @@ import {
   RedisScanKeysQuerySchema,
   RedisSetKeySchema,
   UpdateDatabaseConnectionSchema,
+  UpdatePostgresColumnTypeSchema,
 } from './databases.schemas.js';
 
 const PostgresTableQuerySchema = BrowsePostgresRowsQuerySchema.pick({ schema: true, table: true });
@@ -166,6 +169,33 @@ export const deletePostgresRowRoute = appRoute({
   tags: ['Databases'],
   summary: 'Delete a PostgreSQL row',
   request: { params: IdParamSchema, ...jsonBody(PostgresDeleteRowSchema) },
+  responses: okJson(UnknownDataResponseSchema),
+});
+
+export const addPostgresColumnRoute = appRoute({
+  method: 'post',
+  path: '/{id}/postgres/columns',
+  tags: ['Databases'],
+  summary: 'Add a PostgreSQL column',
+  request: { params: IdParamSchema, ...jsonBody(AddPostgresColumnSchema) },
+  responses: createdJson(UnknownDataResponseSchema),
+});
+
+export const deletePostgresColumnRoute = appRoute({
+  method: 'delete',
+  path: '/{id}/postgres/columns',
+  tags: ['Databases'],
+  summary: 'Delete a PostgreSQL column',
+  request: { params: IdParamSchema, ...jsonBody(DeletePostgresColumnSchema) },
+  responses: okJson(UnknownDataResponseSchema),
+});
+
+export const updatePostgresColumnTypeRoute = appRoute({
+  method: 'patch',
+  path: '/{id}/postgres/columns/type',
+  tags: ['Databases'],
+  summary: 'Update a PostgreSQL column data type',
+  request: { params: IdParamSchema, ...jsonBody(UpdatePostgresColumnTypeSchema) },
   responses: okJson(UnknownDataResponseSchema),
 });
 

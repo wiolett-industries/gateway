@@ -10,12 +10,15 @@ import {
   Plus,
   RefreshCw,
   Save,
+  Search,
+  Settings,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -38,6 +41,107 @@ import {
   VIRTUAL_ROW_HEIGHT,
   valuesEqual,
 } from "./shared";
+
+const POSTGRES_COLUMN_TYPE_OPTIONS = [
+  "text",
+  "varchar(255)",
+  "varchar(1024)",
+  "char(1)",
+  "boolean",
+  "smallint",
+  "integer",
+  "bigint",
+  "numeric",
+  "numeric(12,2)",
+  "real",
+  "double precision",
+  "date",
+  "time",
+  "time with time zone",
+  "timestamp",
+  "timestamp with time zone",
+  "uuid",
+  "json",
+  "jsonb",
+  "bytea",
+  "inet",
+  "cidr",
+  "macaddr",
+  "xml",
+];
+
+const POSTGRES_SEARCH_OPERATIONS = [
+  { value: "like", label: "LIKE" },
+  { value: "equals", label: "=" },
+  { value: "notEquals", label: "!=" },
+  { value: "greaterThan", label: ">" },
+  { value: "lessThan", label: "<" },
+] as const;
+
+type PostgresSearchOperation = (typeof POSTGRES_SEARCH_OPERATIONS)[number]["value"];
+
+type NewColumnDraft = {
+  id: string;
+  name: string;
+  dataType: string;
+};
+
+const POSTGRES_IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_$]*$/;
+const POSTGRES_UDT_TYPE_ALIASES = new Map<string, string>([
+  ["int2", "smallint"],
+  ["int4", "integer"],
+  ["int8", "bigint"],
+  ["bool", "boolean"],
+  ["float4", "real"],
+  ["float8", "double precision"],
+  ["bpchar", "character"],
+  ["varchar", "character varying"],
+  ["timestamp", "timestamp"],
+  ["timestamptz", "timestamp with time zone"],
+  ["time", "time"],
+  ["timetz", "time with time zone"],
+]);
+
+function createNewColumnDraft(): NewColumnDraft {
+  return {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    name: "",
+    dataType: "text",
+  };
+}
+
+function normalizeColumnType(dataType: string) {
+  return dataType.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function normalizePostgresTypeAlias(typeName: string) {
+  const normalized = normalizeColumnType(typeName);
+  return POSTGRES_UDT_TYPE_ALIASES.get(normalized) ?? normalized;
+}
+
+function currentColumnTypeValue(column: PostgresTableMetadata["columns"][number]) {
+  const normalized = normalizeColumnType(column.dataType);
+  if (normalized === "timestamp without time zone") return "timestamp";
+  if (normalized === "time without time zone") return "time";
+  return normalized;
+}
+
+function secondaryColumnTypeLabel(column: PostgresTableMetadata["columns"][number]) {
+  if (!column.udtName) return "";
+  const normalizedUdtName = normalizeColumnType(column.udtName);
+  const normalizedDataType = normalizeColumnType(column.dataType);
+  const canonicalUdtName = normalizePostgresTypeAlias(column.udtName);
+  const canonicalDataType = normalizePostgresTypeAlias(column.dataType);
+  const currentType = normalizePostgresTypeAlias(currentColumnTypeValue(column));
+  if (
+    normalizedUdtName === normalizedDataType ||
+    canonicalUdtName === canonicalDataType ||
+    canonicalUdtName === currentType
+  ) {
+    return "";
+  }
+  return column.udtName;
+}
 
 export function PostgresExplorer({
   database,
@@ -63,11 +167,23 @@ export function PostgresExplorer({
   const [loadingTables, setLoadingTables] = useState(false);
   const [loadingRows, setLoadingRows] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [columnsOpen, setColumnsOpen] = useState(false);
+  const [changingColumn, setChangingColumn] = useState<string | null>(null);
+  const [columnTypeDrafts, setColumnTypeDrafts] = useState<Record<string, string>>({});
+  const [newColumnDrafts, setNewColumnDrafts] = useState<NewColumnDraft[]>([]);
+  const [deletedColumnNames, setDeletedColumnNames] = useState<string[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalRows, setTotalRows] = useState(0);
   const [loadingMoreRows, setLoadingMoreRows] = useState(false);
   const [sortBy, setSortBy] = useState<string>();
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+  const [searchColumn, setSearchColumn] = useState("");
+  const [searchOperation, setSearchOperation] = useState<PostgresSearchOperation>("like");
+  const [searchInput, setSearchInput] = useState("");
+  const [appliedSearchColumn, setAppliedSearchColumn] = useState("");
+  const [appliedSearchOperation, setAppliedSearchOperation] =
+    useState<PostgresSearchOperation>("like");
+  const [searchValue, setSearchValue] = useState("");
   const explorerScrollRef = useRef<HTMLDivElement>(null);
   const rowRequestRef = useRef(0);
 
@@ -84,6 +200,11 @@ export function PostgresExplorer({
     setNewRows([]);
     setCurrentPage(1);
     setTotalRows(0);
+    setSearchColumn("");
+    setSearchInput("");
+    setAppliedSearchColumn("");
+    setAppliedSearchOperation("like");
+    setSearchValue("");
     api
       .listPostgresSchemas(database.id)
       .then((data) => {
@@ -116,6 +237,11 @@ export function PostgresExplorer({
     setNewRows([]);
     setCurrentPage(1);
     setTotalRows(0);
+    setSearchColumn("");
+    setSearchInput("");
+    setAppliedSearchColumn("");
+    setAppliedSearchOperation("like");
+    setSearchValue("");
     api
       .listPostgresTables(database.id, schema)
       .then((data) => {
@@ -155,6 +281,11 @@ export function PostgresExplorer({
     setNewRows([]);
     setCurrentPage(1);
     setTotalRows(0);
+    setSearchColumn("");
+    setSearchInput("");
+    setAppliedSearchColumn("");
+    setAppliedSearchOperation("like");
+    setSearchValue("");
   }, [schema]);
 
   useEffect(() => {
@@ -170,6 +301,9 @@ export function PostgresExplorer({
     }
   }, [loadingSchemas, loadingTables, table]);
 
+  const activeSearchColumn = searchValue ? appliedSearchColumn : "";
+  const activeSearchOperation = searchValue ? appliedSearchOperation : "like";
+
   const loadRows = useCallback(
     async (page = 1, append = false) => {
       if (!schema || !table) return;
@@ -183,6 +317,13 @@ export function PostgresExplorer({
           limit: POSTGRES_EXPLORER_PAGE_SIZE,
           sortBy,
           sortOrder,
+          ...(activeSearchColumn && searchValue
+            ? {
+                searchColumn: activeSearchColumn,
+                searchOperation: activeSearchOperation,
+                searchValue,
+              }
+            : {}),
         });
         if (rowRequestRef.current !== requestId) return;
         setMetadata(data.metadata);
@@ -208,7 +349,16 @@ export function PostgresExplorer({
         if (!append && rowRequestRef.current === requestId) setLoadingRows(false);
       }
     },
-    [database.id, schema, sortBy, sortOrder, table]
+    [
+      activeSearchColumn,
+      activeSearchOperation,
+      database.id,
+      schema,
+      searchValue,
+      sortBy,
+      sortOrder,
+      table,
+    ]
   );
 
   useEffect(() => {
@@ -267,6 +417,8 @@ export function PostgresExplorer({
     ? `repeat(${metadata.columns.length}, minmax(${columnMinWidth}px, 1fr))`
     : "";
   const gridWidth = metadata ? `max(100%, ${metadata.columns.length * columnMinWidth}px)` : "100%";
+  const currentTableType = tables.find((candidate) => candidate.name === table)?.type;
+  const canChangeColumnTypes = canWrite && currentTableType === "table";
 
   useEffect(() => {
     if (metadata && sortBy && !metadata.columns.some((column) => column.name === sortBy)) {
@@ -274,6 +426,28 @@ export function PostgresExplorer({
       setSortOrder("asc");
     }
   }, [metadata, sortBy]);
+
+  useEffect(() => {
+    if (!metadata) return;
+    if (metadata.columns.length === 0) {
+      setSearchColumn("");
+      return;
+    }
+    if (!searchColumn || !metadata.columns.some((column) => column.name === searchColumn)) {
+      setSearchColumn(metadata.columns[0]?.name ?? "");
+    }
+  }, [metadata, searchColumn]);
+
+  useEffect(() => {
+    if (!columnsOpen || !metadata) return;
+    setColumnTypeDrafts(
+      Object.fromEntries(
+        metadata.columns.map((column) => [column.name, currentColumnTypeValue(column)])
+      )
+    );
+    setNewColumnDrafts([]);
+    setDeletedColumnNames([]);
+  }, [columnsOpen, metadata]);
 
   const editedRowCount = useMemo(
     () =>
@@ -297,6 +471,41 @@ export function PostgresExplorer({
   const dirtyCount = editedRowCount + validPendingRows.length;
   const canSaveChanges =
     !saving && dirtyCount > 0 && invalidPendingRowCount === 0 && emptyPendingRowCount === 0;
+  const invalidNewColumnIds = useMemo(() => {
+    const seen = new Set(
+      metadata?.columns
+        .filter((column) => !deletedColumnNames.includes(column.name))
+        .map((column) => column.name) ?? []
+    );
+    const invalid = new Set<string>();
+    for (const draft of newColumnDrafts) {
+      const name = draft.name.trim();
+      if (!name || !POSTGRES_IDENTIFIER_PATTERN.test(name) || seen.has(name)) {
+        invalid.add(draft.id);
+      }
+      if (name) seen.add(name);
+    }
+    return invalid;
+  }, [deletedColumnNames, metadata, newColumnDrafts]);
+  const changedColumnTypes = useMemo(() => {
+    if (!metadata) return [];
+    return metadata.columns
+      .map((column) => ({
+        column,
+        dataType: columnTypeDrafts[column.name] ?? currentColumnTypeValue(column),
+      }))
+      .filter(
+        ({ column, dataType }) =>
+          !deletedColumnNames.includes(column.name) && dataType !== currentColumnTypeValue(column)
+      );
+  }, [columnTypeDrafts, deletedColumnNames, metadata]);
+  const schemaChangeCount =
+    changedColumnTypes.length + deletedColumnNames.length + newColumnDrafts.length;
+  const canSaveColumnSchemaChanges =
+    canChangeColumnTypes &&
+    changingColumn === null &&
+    schemaChangeCount > 0 &&
+    invalidNewColumnIds.size === 0;
 
   const updateDraftRow = (
     row: Record<string, unknown>,
@@ -377,6 +586,71 @@ export function PostgresExplorer({
       await Promise.all([loadRows(1, false), new Promise((resolve) => setTimeout(resolve, 500))]);
     } finally {
       setRefreshing(false);
+    }
+  };
+
+  const applySearch = () => {
+    setAppliedSearchColumn(searchColumn);
+    setAppliedSearchOperation(searchOperation);
+    setSearchValue(searchInput.trim());
+  };
+
+  const updateSearchInput = (value: string) => {
+    setSearchInput(value);
+    if (value.length === 0) {
+      setSearchValue("");
+    }
+  };
+
+  const resetColumnSchemaDrafts = () => {
+    setColumnTypeDrafts(
+      Object.fromEntries(
+        metadata?.columns.map((column) => [column.name, currentColumnTypeValue(column)]) ?? []
+      )
+    );
+    setNewColumnDrafts([]);
+    setDeletedColumnNames([]);
+  };
+
+  const saveColumnSchemaChanges = async () => {
+    if (!metadata || !schema || !table || !canChangeColumnTypes) return;
+    if (!canSaveColumnSchemaChanges) return;
+    try {
+      let nextMetadata = metadata;
+      for (const columnName of deletedColumnNames) {
+        setChangingColumn(columnName);
+        nextMetadata = await api.deletePostgresColumn(database.id, schema, table, columnName);
+      }
+      for (const change of changedColumnTypes) {
+        setChangingColumn(change.column.name);
+        nextMetadata = await api.updatePostgresColumnType(
+          database.id,
+          schema,
+          table,
+          change.column.name,
+          change.dataType
+        );
+      }
+      for (const draft of newColumnDrafts) {
+        const columnName = draft.name.trim();
+        setChangingColumn(columnName);
+        nextMetadata = await api.addPostgresColumn(
+          database.id,
+          schema,
+          table,
+          columnName,
+          draft.dataType
+        );
+      }
+      setMetadata(nextMetadata);
+      toast.success("Column schema updated");
+      setNewColumnDrafts([]);
+      setDeletedColumnNames([]);
+      await loadRows(1, false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to update columns");
+    } finally {
+      setChangingColumn(null);
     }
   };
 
@@ -467,6 +741,15 @@ export function PostgresExplorer({
               </p>
             </div>
             <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => setColumnsOpen(true)}
+                title="Column types"
+              >
+                <Settings className="h-3.5 w-3.5" />
+              </Button>
               {totalRows > 40 && (
                 <Button
                   variant="outline"
@@ -483,7 +766,7 @@ export function PostgresExplorer({
               )}
               {canWrite && (
                 <Button
-                  variant="ghost"
+                  variant="outline"
                   size="icon"
                   className="h-8 w-8"
                   onClick={() =>
@@ -505,6 +788,57 @@ export function PostgresExplorer({
               )}
             </div>
           </div>
+
+          {metadata.columns.length > 0 && (
+            <div className="grid grid-cols-[minmax(180px,260px)_120px_minmax(220px,1fr)_36px] border-b border-border bg-card">
+              <Select value={searchColumn} onValueChange={setSearchColumn}>
+                <SelectTrigger className="h-9 rounded-none border-0 border-r border-border bg-background text-xs shadow-none focus:ring-1 focus:ring-inset">
+                  <SelectValue placeholder="Column" />
+                </SelectTrigger>
+                <SelectContent className="bg-background text-foreground">
+                  {metadata.columns.map((column) => (
+                    <SelectItem key={column.name} value={column.name}>
+                      {column.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select
+                value={searchOperation}
+                onValueChange={(value) => setSearchOperation(value as PostgresSearchOperation)}
+              >
+                <SelectTrigger className="h-9 rounded-none border-0 border-r border-border bg-background font-mono text-xs shadow-none focus:ring-1 focus:ring-inset">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-background text-foreground">
+                  {POSTGRES_SEARCH_OPERATIONS.map((operation) => (
+                    <SelectItem key={operation.value} value={operation.value}>
+                      {operation.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Input
+                value={searchInput}
+                onChange={(event) => updateSearchInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") applySearch();
+                }}
+                className="h-9 rounded-none border-0 border-r border-border bg-background font-mono text-xs shadow-none focus-visible:ring-1 focus-visible:ring-inset"
+                placeholder="Search value"
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 rounded-none bg-background"
+                onClick={applySearch}
+                title="Search"
+              >
+                <Search className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          )}
 
           <div ref={explorerScrollRef} className="dashboard-scrollbar overflow-auto flex-1 min-h-0">
             {metadata.columns.length > 0 && (
@@ -723,6 +1057,226 @@ export function PostgresExplorer({
           No table selected.
         </div>
       )}
+
+      <Dialog open={columnsOpen} onOpenChange={setColumnsOpen}>
+        <DialogContent className="sm:max-w-3xl max-h-[82vh] flex flex-col overflow-hidden">
+          <DialogHeader className="shrink-0">
+            <DialogTitle>Column Types</DialogTitle>
+          </DialogHeader>
+          {metadata ? (
+            <div className="min-h-0 overflow-auto border border-border">
+              <div
+                className={`grid ${
+                  canChangeColumnTypes
+                    ? "grid-cols-[minmax(0,1fr)_220px_36px]"
+                    : "grid-cols-[minmax(0,1fr)_220px]"
+                } border-b border-border bg-muted/40 text-xs font-medium uppercase tracking-wider text-muted-foreground`}
+              >
+                <div className="px-3 py-2">Column</div>
+                <div className="border-l border-border px-3 py-2">Data type</div>
+                {canChangeColumnTypes && <div className="border-l border-border" />}
+              </div>
+              {metadata.columns.map((column) => {
+                const currentType = currentColumnTypeValue(column);
+                const markedDeleted = deletedColumnNames.includes(column.name);
+                const secondaryTypeLabel = secondaryColumnTypeLabel(column);
+                const typeOptions = POSTGRES_COLUMN_TYPE_OPTIONS.includes(currentType)
+                  ? POSTGRES_COLUMN_TYPE_OPTIONS
+                  : [currentType, ...POSTGRES_COLUMN_TYPE_OPTIONS];
+                return (
+                  <div
+                    key={column.name}
+                    className={`grid ${
+                      canChangeColumnTypes
+                        ? "grid-cols-[minmax(0,1fr)_220px_36px]"
+                        : "grid-cols-[minmax(0,1fr)_220px]"
+                    } border-b border-border last:border-b-0 ${markedDeleted ? "bg-destructive/10 opacity-70" : ""}`}
+                  >
+                    <div className="flex h-9 min-w-0 items-center gap-2 px-3">
+                      <span
+                        className={`truncate font-mono text-sm ${markedDeleted ? "line-through" : ""}`}
+                      >
+                        {column.name}
+                      </span>
+                      {column.isPrimaryKey && (
+                        <Badge variant="secondary" className="text-[10px] py-0">
+                          PK
+                        </Badge>
+                      )}
+                      <span className="ml-auto truncate text-xs text-muted-foreground">
+                        {secondaryTypeLabel}
+                      </span>
+                    </div>
+                    <div className="border-l border-border">
+                      <Select
+                        value={columnTypeDrafts[column.name] ?? currentType}
+                        onValueChange={(nextType) =>
+                          setColumnTypeDrafts((prev) => ({ ...prev, [column.name]: nextType }))
+                        }
+                        disabled={!canChangeColumnTypes || changingColumn !== null || markedDeleted}
+                      >
+                        <SelectTrigger className="h-9 rounded-none border-0 font-mono text-xs shadow-none focus:ring-1 focus:ring-inset">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {typeOptions.map((type) => (
+                            <SelectItem key={type} value={type}>
+                              {type}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {canChangeColumnTypes && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9 rounded-none border-l border-border"
+                        onClick={() =>
+                          setDeletedColumnNames((prev) =>
+                            prev.includes(column.name)
+                              ? prev.filter((name) => name !== column.name)
+                              : [...prev, column.name]
+                          )
+                        }
+                        title={markedDeleted ? "Undo column removal" : "Remove column"}
+                        disabled={changingColumn !== null}
+                      >
+                        <Minus className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </div>
+                );
+              })}
+              {newColumnDrafts.map((draft) => {
+                const invalid = invalidNewColumnIds.has(draft.id);
+                return (
+                  <div
+                    key={draft.id}
+                    className="grid grid-cols-[minmax(0,1fr)_220px_36px] border-b border-border bg-emerald-500/5 last:border-b-0"
+                  >
+                    <Input
+                      value={draft.name}
+                      onChange={(event) =>
+                        setNewColumnDrafts((prev) =>
+                          prev.map((candidate) =>
+                            candidate.id === draft.id
+                              ? { ...candidate, name: event.target.value }
+                              : candidate
+                          )
+                        )
+                      }
+                      className={`h-9 rounded-none border-0 font-mono text-xs shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring ${
+                        invalid ? "bg-red-500/15 text-red-400" : ""
+                      }`}
+                      placeholder="new_column"
+                      disabled={changingColumn !== null}
+                    />
+                    <div className="border-l border-border">
+                      <Select
+                        value={draft.dataType}
+                        onValueChange={(dataType) =>
+                          setNewColumnDrafts((prev) =>
+                            prev.map((candidate) =>
+                              candidate.id === draft.id ? { ...candidate, dataType } : candidate
+                            )
+                          )
+                        }
+                        disabled={changingColumn !== null}
+                      >
+                        <SelectTrigger className="h-9 rounded-none border-0 font-mono text-xs shadow-none focus:ring-1 focus:ring-inset">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {POSTGRES_COLUMN_TYPE_OPTIONS.map((type) => (
+                            <SelectItem key={type} value={type}>
+                              {type}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-9 rounded-none border-l border-border"
+                      onClick={() =>
+                        setNewColumnDrafts((prev) =>
+                          prev.filter((candidate) => candidate.id !== draft.id)
+                        )
+                      }
+                      title="Remove pending column"
+                      disabled={changingColumn !== null}
+                    >
+                      <Minus className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                );
+              })}
+              {canChangeColumnTypes && (
+                <div className="grid grid-cols-[minmax(0,1fr)_220px_36px] bg-muted/40">
+                  <div className="h-9" />
+                  <div className="h-9" />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-9 w-9 rounded-none border-l border-border"
+                    onClick={() => setNewColumnDrafts((prev) => [...prev, createNewColumnDraft()])}
+                    disabled={changingColumn !== null}
+                    title="Add column"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              )}
+              {!canChangeColumnTypes &&
+                metadata.columns.length === 0 &&
+                newColumnDrafts.length === 0 && (
+                  <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+                    No columns.
+                  </div>
+                )}
+            </div>
+          ) : (
+            <div className="border border-border px-4 py-8 text-center text-sm text-muted-foreground">
+              No table metadata loaded.
+            </div>
+          )}
+          <div className="flex items-center justify-between gap-4 text-xs text-muted-foreground">
+            <p className="min-w-0">
+              {canChangeColumnTypes
+                ? "Saving runs PostgreSQL ALTER TABLE. PostgreSQL may reject incompatible or dependent changes."
+                : currentTableType === "view"
+                  ? "Views are read-only in this editor."
+                  : "You can inspect column types, but changing them requires database write permission."}
+            </p>
+            {canChangeColumnTypes && (
+              <div className="flex shrink-0 justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={resetColumnSchemaDrafts}
+                  disabled={changingColumn !== null || schemaChangeCount === 0}
+                >
+                  Reset
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => void saveColumnSchemaChanges()}
+                  disabled={!canSaveColumnSchemaChanges}
+                >
+                  {changingColumn
+                    ? "Saving..."
+                    : `Save${schemaChangeCount > 0 ? ` (${schemaChangeCount})` : ""}`}
+                </Button>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

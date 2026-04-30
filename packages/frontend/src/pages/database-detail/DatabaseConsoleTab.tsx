@@ -1,318 +1,421 @@
-import { useVirtualizer } from "@tanstack/react-virtual";
-import { Loader2, Play } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import { toast } from "sonner";
+import { History, Loader2, Play } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { CodeEditor } from "@/components/ui/code-editor";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
 import type { DatabaseConnection } from "@/types";
-import { stringifyCell, VIRTUAL_RESULT_ROW_HEIGHT } from "./shared";
+import { stringifyCell } from "./shared";
+
+type PostgresConsoleResult = {
+  results: Array<{
+    command: string;
+    rowCount: number;
+    durationMs?: number;
+    fields: string[];
+    rows: Record<string, unknown>[];
+    truncated?: boolean;
+    maxRows?: number;
+  }>;
+  truncated?: boolean;
+  resultLimit?: number;
+};
+
+type RedisConsoleResult = {
+  results: Array<{ command: string; result: unknown; truncated?: boolean }>;
+  truncated?: boolean;
+  commandLimit?: number;
+};
+
+type ConsoleHistoryEntry = {
+  query: string;
+  executedAt: string;
+};
+
+const CONSOLE_SPLIT_STORAGE_KEY = "gateway-database-console-split-percent";
+const CONSOLE_HISTORY_LIMIT = 100;
+
+function readStoredSplitPercent() {
+  if (typeof window === "undefined") return 50;
+  const stored = Number.parseFloat(localStorage.getItem(CONSOLE_SPLIT_STORAGE_KEY) ?? "");
+  return Number.isFinite(stored) ? Math.max(20, Math.min(80, stored)) : 50;
+}
+
+function defaultConsoleInput(databaseType: DatabaseConnection["type"]) {
+  return databaseType === "postgres" ? "select 1" : "PING";
+}
+
+function consoleInputStorageKey(databaseId: string) {
+  return `gateway-database-console-input:${databaseId}`;
+}
+
+function consoleHistoryStorageKey(databaseId: string) {
+  return `gateway-database-console-history:${databaseId}`;
+}
+
+function readStoredConsoleInput(databaseId: string, databaseType: DatabaseConnection["type"]) {
+  if (typeof window === "undefined") return defaultConsoleInput(databaseType);
+  return (
+    localStorage.getItem(consoleInputStorageKey(databaseId)) ?? defaultConsoleInput(databaseType)
+  );
+}
+
+function readStoredConsoleHistory(databaseId: string): ConsoleHistoryEntry[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const parsed = JSON.parse(localStorage.getItem(consoleHistoryStorageKey(databaseId)) ?? "[]");
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter(
+        (entry): entry is ConsoleHistoryEntry =>
+          entry &&
+          typeof entry === "object" &&
+          typeof entry.query === "string" &&
+          typeof entry.executedAt === "string"
+      )
+      .slice(0, CONSOLE_HISTORY_LIMIT);
+  } catch {
+    return [];
+  }
+}
+
+function writeStoredConsoleHistory(databaseId: string, history: ConsoleHistoryEntry[]) {
+  localStorage.setItem(
+    consoleHistoryStorageKey(databaseId),
+    JSON.stringify(history.slice(0, CONSOLE_HISTORY_LIMIT))
+  );
+}
+
+function formatDuration(durationMs: number | undefined) {
+  if (durationMs == null) return "n/a";
+  if (durationMs < 1000) return `${durationMs} ms`;
+  return `${(durationMs / 1000).toFixed(2)} s`;
+}
+
+function formatTable(fields: string[], rows: Record<string, unknown>[]) {
+  if (fields.length === 0) return "";
+  if (rows.length === 0) {
+    return `${fields.join(" | ")}\n${fields.map(() => "---").join(" | ")}`;
+  }
+
+  const renderedRows = rows.map((row) => fields.map((field) => stringifyCell(row[field])));
+  const widths = fields.map((field, index) =>
+    Math.min(120, Math.max(field.length, ...renderedRows.map((row) => row[index]?.length ?? 0)))
+  );
+  const renderCell = (value: string, index: number) => {
+    const normalized = value.replace(/\s+/g, " ");
+    const width = widths[index] ?? 0;
+    const clipped =
+      normalized.length > width ? `${normalized.slice(0, Math.max(0, width - 3))}...` : normalized;
+    return clipped.padEnd(width);
+  };
+
+  const header = fields.map(renderCell).join(" | ");
+  const divider = widths.map((width) => "-".repeat(width)).join("-+-");
+  const body = renderedRows.map((row) => row.map(renderCell).join(" | ")).join("\n");
+  return `${header}\n${divider}\n${body}`;
+}
+
+function formatPostgresOutput(result: PostgresConsoleResult) {
+  const lines: string[] = [];
+  const cappedMessages: string[] = [];
+  if (result.truncated) {
+    cappedMessages.push(
+      `result sets capped${result.resultLimit ? ` at ${result.resultLimit}` : ""}`
+    );
+  }
+
+  for (const [index, entry] of result.results.entries()) {
+    const hasRows = entry.fields.length > 0;
+    const rowLabel = hasRows ? "Rows" : "Rows affected";
+    lines.push(
+      `Statement ${index + 1}`,
+      `Command: ${entry.command}`,
+      `${rowLabel}: ${entry.rowCount}`,
+      `Time: ${formatDuration(entry.durationMs)}`
+    );
+    if (entry.truncated) {
+      cappedMessages.push(
+        `statement ${index + 1} rows capped at ${entry.maxRows ?? entry.rows.length}`
+      );
+      lines.push(`Showing first ${entry.maxRows ?? entry.rows.length} rows.`);
+    }
+    if (hasRows) {
+      lines.push("", formatTable(entry.fields, entry.rows));
+    } else {
+      lines.push("", "Command completed.");
+    }
+    lines.push("");
+  }
+
+  if (cappedMessages.length > 0) {
+    lines.push("Output capped:", ...cappedMessages.map((message) => `- ${message}`));
+  }
+
+  return lines.join("\n").trimEnd();
+}
+
+function formatRedisOutput(result: RedisConsoleResult) {
+  const lines: string[] = [];
+  const cappedMessages: string[] = [];
+  if (result.truncated) {
+    cappedMessages.push(
+      `commands capped${result.commandLimit ? ` at ${result.commandLimit}` : ""}`
+    );
+  }
+  for (const [index, entry] of result.results.entries()) {
+    if (entry.truncated) {
+      cappedMessages.push(`command ${index + 1} result capped`);
+    }
+    lines.push(
+      `Command ${index + 1}`,
+      `Command: ${entry.command}${entry.truncated ? " (result truncated)" : ""}`,
+      "",
+      JSON.stringify(entry.result, null, 2),
+      ""
+    );
+  }
+  if (cappedMessages.length > 0) {
+    lines.push("Output capped:", ...cappedMessages.map((message) => `- ${message}`));
+  }
+  return lines.join("\n").trimEnd();
+}
 
 export function DatabaseConsoleTab({ database }: { database: DatabaseConnection }) {
-  const [input, setInput] = useState(database.type === "postgres" ? "select 1" : "PING");
+  const [input, setInput] = useState(() => readStoredConsoleInput(database.id, database.type));
   const [result, setResult] = useState<unknown>(null);
   const [running, setRunning] = useState(false);
-  const [resultOpen, setResultOpen] = useState(false);
-  const resultScrollRef = useRef<HTMLDivElement>(null);
+  const [splitPercent, setSplitPercent] = useState(readStoredSplitPercent);
+  const [resizing, setResizing] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [history, setHistory] = useState<ConsoleHistoryEntry[]>(() =>
+    readStoredConsoleHistory(database.id)
+  );
+  const splitContainerRef = useRef<HTMLDivElement>(null);
+  const latestSplitPercentRef = useRef(splitPercent);
+
+  useEffect(() => {
+    setInput(readStoredConsoleInput(database.id, database.type));
+    setHistory(readStoredConsoleHistory(database.id));
+  }, [database.id, database.type]);
+
+  const updateInput = useCallback(
+    (value: string) => {
+      setInput(value);
+      localStorage.setItem(consoleInputStorageKey(database.id), value);
+    },
+    [database.id]
+  );
+
+  const recordHistory = useCallback(
+    (query: string) => {
+      const normalizedQuery = query.trim();
+      if (!normalizedQuery) return;
+      setHistory((current) => {
+        const next = [
+          { query: normalizedQuery, executedAt: new Date().toISOString() },
+          ...current.filter((entry) => entry.query !== normalizedQuery),
+        ].slice(0, CONSOLE_HISTORY_LIMIT);
+        writeStoredConsoleHistory(database.id, next);
+        return next;
+      });
+    },
+    [database.id]
+  );
 
   const execute = async () => {
     setRunning(true);
+    setResult(null);
+    recordHistory(input);
     try {
       const data =
         database.type === "postgres"
           ? await api.executePostgresSql(database.id, input)
           : await api.executeRedisCommand(database.id, input);
       setResult(data);
-      setResultOpen(true);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Query failed");
+      const message = error instanceof Error ? error.message : "Query failed";
+      setResult({ error: message });
     } finally {
       setRunning(false);
     }
   };
 
-  const postgresResults =
-    database.type === "postgres" &&
-    result &&
-    typeof result === "object" &&
-    "results" in result &&
-    Array.isArray((result as { results: unknown[] }).results)
-      ? (
-          result as {
-            results: Array<{
-              command: string;
-              rowCount: number;
-              fields: string[];
-              rows: Record<string, unknown>[];
-              truncated?: boolean;
-              maxRows?: number;
-            }>;
-            truncated?: boolean;
-            resultLimit?: number;
-          }
-        ).results
-      : null;
+  const output = useMemo(() => {
+    if (running) return "Running...";
+    if (!result) return "Run a command to see output here.";
+    if (typeof result === "object" && "error" in result) {
+      return `Error: ${(result as { error?: string }).error ?? "Query failed"}`;
+    }
+    if (
+      database.type === "postgres" &&
+      typeof result === "object" &&
+      "results" in result &&
+      Array.isArray((result as { results: unknown[] }).results)
+    ) {
+      return formatPostgresOutput(result as PostgresConsoleResult);
+    }
+    if (
+      database.type === "redis" &&
+      typeof result === "object" &&
+      "results" in result &&
+      Array.isArray((result as { results: unknown[] }).results)
+    ) {
+      return formatRedisOutput(result as RedisConsoleResult);
+    }
+    return JSON.stringify(result, null, 2);
+  }, [database.type, result, running]);
 
-  const tableResult =
-    database.type === "postgres" &&
-    postgresResults &&
-    postgresResults.length === 1 &&
-    postgresResults[0] &&
-    Array.isArray(postgresResults[0].fields)
-      ? postgresResults[0]
-      : null;
+  const startResize = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const container = splitContainerRef.current;
+    if (!container) return;
 
-  const redisResults =
-    database.type === "redis" &&
-    result &&
-    typeof result === "object" &&
-    "results" in result &&
-    Array.isArray((result as { results: unknown[] }).results)
-      ? (
-          result as {
-            results: Array<{ command: string; result: unknown; truncated?: boolean }>;
-            truncated?: boolean;
-            commandLimit?: number;
-          }
-        ).results
-      : null;
-  const responseTruncated =
-    result && typeof result === "object" && "truncated" in result
-      ? Boolean((result as { truncated?: boolean }).truncated)
-      : false;
-  const responseLimit =
-    result && typeof result === "object" && "resultLimit" in result
-      ? (result as { resultLimit?: number }).resultLimit
-      : result && typeof result === "object" && "commandLimit" in result
-        ? (result as { commandLimit?: number }).commandLimit
-        : undefined;
+    setResizing(true);
+    const updateSplit = (clientX: number) => {
+      const rect = container.getBoundingClientRect();
+      if (rect.width <= 0) return;
+      const minPaneWidth = Math.min(280, rect.width / 3);
+      const minPercent = (minPaneWidth / rect.width) * 100;
+      const nextPercent = ((clientX - rect.left) / rect.width) * 100;
+      const clamped = Math.max(minPercent, Math.min(100 - minPercent, nextPercent));
+      latestSplitPercentRef.current = clamped;
+      setSplitPercent(clamped);
+    };
+    const handlePointerMove = (moveEvent: PointerEvent) => updateSplit(moveEvent.clientX);
+    const cleanupResize = () => {
+      setResizing(false);
+      document.removeEventListener("pointermove", handlePointerMove);
+      document.removeEventListener("pointerup", cleanupResize);
+      document.removeEventListener("pointercancel", cleanupResize);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      localStorage.setItem(CONSOLE_SPLIT_STORAGE_KEY, String(latestSplitPercentRef.current));
+    };
 
-  const resultRowVirtualizer = useVirtualizer({
-    count: tableResult?.rows.length ?? 0,
-    getScrollElement: () => resultScrollRef.current,
-    estimateSize: () => VIRTUAL_RESULT_ROW_HEIGHT,
-    overscan: 12,
-    getItemKey: (index) => {
-      if (!tableResult) return index;
-      return `${index}-${JSON.stringify(tableResult.rows[index] ?? null)}`;
-    },
-  });
-
-  const resultVirtualRows = tableResult ? resultRowVirtualizer.getVirtualItems() : [];
-  const resultTopPadding = resultVirtualRows[0]?.start ?? 0;
-  const resultBottomPadding = tableResult
-    ? Math.max(
-        0,
-        resultRowVirtualizer.getTotalSize() -
-          (resultVirtualRows[resultVirtualRows.length - 1]?.end ?? 0)
-      )
-    : 0;
-
-  useEffect(() => {
-    if (!resultOpen || !tableResult) return;
-    const frame = requestAnimationFrame(() => {
-      resultRowVirtualizer.measure();
-      resultRowVirtualizer.scrollToOffset(0);
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [resultOpen, resultRowVirtualizer, tableResult]);
+    updateSplit(event.clientX);
+    document.addEventListener("pointermove", handlePointerMove);
+    document.addEventListener("pointerup", cleanupResize);
+    document.addEventListener("pointercancel", cleanupResize);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  }, []);
 
   return (
-    <>
-      <div className="flex flex-col flex-1 min-h-0 overflow-y-auto">
-        <div className="border border-border bg-card overflow-hidden flex flex-col flex-1 min-h-0">
-          <div className="flex items-center justify-between gap-4 px-4 py-3 bg-card border-b border-border shrink-0">
-            <div>
-              <h3 className="text-sm font-semibold">
-                {database.type === "postgres" ? "SQL Console" : "Redis Command Console"}
-              </h3>
-              <p className="text-xs text-muted-foreground">
-                Run one or more {database.type === "postgres" ? "SQL statements" : "Redis commands"}
-                .
-              </p>
-            </div>
-            <Button size="sm" onClick={() => void execute()} disabled={running}>
-              {running ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Play className="h-3.5 w-3.5" />
-              )}
-              Run
+    <div className="border border-border bg-card overflow-hidden flex flex-col flex-1 min-h-0">
+      <div className="flex items-center justify-between gap-4 px-4 py-3 bg-card border-b border-border shrink-0">
+        <div>
+          <h3 className="text-sm font-semibold">
+            {database.type === "postgres" ? "SQL Console" : "Redis Command Console"}
+          </h3>
+          <p className="text-xs text-muted-foreground">
+            Run one or more {database.type === "postgres" ? "SQL statements" : "Redis commands"}.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {history.length > 0 && (
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              onClick={() => setHistoryOpen(true)}
+              aria-label="Open query history"
+            >
+              <History className="h-4 w-4" />
             </Button>
+          )}
+          <Button size="sm" onClick={() => void execute()} disabled={running}>
+            {running ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Play className="h-3.5 w-3.5" />
+            )}
+            Run
+          </Button>
+        </div>
+      </div>
+
+      <div ref={splitContainerRef} className="flex flex-1 min-h-0 overflow-hidden">
+        <div className="flex min-w-0 flex-col" style={{ flex: `0 0 ${splitPercent}%` }}>
+          <div className="h-9 flex items-center border-b border-border px-3 text-xs font-medium text-muted-foreground shrink-0">
+            Console
           </div>
           <CodeEditor
             value={input}
-            onChange={setInput}
+            onChange={updateInput}
             language={database.type === "postgres" ? "sql" : "plain"}
+            minHeight="0px"
+            className="border-0 flex-1 min-h-0"
+          />
+        </div>
+
+        <div
+          className={cn(
+            "group relative w-2 shrink-0 cursor-col-resize transition-colors",
+            resizing && "bg-primary/5"
+          )}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize console output panels"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.round(splitPercent)}
+          onPointerDown={startResize}
+        >
+          <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border group-hover:bg-primary/70" />
+        </div>
+
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className="h-9 flex items-center border-b border-border px-3 text-xs font-medium text-muted-foreground shrink-0">
+            Output
+          </div>
+          <CodeEditor
+            value={output}
+            onChange={() => {}}
+            readOnly
+            language="plain"
+            lineWrapping={false}
+            showLineNumbers={false}
             minHeight="0px"
             className="border-0 flex-1 min-h-0"
           />
         </div>
       </div>
 
-      <Dialog open={resultOpen} onOpenChange={setResultOpen}>
-        <DialogContent
-          className={`w-[90vw] max-h-[85vh] flex flex-col overflow-hidden ${
-            database.type === "postgres" ? "sm:max-w-[64rem]" : "sm:max-w-2xl"
-          }`}
-        >
-          <DialogHeader className="shrink-0">
-            <DialogTitle>
-              {database.type === "postgres" ? "Query Result" : "Command Result"}
-            </DialogTitle>
+      <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
+        <DialogContent className="sm:max-w-3xl max-h-[80vh] flex flex-col overflow-hidden">
+          <DialogHeader>
+            <DialogTitle>Query History</DialogTitle>
           </DialogHeader>
-          {responseTruncated && (
-            <div className="shrink-0 border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
-              Response truncated{responseLimit ? ` after ${responseLimit} result sets` : ""}.
-            </div>
-          )}
-          {tableResult ? (
-            <div
-              ref={resultScrollRef}
-              className="flex-1 min-h-0 overflow-auto border border-border bg-card"
-            >
-              {tableResult.truncated && (
-                <div className="sticky top-0 z-20 border-b border-border bg-card px-4 py-2 text-xs text-muted-foreground">
-                  Showing first {tableResult.maxRows ?? tableResult.rows.length} rows. Refine the
-                  query or add a LIMIT to inspect more specific data.
-                </div>
-              )}
-              <table className="min-w-full border-collapse text-sm">
-                <thead className="sticky top-0 z-10 bg-card">
-                  <tr className="border-b border-border">
-                    {tableResult.fields.map((field) => (
-                      <th
-                        key={field}
-                        className="px-4 py-2 text-left text-xs font-medium tracking-wider text-muted-foreground uppercase whitespace-nowrap"
-                      >
-                        {field}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {resultTopPadding > 0 && (
-                    <tr aria-hidden="true">
-                      <td
-                        colSpan={tableResult.fields.length}
-                        style={{ height: resultTopPadding, padding: 0 }}
-                      />
-                    </tr>
-                  )}
-                  {resultVirtualRows.map((virtualRow) => {
-                    const row = tableResult.rows[virtualRow.index];
-                    return (
-                      <tr
-                        key={`${virtualRow.index}-${JSON.stringify(row)}`}
-                        className="border-b border-border last:border-b-0"
-                      >
-                        {tableResult.fields.map((field) => (
-                          <td
-                            key={field}
-                            className="px-4 py-3 font-mono whitespace-nowrap align-top"
-                          >
-                            {stringifyCell(row?.[field])}
-                          </td>
-                        ))}
-                      </tr>
-                    );
-                  })}
-                  {resultBottomPadding > 0 && (
-                    <tr aria-hidden="true">
-                      <td
-                        colSpan={tableResult.fields.length}
-                        style={{ height: resultBottomPadding, padding: 0 }}
-                      />
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          ) : postgresResults ? (
-            <div className="flex-1 min-h-0 overflow-auto space-y-4">
-              {postgresResults.map((entry, index) => (
-                <div
-                  key={`${entry.command}-${index}`}
-                  className="border border-border bg-card overflow-hidden"
+          <div className="min-h-0 overflow-auto border border-border">
+            {history.length > 0 ? (
+              history.map((entry) => (
+                <button
+                  key={`${entry.executedAt}:${entry.query}`}
+                  type="button"
+                  className="block w-full border-b border-border px-4 py-3 text-left last:border-b-0 hover:bg-muted"
+                  onClick={() => {
+                    updateInput(entry.query);
+                    setHistoryOpen(false);
+                  }}
                 >
-                  <div className="flex items-center justify-between gap-4 border-b border-border px-4 py-3">
-                    <div>
-                      <h4 className="text-sm font-semibold">Statement {index + 1}</h4>
-                      <p className="text-xs text-muted-foreground">
-                        {entry.command} · {entry.rowCount} row{entry.rowCount === 1 ? "" : "s"}
-                        {entry.truncated
-                          ? ` · showing first ${entry.maxRows ?? entry.rows.length}`
-                          : ""}
-                      </p>
-                    </div>
+                  <div className="mb-1 text-xs text-muted-foreground">
+                    {new Date(entry.executedAt).toLocaleString()}
                   </div>
-                  {entry.fields.length > 0 ? (
-                    <div className="overflow-auto">
-                      <table className="min-w-full border-collapse text-sm">
-                        <thead className="sticky top-0 z-10 bg-card">
-                          <tr className="border-b border-border">
-                            {entry.fields.map((field) => (
-                              <th
-                                key={field}
-                                className="px-4 py-2 text-left text-xs font-medium tracking-wider text-muted-foreground uppercase whitespace-nowrap"
-                              >
-                                {field}
-                              </th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {entry.rows.map((row, rowIndex) => (
-                            <tr key={rowIndex} className="border-b border-border last:border-b-0">
-                              {entry.fields.map((field) => (
-                                <td
-                                  key={field}
-                                  className="px-4 py-3 font-mono whitespace-nowrap align-top"
-                                >
-                                  {stringifyCell(row?.[field])}
-                                </td>
-                              ))}
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  ) : (
-                    <div className="p-4 text-sm text-muted-foreground">Command completed.</div>
-                  )}
-                </div>
-              ))}
-            </div>
-          ) : redisResults ? (
-            <div className="flex-1 min-h-0 overflow-auto space-y-4">
-              {redisResults.map((entry, index) => (
-                <div
-                  key={`${entry.command}-${index}`}
-                  className="border border-border bg-card overflow-hidden"
-                >
-                  <div className="border-b border-border px-4 py-3">
-                    <h4 className="text-sm font-semibold">Command {index + 1}</h4>
-                    <p className="text-xs text-muted-foreground">
-                      {entry.command}
-                      {entry.truncated ? " · result truncated" : ""}
-                    </p>
-                  </div>
-                  <pre className="overflow-auto p-4 text-sm whitespace-pre-wrap">
-                    {JSON.stringify(entry.result, null, 2)}
+                  <pre className="line-clamp-3 whitespace-pre-wrap font-mono text-sm">
+                    {entry.query}
                   </pre>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="border border-border bg-card overflow-hidden flex-1 min-h-0">
-              <pre className="overflow-auto p-4 text-sm whitespace-pre-wrap h-full">
-                {result ? JSON.stringify(result, null, 2) : "No results yet."}
-              </pre>
-            </div>
-          )}
+                </button>
+              ))
+            ) : (
+              <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+                No query history yet.
+              </div>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
-    </>
+    </div>
   );
 }

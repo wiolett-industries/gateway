@@ -48,6 +48,10 @@ function stripRawProxyConfig<T extends Record<string, unknown>>(host: T): Omit<T
   return rest;
 }
 
+function redactRawProxyConfig<T extends Record<string, unknown>>(host: T): T {
+  return { ...host, rawConfig: null };
+}
+
 proxyRoutes.openapi({ ...listProxyHostsRoute, middleware: requireScope('proxy:list') }, async (c) => {
   const proxyService = container.resolve(ProxyService);
   const query = ProxyHostListQuerySchema.parse(c.req.query());
@@ -63,6 +67,10 @@ proxyRoutes.openapi({ ...getProxyHostRoute, middleware: requireScopeForResource(
   const id = c.req.param('id')!;
   const host = await proxyService.getProxyHost(id);
   if (isProgrammaticAuth(c)) return c.json({ data: stripRawProxyConfig(host as any) });
+  const scopes = c.get('effectiveScopes') || [];
+  if (!hasScope(scopes, `proxy:raw:read:${id}`) && !hasScope(scopes, 'proxy:raw:read')) {
+    return c.json({ data: redactRawProxyConfig(host as any) });
+  }
   return c.json({ data: host });
 });
 
@@ -176,9 +184,22 @@ proxyRoutes.openapi(validateProxyConfigRoute, async (c) => {
     );
   }
 
-  const advancedScope = proxyHostId ? `proxy:advanced:${proxyHostId}` : 'proxy:advanced';
-  if (!hasScope(scopes, advancedScope)) {
-    throw new AppError(403, 'FORBIDDEN', 'Advanced config requires proxy:advanced scope');
+  const requiredScope =
+    mode === 'raw'
+      ? proxyHostId
+        ? `proxy:raw:write:${proxyHostId}`
+        : 'proxy:raw:write'
+      : proxyHostId
+        ? `proxy:advanced:${proxyHostId}`
+        : 'proxy:advanced';
+  if (!hasScope(scopes, requiredScope)) {
+    throw new AppError(
+      403,
+      'FORBIDDEN',
+      mode === 'raw'
+        ? 'Raw config validation requires proxy:raw:write scope'
+        : 'Advanced config requires proxy:advanced scope'
+    );
   }
 
   const bypassScope = proxyHostId ? `proxy:advanced:bypass:${proxyHostId}` : 'proxy:advanced:bypass';
