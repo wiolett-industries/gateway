@@ -5,6 +5,84 @@
 
 import { extractBaseScope, isValidBaseScope } from './scopes.js';
 
+const IMPLIED_SCOPES_BY_REQUIRED_SCOPE: Record<string, readonly string[]> = {
+  'pki:ca:list:root': ['pki:ca:view:root'],
+  'pki:ca:list:intermediate': ['pki:ca:view:intermediate'],
+  'pki:cert:list': ['pki:cert:view'],
+  'pki:templates:list': ['pki:templates:view', 'pki:templates:edit'],
+  'pki:templates:view': ['pki:templates:edit'],
+  'proxy:list': ['proxy:view', 'proxy:edit'],
+  'proxy:view': ['proxy:edit'],
+  'proxy:raw:read': ['proxy:raw:write'],
+  'ssl:cert:list': ['ssl:cert:view'],
+  'acl:list': ['acl:view', 'acl:edit'],
+  'acl:view': ['acl:edit'],
+  'nodes:list': ['nodes:details', 'nodes:rename'],
+  'nodes:details': ['nodes:rename'],
+  'nodes:config:view': ['nodes:config:edit'],
+  'settings:gateway:view': ['settings:gateway:edit'],
+  'housekeeping:view': ['housekeeping:run', 'housekeeping:configure'],
+  'license:view': ['license:manage'],
+  'docker:containers:list': ['docker:containers:view', 'docker:containers:edit', 'docker:containers:manage'],
+  'docker:containers:view': [
+    'docker:containers:edit',
+    'docker:containers:manage',
+    'docker:containers:console',
+    'docker:containers:files',
+    'docker:containers:environment',
+    'docker:containers:secrets',
+    'docker:containers:webhooks',
+  ],
+  'docker:networks:list': ['docker:networks:edit'],
+  'docker:registries:list': ['docker:registries:edit'],
+  'databases:list': ['databases:view', 'databases:edit', 'databases:query:read'],
+  'databases:view': [
+    'databases:edit',
+    'databases:query:read',
+    'databases:query:write',
+    'databases:query:admin',
+    'databases:credentials:reveal',
+  ],
+  'databases:query:read': ['databases:query:write', 'databases:query:admin'],
+  'databases:query:write': ['databases:query:admin'],
+  'notifications:alerts:list': ['notifications:alerts:view', 'notifications:alerts:edit'],
+  'notifications:alerts:view': ['notifications:alerts:edit'],
+  'notifications:webhooks:list': ['notifications:webhooks:view', 'notifications:webhooks:edit'],
+  'notifications:webhooks:view': ['notifications:webhooks:edit'],
+  'notifications:deliveries:list': ['notifications:deliveries:view'],
+  'notifications:view': ['notifications:manage'],
+  'logs:environments:list': ['logs:environments:view', 'logs:environments:edit', 'logs:read'],
+  'logs:environments:view': ['logs:environments:edit', 'logs:read'],
+  'logs:schemas:view': ['logs:schemas:edit'],
+  'logs:read': ['logs:manage'],
+  'status-page:view': ['status-page:manage'],
+};
+
+function hasImpliedScope(scopes: readonly string[], requiredScope: string): boolean {
+  const requiredBase = extractBaseScope(requiredScope);
+  const impliedScopes = getTransitiveImpliedScopes(requiredBase);
+  if (impliedScopes.length === 0) return false;
+
+  const resourceId = requiredBase === requiredScope ? null : requiredScope.slice(requiredBase.length + 1);
+  for (const impliedScope of impliedScopes) {
+    if (scopes.includes(impliedScope)) return true;
+    if (resourceId && scopes.includes(`${impliedScope}:${resourceId}`)) return true;
+  }
+  return false;
+}
+
+function getTransitiveImpliedScopes(requiredBase: string): string[] {
+  const result = new Set<string>();
+  const queue = [...(IMPLIED_SCOPES_BY_REQUIRED_SCOPE[requiredBase] ?? [])];
+  for (let index = 0; index < queue.length; index += 1) {
+    const scope = queue[index];
+    if (result.has(scope)) continue;
+    result.add(scope);
+    queue.push(...(IMPLIED_SCOPES_BY_REQUIRED_SCOPE[scope] ?? []));
+  }
+  return [...result];
+}
+
 /**
  * Check if a set of scopes grants a required permission.
  * Supports hierarchical matching: 'cert:issue' grants 'cert:issue:ca-123'
@@ -14,8 +92,11 @@ export function hasScope(scopes: string[], requiredScope: string): boolean {
 
   const baseScope = extractBaseScope(requiredScope);
   if (baseScope !== requiredScope) {
-    return scopes.includes(baseScope);
+    if (scopes.includes(baseScope)) return true;
+    return hasImpliedScope(scopes, requiredScope);
   }
+
+  if (hasImpliedScope(scopes, requiredScope)) return true;
 
   if (isValidBaseScope(requiredScope)) return false;
 
@@ -30,7 +111,13 @@ export function hasScope(scopes: string[], requiredScope: string): boolean {
 
 /** Check if scopes contain a broad scope or any resource-scoped variant of it. */
 export function hasScopeBase(scopes: string[], baseScope: string): boolean {
-  return hasScope(scopes, baseScope) || scopes.some((scope) => extractBaseScope(scope) === baseScope);
+  if (hasScope(scopes, baseScope)) return true;
+  return scopes.some((scope) => {
+    const scopeBase = extractBaseScope(scope);
+    if (scope === scopeBase) return false;
+    const resourceId = scope.slice(scopeBase.length + 1);
+    return hasScope([scope], `${baseScope}:${resourceId}`);
+  });
 }
 
 /** Check if scopes grant a broad scope or a specific resource-scoped variant. */
@@ -74,6 +161,20 @@ export function boundScopes(delegatedScopes: string[], principalScopes: string[]
 
   for (const scope of principalScopes) {
     if (hasScope(delegatedScopes, scope)) bounded.add(scope);
+  }
+
+  for (const delegatedScope of delegatedScopes) {
+    const delegatedBase = extractBaseScope(delegatedScope);
+    if (delegatedScope !== delegatedBase) continue;
+
+    for (const principalScope of principalScopes) {
+      const principalBase = extractBaseScope(principalScope);
+      if (principalScope === principalBase) continue;
+
+      const resourceId = principalScope.slice(principalBase.length + 1);
+      const narrowedDelegatedScope = `${delegatedBase}:${resourceId}`;
+      if (hasScope([principalScope], narrowedDelegatedScope)) bounded.add(narrowedDelegatedScope);
+    }
   }
 
   return [...bounded];

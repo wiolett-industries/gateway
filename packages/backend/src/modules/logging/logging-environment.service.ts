@@ -1,4 +1,4 @@
-import { asc, eq, ilike, or } from 'drizzle-orm';
+import { and, asc, eq, ilike, inArray, or } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import { type LoggingFieldDefinition, loggingEnvironments, loggingSchemas } from '@/db/schema/index.js';
 import { AppError } from '@/middleware/error-handler.js';
@@ -22,17 +22,18 @@ export class LoggingEnvironmentService {
     this.eventBus = eventBus;
   }
 
-  async list(query?: { search?: string }): Promise<LoggingEnvironmentView[]> {
+  async list(query?: { search?: string; allowedIds?: string[] }): Promise<LoggingEnvironmentView[]> {
     const search = query?.search?.trim();
+    if (query?.allowedIds?.length === 0) return [];
+    const searchFilter = search
+      ? or(ilike(loggingEnvironments.name, `%${search}%`), ilike(loggingEnvironments.slug, `%${search}%`))
+      : undefined;
+    const allowedFilter = query?.allowedIds ? inArray(loggingEnvironments.id, query.allowedIds) : undefined;
     const rows = await this.db
       .select({ environment: loggingEnvironments, schema: loggingSchemas })
       .from(loggingEnvironments)
       .leftJoin(loggingSchemas, eq(loggingEnvironments.schemaId, loggingSchemas.id))
-      .where(
-        search
-          ? or(ilike(loggingEnvironments.name, `%${search}%`), ilike(loggingEnvironments.slug, `%${search}%`))
-          : undefined
-      )
+      .where(and(allowedFilter, searchFilter))
       .orderBy(asc(loggingEnvironments.name));
     return rows.map((row) => toView(row.environment, row.schema));
   }

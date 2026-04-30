@@ -553,6 +553,7 @@ export const RESOURCE_SCOPABLE: readonly string[] = [
   'databases:query:admin',
   'databases:credentials:reveal',
   // Logging
+  'logs:environments:list',
   'logs:environments:view',
   'logs:environments:edit',
   'logs:environments:delete',

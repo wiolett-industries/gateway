@@ -22,14 +22,18 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
   const [isSavingGroup, setIsSavingGroup] = useState(false);
   const [isSavingMcp, setIsSavingMcp] = useState(false);
   const [isSavingNetwork, setIsSavingNetwork] = useState(false);
+  const [isSavingWebhookPolicy, setIsSavingWebhookPolicy] = useState(false);
   const [trustedProxyCidrs, setTrustedProxyCidrs] = useState("");
+  const [webhookPrivateCidrs, setWebhookPrivateCidrs] = useState("");
   const skipNextCidrsBlur = useRef(false);
+  const skipNextWebhookCidrsBlur = useRef(false);
 
   const load = useCallback(async () => {
     try {
       const settingsData = await api.getAuthProvisioningSettings();
       setSettings(settingsData);
       setTrustedProxyCidrs(settingsData.networkSecurity.trustedProxyCidrs.join(", "));
+      setWebhookPrivateCidrs(settingsData.outboundWebhookPolicy.allowedPrivateCidrs.join(", "));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to load Gateway settings");
     }
@@ -128,6 +132,40 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
       .filter(Boolean);
     if (cidrs.join(",") === settings.networkSecurity.trustedProxyCidrs.join(",")) return;
     updateNetworkSecurity({ trustedProxyCidrs: cidrs });
+  };
+
+  const updateOutboundWebhookPolicy = async (
+    patch: Partial<AuthProvisioningSettings["outboundWebhookPolicy"]>
+  ) => {
+    if (!settings || !canEdit) return;
+    setIsSavingWebhookPolicy(true);
+    const previous = settings;
+    const nextPolicy = { ...settings.outboundWebhookPolicy, ...patch };
+    setSettings({ ...settings, outboundWebhookPolicy: nextPolicy });
+    try {
+      const updated = await api.updateAuthProvisioningSettings({
+        outboundWebhookPolicy: nextPolicy,
+      });
+      setSettings(updated);
+      setWebhookPrivateCidrs(updated.outboundWebhookPolicy.allowedPrivateCidrs.join(", "));
+      toast.success("Outbound webhook policy updated");
+    } catch (err) {
+      setSettings(previous);
+      setWebhookPrivateCidrs(previous.outboundWebhookPolicy.allowedPrivateCidrs.join(", "));
+      toast.error(err instanceof Error ? err.message : "Failed to update outbound webhook policy");
+    } finally {
+      setIsSavingWebhookPolicy(false);
+    }
+  };
+
+  const saveWebhookPrivateCidrs = () => {
+    if (!settings) return;
+    const cidrs = webhookPrivateCidrs
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+    if (cidrs.join(",") === settings.outboundWebhookPolicy.allowedPrivateCidrs.join(",")) return;
+    updateOutboundWebhookPolicy({ allowedPrivateCidrs: cidrs });
   };
 
   if (!settings) return null;
@@ -300,6 +338,60 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
               onChange={(trustCloudflareHeaders) =>
                 updateNetworkSecurity({ trustCloudflareHeaders })
               }
+            />
+          </div>
+
+          <div className="flex items-center justify-between gap-4 px-4 py-3">
+            <div>
+              <p className="text-sm font-medium">Allow private network webhooks</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Notification webhooks may call the private CIDRs below. Local Gateway addresses,
+                localhost, link-local, multicast, and metadata endpoints stay blocked.
+              </p>
+            </div>
+            <Switch
+              checked={settings.outboundWebhookPolicy.allowPrivateNetworks}
+              disabled={!canEdit || isSavingWebhookPolicy}
+              onChange={(allowPrivateNetworks) =>
+                updateOutboundWebhookPolicy({ allowPrivateNetworks })
+              }
+            />
+          </div>
+
+          <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+            <div>
+              <p className="text-sm font-medium">Allowed private webhook CIDRs</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Comma-separated private ranges for notification webhook delivery. Defaults allow
+                common enterprise networks.
+              </p>
+            </div>
+            <Input
+              className="w-full shrink-0 border-border bg-[#080808] text-foreground placeholder:text-muted-foreground sm:max-w-80"
+              value={webhookPrivateCidrs}
+              disabled={
+                !canEdit ||
+                isSavingWebhookPolicy ||
+                !settings.outboundWebhookPolicy.allowPrivateNetworks
+              }
+              placeholder="10.0.0.0/8, 172.16.0.0/12"
+              onChange={(event) => {
+                skipNextWebhookCidrsBlur.current = false;
+                setWebhookPrivateCidrs(event.target.value);
+              }}
+              onBlur={() => {
+                if (skipNextWebhookCidrsBlur.current) {
+                  skipNextWebhookCidrsBlur.current = false;
+                  return;
+                }
+                saveWebhookPrivateCidrs();
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  skipNextWebhookCidrsBlur.current = true;
+                  saveWebhookPrivateCidrs();
+                }
+              }}
             />
           </div>
         </div>

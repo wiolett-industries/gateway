@@ -42,6 +42,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useRealtime } from "@/hooks/use-realtime";
+import { deriveAllowedResourceIdsByScope } from "@/lib/scope-utils";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
@@ -370,18 +371,19 @@ export function SidebarContent({
     "notifications:manage"
   );
   const canAccessDatabases = hasScopedAccess("databases:list");
-  const hasResourceScopedSchemaView =
-    user?.scopes.some((scope) => scope.startsWith("logs:schemas:view:")) ?? false;
+  const hasResourceScopedSchemaView = user
+    ? (deriveAllowedResourceIdsByScope(user.scopes)["logs:schemas:view"]?.length ?? 0) > 0
+    : false;
   const canAccessLogging =
     loggingEnabled &&
-    (hasAnyScope(
-      "logs:environments:list",
-      "logs:environments:view",
-      "logs:schemas:list",
-      "logs:schemas:create",
-      "logs:read",
-      "logs:manage"
-    ) ||
+    (hasScopedAccess("logs:environments:list") ||
+      hasAnyScope(
+        "logs:environments:view",
+        "logs:schemas:list",
+        "logs:schemas:create",
+        "logs:read",
+        "logs:manage"
+      ) ||
       hasResourceScopedSchemaView);
   const canAccessAuthorities = hasAnyScope("pki:ca:list:root", "pki:ca:list:intermediate");
 

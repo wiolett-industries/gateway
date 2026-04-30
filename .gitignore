@@ -9,6 +9,7 @@ coverage/
 .mcp.json
 TODO.md
 todo.md
+security_best_practices_report.md
 
 # Nx
 .nx/cache

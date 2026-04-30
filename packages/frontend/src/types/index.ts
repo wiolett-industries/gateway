@@ -52,6 +52,10 @@ export interface AuthProvisioningSettings {
     trustedProxyCidrs: string[];
     trustCloudflareHeaders: boolean;
   };
+  outboundWebhookPolicy: {
+    allowPrivateNetworks: boolean;
+    allowedPrivateCidrs: string[];
+  };
   currentRequestIp: {
     ipAddress?: string;
     remoteAddress?: string;
@@ -674,6 +678,7 @@ export const RESOURCE_SCOPABLE_SCOPES = [
   "databases:query:write",
   "databases:query:admin",
   "databases:credentials:reveal",
+  "logs:environments:list",
   "logs:environments:view",
   "logs:environments:edit",
   "logs:environments:delete",

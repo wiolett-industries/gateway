@@ -191,6 +191,7 @@ Administration features:
 - OIDC authentication.
 - Built-in and custom permission groups.
 - Granular scopes for users, groups, API tokens, OAuth grants, and MCP access.
+- Write-capable scopes imply matching read/list/view checks while preserving resource boundaries.
 - Audit log for user, token, OAuth, and AI-initiated actions.
 - Setup state and first-run configuration.
 - Update checks and in-app Gateway updates.

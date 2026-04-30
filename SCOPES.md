@@ -32,6 +32,18 @@ The REST API accepts browser sessions, `gw_` API tokens, and `gwo_` OAuth tokens
 
 Delegated API/OAuth scopes are always bounded by the owning user's current effective scopes. Revoking or editing a user's group permissions also reduces the effective permissions of that user's existing tokens.
 
+## Scope Evaluation Behavior
+
+Gateway evaluates scopes with exact, broad, resource-scoped, and implied-scope rules:
+
+- A broad resource-scopable scope grants access to every resource for that base scope. For example, `proxy:view` grants `proxy:view:<hostId>`.
+- A resource-scoped scope grants access only to that resource. For example, `proxy:edit:<hostA>` grants read/edit access to `hostA`, but not to `hostB` and not to broad `proxy:view`.
+- Write-capable scopes satisfy the matching read/list/view checks needed to use the resource. For example, `proxy:edit` satisfies `proxy:view` and `proxy:list`; `databases:query:admin` satisfies `databases:query:write` and `databases:query:read`.
+- Resource-scoped write-capable scopes keep the same resource boundary. For example, `databases:query:read:<databaseId>` can make that database visible in a filtered database list, but it does not grant global `databases:list`.
+- Create-only and destructive-only scopes do not imply list/view access. For example, `proxy:create`, `proxy:delete`, `databases:create`, and `notifications:webhooks:create` do not grant browse permissions by themselves.
+- `logs:schemas:view` does not imply global `logs:schemas:list`. Resource-scoped schema view/edit access can list only the matching schema rows.
+- When an API/OAuth token asks for a broad scope but the owning user has only resource-scoped access, Gateway narrows the effective token scope to the resource-scoped variant.
+
 ## Scope List
 
 | Scope | Resource-scopable |
@@ -151,7 +163,7 @@ Delegated API/OAuth scopes are always bounded by the owning user's current effec
 | `notifications:deliveries:view` |  |
 | `notifications:view` |  |
 | `notifications:manage` |  |
-| `logs:environments:list` |  |
+| `logs:environments:list` | Yes |
 | `logs:environments:view` | Yes |
 | `logs:environments:create` |  |
 | `logs:environments:edit` | Yes |

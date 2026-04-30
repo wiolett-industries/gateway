@@ -15,15 +15,19 @@ Production server:
 - A domain name if you want production HTTPS and ACME automation.
 - An OIDC provider such as Keycloak, Authentik, Auth0, Zitadel, or another OpenID Connect provider.
 
-Recommended production ports:
+> [!IMPORTANT]
+> **Recommended isolation:** Run Gateway inside an isolated VM or on a dedicated host. Gateway is a privileged control plane and mounts the host Docker socket for internal operations such as self-updates and local housekeeping. Do not run unrelated workloads on the same Docker host.
+
+Expose the ports that match your deployment:
 
 | Port | Direction | Purpose |
 |------|-----------|---------|
-| `80/tcp` | inbound to Gateway server | HTTP and ACME HTTP-01 challenge, if used. |
-| `443/tcp` | inbound to Gateway server | Gateway UI and API over HTTPS. |
-| `9443/tcp` | inbound to Gateway server from nodes | gRPC control plane for daemons. |
+| `3000/tcp` | inbound from local network or reverse proxy | Gateway app UI/API port. For behind-NAT installs, expose this on the local network and point your external reverse proxy to it. |
+| `443/tcp` | inbound to Gateway server | Public HTTPS UI/API access when Gateway's installer configures nginx alongside Gateway and sets up the domain. |
+| `80/tcp` | inbound to Gateway server | HTTP and ACME HTTP-01 challenge, only if that challenge mode is used. |
+| `9443/tcp` | inbound to Gateway server from nodes | gRPC control plane for managed daemon connections. |
 
-Managed nodes connect outbound to Gateway on `9443/tcp`.
+Behind NAT or an existing external reverse proxy, publish `3000/tcp` only on the local network and configure the external proxy to forward the public Gateway domain to `http://<gateway-lan-ip>:3000`. If you let the installer configure nginx alongside Gateway for the Gateway domain, only `443/tcp` is required for UI/API access. Managed nodes still connect outbound to Gateway on `9443/tcp`; they do not need inbound management ports.
 
 ## Fast Install
 
@@ -224,10 +228,13 @@ The production stack includes:
 | `redis` | Sessions, cache, and rate limiting. |
 | `clickhouse` | Structured logging storage. |
 
-The app container exposes:
+The generated Gateway stack exposes:
 
-- `3000/tcp` for the app internally or when running without an outer reverse proxy.
+- `3000/tcp` for the Gateway UI/API app. In direct or behind-NAT deployments, keep this reachable from the local network and configure your external reverse proxy to forward the public Gateway domain to this port. When the installer configures local nginx for the Gateway domain, the app port is bound to localhost behind nginx instead of being exposed publicly.
+- `443/tcp` for UI/API access when the installer configures nginx alongside Gateway for the Gateway domain.
 - `9443/tcp` for daemon gRPC connections.
+
+The `app` service also mounts `/var/run/docker.sock` so Gateway can perform local control-plane operations against its own Docker host, including in-app updates and Docker housekeeping. Treat this as a privileged appliance deployment: the preferred production model is a dedicated VM or host used only for Gateway.
 
 ## Updating Gateway
 

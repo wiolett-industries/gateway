@@ -1,19 +1,6 @@
 import { create } from "zustand";
+import { hasScopeBase, scopeMatches } from "@/lib/scope-utils";
 import type { User } from "@/types";
-
-/**
- * Check if scopes grant a required permission.
- * Supports hierarchical matching: 'cert:issue' grants 'cert:issue:ca-123'
- */
-function scopeMatches(scopes: string[], requiredScope: string): boolean {
-  if (scopes.includes(requiredScope)) return true;
-  const parts = requiredScope.split(":");
-  for (let i = parts.length - 1; i >= 1; i--) {
-    const prefix = parts.slice(0, i).join(":");
-    if (scopes.includes(prefix)) return true;
-  }
-  return false;
-}
 
 interface AuthState {
   user: User | null;
@@ -65,7 +52,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   hasScopedAccess: (scopeBase) => {
     const user = get().user;
     if (!user) return false;
-    return user.scopes.some((scope) => scope === scopeBase || scope.startsWith(`${scopeBase}:`));
+    return hasScopeBase(user.scopes, scopeBase);
   },
 
   hasAnyScope: (...scopes) => {

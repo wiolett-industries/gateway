@@ -6,6 +6,7 @@ import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { RequireScope } from "@/components/common/RequireScope";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { ThemeProvider } from "@/components/layout/ThemeProvider";
+import { deriveAllowedResourceIdsByScope, scopeMatches } from "@/lib/scope-utils";
 import { AccessLists } from "@/pages/AccessLists";
 import { Administration } from "@/pages/Administration";
 import { AdminNodeDetail } from "@/pages/AdminNodeDetail";
@@ -264,23 +265,23 @@ function LoggingPageGuard() {
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const user = useAuthStore((s) => s.user);
   const hasAnyScope = useAuthStore((s) => s.hasAnyScope);
-  const canAccessLoggingEnvironments = hasAnyScope(
-    "logs:environments:list",
-    "logs:environments:view",
-    "logs:read",
-    "logs:manage"
-  );
+  const hasScopedAccess = useAuthStore((s) => s.hasScopedAccess);
+  const canAccessLoggingEnvironments =
+    hasScopedAccess("logs:environments:list") ||
+    hasAnyScope("logs:environments:view", "logs:read", "logs:manage");
   const canAccessLoggingSchemaList = hasAnyScope(
     "logs:schemas:list",
     "logs:schemas:create",
     "logs:manage"
   );
-  const hasResourceScopedSchemaView =
-    user?.scopes.some((scope) => scope.startsWith("logs:schemas:view:")) ?? false;
+  const hasResourceScopedSchemaView = user
+    ? (deriveAllowedResourceIdsByScope(user.scopes)["logs:schemas:view"]?.length ?? 0) > 0
+    : false;
   const hasDirectSchemaView =
     section === "schemas" &&
     !!id &&
-    hasAnyScope("logs:schemas:view", `logs:schemas:view:${id}`, "logs:manage");
+    (hasAnyScope("logs:schemas:view", "logs:manage") ||
+      (user ? scopeMatches(user.scopes, `logs:schemas:view:${id}`) : false));
   const canAccessLogging =
     canAccessLoggingEnvironments || canAccessLoggingSchemaList || hasResourceScopedSchemaView;
   const canAccessRequestedRoute =

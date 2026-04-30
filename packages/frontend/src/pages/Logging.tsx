@@ -44,6 +44,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { deriveAllowedResourceIdsByScope, scopeMatches } from "@/lib/scope-utils";
 import { cn, formatBytes } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
@@ -106,7 +107,7 @@ function isLoggingSchemaDirty(schema: LoggingSchema, draft: Partial<LoggingSchem
 export function Logging() {
   const { section, id, tab } = useParams<{ section?: string; id?: string; tab?: string }>();
   const navigate = useNavigate();
-  const { user, hasAnyScope } = useAuthStore();
+  const { user, hasAnyScope, hasScopedAccess } = useAuthStore();
   const [status, setStatus] = useState<LoggingFeatureStatus | null>(null);
   const [environments, setEnvironments] = useState<LoggingEnvironment[]>([]);
   const [schemas, setSchemas] = useState<LoggingSchema[]>([]);
@@ -118,16 +119,12 @@ export function Logging() {
 
   const isEnvironmentDetail = section === "environments" && !!id;
   const isSchemaDetail = section === "schemas" && !!id;
-  const canAccessEnvironments = hasAnyScope(
-    "logs:environments:list",
-    "logs:environments:view",
-    "logs:read",
-    "logs:manage"
-  );
-  const hasResourceScopedSchemaView = useMemo(
-    () => user?.scopes.some((scope) => scope.startsWith("logs:schemas:view:")) ?? false,
-    [user?.scopes]
-  );
+  const canAccessEnvironments =
+    hasScopedAccess("logs:environments:list") ||
+    hasAnyScope("logs:environments:view", "logs:read", "logs:manage");
+  const userScopes = user?.scopes ?? [];
+  const hasResourceScopedSchemaView =
+    (deriveAllowedResourceIdsByScope(userScopes)["logs:schemas:view"]?.length ?? 0) > 0;
   const canListSchemas =
     hasAnyScope("logs:schemas:list", "logs:manage") || hasResourceScopedSchemaView;
   const canAccessSchemas = canListSchemas || hasAnyScope("logs:schemas:create");
@@ -135,7 +132,8 @@ export function Logging() {
   const canViewSelectedSchema =
     isSchemaDetail &&
     !!id &&
-    hasAnyScope("logs:schemas:view", `logs:schemas:view:${id}`, "logs:manage");
+    (hasAnyScope("logs:schemas:view", "logs:manage") ||
+      scopeMatches(userScopes, `logs:schemas:view:${id}`));
   const canAccessLoggingSettings = canAccessEnvironments || canAccessSchemas;
   const visibleTopTabs = useMemo(
     () =>

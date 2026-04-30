@@ -67,6 +67,7 @@ import { FolderService } from '@/modules/proxy/folder.service.js';
 import { NginxTemplateService } from '@/modules/proxy/nginx-template.service.js';
 import { ProxyService } from '@/modules/proxy/proxy.service.js';
 import { NetworkSettingsService } from '@/modules/settings/network-settings.service.js';
+import { OutboundWebhookPolicyService } from '@/modules/settings/outbound-webhook-policy.service.js';
 import { SetupService } from '@/modules/setup/setup.service.js';
 import { ACMEService } from '@/modules/ssl/acme.service.js';
 import { SSLService } from '@/modules/ssl/ssl.service.js';
@@ -130,6 +131,9 @@ export async function initializeContainer(): Promise<void> {
 
   const networkSettingsService = new NetworkSettingsService(db);
   container.registerInstance(NetworkSettingsService, networkSettingsService);
+
+  const outboundWebhookPolicyService = new OutboundWebhookPolicyService(db);
+  container.registerInstance(OutboundWebhookPolicyService, outboundWebhookPolicyService);
 
   const auditService = new AuditService(db);
   container.registerInstance(AuditService, auditService);
@@ -496,7 +500,12 @@ export async function initializeContainer(): Promise<void> {
   const notifDeliveryService = new NotificationDeliveryService(db);
   container.registerInstance(NotificationDeliveryService, notifDeliveryService);
 
-  const notifDispatcherService = new NotificationDispatcherService(db, notifWebhookService, env);
+  const notifDispatcherService = new NotificationDispatcherService(
+    db,
+    notifWebhookService,
+    env,
+    outboundWebhookPolicyService
+  );
   container.registerInstance(NotificationDispatcherService, notifDispatcherService);
 
   // AI Service (depends on many services above)

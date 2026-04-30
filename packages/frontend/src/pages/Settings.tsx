@@ -4,6 +4,7 @@ import { confirm } from "@/components/common/ConfirmDialog";
 import { PageTransition } from "@/components/common/PageTransition";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { deriveAllowedResourceIdsByScope, scopeMatches } from "@/lib/scope-utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useUIStore } from "@/stores/ui";
@@ -46,6 +47,7 @@ export function Settings() {
   const canViewLicense = hasScope("license:view");
   const canManageLicense = hasScope("license:manage");
   const canViewStatusPage = hasScope("status-page:view");
+  const userScopes = user?.scopes;
 
   useEffect(() => {
     api
@@ -61,19 +63,16 @@ export function Settings() {
       .then((r) => setDatabasesList(r.data ?? []))
       .catch(() => {});
     if (
-      user?.scopes.some(
-        (scope) =>
-          scope === "logs:schemas:list" ||
-          scope === "logs:manage" ||
-          scope.startsWith("logs:schemas:view:")
-      )
+      scopeMatches(userScopes ?? [], "logs:schemas:list") ||
+      scopeMatches(userScopes ?? [], "logs:manage") ||
+      (deriveAllowedResourceIdsByScope(userScopes ?? [])["logs:schemas:view"]?.length ?? 0) > 0
     ) {
       api
         .listLoggingSchemas()
         .then(setLoggingSchemasList)
         .catch(() => {});
     }
-  }, [user?.scopes]);
+  }, [userScopes]);
 
   const handleToggleSystemCertificates = (checked: boolean) => {
     setShowSystemCertificates(checked);

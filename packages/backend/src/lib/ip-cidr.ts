@@ -5,11 +5,21 @@ export function normalizeIp(value: string | null | undefined): string | undefine
   if (ip.startsWith('[') && ip.includes(']')) {
     ip = ip.slice(1, ip.indexOf(']'));
   }
-  if (ip.startsWith('::ffff:')) {
+  if (ip.startsWith('::ffff:') && ip.slice(7).includes('.')) {
     ip = ip.slice(7);
   }
   if (ip.includes(':') && ip.includes('.') && ip.lastIndexOf(':') > ip.lastIndexOf('.')) {
     ip = ip.slice(0, ip.lastIndexOf(':'));
+  }
+  const parsedIpv6 = ip.includes(':') ? parseIpv6(ip) : undefined;
+  if (parsedIpv6 && parsedIpv6.value >> 32n === 0xffffn) {
+    const ipv4 = parsedIpv6.value & 0xffffffffn;
+    ip = [
+      Number((ipv4 >> 24n) & 0xffn),
+      Number((ipv4 >> 16n) & 0xffn),
+      Number((ipv4 >> 8n) & 0xffn),
+      Number(ipv4 & 0xffn),
+    ].join('.');
   }
   return parseIp(ip) ? ip.toLowerCase() : undefined;
 }
@@ -53,6 +63,37 @@ export function isInternalIp(ip: string): boolean {
     );
   }
   return ip === '::1' || ipInCidr(ip, 'fc00::/7') || ipInCidr(ip, 'fe80::/10');
+}
+
+export function isPrivateIp(ip: string): boolean {
+  const parsed = parseIp(ip);
+  if (!parsed) return false;
+  if (parsed.version === 4) {
+    return (
+      ipInCidr(ip, '10.0.0.0/8') ||
+      ipInCidr(ip, '100.64.0.0/10') ||
+      ipInCidr(ip, '172.16.0.0/12') ||
+      ipInCidr(ip, '192.168.0.0/16') ||
+      ipInCidr(ip, '198.18.0.0/15')
+    );
+  }
+  return ipInCidr(ip, 'fc00::/7');
+}
+
+export function isAlwaysBlockedOutboundIp(ip: string): boolean {
+  const parsed = parseIp(ip);
+  if (!parsed) return true;
+  if (parsed.version === 4) {
+    return (
+      ipInCidr(ip, '0.0.0.0/8') ||
+      ipInCidr(ip, '127.0.0.0/8') ||
+      ipInCidr(ip, '169.254.0.0/16') ||
+      ipInCidr(ip, '224.0.0.0/4') ||
+      ipInCidr(ip, '240.0.0.0/4') ||
+      ip === '255.255.255.255'
+    );
+  }
+  return ip === '::' || ip === '::1' || ipInCidr(ip, 'fe80::/10') || ipInCidr(ip, 'ff00::/8');
 }
 
 function parseIp(ip: string | undefined): { version: 4 | 6; value: bigint } | undefined {

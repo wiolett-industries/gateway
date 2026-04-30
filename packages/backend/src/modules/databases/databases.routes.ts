@@ -3,6 +3,7 @@ import { streamSSE } from 'hono/streaming';
 import { container } from '@/container.js';
 import { openApiValidationHook } from '@/lib/openapi.js';
 import { hasScope } from '@/lib/permissions.js';
+import { extractBaseScope } from '@/lib/scopes.js';
 import { AppError } from '@/middleware/error-handler.js';
 import { authMiddleware, requireScope, requireScopeForResource } from '@/modules/auth/auth.middleware.js';
 import { TokensService } from '@/modules/tokens/tokens.service.js';
@@ -59,11 +60,10 @@ export const databaseRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiVali
 function getListAccessibleDatabaseIds(scopes: string[]): string[] {
   const ids = new Set<string>();
   for (const scope of scopes) {
-    const base = 'databases:list';
-    if (scope.startsWith(`${base}:`)) {
-      const id = scope.slice(base.length + 1);
-      if (id) ids.add(id);
-    }
+    const base = extractBaseScope(scope);
+    if (scope === base) continue;
+    const id = scope.slice(base.length + 1);
+    if (id && TokensService.hasScope([scope], `databases:list:${id}`)) ids.add(id);
   }
   return [...ids];
 }

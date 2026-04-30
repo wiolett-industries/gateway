@@ -1,6 +1,7 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
 import { openApiValidationHook } from '@/lib/openapi.js';
+import { extractBaseScope } from '@/lib/scopes.js';
 import { AppError } from '@/middleware/error-handler.js';
 import { authMiddleware } from '@/modules/auth/auth.middleware.js';
 import { TokensService } from '@/modules/tokens/tokens.service.js';
@@ -73,10 +74,14 @@ loggingRoutes.openapi({ ...loggingBatchIngestRoute, middleware: loggingIngestAut
 loggingRoutes.use('*', authMiddleware);
 
 loggingRoutes.openapi(
-  { ...listLoggingEnvironmentsRoute, middleware: requireLoggingScope('logs:environments:list') },
+  { ...listLoggingEnvironmentsRoute, middleware: requireLoggingEnvironmentListScope() },
   async (c) => {
     const service = container.resolve(LoggingEnvironmentService);
-    const data = await service.list({ search: c.req.query('search') });
+    const scopes = c.get('effectiveScopes') ?? [];
+    const hasGlobalAccess =
+      TokensService.hasScope(scopes, 'logs:environments:list') || TokensService.hasScope(scopes, 'logs:manage');
+    const allowedIds = hasGlobalAccess ? undefined : [...resourceScopedIds(scopes, 'logs:environments:list')];
+    const data = await service.list({ search: c.req.query('search'), allowedIds });
     return c.json({ data });
   }
 );
@@ -262,10 +267,14 @@ function requireLoggingScope(scope: string) {
 }
 
 function resourceScopedIds(scopes: string[], scope: string): Set<string> {
-  const prefix = `${scope}:`;
-  return new Set(
-    scopes.filter((candidate) => candidate.startsWith(prefix)).map((candidate) => candidate.slice(prefix.length))
-  );
+  const ids = new Set<string>();
+  for (const candidate of scopes) {
+    const base = extractBaseScope(candidate);
+    if (candidate === base) continue;
+    const id = candidate.slice(base.length + 1);
+    if (id && TokensService.hasScope([candidate], `${scope}:${id}`)) ids.add(id);
+  }
+  return ids;
 }
 
 function requireLoggingSchemaListScope() {
@@ -277,6 +286,20 @@ function requireLoggingSchemaListScope() {
       resourceScopedIds(scopes, 'logs:schemas:view').size === 0
     ) {
       throw new AppError(403, 'FORBIDDEN', 'Missing required scope: logs:schemas:list');
+    }
+    await next();
+  };
+}
+
+function requireLoggingEnvironmentListScope() {
+  return async (c: any, next: () => Promise<void>) => {
+    const scopes = c.get('effectiveScopes') ?? [];
+    if (
+      !TokensService.hasScope(scopes, 'logs:environments:list') &&
+      !TokensService.hasScope(scopes, 'logs:manage') &&
+      resourceScopedIds(scopes, 'logs:environments:list').size === 0
+    ) {
+      throw new AppError(403, 'FORBIDDEN', 'Missing required scope: logs:environments:list');
     }
     await next();
   };

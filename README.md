@@ -4,6 +4,7 @@ English | [Русский](README.ru.md) | [中文](README.cn.md)
 
 Self-hosted infrastructure control plane for reverse proxies, Docker workloads, certificates, databases, logs, monitoring, status pages, and automation.
 
+> [!NOTE]
 > Primary development happens on [Wiolett Industries GitLab](https://gitlab.wiolett.net/wiolett/gateway). The [GitHub repository](https://github.com/wiolett-industries/gateway) is a public mirror. Issues and feature requests are welcome on [GitHub](https://github.com/wiolett-industries/gateway/issues).
 
 ## Why Gateway
@@ -26,6 +27,23 @@ Install Gateway on a Linux server with Docker:
 curl -sSL https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/scripts/install.sh | bash
 ```
 
+> [!IMPORTANT]
+> **Production deployment note:** Gateway is a privileged infrastructure control plane. For internal operations such as self-updates and local housekeeping, the Gateway app mounts the host Docker socket. Run Gateway in an isolated VM or dedicated host, and do not place unrelated workloads on the same Docker host.
+
+> [!WARNING]
+> **OIDC required:** For security reasons, Gateway currently supports only SSO login through an OpenID Connect provider. There is no built-in username/password authentication, so you need an OIDC provider configured before users can sign in.
+
+Expose the ports that match your deployment:
+
+| Port | Purpose |
+|------|---------|
+| `3000/tcp` | Gateway app UI/API port. For behind-NAT installs, expose this on the local network and point your external reverse proxy to it. |
+| `443/tcp` | Public HTTPS UI/API access when Gateway's installer configures nginx alongside Gateway and sets up the domain. |
+| `80/tcp` | HTTP and ACME HTTP-01 challenge, only if that challenge mode is used. |
+| `9443/tcp` | gRPC control plane for managed daemon connections. |
+
+Behind NAT or an existing external reverse proxy, publish `3000/tcp` only on the local network and configure the external proxy to forward the public Gateway domain to `http://<gateway-lan-ip>:3000`. If you let the installer configure nginx alongside Gateway for the Gateway domain, only `443/tcp` is required for UI/API access. Managed nodes still connect outbound to Gateway on `9443/tcp`; they do not need inbound management ports.
+
 The installer asks for your domain, OIDC provider, SSL mode, resource profile, and log rotation settings. When it finishes, open Gateway, sign in, and add your first node.
 
 For flags, non-interactive installs, custom SSL, OIDC details, updates, and node setup, read the [installation guide](docs/installation.md).
@@ -38,6 +56,7 @@ For flags, non-interactive installs, custom SSL, OIDC details, updates, and node
 | Install Gateway | [Installation guide](docs/installation.md) |
 | Add nginx, Docker, or monitoring nodes | [Nodes and daemons](docs/nodes.md) |
 | Configure tokens, OAuth, MCP, logging, updates, and AI | [Operations guide](docs/operations.md) |
+| Review the security model | [Security model](docs/security.md) |
 | Understand license tiers and activation | [Licensing](docs/licensing.md) |
 | Run the project locally or contribute | [Development guide](docs/development.md) |
 | Review permission scopes | [SCOPES.md](SCOPES.md) |
@@ -99,6 +118,19 @@ Gateway runs as a Docker stack on the control-plane server. Managed hosts run sm
 
 Nodes do not need inbound management ports. Public traffic ports, such as `80` and `443` on nginx nodes, are still required for the services you expose.
 
+## Security Model
+
+Gateway is designed to be secure by default for a self-hosted infrastructure control plane:
+
+- User login is SSO-only through OIDC, so password policy, MFA, device posture, and identity lifecycle stay with your identity provider.
+- Managed nodes connect outbound to Gateway over gRPC with mTLS. After one-time enrollment, daemon commands require a client certificate issued by Gateway's internal node CA.
+- Each node certificate is bound to a node identity. Gateway checks the mTLS certificate identity before accepting control streams, log streams, and certificate renewal requests.
+- Nodes do not need inbound management ports. Losing Gateway access does not stop existing nginx configs or Docker containers; it only pauses centralized control.
+- API tokens, OAuth grants, MCP access, database credentials, certificate exports, and secret reveal operations are scope-gated, bounded by the owning user's current permissions, and audited.
+- Private key material and stored infrastructure credentials are encrypted at rest with the configured `PKI_MASTER_KEY`.
+
+The result is a PKI-backed trust model: short-lived enrollment tokens get a node into the system, and long-term trust is based on certificate identity rather than reusable shared secrets. This gives Gateway a strong default posture against node hijacking because a copied setup command is not enough to keep controlling a node after enrollment. Read the [security model](docs/security.md) for the full explanation and deployment hardening checklist.
+
 ## Roadmap
 
 Gateway is already focused on production operations rather than a narrow MVP. The active direction is to make it safer, easier to operate, and more useful across medium and small infrastructure fleets.
@@ -154,7 +186,13 @@ Yes. If `CLICKHOUSE_URL` is empty, the structured logging UI and ingest API are 
 <details>
 <summary><strong>Can API or OAuth tokens expose secrets?</strong></summary>
 
-Only when the owning user already has the required scopes. Sensitive OAuth scopes require explicit opt-in during consent, and API/OAuth tokens cannot exceed the user's current effective permissions. See [SCOPES.md](SCOPES.md).
+Only when the owning user already has the required scopes. Sensitive OAuth scopes require explicit opt-in during consent, API/OAuth tokens cannot exceed the user's current effective permissions, and resource-scoped write-capable scopes stay bounded to the same resource when they imply read/list checks. See [SCOPES.md](SCOPES.md).
+</details>
+
+<details>
+<summary><strong>How does Gateway prevent managed nodes from being hijacked?</strong></summary>
+
+Gateway uses its own internal PKI for daemon identity. A node uses a one-time enrollment token only once, receives an mTLS client certificate from Gateway's node CA, deletes the token from local config, and reconnects with the certificate. Gateway then verifies the certificate identity on control streams, log streams, and renewal requests. See the [security model](docs/security.md).
 </details>
 
 <details>
@@ -175,9 +213,9 @@ Gateway uses source-available licensing plus optional product license keys. Curr
 
 | Tier | Who it is for | Key | Current behavior |
 |------|---------------|-----|------------------|
-| ![Community](docs/assets/license/wiolett-gw-community-24.png) Community | Personal use, noncommercial use, and permitted source-license use under [LICENSE.md](LICENSE.md). | Not required. | Full product access today. |
-| ![Homelab](docs/assets/license/wiolett-gw-homelab-24.png) Homelab | Homelab operators and eligible small businesses under $100K revenue and fewer than 10 people. | Free renewable key by request. | Full product access today; planned Homelab-and-up perks include Status Pages, PKI, and Logging. |
-| ![Enterprise](docs/assets/license/wiolett-gw-enterprise-24.png) Enterprise | Organizations above the small-business threshold or teams that want a paid commercial license. | $290/year. | Full product access today; planned Enterprise tier remains the paid commercial/support path. |
+| ![Community](docs/assets/license/wiolett-gw-community-24.png)<br>Community | Personal use, noncommercial use, and permitted source-license use under [LICENSE.md](LICENSE.md). | Not required. | Full product access today. |
+| ![Homelab](docs/assets/license/wiolett-gw-homelab-24.png)<br>Homelab | Homelab operators and eligible small businesses under $100K revenue and fewer than 10 people. | Free renewable key by request. | Full product access today; planned Homelab-and-up perks include Status Pages, PKI, and Logging. |
+| ![Enterprise](docs/assets/license/wiolett-gw-enterprise-24.png)<br>Enterprise | Organizations above the small-business threshold or teams that want a paid commercial license. | $290/year. | Full product access today; planned Enterprise tier remains the paid commercial/support path. |
 
 Homelab keys are available by contacting [contact@wiolett.net](mailto:contact@wiolett.net) or [Wiolett Industries on Telegram](https://t.me/WiolettIndustries). See [Licensing](docs/licensing.md) for license verification, future tier perks, and renewal details.
 

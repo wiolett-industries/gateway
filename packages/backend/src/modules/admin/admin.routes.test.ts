@@ -8,6 +8,7 @@ import { AuthSettingsService } from '@/modules/auth/auth.settings.service.js';
 import { GroupService } from '@/modules/groups/group.service.js';
 import { McpSettingsService } from '@/modules/mcp/mcp-settings.service.js';
 import { NetworkSettingsService } from '@/modules/settings/network-settings.service.js';
+import { OutboundWebhookPolicyService } from '@/modules/settings/outbound-webhook-policy.service.js';
 import { SessionService } from '@/services/session.service.js';
 import type { AppEnv, SessionData, User } from '@/types.js';
 import { adminRoutes } from './admin.routes.js';
@@ -95,6 +96,12 @@ describe('admin Gateway settings route permissions', () => {
         trustCloudflareHeaders: false,
       }),
     } as unknown as NetworkSettingsService);
+    container.registerInstance(OutboundWebhookPolicyService, {
+      getConfig: vi.fn().mockResolvedValue({
+        allowPrivateNetworks: true,
+        allowedPrivateCidrs: ['10.0.0.0/8', '172.16.0.0/12'],
+      }),
+    } as unknown as OutboundWebhookPolicyService);
     container.registerInstance(GroupService, {
       listGroups: vi.fn().mockResolvedValue([]),
     } as unknown as GroupService);
@@ -110,6 +117,10 @@ describe('admin Gateway settings route permissions', () => {
         clientIpSource: 'auto',
         trustedProxyCidrs: [],
         trustCloudflareHeaders: false,
+      },
+      outboundWebhookPolicy: {
+        allowPrivateNetworks: true,
+        allowedPrivateCidrs: ['10.0.0.0/8', '172.16.0.0/12'],
       },
       currentRequestIp: {
         source: 'unknown',

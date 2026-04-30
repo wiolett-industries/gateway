@@ -30,6 +30,9 @@ curl -sSL https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/scripts/setup-da
   sudo bash -s -- --type nginx --gateway gw.example.com:9443 --token <TOKEN>
 ```
 
+> [!IMPORTANT]
+> **Cloudflare DNS/proxy note:** If the Gateway UI is behind Cloudflare, the copied setup command may use the public Gateway domain. Daemons must connect to the Gateway gRPC listener directly on `9443/tcp`; replace `--gateway <domain>:9443` with the actual Gateway server IP or another hostname that exposes `9443/tcp` directly.
+
 The wrapper downloads the daemon-specific installer and forwards all arguments.
 
 ## Daemon-Specific Setup
@@ -110,6 +113,8 @@ The token is only needed for enrollment. Long-term daemon authentication uses mT
 | Internet to nginx node | `80/tcp`, `443/tcp` | Public HTTP/HTTPS traffic served by nginx. |
 
 Managed nodes do not need inbound management ports for Gateway.
+
+If Gateway is behind Cloudflare for the UI/API, make sure daemon setup uses a direct `9443/tcp` endpoint. Cloudflare-proxied hostnames for the web UI should not be used for daemon enrollment unless they explicitly route the Gateway gRPC port.
 
 ## Daemon Configuration
 

@@ -4,6 +4,62 @@ const RESOURCE_SCOPABLE_BY_LENGTH = [...RESOURCE_SCOPABLE_SCOPES].sort(
   (a, b) => b.length - a.length
 );
 const ALL_SCOPE_VALUES = new Set<string>(TOKEN_SCOPES.map((scope) => scope.value));
+const IMPLIED_SCOPES_BY_REQUIRED_SCOPE: Record<string, readonly string[]> = {
+  "pki:ca:list:root": ["pki:ca:view:root"],
+  "pki:ca:list:intermediate": ["pki:ca:view:intermediate"],
+  "pki:cert:list": ["pki:cert:view"],
+  "pki:templates:list": ["pki:templates:view", "pki:templates:edit"],
+  "pki:templates:view": ["pki:templates:edit"],
+  "proxy:list": ["proxy:view", "proxy:edit"],
+  "proxy:view": ["proxy:edit"],
+  "proxy:raw:read": ["proxy:raw:write"],
+  "ssl:cert:list": ["ssl:cert:view"],
+  "acl:list": ["acl:view", "acl:edit"],
+  "acl:view": ["acl:edit"],
+  "nodes:list": ["nodes:details", "nodes:rename"],
+  "nodes:details": ["nodes:rename"],
+  "nodes:config:view": ["nodes:config:edit"],
+  "settings:gateway:view": ["settings:gateway:edit"],
+  "housekeeping:view": ["housekeeping:run", "housekeeping:configure"],
+  "license:view": ["license:manage"],
+  "docker:containers:list": [
+    "docker:containers:view",
+    "docker:containers:edit",
+    "docker:containers:manage",
+  ],
+  "docker:containers:view": [
+    "docker:containers:edit",
+    "docker:containers:manage",
+    "docker:containers:console",
+    "docker:containers:files",
+    "docker:containers:environment",
+    "docker:containers:secrets",
+    "docker:containers:webhooks",
+  ],
+  "docker:networks:list": ["docker:networks:edit"],
+  "docker:registries:list": ["docker:registries:edit"],
+  "databases:list": ["databases:view", "databases:edit", "databases:query:read"],
+  "databases:view": [
+    "databases:edit",
+    "databases:query:read",
+    "databases:query:write",
+    "databases:query:admin",
+    "databases:credentials:reveal",
+  ],
+  "databases:query:read": ["databases:query:write", "databases:query:admin"],
+  "databases:query:write": ["databases:query:admin"],
+  "notifications:alerts:list": ["notifications:alerts:view", "notifications:alerts:edit"],
+  "notifications:alerts:view": ["notifications:alerts:edit"],
+  "notifications:webhooks:list": ["notifications:webhooks:view", "notifications:webhooks:edit"],
+  "notifications:webhooks:view": ["notifications:webhooks:edit"],
+  "notifications:deliveries:list": ["notifications:deliveries:view"],
+  "notifications:view": ["notifications:manage"],
+  "logs:environments:list": ["logs:environments:view", "logs:environments:edit", "logs:read"],
+  "logs:environments:view": ["logs:environments:edit", "logs:read"],
+  "logs:schemas:view": ["logs:schemas:edit"],
+  "logs:read": ["logs:manage"],
+  "status-page:view": ["status-page:manage"],
+};
 
 export function extractBaseScope(scope: string): string {
   if (ALL_SCOPE_VALUES.has(scope)) return scope;
@@ -16,14 +72,51 @@ export function extractBaseScope(scope: string): string {
 export function scopeMatches(availableScopes: readonly string[], requiredScope: string): boolean {
   if (availableScopes.includes(requiredScope)) return true;
   const base = extractBaseScope(requiredScope);
-  return base !== requiredScope && availableScopes.includes(base);
+  if (base !== requiredScope && availableScopes.includes(base)) return true;
+  return hasImpliedScope(availableScopes, requiredScope);
+}
+
+export function hasScopeBase(availableScopes: readonly string[], baseScope: string): boolean {
+  if (scopeMatches(availableScopes, baseScope)) return true;
+  return availableScopes.some((scope) => {
+    const scopeBase = extractBaseScope(scope);
+    if (scope === scopeBase) return false;
+    const resourceId = scope.slice(scopeBase.length + 1);
+    return scopeMatches([scope], `${baseScope}:${resourceId}`);
+  });
+}
+
+function hasImpliedScope(availableScopes: readonly string[], requiredScope: string): boolean {
+  const requiredBase = extractBaseScope(requiredScope);
+  const impliedScopes = getTransitiveImpliedScopes(requiredBase);
+  if (impliedScopes.length === 0) return false;
+
+  const resourceId =
+    requiredBase === requiredScope ? null : requiredScope.slice(requiredBase.length + 1);
+  return impliedScopes.some(
+    (impliedScope) =>
+      availableScopes.includes(impliedScope) ||
+      (resourceId !== null && availableScopes.includes(`${impliedScope}:${resourceId}`))
+  );
+}
+
+function getTransitiveImpliedScopes(requiredBase: string): string[] {
+  const result = new Set<string>();
+  const queue = [...(IMPLIED_SCOPES_BY_REQUIRED_SCOPE[requiredBase] ?? [])];
+  for (let index = 0; index < queue.length; index += 1) {
+    const scope = queue[index];
+    if (result.has(scope)) continue;
+    result.add(scope);
+    queue.push(...(IMPLIED_SCOPES_BY_REQUIRED_SCOPE[scope] ?? []));
+  }
+  return [...result];
 }
 
 export function hasSelectableScopeBase(
   availableScopes: readonly string[],
   baseScope: string
 ): boolean {
-  if (availableScopes.includes(baseScope)) return true;
+  if (hasScopeBase(availableScopes, baseScope)) return true;
   return availableScopes.some(
     (availableScope) =>
       extractBaseScope(availableScope) === baseScope && availableScope !== baseScope
@@ -34,9 +127,12 @@ export function deriveAllowedResourceIdsByScope(userScopes: readonly string[]) {
   const result: Record<string, string[]> = {};
   for (const scope of RESOURCE_SCOPABLE_SCOPES) {
     if (userScopes.includes(scope)) continue;
-    const ids = userScopes
-      .filter((candidate) => extractBaseScope(candidate) === scope && candidate !== scope)
-      .map((candidate) => candidate.slice(scope.length + 1));
+    const ids = userScopes.flatMap((candidate) => {
+      const candidateBase = extractBaseScope(candidate);
+      if (candidate === candidateBase) return [];
+      const id = candidate.slice(candidateBase.length + 1);
+      return id && scopeMatches([candidate], `${scope}:${id}`) ? [id] : [];
+    });
     if (ids.length > 0) result[scope] = [...new Set(ids)];
   }
   return result;

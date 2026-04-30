@@ -19,4 +19,15 @@ describe('UpdateAuthProvisioningSettingsSchema', () => {
 
     expect(result.success).toBe(false);
   });
+
+  it('rejects invalid outbound webhook private CIDRs', () => {
+    const result = UpdateAuthProvisioningSettingsSchema.safeParse({
+      outboundWebhookPolicy: {
+        allowPrivateNetworks: true,
+        allowedPrivateCidrs: ['not-a-cidr'],
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
 });

@@ -1,9 +1,16 @@
 import { createHmac } from 'node:crypto';
+import { request as httpRequest } from 'node:http';
+import type { RequestOptions } from 'node:https';
+import { request as httpsRequest } from 'node:https';
 import { eq } from 'drizzle-orm';
 import type { Env } from '@/config/env.js';
 import type { DrizzleClient } from '@/db/client.js';
 import { notificationDeliveryLog, notificationWebhooks } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
+import {
+  checkOutboundWebhookTarget,
+  type OutboundWebhookPolicyService,
+} from '@/modules/settings/outbound-webhook-policy.service.js';
 import { buildTemplateContext, type NotificationEvent, renderTemplate } from './notification-templates.js';
 import type { NotificationWebhookService } from './notification-webhook.service.js';
 
@@ -14,11 +21,24 @@ const RETRY_DELAYS = [30, 120, 480, 1800, 7200]; // 30s, 2m, 8m, 30m, 2h
 const MAX_RESPONSE_BODY = 2048;
 const HTTP_TIMEOUT_MS = 10_000;
 
+interface WebhookFetchOptions {
+  method: string;
+  headers: Record<string, string>;
+  body?: string;
+  signal: AbortSignal;
+}
+
+interface WebhookFetchResponse {
+  status: number;
+  text: () => Promise<string>;
+}
+
 export class NotificationDispatcherService {
   constructor(
     private db: DrizzleClient,
     private webhookService: NotificationWebhookService,
-    private env: Env
+    private env: Env,
+    private outboundWebhookPolicyService: OutboundWebhookPolicyService
   ) {}
 
   /**
@@ -74,11 +94,10 @@ export class NotificationDispatcherService {
     const timeout = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
     try {
       const method = webhook.method || 'POST';
-      const fetchOptions: RequestInit = {
+      const fetchOptions: WebhookFetchOptions = {
         method,
         headers,
         signal: controller.signal,
-        redirect: 'error',
       };
 
       // Only include body for methods that support it
@@ -86,7 +105,7 @@ export class NotificationDispatcherService {
         fetchOptions.body = body;
       }
 
-      const response = await fetch(webhook.url, fetchOptions);
+      const response = await this.fetchAllowedWebhookTarget(webhook.url, fetchOptions);
 
       responseStatus = response.status;
       const rawBody = await response.text().catch(() => '');
@@ -187,18 +206,17 @@ export class NotificationDispatcherService {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
     try {
-      const fetchOptions: RequestInit = {
+      const fetchOptions: WebhookFetchOptions = {
         method: delivery.requestMethod,
         headers: retryHeaders,
         signal: controller.signal,
-        redirect: 'error',
       };
 
       if (delivery.requestMethod !== 'GET' && delivery.requestBody) {
         fetchOptions.body = delivery.requestBody;
       }
 
-      const response = await fetch(delivery.requestUrl, fetchOptions);
+      const response = await this.fetchAllowedWebhookTarget(delivery.requestUrl, fetchOptions);
 
       responseStatus = response.status;
       const rawBody = await response.text().catch(() => '');
@@ -249,4 +267,104 @@ export class NotificationDispatcherService {
       logger.warn('Webhook delivery permanently failed', { deliveryId, attempt: nextAttempt, error });
     }
   }
+
+  private async fetchAllowedWebhookTarget(url: string, options: WebhookFetchOptions): Promise<WebhookFetchResponse> {
+    const policy = await this.outboundWebhookPolicyService.getConfig();
+    const result = await checkOutboundWebhookTarget(url, policy, this.env);
+    if (!result.allowed) {
+      throw new Error(`Webhook target blocked by outbound network policy: ${result.reason ?? 'target is not allowed'}`);
+    }
+    if (result.resolvedAddresses.length === 0) {
+      throw new Error('Webhook target blocked by outbound network policy: target did not resolve');
+    }
+    return fetchWithPinnedAddresses(url, result.resolvedAddresses, options);
+  }
+}
+
+async function fetchWithPinnedAddresses(
+  rawUrl: string,
+  addresses: string[],
+  options: WebhookFetchOptions
+): Promise<WebhookFetchResponse> {
+  let lastError: unknown;
+  for (const address of addresses) {
+    try {
+      return await fetchWithPinnedAddress(rawUrl, address, options);
+    } catch (error) {
+      if (options.signal.aborted) throw error;
+      lastError = error;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error('Webhook request failed for all resolved addresses');
+}
+
+export function fetchWithPinnedAddress(
+  rawUrl: string,
+  address: string,
+  options: WebhookFetchOptions
+): Promise<WebhookFetchResponse> {
+  const url = new URL(rawUrl);
+  const requester = url.protocol === 'https:' ? httpsRequest : httpRequest;
+  const lookup: NonNullable<RequestOptions['lookup']> = (_hostname, lookupOptions, callback) => {
+    const family = address.includes(':') ? 6 : 4;
+    const lookupCallback = (typeof lookupOptions === 'function' ? lookupOptions : callback) as (
+      err: NodeJS.ErrnoException | null,
+      addressOrAddresses: string | Array<{ address: string; family: number }>,
+      family?: number
+    ) => void;
+    const all =
+      typeof lookupOptions === 'object' && lookupOptions !== null && 'all' in lookupOptions && lookupOptions.all;
+
+    if (all) {
+      lookupCallback(null, [{ address, family }]);
+      return;
+    }
+    lookupCallback(null, address, family);
+  };
+  const requestOptions: RequestOptions = {
+    protocol: url.protocol,
+    hostname: url.hostname,
+    port: url.port,
+    path: `${url.pathname}${url.search}`,
+    method: options.method,
+    headers:
+      options.body !== undefined &&
+      !Object.keys(options.headers).some((header) => header.toLowerCase() === 'content-length')
+        ? { ...options.headers, 'Content-Length': Buffer.byteLength(options.body).toString() }
+        : options.headers,
+    lookup,
+  };
+
+  return new Promise((resolve, reject) => {
+    const req = requester(requestOptions, (res) => {
+      const chunks: Buffer[] = [];
+      let received = 0;
+      res.on('data', (chunk: Buffer | string) => {
+        const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        if (received <= MAX_RESPONSE_BODY) {
+          chunks.push(buffer.subarray(0, Math.max(0, MAX_RESPONSE_BODY + 1 - received)));
+        }
+        received += buffer.length;
+      });
+      res.on('end', () => {
+        const body = Buffer.concat(chunks).toString('utf8');
+        resolve({
+          status: res.statusCode ?? 0,
+          text: async () => body,
+        });
+      });
+      res.on('error', reject);
+    });
+
+    req.on('error', reject);
+    if (options.signal.aborted) {
+      req.destroy(new Error('Request aborted'));
+      return;
+    }
+    const abort = () => req.destroy(new Error('Request aborted'));
+    options.signal.addEventListener('abort', abort, { once: true });
+    req.on('close', () => options.signal.removeEventListener('abort', abort));
+    if (options.body !== undefined) req.write(options.body);
+    req.end();
+  });
 }

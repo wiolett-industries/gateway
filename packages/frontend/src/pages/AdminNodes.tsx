@@ -426,6 +426,14 @@ export function AdminNodes() {
                       ? "Installs the monitoring agent and enrolls with this Gateway."
                       : "Installs nginx, the daemon, and enrolls with this Gateway."}
                 </p>
+                <div className="mb-2 border border-amber-500/20 bg-amber-500/10 p-3">
+                  <p className="text-xs text-amber-700 dark:text-amber-300">
+                    If Gateway is behind Cloudflare, replace the generated{" "}
+                    <span className="font-mono">--gateway</span> host with the actual Gateway server
+                    IP or a hostname that exposes <span className="font-mono">9443/tcp</span>{" "}
+                    directly.
+                  </p>
+                </div>
                 <Tabs defaultValue="curl">
                   <TabsList>
                     <TabsTrigger value="curl">curl</TabsTrigger>

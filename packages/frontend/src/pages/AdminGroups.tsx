@@ -172,12 +172,9 @@ export function AdminGroups({
       .then((r) => setDatabasesList(r.data ?? []))
       .catch(() => {});
     if (
-      userScopes.some(
-        (scope) =>
-          scope === "logs:schemas:list" ||
-          scope === "logs:manage" ||
-          scope.startsWith("logs:schemas:view:")
-      )
+      scopeMatches(userScopes, "logs:schemas:list") ||
+      scopeMatches(userScopes, "logs:manage") ||
+      (deriveAllowedResourceIdsByScope(userScopes)["logs:schemas:view"]?.length ?? 0) > 0
     ) {
       api
         .listLoggingSchemas()

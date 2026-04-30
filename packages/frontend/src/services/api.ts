@@ -553,6 +553,7 @@ class ApiClient extends ApiClientBase {
     oidcDefaultGroupId?: string;
     mcpServerEnabled?: boolean;
     networkSecurity?: Partial<AuthProvisioningSettings["networkSecurity"]>;
+    outboundWebhookPolicy?: Partial<AuthProvisioningSettings["outboundWebhookPolicy"]>;
   }): Promise<AuthProvisioningSettings> {
     return this.request<AuthProvisioningSettings>("/admin/auth-settings", {
       method: "PUT",

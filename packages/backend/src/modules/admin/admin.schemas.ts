@@ -30,6 +30,15 @@ export const UpdateAuthProvisioningSettingsSchema = z.object({
       trustCloudflareHeaders: z.boolean().optional(),
     })
     .optional(),
+  outboundWebhookPolicy: z
+    .object({
+      allowPrivateNetworks: z.boolean().optional(),
+      allowedPrivateCidrs: z
+        .array(z.string().trim().min(1).max(64).refine(isValidCidr, 'Invalid CIDR range'))
+        .max(64)
+        .optional(),
+    })
+    .optional(),
 });
 
 export type UpdateUserGroupInput = z.infer<typeof UpdateUserGroupSchema>;

@@ -36,6 +36,7 @@ import {
   CommandSeparator,
   CommandShortcut,
 } from "@/components/ui/command";
+import { deriveAllowedResourceIdsByScope } from "@/lib/scope-utils";
 import { api } from "@/services/api";
 import { useAIStore } from "@/stores/ai";
 import { useAuthStore } from "@/stores/auth";
@@ -365,8 +366,9 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       return hasAnyScope("pki:ca:list:root", "pki:ca:list:intermediate");
     }
     if (i.label === "Logging") {
-      const hasResourceScopedSchemaView =
-        user?.scopes.some((scope) => scope.startsWith("logs:schemas:view:")) ?? false;
+      const hasResourceScopedSchemaView = user
+        ? (deriveAllowedResourceIdsByScope(user.scopes)["logs:schemas:view"]?.length ?? 0) > 0
+        : false;
       return (
         loggingEnabled &&
         (hasAnyScope(
