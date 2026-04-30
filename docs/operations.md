@@ -216,6 +216,12 @@ curl -H "Content-Type: application/json" \
 
 ### TypeScript SDK
 
+Gateway publishes the official TypeScript logging SDK as [`@wiolett/gateway-logger`](https://www.npmjs.com/package/@wiolett/gateway-logger). Install it in Node services that need structured log delivery with batching, retries, fallback handling, and trace/span context:
+
+```bash
+pnpm add @wiolett/gateway-logger
+```
+
 ```ts
 import { GatewayLogger } from "@wiolett/gateway-logger";
 

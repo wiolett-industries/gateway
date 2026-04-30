@@ -4,6 +4,15 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "https://gitlab.wiolett.net/wiolett/gateway.git",
+    "directory": "packages/logging-sdk"
+  },
+  "bugs": {
+    "url": "https://gitlab.wiolett.net/wiolett/gateway/-/issues"
+  },
+  "homepage": "https://gitlab.wiolett.net/wiolett/gateway/-/tree/main/packages/logging-sdk#readme",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
