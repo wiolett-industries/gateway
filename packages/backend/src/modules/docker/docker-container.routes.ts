@@ -52,6 +52,59 @@ import { DockerManagementService } from './docker.service.js';
 import { DockerSecretService } from './docker-secret.service.js';
 
 const DOCKER_DEPLOYMENT_MANAGED_LABEL = 'wiolett.gateway.deployment.managed';
+const DOCKER_RESOURCE_LIST_MAX = 1000;
+const DOCKER_CONTAINER_PORT_PREVIEW_MAX = 64;
+
+function compactContainerListItem(container: Record<string, any>) {
+  const ports = container.ports ?? container.Ports;
+  return {
+    id: container.id ?? container.Id,
+    name: ((container.name ?? container.Name ?? '') as string).replace(/^\//, ''),
+    image: container.image ?? container.Image,
+    state: container.state ?? container.State,
+    status: container.status ?? container.Status,
+    created: container.created ?? container.Created,
+    ports: Array.isArray(ports) ? ports.slice(0, DOCKER_CONTAINER_PORT_PREVIEW_MAX) : ports,
+    portsCount: Array.isArray(ports) ? ports.length : undefined,
+    portsTruncated: Array.isArray(ports) && ports.length > DOCKER_CONTAINER_PORT_PREVIEW_MAX,
+    kind: container.kind ?? 'container',
+    deploymentId: container.deploymentId,
+    activeSlot: container.activeSlot,
+    primaryRoute: container.primaryRoute,
+    activeSlotContainerId: container.activeSlotContainerId,
+    healthCheckId: container.healthCheckId,
+    healthCheckEnabled: container.healthCheckEnabled,
+    healthStatus: container.healthStatus,
+    lastHealthCheckAt: container.lastHealthCheckAt,
+    folderId: container.folderId,
+    folderIsSystem: container.folderIsSystem,
+    folderSortOrder: container.folderSortOrder,
+    _transition: container._transition,
+  };
+}
+
+function matchesContainerSearch(container: Record<string, any>, search: string | undefined) {
+  if (!search) return true;
+  const ports = container.ports ?? container.Ports;
+  const portText = Array.isArray(ports)
+    ? ports.map((port: any) => [port.ip, port.publicPort, port.privatePort, port.type].join(' ')).join(' ')
+    : '';
+  const haystack = [
+    container.id ?? container.Id,
+    container.name ?? container.Name,
+    container.image ?? container.Image,
+    container.state ?? container.State,
+    container.status ?? container.Status,
+    container.kind,
+    container.deploymentId,
+    container.activeSlot,
+    portText,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  return haystack.includes(search);
+}
 
 /** Resolve container name from container ID via inspect */
 async function resolveContainerName(nodeId: string, containerId: string): Promise<string> {
@@ -80,7 +133,18 @@ export function registerContainerRoutes(router: OpenAPIHono<AppEnv>) {
       const service = container.resolve(DockerManagementService);
       const nodeId = c.req.param('nodeId')!;
       const data = await service.listContainers(nodeId);
-      return c.json({ data });
+      if (!Array.isArray(data)) return c.json({ data });
+      const search = c.req.query('search')?.trim().toLowerCase();
+      const compacted = data
+        .filter((item) => matchesContainerSearch(item, search))
+        .map((item) => compactContainerListItem(item));
+      const truncated = compacted.length > DOCKER_RESOURCE_LIST_MAX;
+      return c.json({
+        data: truncated ? compacted.slice(0, DOCKER_RESOURCE_LIST_MAX) : compacted,
+        total: compacted.length,
+        limit: DOCKER_RESOURCE_LIST_MAX,
+        truncated,
+      });
     }
   );
 
@@ -303,6 +367,18 @@ export function registerContainerRoutes(router: OpenAPIHono<AppEnv>) {
       const nodeId = c.req.param('nodeId')!;
       const containerId = c.req.param('containerId')!;
       const data = await service.getContainerTop(nodeId, containerId);
+      if (Array.isArray(data?.Processes) && data.Processes.length > DOCKER_RESOURCE_LIST_MAX) {
+        return c.json({
+          data: {
+            ...data,
+            Processes: data.Processes.slice(0, DOCKER_RESOURCE_LIST_MAX),
+            totalProcesses: data.Processes.length,
+            limit: DOCKER_RESOURCE_LIST_MAX,
+            truncated: true,
+          },
+          truncated: true,
+        });
+      }
       return c.json({ data });
     }
   );
@@ -407,7 +483,13 @@ export function registerContainerRoutes(router: OpenAPIHono<AppEnv>) {
       const rawQuery = c.req.query();
       const { path } = FileBrowseSchema.parse(rawQuery);
       const data = await service.listDirectory(nodeId, containerId, path);
-      return c.json({ data });
+      const truncated = Array.isArray(data) && data.length > DOCKER_RESOURCE_LIST_MAX;
+      return c.json({
+        data: truncated ? data.slice(0, DOCKER_RESOURCE_LIST_MAX) : data,
+        total: Array.isArray(data) ? data.length : undefined,
+        limit: DOCKER_RESOURCE_LIST_MAX,
+        truncated,
+      });
     }
   );
 

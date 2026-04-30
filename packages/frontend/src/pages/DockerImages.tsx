@@ -39,19 +39,25 @@ import { isNodeIncompatible } from "@/types";
 export function DockerImages({
   embedded,
   onPullRef,
+  onRefreshRef,
   fixedNodeId,
 }: {
   embedded?: boolean;
   onPullRef?: (fn: () => void) => void;
+  onRefreshRef?: (fn: () => void) => void;
   fixedNodeId?: string;
 } = {}) {
   const navigate = useNavigate();
   const { hasScope } = useAuthStore();
   const { images, selectedNodeId, setSelectedNode, fetchImages } = useDockerStore();
   const isLoading = useDockerStore((s) => s.loading.images);
+  const storeDockerNodes = useDockerStore((s) => s.dockerNodes);
+  const dockerNodesLoaded = useDockerStore((s) => s.dockerNodesLoaded);
   const visibleNodeId = fixedNodeId ?? selectedNodeId;
+  const canFetchData = !!visibleNodeId || dockerNodesLoaded;
 
   const [dockerNodes, setDockerNodes] = useState<Node[]>([]);
+  const [nodesLoaded, setNodesLoaded] = useState(false);
   const [search, setSearch] = useState("");
   const [filterUsage, setFilterUsage] = useState("all");
   const [pruning, setPruning] = useState(false);
@@ -103,6 +109,9 @@ export function DockerImages({
   useEffect(() => {
     onPullRef?.(() => openPull());
   }, [onPullRef, openPull]);
+  useEffect(() => {
+    onRefreshRef?.(() => void fetchImages(undefined, search));
+  }, [fetchImages, onRefreshRef, search]);
   const [pullRef, setPullRef] = useState("");
   const [pullRegistryId, setPullRegistryId] = useState<string>("");
   const [pulling, setPulling] = useState(false);
@@ -115,10 +124,12 @@ export function DockerImages({
     } catch {}
 
     if (embedded && !fixedNodeId) {
+      setNodesLoaded(dockerNodesLoaded);
       return;
     }
     if (fixedNodeId) {
       setSelectedNode(fixedNodeId);
+      setNodesLoaded(true);
       return;
     }
 
@@ -129,26 +140,27 @@ export function DockerImages({
       );
       setDockerNodes(onlineNodes);
       useDockerStore.getState().setDockerNodes(onlineNodes);
+      setNodesLoaded(true);
     } catch {
       toast.error("Failed to load Docker nodes");
     }
-  }, [embedded, fixedNodeId, setSelectedNode]);
+  }, [dockerNodesLoaded, embedded, fixedNodeId, setSelectedNode]);
 
   useEffect(() => {
     void loadImagePageState();
   }, [loadImagePageState]);
 
   useEffect(() => {
-    if (!visibleNodeId) return;
-    fetchImages(fixedNodeId);
-    const interval = setInterval(() => fetchImages(fixedNodeId), 30_000);
+    if (!canFetchData) return;
+    fetchImages(fixedNodeId, search);
+    const interval = setInterval(() => fetchImages(fixedNodeId, search), 30_000);
     return () => clearInterval(interval);
-  }, [fetchImages, fixedNodeId, visibleNodeId]);
+  }, [canFetchData, fetchImages, fixedNodeId, search]);
 
   useRealtime("docker.image.changed", (payload) => {
     const ev = payload as { nodeId?: string };
     if (visibleNodeId && ev?.nodeId && ev.nodeId !== visibleNodeId) return;
-    fetchImages(fixedNodeId);
+    fetchImages(fixedNodeId, search);
   });
 
   const filteredImages = useMemo(() => {
@@ -178,6 +190,7 @@ export function DockerImages({
     }
     return result;
   }, [images, search, filterUsage]);
+  const truncatedListMeta = images.find((img) => img._listTruncated);
 
   const handleRemove = useCallback(
     async (imageId: string, tag: string, nodeId?: string) => {
@@ -192,12 +205,12 @@ export function DockerImages({
       try {
         await api.removeImage(nid, imageId);
         toast.success("Image removed");
-        fetchImages();
+        fetchImages(undefined, search);
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Failed to remove image");
       }
     },
-    [fetchImages, selectedNodeId]
+    [fetchImages, selectedNodeId, search]
   );
 
   const handlePrune = useCallback(async () => {
@@ -218,13 +231,13 @@ export function DockerImages({
       toast.success(
         freed ? `Pruned images, freed ${formatBytes(Number(freed))}` : "Pruned unused images"
       );
-      fetchImages();
+      fetchImages(undefined, search);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Prune failed");
     } finally {
       setPruning(false);
     }
-  }, [fetchImages, selectedNodeId]);
+  }, [fetchImages, selectedNodeId, search]);
 
   const closePull = useCallback(() => {
     setPullOpen(false);
@@ -241,15 +254,15 @@ export function DockerImages({
       closePull();
       useDockerStore.getState().invalidate("tasks");
       // Poll images to detect when pull completes
-      setTimeout(() => fetchImages(), 5000);
-      setTimeout(() => fetchImages(), 15000);
-      setTimeout(() => fetchImages(), 30000);
+      setTimeout(() => fetchImages(undefined, search), 5000);
+      setTimeout(() => fetchImages(undefined, search), 15000);
+      setTimeout(() => fetchImages(undefined, search), 30000);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to pull image");
     } finally {
       setPulling(false);
     }
-  }, [closePull, fetchImages, pullNodeId, pullRef, pullRegistryId]);
+  }, [closePull, fetchImages, pullNodeId, pullRef, pullRegistryId, search]);
 
   const allImageColumns: DataTableColumn<any>[] = useMemo(
     () => [
@@ -396,14 +409,17 @@ export function DockerImages({
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-2xl font-bold">Docker Images</h1>
-              {!isLoading && selectedNodeId && <Badge variant="secondary">{images.length}</Badge>}
+              {!isLoading && visibleNodeId && <Badge variant="secondary">{images.length}</Badge>}
             </div>
             <p className="text-sm text-muted-foreground">Manage Docker images across your nodes</p>
           </div>
           <div className="flex items-center gap-2">
             {selectedNodeId && (
               <>
-                <RefreshButton onClick={() => fetchImages()} disabled={isLoading} />
+                <RefreshButton
+                  onClick={() => fetchImages(undefined, search)}
+                  disabled={isLoading}
+                />
                 {hasScope("docker:images:delete") && (
                   <Button variant="outline" onClick={handlePrune} disabled={pruning}>
                     <Trash2 className="h-4 w-4 mr-1" />
@@ -444,7 +460,7 @@ export function DockerImages({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="__all__">All nodes</SelectItem>
-                {(embedded ? useDockerStore.getState().dockerNodes : dockerNodes).map((n) => (
+                {(embedded ? storeDockerNodes : dockerNodes).map((n) => (
                   <SelectItem key={n.id} value={n.id}>
                     {n.displayName || n.hostname}
                   </SelectItem>
@@ -465,6 +481,14 @@ export function DockerImages({
         }
       />
 
+      {truncatedListMeta && (
+        <div className="border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
+          Showing first {truncatedListMeta._listLimit ?? images.length} of{" "}
+          {truncatedListMeta._listTotal ?? "many"} images. Narrow the node or search filters for
+          more specific data.
+        </div>
+      )}
+
       {filteredImages.length > 0 ? (
         <DataTable
           columns={imageColumns}
@@ -475,7 +499,7 @@ export function DockerImages({
           }}
           emptyMessage="No images found."
         />
-      ) : isLoading ? (
+      ) : isLoading || (!visibleNodeId && !nodesLoaded) ? (
         <div className="flex items-center justify-center py-16">
           <div className="flex flex-col items-center gap-3">
             <LoadingSpinner className="" />

@@ -1,6 +1,7 @@
 import { Activity } from "lucide-react";
 import { useMemo } from "react";
 import { DetailRow } from "@/components/common/DetailRow";
+import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/ui/stat-card";
 import type { DatabaseConnection, DatabaseMetricSnapshot } from "@/types";
@@ -11,6 +12,7 @@ interface DatabaseOverviewTabProps {
   canViewMonitoring: boolean;
   healthStatus: DatabaseConnection["healthStatus"];
   history: DatabaseMetricSnapshot[];
+  monitoringLoading: boolean;
 }
 
 export function DatabaseOverviewTab({
@@ -18,6 +20,7 @@ export function DatabaseOverviewTab({
   canViewMonitoring,
   healthStatus,
   history,
+  monitoringLoading,
 }: DatabaseOverviewTabProps) {
   const latest = history.at(-1);
   const showMonitoring = canViewMonitoring && healthStatus !== "offline";
@@ -175,7 +178,12 @@ export function DatabaseOverviewTab({
   return (
     <div className="space-y-4">
       {showMonitoring &&
-        (latest ? (
+        (monitoringLoading && !latest ? (
+          <div className="flex items-center gap-3 border border-border bg-card p-4 text-sm text-muted-foreground">
+            <LoadingSpinner className="" />
+            <span>Loading monitoring data...</span>
+          </div>
+        ) : latest ? (
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             {overviewMetrics.map((metric) => (
               <StatCard

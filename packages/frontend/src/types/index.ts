@@ -559,8 +559,12 @@ export interface WebhookDelivery {
   requestUrl: string;
   requestMethod: string;
   requestBody: string | null;
+  requestBodyPreview?: string | null;
+  requestBodyTruncated?: boolean;
   responseStatus: number | null;
   responseBody: string | null;
+  responseBodyPreview?: string | null;
+  responseBodyTruncated?: boolean;
   responseTimeMs: number | null;
   attempt: number;
   maxAttempts: number;
@@ -2288,6 +2292,8 @@ export interface DockerContainer {
   status: string;
   created: number;
   ports: DockerPort[];
+  portsCount?: number;
+  portsTruncated?: boolean;
   labels?: Record<string, string>;
   kind?: "container" | "deployment";
   deploymentId?: string;
@@ -2303,6 +2309,9 @@ export interface DockerContainer {
   folderIsSystem?: boolean;
   folderSortOrder?: number;
   _transition?: string;
+  _listTruncated?: boolean;
+  _listTotal?: number;
+  _listLimit?: number;
   // Stats (from health report, optional)
   cpuPercent?: number;
   memoryUsage?: number;
@@ -2411,11 +2420,16 @@ export interface DockerDeployment {
   healthConfig: DockerDeploymentHealthConfig;
   drainSeconds: number;
   routes: DockerDeploymentRoute[];
+  routesCount?: number;
+  routesTruncated?: boolean;
   slots: DockerDeploymentSlot[];
   releases: DockerDeploymentRelease[];
   webhook?: DockerWebhook | null;
   healthCheck?: DockerHealthCheck | null;
   _transition?: string;
+  _listTruncated?: boolean;
+  _listTotal?: number;
+  _listLimit?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -2423,17 +2437,31 @@ export interface DockerDeployment {
 export interface DockerImage {
   id: string;
   repoTags: string[];
+  repoTagsCount?: number;
+  repoTagsTruncated?: boolean;
+  repoDigests?: string[];
+  repoDigestsCount?: number;
+  repoDigestsTruncated?: boolean;
   size: number;
   created: number;
+  _listTruncated?: boolean;
+  _listTotal?: number;
+  _listLimit?: number;
 }
 
 export interface DockerVolume {
   name: string;
   driver: string;
   mountpoint: string;
-  labels: Record<string, string>;
+  labels?: Record<string, string>;
   scope: string;
   createdAt?: string;
+  usedBy?: string[];
+  usedByCount?: number;
+  usedByTruncated?: boolean;
+  _listTruncated?: boolean;
+  _listTotal?: number;
+  _listLimit?: number;
 }
 
 export interface DockerNetwork {
@@ -2441,8 +2469,17 @@ export interface DockerNetwork {
   name: string;
   driver: string;
   scope: string;
-  ipam?: { subnet?: string; gateway?: string };
-  containers?: Record<string, { name: string }>;
+  ipam?: {
+    subnet?: string;
+    gateway?: string;
+    config?: Array<{ subnet?: string; gateway?: string }>;
+  };
+  containers?: Record<string, { name?: string }>;
+  containersCount?: number;
+  containersTruncated?: boolean;
+  _listTruncated?: boolean;
+  _listTotal?: number;
+  _listLimit?: number;
 }
 
 export interface DockerTask {
@@ -2487,6 +2524,9 @@ export interface FileEntry {
   linkTarget?: string;
   isSpecial?: boolean;
   isWritable?: boolean;
+  _listTruncated?: boolean;
+  _listTotal?: number;
+  _listLimit?: number;
 }
 
 export interface ContainerCreateConfig {

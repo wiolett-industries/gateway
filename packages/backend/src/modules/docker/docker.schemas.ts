@@ -9,6 +9,7 @@ const ContainerNameSchema = z
     /^[a-zA-Z0-9][a-zA-Z0-9_.-]+$/,
     'Invalid container name (must start with alphanumeric, then alphanumerics, _, ., or -)'
   );
+const DOCKER_CONTAINER_PORTS_MAX = 256;
 
 // Container create
 export const ContainerCreateSchema = z.object({
@@ -23,6 +24,7 @@ export const ContainerCreateSchema = z.object({
         protocol: z.enum(['tcp', 'udp']).default('tcp'),
       })
     )
+    .max(DOCKER_CONTAINER_PORTS_MAX)
     .optional(),
   volumes: z
     .array(
@@ -70,6 +72,7 @@ export const ContainerRecreateSchema = z.object({
         protocol: z.enum(['tcp', 'udp']).default('tcp'),
       })
     )
+    .max(DOCKER_CONTAINER_PORTS_MAX)
     .optional(),
   mounts: z
     .array(
@@ -129,8 +132,10 @@ export const NetworkConnectSchema = z.object({
 });
 
 // Log query
+export const DOCKER_LOG_TAIL_MAX = 1000;
+
 export const LogQuerySchema = z.object({
-  tail: z.coerce.number().default(100),
+  tail: z.coerce.number().int().min(1).max(DOCKER_LOG_TAIL_MAX).default(100),
   timestamps: z.coerce.boolean().default(false),
 });
 

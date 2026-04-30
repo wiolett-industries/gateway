@@ -323,6 +323,11 @@ export function SidebarContent({
 
     Promise.all(nodeIds.map((nid) => api.listDockerContainers(nid).catch(() => [])))
       .then((results) => {
+        if (
+          results.some((containers) => containers.some((container) => container._listTruncated))
+        ) {
+          return;
+        }
         const validIds = results.flat().map((c) => c.id);
         usePinnedContainersStore.getState().removeOrphans(validIds);
       })

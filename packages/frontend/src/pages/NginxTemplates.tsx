@@ -32,13 +32,20 @@ export function NginxTemplates({
   const navigate = useNavigate();
   const { hasScope } = useAuthStore();
   const canViewTemplates = hasScope("proxy:list");
-  const cachedTemplates = api.getCached<NginxTemplate[]>("nginx-templates:list");
+  const cachedTemplates = canViewTemplates
+    ? api.getCached<NginxTemplate[]>("nginx-templates:list")
+    : undefined;
   const [templates, setTemplates] = useState<NginxTemplate[]>(cachedTemplates ?? []);
-  const [isLoading, setIsLoading] = useState(!cachedTemplates);
+  const [isLoading, setIsLoading] = useState(canViewTemplates && !cachedTemplates);
   const [previewTemplate, setPreviewTemplate] = useState<NginxTemplate | null>(null);
   const [previewContent, setPreviewContent] = useState("");
 
   const load = useCallback(async () => {
+    if (!canViewTemplates) {
+      setTemplates([]);
+      setIsLoading(false);
+      return;
+    }
     try {
       const data = await api.listNginxTemplates();
       setTemplates(data || []);
@@ -47,7 +54,7 @@ export function NginxTemplates({
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [canViewTemplates]);
 
   useEffect(() => {
     load();
@@ -99,6 +106,10 @@ export function NginxTemplates({
       toast.error(err instanceof Error ? err.message : "Failed to render preview");
     }
   };
+
+  if (!canViewTemplates) {
+    return null;
+  }
 
   if (isLoading) {
     return <LoadingSpinner />;

@@ -89,6 +89,34 @@ import { API_BASE, ApiClientBase } from "./api-base";
 
 const AUTH_BASE = "/auth";
 
+type DockerListEnvelope<T> = {
+  data: T[];
+  total?: number;
+  limit?: number;
+  truncated?: boolean;
+};
+
+type DockerListQuery = {
+  search?: string;
+};
+
+function dockerListQuery(params?: DockerListQuery & { noCache?: boolean }) {
+  const query = new URLSearchParams();
+  if (params?.search?.trim()) query.set("search", params.search.trim());
+  if (params?.noCache) query.set("_t", String(Date.now()));
+  const qs = query.toString();
+  return qs ? `?${qs}` : "";
+}
+
+function withDockerListMeta<T extends object>(response: DockerListEnvelope<T>): T[] {
+  return (response.data ?? []).map((item) => ({
+    ...item,
+    _listTotal: response.total ?? response.data.length,
+    _listLimit: response.limit ?? response.data.length,
+    _listTruncated: response.truncated === true,
+  })) as T[];
+}
+
 class ApiClient extends ApiClientBase {
   /**
    * Prefetch key data for all pages in background.
@@ -136,13 +164,17 @@ class ApiClient extends ApiClientBase {
     quiet(this.listDomains({}).then((d) => this.setCache("domains:list", d)));
 
     // Templates
-    quiet(this.listTemplates().then((d) => this.setCache("templates:list", d)));
+    if (useAuthStore.getState().hasScope("pki:templates:list")) {
+      quiet(this.listTemplates().then((d) => this.setCache("templates:list", d)));
+    }
 
     // Access Lists
     quiet(this.listAccessLists().then((d) => this.setCache("access-lists:list", d)));
 
     // Nginx Templates
-    quiet(this.listNginxTemplates().then((d) => this.setCache("nginx-templates:list", d)));
+    if (useAuthStore.getState().hasScope("proxy:list")) {
+      quiet(this.listNginxTemplates().then((d) => this.setCache("nginx-templates:list", d)));
+    }
 
     // Version info
     quiet(this.getVersionInfo().then((d) => this.setCache("system:version", d)));
@@ -1643,7 +1675,11 @@ class ApiClient extends ApiClientBase {
       rowCount: number;
       fields: string[];
       rows: Record<string, unknown>[];
+      truncated?: boolean;
+      maxRows?: number;
     }>;
+    truncated?: boolean;
+    resultLimit?: number;
   }> {
     return this.unwrapData(
       this.request<{
@@ -1653,11 +1689,15 @@ class ApiClient extends ApiClientBase {
             rowCount: number;
             fields: string[];
             rows: Record<string, unknown>[];
+            truncated?: boolean;
+            maxRows?: number;
           }>;
+          truncated?: boolean;
+          resultLimit?: number;
         };
       }>(`/databases/${id}/postgres/query`, {
         method: "POST",
-        body: JSON.stringify({ sql }),
+        body: JSON.stringify({ sql, maxRows: 500 }),
       })
     );
   }
@@ -1680,12 +1720,30 @@ class ApiClient extends ApiClientBase {
 
   async getRedisKey(
     id: string,
-    key: string
-  ): Promise<{ key: string; type: string; ttlSeconds: number; value: unknown }> {
+    key: string,
+    params?: { offset?: number; limit?: number; maxStringBytes?: number }
+  ): Promise<{
+    key: string;
+    type: string;
+    ttlSeconds: number;
+    value: unknown;
+    page?: Record<string, unknown>;
+  }> {
+    const query = new URLSearchParams({ key });
+    if (params?.offset !== undefined) query.set("offset", String(params.offset));
+    if (params?.limit !== undefined) query.set("limit", String(params.limit));
+    if (params?.maxStringBytes !== undefined)
+      query.set("maxStringBytes", String(params.maxStringBytes));
     return this.unwrapData(
-      this.request<{ data: { key: string; type: string; ttlSeconds: number; value: unknown } }>(
-        `/databases/${id}/redis/key?key=${encodeURIComponent(key)}`
-      )
+      this.request<{
+        data: {
+          key: string;
+          type: string;
+          ttlSeconds: number;
+          value: unknown;
+          page?: Record<string, unknown>;
+        };
+      }>(`/databases/${id}/redis/key?${query.toString()}`)
     );
   }
 
@@ -1733,15 +1791,22 @@ class ApiClient extends ApiClientBase {
   async executeRedisCommand(
     id: string,
     command: string
-  ): Promise<{ results: Array<{ command: string; result: unknown }> }> {
+  ): Promise<{
+    results: Array<{ command: string; result: unknown; truncated?: boolean }>;
+    truncated?: boolean;
+    commandLimit?: number;
+  }> {
     return this.unwrapData(
-      this.request<{ data: { results: Array<{ command: string; result: unknown }> } }>(
-        `/databases/${id}/redis/command`,
-        {
-          method: "POST",
-          body: JSON.stringify({ command }),
-        }
-      )
+      this.request<{
+        data: {
+          results: Array<{ command: string; result: unknown; truncated?: boolean }>;
+          truncated?: boolean;
+          commandLimit?: number;
+        };
+      }>(`/databases/${id}/redis/command`, {
+        method: "POST",
+        body: JSON.stringify({ command }),
+      })
     );
   }
 
@@ -1917,11 +1982,13 @@ class ApiClient extends ApiClientBase {
 
   // ── Docker Containers ─────────────────────────────────────────────
 
-  async listDockerContainers(nodeId: string, noCache = false): Promise<DockerContainer[]> {
-    const url = noCache
-      ? `/docker/nodes/${nodeId}/containers?_t=${Date.now()}`
-      : `/docker/nodes/${nodeId}/containers`;
-    return this.unwrapData(this.request<{ data: DockerContainer[] }>(url));
+  async listDockerContainers(
+    nodeId: string,
+    options: boolean | (DockerListQuery & { noCache?: boolean }) = false
+  ): Promise<DockerContainer[]> {
+    const params = typeof options === "boolean" ? { noCache: options } : options;
+    const url = `/docker/nodes/${nodeId}/containers${dockerListQuery(params)}`;
+    return withDockerListMeta(await this.request<DockerListEnvelope<DockerContainer>>(url));
   }
 
   async inspectContainer(
@@ -1947,9 +2014,14 @@ class ApiClient extends ApiClientBase {
     );
   }
 
-  async listDockerDeployments(nodeId: string): Promise<DockerDeployment[]> {
-    return this.unwrapData(
-      this.request<{ data: DockerDeployment[] }>(`/docker/nodes/${nodeId}/deployments`)
+  async listDockerDeployments(
+    nodeId: string,
+    params?: DockerListQuery
+  ): Promise<DockerDeployment[]> {
+    return withDockerListMeta(
+      await this.request<DockerListEnvelope<DockerDeployment>>(
+        `/docker/nodes/${nodeId}/deployments${dockerListQuery(params)}`
+      )
     );
   }
 
@@ -2245,11 +2317,23 @@ class ApiClient extends ApiClientBase {
   async getContainerTop(
     nodeId: string,
     containerId: string
-  ): Promise<{ Titles: string[]; Processes: string[][] }> {
+  ): Promise<{
+    Titles: string[];
+    Processes: string[][];
+    truncated?: boolean;
+    totalProcesses?: number;
+    limit?: number;
+  }> {
     return this.unwrapData(
-      this.request<{ data: { Titles: string[]; Processes: string[][] } }>(
-        `/docker/nodes/${nodeId}/containers/${containerId}/top`
-      )
+      this.request<{
+        data: {
+          Titles: string[];
+          Processes: string[][];
+          truncated?: boolean;
+          totalProcesses?: number;
+          limit?: number;
+        };
+      }>(`/docker/nodes/${nodeId}/containers/${containerId}/top`)
     );
   }
 
@@ -2414,8 +2498,12 @@ class ApiClient extends ApiClientBase {
 
   // ── Docker Images ─────────────────────────────────────────────────
 
-  async listDockerImages(nodeId: string): Promise<DockerImage[]> {
-    return this.unwrapData(this.request<{ data: DockerImage[] }>(`/docker/nodes/${nodeId}/images`));
+  async listDockerImages(nodeId: string, params?: DockerListQuery): Promise<DockerImage[]> {
+    return withDockerListMeta(
+      await this.request<DockerListEnvelope<DockerImage>>(
+        `/docker/nodes/${nodeId}/images${dockerListQuery(params)}`
+      )
+    );
   }
 
   async pullImage(
@@ -2447,9 +2535,11 @@ class ApiClient extends ApiClientBase {
 
   // ── Docker Volumes ────────────────────────────────────────────────
 
-  async listDockerVolumes(nodeId: string): Promise<DockerVolume[]> {
-    return this.unwrapData(
-      this.request<{ data: DockerVolume[] }>(`/docker/nodes/${nodeId}/volumes`)
+  async listDockerVolumes(nodeId: string, params?: DockerListQuery): Promise<DockerVolume[]> {
+    return withDockerListMeta(
+      await this.request<DockerListEnvelope<DockerVolume>>(
+        `/docker/nodes/${nodeId}/volumes${dockerListQuery(params)}`
+      )
     );
   }
 
@@ -2473,9 +2563,11 @@ class ApiClient extends ApiClientBase {
 
   // ── Docker Networks ───────────────────────────────────────────────
 
-  async listDockerNetworks(nodeId: string): Promise<DockerNetwork[]> {
-    return this.unwrapData(
-      this.request<{ data: DockerNetwork[] }>(`/docker/nodes/${nodeId}/networks`)
+  async listDockerNetworks(nodeId: string, params?: DockerListQuery): Promise<DockerNetwork[]> {
+    return withDockerListMeta(
+      await this.request<DockerListEnvelope<DockerNetwork>>(
+        `/docker/nodes/${nodeId}/networks${dockerListQuery(params)}`
+      )
     );
   }
 
@@ -2520,11 +2612,10 @@ class ApiClient extends ApiClientBase {
   // ── Docker File Browser ───────────────────────────────────────────
 
   async listContainerDir(nodeId: string, containerId: string, path: string): Promise<FileEntry[]> {
-    return this.unwrapData(
-      this.request<{ data: FileEntry[] }>(
-        `/docker/nodes/${nodeId}/containers/${containerId}/files?path=${encodeURIComponent(path)}`
-      )
+    const response = await this.request<DockerListEnvelope<FileEntry>>(
+      `/docker/nodes/${nodeId}/containers/${containerId}/files?path=${encodeURIComponent(path)}`
     );
+    return withDockerListMeta(response);
   }
 
   async readContainerFile(nodeId: string, containerId: string, path: string): Promise<string> {
@@ -2890,6 +2981,12 @@ class ApiClient extends ApiClientBase {
     if (params?.eventType) query.set("eventType", params.eventType);
     const qs = query.toString();
     return this.request(`/notifications/deliveries${qs ? `?${qs}` : ""}`);
+  }
+
+  async getDelivery(id: string): Promise<import("@/types").WebhookDelivery> {
+    return this.unwrapData(
+      this.request<{ data: import("@/types").WebhookDelivery }>(`/notifications/deliveries/${id}`)
+    );
   }
 
   async getDeliveryStats(

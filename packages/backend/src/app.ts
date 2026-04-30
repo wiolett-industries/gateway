@@ -39,6 +39,7 @@ import { authRoutes } from '@/modules/auth/auth.routes.js';
 import { getProgrammaticWebSocketCredential, getSessionWebSocketCredential } from '@/modules/auth/websocket-auth.js';
 import { databaseRoutes } from '@/modules/databases/databases.routes.js';
 import { dockerRoutes } from '@/modules/docker/docker.routes.js';
+import { DOCKER_LOG_TAIL_MAX } from '@/modules/docker/docker.schemas.js';
 import { createComposeLogsWSHandlers } from '@/modules/docker/docker-compose-logs.ws.js';
 import { createDockerExecWSHandlers } from '@/modules/docker/docker-exec.ws.js';
 import { createDockerLogStreamWSHandlers } from '@/modules/docker/docker-logs.ws.js';
@@ -307,7 +308,8 @@ export function createApp() {
     upgradeWebSocket((c) => {
       const nodeId = c.req.param('nodeId') ?? '';
       const containerId = c.req.param('containerId') ?? '';
-      const tail = Number(c.req.query('tail')) || 100;
+      const requestedTail = Number(c.req.query('tail')) || 100;
+      const tail = Math.min(Math.max(Math.trunc(requestedTail), 1), DOCKER_LOG_TAIL_MAX);
       const credential = getProgrammaticWebSocketCredential(
         c.req.header('cookie'),
         c.req.header('origin'),

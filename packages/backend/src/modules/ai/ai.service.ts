@@ -107,6 +107,262 @@ function estimateMessagesTokens(messages: Record<string, unknown>[]): number {
   return total;
 }
 
+function compactProxyHostForAgent(host: Record<string, any>) {
+  return {
+    id: host.id,
+    type: host.type,
+    domainNames: host.domainNames,
+    enabled: host.enabled,
+    nodeId: host.nodeId,
+    forwardScheme: host.forwardScheme,
+    forwardHost: host.forwardHost,
+    forwardPort: host.forwardPort,
+    sslEnabled: host.sslEnabled,
+    sslForced: host.sslForced,
+    sslCertificateId: host.sslCertificateId,
+    accessListId: host.accessListId,
+    healthCheckEnabled: host.healthCheckEnabled,
+    healthStatus: host.healthStatus,
+    effectiveHealthStatus: host.effectiveHealthStatus,
+    lastHealthCheckAt: host.lastHealthCheckAt,
+    createdAt: host.createdAt,
+    updatedAt: host.updatedAt,
+  };
+}
+
+function compactDockerContainerForAgent(container: Record<string, any>) {
+  const name = ((container.name ?? container.Name ?? '') as string).replace(/^\//, '');
+  const ports = container.ports ?? container.Ports;
+  return {
+    id: container.id ?? container.Id,
+    name,
+    image: container.image ?? container.Image,
+    state: container.state ?? container.State,
+    status: container.status ?? container.Status,
+    created: container.created ?? container.Created,
+    ports: Array.isArray(ports) ? ports.slice(0, 64) : ports,
+    portsCount: Array.isArray(ports) ? ports.length : undefined,
+    portsTruncated: Array.isArray(ports) && ports.length > 64,
+    kind: container.kind ?? 'container',
+    deploymentId: container.deploymentId,
+    activeSlot: container.activeSlot,
+    healthCheckId: container.healthCheckId,
+    healthCheckEnabled: container.healthCheckEnabled,
+    healthStatus: container.healthStatus,
+    lastHealthCheckAt: container.lastHealthCheckAt,
+    folderId: container.folderId,
+    folderIsSystem: container.folderIsSystem,
+    folderSortOrder: container.folderSortOrder,
+    _transition: container._transition,
+  };
+}
+
+function compactDockerDeploymentForAgent(deployment: Record<string, any>) {
+  const healthCheck = deployment.healthCheck;
+  const primaryRoute = Array.isArray(deployment.routes)
+    ? (deployment.routes.find((route: any) => route.isPrimary) ?? deployment.routes[0])
+    : undefined;
+  return {
+    id: deployment.id,
+    nodeId: deployment.nodeId,
+    name: deployment.name,
+    status: deployment.status,
+    activeSlot: deployment.activeSlot,
+    desiredImage: deployment.desiredConfig?.image,
+    primaryRoute: primaryRoute
+      ? {
+          hostPort: primaryRoute.hostPort,
+          containerPort: primaryRoute.containerPort,
+          host: primaryRoute.host,
+          path: primaryRoute.path,
+        }
+      : null,
+    slots: Array.isArray(deployment.slots)
+      ? deployment.slots.map((slot: any) => ({
+          slot: slot.slot,
+          status: slot.status,
+          image: slot.image,
+          containerId: slot.containerId,
+        }))
+      : [],
+    healthCheck: healthCheck
+      ? {
+          id: healthCheck.id,
+          enabled: healthCheck.enabled,
+          healthStatus: healthCheck.healthStatus,
+          lastHealthCheckAt: healthCheck.lastHealthCheckAt,
+        }
+      : null,
+    createdAt: deployment.createdAt,
+    updatedAt: deployment.updatedAt,
+    _transition: deployment._transition,
+  };
+}
+
+const AGENT_LIST_RESULT_MAX = 1000;
+const AGENT_PAGE_LIMIT_MAX = 100;
+const AGENT_PAGE_MAX = 1000;
+const AGENT_IMAGE_REF_PREVIEW_MAX = 20;
+const AGENT_VOLUME_USED_BY_PREVIEW_MAX = 100;
+
+function agentPageLimit(value: unknown, fallback = 50) {
+  const numeric = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.min(Math.max(Math.trunc(numeric), 1), AGENT_PAGE_LIMIT_MAX);
+}
+
+function agentPage(value: unknown, fallback = 1) {
+  const numeric = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.min(Math.max(Math.trunc(numeric), 1), AGENT_PAGE_MAX);
+}
+
+function compactAgentList<T>(items: T[]) {
+  const truncated = items.length > AGENT_LIST_RESULT_MAX;
+  return {
+    data: truncated ? items.slice(0, AGENT_LIST_RESULT_MAX) : items,
+    total: items.length,
+    limit: AGENT_LIST_RESULT_MAX,
+    truncated,
+  };
+}
+
+function compactDockerImageForAgent(image: Record<string, any>) {
+  const repoTags = image.repoTags ?? image.RepoTags;
+  const repoDigests = image.repoDigests ?? image.RepoDigests;
+  return {
+    id: image.id ?? image.Id,
+    parentId: image.parentId ?? image.ParentId,
+    repoTags: Array.isArray(repoTags) ? repoTags.slice(0, AGENT_IMAGE_REF_PREVIEW_MAX) : repoTags,
+    repoTagsCount: Array.isArray(repoTags) ? repoTags.length : undefined,
+    repoTagsTruncated: Array.isArray(repoTags) && repoTags.length > AGENT_IMAGE_REF_PREVIEW_MAX,
+    repoDigests: Array.isArray(repoDigests) ? repoDigests.slice(0, AGENT_IMAGE_REF_PREVIEW_MAX) : repoDigests,
+    repoDigestsCount: Array.isArray(repoDigests) ? repoDigests.length : undefined,
+    repoDigestsTruncated: Array.isArray(repoDigests) && repoDigests.length > AGENT_IMAGE_REF_PREVIEW_MAX,
+    created: image.created ?? image.Created,
+    size: image.size ?? image.Size,
+    virtualSize: image.virtualSize ?? image.VirtualSize,
+    sharedSize: image.sharedSize ?? image.SharedSize,
+    containers: image.containers ?? image.Containers,
+  };
+}
+
+function compactDockerVolumeForAgent(volume: Record<string, any>) {
+  const usedBy = volume.usedBy ?? volume.UsedBy;
+  return {
+    name: volume.name ?? volume.Name,
+    driver: volume.driver ?? volume.Driver,
+    mountpoint: volume.mountpoint ?? volume.Mountpoint,
+    scope: volume.scope ?? volume.Scope,
+    createdAt: volume.createdAt ?? volume.CreatedAt,
+    usedBy: Array.isArray(usedBy) ? usedBy.slice(0, AGENT_VOLUME_USED_BY_PREVIEW_MAX) : usedBy,
+    usedByCount: Array.isArray(usedBy) ? usedBy.length : undefined,
+    usedByTruncated: Array.isArray(usedBy) && usedBy.length > AGENT_VOLUME_USED_BY_PREVIEW_MAX,
+  };
+}
+
+function compactDockerNetworkForAgent(network: Record<string, any>) {
+  const containers = network.containers ?? network.Containers;
+  return {
+    id: network.id ?? network.Id,
+    name: network.name ?? network.Name,
+    driver: network.driver ?? network.Driver,
+    scope: network.scope ?? network.Scope,
+    created: network.created ?? network.Created,
+    internal: network.internal ?? network.Internal,
+    attachable: network.attachable ?? network.Attachable,
+    ingress: network.ingress ?? network.Ingress,
+    containersCount: containers && typeof containers === 'object' ? Object.keys(containers).length : undefined,
+  };
+}
+
+function textMatchesSearch(values: unknown[], search: unknown) {
+  if (typeof search !== 'string' || search.trim() === '') return true;
+  const query = search.trim().toLowerCase();
+  return values
+    .flatMap((value) => (Array.isArray(value) ? value : [value]))
+    .filter((value) => value !== undefined && value !== null)
+    .join(' ')
+    .toLowerCase()
+    .includes(query);
+}
+
+function dockerContainerMatchesSearch(container: Record<string, any>, search: unknown) {
+  const ports = container.ports ?? container.Ports;
+  const portText = Array.isArray(ports)
+    ? ports.map((port: any) => [port.ip, port.publicPort, port.privatePort, port.type].join(' '))
+    : [];
+  return textMatchesSearch(
+    [
+      container.id ?? container.Id,
+      container.name ?? container.Name,
+      container.image ?? container.Image,
+      container.state ?? container.State,
+      container.status ?? container.Status,
+      container.kind,
+      container.deploymentId,
+      portText,
+    ],
+    search
+  );
+}
+
+function dockerDeploymentMatchesSearch(deployment: Record<string, any>, search: unknown) {
+  const routes = Array.isArray(deployment.routes) ? deployment.routes : [];
+  const routeText = routes.map((route: any) =>
+    [route.host, route.path, route.hostPort, route.containerPort].filter(Boolean).join(' ')
+  );
+  return textMatchesSearch(
+    [
+      deployment.id,
+      deployment.nodeId,
+      deployment.name,
+      deployment.status,
+      deployment.activeSlot,
+      deployment.desiredConfig?.image,
+      routeText,
+    ],
+    search
+  );
+}
+
+function dockerImageMatchesSearch(image: Record<string, any>, search: unknown) {
+  return textMatchesSearch(
+    [
+      image.id ?? image.Id,
+      image.parentId ?? image.ParentId,
+      image.repoTags ?? image.RepoTags,
+      image.repoDigests ?? image.RepoDigests,
+    ],
+    search
+  );
+}
+
+function dockerVolumeMatchesSearch(volume: Record<string, any>, search: unknown) {
+  return textMatchesSearch(
+    [
+      volume.name ?? volume.Name,
+      volume.driver ?? volume.Driver,
+      volume.mountpoint ?? volume.Mountpoint,
+      volume.scope ?? volume.Scope,
+      volume.usedBy ?? volume.UsedBy,
+    ],
+    search
+  );
+}
+
+function dockerNetworkMatchesSearch(network: Record<string, any>, search: unknown) {
+  return textMatchesSearch(
+    [
+      network.id ?? network.Id,
+      network.name ?? network.Name,
+      network.driver ?? network.Driver,
+      network.scope ?? network.Scope,
+    ],
+    search
+  );
+}
+
 function trimToTokenBudget(messages: Record<string, unknown>[], maxTokens: number): Record<string, unknown>[] {
   const total = estimateMessagesTokens(messages);
   if (total <= maxTokens) return messages;
@@ -419,8 +675,8 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
           caId: a.caId,
           status: a.status,
           search: a.search,
-          page: a.page || 1,
-          limit: a.limit || 50,
+          page: agentPage(a.page),
+          limit: agentPageLimit(a.limit),
           sortBy: 'createdAt',
           sortOrder: 'desc',
         });
@@ -463,8 +719,17 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
         return { success: true };
 
       // ── Reverse Proxy ──
-      case 'list_proxy_hosts':
-        return this.proxyService.listProxyHosts({ search: a.search, page: a.page || 1, limit: a.limit || 50 });
+      case 'list_proxy_hosts': {
+        const result = await this.proxyService.listProxyHosts({
+          search: a.search,
+          page: agentPage(a.page),
+          limit: agentPageLimit(a.limit),
+        });
+        return {
+          ...result,
+          data: result.data.map((host: any) => compactProxyHostForAgent(host)),
+        };
+      }
       case 'get_proxy_host':
         return this.proxyService.getProxyHost(a.proxyHostId);
       case 'create_proxy_host':
@@ -527,7 +792,7 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
 
       // ── SSL Certificates ──
       case 'list_ssl_certificates':
-        return this.sslService.listCerts({ search: a.search, page: a.page || 1, limit: a.limit || 50 });
+        return this.sslService.listCerts({ search: a.search, page: agentPage(a.page), limit: agentPageLimit(a.limit) });
       case 'link_internal_cert':
         return this.sslService.linkInternalCert({ internalCertId: a.internalCertId, name: a.name }, user.id);
       case 'request_acme_cert':
@@ -543,7 +808,11 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
 
       // ── Domains ──
       case 'list_domains':
-        return this.domainsService.listDomains({ search: a.search, page: a.page || 1, limit: a.limit || 50 });
+        return this.domainsService.listDomains({
+          search: a.search,
+          page: agentPage(a.page),
+          limit: agentPageLimit(a.limit),
+        });
       case 'create_domain':
         return this.domainsService.createDomain({ domain: a.domain }, user.id);
       case 'delete_domain':
@@ -552,7 +821,11 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
 
       // ── Access Lists ──
       case 'list_access_lists':
-        return this.accessListService.list({ search: a.search, page: a.page || 1, limit: a.limit || 50 });
+        return this.accessListService.list({
+          search: a.search,
+          page: agentPage(a.page),
+          limit: agentPageLimit(a.limit),
+        });
       case 'create_access_list':
         return this.accessListService.create(
           {
@@ -571,14 +844,34 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
         return { success: true };
 
       // ── Nodes ──
-      case 'list_nodes':
-        return this.nodesService.list({
+      case 'list_nodes': {
+        const result = await this.nodesService.list({
           search: a.search,
           type: a.type,
           status: a.status,
-          page: a.page || 1,
-          limit: a.limit || 50,
+          page: agentPage(a.page),
+          limit: agentPageLimit(a.limit),
         });
+        return {
+          ...result,
+          data: result.data.map((node) => ({
+            id: node.id,
+            type: node.type,
+            hostname: node.hostname,
+            displayName: node.displayName,
+            status: node.status,
+            isConnected: node.isConnected,
+            serviceCreationLocked: node.serviceCreationLocked,
+            daemonVersion: node.daemonVersion,
+            osInfo: node.osInfo,
+            configVersionHash: node.configVersionHash,
+            capabilities: node.capabilities,
+            lastSeenAt: node.lastSeenAt,
+            createdAt: node.createdAt,
+            updatedAt: node.updatedAt,
+          })),
+        };
+      }
       case 'get_node':
         return this.nodesService.get(a.nodeId);
       case 'create_node':
@@ -669,8 +962,8 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
         return this.auditService.getAuditLog({
           action: a.action,
           resourceType: a.resourceType,
-          page: a.page || 1,
-          limit: a.limit || 50,
+          page: agentPage(a.page),
+          limit: agentPageLimit(a.limit),
         });
       case 'get_dashboard_stats': {
         const stats = await this.monitoringService.getDashboardStats();
@@ -709,13 +1002,26 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
         );
         return { success: true, message: 'Container created', data };
       }
-      case 'list_docker_containers':
-        return this.dockerService.listContainers(a.nodeId);
+      case 'list_docker_containers': {
+        const containers = await this.dockerService.listContainers(a.nodeId);
+        return Array.isArray(containers)
+          ? compactAgentList(
+              containers
+                .filter((container: any) => dockerContainerMatchesSearch(container, a.search))
+                .map((container: any) => compactDockerContainerForAgent(container))
+            )
+          : containers;
+      }
       case 'get_docker_container':
         return this.dockerService.inspectContainer(a.nodeId, a.containerId);
       case 'list_docker_deployments': {
         const { DockerDeploymentService } = await import('@/modules/docker/docker-deployment.service.js');
-        return container.resolve(DockerDeploymentService).list(a.nodeId);
+        const deployments = await container.resolve(DockerDeploymentService).listSummary(a.nodeId);
+        return compactAgentList(
+          deployments
+            .filter((deployment: any) => dockerDeploymentMatchesSearch(deployment, a.search))
+            .map((deployment: any) => compactDockerDeploymentForAgent(deployment))
+        );
       }
       case 'get_docker_deployment': {
         const { DockerDeploymentService } = await import('@/modules/docker/docker-deployment.service.js');
@@ -803,8 +1109,16 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
       }
       case 'get_docker_container_logs':
         return this.dockerService.getContainerLogs(a.nodeId, a.containerId, a.tail || 100, a.timestamps ?? false);
-      case 'list_docker_images':
-        return this.dockerService.listImages(a.nodeId);
+      case 'list_docker_images': {
+        const images = await this.dockerService.listImages(a.nodeId);
+        return Array.isArray(images)
+          ? compactAgentList(
+              images
+                .filter((image: any) => dockerImageMatchesSearch(image, a.search))
+                .map((image: any) => compactDockerImageForAgent(image))
+            )
+          : images;
+      }
       case 'pull_docker_image': {
         const { NodeDispatchService: PullNDS } = await import('@/services/node-dispatch.service.js');
         const pullDispatch = container.resolve(PullNDS);
@@ -819,10 +1133,26 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
         const pruneData = await this.dockerService.pruneImages(a.nodeId, user.id);
         return { success: true, message: 'Unused images pruned', data: pruneData };
       }
-      case 'list_docker_volumes':
-        return this.dockerService.listVolumes(a.nodeId);
-      case 'list_docker_networks':
-        return this.dockerService.listNetworks(a.nodeId);
+      case 'list_docker_volumes': {
+        const volumes = await this.dockerService.listVolumes(a.nodeId);
+        return Array.isArray(volumes)
+          ? compactAgentList(
+              volumes
+                .filter((volume: any) => dockerVolumeMatchesSearch(volume, a.search))
+                .map((volume: any) => compactDockerVolumeForAgent(volume))
+            )
+          : volumes;
+      }
+      case 'list_docker_networks': {
+        const networks = await this.dockerService.listNetworks(a.nodeId);
+        return Array.isArray(networks)
+          ? compactAgentList(
+              networks
+                .filter((network: any) => dockerNetworkMatchesSearch(network, a.search))
+                .map((network: any) => compactDockerNetworkForAgent(network))
+            )
+          : networks;
+      }
 
       // ── Databases ──
       case 'list_databases':
@@ -971,7 +1301,7 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
         if (!this.notifDeliveryService) return { error: 'Notification service not available' };
         return this.notifDeliveryService.list({
           page: 1,
-          limit: a.limit ?? 50,
+          limit: agentPageLimit(a.limit),
           webhookId: a.webhookId,
           status: a.status,
         });

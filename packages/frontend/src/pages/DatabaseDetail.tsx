@@ -34,6 +34,7 @@ export function DatabaseDetail() {
   const [liveHealthStatus, setLiveHealthStatus] =
     useState<DatabaseConnection["healthStatus"]>("unknown");
   const [monitoringHistory, setMonitoringHistory] = useState<DatabaseMetricSnapshot[]>([]);
+  const [monitoringLoading, setMonitoringLoading] = useState(true);
   const [pinOpen, setPinOpen] = useState(false);
   const [credentialsOpen, setCredentialsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -118,25 +119,33 @@ export function DatabaseDetail() {
     if (!database) return;
     setLiveHealthStatus(database.healthStatus);
     setMonitoringHistory([]);
-  }, [database]);
+    setMonitoringLoading(canViewMonitoring && database.healthStatus !== "offline");
+  }, [canViewMonitoring, database]);
 
   useEffect(() => {
-    if (!database || !canViewMonitoring) return;
+    if (!database || !canViewMonitoring) {
+      setMonitoringLoading(false);
+      return;
+    }
     const es = api.createDatabaseMonitoringStream(database.id);
     es.addEventListener("connected", (event: MessageEvent) => {
       const message = JSON.parse(event.data);
       setLiveHealthHistory(message.healthHistory ?? database.healthHistory ?? []);
       setLiveHealthStatus(message.healthStatus ?? database.healthStatus);
+      setMonitoringLoading(false);
     });
     es.addEventListener("history", (event: MessageEvent) => {
       const message = JSON.parse(event.data);
       setMonitoringHistory(message.history ?? []);
+      setMonitoringLoading(false);
     });
     es.addEventListener("snapshot", (event: MessageEvent) => {
       const snapshot = JSON.parse(event.data) as DatabaseMetricSnapshot;
       setMonitoringHistory((prev) => [...prev, snapshot].slice(-60));
       setLiveHealthStatus(snapshot.status);
+      setMonitoringLoading(false);
     });
+    es.onerror = () => setMonitoringLoading(false);
     return () => es.close();
   }, [canViewMonitoring, database]);
 
@@ -297,6 +306,7 @@ export function DatabaseDetail() {
               canViewMonitoring={canViewMonitoring}
               healthStatus={liveHealthStatus}
               history={monitoringHistory}
+              monitoringLoading={monitoringLoading}
             />
           </TabsContent>
 

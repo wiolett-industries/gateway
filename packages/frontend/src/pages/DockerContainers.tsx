@@ -113,11 +113,13 @@ export function DockerContainers({
   embedded,
   onDeployRef,
   onCreateFolderRef,
+  onRefreshRef,
   fixedNodeId,
 }: {
   embedded?: boolean;
   onDeployRef?: (fn: () => void) => void;
   onCreateFolderRef?: (fn: () => void) => void;
+  onRefreshRef?: (fn: () => void) => void;
   fixedNodeId?: string;
 } = {}) {
   const { hasScope, hasScopedAccess } = useAuthStore();
@@ -126,6 +128,8 @@ export function DockerContainers({
   const selectedNodeId = useDockerStore((s) => s.selectedNodeId);
   const filters = useDockerStore((s) => s.filters);
   const isLoading = useDockerStore((s) => s.loading.containers);
+  const storeDockerNodes = useDockerStore((s) => s.dockerNodes);
+  const dockerNodesLoaded = useDockerStore((s) => s.dockerNodesLoaded);
   const setSelectedNode = useDockerStore((s) => s.setSelectedNode);
   const setFilters = useDockerStore((s) => s.setFilters);
   const resetFilters = useDockerStore((s) => s.resetFilters);
@@ -209,11 +213,11 @@ export function DockerContainers({
 
   useEffect(() => {
     if (embedded) {
-      setNodesLoading(false);
+      setNodesLoading(!dockerNodesLoaded);
       return;
     }
     void loadDockerNodes();
-  }, [embedded, loadDockerNodes]);
+  }, [dockerNodesLoaded, embedded, loadDockerNodes]);
 
   useEffect(() => {
     if (previousContainersRef.current === containers) return;
@@ -224,15 +228,21 @@ export function DockerContainers({
   const refreshData = useCallback(
     async (force = false) => {
       await Promise.all([
-        force ? forceFetchContainers(fixedNodeId) : fetchContainers(fixedNodeId),
+        force
+          ? forceFetchContainers(fixedNodeId, filters.search)
+          : fetchContainers(fixedNodeId, filters.search),
         fetchFolders(),
       ]);
     },
-    [fetchContainers, fetchFolders, fixedNodeId, forceFetchContainers]
+    [fetchContainers, fetchFolders, filters.search, fixedNodeId, forceFetchContainers]
   );
 
   useEffect(() => {
-    if (embedded && !fixedNodeId) {
+    onRefreshRef?.(() => void refreshData(true));
+  }, [onRefreshRef, refreshData]);
+
+  useEffect(() => {
+    if (embedded && !fixedNodeId && !dockerNodesLoaded) {
       void fetchFolders();
       return;
     }
@@ -240,7 +250,7 @@ export function DockerContainers({
     void refreshData();
     const interval = setInterval(() => void refreshData(), 30_000);
     return () => clearInterval(interval);
-  }, [embedded, fetchFolders, fixedNodeId, nodesLoading, refreshData]);
+  }, [dockerNodesLoaded, embedded, fetchFolders, fixedNodeId, nodesLoading, refreshData]);
 
   useRealtime("docker.container.changed", (payload) => {
     const ev = payload as { nodeId?: string };
@@ -261,6 +271,7 @@ export function DockerContainers({
   }, [searchInput, setFilters]);
 
   const visibleContainers = optimisticContainers ?? containers;
+  const truncatedListMeta = visibleContainers.find((container) => container._listTruncated);
 
   const filteredContainers = useMemo(() => {
     let result = [...visibleContainers];
@@ -685,7 +696,7 @@ export function DockerContainers({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="__all__">All nodes</SelectItem>
-                {(embedded ? useDockerStore.getState().dockerNodes : dockerNodes)
+                {(embedded ? storeDockerNodes : dockerNodes)
                   .filter((node) => !isNodeIncompatible(node))
                   .map((node) => (
                     <SelectItem key={node.id} value={node.id}>
@@ -707,6 +718,14 @@ export function DockerContainers({
           </div>
         }
       />
+
+      {truncatedListMeta && (
+        <div className="border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
+          Showing first {truncatedListMeta._listLimit ?? visibleContainers.length} of{" "}
+          {truncatedListMeta._listTotal ?? "many"} containers. Narrow the node or search filters for
+          more specific data.
+        </div>
+      )}
 
       {!nodesLoading &&
         !embedded &&

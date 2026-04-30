@@ -1,7 +1,17 @@
-import { and, count, desc, eq, lt, ne, type SQL } from 'drizzle-orm';
+import { and, count, desc, eq, lt, ne, type SQL, sql } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import { notificationDeliveryLog, notificationWebhooks } from '@/db/schema/index.js';
 import { buildWhere } from '@/lib/utils.js';
+
+const DELIVERY_BODY_PREVIEW_CHARS = 2048;
+
+function bodyPreview(value: string | null): { preview: string | null; truncated: boolean } {
+  if (value == null) return { preview: null, truncated: false };
+  return {
+    preview: value.length > DELIVERY_BODY_PREVIEW_CHARS ? value.slice(0, DELIVERY_BODY_PREVIEW_CHARS) : value,
+    truncated: value.length > DELIVERY_BODY_PREVIEW_CHARS,
+  };
+}
 
 interface DeliveryListQuery {
   page: number;
@@ -41,9 +51,13 @@ export class NotificationDeliveryService {
         severity: notificationDeliveryLog.severity,
         requestUrl: notificationDeliveryLog.requestUrl,
         requestMethod: notificationDeliveryLog.requestMethod,
-        requestBody: notificationDeliveryLog.requestBody,
+        requestBody: sql<string | null>`substring(${notificationDeliveryLog.requestBody} from 1 for ${
+          DELIVERY_BODY_PREVIEW_CHARS + 1
+        })`,
         responseStatus: notificationDeliveryLog.responseStatus,
-        responseBody: notificationDeliveryLog.responseBody,
+        responseBody: sql<string | null>`substring(${notificationDeliveryLog.responseBody} from 1 for ${
+          DELIVERY_BODY_PREVIEW_CHARS + 1
+        })`,
         responseTimeMs: notificationDeliveryLog.responseTimeMs,
         attempt: notificationDeliveryLog.attempt,
         maxAttempts: notificationDeliveryLog.maxAttempts,
@@ -61,7 +75,19 @@ export class NotificationDeliveryService {
       .offset(offset);
 
     return {
-      data: rows,
+      data: rows.map((row) => {
+        const request = bodyPreview(row.requestBody);
+        const response = bodyPreview(row.responseBody);
+        return {
+          ...row,
+          requestBody: undefined,
+          responseBody: undefined,
+          requestBodyPreview: request.preview,
+          requestBodyTruncated: request.truncated,
+          responseBodyPreview: response.preview,
+          responseBodyTruncated: response.truncated,
+        };
+      }),
       total,
       page: query.page,
       limit: query.limit,

@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -58,6 +59,9 @@ export function PostgresExplorer({
   const [draftRows, setDraftRows] = useState<Record<string, Record<string, unknown>>>({});
   const [newRows, setNewRows] = useState<Array<Record<string, unknown>>>([]);
   const [saving, setSaving] = useState(false);
+  const [loadingSchemas, setLoadingSchemas] = useState(true);
+  const [loadingTables, setLoadingTables] = useState(false);
+  const [loadingRows, setLoadingRows] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalRows, setTotalRows] = useState(0);
@@ -65,33 +69,112 @@ export function PostgresExplorer({
   const [sortBy, setSortBy] = useState<string>();
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const explorerScrollRef = useRef<HTMLDivElement>(null);
+  const rowRequestRef = useRef(0);
 
   useEffect(() => {
-    api.listPostgresSchemas(database.id).then((data) => {
-      setSchemas(data);
-      setSchema(data[0] ?? "public");
-    });
+    let cancelled = false;
+    setLoadingSchemas(true);
+    setSchemas([]);
+    setSchema("");
+    setTables([]);
+    setTable("");
+    setMetadata(null);
+    setRows([]);
+    setDraftRows({});
+    setNewRows([]);
+    setCurrentPage(1);
+    setTotalRows(0);
+    api
+      .listPostgresSchemas(database.id)
+      .then((data) => {
+        if (cancelled) return;
+        setSchemas(data);
+        setSchema(data[0] ?? "public");
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          toast.error(error instanceof Error ? error.message : "Failed to load schemas");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingSchemas(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [database.id]);
 
   useEffect(() => {
     if (!schema) return;
-    api.listPostgresTables(database.id, schema).then((data) => {
-      setTables(data);
-      setTable((current) =>
-        data.some((item) => item.name === current) ? current : (data[0]?.name ?? "")
-      );
-      if (data.length === 0) {
-        setMetadata(null);
-        setRows([]);
-        setDraftRows({});
-        setNewRows([]);
-      }
-    });
+    let cancelled = false;
+    setLoadingTables(true);
+    setTables([]);
+    setTable("");
+    setMetadata(null);
+    setRows([]);
+    setDraftRows({});
+    setNewRows([]);
+    setCurrentPage(1);
+    setTotalRows(0);
+    api
+      .listPostgresTables(database.id, schema)
+      .then((data) => {
+        if (cancelled) return;
+        setTables(data);
+        setTable(data[0]?.name ?? "");
+        if (data.length === 0) {
+          setMetadata(null);
+          setRows([]);
+          setDraftRows({});
+          setNewRows([]);
+          setCurrentPage(1);
+          setTotalRows(0);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          toast.error(error instanceof Error ? error.message : "Failed to load tables");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingTables(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [database.id, schema]);
+
+  useEffect(() => {
+    if (schema) return;
+    setLoadingTables(false);
+    setTables([]);
+    setTable("");
+    setMetadata(null);
+    setRows([]);
+    setDraftRows({});
+    setNewRows([]);
+    setCurrentPage(1);
+    setTotalRows(0);
+  }, [schema]);
+
+  useEffect(() => {
+    if (table) return;
+    if (!loadingSchemas && !loadingTables) {
+      setLoadingRows(false);
+      setMetadata(null);
+      setRows([]);
+      setDraftRows({});
+      setNewRows([]);
+      setCurrentPage(1);
+      setTotalRows(0);
+    }
+  }, [loadingSchemas, loadingTables, table]);
 
   const loadRows = useCallback(
     async (page = 1, append = false) => {
       if (!schema || !table) return;
+      const requestId = ++rowRequestRef.current;
+      if (!append) setLoadingRows(true);
       try {
         const data = await api.browsePostgresRows(database.id, {
           schema,
@@ -101,6 +184,7 @@ export function PostgresExplorer({
           sortBy,
           sortOrder,
         });
+        if (rowRequestRef.current !== requestId) return;
         setMetadata(data.metadata);
         setRows((prev) => (append ? [...prev, ...data.rows] : data.rows));
         setCurrentPage(data.page);
@@ -110,7 +194,18 @@ export function PostgresExplorer({
           setNewRows([]);
         }
       } catch (error) {
+        if (rowRequestRef.current !== requestId) return;
         toast.error(error instanceof Error ? error.message : "Failed to load rows");
+        if (!append) {
+          setMetadata(null);
+          setRows([]);
+          setDraftRows({});
+          setNewRows([]);
+          setCurrentPage(1);
+          setTotalRows(0);
+        }
+      } finally {
+        if (!append && rowRequestRef.current === requestId) setLoadingRows(false);
       }
     },
     [database.id, schema, sortBy, sortOrder, table]
@@ -152,6 +247,8 @@ export function PostgresExplorer({
       void loadMoreRows();
     }
   }, [hasMoreRows, loadingMoreRows, loadMoreRows]);
+
+  const loadingExplorer = loadingSchemas || loadingTables || loadingRows;
 
   const rowVirtualizer = useVirtualizer({
     count: rows.length,
@@ -302,9 +399,9 @@ export function PostgresExplorer({
       {!focused && (
         <div className="flex flex-wrap items-end gap-3 shrink-0">
           <div>
-            <Select value={schema} onValueChange={setSchema}>
+            <Select value={schema} onValueChange={setSchema} disabled={loadingSchemas}>
               <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Schema" />
+                <SelectValue placeholder={loadingSchemas ? "Loading schemas..." : "Schema"} />
               </SelectTrigger>
               <SelectContent>
                 {schemas.map((item) => (
@@ -316,9 +413,9 @@ export function PostgresExplorer({
             </Select>
           </div>
           <div>
-            <Select value={table} onValueChange={setTable}>
+            <Select value={table} onValueChange={setTable} disabled={loadingTables || !schema}>
               <SelectTrigger className="w-[260px]">
-                <SelectValue placeholder="Table" />
+                <SelectValue placeholder={loadingTables ? "Loading tables..." : "Table"} />
               </SelectTrigger>
               <SelectContent>
                 {tables.map((item) => (
@@ -329,14 +426,29 @@ export function PostgresExplorer({
               </SelectContent>
             </Select>
           </div>
-          <Button variant="outline" onClick={() => void refreshRows()} disabled={refreshing}>
-            <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+          <Button
+            variant="outline"
+            onClick={() => void refreshRows()}
+            disabled={refreshing || loadingExplorer || !table}
+          >
+            <RefreshCw className={`h-4 w-4 ${refreshing || loadingRows ? "animate-spin" : ""}`} />
             Refresh
           </Button>
         </div>
       )}
 
-      {metadata ? (
+      {loadingExplorer && !metadata ? (
+        <div className="flex items-center justify-center gap-3 border border-border bg-card p-8 text-sm text-muted-foreground">
+          <LoadingSpinner className="" />
+          <span>
+            {loadingSchemas
+              ? "Loading database schemas..."
+              : loadingTables
+                ? "Loading database tables..."
+                : "Loading table rows..."}
+          </span>
+        </div>
+      ) : metadata ? (
         <div
           className={`border border-border bg-card overflow-hidden flex flex-col min-h-0 max-h-full ${
             focused ? "border-l-0" : ""

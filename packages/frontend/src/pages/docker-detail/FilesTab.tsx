@@ -23,6 +23,14 @@ interface TreeNode extends FileEntry {
   loading: boolean;
 }
 
+function hasTruncatedListing(nodes: TreeNode[]): boolean {
+  return nodes.some(
+    (node) =>
+      node._listTruncated === true ||
+      (Array.isArray(node.children) && hasTruncatedListing(node.children))
+  );
+}
+
 // ── Component ────────────────────────────────────────────────────
 
 export function FilesTab({ nodeId, containerId }: { nodeId: string; containerId: string }) {
@@ -51,6 +59,8 @@ export function FilesTab({ nodeId, containerId }: { nodeId: string; containerId:
       loading: false,
     }));
   }, []);
+
+  const hasTruncatedDirectory = hasTruncatedListing(roots);
 
   // Load root on mount
   useEffect(() => {
@@ -178,6 +188,12 @@ export function FilesTab({ nodeId, containerId }: { nodeId: string; containerId:
 
   return (
     <div className="pb-6">
+      {hasTruncatedDirectory && (
+        <div className="mb-3 border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
+          Some directories are showing only the first{" "}
+          {roots.find((entry) => entry._listTruncated)?._listLimit ?? 1000} entries.
+        </div>
+      )}
       <div className="border border-border bg-card">
         <div className="overflow-x-auto -mb-px">
           <table className="w-full">

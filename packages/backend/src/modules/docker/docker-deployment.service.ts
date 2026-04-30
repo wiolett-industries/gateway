@@ -59,6 +59,13 @@ export interface DockerDeploymentDetail extends DeploymentRow {
   _transition?: DeploymentTransition;
 }
 
+export interface DockerDeploymentSummary extends DeploymentRow {
+  routes: DeploymentRouteRow[];
+  slots: DeploymentSlotRow[];
+  healthCheck?: Pick<DockerHealthCheckDto, 'id' | 'enabled' | 'healthStatus' | 'lastHealthCheckAt'> | null;
+  _transition?: DeploymentTransition;
+}
+
 function inactiveSlot(slot: DockerDeploymentSlot): DockerDeploymentSlot {
   return slot === 'blue' ? 'green' : 'blue';
 }
@@ -301,6 +308,38 @@ export class DockerDeploymentService {
     return transition ? { ...detail, _transition: transition } : detail;
   }
 
+  private async loadDeploymentSummary(nodeId: string, deploymentId: string): Promise<DockerDeploymentSummary> {
+    const [deployment] = await this.db
+      .select()
+      .from(dockerDeployments)
+      .where(and(eq(dockerDeployments.nodeId, nodeId), eq(dockerDeployments.id, deploymentId)))
+      .limit(1);
+    if (!deployment) throw new AppError(404, 'NOT_FOUND', 'Deployment not found');
+
+    const [routes, slots, healthRows] = await Promise.all([
+      this.db.select().from(dockerDeploymentRoutes).where(eq(dockerDeploymentRoutes.deploymentId, deploymentId)),
+      this.db.select().from(dockerDeploymentSlots).where(eq(dockerDeploymentSlots.deploymentId, deploymentId)),
+      this.healthCheckService?.getRowsForDeployments([deploymentId]).catch(() => new Map()) ??
+        Promise.resolve(new Map()),
+    ]);
+    const health = healthRows.get(deploymentId);
+    const detail: DockerDeploymentSummary = {
+      ...deployment,
+      routes,
+      slots,
+      healthCheck: health
+        ? {
+            id: health.id,
+            enabled: health.enabled,
+            healthStatus: health.healthStatus,
+            lastHealthCheckAt: health.lastHealthCheckAt,
+          }
+        : null,
+    };
+    const transition = this.getTransition(nodeId, deploymentId);
+    return transition ? { ...detail, _transition: transition } : detail;
+  }
+
   private secretContainerName(deploymentId: string) {
     return `deployment:${deploymentId}`;
   }
@@ -325,12 +364,22 @@ export class DockerDeploymentService {
     return Promise.all(deployments.map((deployment) => this.loadDeployment(nodeId, deployment.id)));
   }
 
+  async listSummary(nodeId: string) {
+    await this.validateDockerNode(nodeId, false);
+    const deployments = await this.db
+      .select()
+      .from(dockerDeployments)
+      .where(eq(dockerDeployments.nodeId, nodeId))
+      .orderBy(dockerDeployments.name);
+    return Promise.all(deployments.map((deployment) => this.loadDeploymentSummary(nodeId, deployment.id)));
+  }
+
   async syntheticRows(nodeId: string) {
-    const deployments = await this.list(nodeId);
+    const deployments = await this.listSummary(nodeId);
     return deployments.map((deployment) => this.toSyntheticRow(deployment));
   }
 
-  private toSyntheticRow(deployment: DockerDeploymentDetail) {
+  private toSyntheticRow(deployment: DockerDeploymentSummary) {
     const active = deployment.slots.find((slot) => slot.slot === deployment.activeSlot);
     const primary = deployment.routes.find((route) => route.isPrimary) ?? deployment.routes[0];
     return {

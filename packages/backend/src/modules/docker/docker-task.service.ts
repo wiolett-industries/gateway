@@ -1,4 +1,4 @@
-import { and, desc, eq, lt } from 'drizzle-orm';
+import { and, desc, eq, inArray, lt } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import { dockerTasks } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
@@ -7,6 +7,9 @@ import { AppError } from '@/middleware/error-handler.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
 
 const logger = createChildLogger('DockerTaskService');
+const ACTIVE_TASK_STATUSES = ['pending', 'running'] as const;
+const COMPLETED_TASK_STATUSES = ['completed', 'succeeded', 'failed'] as const;
+const STALE_ACTIVE_TASK_TIMEOUT_MS = 60 * 60 * 1000;
 
 export class DockerTaskService {
   constructor(private db: DrizzleClient) {}
@@ -26,6 +29,7 @@ export class DockerTaskService {
   }
 
   async list(filters?: { nodeId?: string; status?: string; type?: string }) {
+    await this.markStaleActiveTasksFailed();
     const conditions = [];
     if (filters?.nodeId) conditions.push(eq(dockerTasks.nodeId, filters.nodeId));
     if (filters?.status) conditions.push(eq(dockerTasks.status, filters.status));
@@ -35,12 +39,14 @@ export class DockerTaskService {
   }
 
   async get(id: string) {
+    await this.markStaleActiveTasksFailed();
     const [row] = await this.db.select().from(dockerTasks).where(eq(dockerTasks.id, id)).limit(1);
     if (!row) throw new AppError(404, 'NOT_FOUND', 'Docker task not found');
     return row;
   }
 
   async create(input: { nodeId: string; containerId?: string; containerName?: string; type: string }) {
+    await this.markStaleActiveTasksFailed();
     const [row] = await this.db
       .insert(dockerTasks)
       .values({
@@ -54,6 +60,25 @@ export class DockerTaskService {
 
     this.emit(row);
     return row;
+  }
+
+  async markStaleActiveTasksFailed(now = new Date()) {
+    const cutoff = new Date(now.getTime() - STALE_ACTIVE_TASK_TIMEOUT_MS);
+    const rows = await this.db
+      .update(dockerTasks)
+      .set({
+        status: 'failed',
+        error: 'Timed out after backend restart or lost task watcher',
+        completedAt: now,
+      })
+      .where(and(inArray(dockerTasks.status, [...ACTIVE_TASK_STATUSES]), lt(dockerTasks.createdAt, cutoff)))
+      .returning();
+
+    for (const row of rows) this.emit(row);
+    if (rows.length > 0) {
+      logger.warn(`Marked ${rows.length} stale docker task(s) as failed`);
+    }
+    return rows.length;
   }
 
   async update(
@@ -123,10 +148,11 @@ export class DockerTaskService {
    * Delete tasks that were completed more than 24 hours ago.
    */
   async cleanup() {
+    await this.markStaleActiveTasksFailed();
     const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const result = await this.db
       .delete(dockerTasks)
-      .where(and(eq(dockerTasks.status, 'completed'), lt(dockerTasks.completedAt, cutoff)))
+      .where(and(inArray(dockerTasks.status, [...COMPLETED_TASK_STATUSES]), lt(dockerTasks.completedAt, cutoff)))
       .returning({ id: dockerTasks.id });
 
     if (result.length > 0) {

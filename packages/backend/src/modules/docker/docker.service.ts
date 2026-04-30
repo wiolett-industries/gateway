@@ -9,6 +9,7 @@ import type { NotificationEvaluatorService } from '@/modules/notifications/notif
 import type { EventBusService } from '@/services/event-bus.service.js';
 import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import type { NodeRegistryService } from '@/services/node-registry.service.js';
+import { DOCKER_LOG_TAIL_MAX } from './docker.schemas.js';
 import type { DockerDeploymentService } from './docker-deployment.service.js';
 import { DOCKER_DEPLOYMENT_MANAGED_LABEL } from './docker-deployment.service.js';
 import type { DockerEnvironmentService } from './docker-environment.service.js';
@@ -809,11 +810,16 @@ export class DockerManagementService {
     this.setTransition(nodeId, name, 'stopping');
     this.emitTransition(nodeId, name, containerId, 'stopping');
     const task = await this.createTask(nodeId, containerId, name, 'stop');
-    const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'stop', {
-      containerId,
-      timeoutSeconds: timeout,
-    });
-    this.parseResult(result);
+    try {
+      const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'stop', {
+        containerId,
+        timeoutSeconds: timeout,
+      });
+      this.parseResult(result);
+    } catch (err) {
+      await this.failTask(task?.id, err instanceof Error ? err.message : 'Failed to stop container', nodeId, name);
+      throw err;
+    }
     this.watchTransition(nodeId, containerId, name, task?.id, 'exited', 'Container stopped', 'stopped');
     await this.auditService.log({
       action: 'docker.container.stop',
@@ -832,22 +838,27 @@ export class DockerManagementService {
     this.setTransition(nodeId, name, 'restarting');
     this.emitTransition(nodeId, name, containerId, 'restarting');
     const task = await this.createTask(nodeId, containerId, name, 'restart');
-    if (this.runtimeSettingsService) {
-      const persistedRuntime = await this.runtimeSettingsService.get(nodeId, name);
-      if (persistedRuntime) {
-        await this.validateRuntimeResourceConfig(nodeId, containerId, persistedRuntime as Record<string, unknown>);
-        const updateResult = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'live_update', {
-          containerId,
-          configJson: JSON.stringify(persistedRuntime),
-        });
-        this.parseResult(updateResult);
+    try {
+      if (this.runtimeSettingsService) {
+        const persistedRuntime = await this.runtimeSettingsService.get(nodeId, name);
+        if (persistedRuntime) {
+          await this.validateRuntimeResourceConfig(nodeId, containerId, persistedRuntime as Record<string, unknown>);
+          const updateResult = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'live_update', {
+            containerId,
+            configJson: JSON.stringify(persistedRuntime),
+          });
+          this.parseResult(updateResult);
+        }
       }
+      const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'restart', {
+        containerId,
+        timeoutSeconds: timeout,
+      });
+      this.parseResult(result);
+    } catch (err) {
+      await this.failTask(task?.id, err instanceof Error ? err.message : 'Failed to restart container', nodeId, name);
+      throw err;
     }
-    const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'restart', {
-      containerId,
-      timeoutSeconds: timeout,
-    });
-    this.parseResult(result);
     this.watchTransition(nodeId, containerId, name, task?.id, 'running', 'Container restarted', 'restarted');
     await this.auditService.log({
       action: 'docker.container.restart',
@@ -866,8 +877,13 @@ export class DockerManagementService {
     this.setTransition(nodeId, name, 'killing');
     this.emitTransition(nodeId, name, containerId, 'killing');
     const task = await this.createTask(nodeId, containerId, name, 'kill');
-    const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'kill', { containerId, signal });
-    this.parseResult(result);
+    try {
+      const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'kill', { containerId, signal });
+      this.parseResult(result);
+    } catch (err) {
+      await this.failTask(task?.id, err instanceof Error ? err.message : 'Failed to kill container', nodeId, name);
+      throw err;
+    }
     this.watchTransition(nodeId, containerId, name, task?.id, 'exited', `Container killed (${signal})`, 'killed');
     await this.auditService.log({
       action: 'docker.container.kill',
@@ -1030,8 +1046,9 @@ export class DockerManagementService {
 
   async getContainerLogs(nodeId: string, containerId: string, tail: number, timestamps: boolean) {
     await this.validateDockerNode(nodeId);
+    const tailLines = Math.min(Math.max(Math.trunc(tail || 100), 1), DOCKER_LOG_TAIL_MAX);
     const result = await this.nodeDispatch.sendDockerLogsCommand(nodeId, containerId, {
-      tailLines: tail,
+      tailLines,
       timestamps,
     });
     return this.parseResult(result);

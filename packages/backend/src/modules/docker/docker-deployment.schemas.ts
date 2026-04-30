@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+export const DOCKER_DEPLOYMENT_ROUTES_MAX = 32;
+
 export const DockerDeploymentNameSchema = z
   .string()
   .min(2)
@@ -13,7 +15,7 @@ export const DockerDeploymentRouteSchema = z.object({
 });
 
 export const DockerDeploymentHealthSchema = z.object({
-  path: z.string().min(1).default('/'),
+  path: z.string().min(1).max(500).default('/'),
   statusMin: z.number().int().min(100).max(599).default(200),
   statusMax: z.number().int().min(100).max(599).default(399),
   timeoutSeconds: z.number().int().min(1).max(60).default(5),
@@ -49,7 +51,7 @@ export const DockerDeploymentCreateSchema = z.object({
   name: DockerDeploymentNameSchema,
   image: z.string().min(1),
   registryId: z.string().uuid().optional(),
-  routes: z.array(DockerDeploymentRouteSchema).min(1),
+  routes: z.array(DockerDeploymentRouteSchema).min(1).max(DOCKER_DEPLOYMENT_ROUTES_MAX),
   health: DockerDeploymentHealthSchema.default({}),
   drainSeconds: z.number().int().min(0).max(3600).default(30),
   routerImage: z.string().min(1).default('nginx:alpine'),
@@ -67,7 +69,7 @@ export const DockerDeploymentCreateSchema = z.object({
 export const DockerDeploymentUpdateSchema = z.object({
   name: DockerDeploymentNameSchema.optional(),
   desiredConfig: DockerDeploymentDesiredConfigSchema.partial().optional(),
-  routes: z.array(DockerDeploymentRouteSchema).min(1).optional(),
+  routes: z.array(DockerDeploymentRouteSchema).min(1).max(DOCKER_DEPLOYMENT_ROUTES_MAX).optional(),
   health: DockerDeploymentHealthSchema.optional(),
   drainSeconds: z.number().int().min(0).max(3600).optional(),
 });

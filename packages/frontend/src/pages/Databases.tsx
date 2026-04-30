@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/common/EmptyState";
+import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
 import { SearchFilterBar } from "@/components/common/SearchFilterBar";
 import { Badge } from "@/components/ui/badge";
@@ -78,7 +79,7 @@ function DatabaseTagSummary({ tags }: { tags: string[] }) {
 
 export function Databases() {
   const navigate = useNavigate();
-  const { hasScope, hasScopedAccess } = useAuthStore();
+  const { hasScope, hasScopedAccess, isLoading: authLoading } = useAuthStore();
   const [rows, setRows] = useState<DatabaseConnection[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -206,9 +207,10 @@ export function Databases() {
           }
         />
 
-        {loading ? (
-          <div className="border border-border bg-card p-8 text-sm text-muted-foreground">
-            Loading database connections...
+        {loading || authLoading ? (
+          <div className="flex items-center justify-center gap-3 border border-border bg-card p-8 text-sm text-muted-foreground">
+            <LoadingSpinner className="" />
+            <span>Loading database connections...</span>
           </div>
         ) : filtered.length === 0 ? (
           <EmptyState

@@ -38,13 +38,102 @@ function deploymentSecretContainerName(deploymentId: string) {
   return `deployment:${deploymentId}`;
 }
 
+const DOCKER_RESOURCE_LIST_MAX = 1000;
+const DOCKER_DEPLOYMENT_ROUTE_PREVIEW_MAX = 20;
+const DOCKER_DEPLOYMENT_HEALTH_PATH_MAX = 500;
+
+function compactHealthConfig(healthConfig: Record<string, any> | null | undefined) {
+  if (!healthConfig) return healthConfig;
+  const path = typeof healthConfig.path === 'string' ? healthConfig.path : undefined;
+  return {
+    ...healthConfig,
+    path: path ? path.slice(0, DOCKER_DEPLOYMENT_HEALTH_PATH_MAX) : path,
+    pathTruncated: Boolean(path && path.length > DOCKER_DEPLOYMENT_HEALTH_PATH_MAX),
+  };
+}
+
+function compactDeploymentListItem(deployment: Record<string, any>) {
+  const routes = Array.isArray(deployment.routes) ? deployment.routes : [];
+  return {
+    id: deployment.id,
+    nodeId: deployment.nodeId,
+    name: deployment.name,
+    status: deployment.status,
+    activeSlot: deployment.activeSlot,
+    desiredConfig: {
+      image: deployment.desiredConfig?.image,
+      restartPolicy: deployment.desiredConfig?.restartPolicy,
+    },
+    routerName: deployment.routerName,
+    routerImage: deployment.routerImage,
+    networkName: deployment.networkName,
+    healthConfig: compactHealthConfig(deployment.healthConfig),
+    drainSeconds: deployment.drainSeconds,
+    routes: routes.slice(0, DOCKER_DEPLOYMENT_ROUTE_PREVIEW_MAX),
+    routesCount: routes.length,
+    routesTruncated: routes.length > DOCKER_DEPLOYMENT_ROUTE_PREVIEW_MAX,
+    slots: Array.isArray(deployment.slots)
+      ? deployment.slots.map((slot: Record<string, any>) => ({
+          id: slot.id,
+          deploymentId: slot.deploymentId,
+          slot: slot.slot,
+          containerId: slot.containerId,
+          containerName: slot.containerName,
+          image: slot.image,
+          status: slot.status,
+          health: slot.health,
+          drainingUntil: slot.drainingUntil,
+          updatedAt: slot.updatedAt,
+        }))
+      : [],
+    releases: [],
+    healthCheck: deployment.healthCheck ?? null,
+    createdAt: deployment.createdAt,
+    updatedAt: deployment.updatedAt,
+    _transition: deployment._transition,
+  };
+}
+
+function matchesDeploymentSearch(deployment: Record<string, any>, search: string | undefined) {
+  if (!search) return true;
+  const routes = Array.isArray(deployment.routes) ? deployment.routes : [];
+  const routeText = routes
+    .map((route: any) => [route.host, route.path, route.hostPort, route.containerPort].filter(Boolean).join(' '))
+    .join(' ');
+  const haystack = [
+    deployment.id,
+    deployment.nodeId,
+    deployment.name,
+    deployment.status,
+    deployment.activeSlot,
+    deployment.desiredConfig?.image,
+    deployment.routerName,
+    deployment.networkName,
+    routeText,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  return haystack.includes(search);
+}
+
 export function registerDockerDeploymentRoutes(router: OpenAPIHono<AppEnv>) {
   router.openapi(
     { ...listDeploymentsRoute, middleware: requireScopeForResource('docker:containers:list', 'nodeId') },
     async (c) => {
       const service = container.resolve(DockerDeploymentService);
-      const data = await service.list(c.req.param('nodeId')!);
-      return c.json({ data });
+      const data = await service.listSummary(c.req.param('nodeId')!);
+      const search = c.req.query('search')?.trim().toLowerCase();
+      const compacted = data
+        .filter((deployment) => matchesDeploymentSearch(deployment, search))
+        .map((deployment) => compactDeploymentListItem(deployment));
+      const truncated = compacted.length > DOCKER_RESOURCE_LIST_MAX;
+      return c.json({
+        data: truncated ? compacted.slice(0, DOCKER_RESOURCE_LIST_MAX) : compacted,
+        total: compacted.length,
+        limit: DOCKER_RESOURCE_LIST_MAX,
+        truncated,
+      });
     }
   );
 

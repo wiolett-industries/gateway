@@ -254,7 +254,16 @@ export class DockerHealthCheckService {
   async getRowsForContainers(nodeId: string, containerNames: string[]) {
     if (containerNames.length === 0) return new Map<string, HealthRow>();
     const rows = await this.db
-      .select()
+      .select({
+        id: dockerHealthChecks.id,
+        target: dockerHealthChecks.target,
+        nodeId: dockerHealthChecks.nodeId,
+        containerName: dockerHealthChecks.containerName,
+        deploymentId: dockerHealthChecks.deploymentId,
+        enabled: dockerHealthChecks.enabled,
+        healthStatus: dockerHealthChecks.healthStatus,
+        lastHealthCheckAt: dockerHealthChecks.lastHealthCheckAt,
+      })
       .from(dockerHealthChecks)
       .where(
         and(
@@ -269,7 +278,16 @@ export class DockerHealthCheckService {
   async getRowsForDeployments(deploymentIds: string[]) {
     if (deploymentIds.length === 0) return new Map<string, HealthRow>();
     const rows = await this.db
-      .select()
+      .select({
+        id: dockerHealthChecks.id,
+        target: dockerHealthChecks.target,
+        nodeId: dockerHealthChecks.nodeId,
+        containerName: dockerHealthChecks.containerName,
+        deploymentId: dockerHealthChecks.deploymentId,
+        enabled: dockerHealthChecks.enabled,
+        healthStatus: dockerHealthChecks.healthStatus,
+        lastHealthCheckAt: dockerHealthChecks.lastHealthCheckAt,
+      })
       .from(dockerHealthChecks)
       .where(and(eq(dockerHealthChecks.target, 'deployment'), inArray(dockerHealthChecks.deploymentId, deploymentIds)));
     return new Map(rows.flatMap((row) => (row.deploymentId ? [[row.deploymentId, row] as const] : [])));

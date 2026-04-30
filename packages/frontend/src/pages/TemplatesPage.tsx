@@ -14,7 +14,7 @@ const TABS = [
     label: "PKI Certificates",
     icon: Award,
     scope: "pki:templates:list",
-    createScope: "pki:templates:edit",
+    createScope: "pki:templates:create",
   },
   {
     value: "nginx",
@@ -94,22 +94,26 @@ export function TemplatesPage() {
             ))}
           </TabsList>
 
-          <TabsContent value="pki">
-            <Templates
-              embedded
-              onCreateRef={(fn) => {
-                pkiCreateRef.current = fn;
-              }}
-            />
-          </TabsContent>
-          <TabsContent value="nginx">
-            <NginxTemplates
-              embedded
-              onCreateRef={(fn) => {
-                nginxCreateRef.current = fn;
-              }}
-            />
-          </TabsContent>
+          {visibleTabs.some((tab) => tab.value === "pki") && (
+            <TabsContent value="pki">
+              <Templates
+                embedded
+                onCreateRef={(fn) => {
+                  pkiCreateRef.current = fn;
+                }}
+              />
+            </TabsContent>
+          )}
+          {visibleTabs.some((tab) => tab.value === "nginx") && (
+            <TabsContent value="nginx">
+              <NginxTemplates
+                embedded
+                onCreateRef={(fn) => {
+                  nginxCreateRef.current = fn;
+                }}
+              />
+            </TabsContent>
+          )}
         </Tabs>
       </div>
     </PageTransition>

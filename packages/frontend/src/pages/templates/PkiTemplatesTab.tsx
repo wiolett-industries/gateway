@@ -50,9 +50,15 @@ export function PkiTemplatesTab({
   onCreateRef?: (fn: () => void) => void;
 }) {
   const { hasScope } = useAuthStore();
-  const cachedTemplates = api.getCached<Template[]>("templates:list");
+  const canListTemplates = hasScope("pki:templates:list");
+  const canCreateTemplates = hasScope("pki:templates:create");
+  const canEditTemplates = hasScope("pki:templates:edit");
+  const canDeleteTemplates = hasScope("pki:templates:delete");
+  const cachedTemplates = canListTemplates
+    ? api.getCached<Template[]>("templates:list")
+    : undefined;
   const [templates, setTemplates] = useState<Template[]>(cachedTemplates ?? []);
-  const [isLoading, setIsLoading] = useState(!cachedTemplates);
+  const [isLoading, setIsLoading] = useState(canListTemplates && !cachedTemplates);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Template | null>(null);
   const [step, setStep] = useState(0);
@@ -80,6 +86,11 @@ export function PkiTemplatesTab({
   const [isSaving, setIsSaving] = useState(false);
 
   const loadTemplates = useCallback(async () => {
+    if (!canListTemplates) {
+      setTemplates([]);
+      setIsLoading(false);
+      return;
+    }
     try {
       const data = await api.listTemplates();
       setTemplates(data || []);
@@ -88,7 +99,7 @@ export function PkiTemplatesTab({
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [canListTemplates]);
 
   useEffect(() => {
     loadTemplates();
@@ -227,6 +238,10 @@ export function PkiTemplatesTab({
   const canProceed =
     step === 0 ? name.trim() !== "" && validityDays >= 1 && validityDays <= 3650 : true;
 
+  if (!canListTemplates) {
+    return null;
+  }
+
   if (isLoading) {
     return <LoadingSpinner />;
   }
@@ -240,7 +255,7 @@ export function PkiTemplatesTab({
               <h1 className="text-2xl font-bold">Templates</h1>
               <p className="text-sm text-muted-foreground">Certificate issuance templates</p>
             </div>
-            {hasScope("pki:templates:edit") && (
+            {canCreateTemplates && (
               <Button onClick={openCreate}>
                 <Plus className="h-4 w-4" />
                 Create Template
@@ -259,7 +274,7 @@ export function PkiTemplatesTab({
                     <FileText className="h-4 w-4 text-muted-foreground" />
                     <h3 className="font-semibold text-sm">{template.name}</h3>
                   </div>
-                  {hasScope("pki:templates:edit") && !template.isBuiltin && (
+                  {(canEditTemplates || canDeleteTemplates) && !template.isBuiltin && (
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -267,17 +282,21 @@ export function PkiTemplatesTab({
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => openEdit(template)}>
-                          <Pencil className="h-4 w-4" />
-                          Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => handleDelete(template)}
-                          className="text-destructive"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                          Delete
-                        </DropdownMenuItem>
+                        {canEditTemplates && (
+                          <DropdownMenuItem onClick={() => openEdit(template)}>
+                            <Pencil className="h-4 w-4" />
+                            Edit
+                          </DropdownMenuItem>
+                        )}
+                        {canDeleteTemplates && (
+                          <DropdownMenuItem
+                            onClick={() => handleDelete(template)}
+                            className="text-destructive"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            Delete
+                          </DropdownMenuItem>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   )}
@@ -323,7 +342,7 @@ export function PkiTemplatesTab({
         ) : (
           <EmptyState
             message="No templates."
-            {...(hasScope("pki:templates:edit")
+            {...(canCreateTemplates
               ? { actionLabel: "Create one", onAction: () => setDialogOpen(true) }
               : {})}
           />

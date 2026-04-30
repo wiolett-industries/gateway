@@ -45,7 +45,11 @@ export function DatabaseConsoleTab({ database }: { database: DatabaseConnection 
               rowCount: number;
               fields: string[];
               rows: Record<string, unknown>[];
+              truncated?: boolean;
+              maxRows?: number;
             }>;
+            truncated?: boolean;
+            resultLimit?: number;
           }
         ).results
       : null;
@@ -65,8 +69,24 @@ export function DatabaseConsoleTab({ database }: { database: DatabaseConnection 
     typeof result === "object" &&
     "results" in result &&
     Array.isArray((result as { results: unknown[] }).results)
-      ? (result as { results: Array<{ command: string; result: unknown }> }).results
+      ? (
+          result as {
+            results: Array<{ command: string; result: unknown; truncated?: boolean }>;
+            truncated?: boolean;
+            commandLimit?: number;
+          }
+        ).results
       : null;
+  const responseTruncated =
+    result && typeof result === "object" && "truncated" in result
+      ? Boolean((result as { truncated?: boolean }).truncated)
+      : false;
+  const responseLimit =
+    result && typeof result === "object" && "resultLimit" in result
+      ? (result as { resultLimit?: number }).resultLimit
+      : result && typeof result === "object" && "commandLimit" in result
+        ? (result as { commandLimit?: number }).commandLimit
+        : undefined;
 
   const resultRowVirtualizer = useVirtualizer({
     count: tableResult?.rows.length ?? 0,
@@ -142,11 +162,22 @@ export function DatabaseConsoleTab({ database }: { database: DatabaseConnection 
               {database.type === "postgres" ? "Query Result" : "Command Result"}
             </DialogTitle>
           </DialogHeader>
+          {responseTruncated && (
+            <div className="shrink-0 border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
+              Response truncated{responseLimit ? ` after ${responseLimit} result sets` : ""}.
+            </div>
+          )}
           {tableResult ? (
             <div
               ref={resultScrollRef}
               className="flex-1 min-h-0 overflow-auto border border-border bg-card"
             >
+              {tableResult.truncated && (
+                <div className="sticky top-0 z-20 border-b border-border bg-card px-4 py-2 text-xs text-muted-foreground">
+                  Showing first {tableResult.maxRows ?? tableResult.rows.length} rows. Refine the
+                  query or add a LIMIT to inspect more specific data.
+                </div>
+              )}
               <table className="min-w-full border-collapse text-sm">
                 <thead className="sticky top-0 z-10 bg-card">
                   <tr className="border-b border-border">
@@ -210,6 +241,9 @@ export function DatabaseConsoleTab({ database }: { database: DatabaseConnection 
                       <h4 className="text-sm font-semibold">Statement {index + 1}</h4>
                       <p className="text-xs text-muted-foreground">
                         {entry.command} · {entry.rowCount} row{entry.rowCount === 1 ? "" : "s"}
+                        {entry.truncated
+                          ? ` · showing first ${entry.maxRows ?? entry.rows.length}`
+                          : ""}
                       </p>
                     </div>
                   </div>
@@ -259,7 +293,10 @@ export function DatabaseConsoleTab({ database }: { database: DatabaseConnection 
                 >
                   <div className="border-b border-border px-4 py-3">
                     <h4 className="text-sm font-semibold">Command {index + 1}</h4>
-                    <p className="text-xs text-muted-foreground">{entry.command}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {entry.command}
+                      {entry.truncated ? " · result truncated" : ""}
+                    </p>
                   </div>
                   <pre className="overflow-auto p-4 text-sm whitespace-pre-wrap">
                     {JSON.stringify(entry.result, null, 2)}

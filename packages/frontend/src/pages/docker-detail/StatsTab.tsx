@@ -56,9 +56,13 @@ export function StatsTab({
   data: InspectData;
 }) {
   const [current, setCurrent] = useState<ContainerStats | null>(null);
-  const [processes, setProcesses] = useState<{ Titles: string[]; Processes: string[][] } | null>(
-    null
-  );
+  const [processes, setProcesses] = useState<{
+    Titles: string[];
+    Processes: string[][];
+    truncated?: boolean;
+    totalProcesses?: number;
+    limit?: number;
+  } | null>(null);
 
   const [cpuHist, setCpuHist] = useState<number[]>([]);
   const [memHist, setMemHist] = useState<number[]>([]);
@@ -326,6 +330,12 @@ export function StatsTab({
             <div className="border border-border bg-card">
               <div className="border-b border-border p-4">
                 <h4 className="text-sm font-semibold">Process List</h4>
+                {processes?.truncated && (
+                  <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
+                    Showing first {processes.limit ?? filteredProcesses.length} of{" "}
+                    {processes.totalProcesses ?? "many"} processes.
+                  </p>
+                )}
               </div>
               <div className="overflow-x-auto">
                 <div className="max-h-[calc(2rem*9+2.25rem+4px)] overflow-auto">

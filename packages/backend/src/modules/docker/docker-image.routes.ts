@@ -13,6 +13,45 @@ import { ImagePullSchema } from './docker.schemas.js';
 import { DockerManagementService } from './docker.service.js';
 import { DockerRegistryService } from './docker-registry.service.js';
 
+const DOCKER_RESOURCE_LIST_MAX = 1000;
+const DOCKER_IMAGE_REF_PREVIEW_MAX = 20;
+
+function compactImageListItem(image: Record<string, any>) {
+  const repoTags = image.repoTags ?? image.RepoTags;
+  const repoDigests = image.repoDigests ?? image.RepoDigests;
+  return {
+    id: image.id ?? image.Id,
+    parentId: image.parentId ?? image.ParentId,
+    repoTags: Array.isArray(repoTags) ? repoTags.slice(0, DOCKER_IMAGE_REF_PREVIEW_MAX) : repoTags,
+    repoTagsCount: Array.isArray(repoTags) ? repoTags.length : undefined,
+    repoTagsTruncated: Array.isArray(repoTags) && repoTags.length > DOCKER_IMAGE_REF_PREVIEW_MAX,
+    repoDigests: Array.isArray(repoDigests) ? repoDigests.slice(0, DOCKER_IMAGE_REF_PREVIEW_MAX) : repoDigests,
+    repoDigestsCount: Array.isArray(repoDigests) ? repoDigests.length : undefined,
+    repoDigestsTruncated: Array.isArray(repoDigests) && repoDigests.length > DOCKER_IMAGE_REF_PREVIEW_MAX,
+    created: image.created ?? image.Created,
+    size: image.size ?? image.Size,
+    virtualSize: image.virtualSize ?? image.VirtualSize,
+    sharedSize: image.sharedSize ?? image.SharedSize,
+    containers: image.containers ?? image.Containers,
+  };
+}
+
+function matchesImageSearch(image: Record<string, any>, search: string | undefined) {
+  if (!search) return true;
+  const repoTags = image.repoTags ?? image.RepoTags;
+  const repoDigests = image.repoDigests ?? image.RepoDigests;
+  const haystack = [
+    image.id ?? image.Id,
+    image.parentId ?? image.ParentId,
+    ...(Array.isArray(repoTags) ? repoTags : []),
+    ...(Array.isArray(repoDigests) ? repoDigests : []),
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  return haystack.includes(search);
+}
+
 export function registerImageRoutes(router: OpenAPIHono<AppEnv>) {
   // ─── Image routes ────────────────────────────────────────────────────
 
@@ -23,7 +62,18 @@ export function registerImageRoutes(router: OpenAPIHono<AppEnv>) {
       const service = container.resolve(DockerManagementService);
       const nodeId = c.req.param('nodeId')!;
       const data = await service.listImages(nodeId);
-      return c.json({ data });
+      if (!Array.isArray(data)) return c.json({ data });
+      const search = c.req.query('search')?.trim().toLowerCase();
+      const compacted = data
+        .filter((item) => matchesImageSearch(item, search))
+        .map((item) => compactImageListItem(item));
+      const truncated = compacted.length > DOCKER_RESOURCE_LIST_MAX;
+      return c.json({
+        data: truncated ? compacted.slice(0, DOCKER_RESOURCE_LIST_MAX) : compacted,
+        total: compacted.length,
+        limit: DOCKER_RESOURCE_LIST_MAX,
+        truncated,
+      });
     }
   );
 

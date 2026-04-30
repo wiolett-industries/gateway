@@ -339,9 +339,9 @@ databaseRoutes.openapi(
   async (c) => {
     const service = container.resolve(DatabaseConnectionService);
     const user = c.get('user')!;
-    const { sql } = ExecutePostgresSqlSchema.parse(await c.req.json());
+    const { sql, maxRows } = ExecutePostgresSqlSchema.parse(await c.req.json());
     ensureQueryScope(c, c.req.param('id')!, inferPostgresIntent(sql));
-    const data = await service.executePostgresSql(c.req.param('id')!, sql, user.id);
+    const data = await service.executePostgresSql(c.req.param('id')!, sql, user.id, { maxRows });
     return c.json({ data });
   }
 );
@@ -372,7 +372,11 @@ databaseRoutes.openapi(
     ]);
     const service = container.resolve(DatabaseConnectionService);
     const query = RedisGetKeyQuerySchema.parse(c.req.query());
-    const data = await service.getRedisKey(c.req.param('id')!, query.key);
+    const data = await service.getRedisKey(c.req.param('id')!, query.key, {
+      offset: query.offset,
+      limit: query.limit,
+      maxStringBytes: query.maxStringBytes,
+    });
     return c.json({ data });
   }
 );

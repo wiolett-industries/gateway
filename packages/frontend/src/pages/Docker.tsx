@@ -28,14 +28,9 @@ export function Docker() {
   const { tab: tabParam } = useParams<{ tab?: string }>();
   const navigate = useNavigate();
   const { hasScope, hasScopedAccess } = useAuthStore();
-  const selectedNodeId = useDockerStore((s) => s.selectedNodeId);
-  const dockerNodes = useDockerStore((s) => s.dockerNodes);
   const setSelectedNode = useDockerStore((s) => s.setSelectedNode);
   const setDockerNodes = useDockerStore((s) => s.setDockerNodes);
-  const fetchContainers = useDockerStore((s) => s.fetchContainers);
-  const fetchImages = useDockerStore((s) => s.fetchImages);
-  const fetchVolumes = useDockerStore((s) => s.fetchVolumes);
-  const fetchNetworks = useDockerStore((s) => s.fetchNetworks);
+  const fetchTasks = useDockerStore((s) => s.fetchTasks);
   const loading = useDockerStore((s) => s.loading);
 
   const deployContainerRef = useRef<(() => void) | null>(null);
@@ -43,6 +38,10 @@ export function Docker() {
   const pullImageRef = useRef<(() => void) | null>(null);
   const createVolumeRef = useRef<(() => void) | null>(null);
   const createNetworkRef = useRef<(() => void) | null>(null);
+  const refreshContainersRef = useRef<(() => void) | null>(null);
+  const refreshImagesRef = useRef<(() => void) | null>(null);
+  const refreshVolumesRef = useRef<(() => void) | null>(null);
+  const refreshNetworksRef = useRef<(() => void) | null>(null);
 
   const visibleTabs = TABS.filter((t) => hasScopedAccess(t.scope));
   const activeTab =
@@ -79,37 +78,6 @@ export function Docker() {
       .catch(() => toast.error("Failed to load Docker nodes"));
   }, [setDockerNodes]);
 
-  useEffect(() => {
-    if (!selectedNodeId && dockerNodes.length === 0) return;
-    const refreshActiveTab = () => {
-      switch (activeTab) {
-        case "containers":
-          void fetchContainers();
-          break;
-        case "images":
-          void fetchImages();
-          break;
-        case "volumes":
-          void fetchVolumes();
-          break;
-        case "networks":
-          void fetchNetworks();
-          break;
-      }
-    };
-    refreshActiveTab();
-    const interval = setInterval(refreshActiveTab, 30_000);
-    return () => clearInterval(interval);
-  }, [
-    activeTab,
-    dockerNodes.length,
-    selectedNodeId,
-    fetchContainers,
-    fetchImages,
-    fetchVolumes,
-    fetchNetworks,
-  ]);
-
   const handleTabChange = (value: string) => {
     navigate(`/docker/${value}`, { replace: true });
   };
@@ -117,13 +85,15 @@ export function Docker() {
   const handleRefresh = async () => {
     switch (activeTab) {
       case "containers":
-        return fetchContainers();
+        return refreshContainersRef.current?.();
       case "images":
-        return fetchImages();
+        return refreshImagesRef.current?.();
       case "volumes":
-        return fetchVolumes();
+        return refreshVolumesRef.current?.();
       case "networks":
-        return fetchNetworks();
+        return refreshNetworksRef.current?.();
+      case "tasks":
+        return fetchTasks();
     }
   };
 
@@ -221,6 +191,9 @@ export function Docker() {
               onCreateFolderRef={(fn) => {
                 createFolderRef.current = fn;
               }}
+              onRefreshRef={(fn) => {
+                refreshContainersRef.current = fn;
+              }}
             />
           </TabsContent>
           <TabsContent value="images">
@@ -228,6 +201,9 @@ export function Docker() {
               embedded
               onPullRef={(fn) => {
                 pullImageRef.current = fn;
+              }}
+              onRefreshRef={(fn) => {
+                refreshImagesRef.current = fn;
               }}
             />
           </TabsContent>
@@ -237,6 +213,9 @@ export function Docker() {
               onCreateRef={(fn) => {
                 createVolumeRef.current = fn;
               }}
+              onRefreshRef={(fn) => {
+                refreshVolumesRef.current = fn;
+              }}
             />
           </TabsContent>
           <TabsContent value="networks">
@@ -244,6 +223,9 @@ export function Docker() {
               embedded
               onCreateRef={(fn) => {
                 createNetworkRef.current = fn;
+              }}
+              onRefreshRef={(fn) => {
+                refreshNetworksRef.current = fn;
               }}
             />
           </TabsContent>

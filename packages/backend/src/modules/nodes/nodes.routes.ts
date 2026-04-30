@@ -40,6 +40,38 @@ export const nodesRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidat
 
 nodesRoutes.use('*', authMiddleware);
 
+function compactMonitoringHistorySnapshot(snapshot: any) {
+  const health = snapshot?.health ?? {};
+  const stats = snapshot?.stats ?? {};
+  const traffic = snapshot?.traffic ?? null;
+  return {
+    timestamp: snapshot?.timestamp,
+    health: {
+      cpuPercent: health.cpuPercent,
+      systemMemoryUsedBytes: health.systemMemoryUsedBytes,
+      systemMemoryTotalBytes: health.systemMemoryTotalBytes,
+      swapUsedBytes: health.swapUsedBytes,
+      swapTotalBytes: health.swapTotalBytes,
+      diskReadBytes: health.diskReadBytes,
+      diskWriteBytes: health.diskWriteBytes,
+      diskUsagePercent: health.diskUsagePercent,
+      networkRxBytes: health.networkRxBytes,
+      networkTxBytes: health.networkTxBytes,
+      networkInterfaces: health.networkInterfaces,
+    },
+    stats: {
+      activeConnections: stats.activeConnections,
+      accepts: stats.accepts,
+      handled: stats.handled,
+      requests: stats.requests,
+      reading: stats.reading,
+      writing: stats.writing,
+      waiting: stats.waiting,
+    },
+    traffic,
+  };
+}
+
 nodesRoutes.openapi({ ...listNodesRoute, middleware: requireScope('nodes:list') }, async (c) => {
   const service = container.resolve(NodesService);
   const query = NodeListQuerySchema.parse(c.req.query());
@@ -191,7 +223,7 @@ nodesRoutes.openapi(
 
       const history = monitoringService.getHistory(nodeId);
       await stream.writeSSE({
-        data: JSON.stringify({ connected: true, nodeId, history }),
+        data: JSON.stringify({ connected: true, nodeId, history: history.map(compactMonitoringHistorySnapshot) }),
         event: 'connected',
       });
       await stream.sleep(0);

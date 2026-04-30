@@ -99,6 +99,7 @@ export const PostgresObjectSchema = z.record(z.string(), z.any());
 
 export const ExecutePostgresSqlSchema = z.object({
   sql: z.string().trim().min(1).max(100_000),
+  maxRows: z.number().int().min(1).max(2000).default(500),
 });
 
 export const RedisScanKeysQuerySchema = z.object({
@@ -110,6 +111,14 @@ export const RedisScanKeysQuerySchema = z.object({
 
 export const RedisGetKeyQuerySchema = z.object({
   key: z.string().min(1).max(4096),
+  offset: z.coerce.number().int().min(0).default(0),
+  limit: z.coerce.number().int().min(1).max(500).default(100),
+  maxStringBytes: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(1024 * 1024)
+    .default(64 * 1024),
 });
 
 export const RedisSetKeySchema = z.object({

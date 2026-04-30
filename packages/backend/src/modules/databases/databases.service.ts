@@ -19,6 +19,123 @@ import type {
 
 const { Pool } = pg;
 const DATABASE_HEALTH_HISTORY_MIN_INTERVAL_MS = 30_000;
+const POSTGRES_QUERY_TIMEOUT_MS = 15_000;
+const POSTGRES_RESULT_MAX_BYTES = 512 * 1024;
+const POSTGRES_RESULT_SET_MAX = 10;
+const POSTGRES_RESPONSE_MAX_BYTES = 768 * 1024;
+const REDIS_COMMAND_MAX_ITEMS = 500;
+const REDIS_COMMAND_MAX_BYTES = 256 * 1024;
+const REDIS_COMMAND_MAX_COUNT = 20;
+const REDIS_RESPONSE_MAX_BYTES = 512 * 1024;
+
+function truncateUtf8(value: string, maxBytes: number) {
+  if (Buffer.byteLength(value, 'utf8') <= maxBytes) {
+    return { value, truncated: false };
+  }
+  let low = 0;
+  let high = value.length;
+  while (low < high) {
+    const mid = Math.ceil((low + high) / 2);
+    if (Buffer.byteLength(value.slice(0, mid), 'utf8') <= maxBytes) {
+      low = mid;
+    } else {
+      high = mid - 1;
+    }
+  }
+  return { value: value.slice(0, low), truncated: true };
+}
+
+function stringifyForPreview(value: unknown) {
+  try {
+    const json = JSON.stringify(value);
+    return json === undefined ? String(value) : json;
+  } catch {
+    return String(value);
+  }
+}
+
+function estimateJsonBytes(value: unknown) {
+  return Buffer.byteLength(stringifyForPreview(value), 'utf8');
+}
+
+function compactCommandResult(value: unknown): { result: unknown; truncated: boolean } {
+  let result = value;
+  let truncated = false;
+  if (Array.isArray(result) && result.length > REDIS_COMMAND_MAX_ITEMS) {
+    result = result.slice(0, REDIS_COMMAND_MAX_ITEMS);
+    truncated = true;
+  }
+  if (estimateJsonBytes(result) > REDIS_COMMAND_MAX_BYTES) {
+    const preview = truncateUtf8(stringifyForPreview(result), REDIS_COMMAND_MAX_BYTES);
+    result = {
+      preview: preview.value,
+      truncated: true,
+    };
+    truncated = true;
+  }
+  return { result, truncated };
+}
+
+function compactForJsonBudget(value: unknown, maxBytes: number, depth = 0): { value: unknown; truncated: boolean } {
+  if (maxBytes <= 0) return { value: null, truncated: true };
+  if (estimateJsonBytes(value) <= maxBytes) return { value, truncated: false };
+  if (typeof value === 'string') return truncateUtf8(value, maxBytes);
+  if (depth >= 4 || value == null || typeof value !== 'object') {
+    const preview = truncateUtf8(stringifyForPreview(value), maxBytes);
+    return { value: { preview: preview.value, truncated: true }, truncated: true };
+  }
+  if (Array.isArray(value)) {
+    const output: unknown[] = [];
+    for (const item of value) {
+      const remaining = maxBytes - estimateJsonBytes(output) - 2;
+      if (remaining <= 0) {
+        break;
+      }
+      const compact = compactForJsonBudget(item, remaining, depth + 1);
+      output.push(compact.value);
+      if (estimateJsonBytes(output) > maxBytes) {
+        output.pop();
+        break;
+      }
+    }
+    return { value: output, truncated: true };
+  }
+  const output: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(value)) {
+    const remaining = maxBytes - estimateJsonBytes(output) - Buffer.byteLength(key, 'utf8') - 8;
+    if (remaining <= 0) {
+      break;
+    }
+    const compact = compactForJsonBudget(item, remaining, depth + 1);
+    output[key] = compact.value;
+    if (estimateJsonBytes(output) > maxBytes) {
+      delete output[key];
+      break;
+    }
+  }
+  return { value: output, truncated: true };
+}
+
+function compactPostgresRows(rows: Record<string, unknown>[], maxRows: number) {
+  const output: Record<string, unknown>[] = [];
+  let truncated = rows.length > maxRows;
+  for (const row of rows.slice(0, maxRows)) {
+    const remaining = POSTGRES_RESULT_MAX_BYTES - estimateJsonBytes(output) - 2;
+    if (remaining <= 0) {
+      truncated = true;
+      break;
+    }
+    const compact = compactForJsonBudget(row, remaining) as { value: Record<string, unknown>; truncated: boolean };
+    output.push(compact.value);
+    if (estimateJsonBytes(output) > POSTGRES_RESULT_MAX_BYTES) {
+      output.pop();
+      truncated = true;
+      break;
+    }
+    truncated ||= compact.truncated;
+  }
+  return { rows: output, truncated };
+}
 
 export type DatabaseType = 'postgres' | 'redis';
 export type DatabaseHealthStatus = 'online' | 'offline' | 'degraded' | 'unknown';
@@ -1049,16 +1166,38 @@ export class DatabaseConnectionService {
     });
   }
 
-  async executePostgresSql(id: string, sqlText: string, userId: string) {
+  async executePostgresSql(id: string, sqlText: string, userId: string, options: { maxRows?: number } = {}) {
     return this.withPostgresPool(id, 'query', async (pool) => {
+      const maxRows = Math.min(Math.max(Math.trunc(options.maxRows ?? 500), 1), 2000);
       const statements = splitPostgresStatements(sqlText);
-      const result = await pool.query(sqlText);
-      const results = (Array.isArray(result) ? result : [result]).map((entry) => ({
-        command: entry.command,
-        rowCount: entry.rowCount ?? 0,
-        fields: entry.fields?.map((field: { name: string }) => field.name) ?? [],
-        rows: entry.rows,
-      }));
+      const client = await pool.connect();
+      let result: pg.QueryResult | pg.QueryResult[];
+      try {
+        await client.query(`SET statement_timeout = ${POSTGRES_QUERY_TIMEOUT_MS}`);
+        result = await client.query(sqlText);
+      } finally {
+        await client.query('RESET statement_timeout').catch(() => {});
+        client.release();
+      }
+      const entries = Array.isArray(result) ? result : [result];
+      const results = [];
+      let responseTruncated = entries.length > POSTGRES_RESULT_SET_MAX;
+      for (const entry of entries.slice(0, POSTGRES_RESULT_SET_MAX)) {
+        const compacted = compactPostgresRows(entry.rows, maxRows);
+        const next = {
+          command: entry.command,
+          rowCount: entry.rowCount ?? 0,
+          fields: entry.fields?.map((field: { name: string }) => field.name) ?? [],
+          rows: compacted.rows,
+          truncated: compacted.truncated,
+          maxRows,
+        };
+        if (estimateJsonBytes([...results, next]) > POSTGRES_RESPONSE_MAX_BYTES) {
+          responseTruncated = true;
+          break;
+        }
+        results.push(next);
+      }
       const intent = inferPostgresIntent(sqlText);
       await this.auditService.log({
         userId,
@@ -1077,7 +1216,7 @@ export class DatabaseConnectionService {
         intent,
         statementCount: statements.length,
       });
-      return { results };
+      return { results, truncated: responseTruncated, resultLimit: POSTGRES_RESULT_SET_MAX };
     });
   }
 
@@ -1103,41 +1242,84 @@ export class DatabaseConnectionService {
     });
   }
 
-  async getRedisKey(id: string, key: string) {
+  async getRedisKey(
+    id: string,
+    key: string,
+    options: { offset?: number; limit?: number; maxStringBytes?: number } = {}
+  ) {
     return this.withRedisClient(id, 'query', async (client) => {
+      const offset = Math.max(Math.trunc(options.offset ?? 0), 0);
+      const limit = Math.min(Math.max(Math.trunc(options.limit ?? 100), 1), 500);
+      const maxStringBytes = Math.min(Math.max(Math.trunc(options.maxStringBytes ?? 64 * 1024), 1), 1024 * 1024);
       const type = await client.type(key);
       if (type === 'none') throw new AppError(404, 'KEY_NOT_FOUND', 'Redis key not found');
       const ttlSeconds = await client.ttl(key);
       let value: unknown;
+      let page: Record<string, unknown> | undefined;
       switch (type) {
-        case 'string':
-          value = await client.get(key);
+        case 'string': {
+          const total = await client.strlen(key);
+          const raw = (await client.getrange(key, offset, offset + maxStringBytes - 1)) ?? '';
+          const truncated = truncateUtf8(raw, maxStringBytes);
+          value = truncated.value;
+          page = {
+            offset,
+            limit: maxStringBytes,
+            returned: Buffer.byteLength(truncated.value, 'utf8'),
+            total,
+            truncated: truncated.truncated || offset + Buffer.byteLength(truncated.value, 'utf8') < total,
+          };
           break;
-        case 'hash':
-          value = await client.hgetall(key);
+        }
+        case 'hash': {
+          const [cursor, entries] = (await client.hscan(key, String(offset), 'COUNT', limit)) as [string, string[]];
+          value = Object.fromEntries(
+            Array.from({ length: Math.floor(entries.length / 2) }, (_, index) => [
+              entries[index * 2]!,
+              entries[index * 2 + 1]!,
+            ])
+          );
+          page = { cursor: Number(cursor), limit, returned: entries.length / 2, total: await client.hlen(key) };
           break;
+        }
         case 'list':
-          value = await client.lrange(key, 0, -1);
+          value = await client.lrange(key, offset, offset + limit - 1);
+          page = { offset, limit, returned: Array.isArray(value) ? value.length : 0, total: await client.llen(key) };
           break;
-        case 'set':
-          value = await client.smembers(key);
+        case 'set': {
+          const [cursor, members] = (await client.sscan(key, String(offset), 'COUNT', limit)) as [string, string[]];
+          value = members;
+          page = { cursor: Number(cursor), limit, returned: members.length, total: await client.scard(key) };
           break;
+        }
         case 'zset': {
-          const pairs = await client.zrange(key, 0, -1, 'WITHSCORES');
+          const pairs = await client.zrange(key, offset, offset + limit - 1, 'WITHSCORES');
           value = pairs.reduce<Array<{ member: string; score: number }>>((acc, item, index, list) => {
             if (index % 2 === 0) acc.push({ member: item, score: Number(list[index + 1] ?? 0) });
             return acc;
           }, []);
+          page = {
+            offset,
+            limit,
+            returned: Array.isArray(value) ? value.length : 0,
+            total: await client.zcard(key),
+          };
           break;
         }
         case 'stream':
-          value = await client.xrange(key, '-', '+', 'COUNT', 200);
+          value = await client.xrange(key, '-', '+', 'COUNT', limit);
+          page = { offset: 0, limit, returned: Array.isArray(value) ? value.length : 0 };
           break;
         default:
           value = await client.call('DUMP', key);
           break;
       }
-      return { key, type, ttlSeconds, value };
+      if (type !== 'string') {
+        const compacted = compactForJsonBudget(value, REDIS_COMMAND_MAX_BYTES);
+        value = compacted.value;
+        page = { ...(page ?? {}), truncated: Boolean(page?.truncated) || compacted.truncated };
+      }
+      return { key, type, ttlSeconds, value, page };
     });
   }
 
@@ -1226,11 +1408,18 @@ export class DatabaseConnectionService {
       const commands = splitRedisCommands(commandText);
       const results = [];
       const intents = new Set<'read' | 'write' | 'admin'>();
-      for (const command of commands) {
+      let responseTruncated = commands.length > REDIS_COMMAND_MAX_COUNT;
+      for (const command of commands.slice(0, REDIS_COMMAND_MAX_COUNT)) {
         const parts = tokenizeRedisCommand(command);
         const commandName = parts[0]!.toUpperCase();
-        const result = await client.call(parts[0]!, ...parts.slice(1));
-        results.push({ command: commandName, result });
+        const rawResult = await client.call(parts[0]!, ...parts.slice(1));
+        const { result, truncated } = compactCommandResult(rawResult);
+        const next = { command: commandName, result, truncated };
+        if (estimateJsonBytes([...results, next]) > REDIS_RESPONSE_MAX_BYTES) {
+          responseTruncated = true;
+          break;
+        }
+        results.push(next);
         intents.add(inferRedisSingleCommandIntent(command));
       }
       const intent = intents.has('admin') ? 'admin' : intents.has('write') ? 'write' : 'read';
@@ -1253,7 +1442,7 @@ export class DatabaseConnectionService {
         commandCount: commands.length,
         commands: results.slice(0, 5).map((entry) => entry.command),
       });
-      return { results };
+      return { results, truncated: responseTruncated, commandLimit: REDIS_COMMAND_MAX_COUNT };
     });
   }
 

@@ -358,6 +358,13 @@ export function DockerDeployDialog({
                 )}
               </SelectContent>
             </Select>
+            <Input
+              className="mt-2"
+              value={deployImage}
+              onChange={(e) => setDeployImage(e.target.value)}
+              disabled={!deployNodeId}
+              placeholder={!deployNodeId ? "Select a node first" : "Type any image reference"}
+            />
             {deployImage && !deployLocalImages.includes(deployImage) && deployNodeId && (
               <p className="text-xs text-muted-foreground mt-1">
                 Will be pulled to this node on deploy

@@ -59,13 +59,14 @@ const registryParams = pathParamSchema('id');
 const taskParams = pathParamSchema('id');
 const containerSecretParams = pathParamSchema('nodeId', 'containerId', 'secretId');
 const deploymentSecretParams = pathParamSchema('nodeId', 'deploymentId', 'secretId');
+const dockerListQuery = z.object({ search: z.string().trim().optional() });
 
 export const listContainersRoute = appRoute({
   method: 'get',
   path: '/nodes/{nodeId}/containers',
   tags: ['Docker Containers'],
   summary: 'List containers',
-  request: { params: nodeParams },
+  request: { params: nodeParams, query: dockerListQuery },
   responses: okJson(UnknownDataResponseSchema),
 });
 export const createContainerRoute = appRoute({
@@ -275,7 +276,7 @@ export const listDeploymentsRoute = appRoute({
   path: '/nodes/{nodeId}/deployments',
   tags: ['Docker Deployments'],
   summary: 'List blue/green deployments',
-  request: { params: nodeParams },
+  request: { params: nodeParams, query: dockerListQuery },
   responses: okJson(UnknownDataResponseSchema),
 });
 export const createDeploymentRoute = appRoute({
@@ -470,7 +471,7 @@ export const listImagesRoute = appRoute({
   path: '/nodes/{nodeId}/images',
   tags: ['Docker Images'],
   summary: 'List images',
-  request: { params: nodeParams },
+  request: { params: nodeParams, query: dockerListQuery },
   responses: okJson(UnknownDataResponseSchema),
 });
 export const pullImageRoute = appRoute({
@@ -511,7 +512,7 @@ export const listVolumesRoute = appRoute({
   path: '/nodes/{nodeId}/volumes',
   tags: ['Docker Volumes'],
   summary: 'List volumes',
-  request: { params: nodeParams },
+  request: { params: nodeParams, query: dockerListQuery },
   responses: okJson(UnknownDataResponseSchema),
 });
 export const createVolumeRoute = appRoute({
@@ -536,7 +537,7 @@ export const listNetworksRoute = appRoute({
   path: '/nodes/{nodeId}/networks',
   tags: ['Docker Networks'],
   summary: 'List networks',
-  request: { params: nodeParams },
+  request: { params: nodeParams, query: dockerListQuery },
   responses: okJson(UnknownDataResponseSchema),
 });
 export const createNetworkRoute = appRoute({

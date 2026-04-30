@@ -1016,6 +1016,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
       type: 'object',
       properties: {
         nodeId: { type: 'string', description: 'Docker node ID (required)' },
+        search: { type: 'string', description: 'Optional search over container ID, name, image, status, and ports' },
       },
       required: ['nodeId'],
     },
@@ -1049,6 +1050,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
       type: 'object',
       properties: {
         nodeId: { type: 'string', description: 'Docker node ID (required)' },
+        search: { type: 'string', description: 'Optional search over deployment name, image, status, and routes' },
       },
       required: ['nodeId'],
     },
@@ -1379,6 +1381,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
       type: 'object',
       properties: {
         nodeId: { type: 'string', description: 'Docker node ID (required)' },
+        search: { type: 'string', description: 'Optional search over image ID, tags, and digests' },
       },
       required: ['nodeId'],
     },
@@ -1445,6 +1448,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
       type: 'object',
       properties: {
         nodeId: { type: 'string', description: 'Docker node ID (required)' },
+        search: { type: 'string', description: 'Optional search over volume name, driver, mountpoint, and users' },
       },
       required: ['nodeId'],
     },
@@ -1460,6 +1464,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
       type: 'object',
       properties: {
         nodeId: { type: 'string', description: 'Docker node ID (required)' },
+        search: { type: 'string', description: 'Optional search over network ID, name, driver, and scope' },
       },
       required: ['nodeId'],
     },

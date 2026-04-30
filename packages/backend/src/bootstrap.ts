@@ -289,6 +289,9 @@ export async function initializeContainer(): Promise<void> {
   dockerManagementService.setDeploymentService(dockerDeploymentService);
   dockerFolderService.setEventBus(eventBus);
   dockerTaskService.setEventBus(eventBus);
+  void dockerTaskService.markStaleActiveTasksFailed().catch((error) => {
+    logger.warn('Failed to reconcile stale Docker tasks during bootstrap', { error });
+  });
   dockerDeploymentService.setEventBus(eventBus);
   dockerHealthCheckService.setEventBus(eventBus);
   dockerDeploymentService.setHealthCheckService(dockerHealthCheckService);

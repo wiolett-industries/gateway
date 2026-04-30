@@ -27,3 +27,4 @@ packages/daemons/nginx/nginx-daemon
 .nx
 .pnpm-store
 .shannon
+.playwright-mcp

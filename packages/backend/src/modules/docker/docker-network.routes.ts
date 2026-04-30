@@ -12,6 +12,59 @@ import {
 import { NetworkConnectSchema, NetworkCreateSchema } from './docker.schemas.js';
 import { DockerManagementService } from './docker.service.js';
 
+const DOCKER_RESOURCE_LIST_MAX = 1000;
+const DOCKER_NETWORK_CONTAINER_PREVIEW_MAX = 100;
+const DOCKER_NETWORK_IPAM_CONFIG_MAX = 8;
+
+function compactNetworkContainers(containers: unknown) {
+  if (!containers || typeof containers !== 'object') return undefined;
+  const entries = Object.entries(containers as Record<string, any>);
+  return Object.fromEntries(
+    entries.slice(0, DOCKER_NETWORK_CONTAINER_PREVIEW_MAX).map(([id, endpoint]) => [
+      id,
+      {
+        name: endpoint?.name ?? endpoint?.Name,
+      },
+    ])
+  );
+}
+
+function compactNetworkIpam(ipam: any) {
+  const config = ipam?.config ?? ipam?.Config;
+  if (!Array.isArray(config)) return undefined;
+  return {
+    config: config.slice(0, DOCKER_NETWORK_IPAM_CONFIG_MAX).map((entry: any) => ({
+      subnet: entry.subnet ?? entry.Subnet,
+      gateway: entry.gateway ?? entry.Gateway,
+    })),
+  };
+}
+
+function compactNetworkListItem(network: Record<string, any>) {
+  const containers = network.containers ?? network.Containers;
+  const containerEntries = containers && typeof containers === 'object' ? Object.entries(containers) : [];
+  return {
+    id: network.id ?? network.Id,
+    name: network.name ?? network.Name,
+    driver: network.driver ?? network.Driver,
+    scope: network.scope ?? network.Scope,
+    created: network.created ?? network.Created,
+    internal: network.internal ?? network.Internal,
+    attachable: network.attachable ?? network.Attachable,
+    ingress: network.ingress ?? network.Ingress,
+    containers: compactNetworkContainers(containers),
+    containersCount: containerEntries.length,
+    containersTruncated: containerEntries.length > DOCKER_NETWORK_CONTAINER_PREVIEW_MAX,
+    ipam: compactNetworkIpam(network.ipam ?? network.IPAM),
+  };
+}
+
+function matchesNetworkSearch(network: ReturnType<typeof compactNetworkListItem>, search: string | undefined) {
+  if (!search) return true;
+  const haystack = [network.id, network.name, network.driver, network.scope].filter(Boolean).join(' ').toLowerCase();
+  return haystack.includes(search);
+}
+
 export function registerNetworkRoutes(router: OpenAPIHono<AppEnv>) {
   // ─── Network routes ──────────────────────────────────────────────────
 
@@ -22,7 +75,18 @@ export function registerNetworkRoutes(router: OpenAPIHono<AppEnv>) {
       const service = container.resolve(DockerManagementService);
       const nodeId = c.req.param('nodeId')!;
       const data = await service.listNetworks(nodeId);
-      return c.json({ data });
+      if (!Array.isArray(data)) return c.json({ data });
+      const search = c.req.query('search')?.trim().toLowerCase();
+      const compacted = data
+        .map((item) => compactNetworkListItem(item))
+        .filter((item) => matchesNetworkSearch(item, search));
+      const truncated = compacted.length > DOCKER_RESOURCE_LIST_MAX;
+      return c.json({
+        data: truncated ? compacted.slice(0, DOCKER_RESOURCE_LIST_MAX) : compacted,
+        total: compacted.length,
+        limit: DOCKER_RESOURCE_LIST_MAX,
+        truncated,
+      });
     }
   );
 

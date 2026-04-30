@@ -1950,8 +1950,10 @@ function DeliveryLogTab({ refreshToken }: { refreshToken: number }) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [detail, setDetail] = useState<WebhookDelivery | null>(null);
+  const [detailLoadFailed, setDetailLoadFailed] = useState(false);
   const pageRef = useRef(0);
   const requestIdRef = useRef(0);
+  const detailRequestIdRef = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
@@ -1988,6 +1990,21 @@ function DeliveryLogTab({ refreshToken }: { refreshToken: number }) {
     },
     [statusFilter]
   );
+
+  const openDeliveryDetail = async (delivery: WebhookDelivery) => {
+    const requestId = ++detailRequestIdRef.current;
+    setDetailLoadFailed(false);
+    setDetail(delivery);
+    try {
+      const full = await api.getDelivery(delivery.id);
+      if (requestId !== detailRequestIdRef.current) return;
+      setDetail(full);
+    } catch {
+      if (requestId !== detailRequestIdRef.current) return;
+      setDetailLoadFailed(true);
+      toast.error("Failed to load delivery details");
+    }
+  };
 
   useEffect(() => {
     pageRef.current = 0;
@@ -2108,7 +2125,7 @@ function DeliveryLogTab({ refreshToken }: { refreshToken: number }) {
                     <tr
                       key={d.id}
                       className="hover:bg-accent transition-colors cursor-pointer"
-                      onClick={() => setDetail(d)}
+                      onClick={() => void openDeliveryDetail(d)}
                     >
                       <td className="p-3">{sIcon(d.status)}</td>
                       <td className="p-3">
@@ -2173,7 +2190,14 @@ function DeliveryLogTab({ refreshToken }: { refreshToken: number }) {
         </div>
       )}
       {detail && (
-        <Dialog open={!!detail} onOpenChange={() => setDetail(null)}>
+        <Dialog
+          open={!!detail}
+          onOpenChange={() => {
+            detailRequestIdRef.current++;
+            setDetailLoadFailed(false);
+            setDetail(null);
+          }}
+        >
           <DialogContent className="max-w-xl max-h-[80vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Delivery Details</DialogTitle>
@@ -2218,20 +2242,34 @@ function DeliveryLogTab({ refreshToken }: { refreshToken: number }) {
                   </pre>
                 </div>
               )}
-              {detail.requestBody && (
+              {(detail.requestBody ?? detail.requestBodyPreview) && (
                 <div>
                   <p className="text-sm font-medium mb-1">Request Body</p>
                   <pre className="bg-muted p-3 rounded text-xs whitespace-pre-wrap max-h-[200px] overflow-auto font-mono">
-                    {detail.requestBody}
+                    {detail.requestBody ?? detail.requestBodyPreview}
                   </pre>
+                  {!detail.requestBody && detail.requestBodyTruncated && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {detailLoadFailed
+                        ? "Preview truncated. Full details could not be loaded."
+                        : "Preview truncated. Loading full details..."}
+                    </p>
+                  )}
                 </div>
               )}
-              {detail.responseBody && (
+              {(detail.responseBody ?? detail.responseBodyPreview) && (
                 <div>
                   <p className="text-sm font-medium mb-1">Response Body</p>
                   <pre className="bg-muted p-3 rounded text-xs whitespace-pre-wrap max-h-[200px] overflow-auto font-mono">
-                    {detail.responseBody}
+                    {detail.responseBody ?? detail.responseBodyPreview}
                   </pre>
+                  {!detail.responseBody && detail.responseBodyTruncated && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {detailLoadFailed
+                        ? "Preview truncated. Full details could not be loaded."
+                        : "Preview truncated. Loading full details..."}
+                    </p>
+                  )}
                 </div>
               )}
             </div>

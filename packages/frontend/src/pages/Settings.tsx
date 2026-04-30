@@ -236,13 +236,17 @@ export function Settings() {
           />
         )}
 
-        <div className={`grid grid-cols-1 gap-4 ${canViewLicense ? "xl:grid-cols-2" : ""}`}>
-          {/* Update + About */}
-          <UpdateSection canUpdate={canUpdate} />
+        {canViewLicense ? (
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            {/* Update + About */}
+            <UpdateSection canUpdate={canUpdate} />
 
-          {/* License */}
-          {canViewLicense && <LicenseSection canManage={canManageLicense} />}
-        </div>
+            {/* License */}
+            <LicenseSection canManage={canManageLicense} />
+          </div>
+        ) : (
+          <UpdateSection canUpdate={canUpdate} />
+        )}
 
         <p className="text-center text-xs text-muted-foreground">
           Powered by{" "}
