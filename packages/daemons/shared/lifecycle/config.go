@@ -9,8 +9,9 @@ import (
 
 // GatewayConfig holds the gateway connection settings.
 type GatewayConfig struct {
-	Address string `yaml:"address"`
-	Token   string `yaml:"token"`
+	Address    string `yaml:"address"`
+	Token      string `yaml:"token"`
+	CertSHA256 string `yaml:"cert_sha256"`
 }
 
 // TLSConfig holds the mTLS certificate paths.

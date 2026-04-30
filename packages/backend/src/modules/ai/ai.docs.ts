@@ -311,7 +311,7 @@ Nodes are remote servers running Gateway daemons. Each daemon type manages diffe
 ## How to Enroll a New Node (Step by Step)
 
 ### Step 1: Create the node in Gateway UI
-Go to **Nodes** page → click **Enroll Node** → select the node type (nginx, docker, or monitoring) → optionally set a display name → click **Create**. This generates a **one-time enrollment token** and shows setup commands.
+Go to **Nodes** page → click **Enroll Node** → select the node type (nginx, docker, or monitoring) → optionally set a display name → click **Create**. This generates a **one-time enrollment token**, the Gateway gRPC certificate fingerprint, and setup commands.
 
 ### Step 2: Run the setup script on the target server
 The UI shows ready-to-copy commands. Run one of these on the target server as root:
@@ -319,24 +319,24 @@ The UI shows ready-to-copy commands. Run one of these on the target server as ro
 For **nginx** nodes:
 \`\`\`bash
 curl -sSL https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/scripts/setup-node.sh | sudo bash -s -- \\
-  --gateway <gateway-host>:9443 --token <enrollment-token>
+  --gateway <gateway-host>:9443 --token <enrollment-token> --gateway-cert-sha256 sha256:<gateway-cert-fingerprint>
 \`\`\`
 
 For **docker** nodes:
 \`\`\`bash
 curl -sSL https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/scripts/setup-docker-node.sh | sudo bash -s -- \\
-  --gateway <gateway-host>:9443 --token <enrollment-token>
+  --gateway <gateway-host>:9443 --token <enrollment-token> --gateway-cert-sha256 sha256:<gateway-cert-fingerprint>
 \`\`\`
 
 For **monitoring** nodes:
 \`\`\`bash
 curl -sSL https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/scripts/setup-monitoring-node.sh | sudo bash -s -- \\
-  --gateway <gateway-host>:9443 --token <enrollment-token>
+  --gateway <gateway-host>:9443 --token <enrollment-token> --gateway-cert-sha256 sha256:<gateway-cert-fingerprint>
 \`\`\`
 
 The setup script:
 1. Downloads the daemon binary to \`/usr/local/bin/<type>-daemon\`
-2. Creates config at \`/etc/<type>-daemon/config.yaml\` with the gateway address and token
+2. Creates config at \`/etc/<type>-daemon/config.yaml\` with the gateway address, token, and certificate fingerprint
 3. Creates a systemd service and enables it
 4. Starts the daemon — it connects to the gateway and completes mTLS enrollment automatically
 
@@ -346,7 +346,7 @@ The node status changes from **pending** to **online** in the Nodes list once th
 ### Alternative: Manual installation
 If you cannot use the setup script, you can install manually:
 1. Download the daemon binary and place it at \`/usr/local/bin/<type>-daemon\`
-2. Run: \`<type>-daemon install --gateway <host>:9443 --token <token>\`
+2. Run: \`<type>-daemon install --gateway <host>:9443 --token <token> --gateway-cert-sha256 sha256:<gateway-cert-fingerprint>\`
    This creates the config file and systemd service automatically.
 3. Enable and start: \`systemctl enable --now <type>-daemon\`
 
@@ -814,7 +814,7 @@ Programmatic clients can use validated \`advancedConfig\`, but cannot set or rea
 
 ### Nodes
 - \`GET /api/nodes\` — list daemon nodes
-- \`POST /api/nodes\` — create node (returns enrollment token)
+- \`POST /api/nodes\` — create node (returns enrollment token and gatewayCertSha256)
 - \`DELETE /api/nodes/:id\` — delete node
 
 ### Docker

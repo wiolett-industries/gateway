@@ -100,6 +100,7 @@ export function AdminNodes() {
   const [enrollType, setEnrollType] = useState<string>("nginx");
   const [enrollDisplayName, setEnrollDisplayName] = useState("");
   const [enrollToken, setEnrollToken] = useState<string | null>(null);
+  const [gatewayCertSha256, setGatewayCertSha256] = useState<string | null>(null);
   const [enrolling, setEnrolling] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const daemonUpdates = useDaemonUpdatesStore((s) => s.statuses);
@@ -159,6 +160,7 @@ export function AdminNodes() {
         displayName: enrollDisplayName.trim() || undefined,
       });
       setEnrollToken(result.enrollmentToken);
+      setGatewayCertSha256(result.gatewayCertSha256);
       fetchNodes();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to create node");
@@ -172,19 +174,22 @@ export function AdminNodes() {
     setEnrollType("nginx");
     setEnrollDisplayName("");
     setEnrollToken(null);
+    setGatewayCertSha256(null);
     setCopiedField(null);
   };
 
   const gatewayAddr = `${window.location.hostname}:9443`;
   const scriptUrl = "https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/scripts/setup-daemon.sh";
 
-  const curlCommand = enrollToken
-    ? `curl -sSL ${scriptUrl} | sudo bash -s -- \\\n  --type ${enrollType} --gateway ${gatewayAddr} --token ${enrollToken}`
-    : "";
+  const curlCommand =
+    enrollToken && gatewayCertSha256
+      ? `curl -sSL ${scriptUrl} | sudo bash -s -- \\\n  --type ${enrollType} --gateway ${gatewayAddr} --token ${enrollToken} --gateway-cert-sha256 ${gatewayCertSha256}`
+      : "";
 
-  const wgetCommand = enrollToken
-    ? `wget -qO- ${scriptUrl} | sudo bash -s -- \\\n  --type ${enrollType} --gateway ${gatewayAddr} --token ${enrollToken}`
-    : "";
+  const wgetCommand =
+    enrollToken && gatewayCertSha256
+      ? `wget -qO- ${scriptUrl} | sudo bash -s -- \\\n  --type ${enrollType} --gateway ${gatewayAddr} --token ${enrollToken} --gateway-cert-sha256 ${gatewayCertSha256}`
+      : "";
 
   const copyToClipboard = (text: string, field: string) => {
     navigator.clipboard.writeText(text.replace(/\\\n\s*/g, ""));
@@ -431,7 +436,8 @@ export function AdminNodes() {
                     If Gateway is behind Cloudflare, replace the generated{" "}
                     <span className="font-mono">--gateway</span> host with the actual Gateway server
                     IP or a hostname that exposes <span className="font-mono">9443/tcp</span>{" "}
-                    directly.
+                    directly, but keep the generated{" "}
+                    <span className="font-mono">--gateway-cert-sha256</span> fingerprint.
                   </p>
                 </div>
                 <Tabs defaultValue="curl">

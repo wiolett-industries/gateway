@@ -9,6 +9,7 @@ import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { DaemonUpdateService } from '@/services/daemon-update.service.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
+import type { GrpcIdentityService } from '@/services/grpc-identity.service.js';
 import type { NodeRegistryService } from '@/services/node-registry.service.js';
 import type {
   CreateNodeInput,
@@ -30,7 +31,8 @@ export class NodesService {
   constructor(
     private db: DrizzleClient,
     private auditService: AuditService,
-    private registry: NodeRegistryService
+    private registry: NodeRegistryService,
+    private grpcIdentityService: GrpcIdentityService
   ) {}
 
   private eventBus?: EventBusService;
@@ -171,6 +173,7 @@ export class NodesService {
     return {
       node,
       enrollmentToken: tokenRaw, // Shown once only
+      gatewayCertSha256: await this.grpcIdentityService.getGatewayCertSha256(),
     };
   }
 

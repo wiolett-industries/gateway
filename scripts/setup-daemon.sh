@@ -7,7 +7,7 @@ IFS=$'\n\t'
 #
 # Usage:
 #   curl -sSL https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/scripts/setup-daemon.sh | \
-#     sudo bash -s -- --type nginx --gateway gateway.example.com:9443 --token <TOKEN>
+#     sudo bash -s -- --type nginx --gateway gateway.example.com:9443 --token <TOKEN> --gateway-cert-sha256 sha256:<HEX>
 # ────────────────────────────────────────────────────────────────────
 
 # ── Colors ──────────────────────────────────────────────────────────
@@ -86,10 +86,10 @@ Examples:
   sudo bash setup-daemon.sh
 
   # Direct nginx setup:
-  sudo bash setup-daemon.sh --type nginx --gateway gw.example.com:9443 --token <TOKEN>
+  sudo bash setup-daemon.sh --type nginx --gateway gw.example.com:9443 --token <TOKEN> --gateway-cert-sha256 sha256:<HEX>
 
   # Docker daemon with custom GitLab:
-  sudo bash setup-daemon.sh --type docker --gitlab-url https://git.example.com --gateway gw.example.com:9443 --token <TOKEN>
+  sudo bash setup-daemon.sh --type docker --gitlab-url https://git.example.com --gateway gw.example.com:9443 --token <TOKEN> --gateway-cert-sha256 sha256:<HEX>
 HELP
     exit 0
 }

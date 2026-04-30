@@ -95,6 +95,9 @@ func (d *DaemonBase) Run(ctx context.Context) error {
 
 func (d *DaemonBase) enroll() error {
 	d.logger.Info("enrolling with gateway", "address", d.cfg.Gateway.Address)
+	if d.cfg.Gateway.CertSHA256 == "" {
+		return fmt.Errorf("gateway.cert_sha256 is required for initial enrollment")
+	}
 
 	hostname, _ := os.Hostname()
 	osInfo := fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH)
@@ -102,6 +105,7 @@ func (d *DaemonBase) enroll() error {
 	resp, err := enrollment.Enroll(
 		d.cfg.Gateway.Address,
 		d.cfg.Gateway.Token,
+		d.cfg.Gateway.CertSHA256,
 		hostname,
 		"", // nginxVersion — filled by plugin if applicable
 		osInfo,

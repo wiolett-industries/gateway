@@ -10,7 +10,7 @@ import (
 func TestLoadBaseConfigAppliesDefaults(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.yaml")
-	content := "gateway:\n  address: gateway.example:9443\n"
+	content := "gateway:\n  address: gateway.example:9443\n  cert_sha256: sha256:abc\n"
 
 	if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -22,6 +22,9 @@ func TestLoadBaseConfigAppliesDefaults(t *testing.T) {
 	}
 	if cfg.Gateway.Address != "gateway.example:9443" {
 		t.Fatalf("unexpected gateway address: %q", cfg.Gateway.Address)
+	}
+	if cfg.Gateway.CertSHA256 != "sha256:abc" {
+		t.Fatalf("unexpected gateway cert fingerprint: %q", cfg.Gateway.CertSHA256)
 	}
 	if cfg.LogLevel != "info" {
 		t.Fatalf("expected default log level info, got %q", cfg.LogLevel)

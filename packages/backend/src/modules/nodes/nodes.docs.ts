@@ -33,6 +33,30 @@ const ConfigTestResponseSchema = dataResponseSchema(
   })
 );
 
+const CreateNodeResponseSchema = dataResponseSchema(
+  z.object({
+    node: z
+      .object({
+        id: z.string().uuid(),
+        type: z.enum(['nginx', 'bastion', 'monitoring', 'docker']),
+        hostname: z.string(),
+        status: z.enum(['pending', 'online', 'offline', 'error']),
+      })
+      .catchall(z.any()),
+    enrollmentToken: z.string().openapi({
+      description: 'One-time enrollment token. Returned only once.',
+      example: 'gw_node_abc123',
+    }),
+    gatewayCertSha256: z
+      .string()
+      .regex(/^sha256:[0-9a-f]{64}$/)
+      .openapi({
+        description: 'SHA-256 fingerprint of the active Gateway gRPC TLS leaf certificate.',
+        example: 'sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+      }),
+  })
+);
+
 const LogQuerySchema = z.object({
   level: z.string().optional().openapi({ example: 'info,warn,error' }),
   search: z.string().optional(),
@@ -71,7 +95,7 @@ export const createNodeRoute = appRoute({
   tags: ['Nodes'],
   summary: 'Create node enrollment',
   request: jsonBody(CreateNodeSchema),
-  responses: createdJson(UnknownDataResponseSchema),
+  responses: createdJson(CreateNodeResponseSchema),
 });
 
 export const updateNodeRoute = appRoute({

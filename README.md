@@ -123,13 +123,13 @@ Nodes do not need inbound management ports. Public traffic ports, such as `80` a
 Gateway is designed to be secure by default for a self-hosted infrastructure control plane:
 
 - User login is SSO-only through OIDC, so password policy, MFA, device posture, and identity lifecycle stay with your identity provider.
-- Managed nodes connect outbound to Gateway over gRPC with mTLS. After one-time enrollment, daemon commands require a client certificate issued by Gateway's internal node CA.
+- Managed nodes connect outbound to Gateway over gRPC with mTLS. First enrollment requires a one-time token plus the generated Gateway gRPC certificate fingerprint, and the daemon verifies the Gateway TLS leaf before sending the token. After enrollment, daemon commands require a client certificate issued by Gateway's internal node CA.
 - Each node certificate is bound to a node identity. Gateway checks the mTLS certificate identity before accepting control streams, log streams, and certificate renewal requests.
 - Nodes do not need inbound management ports. Losing Gateway access does not stop existing nginx configs or Docker containers; it only pauses centralized control.
 - API tokens, OAuth grants, MCP access, database credentials, certificate exports, and secret reveal operations are scope-gated, bounded by the owning user's current permissions, and audited.
 - Private key material and stored infrastructure credentials are encrypted at rest with the configured `PKI_MASTER_KEY`.
 
-The result is a PKI-backed trust model: short-lived enrollment tokens get a node into the system, and long-term trust is based on certificate identity rather than reusable shared secrets. This gives Gateway a strong default posture against node hijacking because a copied setup command is not enough to keep controlling a node after enrollment. Read the [security model](docs/security.md) for the full explanation and deployment hardening checklist.
+The result is a PKI-backed trust model: short-lived enrollment tokens get a node into the system only after the daemon confirms it is talking to the pinned Gateway certificate, and long-term trust is based on certificate identity rather than reusable shared secrets. This gives Gateway a strong default posture against token interception during setup and node hijacking after enrollment. Read the [security model](docs/security.md) for the full explanation and deployment hardening checklist.
 
 ## Roadmap
 
@@ -192,7 +192,7 @@ Only when the owning user already has the required scopes. Sensitive OAuth scope
 <details>
 <summary><strong>How does Gateway prevent managed nodes from being hijacked?</strong></summary>
 
-Gateway uses its own internal PKI for daemon identity. A node uses a one-time enrollment token only once, receives an mTLS client certificate from Gateway's node CA, deletes the token from local config, and reconnects with the certificate. Gateway then verifies the certificate identity on control streams, log streams, and renewal requests. See the [security model](docs/security.md).
+Gateway uses its own internal PKI for daemon identity. A node setup command includes a one-time enrollment token and the Gateway gRPC certificate fingerprint. The daemon verifies the presented Gateway TLS leaf certificate before it sends the token, receives an mTLS client certificate from Gateway's node CA, deletes the token from local config, and reconnects with the certificate. Gateway then verifies the certificate identity on control streams, log streams, and renewal requests. See the [security model](docs/security.md).
 </details>
 
 <details>

@@ -26,6 +26,7 @@ import { LoggingMetadataService } from '@/modules/logging/logging-metadata.servi
 import { CAService } from '@/modules/pki/ca.service.js';
 import type { RedisClient } from '@/services/cache.service.js';
 import { CryptoService } from '@/services/crypto.service.js';
+import { GrpcIdentityService } from '@/services/grpc-identity.service.js';
 import { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import { NodeRegistryService } from '@/services/node-registry.service.js';
 import { SchedulerService } from '@/services/scheduler.service.js';
@@ -78,20 +79,10 @@ async function main() {
     const caService = container.resolve(CAService);
     const cryptoService = container.resolve(CryptoService);
     const db = container.resolve(TOKENS.DrizzleClient) as any;
-
     const systemCA = container.resolve(SystemCAService);
+    const grpcIdentity = await container.resolve(GrpcIdentityService).resolve();
 
-    // Auto-generate gRPC server TLS cert from system CA if not explicitly configured
-    let grpcCertPath = env.GRPC_TLS_CERT;
-    let grpcKeyPath = env.GRPC_TLS_KEY;
-    if (!grpcCertPath || !grpcKeyPath) {
-      const autoDir = process.env.GRPC_TLS_AUTO_DIR || '/var/lib/gateway/tls';
-      const autoCert = await systemCA.ensureGrpcServerCert(`${autoDir}/grpc-server.crt`, `${autoDir}/grpc-server.key`);
-      grpcCertPath = autoCert.certPath;
-      grpcKeyPath = autoCert.keyPath;
-    }
-
-    await startGrpcServer(env.GRPC_PORT, grpcCertPath, grpcKeyPath, {
+    await startGrpcServer(env.GRPC_PORT, grpcIdentity.certPath, grpcIdentity.keyPath, {
       registry,
       dispatch,
       auditService,

@@ -7,10 +7,10 @@ IFS=$'\n\t'
 #
 # Usage:
 #   curl -sSL https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/scripts/setup-docker-node.sh | \
-#     sudo bash -s -- --gateway gateway.example.com:9443 --token <ENROLLMENT_TOKEN>
+#     sudo bash -s -- --gateway gateway.example.com:9443 --token <ENROLLMENT_TOKEN> --gateway-cert-sha256 sha256:<HEX>
 #
 # Or download and run:
-#   bash setup-docker-node.sh --gateway gateway.example.com:9443 --token <TOKEN>
+#   bash setup-docker-node.sh --gateway gateway.example.com:9443 --token <TOKEN> --gateway-cert-sha256 sha256:<HEX>
 # ──────────────────────────────────────────────────────────────────────
 
 LOG_FILE="/tmp/gateway_docker_setup.log"
@@ -34,6 +34,7 @@ GATEWAY_HOST="${GATEWAY_NODE_HOST:-}"
 GATEWAY_PORT="${GATEWAY_NODE_PORT:-9443}"
 GATEWAY_ADDR="${GATEWAY_NODE_ADDRESS:-}"
 ENROLL_TOKEN="${GATEWAY_NODE_TOKEN:-}"
+GATEWAY_CERT_SHA256="${GATEWAY_NODE_CERT_SHA256:-}"
 DAEMON_VERSION="${GATEWAY_NODE_DAEMON_VERSION:-latest}"
 GITLAB_URL="${GATEWAY_GITLAB_URL:-https://gitlab.wiolett.net}"
 GITLAB_PROJECT="${GATEWAY_GITLAB_PROJECT:-wiolett/gateway}"
@@ -512,13 +513,15 @@ Usage:
   setup-docker-node.sh [options]
 
   In interactive mode (default), the script prompts for gateway address, port,
-  and enrollment token. Use flags to pre-fill or skip prompts.
+  enrollment token, and Gateway certificate fingerprint. Use flags to pre-fill or skip prompts.
 
 Options:
   --gateway <addr>         Gateway gRPC address as host:port (e.g. gateway.example.com:9443)
   --host <host>            Gateway hostname or IP (e.g. gateway.example.com)
   --port <port>            Gateway gRPC port (default: 9443)
   --token <token>          Enrollment token from Gateway UI (Admin > Nodes > Add Node)
+  --gateway-cert-sha256 <fp>
+                           Gateway gRPC TLS leaf fingerprint from the generated setup command
   --version <ver>          Daemon version to install (default: latest)
   --user <user>            Run daemon as this user (default: root)
   --gitlab-url <url>       GitLab instance URL (default: https://gitlab.wiolett.net)
@@ -532,6 +535,7 @@ Environment variables:
   GATEWAY_NODE_PORT             Same as --port (default: 9443)
   GATEWAY_NODE_ADDRESS          Same as --gateway (host:port combined)
   GATEWAY_NODE_TOKEN            Same as --token
+  GATEWAY_NODE_CERT_SHA256      Same as --gateway-cert-sha256
   GATEWAY_NODE_DAEMON_VERSION   Same as --version
   GATEWAY_GITLAB_URL            Same as --gitlab-url
   GATEWAY_GITLAB_PROJECT        Same as --gitlab-project
@@ -541,10 +545,10 @@ Examples:
   sudo bash setup-docker-node.sh
 
   # Fully non-interactive:
-  sudo bash setup-docker-node.sh -y --host gateway.example.com --token gw_node_abc123
+  sudo bash setup-docker-node.sh -y --host gateway.example.com --token gw_node_abc123 --gateway-cert-sha256 sha256:<HEX>
 
   # Custom GitLab and user:
-  sudo bash setup-docker-node.sh --gitlab-url https://git.example.com --user dockeruser --gateway gw:9443 --token TOKEN
+  sudo bash setup-docker-node.sh --gitlab-url https://git.example.com --user dockeruser --gateway gw:9443 --token TOKEN --gateway-cert-sha256 sha256:<HEX>
 HELP
     exit 0
 }
@@ -555,6 +559,7 @@ while [[ $# -gt 0 ]]; do
         --host)           GATEWAY_HOST="$2"; shift 2 ;;
         --port)           GATEWAY_PORT="$2"; shift 2 ;;
         --token)          ENROLL_TOKEN="$2"; shift 2 ;;
+        --gateway-cert-sha256) GATEWAY_CERT_SHA256="$2"; shift 2 ;;
         --version)        DAEMON_VERSION="$2"; shift 2 ;;
         --user)           RUN_USER="$2"; shift 2 ;;
         --gitlab-url)     GITLAB_URL="$2"; shift 2 ;;
@@ -648,6 +653,13 @@ if [[ "$NON_INTERACTIVE" -eq 0 ]]; then
             echo -e "  ${GRAY}Token: ${ENROLL_TOKEN:0:12}...${ENROLL_TOKEN: -4}${NC}"
         fi
 
+        if [[ -z "$GATEWAY_CERT_SHA256" ]]; then
+            GATEWAY_CERT_SHA256=$(prompt_input "Gateway certificate SHA-256 fingerprint" "")
+            [[ -z "$GATEWAY_CERT_SHA256" ]] && die "Gateway certificate SHA-256 fingerprint is required"
+        else
+            echo -e "  ${GRAY}Gateway cert: ${GATEWAY_CERT_SHA256}${NC}"
+        fi
+
         echo ""
     fi
 
@@ -679,6 +691,9 @@ else
     fi
     if [[ -z "$ENROLL_TOKEN" && "$EXISTING_ENROLLED" -eq 0 ]]; then
         die "--token is required in non-interactive mode"
+    fi
+    if [[ -z "$GATEWAY_CERT_SHA256" && "$EXISTING_ENROLLED" -eq 0 ]]; then
+        die "--gateway-cert-sha256 is required in non-interactive mode"
     fi
     [[ -z "$RUN_USER" ]] && RUN_USER="root"
 fi
@@ -718,6 +733,11 @@ if [[ -n "$ENROLL_TOKEN" ]]; then
     echo -e "  Token:       ${GRAY}${ENROLL_TOKEN:0:12}...${NC}"
 else
     echo -e "  Token:       ${GRAY}existing enrollment${NC}"
+fi
+if [[ -n "$GATEWAY_CERT_SHA256" ]]; then
+    echo -e "  Cert SHA256: ${GRAY}${GATEWAY_CERT_SHA256}${NC}"
+else
+    echo -e "  Cert SHA256: ${GRAY}existing enrollment${NC}"
 fi
 echo -e "  Arch:        ${ARCH}"
 echo -e "  OS:          ${OS_ID}"
@@ -827,7 +847,7 @@ enroll_daemon() {
     fi
 
     log "Writing config and enrolling with Gateway..."
-    "$target" install --gateway "$GATEWAY_ADDR" --token "$ENROLL_TOKEN" --docker-socket "$DOCKER_SOCKET"
+    "$target" install --gateway "$GATEWAY_ADDR" --token "$ENROLL_TOKEN" --gateway-cert-sha256 "$GATEWAY_CERT_SHA256" --docker-socket "$DOCKER_SOCKET"
     ok "Config written to /etc/docker-daemon/config.yaml"
 }
 

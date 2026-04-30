@@ -375,6 +375,7 @@ export interface NodeDetail extends Node {
 export interface CreateNodeResponse {
   node: Node;
   enrollmentToken: string;
+  gatewayCertSha256: string;
 }
 
 // CA types

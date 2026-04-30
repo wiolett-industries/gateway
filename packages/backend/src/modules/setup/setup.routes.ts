@@ -68,7 +68,7 @@ setupRoutes.openapi(setupManagementSslRoute, async (c) => {
 /**
  * POST /api/setup/enroll-node
  *
- * Create a node and return an enrollment token during initial setup.
+ * Create a node and return an enrollment token plus Gateway gRPC TLS fingerprint during initial setup.
  * Protected by SETUP_TOKEN (not session auth).
  * Used by install.sh to auto-enroll the local daemon.
  */

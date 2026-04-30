@@ -80,6 +80,7 @@ import { CryptoService } from '@/services/crypto.service.js';
 import { DaemonUpdateService } from '@/services/daemon-update.service.js';
 import { DockerService } from '@/services/docker.service.js';
 import { EventBusService } from '@/services/event-bus.service.js';
+import { GrpcIdentityService } from '@/services/grpc-identity.service.js';
 import { HousekeepingService } from '@/services/housekeeping.service.js';
 import { NginxConfigGenerator } from '@/services/nginx-config-generator.service.js';
 import { NodeDispatchService } from '@/services/node-dispatch.service.js';
@@ -217,6 +218,10 @@ export async function initializeContainer(): Promise<void> {
   container.registerInstance(SystemCAService, systemCA);
   await systemCA.ensureSystemCA();
 
+  const grpcIdentityService = new GrpcIdentityService(env, systemCA);
+  container.registerInstance(GrpcIdentityService, grpcIdentityService);
+  await grpcIdentityService.resolve();
+
   // Nginx config generator (pure config generation, no I/O)
   const configValidator = new ConfigValidatorService();
   container.registerInstance(ConfigValidatorService, configValidator);
@@ -237,7 +242,7 @@ export async function initializeContainer(): Promise<void> {
   const nodeDispatch = new NodeDispatchService(nodeRegistry, db);
   container.registerInstance(NodeDispatchService, nodeDispatch);
 
-  const nodesService = new NodesService(db, auditService, nodeRegistry);
+  const nodesService = new NodesService(db, auditService, nodeRegistry, grpcIdentityService);
   container.registerInstance(NodesService, nodesService);
 
   const nodeMonitoringService = new NodeMonitoringService(nodeRegistry, cacheService);

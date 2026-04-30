@@ -6,11 +6,14 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"regexp"
 	"syscall"
 
 	"github.com/wiolett-industries/gateway/nginx-daemon/internal/config"
 	"github.com/wiolett-industries/gateway/nginx-daemon/internal/daemon"
 )
+
+var gatewayCertSHA256Pattern = regexp.MustCompile(`^sha256:[0-9a-fA-F]{64}$`)
 
 func main() {
 	if len(os.Args) > 1 {
@@ -99,22 +102,28 @@ func setupLogger(level, format string) *slog.Logger {
 
 func runInstall() {
 	if len(os.Args) < 4 {
-		fmt.Fprintf(os.Stderr, "Usage: nginx-daemon install --gateway <address> --token <token>\n")
+		fmt.Fprintf(os.Stderr, "Usage: nginx-daemon install --gateway <address> --token <token> --gateway-cert-sha256 <sha256:hex>\n")
 		os.Exit(1)
 	}
 
-	var address, token string
+	var address, token, certSHA256 string
 	for i := 2; i < len(os.Args)-1; i++ {
 		switch os.Args[i] {
 		case "--gateway":
 			address = os.Args[i+1]
 		case "--token":
 			token = os.Args[i+1]
+		case "--gateway-cert-sha256":
+			certSHA256 = os.Args[i+1]
 		}
 	}
 
-	if address == "" || token == "" {
-		fmt.Fprintf(os.Stderr, "Both --gateway and --token are required\n")
+	if address == "" || token == "" || certSHA256 == "" {
+		fmt.Fprintf(os.Stderr, "--gateway, --token, and --gateway-cert-sha256 are required\n")
+		os.Exit(1)
+	}
+	if !gatewayCertSHA256Pattern.MatchString(certSHA256) {
+		fmt.Fprintf(os.Stderr, "--gateway-cert-sha256 must use sha256:<64-hex> format\n")
 		os.Exit(1)
 	}
 
@@ -129,6 +138,7 @@ func runInstall() {
 	configContent := fmt.Sprintf(`gateway:
   address: "%s"
   token: "%s"
+  cert_sha256: "%s"
 
 tls:
   ca_cert: "/etc/nginx-daemon/certs/ca.pem"
@@ -148,7 +158,7 @@ nginx:
 state_dir: "/var/lib/nginx-daemon"
 log_level: "info"
 log_format: "json"
-`, address, token, defaultNginxConfigDir())
+`, address, token, certSHA256, defaultNginxConfigDir())
 
 	if err := os.WriteFile(configPath, []byte(configContent), 0600); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to write config: %v\n", err)

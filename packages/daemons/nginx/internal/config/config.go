@@ -17,8 +17,9 @@ type Config struct {
 }
 
 type GatewayConfig struct {
-	Address string `yaml:"address"`
-	Token   string `yaml:"token"`
+	Address    string `yaml:"address"`
+	Token      string `yaml:"token"`
+	CertSHA256 string `yaml:"cert_sha256"`
 }
 
 type TLSConfig struct {

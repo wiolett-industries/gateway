@@ -24,6 +24,7 @@ describe("AdminNodes", () => {
     const createNodeSpy = vi.spyOn(api, "createNode").mockResolvedValue({
       node: makeNode({ id: "node-2", status: "pending", type: "nginx" }),
       enrollmentToken: "token-123",
+      gatewayCertSha256: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     });
 
     useAuthStore.setState({
@@ -56,5 +57,9 @@ describe("AdminNodes", () => {
     expect(screen.getByText("token-123")).toBeInTheDocument();
     expect(screen.getByText(/setup-daemon\.sh/)).toHaveTextContent("--type nginx");
     expect(screen.getByText(/setup-daemon\.sh/)).toHaveTextContent("--token token-123");
+    expect(screen.getByText(/setup-daemon\.sh/)).toHaveTextContent(
+      "--gateway-cert-sha256 sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    );
+    expect(screen.getByText(/Cloudflare/i)).toBeInTheDocument();
   });
 });

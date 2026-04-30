@@ -1419,8 +1419,10 @@ DEFAULTEOF
 
     local enroll_token
     enroll_token=$(echo "$enroll_response" | grep -o '"enrollmentToken":"[^"]*"' | cut -d'"' -f4) || true
+    local gateway_cert_sha256
+    gateway_cert_sha256=$(echo "$enroll_response" | grep -o '"gatewayCertSha256":"[^"]*"' | cut -d'"' -f4) || true
 
-    if [ -z "$enroll_token" ]; then
+    if [ -z "$enroll_token" ] || [ -z "$gateway_cert_sha256" ]; then
         warn "Could not auto-enroll node. You can install the daemon manually:"
         echo -e "  ${GRAY}curl -sSL ${GITLAB_API_URL}/${GITLAB_PROJECT_PATH}/-/raw/main/scripts/setup-daemon.sh | sudo bash${NC}"
     else
@@ -1429,7 +1431,7 @@ DEFAULTEOF
         daemon_script=$(mktemp_compat /tmp/gateway-setup-daemon)
         if curl -fsSL "${GITLAB_API_URL}/${GITLAB_PROJECT_PATH}/-/raw/main/scripts/setup-node.sh" -o "$daemon_script" 2>>"$LOG_FILE"; then
             chmod +x "$daemon_script"
-            bash "$daemon_script" -y --gateway "localhost:9443" --token "$enroll_token" 2>>"$LOG_FILE" && \
+            bash "$daemon_script" -y --gateway "localhost:9443" --token "$enroll_token" --gateway-cert-sha256 "$gateway_cert_sha256" 2>>"$LOG_FILE" && \
                 success "Nginx daemon installed and enrolled" || \
                 warn "Daemon setup failed. Check ${LOG_FILE} and retry manually."
         else

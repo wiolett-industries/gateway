@@ -648,7 +648,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
   {
     name: 'create_node',
     description:
-      'Create a new daemon node and generate an enrollment token. IMPORTANT: The response contains enrollmentToken — you MUST display it to the user along with the setup commands (curl/wget). The token is one-time-use and cannot be retrieved again.',
+      'Create a new daemon node and generate an enrollment token. IMPORTANT: The response contains enrollmentToken and gatewayCertSha256 — you MUST display both to the user and include --gateway-cert-sha256 in setup commands (curl/wget). The token is one-time-use and cannot be retrieved again.',
     parameters: {
       type: 'object',
       properties: {

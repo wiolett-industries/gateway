@@ -330,6 +330,7 @@ If a node does not connect:
 
 - Verify the node can reach `gw.example.com:9443`.
 - Confirm the enrollment token was copied before it expired or was used.
+- If logs mention a Gateway certificate fingerprint mismatch, delete the pending node and create a new node in Gateway, then rerun the generated command. You may change `--gateway` to a direct `9443/tcp` endpoint, but keep the generated `--gateway-cert-sha256` value.
 - Check the daemon systemd logs.
 - Confirm system time is sane on both Gateway and the node.
 

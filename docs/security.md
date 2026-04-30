@@ -10,7 +10,7 @@ Gateway defaults to security controls that reduce the most common self-hosted co
 
 - No internal password database. User login currently requires OIDC SSO, so MFA, account lifecycle, password policy, and device controls stay with the identity provider.
 - No inbound management ports on managed nodes. Daemons initiate outbound connections to Gateway.
-- No long-lived daemon shared secret. One-time enrollment tokens are replaced by mTLS client certificates.
+- No long-lived daemon shared secret. First enrollment uses a one-time token plus a pinned Gateway gRPC TLS leaf fingerprint, then replaces the token with an mTLS client certificate.
 - No global trust for programmatic tokens. API/OAuth scopes are bounded by the owning user's current effective permissions.
 - No silent secret reveal. Certificate exports, database credential reveal, Docker secret access, and dangerous OAuth scopes require explicit permissions.
 - No anonymous control plane. Administrative and automation actions are permission-gated and audited.
@@ -37,12 +37,14 @@ Managed hosts run small daemons for nginx, Docker, or monitoring. Those daemons 
 Long-term daemon trust is based on Gateway's internal node PKI:
 
 1. An operator creates a node in Gateway.
-2. Gateway creates a one-time enrollment token and stores only a hash.
-3. The daemon connects to Gateway with that token.
-4. Gateway validates the token and issues a node client certificate from the internal Gateway Node CA.
-5. The daemon writes the CA certificate, client certificate, and private key to its local config path.
-6. The daemon clears the enrollment token and reconnects using mTLS.
-7. Gateway identifies the node from the verified mTLS client certificate.
+2. Gateway creates a one-time enrollment token, stores only a hash, and returns the current Gateway gRPC TLS leaf certificate fingerprint as `gatewayCertSha256`.
+3. The setup command writes the token and fingerprint to daemon config as `gateway.token` and `gateway.cert_sha256`.
+4. The unenrolled daemon connects to Gateway and verifies the presented TLS leaf certificate matches `gateway.cert_sha256`.
+5. Only after that fingerprint check passes, the daemon sends the enrollment token.
+6. Gateway validates the token and issues a node client certificate from the internal Gateway Node CA.
+7. The daemon writes the CA certificate, client certificate, and private key to its local config path.
+8. The daemon clears the enrollment token and reconnects using mTLS.
+9. Gateway identifies the node from the verified mTLS client certificate.
 
 After enrollment, the token is not the node's identity. The certificate is.
 
@@ -51,6 +53,7 @@ After enrollment, the token is not the node's identity. The certificate is.
 A reusable shared secret is easy to copy, leak, or leave behind. Gateway avoids that pattern:
 
 - Enrollment tokens are one-time setup material and are removed from daemon config after use.
+- Enrollment tokens are sent only after the daemon verifies the pinned Gateway gRPC TLS leaf fingerprint, so a DNS/proxy/path mistake cannot silently disclose the token to a different TLS endpoint.
 - Each daemon gets a unique client certificate.
 - The client certificate common name is the Gateway node ID.
 - Gateway verifies that the certificate identity matches the node claiming the stream.
@@ -58,9 +61,9 @@ A reusable shared secret is easy to copy, leak, or leave behind. Gateway avoids 
 - Certificate renewal requires the existing certificate and is checked against the connected node identity.
 - Deleting a node revokes its mTLS certificate so the old daemon cannot reconnect as that node.
 
-This gives every node a cryptographic identity anchored in Gateway's internal CA. A random host cannot join the fleet without a valid enrollment token, and an enrolled daemon cannot impersonate a different node without that node's private key.
+This gives every node a cryptographic identity anchored in Gateway's internal CA. A random host cannot join the fleet without a valid enrollment token and the matching Gateway certificate endpoint, and an enrolled daemon cannot impersonate a different node without that node's private key.
 
-For best enrollment assurance, run the setup command against a direct Gateway `9443/tcp` endpoint that you control. If the web UI is behind Cloudflare or another proxy, use the direct Gateway host/IP for daemon enrollment unless that proxy explicitly supports the gRPC port.
+For best enrollment assurance, run the setup command against a direct Gateway `9443/tcp` endpoint that you control. If the web UI is behind Cloudflare or another proxy, you may replace `--gateway <host>:9443` with the direct Gateway host/IP for daemon enrollment, but keep the generated `--gateway-cert-sha256` value. Replacing the fingerprint defeats the pin and should only happen after creating a new node command from the Gateway UI/API.
 
 ## PKI Responsibilities
 
@@ -162,14 +165,14 @@ Use this baseline for production:
 - Protect `.env`, `SESSION_SECRET`, `PKI_MASTER_KEY`, database credentials, and OIDC client secret.
 - Back up PostgreSQL, Redis data if needed, ClickHouse data if logging is enabled, custom TLS files, and `PKI_MASTER_KEY`.
 - Limit `admin:system`, update, secret reveal, certificate export, console, and file-access scopes to trusted operators.
-- Keep daemon setup tokens short-lived operationally: copy once, enroll, and do not store them in tickets or chat.
-- Enroll daemons against a direct trusted `9443/tcp` Gateway endpoint.
+- Keep daemon setup tokens and generated fingerprints short-lived operationally: copy once, enroll, and do not store setup commands in tickets or chat.
+- Enroll daemons against a direct trusted `9443/tcp` Gateway endpoint, and keep the generated `--gateway-cert-sha256` value when changing only the endpoint host.
 - Keep Gateway and daemons updated.
 - Review audit logs after sensitive changes.
 
 ## Threat Model Notes
 
-Gateway reduces the risk of node hijacking by replacing setup tokens with per-node mTLS certificates, verifying certificate identity on daemon streams, and revoking node certificates on deletion. This is the security property operators should care about most: ongoing control of a managed node depends on possession of that node's private key and a certificate that Gateway issued for that exact node identity.
+Gateway reduces the risk of node hijacking by pinning first enrollment to the generated Gateway gRPC TLS leaf fingerprint, replacing setup tokens with per-node mTLS certificates, verifying certificate identity on daemon streams, and revoking node certificates on deletion. This is the security property operators should care about most: initial token submission depends on reaching the expected Gateway certificate, and ongoing control of a managed node depends on possession of that node's private key and a certificate that Gateway issued for that exact node identity.
 
 Gateway does not remove the need for host security:
 
