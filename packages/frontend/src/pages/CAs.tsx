@@ -5,6 +5,7 @@ import { CACreateDialog } from "@/components/ca/CACreateDialog";
 import { EmptyState } from "@/components/common/EmptyState";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
+import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
 import { SearchFilterBar } from "@/components/common/SearchFilterBar";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { Badge } from "@/components/ui/badge";
@@ -103,30 +104,56 @@ export function CAs() {
               {totalCerts !== 1 ? "s" : ""} issued
             </p>
           </div>
-          {hasScope("pki:ca:create:root") && (
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setCreateIntermediateParentId("pick");
-                  setCreateDialogOpen(true);
-                }}
-                disabled={activeUserManagedCAs.length === 0}
-              >
-                <Plus className="h-4 w-4" />
-                Create Intermediate
-              </Button>
-              <Button
-                onClick={() => {
-                  setCreateIntermediateParentId(undefined);
-                  setCreateDialogOpen(true);
-                }}
-              >
-                <Plus className="h-4 w-4" />
-                Create Root CA
-              </Button>
-            </div>
-          )}
+          <ResponsiveHeaderActions
+            actions={
+              hasScope("pki:ca:create:root")
+                ? [
+                    {
+                      label: "Create Intermediate",
+                      icon: <Plus className="h-4 w-4" />,
+                      onClick: () => {
+                        setCreateIntermediateParentId("pick");
+                        setCreateDialogOpen(true);
+                      },
+                      disabled: activeUserManagedCAs.length === 0,
+                    },
+                    {
+                      label: "Create Root CA",
+                      icon: <Plus className="h-4 w-4" />,
+                      onClick: () => {
+                        setCreateIntermediateParentId(undefined);
+                        setCreateDialogOpen(true);
+                      },
+                    },
+                  ]
+                : []
+            }
+          >
+            {hasScope("pki:ca:create:root") && (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setCreateIntermediateParentId("pick");
+                    setCreateDialogOpen(true);
+                  }}
+                  disabled={activeUserManagedCAs.length === 0}
+                >
+                  <Plus className="h-4 w-4" />
+                  Create Intermediate
+                </Button>
+                <Button
+                  onClick={() => {
+                    setCreateIntermediateParentId(undefined);
+                    setCreateDialogOpen(true);
+                  }}
+                >
+                  <Plus className="h-4 w-4" />
+                  Create Root CA
+                </Button>
+              </>
+            )}
+          </ResponsiveHeaderActions>
         </div>
 
         {/* Search and filters */}

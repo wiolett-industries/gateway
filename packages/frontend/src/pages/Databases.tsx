@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { EmptyState } from "@/components/common/EmptyState";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
+import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
 import { SearchFilterBar } from "@/components/common/SearchFilterBar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -149,7 +150,24 @@ export function Databases() {
               Saved Postgres and Redis connections managed through Gateway
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <ResponsiveHeaderActions
+            actions={[
+              {
+                label: "Refresh",
+                icon: <RefreshCw className="h-4 w-4" />,
+                onClick: () => void load(),
+              },
+              ...(canCreate
+                ? [
+                    {
+                      label: "Add Database",
+                      icon: <Plus className="h-4 w-4" />,
+                      onClick: () => setCreateOpen(true),
+                    },
+                  ]
+                : []),
+            ]}
+          >
             <Button variant="outline" size="icon" onClick={() => void load()} title="Refresh">
               <RefreshCw className="h-4 w-4" />
             </Button>
@@ -159,7 +177,7 @@ export function Databases() {
                 Add Database
               </Button>
             )}
-          </div>
+          </ResponsiveHeaderActions>
         </div>
 
         <SearchFilterBar
@@ -220,8 +238,8 @@ export function Databases() {
               : {})}
           />
         ) : (
-          <div className="border border-border rounded-lg bg-card">
-            <div className="divide-y divide-border -mb-px [&>*:last-child]:border-b [&>*:last-child]:border-border">
+          <div className="overflow-x-auto border border-border rounded-lg bg-card md:overflow-x-visible">
+            <div className="min-w-[920px] divide-y divide-border -mb-px md:min-w-0 [&>*:last-child]:border-b [&>*:last-child]:border-border">
               {filtered.map((row) => (
                 <div
                   key={row.id}
@@ -232,7 +250,7 @@ export function Databases() {
                     <DatabaseIcon className="h-5 w-5 text-muted-foreground" />
                   </div>
 
-                  <div className="flex-1 min-w-0">
+                  <div className="min-w-[280px] flex-1 md:min-w-0">
                     <p className="text-sm font-medium truncate">{row.name}</p>
                     <p className="text-xs text-muted-foreground truncate">
                       {row.host}:{row.port}

@@ -251,7 +251,7 @@ export function OAuthApplicationsSection({
         {loading ? (
           <div className="p-4 text-sm text-muted-foreground">Loading OAuth applications...</div>
         ) : authorizations.length === 0 ? (
-          <p className="py-4 text-center text-sm text-muted-foreground">
+          <p className="px-4 py-4 text-center text-sm text-muted-foreground">
             No OAuth applications authorized yet
           </p>
         ) : (
@@ -259,7 +259,7 @@ export function OAuthApplicationsSection({
             {authorizations.map((authorization) => (
               <div
                 key={`${authorization.clientId}:${authorization.resource}`}
-                className="flex cursor-pointer items-center justify-between gap-4 p-4 transition-colors hover:bg-accent/50"
+                className="flex cursor-pointer flex-col gap-3 p-4 transition-colors hover:bg-accent/50 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
                 onClick={() => openDetails(authorization)}
               >
                 <div className="flex min-w-0 items-center gap-3">
@@ -309,6 +309,7 @@ export function OAuthApplicationsSection({
                 <Button
                   variant="outline"
                   size="icon"
+                  className="self-start sm:self-auto"
                   aria-label={`Disconnect ${authorization.clientName}`}
                   onClick={(event) => {
                     event.stopPropagation();

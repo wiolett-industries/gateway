@@ -5,6 +5,7 @@ import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
+import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
 import { SearchFilterBar } from "@/components/common/SearchFilterBar";
 import { DNSChallengeVerification } from "@/components/ssl/DNSChallengeVerification";
 import { SSLCertificateCreateDialog } from "@/components/ssl/SSLCertificateCreateDialog";
@@ -224,12 +225,26 @@ export function SSLCertificates() {
             <h1 className="text-2xl font-bold">SSL Certificates</h1>
             <p className="text-sm text-muted-foreground">{total} certificates total</p>
           </div>
-          {hasScope("ssl:cert:issue") && (
-            <Button onClick={() => setCreateDialogOpen(true)}>
-              <Plus className="h-4 w-4" />
-              Add Certificate
-            </Button>
-          )}
+          <ResponsiveHeaderActions
+            actions={
+              hasScope("ssl:cert:issue")
+                ? [
+                    {
+                      label: "Add Certificate",
+                      icon: <Plus className="h-4 w-4" />,
+                      onClick: () => setCreateDialogOpen(true),
+                    },
+                  ]
+                : []
+            }
+          >
+            {hasScope("ssl:cert:issue") && (
+              <Button onClick={() => setCreateDialogOpen(true)}>
+                <Plus className="h-4 w-4" />
+                Add Certificate
+              </Button>
+            )}
+          </ResponsiveHeaderActions>
         </div>
 
         {/* Search and filters */}

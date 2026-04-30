@@ -54,6 +54,17 @@ function compactMonitoringHistorySnapshot(snapshot: any) {
       swapTotalBytes: health.swapTotalBytes,
       diskReadBytes: health.diskReadBytes,
       diskWriteBytes: health.diskWriteBytes,
+      diskMounts: Array.isArray(health.diskMounts)
+        ? health.diskMounts.map((mount: any) => ({
+            mountPoint: mount.mountPoint,
+            filesystem: mount.filesystem,
+            device: mount.device,
+            totalBytes: mount.totalBytes,
+            usedBytes: mount.usedBytes,
+            freeBytes: mount.freeBytes,
+            usagePercent: mount.usagePercent,
+          }))
+        : undefined,
       diskUsagePercent: health.diskUsagePercent,
       networkRxBytes: health.networkRxBytes,
       networkTxBytes: health.networkTxBytes,

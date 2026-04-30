@@ -6,7 +6,7 @@ import { canonicalizeScopes } from '@/lib/scopes.js';
 import { authMiddleware, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import { createTokenRoute, listTokensRoute, renameTokenRoute, revokeTokenRoute } from './tokens.docs.js';
-import { CreateTokenSchema } from './tokens.schemas.js';
+import { CreateTokenSchema, UpdateTokenSchema } from './tokens.schemas.js';
 import { TokensService } from './tokens.service.js';
 
 export const tokensRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
@@ -46,9 +46,22 @@ tokensRoutes.openapi(renameTokenRoute, async (c) => {
   const tokensService = container.resolve(TokensService);
   const user = c.get('user')!;
   const id = c.req.param('id')!;
-  const { name } = await c.req.json();
-  if (!name?.trim()) return c.json({ code: 'INVALID', message: 'Name is required' }, 400);
-  await tokensService.renameToken(user.id, id, name.trim());
+  const parsedInput = UpdateTokenSchema.parse(await c.req.json());
+  const input = {
+    ...parsedInput,
+    ...(parsedInput.name !== undefined ? { name: parsedInput.name.trim() } : {}),
+    ...(parsedInput.scopes !== undefined ? { scopes: canonicalizeScopes(parsedInput.scopes) } : {}),
+  };
+
+  if (input.scopes !== undefined && !isScopeSubset(input.scopes, user.scopes)) {
+    const disallowed = input.scopes.filter((s) => !TokensService.hasScope(user.scopes, s));
+    return c.json(
+      { code: 'SCOPE_NOT_ALLOWED', message: `Your group cannot grant scopes: ${disallowed.join(', ')}` },
+      403
+    );
+  }
+
+  await tokensService.updateToken(user.id, id, input);
   return c.json({ success: true });
 });
 

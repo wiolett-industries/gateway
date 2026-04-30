@@ -2,6 +2,7 @@ import { Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { PageTransition } from "@/components/common/PageTransition";
+import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useUrlTab } from "@/hooks/use-url-tab";
@@ -16,6 +17,7 @@ export function Administration() {
   const { hasScope } = useAuthStore();
   const [usersCreateRequest, setUsersCreateRequest] = useState(0);
   const [groupsCreateRequest, setGroupsCreateRequest] = useState(0);
+  const [auditHeaderActionsEl, setAuditHeaderActionsEl] = useState<HTMLDivElement | null>(null);
   const canUsers = hasScope("admin:users");
   const canGroups = hasScope("admin:groups");
   const canAudit = hasScope("admin:audit");
@@ -81,16 +83,28 @@ export function Administration() {
             : "h-full overflow-y-auto p-6 space-y-4"
         }
       >
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0 flex-1">
             <h1 className="text-2xl font-bold">{currentMeta.title}</h1>
             <p className="text-sm text-muted-foreground">{currentMeta.subtitle}</p>
           </div>
           {currentMeta.actionLabel && currentMeta.onAction ? (
-            <Button onClick={currentMeta.onAction}>
-              <Plus className="h-4 w-4" />
-              {currentMeta.actionLabel}
-            </Button>
+            <ResponsiveHeaderActions
+              actions={[
+                {
+                  label: currentMeta.actionLabel,
+                  icon: <Plus className="h-4 w-4" />,
+                  onClick: currentMeta.onAction,
+                },
+              ]}
+            >
+              <Button onClick={currentMeta.onAction}>
+                <Plus className="h-4 w-4" />
+                {currentMeta.actionLabel}
+              </Button>
+            </ResponsiveHeaderActions>
+          ) : currentTab === "audit" ? (
+            <div ref={setAuditHeaderActionsEl} className="shrink-0" />
           ) : null}
         </div>
 
@@ -117,7 +131,7 @@ export function Administration() {
           )}
           {canAudit && (
             <TabsContent value="audit" className="mt-4 flex min-h-0 flex-1 flex-col">
-              <AuditLog embedded />
+              <AuditLog embedded headerActionsTarget={auditHeaderActionsEl} />
             </TabsContent>
           )}
         </Tabs>

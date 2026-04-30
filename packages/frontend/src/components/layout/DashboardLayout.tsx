@@ -1,5 +1,5 @@
 import { Loader2, Menu } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { AIButton } from "@/components/ai/AIButton";
 import { AISidePanel } from "@/components/ai/AISidePanel";
@@ -17,11 +17,14 @@ import { useCAStore } from "@/stores/ca";
 import { useDockerStore } from "@/stores/docker";
 import { useUIStore } from "@/stores/ui";
 import { useUpdateStore } from "@/stores/update";
-import { AI_SCOPE, isNodeIncompatible } from "@/types";
+import { AI_SCOPE, isNodeIncompatible, type User } from "@/types";
 import { SidebarContent } from "./SidebarContent";
 
 const SIDEBAR_WIDTH_KEY = "gateway-sidebar-width";
 const DEFAULT_SIDEBAR_WIDTH = 260;
+let dashboardBootstrapKey: string | null = null;
+let dashboardBootstrapPromise: Promise<{ hasNginxNodes: boolean }> | null = null;
+let dashboardBootstrapResult: { hasNginxNodes: boolean } | null = null;
 
 function readSidebarWidth(): number {
   try {
@@ -39,6 +42,7 @@ function readSidebarWidth(): number {
 export function DashboardLayout() {
   const navigate = useNavigate();
   const { isAuthenticated, isLoading, setUser, setLoading, logout } = useAuthStore();
+  const currentUser = useAuthStore((state) => state.user);
   const {
     isMobile,
     setIsMobile,
@@ -51,6 +55,14 @@ export function DashboardLayout() {
   const [sidebarWidth, setSidebarWidth] = useState(readSidebarWidth);
   const [isResizing, setIsResizing] = useState(false);
   const [hasNginxNodes, setHasNginxNodes] = useState(true); // default true to avoid flash
+  const bootstrapCancelledRef = useRef(false);
+
+  useEffect(() => {
+    if (isAuthenticated) return;
+    dashboardBootstrapKey = null;
+    dashboardBootstrapPromise = null;
+    dashboardBootstrapResult = null;
+  }, [isAuthenticated]);
 
   const handleSidebarResize = useCallback((width: number) => {
     setSidebarWidth(width);
@@ -73,57 +85,108 @@ export function DashboardLayout() {
   }, []);
 
   useEffect(() => {
+    bootstrapCancelledRef.current = false;
+
+    const runGlobalBootstrap = (user: User) => {
+      const bootstrapKey = `${user.id}:${user.scopes.join("|")}`;
+      if (dashboardBootstrapKey === bootstrapKey && dashboardBootstrapResult) {
+        setHasNginxNodes(dashboardBootstrapResult.hasNginxNodes);
+        return;
+      }
+      if (dashboardBootstrapKey === bootstrapKey && dashboardBootstrapPromise) {
+        dashboardBootstrapPromise
+          .then((result) => {
+            if (!bootstrapCancelledRef.current) setHasNginxNodes(result.hasNginxNodes);
+          })
+          .catch(() => {});
+        return;
+      }
+
+      dashboardBootstrapKey = bootstrapKey;
+      dashboardBootstrapResult = null;
+
+      dashboardBootstrapPromise = (async () => {
+        let hasNginxNodes = true;
+
+        // Preload node types for sidebar visibility + Docker command palette.
+        if (
+          user.scopes?.some(
+            (scope: string) =>
+              scope.startsWith("nodes:") ||
+              scope.startsWith("docker:") ||
+              scope.startsWith("proxy:")
+          )
+        ) {
+          try {
+            const r = await api.listNodes({ limit: 100 });
+            const dockerNds = r.data.filter(
+              (n) => n.type === "docker" && n.status === "online" && !isNodeIncompatible(n)
+            );
+            const nginxNds = r.data.filter((n) => n.type === "nginx" && !isNodeIncompatible(n));
+            useDockerStore.getState().setDockerNodes(dockerNds);
+            hasNginxNodes = nginxNds.length > 0;
+          } catch {
+            // Keep the default permissive sidebar state if node preload fails.
+          }
+        }
+
+        await Promise.all([
+          user.scopes?.includes("admin:update")
+            ? useUpdateStore.getState().fetchStatus()
+            : Promise.resolve(),
+          user.scopes?.includes(AI_SCOPE)
+            ? api
+                .getAIStatus()
+                .then((status) => useAIStore.getState().setEnabled(status.enabled))
+                .catch(() => {})
+            : Promise.resolve(),
+        ]);
+
+        return { hasNginxNodes };
+      })();
+
+      dashboardBootstrapPromise
+        .then((result) => {
+          if (dashboardBootstrapKey !== bootstrapKey) return;
+          dashboardBootstrapResult = result;
+          if (!bootstrapCancelledRef.current) setHasNginxNodes(result.hasNginxNodes);
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (dashboardBootstrapKey === bootstrapKey) dashboardBootstrapPromise = null;
+        });
+    };
+
     const checkAuth = async () => {
       try {
-        const user = await api.getCurrentUser();
+        const existingUser = currentUser ?? useAuthStore.getState().user;
+        const user = existingUser ?? (await api.getCurrentUser());
+        if (bootstrapCancelledRef.current) return;
         if (user.isBlocked) {
           setUser(user);
           setLoading(false);
           navigate("/blocked");
           return;
         }
-        setUser(user);
-        // Preload node types for sidebar visibility + Docker command palette
-        if (
-          user.scopes?.some(
-            (s: string) =>
-              s.startsWith("nodes:") || s.startsWith("docker:") || s.startsWith("proxy:")
-          )
-        ) {
-          api
-            .listNodes({ limit: 100 })
-            .then((r) => {
-              const dockerNds = r.data.filter(
-                (n) => n.type === "docker" && n.status === "online" && !isNodeIncompatible(n)
-              );
-              const nginxNds = r.data.filter((n) => n.type === "nginx" && !isNodeIncompatible(n));
-              useDockerStore.getState().setDockerNodes(dockerNds);
-              setHasNginxNodes(nginxNds.length > 0);
-            })
-            .catch(() => {});
-        }
-        // Fetch update status into global store
-        if (user.scopes?.includes("admin:update")) useUpdateStore.getState().fetchStatus();
-        // Check AI availability
-        if (user.scopes?.includes(AI_SCOPE)) {
-          api
-            .getAIStatus()
-            .then((s) => useAIStore.getState().setEnabled(s.enabled))
-            .catch(() => {});
-        }
+        if (!existingUser) setUser(user);
+        runGlobalBootstrap(user);
       } catch (error) {
         if (error instanceof ApiRequestError && error.status === 401) {
+          dashboardBootstrapKey = null;
           logout();
           navigate("/login");
         }
       } finally {
-        setLoading(false);
+        if (!bootstrapCancelledRef.current) setLoading(false);
       }
     };
 
     checkAuth();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [logout, navigate, setLoading, setUser]);
+
+    return () => {
+      bootstrapCancelledRef.current = true;
+    };
+  }, [currentUser, logout, navigate, setLoading, setUser]);
 
   useEffect(() => {
     const checkMobile = () => {

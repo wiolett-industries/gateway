@@ -121,7 +121,7 @@ export function LogsTab({ hostId }: { hostId: string }) {
 
   return (
     <div className="flex flex-col flex-1 min-h-0 gap-2">
-      <div className="flex gap-3 shrink-0">
+      <div className="flex shrink-0 flex-col gap-3 sm:flex-row">
         <Input
           className="flex-1"
           placeholder="Search by path or IP..."
@@ -129,7 +129,7 @@ export function LogsTab({ hostId }: { hostId: string }) {
           onChange={(e) => setSearch(e.target.value)}
         />
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-40">
+          <SelectTrigger className="w-full sm:w-40">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -143,77 +143,82 @@ export function LogsTab({ hostId }: { hostId: string }) {
         </Select>
       </div>
 
-      <div className="flex-1 min-h-0 flex flex-col border border-border bg-card">
-        <table className="w-full shrink-0" style={{ tableLayout: "fixed" }}>
-          {colgroup}
-          <thead>
-            <tr className="text-left border-b border-border">
-              <th className="p-3 text-xs font-medium text-muted-foreground">Time</th>
-              <th className="p-3 text-xs font-medium text-muted-foreground">Type</th>
-              <th className="p-3 text-xs font-medium text-muted-foreground">Remote Addr</th>
-              <th className="p-3 text-xs font-medium text-muted-foreground">Method</th>
-              <th className="p-3 text-xs font-medium text-muted-foreground">Path / Message</th>
-              <th className="p-3 text-xs font-medium text-muted-foreground">Status</th>
-              <th className="p-3 text-xs font-medium text-muted-foreground">Size</th>
-            </tr>
-          </thead>
-        </table>
-        <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto">
-          <table className="w-full" style={{ tableLayout: "fixed" }}>
+      <div className="min-h-0 flex-1 overflow-x-auto border border-border bg-card">
+        <div className="flex h-full min-w-[920px] flex-col">
+          <table className="w-full shrink-0" style={{ tableLayout: "fixed" }}>
             {colgroup}
-            <tbody className="divide-y divide-border">
-              {logs.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="text-center py-16 text-sm text-muted-foreground">
-                    Waiting for log events...
-                  </td>
-                </tr>
-              ) : (
-                logs.map((entry, i) => {
-                  const isError = entry.logType === "error";
-                  return (
-                    <tr key={i}>
-                      <td className="p-3 text-sm text-muted-foreground whitespace-nowrap">
-                        {entry.timestamp}
-                      </td>
-                      <td className="p-3 text-sm">
-                        <Badge
-                          variant={isError ? "destructive" : "secondary"}
-                          className="text-[10px]"
-                        >
-                          {isError ? "err" : "acc"}
-                        </Badge>
-                      </td>
-                      <td className="p-3 text-sm text-muted-foreground">
-                        {isError ? "\u2014" : entry.remoteAddr}
-                      </td>
-                      <td className="p-3 text-sm">{isError ? "\u2014" : entry.method}</td>
-                      <td className="p-3 text-sm truncate" title={isError ? entry.raw : entry.path}>
-                        {isError ? entry.raw : entry.path}
-                      </td>
-                      <td className="p-3 text-sm">
-                        {isError ? (
-                          <Badge variant="destructive" className="text-[10px]">
-                            {entry.level || "err"}
-                          </Badge>
-                        ) : (
-                          <Badge
-                            variant={STATUS_VARIANT[String(entry.status)[0]] ?? "secondary"}
-                            className="text-xs"
-                          >
-                            {entry.status}
-                          </Badge>
-                        )}
-                      </td>
-                      <td className="p-3 text-sm text-muted-foreground">
-                        {isError ? "\u2014" : entry.bodyBytesSent}
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
+            <thead>
+              <tr className="text-left border-b border-border">
+                <th className="p-3 text-xs font-medium text-muted-foreground">Time</th>
+                <th className="p-3 text-xs font-medium text-muted-foreground">Type</th>
+                <th className="p-3 text-xs font-medium text-muted-foreground">Remote Addr</th>
+                <th className="p-3 text-xs font-medium text-muted-foreground">Method</th>
+                <th className="p-3 text-xs font-medium text-muted-foreground">Path / Message</th>
+                <th className="p-3 text-xs font-medium text-muted-foreground">Status</th>
+                <th className="p-3 text-xs font-medium text-muted-foreground">Size</th>
+              </tr>
+            </thead>
           </table>
+          <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
+            <table className="w-full" style={{ tableLayout: "fixed" }}>
+              {colgroup}
+              <tbody className="divide-y divide-border">
+                {logs.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="text-center py-16 text-sm text-muted-foreground">
+                      Waiting for log events...
+                    </td>
+                  </tr>
+                ) : (
+                  logs.map((entry, i) => {
+                    const isError = entry.logType === "error";
+                    return (
+                      <tr key={i}>
+                        <td className="p-3 text-sm text-muted-foreground whitespace-nowrap">
+                          {entry.timestamp}
+                        </td>
+                        <td className="p-3 text-sm">
+                          <Badge
+                            variant={isError ? "destructive" : "secondary"}
+                            className="text-[10px]"
+                          >
+                            {isError ? "err" : "acc"}
+                          </Badge>
+                        </td>
+                        <td className="p-3 text-sm text-muted-foreground">
+                          {isError ? "\u2014" : entry.remoteAddr}
+                        </td>
+                        <td className="p-3 text-sm">{isError ? "\u2014" : entry.method}</td>
+                        <td
+                          className="p-3 text-sm truncate"
+                          title={isError ? entry.raw : entry.path}
+                        >
+                          {isError ? entry.raw : entry.path}
+                        </td>
+                        <td className="p-3 text-sm">
+                          {isError ? (
+                            <Badge variant="destructive" className="text-[10px]">
+                              {entry.level || "err"}
+                            </Badge>
+                          ) : (
+                            <Badge
+                              variant={STATUS_VARIANT[String(entry.status)[0]] ?? "secondary"}
+                              className="text-xs"
+                            >
+                              {entry.status}
+                            </Badge>
+                          )}
+                        </td>
+                        <td className="p-3 text-sm text-muted-foreground">
+                          {isError ? "\u2014" : entry.bodyBytesSent}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>

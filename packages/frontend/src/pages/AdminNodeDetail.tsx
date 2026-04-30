@@ -4,6 +4,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { PageTransition } from "@/components/common/PageTransition";
+import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -315,14 +316,16 @@ export function AdminNodeDetail() {
         }
       >
         {/* Header — matches ProxyHostDetail pattern */}
-        <div className="flex flex-wrap items-center justify-between gap-2 shrink-0">
-          <div className="flex items-center gap-3">
+        <div className="flex items-start justify-between gap-3 shrink-0">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
             <Button variant="ghost" size="icon" onClick={() => navigate("/nodes")}>
               <ArrowLeft className="h-4 w-4" />
             </Button>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-2xl font-bold">{node.displayName || node.hostname}</h1>
+            <div className="min-w-0">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <h1 className="min-w-0 truncate text-2xl font-bold">
+                  {node.displayName || node.hostname}
+                </h1>
                 <Badge variant={STATUS_BADGE[nodeState] || "secondary"}>{nodeState}</Badge>
                 {(node.type === "nginx" || node.type === "docker") &&
                   node.serviceCreationLocked && <Badge variant="warning">Locked</Badge>}
@@ -338,7 +341,62 @@ export function AdminNodeDetail() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <ResponsiveHeaderActions
+            actions={[
+              {
+                label: "Pin",
+                icon: <Pin className="h-4 w-4" />,
+                onClick: () => setPinOpen(true),
+                disabled: nodeUpdating,
+              },
+              ...(hasScope("nodes:rename")
+                ? [
+                    {
+                      label: "Rename",
+                      icon: <Pencil className="h-4 w-4" />,
+                      onClick: () => {
+                        setRenameName(node.displayName ?? "");
+                        setRenameOpen(true);
+                      },
+                      disabled: nodeUpdating,
+                    },
+                  ]
+                : []),
+              ...(canManageServiceCreationLock
+                ? [
+                    {
+                      label: node.serviceCreationLocked
+                        ? "Unlock new services"
+                        : "Lock new services",
+                      onClick: () => handleServiceCreationLock(!node.serviceCreationLocked),
+                      disabled: lockSaving || nodeUpdating,
+                    },
+                  ]
+                : []),
+              ...(hasScope("admin:update")
+                ? [
+                    {
+                      label: "Check for updates",
+                      icon: <ArrowUpCircle className="h-4 w-4" />,
+                      onClick: handleCheckUpdates,
+                      disabled: nodeUpdating || checkingUpdates,
+                      separatorBefore: canManageServiceCreationLock,
+                    },
+                  ]
+                : []),
+              ...(hasScope("nodes:delete")
+                ? [
+                    {
+                      label: "Remove",
+                      icon: <Trash2 className="h-4 w-4" />,
+                      onClick: handleDelete,
+                      destructive: true,
+                      separatorBefore: hasScope("admin:update") || canManageServiceCreationLock,
+                    },
+                  ]
+                : []),
+            ]}
+          >
             <Button
               variant="outline"
               size="icon"
@@ -404,7 +462,7 @@ export function AdminNodeDetail() {
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
-          </div>
+          </ResponsiveHeaderActions>
         </div>
 
         {/* Health bars */}
@@ -491,6 +549,8 @@ export function AdminNodeDetail() {
                     nodeId={node.id}
                     nodeStatus={node.status}
                     nodeType={node.type}
+                    initialHealthReport={node.liveHealthReport ?? node.lastHealthReport}
+                    initialStatsReport={node.liveStatsReport ?? node.lastStatsReport}
                   />
                 )}
               </TabsContent>

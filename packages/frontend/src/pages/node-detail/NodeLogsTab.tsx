@@ -114,7 +114,7 @@ export function NodeLogsTab({ nodeId, nodeStatus }: NodeLogsTabProps) {
   return (
     <div className="flex flex-col flex-1 min-h-0 gap-2">
       {/* Filters */}
-      <div className="flex gap-3 shrink-0">
+      <div className="flex shrink-0 flex-col gap-3 sm:flex-row">
         <div className="flex-1">
           <Input
             placeholder="Search logs..."
@@ -122,7 +122,7 @@ export function NodeLogsTab({ nodeId, nodeStatus }: NodeLogsTabProps) {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <div className="w-40">
+        <div className="w-full sm:w-40">
           <Select value={levelFilter} onValueChange={setLevelFilter}>
             <SelectTrigger>
               <SelectValue />
@@ -139,54 +139,56 @@ export function NodeLogsTab({ nodeId, nodeStatus }: NodeLogsTabProps) {
       </div>
 
       {/* Table */}
-      <div className="flex-1 min-h-0 flex flex-col border border-border bg-card">
-        {/* Fixed header */}
-        <div
-          className="grid border-b border-border text-left text-xs font-medium text-muted-foreground shrink-0"
-          style={{ gridTemplateColumns: "180px 80px 120px 1fr" }}
-        >
-          <div className="p-3">Time</div>
-          <div className="p-3">Level</div>
-          <div className="p-3">Component</div>
-          <div className="p-3">Message</div>
-        </div>
-        {/* Scrollable body */}
-        <VirtualLogList
-          lines={logs}
-          keyFn={(_, i) => i}
-          estimateLineHeight={44}
-          renderLine={(line) => {
-            const entry = line as LogEntry;
-            return (
-              <div
-                className="grid border-b border-border"
-                style={{ gridTemplateColumns: "180px 80px 120px 1fr" }}
-              >
-                <div className="p-3 text-sm text-muted-foreground whitespace-nowrap">
-                  {entry.timestamp}
+      <div className="min-h-0 flex-1 overflow-x-auto border border-border bg-card">
+        <div className="flex h-full min-w-[860px] flex-col">
+          {/* Fixed header */}
+          <div
+            className="grid shrink-0 border-b border-border text-left text-xs font-medium text-muted-foreground"
+            style={{ gridTemplateColumns: "180px 80px 120px 1fr" }}
+          >
+            <div className="p-3">Time</div>
+            <div className="p-3">Level</div>
+            <div className="p-3">Component</div>
+            <div className="p-3">Message</div>
+          </div>
+          {/* Scrollable body */}
+          <VirtualLogList
+            lines={logs}
+            keyFn={(_, i) => i}
+            estimateLineHeight={44}
+            renderLine={(line) => {
+              const entry = line as LogEntry;
+              return (
+                <div
+                  className="grid border-b border-border"
+                  style={{ gridTemplateColumns: "180px 80px 120px 1fr" }}
+                >
+                  <div className="p-3 text-sm text-muted-foreground whitespace-nowrap">
+                    {entry.timestamp}
+                  </div>
+                  <div className="p-3 text-sm">
+                    <Badge
+                      variant={LEVEL_VARIANT[entry.level] ?? "secondary"}
+                      className="text-xs uppercase"
+                    >
+                      {entry.level}
+                    </Badge>
+                  </div>
+                  <div className="p-3 text-sm text-muted-foreground">
+                    {entry.component || "daemon"}
+                  </div>
+                  <div className="p-3 text-sm">{formatMessage(entry)}</div>
                 </div>
-                <div className="p-3 text-sm">
-                  <Badge
-                    variant={LEVEL_VARIANT[entry.level] ?? "secondary"}
-                    className="text-xs uppercase"
-                  >
-                    {entry.level}
-                  </Badge>
-                </div>
-                <div className="p-3 text-sm text-muted-foreground">
-                  {entry.component || "daemon"}
-                </div>
-                <div className="p-3 text-sm">{formatMessage(entry)}</div>
+              );
+            }}
+            className="min-h-0 flex-1 overflow-y-auto"
+            emptyState={
+              <div className="text-center py-16 text-sm text-muted-foreground">
+                Waiting for logs...
               </div>
-            );
-          }}
-          className="flex-1 min-h-0 overflow-y-auto"
-          emptyState={
-            <div className="text-center py-16 text-sm text-muted-foreground">
-              Waiting for logs...
-            </div>
-          }
-        />
+            }
+          />
+        </div>
       </div>
     </div>
   );

@@ -188,7 +188,7 @@ export function SettingsTab({
         <div
           className={cn("border border-border bg-card", host.type !== "proxy" && "md:col-span-2")}
         >
-          <div className="flex items-center justify-between p-4">
+          <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="font-semibold text-sm">Access List</h2>
               <p className="text-xs text-muted-foreground">
@@ -199,7 +199,7 @@ export function SettingsTab({
               value={accessListId || "__none__"}
               onValueChange={(v) => onAccessListChange(v === "__none__" ? "" : v)}
             >
-              <SelectTrigger className="w-48 shrink-0">
+              <SelectTrigger className="w-full shrink-0 sm:w-48">
                 <SelectValue placeholder="None" />
               </SelectTrigger>
               <SelectContent>
@@ -216,7 +216,7 @@ export function SettingsTab({
       </div>
 
       <div className="border border-border bg-card">
-        <div className="flex items-center justify-between p-4 border-b border-border">
+        <div className="flex flex-col gap-3 border-b border-border p-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="font-semibold text-sm">Config Template</h2>
             <p className="text-xs text-muted-foreground">
@@ -226,7 +226,7 @@ export function SettingsTab({
           {canManage && (
             <Button
               size="sm"
-              className="h-7 text-xs px-2.5"
+              className="h-7 w-fit px-2.5 text-xs"
               onClick={onSaveTemplateSettings}
               disabled={!hasTemplateSettingsChanged || isSavingTemplate}
             >
@@ -257,130 +257,138 @@ export function SettingsTab({
           </div>
 
           {editableBuiltinVariables.length > 0 || selectedTemplate?.variables?.length ? (
-            <div className="border border-border">
-              <div className="grid grid-cols-[minmax(0,14rem)_minmax(0,1fr)_minmax(0,12rem)] border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                <div className="px-3 py-2">Variable</div>
-                <div className="px-3 py-2 border-l border-border">Description</div>
-                <div className="px-3 py-2 border-l border-border">Value</div>
-              </div>
-              <div>
-                {editableBuiltinVariables.map((variable) => (
-                  <div
-                    key={variable.name}
-                    className="grid grid-cols-[minmax(0,14rem)_minmax(0,1fr)_minmax(0,12rem)] border-b border-border last:border-b-0"
-                  >
-                    <div className="px-3 py-2 min-w-0 flex items-center">
-                      <p className="text-sm font-medium truncate">{variable.name}</p>
-                    </div>
-                    <div className="border-l border-border">
-                      <div className="flex h-9 items-center px-3 min-w-0">
-                        <p className="text-sm font-medium truncate">{variable.description}</p>
+            <div className="overflow-x-auto border border-border">
+              <div className="min-w-[680px]">
+                <div className="grid grid-cols-[minmax(0,14rem)_minmax(0,1fr)_minmax(0,12rem)] border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  <div className="px-3 py-2">Variable</div>
+                  <div className="px-3 py-2 border-l border-border">Description</div>
+                  <div className="px-3 py-2 border-l border-border">Value</div>
+                </div>
+                <div>
+                  {editableBuiltinVariables.map((variable) => (
+                    <div
+                      key={variable.name}
+                      className="grid grid-cols-[minmax(0,14rem)_minmax(0,1fr)_minmax(0,12rem)] border-b border-border last:border-b-0"
+                    >
+                      <div className="px-3 py-2 min-w-0 flex items-center">
+                        <p className="text-sm font-medium truncate">{variable.name}</p>
+                      </div>
+                      <div className="border-l border-border">
+                        <div className="flex h-9 items-center px-3 min-w-0">
+                          <p className="text-sm font-medium truncate">{variable.description}</p>
+                        </div>
+                      </div>
+                      <div className="border-l border-border">
+                        {variable.name === "forwardScheme" ? (
+                          <Select
+                            value={templateForwardScheme}
+                            onValueChange={(value) =>
+                              setTemplateForwardScheme(value as ForwardScheme)
+                            }
+                          >
+                            <SelectTrigger className="h-9 text-xs border-0 rounded-none shadow-none focus:ring-1 focus:ring-inset focus:ring-ring">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="http">http</SelectItem>
+                              <SelectItem value="https">https</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        ) : variable.name === "forwardHost" ? (
+                          <Input
+                            value={templateForwardHost}
+                            onChange={(e) => setTemplateForwardHost(e.target.value)}
+                            className="h-9 text-xs border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+                          />
+                        ) : variable.name === "forwardPort" ? (
+                          <NumericInput
+                            value={templateForwardPort}
+                            onChange={(value) => setTemplateForwardPort(value)}
+                            min={1}
+                            max={65535}
+                            className="h-9 text-xs border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+                          />
+                        ) : variable.name === "redirectUrl" ? (
+                          <Input
+                            value={templateRedirectUrl}
+                            onChange={(e) => setTemplateRedirectUrl(e.target.value)}
+                            className="h-9 text-xs border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+                          />
+                        ) : (
+                          <NumericInput
+                            value={templateRedirectStatusCode}
+                            onChange={(value) => setTemplateRedirectStatusCode(value)}
+                            min={300}
+                            max={399}
+                            className="h-9 text-xs border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+                          />
+                        )}
                       </div>
                     </div>
-                    <div className="border-l border-border">
-                      {variable.name === "forwardScheme" ? (
-                        <Select
-                          value={templateForwardScheme}
-                          onValueChange={(value) =>
-                            setTemplateForwardScheme(value as ForwardScheme)
-                          }
-                        >
-                          <SelectTrigger className="h-9 text-xs border-0 rounded-none shadow-none focus:ring-1 focus:ring-inset focus:ring-ring">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="http">http</SelectItem>
-                            <SelectItem value="https">https</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      ) : variable.name === "forwardHost" ? (
-                        <Input
-                          value={templateForwardHost}
-                          onChange={(e) => setTemplateForwardHost(e.target.value)}
-                          className="h-9 text-xs border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
-                        />
-                      ) : variable.name === "forwardPort" ? (
-                        <NumericInput
-                          value={templateForwardPort}
-                          onChange={(value) => setTemplateForwardPort(value)}
-                          min={1}
-                          max={65535}
-                          className="h-9 text-xs border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
-                        />
-                      ) : variable.name === "redirectUrl" ? (
-                        <Input
-                          value={templateRedirectUrl}
-                          onChange={(e) => setTemplateRedirectUrl(e.target.value)}
-                          className="h-9 text-xs border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
-                        />
-                      ) : (
-                        <NumericInput
-                          value={templateRedirectStatusCode}
-                          onChange={(value) => setTemplateRedirectStatusCode(value)}
-                          min={300}
-                          max={399}
-                          className="h-9 text-xs border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
-                        />
-                      )}
-                    </div>
-                  </div>
-                ))}
+                  ))}
 
-                {selectedTemplate?.variables?.map((variable) => (
-                  <div
-                    key={variable.name}
-                    className="grid grid-cols-[minmax(0,14rem)_minmax(0,1fr)_minmax(0,12rem)] border-b border-border last:border-b-0"
-                  >
-                    <div className="px-3 py-2 min-w-0 flex items-center">
-                      <p className="text-sm font-medium truncate">{variable.name}</p>
-                    </div>
-                    <div className="border-l border-border">
-                      <div className="flex h-9 items-center px-3 min-w-0">
-                        <p className="text-sm font-medium truncate">
-                          {variable.description || "—"}
-                        </p>
+                  {selectedTemplate?.variables?.map((variable) => (
+                    <div
+                      key={variable.name}
+                      className="grid grid-cols-[minmax(0,14rem)_minmax(0,1fr)_minmax(0,12rem)] border-b border-border last:border-b-0"
+                    >
+                      <div className="px-3 py-2 min-w-0 flex items-center">
+                        <p className="text-sm font-medium truncate">{variable.name}</p>
+                      </div>
+                      <div className="border-l border-border">
+                        <div className="flex h-9 items-center px-3 min-w-0">
+                          <p className="text-sm font-medium truncate">
+                            {variable.description || "—"}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="border-l border-border">
+                        {variable.type === "boolean" ? (
+                          <Select
+                            value={
+                              templateVariables[variable.name] === true ||
+                              templateVariables[variable.name] === "true"
+                                ? "true"
+                                : "false"
+                            }
+                            onValueChange={(value) =>
+                              onTemplateVariableChange(variable.name, value === "true")
+                            }
+                          >
+                            <SelectTrigger className="h-9 text-xs border-0 rounded-none shadow-none focus:ring-1 focus:ring-inset focus:ring-ring">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="true">Enabled</SelectItem>
+                              <SelectItem value="false">Disabled</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        ) : variable.type === "number" ? (
+                          <NumericInput
+                            value={Number(
+                              templateVariables[variable.name] ?? variable.default ?? 0
+                            )}
+                            onChange={(value) => onTemplateVariableChange(variable.name, value)}
+                            className="h-9 text-xs border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+                          />
+                        ) : (
+                          <Input
+                            value={String(
+                              templateVariables[variable.name] ?? variable.default ?? ""
+                            )}
+                            onChange={(e) =>
+                              onTemplateVariableChange(variable.name, e.target.value)
+                            }
+                            placeholder={
+                              variable.default !== undefined ? String(variable.default) : ""
+                            }
+                            className="h-9 text-xs border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+                          />
+                        )}
                       </div>
                     </div>
-                    <div className="border-l border-border">
-                      {variable.type === "boolean" ? (
-                        <Select
-                          value={
-                            templateVariables[variable.name] === true ||
-                            templateVariables[variable.name] === "true"
-                              ? "true"
-                              : "false"
-                          }
-                          onValueChange={(value) =>
-                            onTemplateVariableChange(variable.name, value === "true")
-                          }
-                        >
-                          <SelectTrigger className="h-9 text-xs border-0 rounded-none shadow-none focus:ring-1 focus:ring-inset focus:ring-ring">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="true">Enabled</SelectItem>
-                            <SelectItem value="false">Disabled</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      ) : variable.type === "number" ? (
-                        <NumericInput
-                          value={Number(templateVariables[variable.name] ?? variable.default ?? 0)}
-                          onChange={(value) => onTemplateVariableChange(variable.name, value)}
-                          className="h-9 text-xs border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
-                        />
-                      ) : (
-                        <Input
-                          value={String(templateVariables[variable.name] ?? variable.default ?? "")}
-                          onChange={(e) => onTemplateVariableChange(variable.name, e.target.value)}
-                          placeholder={
-                            variable.default !== undefined ? String(variable.default) : ""
-                          }
-                          className="h-9 text-xs border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
-                        />
-                      )}
-                    </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             </div>
           ) : null}
@@ -410,12 +418,12 @@ export function SettingsTab({
             onChange={(v) => onToggle("http2Support", v)}
             disabled={!host.sslEnabled}
           />
-          <div className="flex items-center justify-between px-4 py-3">
+          <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <span className="text-sm font-medium">SSL Certificate</span>
               <p className="text-xs text-muted-foreground">Select the certificate for HTTPS</p>
             </div>
-            <div className="w-56 shrink-0">
+            <div className="w-full shrink-0 sm:w-56">
               <Select
                 value={host.sslCertificateId || "__none__"}
                 onValueChange={(v) => onSslCertificateChange(v === "__none__" ? "" : v)}
@@ -576,7 +584,7 @@ export function SettingsTab({
       <div className="border border-border bg-card">
         <div
           className={cn(
-            "flex items-center justify-between p-4",
+            "flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between",
             customHeaders.length > 0 && "border-b border-border"
           )}
         >
@@ -586,13 +594,13 @@ export function SettingsTab({
               Add custom HTTP headers to proxied requests
             </p>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex shrink-0 items-center gap-2">
             {canManage && (
               <>
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-7 text-xs px-2.5"
+                  className="h-7 px-2.5 text-xs"
                   onClick={() => setCustomHeaders([...customHeaders, { name: "", value: "" }])}
                 >
                   <Plus className="h-3.5 w-3.5" />
@@ -600,7 +608,7 @@ export function SettingsTab({
                 </Button>
                 <Button
                   size="sm"
-                  className="h-7 text-xs px-2.5"
+                  className="h-7 px-2.5 text-xs"
                   onClick={onSaveCustom}
                   disabled={!hasHeadersChanged || isSavingCustom}
                 >
@@ -626,7 +634,7 @@ export function SettingsTab({
                   animate={{ opacity: 1, height: "auto" }}
                   exit={{ opacity: 0, height: 0 }}
                   transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
-                  className="flex gap-2"
+                  className="flex flex-col gap-2 sm:flex-row"
                 >
                   <Input
                     placeholder="Header name"
@@ -664,7 +672,7 @@ export function SettingsTab({
       <div className="border border-border bg-card">
         <div
           className={cn(
-            "flex items-center justify-between p-4",
+            "flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between",
             customRewrites.length > 0 && "border-b border-border"
           )}
         >
@@ -672,13 +680,13 @@ export function SettingsTab({
             <h2 className="font-semibold text-sm">URL Rewrites</h2>
             <p className="text-xs text-muted-foreground">Rewrite request paths before proxying</p>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex shrink-0 items-center gap-2">
             {canManage && (
               <>
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-7 text-xs px-2.5"
+                  className="h-7 px-2.5 text-xs"
                   onClick={() =>
                     setCustomRewrites([
                       ...customRewrites,
@@ -691,7 +699,7 @@ export function SettingsTab({
                 </Button>
                 <Button
                   size="sm"
-                  className="h-7 text-xs px-2.5"
+                  className="h-7 px-2.5 text-xs"
                   onClick={onSaveCustom}
                   disabled={!hasRewritesChanged || isSavingCustom}
                 >
@@ -717,7 +725,7 @@ export function SettingsTab({
                   animate={{ opacity: 1, height: "auto" }}
                   exit={{ opacity: 0, height: 0 }}
                   transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
-                  className="flex gap-2"
+                  className="flex flex-col gap-2 sm:flex-row"
                 >
                   <Input
                     placeholder="Source path"
@@ -745,7 +753,7 @@ export function SettingsTab({
                       setCustomRewrites(next);
                     }}
                   >
-                    <SelectTrigger className="w-36">
+                    <SelectTrigger className="w-full sm:w-36">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>

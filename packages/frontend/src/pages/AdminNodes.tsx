@@ -6,6 +6,7 @@ import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
+import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
 import { SearchFilterBar } from "@/components/common/SearchFilterBar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -202,12 +203,26 @@ export function AdminNodes() {
               {total} node{total !== 1 ? "s" : ""} registered
             </p>
           </div>
-          {hasScope("nodes:create") && (
-            <Button onClick={() => setEnrollDialogOpen(true)}>
-              <Plus className="h-4 w-4 mr-1" />
-              Add Node
-            </Button>
-          )}
+          <ResponsiveHeaderActions
+            actions={
+              hasScope("nodes:create")
+                ? [
+                    {
+                      label: "Add Node",
+                      icon: <Plus className="h-4 w-4" />,
+                      onClick: () => setEnrollDialogOpen(true),
+                    },
+                  ]
+                : []
+            }
+          >
+            {hasScope("nodes:create") && (
+              <Button onClick={() => setEnrollDialogOpen(true)}>
+                <Plus className="h-4 w-4 mr-1" />
+                Add Node
+              </Button>
+            )}
+          </ResponsiveHeaderActions>
         </div>
 
         <SearchFilterBar
@@ -240,8 +255,8 @@ export function AdminNodes() {
         />
 
         {nodes.length > 0 ? (
-          <div className="border border-border rounded-lg bg-card">
-            <div className="divide-y divide-border -mb-px [&>*:last-child]:border-b [&>*:last-child]:border-border">
+          <div className="overflow-x-auto border border-border rounded-lg bg-card md:overflow-x-visible">
+            <div className="min-w-[720px] divide-y divide-border -mb-px md:min-w-0 [&>*:last-child]:border-b [&>*:last-child]:border-border">
               {nodes.map((node) => {
                 const nodeUpdating = isNodeUpdating(node);
                 const canOpenDetails =

@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
+import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
 import { CreateProxyHostDialog } from "@/components/proxy/CreateProxyHostDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -667,7 +668,35 @@ export function ProxyHostDetail() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <ResponsiveHeaderActions
+            actions={[
+              {
+                label: "Pin",
+                icon: <Pin className="h-4 w-4" />,
+                onClick: () => setPinOpen(true),
+              },
+              ...(hasScope("proxy:edit")
+                ? [
+                    {
+                      label: "Edit",
+                      icon: <Pencil className="h-4 w-4" />,
+                      onClick: () => setEditOpen(true),
+                    },
+                  ]
+                : []),
+              ...(!isSystemHost && hasScope("proxy:delete")
+                ? [
+                    {
+                      label: "Delete",
+                      icon: <Trash2 className="h-4 w-4" />,
+                      onClick: handleDelete,
+                      destructive: true,
+                      separatorBefore: true,
+                    },
+                  ]
+                : []),
+            ]}
+          >
             <Button variant="outline" size="icon" onClick={() => setPinOpen(true)}>
               <Pin className="h-4 w-4" />
             </Button>
@@ -683,7 +712,7 @@ export function ProxyHostDetail() {
                 Delete
               </Button>
             )}
-          </div>
+          </ResponsiveHeaderActions>
         </div>
 
         {/* ── Health bars (only when healthCheckEnabled) ──────── */}

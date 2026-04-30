@@ -19,6 +19,7 @@ import {
   deriveAllowedResourceIdsByScope,
   hasSelectableScopeBase,
   parseScopesForForm,
+  requiresResourceSelection,
 } from "@/lib/scope-utils";
 import { formatDate, formatRelativeDate } from "@/lib/utils";
 import { api } from "@/services/api";
@@ -51,11 +52,29 @@ export function ApiTokensSection({
   const [isCreating, setIsCreating] = useState(false);
   const [tokenScopeSearch, setTokenScopeSearch] = useState("");
   const [editingToken, setEditingToken] = useState<ApiToken | null>(null);
+  const [initialResourceLimitedScopes, setInitialResourceLimitedScopes] = useState<string[]>([]);
   const userScopes = useMemo(() => user?.scopes ?? [], [user?.scopes]);
   const allowedResourceIdsByScope = useMemo(
     () => deriveAllowedResourceIdsByScope(userScopes),
     [userScopes]
   );
+  const finalTokenScopes = useMemo(
+    () => buildFinalScopes(selectedScopes, resourceScopes),
+    [resourceScopes, selectedScopes]
+  );
+  const initialTokenScopes = useMemo(() => {
+    if (!editingToken) return [];
+    const parsedInitialScopes = parseScopesForForm(editingToken.scopes);
+    return buildFinalScopes(parsedInitialScopes.baseScopes, parsedInitialScopes.resources);
+  }, [editingToken]);
+  const tokenScopesChanged = useMemo(() => {
+    if (!editingToken) return false;
+    return initialTokenScopes.join("\n") !== finalTokenScopes.join("\n");
+  }, [editingToken, finalTokenScopes, initialTokenScopes]);
+  const tokenChanged = useMemo(() => {
+    if (!editingToken) return false;
+    return newTokenName.trim() !== editingToken.name || tokenScopesChanged;
+  }, [editingToken, newTokenName, tokenScopesChanged]);
 
   const loadTokens = useCallback(async () => {
     try {
@@ -76,21 +95,43 @@ export function ApiTokensSection({
     const parsed = parseScopesForForm(token.scopes || []);
     setSelectedScopes(parsed.baseScopes);
     setResourceScopes(parsed.resources);
+    setInitialResourceLimitedScopes(Object.keys(parsed.resources));
     setCreatedSecret(null);
     setTokenScopeSearch("");
     setCreateDialogOpen(true);
   };
 
-  const handleTokenRename = async () => {
+  const validateScopeSelection = () => {
+    for (const scope of selectedScopes) {
+      if (
+        requiresResourceSelection(scope, allowedResourceIdsByScope, initialResourceLimitedScopes) &&
+        (resourceScopes[scope]?.length ?? 0) === 0
+      ) {
+        toast.error(`Select at least one resource for ${scope}`);
+        return false;
+      }
+    }
+    if (finalTokenScopes.length === 0) {
+      toast.error("Select at least one scope");
+      return false;
+    }
+    return true;
+  };
+
+  const handleTokenUpdate = async () => {
     if (!editingToken || !newTokenName.trim()) return;
+    if (!validateScopeSelection()) return;
     try {
-      await api.renameToken(editingToken.id, newTokenName.trim());
-      toast.success("Token renamed");
+      await api.updateToken(editingToken.id, {
+        ...(newTokenName.trim() !== editingToken.name ? { name: newTokenName.trim() } : {}),
+        ...(tokenScopesChanged ? { scopes: finalTokenScopes } : {}),
+      });
+      toast.success("Token updated");
       setCreateDialogOpen(false);
       loadTokens();
       setTimeout(() => setEditingToken(null), 200);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to rename token");
+      toast.error(err instanceof Error ? err.message : "Failed to update token");
     }
   };
 
@@ -99,6 +140,7 @@ export function ApiTokensSection({
     setNewTokenName("");
     setSelectedScopes([]);
     setResourceScopes({});
+    setInitialResourceLimitedScopes([]);
     setCreatedSecret(null);
     setTokenScopeSearch("");
     setCreateDialogOpen(true);
@@ -127,20 +169,10 @@ export function ApiTokensSection({
       toast.error("Token name is required");
       return;
     }
-    for (const scope of selectedScopes) {
-      if (allowedResourceIdsByScope[scope]?.length && (resourceScopes[scope]?.length ?? 0) === 0) {
-        toast.error(`Select at least one resource for ${scope}`);
-        return;
-      }
-    }
-    const finalScopes = buildFinalScopes(selectedScopes, resourceScopes);
-    if (finalScopes.length === 0) {
-      toast.error("Select at least one scope");
-      return;
-    }
+    if (!validateScopeSelection()) return;
     setIsCreating(true);
     try {
-      const result = await api.createToken({ name: newTokenName, scopes: finalScopes });
+      const result = await api.createToken({ name: newTokenName, scopes: finalTokenScopes });
       setCreatedSecret(result.token);
       loadTokens();
       toast.success("API token created");
@@ -188,7 +220,7 @@ export function ApiTokensSection({
               {tokens.map((token) => (
                 <div
                   key={token.id}
-                  className="flex items-center justify-between p-4 gap-4 cursor-pointer hover:bg-accent/50 transition-colors"
+                  className="flex cursor-pointer flex-col gap-3 p-4 transition-colors hover:bg-accent/50 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
                   onClick={() => openTokenEdit(token)}
                 >
                   <div className="flex items-center gap-3 min-w-0">
@@ -214,6 +246,7 @@ export function ApiTokensSection({
                   <Button
                     variant="outline"
                     size="icon"
+                    className="self-start sm:self-auto"
                     onClick={(e) => {
                       e.stopPropagation();
                       handleRevokeToken(token);
@@ -225,7 +258,7 @@ export function ApiTokensSection({
               ))}
             </div>
           ) : (
-            <p className="py-4 text-center text-sm text-muted-foreground">
+            <p className="px-4 py-4 text-center text-sm text-muted-foreground">
               No API tokens created yet
             </p>
           )}
@@ -237,7 +270,10 @@ export function ApiTokensSection({
         open={createDialogOpen}
         onOpenChange={(open) => {
           setCreateDialogOpen(open);
-          if (!open) setTimeout(() => setEditingToken(null), 200);
+          if (!open) {
+            setInitialResourceLimitedScopes([]);
+            setTimeout(() => setEditingToken(null), 200);
+          }
         }}
       >
         <DialogContent className="sm:max-w-2xl">
@@ -245,7 +281,7 @@ export function ApiTokensSection({
             <DialogTitle>{editingToken ? "API Token" : "Create API Token"}</DialogTitle>
             <DialogDescription>
               {editingToken
-                ? "View token scopes or rename"
+                ? "Rename this token or edit its granted scopes"
                 : "Select granular permissions for this token"}
             </DialogDescription>
           </DialogHeader>
@@ -297,17 +333,14 @@ export function ApiTokensSection({
                     className="border-0 border-b border-border rounded-none h-9 text-sm focus-visible:ring-0"
                   />
                   <ScopeList
-                    scopes={
-                      editingToken
-                        ? API_TOKEN_SCOPES.filter((s) => selectedScopes.includes(s.value))
-                        : API_TOKEN_SCOPES.filter((s) =>
-                            hasSelectableScopeBase(userScopes, s.value)
-                          )
-                    }
+                    scopes={API_TOKEN_SCOPES.filter(
+                      (scope) =>
+                        selectedScopes.includes(scope.value) ||
+                        hasSelectableScopeBase(userScopes, scope.value)
+                    )}
                     search={tokenScopeSearch}
                     selected={selectedScopes}
                     onToggle={toggleScope}
-                    readOnly={!!editingToken}
                     resources={resourceScopes}
                     onToggleResource={(scope, caId) => {
                       setResourceScopes((prev) => {
@@ -329,7 +362,7 @@ export function ApiTokensSection({
                   />
                   <div className="border-t border-border px-3 py-2">
                     <p className="text-xs text-muted-foreground">
-                      {selectedScopes.length} scope{selectedScopes.length !== 1 ? "s" : ""}
+                      {finalTokenScopes.length} scope{finalTokenScopes.length !== 1 ? "s" : ""}
                     </p>
                   </div>
                 </div>
@@ -340,15 +373,17 @@ export function ApiTokensSection({
                 </Button>
                 {editingToken ? (
                   <Button
-                    onClick={handleTokenRename}
-                    disabled={!newTokenName.trim() || newTokenName.trim() === editingToken.name}
+                    onClick={handleTokenUpdate}
+                    disabled={
+                      !newTokenName.trim() || !tokenChanged || finalTokenScopes.length === 0
+                    }
                   >
                     Save
                   </Button>
                 ) : (
                   <Button
                     onClick={handleCreateToken}
-                    disabled={isCreating || selectedScopes.length === 0}
+                    disabled={isCreating || finalTokenScopes.length === 0}
                   >
                     {isCreating ? "Creating..." : "Create Token"}
                   </Button>

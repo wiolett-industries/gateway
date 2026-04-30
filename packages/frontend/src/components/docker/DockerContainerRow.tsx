@@ -33,6 +33,7 @@ export interface DockerContainerRowProps {
   onStop: (container: DockerContainerRowData) => void;
   onRestart: (container: DockerContainerRowData) => void;
   onMoveToFolder: (container: DockerContainerRowData) => void;
+  canDrag?: boolean;
   isOverlay?: boolean;
 }
 
@@ -48,13 +49,14 @@ export function DockerContainerRow({
   onStop,
   onRestart,
   onMoveToFolder,
+  canDrag = canReorganize,
   isOverlay,
 }: DockerContainerRowProps) {
   const navigate = useNavigate();
   const { attributes, listeners, setNodeRef, transform, isDragging } = useSortable({
     id: `${container._nodeId}:${container.name}`,
     data: { type: "container", container },
-    disabled: isOverlay || !canReorganize || container.folderIsSystem,
+    disabled: isOverlay || !canDrag || container.folderIsSystem,
   });
 
   const style = {
@@ -87,8 +89,8 @@ export function DockerContainerRow({
             : "cursor-default opacity-80"
       }`}
       onClick={handleRowClick}
-      {...(isOverlay ? {} : attributes)}
-      {...(isOverlay ? {} : listeners)}
+      {...(isOverlay || !canDrag ? {} : attributes)}
+      {...(isOverlay || !canDrag ? {} : listeners)}
     >
       <td className="p-3" style={{ paddingLeft: `${depth * 24 + 12}px` }}>
         <div className="flex items-center gap-3 min-w-0">

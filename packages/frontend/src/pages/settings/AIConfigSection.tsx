@@ -114,7 +114,7 @@ export function AIConfigSection() {
           className={`transition-opacity duration-200 ${!aiConfig.enabled ? "opacity-50 pointer-events-none" : ""}`}
         >
           {/* Reasoning Effort */}
-          <div className="border-t border-border px-4 py-3 flex items-center justify-between gap-4">
+          <div className="flex flex-col gap-3 border-t border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
             <div>
               <p className="text-sm font-medium">Reasoning effort</p>
               <p className="text-xs text-muted-foreground mt-0.5">
@@ -122,7 +122,7 @@ export function AIConfigSection() {
                 non-reasoning models.
               </p>
             </div>
-            <div className="flex gap-0 border border-border w-fit shrink-0">
+            <div className="flex w-fit shrink-0 gap-0 border border-border">
               {(["none", "low", "medium", "high"] as const).map((level) => (
                 <button
                   key={level}
@@ -282,7 +282,7 @@ export function AIConfigSection() {
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                 Tools
               </p>
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
                   <p className="text-sm font-medium">Tool Access</p>
                   <p className="text-xs text-muted-foreground mt-0.5">
@@ -294,7 +294,7 @@ export function AIConfigSection() {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-7 text-xs shrink-0"
+                  className="h-7 w-fit shrink-0 text-xs"
                   onClick={() => setAiToolsModalOpen(true)}
                 >
                   Manage

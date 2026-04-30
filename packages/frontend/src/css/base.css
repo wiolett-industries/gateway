@@ -71,3 +71,8 @@ input[type="number"] {
 }
 
 ::selection { background: var(--color-foreground); color: var(--color-background); }
+
+input.audit-date-input::selection {
+  background: var(--color-foreground);
+  color: var(--color-background);
+}

@@ -10,6 +10,12 @@ const UUID_SEGMENT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 const HEX_SEGMENT = /^[0-9a-f]{16,}$/i;
 const TOKENISH_SEGMENT = /^[A-Za-z0-9_-]{16,}$/;
 
+const FALLBACK_AUDIT_SKIP_ROUTES: Array<{ method: string; pattern: RegExp }> = [
+  { method: 'POST', pattern: /^\/api\/logging\/ingest$/ },
+  { method: 'POST', pattern: /^\/api\/logging\/ingest\/batch$/ },
+  { method: 'POST', pattern: /^\/api\/logging\/environments\/[^/]+\/search$/ },
+];
+
 interface FallbackAuditTarget {
   action: string;
   resourceType: string;
@@ -269,11 +275,19 @@ function shouldEmitFallbackAudit(c: Parameters<MiddlewareHandler<AppEnv>>[0]): b
     return false;
   }
 
+  if (shouldSkipFallbackAudit(c.req.method, c.req.path)) {
+    return false;
+  }
+
   if (c.res.status < 200 || c.res.status >= 400) {
     return false;
   }
 
   return !getAuditRequestContext()?.auditEmitted;
+}
+
+function shouldSkipFallbackAudit(method: string, path: string): boolean {
+  return FALLBACK_AUDIT_SKIP_ROUTES.some((route) => route.method === method && route.pattern.test(path));
 }
 
 function resolveFallbackAuditTarget(method: string, path: string): FallbackAuditTarget {
@@ -345,4 +359,5 @@ export const auditContextMiddleware: MiddlewareHandler<AppEnv> = async (c, next)
 export const __testOnly = {
   resolveFallbackAuditTarget,
   sanitizeAuditPath,
+  shouldSkipFallbackAudit,
 };

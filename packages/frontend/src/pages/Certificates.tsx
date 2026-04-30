@@ -5,6 +5,7 @@ import { CertificateIssueDialog } from "@/components/certificates/CertificateIss
 import { EmptyState } from "@/components/common/EmptyState";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
+import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
 import { SearchFilterBar } from "@/components/common/SearchFilterBar";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { Badge } from "@/components/ui/badge";
@@ -95,12 +96,26 @@ export function Certificates() {
             <h1 className="text-2xl font-bold">Certificates</h1>
             <p className="text-sm text-muted-foreground">{total} certificates total</p>
           </div>
-          {hasScope("pki:cert:issue") && (
-            <Button onClick={() => setIssueDialogOpen(true)}>
-              <Plus className="h-4 w-4" />
-              Issue Certificate
-            </Button>
-          )}
+          <ResponsiveHeaderActions
+            actions={
+              hasScope("pki:cert:issue")
+                ? [
+                    {
+                      label: "Issue Certificate",
+                      icon: <Plus className="h-4 w-4" />,
+                      onClick: () => setIssueDialogOpen(true),
+                    },
+                  ]
+                : []
+            }
+          >
+            {hasScope("pki:cert:issue") && (
+              <Button onClick={() => setIssueDialogOpen(true)}>
+                <Plus className="h-4 w-4" />
+                Issue Certificate
+              </Button>
+            )}
+          </ResponsiveHeaderActions>
         </div>
 
         {/* Search and filters */}

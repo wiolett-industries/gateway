@@ -210,16 +210,11 @@ export function createControlHandlers(deps: GrpcServerDeps) {
               });
             }
 
-            await deps.auditService.log({
-              userId: null,
-              action: 'node.connected',
-              resourceType: 'node',
-              resourceId: nodeId,
-              details: {
-                hostname: msg.register.hostname,
-                daemonVersion: msg.register.daemonVersion,
-                nginxVersion: msg.register.nginxVersion,
-              },
+            logger.info('Node connected', {
+              nodeId,
+              hostname: msg.register.hostname,
+              daemonVersion: msg.register.daemonVersion,
+              nginxVersion: msg.register.nginxVersion,
             });
 
             // Enable daemon log streaming on connect (fire-and-forget via stream)

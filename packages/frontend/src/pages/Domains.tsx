@@ -15,6 +15,7 @@ import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
+import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
 import { SearchFilterBar } from "@/components/common/SearchFilterBar";
 import { AddDomainDialog } from "@/components/domains/AddDomainDialog";
 import { DnsStatusBadge } from "@/components/domains/DnsStatusBadge";
@@ -151,19 +152,33 @@ export function Domains() {
     <PageTransition>
       <div className="h-full overflow-y-auto p-6 space-y-4">
         {/* Header */}
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
             <h1 className="text-2xl font-bold">Domains</h1>
             <p className="text-sm text-muted-foreground">
               Manage domains, track DNS status, and issue certificates
             </p>
           </div>
-          {canEdit && (
-            <Button onClick={() => setAddDialogOpen(true)}>
-              <Plus className="h-4 w-4" />
-              Add Domain
-            </Button>
-          )}
+          <ResponsiveHeaderActions
+            actions={
+              canEdit
+                ? [
+                    {
+                      label: "Add Domain",
+                      icon: <Plus className="h-4 w-4" />,
+                      onClick: () => setAddDialogOpen(true),
+                    },
+                  ]
+                : []
+            }
+          >
+            {canEdit && (
+              <Button onClick={() => setAddDialogOpen(true)}>
+                <Plus className="h-4 w-4" />
+                Add Domain
+              </Button>
+            )}
+          </ResponsiveHeaderActions>
         </div>
 
         {/* Search and filters */}

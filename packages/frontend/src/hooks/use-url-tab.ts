@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 
 /**
  * Syncs active tab state with the URL path.
@@ -10,8 +10,14 @@ export function useUrlTab(
   defaultTab: string,
   buildUrl: (tab: string) => string
 ): [string, (tab: string) => void] {
+  const navigate = useNavigate();
   const { tab: tabParam } = useParams<{ tab?: string }>();
-  const routeTab = tabParam && validTabs.includes(tabParam) ? tabParam : defaultTab;
+  const validTabsKey = validTabs.join("\0");
+  const validTabSet = useMemo(
+    () => new Set(validTabsKey ? validTabsKey.split("\0") : []),
+    [validTabsKey]
+  );
+  const routeTab = tabParam && validTabSet.has(tabParam) ? tabParam : defaultTab;
   const [activeTab, setActiveTabState] = useState(routeTab);
   const lastRouteTabRef = useRef(tabParam);
 
@@ -22,12 +28,17 @@ export function useUrlTab(
       return;
     }
 
-    setActiveTabState((current) => (validTabs.includes(current) ? current : routeTab));
-  }, [routeTab, tabParam, validTabs]);
+    setActiveTabState((current) => (validTabSet.has(current) ? current : routeTab));
+  }, [routeTab, tabParam, validTabSet]);
 
-  const setActiveTab = (tab: string) => {
-    setActiveTabState(tab);
-    window.history.replaceState(null, "", buildUrl(tab));
-  };
+  const setActiveTab = useCallback(
+    (tab: string) => {
+      if (!validTabSet.has(tab)) return;
+      setActiveTabState(tab);
+      navigate(buildUrl(tab), { replace: true });
+    },
+    [buildUrl, navigate, validTabSet]
+  );
+
   return [activeTab, setActiveTab];
 }

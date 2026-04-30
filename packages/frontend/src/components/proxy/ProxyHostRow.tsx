@@ -34,6 +34,7 @@ export interface ProxyHostRowProps {
   onToggle: (id: string, currentEnabled: boolean) => void;
   togglingIds: Set<string>;
   onMoveToFolder: (hostId: string) => void;
+  canDrag?: boolean;
   isOverlay?: boolean;
 }
 
@@ -43,16 +44,18 @@ export function ProxyHostRow({
   onToggle,
   togglingIds,
   onMoveToFolder,
+  canDrag,
   isOverlay,
 }: ProxyHostRowProps) {
   const navigate = useNavigate();
   const { hasScope } = useAuthStore();
   const canViewHost = hasScope("proxy:view") || hasScope(`proxy:view:${host.id}`);
   const canEditHost = hasScope("proxy:edit") || hasScope(`proxy:edit:${host.id}`);
+  const effectiveCanDrag = canDrag ?? canEditHost;
   const { attributes, listeners, setNodeRef, transform, isDragging } = useSortable({
     id: host.id,
     data: { type: "host", host },
-    disabled: isOverlay || !canEditHost,
+    disabled: isOverlay || !effectiveCanDrag,
   });
 
   const style = {
@@ -77,8 +80,8 @@ export function ProxyHostRow({
             : "cursor-default opacity-80"
       }`}
       onClick={handleRowClick}
-      {...(isOverlay ? {} : attributes)}
-      {...(isOverlay ? {} : listeners)}
+      {...(isOverlay || !effectiveCanDrag ? {} : attributes)}
+      {...(isOverlay || !effectiveCanDrag ? {} : listeners)}
     >
       <td className="p-3" style={{ paddingLeft: `${depth * 24 + 12}px` }}>
         <div>

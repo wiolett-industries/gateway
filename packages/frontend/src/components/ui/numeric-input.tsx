@@ -55,7 +55,7 @@ const NumericInput = React.forwardRef<HTMLInputElement, NumericInputProps>(
         min={min}
         max={max}
         className={cn(
-          "flex h-11 w-full border bg-transparent px-3 py-1 text-base transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 disabled:cursor-not-allowed disabled:opacity-50 md:h-9 md:text-sm",
+          "flex h-9 w-full border bg-transparent px-3 py-1 text-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 disabled:cursor-not-allowed disabled:opacity-50",
           isInvalid
             ? "border-destructive focus-visible:ring-destructive"
             : "border-input focus-visible:ring-ring",

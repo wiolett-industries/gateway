@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CreateTokenSchema } from './tokens.schemas.js';
+import { CreateTokenSchema, UpdateTokenSchema } from './tokens.schemas.js';
 
 describe('CreateTokenSchema', () => {
   it('rejects user-only AI scopes for API tokens', () => {
@@ -45,5 +45,22 @@ describe('CreateTokenSchema', () => {
     expect(result.error?.issues.map((issue) => issue.message)).toContain(
       'One or more scopes cannot be granted to API tokens'
     );
+  });
+});
+
+describe('UpdateTokenSchema', () => {
+  it('allows updating scopes without renaming the token', () => {
+    const result = UpdateTokenSchema.safeParse({
+      scopes: ['nodes:list', 'proxy:list'],
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects an update without any fields', () => {
+    const result = UpdateTokenSchema.safeParse({});
+
+    expect(result.success).toBe(false);
+    expect(result.error?.issues.map((issue) => issue.message)).toContain('At least one field is required');
   });
 });

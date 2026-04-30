@@ -36,6 +36,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useIsMobile } from "@/hooks/use-is-mobile";
 import { useRealtime } from "@/hooks/use-realtime";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
@@ -46,10 +47,17 @@ import { isNodeIncompatible } from "@/types";
 import { DockerDeployDialog } from "./DockerDeployDialog";
 import { containerDisplayName } from "./docker-detail/helpers";
 
-function UngroupedDropZone({ children }: { children: React.ReactNode }) {
+function UngroupedDropZone({
+  children,
+  disabled,
+}: {
+  children: React.ReactNode;
+  disabled?: boolean;
+}) {
   const { setNodeRef, isOver } = useDroppable({
     id: "docker-folder-ungrouped",
     data: { type: "folder", folderId: null, isSystem: false },
+    disabled,
   });
 
   return (
@@ -161,6 +169,7 @@ export function DockerContainers({
   const [moveDialogContainer, setMoveDialogContainer] = useState<DockerContainerRowData | null>(
     null
   );
+  const isMobile = useIsMobile();
   const [activeDrag, setActiveDrag] = useState<DragEndEvent["active"] | null>(null);
   const [optimisticContainers, setOptimisticContainers] = useState<DockerContainerRowData[] | null>(
     null
@@ -314,6 +323,7 @@ export function DockerContainers({
 
   const hasActiveFilters = filters.search !== "" || filters.status !== "all";
   const canManageFolders = !fixedNodeId && hasScopedAccess("docker:containers:edit");
+  const canDragFolders = canManageFolders && !isMobile;
   const canManageRuntime = hasScopedAccess("docker:containers:manage");
   const showActionsColumn = canManageFolders || canManageRuntime;
   const showNodeColumn = !fixedNodeId;
@@ -749,99 +759,138 @@ export function DockerContainers({
             onDragEnd={(event) => void handleDragEnd(event)}
             onDragCancel={() => setActiveDrag(null)}
           >
-            <div className="border border-border">
-              <table className="w-full" style={{ tableLayout: "fixed" }}>
-                {colGroup}
-                <thead className="border-b border-border bg-muted/40">
-                  <tr className="text-left">
-                    <th className="p-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                      Name
-                    </th>
-                    <th className="p-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                      Image
-                    </th>
-                    {showNodeColumn && (
+            <div className="overflow-x-auto border border-border">
+              <div className="min-w-[900px]">
+                <table className="w-full" style={{ tableLayout: "fixed" }}>
+                  {colGroup}
+                  <thead className="border-b border-border bg-muted/40">
+                    <tr className="text-left">
                       <th className="p-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                        Node
+                        Name
                       </th>
-                    )}
-                    <th className="p-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                      Status
-                    </th>
-                    <th className="p-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                      Health
-                    </th>
-                    <th className="p-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                      Created
-                    </th>
-                    {showActionsColumn && (
-                      <th className="p-3 text-xs font-medium uppercase tracking-wider text-muted-foreground text-right">
-                        Actions
+                      <th className="p-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                        Image
                       </th>
-                    )}
-                  </tr>
-                </thead>
-              </table>
+                      {showNodeColumn && (
+                        <th className="p-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                          Node
+                        </th>
+                      )}
+                      <th className="p-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                        Status
+                      </th>
+                      <th className="p-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                        Health
+                      </th>
+                      <th className="p-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                        Created
+                      </th>
+                      {showActionsColumn && (
+                        <th className="p-3 text-xs font-medium uppercase tracking-wider text-muted-foreground text-right">
+                          Actions
+                        </th>
+                      )}
+                    </tr>
+                  </thead>
+                </table>
 
-              {folderTree.length > 0 && (
-                <SortableContext
-                  items={folderTree.map((folder) => `docker-folder-${folder.id}`)}
-                  strategy={verticalListSortingStrategy}
-                >
-                  {folderTree.map((folder) => (
-                    <DockerFolderGroup
-                      key={folder.id}
-                      folder={folder}
-                      depth={0}
-                      expanded={fixedNodeId ? true : expandedFolderIds.has(folder.id)}
-                      onToggle={fixedNodeId ? () => {} : () => toggleFolder(folder.id)}
-                      onRename={handleRenameFolder}
-                      onDelete={handleDeleteFolder}
-                      onRequestCreateSubfolder={(parentId) => {
-                        setCreateFolderParentId(parentId);
-                        setCreateFolderOpen(true);
-                      }}
-                      onStart={handleStart}
-                      onStop={handleStop}
-                      onRestart={handleRestart}
-                      actionLoading={actionLoading}
-                      onMoveContainerToFolder={setMoveDialogContainer}
-                      expandedFolderIds={expandedFolderIds}
-                      onToggleFolder={toggleFolder}
-                      canManage={canManageContainer}
-                      canReorganize={canReorganizeContainer}
-                      canView={canViewContainer}
-                      canManageFolders={canManageFolders}
-                      collapsible={!fixedNodeId}
-                      showNode={showNodeColumn}
-                      colGroup={colGroup}
-                    />
-                  ))}
-                </SortableContext>
-              )}
+                {folderTree.length > 0 && (
+                  <SortableContext
+                    items={folderTree.map((folder) => `docker-folder-${folder.id}`)}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    {folderTree.map((folder) => (
+                      <DockerFolderGroup
+                        key={folder.id}
+                        folder={folder}
+                        depth={0}
+                        expanded={fixedNodeId ? true : expandedFolderIds.has(folder.id)}
+                        onToggle={fixedNodeId ? () => {} : () => toggleFolder(folder.id)}
+                        onRename={handleRenameFolder}
+                        onDelete={handleDeleteFolder}
+                        onRequestCreateSubfolder={(parentId) => {
+                          setCreateFolderParentId(parentId);
+                          setCreateFolderOpen(true);
+                        }}
+                        onStart={handleStart}
+                        onStop={handleStop}
+                        onRestart={handleRestart}
+                        actionLoading={actionLoading}
+                        onMoveContainerToFolder={setMoveDialogContainer}
+                        expandedFolderIds={expandedFolderIds}
+                        onToggleFolder={toggleFolder}
+                        canManage={canManageContainer}
+                        canReorganize={canReorganizeContainer}
+                        canView={canViewContainer}
+                        canManageFolders={canManageFolders}
+                        canReorder={canDragFolders}
+                        collapsible={!fixedNodeId}
+                        showNode={showNodeColumn}
+                        colGroup={colGroup}
+                      />
+                    ))}
+                  </SortableContext>
+                )}
 
-              {(folderTree.length > 0 || ungroupedContainers.length > 0) &&
-                (canManageFolders ? (
-                  <UngroupedDropZone>
-                    {folderTree.length > 0 && (
-                      <div
-                        className={`flex items-center justify-between px-3 py-2 ${ungroupedContainers.length > 0 ? "border-b border-border" : ""}`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium">Ungrouped</span>
+                {(folderTree.length > 0 || ungroupedContainers.length > 0) &&
+                  (canManageFolders ? (
+                    <UngroupedDropZone disabled={!canDragFolders}>
+                      {folderTree.length > 0 && (
+                        <div
+                          className={`flex items-center justify-between px-3 py-2 ${ungroupedContainers.length > 0 ? "border-b border-border" : ""}`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium">Ungrouped</span>
+                          </div>
+                          <Badge variant="secondary" className="text-xs">
+                            {ungroupedContainers.length}
+                          </Badge>
                         </div>
-                        <Badge variant="secondary" className="text-xs">
-                          {ungroupedContainers.length}
-                        </Badge>
-                      </div>
-                    )}
-                    {ungroupedContainers.length > 0 && (
-                      <SortableContext
-                        items={ungroupedContainers.map(
-                          (container) => `${container._nodeId}:${container.name}`
-                        )}
-                        strategy={verticalListSortingStrategy}
-                      >
+                      )}
+                      {ungroupedContainers.length > 0 && (
+                        <SortableContext
+                          items={ungroupedContainers.map(
+                            (container) => `${container._nodeId}:${container.name}`
+                          )}
+                          strategy={verticalListSortingStrategy}
+                        >
+                          <table className="w-full" style={{ tableLayout: "fixed" }}>
+                            {colGroup}
+                            <tbody className="[&_tr:last-child]:border-b-0">
+                              {ungroupedContainers.map((container) => (
+                                <DockerContainerRow
+                                  key={`${container._nodeId}:${container.name}`}
+                                  container={container}
+                                  canView={canViewContainer(container)}
+                                  canManage={canManageContainer(container)}
+                                  canReorganize={canReorganizeContainer(container)}
+                                  showNode={showNodeColumn}
+                                  loadingAction={actionLoading[container.id]}
+                                  onStart={handleStart}
+                                  onStop={handleStop}
+                                  onRestart={handleRestart}
+                                  onMoveToFolder={setMoveDialogContainer}
+                                  canDrag={canDragFolders && canReorganizeContainer(container)}
+                                />
+                              ))}
+                            </tbody>
+                          </table>
+                        </SortableContext>
+                      )}
+                    </UngroupedDropZone>
+                  ) : (
+                    <>
+                      {folderTree.length > 0 && ungroupedContainers.length > 0 && (
+                        <div className="flex items-center justify-between border-b border-border px-3 py-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium">Ungrouped</span>
+                          </div>
+                          <Badge variant="secondary" className="text-xs">
+                            {ungroupedContainers.length}
+                          </Badge>
+                        </div>
+                      )}
+                      {ungroupedContainers.length > 0 && (
                         <table className="w-full" style={{ tableLayout: "fixed" }}>
                           {colGroup}
                           <tbody className="[&_tr:last-child]:border-b-0">
@@ -851,56 +900,22 @@ export function DockerContainers({
                                 container={container}
                                 canView={canViewContainer(container)}
                                 canManage={canManageContainer(container)}
-                                canReorganize={canReorganizeContainer(container)}
+                                canReorganize={false}
                                 showNode={showNodeColumn}
                                 loadingAction={actionLoading[container.id]}
                                 onStart={handleStart}
                                 onStop={handleStop}
                                 onRestart={handleRestart}
                                 onMoveToFolder={setMoveDialogContainer}
+                                canDrag={false}
                               />
                             ))}
                           </tbody>
                         </table>
-                      </SortableContext>
-                    )}
-                  </UngroupedDropZone>
-                ) : (
-                  <>
-                    {folderTree.length > 0 && ungroupedContainers.length > 0 && (
-                      <div className="flex items-center justify-between border-b border-border px-3 py-2">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium">Ungrouped</span>
-                        </div>
-                        <Badge variant="secondary" className="text-xs">
-                          {ungroupedContainers.length}
-                        </Badge>
-                      </div>
-                    )}
-                    {ungroupedContainers.length > 0 && (
-                      <table className="w-full" style={{ tableLayout: "fixed" }}>
-                        {colGroup}
-                        <tbody className="[&_tr:last-child]:border-b-0">
-                          {ungroupedContainers.map((container) => (
-                            <DockerContainerRow
-                              key={`${container._nodeId}:${container.name}`}
-                              container={container}
-                              canView={canViewContainer(container)}
-                              canManage={canManageContainer(container)}
-                              canReorganize={false}
-                              showNode={showNodeColumn}
-                              loadingAction={actionLoading[container.id]}
-                              onStart={handleStart}
-                              onStop={handleStop}
-                              onRestart={handleRestart}
-                              onMoveToFolder={setMoveDialogContainer}
-                            />
-                          ))}
-                        </tbody>
-                      </table>
-                    )}
-                  </>
-                ))}
+                      )}
+                    </>
+                  ))}
+              </div>
             </div>
             <DockerDragOverlay active={activeDrag} colGroup={colGroup} />
           </DndContext>

@@ -125,11 +125,11 @@ export function HousekeepingSection({ canRun, canConfigure }: HousekeepingSectio
           className={`transition-opacity duration-200 ${!hkConfig.enabled ? "opacity-50 pointer-events-none" : ""}`}
         >
           <div className="p-4 space-y-3">
-            <div className="flex items-center justify-between gap-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
               <span className="text-sm font-medium">Schedule</span>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                 <Input
-                  className="w-48 h-8 text-sm font-mono"
+                  className="w-full font-mono sm:w-48"
                   value={hkConfig.cronExpression}
                   onChange={(e) => setHkConfig({ ...hkConfig, cronExpression: e.target.value })}
                   onBlur={() => updateHkConfig({ cronExpression: hkConfig.cronExpression })}
@@ -236,7 +236,7 @@ export function HousekeepingSection({ canRun, canConfigure }: HousekeepingSectio
               disabled={controlsDisabled}
             />
           </div>
-          <div className="border-t border-border px-4 py-3 flex items-center justify-between">
+          <div className="flex flex-col gap-2 border-t border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="text-xs text-muted-foreground">
               {hkStats?.lastRun ? (
                 <span>

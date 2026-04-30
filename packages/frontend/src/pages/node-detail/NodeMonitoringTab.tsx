@@ -10,7 +10,7 @@ import {
   Wifi,
   X,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/ui/stat-card";
@@ -39,26 +39,83 @@ function toRollingDelta(values: number[]): number[] {
 
 const MAX_HISTORY = 60;
 
+function finiteNumber(value: unknown, fallback = 0) {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function fixed(value: unknown, digits: number, fallback = "0") {
+  return typeof value === "number" && Number.isFinite(value) ? value.toFixed(digits) : fallback;
+}
+
 interface NodeMonitoringTabProps {
   nodeId: string;
   nodeStatus: string;
   nodeType?: string;
+  initialHealthReport?: NodeHealthReport | null;
+  initialStatsReport?: NodeStatsReport | null;
 }
 
-export function NodeMonitoringTab({ nodeId, nodeStatus, nodeType }: NodeMonitoringTabProps) {
-  const [connected, setConnected] = useState(false);
-  const [history, setHistory] = useState<Snapshot[]>([]);
-  const [latest, setLatest] = useState<Snapshot | null>(null);
+function buildInitialSnapshot(
+  health: NodeHealthReport | null | undefined,
+  stats: NodeStatsReport | null | undefined
+): Snapshot | null {
+  if (!health && !stats) return null;
+  const timestamp = new Date(
+    Math.max(health?.timestamp ?? 0, stats?.timestamp ?? 0, Date.now())
+  ).toISOString();
+  return {
+    timestamp,
+    health: health ?? null,
+    stats: stats ?? null,
+    traffic: null,
+  };
+}
+
+function mergeSeededDiskMounts(snapshot: Snapshot, seededSnapshot: Snapshot | null): Snapshot {
+  const seedMounts = seededSnapshot?.health?.diskMounts;
+  const seedHealth = seededSnapshot?.health;
+  if (!seedHealth || !seedMounts?.length || snapshot.health?.diskMounts?.length) return snapshot;
+  return {
+    ...snapshot,
+    health: {
+      ...(snapshot.health ?? seedHealth),
+      diskMounts: seedMounts,
+    } as NodeHealthReport,
+  };
+}
+
+export function NodeMonitoringTab({
+  nodeId,
+  nodeStatus,
+  nodeType,
+  initialHealthReport,
+  initialStatsReport,
+}: NodeMonitoringTabProps) {
+  const initialSnapshot = buildInitialSnapshot(initialHealthReport, initialStatsReport);
+  const initialHealthRef = useRef(initialHealthReport);
+  const initialStatsRef = useRef(initialStatsReport);
+  initialHealthRef.current = initialHealthReport;
+  initialStatsRef.current = initialStatsReport;
+  const [history, setHistory] = useState<Snapshot[]>(() =>
+    initialSnapshot ? [initialSnapshot] : []
+  );
+  const [latest, setLatest] = useState<Snapshot | null>(() => initialSnapshot);
 
   useEffect(() => {
+    const seededSnapshot = buildInitialSnapshot(initialHealthRef.current, initialStatsRef.current);
+    setHistory(seededSnapshot ? [seededSnapshot] : []);
+    setLatest(seededSnapshot);
+
     if (nodeStatus !== "online") return;
     const es = api.createNodeMonitoringStream(nodeId);
 
     es.addEventListener("connected", (e: MessageEvent) => {
       const data = JSON.parse(e.data);
-      setHistory(data.history ?? []);
-      if (data.history?.length > 0) setLatest(data.history[data.history.length - 1]);
-      setConnected(true);
+      const streamHistory = ((data.history ?? []) as Snapshot[]).map((snapshot) =>
+        mergeSeededDiskMounts(snapshot, seededSnapshot)
+      );
+      setHistory(streamHistory.length > 0 ? streamHistory : seededSnapshot ? [seededSnapshot] : []);
+      if (streamHistory.length > 0) setLatest(streamHistory[streamHistory.length - 1]);
     });
 
     es.addEventListener("snapshot", (e: MessageEvent) => {
@@ -70,7 +127,6 @@ export function NodeMonitoringTab({ nodeId, nodeStatus, nodeType }: NodeMonitori
       setLatest(snapshot);
     });
 
-    es.onerror = () => setConnected(false);
     return () => es.close();
   }, [nodeId, nodeStatus]);
 
@@ -82,7 +138,7 @@ export function NodeMonitoringTab({ nodeId, nodeStatus, nodeType }: NodeMonitori
     );
   }
 
-  if (!connected || !latest) {
+  if (!latest) {
     return (
       <div className="flex flex-col items-center gap-2 py-16">
         <LoadingSpinner className="" />
@@ -144,16 +200,16 @@ export function NodeMonitoringTab({ nodeId, nodeStatus, nodeType }: NodeMonitori
       {/* System Resources */}
       <div>
         <h3 className="text-sm font-semibold mb-2 text-muted-foreground">System Resources</h3>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
           <StatCard
             label="CPU"
-            value={`${health?.cpuPercent.toFixed(1) ?? "0"}%`}
+            value={`${fixed(health?.cpuPercent, 1)}%`}
             icon={Cpu}
             history={cpuHist}
             sparklineMax={100}
             color="#3b82f6"
             progress={{ percent: health?.cpuPercent ?? 0 }}
-            subtitle={`Load: ${health?.loadAverage1m.toFixed(2) ?? "0"} / ${health?.loadAverage5m.toFixed(2) ?? "0"} / ${health?.loadAverage15m.toFixed(2) ?? "0"}`}
+            subtitle={`Load: ${fixed(health?.loadAverage1m, 2)} / ${fixed(health?.loadAverage5m, 2)} / ${fixed(health?.loadAverage15m, 2)}`}
           />
           <StatCard
             label="Memory"
@@ -191,7 +247,7 @@ export function NodeMonitoringTab({ nodeId, nodeStatus, nodeType }: NodeMonitori
           {rootMount && (
             <StatCard
               label="Root Disk"
-              value={`${rootMount.usagePercent.toFixed(1)}%`}
+              value={`${fixed(rootMount.usagePercent, 1)}%`}
               icon={HardDrive}
               history={history.map((h) => {
                 const rm = h.health?.diskMounts?.find((m) => m.mountPoint === "/");
@@ -199,7 +255,7 @@ export function NodeMonitoringTab({ nodeId, nodeStatus, nodeType }: NodeMonitori
               })}
               sparklineMax={100}
               color="#f97316"
-              progress={{ percent: rootMount.usagePercent }}
+              progress={{ percent: finiteNumber(rootMount.usagePercent) }}
               subtitle={`${formatBytes(rootMount.usedBytes)} / ${formatBytes(rootMount.totalBytes)}`}
             />
           )}
@@ -210,7 +266,7 @@ export function NodeMonitoringTab({ nodeId, nodeStatus, nodeType }: NodeMonitori
       {nodeType === "nginx" && latest?.traffic && (
         <div>
           <h3 className="text-sm font-semibold mb-2 text-muted-foreground">Traffic</h3>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
             <StatCard
               label="2xx Success"
               value={String(latest.traffic.statusCodes.s2xx)}
@@ -241,14 +297,14 @@ export function NodeMonitoringTab({ nodeId, nodeStatus, nodeType }: NodeMonitori
             />
             <StatCard
               label="Avg Response"
-              value={`${(latest.traffic.avgResponseTime * 1000).toFixed(0)}ms`}
+              value={`${fixed(finiteNumber(latest.traffic.avgResponseTime) * 1000, 0)}ms`}
               icon={Activity}
               history={history.map((h) => (h.traffic?.avgResponseTime ?? 0) * 1000)}
               color="#8b5cf6"
             />
             <StatCard
               label="p95 Response"
-              value={`${(latest.traffic.p95ResponseTime * 1000).toFixed(0)}ms`}
+              value={`${fixed(finiteNumber(latest.traffic.p95ResponseTime) * 1000, 0)}ms`}
               icon={Activity}
               history={history.map((h) => (h.traffic?.p95ResponseTime ?? 0) * 1000)}
               color="#ec4899"
@@ -261,7 +317,7 @@ export function NodeMonitoringTab({ nodeId, nodeStatus, nodeType }: NodeMonitori
       {nodeType === "nginx" && (
         <div>
           <h3 className="text-sm font-semibold mb-2 text-muted-foreground">Connections</h3>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
             <StatCard
               label="Active"
               value={String(stats?.activeConnections ?? 0)}
@@ -297,7 +353,7 @@ export function NodeMonitoringTab({ nodeId, nodeStatus, nodeType }: NodeMonitori
       {/* I/O (all node types) */}
       <div>
         <h3 className="text-sm font-semibold mb-2 text-muted-foreground">I/O</h3>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
           <StatCard
             label="Disk I/O"
             value={`${formatBytes(health?.diskReadBytes ?? 0)} / ${formatBytes(health?.diskWriteBytes ?? 0)}`}
@@ -358,16 +414,16 @@ export function NodeMonitoringTab({ nodeId, nodeStatus, nodeType }: NodeMonitori
       {otherMounts.length > 0 && (
         <div>
           <h3 className="text-sm font-semibold mb-2 text-muted-foreground">Disk Mounts</h3>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
             {otherMounts.map((mount) => (
               <StatCard
                 key={mount.mountPoint}
                 label={mount.mountPoint}
-                value={`${mount.usagePercent.toFixed(1)}%`}
+                value={`${fixed(mount.usagePercent, 1)}%`}
                 icon={HardDrive}
                 history={[]}
                 color="#f97316"
-                progress={{ percent: mount.usagePercent }}
+                progress={{ percent: finiteNumber(mount.usagePercent) }}
                 subtitle={`${formatBytes(mount.usedBytes)} / ${formatBytes(mount.totalBytes)} (${mount.device})`}
               />
             ))}

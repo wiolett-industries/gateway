@@ -36,6 +36,8 @@ interface DataTableProps<T> {
   onGroupClick?: (group: DataTableGroup) => void;
   /** Allow horizontal scrolling when columns exceed the container width */
   horizontalScroll?: boolean;
+  /** Minimum table width when horizontalScroll is enabled */
+  minWidth?: string;
 }
 
 type FlatItem<T> =
@@ -58,6 +60,7 @@ export function DataTable<T>({
   groupBy,
   onGroupClick,
   horizontalScroll = false,
+  minWidth,
 }: DataTableProps<T>) {
   const internalRef = useRef<HTMLDivElement>(null);
   const containerRef = scrollRef ?? internalRef;
@@ -118,7 +121,10 @@ export function DataTable<T>({
         ref={containerRef}
         className={`${horizontalScroll ? "overflow-auto" : "overflow-y-auto"} min-h-0 -mb-px`}
       >
-        <div className={horizontalScroll ? "min-w-max" : ""}>
+        <div
+          className={horizontalScroll ? "min-w-max" : ""}
+          style={horizontalScroll && minWidth ? { minWidth } : undefined}
+        >
           {/* Sticky header — sibling of the virtualized body, sharing the same grid template */}
           <div
             className="sticky top-0 bg-card z-10 shadow-[inset_0_-1px_0_var(--color-border)] grid text-xs font-medium text-muted-foreground uppercase tracking-wider"

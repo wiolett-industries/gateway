@@ -38,6 +38,7 @@ interface FolderGroupProps {
   expandedFolderIds: Set<string>;
   onToggleFolder: (id: string) => void;
   canManage: boolean;
+  canReorder?: boolean;
   colGroup: React.ReactNode;
 }
 
@@ -63,13 +64,14 @@ export function FolderGroup({
   expandedFolderIds,
   onToggleFolder,
   canManage,
+  canReorder = canManage,
   colGroup,
 }: FolderGroupProps) {
   const [isRenaming, setIsRenaming] = useState(false);
   const { attributes, listeners, setNodeRef, transform, isDragging } = useSortable({
     id: `folder-${folder.id}`,
     data: { type: "folder", folderId: folder.id, folder },
-    disabled: !canManage,
+    disabled: !canReorder,
   });
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -86,8 +88,8 @@ export function FolderGroup({
         className="flex items-center gap-2 py-2 px-3 cursor-pointer hover:bg-accent transition-colors border-b border-border"
         style={{ paddingLeft: `${depth * 24 + 12}px` }}
         onClick={onToggle}
-        {...attributes}
-        {...listeners}
+        {...(canReorder ? attributes : {})}
+        {...(canReorder ? listeners : {})}
       >
         <button type="button" className="text-muted-foreground shrink-0">
           {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
@@ -175,6 +177,7 @@ export function FolderGroup({
                 expandedFolderIds={expandedFolderIds}
                 onToggleFolder={onToggleFolder}
                 canManage={canManage}
+                canReorder={canReorder}
                 colGroup={colGroup}
               />
             ))}
@@ -199,6 +202,7 @@ export function FolderGroup({
                       onToggle={onToggleHost}
                       togglingIds={togglingIds}
                       onMoveToFolder={onMoveHostToFolder}
+                      canDrag={canReorder}
                     />
                   ))}
                 </tbody>
@@ -216,6 +220,7 @@ export function FolderGroup({
                     onToggle={onToggleHost}
                     togglingIds={togglingIds}
                     onMoveToFolder={onMoveHostToFolder}
+                    canDrag={canReorder}
                   />
                 ))}
               </tbody>

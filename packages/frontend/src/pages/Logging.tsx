@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
 import { PageTransition } from "@/components/common/PageTransition";
+import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
 import { SearchFilterBar } from "@/components/common/SearchFilterBar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -349,14 +350,36 @@ export function Logging() {
   return (
     <PageTransition>
       <div className={cn("h-full overflow-y-auto p-6 space-y-4", topTab === "schemas" && "pb-3")}>
-        <div className="flex flex-wrap items-center justify-between gap-2 shrink-0">
-          <div>
+        <div className="flex shrink-0 items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
             <h1 className="text-2xl font-bold">Logging</h1>
             <p className="text-sm text-muted-foreground">
               Manage external log environments and reusable schemas
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <ResponsiveHeaderActions
+            actions={[
+              { label: "Refresh", onClick: load, disabled: activeTabLoading },
+              ...(topTab === "environments" && canCreateEnvironment
+                ? [
+                    {
+                      label: "Create Environment",
+                      icon: <Plus className="h-4 w-4" />,
+                      onClick: () => setEnvironmentDialogOpen(true),
+                    },
+                  ]
+                : []),
+              ...(topTab === "schemas" && canCreateSchema
+                ? [
+                    {
+                      label: "Create Schema",
+                      icon: <Plus className="h-4 w-4" />,
+                      onClick: () => setSchemaDialogOpen(true),
+                    },
+                  ]
+                : []),
+            ]}
+          >
             <RefreshButton onClick={load} disabled={activeTabLoading} />
             {topTab === "environments" && canCreateEnvironment && (
               <Button onClick={() => setEnvironmentDialogOpen(true)}>
@@ -370,7 +393,7 @@ export function Logging() {
                 Create Schema
               </Button>
             )}
-          </div>
+          </ResponsiveHeaderActions>
         </div>
 
         <Tabs
@@ -489,8 +512,8 @@ function LoggingEnvironmentsTab({
           {...(canCreate ? { actionLabel: "Create Environment", onAction: onCreate } : {})}
         />
       ) : (
-        <div className="border border-border rounded-lg bg-card">
-          <div className="divide-y divide-border -mb-px [&>*:last-child]:border-b [&>*:last-child]:border-border">
+        <div className="overflow-x-auto border border-border rounded-lg bg-card md:overflow-x-visible">
+          <div className="min-w-[920px] divide-y divide-border -mb-px md:min-w-0 [&>*:last-child]:border-b [&>*:last-child]:border-border">
             {environments.map((environment) => (
               <div
                 key={environment.id}
@@ -500,7 +523,7 @@ function LoggingEnvironmentsTab({
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted">
                   <ScrollText className="h-5 w-5 text-muted-foreground" />
                 </div>
-                <div className="min-w-0 flex-1">
+                <div className="min-w-[320px] flex-1 md:min-w-0">
                   <p className="truncate text-sm font-medium">{environment.name}</p>
                   <p className="truncate text-xs text-muted-foreground">
                     {environment.slug}
@@ -578,8 +601,8 @@ function LoggingSchemasTab({
           {...(canCreate ? { actionLabel: "Create Schema", onAction: onCreate } : {})}
         />
       ) : (
-        <div className="border border-border rounded-lg bg-card">
-          <div className="divide-y divide-border -mb-px [&>*:last-child]:border-b [&>*:last-child]:border-border">
+        <div className="overflow-x-auto border border-border rounded-lg bg-card md:overflow-x-visible">
+          <div className="min-w-[920px] divide-y divide-border -mb-px md:min-w-0 [&>*:last-child]:border-b [&>*:last-child]:border-border">
             {schemas.map((schema) => (
               <div
                 key={schema.id}
@@ -592,7 +615,7 @@ function LoggingSchemasTab({
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted">
                   <FileJson className="h-5 w-5 text-muted-foreground" />
                 </div>
-                <div className="min-w-0 flex-1">
+                <div className="min-w-[320px] flex-1 md:min-w-0">
                   <p className="truncate text-sm font-medium">{schema.name}</p>
                   <p className="truncate text-xs text-muted-foreground">
                     {schema.slug}

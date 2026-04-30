@@ -39,6 +39,7 @@ export function NodeDetailsTab({
   const navigate = useNavigate();
   const [proxyHosts, setProxyHosts] = useState<ProxyHost[]>([]);
   const [dockerContainers, setDockerContainers] = useState<DockerContainer[]>([]);
+  const [dockerContainersLoading, setDockerContainersLoading] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [pendingUpdateTarget, setPendingUpdateTarget] = useState<string | null>(null);
   const h: NodeHealthReport | null = node.liveHealthReport ?? node.lastHealthReport;
@@ -72,6 +73,8 @@ export function NodeDetailsTab({
     let cancelled = false;
     const load = async () => {
       if (node.type === "nginx") {
+        setDockerContainers([]);
+        setDockerContainersLoading(false);
         if (node.status !== "online" || !node.isConnected) {
           setProxyHosts([]);
           return;
@@ -84,15 +87,20 @@ export function NodeDetailsTab({
         }
       }
       if (node.type === "docker") {
+        setProxyHosts([]);
         if (node.status !== "online" || !node.isConnected) {
           setDockerContainers([]);
+          setDockerContainersLoading(false);
           return;
         }
+        setDockerContainersLoading(true);
         try {
           const data = await api.listDockerContainers(node.id);
           if (!cancelled) setDockerContainers(data ?? []);
         } catch {
           if (!cancelled) setDockerContainers([]);
+        } finally {
+          if (!cancelled) setDockerContainersLoading(false);
         }
       }
     };
@@ -120,7 +128,7 @@ export function NodeDetailsTab({
   return (
     <div className="space-y-4">
       {/* Docker Container Overview — docker nodes only */}
-      {node.type === "docker" && dockerContainers.length > 0 && (
+      {node.type === "docker" && (
         <div className="border border-border bg-card">
           <div className="grid grid-cols-4 divide-x divide-border">
             {[
@@ -140,7 +148,7 @@ export function NodeDetailsTab({
               { label: "Total", count: dockerContainers.length },
             ].map((s) => (
               <div key={s.label} className="p-4 text-center">
-                <p className="text-2xl font-bold">{s.count}</p>
+                <p className="text-2xl font-bold">{dockerContainersLoading ? "..." : s.count}</p>
                 <p className="text-xs text-muted-foreground mt-1">{s.label}</p>
               </div>
             ))}

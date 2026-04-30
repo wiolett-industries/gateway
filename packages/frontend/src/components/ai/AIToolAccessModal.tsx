@@ -66,14 +66,14 @@ export function AIToolAccessModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl">
+      <DialogContent className="overflow-x-hidden sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>AI Tool Access</DialogTitle>
           <DialogDescription>Control which tools the AI assistant can use</DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-2">
-          <div className="border border-border max-h-96 overflow-y-auto">
+        <div className="min-w-0 space-y-2">
+          <div className="max-h-96 overflow-y-auto overflow-x-hidden border border-border">
             {categories.map((category, ci) => (
               <div key={category}>
                 {ci > 0 && <Separator />}
@@ -87,16 +87,16 @@ export function AIToolAccessModal({
                   return (
                     <label
                       key={tool.name}
-                      className="flex items-center gap-3 px-3 py-2 hover:bg-accent transition-colors cursor-pointer"
+                      className="flex min-w-0 cursor-pointer items-center gap-3 px-3 py-2 transition-colors hover:bg-accent"
                     >
                       <input
                         type="checkbox"
                         checked={isEnabled}
                         onChange={() => toggleTool(tool.name)}
-                        className="form-checkbox"
+                        className="form-checkbox shrink-0"
                       />
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm">
+                        <p className="break-words text-sm">
                           {tool.description}
                           {tool.destructive && (
                             <span className="ml-1 text-[10px] text-yellow-600 dark:text-yellow-400">
@@ -104,7 +104,7 @@ export function AIToolAccessModal({
                             </span>
                           )}
                         </p>
-                        <p className="text-xs text-muted-foreground font-mono">
+                        <p className="break-all font-mono text-xs text-muted-foreground">
                           {tool.name}
                           <span className="ml-2 text-muted-foreground/60">
                             min: {tool.requiredRole}

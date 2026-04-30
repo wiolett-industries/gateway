@@ -56,6 +56,18 @@ function getGroupEffectiveScopes(group: PermissionGroup): string[] {
   return [...new Set([...group.scopes, ...(group.inheritedScopes ?? [])])];
 }
 
+function formatGroupNameInput(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+/g, "");
+}
+
+function formatGroupName(value: string): string {
+  return formatGroupNameInput(value).replace(/-+$/g, "");
+}
+
 function findMissingRequiredResourceSelection(
   baseScopes: string[],
   resources: Record<string, string[]>,
@@ -251,7 +263,9 @@ export function AdminGroups({
     }
 
     const finalScopes = buildFinalScopes(formBaseScopes, formResources);
-    if (!formName.trim() || finalScopes.length === 0) {
+    const normalizedName = formatGroupName(formName);
+    setFormName(normalizedName);
+    if (!normalizedName || finalScopes.length === 0) {
       toast.error("Name and at least one scope are required");
       return;
     }
@@ -259,7 +273,7 @@ export function AdminGroups({
     try {
       if (editingGroup) {
         await api.updateGroup(editingGroup.id, {
-          name: formName.trim(),
+          name: normalizedName,
           description: formDescription.trim() || null,
           scopes: finalScopes,
           parentId: formParentId,
@@ -267,7 +281,7 @@ export function AdminGroups({
         toast.success("Group updated");
       } else {
         await api.createGroup({
-          name: formName.trim(),
+          name: normalizedName,
           description: formDescription.trim() || undefined,
           scopes: finalScopes,
           parentId: formParentId,
@@ -400,7 +414,7 @@ export function AdminGroups({
               <label className="text-sm font-medium">Name</label>
               <Input
                 value={formName}
-                onChange={(e) => setFormName(e.target.value)}
+                onChange={(e) => setFormName(formatGroupNameInput(e.target.value))}
                 placeholder="e.g. cert-operator"
                 className="mt-1"
               />

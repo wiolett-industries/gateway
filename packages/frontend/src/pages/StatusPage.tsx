@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
+import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -393,12 +394,52 @@ export function StatusPage() {
         )}
       </div>
     ) : null;
+  const headerActions =
+    activeTab === "services" && canManage
+      ? [
+          {
+            label: "Expose Service",
+            icon: <Plus className="h-4 w-4" />,
+            onClick: openCreateService,
+          },
+        ]
+      : activeTab === "incidents" && canCreateIncidents
+        ? [
+            {
+              label: "Create Incident",
+              icon: <Plus className="h-4 w-4" />,
+              onClick: openCreateIncident,
+            },
+          ]
+        : activeTab === "settings"
+          ? [
+              {
+                label: "Preview",
+                icon: <Eye className="h-4 w-4" />,
+                onClick: () => window.open(getStatusPreviewUrl(), "_blank", "noopener,noreferrer"),
+              },
+              ...(config.domain
+                ? [
+                    {
+                      label: "Open",
+                      icon: <ExternalLink className="h-4 w-4" />,
+                      onClick: () =>
+                        window.open(
+                          `${config.sslCertificateId ? "https" : "http"}://${config.domain}`,
+                          "_blank",
+                          "noopener,noreferrer"
+                        ),
+                    },
+                  ]
+                : []),
+            ]
+          : [];
 
   return (
     <PageTransition>
       <div className="h-full space-y-4 overflow-y-auto p-6">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <h1 className="text-2xl font-bold">Status Page</h1>
               <Badge variant={config.enabled ? "success" : "secondary"}>
@@ -409,7 +450,7 @@ export function StatusPage() {
               Manage public services and incident communication
             </p>
           </div>
-          {headerAction}
+          <ResponsiveHeaderActions actions={headerActions}>{headerAction}</ResponsiveHeaderActions>
         </div>
 
         {!config.enabled && !loading && (

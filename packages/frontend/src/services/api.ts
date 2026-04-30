@@ -428,16 +428,47 @@ class ApiClient extends ApiClientBase {
     page?: number;
     limit?: number;
     action?: string;
+    actions?: string[];
     resourceType?: string;
+    resourceTypes?: string[];
+    userId?: string;
+    userIds?: string[];
+    from?: string;
+    to?: string;
+    excludedActions?: string[];
+    excludedResourceTypes?: string[];
   }): Promise<PaginatedResponse<AuditLogEntry>> {
     const searchParams = new URLSearchParams();
     if (params?.page) searchParams.set("page", params.page.toString());
     if (params?.limit) searchParams.set("limit", params.limit.toString());
     if (params?.action) searchParams.set("action", params.action);
+    for (const action of params?.actions ?? []) searchParams.append("action", action);
     if (params?.resourceType) searchParams.set("resourceType", params.resourceType);
+    for (const resourceType of params?.resourceTypes ?? []) {
+      searchParams.append("resourceType", resourceType);
+    }
+    if (params?.userId) searchParams.set("userId", params.userId);
+    for (const userId of params?.userIds ?? []) searchParams.append("userId", userId);
+    if (params?.from) searchParams.set("from", params.from);
+    if (params?.to) searchParams.set("to", params.to);
+    for (const action of params?.excludedActions ?? [])
+      searchParams.append("excludeAction", action);
+    for (const resourceType of params?.excludedResourceTypes ?? []) {
+      searchParams.append("excludeResourceType", resourceType);
+    }
 
     const query = searchParams.toString();
     return this.request<PaginatedResponse<AuditLogEntry>>(`/audit${query ? `?${query}` : ""}`);
+  }
+
+  async getAuditUsers(): Promise<
+    Array<{ userId: string | null; userName: string | null; userEmail: string | null }>
+  > {
+    return this.unwrapData(
+      this.request<{
+        data: Array<{ userId: string | null; userName: string | null; userEmail: string | null }>;
+      }>("/audit/users")
+    );
   }
 
   // ── Alerts ────────────────────────────────────────────────────────
@@ -467,10 +498,14 @@ class ApiClient extends ApiClientBase {
   }
 
   async renameToken(id: string, name: string): Promise<void> {
+    return this.updateToken(id, { name });
+  }
+
+  async updateToken(id: string, data: { name?: string; scopes?: string[] }): Promise<void> {
     return this.request<void>(`/tokens/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name }),
+      body: JSON.stringify(data),
     });
   }
 

@@ -154,14 +154,14 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
             onChange={handleToggleAutoCreate}
           />
         </div>
-        <div className="flex items-center justify-between gap-4 px-4 py-3">
+        <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
           <div>
             <p className="text-sm font-medium">Default group for new OIDC users</p>
             <p className="text-xs text-muted-foreground mt-0.5">
               Applied to newly auto-created users after the first real administrator signs in
             </p>
           </div>
-          <div className="w-64 shrink-0">
+          <div className="w-full shrink-0 sm:w-64">
             <Select
               value={settings.oidcDefaultGroupId}
               disabled={!canEdit || isSavingGroup}
@@ -194,14 +194,14 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
           />
         </div>
         <div className="divide-y divide-border">
-          <div className="flex items-start justify-between gap-4 px-4 py-3">
+          <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
             <div>
               <p className="text-sm font-medium">Client IP source</p>
               <p className="text-xs text-muted-foreground mt-0.5">
                 Controls which address Gateway uses for rate limits and audit records
               </p>
             </div>
-            <div className="w-64 shrink-0">
+            <div className="w-full shrink-0 sm:w-64">
               <Select
                 value={settings.networkSecurity.clientIpSource}
                 disabled={!canEdit || isSavingNetwork}
@@ -254,7 +254,7 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
             </p>
           )}
 
-          <div className="flex items-center justify-between gap-4 px-4 py-3">
+          <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
             <div>
               <p className="text-sm font-medium">Trusted proxy CIDRs</p>
               <p className="text-xs text-muted-foreground mt-0.5">
@@ -263,7 +263,7 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
               </p>
             </div>
             <Input
-              className="w-full max-w-80 shrink-0 border-border bg-[#080808] text-foreground placeholder:text-muted-foreground"
+              className="w-full shrink-0 border-border bg-[#080808] text-foreground placeholder:text-muted-foreground sm:max-w-80"
               value={trustedProxyCidrs}
               disabled={!canEdit || isSavingNetwork}
               placeholder="10.0.0.0/8, 172.16.0.0/12"

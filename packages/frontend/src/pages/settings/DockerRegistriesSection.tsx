@@ -191,7 +191,7 @@ export function DockerRegistriesSection({ nodesList }: DockerRegistriesSectionPr
               {registries.map((r) => (
                 <div
                   key={r.id}
-                  className={`flex items-center justify-between p-4 gap-4 transition-colors ${
+                  className={`flex flex-col gap-3 p-4 transition-colors sm:flex-row sm:items-center sm:justify-between sm:gap-4 ${
                     canEditRegistry ? "cursor-pointer hover:bg-accent/50" : ""
                   }`}
                   onClick={canEditRegistry ? () => openRegEdit(r) : undefined}
@@ -223,7 +223,7 @@ export function DockerRegistriesSection({ nodesList }: DockerRegistriesSectionPr
                     </div>
                   </div>
                   <div
-                    className="flex items-center gap-2 shrink-0"
+                    className="flex w-full shrink-0 items-center gap-2 sm:w-auto"
                     onClick={(e) => e.stopPropagation()}
                   >
                     {canTestRegistry && (
@@ -251,7 +251,7 @@ export function DockerRegistriesSection({ nodesList }: DockerRegistriesSectionPr
               ))}
             </div>
           ) : (
-            <p className="py-4 text-center text-sm text-muted-foreground">
+            <p className="px-4 py-4 text-center text-sm text-muted-foreground">
               No registries configured. Add a registry to pull images from private sources.
             </p>
           )}

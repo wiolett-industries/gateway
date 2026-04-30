@@ -1,10 +1,11 @@
 import { z } from '@hono/zod-openapi';
 import { appRoute, createdJson, IdParamSchema, jsonBody, okJson } from '@/lib/openapi.js';
-import { CreateTokenResponseSchema, CreateTokenSchema, TokenResponseSchema } from './tokens.schemas.js';
-
-const RenameTokenSchema = z.object({
-  name: z.string().min(1).max(255),
-});
+import {
+  CreateTokenResponseSchema,
+  CreateTokenSchema,
+  TokenResponseSchema,
+  UpdateTokenSchema,
+} from './tokens.schemas.js';
 
 export const listTokensRoute = appRoute({
   method: 'get',
@@ -27,8 +28,8 @@ export const renameTokenRoute = appRoute({
   method: 'patch',
   path: '/{id}',
   tags: ['Tokens'],
-  summary: 'Rename an API token',
-  request: { params: IdParamSchema, ...jsonBody(RenameTokenSchema) },
+  summary: 'Update an API token',
+  request: { params: IdParamSchema, ...jsonBody(UpdateTokenSchema) },
   responses: okJson(z.object({ success: z.boolean() })),
 });
 

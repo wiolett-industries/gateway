@@ -443,6 +443,8 @@ export function DockerNetworks({
           data={filteredNetworks}
           keyFn={(net) => `${(net as any)._nodeId ?? selectedNodeId ?? "node"}:${net.id}`}
           emptyMessage="No networks found."
+          horizontalScroll
+          minWidth={fixedNodeId ? "720px" : "860px"}
         />
       ) : isLoading || (!visibleNodeId && !nodesLoaded) ? (
         <div className="flex items-center justify-center py-16">

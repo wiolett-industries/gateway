@@ -43,6 +43,7 @@ import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
+import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
 import { SearchFilterBar } from "@/components/common/SearchFilterBar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -220,6 +221,31 @@ export function Notifications() {
         Refresh
       </Button>
     ) : null;
+  const headerActions =
+    activeTab === "alerts" && canManageAlerts
+      ? [
+          {
+            label: "New Alert",
+            icon: <Plus className="h-4 w-4" />,
+            onClick: () => setOpenCreateAlertToken((v) => v + 1),
+          },
+        ]
+      : activeTab === "webhooks" && canManageWebhooks
+        ? [
+            {
+              label: "New Webhook",
+              icon: <Plus className="h-4 w-4" />,
+              onClick: () => setOpenCreateWebhookToken((v) => v + 1),
+            },
+          ]
+        : activeTab === "deliveries" && canViewDeliveries
+          ? [
+              {
+                label: "Refresh",
+                onClick: () => setRefreshDeliveriesToken((v) => v + 1),
+              },
+            ]
+          : [];
 
   useEffect(() => {
     if (visibleTabs.length === 0) return;
@@ -238,14 +264,14 @@ export function Notifications() {
           : "h-full overflow-y-auto p-6 space-y-6"
       }
     >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
           <h1 className="text-2xl font-semibold">Notifications</h1>
           <p className="text-sm text-muted-foreground">
             Manage alert rules, webhooks, and delivery activity
           </p>
         </div>
-        {headerAction}
+        <ResponsiveHeaderActions actions={headerActions}>{headerAction}</ResponsiveHeaderActions>
       </div>
       <Tabs
         value={activeTab}

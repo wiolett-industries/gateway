@@ -49,6 +49,7 @@ interface DockerFolderGroupProps {
   canReorganize: (container: DockerContainerRowData) => boolean;
   canView: (container: DockerContainerRowData) => boolean;
   canManageFolders: boolean;
+  canReorder?: boolean;
   collapsible?: boolean;
   showNode: boolean;
   colGroup: React.ReactNode;
@@ -79,6 +80,7 @@ export function DockerFolderGroup({
   canReorganize,
   canView,
   canManageFolders,
+  canReorder = canManageFolders,
   collapsible = true,
   showNode,
   colGroup,
@@ -87,7 +89,7 @@ export function DockerFolderGroup({
   const { attributes, listeners, setNodeRef, transform, isDragging } = useSortable({
     id: `docker-folder-${folder.id}`,
     data: { type: "folder", folderId: folder.id, isSystem: folder.isSystem, folder },
-    disabled: !canManageFolders,
+    disabled: !canReorder,
   });
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -104,8 +106,8 @@ export function DockerFolderGroup({
         }`}
         style={{ paddingLeft: `${depth * 24 + 12}px` }}
         onClick={collapsible ? onToggle : undefined}
-        {...attributes}
-        {...listeners}
+        {...(canReorder ? attributes : {})}
+        {...(canReorder ? listeners : {})}
       >
         {collapsible ? (
           <button type="button" className="text-muted-foreground shrink-0">
@@ -208,6 +210,7 @@ export function DockerFolderGroup({
                 canReorganize={canReorganize}
                 canView={canView}
                 canManageFolders={canManageFolders}
+                canReorder={canReorder}
                 collapsible={collapsible}
                 showNode={showNode}
                 colGroup={colGroup}
@@ -235,6 +238,7 @@ export function DockerFolderGroup({
                     onStop={onStop}
                     onRestart={onRestart}
                     onMoveToFolder={onMoveContainerToFolder}
+                    canDrag={canReorder && canReorganize(container)}
                   />
                 ))}
               </tbody>
@@ -261,6 +265,7 @@ export function DockerFolderGroup({
                       onStop={onStop}
                       onRestart={onRestart}
                       onMoveToFolder={onMoveContainerToFolder}
+                      canDrag={canReorder && canReorganize(container)}
                     />
                   ))}
                 </tbody>

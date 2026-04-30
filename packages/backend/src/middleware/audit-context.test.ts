@@ -49,3 +49,23 @@ describe('resolveFallbackAuditTarget', () => {
     });
   });
 });
+
+describe('shouldSkipFallbackAudit', () => {
+  it('skips high-volume logging ingest and read-style POST routes', () => {
+    expect(__testOnly.shouldSkipFallbackAudit('POST', '/api/logging/ingest')).toBe(true);
+    expect(__testOnly.shouldSkipFallbackAudit('POST', '/api/logging/ingest/batch')).toBe(true);
+    expect(
+      __testOnly.shouldSkipFallbackAudit(
+        'POST',
+        '/api/logging/environments/11111111-1111-4111-8111-111111111111/search'
+      )
+    ).toBe(true);
+  });
+
+  it('keeps logging create/update/delete routes eligible for service or fallback audit', () => {
+    expect(__testOnly.shouldSkipFallbackAudit('POST', '/api/logging/environments')).toBe(false);
+    expect(
+      __testOnly.shouldSkipFallbackAudit('DELETE', '/api/logging/environments/11111111-1111-4111-8111-111111111111')
+    ).toBe(false);
+  });
+});

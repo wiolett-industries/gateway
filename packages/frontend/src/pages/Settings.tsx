@@ -124,14 +124,14 @@ export function Settings() {
             <h2 className="font-semibold">Preferences</h2>
           </div>
           <div className="divide-y divide-border">
-            <div className="flex items-center justify-between gap-4 px-4 py-3">
+            <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
               <div>
                 <p className="text-sm font-medium">Theme</p>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   Choose how the interface looks
                 </p>
               </div>
-              <div className="flex gap-0 border border-border w-fit shrink-0">
+              <div className="flex w-fit shrink-0 gap-0 border border-border">
                 {(["light", "dark", "system"] as const).map((t) => (
                   <button
                     key={t}

@@ -1,4 +1,4 @@
-import { count as countFn, desc, eq, gte, lte } from 'drizzle-orm';
+import { asc, count as countFn, desc, eq, gte, inArray, isNull, lte, notInArray, or } from 'drizzle-orm';
 import { inject, injectable } from 'tsyringe';
 import { TOKENS } from '@/container.js';
 import type { DrizzleClient } from '@/db/client.js';
@@ -44,17 +44,41 @@ export class AuditService {
 
   async getAuditLog(params: {
     action?: string;
+    actions?: string[];
     resourceType?: string;
+    resourceTypes?: string[];
     resourceId?: string;
+    userId?: string;
+    userIds?: string[];
+    excludedActions?: string[];
+    excludedResourceTypes?: string[];
     from?: Date;
     to?: Date;
     page: number;
     limit: number;
   }): Promise<PaginatedResponse<typeof auditLog.$inferSelect>> {
     const conditions = [];
-    if (params.action) conditions.push(eq(auditLog.action, params.action));
-    if (params.resourceType) conditions.push(eq(auditLog.resourceType, params.resourceType));
+    const actions = uniqueDefined([...(params.actions ?? []), params.action]);
+    const resourceTypes = uniqueDefined([...(params.resourceTypes ?? []), params.resourceType]);
+    const userIds = uniqueDefined([...(params.userIds ?? []), params.userId]);
+
+    if (actions.length === 1) conditions.push(eq(auditLog.action, actions[0]!));
+    else if (actions.length > 1) conditions.push(inArray(auditLog.action, actions));
+    if (resourceTypes.length === 1) conditions.push(eq(auditLog.resourceType, resourceTypes[0]!));
+    else if (resourceTypes.length > 1) conditions.push(inArray(auditLog.resourceType, resourceTypes));
     if (params.resourceId) conditions.push(eq(auditLog.resourceId, params.resourceId));
+    if (userIds.length) {
+      const concreteUserIds = userIds.filter((id) => id !== 'system');
+      const includesSystem = concreteUserIds.length !== userIds.length;
+      if (includesSystem && concreteUserIds.length)
+        conditions.push(or(isNull(auditLog.userId), inArray(auditLog.userId, concreteUserIds)));
+      else if (includesSystem) conditions.push(isNull(auditLog.userId));
+      else if (concreteUserIds.length === 1) conditions.push(eq(auditLog.userId, concreteUserIds[0]!));
+      else conditions.push(inArray(auditLog.userId, concreteUserIds));
+    }
+    if (params.excludedActions?.length) conditions.push(notInArray(auditLog.action, params.excludedActions));
+    if (params.excludedResourceTypes?.length)
+      conditions.push(notInArray(auditLog.resourceType, params.excludedResourceTypes));
     if (params.from) conditions.push(gte(auditLog.createdAt, params.from));
     if (params.to) conditions.push(lte(auditLog.createdAt, params.to));
 
@@ -96,4 +120,20 @@ export class AuditService {
       },
     };
   }
+
+  async getAuditUsers(): Promise<Array<{ userId: string | null; userName: string | null; userEmail: string | null }>> {
+    return this.db
+      .selectDistinct({
+        userId: auditLog.userId,
+        userName: users.name,
+        userEmail: users.email,
+      })
+      .from(auditLog)
+      .leftJoin(users, eq(auditLog.userId, users.id))
+      .orderBy(asc(users.name), asc(users.email), asc(auditLog.userId));
+  }
+}
+
+function uniqueDefined(values: Array<string | undefined>): string[] {
+  return [...new Set(values.map((value) => value?.trim()).filter((value): value is string => !!value))];
 }

@@ -3,3 +3,26 @@
 .dashboard-scrollbar ::-webkit-scrollbar-thumb, .dashboard-scrollbar::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 0; }
 .dashboard-scrollbar ::-webkit-scrollbar-thumb:hover, .dashboard-scrollbar::-webkit-scrollbar-thumb:hover { background: var(--color-muted-foreground); }
 .dashboard-scrollbar ::-webkit-scrollbar-corner, .dashboard-scrollbar::-webkit-scrollbar-corner { background: var(--color-card); }
+
+::-webkit-scrollbar-corner { background: transparent; }
+
+@media (max-width: 639px) {
+  * {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  *::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+
+  .h-full.overflow-y-auto.p-6,
+  .h-full.space-y-4.overflow-y-auto.p-6,
+  .h-full.overflow-y-auto.px-6.pt-6.pb-3,
+  .h-full.flex.flex-col.p-6.gap-4,
+  .h-full.p-6 {
+    padding: 0.75rem !important;
+  }
+}

@@ -120,3 +120,28 @@ describe('TokensService.validateToken', () => {
     expect(result?.scopes).toEqual(['nodes:list']);
   });
 });
+
+describe('TokensService.updateToken', () => {
+  it('stores canonical API token scopes', async () => {
+    const set = vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) });
+    const db = {
+      update: vi.fn().mockReturnValue({ set }),
+      query: {
+        apiTokens: {
+          findFirst: vi.fn().mockResolvedValue({
+            id: '22222222-2222-4222-8222-222222222222',
+            userId: USER_ID,
+            name: 'CI',
+            scopes: ['nodes:list'],
+          }),
+        },
+      },
+    };
+
+    await createService(db).updateToken(USER_ID, '22222222-2222-4222-8222-222222222222', {
+      scopes: ['proxy:view:host-1', 'proxy:view'],
+    });
+
+    expect(set).toHaveBeenCalledWith({ scopes: ['proxy:view'] });
+  });
+});

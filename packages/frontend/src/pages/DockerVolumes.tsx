@@ -427,6 +427,8 @@ export function DockerVolumes({
           data={filteredVolumes}
           keyFn={(v) => `${(v as any)._nodeId ?? selectedNodeId ?? "node"}:${v.name}`}
           emptyMessage="No volumes found."
+          horizontalScroll
+          minWidth={fixedNodeId ? "720px" : "860px"}
         />
       ) : isLoading || (!visibleNodeId && !nodesLoaded) ? (
         <div className="flex items-center justify-center py-16">

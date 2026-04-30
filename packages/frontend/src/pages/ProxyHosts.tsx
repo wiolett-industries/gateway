@@ -16,6 +16,7 @@ import { EmptyState } from "@/components/common/EmptyState";
 import { FolderCreateDialog } from "@/components/common/FolderCreateDialog";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
+import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
 import { SearchFilterBar } from "@/components/common/SearchFilterBar";
 import { CreateProxyHostDialog } from "@/components/proxy/CreateProxyHostDialog";
 import { DragOverlay } from "@/components/proxy/DragOverlay";
@@ -31,6 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useIsMobile } from "@/hooks/use-is-mobile";
 import { useRealtime } from "@/hooks/use-realtime";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
@@ -53,10 +55,17 @@ const healthOptions: { value: HealthStatus | "all"; label: string }[] = [
   { value: "disabled", label: "Disabled" },
 ];
 
-function UngroupedDropZone({ children }: { children: React.ReactNode }) {
+function UngroupedDropZone({
+  children,
+  disabled,
+}: {
+  children: React.ReactNode;
+  disabled?: boolean;
+}) {
   const { setNodeRef, isOver } = useDroppable({
     id: "folder-ungrouped",
     data: { type: "folder", folderId: null },
+    disabled,
   });
 
   return (
@@ -95,7 +104,10 @@ export function ProxyHosts() {
   const [moveDialogHostId, setMoveDialogHostId] = useState<string | null>(null);
   const [activeDrag, setActiveDrag] = useState<DragEndEvent["active"] | null>(null);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const isMobile = useIsMobile();
   const canManageFolders = hasScope("proxy:edit");
+  const canReorderFolders = canManageFolders && !isMobile;
+  const canCreateProxyHost = hasScope("proxy:create");
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -347,12 +359,36 @@ export function ProxyHosts() {
     <PageTransition>
       <div className="h-full overflow-y-auto px-6 pt-6 pb-3 space-y-4">
         {/* Header */}
-        <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-start justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold">Proxy Hosts</h1>
             <p className="text-sm text-muted-foreground">{totalHosts} proxy hosts total</p>
           </div>
-          <div className="flex items-center gap-2">
+          <ResponsiveHeaderActions
+            actions={[
+              ...(canManageFolders
+                ? [
+                    {
+                      label: "Add Folder",
+                      icon: <FolderPlus className="h-4 w-4" />,
+                      onClick: () => {
+                        setCreateFolderParentId(null);
+                        setCreateFolderOpen(true);
+                      },
+                    },
+                  ]
+                : []),
+              ...(canCreateProxyHost
+                ? [
+                    {
+                      label: "Add Proxy Host",
+                      icon: <Plus className="h-4 w-4" />,
+                      onClick: () => setCreateDialogOpen(true),
+                    },
+                  ]
+                : []),
+            ]}
+          >
             {canManageFolders && (
               <Button
                 variant="outline"
@@ -365,13 +401,13 @@ export function ProxyHosts() {
                 Add Folder
               </Button>
             )}
-            {hasScope("proxy:create") && (
+            {canCreateProxyHost && (
               <Button onClick={() => setCreateDialogOpen(true)}>
                 <Plus className="h-4 w-4" />
                 Add Proxy Host
               </Button>
             )}
-          </div>
+          </ResponsiveHeaderActions>
         </div>
 
         {/* Search and filters */}
@@ -441,14 +477,100 @@ export function ProxyHosts() {
               onDragEnd={handleDragEnd}
               onDragCancel={() => setActiveDrag(null)}
             >
-              <div className="border border-border bg-card">
-                {/* Table header */}
-                <div className="overflow-x-auto">
+              <div className="overflow-x-auto border border-border bg-card">
+                <div className="min-w-[760px]">
+                  {/* Table header */}
                   <table className="w-full" style={{ tableLayout: "fixed" }}>
                     {colGroup}
                     {tableHeaders}
                   </table>
+
+                  {/* Folders */}
+                  {folders.length > 0 && (
+                    <SortableContext
+                      items={folders.map((folder) => `folder-${folder.id}`)}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      {folders.map((folder) => (
+                        <FolderGroup
+                          key={folder.id}
+                          folder={folder}
+                          depth={0}
+                          expanded={expandedFolderIds.has(folder.id)}
+                          onToggle={() => toggleFolder(folder.id)}
+                          onRename={handleRenameFolder}
+                          onDelete={handleDeleteFolder}
+                          onRequestCreateSubfolder={(parentId) => {
+                            setCreateFolderParentId(parentId);
+                            setCreateFolderOpen(true);
+                          }}
+                          onToggleHost={handleToggle}
+                          togglingIds={togglingIds}
+                          onMoveHostToFolder={(hostId) => setMoveDialogHostId(hostId)}
+                          expandedFolderIds={expandedFolderIds}
+                          onToggleFolder={toggleFolder}
+                          canManage={canManageFolders}
+                          canReorder={canReorderFolders}
+                          colGroup={colGroup}
+                        />
+                      ))}
+                    </SortableContext>
+                  )}
+
+                  {/* Ungrouped hosts — always visible when folders exist so it's a drop target */}
+                  {(folders.length > 0 || ungroupedHosts.length > 0) && (
+                    <UngroupedDropZone disabled={!canReorderFolders}>
+                      {folders.length > 0 && (
+                        <div
+                          className={`flex items-center gap-2 px-3 py-2 ${
+                            ungroupedHosts.length > 0 ? "border-b border-border" : ""
+                          }`}
+                        >
+                          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                            Ungrouped
+                          </span>
+                          <Badge variant="secondary" className="text-xs">
+                            {ungroupedHosts.length}
+                          </Badge>
+                        </div>
+                      )}
+                      {ungroupedHosts.length > 0 && (
+                        <SortableContext
+                          items={ungroupedHosts.map((h) => h.id)}
+                          strategy={verticalListSortingStrategy}
+                        >
+                          <table className="w-full" style={{ tableLayout: "fixed" }}>
+                            {colGroup}
+                            <tbody className="[&_tr:last-child]:border-b-0">
+                              {ungroupedHosts.map((host) => (
+                                <ProxyHostRow
+                                  key={host.id}
+                                  host={host}
+                                  onToggle={handleToggle}
+                                  togglingIds={togglingIds}
+                                  onMoveToFolder={(hostId) => setMoveDialogHostId(hostId)}
+                                  canDrag={canReorderFolders}
+                                />
+                              ))}
+                            </tbody>
+                          </table>
+                        </SortableContext>
+                      )}
+                    </UngroupedDropZone>
+                  )}
                 </div>
+              </div>
+
+              <DragOverlay active={activeDrag} colGroup={colGroup} />
+            </DndContext>
+          ) : (
+            <div className="overflow-x-auto border border-border bg-card">
+              <div className="min-w-[760px]">
+                {/* Table header */}
+                <table className="w-full" style={{ tableLayout: "fixed" }}>
+                  {colGroup}
+                  {tableHeaders}
+                </table>
 
                 {/* Folders */}
                 {folders.length > 0 && (
@@ -475,6 +597,7 @@ export function ProxyHosts() {
                         expandedFolderIds={expandedFolderIds}
                         onToggleFolder={toggleFolder}
                         canManage={canManageFolders}
+                        canReorder={canReorderFolders}
                         colGroup={colGroup}
                       />
                     ))}
@@ -483,7 +606,7 @@ export function ProxyHosts() {
 
                 {/* Ungrouped hosts — always visible when folders exist so it's a drop target */}
                 {(folders.length > 0 || ungroupedHosts.length > 0) && (
-                  <UngroupedDropZone>
+                  <UngroupedDropZone disabled={!canReorderFolders}>
                     {folders.length > 0 && (
                       <div
                         className={`flex items-center gap-2 px-3 py-2 ${
@@ -499,108 +622,24 @@ export function ProxyHosts() {
                       </div>
                     )}
                     {ungroupedHosts.length > 0 && (
-                      <SortableContext
-                        items={ungroupedHosts.map((h) => h.id)}
-                        strategy={verticalListSortingStrategy}
-                      >
-                        <table className="w-full" style={{ tableLayout: "fixed" }}>
-                          {colGroup}
-                          <tbody className="[&_tr:last-child]:border-b-0">
-                            {ungroupedHosts.map((host) => (
-                              <ProxyHostRow
-                                key={host.id}
-                                host={host}
-                                onToggle={handleToggle}
-                                togglingIds={togglingIds}
-                                onMoveToFolder={(hostId) => setMoveDialogHostId(hostId)}
-                              />
-                            ))}
-                          </tbody>
-                        </table>
-                      </SortableContext>
+                      <table className="w-full" style={{ tableLayout: "fixed" }}>
+                        {colGroup}
+                        <tbody className="[&_tr:last-child]:border-b-0">
+                          {ungroupedHosts.map((host) => (
+                            <ProxyHostRow
+                              key={host.id}
+                              host={host}
+                              onToggle={handleToggle}
+                              togglingIds={togglingIds}
+                              onMoveToFolder={(hostId) => setMoveDialogHostId(hostId)}
+                            />
+                          ))}
+                        </tbody>
+                      </table>
                     )}
                   </UngroupedDropZone>
                 )}
               </div>
-
-              <DragOverlay active={activeDrag} colGroup={colGroup} />
-            </DndContext>
-          ) : (
-            <div className="border border-border bg-card">
-              {/* Table header */}
-              <div className="overflow-x-auto">
-                <table className="w-full" style={{ tableLayout: "fixed" }}>
-                  {colGroup}
-                  {tableHeaders}
-                </table>
-              </div>
-
-              {/* Folders */}
-              {folders.length > 0 && (
-                <SortableContext
-                  items={folders.map((folder) => `folder-${folder.id}`)}
-                  strategy={verticalListSortingStrategy}
-                >
-                  {folders.map((folder) => (
-                    <FolderGroup
-                      key={folder.id}
-                      folder={folder}
-                      depth={0}
-                      expanded={expandedFolderIds.has(folder.id)}
-                      onToggle={() => toggleFolder(folder.id)}
-                      onRename={handleRenameFolder}
-                      onDelete={handleDeleteFolder}
-                      onRequestCreateSubfolder={(parentId) => {
-                        setCreateFolderParentId(parentId);
-                        setCreateFolderOpen(true);
-                      }}
-                      onToggleHost={handleToggle}
-                      togglingIds={togglingIds}
-                      onMoveHostToFolder={(hostId) => setMoveDialogHostId(hostId)}
-                      expandedFolderIds={expandedFolderIds}
-                      onToggleFolder={toggleFolder}
-                      canManage={canManageFolders}
-                      colGroup={colGroup}
-                    />
-                  ))}
-                </SortableContext>
-              )}
-
-              {/* Ungrouped hosts — always visible when folders exist so it's a drop target */}
-              {(folders.length > 0 || ungroupedHosts.length > 0) && (
-                <UngroupedDropZone>
-                  {folders.length > 0 && (
-                    <div
-                      className={`flex items-center gap-2 px-3 py-2 ${
-                        ungroupedHosts.length > 0 ? "border-b border-border" : ""
-                      }`}
-                    >
-                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                        Ungrouped
-                      </span>
-                      <Badge variant="secondary" className="text-xs">
-                        {ungroupedHosts.length}
-                      </Badge>
-                    </div>
-                  )}
-                  {ungroupedHosts.length > 0 && (
-                    <table className="w-full" style={{ tableLayout: "fixed" }}>
-                      {colGroup}
-                      <tbody className="[&_tr:last-child]:border-b-0">
-                        {ungroupedHosts.map((host) => (
-                          <ProxyHostRow
-                            key={host.id}
-                            host={host}
-                            onToggle={handleToggle}
-                            togglingIds={togglingIds}
-                            onMoveToFolder={(hostId) => setMoveDialogHostId(hostId)}
-                          />
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
-                </UngroupedDropZone>
-              )}
             </div>
           )
         ) : (

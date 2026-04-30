@@ -2,6 +2,7 @@ import { Award, FileCode, Plus } from "lucide-react";
 import { useRef } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { PageTransition } from "@/components/common/PageTransition";
+import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuthStore } from "@/stores/auth";
@@ -70,6 +71,24 @@ export function TemplatesPage() {
         return null;
     }
   };
+  const headerActions =
+    activeTab === "pki" && hasScope("pki:templates:create")
+      ? [
+          {
+            label: "Create Template",
+            icon: <Plus className="h-4 w-4" />,
+            onClick: () => pkiCreateRef.current?.(),
+          },
+        ]
+      : activeTab === "nginx" && hasScope("proxy:edit")
+        ? [
+            {
+              label: "Create Template",
+              icon: <Plus className="h-4 w-4" />,
+              onClick: () => nginxCreateRef.current?.(),
+            },
+          ]
+        : [];
 
   return (
     <PageTransition>
@@ -81,7 +100,9 @@ export function TemplatesPage() {
               Certificate and nginx configuration templates
             </p>
           </div>
-          <div className="flex items-center gap-2">{renderActions()}</div>
+          <ResponsiveHeaderActions actions={headerActions}>
+            {renderActions()}
+          </ResponsiveHeaderActions>
         </div>
 
         <Tabs value={activeTab} onValueChange={handleTabChange} className="flex flex-col">

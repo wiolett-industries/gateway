@@ -11,7 +11,7 @@ import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import { resolveLiveUser } from '@/modules/auth/live-session-user.js';
 import type { User } from '@/types.js';
-import type { CreateTokenInput } from './tokens.schemas.js';
+import type { CreateTokenInput, UpdateTokenInput } from './tokens.schemas.js';
 
 const logger = createChildLogger('TokensService');
 
@@ -83,17 +83,27 @@ export class TokensService {
   }
 
   async renameToken(userId: string, tokenId: string, name: string): Promise<void> {
+    await this.updateToken(userId, tokenId, { name });
+  }
+
+  async updateToken(userId: string, tokenId: string, input: UpdateTokenInput): Promise<void> {
     const token = await this.db.query.apiTokens.findFirst({
       where: and(eq(apiTokens.id, tokenId), eq(apiTokens.userId, userId)),
     });
     if (!token) throw new AppError(404, 'TOKEN_NOT_FOUND', 'Token not found');
-    await this.db.update(apiTokens).set({ name }).where(eq(apiTokens.id, tokenId));
+    const patch: Partial<typeof apiTokens.$inferInsert> = {};
+    if (input.name !== undefined) patch.name = input.name;
+    if (input.scopes !== undefined) patch.scopes = canonicalizeScopes(input.scopes).filter(isApiTokenScope);
+    await this.db.update(apiTokens).set(patch).where(eq(apiTokens.id, tokenId));
     await this.auditService.log({
       userId,
-      action: 'api_token.rename',
+      action: input.scopes === undefined ? 'api_token.rename' : 'api_token.update',
       resourceType: 'api-token',
       resourceId: tokenId,
-      details: { name },
+      details: {
+        name: input.name ?? token.name,
+        ...(input.scopes !== undefined ? { previousScopes: token.scopes, scopes: patch.scopes } : {}),
+      },
     });
   }
 

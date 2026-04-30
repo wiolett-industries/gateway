@@ -6,6 +6,7 @@ import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
+import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -169,10 +170,20 @@ export function AccessLists() {
             </p>
           </div>
           {hasScope("acl:edit") && (
-            <Button onClick={openCreate}>
-              <Plus className="h-4 w-4" />
-              Add Access List
-            </Button>
+            <ResponsiveHeaderActions
+              actions={[
+                {
+                  label: "Add Access List",
+                  icon: <Plus className="h-4 w-4" />,
+                  onClick: openCreate,
+                },
+              ]}
+            >
+              <Button onClick={openCreate}>
+                <Plus className="h-4 w-4" />
+                Add Access List
+              </Button>
+            </ResponsiveHeaderActions>
           )}
         </div>
 

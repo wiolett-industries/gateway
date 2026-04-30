@@ -498,6 +498,8 @@ export function DockerImages({
             return `${img._nodeId ?? selectedNodeId ?? "node"}:${img.id ?? img.Id ?? ""}:${tags.join("|")}`;
           }}
           emptyMessage="No images found."
+          horizontalScroll
+          minWidth={fixedNodeId ? "760px" : "900px"}
         />
       ) : isLoading || (!visibleNodeId && !nodesLoaded) ? (
         <div className="flex items-center justify-center py-16">
