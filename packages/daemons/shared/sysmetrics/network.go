@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	pb "github.com/wiolett/gateway/daemon-shared/gatewayv1"
+	pb "github.com/wiolett-industries/gateway/daemon-shared/gatewayv1"
 )
 
 // GetNetworkInterfaces reads /proc/net/dev and returns per-interface stats, skipping lo.

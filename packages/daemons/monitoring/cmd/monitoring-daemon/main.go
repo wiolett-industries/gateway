@@ -8,9 +8,9 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/wiolett/gateway/daemon-shared/lifecycle"
-	"github.com/wiolett/gateway/monitoring-daemon/internal/config"
-	"github.com/wiolett/gateway/monitoring-daemon/internal/monitoring"
+	"github.com/wiolett-industries/gateway/daemon-shared/lifecycle"
+	"github.com/wiolett-industries/gateway/monitoring-daemon/internal/config"
+	"github.com/wiolett-industries/gateway/monitoring-daemon/internal/monitoring"
 )
 
 // Version is set via -ldflags at build time; falls back to "dev".

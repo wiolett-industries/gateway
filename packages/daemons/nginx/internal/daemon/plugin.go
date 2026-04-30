@@ -7,14 +7,14 @@ import (
 	"os"
 	"time"
 
-	pb "github.com/wiolett/gateway/daemon-shared/gatewayv1"
-	"github.com/wiolett/gateway/daemon-shared/connector"
-	"github.com/wiolett/gateway/daemon-shared/lifecycle"
-	"github.com/wiolett/gateway/daemon-shared/stream"
-	"github.com/wiolett/gateway/daemon-shared/sysmetrics"
-	sharedstate "github.com/wiolett/gateway/daemon-shared/state"
-	"github.com/wiolett/gateway/nginx-daemon/internal/config"
-	"github.com/wiolett/gateway/nginx-daemon/internal/nginx"
+	"github.com/wiolett-industries/gateway/daemon-shared/connector"
+	pb "github.com/wiolett-industries/gateway/daemon-shared/gatewayv1"
+	"github.com/wiolett-industries/gateway/daemon-shared/lifecycle"
+	sharedstate "github.com/wiolett-industries/gateway/daemon-shared/state"
+	"github.com/wiolett-industries/gateway/daemon-shared/stream"
+	"github.com/wiolett-industries/gateway/daemon-shared/sysmetrics"
+	"github.com/wiolett-industries/gateway/nginx-daemon/internal/config"
+	"github.com/wiolett-industries/gateway/nginx-daemon/internal/nginx"
 	"google.golang.org/grpc"
 )
 

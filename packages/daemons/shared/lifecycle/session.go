@@ -7,11 +7,11 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/wiolett/gateway/daemon-shared/connector"
-	"github.com/wiolett/gateway/daemon-shared/exec"
-	pb "github.com/wiolett/gateway/daemon-shared/gatewayv1"
-	"github.com/wiolett/gateway/daemon-shared/stream"
-	"github.com/wiolett/gateway/daemon-shared/sysmetrics"
+	"github.com/wiolett-industries/gateway/daemon-shared/connector"
+	"github.com/wiolett-industries/gateway/daemon-shared/exec"
+	pb "github.com/wiolett-industries/gateway/daemon-shared/gatewayv1"
+	"github.com/wiolett-industries/gateway/daemon-shared/stream"
+	"github.com/wiolett-industries/gateway/daemon-shared/sysmetrics"
 	"google.golang.org/grpc"
 )
 

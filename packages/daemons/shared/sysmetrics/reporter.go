@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	pb "github.com/wiolett/gateway/daemon-shared/gatewayv1"
+	pb "github.com/wiolett-industries/gateway/daemon-shared/gatewayv1"
 )
 
 // SystemReporter collects system-level metrics into a HealthReport.

@@ -14,7 +14,7 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
 	mobyclient "github.com/moby/moby/client"
-	pb "github.com/wiolett/gateway/daemon-shared/gatewayv1"
+	pb "github.com/wiolett-industries/gateway/daemon-shared/gatewayv1"
 )
 
 const (

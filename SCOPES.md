@@ -11,6 +11,27 @@ All scopes follow `domain:resource:action[:qualifier]`. Resource-scopable scopes
 | `operator` | Operational access for day-to-day PKI, proxy, SSL, ACL, node, Docker container, database, notification, and logging read/query work. |
 | `viewer` | Read-only list/view access. |
 
+## Programmatic Access
+
+Gateway has three token families:
+
+| Prefix | Purpose |
+|--------|---------|
+| `gw_` | API token for REST API automation. |
+| `gwo_` | OAuth access token for one OAuth resource. |
+| `gwl_` | External logging ingest token. |
+
+OAuth tokens are bound to exactly one resource:
+
+| Resource | URL path | Accepted by |
+|----------|----------|-------------|
+| Gateway API | `/api` | REST API routes |
+| Gateway MCP | `/api/mcp` | Remote MCP endpoint |
+
+The REST API accepts browser sessions, `gw_` API tokens, and `gwo_` OAuth tokens issued for the Gateway API resource. The MCP endpoint accepts only `gwo_` OAuth tokens issued for the Gateway MCP resource; API tokens, browser cookies, and logging tokens are rejected.
+
+Delegated API/OAuth scopes are always bounded by the owning user's current effective scopes. Revoking or editing a user's group permissions also reduces the effective permissions of that user's existing tokens.
+
 ## Scope List
 
 | Scope | Resource-scopable |
@@ -154,4 +175,51 @@ All scopes follow `domain:resource:action[:qualifier]`. Resource-scopable scopes
 
 ## API Token Delegation
 
-API tokens cannot be granted `feat:ai:use`, `feat:ai:configure`, or `admin:system`. `admin:system` remains a protected user/group scope for system administrator shielding.
+API and OAuth tokens can be granted 122 of the 136 scopes. They cannot be granted:
+
+| Scope | Reason |
+|-------|--------|
+| `feat:ai:use` | User/session-only AI assistant access. |
+| `feat:ai:configure` | User/session-only AI configuration. |
+| `mcp:use` | User-account capability gate for remote MCP. |
+| `admin:system` | Protected system-administrator shielding. |
+| `admin:users` | User administration is session-only. |
+| `admin:groups` | Permission group administration is session-only. |
+| `settings:gateway:view` | Gateway auth/control-plane settings are session-only. |
+| `settings:gateway:edit` | Gateway auth/control-plane settings are session-only. |
+| `proxy:raw:read` | Raw nginx config is session-only. |
+| `proxy:raw:write` | Raw nginx config is session-only. |
+| `proxy:raw:toggle` | Raw nginx mode is session-only. |
+| `proxy:advanced:bypass` | Unrestricted advanced nginx snippets are session-only. |
+| `nodes:config:view` | Global node nginx config is session-only. |
+| `nodes:config:edit` | Global node nginx config is session-only. |
+
+`mcp:use` is not a token scope. It gates whether the owning user account may use the MCP endpoint at all. MCP tokens use ordinary delegated Gateway scopes such as `nodes:list`, `proxy:view`, or `docker:containers:view` to determine which MCP tools and resources are available.
+
+## OAuth Manual Approval Scopes
+
+OAuth consent leaves high-risk scopes unchecked by default. The user must explicitly select them in the consent UI. Resource-scoped variants are covered by their base scope, for example `pki:cert:export:<certificateId>` is treated as `pki:cert:export`.
+
+| Scope | Risk |
+|-------|------|
+| `pki:ca:create:root` | Can create trust anchors and currently gates CA private-key export. |
+| `pki:ca:create:intermediate` | Can create subordinate CAs. |
+| `pki:ca:revoke:root` | Can revoke or delete root CAs. |
+| `pki:ca:revoke:intermediate` | Can revoke or delete intermediate CAs. |
+| `pki:cert:export` | Can export certificates with private key material. |
+| `ssl:cert:issue` | Can upload/provision certificates and private keys. |
+| `ssl:cert:delete` | Can remove deployed SSL certificates. |
+| `ssl:cert:revoke` | Can revoke SSL certificates. |
+| `ssl:cert:export` | Reserved for SSL certificate export capability. |
+| `nodes:console` | Can open an interactive shell on nodes. |
+| `docker:containers:console` | Can open an interactive console in containers. |
+| `docker:containers:files` | Can read and write container filesystem contents. |
+| `docker:containers:secrets` | Can reveal and manage encrypted container/deployment secrets. |
+| `databases:query:read` | Can read data from saved database connections. |
+| `databases:query:write` | Can modify data in saved database connections. |
+| `databases:query:admin` | Can run administrative database commands. |
+| `databases:credentials:reveal` | Can reveal stored database credentials and connection strings. |
+| `logs:tokens:create` | Can mint logging ingest tokens. |
+| `admin:audit` | Can read audit history. |
+| `admin:details:certificates` | Can view internal system PKI and SSL certificates. |
+| `admin:update` | Can check for and apply Gateway/daemon updates. |

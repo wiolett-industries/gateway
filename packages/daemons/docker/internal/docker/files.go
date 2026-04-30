@@ -235,8 +235,9 @@ func parseLsOutput(output string) []FileEntry {
 
 // parseLsLine parses a single line of ls -la output.
 // Handles both GNU and BusyBox formats:
-//   GNU:     -rw-r--r--  1 root root 12345 2024-01-15 10:30 filename.txt
-//   BusyBox: -rw-r--r--  1 root root 12345 Apr  1 01:10 filename.txt
+//
+//	GNU:     -rw-r--r--  1 root root 12345 2024-01-15 10:30 filename.txt
+//	BusyBox: -rw-r--r--  1 root root 12345 Apr  1 01:10 filename.txt
 func parseLsLine(line string) *FileEntry {
 	fields := strings.Fields(line)
 	if len(fields) < 8 {

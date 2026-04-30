@@ -8,8 +8,8 @@ import (
 	"math/rand/v2"
 	"time"
 
-	"github.com/wiolett/gateway/daemon-shared/auth"
-	pb "github.com/wiolett/gateway/daemon-shared/gatewayv1"
+	"github.com/wiolett-industries/gateway/daemon-shared/auth"
+	pb "github.com/wiolett-industries/gateway/daemon-shared/gatewayv1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials"

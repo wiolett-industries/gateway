@@ -4750,7 +4750,7 @@ const file_gateway_v1_nginx_daemon_proto_rawDesc = "" +
 	"\rCommandStream\x12\x19.gateway.v1.DaemonMessage\x1a\x1a.gateway.v1.GatewayCommand(\x010\x012Y\n" +
 	"\tLogStream\x12L\n" +
 	"\n" +
-	"StreamLogs\x12\x1c.gateway.v1.LogStreamMessage\x1a\x1c.gateway.v1.LogStreamControl(\x010\x01B4Z2github.com/wiolett/gateway/daemon-shared/gatewayv1b\x06proto3"
+	"StreamLogs\x12\x1c.gateway.v1.LogStreamMessage\x1a\x1c.gateway.v1.LogStreamControl(\x010\x01B?Z=github.com/wiolett-industries/gateway/daemon-shared/gatewayv1b\x06proto3"
 
 var (
 	file_gateway_v1_nginx_daemon_proto_rawDescOnce sync.Once

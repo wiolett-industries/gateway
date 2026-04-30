@@ -8,11 +8,11 @@ import (
 	"regexp"
 	"strings"
 
-	pb "github.com/wiolett/gateway/daemon-shared/gatewayv1"
-	"github.com/wiolett/gateway/daemon-shared/stream"
-	sharedstate "github.com/wiolett/gateway/daemon-shared/state"
-	"github.com/wiolett/gateway/nginx-daemon/internal/config"
-	"github.com/wiolett/gateway/nginx-daemon/internal/nginx"
+	pb "github.com/wiolett-industries/gateway/daemon-shared/gatewayv1"
+	sharedstate "github.com/wiolett-industries/gateway/daemon-shared/state"
+	"github.com/wiolett-industries/gateway/daemon-shared/stream"
+	"github.com/wiolett-industries/gateway/nginx-daemon/internal/config"
+	"github.com/wiolett-industries/gateway/nginx-daemon/internal/nginx"
 )
 
 // acmeTokenRegex validates ACME challenge tokens (alphanumeric + dash + underscore).

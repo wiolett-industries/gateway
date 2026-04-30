@@ -4,9 +4,9 @@ import (
 	"log/slog"
 	"path/filepath"
 
-	pb "github.com/wiolett/gateway/daemon-shared/gatewayv1"
-	"github.com/wiolett/gateway/nginx-daemon/internal/config"
-	"github.com/wiolett/gateway/nginx-daemon/internal/nginx"
+	pb "github.com/wiolett-industries/gateway/daemon-shared/gatewayv1"
+	"github.com/wiolett-industries/gateway/nginx-daemon/internal/config"
+	"github.com/wiolett-industries/gateway/nginx-daemon/internal/nginx"
 )
 
 // Reporter collects nginx-specific metrics.

@@ -10,9 +10,9 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/wiolett/gateway/daemon-shared/lifecycle"
-	"github.com/wiolett/gateway/docker-daemon/internal/config"
-	"github.com/wiolett/gateway/docker-daemon/internal/docker"
+	"github.com/wiolett-industries/gateway/daemon-shared/lifecycle"
+	"github.com/wiolett-industries/gateway/docker-daemon/internal/config"
+	"github.com/wiolett-industries/gateway/docker-daemon/internal/docker"
 )
 
 // Version is set via -ldflags at build time; falls back to "dev".

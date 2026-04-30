@@ -22,3 +22,8 @@ packages/daemons/nginx/nginx-daemon
 .memory/memory.db*
 .memory/memories/
 .memory/embeddings/
+.codex
+.claude
+.nx
+.pnpm-store
+.shannon

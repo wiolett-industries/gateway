@@ -4,8 +4,8 @@ import (
 	"context"
 	"log/slog"
 
-	pb "github.com/wiolett/gateway/daemon-shared/gatewayv1"
-	"github.com/wiolett/gateway/daemon-shared/stream"
+	pb "github.com/wiolett-industries/gateway/daemon-shared/gatewayv1"
+	"github.com/wiolett-industries/gateway/daemon-shared/stream"
 )
 
 // FatalError is returned when the daemon must exit and NOT retry.

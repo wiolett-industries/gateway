@@ -4,8 +4,8 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/wiolett/gateway/daemon-shared/lifecycle"
-	"github.com/wiolett/gateway/nginx-daemon/internal/config"
+	"github.com/wiolett-industries/gateway/daemon-shared/lifecycle"
+	"github.com/wiolett-industries/gateway/nginx-daemon/internal/config"
 )
 
 // Version is set via -ldflags at build time; falls back to "dev".

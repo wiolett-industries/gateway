@@ -5,10 +5,10 @@ import (
 	"log/slog"
 	"os"
 
-	pb "github.com/wiolett/gateway/daemon-shared/gatewayv1"
-	"github.com/wiolett/gateway/daemon-shared/lifecycle"
-	"github.com/wiolett/gateway/daemon-shared/stream"
-	"github.com/wiolett/gateway/daemon-shared/sysmetrics"
+	pb "github.com/wiolett-industries/gateway/daemon-shared/gatewayv1"
+	"github.com/wiolett-industries/gateway/daemon-shared/lifecycle"
+	"github.com/wiolett-industries/gateway/daemon-shared/stream"
+	"github.com/wiolett-industries/gateway/daemon-shared/sysmetrics"
 )
 
 // MonitoringPlugin implements lifecycle.DaemonPlugin for the monitoring daemon.

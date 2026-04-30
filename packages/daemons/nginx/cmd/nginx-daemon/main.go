@@ -8,8 +8,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/wiolett/gateway/nginx-daemon/internal/config"
-	"github.com/wiolett/gateway/nginx-daemon/internal/daemon"
+	"github.com/wiolett-industries/gateway/nginx-daemon/internal/config"
+	"github.com/wiolett-industries/gateway/nginx-daemon/internal/daemon"
 )
 
 func main() {

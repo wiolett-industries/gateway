@@ -15,11 +15,11 @@ import (
 	"sync"
 	"time"
 
-	pb "github.com/wiolett/gateway/daemon-shared/gatewayv1"
-	"github.com/wiolett/gateway/daemon-shared/lifecycle"
-	"github.com/wiolett/gateway/daemon-shared/stream"
-	"github.com/wiolett/gateway/daemon-shared/sysmetrics"
-	"github.com/wiolett/gateway/docker-daemon/internal/config"
+	pb "github.com/wiolett-industries/gateway/daemon-shared/gatewayv1"
+	"github.com/wiolett-industries/gateway/daemon-shared/lifecycle"
+	"github.com/wiolett-industries/gateway/daemon-shared/stream"
+	"github.com/wiolett-industries/gateway/daemon-shared/sysmetrics"
+	"github.com/wiolett-industries/gateway/docker-daemon/internal/config"
 )
 
 // DockerPlugin implements lifecycle.DaemonPlugin for the docker daemon.

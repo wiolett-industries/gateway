@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	pb "github.com/wiolett/gateway/daemon-shared/gatewayv1"
+	pb "github.com/wiolett-industries/gateway/daemon-shared/gatewayv1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 )

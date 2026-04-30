@@ -1,4 +1,4 @@
-MODULE := github.com/wiolett/gateway/docker-daemon
+MODULE := github.com/wiolett-industries/gateway/docker-daemon
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 BINARY := bin/docker-daemon
 

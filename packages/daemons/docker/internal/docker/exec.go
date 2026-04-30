@@ -10,8 +10,8 @@ import (
 
 	"github.com/moby/moby/client"
 
-	pb "github.com/wiolett/gateway/daemon-shared/gatewayv1"
-	"github.com/wiolett/gateway/daemon-shared/stream"
+	pb "github.com/wiolett-industries/gateway/daemon-shared/gatewayv1"
+	"github.com/wiolett-industries/gateway/daemon-shared/stream"
 )
 
 const maxBufferChunks = 1000

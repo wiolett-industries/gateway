@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/wiolett/gateway/daemon-shared/lifecycle"
+	"github.com/wiolett-industries/gateway/daemon-shared/lifecycle"
 	"gopkg.in/yaml.v3"
 )
 

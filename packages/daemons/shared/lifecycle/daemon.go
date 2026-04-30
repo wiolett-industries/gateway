@@ -7,12 +7,12 @@ import (
 	"os"
 	"runtime"
 
-	"github.com/wiolett/gateway/daemon-shared/auth"
-	"github.com/wiolett/gateway/daemon-shared/connector"
-	"github.com/wiolett/gateway/daemon-shared/enrollment"
-	"github.com/wiolett/gateway/daemon-shared/state"
-	"github.com/wiolett/gateway/daemon-shared/stream"
-	"github.com/wiolett/gateway/daemon-shared/sysmetrics"
+	"github.com/wiolett-industries/gateway/daemon-shared/auth"
+	"github.com/wiolett-industries/gateway/daemon-shared/connector"
+	"github.com/wiolett-industries/gateway/daemon-shared/enrollment"
+	"github.com/wiolett-industries/gateway/daemon-shared/state"
+	"github.com/wiolett-industries/gateway/daemon-shared/stream"
+	"github.com/wiolett-industries/gateway/daemon-shared/sysmetrics"
 )
 
 // Version is set via -ldflags at build time; falls back to "dev".

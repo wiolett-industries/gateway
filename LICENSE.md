@@ -1,6 +1,13 @@
-# PolyForm Small Business License 1.0.0
+# Wiolett Industries Gateway License Terms
 
-<https://polyformproject.org/licenses/small-business/1.0.0>
+These terms are based on the PolyForm Small Business License
+1.0.0, with Wiolett Industries-specific small-business thresholds and
+additional permitted personal and noncommercial uses.
+
+Reference: <https://polyformproject.org/licenses/small-business/1.0.0>
+
+Product license tiers, activation, and renewal policy are
+documented separately in [docs/licensing.md](docs/licensing.md).
 
 ## Acceptance
 
@@ -35,7 +42,7 @@ URL for them above, as well as copies of any plain-text lines
 beginning with `Required Notice:` that the licensor provided
 with the software. For example:
 
-> Required Notice: Copyright Wiolett (https://wiolett.net)
+> Required Notice: Copyright Wiolett Industries (https://wiolett.net)
 
 ## Changes and New Works License
 
@@ -58,6 +65,18 @@ contractors, and less than 100,000 USD (2025) total revenue
 in the prior tax year. If your company grows beyond either
 of those limits, you may continue use for a permitted purpose
 for 1 year after exceeding either limit for the first time.
+
+Eligible small businesses may request a free Homelab product
+license key as described in [docs/licensing.md](docs/licensing.md).
+Enterprise product license keys are paid commercial keys.
+
+## Commercial Licenses
+
+If your company does not qualify under [Small Business](#small-business),
+or if your use is otherwise not a permitted purpose under
+these terms, you need a separate paid commercial license from
+the licensor. The current Enterprise product license policy is
+documented in [docs/licensing.md](docs/licensing.md).
 
 ## Personal Uses
 
