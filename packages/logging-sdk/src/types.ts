@@ -40,19 +40,39 @@ export interface GatewayRetryOptions {
   jitter?: boolean;
 }
 
+export type GatewayLog = NormalizedGatewayLogEvent;
+export type GatewayLogFailureReason = 'permanent_failure' | 'retry_exhausted';
+
+export interface GatewayLogFailureInfo {
+  reason: GatewayLogFailureReason;
+  error?: unknown;
+  status?: number;
+}
+
+export enum GatewayLoggerHook {
+  SHUTDOWN = 'shutdown',
+}
+
+export interface GatewayLoggerHooks {
+  install(hook: GatewayLoggerHook): () => void;
+  uninstall(hook: GatewayLoggerHook): void;
+}
+
 export interface GatewayLoggerOptions extends GatewayLogContext {
   endpoint: string;
   token: string;
   batching?: GatewayBatchingOptions;
   retry?: GatewayRetryOptions;
   fetch?: typeof fetch;
-  onError?: (error: unknown) => void;
-  onDrop?: (event: NormalizedGatewayLogEvent, reason: GatewayLogDropReason) => void;
+  onError?: (error: unknown, logs?: readonly GatewayLog[], failure?: GatewayLogFailureInfo) => void;
+  onDrop?: (log: GatewayLog, reason: GatewayLogDropReason) => void;
+  onFallback?: (logs: readonly GatewayLog[], failure: GatewayLogFailureInfo) => void | Promise<void>;
 }
 
 export type GatewayLogDropReason = 'queue_full' | 'closed' | 'invalid_event' | 'permanent_failure' | 'retry_exhausted';
 
-export interface GatewayLogger {
+export interface GatewayLoggerMethods {
+  readonly hooks: GatewayLoggerHooks;
   trace(message: string, options?: GatewayLogOptions): void;
   debug(message: string, options?: GatewayLogOptions): void;
   info(message: string, options?: GatewayLogOptions): void;
@@ -60,12 +80,11 @@ export interface GatewayLogger {
   error(message: string, options?: GatewayLogOptions): void;
   fatal(message: string, options?: GatewayLogOptions): void;
   log(event: GatewayLogEvent): void;
-  child(context: GatewayLogContext): GatewayLogger;
+  child(context: GatewayLogContext): GatewayLoggerMethods;
   createTrace(context?: GatewayTraceContext): GatewayTraceLogger;
-  withContext<T>(context: GatewayLogContext, fn: (logger: GatewayLogger) => T | Promise<T>): Promise<T>;
+  withContext<T>(context: GatewayLogContext, fn: (logger: GatewayLoggerMethods) => T | Promise<T>): Promise<T>;
   flush(): Promise<void>;
   close(): Promise<void>;
-  installShutdownHooks(): () => void;
 }
 
 export interface GatewayTraceContext extends GatewayLogContext {
@@ -78,13 +97,13 @@ export interface GatewaySpanContext extends GatewayLogContext {
   spanId?: string;
 }
 
-export interface GatewayTraceLogger extends GatewayLogger {
+export interface GatewayTraceLogger extends GatewayLoggerMethods {
   readonly traceId: string;
   createSpan(context?: GatewaySpanContext | string): GatewaySpanLogger;
   end(message?: string, options?: GatewayLogOptions): Promise<void>;
 }
 
-export interface GatewaySpanLogger extends GatewayLogger {
+export interface GatewaySpanLogger extends GatewayLoggerMethods {
   readonly traceId: string;
   readonly spanId: string;
   end(message?: string, options?: GatewayLogOptions): Promise<void>;

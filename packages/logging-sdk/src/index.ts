@@ -1,10 +1,14 @@
-export { createGatewayLogger } from './logger.js';
+export { GatewayLogger } from './logger.js';
 export type {
   GatewayBatchingOptions,
+  GatewayLog,
   GatewayLogContext,
   GatewayLogDropReason,
   GatewayLogEvent,
-  GatewayLogger,
+  GatewayLogFailureInfo,
+  GatewayLogFailureReason,
+  GatewayLoggerHooks,
+  GatewayLoggerMethods,
   GatewayLoggerOptions,
   GatewayLogOptions,
   GatewayLogSeverity,
@@ -15,3 +19,4 @@ export type {
   GatewayTraceContext,
   GatewayTraceLogger,
 } from './types.js';
+export { GatewayLoggerHook } from './types.js';

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createGatewayLogger } from './logger.js';
+import { GatewayLogger } from './logger.js';
+import { GatewayLoggerHook } from './types.js';
 
 describe('gateway logger', () => {
   it('queues severity helper events with merged context', async () => {
@@ -7,7 +8,7 @@ describe('gateway logger', () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValue(new Response(JSON.stringify({ accepted: 1, rejected: 0, errors: [] }), { status: 200 }));
-    const logger = createGatewayLogger({
+    const logger = new GatewayLogger({
       endpoint: 'https://gateway.example.com',
       token: 'gwl_test',
       service: 'api',
@@ -43,7 +44,7 @@ describe('gateway logger', () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValue(new Response(JSON.stringify({ accepted: 1, rejected: 0, errors: [] }), { status: 200 }));
-    const logger = createGatewayLogger({
+    const logger = new GatewayLogger({
       endpoint: 'https://gateway.example.com',
       token: 'gwl_test',
       fetch: fetchMock,
@@ -61,7 +62,7 @@ describe('gateway logger', () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValue(new Response(JSON.stringify({ accepted: 1, rejected: 0, errors: [] }), { status: 200 }));
-    const logger = createGatewayLogger({
+    const logger = new GatewayLogger({
       endpoint: 'https://gateway.example.com',
       token: 'gwl_test',
       labels: { app: 'billing' },
@@ -78,6 +79,36 @@ describe('gateway logger', () => {
       requestId: 'req_123',
       labels: { app: 'billing', route: '/payments' },
     });
+    await logger.close();
+  });
+
+  it('installs shutdown hooks once and supports registry uninstallers', async () => {
+    const logger = new GatewayLogger({
+      endpoint: 'https://gateway.example.com',
+      token: 'gwl_test',
+      fetch: vi.fn().mockResolvedValue(new Response(JSON.stringify({ accepted: 0, rejected: 0 }), { status: 200 })),
+    });
+    const beforeSigint = process.listenerCount('SIGINT');
+    const beforeSigterm = process.listenerCount('SIGTERM');
+    const beforeExit = process.listenerCount('beforeExit');
+
+    const uninstall = logger.hooks.install(GatewayLoggerHook.SHUTDOWN);
+    const duplicateUninstall = logger.hooks.install(GatewayLoggerHook.SHUTDOWN);
+
+    expect(process.listenerCount('SIGINT')).toBe(beforeSigint + 1);
+    expect(process.listenerCount('SIGTERM')).toBe(beforeSigterm + 1);
+    expect(process.listenerCount('beforeExit')).toBe(beforeExit + 1);
+
+    logger.hooks.uninstall(GatewayLoggerHook.SHUTDOWN);
+    expect(process.listenerCount('SIGINT')).toBe(beforeSigint);
+    expect(process.listenerCount('SIGTERM')).toBe(beforeSigterm);
+    expect(process.listenerCount('beforeExit')).toBe(beforeExit);
+
+    uninstall();
+    duplicateUninstall();
+    expect(process.listenerCount('SIGINT')).toBe(beforeSigint);
+    expect(process.listenerCount('SIGTERM')).toBe(beforeSigterm);
+    expect(process.listenerCount('beforeExit')).toBe(beforeExit);
     await logger.close();
   });
 });

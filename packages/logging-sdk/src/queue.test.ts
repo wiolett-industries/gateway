@@ -122,4 +122,44 @@ describe('gateway log queue', () => {
 
     expect(onDrop).toHaveBeenCalledWith(event('after close'), 'closed');
   });
+
+  it('passes failed logs to drop, error, and fallback callbacks when delivery permanently fails', async () => {
+    const error = { code: 'INVALID_BODY' };
+    const logs = [event('one'), event('two')];
+    const onDrop = vi.fn();
+    const onError = vi.fn();
+    const onFallback = vi.fn();
+    const queue = new GatewayLogQueue({
+      transport: {
+        send: vi.fn().mockResolvedValue({ ok: false, retryable: false, rateLimited: false, status: 400, error }),
+      } as GatewayTransport,
+      maxBatchSize: 100,
+      flushIntervalMs: 60_000,
+      flushDebounceMs: 250,
+      maxQueueSize: 1000,
+      overflow: 'drop-oldest',
+      retry: { maxAttempts: 3, minDelayMs: 100, maxDelayMs: 1000, jitter: false },
+      onDrop,
+      onError,
+      onFallback,
+    });
+
+    queue.enqueue(logs[0]);
+    queue.enqueue(logs[1]);
+    await queue.flush();
+
+    expect(onDrop).toHaveBeenNthCalledWith(1, logs[0], 'permanent_failure');
+    expect(onDrop).toHaveBeenNthCalledWith(2, logs[1], 'permanent_failure');
+    expect(onError).toHaveBeenCalledWith(error, logs, {
+      reason: 'permanent_failure',
+      error,
+      status: 400,
+    });
+    expect(onFallback).toHaveBeenCalledWith(logs, {
+      reason: 'permanent_failure',
+      error,
+      status: 400,
+    });
+    await queue.close();
+  });
 });

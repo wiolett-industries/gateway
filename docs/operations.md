@@ -217,9 +217,9 @@ curl -H "Content-Type: application/json" \
 ### TypeScript SDK
 
 ```ts
-import { createGatewayLogger } from "@wiolett/gateway-logger";
+import { GatewayLogger } from "@wiolett/gateway-logger";
 
-const logger = createGatewayLogger({
+const logger = new GatewayLogger({
   endpoint: "https://gw.example.com",
   token: process.env.GATEWAY_LOGGING_TOKEN!,
   service: "billing-api",

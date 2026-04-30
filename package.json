@@ -36,6 +36,17 @@
     "pnpm": ">=9.0.0"
   },
   "packageManager": "pnpm@9.15.0",
+  "pnpm": {
+    "overrides": {
+      "@hono/node-server": "1.19.13",
+      "axios": "1.15.0",
+      "follow-redirects": "1.16.0",
+      "hono": "4.12.14",
+      "postcss": "8.5.10",
+      "protobufjs": "7.5.5",
+      "esbuild": "0.25.12"
+    }
+  },
   "devDependencies": {
     "nx": "22.6.3"
   }

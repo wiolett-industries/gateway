@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createGatewayLogger } from './logger.js';
+import { GatewayLogger } from './logger.js';
 
 describe('gateway trace logger', () => {
   it('adds trace id to trace logs and trace plus span id to span logs', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValue(new Response(JSON.stringify({ accepted: 2, rejected: 0, errors: [] }), { status: 200 }));
-    const logger = createGatewayLogger({
+    const logger = new GatewayLogger({
       endpoint: 'https://gateway.example.com',
       token: 'gwl_test',
       fetch: fetchMock,
@@ -35,7 +35,7 @@ describe('gateway trace logger', () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValue(new Response(JSON.stringify({ accepted: 1, rejected: 0, errors: [] }), { status: 200 }));
-    const logger = createGatewayLogger({
+    const logger = new GatewayLogger({
       endpoint: 'https://gateway.example.com',
       token: 'gwl_test',
       fetch: fetchMock,

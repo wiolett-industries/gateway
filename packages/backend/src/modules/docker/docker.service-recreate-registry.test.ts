@@ -24,7 +24,20 @@ function createService(dispatch: {
     dispatch as never,
     { getNode: vi.fn().mockReturnValue({ id: 'node-1' }) } as never
   );
-  vi.spyOn(service as never, 'watchRecreateByName').mockImplementation(() => undefined);
+  vi.spyOn(
+    service as unknown as {
+      watchRecreateByName: (
+        nodeId: string,
+        containerName: string,
+        oldContainerId: string,
+        taskId: string | undefined,
+        progress: string,
+        expectedState: string,
+        timeoutMs?: number
+      ) => void;
+    },
+    'watchRecreateByName'
+  ).mockImplementation(() => undefined);
   return service;
 }
 

@@ -1,6 +1,13 @@
 import { calculateRetryDelayMs, sleep } from './retry.js';
 import type { GatewayTransport } from './transport.js';
-import type { GatewayLogDropReason, GatewayRetryOptions, NormalizedGatewayLogEvent } from './types.js';
+import type {
+  GatewayLog,
+  GatewayLogDropReason,
+  GatewayLogFailureInfo,
+  GatewayLogFailureReason,
+  GatewayRetryOptions,
+  NormalizedGatewayLogEvent,
+} from './types.js';
 
 export interface GatewayLogQueueOptions {
   transport: GatewayTransport;
@@ -10,8 +17,9 @@ export interface GatewayLogQueueOptions {
   maxQueueSize: number;
   overflow: 'drop-oldest' | 'drop-newest';
   retry: Required<GatewayRetryOptions>;
-  onError?: (error: unknown) => void;
-  onDrop?: (event: NormalizedGatewayLogEvent, reason: GatewayLogDropReason) => void;
+  onError?: (error: unknown, logs?: readonly GatewayLog[], failure?: GatewayLogFailureInfo) => void;
+  onDrop?: (log: GatewayLog, reason: GatewayLogDropReason) => void;
+  onFallback?: (logs: readonly GatewayLog[], failure: GatewayLogFailureInfo) => void | Promise<void>;
 }
 
 export class GatewayLogQueue {
@@ -97,14 +105,12 @@ export class GatewayLogQueue {
       if (result.ok) return;
 
       if (!result.retryable) {
-        this.dropBatch(batch, 'permanent_failure');
-        this.options.onError?.(result.error);
+        await this.handleDeliveryFailure(batch, 'permanent_failure', result.error, result.status);
         return;
       }
 
       if (attempt >= this.options.retry.maxAttempts) {
-        this.dropBatch(batch, 'retry_exhausted');
-        this.options.onError?.(result.error);
+        await this.handleDeliveryFailure(batch, 'retry_exhausted', result.error, result.status);
         return;
       }
 
@@ -122,5 +128,28 @@ export class GatewayLogQueue {
 
   private dropBatch(batch: NormalizedGatewayLogEvent[], reason: GatewayLogDropReason): void {
     for (const event of batch) this.options.onDrop?.(event, reason);
+  }
+
+  private async handleDeliveryFailure(
+    batch: NormalizedGatewayLogEvent[],
+    reason: GatewayLogFailureReason,
+    error: unknown,
+    status: number | undefined
+  ): Promise<void> {
+    const logs = [...batch];
+    const failure: GatewayLogFailureInfo = {
+      reason,
+      error,
+      status,
+    };
+    this.dropBatch(batch, reason);
+    this.options.onError?.(error, logs, failure);
+    if (!this.options.onFallback) return;
+
+    try {
+      await this.options.onFallback(logs, failure);
+    } catch (fallbackError) {
+      this.options.onError?.(fallbackError, logs, failure);
+    }
   }
 }
