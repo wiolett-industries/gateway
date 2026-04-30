@@ -50,7 +50,6 @@ groupRoutes.openapi(createGroupRoute, async (c) => {
     resourceType: 'permission_group',
     resourceId: group.id,
     details: { name: group.name, scopes: input.scopes },
-    ipAddress: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || c.req.header('x-real-ip'),
     userAgent: c.req.header('user-agent'),
   });
 
@@ -81,7 +80,6 @@ groupRoutes.openapi(updateGroupRoute, async (c) => {
     resourceType: 'permission_group',
     resourceId: id,
     details: { changes: input },
-    ipAddress: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || c.req.header('x-real-ip'),
     userAgent: c.req.header('user-agent'),
   });
 
@@ -108,7 +106,6 @@ groupRoutes.openapi(deleteGroupRoute, async (c) => {
     resourceType: 'permission_group',
     resourceId: id,
     details: { name: group.name },
-    ipAddress: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || c.req.header('x-real-ip'),
     userAgent: c.req.header('user-agent'),
   });
 

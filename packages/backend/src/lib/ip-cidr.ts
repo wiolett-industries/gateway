@@ -1,0 +1,95 @@
+export function normalizeIp(value: string | null | undefined): string | undefined {
+  if (!value) return undefined;
+  let ip = value.trim();
+  if (!ip) return undefined;
+  if (ip.startsWith('[') && ip.includes(']')) {
+    ip = ip.slice(1, ip.indexOf(']'));
+  }
+  if (ip.startsWith('::ffff:')) {
+    ip = ip.slice(7);
+  }
+  if (ip.includes(':') && ip.includes('.') && ip.lastIndexOf(':') > ip.lastIndexOf('.')) {
+    ip = ip.slice(0, ip.lastIndexOf(':'));
+  }
+  return parseIp(ip) ? ip.toLowerCase() : undefined;
+}
+
+export function isValidCidr(cidr: string): boolean {
+  const [range, bitsRaw] = cidr.split('/');
+  if (!range || bitsRaw === undefined || cidr.split('/').length !== 2) return false;
+  const parsedRange = parseIp(range);
+  const bits = Number(bitsRaw);
+  if (!parsedRange || !Number.isInteger(bits)) return false;
+  const maxBits = parsedRange.version === 4 ? 32 : 128;
+  return bits >= 0 && bits <= maxBits;
+}
+
+export function ipInAnyCidr(ip: string, cidrs: string[]): boolean {
+  return cidrs.some((cidr) => ipInCidr(ip, cidr));
+}
+
+export function ipInCidr(ip: string, cidr: string): boolean {
+  const [range, bitsRaw] = cidr.split('/');
+  const parsedIp = parseIp(ip);
+  const parsedRange = parseIp(range);
+  const bits = Number(bitsRaw);
+  if (!parsedIp || !parsedRange || parsedIp.version !== parsedRange.version || !Number.isInteger(bits)) return false;
+  const maxBits = parsedIp.version === 4 ? 32 : 128;
+  if (bits < 0 || bits > maxBits) return false;
+  const shift = BigInt(maxBits - bits);
+  return parsedIp.value >> shift === parsedRange.value >> shift;
+}
+
+export function isInternalIp(ip: string): boolean {
+  const parsed = parseIp(ip);
+  if (!parsed) return false;
+  if (parsed.version === 4) {
+    return (
+      ipInCidr(ip, '10.0.0.0/8') ||
+      ipInCidr(ip, '172.16.0.0/12') ||
+      ipInCidr(ip, '192.168.0.0/16') ||
+      ipInCidr(ip, '127.0.0.0/8') ||
+      ipInCidr(ip, '169.254.0.0/16')
+    );
+  }
+  return ip === '::1' || ipInCidr(ip, 'fc00::/7') || ipInCidr(ip, 'fe80::/10');
+}
+
+function parseIp(ip: string | undefined): { version: 4 | 6; value: bigint } | undefined {
+  if (!ip) return undefined;
+  if (ip.includes(':')) return parseIpv6(ip);
+  return parseIpv4(ip);
+}
+
+function parseIpv4(ip: string): { version: 4; value: bigint } | undefined {
+  const parts = ip.split('.');
+  if (parts.length !== 4) return undefined;
+  let value = 0n;
+  for (const part of parts) {
+    if (!/^\d{1,3}$/.test(part)) return undefined;
+    const octet = Number(part);
+    if (octet < 0 || octet > 255) return undefined;
+    value = (value << 8n) + BigInt(octet);
+  }
+  return { version: 4, value };
+}
+
+function parseIpv6(ip: string): { version: 6; value: bigint } | undefined {
+  const normalized = ip.toLowerCase();
+  if ((normalized.match(/::/g) ?? []).length > 1) return undefined;
+  const [headRaw, tailRaw = ''] = normalized.split('::');
+  const head = headRaw ? headRaw.split(':') : [];
+  const tail = tailRaw ? tailRaw.split(':') : [];
+  const pieces = [...head, ...tail];
+  if (pieces.some((piece) => piece === '' || !/^[0-9a-f]{1,4}$/.test(piece))) return undefined;
+  const fill = normalized.includes('::') ? 8 - pieces.length : 0;
+  if (fill < 0 || (!normalized.includes('::') && pieces.length !== 8)) return undefined;
+  const groups = [...head, ...Array(fill).fill('0'), ...tail];
+  if (groups.length !== 8) return undefined;
+
+  let value = 0n;
+  for (const group of groups) {
+    value = (value << 16n) + BigInt(Number.parseInt(group, 16));
+  }
+  return { version: 6, value };
+}

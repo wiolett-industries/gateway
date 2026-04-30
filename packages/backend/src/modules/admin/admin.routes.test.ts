@@ -7,6 +7,7 @@ import { errorHandler } from '@/middleware/error-handler.js';
 import { AuthSettingsService } from '@/modules/auth/auth.settings.service.js';
 import { GroupService } from '@/modules/groups/group.service.js';
 import { McpSettingsService } from '@/modules/mcp/mcp-settings.service.js';
+import { NetworkSettingsService } from '@/modules/settings/network-settings.service.js';
 import { SessionService } from '@/services/session.service.js';
 import type { AppEnv, SessionData, User } from '@/types.js';
 import { adminRoutes } from './admin.routes.js';
@@ -87,6 +88,13 @@ describe('admin Gateway settings route permissions', () => {
     container.registerInstance(McpSettingsService, {
       getConfig: vi.fn().mockResolvedValue({ serverEnabled: true }),
     } as unknown as McpSettingsService);
+    container.registerInstance(NetworkSettingsService, {
+      getConfig: vi.fn().mockResolvedValue({
+        clientIpSource: 'auto',
+        trustedProxyCidrs: [],
+        trustCloudflareHeaders: false,
+      }),
+    } as unknown as NetworkSettingsService);
     container.registerInstance(GroupService, {
       listGroups: vi.fn().mockResolvedValue([]),
     } as unknown as GroupService);
@@ -98,6 +106,14 @@ describe('admin Gateway settings route permissions', () => {
       oidcAutoCreateUsers: false,
       oidcDefaultGroupId: null,
       mcpServerEnabled: true,
+      networkSecurity: {
+        clientIpSource: 'auto',
+        trustedProxyCidrs: [],
+        trustCloudflareHeaders: false,
+      },
+      currentRequestIp: {
+        source: 'unknown',
+      },
       availableGroups: [],
     });
   });

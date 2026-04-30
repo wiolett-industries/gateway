@@ -151,7 +151,6 @@ certRoutes.openapi({ ...exportCertificateRoute, middleware: requireScope('pki:ce
         resourceType: 'certificate',
         resourceId: id,
         details: { format: 'pkcs12' },
-        ipAddress: c.req.header('x-forwarded-for')?.split(',')[0]?.trim(),
         userAgent: c.req.header('user-agent'),
       });
       const p12 = exportService.exportPKCS12(cert.certificatePem, privateKey, passphrase);
@@ -175,7 +174,6 @@ certRoutes.openapi({ ...exportCertificateRoute, middleware: requireScope('pki:ce
           resourceType: 'certificate',
           resourceId: id,
           details: { format: 'jks' },
-          ipAddress: c.req.header('x-forwarded-for')?.split(',')[0]?.trim(),
           userAgent: c.req.header('user-agent'),
         });
       }

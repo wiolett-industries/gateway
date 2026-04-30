@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -20,11 +21,15 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
   const [isSavingAutoCreate, setIsSavingAutoCreate] = useState(false);
   const [isSavingGroup, setIsSavingGroup] = useState(false);
   const [isSavingMcp, setIsSavingMcp] = useState(false);
+  const [isSavingNetwork, setIsSavingNetwork] = useState(false);
+  const [trustedProxyCidrs, setTrustedProxyCidrs] = useState("");
+  const skipNextCidrsBlur = useRef(false);
 
   const load = useCallback(async () => {
     try {
       const settingsData = await api.getAuthProvisioningSettings();
       setSettings(settingsData);
+      setTrustedProxyCidrs(settingsData.networkSecurity.trustedProxyCidrs.join(", "));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to load Gateway settings");
     }
@@ -91,6 +96,40 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
     }
   };
 
+  const updateNetworkSecurity = async (
+    patch: Partial<AuthProvisioningSettings["networkSecurity"]>
+  ) => {
+    if (!settings || !canEdit) return;
+    setIsSavingNetwork(true);
+    const previous = settings;
+    const nextNetworkSecurity = { ...settings.networkSecurity, ...patch };
+    setSettings({ ...settings, networkSecurity: nextNetworkSecurity });
+    try {
+      const updated = await api.updateAuthProvisioningSettings({
+        networkSecurity: nextNetworkSecurity,
+      });
+      setSettings(updated);
+      setTrustedProxyCidrs(updated.networkSecurity.trustedProxyCidrs.join(", "));
+      toast.success("Network settings updated");
+    } catch (err) {
+      setSettings(previous);
+      setTrustedProxyCidrs(previous.networkSecurity.trustedProxyCidrs.join(", "));
+      toast.error(err instanceof Error ? err.message : "Failed to update network settings");
+    } finally {
+      setIsSavingNetwork(false);
+    }
+  };
+
+  const saveTrustedProxyCidrs = () => {
+    if (!settings) return;
+    const cidrs = trustedProxyCidrs
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+    if (cidrs.join(",") === settings.networkSecurity.trustedProxyCidrs.join(",")) return;
+    updateNetworkSecurity({ trustedProxyCidrs: cidrs });
+  };
+
   if (!settings) return null;
 
   return (
@@ -98,7 +137,7 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
       <div className="border-b border-border p-4">
         <h2 className="font-semibold">Gateway settings</h2>
         <p className="text-xs text-muted-foreground mt-0.5">
-          Configure sign-in provisioning and external control-plane access
+          Configure sign-in provisioning, control-plane access, and network trust
         </p>
       </div>
       <div className="divide-y divide-border">
@@ -153,6 +192,116 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
             disabled={!canEdit || isSavingMcp}
             onChange={handleToggleMcpServer}
           />
+        </div>
+        <div className="divide-y divide-border">
+          <div className="flex items-start justify-between gap-4 px-4 py-3">
+            <div>
+              <p className="text-sm font-medium">Client IP source</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Controls which address Gateway uses for rate limits and audit records
+              </p>
+            </div>
+            <div className="w-64 shrink-0">
+              <Select
+                value={settings.networkSecurity.clientIpSource}
+                disabled={!canEdit || isSavingNetwork}
+                onValueChange={(clientIpSource) =>
+                  updateNetworkSecurity({
+                    clientIpSource:
+                      clientIpSource as AuthProvisioningSettings["networkSecurity"]["clientIpSource"],
+                  })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="auto">Auto</SelectItem>
+                  <SelectItem value="direct">Direct connection</SelectItem>
+                  <SelectItem value="reverse_proxy">Reverse proxy</SelectItem>
+                  <SelectItem value="cloudflare">Cloudflare</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 divide-y divide-border md:grid-cols-3 md:divide-x md:divide-y-0">
+            <div className="px-4 py-3">
+              <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                Resolved IP
+              </p>
+              <p className="mt-1 font-mono text-sm">
+                {settings.currentRequestIp.ipAddress ?? "unknown"}
+              </p>
+            </div>
+            <div className="px-4 py-3">
+              <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                Remote peer
+              </p>
+              <p className="mt-1 font-mono text-sm">
+                {settings.currentRequestIp.remoteAddress ?? "unknown"}
+              </p>
+            </div>
+            <div className="px-4 py-3">
+              <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Source</p>
+              <p className="mt-1 font-mono text-sm">{settings.currentRequestIp.source}</p>
+            </div>
+          </div>
+
+          {settings.currentRequestIp.warning && (
+            <p className="bg-muted px-4 py-3 text-xs text-muted-foreground">
+              {settings.currentRequestIp.warning}
+            </p>
+          )}
+
+          <div className="flex items-center justify-between gap-4 px-4 py-3">
+            <div>
+              <p className="text-sm font-medium">Trusted proxy CIDRs</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Comma-separated proxy ranges allowed to provide forwarded client headers. Empty
+                trusts all peers in reverse proxy mode.
+              </p>
+            </div>
+            <Input
+              className="w-full max-w-80 shrink-0 border-border bg-[#080808] text-foreground placeholder:text-muted-foreground"
+              value={trustedProxyCidrs}
+              disabled={!canEdit || isSavingNetwork}
+              placeholder="10.0.0.0/8, 172.16.0.0/12"
+              onChange={(event) => {
+                skipNextCidrsBlur.current = false;
+                setTrustedProxyCidrs(event.target.value);
+              }}
+              onBlur={() => {
+                if (skipNextCidrsBlur.current) {
+                  skipNextCidrsBlur.current = false;
+                  return;
+                }
+                saveTrustedProxyCidrs();
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  skipNextCidrsBlur.current = true;
+                  saveTrustedProxyCidrs();
+                }
+              }}
+            />
+          </div>
+
+          <div className="flex items-center justify-between gap-4 px-4 py-3">
+            <div>
+              <p className="text-sm font-medium">Trust Cloudflare headers without edge IP check</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Enable only when direct origin access is blocked outside Cloudflare
+              </p>
+            </div>
+            <Switch
+              checked={settings.networkSecurity.trustCloudflareHeaders}
+              disabled={!canEdit || isSavingNetwork}
+              onChange={(trustCloudflareHeaders) =>
+                updateNetworkSecurity({ trustCloudflareHeaders })
+              }
+            />
+          </div>
         </div>
       </div>
     </div>

@@ -517,6 +517,7 @@ class ApiClient extends ApiClientBase {
     oidcAutoCreateUsers?: boolean;
     oidcDefaultGroupId?: string;
     mcpServerEnabled?: boolean;
+    networkSecurity?: Partial<AuthProvisioningSettings["networkSecurity"]>;
   }): Promise<AuthProvisioningSettings> {
     return this.request<AuthProvisioningSettings>("/admin/auth-settings", {
       method: "PUT",

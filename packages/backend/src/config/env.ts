@@ -64,6 +64,11 @@ const envSchema = z.object({
   RATE_LIMIT_STREAM_MAX_REQUESTS: rateLimitMaxSchema.default(120),
   RATE_LIMIT_AI_WS_MAX_REQUESTS: rateLimitMaxSchema.default(30),
 
+  // Request body limits
+  REQUEST_BODY_MAX_BYTES: z.coerce.number().int().positive().default(2_097_152),
+  OAUTH_BODY_MAX_BYTES: z.coerce.number().int().positive().default(32_768),
+  DOCKER_FILE_WRITE_MAX_BODY_BYTES: z.coerce.number().int().positive().default(1_500_000),
+
   // Session
   SESSION_EXPIRY: z.coerce.number().default(2592000), // 30 days
 

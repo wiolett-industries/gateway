@@ -1,6 +1,7 @@
 import type { MiddlewareHandler } from 'hono';
 import { type Env, getEnv } from '@/config/env.js';
 import { container, TOKENS } from '@/container.js';
+import { getClientIpForContext } from '@/lib/request-ip.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { RedisClient } from '@/services/cache.service.js';
 import type { AppEnv } from '@/types.js';
@@ -19,7 +20,7 @@ export function createRateLimiter(config: RateLimitConfig): MiddlewareHandler<Ap
   return async (c, next) => {
     const redis = container.resolve<RedisClient>(TOKENS.RedisClient);
 
-    const clientIp = c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || c.req.header('x-real-ip') || 'unknown';
+    const clientIp = (await getClientIpForContext(c)) || 'unknown';
 
     const key = `${keyPrefix}:${clientIp}`;
     const now = Date.now();

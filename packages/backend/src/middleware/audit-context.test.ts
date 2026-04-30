@@ -1,26 +1,5 @@
 import { describe, expect, it } from 'vitest';
-// sanitizeAuditPath is intentionally tested through the middleware module's export surface.
-import { __testOnly } from '@/middleware/audit-context.js';
-import { extractClientIp } from './audit-request-context.js';
-
-describe('extractClientIp', () => {
-  it('prefers the first x-forwarded-for hop', () => {
-    const headers = new Headers({
-      'x-forwarded-for': '198.51.100.10, 203.0.113.4',
-      'x-real-ip': '203.0.113.4',
-    });
-
-    expect(extractClientIp(headers)).toBe('198.51.100.10');
-  });
-
-  it('falls back to direct client ip headers', () => {
-    const headers = new Headers({
-      'cf-connecting-ip': '203.0.113.9',
-    });
-
-    expect(extractClientIp(headers)).toBe('203.0.113.9');
-  });
-});
+import { __testOnly } from './audit-context.js';
 
 describe('sanitizeAuditPath', () => {
   it('redacts high-entropy path segments', () => {

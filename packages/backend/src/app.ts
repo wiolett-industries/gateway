@@ -5,6 +5,7 @@ import { createNodeWebSocket } from '@hono/node-ws';
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { apiReference } from '@scalar/hono-api-reference';
 import type { MiddlewareHandler } from 'hono';
+import { bodyLimit } from 'hono/body-limit';
 import { cors } from 'hono/cors';
 import { HTTPException } from 'hono/http-exception';
 import { requestId } from 'hono/request-id';
@@ -73,6 +74,13 @@ import { authenticateEventsConnection, createEventsWSHandlers } from '@/ws/event
 
 const STATUS_PREVIEW_PREFIX = '/_status-preview';
 
+function requestBodyLimit(maxSize: number): MiddlewareHandler<AppEnv> {
+  return bodyLimit({
+    maxSize,
+    onError: (c) => c.json({ code: 'PAYLOAD_TOO_LARGE', message: 'Request body too large' }, 413),
+  }) as MiddlewareHandler<AppEnv>;
+}
+
 const requireAnyEffectiveScope: MiddlewareHandler<AppEnv> = async (c, next) => {
   const scopes = c.get('effectiveScopes') ?? [];
   if (scopes.length === 0) {
@@ -110,6 +118,7 @@ async function isStatusHostRequest(hostHeader: string | undefined): Promise<bool
 
 export function createApp() {
   const app = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
+  const env = getEnv();
 
   // WebSocket support for AI assistant
   const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app: app as any });
@@ -123,7 +132,7 @@ export function createApp() {
     '*',
     cors({
       origin: (origin) => {
-        const appOrigin = new URL(getEnv().APP_URL).origin;
+        const appOrigin = new URL(env.APP_URL).origin;
         if (origin === appOrigin) return origin;
         if (
           isDevelopment() &&
@@ -141,6 +150,16 @@ export function createApp() {
       maxAge: 86400,
     })
   );
+
+  app.use('/api/oauth/token', requestBodyLimit(env.OAUTH_BODY_MAX_BYTES));
+  app.use('/api/oauth/revoke', requestBodyLimit(env.OAUTH_BODY_MAX_BYTES));
+  app.use('/api/logging/ingest', requestBodyLimit(env.LOGGING_INGEST_MAX_BODY_BYTES));
+  app.use('/api/logging/ingest/batch', requestBodyLimit(env.LOGGING_INGEST_MAX_BODY_BYTES));
+  app.use(
+    '/api/docker/nodes/:nodeId/containers/:containerId/files/write',
+    requestBodyLimit(env.DOCKER_FILE_WRITE_MAX_BODY_BYTES)
+  );
+  app.use('/api/*', requestBodyLimit(env.REQUEST_BODY_MAX_BYTES));
 
   // Rate limiting for API and public PKI routes
   app.use('/api/*', rateLimitMiddleware);

@@ -145,9 +145,15 @@ export const FileBrowseSchema = z.object({
 });
 
 // File write
+export const DOCKER_FILE_WRITE_MAX_BYTES = 1024 * 1024;
+export const DOCKER_FILE_WRITE_MAX_BASE64_LENGTH = Math.ceil(DOCKER_FILE_WRITE_MAX_BYTES / 3) * 4;
+
 export const FileWriteSchema = z.object({
   path: z.string().min(1),
-  content: z.string(), // base64-encoded content
+  content: z
+    .string()
+    .max(DOCKER_FILE_WRITE_MAX_BASE64_LENGTH)
+    .regex(/^[A-Za-z0-9+/]*={0,2}$/), // base64-encoded content
 });
 
 // Env update

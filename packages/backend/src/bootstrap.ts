@@ -66,6 +66,7 @@ import { TemplatesService } from '@/modules/pki/templates.service.js';
 import { FolderService } from '@/modules/proxy/folder.service.js';
 import { NginxTemplateService } from '@/modules/proxy/nginx-template.service.js';
 import { ProxyService } from '@/modules/proxy/proxy.service.js';
+import { NetworkSettingsService } from '@/modules/settings/network-settings.service.js';
 import { SetupService } from '@/modules/setup/setup.service.js';
 import { ACMEService } from '@/modules/ssl/acme.service.js';
 import { SSLService } from '@/modules/ssl/ssl.service.js';
@@ -126,6 +127,9 @@ export async function initializeContainer(): Promise<void> {
 
   const mcpSettingsService = new McpSettingsService(db);
   container.registerInstance(McpSettingsService, mcpSettingsService);
+
+  const networkSettingsService = new NetworkSettingsService(db);
+  container.registerInstance(NetworkSettingsService, networkSettingsService);
 
   const auditService = new AuditService(db);
   container.registerInstance(AuditService, auditService);

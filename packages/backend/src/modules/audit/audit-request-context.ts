@@ -23,26 +23,3 @@ export function markAuditEmitted(): void {
     context.auditEmitted = true;
   }
 }
-
-export function extractClientIp(headers: Pick<Headers, 'get'>): string | undefined {
-  const forwardedFor = headers.get('x-forwarded-for');
-  if (forwardedFor) {
-    const firstHop = forwardedFor
-      .split(',')
-      .map((value) => value.trim())
-      .find(Boolean);
-    if (firstHop) {
-      return firstHop;
-    }
-  }
-
-  const directHeaders = ['cf-connecting-ip', 'x-real-ip', 'x-client-ip'];
-  for (const header of directHeaders) {
-    const value = headers.get(header)?.trim();
-    if (value) {
-      return value;
-    }
-  }
-
-  return undefined;
-}

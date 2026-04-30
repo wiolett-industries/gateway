@@ -3,7 +3,6 @@ package docker
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -57,8 +56,10 @@ func ReadFile(ctx context.Context, c *Client, containerID string, path string, m
 	// Check that the target is a regular, readable file (not a device, socket, pipe, etc.)
 	checkCtx, checkCancel := context.WithTimeout(ctx, 5*time.Second)
 	defer checkCancel()
-	_, err := execInContainer(checkCtx, c, containerID, []string{"sh", "-c", fmt.Sprintf("test -f '%s' && test -r '%s'", path, path)})
-	if err != nil {
+	if _, err := execInContainer(checkCtx, c, containerID, []string{"test", "-f", path}); err != nil {
+		return nil, fmt.Errorf("not a regular/readable file: %s", path)
+	}
+	if _, err := execInContainer(checkCtx, c, containerID, []string{"test", "-r", path}); err != nil {
 		return nil, fmt.Errorf("not a regular/readable file: %s", path)
 	}
 
@@ -74,7 +75,7 @@ func ReadFile(ctx context.Context, c *Client, containerID string, path string, m
 }
 
 // WriteFile writes content to a regular, writable file inside a container.
-// Content is base64-encoded and decoded inside the container to safely handle binary data.
+// Content is sent on stdin and the target path is passed as argv so it is never interpreted by a shell.
 func WriteFile(ctx context.Context, c *Client, containerID string, path string, content []byte) error {
 	if err := validatePath(path); err != nil {
 		return err
@@ -83,49 +84,24 @@ func WriteFile(ctx context.Context, c *Client, containerID string, path string, 
 	// Check that the target is a regular, writable file
 	checkCtx, checkCancel := context.WithTimeout(ctx, 5*time.Second)
 	defer checkCancel()
-	_, err := execInContainer(checkCtx, c, containerID, []string{"sh", "-c", fmt.Sprintf("test -f '%s' && test -w '%s'", path, path)})
-	if err != nil {
+	if _, err := execInContainer(checkCtx, c, containerID, []string{"test", "-f", path}); err != nil {
+		return fmt.Errorf("file is not writable: %s", path)
+	}
+	if _, err := execInContainer(checkCtx, c, containerID, []string{"test", "-w", path}); err != nil {
 		return fmt.Errorf("file is not writable: %s", path)
 	}
 
-	// Encode content as base64 and decode inside the container
-	encoded := base64.StdEncoding.EncodeToString(content)
-
-	// Write in chunks if content is large (shell argument limit)
 	writeCtx, writeCancel := context.WithTimeout(ctx, 30*time.Second)
 	defer writeCancel()
 
-	// Use echo + base64 -d pipeline to write the file
-	// Split into chunks of 64KB to avoid argument length limits
-	const chunkSize = 65536
-	if len(encoded) <= chunkSize {
-		_, err = execInContainer(writeCtx, c, containerID, []string{"sh", "-c", fmt.Sprintf("echo '%s' | base64 -d > '%s'", encoded, path)})
-	} else {
-		// For large files, write base64 chunks to a temp file, then decode
-		tmpPath := path + ".tmp.b64"
-		// Clear temp file
-		_, _ = execInContainer(writeCtx, c, containerID, []string{"sh", "-c", fmt.Sprintf("true > '%s'", tmpPath)})
-		for i := 0; i < len(encoded); i += chunkSize {
-			end := i + chunkSize
-			if end > len(encoded) {
-				end = len(encoded)
-			}
-			chunk := encoded[i:end]
-			_, err = execInContainer(writeCtx, c, containerID, []string{"sh", "-c", fmt.Sprintf("echo -n '%s' >> '%s'", chunk, tmpPath)})
-			if err != nil {
-				// Clean up temp file
-				_, _ = execInContainer(writeCtx, c, containerID, []string{"rm", "-f", tmpPath})
-				return fmt.Errorf("write chunk: %w", err)
-			}
-		}
-		// Decode and move to target
-		_, err = execInContainer(writeCtx, c, containerID, []string{"sh", "-c", fmt.Sprintf("base64 -d '%s' > '%s' && rm -f '%s'", tmpPath, path, tmpPath)})
-	}
-
-	if err != nil {
+	if _, err := execInContainerWithInput(writeCtx, c, containerID, dockerWriteFileCommand(path), content); err != nil {
 		return fmt.Errorf("write file: %w", err)
 	}
 	return nil
+}
+
+func dockerWriteFileCommand(path string) []string {
+	return []string{"dd", "of=" + path, "bs=65536"}
 }
 
 // validatePath ensures the path is absolute and does not contain path traversal.
@@ -201,6 +177,77 @@ func execInContainer(ctx context.Context, c *Client, containerID string, cmd []s
 	}
 
 	return stdoutBuf.String(), nil
+}
+
+func execInContainerWithInput(ctx context.Context, c *Client, containerID string, cmd []string, input []byte) (string, error) {
+	createResult, err := c.cli.ExecCreate(ctx, containerID, client.ExecCreateOptions{
+		Cmd:          cmd,
+		AttachStdin:  true,
+		AttachStdout: true,
+		AttachStderr: true,
+	})
+	if err != nil {
+		return "", fmt.Errorf("exec create: %w", err)
+	}
+
+	attachResult, err := c.cli.ExecAttach(ctx, createResult.ID, client.ExecAttachOptions{})
+	if err != nil {
+		return "", fmt.Errorf("exec attach: %w", err)
+	}
+	defer attachResult.Close()
+
+	writeErr := make(chan error, 1)
+	go func() {
+		_, err := attachResult.Conn.Write(input)
+		if closeErr := attachResult.CloseWrite(); err == nil {
+			err = closeErr
+		}
+		writeErr <- err
+	}()
+
+	const maxRead = 10 * 1024 * 1024
+	raw, readErr := io.ReadAll(io.LimitReader(attachResult.Reader, maxRead))
+	if err := <-writeErr; err != nil {
+		return "", fmt.Errorf("exec write: %w", err)
+	}
+	if readErr != nil {
+		return "", fmt.Errorf("exec read: %w", readErr)
+	}
+
+	stdout, stderr := splitDockerStream(raw)
+	inspResult, inspErr := c.cli.ExecInspect(ctx, createResult.ID, client.ExecInspectOptions{})
+	if inspErr == nil && inspResult.ExitCode != 0 {
+		errMsg := strings.TrimSpace(stderr)
+		if errMsg == "" {
+			errMsg = strings.TrimSpace(stdout)
+		}
+		if errMsg == "" {
+			errMsg = fmt.Sprintf("command exited with code %d", inspResult.ExitCode)
+		}
+		return "", fmt.Errorf("%s", errMsg)
+	}
+
+	return stdout, nil
+}
+
+func splitDockerStream(raw []byte) (string, string) {
+	var stdoutBuf, stderrBuf bytes.Buffer
+	data := raw
+	for len(data) >= 8 {
+		streamType := data[0]
+		frameSize := int(data[4])<<24 | int(data[5])<<16 | int(data[6])<<8 | int(data[7])
+		data = data[8:]
+		if frameSize > len(data) {
+			frameSize = len(data)
+		}
+		if streamType == 2 {
+			stderrBuf.Write(data[:frameSize])
+		} else {
+			stdoutBuf.Write(data[:frameSize])
+		}
+		data = data[frameSize:]
+	}
+	return stdoutBuf.String(), stderrBuf.String()
 }
 
 // parseLsOutput parses the output of `ls -la --time-style=long-iso` into FileEntry structs.

@@ -1,11 +1,8 @@
 import type { MiddlewareHandler } from 'hono';
 import { container } from '@/container.js';
+import { getClientIpForContext } from '@/lib/request-ip.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
-import {
-  extractClientIp,
-  getAuditRequestContext,
-  runWithAuditRequestContext,
-} from '@/modules/audit/audit-request-context.js';
+import { getAuditRequestContext, runWithAuditRequestContext } from '@/modules/audit/audit-request-context.js';
 import type { AppEnv } from '@/types.js';
 
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
@@ -318,7 +315,7 @@ function sanitizeAuditPath(path: string): string {
 export const auditContextMiddleware: MiddlewareHandler<AppEnv> = async (c, next) => {
   const context = {
     requestId: c.get('requestId'),
-    ipAddress: extractClientIp(c.req.raw.headers),
+    ipAddress: await getClientIpForContext(c),
     userAgent: c.req.header('user-agent'),
     auditEmitted: false,
   };

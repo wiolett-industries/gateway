@@ -47,6 +47,17 @@ export interface AuthProvisioningSettings {
   oidcAutoCreateUsers: boolean;
   oidcDefaultGroupId: string;
   mcpServerEnabled: boolean;
+  networkSecurity: {
+    clientIpSource: "auto" | "direct" | "reverse_proxy" | "cloudflare";
+    trustedProxyCidrs: string[];
+    trustCloudflareHeaders: boolean;
+  };
+  currentRequestIp: {
+    ipAddress?: string;
+    remoteAddress?: string;
+    source: "remote" | "cloudflare" | "forwarded" | "real-ip" | "unknown";
+    warning?: string;
+  };
   availableGroups: AuthProvisioningGroupOption[];
 }
 

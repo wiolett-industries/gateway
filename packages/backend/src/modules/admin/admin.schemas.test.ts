@@ -9,4 +9,14 @@ describe('UpdateAuthProvisioningSettingsSchema', () => {
 
     expect(result.success).toBe(true);
   });
+
+  it('rejects invalid trusted proxy CIDRs', () => {
+    const result = UpdateAuthProvisioningSettingsSchema.safeParse({
+      networkSecurity: {
+        trustedProxyCidrs: ['not-a-cidr'],
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
 });

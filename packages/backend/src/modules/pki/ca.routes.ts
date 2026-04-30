@@ -141,7 +141,6 @@ caRoutes.openapi({ ...exportCAKeyRoute, middleware: requireScope('pki:ca:create:
     action: 'ca.export_key',
     resourceType: 'ca',
     resourceId: id,
-    ipAddress: c.req.header('x-forwarded-for')?.split(',')[0]?.trim(),
     userAgent: c.req.header('user-agent'),
   });
 

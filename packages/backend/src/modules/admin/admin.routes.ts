@@ -2,6 +2,7 @@ import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
 import { openApiValidationHook } from '@/lib/openapi.js';
 import { canManageUser, isScopeSubset } from '@/lib/permissions.js';
+import { getRemoteAddress, resolveClientIp } from '@/lib/request-ip.js';
 import {
   CreateUserSchema,
   UpdateAuthProvisioningSettingsSchema,
@@ -14,6 +15,7 @@ import { AuthService } from '@/modules/auth/auth.service.js';
 import { AuthSettingsService } from '@/modules/auth/auth.settings.service.js';
 import { GroupService } from '@/modules/groups/group.service.js';
 import { McpSettingsService } from '@/modules/mcp/mcp-settings.service.js';
+import { NetworkSettingsService } from '@/modules/settings/network-settings.service.js';
 import type { AppEnv } from '@/types.js';
 import {
   createAdminUserRoute,
@@ -44,12 +46,14 @@ adminRoutes.openapi({ ...listAdminUsersRoute, middleware: requireScope('admin:us
 adminRoutes.openapi({ ...getAuthSettingsRoute, middleware: requireScope('settings:gateway:view') }, async (c) => {
   const authSettingsService = container.resolve(AuthSettingsService);
   const mcpSettingsService = container.resolve(McpSettingsService);
+  const networkSettingsService = container.resolve(NetworkSettingsService);
   const groupService = container.resolve(GroupService);
   const actorScopes = c.get('effectiveScopes') || [];
 
-  const [settings, mcpSettings, groups] = await Promise.all([
+  const [settings, mcpSettings, networkSecurity, groups] = await Promise.all([
     authSettingsService.getConfig(),
     mcpSettingsService.getConfig(),
+    networkSettingsService.getConfig(),
     groupService.listGroups(),
   ]);
   const assignableGroups = groups.filter((group) => isScopeSubset(getEffectiveGroupScopes(group), actorScopes));
@@ -57,6 +61,8 @@ adminRoutes.openapi({ ...getAuthSettingsRoute, middleware: requireScope('setting
   return c.json({
     ...settings,
     mcpServerEnabled: mcpSettings.serverEnabled,
+    networkSecurity,
+    currentRequestIp: resolveClientIp(c.req.raw.headers, getRemoteAddress(c), networkSecurity),
     availableGroups: assignableGroups.map((group) => ({
       id: group.id,
       name: group.name,
@@ -68,6 +74,7 @@ adminRoutes.openapi({ ...getAuthSettingsRoute, middleware: requireScope('setting
 adminRoutes.openapi({ ...updateAuthSettingsRoute, middleware: requireScope('settings:gateway:edit') }, async (c) => {
   const authSettingsService = container.resolve(AuthSettingsService);
   const mcpSettingsService = container.resolve(McpSettingsService);
+  const networkSettingsService = container.resolve(NetworkSettingsService);
   const groupService = container.resolve(GroupService);
   const auditService = container.resolve(AuditService);
   const currentUser = c.get('user')!;
@@ -86,9 +93,12 @@ adminRoutes.openapi({ ...updateAuthSettingsRoute, middleware: requireScope('sett
   }
 
   try {
-    const [updated, mcpSettings] = await Promise.all([
+    const [updated, mcpSettings, networkSecurity] = await Promise.all([
       authSettingsService.updateConfig(input),
       mcpSettingsService.updateConfig({ serverEnabled: input.mcpServerEnabled }),
+      input.networkSecurity
+        ? networkSettingsService.updateConfig(input.networkSecurity)
+        : networkSettingsService.getConfig(),
     ]);
     const groups = await groupService.listGroups();
     const assignableGroups = groups.filter((group) => isScopeSubset(getEffectiveGroupScopes(group), actorScopes));
@@ -99,13 +109,14 @@ adminRoutes.openapi({ ...updateAuthSettingsRoute, middleware: requireScope('sett
       resourceType: 'settings',
       resourceId: 'auth',
       details: input,
-      ipAddress: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || c.req.header('x-real-ip'),
       userAgent: c.req.header('user-agent'),
     });
 
     return c.json({
       ...updated,
       mcpServerEnabled: mcpSettings.serverEnabled,
+      networkSecurity,
+      currentRequestIp: resolveClientIp(c.req.raw.headers, getRemoteAddress(c), networkSecurity),
       availableGroups: assignableGroups.map((group) => ({
         id: group.id,
         name: group.name,
@@ -154,7 +165,6 @@ adminRoutes.openapi({ ...createAdminUserRoute, middleware: requireScope('admin:u
         groupId: createdUser.groupId,
         groupName: createdUser.groupName,
       },
-      ipAddress: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || c.req.header('x-real-ip'),
       userAgent: c.req.header('user-agent'),
     });
 
@@ -199,7 +209,6 @@ adminRoutes.openapi({ ...updateUserGroupRoute, middleware: requireScope('admin:u
       newGroupId: updatedUser.groupId,
       newGroupName: updatedUser.groupName,
     },
-    ipAddress: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || c.req.header('x-real-ip'),
     userAgent: c.req.header('user-agent'),
   });
 
@@ -250,7 +259,6 @@ adminRoutes.openapi({ ...updateUserBlockRoute, middleware: requireScope('admin:u
       targetUserName: targetUser.name,
       blocked,
     },
-    ipAddress: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || c.req.header('x-real-ip'),
     userAgent: c.req.header('user-agent'),
   });
 
@@ -296,7 +304,6 @@ adminRoutes.openapi({ ...deleteAdminUserRoute, middleware: requireScope('admin:u
       targetGroupId: targetUser.groupId,
       targetGroupName: targetUser.groupName,
     },
-    ipAddress: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || c.req.header('x-real-ip'),
     userAgent: c.req.header('user-agent'),
   });
 
