@@ -23,6 +23,10 @@ export default defineConfig({
         target: "http://localhost:3000",
         changeOrigin: true,
       },
+      "/.well-known": {
+        target: "http://localhost:3000",
+        changeOrigin: true,
+      },
       "/pki": {
         target: "http://localhost:3000",
         changeOrigin: true,

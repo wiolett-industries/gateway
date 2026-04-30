@@ -12,10 +12,7 @@ describe('diffDockerContainerStateReports', () => {
   });
 
   it('emits an exited change when a container disappears without a same-name replacement', () => {
-    const changes = diffDockerContainerStateReports(
-      [{ containerId: 'old-id', name: 'worker', state: 'running' }],
-      []
-    );
+    const changes = diffDockerContainerStateReports([{ containerId: 'old-id', name: 'worker', state: 'running' }], []);
 
     expect(changes).toEqual([{ containerId: 'old-id', name: 'worker', state: 'exited' }]);
   });

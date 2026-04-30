@@ -455,7 +455,7 @@ Gateway uses a group-based permission system with nested group inheritance. Each
 | proxy:create | Create proxy hosts (resource-scopable) |
 | proxy:edit | Update proxy hosts (resource-scopable) |
 | proxy:delete | Delete proxy hosts (resource-scopable) |
-| proxy:raw:read | View rendered nginx config (resource-scopable) |
+| proxy:raw:read | View raw nginx config in browser-only raw config workflows (resource-scopable) |
 | proxy:raw:write | Write raw nginx config (resource-scopable) |
 | proxy:raw:toggle | Enable/disable raw config mode (resource-scopable) |
 | proxy:advanced | Edit advanced nginx snippets (resource-scopable) |
@@ -527,7 +527,7 @@ Gateway uses a group-based permission system with nested group inheritance. Each
 |-------|-------------|
 | feat:ai:use | Access the AI assistant |
 | feat:ai:configure | Configure AI assistant settings |
-| mcp:use | Access the remote MCP server with a Gateway API token |
+| mcp:use | Allow a user account to access the remote MCP server with OAuth |
 
 ### Docker: Containers
 | Scope | Description |
@@ -664,6 +664,13 @@ Gateway provides Portainer-like Docker container management through a daemon run
 - Webhook configuration requires the \`docker:containers:webhooks\` scope.
 - Use \`update_docker_container_image\` tool to change a container's image tag programmatically (pulls + recreates).
 
+## Blue/Green Deployments
+- Deployments are Gateway-managed blue/green services with a stable deployment ID, active slot, inactive slot, router, routes, health checks, and release history.
+- Managed deployment containers are protected. Do not start, stop, restart, kill, remove, rename, or update the underlying slot container directly.
+- Use \`list_docker_deployments\` and \`get_docker_deployment\` to find the deployment ID, active slot, routes, and health.
+- Use \`start_docker_deployment\`, \`stop_docker_deployment\`, \`restart_docker_deployment\`, \`kill_docker_deployment\`, \`deploy_docker_deployment\`, \`switch_docker_deployment_slot\`, \`rollback_docker_deployment\`, and \`stop_docker_deployment_slot\` for deployment-safe lifecycle operations.
+- To roll out a new image or tag for a deployment, use \`deploy_docker_deployment\` instead of \`update_docker_container_image\`.
+
 ## Settings
 - **Runtime (live-update)**: restart policy, memory limit, CPU shares, PID limit — applied without recreation
 - **Requires recreate**: port mappings, volume mounts, entrypoint, command, working dir, hostname, labels, image tag
@@ -687,7 +694,7 @@ Long-running operations (stop, restart, kill, recreate, update) create tasks vis
 ## Key Notes
 - All Docker tools require a nodeId parameter — use list_nodes with type="docker" to find Docker nodes
 - Container IDs change after recreate/update — the frontend handles navigation to new IDs
-- Transition states (stopping, restarting, recreating, etc.) block concurrent operations on the same container`,
+- Transition states (stopping, restarting, recreating, deploying, switching, etc.) block concurrent operations on the same container or deployment`,
 
   databases: `# Databases
 
@@ -750,8 +757,8 @@ Gateway can store and operate external Postgres and Redis connections directly f
 
   api: `# Gateway REST API
 
-Gateway provides a full REST API for programmatic access to all features. API tokens allow external scripts, CI/CD pipelines, and integrations to interact with Gateway without a browser session.
-AI assistant access, AI configuration, and the protected \`admin:system\` scope cannot be delegated to API tokens. MCP access requires a Gateway API token with \`mcp:use\` plus the scopes for the tools being called.
+Gateway provides REST access for external scripts, CI/CD pipelines, CLI tools, and integrations without a browser session.
+Programmatic REST clients can use either Gateway API tokens (\`gw_\`) or OAuth Authorization Code + PKCE access tokens (\`gwo_\`). AI assistant access, AI configuration, MCP user access, auth administration, raw nginx config, gateway settings, node raw config, and \`proxy:advanced:bypass\` cannot be delegated to API/OAuth tokens. MCP clients use OAuth access tokens for the MCP resource with ordinary delegated API scopes; the owning user account must have \`mcp:use\`.
 
 ## Creating an API Token
 1. Go to **Settings** page → **API Tokens** section
@@ -761,13 +768,14 @@ AI assistant access, AI configuration, and the protected \`admin:system\` scope 
 5. Tokens cannot be retrieved after creation — if lost, revoke and create a new one
 
 ## Authentication
-All API requests require authentication via the \`Authorization\` header:
+Programmatic API requests authenticate via the \`Authorization\` header:
 
 \`\`\`bash
 curl -H "Authorization: Bearer gw_your_token_here" https://gateway.example.com/api/cas
 \`\`\`
 
 Token format: \`gw_\` followed by 64 hex characters.
+OAuth access tokens use the \`gwo_\` prefix and the same Bearer header. Browser-only endpoints still require the HttpOnly session cookie and CSRF token where applicable.
 
 ## Base URL
 All endpoints are under \`/api/\`. Example: \`https://gateway.example.com/api/cas\`
@@ -797,6 +805,7 @@ All endpoints are under \`/api/\`. Example: \`https://gateway.example.com/api/ca
 - \`PATCH /api/proxy-hosts/:id\` — update proxy host
 - \`DELETE /api/proxy-hosts/:id\` — delete proxy host
 - \`GET /api/nginx-templates\` — list nginx config templates
+Programmatic clients can use validated \`advancedConfig\`, but cannot set or read raw nginx config fields.
 
 ### Domains
 - \`GET /api/domains\` — list domains
@@ -826,13 +835,9 @@ All endpoints are under \`/api/\`. Example: \`https://gateway.example.com/api/ca
 - \`GET /api/access-lists\` — list access lists
 - \`POST /api/access-lists\` — create access list
 
-### Administration
-- \`GET /api/admin/users\` — list users (requires admin:users scope)
-- \`GET /api/admin/groups\` — list permission groups
+### Browser-only administration
+- \`/auth/*\`, \`/api/oauth/consent/*\`, \`/api/oauth/authorizations/*\`, \`/api/admin/users\`, \`/api/admin/groups\`, \`/api/tokens\`, \`/api/ai/*\`, raw nginx config endpoints, and system update mutations require a browser session.
 - \`GET /api/audit\` — query audit log
-- \`GET /api/tokens\` — list your API tokens
-- \`POST /api/tokens\` — create new API token
-- \`DELETE /api/tokens/:id\` — revoke a token
 
 ## Response Format
 - Success: JSON body with the resource data

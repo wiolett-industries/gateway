@@ -67,6 +67,7 @@ export function AdminNodeDetail() {
   const { hasScope } = useAuthStore();
 
   const [node, setNode] = useState<NodeDetail | null>(null);
+  const [healthHistory, setHealthHistory] = useState<Array<{ ts: string; status: string }>>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const [activeTab, setActiveTab] = useUrlTab(
@@ -146,8 +147,9 @@ export function AdminNodeDetail() {
       if (!id) return;
       if (!silent) setIsLoading(true);
       try {
-        const data = await api.getNode(id);
+        const [data, history] = await Promise.all([api.getNode(id), api.getNodeHealthHistory(id)]);
         setNode(data);
+        setHealthHistory(history);
       } catch (err) {
         if (err instanceof ApiRequestError && err.status === 404) {
           usePinnedNodesStore.getState().removePin(id);
@@ -406,7 +408,7 @@ export function AdminNodeDetail() {
         </div>
 
         {/* Health bars */}
-        <HealthBars history={node.healthHistory} currentStatus={node.status} />
+        <HealthBars history={healthHistory} currentStatus={node.status} />
 
         {/* Tabs */}
         <Tabs

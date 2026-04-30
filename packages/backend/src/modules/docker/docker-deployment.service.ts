@@ -27,6 +27,7 @@ import type {
 import type { DockerHealthCheckDto, DockerHealthCheckService } from './docker-health-check.service.js';
 import type { DockerRegistryAuthCandidate, DockerRegistryService } from './docker-registry.service.js';
 import type { DockerSecretService } from './docker-secret.service.js';
+import { assertNoDockerSocketMountsInConfig } from './docker-socket-mount.guard.js';
 import type { DockerTaskService } from './docker-task.service.js';
 
 export const DOCKER_DEPLOYMENT_MANAGED_LABEL = 'wiolett.gateway.deployment.managed';
@@ -354,7 +355,6 @@ export class DockerDeploymentService {
       healthCheckEnabled: deployment.healthCheck?.enabled ?? false,
       healthStatus: deployment.healthCheck?.healthStatus ?? 'unknown',
       lastHealthCheckAt: deployment.healthCheck?.lastHealthCheckAt ?? null,
-      healthHistory: deployment.healthCheck?.healthHistory ?? [],
       folderId: null,
       folderIsSystem: false,
       folderSortOrder: 0,
@@ -392,6 +392,7 @@ export class DockerDeploymentService {
       restartPolicy: input.restartPolicy,
       runtime: input.runtime,
     };
+    assertNoDockerSocketMountsInConfig(desiredConfig);
 
     await this.db.transaction(async (tx) => {
       await tx.insert(dockerDeployments).values({
@@ -549,6 +550,7 @@ export class DockerDeploymentService {
     const desiredConfig = input.desiredConfig
       ? { ...current.desiredConfig, ...input.desiredConfig }
       : current.desiredConfig;
+    assertNoDockerSocketMountsInConfig(desiredConfig);
 
     if (routes && !deploymentRoutesEqual(current.routes, routes)) {
       try {
@@ -626,6 +628,7 @@ export class DockerDeploymentService {
       image: targetImage,
       env: input.env ?? deployment.desiredConfig.env,
     };
+    assertNoDockerSocketMountsInConfig(desiredConfig);
     let task: Awaited<ReturnType<DockerTaskService['create']>> | null = null;
     let release: DeploymentReleaseRow | null = null;
 
@@ -720,6 +723,7 @@ export class DockerDeploymentService {
       ...releaseContext?.desiredConfig,
       image: releaseContext?.image ?? deployment.desiredConfig.image,
     };
+    assertNoDockerSocketMountsInConfig(desiredConfig);
     const daemonDesiredConfig = await this.desiredConfigWithSecrets(nodeId, deploymentId, desiredConfig);
     const registryAuthCandidates = await this.registry.resolveAuthCandidatesForImagePull(
       nodeId,
@@ -842,6 +846,7 @@ export class DockerDeploymentService {
         throw new AppError(409, 'ROLLBACK_UNAVAILABLE', 'Rollback slot does not have a previous image');
       }
       const desiredConfig = rollbackSlot.desiredConfig ?? { ...deployment.desiredConfig, image: rollbackSlot.image };
+      assertNoDockerSocketMountsInConfig(desiredConfig);
       await this.switchToSlot(nodeId, deploymentId, { slot: inactiveSlot(deployment.activeSlot), force }, userId, {
         image: desiredConfig.image,
         source: 'rollback',

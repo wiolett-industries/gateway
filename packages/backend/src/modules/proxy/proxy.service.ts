@@ -41,6 +41,11 @@ function matchesExpectedBody(body: string, expectedBody: string, mode: HealthChe
 
 type ProxyHostRow = typeof proxyHosts.$inferSelect;
 
+function stripProxyHealthHistory<T extends { healthHistory?: unknown }>(host: T): Omit<T, 'healthHistory'> {
+  const { healthHistory: _healthHistory, ...rest } = host;
+  return rest;
+}
+
 interface CertPaths {
   sslCertPath: string | null;
   sslKeyPath: string | null;
@@ -427,7 +432,7 @@ export class ProxyService {
       : null;
 
     return {
-      ...host,
+      ...stripProxyHealthHistory(host),
       sslCertificate: sslCert
         ? {
             id: sslCert.id,
@@ -453,6 +458,16 @@ export class ProxyService {
           }
         : null,
     };
+  }
+
+  async getProxyHostHealthHistory(id: string) {
+    const host = await this.db.query.proxyHosts.findFirst({
+      where: eq(proxyHosts.id, id),
+      columns: { id: true, isSystem: true, healthHistory: true },
+    });
+    if (!host) throw new AppError(404, 'PROXY_HOST_NOT_FOUND', 'Proxy host not found');
+    if (host.isSystem) throw new AppError(404, 'PROXY_HOST_NOT_FOUND', 'Proxy host not found');
+    return host.healthHistory ?? [];
   }
 
   // -----------------------------------------------------------------------

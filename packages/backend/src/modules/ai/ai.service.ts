@@ -1,13 +1,17 @@
 import OpenAI from 'openai';
 import { container } from '@/container.js';
 import { createChildLogger } from '@/lib/logger.js';
-import { hasScope } from '@/lib/permissions.js';
+import { hasScope, hasScopeForResource } from '@/lib/permissions.js';
 import { isPrivateUrl } from '@/lib/utils.js';
 import type { AccessListService } from '@/modules/access-lists/access-list.service.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { AuthService } from '@/modules/auth/auth.service.js';
 import type { DatabaseConnectionService } from '@/modules/databases/databases.service.js';
 import type { DockerManagementService } from '@/modules/docker/docker.service.js';
+import {
+  DockerDeploymentDeploySchema,
+  DockerDeploymentSwitchSchema,
+} from '@/modules/docker/docker-deployment.schemas.js';
 import type { DomainsService } from '@/modules/domains/domain.service.js';
 import type { GroupService } from '@/modules/groups/group.service.js';
 import type { MonitoringService } from '@/modules/monitoring/monitoring.service.js';
@@ -63,6 +67,7 @@ function getToolResourceId(args: Record<string, unknown>): string {
       args.userId ||
       args.nodeId ||
       args.containerId ||
+      args.deploymentId ||
       args.databaseId ||
       args.ruleId ||
       args.webhookId ||
@@ -72,6 +77,14 @@ function getToolResourceId(args: Record<string, unknown>): string {
 
 function isMutatingTool(toolDef: { destructive: boolean; invalidateStores: string[] }): boolean {
   return toolDef.destructive || toolDef.invalidateStores.length > 0;
+}
+
+function hasToolExecutionScope(
+  scopes: string[],
+  requiredScope: string | undefined,
+  args: Record<string, unknown>
+): boolean {
+  return !!requiredScope && hasScopeForResource(scopes, requiredScope, getToolResourceId(args));
 }
 
 function estimateTokens(text: string): number {
@@ -308,7 +321,7 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
     const executionUser = options.scopes ? { ...user, scopes: options.scopes } : user;
 
     // Permission check — tools with empty requiredScope are blocked (must be explicit)
-    if (!toolDef.requiredScope || !hasScope(executionUser.scopes, toolDef.requiredScope)) {
+    if (!hasToolExecutionScope(executionUser.scopes, toolDef.requiredScope, args)) {
       return {
         error: `PERMISSION_DENIED: You do not have the "${toolDef.requiredScope || 'unknown'}" scope required for this action. Tell the user they lack this permission and suggest contacting an administrator. Do NOT ask follow-up questions or retry.`,
         invalidateStores: [],
@@ -340,6 +353,8 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
                   success: true,
                   tokenId: options.tokenId,
                   tokenPrefix: options.tokenPrefix,
+                  authType: options.authType,
+                  clientId: options.clientId,
                   toolName,
                   category: toolDef.category,
                   arguments: redactedArgs,
@@ -362,6 +377,8 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
             error: message,
             tokenId: options.tokenId,
             tokenPrefix: options.tokenPrefix,
+            authType: options.authType,
+            clientId: options.clientId,
             toolName,
             category: toolDef.category,
             arguments: redactedArgs,
@@ -696,6 +713,61 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
         return this.dockerService.listContainers(a.nodeId);
       case 'get_docker_container':
         return this.dockerService.inspectContainer(a.nodeId, a.containerId);
+      case 'list_docker_deployments': {
+        const { DockerDeploymentService } = await import('@/modules/docker/docker-deployment.service.js');
+        return container.resolve(DockerDeploymentService).list(a.nodeId);
+      }
+      case 'get_docker_deployment': {
+        const { DockerDeploymentService } = await import('@/modules/docker/docker-deployment.service.js');
+        return container.resolve(DockerDeploymentService).get(a.nodeId, a.deploymentId);
+      }
+      case 'start_docker_deployment': {
+        const { DockerDeploymentService } = await import('@/modules/docker/docker-deployment.service.js');
+        const data = await container.resolve(DockerDeploymentService).start(a.nodeId, a.deploymentId, user.id);
+        return { success: true, message: 'Deployment started', data };
+      }
+      case 'stop_docker_deployment': {
+        const { DockerDeploymentService } = await import('@/modules/docker/docker-deployment.service.js');
+        const data = await container.resolve(DockerDeploymentService).stop(a.nodeId, a.deploymentId, user.id);
+        return { success: true, message: 'Deployment stopped', data };
+      }
+      case 'restart_docker_deployment': {
+        const { DockerDeploymentService } = await import('@/modules/docker/docker-deployment.service.js');
+        const data = await container.resolve(DockerDeploymentService).restart(a.nodeId, a.deploymentId, user.id);
+        return { success: true, message: 'Deployment restarted', data };
+      }
+      case 'kill_docker_deployment': {
+        const { DockerDeploymentService } = await import('@/modules/docker/docker-deployment.service.js');
+        const data = await container.resolve(DockerDeploymentService).kill(a.nodeId, a.deploymentId, user.id);
+        return { success: true, message: 'Deployment killed', data };
+      }
+      case 'deploy_docker_deployment': {
+        const { DockerDeploymentService } = await import('@/modules/docker/docker-deployment.service.js');
+        const input = DockerDeploymentDeploySchema.parse(args);
+        const data = await container.resolve(DockerDeploymentService).deploy(a.nodeId, a.deploymentId, input, user.id);
+        return { success: true, message: 'Deployment rollout started', data };
+      }
+      case 'switch_docker_deployment_slot': {
+        const { DockerDeploymentService } = await import('@/modules/docker/docker-deployment.service.js');
+        const input = DockerDeploymentSwitchSchema.parse(args);
+        const data = await container
+          .resolve(DockerDeploymentService)
+          .switchToSlot(a.nodeId, a.deploymentId, input, user.id);
+        return { success: true, message: `Deployment switched to ${input.slot}`, data };
+      }
+      case 'rollback_docker_deployment': {
+        const { DockerDeploymentService } = await import('@/modules/docker/docker-deployment.service.js');
+        const data = await container
+          .resolve(DockerDeploymentService)
+          .rollback(a.nodeId, a.deploymentId, a.force === true, user.id);
+        return { success: true, message: 'Deployment rolled back', data };
+      }
+      case 'stop_docker_deployment_slot': {
+        const { DockerDeploymentService } = await import('@/modules/docker/docker-deployment.service.js');
+        const slot = DockerDeploymentSwitchSchema.shape.slot.parse(a.slot);
+        await container.resolve(DockerDeploymentService).stopSlot(a.nodeId, a.deploymentId, slot, user.id);
+        return { success: true, message: `Deployment ${slot} slot stopped` };
+      }
       case 'start_docker_container':
         await this.dockerService.startContainer(a.nodeId, a.containerId, user.id);
         return { success: true };

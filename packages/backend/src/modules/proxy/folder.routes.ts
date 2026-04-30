@@ -1,7 +1,7 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
 import { openApiValidationHook } from '@/lib/openapi.js';
-import { authMiddleware, requireScope, sessionOnly } from '@/modules/auth/auth.middleware.js';
+import { authMiddleware, isProgrammaticAuth, requireScope } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import {
   cloneProxyFolderRoute,
@@ -29,7 +29,27 @@ import { FolderService } from './folder.service.js';
 export const folderRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
 
 folderRoutes.use('*', authMiddleware);
-folderRoutes.use('*', sessionOnly);
+
+function stripRawProxyConfig<T extends Record<string, unknown>>(host: T): Omit<T, 'rawConfig' | 'rawConfigEnabled'> {
+  const { rawConfig: _rawConfig, rawConfigEnabled: _rawConfigEnabled, ...rest } = host;
+  return rest;
+}
+
+export function stripGroupedRawConfigForProgrammaticResponse(
+  result: Awaited<ReturnType<FolderService['getGroupedHosts']>>
+) {
+  const stripFolder = (folder: any): any => ({
+    ...folder,
+    hosts: folder.hosts.map((host: any) => stripRawProxyConfig(host)),
+    children: folder.children.map(stripFolder),
+  });
+
+  return {
+    ...result,
+    folders: result.folders.map(stripFolder),
+    ungroupedHosts: result.ungroupedHosts.map((host: any) => stripRawProxyConfig(host)),
+  };
+}
 
 // --- Static GET routes first ---
 
@@ -46,6 +66,7 @@ folderRoutes.openapi({ ...groupedProxyHostsRoute, middleware: requireScope('prox
   const rawQuery = c.req.query();
   const query = GroupedHostsQuerySchema.parse(rawQuery);
   const result = await folderService.getGroupedHosts(query);
+  if (isProgrammaticAuth(c)) return c.json({ data: stripGroupedRawConfigForProgrammaticResponse(result) });
   return c.json({ data: result });
 });
 

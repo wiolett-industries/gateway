@@ -138,7 +138,7 @@ export function createWSHandlers() {
       // Re-validate session on each message to catch role changes
       if (state.sessionId) {
         const freshUser = await authenticateFromSession(state.sessionId);
-        if (!freshUser || !canUseAI(freshUser.scopes)) {
+        if (!freshUser || freshUser.isBlocked || !canUseAI(freshUser.scopes)) {
           send(ws, { type: 'auth_error', message: 'Session expired or role changed' });
           try {
             ws.close();
@@ -313,6 +313,11 @@ export async function authenticateWSConnection(ws: WSContext, sessionId: string)
   const user = await authenticateFromSession(sessionId);
   if (!user) {
     send(ws, { type: 'auth_error', message: 'Invalid or expired session' });
+    return false;
+  }
+
+  if (user.isBlocked) {
+    send(ws, { type: 'auth_error', message: 'Account is blocked' });
     return false;
   }
 

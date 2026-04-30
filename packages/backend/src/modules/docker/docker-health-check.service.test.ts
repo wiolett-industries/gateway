@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { AppError } from '@/middleware/error-handler.js';
+import type { AppError } from '@/middleware/error-handler.js';
 import { DockerHealthCheckService } from './docker-health-check.service.js';
 
 const HEALTH_INPUT = {
@@ -31,12 +31,13 @@ describe('DockerHealthCheckService', () => {
       {} as never
     );
 
-    await expect(service.upsertDeployment('node-a', '11111111-1111-4111-8111-111111111111', HEALTH_INPUT)).rejects
-      .toMatchObject({
-        name: 'AppError',
-        code: 'NOT_FOUND',
-        statusCode: 404,
-      } satisfies Partial<AppError>);
+    await expect(
+      service.upsertDeployment('node-a', '11111111-1111-4111-8111-111111111111', HEALTH_INPUT)
+    ).rejects.toMatchObject({
+      name: 'AppError',
+      code: 'NOT_FOUND',
+      statusCode: 404,
+    } satisfies Partial<AppError>);
 
     expect(findDeployment).toHaveBeenCalledOnce();
   });

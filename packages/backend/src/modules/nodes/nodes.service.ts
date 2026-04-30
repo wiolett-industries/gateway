@@ -19,6 +19,11 @@ import type {
 
 const logger = createChildLogger('NodesService');
 
+function stripNodeHealthHistory<T extends { healthHistory?: unknown }>(node: T): Omit<T, 'healthHistory'> {
+  const { healthHistory: _healthHistory, ...rest } = node;
+  return rest;
+}
+
 export class NodesService {
   private daemonUpdateService?: DaemonUpdateService;
 
@@ -59,7 +64,24 @@ export class NodesService {
 
     const offset = (query.page - 1) * query.limit;
     const rows = await this.db
-      .select()
+      .select({
+        id: nodes.id,
+        type: nodes.type,
+        hostname: nodes.hostname,
+        displayName: nodes.displayName,
+        status: nodes.status,
+        serviceCreationLocked: nodes.serviceCreationLocked,
+        daemonVersion: nodes.daemonVersion,
+        osInfo: nodes.osInfo,
+        configVersionHash: nodes.configVersionHash,
+        capabilities: nodes.capabilities,
+        lastSeenAt: nodes.lastSeenAt,
+        lastHealthReport: nodes.lastHealthReport,
+        lastStatsReport: nodes.lastStatsReport,
+        metadata: nodes.metadata,
+        createdAt: nodes.createdAt,
+        updatedAt: nodes.updatedAt,
+      })
       .from(nodes)
       .where(where)
       .orderBy(nodes.createdAt)
@@ -97,12 +119,26 @@ export class NodesService {
     const isConnected = !!connectedNode;
 
     return {
-      ...node,
+      ...stripNodeHealthHistory(node),
       status: node.status === 'online' && !isConnected ? 'offline' : node.status,
       isConnected,
       liveHealthReport: connectedNode?.lastHealthReport ?? null,
       liveStatsReport: connectedNode?.lastStatsReport ?? null,
     };
+  }
+
+  async getHealthHistory(id: string) {
+    const [node] = await this.db
+      .select({ healthHistory: nodes.healthHistory })
+      .from(nodes)
+      .where(eq(nodes.id, id))
+      .limit(1);
+
+    if (!node) {
+      throw new AppError(404, 'NOT_FOUND', 'Node not found');
+    }
+
+    return node.healthHistory ?? [];
   }
 
   async create(input: CreateNodeInput, userId: string) {
@@ -177,7 +213,11 @@ export class NodesService {
       throw new AppError(404, 'NOT_FOUND', 'Node not found');
     }
     if (existing.type !== 'nginx' && existing.type !== 'docker') {
-      throw new AppError(400, 'NODE_LOCK_UNSUPPORTED', 'Only nginx and Docker nodes can be locked for service creation');
+      throw new AppError(
+        400,
+        'NODE_LOCK_UNSUPPORTED',
+        'Only nginx and Docker nodes can be locked for service creation'
+      );
     }
 
     await this.db

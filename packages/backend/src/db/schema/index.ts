@@ -25,6 +25,7 @@ export * from './notification-alert-rules.js';
 export * from './notification-alert-states.js';
 export * from './notification-delivery-log.js';
 export * from './notification-webhooks.js';
+export * from './oauth.js';
 export * from './permission-groups.js';
 export * from './proxy-host-folders.js';
 export * from './proxy-hosts.js';

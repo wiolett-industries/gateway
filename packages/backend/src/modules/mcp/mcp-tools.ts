@@ -5,7 +5,7 @@ import {
   type ListToolsResult,
 } from '@modelcontextprotocol/sdk/types.js';
 import { container } from '@/container.js';
-import { hasScope } from '@/lib/permissions.js';
+import { hasScopeBase, hasScopeForResource } from '@/lib/permissions.js';
 import { AIService } from '@/modules/ai/ai.service.js';
 import { AI_TOOLS } from '@/modules/ai/ai.tools.js';
 import type { AIToolDefinition } from '@/modules/ai/ai.types.js';
@@ -22,7 +22,12 @@ function isEligibleMcpTool(tool: AIToolDefinition): boolean {
 }
 
 function hasToolScope(scopes: string[], tool: AIToolDefinition): boolean {
-  return !!tool.requiredScope && hasScope(scopes, tool.requiredScope);
+  return !!tool.requiredScope && hasScopeBase(scopes, tool.requiredScope);
+}
+
+function hasToolScopeForArgs(scopes: string[], tool: AIToolDefinition, args: Record<string, unknown>): boolean {
+  if (!tool.requiredScope) return false;
+  return hasScopeForResource(scopes, tool.requiredScope, getToolResourceId(args));
 }
 
 function isMutatingTool(tool: AIToolDefinition): boolean {
@@ -55,6 +60,7 @@ function getToolResourceId(args: Record<string, unknown>): string {
       args.userId ||
       args.nodeId ||
       args.containerId ||
+      args.deploymentId ||
       args.databaseId ||
       args.ruleId ||
       args.webhookId ||
@@ -83,6 +89,8 @@ async function auditDeniedMutatingTool(
       reason,
       tokenId: auth.tokenId,
       tokenPrefix: auth.tokenPrefix,
+      authType: auth.authType,
+      clientId: auth.clientId,
       toolName: tool.name,
       category: tool.category,
       requiredScope: tool.requiredScope,
@@ -142,7 +150,7 @@ export function registerMcpToolHandlers(server: McpAuthContext['server'], auth: 
     const toolName = request.params.name;
     const tool = AI_TOOLS.find((candidate) => candidate.name === toolName);
     const args = request.params.arguments ?? {};
-    if (!tool || !isEligibleMcpTool(tool) || !hasToolScope(auth.scopes, tool)) {
+    if (!tool || !isEligibleMcpTool(tool) || !hasToolScopeForArgs(auth.scopes, tool, args)) {
       if (tool && isEligibleMcpTool(tool)) {
         await auditDeniedMutatingTool(tool, auth, user, args, 'missing_scope');
       }
@@ -154,6 +162,8 @@ export function registerMcpToolHandlers(server: McpAuthContext['server'], auth: 
       scopes: auth.scopes,
       tokenId: auth.tokenId,
       tokenPrefix: auth.tokenPrefix,
+      authType: auth.authType,
+      clientId: auth.clientId,
     });
 
     if (result.error) {

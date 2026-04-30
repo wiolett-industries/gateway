@@ -1,8 +1,7 @@
 import type { WSContext } from 'hono/ws';
 import { container } from '@/container.js';
 import { createChildLogger } from '@/lib/logger.js';
-import { hasScope } from '@/lib/permissions.js';
-import { resolveLiveSessionUser } from '@/modules/auth/live-session-user.js';
+import { resolveWebSocketCredential, type WebSocketCredential } from '@/modules/auth/websocket-auth.js';
 import { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import { NodeRegistryService } from '@/services/node-registry.service.js';
 import type { User } from '@/types.js';
@@ -24,7 +23,7 @@ interface ExecWSState {
   outputHandler: ((data: any) => void) | null;
   keepaliveInterval: ReturnType<typeof setInterval> | null;
   outputQueue: Promise<void>;
-  token: string;
+  credential: WebSocketCredential | null;
 }
 
 const wsStates = new WeakMap<WSContext, ExecWSState>();
@@ -33,7 +32,7 @@ const wsStates = new WeakMap<WSContext, ExecWSState>();
  * Create WebSocket handlers for node-level console sessions.
  * Same pattern as Docker exec but uses NodeExecCommand (host-level PTY).
  */
-export function createNodeExecWSHandlers(nodeId: string, shell: string, token: string) {
+export function createNodeExecWSHandlers(nodeId: string, shell: string, credential: WebSocketCredential | null) {
   const dispatch = container.resolve(NodeDispatchService);
   const registry = container.resolve(NodeRegistryService);
 
@@ -46,7 +45,7 @@ export function createNodeExecWSHandlers(nodeId: string, shell: string, token: s
         outputHandler: null,
         keepaliveInterval: null,
         outputQueue: Promise.resolve(),
-        token,
+        credential,
       };
       wsStates.set(ws, state);
 
@@ -54,7 +53,7 @@ export function createNodeExecWSHandlers(nodeId: string, shell: string, token: s
         void revalidateNodeExecAccess(ws, state, nodeId, true);
       }, 30_000);
 
-      authenticateAndCreateExec(ws, state, token, nodeId, shell, dispatch, registry).catch((err) => {
+      authenticateAndCreateExec(ws, state, credential, nodeId, shell, dispatch, registry).catch((err) => {
         logger.error('Auth/exec creation failed', { error: err instanceof Error ? err.message : String(err) });
         try {
           ws.close();
@@ -135,25 +134,19 @@ export function createNodeExecWSHandlers(nodeId: string, shell: string, token: s
 async function authenticateAndCreateExec(
   ws: WSContext,
   state: ExecWSState,
-  token: string,
+  credential: WebSocketCredential | null,
   nodeId: string,
   shell: string,
   dispatch: NodeDispatchService,
   registry: NodeRegistryService
 ): Promise<void> {
-  const authResult = await resolveLiveSessionUser(token);
+  const authResult = await resolveWebSocketCredential(credential, `nodes:console:${nodeId}`);
   if (!authResult) {
     send(ws, { type: 'auth_error', message: 'Invalid or expired token' });
     ws.close(1008, 'Authentication failed');
     return;
   }
-  const { user, effectiveScopes } = authResult;
-
-  if (!hasScope(effectiveScopes, `nodes:console:${nodeId}`)) {
-    send(ws, { type: 'auth_error', message: `Missing required scope: nodes:console:${nodeId}` });
-    ws.close(1008, 'Insufficient permissions');
-    return;
-  }
+  const { user } = authResult;
 
   if (user.isBlocked) {
     send(ws, { type: 'auth_error', message: 'Account is blocked' });
@@ -257,8 +250,8 @@ async function revalidateNodeExecAccess(
   nodeId: string,
   emitPong = false
 ): Promise<boolean> {
-  const authResult = await resolveLiveSessionUser(state.token);
-  if (!authResult || authResult.user.isBlocked || !hasScope(authResult.effectiveScopes, `nodes:console:${nodeId}`)) {
+  const authResult = await resolveWebSocketCredential(state.credential, `nodes:console:${nodeId}`);
+  if (!authResult) {
     state.authenticated = false;
     send(ws, { type: 'auth_error', message: 'Access revoked or token expired' });
     try {

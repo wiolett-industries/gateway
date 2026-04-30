@@ -6,6 +6,7 @@ import { container } from '@/container.js';
 import { AIService } from '@/modules/ai/ai.service.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
 import { MonitoringService } from '@/modules/monitoring/monitoring.service.js';
+import { OAuthService } from '@/modules/oauth/oauth.service.js';
 import { TokensService } from '@/modules/tokens/tokens.service.js';
 import type { AppEnv, User } from '@/types.js';
 import { mcpRoutes } from './mcp.routes.js';
@@ -37,12 +38,12 @@ function createApp() {
   return app;
 }
 
-function registerToken(scopes: string[] | null) {
+function registerToken(scopes: string[] | null, user: User = USER) {
   container.registerInstance(TokensService, {
     validateToken: vi.fn().mockResolvedValue(
       scopes
         ? {
-            user: USER,
+            user,
             scopes,
             tokenId: 'token-1',
             tokenPrefix: 'gw_abc1234',
@@ -50,6 +51,7 @@ function registerToken(scopes: string[] | null) {
         : null
     ),
   } as unknown as TokensService);
+  registerOAuth(scopes, user);
 }
 
 function registerMcpSettings(enabled = true) {
@@ -58,7 +60,28 @@ function registerMcpSettings(enabled = true) {
   } as unknown as McpSettingsService);
 }
 
-function mcpHeaders(token = 'gw_valid') {
+function registerOAuth(scopes: string[] | null = null, user: User = USER) {
+  container.registerInstance(OAuthService, {
+    getMcpResourceUrl: vi.fn().mockReturnValue('https://gateway.example.com/api/mcp'),
+    getApiResourceUrl: vi.fn().mockReturnValue('https://gateway.example.com/api'),
+    getProtectedResourceMetadataUrl: vi
+      .fn()
+      .mockReturnValue('https://gateway.example.com/.well-known/oauth-protected-resource/api/mcp'),
+    validateAccessToken: vi.fn().mockResolvedValue(
+      scopes
+        ? {
+            user,
+            scopes,
+            tokenId: 'oauth-token-1',
+            tokenPrefix: 'gwo_abc123',
+            clientId: 'goc_client',
+          }
+        : null
+    ),
+  } as unknown as OAuthService);
+}
+
+function mcpHeaders(token = 'gwo_valid') {
   return {
     Authorization: `Bearer ${token}`,
     Accept: 'application/json, text/event-stream',
@@ -67,7 +90,7 @@ function mcpHeaders(token = 'gw_valid') {
   };
 }
 
-async function mcpRequest(method: string, params: Record<string, unknown> = {}, token = 'gw_valid') {
+async function mcpRequest(method: string, params: Record<string, unknown> = {}, token = 'gwo_valid') {
   const response = await createApp().request('/api/mcp', {
     method: 'POST',
     headers: mcpHeaders(token),
@@ -81,6 +104,7 @@ async function mcpRequest(method: string, params: Record<string, unknown> = {}, 
 
 beforeEach(() => {
   registerMcpSettings(true);
+  registerOAuth();
 });
 
 afterEach(() => {
@@ -103,8 +127,11 @@ describe('MCP route authentication', () => {
 
   it('rejects missing auth', async () => {
     const response = await createApp().request('/api/mcp', { method: 'POST' });
+    const challenge = response.headers.get('WWW-Authenticate');
 
     expect(response.status).toBe(401);
+    expect(challenge).toContain('resource_metadata=');
+    expect(challenge).not.toContain('scope="mcp:use"');
   });
 
   it('rejects cookie-only auth', async () => {
@@ -150,21 +177,72 @@ describe('MCP route authentication', () => {
     expect(response.status).toBe(403);
   });
 
-  it('rejects valid tokens without mcp:use', async () => {
+  it('rejects Gateway API tokens for MCP', async () => {
     registerToken(['nodes:list']);
+
+    const { response } = await mcpRequest('tools/list', {}, 'gw_valid');
+
+    expect(response.status).toBe(401);
+  });
+
+  it('allows OAuth access tokens without mcp:use when the user can use MCP', async () => {
+    registerOAuth(['nodes:list']);
+
+    const { response, body } = await mcpRequest('tools/list', {}, 'gwo_valid');
+
+    expect(response.status).toBe(200);
+    const names = body.result.tools.map((tool: { name: string }) => tool.name);
+    expect(names).toContain('list_nodes');
+  });
+
+  it('rejects API-resource OAuth access tokens for MCP', async () => {
+    const validateAccessToken = vi.fn().mockResolvedValueOnce(null);
+    container.registerInstance(OAuthService, {
+      getMcpResourceUrl: vi.fn().mockReturnValue('https://gateway.example.com/api/mcp'),
+      getApiResourceUrl: vi.fn().mockReturnValue('https://gateway.example.com/api'),
+      getProtectedResourceMetadataUrl: vi
+        .fn()
+        .mockReturnValue('https://gateway.example.com/.well-known/oauth-protected-resource/api/mcp'),
+      validateAccessToken,
+    } as unknown as OAuthService);
+
+    const { response } = await mcpRequest('tools/list', {}, 'gwo_valid');
+
+    expect(response.status).toBe(401);
+    expect(validateAccessToken).toHaveBeenCalledTimes(1);
+    expect(validateAccessToken).toHaveBeenCalledWith('gwo_valid', {
+      resource: 'https://gateway.example.com/api/mcp',
+    });
+  });
+
+  it('rejects OAuth access tokens when the user cannot use MCP', async () => {
+    registerOAuth(['nodes:list'], { ...USER, scopes: ['nodes:list'] });
 
     const response = await createApp().request('/api/mcp', {
       method: 'POST',
-      headers: mcpHeaders(),
+      headers: mcpHeaders('gwo_valid'),
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
     });
 
     expect(response.status).toBe(403);
-    expect(await response.json()).toEqual({ message: 'MCP requires the mcp:use scope' });
+    expect(response.headers.get('WWW-Authenticate')).toContain('insufficient_scope');
+  });
+
+  it('rejects API tokens without checking user MCP capability', async () => {
+    registerToken(['nodes:list'], { ...USER, scopes: ['nodes:list'] });
+
+    const response = await createApp().request('/api/mcp', {
+      method: 'POST',
+      headers: mcpHeaders('gw_valid'),
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+    });
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ message: 'MCP accepts only Gateway OAuth access tokens' });
   });
 
   it('returns JSON-RPC method-not-allowed for GET in stateless mode', async () => {
-    registerToken(['mcp:use', 'nodes:list']);
+    registerToken(['nodes:list']);
 
     const response = await createApp().request('/api/mcp', {
       method: 'GET',
@@ -179,7 +257,7 @@ describe('MCP route authentication', () => {
 
 describe('MCP tools', () => {
   it('lists only scoped Gateway tools and excludes AI-only tools', async () => {
-    registerToken(['mcp:use', 'nodes:list']);
+    registerToken(['nodes:list']);
 
     const { response, body } = await mcpRequest('tools/list');
 
@@ -193,7 +271,7 @@ describe('MCP tools', () => {
   });
 
   it('does not call tools hidden by effective token scopes', async () => {
-    registerToken(['mcp:use', 'nodes:list']);
+    registerToken(['nodes:list']);
     const executeTool = vi.fn();
     const auditLog = vi.fn().mockResolvedValue(undefined);
     container.registerInstance(AIService, { executeTool } as unknown as AIService);
@@ -216,8 +294,8 @@ describe('MCP tools', () => {
           success: false,
           denied: true,
           reason: 'missing_scope',
-          tokenId: 'token-1',
-          tokenPrefix: 'gw_abc1234',
+          tokenId: 'oauth-token-1',
+          tokenPrefix: 'gwo_abc123',
           toolName: 'create_node',
           requiredScope: 'nodes:create',
           arguments: { hostname: 'node-1', enrollmentToken: '[REDACTED]' },
@@ -227,7 +305,7 @@ describe('MCP tools', () => {
   });
 
   it('passes effective token scopes and token metadata to AI tool execution', async () => {
-    registerToken(['mcp:use', 'nodes:list']);
+    registerToken(['nodes:list']);
     const executeTool = vi.fn().mockResolvedValue({ result: { data: [] }, invalidateStores: [] });
     container.registerInstance(AIService, { executeTool } as unknown as AIService);
 
@@ -243,15 +321,17 @@ describe('MCP tools', () => {
       { limit: 5 },
       {
         source: 'mcp',
-        scopes: ['mcp:use', 'nodes:list'],
-        tokenId: 'token-1',
-        tokenPrefix: 'gw_abc1234',
+        scopes: ['nodes:list'],
+        tokenId: 'oauth-token-1',
+        tokenPrefix: 'gwo_abc123',
+        authType: 'oauth',
+        clientId: 'goc_client',
       }
     );
   });
 
   it('uses corrected granular scopes when listing template and access-list tools', async () => {
-    registerToken(['mcp:use', 'pki:templates:create', 'pki:templates:delete', 'acl:create']);
+    registerToken(['pki:templates:create', 'pki:templates:delete', 'acl:create']);
 
     const { body } = await mcpRequest('tools/list');
     const names = body.result.tools.map((tool: { name: string }) => tool.name);
@@ -260,11 +340,69 @@ describe('MCP tools', () => {
     expect(names).toContain('delete_template');
     expect(names).toContain('create_access_list');
   });
+
+  it('lists and calls resource-scoped proxy mutation tools for matching resources only', async () => {
+    registerToken(['proxy:edit:host-1']);
+    const executeTool = vi.fn().mockResolvedValue({ result: { id: 'host-1' }, invalidateStores: [] });
+    container.registerInstance(AIService, { executeTool } as unknown as AIService);
+
+    const list = await mcpRequest('tools/list');
+    const names = list.body.result.tools.map((tool: { name: string }) => tool.name);
+    expect(names).toContain('update_proxy_host');
+
+    const allowed = await mcpRequest('tools/call', {
+      name: 'update_proxy_host',
+      arguments: { proxyHostId: 'host-1', enabled: false },
+    });
+    expect(allowed.body.result.isError).not.toBe(true);
+    expect(executeTool).toHaveBeenCalledWith(
+      USER,
+      'update_proxy_host',
+      { proxyHostId: 'host-1', enabled: false },
+      expect.objectContaining({ scopes: ['proxy:edit:host-1'] })
+    );
+
+    executeTool.mockClear();
+    container.registerInstance(AuditService, { log: vi.fn().mockResolvedValue(undefined) } as unknown as AuditService);
+    const denied = await mcpRequest('tools/call', {
+      name: 'update_proxy_host',
+      arguments: { proxyHostId: 'host-2', enabled: false },
+    });
+    expect(JSON.stringify(denied.body)).toContain('unavailable');
+    expect(executeTool).not.toHaveBeenCalled();
+  });
+
+  it('does not expose rendered nginx config with ordinary proxy view scope', async () => {
+    registerToken(['proxy:view']);
+
+    const { body } = await mcpRequest('tools/list');
+    const names = body.result.tools.map((tool: { name: string }) => tool.name);
+
+    expect(names).not.toContain('get_proxy_rendered_config');
+  });
+
+  it('lists blue/green deployment tools under Docker container scopes', async () => {
+    registerToken(['docker:containers:list', 'docker:containers:view', 'docker:containers:manage']);
+
+    const { body } = await mcpRequest('tools/list');
+    const names = body.result.tools.map((tool: { name: string }) => tool.name);
+
+    expect(names).toContain('list_docker_deployments');
+    expect(names).toContain('get_docker_deployment');
+    expect(names).toContain('start_docker_deployment');
+    expect(names).toContain('stop_docker_deployment');
+    expect(names).toContain('restart_docker_deployment');
+    expect(names).toContain('kill_docker_deployment');
+    expect(names).toContain('deploy_docker_deployment');
+    expect(names).toContain('switch_docker_deployment_slot');
+    expect(names).toContain('rollback_docker_deployment');
+    expect(names).toContain('stop_docker_deployment_slot');
+  });
 });
 
 describe('MCP resources and prompts', () => {
   it('lists resources filtered by token scopes', async () => {
-    registerToken(['mcp:use', 'nodes:list']);
+    registerToken(['nodes:list']);
 
     const { body } = await mcpRequest('resources/list');
     const uris = body.result.resources.map((resource: { uri: string }) => resource.uri);
@@ -279,7 +417,7 @@ describe('MCP resources and prompts', () => {
   });
 
   it('returns compact JSON resource content', async () => {
-    registerToken(['mcp:use', 'nodes:list']);
+    registerToken(['nodes:list']);
     container.registerInstance(MonitoringService, {
       getDashboardStats: vi.fn().mockResolvedValue({
         proxyHosts: { total: 3 },
@@ -301,7 +439,7 @@ describe('MCP resources and prompts', () => {
   });
 
   it('returns an internal docs index filtered by token scopes', async () => {
-    registerToken(['mcp:use', 'nodes:list']);
+    registerToken(['nodes:list']);
 
     const { body } = await mcpRequest('resources/read', {
       uri: 'gateway://docs',
@@ -316,7 +454,7 @@ describe('MCP resources and prompts', () => {
   });
 
   it('returns scoped internal documentation as MCP resource content', async () => {
-    registerToken(['mcp:use', 'nodes:list']);
+    registerToken(['nodes:list']);
 
     const { body } = await mcpRequest('resources/read', {
       uri: 'gateway://docs/nodes',
@@ -327,8 +465,8 @@ describe('MCP resources and prompts', () => {
     expect(data.content).toContain('# Nodes');
   });
 
-  it('allows mcp:use tokens to read MCP-safe docs that were AI-gated internally', async () => {
-    registerToken(['mcp:use']);
+  it('allows MCP callers to read MCP-safe docs that were AI-gated internally', async () => {
+    registerToken(['nodes:list']);
 
     const { body } = await mcpRequest('resources/read', {
       uri: 'gateway://docs/api',
@@ -340,7 +478,7 @@ describe('MCP resources and prompts', () => {
   });
 
   it('lists prompts filtered by token scopes', async () => {
-    registerToken(['mcp:use', 'docker:containers:manage', 'docker:images:pull']);
+    registerToken(['docker:containers:manage', 'docker:images:pull']);
 
     const { body } = await mcpRequest('prompts/list');
     const names = body.result.prompts.map((prompt: { name: string }) => prompt.name);

@@ -99,14 +99,22 @@ authRoutes.openapi(callbackRoute, async (c) => {
     });
 
     let baseUrl = env.APP_URL;
+    let directReturnTo: string | null = null;
     if (result.returnTo) {
       try {
         if (new URL(result.returnTo).origin === new URL(env.APP_URL).origin) {
           baseUrl = result.returnTo;
+          const returnPath = new URL(result.returnTo).pathname;
+          if (returnPath.startsWith('/api/oauth/authorize') || returnPath === '/oauth/consent') {
+            directReturnTo = result.returnTo;
+          }
         }
       } catch {
         // Invalid URL, use default
       }
+    }
+    if (directReturnTo) {
+      return c.redirect(directReturnTo, 302);
     }
     const redirectUrl = new URL('/callback', baseUrl);
     return c.redirect(redirectUrl.toString(), 302);
@@ -140,6 +148,7 @@ authRoutes.openapi(csrfTokenRoute, async (c) => {
 
 // Logout
 authRoutes.use('/logout', authMiddleware);
+authRoutes.use('/logout', sessionOnly);
 authRoutes.openapi(logoutRoute, async (c) => {
   const sessionId = c.get('sessionId');
   if (!sessionId) {
@@ -161,6 +170,7 @@ authRoutes.openapi(logoutRoute, async (c) => {
 
 // Get current user
 authRoutes.use('/me', authMiddleware);
+authRoutes.use('/me', sessionOnly);
 authRoutes.openapi(currentUserRoute, async (c) => {
   const sessionUser = c.get('user')!;
   const authService = container.resolve(AuthService);

@@ -50,6 +50,48 @@ export interface AuthProvisioningSettings {
   availableGroups: AuthProvisioningGroupOption[];
 }
 
+export interface OAuthConsentPreview {
+  requestId: string;
+  client: {
+    id: string;
+    name: string;
+    uri: string | null;
+    logoUri: string | null;
+  };
+  account: {
+    id: string;
+    email: string;
+    name: string | null;
+    avatarUrl: string | null;
+  };
+  requestedScopes: string[];
+  grantableScopes: string[];
+  unavailableScopes: string[];
+  manualApprovalScopes: string[];
+  resource: string;
+  resourceInfo: {
+    resource: string;
+    name: string;
+    description: string;
+  };
+  expiresAt: string;
+}
+
+export interface OAuthAuthorization {
+  clientId: string;
+  clientName: string;
+  clientUri: string | null;
+  logoUri: string | null;
+  scopes: string[];
+  resource: string;
+  resources: string[];
+  activeAccessTokens: number;
+  activeRefreshTokens: number;
+  createdAt: string;
+  lastUsedAt: string | null;
+  expiresAt: string | null;
+}
+
 export type LoggingSchemaMode = "loose" | "strip" | "reject";
 export type LoggingSeverity = "trace" | "debug" | "info" | "warn" | "error" | "fatal";
 export type LoggingFieldType = "string" | "number" | "boolean" | "datetime" | "json";
@@ -273,9 +315,9 @@ export interface Node {
   configVersionHash: string | null;
   capabilities: Record<string, unknown>;
   lastSeenAt: string | null;
-  lastHealthReport: NodeHealthReport | null;
-  lastStatsReport: NodeStatsReport | null;
-  healthHistory: Array<{ ts: string; status: string }>;
+  lastHealthReport?: NodeHealthReport | null;
+  lastStatsReport?: NodeStatsReport | null;
+  healthHistory?: Array<{ ts: string; status: string }>;
   metadata: Record<string, unknown>;
   isConnected: boolean;
   createdAt: string;
@@ -309,6 +351,8 @@ export function effectiveNodeStatus(node: {
 }
 
 export interface NodeDetail extends Node {
+  lastHealthReport: NodeHealthReport | null;
+  lastStatsReport: NodeStatsReport | null;
   liveHealthReport: NodeHealthReport | null;
   liveStatsReport: NodeStatsReport | null;
 }
@@ -1136,7 +1180,7 @@ export const TOKEN_SCOPES = [
   {
     value: "mcp:use",
     label: "Use MCP",
-    desc: "Allow API tokens to access the remote MCP server",
+    desc: "Allow this user account to access the remote MCP server with OAuth",
     group: "Features",
   },
   // Docker: Containers
@@ -1448,11 +1492,25 @@ export const TOKEN_SCOPES = [
   },
 ] as const;
 
+const PROGRAMMATIC_DENIED_SCOPE_VALUES = new Set<string>([
+  "feat:ai:use",
+  "feat:ai:configure",
+  "mcp:use",
+  "admin:system",
+  "admin:users",
+  "admin:groups",
+  "settings:gateway:view",
+  "settings:gateway:edit",
+  "proxy:raw:read",
+  "proxy:raw:write",
+  "proxy:raw:toggle",
+  "proxy:advanced:bypass",
+  "nodes:config:view",
+  "nodes:config:edit",
+]);
+
 export const API_TOKEN_SCOPES = TOKEN_SCOPES.filter(
-  (scope) =>
-    scope.value !== "feat:ai:use" &&
-    scope.value !== "feat:ai:configure" &&
-    scope.value !== "admin:system"
+  (scope) => !PROGRAMMATIC_DENIED_SCOPE_VALUES.has(scope.value)
 );
 
 export const GROUP_ASSIGNABLE_SCOPES = TOKEN_SCOPES.filter(
@@ -1692,7 +1750,7 @@ export interface DatabaseConnection {
   healthStatus: DatabaseHealthStatus;
   lastHealthCheckAt: string | null;
   lastError: string | null;
-  healthHistory: DatabaseHealthEntry[];
+  healthHistory?: DatabaseHealthEntry[];
   hasStoredPassword: boolean;
   config: PostgresDatabaseConfig | RedisDatabaseConfig;
   createdById: string;

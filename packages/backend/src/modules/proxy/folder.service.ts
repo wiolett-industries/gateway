@@ -35,6 +35,7 @@ function toPlainHost(host: ProxyHostRow): Record<string, unknown> {
     if (key in host) plain[key] = (host as any)[key];
   }
 
+  delete plain.healthHistory;
   let effectiveStatus = host.healthStatus as string;
   if (host.healthStatus === 'online' && Array.isArray(host.healthHistory) && host.healthHistory.length > 0) {
     const fiveMinAgo = Date.now() - 5 * 60 * 1000;

@@ -19,6 +19,7 @@ type ResourceDefinition = {
 };
 
 function canAccess(scopes: string[], requiredScopes: string[]): boolean {
+  if (requiredScopes.length === 0) return true;
   return requiredScopes.some((scope) => hasScope(scopes, scope));
 }
 
@@ -42,19 +43,19 @@ function docUri(topic: string): string {
   return `gateway://docs/${encodeURIComponent(topic)}`;
 }
 
-function docRequiredScope(topic: string): string {
+function docRequiredScopes(topic: string): string[] {
   const requiredScope = DOC_TOPIC_SCOPES[topic];
-  return requiredScope === 'feat:ai:use' || !requiredScope ? 'mcp:use' : requiredScope;
+  return requiredScope === 'feat:ai:use' || !requiredScope ? [] : [requiredScope];
 }
 
 function accessibleDocTopics(scopes: string[]) {
   return Object.keys(INTERNAL_DOCS)
     .sort()
-    .filter((topic) => hasScope(scopes, docRequiredScope(topic)))
+    .filter((topic) => canAccess(scopes, docRequiredScopes(topic)))
     .map((topic) => ({
       topic,
       uri: docUri(topic),
-      requiredScope: docRequiredScope(topic),
+      requiredScopes: docRequiredScopes(topic),
     }));
 }
 
@@ -241,7 +242,7 @@ const docsResources: ResourceDefinition[] = [
     uri: 'gateway://docs',
     title: 'Gateway internal documentation',
     description: 'Index of internal documentation topics available to this MCP token.',
-    requiredScopes: ['mcp:use'],
+    requiredScopes: [],
     async read(_uri, scopes) {
       const topics = accessibleDocTopics(scopes);
       return {
@@ -258,7 +259,7 @@ const docsResources: ResourceDefinition[] = [
         uri: docUri(topic),
         title: `Gateway internal documentation: ${topic}`,
         description: `Internal Gateway operator documentation for ${topic}.`,
-        requiredScopes: [docRequiredScope(topic)],
+        requiredScopes: docRequiredScopes(topic),
         async read() {
           return {
             topic,

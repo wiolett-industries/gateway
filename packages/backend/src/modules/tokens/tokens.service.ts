@@ -5,8 +5,8 @@ import { TOKENS } from '@/container.js';
 import type { DrizzleClient } from '@/db/client.js';
 import { apiTokens } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
-import { boundScopes } from '@/lib/permissions.js';
-import { isApiTokenScope } from '@/lib/scopes.js';
+import { boundScopes, hasScope as permissionHasScope } from '@/lib/permissions.js';
+import { canonicalizeScopes, isApiTokenScope } from '@/lib/scopes.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import { resolveLiveUser } from '@/modules/auth/live-session-user.js';
@@ -30,6 +30,7 @@ export class TokensService {
     const raw = `gw_${randomBytes(32).toString('hex')}`;
     const tokenHash = hashToken(raw);
     const tokenPrefix = raw.slice(0, 10);
+    const scopes = canonicalizeScopes(input.scopes).filter(isApiTokenScope);
 
     const [token] = await this.db
       .insert(apiTokens)
@@ -38,11 +39,11 @@ export class TokensService {
         name: input.name,
         tokenHash,
         tokenPrefix,
-        scopes: input.scopes,
+        scopes,
       })
       .returning();
 
-    logger.info('Created API token', { tokenId: token.id, userId, scopes: input.scopes });
+    logger.info('Created API token', { tokenId: token.id, userId, scopes });
     await this.auditService.log({
       userId,
       action: 'api_token.create',
@@ -63,15 +64,19 @@ export class TokensService {
   }
 
   async listTokens(userId: string) {
-    const tokens = await this.db.query.apiTokens.findMany({
-      where: eq(apiTokens.userId, userId),
-    });
+    const [tokens, user] = await Promise.all([
+      this.db.query.apiTokens.findMany({
+        where: eq(apiTokens.userId, userId),
+      }),
+      resolveLiveUser(this.db, userId),
+    ]);
+    const ownerScopes = user?.scopes ?? [];
 
     return tokens.map((t) => ({
       id: t.id,
       name: t.name,
       tokenPrefix: t.tokenPrefix,
-      scopes: t.scopes.filter(isApiTokenScope),
+      scopes: canonicalizeScopes(boundScopes(t.scopes, ownerScopes)).filter(isApiTokenScope),
       lastUsedAt: t.lastUsedAt?.toISOString() ?? null,
       createdAt: t.createdAt.toISOString(),
     }));
@@ -148,12 +153,6 @@ export class TokensService {
    * Supports hierarchical matching: 'cert:issue' grants 'cert:issue:ca-123'
    */
   static hasScope(scopes: string[], requiredScope: string): boolean {
-    if (scopes.includes(requiredScope)) return true;
-    const parts = requiredScope.split(':');
-    for (let i = parts.length - 1; i >= 1; i--) {
-      const prefix = parts.slice(0, i).join(':');
-      if (scopes.includes(prefix)) return true;
-    }
-    return false;
+    return permissionHasScope(scopes, requiredScope);
   }
 }

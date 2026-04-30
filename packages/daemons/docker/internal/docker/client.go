@@ -439,6 +439,9 @@ func (c *Client) CreateContainer(ctx context.Context, configJSON string) (string
 	if cfg.Image == "" {
 		return "", "", fmt.Errorf("image is required")
 	}
+	if err := forbidDockerSocketBinds(cfg.Binds); err != nil {
+		return "", "", err
+	}
 
 	containerCfg := &container.Config{
 		Image:      cfg.Image,
@@ -589,6 +592,14 @@ func (c *Client) DuplicateContainer(ctx context.Context, id string, newName stri
 	// Clone config, clear runtime fields
 	cfg := insp.Config
 	cfg.Hostname = ""
+	if insp.HostConfig != nil {
+		if err := forbidDockerSocketBinds(insp.HostConfig.Binds); err != nil {
+			return "", err
+		}
+	}
+	if err := forbidDockerSocketMountPoints(insp.Mounts); err != nil {
+		return "", err
+	}
 
 	result, err := c.cli.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Config:     cfg,
@@ -811,6 +822,14 @@ func (c *Client) RecreateWithConfig(ctx context.Context, id string, configJSON s
 		// Clear Mounts field since we're using Binds
 		insp.Mounts = nil
 	}
+	if insp.HostConfig != nil {
+		if err := forbidDockerSocketBinds(insp.HostConfig.Binds); err != nil {
+			return err
+		}
+	}
+	if err := forbidDockerSocketMountPoints(insp.Mounts); err != nil {
+		return err
+	}
 
 	// Apply entrypoint override
 	if params.Entrypoint != nil {
@@ -954,6 +973,14 @@ func (c *Client) createContainerFromInspect(
 	createConfig := *insp.Config
 	createConfig.Image = imageRef
 	createConfig.Env = applyEnvChanges(insp.Config.Env, envOverrides, envRemovals)
+	if insp.HostConfig != nil {
+		if err := forbidDockerSocketBinds(insp.HostConfig.Binds); err != nil {
+			return "", err
+		}
+	}
+	if err := forbidDockerSocketMountPoints(insp.Mounts); err != nil {
+		return "", err
+	}
 
 	// Preserve all networks the container was connected to.
 	// Docker only allows one network at creation time; the rest are connected after.

@@ -1,8 +1,7 @@
 import type { WSContext } from 'hono/ws';
 import { container } from '@/container.js';
 import { createChildLogger } from '@/lib/logger.js';
-import { hasScope } from '@/lib/permissions.js';
-import { resolveLiveSessionUser } from '@/modules/auth/live-session-user.js';
+import { resolveWebSocketCredential, type WebSocketCredential } from '@/modules/auth/websocket-auth.js';
 import { DockerManagementService } from '@/modules/docker/docker.service.js';
 import { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import { NodeRegistryService } from '@/services/node-registry.service.js';
@@ -10,11 +9,9 @@ import type { User } from '@/types.js';
 
 const logger = createChildLogger('ComposeLogStream');
 
-async function authorizeComposeLogAccess(token: string, nodeId: string): Promise<User | null> {
-  const result = await resolveLiveSessionUser(token);
-  const user = result?.user ?? null;
-  if (!user || user.isBlocked) return null;
-  return hasScope(user.scopes, `docker:containers:view:${nodeId}`) ? user : null;
+async function authorizeComposeLogAccess(credential: WebSocketCredential | null, nodeId: string): Promise<User | null> {
+  const result = await resolveWebSocketCredential(credential, `docker:containers:view:${nodeId}`);
+  return result?.user ?? null;
 }
 
 function send(ws: WSContext, msg: Record<string, unknown>): void {
@@ -29,7 +26,7 @@ interface ComposeLogState {
   authenticated: boolean;
   handlerKeys: string[];
   keepaliveInterval: ReturnType<typeof setInterval> | null;
-  token: string;
+  credential: WebSocketCredential | null;
 }
 
 const wsStates = new WeakMap<WSContext, ComposeLogState>();
@@ -39,21 +36,21 @@ const wsStates = new WeakMap<WSContext, ComposeLogState>();
  * Fetches all containers with matching com.docker.compose.project label,
  * then streams logs from all of them with container name prefixes.
  */
-export function createComposeLogsWSHandlers(nodeId: string, project: string, token: string) {
+export function createComposeLogsWSHandlers(nodeId: string, project: string, credential: WebSocketCredential | null) {
   const dispatch = container.resolve(NodeDispatchService);
   const registry = container.resolve(NodeRegistryService);
   const dockerService = container.resolve(DockerManagementService);
 
   return {
     onOpen(_event: Event, ws: WSContext) {
-      const state: ComposeLogState = { authenticated: false, handlerKeys: [], keepaliveInterval: null, token };
+      const state: ComposeLogState = { authenticated: false, handlerKeys: [], keepaliveInterval: null, credential };
       wsStates.set(ws, state);
 
       state.keepaliveInterval = setInterval(() => {
         void revalidateComposeLogAccess(ws, state, nodeId, true);
       }, 30_000);
 
-      startComposeStream(ws, state, token, nodeId, project, dispatch, registry, dockerService).catch((err) => {
+      startComposeStream(ws, state, credential, nodeId, project, dispatch, registry, dockerService).catch((err) => {
         logger.error('Compose log stream failed', { error: err instanceof Error ? err.message : String(err) });
         try {
           ws.close();
@@ -97,14 +94,14 @@ function cleanup(ws: WSContext, registry: NodeRegistryService) {
 async function startComposeStream(
   ws: WSContext,
   state: ComposeLogState,
-  token: string,
+  credential: WebSocketCredential | null,
   nodeId: string,
   project: string,
   dispatch: NodeDispatchService,
   registry: NodeRegistryService,
   dockerService: DockerManagementService
 ): Promise<void> {
-  const user = await authorizeComposeLogAccess(token, nodeId);
+  const user = await authorizeComposeLogAccess(credential, nodeId);
   if (!user) {
     send(ws, { type: 'auth_error', message: 'Access revoked or token expired' });
     ws.close(1008, 'Auth failed');
@@ -223,7 +220,7 @@ async function revalidateComposeLogAccess(
   nodeId: string,
   emitPong = false
 ): Promise<boolean> {
-  const user = await authorizeComposeLogAccess(state.token, nodeId);
+  const user = await authorizeComposeLogAccess(state.credential, nodeId);
   if (!user) {
     state.authenticated = false;
     send(ws, { type: 'auth_error', message: 'Access revoked or token expired' });

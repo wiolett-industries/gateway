@@ -31,11 +31,12 @@ function warnStyle(pct: number): {
 interface PinnedNodeCardProps {
   node: Node;
   liveHealth?: NodeHealthReport;
+  healthHistory?: Array<{ ts: string; status: string }>;
 }
 
-export function PinnedNodeCard({ node, liveHealth }: PinnedNodeCardProps) {
+export function PinnedNodeCard({ node, liveHealth, healthHistory }: PinnedNodeCardProps) {
   const h = liveHealth ?? node.lastHealthReport;
-  const eStatus = effectiveNodeStatus(node);
+  const eStatus = effectiveNodeStatus({ ...node, healthHistory });
   const statusColor =
     eStatus === "online" ? "success" : eStatus === "degraded" ? "warning" : "destructive";
 
@@ -64,7 +65,7 @@ export function PinnedNodeCard({ node, liveHealth }: PinnedNodeCardProps) {
         <p className="text-xl font-bold truncate">{node.displayName || node.hostname}</p>
         <div className="flex items-center gap-2">
           <HealthBars
-            history={node.healthHistory}
+            history={healthHistory ?? []}
             currentStatus={node.status}
             showLabels={false}
             className="flex-1"

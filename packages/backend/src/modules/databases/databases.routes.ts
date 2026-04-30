@@ -4,7 +4,7 @@ import { container } from '@/container.js';
 import { openApiValidationHook } from '@/lib/openapi.js';
 import { hasScope } from '@/lib/permissions.js';
 import { AppError } from '@/middleware/error-handler.js';
-import { authMiddleware, requireScope, requireScopeForResource, sessionOnly } from '@/modules/auth/auth.middleware.js';
+import { authMiddleware, requireScope, requireScopeForResource } from '@/modules/auth/auth.middleware.js';
 import { TokensService } from '@/modules/tokens/tokens.service.js';
 import type { AppEnv } from '@/types.js';
 import { DatabaseMonitoringService } from './database-monitoring.service.js';
@@ -19,6 +19,7 @@ import {
   executeRedisCommandRoute,
   expireRedisKeyRoute,
   getDatabaseConnectionRoute,
+  getDatabaseHealthHistoryRoute,
   getRedisKeyRoute,
   insertPostgresRowRoute,
   listDatabaseConnectionsRoute,
@@ -80,7 +81,6 @@ function ensureAnyDatabaseScope(c: any, databaseId: string, scopeBases: string[]
 }
 
 databaseRoutes.use('*', authMiddleware);
-databaseRoutes.use('*', sessionOnly);
 
 databaseRoutes.openapi(listDatabaseConnectionsRoute, async (c) => {
   const service = container.resolve(DatabaseConnectionService);
@@ -111,6 +111,15 @@ databaseRoutes.openapi(
   async (c) => {
     const service = container.resolve(DatabaseConnectionService);
     const data = await service.get(c.req.param('id')!);
+    return c.json({ data });
+  }
+);
+
+databaseRoutes.openapi(
+  { ...getDatabaseHealthHistoryRoute, middleware: requireScopeForResource('databases:view', 'id') },
+  async (c) => {
+    const service = container.resolve(DatabaseConnectionService);
+    const data = await service.getHealthHistory(c.req.param('id')!);
     return c.json({ data });
   }
 );
@@ -164,12 +173,13 @@ databaseRoutes.openapi(
 
     return streamSSE(c, async (stream) => {
       const details = await connections.get(databaseId);
+      const healthHistory = await connections.getHealthHistory(databaseId);
       const history = await monitoring.getHistory(databaseId);
       await stream.writeSSE({
         data: JSON.stringify({
           connected: true,
           databaseId,
-          healthHistory: details.healthHistory,
+          healthHistory,
           healthStatus: details.healthStatus,
         }),
         event: 'connected',

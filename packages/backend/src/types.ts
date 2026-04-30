@@ -28,9 +28,12 @@ export interface AppEnv {
     sessionId?: string;
     effectiveScopes?: string[];
     isTokenAuth?: boolean;
+    authType?: 'session' | 'api-token' | 'oauth-token';
     mcpAuth?: {
       tokenId: string;
       tokenPrefix: string;
+      authType?: 'oauth' | 'api-token';
+      clientId?: string;
     };
     requestId: string;
     loggingIngest?: {
@@ -56,6 +59,7 @@ export type AuthenticatedContext = Context<AppEnv> & {
     sessionId?: string;
     effectiveScopes?: string[];
     isTokenAuth?: boolean;
+    authType?: 'session' | 'api-token' | 'oauth-token';
     requestId: string;
   };
 };

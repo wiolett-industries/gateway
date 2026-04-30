@@ -10,6 +10,8 @@ export interface CreateMcpServerOptions {
   scopes: string[];
   tokenId: string;
   tokenPrefix: string;
+  authType?: 'oauth' | 'api-token';
+  clientId?: string;
 }
 
 export function createMcpServer(options: CreateMcpServerOptions) {
@@ -17,7 +19,7 @@ export function createMcpServer(options: CreateMcpServerOptions) {
     { name: 'gateway', version: '1.0.0' },
     {
       instructions:
-        'Gateway MCP exposes scoped control-plane tools, curated read-only resources, and operational prompts. API token scopes determine every listed and callable capability.',
+        'Gateway MCP exposes scoped control-plane tools, curated read-only resources, and operational prompts. OAuth token scopes determine every listed and callable capability.',
     }
   );
 
@@ -33,6 +35,8 @@ export function createMcpServer(options: CreateMcpServerOptions) {
       scopes: options.scopes,
       tokenId: options.tokenId,
       tokenPrefix: options.tokenPrefix,
+      authType: options.authType,
+      clientId: options.clientId,
     },
     options.user
   );

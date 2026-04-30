@@ -4,6 +4,7 @@ import Redis from 'ioredis';
 import pg from 'pg';
 import type { DrizzleClient } from '@/db/client.js';
 import { type DatabaseHealthEntry, databaseConnections } from '@/db/schema/index.js';
+import { compactHealthHistory } from '@/lib/health-history.js';
 import { buildWhere } from '@/lib/utils.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
@@ -18,7 +19,6 @@ import type {
 
 const { Pool } = pg;
 const DATABASE_HEALTH_HISTORY_MIN_INTERVAL_MS = 30_000;
-const DATABASE_HEALTH_HISTORY_MAX_AGE_MS = 7 * 24 * 3600 * 1000;
 
 export type DatabaseType = 'postgres' | 'redis';
 export type DatabaseHealthStatus = 'online' | 'offline' | 'degraded' | 'unknown';
@@ -61,7 +61,7 @@ export interface DatabaseConnectionView {
   healthStatus: DatabaseHealthStatus;
   lastHealthCheckAt: string | null;
   lastError: string | null;
-  healthHistory: DatabaseHealthEntry[];
+  healthHistory?: DatabaseHealthEntry[];
   hasStoredPassword: boolean;
   config: Record<string, unknown>;
   createdById: string;
@@ -583,7 +583,7 @@ export class DatabaseConnectionService {
       this.db.select({ count: count() }).from(databaseConnections).where(where),
     ]);
 
-    const data = rows.map((row) => this.toView(row, this.decryptConfig(row.encryptedConfig), false));
+    const data = rows.map((row) => this.toView(row, this.decryptConfig(row.encryptedConfig), false, false));
     const total = Number(totalCount);
     return {
       data,
@@ -598,7 +598,12 @@ export class DatabaseConnectionService {
 
   async get(id: string, revealCredentials = false): Promise<DatabaseConnectionView> {
     const row = await this.getRow(id);
-    return this.toView(row, this.decryptConfig(row.encryptedConfig), revealCredentials);
+    return this.toView(row, this.decryptConfig(row.encryptedConfig), revealCredentials, false);
+  }
+
+  async getHealthHistory(id: string): Promise<DatabaseHealthEntry[]> {
+    const row = await this.getRow(id);
+    return (row.healthHistory as DatabaseHealthEntry[] | null) ?? [];
   }
 
   async revealCredentials(id: string): Promise<Record<string, unknown>> {
@@ -653,7 +658,7 @@ export class DatabaseConnectionService {
       details: { name: row.name, type: row.type, host: row.host, port: row.port },
     });
     this.emitChange(row.id, 'created', { name: row.name, type: row.type, healthStatus: row.healthStatus });
-    return this.toView(row, normalized, false);
+    return this.toView(row, normalized, false, false);
   }
 
   async update(id: string, input: UpdateDatabaseConnectionInput, userId: string): Promise<DatabaseConnectionView> {
@@ -735,7 +740,7 @@ export class DatabaseConnectionService {
       },
     });
     this.emitChange(id, 'updated', { name: row.name, type: row.type, healthStatus: row.healthStatus });
-    return this.toView(row, mergedConfig, false);
+    return this.toView(row, mergedConfig, false, false);
   }
 
   async delete(id: string, userId: string): Promise<void> {
@@ -1347,9 +1352,10 @@ export class DatabaseConnectionService {
   private toView(
     row: typeof databaseConnections.$inferSelect,
     config: DatabaseConnectionConfig,
-    revealCredentials: boolean
+    revealCredentials: boolean,
+    includeHealthHistory = true
   ): DatabaseConnectionView {
-    return {
+    const view = {
       id: row.id,
       name: row.name,
       type: row.type,
@@ -1364,7 +1370,7 @@ export class DatabaseConnectionService {
       healthStatus: row.healthStatus,
       lastHealthCheckAt: row.lastHealthCheckAt?.toISOString() ?? null,
       lastError: row.lastError,
-      healthHistory: (row.healthHistory as DatabaseHealthEntry[] | null) ?? [],
+      ...(includeHealthHistory ? { healthHistory: (row.healthHistory as DatabaseHealthEntry[] | null) ?? [] } : {}),
       hasStoredPassword: !!config.password,
       config:
         config.type === 'postgres'
@@ -1389,6 +1395,7 @@ export class DatabaseConnectionService {
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
     };
+    return view as DatabaseConnectionView;
   }
 
   private normalizePostgres(
@@ -1644,7 +1651,6 @@ export class DatabaseConnectionService {
   }
 
   private trimHealthHistory(history: DatabaseHealthEntry[]): DatabaseHealthEntry[] {
-    const cutoff = Date.now() - DATABASE_HEALTH_HISTORY_MAX_AGE_MS;
-    return history.filter((entry) => new Date(entry.ts).getTime() >= cutoff);
+    return compactHealthHistory(history);
   }
 }

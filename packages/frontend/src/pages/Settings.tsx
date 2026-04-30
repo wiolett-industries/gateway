@@ -14,6 +14,7 @@ import { AuthProvisioningSection } from "./settings/AuthProvisioningSection";
 import { DockerRegistriesSection } from "./settings/DockerRegistriesSection";
 import { HousekeepingSection } from "./settings/HousekeepingSection";
 import { LicenseSection } from "./settings/LicenseSection";
+import { OAuthApplicationsSection } from "./settings/OAuthApplicationsSection";
 import { StatusPageSection } from "./settings/StatusPageSection";
 import { UpdateSection } from "./settings/UpdateSection";
 
@@ -201,6 +202,14 @@ export function Settings() {
         {/* API Tokens */}
         <ApiTokensSection
           user={user}
+          nodesList={nodesList}
+          proxyHostsList={proxyHostsList}
+          databasesList={databasesList}
+          loggingSchemasList={loggingSchemasList}
+        />
+
+        {/* OAuth Applications */}
+        <OAuthApplicationsSection
           nodesList={nodesList}
           proxyHostsList={proxyHostsList}
           databasesList={databasesList}

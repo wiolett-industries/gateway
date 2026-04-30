@@ -1,0 +1,195 @@
+import 'reflect-metadata';
+import { Hono } from 'hono';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { errorHandler } from '@/middleware/error-handler.js';
+import type { AppEnv } from '@/types.js';
+
+const mocks = vi.hoisted(() => ({
+  authType: 'api-token' as 'api-token' | 'session',
+  proxyService: {
+    listProxyHosts: vi.fn(),
+    getProxyHost: vi.fn(),
+    createProxyHost: vi.fn(),
+    updateProxyHost: vi.fn(),
+    toggleProxyHost: vi.fn(),
+    getProxyHostHealthHistory: vi.fn(),
+    getRenderedConfig: vi.fn(),
+    validateAdvancedConfig: vi.fn(),
+    deleteProxyHost: vi.fn(),
+  },
+}));
+
+vi.mock('@/container.js', () => ({
+  container: {
+    resolve: vi.fn(() => mocks.proxyService),
+  },
+}));
+
+vi.mock('@/modules/auth/auth.middleware.js', () => ({
+  authMiddleware: async (c: any, next: () => Promise<void>) => {
+    c.set('user', { id: 'user-1' });
+    c.set('effectiveScopes', [
+      'proxy:list',
+      'proxy:create',
+      'proxy:view:host-1',
+      'proxy:edit:host-1',
+      'proxy:advanced:host-1',
+    ]);
+    c.set('authType', mocks.authType);
+    await next();
+  },
+  isProgrammaticAuth: (c: any) => c.get('authType') === 'api-token' || c.get('authType') === 'oauth-token',
+  requireScope: () => async (_c: any, next: () => Promise<void>) => next(),
+  requireScopeForResource: () => async (_c: any, next: () => Promise<void>) => next(),
+  sessionOnly: async (c: any, next: () => Promise<void>) => {
+    if (c.get('authType') !== 'session') {
+      return c.json({ message: 'This endpoint requires browser session authentication.' }, 403);
+    }
+    await next();
+  },
+}));
+
+vi.mock('./proxy.service.js', () => ({
+  ProxyService: class ProxyService {},
+}));
+
+import { proxyRoutes } from './proxy.routes.js';
+
+const rawHost = {
+  id: 'host-1',
+  domainNames: ['app.example.com'],
+  rawConfig: 'server {}',
+  rawConfigEnabled: true,
+};
+
+function jsonRequest(method: string, path: string, body: unknown) {
+  return proxyRoutes.request(path, {
+    method,
+    headers: {
+      Authorization: 'Bearer gw_token',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+function createApp() {
+  const app = new Hono<AppEnv>();
+  app.onError(errorHandler);
+  app.route('/', proxyRoutes);
+  return app;
+}
+
+describe('proxy routes programmatic raw config handling', () => {
+  beforeEach(() => {
+    mocks.authType = 'api-token';
+    vi.clearAllMocks();
+    mocks.proxyService.listProxyHosts.mockResolvedValue({ data: [rawHost], total: 1 });
+    mocks.proxyService.getProxyHost.mockResolvedValue(rawHost);
+    mocks.proxyService.createProxyHost.mockResolvedValue(rawHost);
+    mocks.proxyService.updateProxyHost.mockResolvedValue(rawHost);
+    mocks.proxyService.toggleProxyHost.mockResolvedValue(rawHost);
+    mocks.proxyService.getRenderedConfig.mockResolvedValue('server {}');
+    mocks.proxyService.validateAdvancedConfig.mockResolvedValue({ valid: true });
+  });
+
+  it('strips raw config fields from programmatic list and detail responses', async () => {
+    const listResponse = await proxyRoutes.request('/', {
+      headers: { Authorization: 'Bearer gw_token' },
+    });
+    const listBody = (await listResponse.json()) as { data: Array<Record<string, unknown>> };
+
+    expect(listBody.data[0]).not.toHaveProperty('rawConfig');
+    expect(listBody.data[0]).not.toHaveProperty('rawConfigEnabled');
+
+    const detailResponse = await proxyRoutes.request('/host-1', {
+      headers: { Authorization: 'Bearer gw_token' },
+    });
+    const detailBody = (await detailResponse.json()) as { data: Record<string, unknown> };
+
+    expect(detailBody.data).not.toHaveProperty('rawConfig');
+    expect(detailBody.data).not.toHaveProperty('rawConfigEnabled');
+  });
+
+  it('rejects raw config create and update requests from programmatic auth', async () => {
+    const createResponse = await jsonRequest('POST', '/', {
+      type: 'raw',
+      nodeId: '11111111-1111-4111-8111-111111111111',
+      domainNames: ['raw.example.com'],
+      forwardHost: 'upstream',
+      forwardPort: 8080,
+      rawConfig: 'server {}',
+    });
+
+    expect(createResponse.status).toBe(403);
+    expect(mocks.proxyService.createProxyHost).not.toHaveBeenCalled();
+
+    const updateResponse = await jsonRequest('PUT', '/host-1', {
+      rawConfig: 'server {}',
+    });
+
+    expect(updateResponse.status).toBe(403);
+    expect(mocks.proxyService.updateProxyHost).not.toHaveBeenCalled();
+  });
+
+  it('rejects raw config validation from programmatic auth', async () => {
+    const response = await jsonRequest('POST', '/validate-config', {
+      snippet: 'server {}',
+      mode: 'raw',
+    });
+
+    expect(response.status).toBe(403);
+    expect(mocks.proxyService.validateAdvancedConfig).not.toHaveBeenCalled();
+  });
+
+  it('rejects rendered raw config reads from programmatic auth', async () => {
+    const response = await proxyRoutes.request('/host-1/rendered-config', {
+      headers: { Authorization: 'Bearer gw_token' },
+    });
+
+    expect(response.status).toBe(403);
+    expect(mocks.proxyService.getRenderedConfig).not.toHaveBeenCalled();
+  });
+
+  it('requires raw write scope when a browser session creates a host with raw config', async () => {
+    mocks.authType = 'session';
+
+    const response = await createApp().request('/', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer gw_token',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        nodeId: '11111111-1111-4111-8111-111111111111',
+        domainNames: ['raw.example.com'],
+        forwardHost: 'upstream',
+        forwardPort: 8080,
+        rawConfig: 'server {}',
+      }),
+    });
+
+    expect(response.status).toBe(403);
+    expect(mocks.proxyService.createProxyHost).not.toHaveBeenCalled();
+  });
+
+  it('requires raw toggle scope when a browser session creates a raw-typed host', async () => {
+    mocks.authType = 'session';
+
+    const response = await createApp().request('/', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer gw_token',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        type: 'raw',
+        nodeId: '11111111-1111-4111-8111-111111111111',
+        domainNames: ['raw.example.com'],
+      }),
+    });
+
+    expect(response.status).toBe(403);
+    expect(mocks.proxyService.createProxyHost).not.toHaveBeenCalled();
+  });
+});

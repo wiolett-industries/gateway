@@ -1,19 +1,16 @@
 import type { WSContext } from 'hono/ws';
 import { container } from '@/container.js';
 import { createChildLogger } from '@/lib/logger.js';
-import { hasScope } from '@/lib/permissions.js';
-import { resolveLiveSessionUser } from '@/modules/auth/live-session-user.js';
+import { resolveWebSocketCredential, type WebSocketCredential } from '@/modules/auth/websocket-auth.js';
 import { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import { NodeRegistryService } from '@/services/node-registry.service.js';
 import type { User } from '@/types.js';
 
 const logger = createChildLogger('DockerExec');
 
-async function authorizeExecAccess(token: string, nodeId: string): Promise<User | null> {
-  const result = await resolveLiveSessionUser(token);
-  const user = result?.user ?? null;
-  if (!user || user.isBlocked) return null;
-  return hasScope(user.scopes, `docker:containers:console:${nodeId}`) ? user : null;
+async function authorizeExecAccess(credential: WebSocketCredential | null, nodeId: string): Promise<User | null> {
+  const result = await resolveWebSocketCredential(credential, `docker:containers:console:${nodeId}`);
+  return result?.user ?? null;
 }
 
 function send(ws: WSContext, msg: Record<string, unknown>): void {
@@ -31,7 +28,7 @@ interface ExecWSState {
   outputHandler: ((data: any) => void) | null;
   keepaliveInterval: ReturnType<typeof setInterval> | null;
   outputQueue: Promise<void>;
-  token: string;
+  credential: WebSocketCredential | null;
 }
 
 const wsStates = new WeakMap<WSContext, ExecWSState>();
@@ -48,7 +45,12 @@ const wsStates = new WeakMap<WSContext, ExecWSState>();
  * 6. On WS disconnect, backend sends "detach" — daemon keeps exec alive, buffers output
  * 7. On reconnect, daemon replays buffered output then resumes live forwarding
  */
-export function createDockerExecWSHandlers(nodeId: string, containerId: string, shell: string, token: string) {
+export function createDockerExecWSHandlers(
+  nodeId: string,
+  containerId: string,
+  shell: string,
+  credential: WebSocketCredential | null
+) {
   const dispatch = container.resolve(NodeDispatchService);
   const registry = container.resolve(NodeRegistryService);
 
@@ -61,7 +63,7 @@ export function createDockerExecWSHandlers(nodeId: string, containerId: string, 
         outputHandler: null,
         keepaliveInterval: null,
         outputQueue: Promise.resolve(),
-        token,
+        credential,
       };
       wsStates.set(ws, state);
 
@@ -70,7 +72,7 @@ export function createDockerExecWSHandlers(nodeId: string, containerId: string, 
       }, 30_000);
 
       // Authenticate immediately from the session cookie.
-      authenticateAndCreateExec(ws, state, token, nodeId, containerId, shell, dispatch, registry).catch((err) => {
+      authenticateAndCreateExec(ws, state, credential, nodeId, containerId, shell, dispatch, registry).catch((err) => {
         logger.error('Auth/exec creation failed', { error: err instanceof Error ? err.message : String(err) });
         try {
           ws.close();
@@ -168,14 +170,14 @@ export function createDockerExecWSHandlers(nodeId: string, containerId: string, 
 async function authenticateAndCreateExec(
   ws: WSContext,
   state: ExecWSState,
-  token: string,
+  credential: WebSocketCredential | null,
   nodeId: string,
   containerId: string,
   shell: string,
   dispatch: NodeDispatchService,
   registry: NodeRegistryService
 ): Promise<void> {
-  const user = await authorizeExecAccess(token, nodeId);
+  const user = await authorizeExecAccess(credential, nodeId);
   if (!user) {
     send(ws, { type: 'auth_error', message: 'Access revoked or token expired' });
     ws.close(1008, 'Authentication failed');
@@ -321,7 +323,7 @@ async function revalidateExecAccess(
   nodeId: string,
   emitPong = false
 ): Promise<boolean> {
-  const user = await authorizeExecAccess(state.token, nodeId);
+  const user = await authorizeExecAccess(state.credential, nodeId);
   if (!user) {
     state.authenticated = false;
     send(ws, { type: 'auth_error', message: 'Access revoked or token expired' });

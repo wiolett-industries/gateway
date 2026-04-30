@@ -1,6 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import { proxyHosts } from '@/db/schema/index.js';
+import { compactHealthHistory } from '@/lib/health-history.js';
 import { createChildLogger } from '@/lib/logger.js';
 import type { NotificationEvaluatorService } from '@/modules/notifications/notification-evaluator.service.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
@@ -8,7 +9,6 @@ import type { EventBusService } from '@/services/event-bus.service.js';
 const logger = createChildLogger('HealthCheckJob');
 
 const HEALTH_CHECK_TIMEOUT_MS = 10_000;
-const MAX_HISTORY_AGE_MS = 90 * 24 * 3600 * 1000; // 90 days
 const SLOW_BASELINE_WINDOW_MS = 3 * 60 * 60 * 1000; // 3 hours of history for baseline avg
 
 type HealthStatus = 'online' | 'offline' | 'degraded' | 'unknown';
@@ -54,8 +54,7 @@ export class HealthCheckJob {
         const { status: checkStatus, responseMs } = await this.checkHost(host);
 
         const now = Date.now();
-        const cutoff = new Date(now - MAX_HISTORY_AGE_MS).toISOString();
-        const history: HealthEntry[] = ((host.healthHistory as HealthEntry[]) ?? []).filter((h) => h.ts > cutoff);
+        const existingHistory: HealthEntry[] = (host.healthHistory as HealthEntry[]) ?? [];
 
         // Compute slow flag: compare response time against baseline average
         let slow = false;
@@ -63,7 +62,7 @@ export class HealthCheckJob {
           const threshold = host.healthCheckSlowThreshold ?? 3;
           if (threshold > 0) {
             const baselineCutoff = now - SLOW_BASELINE_WINDOW_MS;
-            const baselineTimes = history
+            const baselineTimes = existingHistory
               .filter(
                 (h) => h.status === 'online' && h.responseMs != null && new Date(h.ts).getTime() >= baselineCutoff
               )
@@ -80,7 +79,7 @@ export class HealthCheckJob {
         const entry: HealthEntry = { ts: new Date(now).toISOString(), status: checkStatus };
         if (responseMs != null) entry.responseMs = responseMs;
         if (slow) entry.slow = true;
-        history.push(entry);
+        const history = compactHealthHistory([...existingHistory, entry], { nowMs: now });
 
         // Derive the stored healthStatus field from the check
         const newStatus: HealthStatus = checkStatus === 'online' ? (slow ? 'degraded' : 'online') : 'offline';

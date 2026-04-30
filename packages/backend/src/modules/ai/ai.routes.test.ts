@@ -109,7 +109,7 @@ describe('AI routes session-only authentication', () => {
 
     expect(response.status).toBe(403);
     expect(await response.json()).toEqual({
-      message: 'This endpoint requires session authentication. API tokens are not allowed.',
+      message: 'This endpoint requires browser session authentication.',
     });
   });
 });

@@ -190,6 +190,27 @@
       "when": 1777410000000,
       "tag": "0026_permission_scope_cleanup",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1777413600000,
+      "tag": "0027_oauth_mcp",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1777417200000,
+      "tag": "0028_programmatic_api_surface",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1777478400000,
+      "tag": "0029_compact_health_history",
+      "breakpoints": true
     }
   ]
 }

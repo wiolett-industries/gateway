@@ -5,6 +5,7 @@ import type { DrizzleClient } from '@/db/client.js';
 import { permissionGroups, users } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { hasScope, isScopeSubset } from '@/lib/permissions.js';
+import { canonicalizeScopes } from '@/lib/scopes.js';
 import { AppError } from '@/middleware/error-handler.js';
 import { computeEffectiveGroupAccess, fetchGroupScopeMap } from '@/modules/auth/live-session-user.js';
 import type { CreateGroupInput, UpdateGroupInput } from './group.schemas.js';
@@ -75,11 +76,11 @@ export class GroupService {
   }
 
   async buildEffectiveScopes(scopes: string[], parentId: string | null | undefined): Promise<string[]> {
-    const directScopes = [...new Set(scopes)];
+    const directScopes = canonicalizeScopes(scopes);
     if (!parentId) return directScopes;
 
     const parentScopes = await this.getEffectiveScopesForGroupId(parentId);
-    return [...new Set([...directScopes, ...parentScopes])];
+    return canonicalizeScopes([...directScopes, ...parentScopes]);
   }
 
   async assertCanCreateGroup(input: CreateGroupInput, actorScopes: string[]): Promise<void> {
@@ -190,6 +191,7 @@ export class GroupService {
   }
 
   async createGroup(input: CreateGroupInput) {
+    const scopes = canonicalizeScopes(input.scopes);
     const existing = await this.getGroupByName(input.name);
     if (existing) {
       throw new AppError(409, 'GROUP_EXISTS', `Group "${input.name}" already exists`);
@@ -218,7 +220,7 @@ export class GroupService {
         description: input.description ?? null,
         isBuiltin: false,
         parentId: input.parentId ?? null,
-        scopes: input.scopes,
+        scopes,
       })
       .returning();
 
@@ -301,7 +303,7 @@ export class GroupService {
       .set({
         ...(input.name !== undefined && { name: input.name }),
         ...(input.description !== undefined && { description: input.description }),
-        ...(input.scopes !== undefined && { scopes: input.scopes }),
+        ...(input.scopes !== undefined && { scopes: canonicalizeScopes(input.scopes) }),
         ...(input.parentId !== undefined && { parentId: input.parentId }),
         updatedAt: new Date(),
       })

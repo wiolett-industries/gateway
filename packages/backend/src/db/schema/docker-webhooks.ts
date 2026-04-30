@@ -1,6 +1,6 @@
 import { boolean, integer, pgTable, text, timestamp, unique, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
-import { nodes } from './nodes.js';
 import { dockerDeployments } from './docker-deployments.js';
+import { nodes } from './nodes.js';
 
 export const dockerWebhooks = pgTable(
   'docker_webhooks',

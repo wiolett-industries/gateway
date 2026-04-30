@@ -52,6 +52,15 @@ export const getDatabaseConnectionRoute = appRoute({
   responses: okJson(UnknownDataResponseSchema),
 });
 
+export const getDatabaseHealthHistoryRoute = appRoute({
+  method: 'get',
+  path: '/{id}/health-history',
+  tags: ['Databases'],
+  summary: 'Get database connection health history',
+  request: { params: IdParamSchema },
+  responses: okJson(UnknownDataResponseSchema),
+});
+
 export const updateDatabaseConnectionRoute = appRoute({
   method: 'patch',
   path: '/{id}',

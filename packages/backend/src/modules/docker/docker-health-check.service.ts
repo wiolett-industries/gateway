@@ -7,6 +7,7 @@ import {
   dockerDeployments,
   dockerHealthChecks,
 } from '@/db/schema/index.js';
+import { compactHealthHistory } from '@/lib/health-history.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { NotificationEvaluatorService } from '@/modules/notifications/notification-evaluator.service.js';
@@ -16,7 +17,6 @@ import type { DockerHealthCheckUpsertInput } from './docker.schemas.js';
 import { DOCKER_DEPLOYMENT_MANAGED_LABEL } from './docker-deployment.service.js';
 
 const logger = createChildLogger('DockerHealthCheckService');
-const MAX_HISTORY_AGE_MS = 90 * 24 * 3600 * 1000;
 
 export interface DockerHealthRouteOption {
   id: string;
@@ -386,9 +386,7 @@ export class DockerHealthCheckService {
       ...(probe.responseMs !== undefined ? { responseMs: probe.responseMs } : {}),
       ...(status === 'degraded' ? { slow: true } : {}),
     };
-    const cutoff = new Date(Date.now() - MAX_HISTORY_AGE_MS).toISOString();
-    const history = ((row.healthHistory ?? []) as DockerHealthEntry[]).filter((item) => item.ts > cutoff);
-    history.push(entry);
+    const history = compactHealthHistory([...((row.healthHistory ?? []) as DockerHealthEntry[]), entry]);
 
     await this.db
       .update(dockerHealthChecks)

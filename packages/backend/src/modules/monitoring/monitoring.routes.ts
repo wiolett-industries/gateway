@@ -28,7 +28,6 @@ import { NginxStatsService } from './nginx-stats.service.js';
 export const monitoringRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
 
 monitoringRoutes.use('*', authMiddleware);
-monitoringRoutes.use('*', sessionOnly);
 
 // Dashboard stats — aggregate counts for proxy hosts, SSL certs, PKI certs, CAs
 monitoringRoutes.openapi(dashboardStatsRoute, async (c) => {
@@ -189,14 +188,20 @@ monitoringRoutes.openapi({ ...nginxStatsStreamRoute, middleware: requireScope('p
 });
 
 // Read global nginx.conf
-monitoringRoutes.openapi({ ...nginxConfigRoute, middleware: requireScope('proxy:list') }, async (c) => {
+monitoringRoutes.openapi({ ...nginxConfigRoute, middleware: sessionOnly }, async (c) => {
+  if (!hasScope(c.get('effectiveScopes') || [], 'proxy:list')) {
+    return c.json({ message: 'Missing required scope: proxy:list' }, 403);
+  }
   const nginxConfigService = container.resolve(NginxConfigService);
   const content = await nginxConfigService.getGlobalConfig();
   return c.json({ data: { content } });
 });
 
 // Update global nginx.conf
-monitoringRoutes.openapi({ ...updateNginxConfigRoute, middleware: requireScope('proxy:edit') }, async (c) => {
+monitoringRoutes.openapi({ ...updateNginxConfigRoute, middleware: sessionOnly }, async (c) => {
+  if (!hasScope(c.get('effectiveScopes') || [], 'proxy:edit')) {
+    return c.json({ message: 'Missing required scope: proxy:edit' }, 403);
+  }
   const body = await c.req.json<{ content: string }>();
   if (!body.content || typeof body.content !== 'string') {
     return c.json({ code: 'INVALID_BODY', message: 'content is required' }, 400);
@@ -210,7 +215,10 @@ monitoringRoutes.openapi({ ...updateNginxConfigRoute, middleware: requireScope('
 });
 
 // Test current nginx config
-monitoringRoutes.openapi({ ...testNginxConfigRoute, middleware: requireScope('proxy:edit') }, async (c) => {
+monitoringRoutes.openapi({ ...testNginxConfigRoute, middleware: sessionOnly }, async (c) => {
+  if (!hasScope(c.get('effectiveScopes') || [], 'proxy:edit')) {
+    return c.json({ message: 'Missing required scope: proxy:edit' }, 403);
+  }
   const nginxConfigService = container.resolve(NginxConfigService);
   const result = await nginxConfigService.testConfig();
   return c.json({ data: result });

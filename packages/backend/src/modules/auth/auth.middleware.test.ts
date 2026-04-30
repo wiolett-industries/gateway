@@ -29,7 +29,7 @@ const SESSION: SessionData = {
   csrfToken: 'csrf-token',
 };
 
-function createDb(): DrizzleClient {
+function createDb({ isBlocked = false }: { isBlocked?: boolean } = {}): DrizzleClient {
   return {
     query: {
       users: {
@@ -40,7 +40,7 @@ function createDb(): DrizzleClient {
           name: USER.name,
           avatarUrl: USER.avatarUrl,
           groupId: USER.groupId,
-          isBlocked: USER.isBlocked,
+          isBlocked,
         }),
       },
       permissionGroups: {
@@ -66,19 +66,22 @@ function createApp() {
     throw error;
   });
   app.use('*', authMiddleware);
+  app.get('/auth/csrf', (c) => c.json({ userId: c.get('user')?.id, isBlocked: c.get('user')?.isBlocked }));
+  app.get('/auth/me', (c) => c.json({ userId: c.get('user')?.id, isBlocked: c.get('user')?.isBlocked }));
+  app.post('/auth/logout', (c) => c.json({ userId: c.get('user')?.id, isBlocked: c.get('user')?.isBlocked }));
   app.get('/read', (c) => c.json({ userId: c.get('user')?.id }));
   app.post('/mutate', (c) => c.json({ userId: c.get('user')?.id }));
   return app;
 }
 
-function registerSession({ csrfValid = true }: { csrfValid?: boolean } = {}) {
+function registerSession({ csrfValid = true, isBlocked = false }: { csrfValid?: boolean; isBlocked?: boolean } = {}) {
   container.registerInstance(SessionService, {
     getSession: vi.fn().mockResolvedValue(SESSION),
     validateCsrfToken: vi.fn().mockResolvedValue(csrfValid),
     updateSession: vi.fn().mockResolvedValue(undefined),
     refreshSession: vi.fn().mockResolvedValue(false),
   } as unknown as SessionService);
-  container.registerInstance(TOKENS.DrizzleClient, createDb());
+  container.registerInstance(TOKENS.DrizzleClient, createDb({ isBlocked }));
 }
 
 afterEach(() => {
@@ -137,5 +140,32 @@ describe('authMiddleware browser session credentials', () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ userId: USER.id });
+  });
+
+  it('rejects blocked session users on protected routes but leaves auth status and logout routes reachable', async () => {
+    registerSession({ isBlocked: true });
+
+    const protectedResponse = await createApp().request('/read', {
+      headers: { Cookie: 'session_id=session-1' },
+    });
+    const csrfResponse = await createApp().request('/auth/csrf', {
+      headers: { Cookie: 'session_id=session-1' },
+    });
+    const meResponse = await createApp().request('/auth/me', {
+      headers: { Cookie: 'session_id=session-1' },
+    });
+    const logoutResponse = await createApp().request('/auth/logout', {
+      method: 'POST',
+      headers: { Cookie: 'session_id=session-1', 'X-CSRF-Token': 'csrf-token' },
+    });
+
+    expect(protectedResponse.status).toBe(403);
+    expect(await protectedResponse.json()).toEqual({ message: 'Account is blocked' });
+    expect(csrfResponse.status).toBe(200);
+    expect(await csrfResponse.json()).toEqual({ userId: USER.id, isBlocked: true });
+    expect(meResponse.status).toBe(200);
+    expect(await meResponse.json()).toEqual({ userId: USER.id, isBlocked: true });
+    expect(logoutResponse.status).toBe(200);
+    expect(await logoutResponse.json()).toEqual({ userId: USER.id, isBlocked: true });
   });
 });

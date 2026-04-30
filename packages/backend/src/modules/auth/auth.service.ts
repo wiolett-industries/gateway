@@ -469,9 +469,6 @@ export class AuthService {
       throw new Error('User not found');
     }
 
-    // Destroy all sessions immediately
-    await this.sessionService.destroyAllUserSessions(userId);
-
     this.emitUser(userId, 'updated');
     this.emitPermissions(userId, [], null);
     return this.mapDbUserToUser(updatedUser);

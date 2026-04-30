@@ -56,6 +56,7 @@ import { NotificationDeliveryService } from '@/modules/notifications/notificatio
 import { NotificationDispatcherService } from '@/modules/notifications/notification-dispatcher.service.js';
 import { NotificationEvaluatorService } from '@/modules/notifications/notification-evaluator.service.js';
 import { NotificationWebhookService } from '@/modules/notifications/notification-webhook.service.js';
+import { OAuthService } from '@/modules/oauth/oauth.service.js';
 import { CAService } from '@/modules/pki/ca.service.js';
 import { CertService } from '@/modules/pki/cert.service.js';
 import { CRLService } from '@/modules/pki/crl.service.js';
@@ -131,6 +132,9 @@ export async function initializeContainer(): Promise<void> {
 
   const authService = new AuthService(db, sessionService, cacheService, authSettingsService, auditService);
   container.registerInstance(AuthService, authService);
+
+  const oauthService = new OAuthService(db, cacheService, auditService);
+  container.registerInstance(OAuthService, oauthService);
 
   const templatesService = new TemplatesService(db);
   container.registerInstance(TemplatesService, templatesService);

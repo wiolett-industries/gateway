@@ -1,0 +1,5 @@
+-- Intentionally no-op.
+--
+-- Health history compaction is applied by the application on the next write for
+-- each node, proxy host, Docker health check, and database connection. Avoid a
+-- rollout-time bulk rewrite of production health history.

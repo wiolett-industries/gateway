@@ -32,6 +32,8 @@ import { LoginPage } from "@/pages/Login";
 import { NginxTemplateEdit } from "@/pages/NginxTemplateEdit";
 import { NodeConsolePopout } from "@/pages/NodeConsolePopout";
 import { Notifications } from "@/pages/Notifications";
+import { OAuthConsent } from "@/pages/OAuthConsent";
+import { OAuthError } from "@/pages/OAuthError";
 import { ProxyHostDetail } from "@/pages/ProxyHostDetail";
 import { ProxyHosts } from "@/pages/ProxyHosts";
 import { Settings } from "@/pages/Settings";
@@ -470,6 +472,8 @@ export default function App() {
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/callback" element={<AuthCallback />} />
+            <Route path="/oauth/consent" element={<OAuthConsent />} />
+            <Route path="/oauth/error" element={<OAuthError />} />
             <Route path="/blocked" element={<BlockedPage />} />
             <Route
               path="/docker/console/:nodeId/:containerId"

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { container } from '@/container.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { openApiValidationHook } from '@/lib/openapi.js';
+import { hasScope } from '@/lib/permissions.js';
 import { authMiddleware, requireScope, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import { DaemonUpdateService } from '@/services/daemon-update.service.js';
 import { EventBusService } from '@/services/event-bus.service.js';
@@ -24,7 +25,13 @@ const logger = createChildLogger('SystemRoutes');
 export const systemRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
 
 systemRoutes.use('*', authMiddleware);
-systemRoutes.use('*', sessionOnly);
+
+function requireUpdateScope(c: any) {
+  if (!hasScope(c.get('effectiveScopes') || [], 'admin:update')) {
+    return c.json({ message: 'Missing required scope: admin:update' }, 403);
+  }
+  return null;
+}
 
 // GET /version — current version + cached update status (any authenticated user)
 systemRoutes.openapi(systemVersionRoute, async (c) => {
@@ -34,14 +41,18 @@ systemRoutes.openapi(systemVersionRoute, async (c) => {
 });
 
 // POST /check-update — manual check against GitLab (admin only)
-systemRoutes.openapi({ ...checkSystemUpdateRoute, middleware: requireScope('admin:update') }, async (c) => {
+systemRoutes.openapi({ ...checkSystemUpdateRoute, middleware: sessionOnly }, async (c) => {
+  const forbidden = requireUpdateScope(c);
+  if (forbidden) return forbidden;
   const updateService = container.resolve(UpdateService);
   const status = await updateService.checkForUpdates();
   return c.json({ data: status });
 });
 
 // POST /update — trigger self-update (admin only)
-systemRoutes.openapi({ ...performSystemUpdateRoute, middleware: requireScope('admin:update') }, async (c) => {
+systemRoutes.openapi({ ...performSystemUpdateRoute, middleware: sessionOnly }, async (c) => {
+  const forbidden = requireUpdateScope(c);
+  if (forbidden) return forbidden;
   const body = await c.req.json();
   const { version } = z
     .object({
@@ -118,14 +129,18 @@ systemRoutes.openapi({ ...daemonUpdatesRoute, middleware: requireScope('admin:up
 });
 
 // POST /daemon-updates/check — force re-check daemon updates
-systemRoutes.openapi({ ...checkDaemonUpdatesRoute, middleware: requireScope('admin:update') }, async (c) => {
+systemRoutes.openapi({ ...checkDaemonUpdatesRoute, middleware: sessionOnly }, async (c) => {
+  const forbidden = requireUpdateScope(c);
+  if (forbidden) return forbidden;
   const service = container.resolve(DaemonUpdateService);
   const data = await service.checkForUpdates();
   return c.json({ data });
 });
 
 // POST /daemon-updates/:nodeId — trigger update for a specific node
-systemRoutes.openapi({ ...updateDaemonRoute, middleware: requireScope('admin:update') }, async (c) => {
+systemRoutes.openapi({ ...updateDaemonRoute, middleware: sessionOnly }, async (c) => {
+  const forbidden = requireUpdateScope(c);
+  if (forbidden) return forbidden;
   const nodeId = c.req.param('nodeId')!;
   const service = container.resolve(DaemonUpdateService);
   const { NodeDispatchService } = await import('@/services/node-dispatch.service.js');

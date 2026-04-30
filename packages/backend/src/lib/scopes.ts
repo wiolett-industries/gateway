@@ -169,10 +169,25 @@ export const ALL_SCOPES = [
 
 export type Scope = (typeof ALL_SCOPES)[number];
 
-export const USER_ONLY_SCOPES = ['feat:ai:use', 'feat:ai:configure'] as const;
-const NON_API_TOKEN_SCOPE_SET = new Set<string>([...USER_ONLY_SCOPES, 'admin:system']);
+export const USER_ONLY_SCOPES = ['feat:ai:use', 'feat:ai:configure', 'mcp:use'] as const;
+export const PROGRAMMATIC_DENIED_BASE_SCOPES = [
+  ...USER_ONLY_SCOPES,
+  'admin:system',
+  'admin:users',
+  'admin:groups',
+  'settings:gateway:view',
+  'settings:gateway:edit',
+  'proxy:raw:read',
+  'proxy:raw:write',
+  'proxy:raw:toggle',
+  'proxy:advanced:bypass',
+  'nodes:config:view',
+  'nodes:config:edit',
+] as const;
 
-export const API_TOKEN_SCOPES = ALL_SCOPES.filter((scope) => !NON_API_TOKEN_SCOPE_SET.has(scope));
+const PROGRAMMATIC_DENIED_SCOPE_SET = new Set<string>(PROGRAMMATIC_DENIED_BASE_SCOPES);
+
+export const API_TOKEN_SCOPES = ALL_SCOPES.filter((scope) => !PROGRAMMATIC_DENIED_SCOPE_SET.has(scope));
 
 /** System-admin group: every scope including admin:system (protected) */
 export const SYSTEM_ADMIN_SCOPES: readonly string[] = [...ALL_SCOPES];
@@ -551,30 +566,88 @@ export const RESOURCE_SCOPABLE: readonly string[] = [
 ];
 
 const ALL_SCOPES_SET = new Set<string>(ALL_SCOPES);
+const RESOURCE_SCOPABLE_SET = new Set<string>(RESOURCE_SCOPABLE);
+const RESOURCE_SCOPABLE_BY_LENGTH = [...RESOURCE_SCOPABLE].sort((a, b) => b.length - a.length);
+
+export const MANUAL_APPROVAL_SCOPES = [
+  'pki:ca:create:root',
+  'pki:ca:create:intermediate',
+  'pki:ca:revoke:root',
+  'pki:ca:revoke:intermediate',
+  'pki:cert:export',
+  'ssl:cert:issue',
+  'ssl:cert:delete',
+  'ssl:cert:revoke',
+  'ssl:cert:export',
+  'nodes:console',
+  'docker:containers:console',
+  'docker:containers:files',
+  'docker:containers:secrets',
+  'databases:query:read',
+  'databases:query:write',
+  'databases:query:admin',
+  'databases:credentials:reveal',
+  'logs:tokens:create',
+  'admin:audit',
+  'admin:details:certificates',
+  'admin:update',
+] as const;
+export const MANUAL_APPROVAL_SCOPE_SET = new Set<string>(MANUAL_APPROVAL_SCOPES);
 
 /** Extract the base scope from a potentially resource-scoped string */
 export function extractBaseScope(scope: string): string {
-  // Try progressively shorter prefixes to find a match in ALL_SCOPES
-  const parts = scope.split(':');
-  for (let i = parts.length; i >= 1; i--) {
-    const prefix = parts.slice(0, i).join(':');
-    if (ALL_SCOPES_SET.has(prefix)) return prefix;
+  if (ALL_SCOPES_SET.has(scope)) return scope;
+  for (const base of RESOURCE_SCOPABLE_BY_LENGTH) {
+    if (scope.startsWith(`${base}:`) && scope.length > base.length + 1) {
+      return base;
+    }
   }
   return scope;
 }
 
 /** Check if a scope string has a valid base scope */
 export function isValidBaseScope(scope: string): boolean {
-  return ALL_SCOPES_SET.has(extractBaseScope(scope));
+  const base = extractBaseScope(scope);
+  return ALL_SCOPES_SET.has(base) && (scope === base || RESOURCE_SCOPABLE_SET.has(base));
 }
 
 /** Check whether a scope may be delegated to an API token */
 export function isApiTokenScope(scope: string): boolean {
-  return isValidBaseScope(scope) && !NON_API_TOKEN_SCOPE_SET.has(extractBaseScope(scope));
+  return isValidBaseScope(scope) && !PROGRAMMATIC_DENIED_SCOPE_SET.has(extractBaseScope(scope));
 }
 
 /** Check if a scope string is a resource-scoped variant */
 export function isResourceScoped(scope: string): boolean {
   const base = extractBaseScope(scope);
   return scope !== base && RESOURCE_SCOPABLE.includes(base);
+}
+
+/** Canonicalize valid scopes so broad scopes win over resource-scoped variants. */
+export function canonicalizeScopes(scopes: readonly string[]): string[] {
+  const exactScopes = new Set<string>();
+  const resourceScopedByBase = new Map<string, Set<string>>();
+
+  for (const rawScope of scopes) {
+    const scope = rawScope.trim();
+    if (!scope || !isValidBaseScope(scope)) continue;
+    const base = extractBaseScope(scope);
+    if (scope === base) {
+      exactScopes.add(scope);
+      continue;
+    }
+    if (!resourceScopedByBase.has(base)) resourceScopedByBase.set(base, new Set());
+    resourceScopedByBase.get(base)!.add(scope);
+  }
+
+  const canonical = new Set<string>(exactScopes);
+  for (const [base, scopedVariants] of resourceScopedByBase.entries()) {
+    if (exactScopes.has(base)) continue;
+    for (const scope of scopedVariants) canonical.add(scope);
+  }
+
+  return [...canonical].sort();
+}
+
+export function withoutManualApprovalScopes(scopes: readonly string[]): string[] {
+  return scopes.filter((scope) => !MANUAL_APPROVAL_SCOPE_SET.has(extractBaseScope(scope)));
 }

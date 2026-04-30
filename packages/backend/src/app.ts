@@ -34,8 +34,9 @@ import { aiRoutes } from '@/modules/ai/ai.routes.js';
 import { authenticateWSConnection, createWSHandlers } from '@/modules/ai/ai.ws.js';
 import { alertRoutes } from '@/modules/audit/alert.routes.js';
 import { auditRoutes } from '@/modules/audit/audit.routes.js';
-import { authMiddleware, requireActiveUser, SESSION_COOKIE_NAME } from '@/modules/auth/auth.middleware.js';
+import { authMiddleware, requireActiveUser } from '@/modules/auth/auth.middleware.js';
 import { authRoutes } from '@/modules/auth/auth.routes.js';
+import { getProgrammaticWebSocketCredential, getSessionWebSocketCredential } from '@/modules/auth/websocket-auth.js';
 import { databaseRoutes } from '@/modules/databases/databases.routes.js';
 import { dockerRoutes } from '@/modules/docker/docker.routes.js';
 import { createComposeLogsWSHandlers } from '@/modules/docker/docker-compose-logs.ws.js';
@@ -52,6 +53,7 @@ import { monitoringRoutes } from '@/modules/monitoring/monitoring.routes.js';
 import { createNodeExecWSHandlers } from '@/modules/nodes/node-exec.ws.js';
 import { nodesRoutes } from '@/modules/nodes/nodes.routes.js';
 import { notificationRoutes } from '@/modules/notifications/notification.routes.js';
+import { oauthMetadataRoutes, oauthRoutes } from '@/modules/oauth/oauth.routes.js';
 import { caRoutes } from '@/modules/pki/ca.routes.js';
 import { certRoutes } from '@/modules/pki/cert.routes.js';
 import { publicPkiRoutes } from '@/modules/pki/public.routes.js';
@@ -78,15 +80,6 @@ const requireAnyEffectiveScope: MiddlewareHandler<AppEnv> = async (c, next) => {
   await next();
 };
 
-function getCookieValue(cookieHeader: string | undefined, name: string): string {
-  if (!cookieHeader) return '';
-  for (const part of cookieHeader.split(';')) {
-    const [rawKey, ...rawValue] = part.trim().split('=');
-    if (rawKey === name) return rawValue.join('=');
-  }
-  return '';
-}
-
 function isAllowedWebSocketOrigin(origin: string | undefined): boolean {
   if (!origin) return false;
   try {
@@ -102,8 +95,8 @@ function isAllowedWebSocketOrigin(origin: string | undefined): boolean {
 }
 
 function getWebSocketSessionId(cookieHeader: string | undefined, origin: string | undefined): string {
-  if (!isAllowedWebSocketOrigin(origin)) return '';
-  return getCookieValue(cookieHeader, SESSION_COOKIE_NAME);
+  const credential = getSessionWebSocketCredential(cookieHeader, origin, isAllowedWebSocketOrigin);
+  return credential?.value ?? '';
 }
 
 async function isStatusHostRequest(hostHeader: string | undefined): Promise<boolean> {
@@ -154,6 +147,7 @@ export function createApp() {
   app.use('/auth/*', authRateLimitMiddleware);
   app.use('/auth/login', authLoginRateLimitMiddleware);
   app.use('/auth/callback', authCallbackRateLimitMiddleware);
+  app.use('/api/oauth/*', authRateLimitMiddleware);
   app.use('/pki/*', pkiRateLimitMiddleware);
   app.use('/api/public/status-page', publicStatusRateLimitMiddleware);
   app.use('/api/webhooks/docker/*', publicWebhookRateLimitMiddleware);
@@ -195,6 +189,8 @@ export function createApp() {
     if (
       path.startsWith('/api/') ||
       path.startsWith('/auth/') ||
+      path.startsWith('/oauth/') ||
+      path.startsWith('/.well-known/') ||
       path.startsWith('/pki/') ||
       path.startsWith('/docs') ||
       path === '/openapi.json' ||
@@ -213,8 +209,11 @@ export function createApp() {
 
   // Auth routes
   app.route('/auth', authRoutes);
+  app.route('/.well-known', oauthMetadataRoutes);
 
   // Protected API routes
+  app.route('/api/oauth', oauthRoutes);
+  app.route('/api/mcp/.well-known', oauthMetadataRoutes);
   app.route('/api/cas', caRoutes);
   app.route('/api/certificates', certRoutes);
   app.route('/api/templates', templateRoutes);
@@ -276,8 +275,13 @@ export function createApp() {
       const nodeId = c.req.param('nodeId') ?? '';
       const containerId = c.req.param('containerId') ?? '';
       const shell = c.req.query('shell') || '/bin/sh';
-      const sessionId = getWebSocketSessionId(c.req.header('cookie'), c.req.header('origin'));
-      return createDockerExecWSHandlers(nodeId, containerId, shell, sessionId);
+      const credential = getProgrammaticWebSocketCredential(
+        c.req.header('cookie'),
+        c.req.header('origin'),
+        c.req.header('authorization'),
+        isAllowedWebSocketOrigin
+      );
+      return createDockerExecWSHandlers(nodeId, containerId, shell, credential);
     })
   );
 
@@ -287,8 +291,13 @@ export function createApp() {
     upgradeWebSocket((c) => {
       const nodeId = c.req.param('nodeId') ?? '';
       const shell = c.req.query('shell') || 'auto';
-      const sessionId = getWebSocketSessionId(c.req.header('cookie'), c.req.header('origin'));
-      return createNodeExecWSHandlers(nodeId, shell, sessionId);
+      const credential = getProgrammaticWebSocketCredential(
+        c.req.header('cookie'),
+        c.req.header('origin'),
+        c.req.header('authorization'),
+        isAllowedWebSocketOrigin
+      );
+      return createNodeExecWSHandlers(nodeId, shell, credential);
     })
   );
 
@@ -299,8 +308,13 @@ export function createApp() {
       const nodeId = c.req.param('nodeId') ?? '';
       const containerId = c.req.param('containerId') ?? '';
       const tail = Number(c.req.query('tail')) || 100;
-      const sessionId = getWebSocketSessionId(c.req.header('cookie'), c.req.header('origin'));
-      return createDockerLogStreamWSHandlers(nodeId, containerId, tail, sessionId);
+      const credential = getProgrammaticWebSocketCredential(
+        c.req.header('cookie'),
+        c.req.header('origin'),
+        c.req.header('authorization'),
+        isAllowedWebSocketOrigin
+      );
+      return createDockerLogStreamWSHandlers(nodeId, containerId, tail, credential);
     })
   );
 
@@ -334,8 +348,13 @@ export function createApp() {
     upgradeWebSocket((c) => {
       const nodeId = c.req.param('nodeId') ?? '';
       const project = decodeURIComponent(c.req.param('project') ?? '');
-      const sessionId = getWebSocketSessionId(c.req.header('cookie'), c.req.header('origin'));
-      return createComposeLogsWSHandlers(nodeId, project, sessionId);
+      const credential = getProgrammaticWebSocketCredential(
+        c.req.header('cookie'),
+        c.req.header('origin'),
+        c.req.header('authorization'),
+        isAllowedWebSocketOrigin
+      );
+      return createComposeLogsWSHandlers(nodeId, project, credential);
     })
   );
 
@@ -348,7 +367,7 @@ export function createApp() {
       title: 'Gateway API',
       version: '1.0.0',
       description:
-        'Gateway is a self-hosted control plane for managing nodes, reverse proxies, Docker workloads, certificates, databases, logging, monitoring, status pages, notifications, and operational automation.\n\n## Authentication\n\nBrowser sessions authenticate through the HttpOnly `session_id` cookie set by OIDC login. Cookie-authenticated mutating requests must include `X-CSRF-Token` from `/auth/csrf`.\n\nAPI tokens use `Authorization: Bearer gw_...` for programmatic access.\n\n## Remote MCP\n\n`POST /api/mcp` exposes Gateway through stateless Streamable HTTP MCP for API-token clients. It accepts only scoped `gw_...` API tokens, not browser cookies or `gwl_...` logging ingest tokens.\n\n## Public PKI Endpoints\n\nCRL and OCSP endpoints under `/pki/` are unauthenticated and publicly accessible.',
+        'Gateway is a self-hosted control plane for managing nodes, reverse proxies, Docker workloads, certificates, databases, logging, monitoring, status pages, notifications, and operational automation.\n\n## Authentication\n\nBrowser sessions authenticate through the HttpOnly `session_id` cookie set by OIDC login. Cookie-authenticated mutating requests must include `X-CSRF-Token` from `/auth/csrf`.\n\nAPI tokens use `Authorization: Bearer gw_...` for programmatic REST access. OAuth public clients use Authorization Code + PKCE and Gateway-issued `gwo_...` access tokens for the same programmatic API surface.\n\n## Remote MCP\n\n`POST /api/mcp` exposes Gateway through stateless Streamable HTTP MCP. It accepts only OAuth `gwo_...` access tokens issued for the Gateway MCP resource. Browser cookies, `gw_...` API tokens, and `gwl_...` logging ingest tokens are not accepted.\n\n## Public PKI Endpoints\n\nCRL and OCSP endpoints under `/pki/` are unauthenticated and publicly accessible.',
     },
     servers: [
       {

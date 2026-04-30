@@ -145,7 +145,7 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
           <div>
             <p className="text-sm font-medium">Enable MCP server</p>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Allow scoped Gateway API tokens with mcp:use to access the remote MCP endpoint
+              Allow MCP-enabled user accounts to access the remote MCP endpoint with OAuth
             </p>
           </div>
           <Switch

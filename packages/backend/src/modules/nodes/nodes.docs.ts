@@ -56,6 +56,15 @@ export const getNodeRoute = appRoute({
   responses: okJson(UnknownDataResponseSchema),
 });
 
+export const getNodeHealthHistoryRoute = appRoute({
+  method: 'get',
+  path: '/{id}/health-history',
+  tags: ['Nodes'],
+  summary: 'Get node health history',
+  request: { params: IdParamSchema },
+  responses: okJson(UnknownDataResponseSchema),
+});
+
 export const createNodeRoute = appRoute({
   method: 'post',
   path: '/',

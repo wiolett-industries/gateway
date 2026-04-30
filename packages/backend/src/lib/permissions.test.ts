@@ -6,6 +6,8 @@ import {
   hasAllScopes,
   hasAnyScope,
   hasScope,
+  hasScopeBase,
+  hasScopeForResource,
   isScopeSubset,
 } from './permissions.js';
 
@@ -20,19 +22,24 @@ describe('Scope-based permissions', () => {
     });
 
     it('hierarchical: parent grants child', () => {
-      expect(hasScope(['cert:issue'], 'cert:issue:ca-123')).toBe(true);
+      expect(hasScope(['nodes:details'], 'nodes:details:node-123')).toBe(true);
     });
 
     it('hierarchical: child does not grant parent', () => {
-      expect(hasScope(['cert:issue:ca-123'], 'cert:issue')).toBe(false);
+      expect(hasScope(['nodes:details:node-123'], 'nodes:details')).toBe(false);
     });
 
     it('hierarchical: exact resource match', () => {
-      expect(hasScope(['cert:issue:ca-123'], 'cert:issue:ca-123')).toBe(true);
+      expect(hasScope(['nodes:details:node-123'], 'nodes:details:node-123')).toBe(true);
     });
 
     it('hierarchical: different resource no match', () => {
-      expect(hasScope(['cert:issue:ca-123'], 'cert:issue:ca-456')).toBe(false);
+      expect(hasScope(['nodes:details:node-123'], 'nodes:details:node-456')).toBe(false);
+    });
+
+    it('does not let an exact scope grant a different exact scope with the same prefix', () => {
+      expect(hasScope(['proxy:advanced'], 'proxy:advanced:bypass')).toBe(false);
+      expect(hasScope(['proxy:advanced:bypass'], 'proxy:advanced:bypass:host-1')).toBe(true);
     });
 
     it('empty scopes', () => {
@@ -47,6 +54,21 @@ describe('Scope-based permissions', () => {
 
     it('matches none', () => {
       expect(hasAnyScope(['cert:read'], ['admin:users', 'admin:audit'])).toBe(false);
+    });
+  });
+
+  describe('hasScopeBase', () => {
+    it('matches resource-scoped variants without treating sibling scopes as matches', () => {
+      expect(hasScopeBase(['proxy:edit:host-1'], 'proxy:edit')).toBe(true);
+      expect(hasScopeBase(['proxy:advanced:bypass:host-1'], 'proxy:advanced')).toBe(false);
+    });
+  });
+
+  describe('hasScopeForResource', () => {
+    it('matches broad and exact resource-scoped scopes only', () => {
+      expect(hasScopeForResource(['proxy:edit'], 'proxy:edit', 'host-1')).toBe(true);
+      expect(hasScopeForResource(['proxy:edit:host-1'], 'proxy:edit', 'host-1')).toBe(true);
+      expect(hasScopeForResource(['proxy:edit:host-2'], 'proxy:edit', 'host-1')).toBe(false);
     });
   });
 
@@ -76,7 +98,7 @@ describe('Scope-based permissions', () => {
     });
 
     it('resource-scoped is subset of parent', () => {
-      expect(isScopeSubset(['cert:issue:ca-123'], ['cert:issue'])).toBe(true);
+      expect(isScopeSubset(['nodes:details:node-123'], ['nodes:details'])).toBe(true);
     });
 
     it('non-subset fails', () => {
@@ -98,6 +120,10 @@ describe('Scope-based permissions', () => {
 
     it('keeps a resource-scoped token when the current user still has the broad permission', () => {
       expect(boundScopes(['nodes:details:node-1'], ['nodes:details'])).toEqual(['nodes:details:node-1']);
+    });
+
+    it('does not bound a denied exact child scope from a grantable exact parent scope', () => {
+      expect(boundScopes(['proxy:advanced'], ['proxy:advanced:bypass'])).toEqual([]);
     });
 
     it('removes delegated scopes no longer granted by the current user', () => {

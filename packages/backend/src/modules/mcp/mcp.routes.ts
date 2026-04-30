@@ -48,6 +48,8 @@ mcpRoutes.post('/', async (c) => {
     scopes,
     tokenId: auth.tokenId,
     tokenPrefix: auth.tokenPrefix,
+    authType: auth.authType,
+    clientId: auth.clientId,
   });
 
   await server.connect(transport);

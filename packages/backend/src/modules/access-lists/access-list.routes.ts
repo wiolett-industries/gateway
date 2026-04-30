@@ -1,7 +1,7 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
 import { openApiValidationHook } from '@/lib/openapi.js';
-import { authMiddleware, requireScope, sessionOnly } from '@/modules/auth/auth.middleware.js';
+import { authMiddleware, requireScope } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import {
   createAccessListRoute,
@@ -16,7 +16,6 @@ import { AccessListService } from './access-list.service.js';
 export const accessListRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
 
 accessListRoutes.use('*', authMiddleware);
-accessListRoutes.use('*', sessionOnly);
 
 // List access lists
 accessListRoutes.openapi({ ...listAccessListsRoute, middleware: requireScope('acl:list') }, async (c) => {

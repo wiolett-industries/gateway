@@ -503,6 +503,9 @@ func (c *Client) createDeploymentSlot(ctx context.Context, deploymentID, network
 	if name == "" {
 		return "", fmt.Errorf("slot container name is required")
 	}
+	if err := forbidDeploymentSocketMounts(desired.Mounts); err != nil {
+		return "", err
+	}
 	labels := map[string]string{}
 	for k, v := range desired.Labels {
 		labels[k] = v

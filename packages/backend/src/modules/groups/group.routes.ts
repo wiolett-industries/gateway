@@ -1,8 +1,9 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
 import { openApiValidationHook } from '@/lib/openapi.js';
+import { canonicalizeScopes } from '@/lib/scopes.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
-import { authMiddleware, requireScope } from '@/modules/auth/auth.middleware.js';
+import { authMiddleware, requireScope, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import { createGroupRoute, deleteGroupRoute, getGroupRoute, listGroupsRoute, updateGroupRoute } from './group.docs.js';
 import { CreateGroupSchema, UpdateGroupSchema } from './group.schemas.js';
@@ -11,6 +12,7 @@ import { GroupService } from './group.service.js';
 export const groupRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
 
 groupRoutes.use('*', authMiddleware);
+groupRoutes.use('*', sessionOnly);
 groupRoutes.use('*', requireScope('admin:groups'));
 
 // List all groups
@@ -34,7 +36,8 @@ groupRoutes.openapi(createGroupRoute, async (c) => {
   const auditService = container.resolve(AuditService);
   const user = c.get('user')!;
   const body = await c.req.json();
-  const input = CreateGroupSchema.parse(body);
+  const parsedInput = CreateGroupSchema.parse(body);
+  const input = { ...parsedInput, scopes: canonicalizeScopes(parsedInput.scopes) };
 
   const userScopes = c.get('effectiveScopes') || [];
   await groupService.assertCanCreateGroup(input, userScopes);
@@ -61,7 +64,11 @@ groupRoutes.openapi(updateGroupRoute, async (c) => {
   const user = c.get('user')!;
   const id = c.req.param('id')!;
   const body = await c.req.json();
-  const input = UpdateGroupSchema.parse(body);
+  const parsedInput = UpdateGroupSchema.parse(body);
+  const input = {
+    ...parsedInput,
+    ...(parsedInput.scopes !== undefined && { scopes: canonicalizeScopes(parsedInput.scopes) }),
+  };
 
   const userScopes = c.get('effectiveScopes') || [];
   await groupService.assertCanUpdateGroup(id, input, userScopes);

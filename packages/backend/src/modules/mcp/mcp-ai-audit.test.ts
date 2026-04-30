@@ -1,6 +1,8 @@
 import 'reflect-metadata';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { container } from '@/container.js';
 import { AIService } from '@/modules/ai/ai.service.js';
+import { DockerDeploymentService } from '@/modules/docker/docker-deployment.service.js';
 import type { User } from '@/types.js';
 
 const USER: User = {
@@ -17,10 +19,12 @@ const USER: User = {
 
 function createService({
   nodesService,
+  proxyService = {},
   databaseService = {},
   auditService,
 }: {
   nodesService: { list?: ReturnType<typeof vi.fn>; create?: ReturnType<typeof vi.fn> };
+  proxyService?: Record<string, ReturnType<typeof vi.fn>>;
   databaseService?: Record<string, ReturnType<typeof vi.fn>>;
   auditService: { log: ReturnType<typeof vi.fn> };
 }) {
@@ -29,7 +33,7 @@ function createService({
     {} as never,
     {} as never,
     {} as never,
-    {} as never,
+    proxyService as never,
     {} as never,
     {} as never,
     {} as never,
@@ -43,6 +47,10 @@ function createService({
     {} as never
   );
 }
+
+afterEach(() => {
+  container.reset();
+});
 
 describe('AIService MCP audit behavior', () => {
   it('writes mcp audit entries for mutating MCP tool calls', async () => {
@@ -158,5 +166,79 @@ describe('AIService MCP audit behavior', () => {
 
     expect(allowed.error).toBeUndefined();
     expect(databaseService.executePostgresSql).toHaveBeenCalledWith('db-1', 'select 1', USER.id);
+  });
+
+  it('uses delegated MCP scopes for proxy advanced-config secondary checks', async () => {
+    const auditService = { log: vi.fn().mockResolvedValue(undefined) };
+    const proxyService = {
+      updateProxyHost: vi.fn().mockResolvedValue({ id: 'proxy-1' }),
+    };
+    const service = createService({ nodesService: {}, proxyService, auditService });
+
+    const result = await service.executeTool(
+      { ...USER, scopes: ['proxy:edit', 'proxy:advanced', 'proxy:advanced:bypass'] },
+      'update_proxy_host',
+      { proxyHostId: 'proxy-1', advancedConfig: 'proxy_set_header Host $host;' },
+      { source: 'mcp', scopes: ['proxy:edit'], tokenId: 'token-1', tokenPrefix: 'gwo_abc1234' }
+    );
+
+    expect(result.error).toBe('Advanced config requires proxy:advanced scope');
+    expect(proxyService.updateProxyHost).not.toHaveBeenCalled();
+  });
+
+  it('allows delegated MCP proxy edits with matching resource-scoped edit scope', async () => {
+    const auditService = { log: vi.fn().mockResolvedValue(undefined) };
+    const proxyService = {
+      updateProxyHost: vi.fn().mockResolvedValue({ id: 'proxy-1' }),
+    };
+    const service = createService({ nodesService: {}, proxyService, auditService });
+
+    const result = await service.executeTool(
+      { ...USER, scopes: ['proxy:edit', 'proxy:advanced', 'proxy:advanced:bypass'] },
+      'update_proxy_host',
+      { proxyHostId: 'proxy-1', enabled: false },
+      { source: 'mcp', scopes: ['proxy:edit:proxy-1'], tokenId: 'token-1', tokenPrefix: 'gwo_abc1234' }
+    );
+
+    expect(result.error).toBeUndefined();
+    expect(proxyService.updateProxyHost).toHaveBeenCalledWith('proxy-1', { enabled: false }, USER.id, false);
+  });
+
+  it('executes blue/green deployment lifecycle tools through the deployment service', async () => {
+    const auditService = { log: vi.fn().mockResolvedValue(undefined) };
+    const deploymentService = {
+      start: vi.fn().mockResolvedValue({ id: 'dep-1', status: 'ready' }),
+    };
+    container.registerInstance(DockerDeploymentService, deploymentService as unknown as DockerDeploymentService);
+    const service = createService({ nodesService: {}, auditService });
+
+    const result = await service.executeTool(
+      USER,
+      'start_docker_deployment',
+      { nodeId: 'node-1', deploymentId: 'dep-1' },
+      { source: 'mcp', scopes: ['docker:containers:manage'], tokenId: 'token-1', tokenPrefix: 'gw_abc1234' }
+    );
+
+    expect(result.error).toBeUndefined();
+    expect(deploymentService.start).toHaveBeenCalledWith('node-1', 'dep-1', USER.id);
+    expect(result.result).toEqual({
+      success: true,
+      message: 'Deployment started',
+      data: { id: 'dep-1', status: 'ready' },
+    });
+    expect(auditService.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: USER.id,
+        action: 'mcp.start_docker_deployment',
+        resourceType: 'docker',
+        resourceId: 'node-1',
+        details: expect.objectContaining({
+          source: 'mcp',
+          success: true,
+          toolName: 'start_docker_deployment',
+          arguments: { nodeId: 'node-1', deploymentId: 'dep-1' },
+        }),
+      })
+    );
   });
 });

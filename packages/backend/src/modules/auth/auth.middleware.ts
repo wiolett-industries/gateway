@@ -4,31 +4,89 @@ import { HTTPException } from 'hono/http-exception';
 import { container, TOKENS } from '@/container.js';
 import type { DrizzleClient } from '@/db/client.js';
 import { resolveLiveUser } from '@/modules/auth/live-session-user.js';
+import { OAuthService } from '@/modules/oauth/oauth.service.js';
 import { TokensService } from '@/modules/tokens/tokens.service.js';
 import { SessionService } from '@/services/session.service.js';
-import type { AppEnv } from '@/types.js';
+import type { AppEnv, User } from '@/types.js';
 
 const SESSION_COOKIE_NAME = 'session_id';
 const CSRF_HEADER_NAME = 'X-CSRF-Token';
 const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
-function extractCredential(c: Context<AppEnv>): { type: 'session' | 'apitoken'; value: string } | null {
-  const cookieSession = getCookie(c, SESSION_COOKIE_NAME);
-  if (cookieSession) return { type: 'session', value: cookieSession };
+type CredentialType = 'session' | 'api-token' | 'oauth-token';
 
+type AuthenticatedBearer = {
+  type: Exclude<CredentialType, 'session'>;
+  user: User;
+  scopes: string[];
+  tokenId: string;
+  tokenPrefix: string;
+  clientId?: string;
+};
+
+function extractCredential(c: Context<AppEnv>): { type: CredentialType; value: string } | null {
   const authHeader = c.req.header('Authorization');
   if (authHeader?.startsWith('Bearer ')) {
-    const value = authHeader.slice(7);
+    const value = authHeader.slice(7).trim();
     if (value.startsWith('gw_')) {
-      return { type: 'apitoken', value };
+      return { type: 'api-token', value };
+    }
+    if (value.startsWith('gwo_')) {
+      return { type: 'oauth-token', value };
     }
   }
+
+  const cookieSession = getCookie(c, SESSION_COOKIE_NAME);
+  if (cookieSession) return { type: 'session', value: cookieSession };
 
   return null;
 }
 
 function requiresCsrf(method: string): boolean {
   return UNSAFE_METHODS.has(method.toUpperCase());
+}
+
+function allowsBlockedSessionPath(c: Context<AppEnv>): boolean {
+  const path = new URL(c.req.url).pathname;
+  return path === '/auth/csrf' || path === '/auth/me' || path === '/auth/logout';
+}
+
+export async function authenticateBearerToken(rawToken: string): Promise<AuthenticatedBearer | null> {
+  if (rawToken.startsWith('gw_')) {
+    const tokensService = container.resolve(TokensService);
+    const result = await tokensService.validateToken(rawToken);
+    if (!result) return null;
+    return {
+      type: 'api-token',
+      user: result.user,
+      scopes: result.scopes,
+      tokenId: result.tokenId,
+      tokenPrefix: result.tokenPrefix,
+    };
+  }
+
+  if (rawToken.startsWith('gwo_')) {
+    const oauthService = container.resolve(OAuthService);
+    const result = await oauthService.validateAccessToken(rawToken, { resource: oauthService.getApiResourceUrl() });
+    if (!result) return null;
+    return {
+      type: 'oauth-token',
+      user: result.user,
+      scopes: result.scopes,
+      tokenId: result.tokenId,
+      tokenPrefix: result.tokenPrefix,
+      clientId: result.clientId,
+    };
+  }
+
+  return null;
+}
+
+function applyBearerContext(c: Context<AppEnv>, result: AuthenticatedBearer): void {
+  c.set('user', result.user);
+  c.set('effectiveScopes', result.scopes);
+  c.set('isTokenAuth', true);
+  c.set('authType', result.type);
 }
 
 export const authMiddleware: MiddlewareHandler<AppEnv> = async (c, next) => {
@@ -38,15 +96,12 @@ export const authMiddleware: MiddlewareHandler<AppEnv> = async (c, next) => {
     throw new HTTPException(401, { message: 'Authentication required' });
   }
 
-  if (credential.type === 'apitoken') {
-    const tokensService = container.resolve(TokensService);
-    const result = await tokensService.validateToken(credential.value);
+  if (credential.type === 'api-token' || credential.type === 'oauth-token') {
+    const result = await authenticateBearerToken(credential.value);
     if (!result) {
-      throw new HTTPException(401, { message: 'Invalid or expired API token' });
+      throw new HTTPException(401, { message: 'Invalid or expired bearer token' });
     }
-    c.set('user', result.user);
-    c.set('effectiveScopes', result.scopes);
-    c.set('isTokenAuth', true);
+    applyBearerContext(c, result);
   } else {
     const sessionService = container.resolve(SessionService);
     const session = await sessionService.getSession(credential.value);
@@ -64,11 +119,15 @@ export const authMiddleware: MiddlewareHandler<AppEnv> = async (c, next) => {
     if (!user) {
       throw new HTTPException(401, { message: 'User no longer exists' });
     }
+    if (user.isBlocked && !allowsBlockedSessionPath(c)) {
+      throw new HTTPException(403, { message: 'Account is blocked' });
+    }
 
     c.set('user', user);
     c.set('sessionId', credential.value);
     c.set('effectiveScopes', user.scopes);
     c.set('isTokenAuth', false);
+    c.set('authType', 'session');
     sessionService.updateSession(credential.value, { user }).catch(() => {});
     sessionService.refreshSession(credential.value, session).catch(() => {});
   }
@@ -80,13 +139,10 @@ export const optionalAuthMiddleware: MiddlewareHandler<AppEnv> = async (c, next)
   const credential = extractCredential(c);
 
   if (credential) {
-    if (credential.type === 'apitoken') {
-      const tokensService = container.resolve(TokensService);
-      const result = await tokensService.validateToken(credential.value);
+    if (credential.type === 'api-token' || credential.type === 'oauth-token') {
+      const result = await authenticateBearerToken(credential.value);
       if (result) {
-        c.set('user', result.user);
-        c.set('effectiveScopes', result.scopes);
-        c.set('isTokenAuth', true);
+        applyBearerContext(c, result);
       }
     } else {
       const sessionService = container.resolve(SessionService);
@@ -101,6 +157,7 @@ export const optionalAuthMiddleware: MiddlewareHandler<AppEnv> = async (c, next)
           c.set('sessionId', credential.value);
           c.set('effectiveScopes', user.scopes);
           c.set('isTokenAuth', false);
+          c.set('authType', 'session');
           sessionService.updateSession(credential.value, { user }).catch(() => {});
           sessionService.refreshSession(credential.value, session).catch(() => {});
         }
@@ -175,12 +232,18 @@ export function requireScopeForResource(scopeBase: string, paramName: string): M
  * API tokens are not allowed.
  */
 export const sessionOnly: MiddlewareHandler<AppEnv> = async (c, next) => {
-  if (c.get('isTokenAuth')) {
+  if (c.get('authType') !== 'session') {
     throw new HTTPException(403, {
-      message: 'This endpoint requires session authentication. API tokens are not allowed.',
+      message: 'This endpoint requires browser session authentication.',
     });
   }
   await next();
 };
+
+export const requireBrowserSession = sessionOnly;
+
+export function isProgrammaticAuth(c: Context<AppEnv>): boolean {
+  return c.get('authType') === 'api-token' || c.get('authType') === 'oauth-token';
+}
 
 export { CSRF_HEADER_NAME, SESSION_COOKIE_NAME };

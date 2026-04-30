@@ -8,7 +8,7 @@ import {
   Trash2,
   Users,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
@@ -34,70 +34,19 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useRealtime } from "@/hooks/use-realtime";
+import {
+  buildFinalScopes,
+  deriveAllowedResourceIdsByScope,
+  hasSelectableScopeBase,
+  parseScopesForForm,
+  requiresResourceSelection,
+  scopeMatches,
+} from "@/lib/scope-utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useCAStore } from "@/stores/ca";
 import type { DatabaseConnection, LoggingSchema, Node, PermissionGroup, ProxyHost } from "@/types";
 import { GROUP_ASSIGNABLE_SCOPES, RESOURCE_SCOPABLE_SCOPES } from "@/types";
-
-/**
- * Parse a scopes array into base selections + resource map.
- * e.g. ["cert:read", "cert:issue:abc", "cert:issue:def"] →
- *   baseScopes: ["cert:read", "cert:issue"]
- *   resources: { "cert:issue": ["abc", "def"] }
- */
-function parseScopesForForm(scopes: string[]) {
-  const baseScopes: string[] = [];
-  const resources: Record<string, string[]> = {};
-
-  for (const s of scopes) {
-    // Check if this scope is a resource-scoped version of a restrictable scope
-    let matched = false;
-    for (const base of RESOURCE_SCOPABLE_SCOPES) {
-      if (s.startsWith(`${base}:`)) {
-        const resourceId = s.slice(base.length + 1);
-        if (!baseScopes.includes(base)) baseScopes.push(base);
-        if (!resources[base]) resources[base] = [];
-        resources[base].push(resourceId);
-        matched = true;
-        break;
-      }
-    }
-    if (!matched) {
-      baseScopes.push(s);
-    }
-  }
-
-  return { baseScopes, resources };
-}
-
-/**
- * Build final scopes array from base selections + resource map.
- * If a CA-restrictable scope has resources selected, emit per-resource scopes.
- * Otherwise emit the base scope (unrestricted).
- */
-function buildFinalScopes(baseScopes: string[], resources: Record<string, string[]>): string[] {
-  const result: string[] = [];
-  for (const scope of baseScopes) {
-    const res = resources[scope];
-    if (res && res.length > 0) {
-      for (const id of res) result.push(`${scope}:${id}`);
-    } else {
-      result.push(scope);
-    }
-  }
-  return result;
-}
-
-function scopeMatches(scopes: string[], requiredScope: string): boolean {
-  if (scopes.includes(requiredScope)) return true;
-  const parts = requiredScope.split(":");
-  for (let i = parts.length - 1; i >= 1; i--) {
-    const prefix = parts.slice(0, i).join(":");
-    if (scopes.includes(prefix)) return true;
-  }
-  return false;
-}
 
 function isScopeSubset(requestedScopes: string[], allowedScopes: string[]): boolean {
   return requestedScopes.every((scope) => scopeMatches(allowedScopes, scope));
@@ -110,11 +59,12 @@ function getGroupEffectiveScopes(group: PermissionGroup): string[] {
 function findMissingRequiredResourceSelection(
   baseScopes: string[],
   resources: Record<string, string[]>,
-  allowedResourceIdsByScope: Record<string, string[]>
+  allowedResourceIdsByScope: Record<string, string[]>,
+  initialResourceLimitedScopes: readonly string[]
 ): string | null {
   for (const scope of baseScopes) {
     if (
-      (allowedResourceIdsByScope[scope]?.length ?? 0) > 0 &&
+      requiresResourceSelection(scope, allowedResourceIdsByScope, initialResourceLimitedScopes) &&
       (resources[scope]?.length ?? 0) === 0
     ) {
       return scope;
@@ -146,28 +96,18 @@ export function AdminGroups({
   const [formParentId, setFormParentId] = useState<string | null>(null);
   const [formBaseScopes, setFormBaseScopes] = useState<string[]>([]);
   const [formResources, setFormResources] = useState<Record<string, string[]>>({});
+  const [initialResourceLimitedScopes, setInitialResourceLimitedScopes] = useState<string[]>([]);
   const [scopeSearch, setScopeSearch] = useState("");
   const [saving, setSaving] = useState(false);
+  const lastCreateRequest = useRef(createRequest);
   const userScopes = useMemo(() => user?.scopes ?? [], [user?.scopes]);
-  const allowedResourceIdsByScope = useMemo(() => {
-    const result: Record<string, string[]> = {};
-    for (const scope of RESOURCE_SCOPABLE_SCOPES) {
-      if (userScopes.includes(scope)) continue;
-      const prefix = `${scope}:`;
-      const ids = userScopes
-        .filter((candidate) => candidate.startsWith(prefix))
-        .map((candidate) => candidate.slice(prefix.length));
-      if (ids.length > 0) result[scope] = [...new Set(ids)];
-    }
-    return result;
-  }, [userScopes]);
+  const allowedResourceIdsByScope = useMemo(
+    () => deriveAllowedResourceIdsByScope(userScopes),
+    [userScopes]
+  );
   const assignableScopes = useMemo(
     () =>
-      GROUP_ASSIGNABLE_SCOPES.filter((scope) =>
-        userScopes.some(
-          (userScope) => userScope === scope.value || userScope.startsWith(`${scope.value}:`)
-        )
-      ),
+      GROUP_ASSIGNABLE_SCOPES.filter((scope) => hasSelectableScopeBase(userScopes, scope.value)),
     [userScopes]
   );
   const canManageGroup = useCallback(
@@ -274,12 +214,14 @@ export function AdminGroups({
     setFormParentId(null);
     setFormBaseScopes([]);
     setFormResources({});
+    setInitialResourceLimitedScopes([]);
     setScopeSearch("");
     setDialogOpen(true);
   }, []);
 
   useEffect(() => {
-    if (!embedded || createRequest === 0) return;
+    if (!embedded || createRequest === 0 || createRequest === lastCreateRequest.current) return;
+    lastCreateRequest.current = createRequest;
     openCreateDialog();
   }, [createRequest, embedded, openCreateDialog]);
 
@@ -291,6 +233,7 @@ export function AdminGroups({
     const { baseScopes, resources } = parseScopesForForm(group.scopes);
     setFormBaseScopes(baseScopes);
     setFormResources(resources);
+    setInitialResourceLimitedScopes(Object.keys(resources));
     setScopeSearch("");
     setDialogOpen(true);
   };
@@ -299,7 +242,8 @@ export function AdminGroups({
     const missingResourceScope = findMissingRequiredResourceSelection(
       formBaseScopes,
       formResources,
-      allowedResourceIdsByScope
+      allowedResourceIdsByScope,
+      initialResourceLimitedScopes
     );
     if (missingResourceScope) {
       toast.error(`Select at least one resource for ${missingResourceScope}`);

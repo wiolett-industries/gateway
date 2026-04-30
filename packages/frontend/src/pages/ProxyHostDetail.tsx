@@ -47,6 +47,7 @@ export function ProxyHostDetail() {
   const { hasScope } = useAuthStore();
 
   const [host, setHost] = useState<ProxyHost | null>(null);
+  const [healthHistory, setHealthHistory] = useState<NonNullable<ProxyHost["healthHistory"]>>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const [activeTab, setActiveTab] = useUrlTab(
@@ -115,7 +116,9 @@ export function ProxyHostDetail() {
       if (!silent) setIsLoading(true);
       try {
         const data = await api.getProxyHost(id);
+        const history = data.healthCheckEnabled ? await api.getProxyHostHealthHistory(id) : [];
         setHost(data);
+        setHealthHistory(history);
         // Sync local state from host
         setCustomHeaders(data.customHeaders || []);
         setCacheEnabled(data.cacheEnabled);
@@ -674,7 +677,7 @@ export function ProxyHostDetail() {
 
         {/* ── Health bars (only when healthCheckEnabled) ──────── */}
         {host.healthCheckEnabled && (
-          <HealthBars history={host.healthHistory} currentStatus={host.healthStatus} />
+          <HealthBars history={healthHistory} currentStatus={host.healthStatus} />
         )}
 
         {/* ── Raw mode warning banner ────────────────────────── */}

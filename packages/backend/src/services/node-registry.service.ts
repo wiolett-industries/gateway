@@ -5,6 +5,7 @@ import type { DrizzleClient } from '@/db/client.js';
 import { nodes } from '@/db/schema/index.js';
 import type { NodeHealthReport, NodeStatsReport } from '@/db/schema/nodes.js';
 import type { CommandResult, DaemonMessage, GatewayCommand } from '@/grpc/generated/types.js';
+import { compactHealthHistory } from '@/lib/health-history.js';
 import { createChildLogger } from '@/lib/logger.js';
 import type { NotificationEvaluatorService } from '@/modules/notifications/notification-evaluator.service.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
@@ -460,18 +461,19 @@ export class NodeRegistryService {
   private async recordOfflineStatus(nodeId: string): Promise<void> {
     try {
       const nowMs = Date.now();
-      const cutoff = new Date(nowMs - 7 * 24 * 3600 * 1000).toISOString();
       const [row] = await this.db
         .select({ healthHistory: nodes.healthHistory })
         .from(nodes)
         .where(eq(nodes.id, nodeId))
         .limit(1);
 
-      const history: Array<{ ts: string; status: string }> = (
-        (row?.healthHistory as Array<{ ts: string; status: string }>) ?? []
-      ).filter((h) => h.ts > cutoff);
-
-      history.push({ ts: new Date(nowMs).toISOString(), status: 'offline' });
+      const history = compactHealthHistory(
+        [
+          ...((row?.healthHistory as Array<{ ts: string; status: string }>) ?? []),
+          { ts: new Date(nowMs).toISOString(), status: 'offline' },
+        ],
+        { nowMs }
+      );
 
       await this.db.update(nodes).set({ healthHistory: history }).where(eq(nodes.id, nodeId));
     } catch (err) {

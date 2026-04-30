@@ -1,19 +1,16 @@
 import type { WSContext } from 'hono/ws';
 import { container } from '@/container.js';
 import { createChildLogger } from '@/lib/logger.js';
-import { hasScope } from '@/lib/permissions.js';
-import { resolveLiveSessionUser } from '@/modules/auth/live-session-user.js';
+import { resolveWebSocketCredential, type WebSocketCredential } from '@/modules/auth/websocket-auth.js';
 import { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import { NodeRegistryService } from '@/services/node-registry.service.js';
 import type { User } from '@/types.js';
 
 const logger = createChildLogger('DockerLogStream');
 
-async function authorizeLogAccess(token: string, nodeId: string): Promise<User | null> {
-  const result = await resolveLiveSessionUser(token);
-  const user = result?.user ?? null;
-  if (!user || user.isBlocked) return null;
-  return hasScope(user.scopes, `docker:containers:view:${nodeId}`) ? user : null;
+async function authorizeLogAccess(credential: WebSocketCredential | null, nodeId: string): Promise<User | null> {
+  const result = await resolveWebSocketCredential(credential, `docker:containers:view:${nodeId}`);
+  return result?.user ?? null;
 }
 
 function send(ws: WSContext, msg: Record<string, unknown>): void {
@@ -88,7 +85,12 @@ const wsStates = new WeakMap<WSContext, LogStreamWSState>();
  *    sends { type: "history" }
  * 5. On WS close, everything is cleaned up
  */
-export function createDockerLogStreamWSHandlers(nodeId: string, containerId: string, tail: number, token: string) {
+export function createDockerLogStreamWSHandlers(
+  nodeId: string,
+  containerId: string,
+  tail: number,
+  credential: WebSocketCredential | null
+) {
   const dispatch = container.resolve(NodeDispatchService);
   const registry = container.resolve(NodeRegistryService);
 
@@ -106,11 +108,11 @@ export function createDockerLogStreamWSHandlers(nodeId: string, containerId: str
       wsStates.set(ws, state);
 
       state.keepaliveInterval = setInterval(() => {
-        void revalidateLogAccess(ws, state, token, nodeId, true);
+        void revalidateLogAccess(ws, state, credential, nodeId, true);
       }, 30_000);
 
       // Authenticate, fetch initial logs, then start follow stream
-      authenticateAndStartStream(ws, state, token, nodeId, containerId, tail, dispatch, registry).catch((err) => {
+      authenticateAndStartStream(ws, state, credential, nodeId, containerId, tail, dispatch, registry).catch((err) => {
         logger.error('Auth/stream start failed', {
           error: err instanceof Error ? err.message : String(err),
         });
@@ -135,7 +137,7 @@ export function createDockerLogStreamWSHandlers(nodeId: string, containerId: str
         }
         if (msg?.type === 'load_more') {
           if (!state.authenticated || state.loadingMore) return;
-          if (!(await revalidateLogAccess(ws, state, token, nodeId))) return;
+          if (!(await revalidateLogAccess(ws, state, credential, nodeId))) return;
           if (!state.oldestTimestamp) {
             send(ws, { type: 'history', lines: [], hasMore: false });
             return;
@@ -193,14 +195,14 @@ export function createDockerLogStreamWSHandlers(nodeId: string, containerId: str
 async function authenticateAndStartStream(
   ws: WSContext,
   state: LogStreamWSState,
-  token: string,
+  credential: WebSocketCredential | null,
   nodeId: string,
   containerId: string,
   tail: number,
   dispatch: NodeDispatchService,
   registry: NodeRegistryService
 ): Promise<void> {
-  const user = await authorizeLogAccess(token, nodeId);
+  const user = await authorizeLogAccess(credential, nodeId);
   if (!user) {
     send(ws, { type: 'auth_error', message: 'Access revoked or token expired' });
     ws.close(1008, 'Authentication failed');
@@ -258,7 +260,7 @@ async function authenticateAndStartStream(
 
   registry.registerLogStreamHandler(handlerKey, (lines: string[], ended?: boolean) => {
     void (async () => {
-      if (!(await revalidateLogAccess(ws, state, token, nodeId))) return;
+      if (!(await revalidateLogAccess(ws, state, credential, nodeId))) return;
       if (ended) {
         send(ws, { type: 'logs_ended' });
         return;
@@ -350,11 +352,11 @@ async function handleLoadMore(
 async function revalidateLogAccess(
   ws: WSContext,
   state: LogStreamWSState,
-  token: string,
+  credential: WebSocketCredential | null,
   nodeId: string,
   emitPong = false
 ): Promise<boolean> {
-  const user = await authorizeLogAccess(token, nodeId);
+  const user = await authorizeLogAccess(credential, nodeId);
   if (!user) {
     state.authenticated = false;
     if (state.handlerKey) {

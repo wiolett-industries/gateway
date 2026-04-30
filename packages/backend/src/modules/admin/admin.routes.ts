@@ -9,7 +9,7 @@ import {
   UpdateUserGroupSchema,
 } from '@/modules/admin/admin.schemas.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
-import { authMiddleware, requireScope } from '@/modules/auth/auth.middleware.js';
+import { authMiddleware, requireScope, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import { AuthService } from '@/modules/auth/auth.service.js';
 import { AuthSettingsService } from '@/modules/auth/auth.settings.service.js';
 import { GroupService } from '@/modules/groups/group.service.js';
@@ -28,6 +28,7 @@ import {
 export const adminRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
 
 adminRoutes.use('*', authMiddleware);
+adminRoutes.use('*', sessionOnly);
 
 function getEffectiveGroupScopes(group: { scopes: string[]; inheritedScopes?: string[] }) {
   return [...new Set([...(group.scopes ?? []), ...(group.inheritedScopes ?? [])])];

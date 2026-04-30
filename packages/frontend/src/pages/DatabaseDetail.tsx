@@ -77,7 +77,13 @@ export function DatabaseDetail() {
     if (!id) return;
     setLoading(true);
     try {
-      setDatabase(await api.getDatabase(id));
+      const [database, healthHistory] = await Promise.all([
+        api.getDatabase(id),
+        api.getDatabaseHealthHistory(id),
+      ]);
+      setDatabase(database);
+      setLiveHealthHistory(healthHistory);
+      setLiveHealthStatus(database.healthStatus);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to load database");
       navigate("/databases");
@@ -110,7 +116,6 @@ export function DatabaseDetail() {
 
   useEffect(() => {
     if (!database) return;
-    setLiveHealthHistory(database.healthHistory ?? []);
     setLiveHealthStatus(database.healthStatus);
     setMonitoringHistory([]);
   }, [database]);
@@ -151,7 +156,7 @@ export function DatabaseDetail() {
       if (event.healthStatus) setLiveHealthStatus(event.healthStatus);
       if (event.sampledAt && event.healthStatus) {
         setLiveHealthHistory((prev) => [
-          ...prev,
+          ...(prev ?? []),
           { ts: event.sampledAt!, status: event.healthStatus! },
         ]);
       }

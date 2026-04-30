@@ -2,7 +2,7 @@ import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
 import { openApiValidationHook } from '@/lib/openapi.js';
 import { AppError } from '@/middleware/error-handler.js';
-import { authMiddleware, requireScope, sessionOnly } from '@/modules/auth/auth.middleware.js';
+import { authMiddleware, requireScope } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import {
   createStatusPageIncidentRoute,
@@ -37,7 +37,6 @@ export const statusPageRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiVa
 export const publicStatusPageRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
 
 statusPageRoutes.use('*', authMiddleware);
-statusPageRoutes.use('*', sessionOnly);
 
 statusPageRoutes.openapi({ ...getStatusPageSettingsRoute, middleware: requireScope('status-page:view') }, async (c) => {
   const service = container.resolve(StatusPageService);

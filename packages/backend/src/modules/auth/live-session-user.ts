@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import { container, TOKENS } from '@/container.js';
 import type { DrizzleClient } from '@/db/client.js';
 import { users } from '@/db/schema/index.js';
+import { canonicalizeScopes } from '@/lib/scopes.js';
 import { SessionService } from '@/services/session.service.js';
 import type { User } from '@/types.js';
 
@@ -30,7 +31,7 @@ export function computeEffectiveGroupAccess(groupId: string, groupMap: Map<strin
 
   return {
     groupName: group?.name ?? 'unknown',
-    scopes: [...scopeSet],
+    scopes: canonicalizeScopes([...scopeSet]),
   };
 }
 

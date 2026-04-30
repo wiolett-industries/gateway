@@ -55,10 +55,18 @@ function parseScopedSelections(
   const baseScopes: string[] = [];
   const resources: Record<string, string[]> = {};
   const exactBaseScopes = new Set<string>();
+  const sortedRestrictableScopes = [...restrictableScopes].sort((a, b) => b.length - a.length);
+  const restrictableScopeSet = new Set<string>(restrictableScopes);
 
   for (const value of values) {
+    if (restrictableScopeSet.has(value)) {
+      if (!baseScopes.includes(value)) baseScopes.push(value);
+      exactBaseScopes.add(value);
+      continue;
+    }
+
     let matchedBase: string | null = null;
-    for (const base of restrictableScopes) {
+    for (const base of sortedRestrictableScopes) {
       if (value.startsWith(`${base}:`)) {
         matchedBase = base;
         const resourceId = value.slice(base.length + 1);
@@ -306,7 +314,10 @@ function ScopeRow({
     }
   }
   const showRestrictions =
-    isRestrictable && resourceOptions.length > 0 && (isSelected || combinedSelectedIds.length > 0);
+    isRestrictable &&
+    resourceOptions.length > 0 &&
+    (isSelected || combinedSelectedIds.length > 0) &&
+    (!disabled || combinedSelectedIds.length > 0);
   const baseLocked = !!inheritedExactBase || inheritedSelectedIds.length > 0;
   const rowDisabled = disabled || baseLocked;
 

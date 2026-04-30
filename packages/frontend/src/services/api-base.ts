@@ -46,6 +46,13 @@ function getRetryAfterSeconds(response: Response): number {
   return 60;
 }
 
+function getLoginRedirectUrl(): string {
+  if (window.location.pathname.startsWith("/oauth/")) {
+    return `/auth/login?return_to=${encodeURIComponent(window.location.href)}`;
+  }
+  return "/login";
+}
+
 export class ApiClientBase {
   protected cache = new Map<string, CacheEntry>();
   private csrfToken: string | null = null;
@@ -118,7 +125,7 @@ export class ApiClientBase {
 
     if (response.status === 401) {
       useAuthStore.getState().logout();
-      window.location.href = "/login";
+      window.location.href = getLoginRedirectUrl();
       throw new ApiRequestError("Session expired", {
         status: response.status,
         code: "UNAUTHORIZED",
@@ -203,7 +210,7 @@ export class ApiClientBase {
       if (response.status === 401) {
         this.clearCsrfToken();
         useAuthStore.getState().logout();
-        window.location.href = "/login";
+        window.location.href = getLoginRedirectUrl();
         throw new ApiRequestError("Session expired", {
           status: response.status,
           code: "UNAUTHORIZED",
@@ -247,7 +254,10 @@ export class ApiClientBase {
   }
 
   protected async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-    const url = endpoint.startsWith("/auth") ? endpoint : `${API_BASE}${endpoint}`;
+    const url =
+      endpoint.startsWith("/auth") || endpoint.startsWith(API_BASE)
+        ? endpoint
+        : `${API_BASE}${endpoint}`;
     const method = (options.method || "GET").toUpperCase();
 
     // For GET requests, update the shared cache but return the network result

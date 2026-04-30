@@ -17,6 +17,7 @@ import {
   createNodeRoute,
   deleteNodeRoute,
   getNodeConfigRoute,
+  getNodeHealthHistoryRoute,
   getNodeRoute,
   listNodesRoute,
   nodeDaemonLogsRoute,
@@ -38,7 +39,6 @@ import { NodesService } from './nodes.service.js';
 export const nodesRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
 
 nodesRoutes.use('*', authMiddleware);
-nodesRoutes.use('*', sessionOnly);
 
 nodesRoutes.openapi({ ...listNodesRoute, middleware: requireScope('nodes:list') }, async (c) => {
   const service = container.resolve(NodesService);
@@ -53,6 +53,16 @@ nodesRoutes.openapi({ ...getNodeRoute, middleware: requireScopeForResource('node
   const node = await service.get(id);
   return c.json({ data: node });
 });
+
+nodesRoutes.openapi(
+  { ...getNodeHealthHistoryRoute, middleware: requireScopeForResource('nodes:details', 'id') },
+  async (c) => {
+    const service = container.resolve(NodesService);
+    const id = c.req.param('id')!;
+    const healthHistory = await service.getHealthHistory(id);
+    return c.json({ data: healthHistory });
+  }
+);
 
 nodesRoutes.openapi({ ...createNodeRoute, middleware: requireScope('nodes:create') }, async (c) => {
   const service = container.resolve(NodesService);
@@ -107,60 +117,63 @@ async function requireNginxNode(c: any): Promise<boolean> {
   }
 }
 
-nodesRoutes.openapi(
-  { ...getNodeConfigRoute, middleware: requireScopeForResource('nodes:config:view', 'id') },
-  async (c) => {
-    if (!(await requireNginxNode(c))) return c.body(null);
-    const { NodeDispatchService } = await import('@/services/node-dispatch.service.js');
-    const dispatch = container.resolve(NodeDispatchService);
-    const nodeId = c.req.param('id')!;
-    const result = await dispatch.readGlobalConfig(nodeId);
-    if (!result.success) {
-      return c.json({ code: 'DISPATCH_ERROR', message: result.error || 'Failed to read config' }, 502);
-    }
-    return c.json({ data: { content: result.detail } });
+nodesRoutes.openapi({ ...getNodeConfigRoute, middleware: sessionOnly }, async (c) => {
+  const requiredScope = `nodes:config:view:${c.req.param('id')!}`;
+  if (!hasScope(c.get('effectiveScopes') || [], requiredScope)) {
+    return c.json({ message: `Missing required scope: ${requiredScope}` }, 403);
   }
-);
+  if (!(await requireNginxNode(c))) return c.body(null);
+  const { NodeDispatchService } = await import('@/services/node-dispatch.service.js');
+  const dispatch = container.resolve(NodeDispatchService);
+  const nodeId = c.req.param('id')!;
+  const result = await dispatch.readGlobalConfig(nodeId);
+  if (!result.success) {
+    return c.json({ code: 'DISPATCH_ERROR', message: result.error || 'Failed to read config' }, 502);
+  }
+  return c.json({ data: { content: result.detail } });
+});
 
-nodesRoutes.openapi(
-  { ...updateNodeConfigRoute, middleware: requireScopeForResource('nodes:config:edit', 'id') },
-  async (c) => {
-    if (!(await requireNginxNode(c))) return c.body(null);
-    const { NodeDispatchService } = await import('@/services/node-dispatch.service.js');
-    const dispatch = container.resolve(NodeDispatchService);
-    const nodeId = c.req.param('id')!;
-    const body = await c.req.json<{ content: string }>();
-    if (!body.content || typeof body.content !== 'string') {
-      return c.json({ code: 'INVALID_BODY', message: 'content is required' }, 400);
-    }
-    if (body.content.length > 1_048_576) {
-      return c.json({ data: { valid: false, error: 'Config exceeds 1MB limit' } }, 422);
-    }
-    const result = await dispatch.updateGlobalConfig(nodeId, body.content, '');
-    if (!result.success) {
-      return c.json({ data: { valid: false, error: result.error } }, 422);
-    }
-    return c.json({ data: { valid: true } });
+nodesRoutes.openapi({ ...updateNodeConfigRoute, middleware: sessionOnly }, async (c) => {
+  const requiredScope = `nodes:config:edit:${c.req.param('id')!}`;
+  if (!hasScope(c.get('effectiveScopes') || [], requiredScope)) {
+    return c.json({ message: `Missing required scope: ${requiredScope}` }, 403);
   }
-);
+  if (!(await requireNginxNode(c))) return c.body(null);
+  const { NodeDispatchService } = await import('@/services/node-dispatch.service.js');
+  const dispatch = container.resolve(NodeDispatchService);
+  const nodeId = c.req.param('id')!;
+  const body = await c.req.json<{ content: string }>();
+  if (!body.content || typeof body.content !== 'string') {
+    return c.json({ code: 'INVALID_BODY', message: 'content is required' }, 400);
+  }
+  if (body.content.length > 1_048_576) {
+    return c.json({ data: { valid: false, error: 'Config exceeds 1MB limit' } }, 422);
+  }
+  const result = await dispatch.updateGlobalConfig(nodeId, body.content, '');
+  if (!result.success) {
+    return c.json({ data: { valid: false, error: result.error } }, 422);
+  }
+  return c.json({ data: { valid: true } });
+});
 
 // Test node's nginx config on the target node daemon.
 // Do not run a backend-local nginx -t first, because node configs can contain
 // valid host-specific includes/paths that do not exist inside the Gateway container.
-nodesRoutes.openapi(
-  { ...testNodeConfigRoute, middleware: requireScopeForResource('nodes:config:edit', 'id') },
-  async (c) => {
-    if (!(await requireNginxNode(c))) return c.body(null);
-    const { NodeDispatchService } = await import('@/services/node-dispatch.service.js');
-    const dispatch = container.resolve(NodeDispatchService);
-    const nodeId = c.req.param('id')!;
-    await c.req.json<{ content?: string }>().catch(() => ({}) as { content?: string });
-
-    // Remote test via daemon (tests the deployed config in the node environment)
-    const result = await dispatch.testConfig(nodeId);
-    return c.json({ data: { valid: result.success, error: result.error || undefined } });
+nodesRoutes.openapi({ ...testNodeConfigRoute, middleware: sessionOnly }, async (c) => {
+  const requiredScope = `nodes:config:edit:${c.req.param('id')!}`;
+  if (!hasScope(c.get('effectiveScopes') || [], requiredScope)) {
+    return c.json({ message: `Missing required scope: ${requiredScope}` }, 403);
   }
-);
+  if (!(await requireNginxNode(c))) return c.body(null);
+  const { NodeDispatchService } = await import('@/services/node-dispatch.service.js');
+  const dispatch = container.resolve(NodeDispatchService);
+  const nodeId = c.req.param('id')!;
+  await c.req.json<{ content?: string }>().catch(() => ({}) as { content?: string });
+
+  // Remote test via daemon (tests the deployed config in the node environment)
+  const result = await dispatch.testConfig(nodeId);
+  return c.json({ data: { valid: result.success, error: result.error || undefined } });
+});
 
 // Node monitoring SSE stream — real-time health + stats at 5s intervals
 nodesRoutes.openapi(

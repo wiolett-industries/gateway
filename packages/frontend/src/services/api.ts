@@ -56,6 +56,8 @@ import type {
   LoggingSearchResult,
   NginxProcessInfo,
   NginxTemplate,
+  OAuthAuthorization,
+  OAuthConsentPreview,
   PaginatedResponse,
   PermissionGroup,
   PostgresTableMetadata,
@@ -168,6 +170,61 @@ class ApiClient extends ApiClientBase {
 
   getLoginUrl(): string {
     return `${AUTH_BASE}/login`;
+  }
+
+  async getOAuthConsent(requestId: string): Promise<OAuthConsentPreview> {
+    return this.request<OAuthConsentPreview>(`/api/oauth/consent/${encodeURIComponent(requestId)}`);
+  }
+
+  async approveOAuthConsent(requestId: string, scopes: string[]): Promise<{ redirectUrl: string }> {
+    return this.request<{ redirectUrl: string }>(
+      `/api/oauth/consent/${encodeURIComponent(requestId)}/approve`,
+      {
+        method: "POST",
+        body: JSON.stringify({ scopes }),
+      }
+    );
+  }
+
+  async denyOAuthConsent(requestId: string): Promise<{ redirectUrl: string }> {
+    return this.request<{ redirectUrl: string }>(
+      `/api/oauth/consent/${encodeURIComponent(requestId)}/deny`,
+      {
+        method: "POST",
+        body: JSON.stringify({}),
+      }
+    );
+  }
+
+  async listOAuthAuthorizations(): Promise<OAuthAuthorization[]> {
+    return this.unwrapData(
+      this.request<{ data: OAuthAuthorization[] }>("/api/oauth/authorizations")
+    );
+  }
+
+  async revokeOAuthAuthorization(clientId: string, resource: string): Promise<void> {
+    await this.request<void>(
+      `/api/oauth/authorizations/${encodeURIComponent(clientId)}?resource=${encodeURIComponent(resource)}`,
+      {
+        method: "DELETE",
+      }
+    );
+  }
+
+  async updateOAuthAuthorization(
+    clientId: string,
+    resource: string,
+    scopes: string[]
+  ): Promise<OAuthAuthorization> {
+    return this.unwrapData(
+      this.request<{ data: OAuthAuthorization }>(
+        `/api/oauth/authorizations/${encodeURIComponent(clientId)}?resource=${encodeURIComponent(resource)}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ scopes }),
+        }
+      )
+    );
   }
 
   // ── Certificate Authorities ───────────────────────────────────────
@@ -505,6 +562,10 @@ class ApiClient extends ApiClientBase {
     return this.unwrapData(this.request(`/nodes/${id}`));
   }
 
+  async getNodeHealthHistory(id: string): Promise<Array<{ ts: string; status: string }>> {
+    return this.unwrapData(this.request(`/nodes/${id}/health-history`));
+  }
+
   async createNode(data: {
     type?: string;
     hostname: string;
@@ -644,6 +705,12 @@ class ApiClient extends ApiClientBase {
 
   async getProxyHost(id: string): Promise<ProxyHost> {
     return this.unwrapData(this.request<{ data: ProxyHost }>(`/proxy-hosts/${id}`));
+  }
+
+  async getProxyHostHealthHistory(
+    id: string
+  ): Promise<Array<{ ts: string; status: string; responseMs?: number; slow?: boolean }>> {
+    return this.unwrapData(this.request(`/proxy-hosts/${id}/health-history`));
   }
 
   async createProxyHost(data: CreateProxyHostRequest): Promise<ProxyHost> {
@@ -1281,6 +1348,10 @@ class ApiClient extends ApiClientBase {
 
   async getDatabase(id: string): Promise<DatabaseConnection> {
     return this.unwrapData(this.request<{ data: DatabaseConnection }>(`/databases/${id}`));
+  }
+
+  async getDatabaseHealthHistory(id: string): Promise<DatabaseConnection["healthHistory"]> {
+    return this.unwrapData(this.request(`/databases/${id}/health-history`));
   }
 
   async createDatabase(data: Record<string, unknown>): Promise<DatabaseConnection> {

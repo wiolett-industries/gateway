@@ -2,6 +2,7 @@ import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
 import { openApiValidationHook } from '@/lib/openapi.js';
 import { isScopeSubset } from '@/lib/permissions.js';
+import { canonicalizeScopes } from '@/lib/scopes.js';
 import { authMiddleware, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import { createTokenRoute, listTokensRoute, renameTokenRoute, revokeTokenRoute } from './tokens.docs.js';
@@ -24,7 +25,8 @@ tokensRoutes.openapi(createTokenRoute, async (c) => {
   const tokensService = container.resolve(TokensService);
   const user = c.get('user')!;
   const body = await c.req.json();
-  const input = CreateTokenSchema.parse(body);
+  const parsedInput = CreateTokenSchema.parse(body);
+  const input = { ...parsedInput, scopes: canonicalizeScopes(parsedInput.scopes) };
 
   // Token scopes must be a subset of the user's group scopes
   const userScopes = user.scopes;

@@ -35,9 +35,9 @@ const prompts: PromptDefinition[] = [
   {
     name: 'rollout-container-image',
     title: 'Roll out container image',
-    description: 'Plan a Docker image rollout through existing container tools.',
+    description: 'Plan a Docker image rollout through existing container or blue/green deployment tools.',
     requiredScopes: ['docker:containers:manage', 'docker:images:pull'],
-    text: 'Plan a controlled container image rollout. Confirm the target node, container, current image, desired tag, dependency risk, and rollback path. Use only available Docker tools, and treat recreate/update operations as operationally risky actions requiring explicit operator intent.',
+    text: 'Plan a controlled Docker image rollout. First identify whether the target is a regular container or a Gateway blue/green deployment. For regular containers use container image update tools; for managed blue/green deployments use deployment tools such as list_docker_deployments, get_docker_deployment, deploy_docker_deployment, switch_docker_deployment_slot, and rollback_docker_deployment. Never operate on an underlying managed deployment slot container directly. Confirm the target node, current image, desired tag, dependency risk, and rollback path, and treat recreate/update/deploy/switch operations as operationally risky actions requiring explicit operator intent.',
   },
   {
     name: 'create-status-incident',

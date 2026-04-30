@@ -2,7 +2,7 @@ import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
 import { openApiValidationHook } from '@/lib/openapi.js';
 import { hasScope } from '@/lib/permissions.js';
-import { authMiddleware, requireScope, sessionOnly } from '@/modules/auth/auth.middleware.js';
+import { authMiddleware, requireScope } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import {
   deleteSslCertificateRoute,
@@ -25,7 +25,6 @@ import { SSLService } from './ssl.service.js';
 export const sslRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
 
 sslRoutes.use('*', authMiddleware);
-sslRoutes.use('*', sessionOnly);
 
 // List SSL certificates (paginated, filterable)
 sslRoutes.openapi({ ...listSslCertificatesRoute, middleware: requireScope('ssl:cert:list') }, async (c) => {

@@ -1,7 +1,7 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
 import { openApiValidationHook } from '@/lib/openapi.js';
-import { authMiddleware, requireScope, sessionOnly } from '@/modules/auth/auth.middleware.js';
+import { authMiddleware, requireScope } from '@/modules/auth/auth.middleware.js';
 import { SSLService } from '@/modules/ssl/ssl.service.js';
 import type { AppEnv } from '@/types.js';
 import {
@@ -20,7 +20,6 @@ import { DomainsService } from './domain.service.js';
 export const domainRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
 
 domainRoutes.use('*', authMiddleware);
-domainRoutes.use('*', sessionOnly);
 
 // List domains (paginated)
 domainRoutes.openapi({ ...listDomainsRoute, middleware: requireScope('proxy:list') }, async (c) => {

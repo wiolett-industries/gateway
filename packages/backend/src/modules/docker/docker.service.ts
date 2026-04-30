@@ -22,6 +22,7 @@ import {
 } from './docker-runtime-limits.js';
 import type { DockerRuntimeSettingsService } from './docker-runtime-settings.service.js';
 import type { DockerSecretService } from './docker-secret.service.js';
+import { assertNoDockerSocketMountsInConfig } from './docker-socket-mount.guard.js';
 import type { DockerTaskService } from './docker-task.service.js';
 import type { DockerWebhookService } from './docker-webhook.service.js';
 
@@ -654,7 +655,6 @@ export class DockerManagementService {
           c.healthCheckEnabled = health.enabled;
           c.healthStatus = health.healthStatus;
           c.lastHealthCheckAt = health.lastHealthCheckAt;
-          c.healthHistory = health.healthHistory ?? [];
         }
       }
       if (this.deploymentService) {
@@ -687,7 +687,6 @@ export class DockerManagementService {
           deployment.healthCheckEnabled = health.enabled;
           deployment.healthStatus = health.healthStatus;
           deployment.lastHealthCheckAt = health.lastHealthCheckAt;
-          deployment.healthHistory = health.healthHistory ?? [];
         }
         visibleContainers.push(...deploymentRows);
       }
@@ -728,6 +727,7 @@ export class DockerManagementService {
   async createContainer(nodeId: string, config: Record<string, unknown>, userId: string) {
     await assertNodeAllowsServiceCreation(this.db, nodeId, 'docker');
     await this.validateDockerNode(nodeId);
+    assertNoDockerSocketMountsInConfig(config);
     const registryId = typeof config.registryId === 'string' ? config.registryId : null;
     delete config.registryId;
     const requestedName = (config.name as string | undefined)?.trim();
@@ -1109,6 +1109,7 @@ export class DockerManagementService {
     const expectedState = await this.resolveExpectedRecreateState(nodeId, containerId);
     this.requireNoTransition(nodeId, name);
     config = await this.applyPersistedRuntimeSettingsToConfig(nodeId, name, config);
+    assertNoDockerSocketMountsInConfig(config);
     await this.validateRuntimeResourceConfig(nodeId, containerId, config);
     this.setTransition(nodeId, name, 'recreating');
     this.emitTransition(nodeId, name, containerId, 'recreating');

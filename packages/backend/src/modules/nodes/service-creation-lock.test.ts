@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { AppError } from '@/middleware/error-handler.js';
+import type { AppError } from '@/middleware/error-handler.js';
 import { assertNodeAllowsServiceCreation } from './service-creation-lock.js';
 
 function dbWithNode(node: unknown) {

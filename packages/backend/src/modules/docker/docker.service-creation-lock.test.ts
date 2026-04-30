@@ -16,12 +16,9 @@ function dbWithLockedDockerNode() {
 }
 
 function createDockerService(db: any, dispatch: any) {
-  return new DockerManagementService(
-    db,
-    { log: vi.fn().mockResolvedValue(undefined) } as never,
-    dispatch,
-    { getNode: vi.fn().mockReturnValue({ id: 'node-1' }) } as never
-  );
+  return new DockerManagementService(db, { log: vi.fn().mockResolvedValue(undefined) } as never, dispatch, {
+    getNode: vi.fn().mockReturnValue({ id: 'node-1' }),
+  } as never);
 }
 
 describe('DockerManagementService service creation lock', () => {

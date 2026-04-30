@@ -143,7 +143,18 @@ function canReceiveChannelPayload(scopes: string[], channel: string, payload: un
 
 async function authenticate(token: string): Promise<{ user: User; scopes: string[] } | null> {
   const result = await resolveLiveSessionUser(token);
+  if (result?.user.isBlocked) return null;
   return result ? { user: result.user, scopes: result.effectiveScopes } : null;
+}
+
+function closeUnauthenticated(ws: WSContext, state: ConnState, message = 'unauthenticated') {
+  send(ws, { type: 'error', message });
+  clearAll(state);
+  try {
+    ws.close(4001, message);
+  } catch {
+    /* ignore */
+  }
 }
 
 function clearAll(state: ConnState) {
@@ -180,6 +191,10 @@ function subscribePerUser(ws: WSContext, state: ConnState) {
     try {
       const db = container.resolve<DrizzleClient>(TOKENS.DrizzleClient);
       const fresh = await resolveLiveUser(db, state.user!.id);
+      if (!fresh || fresh.isBlocked) {
+        closeUnauthenticated(ws, state);
+        return;
+      }
       if (fresh) {
         state.user = fresh;
         state.scopes = fresh.scopes ?? [];
@@ -330,12 +345,7 @@ export async function authenticateEventsConnection(ws: WSContext, token: string)
   if (!state) return;
   const authResult = await authenticate(token);
   if (!authResult) {
-    send(ws, { type: 'error', message: 'unauthenticated' });
-    try {
-      ws.close(4001, 'unauthenticated');
-    } catch {
-      /* ignore */
-    }
+    closeUnauthenticated(ws, state);
     return;
   }
   state.user = authResult.user;

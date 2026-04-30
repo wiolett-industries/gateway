@@ -14,6 +14,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import {
+  buildFinalScopes,
+  deriveAllowedResourceIdsByScope,
+  hasSelectableScopeBase,
+  parseScopesForForm,
+} from "@/lib/scope-utils";
 import { formatDate, formatRelativeDate } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useCAStore } from "@/stores/ca";
@@ -46,18 +52,10 @@ export function ApiTokensSection({
   const [tokenScopeSearch, setTokenScopeSearch] = useState("");
   const [editingToken, setEditingToken] = useState<ApiToken | null>(null);
   const userScopes = useMemo(() => user?.scopes ?? [], [user?.scopes]);
-  const allowedResourceIdsByScope = useMemo(() => {
-    const result: Record<string, string[]> = {};
-    for (const scope of RESOURCE_SCOPABLE_SCOPES) {
-      if (userScopes.includes(scope)) continue;
-      const prefix = `${scope}:`;
-      const ids = userScopes
-        .filter((candidate) => candidate.startsWith(prefix))
-        .map((candidate) => candidate.slice(prefix.length));
-      if (ids.length > 0) result[scope] = [...new Set(ids)];
-    }
-    return result;
-  }, [userScopes]);
+  const allowedResourceIdsByScope = useMemo(
+    () => deriveAllowedResourceIdsByScope(userScopes),
+    [userScopes]
+  );
 
   const loadTokens = useCallback(async () => {
     try {
@@ -75,23 +73,9 @@ export function ApiTokensSection({
   const openTokenEdit = (token: ApiToken) => {
     setEditingToken(token);
     setNewTokenName(token.name);
-    const base: string[] = [];
-    const res: Record<string, string[]> = {};
-    for (const s of token.scopes || []) {
-      let matched = false;
-      for (const b of RESOURCE_SCOPABLE_SCOPES) {
-        if (s.startsWith(`${b}:`)) {
-          if (!base.includes(b)) base.push(b);
-          if (!res[b]) res[b] = [];
-          res[b].push(s.slice(b.length + 1));
-          matched = true;
-          break;
-        }
-      }
-      if (!matched) base.push(s);
-    }
-    setSelectedScopes(base);
-    setResourceScopes(res);
+    const parsed = parseScopesForForm(token.scopes || []);
+    setSelectedScopes(parsed.baseScopes);
+    setResourceScopes(parsed.resources);
     setCreatedSecret(null);
     setTokenScopeSearch("");
     setCreateDialogOpen(true);
@@ -143,20 +127,13 @@ export function ApiTokensSection({
       toast.error("Token name is required");
       return;
     }
-    const finalScopes: string[] = [];
     for (const scope of selectedScopes) {
-      const resources = resourceScopes[scope];
-      if (resources && resources.length > 0) {
-        for (const resId of resources) {
-          finalScopes.push(`${scope}:${resId}`);
-        }
-      } else if (allowedResourceIdsByScope[scope]?.length) {
+      if (allowedResourceIdsByScope[scope]?.length && (resourceScopes[scope]?.length ?? 0) === 0) {
         toast.error(`Select at least one resource for ${scope}`);
         return;
-      } else {
-        finalScopes.push(scope);
       }
     }
+    const finalScopes = buildFinalScopes(selectedScopes, resourceScopes);
     if (finalScopes.length === 0) {
       toast.error("Select at least one scope");
       return;
@@ -215,7 +192,9 @@ export function ApiTokensSection({
                   onClick={() => openTokenEdit(token)}
                 >
                   <div className="flex items-center gap-3 min-w-0">
-                    <Key className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center border border-border bg-muted">
+                      <Key className="h-4 w-4 text-muted-foreground" />
+                    </div>
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <p className="text-sm font-medium">{token.name}</p>
@@ -321,11 +300,9 @@ export function ApiTokensSection({
                     scopes={
                       editingToken
                         ? API_TOKEN_SCOPES.filter((s) => selectedScopes.includes(s.value))
-                        : API_TOKEN_SCOPES.filter((s) => {
-                            return userScopes.some(
-                              (us) => us === s.value || us.startsWith(`${s.value}:`)
-                            );
-                          })
+                        : API_TOKEN_SCOPES.filter((s) =>
+                            hasSelectableScopeBase(userScopes, s.value)
+                          )
                     }
                     search={tokenScopeSearch}
                     selected={selectedScopes}

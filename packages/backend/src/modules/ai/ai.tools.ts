@@ -1042,6 +1042,182 @@ export const AI_TOOLS: AIToolDefinition[] = [
     invalidateStores: [],
   },
   {
+    name: 'list_docker_deployments',
+    description:
+      'List blue/green Docker deployments on a specific node. Use this before acting on managed deployment containers; deployment rows include activeSlot, slots, routes, status, and health.',
+    parameters: {
+      type: 'object',
+      properties: {
+        nodeId: { type: 'string', description: 'Docker node ID (required)' },
+      },
+      required: ['nodeId'],
+    },
+    destructive: false,
+    category: 'Docker',
+    requiredScope: 'docker:containers:list',
+    invalidateStores: [],
+  },
+  {
+    name: 'get_docker_deployment',
+    description:
+      'Get detailed information about a blue/green Docker deployment by deployment ID. Use deploymentId, not the active slot container ID.',
+    parameters: {
+      type: 'object',
+      properties: {
+        nodeId: { type: 'string', description: 'Docker node ID' },
+        deploymentId: { type: 'string', description: 'Gateway deployment ID' },
+      },
+      required: ['nodeId', 'deploymentId'],
+    },
+    destructive: false,
+    category: 'Docker',
+    requiredScope: 'docker:containers:view',
+    invalidateStores: [],
+  },
+  {
+    name: 'start_docker_deployment',
+    description:
+      'Start a stopped blue/green Docker deployment through the deployment layer. Do not start the underlying managed container directly.',
+    parameters: {
+      type: 'object',
+      properties: {
+        nodeId: { type: 'string', description: 'Docker node ID' },
+        deploymentId: { type: 'string', description: 'Gateway deployment ID' },
+      },
+      required: ['nodeId', 'deploymentId'],
+    },
+    destructive: true,
+    category: 'Docker',
+    requiredScope: 'docker:containers:manage',
+    invalidateStores: ['containers'],
+  },
+  {
+    name: 'stop_docker_deployment',
+    description:
+      'Stop a blue/green Docker deployment through the deployment layer. Do not stop the underlying managed container directly.',
+    parameters: {
+      type: 'object',
+      properties: {
+        nodeId: { type: 'string', description: 'Docker node ID' },
+        deploymentId: { type: 'string', description: 'Gateway deployment ID' },
+      },
+      required: ['nodeId', 'deploymentId'],
+    },
+    destructive: true,
+    category: 'Docker',
+    requiredScope: 'docker:containers:manage',
+    invalidateStores: ['containers'],
+  },
+  {
+    name: 'restart_docker_deployment',
+    description:
+      'Restart a blue/green Docker deployment through the deployment layer. Use this instead of restarting the active slot container.',
+    parameters: {
+      type: 'object',
+      properties: {
+        nodeId: { type: 'string', description: 'Docker node ID' },
+        deploymentId: { type: 'string', description: 'Gateway deployment ID' },
+      },
+      required: ['nodeId', 'deploymentId'],
+    },
+    destructive: true,
+    category: 'Docker',
+    requiredScope: 'docker:containers:manage',
+    invalidateStores: ['containers'],
+  },
+  {
+    name: 'kill_docker_deployment',
+    description:
+      'Force-kill a blue/green Docker deployment through the deployment layer. Prefer stop_docker_deployment unless an immediate kill is explicitly requested.',
+    parameters: {
+      type: 'object',
+      properties: {
+        nodeId: { type: 'string', description: 'Docker node ID' },
+        deploymentId: { type: 'string', description: 'Gateway deployment ID' },
+      },
+      required: ['nodeId', 'deploymentId'],
+    },
+    destructive: true,
+    category: 'Docker',
+    requiredScope: 'docker:containers:manage',
+    invalidateStores: ['containers'],
+  },
+  {
+    name: 'deploy_docker_deployment',
+    description:
+      'Deploy a new inactive slot for a blue/green Docker deployment, optionally with a full image reference or a new tag. This is the deployment-safe replacement for updating a managed slot container image.',
+    parameters: {
+      type: 'object',
+      properties: {
+        nodeId: { type: 'string', description: 'Docker node ID' },
+        deploymentId: { type: 'string', description: 'Gateway deployment ID' },
+        image: { type: 'string', description: 'Optional full image reference to deploy' },
+        tag: { type: 'string', description: 'Optional tag applied to the current deployment image repository' },
+        registryId: { type: 'string', description: 'Optional Docker registry UUID for pulling the image' },
+        env: { type: 'object', description: 'Optional environment overrides for the new deployment config' },
+      },
+      required: ['nodeId', 'deploymentId'],
+    },
+    destructive: true,
+    category: 'Docker',
+    requiredScope: 'docker:containers:manage',
+    invalidateStores: ['containers', 'tasks'],
+  },
+  {
+    name: 'switch_docker_deployment_slot',
+    description:
+      'Switch a blue/green Docker deployment to the specified slot. Use only with the Gateway deployment ID and slot name, not a container ID.',
+    parameters: {
+      type: 'object',
+      properties: {
+        nodeId: { type: 'string', description: 'Docker node ID' },
+        deploymentId: { type: 'string', description: 'Gateway deployment ID' },
+        slot: { type: 'string', enum: ['blue', 'green'], description: 'Target slot to make active' },
+        force: { type: 'boolean', description: 'Force switch even if health checks are not healthy (default false)' },
+      },
+      required: ['nodeId', 'deploymentId', 'slot'],
+    },
+    destructive: true,
+    category: 'Docker',
+    requiredScope: 'docker:containers:manage',
+    invalidateStores: ['containers'],
+  },
+  {
+    name: 'rollback_docker_deployment',
+    description: 'Rollback a blue/green Docker deployment to the inactive previous slot.',
+    parameters: {
+      type: 'object',
+      properties: {
+        nodeId: { type: 'string', description: 'Docker node ID' },
+        deploymentId: { type: 'string', description: 'Gateway deployment ID' },
+        force: { type: 'boolean', description: 'Force rollback even if health checks are not healthy (default false)' },
+      },
+      required: ['nodeId', 'deploymentId'],
+    },
+    destructive: true,
+    category: 'Docker',
+    requiredScope: 'docker:containers:manage',
+    invalidateStores: ['containers'],
+  },
+  {
+    name: 'stop_docker_deployment_slot',
+    description:
+      'Stop an inactive blue/green deployment slot. The active slot cannot be stopped by this tool; use stop_docker_deployment to stop the whole deployment.',
+    parameters: {
+      type: 'object',
+      properties: {
+        nodeId: { type: 'string', description: 'Docker node ID' },
+        deploymentId: { type: 'string', description: 'Gateway deployment ID' },
+        slot: { type: 'string', enum: ['blue', 'green'], description: 'Inactive slot to stop' },
+      },
+      required: ['nodeId', 'deploymentId', 'slot'],
+    },
+    destructive: true,
+    category: 'Docker',
+    requiredScope: 'docker:containers:manage',
+    invalidateStores: ['containers'],
+  },
+  {
     name: 'start_docker_container',
     description: 'Start a stopped Docker container.',
     parameters: {

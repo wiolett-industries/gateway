@@ -1,7 +1,7 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
 import { openApiValidationHook } from '@/lib/openapi.js';
-import { authMiddleware, requireScope, sessionOnly } from '@/modules/auth/auth.middleware.js';
+import { authMiddleware, requireScope } from '@/modules/auth/auth.middleware.js';
 import { HousekeepingService } from '@/services/housekeeping.service.js';
 import { SchedulerService } from '@/services/scheduler.service.js';
 import type { AppEnv } from '@/types.js';
@@ -17,7 +17,6 @@ import {
 export const housekeepingRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
 
 housekeepingRoutes.use('*', authMiddleware);
-housekeepingRoutes.use('*', sessionOnly);
 
 // GET /config
 housekeepingRoutes.openapi(

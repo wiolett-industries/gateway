@@ -3,18 +3,39 @@
  * Replaces the old role-based helpers (hasRole, canManageCAs, etc.)
  */
 
+import { extractBaseScope, isValidBaseScope } from './scopes.js';
+
 /**
  * Check if a set of scopes grants a required permission.
  * Supports hierarchical matching: 'cert:issue' grants 'cert:issue:ca-123'
  */
 export function hasScope(scopes: string[], requiredScope: string): boolean {
   if (scopes.includes(requiredScope)) return true;
+
+  const baseScope = extractBaseScope(requiredScope);
+  if (baseScope !== requiredScope) {
+    return scopes.includes(baseScope);
+  }
+
+  if (isValidBaseScope(requiredScope)) return false;
+
   const parts = requiredScope.split(':');
   for (let i = parts.length - 1; i >= 1; i--) {
     const prefix = parts.slice(0, i).join(':');
     if (scopes.includes(prefix)) return true;
   }
+
   return false;
+}
+
+/** Check if scopes contain a broad scope or any resource-scoped variant of it. */
+export function hasScopeBase(scopes: string[], baseScope: string): boolean {
+  return hasScope(scopes, baseScope) || scopes.some((scope) => extractBaseScope(scope) === baseScope);
+}
+
+/** Check if scopes grant a broad scope or a specific resource-scoped variant. */
+export function hasScopeForResource(scopes: string[], baseScope: string, resourceId: string): boolean {
+  return hasScope(scopes, baseScope) || (!!resourceId && hasScope(scopes, `${baseScope}:${resourceId}`));
 }
 
 /** Check if scopes grant any of the required scopes */

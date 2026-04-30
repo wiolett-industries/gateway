@@ -1,6 +1,6 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { openApiValidationHook } from '@/lib/openapi.js';
-import { authMiddleware, sessionOnly } from '@/modules/auth/auth.middleware.js';
+import { authMiddleware } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import { registerContainerRoutes } from './docker-container.routes.js';
 import { registerDockerDeploymentRoutes } from './docker-deployment.routes.js';
@@ -16,7 +16,6 @@ import { registerWebhookConfigRoutes } from './docker-webhook.routes.js';
 export const dockerRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
 
 dockerRoutes.use('*', authMiddleware);
-dockerRoutes.use('*', sessionOnly);
 
 // Register all route groups
 registerWebhookConfigRoutes(dockerRoutes);

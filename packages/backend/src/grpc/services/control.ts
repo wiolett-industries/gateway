@@ -2,6 +2,7 @@ import type { ServerDuplexStream } from '@grpc/grpc-js';
 import { eq } from 'drizzle-orm';
 import { container } from '@/container.js';
 import { nodes } from '@/db/schema/index.js';
+import { compactHealthHistory } from '@/lib/health-history.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { isMinorCompatible } from '@/lib/semver.js';
 import { daemonLogRelay } from '@/modules/monitoring/log-relay.service.js';
@@ -16,7 +17,6 @@ const logger = createChildLogger('GrpcControl');
 // Throttle health history writes — track last recorded timestamp per node
 const lastRecordedTs = new Map<string, number>();
 const HEALTH_HISTORY_MIN_INTERVAL_MS = 30_000; // one entry per 30s
-const MAX_HEALTH_HISTORY_AGE_MS = 7 * 24 * 3600 * 1000; // 7 days
 
 interface DockerContainerStateSnapshot {
   containerId: string;
@@ -363,7 +363,9 @@ export function createControlHandlers(deps: GrpcServerDeps) {
               : [];
 
             if (connectedNode?.type === 'docker') {
-              const nextContainerIds = new Set(nextContainerStats.map((container: any) => String(container.containerId)));
+              const nextContainerIds = new Set(
+                nextContainerStats.map((container: any) => String(container.containerId))
+              );
               for (const change of diffDockerContainerStateReports(previousContainerStats, nextContainerStats)) {
                 deps.registry.publishDockerContainerChanged(nodeId, change.containerId, change.name, change.state, {
                   observe: !nextContainerIds.has(change.containerId),
@@ -372,7 +374,12 @@ export function createControlHandlers(deps: GrpcServerDeps) {
 
               for (const container of nextContainerStats) {
                 if (!container.containerId) continue;
-                deps.registry.observeDockerContainerState(nodeId, container.containerId, container.name, container.state);
+                deps.registry.observeDockerContainerState(
+                  nodeId,
+                  container.containerId,
+                  container.name,
+                  container.state
+                );
               }
             }
 
@@ -432,18 +439,19 @@ export function createControlHandlers(deps: GrpcServerDeps) {
               const status = isHealthy ? 'online' : 'degraded';
 
               try {
-                const cutoff = new Date(nowMs - MAX_HEALTH_HISTORY_AGE_MS).toISOString();
                 const [histRow] = await deps.db
                   .select({ healthHistory: nodes.healthHistory })
                   .from(nodes)
                   .where(eq(nodes.id, nodeId))
                   .limit(1);
 
-                const history: Array<{ ts: string; status: string }> = (
-                  (histRow?.healthHistory as Array<{ ts: string; status: string }>) ?? []
-                ).filter((h) => h.ts > cutoff);
-
-                history.push({ ts: new Date(nowMs).toISOString(), status });
+                const history = compactHealthHistory(
+                  [
+                    ...((histRow?.healthHistory as Array<{ ts: string; status: string }>) ?? []),
+                    { ts: new Date(nowMs).toISOString(), status },
+                  ],
+                  { nowMs }
+                );
 
                 await deps.db.update(nodes).set({ healthHistory: history }).where(eq(nodes.id, nodeId));
                 lastRecordedTs.set(nodeId, nowMs);

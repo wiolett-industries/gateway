@@ -41,6 +41,15 @@ export const getProxyHostRoute = appRoute({
   responses: okJson(UnknownDataResponseSchema),
 });
 
+export const getProxyHostHealthHistoryRoute = appRoute({
+  method: 'get',
+  path: '/{id}/health-history',
+  tags: ['Proxy Hosts'],
+  summary: 'Get proxy host health history',
+  request: { params: IdParamSchema },
+  responses: okJson(UnknownDataResponseSchema),
+});
+
 export const createProxyHostRoute = appRoute({
   method: 'post',
   path: '/',

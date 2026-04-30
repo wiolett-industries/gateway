@@ -266,6 +266,33 @@ export function Dashboard() {
 
   // Open monitoring SSE streams for visible dashboard nodes.
   const [pinnedHealth, setPinnedHealth] = useState<Record<string, NodeHealthReport>>({});
+  const [nodeHealthHistory, setNodeHealthHistory] = useState<
+    Record<string, Array<{ ts: string; status: string }>>
+  >({});
+
+  useEffect(() => {
+    if (dashboardVisibleIds.length === 0) {
+      setNodeHealthHistory({});
+      return;
+    }
+    let cancelled = false;
+    Promise.all(
+      dashboardVisibleIds.map(async (nodeId) => {
+        try {
+          return [nodeId, await api.getNodeHealthHistory(nodeId)] as const;
+        } catch {
+          return [nodeId, []] as const;
+        }
+      })
+    ).then((entries) => {
+      if (cancelled) return;
+      setNodeHealthHistory(Object.fromEntries(entries));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [dashboardVisibleIds]);
+
   useEffect(() => {
     if (!hasScope("nodes:list")) return;
     if (dashboardVisibleIds.length === 0) return;
@@ -369,7 +396,12 @@ export function Dashboard() {
               return disk ? disk.usagePercent >= WARN_THRESHOLD : false;
             })
             .map((node) => (
-              <PinnedNodeCard key={node.id} node={node} liveHealth={pinnedHealth[node.id]} />
+              <PinnedNodeCard
+                key={node.id}
+                node={node}
+                liveHealth={pinnedHealth[node.id]}
+                healthHistory={nodeHealthHistory[node.id]}
+              />
             ))}
 
           <CertificateExpiryCard expiringItems={expiringItems} hasScope={hasScope} />

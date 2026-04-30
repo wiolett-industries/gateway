@@ -1,7 +1,7 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
 import { openApiValidationHook } from '@/lib/openapi.js';
-import { authMiddleware, requireScope, sessionOnly } from '@/modules/auth/auth.middleware.js';
+import { authMiddleware, requireScope } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import {
   ActivateLicenseSchema,
@@ -15,7 +15,6 @@ import { LicenseService } from './license.service.js';
 export const licenseRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
 
 licenseRoutes.use('*', authMiddleware);
-licenseRoutes.use('*', sessionOnly);
 
 licenseRoutes.openapi({ ...licenseStatusRoute, middleware: requireScope('license:view') }, async (c) => {
   const service = container.resolve(LicenseService);
