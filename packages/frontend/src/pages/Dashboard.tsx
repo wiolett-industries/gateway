@@ -24,15 +24,15 @@ import { QuickStatsCard } from "./dashboard/QuickStatsCard";
 import { RecentActivityCard } from "./dashboard/RecentActivityCard";
 
 export function Dashboard() {
-  const { hasScope } = useAuthStore();
+  const { user, hasScope, hasScopedAccess } = useAuthStore();
   const { cas, fetchCAs, isLoading: casLoading } = useCAStore();
   const [activity, setActivity] = useState<AuditLogEntry[]>([]);
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [healthHosts, setHealthHosts] = useState<ProxyHost[]>([]);
   const [statsLoading, setStatsLoading] = useState(true);
   const [activityLoading, setActivityLoading] = useState(hasScope("admin:audit"));
-  const [nodesLoading, setNodesLoading] = useState(hasScope("nodes:list"));
-  const [healthLoading, setHealthLoading] = useState(hasScope("proxy:list"));
+  const [nodesLoading, setNodesLoading] = useState(hasScopedAccess("nodes:details"));
+  const [healthLoading, setHealthLoading] = useState(hasScopedAccess("proxy:view"));
   const [expiringItems, setExpiringItems] = useState<ExpiringItem[]>([]);
   const [nodesList, setNodesList] = useState<Node[]>([]);
   const nodeRefreshTick = useNodesStore((s) => s.refreshTick);
@@ -44,6 +44,10 @@ export function Dashboard() {
   const canViewSystemCertificates = useAuthStore((s) => s.hasScope("admin:details:certificates"));
   const showSystemCertificatePreference = useUIStore((s) => s.showSystemCertificates);
   const showSystemCertificates = canViewSystemCertificates && showSystemCertificatePreference;
+  const cacheScopeKey = useMemo(
+    () => `${user?.id ?? "anonymous"}:${[...(user?.scopes ?? [])].sort().join(",")}`,
+    [user?.id, user?.scopes]
+  );
   const canViewNodeDetails = useCallback(
     (nodeId: string) => hasScope("nodes:details") || hasScope(`nodes:details:${nodeId}`),
     [hasScope]
@@ -52,9 +56,10 @@ export function Dashboard() {
     (hostId: string) => hasScope("proxy:view") || hasScope(`proxy:view:${hostId}`),
     [hasScope]
   );
+  const canViewCAs = hasScope("pki:ca:view:root") || hasScope("pki:ca:view:intermediate");
 
   const refreshNodes = useCallback(() => {
-    if (!hasScope("nodes:list")) {
+    if (!hasScopedAccess("nodes:details")) {
       setNodesLoading(false);
       return;
     }
@@ -67,10 +72,10 @@ export function Dashboard() {
       })
       .catch(() => {})
       .finally(() => setNodesLoading(false));
-  }, [hasScope]);
+  }, [hasScopedAccess]);
 
   const refreshStats = useCallback(() => {
-    const statsCacheKey = `dashboard:stats:${showSystemCertificates ? "system" : "default"}`;
+    const statsCacheKey = `dashboard:stats:${cacheScopeKey}:${showSystemCertificates ? "system" : "default"}`;
     return api
       .getDashboardStats(showSystemCertificates)
       .then((data) => {
@@ -80,25 +85,25 @@ export function Dashboard() {
       .catch(() => {
         setStats(null);
       });
-  }, [showSystemCertificates]);
+  }, [cacheScopeKey, showSystemCertificates]);
 
   const refreshHealthOverview = useCallback(() => {
-    if (!hasScope("proxy:list")) {
+    if (!hasScopedAccess("proxy:view")) {
       setHealthLoading(false);
       return Promise.resolve();
     }
     return api
       .getHealthOverview()
       .then((hosts) => {
-        api.setCache("dashboard:health", hosts || []);
+        api.setCache(`dashboard:health:${cacheScopeKey}`, hosts || []);
         setHealthHosts(hosts || []);
       })
       .catch(() => setHealthHosts([]))
       .finally(() => setHealthLoading(false));
-  }, [hasScope]);
+  }, [cacheScopeKey, hasScopedAccess]);
 
   const refreshExpiringSSL = useCallback(() => {
-    if (!hasScope("ssl:cert:list")) return Promise.resolve();
+    if (!hasScopedAccess("ssl:cert:view")) return Promise.resolve();
     return api
       .listSSLCertificates({
         status: "active",
@@ -118,10 +123,10 @@ export function Dashboard() {
         setExpiringItems((prev) => [...prev.filter((i) => i.type !== "ssl"), ...expiring]);
       })
       .catch(() => {});
-  }, [hasScope, showSystemCertificates]);
+  }, [hasScopedAccess, showSystemCertificates]);
 
   const refreshExpiringPKI = useCallback(() => {
-    if (!hasScope("pki:cert:list")) return Promise.resolve();
+    if (!hasScopedAccess("pki:cert:view")) return Promise.resolve();
     return api
       .listCertificates({ status: "active", limit: 100, showSystem: showSystemCertificates })
       .then((res) => {
@@ -137,14 +142,14 @@ export function Dashboard() {
         setExpiringItems((prev) => [...prev.filter((i) => i.type !== "pki"), ...expiring]);
       })
       .catch(() => {});
-  }, [hasScope, showSystemCertificates]);
+  }, [hasScopedAccess, showSystemCertificates]);
 
   const refreshPinnedProxies = useCallback(() => {
     if (dashboardPinnedProxyIds.length === 0) {
       setPinnedProxyHosts([]);
       return Promise.resolve();
     }
-    if (!hasScope("proxy:list")) return Promise.resolve();
+    if (!hasScopedAccess("proxy:view")) return Promise.resolve();
     return api
       .listProxyHosts({ limit: 100 })
       .then((r) => {
@@ -155,10 +160,10 @@ export function Dashboard() {
         usePinnedProxiesStore.getState().removeOrphans(hosts.map((p) => p.id));
       })
       .catch(() => {});
-  }, [canViewProxyDetails, dashboardPinnedProxyIds, hasScope]);
+  }, [canViewProxyDetails, dashboardPinnedProxyIds, hasScopedAccess]);
 
   useEffect(() => {
-    if (hasScope("pki:ca:list:root")) {
+    if (canViewCAs) {
       fetchCAs();
     }
 
@@ -173,7 +178,7 @@ export function Dashboard() {
     }
 
     // Use cached stats immediately, then refetch
-    const statsCacheKey = `dashboard:stats:${showSystemCertificates ? "system" : "default"}`;
+    const statsCacheKey = `dashboard:stats:${cacheScopeKey}:${showSystemCertificates ? "system" : "default"}`;
     const cachedStats = api.getCached<DashboardStats>(statsCacheKey);
     if (cachedStats) {
       setStats(cachedStats);
@@ -181,8 +186,8 @@ export function Dashboard() {
     }
     refreshStats().finally(() => setStatsLoading(false));
 
-    if (hasScope("proxy:list")) {
-      const cachedHealth = api.getCached<ProxyHost[]>("dashboard:health");
+    if (hasScopedAccess("proxy:view")) {
+      const cachedHealth = api.getCached<ProxyHost[]>(`dashboard:health:${cacheScopeKey}`);
       if (cachedHealth) setHealthHosts(cachedHealth);
       refreshHealthOverview();
     }
@@ -190,8 +195,11 @@ export function Dashboard() {
     refreshExpiringSSL();
     refreshExpiringPKI();
   }, [
+    cacheScopeKey,
     fetchCAs,
     hasScope,
+    hasScopedAccess,
+    canViewCAs,
     refreshExpiringPKI,
     refreshExpiringSSL,
     refreshHealthOverview,
@@ -205,29 +213,29 @@ export function Dashboard() {
     refreshNodes();
   }, [refreshNodes, nodeRefreshTick]);
 
-  useRealtime(hasScope("nodes:list") ? "node.changed" : null, () => {
+  useRealtime(hasScopedAccess("nodes:details") ? "node.changed" : null, () => {
     refreshNodes();
   });
 
-  useRealtime(hasScope("pki:ca:list:root") ? "ca.changed" : null, () => {
+  useRealtime(canViewCAs ? "ca.changed" : null, () => {
     fetchCAs();
     refreshStats();
   });
 
-  useRealtime(hasScope("pki:cert:list") ? "cert.changed" : null, () => {
-    if (hasScope("pki:ca:list:root")) {
+  useRealtime(hasScopedAccess("pki:cert:view") ? "cert.changed" : null, () => {
+    if (canViewCAs) {
       fetchCAs();
     }
     refreshStats();
     refreshExpiringPKI();
   });
 
-  useRealtime(hasScope("ssl:cert:list") ? "ssl.cert.changed" : null, () => {
+  useRealtime(hasScopedAccess("ssl:cert:view") ? "ssl.cert.changed" : null, () => {
     refreshStats();
     refreshExpiringSSL();
   });
 
-  useRealtime(hasScope("proxy:list") ? "proxy.host.changed" : null, () => {
+  useRealtime(hasScopedAccess("proxy:view") ? "proxy.host.changed" : null, () => {
     refreshStats();
     refreshHealthOverview();
     refreshPinnedProxies();
@@ -294,7 +302,7 @@ export function Dashboard() {
   }, [dashboardVisibleIds]);
 
   useEffect(() => {
-    if (!hasScope("nodes:list")) return;
+    if (!hasScopedAccess("nodes:details")) return;
     if (dashboardVisibleIds.length === 0) return;
     const streams: EventSource[] = [];
     for (const nodeId of dashboardVisibleIds) {
@@ -310,7 +318,7 @@ export function Dashboard() {
       streams.push(es);
     }
     return () => streams.forEach((es) => es.close());
-  }, [dashboardVisibleIds, hasScope]);
+  }, [dashboardVisibleIds, hasScopedAccess]);
 
   // Collect expiring CAs from store
   useEffect(() => {
@@ -379,7 +387,11 @@ export function Dashboard() {
               </div>
             )}
 
-          <QuickStatsCard displayStats={displayStats} nodesList={nodesList} hasScope={hasScope} />
+          <QuickStatsCard
+            displayStats={displayStats}
+            nodesList={nodesList}
+            hasScope={hasScopedAccess}
+          />
 
           {/* Pinned Proxy Host Cards */}
           {pinnedProxyHosts
@@ -404,15 +416,19 @@ export function Dashboard() {
               />
             ))}
 
-          <CertificateExpiryCard expiringItems={expiringItems} hasScope={hasScope} />
+          <CertificateExpiryCard expiringItems={expiringItems} hasScope={hasScopedAccess} />
 
           <HealthOverviewCard
             healthHosts={visibleHealthHosts}
-            hasScope={hasScope}
+            hasScope={hasScopedAccess}
             loading={healthLoading}
           />
 
-          <NodesCard nodesList={visibleNodesForCards} hasScope={hasScope} loading={nodesLoading} />
+          <NodesCard
+            nodesList={visibleNodesForCards}
+            hasScope={hasScopedAccess}
+            loading={nodesLoading}
+          />
 
           <CertificateAuthoritiesCard cas={cas} hasScope={hasScope} />
 

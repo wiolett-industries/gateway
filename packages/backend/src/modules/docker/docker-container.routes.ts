@@ -128,7 +128,7 @@ export function registerContainerRoutes(router: OpenAPIHono<AppEnv>) {
 
   // List containers
   router.openapi(
-    { ...listContainersRoute, middleware: requireScopeForResource('docker:containers:list', 'nodeId') },
+    { ...listContainersRoute, middleware: requireScopeForResource('docker:containers:view', 'nodeId') },
     async (c) => {
       const service = container.resolve(DockerManagementService);
       const nodeId = c.req.param('nodeId')!;

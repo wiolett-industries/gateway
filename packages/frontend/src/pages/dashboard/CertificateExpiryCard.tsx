@@ -18,10 +18,10 @@ interface CertificateExpiryCardProps {
 function filterByScope(items: ExpiringItem[], hasScope: (scope: string) => boolean) {
   return items.filter((i) =>
     i.type === "ssl"
-      ? hasScope("ssl:cert:list")
+      ? hasScope("ssl:cert:view")
       : i.type === "pki"
-        ? hasScope("pki:cert:list")
-        : hasScope("pki:ca:list:root")
+        ? hasScope("pki:cert:view")
+        : hasScope("pki:ca:view:root") || hasScope("pki:ca:view:intermediate")
   );
 }
 

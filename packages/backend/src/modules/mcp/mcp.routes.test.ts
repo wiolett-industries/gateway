@@ -22,7 +22,7 @@ const USER: User = {
   avatarUrl: null,
   groupId: 'group-1',
   groupName: 'admin',
-  scopes: ['mcp:use', 'nodes:list', 'nodes:create', 'proxy:list', 'ssl:cert:list', 'status-page:view'],
+  scopes: ['mcp:use', 'nodes:details', 'nodes:create', 'proxy:view', 'ssl:cert:view', 'status-page:view'],
   isBlocked: false,
 };
 
@@ -178,7 +178,7 @@ describe('MCP route authentication', () => {
   });
 
   it('rejects Gateway API tokens for MCP', async () => {
-    registerToken(['nodes:list']);
+    registerToken(['nodes:details']);
 
     const { response } = await mcpRequest('tools/list', {}, 'gw_valid');
 
@@ -186,7 +186,7 @@ describe('MCP route authentication', () => {
   });
 
   it('allows OAuth access tokens without mcp:use when the user can use MCP', async () => {
-    registerOAuth(['nodes:list']);
+    registerOAuth(['nodes:details']);
 
     const { response, body } = await mcpRequest('tools/list', {}, 'gwo_valid');
 
@@ -216,7 +216,7 @@ describe('MCP route authentication', () => {
   });
 
   it('rejects OAuth access tokens when the user cannot use MCP', async () => {
-    registerOAuth(['nodes:list'], { ...USER, scopes: ['nodes:list'] });
+    registerOAuth(['nodes:details'], { ...USER, scopes: ['nodes:details'] });
 
     const response = await createApp().request('/api/mcp', {
       method: 'POST',
@@ -229,7 +229,7 @@ describe('MCP route authentication', () => {
   });
 
   it('rejects API tokens without checking user MCP capability', async () => {
-    registerToken(['nodes:list'], { ...USER, scopes: ['nodes:list'] });
+    registerToken(['nodes:details'], { ...USER, scopes: ['nodes:details'] });
 
     const response = await createApp().request('/api/mcp', {
       method: 'POST',
@@ -242,7 +242,7 @@ describe('MCP route authentication', () => {
   });
 
   it('returns JSON-RPC method-not-allowed for GET in stateless mode', async () => {
-    registerToken(['nodes:list']);
+    registerToken(['nodes:details']);
 
     const response = await createApp().request('/api/mcp', {
       method: 'GET',
@@ -257,7 +257,7 @@ describe('MCP route authentication', () => {
 
 describe('MCP tools', () => {
   it('lists only scoped Gateway tools and excludes AI-only tools', async () => {
-    registerToken(['nodes:list']);
+    registerToken(['nodes:details']);
 
     const { response, body } = await mcpRequest('tools/list');
 
@@ -271,7 +271,7 @@ describe('MCP tools', () => {
   });
 
   it('does not call tools hidden by effective token scopes', async () => {
-    registerToken(['nodes:list']);
+    registerToken(['nodes:details']);
     const executeTool = vi.fn();
     const auditLog = vi.fn().mockResolvedValue(undefined);
     container.registerInstance(AIService, { executeTool } as unknown as AIService);
@@ -305,7 +305,7 @@ describe('MCP tools', () => {
   });
 
   it('passes effective token scopes and token metadata to AI tool execution', async () => {
-    registerToken(['nodes:list']);
+    registerToken(['nodes:details']);
     const executeTool = vi.fn().mockResolvedValue({ result: { data: [] }, invalidateStores: [] });
     container.registerInstance(AIService, { executeTool } as unknown as AIService);
 
@@ -321,7 +321,7 @@ describe('MCP tools', () => {
       { limit: 5 },
       {
         source: 'mcp',
-        scopes: ['nodes:list'],
+        scopes: ['nodes:details'],
         tokenId: 'oauth-token-1',
         tokenPrefix: 'gwo_abc123',
         authType: 'oauth',
@@ -382,7 +382,7 @@ describe('MCP tools', () => {
   });
 
   it('lists blue/green deployment tools under Docker container scopes', async () => {
-    registerToken(['docker:containers:list', 'docker:containers:view', 'docker:containers:manage']);
+    registerToken(['docker:containers:view', 'docker:containers:view', 'docker:containers:manage']);
 
     const { body } = await mcpRequest('tools/list');
     const names = body.result.tools.map((tool: { name: string }) => tool.name);
@@ -402,7 +402,7 @@ describe('MCP tools', () => {
 
 describe('MCP resources and prompts', () => {
   it('lists resources filtered by token scopes', async () => {
-    registerToken(['nodes:list']);
+    registerToken(['nodes:details']);
 
     const { body } = await mcpRequest('resources/list');
     const uris = body.result.resources.map((resource: { uri: string }) => resource.uri);
@@ -417,7 +417,7 @@ describe('MCP resources and prompts', () => {
   });
 
   it('returns compact JSON resource content', async () => {
-    registerToken(['nodes:list']);
+    registerToken(['nodes:details']);
     container.registerInstance(MonitoringService, {
       getDashboardStats: vi.fn().mockResolvedValue({
         proxyHosts: { total: 3 },
@@ -438,8 +438,33 @@ describe('MCP resources and prompts', () => {
     expect(data.proxyHosts).toBeUndefined();
   });
 
+  it('filters MCP overview CA stats by delegated CA view type', async () => {
+    registerToken(['pki:ca:view:intermediate']);
+    const getDashboardStats = vi.fn().mockResolvedValue({
+      proxyHosts: { total: 3 },
+      sslCertificates: { total: 4 },
+      pkiCertificates: { total: 5 },
+      cas: { total: 1, root: 0, intermediate: 1 },
+      nodes: { total: 2, online: 1, offline: 1, pending: 0 },
+    });
+    container.registerInstance(MonitoringService, { getDashboardStats } as unknown as MonitoringService);
+
+    const list = await mcpRequest('resources/list');
+    const uris = list.body.result.resources.map((resource: { uri: string }) => resource.uri);
+    expect(uris).toContain('gateway://overview');
+
+    const { body } = await mcpRequest('resources/read', {
+      uri: 'gateway://overview',
+    });
+
+    expect(getDashboardStats).toHaveBeenCalledWith(expect.objectContaining({ allowedCaTypes: ['intermediate'] }));
+    const data = JSON.parse(body.result.contents[0].text);
+    expect(data.cas).toEqual({ total: 1, root: 0, intermediate: 1 });
+    expect(data.nodes).toBeUndefined();
+  });
+
   it('returns an internal docs index filtered by token scopes', async () => {
-    registerToken(['nodes:list']);
+    registerToken(['nodes:details']);
 
     const { body } = await mcpRequest('resources/read', {
       uri: 'gateway://docs',
@@ -454,7 +479,7 @@ describe('MCP resources and prompts', () => {
   });
 
   it('returns scoped internal documentation as MCP resource content', async () => {
-    registerToken(['nodes:list']);
+    registerToken(['nodes:details']);
 
     const { body } = await mcpRequest('resources/read', {
       uri: 'gateway://docs/nodes',
@@ -466,7 +491,7 @@ describe('MCP resources and prompts', () => {
   });
 
   it('allows MCP callers to read MCP-safe docs that were AI-gated internally', async () => {
-    registerToken(['nodes:list']);
+    registerToken(['nodes:details']);
 
     const { body } = await mcpRequest('resources/read', {
       uri: 'gateway://docs/api',

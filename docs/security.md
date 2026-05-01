@@ -96,7 +96,7 @@ Authorization uses granular scopes:
 - API tokens and OAuth grants cannot exceed the owning user's current effective scopes.
 - MCP access requires the owning user to have the `mcp:use` capability.
 - Resource-scoped grants can limit access to a specific node, proxy host, database, logging environment, schema, or similar resource.
-- Write-capable scopes satisfy matching read/list/view checks, but resource-scoped grants stay bounded to the same resource.
+- Write-capable scopes satisfy matching read/view checks, but resource-scoped grants stay bounded to the same resource.
 - Create-only and destructive-only scopes do not grant browse access by themselves.
 
 Sensitive operations have dedicated scopes. Examples include Docker mount editing, Docker secret reveal, database credential reveal, certificate export, node console access, container file access, and audit log access.

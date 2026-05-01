@@ -152,10 +152,21 @@ function ProxyHostDetailGuard() {
   return <ProxyHostDetail />;
 }
 
+function ProxyHostsPageGuard() {
+  const hasScope = useAuthStore((s) => s.hasScope);
+  const hasScopedAccess = useAuthStore((s) => s.hasScopedAccess);
+
+  if (!hasScopedAccess("proxy:view") && !hasScope("proxy:folders:manage")) {
+    return <Navigate to="/" replace />;
+  }
+
+  return <ProxyHosts />;
+}
+
 function CAsPageGuard() {
   const hasAnyScope = useAuthStore((s) => s.hasAnyScope);
 
-  if (!hasAnyScope("pki:ca:list:root", "pki:ca:list:intermediate")) {
+  if (!hasAnyScope("pki:ca:view:root", "pki:ca:view:intermediate")) {
     return <Navigate to="/" replace />;
   }
 
@@ -173,13 +184,29 @@ function CADetailGuard() {
 }
 
 function CertificateDetailGuard() {
+  const { id } = useParams<{ id: string }>();
   const hasScope = useAuthStore((s) => s.hasScope);
 
-  if (!hasScope("pki:cert:view")) {
+  if (!hasScope("pki:cert:view") && !(id && hasScope(`pki:cert:view:${id}`))) {
     return <Navigate to="/" replace />;
   }
 
   return <CertificateDetail />;
+}
+
+function NginxTemplateEditGuard() {
+  const { id } = useParams<{ id?: string }>();
+  const hasScope = useAuthStore((s) => s.hasScope);
+
+  if (id) {
+    if (!hasScope("proxy:templates:edit") && !hasScope(`proxy:templates:edit:${id}`)) {
+      return <Navigate to="/" replace />;
+    }
+  } else if (!hasScope("proxy:templates:create")) {
+    return <Navigate to="/" replace />;
+  }
+
+  return <NginxTemplateEdit />;
 }
 
 function NodeDetailGuard() {
@@ -194,14 +221,16 @@ function NodeDetailGuard() {
 }
 
 function DockerPageGuard() {
+  const hasScope = useAuthStore((s) => s.hasScope);
   const hasScopedAccess = useAuthStore((s) => s.hasScopedAccess);
 
   const canAccessDocker =
-    hasScopedAccess("docker:containers:list") ||
-    hasScopedAccess("docker:images:list") ||
-    hasScopedAccess("docker:volumes:list") ||
-    hasScopedAccess("docker:networks:list") ||
-    hasScopedAccess("docker:tasks");
+    hasScopedAccess("docker:containers:view") ||
+    hasScopedAccess("docker:images:view") ||
+    hasScopedAccess("docker:volumes:view") ||
+    hasScopedAccess("docker:networks:view") ||
+    hasScopedAccess("docker:tasks") ||
+    hasScope("docker:containers:folders:manage");
 
   if (!canAccessDocker) {
     return <Navigate to="/" replace />;
@@ -213,7 +242,7 @@ function DockerPageGuard() {
 function DatabasesPageGuard() {
   const hasScopedAccess = useAuthStore((s) => s.hasScopedAccess);
 
-  const canAccessDatabases = hasScopedAccess("databases:list");
+  const canAccessDatabases = hasScopedAccess("databases:view");
 
   if (!canAccessDatabases) {
     return <Navigate to="/" replace />;
@@ -237,17 +266,17 @@ function NotificationsPageGuard() {
   const hasAnyScope = useAuthStore((s) => s.hasAnyScope);
 
   const canAccessNotifications = hasAnyScope(
-    "notifications:alerts:list",
+    "notifications:alerts:view",
     "notifications:alerts:view",
     "notifications:alerts:create",
     "notifications:alerts:edit",
     "notifications:alerts:delete",
-    "notifications:webhooks:list",
+    "notifications:webhooks:view",
     "notifications:webhooks:view",
     "notifications:webhooks:create",
     "notifications:webhooks:edit",
     "notifications:webhooks:delete",
-    "notifications:deliveries:list",
+    "notifications:deliveries:view",
     "notifications:deliveries:view",
     "notifications:view",
     "notifications:manage"
@@ -267,10 +296,10 @@ function LoggingPageGuard() {
   const hasAnyScope = useAuthStore((s) => s.hasAnyScope);
   const hasScopedAccess = useAuthStore((s) => s.hasScopedAccess);
   const canAccessLoggingEnvironments =
-    hasScopedAccess("logs:environments:list") ||
+    hasScopedAccess("logs:environments:view") ||
     hasAnyScope("logs:environments:view", "logs:read", "logs:manage");
   const canAccessLoggingSchemaList = hasAnyScope(
-    "logs:schemas:list",
+    "logs:schemas:view",
     "logs:schemas:create",
     "logs:manage"
   );
@@ -286,7 +315,7 @@ function LoggingPageGuard() {
     canAccessLoggingEnvironments || canAccessLoggingSchemaList || hasResourceScopedSchemaView;
   const canAccessRequestedRoute =
     section === "schemas" && !!id
-      ? hasDirectSchemaView || hasAnyScope("logs:schemas:list", "logs:manage")
+      ? hasDirectSchemaView || hasAnyScope("logs:schemas:view", "logs:manage")
       : canAccessLogging;
 
   useEffect(() => {
@@ -334,7 +363,7 @@ function RealtimeBridge() {
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
   const logout = useAuthStore((s) => s.logout);
-  const canListNodes = useAuthStore((s) => s.hasScope("nodes:list"));
+  const canListNodes = useAuthStore((s) => s.hasScopedAccess("nodes:details"));
   const setGatewayUpdatingActive = useAppStatusStore((s) => s.setGatewayUpdatingActive);
   const clearGatewayUpdating = useAppStatusStore((s) => s.clearGatewayUpdating);
 
@@ -384,10 +413,14 @@ function RealtimeBridge() {
 
 export default function App() {
   const [startupChecked, setStartupChecked] = useState(false);
+  const user = useAuthStore((s) => s.user);
   const maintenanceActive = useAppStatusStore((s) => s.maintenanceActive);
   const setMaintenanceActive = useAppStatusStore((s) => s.setMaintenanceActive);
   const setGatewayUpdatingActive = useAppStatusStore((s) => s.setGatewayUpdatingActive);
   const clearGatewayUpdating = useAppStatusStore((s) => s.clearGatewayUpdating);
+  const authRouteKey = user
+    ? `${user.id}:${[...user.scopes].sort().join(",")}:${user.isBlocked ? "blocked" : "active"}`
+    : "anonymous";
 
   useEffect(() => {
     localStorage.removeItem("gateway-auth");
@@ -470,7 +503,7 @@ export default function App() {
         <RealtimeBridge />
         <AppStatusGate />
         <BrowserRouter>
-          <Routes>
+          <Routes key={authRouteKey}>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/callback" element={<AuthCallback />} />
             <Route path="/oauth/consent" element={<OAuthConsent />} />
@@ -518,25 +551,19 @@ export default function App() {
             />
             <Route element={<DashboardLayout />}>
               <Route path="/" element={<Dashboard />} />
-              <Route path="/proxy-hosts" element={scoped("proxy:list", <ProxyHosts />)} />
+              <Route path="/proxy-hosts" element={<ProxyHostsPageGuard />} />
               <Route path="/proxy-hosts/:id/:tab?" element={<ProxyHostDetailGuard />} />
-              <Route
-                path="/nginx-templates/new"
-                element={scoped("proxy:edit", <NginxTemplateEdit />)}
-              />
-              <Route
-                path="/nginx-templates/:id"
-                element={scoped("proxy:edit", <NginxTemplateEdit />)}
-              />
+              <Route path="/nginx-templates/new" element={<NginxTemplateEditGuard />} />
+              <Route path="/nginx-templates/:id" element={<NginxTemplateEditGuard />} />
               <Route
                 path="/ssl-certificates"
-                element={scoped("ssl:cert:list", <SSLCertificates />)}
+                element={scoped("ssl:cert:view", <SSLCertificates />)}
               />
-              <Route path="/domains" element={scoped("proxy:list", <Domains />)} />
-              <Route path="/access-lists" element={scoped("acl:list", <AccessLists />)} />
+              <Route path="/domains" element={scoped("domains:view", <Domains />)} />
+              <Route path="/access-lists" element={scoped("acl:view", <AccessLists />)} />
               <Route path="/cas" element={<CAsPageGuard />} />
               <Route path="/cas/:id" element={<CADetailGuard />} />
-              <Route path="/certificates" element={scoped("pki:cert:list", <Certificates />)} />
+              <Route path="/certificates" element={scoped("pki:cert:view", <Certificates />)} />
               <Route path="/certificates/:id" element={<CertificateDetailGuard />} />
               <Route path="/templates/:tab?" element={<TemplatesPage />} />
               <Route path="/administration" element={<AdministrationPageGuard />} />
@@ -562,7 +589,7 @@ export default function App() {
                 path="/admin/groups"
                 element={scoped("admin:groups", <Navigate to="/administration/groups" replace />)}
               />
-              <Route path="/nodes" element={scoped("nodes:list", <AdminNodes />)} />
+              <Route path="/nodes" element={scoped("nodes:details", <AdminNodes />)} />
               <Route path="/nodes/:id/:tab?" element={<NodeDetailGuard />} />
               <Route path="/docker/:tab?" element={<DockerPageGuard />} />
               <Route

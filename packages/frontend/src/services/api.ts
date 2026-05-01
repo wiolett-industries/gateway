@@ -54,7 +54,6 @@ import type {
   LoggingSchema,
   LoggingSearchRequest,
   LoggingSearchResult,
-  NginxProcessInfo,
   NginxTemplate,
   OAuthAuthorization,
   OAuthConsentPreview,
@@ -161,10 +160,12 @@ class ApiClient extends ApiClientBase {
     );
 
     // Domains
-    quiet(this.listDomains({}).then((d) => this.setCache("domains:list", d)));
+    if (useAuthStore.getState().hasScope("domains:view")) {
+      quiet(this.listDomains({}).then((d) => this.setCache("domains:list", d)));
+    }
 
     // Templates
-    if (useAuthStore.getState().hasScope("pki:templates:list")) {
+    if (useAuthStore.getState().hasScope("pki:templates:view")) {
       quiet(this.listTemplates().then((d) => this.setCache("templates:list", d)));
     }
 
@@ -172,7 +173,7 @@ class ApiClient extends ApiClientBase {
     quiet(this.listAccessLists().then((d) => this.setCache("access-lists:list", d)));
 
     // Nginx Templates
-    if (useAuthStore.getState().hasScope("proxy:list")) {
+    if (useAuthStore.getState().hasScopedAccess("proxy:templates:view")) {
       quiet(this.listNginxTemplates().then((d) => this.setCache("nginx-templates:list", d)));
     }
 
@@ -1897,57 +1898,6 @@ class ApiClient extends ApiClientBase {
         body: JSON.stringify({ command }),
       })
     );
-  }
-
-  // ── Nginx Management ──────────────────────────────────────────
-
-  async checkNginxAvailable(): Promise<boolean> {
-    try {
-      const result = await this.unwrapData(
-        this.request<{ data: { available: boolean } }>("/monitoring/nginx/available")
-      );
-      return result.available;
-    } catch {
-      return false;
-    }
-  }
-
-  async getNginxInfo(): Promise<NginxProcessInfo | null> {
-    try {
-      return this.unwrapData(this.request<{ data: NginxProcessInfo }>("/monitoring/nginx/info"));
-    } catch {
-      return null;
-    }
-  }
-
-  async getNginxConfig(): Promise<string> {
-    const result = await this.unwrapData(
-      this.request<{ data: { content: string } }>("/monitoring/nginx/config")
-    );
-    return result.content;
-  }
-
-  async updateNginxConfig(content: string): Promise<{ valid: boolean; error?: string }> {
-    return this.unwrapData(
-      this.request<{ data: { valid: boolean; error?: string } }>("/monitoring/nginx/config", {
-        method: "PUT",
-        body: JSON.stringify({ content }),
-      })
-    );
-  }
-
-  async testNginxConfig(): Promise<{ valid: boolean; error?: string }> {
-    return this.unwrapData(
-      this.request<{ data: { valid: boolean; error?: string } }>("/monitoring/nginx/config/test", {
-        method: "POST",
-      })
-    );
-  }
-
-  createNginxStatsStream(): EventSource {
-    return new EventSource(`${API_BASE}/monitoring/nginx/stats/stream`, {
-      withCredentials: true,
-    });
   }
 
   // ── System / Updates ──────────────────────────────────────────────

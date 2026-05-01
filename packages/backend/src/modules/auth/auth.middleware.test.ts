@@ -16,7 +16,7 @@ const USER: User = {
   avatarUrl: null,
   groupId: 'group-1',
   groupName: 'admin',
-  scopes: ['nodes:list'],
+  scopes: ['nodes:details'],
   isBlocked: false,
 };
 

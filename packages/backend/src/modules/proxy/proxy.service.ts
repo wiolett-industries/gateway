@@ -1,4 +1,4 @@
-import { and, count, desc, eq, ilike, sql } from 'drizzle-orm';
+import { and, count, desc, eq, ilike, inArray, sql } from 'drizzle-orm';
 import { getEnv } from '@/config/env.js';
 import type { DrizzleClient } from '@/db/client.js';
 import { accessLists } from '@/db/schema/access-lists.js';
@@ -474,8 +474,21 @@ export class ProxyService {
   // List
   // -----------------------------------------------------------------------
 
-  async listProxyHosts(query: ProxyHostListQuery): Promise<PaginatedResponse<ProxyHostRow>> {
+  async listProxyHosts(
+    query: ProxyHostListQuery,
+    options?: { allowedIds?: string[] }
+  ): Promise<PaginatedResponse<ProxyHostRow>> {
     const conditions = [eq(proxyHosts.isSystem, false)];
+
+    if (options?.allowedIds) {
+      if (options.allowedIds.length === 0) {
+        return {
+          data: [],
+          pagination: { page: query.page, limit: query.limit, total: 0, totalPages: 0 },
+        };
+      }
+      conditions.push(inArray(proxyHosts.id, options.allowedIds));
+    }
 
     if (query.type) {
       conditions.push(eq(proxyHosts.type, query.type));

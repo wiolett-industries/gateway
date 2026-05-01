@@ -7,7 +7,7 @@ interface CertificateAuthoritiesCardProps {
 }
 
 export function CertificateAuthoritiesCard({ cas, hasScope }: CertificateAuthoritiesCardProps) {
-  if (!hasScope("pki:ca:list:root")) return null;
+  if (!hasScope("pki:ca:view:root") && !hasScope("pki:ca:view:intermediate")) return null;
 
   return (
     <div className="border border-border bg-card">

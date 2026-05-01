@@ -6,10 +6,10 @@ All scopes follow `domain:resource:action[:qualifier]`. Resource-scopable scopes
 
 | Group | Description |
 |-------|-------------|
-| `system-admin` | All 137 scopes, including protected `admin:system`. |
-| `admin` | Curated broad access; excludes `admin:system`, `settings:gateway:edit`, `housekeeping:configure`, and Docker registry create/edit/delete defaults. |
+| `system-admin` | All 132 scopes, including protected `admin:system`. |
+| `admin` | Curated broad access, excluding `admin:system`, gateway settings edit, housekeeping configure, and Docker registry mutation defaults. |
 | `operator` | Operational access for day-to-day PKI, proxy, SSL, ACL, node, Docker container, database, notification, and logging read/query work. |
-| `viewer` | Read-only list/view access. |
+| `viewer` | Read-only view/discovery access. |
 
 ## Programmatic Access
 
@@ -38,35 +38,38 @@ Gateway evaluates scopes with exact, broad, resource-scoped, and implied-scope r
 
 - A broad resource-scopable scope grants access to every resource for that base scope. For example, `proxy:view` grants `proxy:view:<hostId>`.
 - A resource-scoped scope grants access only to that resource. For example, `proxy:edit:<hostA>` grants read/edit access to `hostA`, but not to `hostB` and not to broad `proxy:view`.
-- Write-capable scopes satisfy the matching read/list/view checks needed to use the resource. For example, `proxy:edit` satisfies `proxy:view` and `proxy:list`; `databases:query:admin` satisfies `databases:query:write` and `databases:query:read`.
-- Resource-scoped write-capable scopes keep the same resource boundary. For example, `databases:query:read:<databaseId>` can make that database visible in a filtered database list, but it does not grant global `databases:list`.
-- Create-only and destructive-only scopes do not imply list/view access. For example, `proxy:create`, `proxy:delete`, `databases:create`, and `notifications:webhooks:create` do not grant browse permissions by themselves.
-- `logs:schemas:view` does not imply global `logs:schemas:list`. Resource-scoped schema view/edit access can list only the matching schema rows.
+- List APIs and list pages are derived from view/detail permissions. Broad view lists every visible resource of that type; resource-scoped view lists only matching rows.
+- Write-capable scopes satisfy the matching read/view checks needed to use the resource. For example, `proxy:edit` satisfies `proxy:view`; `databases:query:admin` satisfies `databases:query:write` and `databases:query:read`.
+- Resource-scoped write-capable scopes keep the same resource boundary. For example, `databases:query:read:<databaseId>` can make that database visible in a filtered database list, but it does not grant global `databases:view`.
+- Create-only and destructive-only scopes do not imply view/discovery access. For example, `proxy:create`, `proxy:delete`, `databases:create`, and `notifications:webhooks:create` do not grant browse permissions by themselves.
+- `logs:schemas:view:<schemaId>` does not imply global `logs:schemas:view`. Resource-scoped schema view/edit access can list only the matching schema rows.
+- `proxy:folders:manage` and `docker:containers:folders:manage` grant full folder-tree visibility and folder mutation rights, but not item visibility. Moving or reordering items still requires the matching item edit scope.
 - When an API/OAuth token asks for a broad scope but the owning user has only resource-scoped access, Gateway narrows the effective token scope to the resource-scoped variant.
+
+Legacy global nginx management routes under `/api/monitoring/nginx/*` are no longer exposed. Node-specific nginx monitoring, config, and logs remain governed by node scopes.
 
 ## Scope List
 
 | Scope | Resource-scopable |
 |-------|-------------------|
-| `pki:ca:list:root` |  |
-| `pki:ca:list:intermediate` |  |
 | `pki:ca:view:root` |  |
 | `pki:ca:view:intermediate` |  |
 | `pki:ca:create:root` |  |
 | `pki:ca:create:intermediate` | Yes |
 | `pki:ca:revoke:root` |  |
 | `pki:ca:revoke:intermediate` |  |
-| `pki:cert:list` |  |
-| `pki:cert:view` |  |
+| `pki:cert:view` | Yes |
 | `pki:cert:issue` | Yes |
 | `pki:cert:revoke` | Yes |
 | `pki:cert:export` | Yes |
-| `pki:templates:list` |  |
 | `pki:templates:view` |  |
 | `pki:templates:create` |  |
 | `pki:templates:edit` |  |
 | `pki:templates:delete` |  |
-| `proxy:list` |  |
+| `domains:view` |  |
+| `domains:create` |  |
+| `domains:edit` |  |
+| `domains:delete` |  |
 | `proxy:view` | Yes |
 | `proxy:create` | Yes |
 | `proxy:edit` | Yes |
@@ -76,18 +79,20 @@ Gateway evaluates scopes with exact, broad, resource-scoped, and implied-scope r
 | `proxy:raw:toggle` | Yes |
 | `proxy:advanced` | Yes |
 | `proxy:advanced:bypass` | Yes |
-| `ssl:cert:list` |  |
+| `proxy:folders:manage` |  |
+| `proxy:templates:view` | Yes |
+| `proxy:templates:create` |  |
+| `proxy:templates:edit` | Yes |
+| `proxy:templates:delete` | Yes |
 | `ssl:cert:view` | Yes |
 | `ssl:cert:issue` |  |
 | `ssl:cert:delete` | Yes |
 | `ssl:cert:revoke` | Yes |
 | `ssl:cert:export` | Yes |
-| `acl:list` |  |
 | `acl:view` | Yes |
 | `acl:create` |  |
 | `acl:edit` | Yes |
 | `acl:delete` | Yes |
-| `nodes:list` |  |
 | `nodes:details` | Yes |
 | `nodes:create` |  |
 | `nodes:rename` | Yes |
@@ -114,7 +119,6 @@ Gateway evaluates scopes with exact, broad, resource-scoped, and implied-scope r
 | `feat:ai:use` |  |
 | `feat:ai:configure` |  |
 | `mcp:use` |  |
-| `docker:containers:list` | Yes |
 | `docker:containers:view` | Yes |
 | `docker:containers:create` | Yes |
 | `docker:containers:edit` | Yes |
@@ -126,22 +130,22 @@ Gateway evaluates scopes with exact, broad, resource-scoped, and implied-scope r
 | `docker:containers:secrets` | Yes |
 | `docker:containers:webhooks` | Yes |
 | `docker:containers:mounts` | Yes |
-| `docker:images:list` | Yes |
+| `docker:containers:folders:manage` |  |
+| `docker:images:view` | Yes |
 | `docker:images:pull` | Yes |
 | `docker:images:delete` | Yes |
-| `docker:volumes:list` | Yes |
+| `docker:volumes:view` | Yes |
 | `docker:volumes:create` | Yes |
 | `docker:volumes:delete` | Yes |
-| `docker:networks:list` | Yes |
+| `docker:networks:view` | Yes |
 | `docker:networks:create` | Yes |
 | `docker:networks:edit` | Yes |
 | `docker:networks:delete` | Yes |
-| `docker:registries:list` |  |
+| `docker:registries:view` |  |
 | `docker:registries:create` |  |
 | `docker:registries:edit` |  |
 | `docker:registries:delete` |  |
 | `docker:tasks` |  |
-| `databases:list` | Yes |
 | `databases:view` | Yes |
 | `databases:create` |  |
 | `databases:edit` | Yes |
@@ -150,29 +154,24 @@ Gateway evaluates scopes with exact, broad, resource-scoped, and implied-scope r
 | `databases:query:write` | Yes |
 | `databases:query:admin` | Yes |
 | `databases:credentials:reveal` | Yes |
-| `notifications:alerts:list` |  |
 | `notifications:alerts:view` |  |
 | `notifications:alerts:create` |  |
 | `notifications:alerts:edit` |  |
 | `notifications:alerts:delete` |  |
-| `notifications:webhooks:list` |  |
 | `notifications:webhooks:view` |  |
 | `notifications:webhooks:create` |  |
 | `notifications:webhooks:edit` |  |
 | `notifications:webhooks:delete` |  |
-| `notifications:deliveries:list` |  |
 | `notifications:deliveries:view` |  |
 | `notifications:view` |  |
 | `notifications:manage` |  |
-| `logs:environments:list` | Yes |
 | `logs:environments:view` | Yes |
 | `logs:environments:create` |  |
 | `logs:environments:edit` | Yes |
 | `logs:environments:delete` | Yes |
-| `logs:tokens:list` | Yes |
+| `logs:tokens:view` | Yes |
 | `logs:tokens:create` | Yes |
 | `logs:tokens:delete` | Yes |
-| `logs:schemas:list` |  |
 | `logs:schemas:view` | Yes |
 | `logs:schemas:create` |  |
 | `logs:schemas:edit` | Yes |
@@ -188,7 +187,7 @@ Gateway evaluates scopes with exact, broad, resource-scoped, and implied-scope r
 
 ## API Token Delegation
 
-API and OAuth tokens can be granted 123 of the 137 scopes. They cannot be granted:
+API and OAuth tokens can be granted 118 of the 132 scopes. They cannot be granted:
 
 | Scope | Reason |
 |-------|--------|
@@ -207,7 +206,7 @@ API and OAuth tokens can be granted 123 of the 137 scopes. They cannot be grante
 | `nodes:config:view` | Global node nginx config is session-only. |
 | `nodes:config:edit` | Global node nginx config is session-only. |
 
-`mcp:use` is not a token scope. It gates whether the owning user account may use the MCP endpoint at all. MCP tokens use ordinary delegated Gateway scopes such as `nodes:list`, `proxy:view`, or `docker:containers:view` to determine which MCP tools and resources are available.
+`mcp:use` is not a token scope. It gates whether the owning user account may use the MCP endpoint at all. MCP tokens use ordinary delegated Gateway scopes such as `nodes:details`, `proxy:view`, or `docker:containers:view` to determine which MCP tools and resources are available.
 
 ## OAuth Manual Approval Scopes
 

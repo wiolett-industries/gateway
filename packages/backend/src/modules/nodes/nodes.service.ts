@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import bcrypt from 'bcryptjs';
-import { count, eq, ilike, type SQL } from 'drizzle-orm';
+import { count, eq, ilike, inArray, type SQL } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import { certificates, nodes, proxyHosts } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
@@ -46,8 +46,21 @@ export class NodesService {
     this.eventBus?.publish('node.changed', { id, action });
   }
 
-  async list(query: NodeListQuery) {
+  async list(query: NodeListQuery, options?: { allowedIds?: string[] }) {
     const conditions: SQL[] = [];
+
+    if (options?.allowedIds) {
+      if (options.allowedIds.length === 0) {
+        return {
+          data: [],
+          total: 0,
+          page: query.page,
+          limit: query.limit,
+          totalPages: 0,
+        };
+      }
+      conditions.push(inArray(nodes.id, options.allowedIds));
+    }
 
     if (query.search) {
       conditions.push(ilike(nodes.hostname, `%${query.search}%`));

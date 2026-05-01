@@ -4,7 +4,7 @@ import { CreateGroupSchema, UpdateGroupSchema } from './group.schemas.js';
 const VALID_GROUP = {
   name: 'custom-operators',
   description: 'Custom operators',
-  scopes: ['nodes:list'],
+  scopes: ['nodes:details'],
 };
 
 describe('group schemas', () => {

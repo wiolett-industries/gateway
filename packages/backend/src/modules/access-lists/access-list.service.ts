@@ -1,5 +1,5 @@
 import bcrypt from 'bcryptjs';
-import { count, desc, eq, ilike } from 'drizzle-orm';
+import { count, desc, eq, ilike, inArray } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import type { BasicAuthUser } from '@/db/schema/access-lists.js';
 import { certificates } from '@/db/schema/certificates.js';
@@ -271,8 +271,18 @@ export class AccessListService {
   // List
   // -----------------------------------------------------------------------
 
-  async list(query: AccessListQuery): Promise<PaginatedResponse<AccessListRow>> {
+  async list(query: AccessListQuery, options?: { allowedIds?: string[] }): Promise<PaginatedResponse<AccessListRow>> {
     const conditions = [];
+
+    if (options?.allowedIds) {
+      if (options.allowedIds.length === 0) {
+        return {
+          data: [],
+          pagination: { page: query.page, limit: query.limit, total: 0, totalPages: 0 },
+        };
+      }
+      conditions.push(inArray(accessLists.id, options.allowedIds));
+    }
 
     if (query.search) {
       conditions.push(ilike(accessLists.name, `%${escapeLike(query.search)}%`));

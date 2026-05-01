@@ -5,7 +5,7 @@ describe('CreateTokenSchema', () => {
   it('rejects user-only AI scopes for API tokens', () => {
     const result = CreateTokenSchema.safeParse({
       name: 'CI token',
-      scopes: ['nodes:list', 'feat:ai:use'],
+      scopes: ['nodes:details', 'feat:ai:use'],
     });
 
     expect(result.success).toBe(false);
@@ -17,7 +17,7 @@ describe('CreateTokenSchema', () => {
   it('rejects admin:system for API tokens', () => {
     const result = CreateTokenSchema.safeParse({
       name: 'CI token',
-      scopes: ['nodes:list', 'admin:system'],
+      scopes: ['nodes:details', 'admin:system'],
     });
 
     expect(result.success).toBe(false);
@@ -29,7 +29,7 @@ describe('CreateTokenSchema', () => {
   it('allows delegable scopes for API tokens', () => {
     const result = CreateTokenSchema.safeParse({
       name: 'CI token',
-      scopes: ['nodes:list', 'proxy:list'],
+      scopes: ['nodes:details', 'proxy:view'],
     });
 
     expect(result.success).toBe(true);
@@ -38,7 +38,7 @@ describe('CreateTokenSchema', () => {
   it('rejects mcp:use for API tokens', () => {
     const result = CreateTokenSchema.safeParse({
       name: 'CI token',
-      scopes: ['nodes:list', 'mcp:use'],
+      scopes: ['nodes:details', 'mcp:use'],
     });
 
     expect(result.success).toBe(false);
@@ -51,7 +51,7 @@ describe('CreateTokenSchema', () => {
 describe('UpdateTokenSchema', () => {
   it('allows updating scopes without renaming the token', () => {
     const result = UpdateTokenSchema.safeParse({
-      scopes: ['nodes:list', 'proxy:list'],
+      scopes: ['nodes:details', 'proxy:view'],
     });
 
     expect(result.success).toBe(true);

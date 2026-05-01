@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { and, count, desc, eq, ilike, lte, or } from 'drizzle-orm';
+import { and, count, desc, eq, ilike, inArray, lte, or } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import { certificates, proxyHosts, sslCertificates } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
@@ -674,8 +674,18 @@ export class SSLService {
   // List certificates
   // ---------------------------------------------------------------------------
 
-  async listCerts(params: SSLCertListQuery): Promise<PaginatedResponse<any>> {
+  async listCerts(params: SSLCertListQuery, options?: { allowedIds?: string[] }): Promise<PaginatedResponse<any>> {
     const conditions = [];
+
+    if (options?.allowedIds) {
+      if (options.allowedIds.length === 0) {
+        return {
+          data: [],
+          pagination: { page: params.page, limit: params.limit, total: 0, totalPages: 0 },
+        };
+      }
+      conditions.push(inArray(sslCertificates.id, options.allowedIds));
+    }
 
     if (!params.showSystem) conditions.push(eq(sslCertificates.isSystem, false));
     if (params.type) conditions.push(eq(sslCertificates.type, params.type));
@@ -733,12 +743,15 @@ export class SSLService {
   // Get certificates expiring soon (for renewal job)
   // ---------------------------------------------------------------------------
 
-  async getCertsExpiringSoon(days: number) {
+  async getCertsExpiringSoon(days: number, options?: { allowedIds?: string[] }) {
     const threshold = new Date();
     threshold.setDate(threshold.getDate() + days);
 
+    if (options?.allowedIds?.length === 0) return [];
+
     return this.db.query.sslCertificates.findMany({
       where: and(
+        options?.allowedIds ? inArray(sslCertificates.id, options.allowedIds) : undefined,
         eq(sslCertificates.status, 'active'),
         eq(sslCertificates.autoRenew, true),
         lte(sslCertificates.notAfter, threshold)

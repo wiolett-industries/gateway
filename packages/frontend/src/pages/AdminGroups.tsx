@@ -172,7 +172,7 @@ export function AdminGroups({
       .then((r) => setDatabasesList(r.data ?? []))
       .catch(() => {});
     if (
-      scopeMatches(userScopes, "logs:schemas:list") ||
+      scopeMatches(userScopes, "logs:schemas:view") ||
       scopeMatches(userScopes, "logs:manage") ||
       (deriveAllowedResourceIdsByScope(userScopes)["logs:schemas:view"]?.length ?? 0) > 0
     ) {

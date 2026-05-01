@@ -30,8 +30,8 @@ export function NginxTemplates({
   onCreateRef?: (fn: () => void) => void;
 }) {
   const navigate = useNavigate();
-  const { hasScope } = useAuthStore();
-  const canViewTemplates = hasScope("proxy:list");
+  const { hasScope, hasScopedAccess } = useAuthStore();
+  const canViewTemplates = hasScopedAccess("proxy:templates:view");
   const cachedTemplates = canViewTemplates
     ? api.getCached<NginxTemplate[]>("nginx-templates:list")
     : undefined;
@@ -126,7 +126,7 @@ export function NginxTemplates({
                 Nginx server block templates for proxy hosts
               </p>
             </div>
-            {hasScope("proxy:edit") && (
+            {hasScope("proxy:templates:create") && (
               <Button onClick={() => navigate("/nginx-templates/new")}>
                 <Plus className="h-4 w-4" />
                 Create Template
@@ -138,11 +138,20 @@ export function NginxTemplates({
         {templates.length > 0 ? (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             {templates.map((t) => {
-              const canEditTemplate = hasScope("proxy:edit") && !t.isBuiltin;
-              const canCloneTemplate = hasScope("proxy:edit");
-              const canDeleteTemplate = hasScope("proxy:delete") && !t.isBuiltin;
+              const canEditTemplate =
+                (hasScope("proxy:templates:edit") || hasScope(`proxy:templates:edit:${t.id}`)) &&
+                !t.isBuiltin;
+              const canCloneTemplate =
+                hasScope("proxy:templates:create") &&
+                (hasScope("proxy:templates:edit") || hasScope(`proxy:templates:edit:${t.id}`));
+              const canDeleteTemplate =
+                (hasScope("proxy:templates:delete") ||
+                  hasScope(`proxy:templates:delete:${t.id}`)) &&
+                !t.isBuiltin;
               const hasActions = canEditTemplate || canCloneTemplate || canDeleteTemplate;
-              const canOpenTemplate = canEditTemplate || canViewTemplates;
+              const canViewTemplate =
+                hasScope("proxy:templates:view") || hasScope(`proxy:templates:view:${t.id}`);
+              const canOpenTemplate = canEditTemplate || canViewTemplate;
 
               return (
                 <div key={t.id} className="border border-border bg-card p-4 space-y-3">
@@ -154,7 +163,7 @@ export function NginxTemplates({
                       onClick={() => {
                         if (canEditTemplate) {
                           navigate(`/nginx-templates/${t.id}`);
-                        } else if (canViewTemplates) {
+                        } else if (canViewTemplate) {
                           void handlePreview(t);
                         }
                       }}
@@ -214,8 +223,8 @@ export function NginxTemplates({
         ) : (
           <EmptyState
             message="No config templates."
-            actionLabel={hasScope("proxy:edit") ? "Create one" : undefined}
-            actionHref={hasScope("proxy:edit") ? "/nginx-templates/new" : undefined}
+            actionLabel={hasScope("proxy:templates:create") ? "Create one" : undefined}
+            actionHref={hasScope("proxy:templates:create") ? "/nginx-templates/new" : undefined}
           />
         )}
       </div>

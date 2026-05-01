@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { api } from "@/services/api";
+import { useAuthStore } from "@/stores/auth";
 import { useCAStore } from "@/stores/ca";
 import type { KeyAlgorithm } from "@/types";
 
@@ -30,6 +31,7 @@ interface CACreateDialogProps {
 
 export function CACreateDialog({ open, onOpenChange, parentId }: CACreateDialogProps) {
   const { cas, fetchCAs } = useCAStore();
+  const hasScope = useAuthStore((s) => s.hasScope);
 
   const [selectedParentId, setSelectedParentId] = useState<string>("");
   const [commonName, setCommonName] = useState("");
@@ -42,7 +44,10 @@ export function CACreateDialog({ open, onOpenChange, parentId }: CACreateDialogP
   const needsParentPicker = parentId === "pick";
   const resolvedParentId = needsParentPicker ? selectedParentId : parentId;
   const isIntermediate = !!resolvedParentId;
-  const activeCAs = (cas || []).filter((ca) => ca.status === "active" && !ca.isSystem);
+  const activeCAs = (cas || []).filter(
+    (ca) =>
+      ca.status === "active" && !ca.isSystem && hasScope(`pki:ca:create:intermediate:${ca.id}`)
+  );
 
   const handleCreate = async () => {
     if (!commonName.trim()) {

@@ -6,7 +6,7 @@ import type { AppEnv } from '@/types.js';
 
 const mocks = vi.hoisted(() => ({
   authType: 'api-token' as 'api-token' | 'session',
-  scopes: ['proxy:list', 'proxy:create', 'proxy:view:host-1', 'proxy:edit:host-1', 'proxy:advanced:host-1'],
+  scopes: ['proxy:view', 'proxy:create', 'proxy:view:host-1', 'proxy:edit:host-1', 'proxy:advanced:host-1'],
   proxyService: {
     listProxyHosts: vi.fn(),
     getProxyHost: vi.fn(),
@@ -35,6 +35,7 @@ vi.mock('@/modules/auth/auth.middleware.js', () => ({
   },
   isProgrammaticAuth: (c: any) => c.get('authType') === 'api-token' || c.get('authType') === 'oauth-token',
   requireScope: () => async (_c: any, next: () => Promise<void>) => next(),
+  requireScopeBase: () => async (_c: any, next: () => Promise<void>) => next(),
   requireScopeForResource: () => async (_c: any, next: () => Promise<void>) => next(),
   sessionOnly: async (c: any, next: () => Promise<void>) => {
     if (c.get('authType') !== 'session') {
@@ -78,7 +79,7 @@ function createApp() {
 describe('proxy routes programmatic raw config handling', () => {
   beforeEach(() => {
     mocks.authType = 'api-token';
-    mocks.scopes = ['proxy:list', 'proxy:create', 'proxy:view:host-1', 'proxy:edit:host-1', 'proxy:advanced:host-1'];
+    mocks.scopes = ['proxy:view', 'proxy:create', 'proxy:view:host-1', 'proxy:edit:host-1', 'proxy:advanced:host-1'];
     vi.clearAllMocks();
     mocks.proxyService.listProxyHosts.mockResolvedValue({ data: [rawHost], total: 1 });
     mocks.proxyService.getProxyHost.mockResolvedValue(rawHost);

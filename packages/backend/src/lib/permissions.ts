@@ -6,24 +6,16 @@
 import { extractBaseScope, isValidBaseScope } from './scopes.js';
 
 const IMPLIED_SCOPES_BY_REQUIRED_SCOPE: Record<string, readonly string[]> = {
-  'pki:ca:list:root': ['pki:ca:view:root'],
-  'pki:ca:list:intermediate': ['pki:ca:view:intermediate'],
-  'pki:cert:list': ['pki:cert:view'],
-  'pki:templates:list': ['pki:templates:view', 'pki:templates:edit'],
   'pki:templates:view': ['pki:templates:edit'],
-  'proxy:list': ['proxy:view', 'proxy:edit'],
   'proxy:view': ['proxy:edit'],
+  'proxy:templates:view': ['proxy:templates:edit'],
   'proxy:raw:read': ['proxy:raw:write'],
-  'ssl:cert:list': ['ssl:cert:view'],
-  'acl:list': ['acl:view', 'acl:edit'],
   'acl:view': ['acl:edit'],
-  'nodes:list': ['nodes:details', 'nodes:rename'],
   'nodes:details': ['nodes:rename'],
   'nodes:config:view': ['nodes:config:edit'],
   'settings:gateway:view': ['settings:gateway:edit'],
   'housekeeping:view': ['housekeeping:run', 'housekeeping:configure'],
   'license:view': ['license:manage'],
-  'docker:containers:list': ['docker:containers:view', 'docker:containers:edit', 'docker:containers:manage'],
   'docker:containers:view': [
     'docker:containers:edit',
     'docker:containers:manage',
@@ -33,26 +25,16 @@ const IMPLIED_SCOPES_BY_REQUIRED_SCOPE: Record<string, readonly string[]> = {
     'docker:containers:secrets',
     'docker:containers:webhooks',
   ],
-  'docker:networks:list': ['docker:networks:edit'],
-  'docker:registries:list': ['docker:registries:edit'],
-  'databases:list': ['databases:view', 'databases:edit', 'databases:query:read'],
-  'databases:view': [
-    'databases:edit',
-    'databases:query:read',
-    'databases:query:write',
-    'databases:query:admin',
-    'databases:credentials:reveal',
-  ],
+  'docker:networks:view': ['docker:networks:edit'],
+  'docker:registries:view': ['docker:registries:edit'],
+  'databases:view': ['databases:edit', 'databases:query:read', 'databases:query:write', 'databases:query:admin'],
   'databases:query:read': ['databases:query:write', 'databases:query:admin'],
   'databases:query:write': ['databases:query:admin'],
-  'notifications:alerts:list': ['notifications:alerts:view', 'notifications:alerts:edit'],
   'notifications:alerts:view': ['notifications:alerts:edit'],
-  'notifications:webhooks:list': ['notifications:webhooks:view', 'notifications:webhooks:edit'],
   'notifications:webhooks:view': ['notifications:webhooks:edit'],
-  'notifications:deliveries:list': ['notifications:deliveries:view'],
   'notifications:view': ['notifications:manage'],
-  'logs:environments:list': ['logs:environments:view', 'logs:environments:edit', 'logs:read'],
   'logs:environments:view': ['logs:environments:edit', 'logs:read'],
+  'logs:tokens:view': ['logs:manage'],
   'logs:schemas:view': ['logs:schemas:edit'],
   'logs:read': ['logs:manage'],
   'status-page:view': ['status-page:manage'],
@@ -123,6 +105,18 @@ export function hasScopeBase(scopes: string[], baseScope: string): boolean {
 /** Check if scopes grant a broad scope or a specific resource-scoped variant. */
 export function hasScopeForResource(scopes: string[], baseScope: string, resourceId: string): boolean {
   return hasScope(scopes, baseScope) || (!!resourceId && hasScope(scopes, `${baseScope}:${resourceId}`));
+}
+
+/** Return resource IDs from scoped grants that satisfy baseScope:<id>. */
+export function getResourceScopedIds(scopes: readonly string[], baseScope: string): string[] {
+  const ids = new Set<string>();
+  for (const scope of scopes) {
+    const scopeBase = extractBaseScope(scope);
+    if (scope === scopeBase) continue;
+    const resourceId = scope.slice(scopeBase.length + 1);
+    if (resourceId && hasScope([scope], `${baseScope}:${resourceId}`)) ids.add(resourceId);
+  }
+  return [...ids];
 }
 
 /** Check if scopes grant any of the required scopes */

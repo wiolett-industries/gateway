@@ -169,6 +169,10 @@ export function CADetail() {
     }
   };
   const childCAs = (cas || []).filter((c) => c.parentId === ca.id);
+  const canCreateIntermediate = hasScope(`pki:ca:create:intermediate:${ca.id}`);
+  const canRevokeCA = hasScope(
+    ca.type === "root" ? "pki:ca:revoke:root" : "pki:ca:revoke:intermediate"
+  );
 
   return (
     <PageTransition>
@@ -191,7 +195,7 @@ export function CADetail() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {hasScope("pki:ca:create:intermediate") && ca.status === "active" && !ca.isSystem && (
+            {canCreateIntermediate && ca.status === "active" && !ca.isSystem && (
               <Button variant="outline" onClick={() => setCreateIntermediateOpen(true)}>
                 <Shield className="h-4 w-4" />
                 Create Intermediate
@@ -269,7 +273,7 @@ export function CADetail() {
                   <Copy className="h-4 w-4" />
                   Copy Serial
                 </DropdownMenuItem>
-                {hasScope("pki:ca:revoke:root") && ca.status === "active" && !ca.isSystem && (
+                {canRevokeCA && ca.status === "active" && !ca.isSystem && (
                   <>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={handleRevoke} className="text-destructive">

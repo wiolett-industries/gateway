@@ -186,7 +186,7 @@ Gateway 已经面向 production operations，而不是狭窄的 MVP。当前方�
 <details>
 <summary><strong>API 或 OAuth tokens 会暴露 secrets 吗？</strong></summary>
 
-只有当拥有者已经具备所需 scopes 时才可以。Sensitive OAuth scopes 在 consent 时需要显式 opt-in，API/OAuth tokens 不能超过用户当前的 effective permissions，并且 resource-scoped write-capable scopes 在隐含 read/list checks 时仍然限制在同一 resource 内。参见 [SCOPES.md](SCOPES.md)。
+只有当拥有者已经具备所需 scopes 时才可以。Sensitive OAuth scopes 在 consent 时需要显式 opt-in，API/OAuth tokens 不能超过用户当前的 effective permissions，并且 resource-scoped write-capable scopes 在隐含 read/view checks 时仍然限制在同一 resource 内。参见 [SCOPES.md](SCOPES.md)。
 </details>
 
 <details>

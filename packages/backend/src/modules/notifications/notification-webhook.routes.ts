@@ -27,7 +27,7 @@ webhookRoutes.openapi(
   {
     ...listNotificationWebhookPresetsRoute,
     middleware: requireAnyScope(
-      'notifications:webhooks:list',
+      'notifications:webhooks:view',
       'notifications:webhooks:view',
       'notifications:webhooks:create',
       'notifications:webhooks:edit',
@@ -46,7 +46,7 @@ webhookRoutes.openapi(
   {
     ...listNotificationWebhooksRoute,
     middleware: requireAnyScope(
-      'notifications:webhooks:list',
+      'notifications:webhooks:view',
       'notifications:webhooks:view',
       'notifications:view',
       'notifications:manage'
@@ -66,7 +66,7 @@ webhookRoutes.openapi(
     ...getNotificationWebhookRoute,
     middleware: requireAnyScope(
       'notifications:webhooks:view',
-      'notifications:webhooks:list',
+      'notifications:webhooks:view',
       'notifications:view',
       'notifications:manage'
     ),

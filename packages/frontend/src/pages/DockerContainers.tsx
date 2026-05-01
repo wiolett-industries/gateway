@@ -144,6 +144,7 @@ export function DockerContainers({
   const fetchContainers = useDockerStore((s) => s.fetchContainers);
   const forceFetchContainers = useDockerStore((s) => s.forceFetchContainers);
   const visibleNodeId = fixedNodeId ?? selectedNodeId;
+  const canViewContainers = hasScopedAccess("docker:containers:view");
 
   const {
     folders,
@@ -237,13 +238,22 @@ export function DockerContainers({
   const refreshData = useCallback(
     async (force = false) => {
       await Promise.all([
-        force
-          ? forceFetchContainers(fixedNodeId, filters.search)
-          : fetchContainers(fixedNodeId, filters.search),
+        canViewContainers
+          ? force
+            ? forceFetchContainers(fixedNodeId, filters.search)
+            : fetchContainers(fixedNodeId, filters.search)
+          : Promise.resolve(),
         fetchFolders(),
       ]);
     },
-    [fetchContainers, fetchFolders, filters.search, fixedNodeId, forceFetchContainers]
+    [
+      canViewContainers,
+      fetchContainers,
+      fetchFolders,
+      filters.search,
+      fixedNodeId,
+      forceFetchContainers,
+    ]
   );
 
   useEffect(() => {
@@ -322,7 +332,7 @@ export function DockerContainers({
   );
 
   const hasActiveFilters = filters.search !== "" || filters.status !== "all";
-  const canManageFolders = !fixedNodeId && hasScopedAccess("docker:containers:edit");
+  const canManageFolders = !fixedNodeId && hasScope("docker:containers:folders:manage");
   const canDragFolders = canManageFolders && !isMobile;
   const canManageRuntime = hasScopedAccess("docker:containers:manage");
   const showActionsColumn = canManageFolders || canManageRuntime;

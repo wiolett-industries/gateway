@@ -83,7 +83,7 @@ export function SettingsTab({
   const canEditMounts =
     hasScope("docker:containers:mounts") || hasScope(`docker:containers:mounts:${nodeId}`);
   const canManageNetworks = hasScope("docker:networks:edit");
-  const canListNetworks = hasScope("docker:networks:list");
+  const canListNetworks = hasScope("docker:networks:view");
   const recreatesRunningContainer =
     (data.State?.Status ?? (data.State?.Running ? "running" : "stopped")) === "running";
 

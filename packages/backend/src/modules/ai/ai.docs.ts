@@ -1,4 +1,4 @@
-import { hasScope } from '@/lib/permissions.js';
+import { hasScopeBase } from '@/lib/permissions.js';
 
 export const INTERNAL_DOCS: Record<string, string> = {
   pki: `# PKI (Public Key Infrastructure)
@@ -420,8 +420,8 @@ Gateway uses a group-based permission system with nested group inheritance. Each
 ### PKI: Certificate Authorities
 | Scope | Description |
 |-------|-------------|
-| pki:ca:list:root | List root CAs |
-| pki:ca:list:intermediate | List intermediate CAs |
+| pki:ca:view:root | List root CAs |
+| pki:ca:view:intermediate | List intermediate CAs |
 | pki:ca:view:root | View root CA details |
 | pki:ca:view:intermediate | View intermediate CA details |
 | pki:ca:create:root | Create root CAs |
@@ -432,7 +432,7 @@ Gateway uses a group-based permission system with nested group inheritance. Each
 ### PKI: Certificates
 | Scope | Description |
 |-------|-------------|
-| pki:cert:list | List PKI certificates |
+| pki:cert:view | List PKI certificates |
 | pki:cert:view | View certificate details |
 | pki:cert:issue | Issue certificates from a CA (resource-scopable) |
 | pki:cert:revoke | Revoke certificates |
@@ -441,7 +441,7 @@ Gateway uses a group-based permission system with nested group inheritance. Each
 ### PKI: Certificate Templates
 | Scope | Description |
 |-------|-------------|
-| pki:templates:list | List certificate templates |
+| pki:templates:view | List certificate templates |
 | pki:templates:view | View template details |
 | pki:templates:create | Create templates |
 | pki:templates:edit | Edit templates |
@@ -450,7 +450,7 @@ Gateway uses a group-based permission system with nested group inheritance. Each
 ### Reverse Proxy
 | Scope | Description |
 |-------|-------------|
-| proxy:list | List proxy hosts |
+| proxy:view | List proxy hosts |
 | proxy:view | View proxy host details (resource-scopable) |
 | proxy:create | Create proxy hosts (resource-scopable) |
 | proxy:edit | Update proxy hosts (resource-scopable) |
@@ -464,7 +464,7 @@ Gateway uses a group-based permission system with nested group inheritance. Each
 ### SSL Certificates
 | Scope | Description |
 |-------|-------------|
-| ssl:cert:list | List SSL certificates |
+| ssl:cert:view | List SSL certificates |
 | ssl:cert:view | View SSL certificate details |
 | ssl:cert:issue | Request ACME / upload / link internal certs |
 | ssl:cert:delete | Delete SSL certificates (resource-scopable) |
@@ -474,7 +474,7 @@ Gateway uses a group-based permission system with nested group inheritance. Each
 ### Access Control Lists
 | Scope | Description |
 |-------|-------------|
-| acl:list | List access lists |
+| acl:view | List access lists |
 | acl:view | View access list details |
 | acl:create | Create access lists |
 | acl:edit | Edit access lists (resource-scopable) |
@@ -483,7 +483,7 @@ Gateway uses a group-based permission system with nested group inheritance. Each
 ### Nodes
 | Scope | Description |
 |-------|-------------|
-| nodes:list | List daemon nodes |
+| nodes:details | List daemon nodes |
 | nodes:details | View node details, health, stats (resource-scopable) |
 | nodes:create | Create/enroll new nodes |
 | nodes:rename | Rename a node (resource-scopable) |
@@ -532,7 +532,7 @@ Gateway uses a group-based permission system with nested group inheritance. Each
 ### Docker: Containers
 | Scope | Description |
 |-------|-------------|
-| docker:containers:list | List containers on a node |
+| docker:containers:view | List containers on a node |
 | docker:containers:view | View container details (resource-scopable) |
 | docker:containers:create | Create/deploy containers |
 | docker:containers:edit | Edit container settings (resource-scopable) |
@@ -548,21 +548,21 @@ Gateway uses a group-based permission system with nested group inheritance. Each
 ### Docker: Images
 | Scope | Description |
 |-------|-------------|
-| docker:images:list | List images on a node |
+| docker:images:view | List images on a node |
 | docker:images:pull | Pull images from registries |
 | docker:images:delete | Remove/prune images |
 
 ### Docker: Volumes
 | Scope | Description |
 |-------|-------------|
-| docker:volumes:list | List volumes |
+| docker:volumes:view | List volumes |
 | docker:volumes:create | Create volumes |
 | docker:volumes:delete | Remove volumes |
 
 ### Docker: Networks
 | Scope | Description |
 |-------|-------------|
-| docker:networks:list | List networks |
+| docker:networks:view | List networks |
 | docker:networks:create | Create networks |
 | docker:networks:edit | Connect/disconnect containers |
 | docker:networks:delete | Remove networks |
@@ -570,7 +570,7 @@ Gateway uses a group-based permission system with nested group inheritance. Each
 ### Docker: Registries
 | Scope | Description |
 |-------|-------------|
-| docker:registries:list | List private registries |
+| docker:registries:view | List private registries |
 | docker:registries:create | Add registries |
 | docker:registries:edit | Edit/test registries |
 | docker:registries:delete | Remove registries |
@@ -583,7 +583,7 @@ Gateway uses a group-based permission system with nested group inheritance. Each
 ### Databases
 | Scope | Description |
 |-------|-------------|
-| databases:list | List saved database connections |
+| databases:view | List saved database connections |
 | databases:view | View database connection details (resource-scopable) |
 | databases:create | Create saved database connections |
 | databases:edit | Edit saved database connections (resource-scopable) |
@@ -596,15 +596,15 @@ Gateway uses a group-based permission system with nested group inheritance. Each
 ### Logging
 | Scope | Description |
 |-------|-------------|
-| logs:environments:list | List logging environments |
+| logs:environments:view | List logging environments |
 | logs:environments:view | View logging environments (resource-scopable) |
 | logs:environments:create | Create logging environments |
 | logs:environments:edit | Edit logging environments (resource-scopable) |
 | logs:environments:delete | Delete logging environments (resource-scopable) |
-| logs:tokens:list | List ingest tokens (resource-scopable by environment) |
+| logs:tokens:view | List ingest tokens (resource-scopable by environment) |
 | logs:tokens:create | Create ingest tokens (resource-scopable by environment) |
 | logs:tokens:delete | Delete ingest tokens (resource-scopable by environment) |
-| logs:schemas:list | List logging schemas |
+| logs:schemas:view | List logging schemas |
 | logs:schemas:view | View logging schemas (resource-scopable by schema ID) |
 | logs:schemas:create | Create logging schemas |
 | logs:schemas:edit | Edit logging schemas (resource-scopable by schema ID) |
@@ -629,7 +629,7 @@ Gateway uses a group-based permission system with nested group inheritance. Each
 | system-admin | Full access including admin:system |
 | admin | Curated broad access, excluding admin:system, settings:gateway:edit, housekeeping:configure, and Docker registry create/edit/delete defaults |
 | operator | Operational access — PKI, proxy, SSL, ACL, nodes, Docker containers, AI |
-| viewer | Read-only — list/view scopes for PKI, proxy, SSL, Docker containers |
+| viewer | Read-only — view/discovery scopes for PKI, proxy, SSL, Docker containers |
 
 Custom groups can be created with any combination of scopes.
 
@@ -712,7 +712,7 @@ Gateway can store and operate external Postgres and Redis connections directly f
 - Team members can operate databases through Gateway without being given the raw hosting credentials.
 
 ## Permissions
-- \`databases:list\`, \`databases:view\`, \`databases:create\`, \`databases:edit\`, \`databases:delete\`
+- \`databases:view\`, \`databases:create\`, \`databases:edit\`, \`databases:delete\`
 - \`databases:query:read\`, \`databases:query:write\`, \`databases:query:admin\`; AI/MCP query tools also require \`databases:view\` on the same database.
 - \`databases:credentials:reveal\`
 - Most database scopes are resource-scopable by database ID, so access can be limited per saved connection.
@@ -851,7 +851,7 @@ Programmatic clients can use validated \`advancedConfig\`, but cannot set or rea
 - Filter by type: \`?type=nginx\` on nodes, \`?status=running\` on containers.
 
 ## Scopes
-Token permissions are controlled by scopes. Each endpoint requires specific scopes. A token with only \`pki:cert:list\` can list certificates but cannot issue or revoke them. See the permissions topic for the full scope list.
+Token permissions are controlled by scopes. Each endpoint requires specific scopes. A token with only \`pki:cert:view\` can list certificates but cannot issue or revoke them. See the permissions topic for the full scope list.
 
 ## Token Management
 - Tokens are tied to the user who created them
@@ -946,38 +946,38 @@ Available in all templates:
 - \`{{#if (gt value 95)}}🔥 CRITICAL{{else}}⚠️ Warning{{/if}}: {{alert_name}}\`
 
 ## API Endpoints
-- \`GET /api/notifications/alert-rules\` — list rules (notifications:alerts:list or notifications:manage)
+- \`GET /api/notifications/alert-rules\` — list rules (notifications:alerts:view or notifications:manage)
 - \`GET /api/notifications/alert-rules/:id\` — view rule (notifications:alerts:view or notifications:manage)
 - \`POST /api/notifications/alert-rules\` — create rule (notifications:alerts:create or notifications:manage)
 - \`PUT /api/notifications/alert-rules/:id\` — update rule (notifications:alerts:edit or notifications:manage)
 - \`DELETE /api/notifications/alert-rules/:id\` — delete rule (notifications:alerts:delete or notifications:manage)
 - \`GET /api/notifications/alert-rules/categories\` — list categories with metrics/events/variables
-- \`GET /api/notifications/webhooks\` — list webhooks (notifications:webhooks:list or notifications:manage)
+- \`GET /api/notifications/webhooks\` — list webhooks (notifications:webhooks:view or notifications:manage)
 - \`GET /api/notifications/webhooks/:id\` — view webhook (notifications:webhooks:view or notifications:manage)
 - \`POST /api/notifications/webhooks\` — create webhook (notifications:webhooks:create or notifications:manage)
 - \`PUT /api/notifications/webhooks/:id\` — update webhook (notifications:webhooks:edit or notifications:manage)
 - \`DELETE /api/notifications/webhooks/:id\` — delete webhook (notifications:webhooks:delete or notifications:manage)
 - \`POST /api/notifications/webhooks/:id/test\` — send test delivery
-- \`GET /api/notifications/deliveries\` — list delivery log (notifications:deliveries:list or notifications:manage)
+- \`GET /api/notifications/deliveries\` — list delivery log (notifications:deliveries:view or notifications:manage)
 - \`GET /api/notifications/deliveries/:id\` — view delivery log entry (notifications:deliveries:view or notifications:manage)
 - \`GET /api/notifications/deliveries/stats\` — delivery statistics`,
 };
 
 /** Map doc topics to the scope required to read them */
 export const DOC_TOPIC_SCOPES: Record<string, string> = {
-  pki: 'pki:ca:list:root',
-  ssl: 'ssl:cert:list',
-  proxy: 'proxy:list',
-  domains: 'proxy:list',
-  'access-lists': 'acl:list',
-  templates: 'pki:templates:list',
-  acme: 'ssl:cert:list',
+  pki: 'pki:ca:view:root',
+  ssl: 'ssl:cert:view',
+  proxy: 'proxy:view',
+  domains: 'domains:view',
+  'access-lists': 'acl:view',
+  templates: 'pki:templates:view',
+  acme: 'ssl:cert:view',
   users: 'admin:users',
   audit: 'admin:audit',
   nginx: 'proxy:edit',
-  nodes: 'nodes:list',
-  docker: 'docker:containers:list',
-  databases: 'databases:list',
+  nodes: 'nodes:details',
+  docker: 'docker:containers:view',
+  databases: 'databases:view',
   postgres: 'databases:view',
   redis: 'databases:view',
   housekeeping: 'housekeeping:view',
@@ -991,7 +991,7 @@ export function getInternalDocumentation(topic: string, userScopes: string[]): {
   if (!content) {
     // Only list topics the user has access to
     const available = Object.keys(INTERNAL_DOCS).filter(
-      (t) => !DOC_TOPIC_SCOPES[t] || hasScope(userScopes, DOC_TOPIC_SCOPES[t])
+      (t) => !DOC_TOPIC_SCOPES[t] || hasScopeBase(userScopes, DOC_TOPIC_SCOPES[t])
     );
     return {
       topic,
@@ -999,7 +999,7 @@ export function getInternalDocumentation(topic: string, userScopes: string[]): {
     };
   }
   const requiredScope = DOC_TOPIC_SCOPES[topic];
-  if (requiredScope && !hasScope(userScopes, requiredScope)) {
+  if (requiredScope && !hasScopeBase(userScopes, requiredScope)) {
     return { topic, content: `You do not have permission to access documentation for "${topic}".` };
   }
   return { topic, content };

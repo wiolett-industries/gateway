@@ -1,7 +1,7 @@
 import OpenAI from 'openai';
 import { container } from '@/container.js';
 import { createChildLogger } from '@/lib/logger.js';
-import { hasScope, hasScopeForResource } from '@/lib/permissions.js';
+import { getResourceScopedIds, hasScope, hasScopeBase, hasScopeForResource } from '@/lib/permissions.js';
 import { isPrivateUrl } from '@/lib/utils.js';
 import type { AccessListService } from '@/modules/access-lists/access-list.service.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
@@ -38,6 +38,50 @@ import type {
 } from './ai.types.js';
 
 const logger = createChildLogger('AIService');
+const BROAD_ONLY_TOOL_SCOPES = new Set(['create_proxy_host']);
+const DIRECT_DATABASE_VIEW_TOOLS = new Set(['list_databases', 'get_database_connection']);
+const ANY_SCOPE_TOOL_REQUIREMENTS: Record<string, string[]> = {
+  list_cas: ['pki:ca:view:root', 'pki:ca:view:intermediate'],
+  get_ca: ['pki:ca:view:root', 'pki:ca:view:intermediate'],
+  delete_ca: ['pki:ca:revoke:root', 'pki:ca:revoke:intermediate'],
+};
+
+function caTypeViewScope(type: string): 'pki:ca:view:root' | 'pki:ca:view:intermediate' {
+  return type === 'root' ? 'pki:ca:view:root' : 'pki:ca:view:intermediate';
+}
+
+function caTypeRevokeScope(type: string): 'pki:ca:revoke:root' | 'pki:ca:revoke:intermediate' {
+  return type === 'root' ? 'pki:ca:revoke:root' : 'pki:ca:revoke:intermediate';
+}
+
+function dashboardStatsOptionsForScopes(scopes: string[]) {
+  return {
+    allowedCaTypes: [
+      hasScope(scopes, 'pki:ca:view:root') ? 'root' : null,
+      hasScope(scopes, 'pki:ca:view:intermediate') ? 'intermediate' : null,
+    ].filter((type): type is 'root' | 'intermediate' => !!type),
+    allowedProxyHostIds: hasScope(scopes, 'proxy:view') ? undefined : getResourceScopedIds(scopes, 'proxy:view'),
+    allowedSslCertificateIds: hasScope(scopes, 'ssl:cert:view')
+      ? undefined
+      : getResourceScopedIds(scopes, 'ssl:cert:view'),
+    allowedPkiCertificateIds: hasScope(scopes, 'pki:cert:view')
+      ? undefined
+      : getResourceScopedIds(scopes, 'pki:cert:view'),
+    allowedNodeIds: hasScope(scopes, 'nodes:details') ? undefined : getResourceScopedIds(scopes, 'nodes:details'),
+  };
+}
+
+function allowedResourceIdsForScopes(scopes: string[], baseScope: string): string[] | undefined {
+  return hasScope(scopes, baseScope) ? undefined : getResourceScopedIds(scopes, baseScope);
+}
+
+function directResourceIdsForScopes(scopes: string[], baseScope: string): string[] | undefined {
+  if (scopes.includes(baseScope)) return undefined;
+  const prefix = `${baseScope}:`;
+  const ids = scopes.filter((scope) => scope.startsWith(prefix)).map((scope) => scope.slice(prefix.length));
+  return [...new Set(ids)];
+}
+
 const SENSITIVE_TOOL_ARG_RE =
   /(?:password|passwd|secret|signingsecret|privatekey|private_key|token|authorization|cookie|apikey|api_key|clientsecret|client_secret|refresh)/i;
 
@@ -59,6 +103,7 @@ function redactToolArgs(value: unknown, depth = 0): unknown {
 function getToolResourceId(args: Record<string, unknown>): string {
   return String(
     args.caId ||
+      args.parentCaId ||
       args.certificateId ||
       args.proxyHostId ||
       args.domainId ||
@@ -75,16 +120,30 @@ function getToolResourceId(args: Record<string, unknown>): string {
   );
 }
 
+function getToolAuthorizationResourceId(toolName: string, args: Record<string, unknown>): string {
+  if (toolName === 'create_proxy_host') return '';
+  return getToolResourceId(args);
+}
+
 function isMutatingTool(toolDef: { destructive: boolean; invalidateStores: string[] }): boolean {
   return toolDef.destructive || toolDef.invalidateStores.length > 0;
 }
 
 function hasToolExecutionScope(
   scopes: string[],
+  toolName: string,
   requiredScope: string | undefined,
   args: Record<string, unknown>
 ): boolean {
-  return !!requiredScope && hasScopeForResource(scopes, requiredScope, getToolResourceId(args));
+  if (!requiredScope) return false;
+  const anyRequirements = ANY_SCOPE_TOOL_REQUIREMENTS[toolName];
+  if (anyRequirements) return anyRequirements.some((scope) => hasScope(scopes, scope));
+  if (BROAD_ONLY_TOOL_SCOPES.has(toolName)) return hasScope(scopes, requiredScope);
+  if (DIRECT_DATABASE_VIEW_TOOLS.has(toolName)) {
+    return scopes.includes(requiredScope) || scopes.some((scope) => scope.startsWith(`${requiredScope}:`));
+  }
+  const resourceId = getToolAuthorizationResourceId(toolName, args);
+  return resourceId ? hasScopeForResource(scopes, requiredScope, resourceId) : hasScopeBase(scopes, requiredScope);
 }
 
 function estimateTokens(text: string): number {
@@ -482,19 +541,19 @@ CORRECT (multiple small questions):
 You have an **internal_documentation** tool. Use it BEFORE attempting complex tasks to get detailed info about how things work in this system. Available topics: ${Object.keys(
       INTERNAL_DOCS
     )
-      .filter((t) => !DOC_TOPIC_SCOPES[t] || hasScope(user.scopes, DOC_TOPIC_SCOPES[t]))
+      .filter((t) => !DOC_TOPIC_SCOPES[t] || hasScopeBase(user.scopes, DOC_TOPIC_SCOPES[t]))
       .join(
         ', '
       )}. When unsure about field values, workflows, or constraints — look it up first. It's free, fast, and prevents errors.
 
 ## Key Facts (use internal_documentation for details)`);
 
-    if (hasScope(user.scopes, 'pki:cert:list') || hasScope(user.scopes, 'ssl:cert:list')) {
+    if (hasScopeBase(user.scopes, 'pki:cert:view') || hasScopeBase(user.scopes, 'ssl:cert:view')) {
       parts.push(
         `- PKI Certificates and SSL Certificates are SEPARATE stores. To use a PKI cert with a proxy host: issue_certificate → link_internal_cert → use the returned SSL cert ID.`
       );
     }
-    if (hasScope(user.scopes, 'pki:cert:list')) {
+    if (hasScopeBase(user.scopes, 'pki:cert:view')) {
       parts.push(`- Certificate types: tls-server, tls-client, code-signing, email. Use "tls-server" for web/SSL.
 - SANs are PLAIN values: "example.com", "10.0.0.1". NEVER prefix with "DNS:" or "IP:".
 - Never pass a PKI certificate ID as sslCertificateId on a proxy host.`);
@@ -502,23 +561,23 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
 
     // Inventory summary — only include sections the user has read access to
     try {
-      const stats = await this.monitoringService.getDashboardStats();
+      const stats = await this.monitoringService.getDashboardStats(dashboardStatsOptionsForScopes(user.scopes));
       const inv: string[] = [];
-      if (hasScope(user.scopes, 'pki:ca:list:root'))
+      if (hasScope(user.scopes, 'pki:ca:view:root') || hasScope(user.scopes, 'pki:ca:view:intermediate'))
         inv.push(`- Certificate Authorities: ${stats.cas.total} total (${stats.cas.active} active)`);
-      if (hasScope(user.scopes, 'pki:cert:list'))
+      if (hasScopeBase(user.scopes, 'pki:cert:view'))
         inv.push(
           `- PKI Certificates: ${stats.pkiCertificates.total} total (${stats.pkiCertificates.active} active, ${stats.pkiCertificates.revoked} revoked, ${stats.pkiCertificates.expired} expired)`
         );
-      if (hasScope(user.scopes, 'proxy:list'))
+      if (hasScopeBase(user.scopes, 'proxy:view'))
         inv.push(
           `- Proxy Hosts: ${stats.proxyHosts.total} total (${stats.proxyHosts.enabled} enabled, ${stats.proxyHosts.online} online)`
         );
-      if (hasScope(user.scopes, 'ssl:cert:list'))
+      if (hasScopeBase(user.scopes, 'ssl:cert:view'))
         inv.push(
           `- SSL Certificates: ${stats.sslCertificates.total} total (${stats.sslCertificates.active} active, ${stats.sslCertificates.expiringSoon} expiring soon)`
         );
-      if (hasScope(user.scopes, 'nodes:list'))
+      if (hasScopeBase(user.scopes, 'nodes:details'))
         inv.push(
           `- Nodes: ${stats.nodes.total} total (${stats.nodes.online} online, ${stats.nodes.offline} offline, ${stats.nodes.pending} pending)`
         );
@@ -529,8 +588,12 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
 
     // CA names summary — only if user can read CAs
     try {
-      if (!hasScope(user.scopes, 'pki:ca:list:root')) throw new Error('skip');
-      const cas = await this.caService.getCATree();
+      if (!hasScope(user.scopes, 'pki:ca:view:root') && !hasScope(user.scopes, 'pki:ca:view:intermediate')) {
+        throw new Error('skip');
+      }
+      const cas = (await this.caService.getCATree()).filter((ca: { type: string }) =>
+        hasScope(user.scopes, caTypeViewScope(ca.type))
+      );
       if (cas.length > 0) {
         const caList = cas
           .map(
@@ -577,7 +640,7 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
     const executionUser = options.scopes ? { ...user, scopes: options.scopes } : user;
 
     // Permission check — tools with empty requiredScope are blocked (must be explicit)
-    if (!hasToolExecutionScope(executionUser.scopes, toolDef.requiredScope, args)) {
+    if (!hasToolExecutionScope(executionUser.scopes, toolName, toolDef.requiredScope, args)) {
       return {
         error: `PERMISSION_DENIED: You do not have the "${toolDef.requiredScope || 'unknown'}" scope required for this action. Tell the user they lack this permission and suggest contacting an administrator. Do NOT ask follow-up questions or retry.`,
         invalidateStores: [],
@@ -654,9 +717,16 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
     switch (toolName) {
       // ── PKI - CAs ──
       case 'list_cas':
-        return this.caService.getCATree();
-      case 'get_ca':
-        return this.caService.getCA(a.caId);
+        return (await this.caService.getCATree()).filter((ca: { type: string }) =>
+          hasScope(user.scopes, caTypeViewScope(ca.type))
+        );
+      case 'get_ca': {
+        const ca = await this.caService.getCA(a.caId);
+        if (!hasScope(user.scopes, caTypeViewScope(ca.type))) {
+          throw new Error(`PERMISSION_DENIED: Missing required scope ${caTypeViewScope(ca.type)}`);
+        }
+        return ca;
+      }
       case 'create_root_ca': {
         const rootCaInput = CreateRootCASchema.parse(args);
         return this.caService.createRootCA(rootCaInput, user.id);
@@ -665,21 +735,30 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
         const intCaInput = CreateIntermediateCASchema.parse(args);
         return this.caService.createIntermediateCA(a.parentCaId, intCaInput, user.id);
       }
-      case 'delete_ca':
+      case 'delete_ca': {
+        const ca = await this.caService.getCA(a.caId);
+        const requiredScope = caTypeRevokeScope(ca.type);
+        if (!hasScope(user.scopes, requiredScope)) {
+          throw new Error(`PERMISSION_DENIED: Missing required scope ${requiredScope}`);
+        }
         await this.caService.deleteCA(a.caId, user.id);
         return { success: true };
+      }
 
       // ── PKI - Certificates ──
       case 'list_certificates':
-        return this.certService.listCertificates({
-          caId: a.caId,
-          status: a.status,
-          search: a.search,
-          page: agentPage(a.page),
-          limit: agentPageLimit(a.limit),
-          sortBy: 'createdAt',
-          sortOrder: 'desc',
-        });
+        return this.certService.listCertificates(
+          {
+            caId: a.caId,
+            status: a.status,
+            search: a.search,
+            page: agentPage(a.page),
+            limit: agentPageLimit(a.limit),
+            sortBy: 'createdAt',
+            sortOrder: 'desc',
+          },
+          { allowedIds: allowedResourceIdsForScopes(user.scopes, 'pki:cert:view') }
+        );
       case 'get_certificate':
         return this.certService.getCertificate(a.certificateId);
       case 'issue_certificate': {
@@ -720,18 +799,21 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
 
       // ── Reverse Proxy ──
       case 'list_proxy_hosts': {
-        const result = await this.proxyService.listProxyHosts({
-          search: a.search,
-          page: agentPage(a.page),
-          limit: agentPageLimit(a.limit),
-        });
+        const result = await this.proxyService.listProxyHosts(
+          {
+            search: a.search,
+            page: agentPage(a.page),
+            limit: agentPageLimit(a.limit),
+          },
+          { allowedIds: allowedResourceIdsForScopes(user.scopes, 'proxy:view') }
+        );
         return {
           ...result,
           data: result.data.map((host: any) => compactProxyHostForAgent(host)),
         };
       }
       case 'get_proxy_host':
-        return this.proxyService.getProxyHost(a.proxyHostId);
+        return compactProxyHostForAgent(await this.proxyService.getProxyHost(a.proxyHostId));
       case 'create_proxy_host':
         return this.proxyService.createProxyHost(
           {
@@ -785,6 +867,11 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
       case 'create_proxy_folder':
         return this.folderService.createFolder({ name: a.name, parentId: a.parentId }, user.id);
       case 'move_hosts_to_folder':
+        for (const hostId of a.hostIds || []) {
+          if (!hasScope(user.scopes, `proxy:edit:${hostId}`)) {
+            throw new Error(`PERMISSION_DENIED: Missing required scope proxy:edit:${hostId}`);
+          }
+        }
         return this.folderService.moveHostsToFolder({ hostIds: a.hostIds, folderId: a.folderId }, user.id);
       case 'delete_proxy_folder':
         await this.folderService.deleteFolder(a.folderId, user.id);
@@ -792,7 +879,10 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
 
       // ── SSL Certificates ──
       case 'list_ssl_certificates':
-        return this.sslService.listCerts({ search: a.search, page: agentPage(a.page), limit: agentPageLimit(a.limit) });
+        return this.sslService.listCerts(
+          { search: a.search, page: agentPage(a.page), limit: agentPageLimit(a.limit) },
+          { allowedIds: allowedResourceIdsForScopes(user.scopes, 'ssl:cert:view') }
+        );
       case 'link_internal_cert':
         return this.sslService.linkInternalCert({ internalCertId: a.internalCertId, name: a.name }, user.id);
       case 'request_acme_cert':
@@ -821,11 +911,14 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
 
       // ── Access Lists ──
       case 'list_access_lists':
-        return this.accessListService.list({
-          search: a.search,
-          page: agentPage(a.page),
-          limit: agentPageLimit(a.limit),
-        });
+        return this.accessListService.list(
+          {
+            search: a.search,
+            page: agentPage(a.page),
+            limit: agentPageLimit(a.limit),
+          },
+          { allowedIds: allowedResourceIdsForScopes(user.scopes, 'acl:view') }
+        );
       case 'create_access_list':
         return this.accessListService.create(
           {
@@ -845,13 +938,16 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
 
       // ── Nodes ──
       case 'list_nodes': {
-        const result = await this.nodesService.list({
-          search: a.search,
-          type: a.type,
-          status: a.status,
-          page: agentPage(a.page),
-          limit: agentPageLimit(a.limit),
-        });
+        const result = await this.nodesService.list(
+          {
+            search: a.search,
+            type: a.type,
+            status: a.status,
+            page: agentPage(a.page),
+            limit: agentPageLimit(a.limit),
+          },
+          { allowedIds: allowedResourceIdsForScopes(user.scopes, 'nodes:details') }
+        );
         return {
           ...result,
           data: result.data.map((node) => ({
@@ -966,14 +1062,16 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
           limit: agentPageLimit(a.limit),
         });
       case 'get_dashboard_stats': {
-        const stats = await this.monitoringService.getDashboardStats();
+        const stats = await this.monitoringService.getDashboardStats(dashboardStatsOptionsForScopes(user.scopes));
         // Filter stats by user's read scopes — don't leak data they can't access
         const filtered: Record<string, unknown> = {};
-        if (hasScope(user.scopes, 'proxy:list')) filtered.proxyHosts = stats.proxyHosts;
-        if (hasScope(user.scopes, 'ssl:cert:list')) filtered.sslCertificates = stats.sslCertificates;
-        if (hasScope(user.scopes, 'pki:cert:list')) filtered.pkiCertificates = stats.pkiCertificates;
-        if (hasScope(user.scopes, 'pki:ca:list:root')) filtered.cas = stats.cas;
-        if (hasScope(user.scopes, 'nodes:list')) filtered.nodes = stats.nodes;
+        if (hasScopeBase(user.scopes, 'proxy:view')) filtered.proxyHosts = stats.proxyHosts;
+        if (hasScopeBase(user.scopes, 'ssl:cert:view')) filtered.sslCertificates = stats.sslCertificates;
+        if (hasScopeBase(user.scopes, 'pki:cert:view')) filtered.pkiCertificates = stats.pkiCertificates;
+        if (hasScope(user.scopes, 'pki:ca:view:root') || hasScope(user.scopes, 'pki:ca:view:intermediate')) {
+          filtered.cas = stats.cas;
+        }
+        if (hasScopeBase(user.scopes, 'nodes:details')) filtered.nodes = stats.nodes;
         if (Object.keys(filtered).length === 0) {
           return {
             message:
@@ -1166,16 +1264,24 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
       }
 
       // ── Databases ──
-      case 'list_databases':
-        return this.databaseService.list({
-          page: 1,
-          limit: 100,
-          search: a.search,
-          type: a.type,
-          healthStatus: a.healthStatus,
-        });
+      case 'list_databases': {
+        const allowedIds = directResourceIdsForScopes(user.scopes, 'databases:view');
+        if (allowedIds?.length === 0) {
+          throw new Error('PERMISSION_DENIED: Missing required scope databases:view');
+        }
+        return this.databaseService.list(
+          {
+            page: 1,
+            limit: 100,
+            search: a.search,
+            type: a.type,
+            healthStatus: a.healthStatus,
+          },
+          { allowedIds }
+        );
+      }
       case 'get_database_connection':
-        this.ensureDatabaseScope(user, 'databases:view', a.databaseId);
+        this.ensureDirectDatabaseScope(user, 'databases:view', a.databaseId);
         return this.databaseService.get(a.databaseId);
       case 'query_postgres_read':
         this.ensureDatabaseQueryScopes(user, 'databases:query:read', a.databaseId);

@@ -119,7 +119,7 @@ function matchesDeploymentSearch(deployment: Record<string, any>, search: string
 
 export function registerDockerDeploymentRoutes(router: OpenAPIHono<AppEnv>) {
   router.openapi(
-    { ...listDeploymentsRoute, middleware: requireScopeForResource('docker:containers:list', 'nodeId') },
+    { ...listDeploymentsRoute, middleware: requireScopeForResource('docker:containers:view', 'nodeId') },
     async (c) => {
       const service = container.resolve(DockerDeploymentService);
       const data = await service.listSummary(c.req.param('nodeId')!);

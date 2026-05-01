@@ -42,7 +42,7 @@ export function Settings() {
   const canRunHousekeeping = hasScope("housekeeping:run");
   const canConfigureHousekeeping = hasScope("housekeeping:configure");
   const canConfigAI = hasScope("feat:ai:configure");
-  const canManageRegistries = hasScope("docker:registries:list");
+  const canManageRegistries = hasScope("docker:registries:view");
   const canViewSystemCertificates = hasScope("admin:details:certificates");
   const canViewLicense = hasScope("license:view");
   const canManageLicense = hasScope("license:manage");
@@ -63,7 +63,7 @@ export function Settings() {
       .then((r) => setDatabasesList(r.data ?? []))
       .catch(() => {});
     if (
-      scopeMatches(userScopes ?? [], "logs:schemas:list") ||
+      scopeMatches(userScopes ?? [], "logs:schemas:view") ||
       scopeMatches(userScopes ?? [], "logs:manage") ||
       (deriveAllowedResourceIdsByScope(userScopes ?? [])["logs:schemas:view"]?.length ?? 0) > 0
     ) {

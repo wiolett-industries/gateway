@@ -79,8 +79,8 @@ loggingRoutes.openapi(
     const service = container.resolve(LoggingEnvironmentService);
     const scopes = c.get('effectiveScopes') ?? [];
     const hasGlobalAccess =
-      TokensService.hasScope(scopes, 'logs:environments:list') || TokensService.hasScope(scopes, 'logs:manage');
-    const allowedIds = hasGlobalAccess ? undefined : [...resourceScopedIds(scopes, 'logs:environments:list')];
+      TokensService.hasScope(scopes, 'logs:environments:view') || TokensService.hasScope(scopes, 'logs:manage');
+    const allowedIds = hasGlobalAccess ? undefined : [...resourceScopedIds(scopes, 'logs:environments:view')];
     const data = await service.list({ search: c.req.query('search'), allowedIds });
     return c.json({ data });
   }
@@ -131,7 +131,7 @@ loggingRoutes.openapi({ ...listLoggingSchemasRoute, middleware: requireLoggingSc
   const service = container.resolve(LoggingSchemaService);
   const scopes = c.get('effectiveScopes') ?? [];
   const data = await service.list({ search: c.req.query('search') });
-  if (TokensService.hasScope(scopes, 'logs:schemas:list') || TokensService.hasScope(scopes, 'logs:manage')) {
+  if (TokensService.hasScope(scopes, 'logs:schemas:view') || TokensService.hasScope(scopes, 'logs:manage')) {
     return c.json({ data });
   }
   const visibleIds = resourceScopedIds(scopes, 'logs:schemas:view');
@@ -180,7 +180,7 @@ loggingRoutes.openapi(
 );
 
 loggingRoutes.openapi(
-  { ...listLoggingTokensRoute, middleware: requireLoggingResourceScope('logs:tokens:list') },
+  { ...listLoggingTokensRoute, middleware: requireLoggingResourceScope('logs:tokens:view') },
   async (c) => {
     const service = container.resolve(LoggingTokenService);
     const data = await service.list(c.req.param('id')!);
@@ -281,11 +281,11 @@ function requireLoggingSchemaListScope() {
   return async (c: any, next: () => Promise<void>) => {
     const scopes = c.get('effectiveScopes') ?? [];
     if (
-      !TokensService.hasScope(scopes, 'logs:schemas:list') &&
+      !TokensService.hasScope(scopes, 'logs:schemas:view') &&
       !TokensService.hasScope(scopes, 'logs:manage') &&
       resourceScopedIds(scopes, 'logs:schemas:view').size === 0
     ) {
-      throw new AppError(403, 'FORBIDDEN', 'Missing required scope: logs:schemas:list');
+      throw new AppError(403, 'FORBIDDEN', 'Missing required scope: logs:schemas:view');
     }
     await next();
   };
@@ -295,11 +295,11 @@ function requireLoggingEnvironmentListScope() {
   return async (c: any, next: () => Promise<void>) => {
     const scopes = c.get('effectiveScopes') ?? [];
     if (
-      !TokensService.hasScope(scopes, 'logs:environments:list') &&
+      !TokensService.hasScope(scopes, 'logs:environments:view') &&
       !TokensService.hasScope(scopes, 'logs:manage') &&
-      resourceScopedIds(scopes, 'logs:environments:list').size === 0
+      resourceScopedIds(scopes, 'logs:environments:view').size === 0
     ) {
-      throw new AppError(403, 'FORBIDDEN', 'Missing required scope: logs:environments:list');
+      throw new AppError(403, 'FORBIDDEN', 'Missing required scope: logs:environments:view');
     }
     await next();
   };

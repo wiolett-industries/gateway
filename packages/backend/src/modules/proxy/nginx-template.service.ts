@@ -1,4 +1,4 @@
-import { count, eq } from 'drizzle-orm';
+import { count, eq, inArray } from 'drizzle-orm';
 import Handlebars from 'handlebars';
 import type { DrizzleClient } from '@/db/client.js';
 import { nginxTemplates } from '@/db/schema/nginx-templates.js';
@@ -378,8 +378,10 @@ export class NginxTemplateService {
   // CRUD
   // -----------------------------------------------------------------------
 
-  async listTemplates() {
+  async listTemplates(options?: { allowedIds?: string[] }) {
+    if (options?.allowedIds?.length === 0) return [];
     return this.db.query.nginxTemplates.findMany({
+      where: options?.allowedIds ? inArray(nginxTemplates.id, options.allowedIds) : undefined,
       orderBy: (t, { asc }) => [asc(t.name)],
     });
   }

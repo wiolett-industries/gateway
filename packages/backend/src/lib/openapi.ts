@@ -251,7 +251,7 @@ const tagExamples: Record<string, unknown> = {
     email: 'admin@example.com',
     name: 'Admin User',
     groupName: 'Administrators',
-    scopes: ['nodes:list', 'proxy:list'],
+    scopes: ['nodes:details', 'proxy:view'],
   },
   'Certificate Authorities': {
     id: '550e8400-e29b-41d4-a716-446655440000',
@@ -295,7 +295,7 @@ const tagExamples: Record<string, unknown> = {
     id: '550e8400-e29b-41d4-a716-446655440000',
     name: 'Automation token',
     tokenPrefix: 'gw_abc123',
-    scopes: ['nodes:list'],
+    scopes: ['nodes:details'],
   },
   Admin: {
     id: '550e8400-e29b-41d4-a716-446655440000',

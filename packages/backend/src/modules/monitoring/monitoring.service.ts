@@ -1,7 +1,8 @@
-import { and, count, eq, gt, lt, sql } from 'drizzle-orm';
+import { and, count, eq, gt, inArray, lt, sql } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import { certificateAuthorities, certificates, nodes, proxyHosts, sslCertificates } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
+import { buildWhere } from '@/lib/utils.js';
 
 const logger = createChildLogger('MonitoringService');
 
@@ -46,20 +47,68 @@ export interface HealthOverviewEntry {
   lastHealthCheckAt: Date | null;
 }
 
+export interface DashboardStatsOptions {
+  showSystem?: boolean;
+  allowedCaTypes?: Array<'root' | 'intermediate'>;
+  allowedProxyHostIds?: string[];
+  allowedSslCertificateIds?: string[];
+  allowedPkiCertificateIds?: string[];
+  allowedNodeIds?: string[];
+}
+
 export class MonitoringService {
   constructor(private readonly db: DrizzleClient) {}
 
-  async getDashboardStats(showSystem = false): Promise<DashboardStats> {
+  async getDashboardStats(options: DashboardStatsOptions = {}): Promise<DashboardStats> {
     logger.debug('Fetching dashboard stats');
 
     const now = new Date();
     const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
-    const visibleSsl = showSystem ? undefined : eq(sslCertificates.isSystem, false);
-    const visiblePki = showSystem
-      ? undefined
-      : sql`${certificates.caId} NOT IN (SELECT id FROM ${certificateAuthorities} WHERE is_system = true)`;
-    const visibleCa = showSystem ? undefined : eq(certificateAuthorities.isSystem, false);
+    const scopedProxy =
+      options.allowedProxyHostIds === undefined
+        ? undefined
+        : options.allowedProxyHostIds.length === 0
+          ? sql`false`
+          : inArray(proxyHosts.id, options.allowedProxyHostIds);
+    const scopedSsl =
+      options.allowedSslCertificateIds === undefined
+        ? undefined
+        : options.allowedSslCertificateIds.length === 0
+          ? sql`false`
+          : inArray(sslCertificates.id, options.allowedSslCertificateIds);
+    const scopedPki =
+      options.allowedPkiCertificateIds === undefined
+        ? undefined
+        : options.allowedPkiCertificateIds.length === 0
+          ? sql`false`
+          : inArray(certificates.id, options.allowedPkiCertificateIds);
+    const scopedNodes =
+      options.allowedNodeIds === undefined
+        ? undefined
+        : options.allowedNodeIds.length === 0
+          ? sql`false`
+          : inArray(nodes.id, options.allowedNodeIds);
+
+    const proxyWhere = buildWhere([scopedProxy]);
+    const visibleSsl = buildWhere([options.showSystem ? undefined : eq(sslCertificates.isSystem, false), scopedSsl]);
+    const visiblePki = buildWhere([
+      options.showSystem
+        ? undefined
+        : sql`${certificates.caId} NOT IN (SELECT id FROM ${certificateAuthorities} WHERE is_system = true)`,
+      scopedPki,
+    ]);
+    const scopedCaTypes =
+      options.allowedCaTypes === undefined
+        ? undefined
+        : options.allowedCaTypes.length === 0
+          ? sql`false`
+          : inArray(certificateAuthorities.type, options.allowedCaTypes);
+    const visibleCa = buildWhere([
+      options.showSystem ? undefined : eq(certificateAuthorities.isSystem, false),
+      scopedCaTypes,
+    ]);
+    const nodeWhere = buildWhere([scopedNodes]);
 
     const [
       // Proxy host counts
@@ -92,11 +141,31 @@ export class MonitoringService {
       nodePending,
     ] = await Promise.all([
       // Proxy hosts
-      this.db.select({ value: count() }).from(proxyHosts),
-      this.db.select({ value: count() }).from(proxyHosts).where(eq(proxyHosts.enabled, true)),
-      this.db.select({ value: count() }).from(proxyHosts).where(eq(proxyHosts.healthStatus, 'online')),
-      this.db.select({ value: count() }).from(proxyHosts).where(eq(proxyHosts.healthStatus, 'offline')),
-      this.db.select({ value: count() }).from(proxyHosts).where(eq(proxyHosts.healthStatus, 'degraded')),
+      this.db.select({ value: count() }).from(proxyHosts).where(proxyWhere),
+      this.db
+        .select({ value: count() })
+        .from(proxyHosts)
+        .where(proxyWhere ? and(proxyWhere, eq(proxyHosts.enabled, true)) : eq(proxyHosts.enabled, true)),
+      this.db
+        .select({ value: count() })
+        .from(proxyHosts)
+        .where(
+          proxyWhere ? and(proxyWhere, eq(proxyHosts.healthStatus, 'online')) : eq(proxyHosts.healthStatus, 'online')
+        ),
+      this.db
+        .select({ value: count() })
+        .from(proxyHosts)
+        .where(
+          proxyWhere ? and(proxyWhere, eq(proxyHosts.healthStatus, 'offline')) : eq(proxyHosts.healthStatus, 'offline')
+        ),
+      this.db
+        .select({ value: count() })
+        .from(proxyHosts)
+        .where(
+          proxyWhere
+            ? and(proxyWhere, eq(proxyHosts.healthStatus, 'degraded'))
+            : eq(proxyHosts.healthStatus, 'degraded')
+        ),
 
       // SSL certificates
       this.db.select({ value: count() }).from(sslCertificates).where(visibleSsl),
@@ -157,10 +226,19 @@ export class MonitoringService {
         ),
 
       // Nodes
-      this.db.select({ value: count() }).from(nodes),
-      this.db.select({ value: count() }).from(nodes).where(eq(nodes.status, 'online')),
-      this.db.select({ value: count() }).from(nodes).where(eq(nodes.status, 'offline')),
-      this.db.select({ value: count() }).from(nodes).where(eq(nodes.status, 'pending')),
+      this.db.select({ value: count() }).from(nodes).where(nodeWhere),
+      this.db
+        .select({ value: count() })
+        .from(nodes)
+        .where(nodeWhere ? and(nodeWhere, eq(nodes.status, 'online')) : eq(nodes.status, 'online')),
+      this.db
+        .select({ value: count() })
+        .from(nodes)
+        .where(nodeWhere ? and(nodeWhere, eq(nodes.status, 'offline')) : eq(nodes.status, 'offline')),
+      this.db
+        .select({ value: count() })
+        .from(nodes)
+        .where(nodeWhere ? and(nodeWhere, eq(nodes.status, 'pending')) : eq(nodes.status, 'pending')),
     ]);
 
     return {
@@ -196,8 +274,10 @@ export class MonitoringService {
     };
   }
 
-  async getHealthOverview(): Promise<HealthOverviewEntry[]> {
+  async getHealthOverview(options?: { allowedHostIds?: string[] }): Promise<HealthOverviewEntry[]> {
     logger.debug('Fetching health overview');
+
+    if (options?.allowedHostIds?.length === 0) return [];
 
     const hosts = await this.db
       .select({
@@ -209,6 +289,7 @@ export class MonitoringService {
         lastHealthCheckAt: proxyHosts.lastHealthCheckAt,
       })
       .from(proxyHosts)
+      .where(options?.allowedHostIds ? inArray(proxyHosts.id, options.allowedHostIds) : undefined)
       .orderBy(
         // Order: offline first, then degraded, then online, then unknown
         sql`CASE ${proxyHosts.healthStatus}

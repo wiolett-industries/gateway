@@ -19,7 +19,7 @@ const USER: User = {
   avatarUrl: null,
   groupId: '22222222-2222-4222-8222-222222222222',
   groupName: 'admin',
-  scopes: ['nodes:list', 'mcp:use'],
+  scopes: ['nodes:details', 'mcp:use'],
   isBlocked: false,
 };
 
@@ -60,7 +60,7 @@ function registerOAuthService(overrides: Partial<OAuthService> = {}) {
       access_token: 'gwo_access',
       token_type: 'Bearer',
       expires_in: 900,
-      scope: 'nodes:list docker:containers:view',
+      scope: 'nodes:details docker:containers:view',
       refresh_token: 'gwr_refresh',
     }),
     revokeToken: vi.fn().mockResolvedValue(undefined),
@@ -156,7 +156,7 @@ describe('OAuth metadata routes', () => {
     expect(response.status).toBe(200);
     expect(body.resource).toBe('https://gateway.example.com/api');
     expect(body.authorization_servers).toEqual(['https://gateway.example.com']);
-    expect(body.scopes_supported).toContain('nodes:list');
+    expect(body.scopes_supported).toContain('nodes:details');
     expect(body.scopes_supported).not.toContain('mcp:use');
     expect(body.scopes_supported).not.toContain('admin:system');
     expect(body.scopes_supported).not.toContain('admin:users');
@@ -193,7 +193,7 @@ describe('OAuth authorization route', () => {
     registerSession();
     const createConsentRequest = vi.fn().mockResolvedValue({ id: 'request-1' });
     registerOAuthService({ createConsentRequest });
-    const mcpAuthorizePath = `${authorizePath}&scope=nodes%3Alist`.replace('/authorize?', '/authorize/api/mcp?');
+    const mcpAuthorizePath = `${authorizePath}&scope=nodes%3Adetails`.replace('/authorize?', '/authorize/api/mcp?');
 
     const response = await createApp().request(mcpAuthorizePath, {
       headers: { Cookie: 'session_id=session-1' },
@@ -293,7 +293,7 @@ describe('OAuth client and token routes', () => {
     expect(response.status).toBe(200);
     expect(body.access_token).toBe('gwo_access');
     expect(body.refresh_token).toBe('gwr_refresh');
-    expect(body.scope).toBe('nodes:list docker:containers:view');
+    expect(body.scope).toBe('nodes:details docker:containers:view');
   });
 
   it('revokes tokens without exposing whether the token existed', async () => {

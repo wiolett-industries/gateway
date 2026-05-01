@@ -90,16 +90,16 @@ const navigationGroups: NavGroup[] = [
   {
     label: "Reverse Proxy",
     items: [
-      { name: "Proxy Hosts", href: "/proxy-hosts", icon: Globe, scope: "proxy:list" },
-      { name: "Domains", href: "/domains", icon: Globe2, scope: "proxy:list" },
-      { name: "SSL Certificates", href: "/ssl-certificates", icon: Lock, scope: "ssl:cert:list" },
+      { name: "Proxy Hosts", href: "/proxy-hosts", icon: Globe, scope: "proxy:view" },
+      { name: "Domains", href: "/domains", icon: Globe2, scope: "domains:view" },
+      { name: "SSL Certificates", href: "/ssl-certificates", icon: Lock, scope: "ssl:cert:view" },
     ],
   },
   {
     label: "PKI",
     items: [
-      { name: "Authorities", href: "/cas", icon: ShieldCheck, scope: "pki:ca:list:root" },
-      { name: "Certificates", href: "/certificates", icon: FileText, scope: "pki:cert:list" },
+      { name: "Authorities", href: "/cas", icon: ShieldCheck, scope: "pki:ca:view:root" },
+      { name: "Certificates", href: "/certificates", icon: FileText, scope: "pki:cert:view" },
     ],
   },
   {
@@ -109,14 +109,14 @@ const navigationGroups: NavGroup[] = [
         name: "Docker",
         href: "/docker",
         icon: Box,
-        scope: "docker:containers:list",
+        scope: "docker:containers:view",
         matchTabs: true,
       },
       {
         name: "Databases",
         href: "/databases",
         icon: Database,
-        scope: "databases:list",
+        scope: "databases:view",
       },
       {
         name: "Logging",
@@ -126,14 +126,14 @@ const navigationGroups: NavGroup[] = [
         matchTabs: true,
         requiresLoggingEnabled: true,
       },
-      { name: "Nodes", href: "/nodes", icon: Server, scope: "nodes:list" },
+      { name: "Nodes", href: "/nodes", icon: Server, scope: "nodes:details" },
     ],
   },
   {
     label: "Management",
     items: [
       { name: "Templates", href: "/templates", icon: Award, matchTabs: true },
-      { name: "Access Lists", href: "/access-lists", icon: ShieldAlert, scope: "acl:list" },
+      { name: "Access Lists", href: "/access-lists", icon: ShieldAlert, scope: "acl:view" },
       {
         name: "Notifications",
         href: "/notifications",
@@ -348,44 +348,46 @@ export function SidebarContent({
 
   const dockerNodes = useDockerStore((s) => s.dockerNodes);
   const hasDockerNodes = dockerNodes.length > 0;
+  const canAccessProxyHosts = hasScopedAccess("proxy:view") || hasScope("proxy:folders:manage");
   const canAccessDocker =
-    hasScopedAccess("docker:containers:list") ||
-    hasScopedAccess("docker:images:list") ||
-    hasScopedAccess("docker:volumes:list") ||
-    hasScopedAccess("docker:networks:list") ||
-    hasScopedAccess("docker:tasks");
+    hasScopedAccess("docker:containers:view") ||
+    hasScopedAccess("docker:images:view") ||
+    hasScopedAccess("docker:volumes:view") ||
+    hasScopedAccess("docker:networks:view") ||
+    hasScopedAccess("docker:tasks") ||
+    hasScope("docker:containers:folders:manage");
   const canAccessNotifications = hasAnyScope(
-    "notifications:alerts:list",
+    "notifications:alerts:view",
     "notifications:alerts:view",
     "notifications:alerts:create",
     "notifications:alerts:edit",
     "notifications:alerts:delete",
-    "notifications:webhooks:list",
+    "notifications:webhooks:view",
     "notifications:webhooks:view",
     "notifications:webhooks:create",
     "notifications:webhooks:edit",
     "notifications:webhooks:delete",
-    "notifications:deliveries:list",
+    "notifications:deliveries:view",
     "notifications:deliveries:view",
     "notifications:view",
     "notifications:manage"
   );
-  const canAccessDatabases = hasScopedAccess("databases:list");
+  const canAccessDatabases = hasScopedAccess("databases:view");
   const hasResourceScopedSchemaView = user
     ? (deriveAllowedResourceIdsByScope(user.scopes)["logs:schemas:view"]?.length ?? 0) > 0
     : false;
   const canAccessLogging =
     loggingEnabled &&
-    (hasScopedAccess("logs:environments:list") ||
+    (hasScopedAccess("logs:environments:view") ||
       hasAnyScope(
         "logs:environments:view",
-        "logs:schemas:list",
+        "logs:schemas:view",
         "logs:schemas:create",
         "logs:read",
         "logs:manage"
       ) ||
       hasResourceScopedSchemaView);
-  const canAccessAuthorities = hasAnyScope("pki:ca:list:root", "pki:ca:list:intermediate");
+  const canAccessAuthorities = hasAnyScope("pki:ca:view:root", "pki:ca:view:intermediate");
 
   useEffect(() => {
     api
@@ -397,11 +399,14 @@ export function SidebarContent({
   const effectiveGroups = navigationGroups
     .map((group) => {
       // Hide entire Reverse Proxy group when no nginx nodes
-      if (group.label === "Reverse Proxy" && !hasNginxNodes) return { ...group, items: [] };
+      if (group.label === "Reverse Proxy" && !hasNginxNodes && !canAccessProxyHosts)
+        return { ...group, items: [] };
       return {
         ...group,
         items: group.items.filter((item) => {
-          if (item.href === "/docker") {
+          if (item.href === "/proxy-hosts") {
+            if (!canAccessProxyHosts) return false;
+          } else if (item.href === "/docker") {
             if (!canAccessDocker) return false;
           } else if (item.href === "/databases") {
             if (!canAccessDatabases) return false;
@@ -416,21 +421,22 @@ export function SidebarContent({
           } else if (item.href === "/administration") {
             if (!hasAnyScope("admin:audit", "admin:users", "admin:groups")) return false;
           } else if (item.scope) {
-            const isResourceScoped =
-              item.scope.startsWith("docker:") ||
-              item.scope.startsWith("databases:") ||
-              item.scope.startsWith("logs:");
-            if (isResourceScoped ? !hasScopedAccess(item.scope) : !hasScope(item.scope)) {
+            if (!hasScopedAccess(item.scope)) {
               return false;
             }
           }
           // Hide Docker when no docker nodes exist
-          if (item.href === "/docker" && !hasDockerNodes) return false;
+          if (
+            item.href === "/docker" &&
+            !hasDockerNodes &&
+            !hasScope("docker:containers:folders:manage")
+          )
+            return false;
           // Templates: need at least one template scope
           if (
             item.href === "/templates" &&
-            !hasScope("pki:templates:list") &&
-            !hasScope("proxy:list")
+            !hasScopedAccess("pki:templates:view") &&
+            !hasScopedAccess("proxy:templates:view")
           )
             return false;
           return true;

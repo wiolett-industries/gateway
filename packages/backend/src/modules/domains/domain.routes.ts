@@ -1,6 +1,8 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
 import { openApiValidationHook } from '@/lib/openapi.js';
+import { hasScope } from '@/lib/permissions.js';
+import { AppError } from '@/middleware/error-handler.js';
 import { authMiddleware, requireScope } from '@/modules/auth/auth.middleware.js';
 import { SSLService } from '@/modules/ssl/ssl.service.js';
 import type { AppEnv } from '@/types.js';
@@ -22,7 +24,7 @@ export const domainRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValida
 domainRoutes.use('*', authMiddleware);
 
 // List domains (paginated)
-domainRoutes.openapi({ ...listDomainsRoute, middleware: requireScope('proxy:list') }, async (c) => {
+domainRoutes.openapi({ ...listDomainsRoute, middleware: requireScope('domains:view') }, async (c) => {
   const domainsService = container.resolve(DomainsService);
   const query = DomainListQuerySchema.parse({
     page: c.req.query('page'),
@@ -35,7 +37,7 @@ domainRoutes.openapi({ ...listDomainsRoute, middleware: requireScope('proxy:list
 });
 
 // Autocomplete search (must be before /:id)
-domainRoutes.openapi({ ...searchDomainsRoute, middleware: requireScope('proxy:list') }, async (c) => {
+domainRoutes.openapi({ ...searchDomainsRoute, middleware: requireScope('domains:view') }, async (c) => {
   const domainsService = container.resolve(DomainsService);
   const q = c.req.query('q') || '';
   if (q.length < 1) return c.json({ data: [] });
@@ -44,7 +46,7 @@ domainRoutes.openapi({ ...searchDomainsRoute, middleware: requireScope('proxy:li
 });
 
 // Get domain detail with usage
-domainRoutes.openapi({ ...getDomainRoute, middleware: requireScope('proxy:list') }, async (c) => {
+domainRoutes.openapi({ ...getDomainRoute, middleware: requireScope('domains:view') }, async (c) => {
   const domainsService = container.resolve(DomainsService);
   try {
     const domain = await domainsService.getDomain(c.req.param('id')!);
@@ -55,7 +57,7 @@ domainRoutes.openapi({ ...getDomainRoute, middleware: requireScope('proxy:list')
 });
 
 // Create domain
-domainRoutes.openapi({ ...createDomainRoute, middleware: requireScope('proxy:edit') }, async (c) => {
+domainRoutes.openapi({ ...createDomainRoute, middleware: requireScope('domains:create') }, async (c) => {
   const user = c.get('user')!;
   const body = await c.req.json();
   const input = CreateDomainSchema.parse(body);
@@ -73,7 +75,7 @@ domainRoutes.openapi({ ...createDomainRoute, middleware: requireScope('proxy:edi
 });
 
 // Update domain
-domainRoutes.openapi({ ...updateDomainRoute, middleware: requireScope('proxy:edit') }, async (c) => {
+domainRoutes.openapi({ ...updateDomainRoute, middleware: requireScope('domains:edit') }, async (c) => {
   const user = c.get('user')!;
   const body = await c.req.json();
   const input = UpdateDomainSchema.parse(body);
@@ -87,7 +89,7 @@ domainRoutes.openapi({ ...updateDomainRoute, middleware: requireScope('proxy:edi
 });
 
 // Delete domain
-domainRoutes.openapi({ ...deleteDomainRoute, middleware: requireScope('proxy:delete') }, async (c) => {
+domainRoutes.openapi({ ...deleteDomainRoute, middleware: requireScope('domains:delete') }, async (c) => {
   const user = c.get('user')!;
   const domainsService = container.resolve(DomainsService);
   try {
@@ -99,7 +101,7 @@ domainRoutes.openapi({ ...deleteDomainRoute, middleware: requireScope('proxy:del
 });
 
 // Manual DNS check
-domainRoutes.openapi({ ...checkDomainDnsRoute, middleware: requireScope('proxy:edit') }, async (c) => {
+domainRoutes.openapi({ ...checkDomainDnsRoute, middleware: requireScope('domains:edit') }, async (c) => {
   const domainsService = container.resolve(DomainsService);
   try {
     const domain = await domainsService.checkDns(c.req.param('id')!);
@@ -110,10 +112,13 @@ domainRoutes.openapi({ ...checkDomainDnsRoute, middleware: requireScope('proxy:e
 });
 
 // Issue ACME cert for domain
-domainRoutes.openapi({ ...issueDomainCertificateRoute, middleware: requireScope('proxy:edit') }, async (c) => {
+domainRoutes.openapi({ ...issueDomainCertificateRoute, middleware: requireScope('domains:edit') }, async (c) => {
   const user = c.get('user')!;
   const domainsService = container.resolve(DomainsService);
   const sslService = container.resolve(SSLService);
+  if (!hasScope(c.get('effectiveScopes') || [], 'ssl:cert:issue')) {
+    throw new AppError(403, 'FORBIDDEN', 'Missing required scope: ssl:cert:issue');
+  }
 
   let domainRow: Awaited<ReturnType<DomainsService['getDomain']>> | undefined;
   try {

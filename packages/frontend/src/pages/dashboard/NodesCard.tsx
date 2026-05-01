@@ -11,7 +11,7 @@ interface NodesCardProps {
 }
 
 export function NodesCard({ nodesList, hasScope, loading = false }: NodesCardProps) {
-  if (!hasScope("nodes:list")) return null;
+  if (!hasScope("nodes:details")) return null;
 
   return (
     <div className="border border-border bg-card">

@@ -280,54 +280,54 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       icon: Globe,
       shortcut: "⌘2",
       action: () => navigate("/proxy-hosts"),
-      scope: "proxy:list",
+      scope: "proxy:view",
     },
     {
       label: "Domains",
       icon: Globe2,
       shortcut: "⌘3",
       action: () => navigate("/domains"),
-      scope: "proxy:list",
+      scope: "domains:view",
     },
     {
       label: "SSL Certificates",
       icon: Lock,
       shortcut: "⌘4",
       action: () => navigate("/ssl-certificates"),
-      scope: "ssl:cert:list",
+      scope: "ssl:cert:view",
     },
     {
       label: "Authorities",
       icon: ShieldCheck,
       shortcut: "⌘5",
       action: () => navigate("/cas"),
-      scope: "pki:ca:list:root",
+      scope: "pki:ca:view:root",
     },
     {
       label: "Certificates",
       icon: FileText,
       shortcut: "⌘6",
       action: () => navigate("/certificates"),
-      scope: "pki:cert:list",
+      scope: "pki:cert:view",
     },
     {
       label: "Templates",
       icon: Award,
       shortcut: "⌘7",
       action: () => navigate("/templates/pki"),
-      scope: "pki:templates:list",
+      scope: "pki:templates:view",
     },
     {
       label: "Docker",
       icon: Box,
       action: () => navigate("/docker"),
-      scope: "docker:containers:list",
+      scope: "docker:containers:view",
     },
     {
       label: "Databases",
       icon: Database,
       action: () => navigate("/databases"),
-      scope: "databases:list",
+      scope: "databases:view",
     },
     {
       label: "Logging",
@@ -340,14 +340,14 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       icon: Server,
       shortcut: "⌘9",
       action: () => navigate("/nodes"),
-      scope: "nodes:list",
+      scope: "nodes:details",
     },
     {
       label: "Access Lists",
       icon: ShieldAlert,
       shortcut: "⌘0",
       action: () => navigate("/access-lists"),
-      scope: "acl:list",
+      scope: "acl:view",
     },
     {
       label: "Administration",
@@ -363,7 +363,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     }
     if (!i.scope) return true;
     if (i.label === "Authorities") {
-      return hasAnyScope("pki:ca:list:root", "pki:ca:list:intermediate");
+      return hasAnyScope("pki:ca:view:root", "pki:ca:view:intermediate");
     }
     if (i.label === "Logging") {
       const hasResourceScopedSchemaView = user
@@ -372,9 +372,9 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       return (
         loggingEnabled &&
         (hasAnyScope(
-          "logs:environments:list",
           "logs:environments:view",
-          "logs:schemas:list",
+          "logs:environments:view",
+          "logs:schemas:view",
           "logs:schemas:create",
           "logs:read",
           "logs:manage"
@@ -382,10 +382,23 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
           hasResourceScopedSchemaView)
       );
     }
-    if (i.scope.startsWith("docker:") || i.scope.startsWith("databases:")) {
-      return hasScopedAccess(i.scope);
+    if (i.label === "Templates") {
+      return hasScopedAccess("pki:templates:view") || hasScopedAccess("proxy:templates:view");
     }
-    return hasScope(i.scope);
+    if (i.label === "Proxy Hosts") {
+      return hasScopedAccess("proxy:view") || hasScope("proxy:folders:manage");
+    }
+    if (i.label === "Docker") {
+      return (
+        hasScopedAccess("docker:containers:view") ||
+        hasScopedAccess("docker:images:view") ||
+        hasScopedAccess("docker:volumes:view") ||
+        hasScopedAccess("docker:networks:view") ||
+        hasScope("docker:tasks") ||
+        hasScope("docker:containers:folders:manage")
+      );
+    }
+    return hasScopedAccess(i.scope);
   });
 
   const allActionItems: NavEntry[] = [
@@ -437,21 +450,21 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 
   // Filtered entities for search mode
   const filteredContainers =
-    searchQuery && hasScopedAccess("docker:containers:list")
+    searchQuery && hasScopedAccess("docker:containers:view")
       ? containers.filter((c) => fuzzyMatch(`${c.name} ${c.image}`, searchQuery) > 0).slice(0, 5)
       : [];
   const filteredProxies =
-    searchQuery && hasScope("proxy:list")
+    searchQuery && hasScopedAccess("proxy:view")
       ? proxyHosts.filter((p) => fuzzyMatch(p.domainNames.join(" "), searchQuery) > 0).slice(0, 5)
       : [];
   const filteredNodes =
-    searchQuery && hasScope("nodes:list")
+    searchQuery && hasScopedAccess("nodes:details")
       ? nodes
           .filter((n) => fuzzyMatch(`${n.displayName || ""} ${n.hostname}`, searchQuery) > 0)
           .slice(0, 5)
       : [];
   const filteredCAs =
-    searchQuery && hasAnyScope("pki:ca:list:root", "pki:ca:list:intermediate")
+    searchQuery && hasAnyScope("pki:ca:view:root", "pki:ca:view:intermediate")
       ? (cas || []).filter((ca) => fuzzyMatch(ca.commonName, searchQuery) > 0).slice(0, 5)
       : [];
 
@@ -621,7 +634,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 
             {/* CAs when no search */}
             {!searchQuery &&
-              hasAnyScope("pki:ca:list:root", "pki:ca:list:intermediate") &&
+              hasAnyScope("pki:ca:view:root", "pki:ca:view:intermediate") &&
               (cas || []).length > 0 && (
                 <>
                   <CommandGroup heading="Certificate Authorities">

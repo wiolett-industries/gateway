@@ -60,8 +60,32 @@ export class DockerFolderService {
     this.eventBus = bus;
   }
 
-  private emitLayoutChanged(action: string, folderId?: string | null) {
-    this.eventBus?.publish('docker.folder.changed', { action, folderId });
+  private async getAffectedNodeIdsForFolders(folderIds: Array<string | null | undefined>): Promise<string[]> {
+    const ids = [...new Set(folderIds.filter((id): id is string => !!id))];
+    if (ids.length === 0) return [];
+
+    const allFolders = await this.db.select().from(dockerContainerFolders);
+    const affectedFolderIds = new Set(ids);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const folder of allFolders) {
+        if (folder.parentId && affectedFolderIds.has(folder.parentId) && !affectedFolderIds.has(folder.id)) {
+          affectedFolderIds.add(folder.id);
+          changed = true;
+        }
+      }
+    }
+
+    const assignments = await this.db
+      .select({ nodeId: dockerContainerFolderAssignments.nodeId })
+      .from(dockerContainerFolderAssignments)
+      .where(inArray(dockerContainerFolderAssignments.folderId, [...affectedFolderIds]));
+    return [...new Set(assignments.map((row) => row.nodeId))];
+  }
+
+  private emitLayoutChanged(action: string, folderId?: string | null, nodeIds: string[] = []) {
+    this.eventBus?.publish('docker.folder.changed', { action, folderId, nodeIds });
   }
 
   private async getNextSortOrder(parentId: string | null): Promise<number> {
@@ -142,7 +166,7 @@ export class DockerFolderService {
       details: { oldName: folder.name, newName: input.name },
     });
 
-    this.emitLayoutChanged('folder_updated', id);
+    this.emitLayoutChanged('folder_updated', id, await this.getAffectedNodeIdsForFolders([id]));
     return updated;
   }
 
@@ -150,6 +174,7 @@ export class DockerFolderService {
     const folder = await this.getFolderOrThrow(id);
     this.assertFolderMutable(folder);
 
+    const nodeIds = await this.getAffectedNodeIdsForFolders([id]);
     await this.db.delete(dockerContainerFolders).where(eq(dockerContainerFolders.id, id));
 
     await this.auditService.log({
@@ -160,7 +185,7 @@ export class DockerFolderService {
       details: { name: folder.name },
     });
 
-    this.emitLayoutChanged('folder_deleted', id);
+    this.emitLayoutChanged('folder_deleted', id, nodeIds);
   }
 
   async reorderFolders(input: ReorderDockerFoldersInput, userId: string) {
@@ -197,14 +222,34 @@ export class DockerFolderService {
       details: { items: input.items },
     });
 
-    this.emitLayoutChanged('folders_reordered');
+    this.emitLayoutChanged(
+      'folders_reordered',
+      null,
+      await this.getAffectedNodeIdsForFolders(input.items.map((item) => item.id))
+    );
   }
 
-  async getFolderTree(): Promise<DockerFolderTreeNode[]> {
+  async getFolderTree(options?: {
+    includeAllFolders?: boolean;
+    allowedNodeIds?: string[];
+  }): Promise<DockerFolderTreeNode[]> {
     const allFolders = await this.db
       .select()
       .from(dockerContainerFolders)
       .orderBy(asc(dockerContainerFolders.depth), asc(dockerContainerFolders.sortOrder));
+
+    if (!options?.includeAllFolders && options?.allowedNodeIds) {
+      if (options.allowedNodeIds.length === 0) return [];
+      const assignments = await this.db
+        .select({ folderId: dockerContainerFolderAssignments.folderId })
+        .from(dockerContainerFolderAssignments)
+        .where(inArray(dockerContainerFolderAssignments.nodeId, options.allowedNodeIds));
+      const visibleIds = new Set(assignments.map((row) => row.folderId).filter((id): id is string => !!id));
+      for (const folder of [...allFolders].sort((a, b) => b.depth - a.depth)) {
+        if (visibleIds.has(folder.id) && folder.parentId) visibleIds.add(folder.parentId);
+      }
+      return this.buildTree(allFolders.filter((folder) => visibleIds.has(folder.id)));
+    }
 
     return this.buildTree(allFolders);
   }
@@ -312,7 +357,7 @@ export class DockerFolderService {
       details: { items: input.items, folderId: input.folderId },
     });
 
-    this.emitLayoutChanged('containers_moved', input.folderId);
+    this.emitLayoutChanged('containers_moved', input.folderId, [...new Set(input.items.map((item) => item.nodeId))]);
   }
 
   async reorderContainers(input: ReorderDockerContainersInput, userId: string) {
@@ -361,7 +406,7 @@ export class DockerFolderService {
       details: { items: input.items },
     });
 
-    this.emitLayoutChanged('containers_reordered');
+    this.emitLayoutChanged('containers_reordered', null, [...new Set(input.items.map((item) => item.nodeId))]);
   }
 
   async getPlacementsForRefs(items: Array<{ nodeId: string; containerName: string }>) {

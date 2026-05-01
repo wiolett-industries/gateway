@@ -17,7 +17,7 @@ export function registerRegistryRoutes(router: OpenAPIHono<AppEnv>) {
   // ─── Registry routes ──────────────────────────────────────────────────
 
   // List registries
-  router.openapi({ ...listRegistriesRoute, middleware: requireScope('docker:registries:list') }, async (c) => {
+  router.openapi({ ...listRegistriesRoute, middleware: requireScope('docker:registries:view') }, async (c) => {
     const service = container.resolve(DockerRegistryService);
     const nodeId = c.req.query('nodeId');
     const data = await service.list(nodeId);

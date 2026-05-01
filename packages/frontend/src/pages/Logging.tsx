@@ -120,15 +120,15 @@ export function Logging() {
   const isEnvironmentDetail = section === "environments" && !!id;
   const isSchemaDetail = section === "schemas" && !!id;
   const canAccessEnvironments =
-    hasScopedAccess("logs:environments:list") ||
+    hasScopedAccess("logs:environments:view") ||
     hasAnyScope("logs:environments:view", "logs:read", "logs:manage");
   const userScopes = user?.scopes ?? [];
   const hasResourceScopedSchemaView =
     (deriveAllowedResourceIdsByScope(userScopes)["logs:schemas:view"]?.length ?? 0) > 0;
   const canListSchemas =
-    hasAnyScope("logs:schemas:list", "logs:manage") || hasResourceScopedSchemaView;
+    hasAnyScope("logs:schemas:view", "logs:manage") || hasResourceScopedSchemaView;
   const canAccessSchemas = canListSchemas || hasAnyScope("logs:schemas:create");
-  const canViewSchemaDetails = hasAnyScope("logs:schemas:list", "logs:schemas:view", "logs:manage");
+  const canViewSchemaDetails = hasAnyScope("logs:schemas:view", "logs:schemas:view", "logs:manage");
   const canViewSelectedSchema =
     isSchemaDetail &&
     !!id &&

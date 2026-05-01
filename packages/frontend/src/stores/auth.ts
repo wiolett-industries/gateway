@@ -2,6 +2,19 @@ import { create } from "zustand";
 import { hasScopeBase, scopeMatches } from "@/lib/scope-utils";
 import type { User } from "@/types";
 
+type AuthContextResetCallback = () => void;
+
+let authContextResetCallback: AuthContextResetCallback | null = null;
+
+export function registerAuthContextReset(callback: AuthContextResetCallback) {
+  authContextResetCallback = callback;
+}
+
+function authContextKey(user: User | null): string {
+  if (!user) return "anonymous";
+  return `${user.id}:${[...user.scopes].sort().join(",")}:${user.isBlocked ? "blocked" : "active"}`;
+}
+
 interface AuthState {
   user: User | null;
   isAuthenticated: boolean;
@@ -21,27 +34,39 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   isAuthenticated: false,
   isLoading: true,
 
-  setUser: (user) =>
+  setUser: (user) => {
+    if (authContextKey(get().user) !== authContextKey(user)) {
+      authContextResetCallback?.();
+    }
     set({
       user,
       isAuthenticated: !!user,
-    }),
+    });
+  },
 
   setLoading: (isLoading) => set({ isLoading }),
 
-  login: (user) =>
+  login: (user) => {
+    if (authContextKey(get().user) !== authContextKey(user)) {
+      authContextResetCallback?.();
+    }
     set({
       user,
       isAuthenticated: true,
       isLoading: false,
-    }),
+    });
+  },
 
-  logout: () =>
+  logout: () => {
+    if (get().user || get().isAuthenticated) {
+      authContextResetCallback?.();
+    }
     set({
       user: null,
       isAuthenticated: false,
       isLoading: false,
-    }),
+    });
+  },
 
   hasScope: (scope) => {
     const user = get().user;

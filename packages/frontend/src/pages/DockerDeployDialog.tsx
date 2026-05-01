@@ -97,7 +97,7 @@ export function DockerDeployDialog({
   }, [allNodes, open, nodeId]);
 
   useEffect(() => {
-    if (!open || !hasScope("docker:registries:list")) {
+    if (!open || !hasScope("docker:registries:view")) {
       setRegistries([]);
       return;
     }

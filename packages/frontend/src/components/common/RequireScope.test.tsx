@@ -18,13 +18,13 @@ vi.mock("sonner", () => ({
 describe("RequireScope", () => {
   it("renders protected content when the user has the required scope", () => {
     useAuthStore.setState({
-      user: makeUser({ scopes: ["nodes:list"] }),
+      user: makeUser({ scopes: ["nodes:details"] }),
       isAuthenticated: true,
       isLoading: false,
     });
 
     renderWithRouter(
-      <RequireScope scope="nodes:list">
+      <RequireScope scope="nodes:details">
         <div>Protected Content</div>
       </RequireScope>
     );
@@ -41,7 +41,7 @@ describe("RequireScope", () => {
     });
 
     renderWithRouter(
-      <RequireScope scope="nodes:list">
+      <RequireScope scope="nodes:details">
         <div>Protected Content</div>
       </RequireScope>,
       {

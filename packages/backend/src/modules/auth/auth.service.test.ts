@@ -5,7 +5,7 @@ import { AuthService } from './auth.service.js';
 vi.mock('./live-session-user.js', () => ({
   resolveEffectiveGroupAccess: vi.fn().mockResolvedValue({
     groupName: 'admin',
-    scopes: ['nodes:list'],
+    scopes: ['nodes:details'],
   }),
   computeEffectiveGroupAccess: vi.fn(),
   fetchGroupScopeMap: vi.fn(),

@@ -18,7 +18,7 @@ export const templateRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiVali
 templateRoutes.use('*', authMiddleware);
 
 // List templates
-templateRoutes.openapi({ ...listTemplatesRoute, middleware: requireScope('pki:templates:list') }, async (c) => {
+templateRoutes.openapi({ ...listTemplatesRoute, middleware: requireScope('pki:templates:view') }, async (c) => {
   const templatesService = container.resolve(TemplatesService);
   const templates = await templatesService.listTemplates();
   return c.json(templates);

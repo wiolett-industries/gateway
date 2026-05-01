@@ -1,6 +1,8 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
 import { openApiValidationHook } from '@/lib/openapi.js';
+import { getResourceScopedIds, hasScope, hasScopeBase } from '@/lib/permissions.js';
+import { AppError } from '@/middleware/error-handler.js';
 import { authMiddleware, isProgrammaticAuth, requireScope } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import {
@@ -51,21 +53,42 @@ export function stripGroupedRawConfigForProgrammaticResponse(
   };
 }
 
+function requireFolderListAccess(scopes: string[]) {
+  if (!hasScopeBase(scopes, 'proxy:view') && !hasScope(scopes, 'proxy:folders:manage')) {
+    throw new AppError(403, 'FORBIDDEN', 'Missing required scope: proxy:view or proxy:folders:manage');
+  }
+}
+
 // --- Static GET routes first ---
 
 // Get folder tree
-folderRoutes.openapi({ ...listProxyFoldersRoute, middleware: requireScope('proxy:list') }, async (c) => {
+folderRoutes.openapi(listProxyFoldersRoute, async (c) => {
   const folderService = container.resolve(FolderService);
-  const tree = await folderService.getFolderTree();
+  const scopes = c.get('effectiveScopes') || [];
+  requireFolderListAccess(scopes);
+  const canManageFolders = hasScope(scopes, 'proxy:folders:manage');
+  const tree = await folderService.getFolderTree(
+    canManageFolders || hasScope(scopes, 'proxy:view')
+      ? { includeAllFolders: canManageFolders }
+      : { allowedHostIds: getResourceScopedIds(scopes, 'proxy:view') }
+  );
   return c.json({ data: tree });
 });
 
 // Get grouped hosts
-folderRoutes.openapi({ ...groupedProxyHostsRoute, middleware: requireScope('proxy:list') }, async (c) => {
+folderRoutes.openapi(groupedProxyHostsRoute, async (c) => {
   const folderService = container.resolve(FolderService);
   const rawQuery = c.req.query();
   const query = GroupedHostsQuerySchema.parse(rawQuery);
-  const result = await folderService.getGroupedHosts(query);
+  const scopes = c.get('effectiveScopes') || [];
+  requireFolderListAccess(scopes);
+  const canManageFolders = hasScope(scopes, 'proxy:folders:manage');
+  const result = await folderService.getGroupedHosts(
+    query,
+    hasScope(scopes, 'proxy:view')
+      ? { includeAllFolders: canManageFolders }
+      : { allowedHostIds: getResourceScopedIds(scopes, 'proxy:view'), includeAllFolders: canManageFolders }
+  );
   if (isProgrammaticAuth(c)) return c.json({ data: stripGroupedRawConfigForProgrammaticResponse(result) });
   return c.json({ data: result });
 });
@@ -73,7 +96,7 @@ folderRoutes.openapi({ ...groupedProxyHostsRoute, middleware: requireScope('prox
 // --- Static POST routes ---
 
 // Create folder
-folderRoutes.openapi({ ...createProxyFolderRoute, middleware: requireScope('proxy:edit') }, async (c) => {
+folderRoutes.openapi({ ...createProxyFolderRoute, middleware: requireScope('proxy:folders:manage') }, async (c) => {
   const folderService = container.resolve(FolderService);
   const user = c.get('user')!;
   const body = await c.req.json();
@@ -83,11 +106,17 @@ folderRoutes.openapi({ ...createProxyFolderRoute, middleware: requireScope('prox
 });
 
 // Move hosts to folder
-folderRoutes.openapi({ ...moveProxyHostsRoute, middleware: requireScope('proxy:edit') }, async (c) => {
+folderRoutes.openapi({ ...moveProxyHostsRoute, middleware: requireScope('proxy:folders:manage') }, async (c) => {
   const folderService = container.resolve(FolderService);
   const user = c.get('user')!;
   const body = await c.req.json();
   const input = MoveHostsToFolderSchema.parse(body);
+  const scopes = c.get('effectiveScopes') || [];
+  for (const hostId of input.hostIds) {
+    if (!hasScope(scopes, `proxy:edit:${hostId}`)) {
+      throw new AppError(403, 'FORBIDDEN', `Missing required scope: proxy:edit:${hostId}`);
+    }
+  }
   await folderService.moveHostsToFolder(input, user.id);
   return c.json({ success: true });
 });
@@ -95,7 +124,7 @@ folderRoutes.openapi({ ...moveProxyHostsRoute, middleware: requireScope('proxy:e
 // --- Static PUT routes (before /:id) ---
 
 // Reorder folders
-folderRoutes.openapi({ ...reorderProxyFoldersRoute, middleware: requireScope('proxy:edit') }, async (c) => {
+folderRoutes.openapi({ ...reorderProxyFoldersRoute, middleware: requireScope('proxy:folders:manage') }, async (c) => {
   const folderService = container.resolve(FolderService);
   const body = await c.req.json();
   const input = ReorderFoldersSchema.parse(body);
@@ -104,10 +133,16 @@ folderRoutes.openapi({ ...reorderProxyFoldersRoute, middleware: requireScope('pr
 });
 
 // Reorder hosts within a folder
-folderRoutes.openapi({ ...reorderProxyHostsRoute, middleware: requireScope('proxy:edit') }, async (c) => {
+folderRoutes.openapi({ ...reorderProxyHostsRoute, middleware: requireScope('proxy:folders:manage') }, async (c) => {
   const folderService = container.resolve(FolderService);
   const body = await c.req.json();
   const input = ReorderHostsSchema.parse(body);
+  const scopes = c.get('effectiveScopes') || [];
+  for (const item of input.items) {
+    if (!hasScope(scopes, `proxy:edit:${item.id}`)) {
+      throw new AppError(403, 'FORBIDDEN', `Missing required scope: proxy:edit:${item.id}`);
+    }
+  }
   await folderService.reorderHosts(input);
   return c.json({ success: true });
 });
@@ -115,7 +150,7 @@ folderRoutes.openapi({ ...reorderProxyHostsRoute, middleware: requireScope('prox
 // --- Parameterised routes last ---
 
 // Update folder / rename
-folderRoutes.openapi({ ...updateProxyFolderRoute, middleware: requireScope('proxy:edit') }, async (c) => {
+folderRoutes.openapi({ ...updateProxyFolderRoute, middleware: requireScope('proxy:folders:manage') }, async (c) => {
   const folderService = container.resolve(FolderService);
   const user = c.get('user')!;
   const id = c.req.param('id')!;
@@ -126,7 +161,7 @@ folderRoutes.openapi({ ...updateProxyFolderRoute, middleware: requireScope('prox
 });
 
 // Move folder to new parent
-folderRoutes.openapi({ ...moveProxyFolderRoute, middleware: requireScope('proxy:edit') }, async (c) => {
+folderRoutes.openapi({ ...moveProxyFolderRoute, middleware: requireScope('proxy:folders:manage') }, async (c) => {
   const folderService = container.resolve(FolderService);
   const user = c.get('user')!;
   const id = c.req.param('id')!;
@@ -137,7 +172,7 @@ folderRoutes.openapi({ ...moveProxyFolderRoute, middleware: requireScope('proxy:
 });
 
 // Delete folder
-folderRoutes.openapi({ ...deleteProxyFolderRoute, middleware: requireScope('proxy:delete') }, async (c) => {
+folderRoutes.openapi({ ...deleteProxyFolderRoute, middleware: requireScope('proxy:folders:manage') }, async (c) => {
   const folderService = container.resolve(FolderService);
   const user = c.get('user')!;
   const id = c.req.param('id')!;
@@ -146,7 +181,7 @@ folderRoutes.openapi({ ...deleteProxyFolderRoute, middleware: requireScope('prox
 });
 
 // Clone folder's proxy host
-folderRoutes.openapi({ ...cloneProxyFolderRoute, middleware: requireScope('proxy:edit') }, async (c) => {
+folderRoutes.openapi({ ...cloneProxyFolderRoute, middleware: requireScope('proxy:folders:manage') }, async (c) => {
   // Placeholder for future clone functionality
   return c.json({ error: 'Not implemented' }, 501);
 });

@@ -57,7 +57,7 @@ export function registerImageRoutes(router: OpenAPIHono<AppEnv>) {
 
   // List images
   router.openapi(
-    { ...listImagesRoute, middleware: requireScopeForResource('docker:images:list', 'nodeId') },
+    { ...listImagesRoute, middleware: requireScopeForResource('docker:images:view', 'nodeId') },
     async (c) => {
       const service = container.resolve(DockerManagementService);
       const nodeId = c.req.param('nodeId')!;

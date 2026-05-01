@@ -9,7 +9,7 @@ vi.mock('@/modules/auth/auth.middleware.js', () => {
     avatarUrl: null,
     groupId: 'group-1',
     groupName: 'Docs',
-    scopes: ['nodes:list'],
+    scopes: ['nodes:details'],
     isBlocked: false,
   };
 
@@ -53,6 +53,7 @@ vi.mock('@/modules/auth/auth.middleware.js', () => {
     requireActiveUser,
     requireScope: allow,
     requireAnyScope: allow,
+    requireScopeBase: allow,
     requireScopeForResource: allow,
     sessionOnly: allow(),
     CSRF_HEADER_NAME: 'X-CSRF-Token',

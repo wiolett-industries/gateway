@@ -33,7 +33,7 @@ const statusOptions: { value: StatusFilter; label: string }[] = [
 
 export function CAs() {
   const navigate = useNavigate();
-  const { hasScope } = useAuthStore();
+  const { hasScope, hasScopedAccess } = useAuthStore();
   const { cas, fetchCAs, isLoading } = useCAStore();
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [createIntermediateParentId, setCreateIntermediateParentId] = useState<
@@ -74,10 +74,15 @@ export function CAs() {
   const visibleCAs = search
     ? filteredByStatus.filter((ca) => ca.commonName.toLowerCase().includes(search.toLowerCase()))
     : filteredByStatus;
-  const rootCAs = visibleCAs.filter((ca) => !ca.parentId);
+  const visibleCAIds = new Set(visibleCAs.map((ca) => ca.id));
+  const topLevelCAs = visibleCAs.filter((ca) => !ca.parentId || !visibleCAIds.has(ca.parentId));
   const activeCAs = allCAs.filter((ca) => ca.status === "active");
-  const activeUserManagedCAs = activeCAs.filter((ca) => !ca.isSystem);
+  const activeUserManagedCAs = activeCAs.filter(
+    (ca) => !ca.isSystem && hasScope(`pki:ca:create:intermediate:${ca.id}`)
+  );
   const totalCerts = allCAs.reduce((sum, ca) => sum + (ca.certCount || 0), 0);
+  const canCreateRoot = hasScope("pki:ca:create:root");
+  const canCreateIntermediate = hasScopedAccess("pki:ca:create:intermediate");
 
   const getChildren = (parentId: string) => visibleCAs.filter((ca) => ca.parentId === parentId);
 
@@ -105,8 +110,8 @@ export function CAs() {
             </p>
           </div>
           <ResponsiveHeaderActions
-            actions={
-              hasScope("pki:ca:create:root")
+            actions={[
+              ...(canCreateIntermediate
                 ? [
                     {
                       label: "Create Intermediate",
@@ -117,6 +122,10 @@ export function CAs() {
                       },
                       disabled: activeUserManagedCAs.length === 0,
                     },
+                  ]
+                : []),
+              ...(canCreateRoot
+                ? [
                     {
                       label: "Create Root CA",
                       icon: <Plus className="h-4 w-4" />,
@@ -126,32 +135,32 @@ export function CAs() {
                       },
                     },
                   ]
-                : []
-            }
+                : []),
+            ]}
           >
-            {hasScope("pki:ca:create:root") && (
-              <>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setCreateIntermediateParentId("pick");
-                    setCreateDialogOpen(true);
-                  }}
-                  disabled={activeUserManagedCAs.length === 0}
-                >
-                  <Plus className="h-4 w-4" />
-                  Create Intermediate
-                </Button>
-                <Button
-                  onClick={() => {
-                    setCreateIntermediateParentId(undefined);
-                    setCreateDialogOpen(true);
-                  }}
-                >
-                  <Plus className="h-4 w-4" />
-                  Create Root CA
-                </Button>
-              </>
+            {canCreateIntermediate && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setCreateIntermediateParentId("pick");
+                  setCreateDialogOpen(true);
+                }}
+                disabled={activeUserManagedCAs.length === 0}
+              >
+                <Plus className="h-4 w-4" />
+                Create Intermediate
+              </Button>
+            )}
+            {canCreateRoot && (
+              <Button
+                onClick={() => {
+                  setCreateIntermediateParentId(undefined);
+                  setCreateDialogOpen(true);
+                }}
+              >
+                <Plus className="h-4 w-4" />
+                Create Root CA
+              </Button>
             )}
           </ResponsiveHeaderActions>
         </div>
@@ -199,7 +208,7 @@ export function CAs() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {rootCAs.map((rootCA) => {
+                  {topLevelCAs.map((rootCA) => {
                     const children = getChildren(rootCA.id);
                     return (
                       <CARows
@@ -219,7 +228,7 @@ export function CAs() {
         ) : (
           <EmptyState
             message="No certificate authorities."
-            {...(hasScope("pki:ca:create:root")
+            {...(canCreateRoot
               ? {
                   actionLabel: "Create one",
                   onAction: () => {

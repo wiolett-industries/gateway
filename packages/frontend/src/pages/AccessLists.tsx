@@ -169,7 +169,7 @@ export function AccessLists() {
               Manage IP rules and basic authentication
             </p>
           </div>
-          {hasScope("acl:edit") && (
+          {hasScope("acl:create") && (
             <ResponsiveHeaderActions
               actions={[
                 {
@@ -267,7 +267,7 @@ export function AccessLists() {
         ) : (
           <EmptyState
             message="No access lists."
-            {...(hasScope("acl:edit") ? { actionLabel: "Create one", onAction: openCreate } : {})}
+            {...(hasScope("acl:create") ? { actionLabel: "Create one", onAction: openCreate } : {})}
           />
         )}
 

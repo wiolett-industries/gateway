@@ -18,10 +18,10 @@ import { DockerTasks } from "./DockerTasks";
 import { DockerVolumes } from "./DockerVolumes";
 
 const TABS = [
-  { value: "containers", label: "Containers", icon: Box, scope: "docker:containers:list" },
-  { value: "images", label: "Images", icon: Layers, scope: "docker:images:list" },
-  { value: "volumes", label: "Volumes", icon: HardDrive, scope: "docker:volumes:list" },
-  { value: "networks", label: "Networks", icon: Network, scope: "docker:networks:list" },
+  { value: "containers", label: "Containers", icon: Box, scope: "docker:containers:view" },
+  { value: "images", label: "Images", icon: Layers, scope: "docker:images:view" },
+  { value: "volumes", label: "Volumes", icon: HardDrive, scope: "docker:volumes:view" },
+  { value: "networks", label: "Networks", icon: Network, scope: "docker:networks:view" },
   { value: "tasks", label: "Tasks", icon: ListTodo, scope: "docker:tasks" },
 ] as const;
 
@@ -44,7 +44,10 @@ export function Docker() {
   const refreshVolumesRef = useRef<(() => void) | null>(null);
   const refreshNetworksRef = useRef<(() => void) | null>(null);
 
-  const visibleTabs = TABS.filter((t) => hasScopedAccess(t.scope));
+  const canManageContainerFolders = hasScope("docker:containers:folders:manage");
+  const visibleTabs = TABS.filter(
+    (t) => hasScopedAccess(t.scope) || (t.value === "containers" && canManageContainerFolders)
+  );
   const activeTab =
     tabParam && visibleTabs.some((t) => t.value === tabParam)
       ? tabParam
@@ -69,6 +72,7 @@ export function Docker() {
 
   // Fetch docker nodes on mount, store in zustand for multi-node fetching
   useEffect(() => {
+    if (!hasScopedAccess("nodes:details")) return;
     api
       .listNodes({ type: "docker", limit: 100 })
       .then((r) => {
@@ -77,7 +81,7 @@ export function Docker() {
         );
       })
       .catch(() => toast.error("Failed to load Docker nodes"));
-  }, [setDockerNodes]);
+  }, [hasScopedAccess, setDockerNodes]);
 
   const handleTabChange = (value: string) => {
     navigate(`/docker/${value}`, { replace: true });
@@ -103,7 +107,7 @@ export function Docker() {
       case "containers":
         return (
           <>
-            {hasScopedAccess("docker:containers:edit") && (
+            {canManageContainerFolders && (
               <Button variant="outline" onClick={() => createFolderRef.current?.()}>
                 <FolderPlus className="h-4 w-4 mr-1" />
                 New Folder
@@ -144,7 +148,7 @@ export function Docker() {
   };
   const headerActions = [
     { label: "Refresh", onClick: handleRefresh, disabled: activeTabLoading },
-    ...(activeTab === "containers" && hasScopedAccess("docker:containers:edit")
+    ...(activeTab === "containers" && canManageContainerFolders
       ? [
           {
             label: "New Folder",

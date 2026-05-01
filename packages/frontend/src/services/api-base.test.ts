@@ -73,6 +73,56 @@ describe("ApiClientBase", () => {
     expect(headers.get("X-CSRF-Token")).toBe("csrf-token");
   });
 
+  it("clears cache and rejects responses that complete after a session reset", async () => {
+    const client = new TestApiClient();
+    client.setCache("req:/api/thing", { value: 1 });
+    let resolveFetch: (value: Response) => void = () => {};
+    vi.spyOn(globalThis, "fetch").mockReturnValueOnce(
+      new Promise<Response>((resolve) => {
+        resolveFetch = resolve;
+      })
+    );
+
+    const request = client.getThing();
+    client.resetSessionState();
+    resolveFetch(
+      new Response(JSON.stringify({ value: 2 }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+
+    await expect(request).rejects.toMatchObject({ code: "SESSION_CHANGED" });
+    expect(client.getCached("req:/api/thing")).toBeUndefined();
+  });
+
+  it("rejects and avoids cache writes when the session changes during response parsing", async () => {
+    const client = new TestApiClient();
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: new Headers({ "Content-Type": "application/json" }),
+      json: async () => {
+        client.resetSessionState();
+        return { value: 2 };
+      },
+    } as Response);
+
+    await expect(client.getThing()).rejects.toMatchObject({ code: "SESSION_CHANGED" });
+    expect(client.getCached("req:/api/thing")).toBeUndefined();
+  });
+
+  it("rejects cachedRequest refreshes that complete after a session reset", async () => {
+    const client = new TestApiClient();
+    const request = client.cachedRequest("custom:key", async () => {
+      client.resetSessionState();
+      return { value: 3 };
+    });
+
+    await expect(request).rejects.toMatchObject({ code: "SESSION_CHANGED" });
+    expect(client.getCached("custom:key")).toBeUndefined();
+  });
+
   it("sends cookie credentials and no session Authorization header", async () => {
     const client = new TestApiClient();
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(

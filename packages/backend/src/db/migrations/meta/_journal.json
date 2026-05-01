@@ -211,6 +211,13 @@
       "when": 1777478400000,
       "tag": "0029_compact_health_history",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1777593600000,
+      "tag": "0030_remove_list_scopes",
+      "breakpoints": true
     }
   ]
 }

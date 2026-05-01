@@ -19,7 +19,7 @@ const USER: User = {
   avatarUrl: null,
   groupId: 'group-1',
   groupName: 'admin',
-  scopes: ['mcp:use', 'nodes:list', 'nodes:details:node-1'],
+  scopes: ['mcp:use', 'nodes:details', 'nodes:details:node-1'],
   isBlocked: false,
 };
 
@@ -161,12 +161,12 @@ describe('OAuthService.createConsentRequest', () => {
       redirect_uri: 'http://127.0.0.1:8765/callback',
       code_challenge: 'challenge',
       code_challenge_method: 'S256',
-      scope: 'mcp:use nodes:list',
+      scope: 'mcp:use nodes:details',
     });
 
     expect(pending.resource).toBe('https://gateway.example.com/api/mcp');
-    expect(pending.requestedScopes).toEqual(['nodes:list']);
-    expect(pending.grantableScopes).toEqual(['nodes:list']);
+    expect(pending.requestedScopes).toEqual(['nodes:details']);
+    expect(pending.grantableScopes).toEqual(['nodes:details']);
     expect(pending.unavailableScopes).toEqual([]);
     expect(cacheSet).toHaveBeenCalledWith(expect.stringContaining('oauth:consent:'), pending, 600);
   });
@@ -176,14 +176,14 @@ describe('OAuthService.createConsentRequest', () => {
 
     await expect(
       service.createConsentRequest(
-        { ...USER, scopes: ['nodes:list'] },
+        { ...USER, scopes: ['nodes:details'] },
         {
           response_type: 'code',
           client_id: 'goc_client',
           redirect_uri: 'http://127.0.0.1:8765/callback',
           code_challenge: 'challenge',
           code_challenge_method: 'S256',
-          scope: 'mcp:use nodes:list',
+          scope: 'mcp:use nodes:details',
         }
       )
     ).rejects.toThrow('Your account is not allowed to use MCP');
@@ -211,7 +211,7 @@ describe('OAuthService.createConsentRequest', () => {
         code_challenge: 'challenge',
         code_challenge_method: 'S256',
         scope:
-          'nodes:list docker:containers:environment docker:containers:files:node-1 docker:containers:secrets pki:cert:export admin:update',
+          'nodes:details docker:containers:environment docker:containers:files:node-1 docker:containers:secrets pki:cert:export admin:update',
       }
     );
 
@@ -220,7 +220,7 @@ describe('OAuthService.createConsentRequest', () => {
       'docker:containers:environment',
       'docker:containers:files:node-1',
       'docker:containers:secrets',
-      'nodes:list',
+      'nodes:details',
       'pki:cert:export',
     ]);
     expect(pending.manualApprovalScopes).toEqual([
@@ -242,8 +242,8 @@ describe('OAuthService.approveConsent', () => {
       clientUri: null,
       logoUri: null,
       redirectUri: 'http://127.0.0.1:8765/callback',
-      requestedScopes: ['nodes:list', 'docker:containers:secrets'],
-      grantableScopes: ['docker:containers:secrets', 'nodes:list'],
+      requestedScopes: ['nodes:details', 'docker:containers:secrets'],
+      grantableScopes: ['docker:containers:secrets', 'nodes:details'],
       unavailableScopes: [],
       manualApprovalScopes: ['docker:containers:secrets'],
       codeChallenge: 'challenge',
@@ -265,7 +265,7 @@ describe('OAuthService.approveConsent', () => {
     );
 
     const authorizationCodeInsert = insertCalls.find((call) => call.table === oauthAuthorizationCodes);
-    expect(authorizationCodeInsert?.values.scopes).toEqual(['nodes:list']);
+    expect(authorizationCodeInsert?.values.scopes).toEqual(['nodes:details']);
   });
 
   it('rejects an explicit empty approval scope list', async () => {
@@ -286,7 +286,7 @@ describe('OAuthService.updateUserAuthorizationScopes', () => {
     const refreshToken = {
       clientId: 'goc_client',
       userId: USER.id,
-      scopes: ['nodes:list'],
+      scopes: ['nodes:details'],
       resource: 'https://gateway.example.com/api/mcp',
       expiresAt: new Date(Date.now() + 60_000),
       createdAt: new Date('2026-04-29T10:00:00Z'),
@@ -297,15 +297,15 @@ describe('OAuthService.updateUserAuthorizationScopes', () => {
     });
 
     const authorization = await service.updateUserAuthorizationScopes(
-      { ...USER, scopes: ['mcp:use', 'nodes:list', 'nodes:details:node-1'] },
+      { ...USER, scopes: ['mcp:use', 'nodes:details', 'nodes:details:node-1'] },
       'goc_client',
       'https://gateway.example.com/api/mcp',
       ['nodes:details']
     );
 
     expect(updateCalls.some((call) => call.table === oauthRefreshTokens)).toBe(true);
-    expect(refreshToken.scopes).toEqual(['nodes:details:node-1', 'nodes:list']);
-    expect(authorization?.scopes).toEqual(['nodes:details:node-1', 'nodes:list']);
+    expect(refreshToken.scopes).toEqual(['nodes:details']);
+    expect(authorization?.scopes).toEqual(['nodes:details']);
     expect(auditLog).toHaveBeenCalledWith(
       expect.objectContaining({
         action: 'oauth.authorization_update',
@@ -320,7 +320,7 @@ describe('OAuthService.updateUserAuthorizationScopes', () => {
         {
           clientId: 'goc_client',
           userId: USER.id,
-          scopes: ['nodes:list'],
+          scopes: ['nodes:details'],
           resource: 'https://gateway.example.com/api/mcp',
           expiresAt: new Date(Date.now() + 60_000),
           createdAt: new Date('2026-04-29T10:00:00Z'),
@@ -331,10 +331,10 @@ describe('OAuthService.updateUserAuthorizationScopes', () => {
 
     await expect(
       service.updateUserAuthorizationScopes(
-        { ...USER, scopes: ['nodes:list'] },
+        { ...USER, scopes: ['nodes:details'] },
         'goc_client',
         'https://gateway.example.com/api/mcp',
-        ['nodes:list']
+        ['nodes:details']
       )
     ).rejects.toThrow('Your account is not allowed to use MCP');
   });
@@ -347,7 +347,7 @@ describe('OAuthService.listUserAuthorizations', () => {
         {
           clientId: 'goc_client',
           userId: USER.id,
-          scopes: ['nodes:list'],
+          scopes: ['nodes:details'],
           resource: 'https://gateway.example.com/api',
           expiresAt: new Date(Date.now() + 60_000),
           createdAt: new Date('2026-04-29T10:00:00Z'),
@@ -356,7 +356,7 @@ describe('OAuthService.listUserAuthorizations', () => {
         {
           clientId: 'goc_client',
           userId: USER.id,
-          scopes: ['nodes:list'],
+          scopes: ['nodes:details'],
           resource: 'https://gateway.example.com/api/mcp',
           expiresAt: new Date(Date.now() + 60_000),
           createdAt: new Date('2026-04-29T11:00:00Z'),
@@ -381,7 +381,7 @@ describe('OAuthService.listUserAuthorizations', () => {
         {
           clientId: 'goc_client',
           userId: USER.id,
-          scopes: ['nodes:list', 'nodes:details'],
+          scopes: ['nodes:details', 'nodes:details'],
           resource: 'https://gateway.example.com/api',
           expiresAt: new Date(Date.now() + 60_000),
           createdAt: new Date('2026-04-29T10:00:00Z'),
@@ -406,7 +406,7 @@ describe('OAuthService.exchangeToken authorization code flow', () => {
         userId: USER.id,
         redirectUri: 'http://127.0.0.1:8765/callback',
         codeChallenge: s256(verifier),
-        scopes: ['nodes:list'],
+        scopes: ['nodes:details'],
         resource: 'https://gateway.example.com/api',
         usedAt: null,
         expiresAt: new Date(Date.now() + 60_000),
@@ -422,7 +422,7 @@ describe('OAuthService.exchangeToken authorization code flow', () => {
     });
 
     expect(result.token_type).toBe('Bearer');
-    expect(result.scope).toBe('nodes:list');
+    expect(result.scope).toBe('nodes:details');
     expect(updateCalls.some((call) => call.table === oauthAuthorizationCodes)).toBe(true);
     expect(insertCalls).toHaveLength(2);
   });
@@ -435,7 +435,7 @@ describe('OAuthService.exchangeToken authorization code flow', () => {
         userId: USER.id,
         redirectUri: 'http://127.0.0.1:8765/callback',
         codeChallenge: 'stored-challenge',
-        scopes: ['nodes:list'],
+        scopes: ['nodes:details'],
         resource: 'https://gateway.example.com/api',
         usedAt: null,
         expiresAt: new Date(Date.now() + 60_000),
@@ -464,7 +464,7 @@ describe('OAuthService.revokeToken', () => {
         tokenHash: 'hash',
         clientId: 'goc_client',
         userId: USER.id,
-        scopes: ['nodes:list'],
+        scopes: ['nodes:details'],
         resource: 'https://gateway.example.com/api',
         revokedAt: null,
         replacedByTokenId: null,
@@ -522,7 +522,7 @@ describe('OAuthService.revokeToken', () => {
         tokenHash: 'hash',
         clientId: 'goc_client',
         userId: USER.id,
-        scopes: ['nodes:list'],
+        scopes: ['nodes:details'],
         resource: 'https://gateway.example.com/api',
         revokedAt: new Date('2026-04-29T10:00:00Z'),
         replacedByTokenId: 'refresh-2',
@@ -567,7 +567,7 @@ describe('OAuthService.revokeToken', () => {
         tokenHash: 'hash',
         clientId: 'goc_client',
         userId: USER.id,
-        scopes: ['nodes:list'],
+        scopes: ['nodes:details'],
         resource: 'https://gateway.example.com/api',
         revokedAt: null,
         replacedByTokenId: null,

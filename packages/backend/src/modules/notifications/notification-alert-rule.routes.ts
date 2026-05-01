@@ -47,7 +47,7 @@ alertRuleRoutes.openapi(
   {
     ...listNotificationCategoriesRoute,
     middleware: requireAnyScope(
-      'notifications:alerts:list',
+      'notifications:alerts:view',
       'notifications:alerts:view',
       'notifications:alerts:create',
       'notifications:alerts:edit',
@@ -66,7 +66,7 @@ alertRuleRoutes.openapi(
   {
     ...listNotificationAlertRulesRoute,
     middleware: requireAnyScope(
-      'notifications:alerts:list',
+      'notifications:alerts:view',
       'notifications:alerts:view',
       'notifications:view',
       'notifications:manage'
@@ -86,7 +86,7 @@ alertRuleRoutes.openapi(
     ...getNotificationAlertRuleRoute,
     middleware: requireAnyScope(
       'notifications:alerts:view',
-      'notifications:alerts:list',
+      'notifications:alerts:view',
       'notifications:view',
       'notifications:manage'
     ),

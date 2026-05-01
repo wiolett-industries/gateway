@@ -2,8 +2,14 @@ import { OpenAPIHono } from '@hono/zod-openapi';
 import { streamSSE } from 'hono/streaming';
 import { container } from '@/container.js';
 import { openApiValidationHook } from '@/lib/openapi.js';
-import { hasScope } from '@/lib/permissions.js';
-import { authMiddleware, requireScope, requireScopeForResource, sessionOnly } from '@/modules/auth/auth.middleware.js';
+import { getResourceScopedIds, hasScope } from '@/lib/permissions.js';
+import {
+  authMiddleware,
+  requireScope,
+  requireScopeBase,
+  requireScopeForResource,
+  sessionOnly,
+} from '@/modules/auth/auth.middleware.js';
 import {
   daemonLogRelay,
   getDaemonLogHistory,
@@ -83,10 +89,14 @@ function compactMonitoringHistorySnapshot(snapshot: any) {
   };
 }
 
-nodesRoutes.openapi({ ...listNodesRoute, middleware: requireScope('nodes:list') }, async (c) => {
+nodesRoutes.openapi({ ...listNodesRoute, middleware: requireScopeBase('nodes:details') }, async (c) => {
   const service = container.resolve(NodesService);
   const query = NodeListQuerySchema.parse(c.req.query());
-  const result = await service.list(query);
+  const scopes = c.get('effectiveScopes') || [];
+  const result = await service.list(
+    query,
+    hasScope(scopes, 'nodes:details') ? undefined : { allowedIds: getResourceScopedIds(scopes, 'nodes:details') }
+  );
   return c.json(result);
 });
 

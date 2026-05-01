@@ -20,8 +20,8 @@ const preview: OAuthConsentPreview = {
     name: "Admin User",
     avatarUrl: null,
   },
-  requestedScopes: ["nodes:list", "docker:containers:view", "admin:users"],
-  grantableScopes: ["nodes:list", "docker:containers:view"],
+  requestedScopes: ["nodes:details", "docker:containers:view", "admin:users"],
+  grantableScopes: ["nodes:details", "docker:containers:view"],
   unavailableScopes: ["admin:users"],
   manualApprovalScopes: [],
   resource: "https://gateway.example.com/api",
@@ -55,7 +55,7 @@ describe("OAuthConsent", () => {
     expect(screen.getByText("admin@example.com")).toBeInTheDocument();
     expect(screen.getByText("Unverified client")).toBeInTheDocument();
     expect(screen.getByText(/Only authorize tools you trust/)).toBeInTheDocument();
-    expect(screen.getByText("List Nodes")).toBeInTheDocument();
+    expect(screen.getByText("View Nodes")).toBeInTheDocument();
     expect(screen.getByText("View Containers")).toBeInTheDocument();
     expect(screen.getByText("Manage Users")).toBeInTheDocument();
     expect(
@@ -74,7 +74,7 @@ describe("OAuthConsent", () => {
       route: "/oauth/consent?request=request-1",
     });
 
-    const nodes = await screen.findByLabelText(/List Nodes/i);
+    const nodes = await screen.findByLabelText(/View Nodes/i);
     await userEvent.click(nodes);
     await userEvent.click(screen.getByRole("button", { name: /Authorize/i }));
 
@@ -178,8 +178,8 @@ describe("OAuthConsent", () => {
   it("leaves manual approval scopes unchecked until explicitly selected", async () => {
     vi.spyOn(api, "getOAuthConsent").mockResolvedValue({
       ...preview,
-      requestedScopes: ["nodes:list", "docker:containers:secrets"],
-      grantableScopes: ["nodes:list", "docker:containers:secrets"],
+      requestedScopes: ["nodes:details", "docker:containers:secrets"],
+      grantableScopes: ["nodes:details", "docker:containers:secrets"],
       unavailableScopes: [],
       manualApprovalScopes: ["docker:containers:secrets"],
     });
@@ -193,11 +193,11 @@ describe("OAuthConsent", () => {
     });
 
     expect(await screen.findByText(/reveal sensitive data/)).toBeInTheDocument();
-    expect(screen.getByRole("checkbox", { name: /List Nodes/i })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: /View Nodes/i })).toBeChecked();
     expect(screen.getByRole("checkbox", { name: /Container Secrets/i })).not.toBeChecked();
 
     await userEvent.click(screen.getByRole("button", { name: /Authorize/i }));
 
-    expect(approve).toHaveBeenCalledWith("request-1", ["nodes:list"]);
+    expect(approve).toHaveBeenCalledWith("request-1", ["nodes:details"]);
   });
 });

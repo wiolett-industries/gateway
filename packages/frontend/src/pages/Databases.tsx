@@ -119,7 +119,7 @@ export function Databases() {
     () =>
       rows.filter(
         (row) =>
-          hasScopedAccess("databases:list") &&
+          hasScopedAccess("databases:view") &&
           (hasScope("databases:view") || hasScope(`databases:view:${row.id}`))
       ),
     [hasScope, hasScopedAccess, rows]

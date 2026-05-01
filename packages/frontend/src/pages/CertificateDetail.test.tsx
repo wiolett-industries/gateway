@@ -19,7 +19,7 @@ describe("CertificateDetail", () => {
     );
 
     useAuthStore.setState({
-      user: makeUser({ scopes: ["pki:cert:list", "pki:cert:revoke"] }),
+      user: makeUser({ scopes: ["pki:cert:view", "pki:cert:revoke"] }),
       isAuthenticated: true,
       isLoading: false,
     });
@@ -49,7 +49,7 @@ describe("CertificateDetail", () => {
     );
 
     useAuthStore.setState({
-      user: makeUser({ scopes: ["pki:cert:list", "pki:cert:revoke"] }),
+      user: makeUser({ scopes: ["pki:cert:view", "pki:cert:revoke"] }),
       isAuthenticated: true,
       isLoading: false,
     });

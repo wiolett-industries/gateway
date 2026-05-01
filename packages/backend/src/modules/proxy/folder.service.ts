@@ -316,11 +316,21 @@ export class FolderService {
   // Get folder tree
   // -----------------------------------------------------------------------
 
-  async getFolderTree(): Promise<FolderTreeNode[]> {
+  async getFolderTree(options?: { allowedHostIds?: string[]; includeAllFolders?: boolean }): Promise<FolderTreeNode[]> {
     const allFolders = await this.db
       .select()
       .from(proxyHostFolders)
       .orderBy(asc(proxyHostFolders.depth), asc(proxyHostFolders.sortOrder));
+
+    if (options?.includeAllFolders) return this.buildTree(allFolders, []);
+    if (options?.allowedHostIds) {
+      if (options.allowedHostIds.length === 0) return [];
+      const visibleHosts = await this.db
+        .select()
+        .from(proxyHosts)
+        .where(inArray(proxyHosts.id, options.allowedHostIds));
+      return this.pruneEmptyBranches(this.buildTree(allFolders, visibleHosts));
+    }
 
     return this.buildTree(allFolders, []);
   }
@@ -329,7 +339,10 @@ export class FolderService {
   // Get grouped hosts (main endpoint for the proxy hosts page)
   // -----------------------------------------------------------------------
 
-  async getGroupedHosts(query: GroupedHostsQuery): Promise<GroupedHostsResponse> {
+  async getGroupedHosts(
+    query: GroupedHostsQuery,
+    options?: { allowedHostIds?: string[]; includeAllFolders?: boolean }
+  ): Promise<GroupedHostsResponse> {
     // 1. Fetch all folders
     const allFolders = await this.db
       .select()
@@ -338,6 +351,16 @@ export class FolderService {
 
     // 2. Fetch all hosts (with optional filters)
     const conditions = [eq(proxyHosts.isSystem, false)];
+    if (options?.allowedHostIds) {
+      if (options.allowedHostIds.length === 0) {
+        return {
+          folders: options.includeAllFolders ? this.buildTree(allFolders, []) : [],
+          ungroupedHosts: [],
+          totalHosts: 0,
+        };
+      }
+      conditions.push(inArray(proxyHosts.id, options.allowedHostIds));
+    }
     if (query.type) {
       conditions.push(eq(proxyHosts.type, query.type));
     }
@@ -382,7 +405,7 @@ export class FolderService {
       }));
 
     return {
-      folders: mapTree(tree),
+      folders: mapTree(options?.includeAllFolders ? tree : this.pruneEmptyBranches(tree)),
       ungroupedHosts: ungroupedHosts.map(toPlainHost) as any,
       totalHosts: allHosts.length,
     };
@@ -492,6 +515,12 @@ export class FolderService {
     }
 
     return roots;
+  }
+
+  private pruneEmptyBranches(nodes: FolderTreeNode[]): FolderTreeNode[] {
+    return nodes
+      .map((node) => ({ ...node, children: this.pruneEmptyBranches(node.children) }))
+      .filter((node) => node.hosts.length > 0 || node.children.length > 0);
   }
 
   private async getDescendantIds(folderId: string): Promise<string[]> {

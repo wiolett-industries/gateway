@@ -1,6 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { container } from '@/container.js';
-import { hasScope } from '@/lib/permissions.js';
+import { getResourceScopedIds, hasScope, hasScopeBase } from '@/lib/permissions.js';
 import { DOC_TOPIC_SCOPES, INTERNAL_DOCS } from '@/modules/ai/ai.docs.js';
 import { LoggingEnvironmentService } from '@/modules/logging/logging-environment.service.js';
 import { MonitoringService } from '@/modules/monitoring/monitoring.service.js';
@@ -20,7 +20,24 @@ type ResourceDefinition = {
 
 function canAccess(scopes: string[], requiredScopes: string[]): boolean {
   if (requiredScopes.length === 0) return true;
-  return requiredScopes.some((scope) => hasScope(scopes, scope));
+  return requiredScopes.some((scope) => hasScopeBase(scopes, scope));
+}
+
+function dashboardStatsOptions(scopes: string[]) {
+  return {
+    allowedCaTypes: [
+      hasScope(scopes, 'pki:ca:view:root') ? 'root' : null,
+      hasScope(scopes, 'pki:ca:view:intermediate') ? 'intermediate' : null,
+    ].filter((type): type is 'root' | 'intermediate' => !!type),
+    allowedProxyHostIds: hasScope(scopes, 'proxy:view') ? undefined : getResourceScopedIds(scopes, 'proxy:view'),
+    allowedSslCertificateIds: hasScope(scopes, 'ssl:cert:view')
+      ? undefined
+      : getResourceScopedIds(scopes, 'ssl:cert:view'),
+    allowedPkiCertificateIds: hasScope(scopes, 'pki:cert:view')
+      ? undefined
+      : getResourceScopedIds(scopes, 'pki:cert:view'),
+    allowedNodeIds: hasScope(scopes, 'nodes:details') ? undefined : getResourceScopedIds(scopes, 'nodes:details'),
+  };
 }
 
 function compactResource(uri: URL, data: unknown) {
@@ -65,15 +82,24 @@ const operationalResources: ResourceDefinition[] = [
     uri: 'gateway://overview',
     title: 'Gateway overview',
     description: 'Dashboard-level counts filtered to the token scopes.',
-    requiredScopes: ['proxy:list', 'ssl:cert:list', 'pki:cert:list', 'pki:ca:list:root', 'nodes:list'],
+    requiredScopes: [
+      'proxy:view',
+      'ssl:cert:view',
+      'pki:cert:view',
+      'pki:ca:view:root',
+      'pki:ca:view:intermediate',
+      'nodes:details',
+    ],
     async read(_uri, scopes) {
-      const stats = await container.resolve(MonitoringService).getDashboardStats();
+      const stats = await container.resolve(MonitoringService).getDashboardStats(dashboardStatsOptions(scopes));
       const filtered: Record<string, unknown> = { generatedAt: new Date().toISOString() };
-      if (hasScope(scopes, 'proxy:list')) filtered.proxyHosts = stats.proxyHosts;
-      if (hasScope(scopes, 'ssl:cert:list')) filtered.sslCertificates = stats.sslCertificates;
-      if (hasScope(scopes, 'pki:cert:list')) filtered.pkiCertificates = stats.pkiCertificates;
-      if (hasScope(scopes, 'pki:ca:list:root')) filtered.cas = stats.cas;
-      if (hasScope(scopes, 'nodes:list')) filtered.nodes = stats.nodes;
+      if (hasScopeBase(scopes, 'proxy:view')) filtered.proxyHosts = stats.proxyHosts;
+      if (hasScopeBase(scopes, 'ssl:cert:view')) filtered.sslCertificates = stats.sslCertificates;
+      if (hasScopeBase(scopes, 'pki:cert:view')) filtered.pkiCertificates = stats.pkiCertificates;
+      if (hasScope(scopes, 'pki:ca:view:root') || hasScope(scopes, 'pki:ca:view:intermediate')) {
+        filtered.cas = stats.cas;
+      }
+      if (hasScopeBase(scopes, 'nodes:details')) filtered.nodes = stats.nodes;
       return filtered;
     },
   },
@@ -82,9 +108,14 @@ const operationalResources: ResourceDefinition[] = [
     uri: 'gateway://nodes',
     title: 'Gateway nodes',
     description: 'Bounded list of Gateway nodes and connection state.',
-    requiredScopes: ['nodes:list'],
-    async read() {
-      const result = await container.resolve(NodesService).list({ page: 1, limit: 25 });
+    requiredScopes: ['nodes:details'],
+    async read(_uri, scopes) {
+      const result = await container
+        .resolve(NodesService)
+        .list(
+          { page: 1, limit: 25 },
+          hasScope(scopes, 'nodes:details') ? undefined : { allowedIds: getResourceScopedIds(scopes, 'nodes:details') }
+        );
       return {
         total: result.total,
         nodes: take(result.data).map((node) => ({
@@ -103,9 +134,14 @@ const operationalResources: ResourceDefinition[] = [
     uri: 'gateway://proxy/hosts',
     title: 'Proxy hosts',
     description: 'Bounded list of reverse proxy hosts and health status.',
-    requiredScopes: ['proxy:list'],
-    async read() {
-      const result = await container.resolve(ProxyService).listProxyHosts({ page: 1, limit: 25 });
+    requiredScopes: ['proxy:view'],
+    async read(_uri, scopes) {
+      const result = await container
+        .resolve(ProxyService)
+        .listProxyHosts(
+          { page: 1, limit: 25 },
+          hasScope(scopes, 'proxy:view') ? undefined : { allowedIds: getResourceScopedIds(scopes, 'proxy:view') }
+        );
       return {
         total: result.pagination.total,
         hosts: take(result.data).map((host) => ({
@@ -128,13 +164,16 @@ const operationalResources: ResourceDefinition[] = [
     uri: 'gateway://docker/nodes',
     title: 'Docker nodes',
     description: 'Bounded list of Docker-capable nodes.',
-    requiredScopes: ['nodes:list'],
-    async read() {
-      const result = await container.resolve(NodesService).list({
-        type: 'docker',
-        page: 1,
-        limit: 25,
-      });
+    requiredScopes: ['nodes:details'],
+    async read(_uri, scopes) {
+      const result = await container.resolve(NodesService).list(
+        {
+          type: 'docker',
+          page: 1,
+          limit: 25,
+        },
+        hasScope(scopes, 'nodes:details') ? undefined : { allowedIds: getResourceScopedIds(scopes, 'nodes:details') }
+      );
       return {
         total: result.total,
         nodes: take(result.data).map((node) => ({
@@ -152,9 +191,15 @@ const operationalResources: ResourceDefinition[] = [
     uri: 'gateway://logging/environments',
     title: 'Logging environments',
     description: 'Bounded list of external logging environments.',
-    requiredScopes: ['logs:environments:list'],
-    async read() {
-      const environments = await container.resolve(LoggingEnvironmentService).list();
+    requiredScopes: ['logs:environments:view'],
+    async read(_uri, scopes) {
+      const environments = await container
+        .resolve(LoggingEnvironmentService)
+        .list(
+          hasScope(scopes, 'logs:environments:view')
+            ? undefined
+            : { allowedIds: getResourceScopedIds(scopes, 'logs:environments:view') }
+        );
       return {
         total: environments.length,
         environments: take(environments).map((environment) => ({
@@ -216,9 +261,14 @@ const operationalResources: ResourceDefinition[] = [
     uri: 'gateway://certificates/expiring',
     title: 'Expiring certificates',
     description: 'SSL certificates expiring in the next 30 days.',
-    requiredScopes: ['ssl:cert:list'],
-    async read() {
-      const certs = await container.resolve(SSLService).getCertsExpiringSoon(30);
+    requiredScopes: ['ssl:cert:view'],
+    async read(_uri, scopes) {
+      const certs = await container
+        .resolve(SSLService)
+        .getCertsExpiringSoon(
+          30,
+          hasScope(scopes, 'ssl:cert:view') ? undefined : { allowedIds: getResourceScopedIds(scopes, 'ssl:cert:view') }
+        );
       return {
         windowDays: 30,
         total: certs.length,

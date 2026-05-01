@@ -79,7 +79,7 @@ afterEach(() => {
 
 describe('group route permissions', () => {
   it('does not delete groups when delete authorization rejects affected scopes', async () => {
-    registerSession(['admin:groups', 'nodes:list']);
+    registerSession(['admin:groups', 'nodes:details']);
     const assertCanDeleteGroup = vi
       .fn()
       .mockRejectedValue(
@@ -102,7 +102,7 @@ describe('group route permissions', () => {
     expect(response.status).toBe(403);
     expect(assertCanDeleteGroup).toHaveBeenCalledWith('33333333-3333-4333-8333-333333333333', [
       'admin:groups',
-      'nodes:list',
+      'nodes:details',
     ]);
     expect(getGroup).not.toHaveBeenCalled();
     expect(deleteGroup).not.toHaveBeenCalled();

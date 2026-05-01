@@ -378,7 +378,8 @@ export class DockerWebhookService {
   // ─── Helpers ──────────────────────────────────────────────────────
 
   private emit(action: string, data: Record<string, unknown>) {
-    this.eventBus?.publish('docker.webhook.changed', { ...data, action });
+    const { token: _token, ...safeData } = data;
+    this.eventBus?.publish('docker.webhook.changed', { ...safeData, action });
   }
 }
 

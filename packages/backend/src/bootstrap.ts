@@ -47,8 +47,6 @@ import { LoggingTokenService } from '@/modules/logging/logging-token.service.js'
 import { LoggingValidationService } from '@/modules/logging/logging-validation.service.js';
 import { McpSettingsService } from '@/modules/mcp/mcp-settings.service.js';
 import { MonitoringService } from '@/modules/monitoring/monitoring.service.js';
-import { NginxConfigService } from '@/modules/monitoring/nginx-config.service.js';
-import { NginxStatsService } from '@/modules/monitoring/nginx-stats.service.js';
 import { NodeMonitoringService } from '@/modules/nodes/node-monitoring.service.js';
 import { NodesService } from '@/modules/nodes/nodes.service.js';
 import { NotificationAlertRuleService } from '@/modules/notifications/notification-alert-rule.service.js';
@@ -171,8 +169,9 @@ export async function initializeContainer(): Promise<void> {
 
   // Upsert built-in groups (creates on fresh install, syncs scopes on upgrade)
   {
-    const { BUILTIN_GROUPS } = await import('@/lib/scopes.js');
+    const { BUILTIN_GROUPS, canonicalizeScopes } = await import('@/lib/scopes.js');
     const { permissionGroups } = await import('@/db/schema/index.js');
+    const { eq } = await import('drizzle-orm');
     for (const bg of BUILTIN_GROUPS) {
       await db
         .insert(permissionGroups)
@@ -186,6 +185,21 @@ export async function initializeContainer(): Promise<void> {
           target: permissionGroups.name,
           set: { scopes: [...bg.scopes], description: bg.description },
         });
+    }
+
+    const groups = await db.select().from(permissionGroups);
+    for (const group of groups) {
+      const originalScopes = Array.isArray(group.scopes) ? group.scopes : [];
+      const canonicalScopes = canonicalizeScopes(originalScopes);
+      const originalKey = [...originalScopes].sort().join('\0');
+      const canonicalKey = [...canonicalScopes].sort().join('\0');
+      if (originalKey === canonicalKey) continue;
+      await db
+        .update(permissionGroups)
+        .set({ scopes: canonicalScopes, updatedAt: new Date() })
+        .where(eq(permissionGroups.id, group.id));
+      const removedScopes = originalScopes.filter((scope) => !canonicalScopes.includes(scope));
+      logger.info('Sanitized permission group scopes', { groupId: group.id, groupName: group.name, removedScopes });
     }
   }
 
@@ -397,12 +411,6 @@ export async function initializeContainer(): Promise<void> {
   // Monitoring services
   const monitoringService = new MonitoringService(db);
   container.registerInstance(MonitoringService, monitoringService);
-
-  const nginxStatsService = new NginxStatsService(nodeRegistry, nodeDispatch);
-  container.registerInstance(NginxStatsService, nginxStatsService);
-
-  const nginxConfigService = new NginxConfigService(nodeDispatch);
-  container.registerInstance(NginxConfigService, nginxConfigService);
 
   // AI Settings
   const aiSettingsService = new AISettingsService(db, cryptoService);

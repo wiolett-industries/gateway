@@ -45,16 +45,18 @@ describe('Scope-based permissions', () => {
     it('lets write scopes satisfy matching read scopes', () => {
       expect(hasScope(['settings:gateway:edit'], 'settings:gateway:view')).toBe(true);
       expect(hasScope(['proxy:edit'], 'proxy:view')).toBe(true);
-      expect(hasScope(['proxy:edit'], 'proxy:list')).toBe(true);
+      expect(hasScope(['proxy:edit'], 'proxy:view')).toBe(true);
       expect(hasScope(['databases:query:admin'], 'databases:query:read')).toBe(true);
     });
 
     it('does not let create-only or destructive action scopes satisfy read scopes', () => {
-      expect(hasScope(['proxy:create'], 'proxy:list')).toBe(false);
+      expect(hasScope(['proxy:create'], 'proxy:view')).toBe(false);
       expect(hasScope(['proxy:delete'], 'proxy:view')).toBe(false);
-      expect(hasScope(['notifications:webhooks:create'], 'notifications:webhooks:list')).toBe(false);
-      expect(hasScope(['databases:create'], 'databases:list')).toBe(false);
-      expect(hasScope(['logs:schemas:view'], 'logs:schemas:list')).toBe(false);
+      expect(hasScope(['notifications:webhooks:create'], 'notifications:webhooks:view')).toBe(false);
+      expect(hasScope(['databases:create'], 'databases:view')).toBe(false);
+      expect(hasScope(['databases:credentials:reveal'], 'databases:view')).toBe(false);
+      expect(hasScope(['databases:credentials:reveal:db-1'], 'databases:view:db-1')).toBe(false);
+      expect(hasScope(['logs:schemas:delete'], 'logs:schemas:view')).toBe(false);
     });
 
     it('keeps write-to-read implications inside the same resource boundary', () => {
@@ -62,8 +64,8 @@ describe('Scope-based permissions', () => {
       expect(hasScope(['proxy:edit:host-1'], 'proxy:view:host-2')).toBe(false);
       expect(hasScope(['proxy:edit:host-1'], 'proxy:view')).toBe(false);
       expect(hasScope(['databases:query:admin:db-1'], 'databases:query:write:db-1')).toBe(true);
-      expect(hasScope(['databases:query:read:db-1'], 'databases:list:db-1')).toBe(true);
-      expect(hasScope(['logs:environments:edit:env-1'], 'logs:environments:list:env-1')).toBe(true);
+      expect(hasScope(['databases:query:read:db-1'], 'databases:view:db-1')).toBe(true);
+      expect(hasScope(['logs:environments:edit:env-1'], 'logs:environments:view:env-1')).toBe(true);
       expect(hasScope(['databases:query:admin:db-1'], 'databases:query:write')).toBe(false);
     });
 
@@ -134,9 +136,9 @@ describe('Scope-based permissions', () => {
 
   describe('boundScopes', () => {
     it('keeps exact scopes granted by both sides', () => {
-      expect(boundScopes(['admin:users', 'nodes:list'], ['admin:users', 'nodes:list'])).toEqual([
+      expect(boundScopes(['admin:users', 'nodes:details'], ['admin:users', 'nodes:details'])).toEqual([
         'admin:users',
-        'nodes:list',
+        'nodes:details',
       ]);
     });
 
@@ -146,9 +148,9 @@ describe('Scope-based permissions', () => {
 
     it('downgrades broad delegated read scopes to resource-scoped read scopes implied by write access', () => {
       expect(boundScopes(['proxy:view'], ['proxy:edit:host-1'])).toEqual(['proxy:view:host-1']);
-      expect(boundScopes(['databases:list'], ['databases:edit:db-1'])).toEqual(['databases:list:db-1']);
-      expect(boundScopes(['logs:environments:list'], ['logs:environments:edit:env-1'])).toEqual([
-        'logs:environments:list:env-1',
+      expect(boundScopes(['databases:view'], ['databases:edit:db-1'])).toEqual(['databases:view:db-1']);
+      expect(boundScopes(['logs:environments:view'], ['logs:environments:edit:env-1'])).toEqual([
+        'logs:environments:view:env-1',
       ]);
     });
 
@@ -161,7 +163,7 @@ describe('Scope-based permissions', () => {
     });
 
     it('removes delegated scopes no longer granted by the current user', () => {
-      expect(boundScopes(['admin:users', 'nodes:details:node-1'], ['nodes:list'])).toEqual([]);
+      expect(boundScopes(['admin:users', 'nodes:details:node-1'], ['nodes:details:node-2'])).toEqual([]);
     });
 
     it('does not merge different resource scopes', () => {

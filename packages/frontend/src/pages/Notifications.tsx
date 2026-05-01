@@ -146,13 +146,13 @@ export function Notifications() {
   const navigate = useNavigate();
   const { hasAnyScope } = useAuthStore();
   const canReadAlerts = hasAnyScope(
-    "notifications:alerts:list",
+    "notifications:alerts:view",
     "notifications:alerts:view",
     "notifications:view",
     "notifications:manage"
   );
   const canAccessAlerts = hasAnyScope(
-    "notifications:alerts:list",
+    "notifications:alerts:view",
     "notifications:alerts:view",
     "notifications:alerts:create",
     "notifications:alerts:edit",
@@ -161,7 +161,7 @@ export function Notifications() {
     "notifications:manage"
   );
   const canReadWebhooks = hasAnyScope(
-    "notifications:webhooks:list",
+    "notifications:webhooks:view",
     "notifications:webhooks:view",
     "notifications:view",
     "notifications:manage"
@@ -173,7 +173,7 @@ export function Notifications() {
     "notifications:manage"
   );
   const canAccessWebhooks = hasAnyScope(
-    "notifications:webhooks:list",
+    "notifications:webhooks:view",
     "notifications:webhooks:view",
     "notifications:webhooks:create",
     "notifications:webhooks:edit",
@@ -188,7 +188,7 @@ export function Notifications() {
     "notifications:manage"
   );
   const canViewDeliveries = hasAnyScope(
-    "notifications:deliveries:list",
+    "notifications:deliveries:view",
     "notifications:deliveries:view",
     "notifications:view",
     "notifications:manage"

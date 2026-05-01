@@ -70,7 +70,7 @@ export function registerNetworkRoutes(router: OpenAPIHono<AppEnv>) {
 
   // List networks
   router.openapi(
-    { ...listNetworksRoute, middleware: requireScopeForResource('docker:networks:list', 'nodeId') },
+    { ...listNetworksRoute, middleware: requireScopeForResource('docker:networks:view', 'nodeId') },
     async (c) => {
       const service = container.resolve(DockerManagementService);
       const nodeId = c.req.param('nodeId')!;

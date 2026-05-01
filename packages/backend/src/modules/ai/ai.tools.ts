@@ -1,5 +1,44 @@
-import { hasScope } from '@/lib/permissions.js';
+import { getResourceScopedIds, hasScope, hasScopeBase } from '@/lib/permissions.js';
 import type { AIToolDefinition } from './ai.types.js';
+
+const BROAD_ONLY_TOOL_SCOPES = new Set(['create_proxy_host']);
+const DIRECT_DATABASE_VIEW_TOOLS = new Set(['list_databases', 'get_database_connection']);
+const DIRECT_DATABASE_VIEW_AND_QUERY_TOOLS = new Set([
+  'query_postgres_read',
+  'execute_postgres_sql',
+  'browse_redis_keys',
+  'get_redis_key',
+  'set_redis_key',
+  'execute_redis_command',
+]);
+const ANY_SCOPE_TOOL_REQUIREMENTS: Record<string, string[]> = {
+  list_cas: ['pki:ca:view:root', 'pki:ca:view:intermediate'],
+  get_ca: ['pki:ca:view:root', 'pki:ca:view:intermediate'],
+  delete_ca: ['pki:ca:revoke:root', 'pki:ca:revoke:intermediate'],
+};
+
+function hasDirectScopeBase(userScopes: string[], requiredScope: string): boolean {
+  return userScopes.includes(requiredScope) || userScopes.some((scope) => scope.startsWith(`${requiredScope}:`));
+}
+
+function getDirectResourceScopedIds(userScopes: string[], baseScope: string): string[] {
+  return userScopes
+    .filter((scope) => scope.startsWith(`${baseScope}:`) && scope.length > baseScope.length + 1)
+    .map((scope) => scope.slice(baseScope.length + 1));
+}
+
+function hasDirectDatabaseViewForQueryTool(userScopes: string[], queryScope: string): boolean {
+  if (!hasScopeBase(userScopes, queryScope) || !hasDirectScopeBase(userScopes, 'databases:view')) return false;
+  if (userScopes.includes('databases:view') || hasScope(userScopes, queryScope)) return true;
+
+  const queryIds = new Set(getResourceScopedIds(userScopes, queryScope));
+  return getDirectResourceScopedIds(userScopes, 'databases:view').some((databaseId) => queryIds.has(databaseId));
+}
+
+function hasAnyRequiredToolScope(userScopes: string[], toolName: string): boolean {
+  const requirements = ANY_SCOPE_TOOL_REQUIREMENTS[toolName];
+  return !!requirements && requirements.some((scope) => hasScope(userScopes, scope));
+}
 
 export const AI_TOOLS: AIToolDefinition[] = [
   // ── PKI - Certificate Authorities ──
@@ -10,7 +49,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     parameters: { type: 'object', properties: {} },
     destructive: false,
     category: 'PKI - Certificate Authorities',
-    requiredScope: 'pki:ca:list:root',
+    requiredScope: 'pki:ca:view:root',
     invalidateStores: [],
   },
   {
@@ -25,7 +64,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'PKI - Certificate Authorities',
-    requiredScope: 'pki:ca:list:root',
+    requiredScope: 'pki:ca:view:root',
     invalidateStores: [],
   },
   {
@@ -116,7 +155,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'PKI - Certificates',
-    requiredScope: 'pki:cert:list',
+    requiredScope: 'pki:cert:view',
     invalidateStores: [],
   },
   {
@@ -131,7 +170,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'PKI - Certificates',
-    requiredScope: 'pki:cert:list',
+    requiredScope: 'pki:cert:view',
     invalidateStores: [],
   },
   {
@@ -204,7 +243,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     parameters: { type: 'object', properties: {} },
     destructive: false,
     category: 'PKI - Templates',
-    requiredScope: 'pki:templates:list',
+    requiredScope: 'pki:templates:view',
     invalidateStores: [],
   },
   {
@@ -261,7 +300,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'Reverse Proxy',
-    requiredScope: 'proxy:list',
+    requiredScope: 'proxy:view',
     invalidateStores: [],
   },
   {
@@ -397,7 +436,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'Reverse Proxy',
-    requiredScope: 'proxy:edit',
+    requiredScope: 'proxy:folders:manage',
     invalidateStores: ['proxy'],
   },
   {
@@ -413,7 +452,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'Reverse Proxy',
-    requiredScope: 'proxy:edit',
+    requiredScope: 'proxy:folders:manage',
     invalidateStores: ['proxy'],
   },
   {
@@ -428,7 +467,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: true,
     category: 'Reverse Proxy',
-    requiredScope: 'proxy:delete',
+    requiredScope: 'proxy:folders:manage',
     invalidateStores: ['proxy'],
   },
 
@@ -446,7 +485,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'SSL Certificates',
-    requiredScope: 'ssl:cert:list',
+    requiredScope: 'ssl:cert:view',
     invalidateStores: [],
   },
   {
@@ -508,7 +547,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'Domains',
-    requiredScope: 'proxy:list',
+    requiredScope: 'domains:view',
     invalidateStores: [],
   },
   {
@@ -524,7 +563,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'Domains',
-    requiredScope: 'proxy:edit',
+    requiredScope: 'domains:create',
     invalidateStores: ['domains'],
   },
   {
@@ -539,7 +578,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: true,
     category: 'Domains',
-    requiredScope: 'proxy:delete',
+    requiredScope: 'domains:delete',
     invalidateStores: ['domains'],
   },
 
@@ -557,7 +596,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'Access Lists',
-    requiredScope: 'acl:list',
+    requiredScope: 'acl:view',
     invalidateStores: [],
   },
   {
@@ -627,7 +666,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'Nodes',
-    requiredScope: 'nodes:list',
+    requiredScope: 'nodes:details',
     invalidateStores: [],
   },
   {
@@ -1022,7 +1061,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'Docker',
-    requiredScope: 'docker:containers:list',
+    requiredScope: 'docker:containers:view',
     invalidateStores: [],
   },
   {
@@ -1056,7 +1095,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'Docker',
-    requiredScope: 'docker:containers:list',
+    requiredScope: 'docker:containers:view',
     invalidateStores: [],
   },
   {
@@ -1387,7 +1426,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'Docker',
-    requiredScope: 'docker:images:list',
+    requiredScope: 'docker:images:view',
     invalidateStores: [],
   },
   {
@@ -1454,7 +1493,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'Docker',
-    requiredScope: 'docker:volumes:list',
+    requiredScope: 'docker:volumes:view',
     invalidateStores: [],
   },
   {
@@ -1470,7 +1509,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'Docker',
-    requiredScope: 'docker:networks:list',
+    requiredScope: 'docker:networks:view',
     invalidateStores: [],
   },
 
@@ -1492,7 +1531,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'Databases',
-    requiredScope: 'databases:list',
+    requiredScope: 'databases:view',
     invalidateStores: [],
   },
   {
@@ -1933,7 +1972,14 @@ export function getOpenAITools(
     if (t.name === 'web_search' && !webSearchEnabled) return false;
     // Every tool must have a requiredScope — reject tools without one
     if (!t.requiredScope) return false;
-    return hasScope(userScopes, t.requiredScope);
+    if (ANY_SCOPE_TOOL_REQUIREMENTS[t.name]) return hasAnyRequiredToolScope(userScopes, t.name);
+    if (DIRECT_DATABASE_VIEW_TOOLS.has(t.name)) return hasDirectScopeBase(userScopes, t.requiredScope);
+    if (DIRECT_DATABASE_VIEW_AND_QUERY_TOOLS.has(t.name)) {
+      return hasDirectDatabaseViewForQueryTool(userScopes, t.requiredScope);
+    }
+    return BROAD_ONLY_TOOL_SCOPES.has(t.name)
+      ? hasScope(userScopes, t.requiredScope)
+      : hasScopeBase(userScopes, t.requiredScope);
   }).map((t) => ({
     type: 'function' as const,
     function: {

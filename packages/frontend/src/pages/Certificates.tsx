@@ -72,7 +72,7 @@ export function Certificates() {
   });
 
   useRealtime("ca.changed", () => {
-    if (hasScope("pki:ca:list:root")) {
+    if (hasScope("pki:ca:view:root")) {
       fetchCAs();
     }
   });

@@ -336,8 +336,21 @@ export class CertService {
     };
   }
 
-  async listCertificates(params: CertificateListQuery): Promise<PaginatedResponse<any>> {
+  async listCertificates(
+    params: CertificateListQuery,
+    options?: { allowedIds?: string[] }
+  ): Promise<PaginatedResponse<any>> {
     const conditions = [];
+
+    if (options?.allowedIds) {
+      if (options.allowedIds.length === 0) {
+        return {
+          data: [],
+          pagination: { page: params.page, limit: params.limit, total: 0, totalPages: 0 },
+        };
+      }
+      conditions.push(inArray(certificates.id, options.allowedIds));
+    }
 
     if (!params.showSystem) {
       // Exclude certificates issued by the internal system CA (node mTLS certs)

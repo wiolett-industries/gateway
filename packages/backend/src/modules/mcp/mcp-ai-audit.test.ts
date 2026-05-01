@@ -13,7 +13,7 @@ const USER: User = {
   avatarUrl: null,
   groupId: 'group-1',
   groupName: 'admin',
-  scopes: ['nodes:list', 'nodes:create'],
+  scopes: ['nodes:details', 'nodes:create'],
   isBlocked: false,
 };
 
@@ -22,17 +22,19 @@ function createService({
   proxyService = {},
   dockerService = {},
   databaseService = {},
+  caService = {},
   auditService,
 }: {
   nodesService: { list?: ReturnType<typeof vi.fn>; create?: ReturnType<typeof vi.fn> };
   proxyService?: Record<string, ReturnType<typeof vi.fn>>;
   dockerService?: Record<string, ReturnType<typeof vi.fn>>;
   databaseService?: Record<string, ReturnType<typeof vi.fn>>;
+  caService?: Record<string, ReturnType<typeof vi.fn>>;
   auditService: { log: ReturnType<typeof vi.fn> };
 }) {
   return new AIService(
     {} as never,
-    {} as never,
+    caService as never,
     {} as never,
     {} as never,
     proxyService as never,
@@ -121,7 +123,7 @@ describe('AIService MCP audit behavior', () => {
     };
     const service = createService({ nodesService, auditService });
 
-    const result = await service.executeTool(USER, 'list_nodes', {}, { source: 'mcp', scopes: ['nodes:list'] });
+    const result = await service.executeTool(USER, 'list_nodes', {}, { source: 'mcp', scopes: ['nodes:details'] });
 
     expect(result.error).toBeUndefined();
     expect(auditService.log).not.toHaveBeenCalled();
@@ -161,7 +163,7 @@ describe('AIService MCP audit behavior', () => {
     };
     const service = createService({ nodesService, auditService });
 
-    const result = await service.executeTool(USER, 'list_nodes', {}, { source: 'mcp', scopes: ['nodes:list'] });
+    const result = await service.executeTool(USER, 'list_nodes', {}, { source: 'mcp', scopes: ['nodes:details'] });
 
     expect(result.error).toBeUndefined();
     expect(result.result).toMatchObject({
@@ -215,7 +217,7 @@ describe('AIService MCP audit behavior', () => {
     };
     const service = createService({ nodesService: {}, proxyService, auditService });
 
-    const result = await service.executeTool(USER, 'list_proxy_hosts', {}, { source: 'mcp', scopes: ['proxy:list'] });
+    const result = await service.executeTool(USER, 'list_proxy_hosts', {}, { source: 'mcp', scopes: ['proxy:view'] });
 
     expect(result.error).toBeUndefined();
     expect(result.result).toMatchObject({
@@ -260,7 +262,7 @@ describe('AIService MCP audit behavior', () => {
       USER,
       'list_docker_containers',
       { nodeId: 'node-1' },
-      { source: 'mcp', scopes: ['docker:containers:list:node-1'] }
+      { source: 'mcp', scopes: ['docker:containers:view:node-1'] }
     );
 
     expect(result.error).toBeUndefined();
@@ -319,19 +321,19 @@ describe('AIService MCP audit behavior', () => {
       USER,
       'list_docker_images',
       { nodeId: 'node-1' },
-      { source: 'mcp', scopes: ['docker:images:list:node-1'] }
+      { source: 'mcp', scopes: ['docker:images:view:node-1'] }
     );
     const volumes = await service.executeTool(
       USER,
       'list_docker_volumes',
       { nodeId: 'node-1' },
-      { source: 'mcp', scopes: ['docker:volumes:list:node-1'] }
+      { source: 'mcp', scopes: ['docker:volumes:view:node-1'] }
     );
     const networks = await service.executeTool(
       USER,
       'list_docker_networks',
       { nodeId: 'node-1' },
-      { source: 'mcp', scopes: ['docker:networks:list:node-1'] }
+      { source: 'mcp', scopes: ['docker:networks:view:node-1'] }
     );
 
     expect(images.error).toBeUndefined();
@@ -376,7 +378,7 @@ describe('AIService MCP audit behavior', () => {
       USER,
       'list_docker_images',
       { nodeId: 'node-1' },
-      { source: 'mcp', scopes: ['docker:images:list:node-1'] }
+      { source: 'mcp', scopes: ['docker:images:view:node-1'] }
     );
 
     expect(result.error).toBeUndefined();
@@ -418,7 +420,7 @@ describe('AIService MCP audit behavior', () => {
       USER,
       'list_docker_deployments',
       { nodeId: 'node-1' },
-      { source: 'mcp', scopes: ['docker:containers:list:node-1'] }
+      { source: 'mcp', scopes: ['docker:containers:view:node-1'] }
     );
 
     expect(result.error).toBeUndefined();
@@ -481,6 +483,163 @@ describe('AIService MCP audit behavior', () => {
 
     expect(allowed.error).toBeUndefined();
     expect(databaseService.executePostgresSql).toHaveBeenCalledWith('db-1', 'select 1', USER.id);
+  });
+
+  it('filters database list tools to delegated resource-scoped view grants', async () => {
+    const auditService = { log: vi.fn().mockResolvedValue(undefined) };
+    const databaseService = {
+      list: vi.fn().mockResolvedValue({ data: [{ id: 'db-1' }], pagination: { page: 1, limit: 100, total: 1 } }),
+    };
+    const service = createService({ nodesService: {}, databaseService, auditService });
+
+    const result = await service.executeTool(
+      { ...USER, scopes: ['databases:view:db-1'] },
+      'list_databases',
+      { search: 'prod' },
+      { source: 'mcp', scopes: ['databases:view:db-1'], tokenId: 'token-1', tokenPrefix: 'gwo_abc1234' }
+    );
+
+    expect(result.error).toBeUndefined();
+    expect(databaseService.list).toHaveBeenCalledWith(
+      { page: 1, limit: 100, search: 'prod', type: undefined, healthStatus: undefined },
+      { allowedIds: ['db-1'] }
+    );
+  });
+
+  it('does not treat database query scopes as view grants for database list tools', async () => {
+    const auditService = { log: vi.fn().mockResolvedValue(undefined) };
+    const databaseService = {
+      list: vi.fn().mockResolvedValue({ data: [], pagination: { page: 1, limit: 100, total: 0 } }),
+    };
+    const service = createService({ nodesService: {}, databaseService, auditService });
+
+    const result = await service.executeTool(
+      { ...USER, scopes: ['databases:query:read:db-1'] },
+      'list_databases',
+      {},
+      {
+        source: 'mcp',
+        scopes: ['databases:query:read:db-1'],
+        tokenId: 'token-1',
+        tokenPrefix: 'gwo_abc1234',
+      }
+    );
+
+    expect(result.error).toContain('PERMISSION_DENIED');
+    expect(databaseService.list).not.toHaveBeenCalled();
+  });
+
+  it('does not authorize proxy host creation from a node-scoped proxy:create grant', async () => {
+    const auditService = { log: vi.fn().mockResolvedValue(undefined) };
+    const proxyService = {
+      createProxyHost: vi.fn().mockResolvedValue({ id: 'proxy-1' }),
+    };
+    const service = createService({ nodesService: {}, proxyService, auditService });
+
+    const result = await service.executeTool(
+      { ...USER, scopes: ['proxy:create:node-1'] },
+      'create_proxy_host',
+      { nodeId: 'node-1', domainNames: ['example.com'] },
+      { source: 'mcp', scopes: ['proxy:create:node-1'], tokenId: 'token-1', tokenPrefix: 'gwo_abc1234' }
+    );
+
+    expect(result.error).toContain('PERMISSION_DENIED');
+    expect(proxyService.createProxyHost).not.toHaveBeenCalled();
+  });
+
+  it('binds resource-scoped intermediate CA creation to the parent CA id', async () => {
+    const auditService = { log: vi.fn().mockResolvedValue(undefined) };
+    const service = createService({ nodesService: {}, auditService });
+
+    const result = await service.executeTool(
+      { ...USER, scopes: ['pki:ca:create:intermediate:parent-a'] },
+      'create_intermediate_ca',
+      {
+        parentCaId: 'parent-b',
+        commonName: 'Intermediate CA',
+        keyAlgorithm: 'rsa-2048',
+        validityYears: 5,
+      },
+      {
+        source: 'mcp',
+        scopes: ['pki:ca:create:intermediate:parent-a'],
+        tokenId: 'token-1',
+        tokenPrefix: 'gwo_abc1234',
+      }
+    );
+
+    expect(result.error).toContain('PERMISSION_DENIED');
+  });
+
+  it('filters CA list tools by root/intermediate view scopes', async () => {
+    const auditService = { log: vi.fn().mockResolvedValue(undefined) };
+    const caService = {
+      getCATree: vi.fn().mockResolvedValue([
+        { id: 'root-1', type: 'root', commonName: 'Root' },
+        { id: 'int-1', type: 'intermediate', commonName: 'Intermediate' },
+      ]),
+    };
+    const service = new AIService(
+      {} as never,
+      caService as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      auditService as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never
+    );
+
+    const result = await service.executeTool({ ...USER, scopes: ['pki:ca:view:intermediate'] }, 'list_cas', {});
+
+    expect(result.result).toEqual([{ id: 'int-1', type: 'intermediate', commonName: 'Intermediate' }]);
+  });
+
+  it('enforces target CA type before deleting CAs through AI/MCP tools', async () => {
+    const auditService = { log: vi.fn().mockResolvedValue(undefined) };
+    const caService = {
+      getCA: vi.fn().mockResolvedValue({ id: 'int-1', type: 'intermediate', commonName: 'Intermediate' }),
+      deleteCA: vi.fn().mockResolvedValue(undefined),
+    };
+    const service = createService({ nodesService: {}, caService, auditService });
+
+    const denied = await service.executeTool(
+      { ...USER, scopes: ['pki:ca:revoke:root'] },
+      'delete_ca',
+      { caId: 'int-1' },
+      {
+        source: 'mcp',
+        scopes: ['pki:ca:revoke:root'],
+        tokenId: 'token-1',
+        tokenPrefix: 'gwo_abc1234',
+      }
+    );
+
+    expect(denied.error).toContain('PERMISSION_DENIED: Missing required scope pki:ca:revoke:intermediate');
+    expect(caService.deleteCA).not.toHaveBeenCalled();
+
+    const allowed = await service.executeTool(
+      { ...USER, scopes: ['pki:ca:revoke:intermediate'] },
+      'delete_ca',
+      { caId: 'int-1' },
+      {
+        source: 'mcp',
+        scopes: ['pki:ca:revoke:intermediate'],
+        tokenId: 'token-1',
+        tokenPrefix: 'gwo_abc1234',
+      }
+    );
+
+    expect(allowed.error).toBeUndefined();
+    expect(caService.deleteCA).toHaveBeenCalledWith('int-1', USER.id);
   });
 
   it('uses delegated MCP scopes for proxy advanced-config secondary checks', async () => {

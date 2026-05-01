@@ -9,10 +9,10 @@ interface RequireScopeProps {
 }
 
 export function RequireScope({ scope, children }: RequireScopeProps) {
-  const hasScope = useAuthStore((s) => s.hasScope);
+  const hasScopedAccess = useAuthStore((s) => s.hasScopedAccess);
   const toasted = useRef(false);
 
-  const allowed = hasScope(scope);
+  const allowed = hasScopedAccess(scope);
 
   useEffect(() => {
     if (!allowed && !toasted.current) {

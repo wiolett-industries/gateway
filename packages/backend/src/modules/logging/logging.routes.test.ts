@@ -80,14 +80,15 @@ describe('logging schema route permissions', () => {
     expect(await response.json()).toEqual({ data: [SCHEMA_1] });
   });
 
-  it('does not list schemas with only global schema view scope', async () => {
+  it('lists schemas with global schema view scope', async () => {
     registerServices(['logs:schemas:view'], {
       list: vi.fn().mockResolvedValue([SCHEMA_1, SCHEMA_2]),
     });
 
     const response = await createApp().request('/api/logging/schemas', { headers: authHeaders() });
 
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ data: [SCHEMA_1, SCHEMA_2] });
   });
 
   it('allows schema creation with logs:schemas:create', async () => {

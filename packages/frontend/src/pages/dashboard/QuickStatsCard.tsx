@@ -43,17 +43,17 @@ interface QuickStatsCardProps {
 
 export function QuickStatsCard({ displayStats, nodesList, hasScope }: QuickStatsCardProps) {
   if (
-    !hasScope("proxy:list") &&
-    !hasScope("ssl:cert:list") &&
-    !hasScope("pki:cert:list") &&
-    !hasScope("nodes:list")
+    !hasScope("proxy:view") &&
+    !hasScope("ssl:cert:view") &&
+    !hasScope("pki:cert:view") &&
+    !hasScope("nodes:details")
   ) {
     return null;
   }
 
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      {hasScope("proxy:list") && (
+      {hasScope("proxy:view") && (
         <StatCard
           title="Proxy Hosts"
           value={displayStats.proxyHosts.total}
@@ -62,7 +62,7 @@ export function QuickStatsCard({ displayStats, nodesList, hasScope }: QuickStats
           href="/proxy-hosts"
         />
       )}
-      {hasScope("ssl:cert:list") && (
+      {hasScope("ssl:cert:view") && (
         <StatCard
           title="SSL Certificates"
           value={displayStats.sslCertificates.total}
@@ -75,7 +75,7 @@ export function QuickStatsCard({ displayStats, nodesList, hasScope }: QuickStats
           href="/ssl-certificates"
         />
       )}
-      {hasScope("pki:cert:list") && (
+      {hasScope("pki:cert:view") && (
         <StatCard
           title="PKI Certificates"
           value={displayStats.pkiCertificates.active}
@@ -84,7 +84,7 @@ export function QuickStatsCard({ displayStats, nodesList, hasScope }: QuickStats
           href="/certificates"
         />
       )}
-      {hasScope("nodes:list") && (
+      {hasScope("nodes:details") && (
         <StatCard
           title="Nodes"
           value={nodesList.filter((n) => n.status === "online").length}

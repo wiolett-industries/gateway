@@ -26,8 +26,8 @@ export class CAService {
   setEventBus(bus: EventBusService) {
     this.eventBus = bus;
   }
-  private emitCa(id: string, action: 'created' | 'updated' | 'revoked' | 'deleted') {
-    this.eventBus?.publish('ca.changed', { id, action });
+  private emitCa(id: string, action: 'created' | 'updated' | 'revoked' | 'deleted', type: 'root' | 'intermediate') {
+    this.eventBus?.publish('ca.changed', { id, action, type });
   }
 
   async createRootCA(input: CreateRootCAInput, userId: string) {
@@ -99,7 +99,7 @@ export class CAService {
     });
 
     logger.info('Created root CA', { caId: ca.id, cn: input.commonName });
-    this.emitCa(ca.id, 'created');
+    this.emitCa(ca.id, 'created', ca.type);
     return ca;
   }
 
@@ -205,7 +205,7 @@ export class CAService {
     });
 
     logger.info('Created intermediate CA', { caId: ca.id, parentId, cn: input.commonName });
-    this.emitCa(ca.id, 'created');
+    this.emitCa(ca.id, 'created', ca.type);
     return ca;
   }
 
@@ -298,7 +298,7 @@ export class CAService {
       details: { changes: Object.keys(updates) },
     });
 
-    this.emitCa(id, 'updated');
+    this.emitCa(id, 'updated', ca.type);
     return this.getCA(id);
   }
 
@@ -342,7 +342,7 @@ export class CAService {
     });
 
     logger.info('Revoked CA', { caId: id, reason });
-    this.emitCa(id, 'revoked');
+    this.emitCa(id, 'revoked', ca.type);
   }
 
   async deleteCA(id: string, userId: string) {
@@ -378,7 +378,7 @@ export class CAService {
       resourceType: 'ca',
       resourceId: id,
     });
-    this.emitCa(id, 'deleted');
+    this.emitCa(id, 'deleted', ca.type);
   }
 
   /**

@@ -14,7 +14,7 @@ export function HealthOverviewCard({
   hasScope,
   loading = false,
 }: HealthOverviewCardProps) {
-  if (!hasScope("proxy:list")) return null;
+  if (!hasScope("proxy:view")) return null;
 
   return (
     <div className="border border-border bg-card">

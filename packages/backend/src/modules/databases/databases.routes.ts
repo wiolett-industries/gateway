@@ -2,11 +2,9 @@ import { OpenAPIHono } from '@hono/zod-openapi';
 import { streamSSE } from 'hono/streaming';
 import { container } from '@/container.js';
 import { openApiValidationHook } from '@/lib/openapi.js';
-import { hasScope } from '@/lib/permissions.js';
-import { extractBaseScope } from '@/lib/scopes.js';
+import { getResourceScopedIds, hasScope } from '@/lib/permissions.js';
 import { AppError } from '@/middleware/error-handler.js';
 import { authMiddleware, requireScope, requireScopeForResource } from '@/modules/auth/auth.middleware.js';
-import { TokensService } from '@/modules/tokens/tokens.service.js';
 import type { AppEnv } from '@/types.js';
 import { DatabaseMonitoringService } from './database-monitoring.service.js';
 import {
@@ -57,17 +55,6 @@ import { DatabaseConnectionService, inferPostgresIntent, inferRedisIntent } from
 
 export const databaseRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
 
-function getListAccessibleDatabaseIds(scopes: string[]): string[] {
-  const ids = new Set<string>();
-  for (const scope of scopes) {
-    const base = extractBaseScope(scope);
-    if (scope === base) continue;
-    const id = scope.slice(base.length + 1);
-    if (id && TokensService.hasScope([scope], `databases:list:${id}`)) ids.add(id);
-  }
-  return [...ids];
-}
-
 function ensureQueryScope(c: any, databaseId: string, intent: 'read' | 'write' | 'admin') {
   const scopeSets =
     intent === 'read'
@@ -80,7 +67,7 @@ function ensureQueryScope(c: any, databaseId: string, intent: 'read' | 'write' |
 
 function ensureAnyDatabaseScope(c: any, databaseId: string, scopeBases: string[]) {
   const scopes = c.get('effectiveScopes') ?? [];
-  const granted = scopeBases.some((base) => TokensService.hasScope(scopes, `${base}:${databaseId}`));
+  const granted = scopeBases.some((base) => hasScope(scopes, `${base}:${databaseId}`));
   if (!granted) {
     throw new AppError(403, 'FORBIDDEN', `Missing required scope for database ${databaseId}`);
   }
@@ -91,8 +78,8 @@ databaseRoutes.use('*', authMiddleware);
 databaseRoutes.openapi(listDatabaseConnectionsRoute, async (c) => {
   const service = container.resolve(DatabaseConnectionService);
   const scopes = c.get('effectiveScopes') ?? [];
-  const hasGlobalAccess = hasScope(scopes, 'databases:list');
-  const allowedIds = getListAccessibleDatabaseIds(scopes);
+  const hasGlobalAccess = hasScope(scopes, 'databases:view');
+  const allowedIds = getResourceScopedIds(scopes, 'databases:view');
   if (!hasGlobalAccess && allowedIds.length === 0) {
     throw new AppError(403, 'FORBIDDEN', 'Missing required database access scope');
   }

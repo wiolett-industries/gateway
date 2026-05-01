@@ -47,18 +47,20 @@ describe("scope editor utilities", () => {
   it("lets write scopes satisfy matching read scopes", () => {
     expect(scopeMatches(["settings:gateway:edit"], "settings:gateway:view")).toBe(true);
     expect(scopeMatches(["proxy:edit"], "proxy:view")).toBe(true);
-    expect(scopeMatches(["proxy:edit"], "proxy:list")).toBe(true);
+    expect(scopeMatches(["proxy:edit"], "proxy:view")).toBe(true);
     expect(scopeMatches(["databases:query:admin"], "databases:query:read")).toBe(true);
   });
 
   it("does not let create-only or destructive action scopes satisfy read scopes", () => {
-    expect(scopeMatches(["proxy:create"], "proxy:list")).toBe(false);
+    expect(scopeMatches(["proxy:create"], "proxy:view")).toBe(false);
     expect(scopeMatches(["proxy:delete"], "proxy:view")).toBe(false);
-    expect(scopeMatches(["notifications:webhooks:create"], "notifications:webhooks:list")).toBe(
+    expect(scopeMatches(["notifications:webhooks:create"], "notifications:webhooks:view")).toBe(
       false
     );
-    expect(scopeMatches(["databases:create"], "databases:list")).toBe(false);
-    expect(scopeMatches(["logs:schemas:view"], "logs:schemas:list")).toBe(false);
+    expect(scopeMatches(["databases:create"], "databases:view")).toBe(false);
+    expect(scopeMatches(["databases:credentials:reveal"], "databases:view")).toBe(false);
+    expect(scopeMatches(["databases:credentials:reveal:db-1"], "databases:view:db-1")).toBe(false);
+    expect(scopeMatches(["logs:schemas:delete"], "logs:schemas:view")).toBe(false);
   });
 
   it("keeps write-to-read implications inside the same resource boundary", () => {
@@ -66,8 +68,8 @@ describe("scope editor utilities", () => {
     expect(scopeMatches(["proxy:edit:host-1"], "proxy:view:host-2")).toBe(false);
     expect(scopeMatches(["proxy:edit:host-1"], "proxy:view")).toBe(false);
     expect(scopeMatches(["databases:query:admin:db-1"], "databases:query:write:db-1")).toBe(true);
-    expect(scopeMatches(["databases:query:read:db-1"], "databases:list:db-1")).toBe(true);
-    expect(scopeMatches(["logs:environments:edit:env-1"], "logs:environments:list:env-1")).toBe(
+    expect(scopeMatches(["databases:query:read:db-1"], "databases:view:db-1")).toBe(true);
+    expect(scopeMatches(["logs:environments:edit:env-1"], "logs:environments:view:env-1")).toBe(
       true
     );
     expect(scopeMatches(["databases:query:admin:db-1"], "databases:query:write")).toBe(false);
@@ -91,11 +93,9 @@ describe("scope editor utilities", () => {
       "proxy:view": ["host-1"],
     });
     expect(deriveAllowedResourceIdsByScope(["databases:query:read:db-1"])).toMatchObject({
-      "databases:list": ["db-1"],
       "databases:view": ["db-1"],
     });
     expect(deriveAllowedResourceIdsByScope(["logs:environments:edit:env-1"])).toMatchObject({
-      "logs:environments:list": ["env-1"],
       "logs:environments:view": ["env-1"],
     });
     expect(deriveAllowedResourceIdsByScope(["logs:schemas:edit:schema-1"])).toMatchObject({

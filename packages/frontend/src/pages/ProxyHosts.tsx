@@ -77,7 +77,7 @@ function UngroupedDropZone({
 
 export function ProxyHosts() {
   const navigate = useNavigate();
-  const { hasScope } = useAuthStore();
+  const { hasScope, hasScopedAccess } = useAuthStore();
   const {
     folders,
     ungroupedHosts,
@@ -105,9 +105,11 @@ export function ProxyHosts() {
   const [activeDrag, setActiveDrag] = useState<DragEndEvent["active"] | null>(null);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const isMobile = useIsMobile();
-  const canManageFolders = hasScope("proxy:edit");
+  const canManageFolders = hasScope("proxy:folders:manage");
   const canReorderFolders = canManageFolders && !isMobile;
   const canCreateProxyHost = hasScope("proxy:create");
+  const canShowHostActions =
+    canManageFolders || hasScopedAccess("proxy:edit") || hasScopedAccess("proxy:delete");
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -335,7 +337,7 @@ export function ProxyHosts() {
       <col style={{ width: "8%" }} />
       <col style={{ width: "10%" }} />
       <col style={{ width: "8%" }} />
-      {hasScope("proxy:edit") && <col style={{ width: "56px" }} />}
+      {canShowHostActions && <col style={{ width: "56px" }} />}
     </colgroup>
   );
 
@@ -348,7 +350,7 @@ export function ProxyHosts() {
         <th className="p-3 text-xs font-medium text-muted-foreground">SSL</th>
         <th className="p-3 text-xs font-medium text-muted-foreground">Health</th>
         <th className="p-3 text-xs font-medium text-muted-foreground">Enabled</th>
-        {hasScope("proxy:edit") && (
+        {canShowHostActions && (
           <th className="w-14 p-3 text-xs font-medium text-muted-foreground"></th>
         )}
       </tr>
@@ -549,7 +551,6 @@ export function ProxyHosts() {
                                   onToggle={handleToggle}
                                   togglingIds={togglingIds}
                                   onMoveToFolder={(hostId) => setMoveDialogHostId(hostId)}
-                                  canDrag={canReorderFolders}
                                 />
                               ))}
                             </tbody>
@@ -645,7 +646,7 @@ export function ProxyHosts() {
         ) : (
           <EmptyState
             message="No proxy hosts."
-            {...(hasScope("proxy:edit")
+            {...(canCreateProxyHost
               ? { actionLabel: "Add one", onAction: () => setCreateDialogOpen(true) }
               : {})}
             hasActiveFilters={hasActiveFilters}

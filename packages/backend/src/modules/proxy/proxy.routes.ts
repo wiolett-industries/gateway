@@ -1,12 +1,13 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
 import { openApiValidationHook } from '@/lib/openapi.js';
-import { hasScope } from '@/lib/permissions.js';
+import { getResourceScopedIds, hasScope } from '@/lib/permissions.js';
 import { AppError } from '@/middleware/error-handler.js';
 import {
   authMiddleware,
   isProgrammaticAuth,
   requireScope,
+  requireScopeBase,
   requireScopeForResource,
   sessionOnly,
 } from '@/modules/auth/auth.middleware.js';
@@ -52,10 +53,14 @@ function redactRawProxyConfig<T extends Record<string, unknown>>(host: T): T {
   return { ...host, rawConfig: null };
 }
 
-proxyRoutes.openapi({ ...listProxyHostsRoute, middleware: requireScope('proxy:list') }, async (c) => {
+proxyRoutes.openapi({ ...listProxyHostsRoute, middleware: requireScopeBase('proxy:view') }, async (c) => {
   const proxyService = container.resolve(ProxyService);
   const query = ProxyHostListQuerySchema.parse(c.req.query());
-  const result = await proxyService.listProxyHosts(query);
+  const scopes = c.get('effectiveScopes') || [];
+  const result = await proxyService.listProxyHosts(
+    query,
+    hasScope(scopes, 'proxy:view') ? undefined : { allowedIds: getResourceScopedIds(scopes, 'proxy:view') }
+  );
   if (isProgrammaticAuth(c)) {
     return c.json({ ...result, data: result.data.map((host: any) => stripRawProxyConfig(host)) });
   }

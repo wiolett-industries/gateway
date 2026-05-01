@@ -623,6 +623,7 @@ export interface AlertCategoryDef {
 
 export const RESOURCE_SCOPABLE_SCOPES = [
   "pki:ca:create:intermediate",
+  "pki:cert:view",
   "pki:cert:issue",
   "pki:cert:revoke",
   "pki:cert:export",
@@ -635,6 +636,9 @@ export const RESOURCE_SCOPABLE_SCOPES = [
   "proxy:raw:read",
   "proxy:raw:write",
   "proxy:raw:toggle",
+  "proxy:templates:view",
+  "proxy:templates:edit",
+  "proxy:templates:delete",
   "ssl:cert:view",
   "ssl:cert:delete",
   "ssl:cert:revoke",
@@ -650,7 +654,6 @@ export const RESOURCE_SCOPABLE_SCOPES = [
   "nodes:rename",
   "nodes:delete",
   "nodes:lock",
-  "docker:containers:list",
   "docker:containers:view",
   "docker:containers:create",
   "docker:containers:edit",
@@ -662,17 +665,16 @@ export const RESOURCE_SCOPABLE_SCOPES = [
   "docker:containers:secrets",
   "docker:containers:webhooks",
   "docker:containers:mounts",
-  "docker:images:list",
+  "docker:images:view",
   "docker:images:pull",
   "docker:images:delete",
-  "docker:volumes:list",
+  "docker:volumes:view",
   "docker:volumes:create",
   "docker:volumes:delete",
-  "docker:networks:list",
+  "docker:networks:view",
   "docker:networks:create",
   "docker:networks:edit",
   "docker:networks:delete",
-  "databases:list",
   "databases:view",
   "databases:edit",
   "databases:delete",
@@ -680,11 +682,10 @@ export const RESOURCE_SCOPABLE_SCOPES = [
   "databases:query:write",
   "databases:query:admin",
   "databases:credentials:reveal",
-  "logs:environments:list",
   "logs:environments:view",
   "logs:environments:edit",
   "logs:environments:delete",
-  "logs:tokens:list",
+  "logs:tokens:view",
   "logs:tokens:create",
   "logs:tokens:delete",
   "logs:schemas:view",
@@ -694,30 +695,18 @@ export const RESOURCE_SCOPABLE_SCOPES = [
 ] as const;
 
 // API Token / Group scopes
-export const TOKEN_SCOPES = [
+const RAW_TOKEN_SCOPES = [
   // PKI: Certificate Authorities
-  {
-    value: "pki:ca:list:root",
-    label: "List Root CAs",
-    desc: "List root certificate authorities",
-    group: "PKI: Certificate Authorities",
-  },
-  {
-    value: "pki:ca:list:intermediate",
-    label: "List Intermediate CAs",
-    desc: "List intermediate certificate authorities",
-    group: "PKI: Certificate Authorities",
-  },
   {
     value: "pki:ca:view:root",
     label: "View Root CAs",
-    desc: "View root CA details",
+    desc: "View root certificate authorities",
     group: "PKI: Certificate Authorities",
   },
   {
     value: "pki:ca:view:intermediate",
     label: "View Intermediate CAs",
-    desc: "View intermediate CA details",
+    desc: "View intermediate certificate authorities",
     group: "PKI: Certificate Authorities",
   },
   {
@@ -746,15 +735,9 @@ export const TOKEN_SCOPES = [
   },
   // PKI: Certificates
   {
-    value: "pki:cert:list",
-    label: "List Certificates",
-    desc: "List issued certificates",
-    group: "PKI: Certificates",
-  },
-  {
     value: "pki:cert:view",
     label: "View Certificates",
-    desc: "View certificate details and chain",
+    desc: "View issued certificates",
     group: "PKI: Certificates",
   },
   {
@@ -777,15 +760,9 @@ export const TOKEN_SCOPES = [
   },
   // PKI: Templates
   {
-    value: "pki:templates:list",
-    label: "List Templates",
-    desc: "List certificate templates",
-    group: "PKI: Templates",
-  },
-  {
     value: "pki:templates:view",
     label: "View Templates",
-    desc: "View certificate template details",
+    desc: "View certificate templates",
     group: "PKI: Templates",
   },
   {
@@ -806,17 +783,26 @@ export const TOKEN_SCOPES = [
     desc: "Delete certificate templates",
     group: "PKI: Templates",
   },
-  // Proxy Hosts
+  // Domains
+  { value: "domains:view", label: "View Domains", desc: "View managed domains", group: "Domains" },
   {
-    value: "proxy:list",
-    label: "List Proxy Hosts",
-    desc: "List and search proxy hosts",
-    group: "Proxy Hosts",
+    value: "domains:create",
+    label: "Create Domains",
+    desc: "Create managed domains",
+    group: "Domains",
   },
+  { value: "domains:edit", label: "Edit Domains", desc: "Edit managed domains", group: "Domains" },
+  {
+    value: "domains:delete",
+    label: "Delete Domains",
+    desc: "Delete managed domains",
+    group: "Domains",
+  },
+  // Proxy Hosts
   {
     value: "proxy:view",
     label: "View Proxy Hosts",
-    desc: "View proxy host details",
+    desc: "View and search proxy hosts",
     group: "Proxy Hosts",
   },
   {
@@ -867,17 +853,42 @@ export const TOKEN_SCOPES = [
     desc: "Switch between managed and raw config mode",
     group: "Proxy Hosts",
   },
-  // SSL Certificates
   {
-    value: "ssl:cert:list",
-    label: "List SSL Certificates",
-    desc: "List SSL certificates",
-    group: "SSL Certificates",
+    value: "proxy:folders:manage",
+    label: "Manage Proxy Folders",
+    desc: "Create, reorder, and remove proxy host folders",
+    group: "Proxy Hosts",
   },
+  // Proxy Templates
+  {
+    value: "proxy:templates:view",
+    label: "View Nginx Templates",
+    desc: "View nginx templates",
+    group: "Proxy Templates",
+  },
+  {
+    value: "proxy:templates:create",
+    label: "Create Nginx Templates",
+    desc: "Create nginx templates",
+    group: "Proxy Templates",
+  },
+  {
+    value: "proxy:templates:edit",
+    label: "Edit Nginx Templates",
+    desc: "Edit nginx templates",
+    group: "Proxy Templates",
+  },
+  {
+    value: "proxy:templates:delete",
+    label: "Delete Nginx Templates",
+    desc: "Delete nginx templates",
+    group: "Proxy Templates",
+  },
+  // SSL Certificates
   {
     value: "ssl:cert:view",
     label: "View SSL Certificates",
-    desc: "View SSL certificate details",
+    desc: "View SSL certificates",
     group: "SSL Certificates",
   },
   {
@@ -906,15 +917,9 @@ export const TOKEN_SCOPES = [
   },
   // Access Control Lists
   {
-    value: "acl:list",
-    label: "List Access Lists",
-    desc: "List access control lists",
-    group: "Access Control",
-  },
-  {
     value: "acl:view",
     label: "View Access Lists",
-    desc: "View access list details",
+    desc: "View access control lists",
     group: "Access Control",
   },
   {
@@ -936,13 +941,7 @@ export const TOKEN_SCOPES = [
     group: "Access Control",
   },
   // Nodes
-  { value: "nodes:list", label: "List Nodes", desc: "List managed nodes", group: "Nodes" },
-  {
-    value: "nodes:details",
-    label: "View Node Details",
-    desc: "View node details and monitoring",
-    group: "Nodes",
-  },
+  { value: "nodes:details", label: "View Nodes", desc: "View managed nodes", group: "Nodes" },
   { value: "nodes:create", label: "Create Nodes", desc: "Enroll new nodes", group: "Nodes" },
   { value: "nodes:rename", label: "Rename Nodes", desc: "Rename nodes", group: "Nodes" },
   { value: "nodes:delete", label: "Delete Nodes", desc: "Remove nodes", group: "Nodes" },
@@ -1066,15 +1065,9 @@ export const TOKEN_SCOPES = [
   },
   // Notifications
   {
-    value: "notifications:alerts:list",
-    label: "List Alert Rules",
-    desc: "List notification alert rules",
-    group: "Notifications",
-  },
-  {
     value: "notifications:alerts:view",
     label: "View Alert Rules",
-    desc: "View alert rule details",
+    desc: "View notification alert rules",
     group: "Notifications",
   },
   {
@@ -1096,15 +1089,9 @@ export const TOKEN_SCOPES = [
     group: "Notifications",
   },
   {
-    value: "notifications:webhooks:list",
-    label: "List Webhooks",
-    desc: "List notification webhooks",
-    group: "Notifications",
-  },
-  {
     value: "notifications:webhooks:view",
     label: "View Webhooks",
-    desc: "View webhook details",
+    desc: "View notification webhooks",
     group: "Notifications",
   },
   {
@@ -1126,15 +1113,9 @@ export const TOKEN_SCOPES = [
     group: "Notifications",
   },
   {
-    value: "notifications:deliveries:list",
-    label: "List Delivery Logs",
-    desc: "List webhook delivery attempts",
-    group: "Notifications",
-  },
-  {
     value: "notifications:deliveries:view",
     label: "View Delivery Logs",
-    desc: "View delivery log details",
+    desc: "View webhook delivery attempts",
     group: "Notifications",
   },
   {
@@ -1207,15 +1188,9 @@ export const TOKEN_SCOPES = [
   },
   // Docker: Containers
   {
-    value: "docker:containers:list",
-    label: "List Containers",
-    desc: "List Docker containers",
-    group: "Docker: Containers",
-  },
-  {
     value: "docker:containers:view",
     label: "View Containers",
-    desc: "View container details, logs, and stats",
+    desc: "View Docker containers",
     group: "Docker: Containers",
   },
   {
@@ -1278,11 +1253,17 @@ export const TOKEN_SCOPES = [
     desc: "Add, remove, or change container and deployment mounts",
     group: "Docker: Containers",
   },
+  {
+    value: "docker:containers:folders:manage",
+    label: "Manage Container Folders",
+    desc: "Create, reorder, and remove Docker container folders",
+    group: "Docker: Containers",
+  },
   // Docker: Images
   {
-    value: "docker:images:list",
-    label: "List Images",
-    desc: "List Docker images",
+    value: "docker:images:view",
+    label: "View Images",
+    desc: "View Docker images",
     group: "Docker: Images",
   },
   {
@@ -1299,9 +1280,9 @@ export const TOKEN_SCOPES = [
   },
   // Docker: Volumes
   {
-    value: "docker:volumes:list",
-    label: "List Volumes",
-    desc: "List Docker volumes",
+    value: "docker:volumes:view",
+    label: "View Volumes",
+    desc: "View Docker volumes",
     group: "Docker: Volumes",
   },
   {
@@ -1318,9 +1299,9 @@ export const TOKEN_SCOPES = [
   },
   // Docker: Networks
   {
-    value: "docker:networks:list",
-    label: "List Networks",
-    desc: "List Docker networks",
+    value: "docker:networks:view",
+    label: "View Networks",
+    desc: "View Docker networks",
     group: "Docker: Networks",
   },
   {
@@ -1343,9 +1324,9 @@ export const TOKEN_SCOPES = [
   },
   // Docker: Registries
   {
-    value: "docker:registries:list",
-    label: "List Registries",
-    desc: "List Docker registries",
+    value: "docker:registries:view",
+    label: "View Registries",
+    desc: "View Docker registries",
     group: "Docker: Registries",
   },
   {
@@ -1375,15 +1356,9 @@ export const TOKEN_SCOPES = [
   },
   // Databases
   {
-    value: "databases:list",
-    label: "List Databases",
-    desc: "List saved database connections",
-    group: "Databases",
-  },
-  {
     value: "databases:view",
     label: "View Databases",
-    desc: "View database connection details",
+    desc: "View saved database connections",
     group: "Databases",
   },
   {
@@ -1429,15 +1404,9 @@ export const TOKEN_SCOPES = [
     group: "Databases",
   },
   {
-    value: "logs:environments:list",
-    label: "List Logging Environments",
-    desc: "List external logging environments",
-    group: "Logging",
-  },
-  {
     value: "logs:environments:view",
     label: "View Logging Environments",
-    desc: "View logging environment settings",
+    desc: "View external logging environments",
     group: "Logging",
   },
   {
@@ -1459,9 +1428,9 @@ export const TOKEN_SCOPES = [
     group: "Logging",
   },
   {
-    value: "logs:tokens:list",
-    label: "List Logging Tokens",
-    desc: "List logging ingest tokens",
+    value: "logs:tokens:view",
+    label: "View Logging Tokens",
+    desc: "View logging ingest tokens",
     group: "Logging",
   },
   {
@@ -1477,15 +1446,9 @@ export const TOKEN_SCOPES = [
     group: "Logging",
   },
   {
-    value: "logs:schemas:list",
-    label: "List Logging Schemas",
-    desc: "List reusable logging schemas",
-    group: "Logging",
-  },
-  {
     value: "logs:schemas:view",
     label: "View Logging Schemas",
-    desc: "View reusable logging schema details",
+    desc: "View reusable logging schemas",
     group: "Logging",
   },
   {
@@ -1519,6 +1482,8 @@ export const TOKEN_SCOPES = [
     group: "Logging",
   },
 ] as const;
+
+export const TOKEN_SCOPES = RAW_TOKEN_SCOPES;
 
 const PROGRAMMATIC_DENIED_SCOPE_VALUES = new Set<string>([
   "feat:ai:use",
@@ -2100,56 +2065,6 @@ export interface SSLCertificateOperationResult {
   certificate: SSLCertificate;
   status: "issued" | "pending_dns_verification";
   challenges?: DNSChallenge[];
-}
-
-// ── Nginx Monitoring ──────────────────────────────────────────────
-
-export interface NginxStubStatus {
-  activeConnections: number;
-  accepts: number;
-  handled: number;
-  requests: number;
-  reading: number;
-  writing: number;
-  waiting: number;
-}
-
-export interface NginxSystemStats {
-  cpuUsagePercent: number;
-  memoryUsageBytes: number;
-  memoryLimitBytes: number;
-  memoryUsagePercent: number;
-  networkRxBytes: number;
-  networkTxBytes: number;
-  blockReadBytes: number;
-  blockWriteBytes: number;
-}
-
-export interface NginxTrafficStats {
-  statusCodes: { s2xx: number; s3xx: number; s4xx: number; s5xx: number };
-  avgResponseTime: number;
-  p95ResponseTime: number;
-  totalRequests: number;
-}
-
-export interface NginxStatsSnapshot {
-  timestamp: string;
-  stubStatus: NginxStubStatus | null;
-  systemStats: NginxSystemStats | null;
-  trafficStats: NginxTrafficStats | null;
-  derived: {
-    requestsPerSec: number;
-    connectionsPerSec: number;
-  };
-}
-
-export interface NginxProcessInfo {
-  version: string;
-  workerCount: number;
-  uptime: string;
-  uptimeSeconds: number;
-  containerStatus: string;
-  configValid: boolean;
 }
 
 // ── Domains ───────────────────────────────────────────────────────

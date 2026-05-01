@@ -44,8 +44,9 @@ import type { DnsStatus, Domain } from "@/types";
 
 export function Domains() {
   const { hasScope } = useAuthStore();
-  const canEdit = hasScope("proxy:edit");
-  const isAdmin = hasScope("proxy:delete");
+  const canEdit = hasScope("domains:edit");
+  const isAdmin = hasScope("domains:delete");
+  const canIssueCert = canEdit && hasScope("ssl:cert:issue");
 
   const cachedDomains = api.getCached<{ data: Domain[]; pagination: { totalPages: number } }>(
     "domains:list"
@@ -292,7 +293,7 @@ export function Domains() {
                                 <RefreshCw className="h-4 w-4" />
                                 Check DNS
                               </DropdownMenuItem>
-                              {d.dnsStatus === "valid" && !d.sslCertCount && (
+                              {canIssueCert && d.dnsStatus === "valid" && !d.sslCertCount && (
                                 <DropdownMenuItem onClick={() => handleIssueCert(d)}>
                                   <Shield className="h-4 w-4" />
                                   Issue Cert

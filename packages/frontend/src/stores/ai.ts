@@ -548,6 +548,24 @@ export const useAIStore = create<AIState>()((set, get) => ({
   },
 }));
 
+export function resetAIStateForAuthChange() {
+  if (retryTimer) {
+    clearInterval(retryTimer);
+    retryTimer = null;
+  }
+  currentRequestId = null;
+  wsClient?.disconnect();
+  wsClient = null;
+  useAIStore.setState({
+    messages: [],
+    isStreaming: false,
+    isConnected: false,
+    retryAfter: null,
+    savedName: null,
+    pendingApprovalToolCallId: null,
+  });
+}
+
 function handleWSMessage(
   msg: WSServerMessage,
   set: (partial: Partial<AIState> | ((state: AIState) => Partial<AIState>)) => void,

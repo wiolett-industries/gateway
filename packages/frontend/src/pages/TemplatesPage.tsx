@@ -14,27 +14,27 @@ const TABS = [
     value: "pki",
     label: "PKI Certificates",
     icon: Award,
-    scope: "pki:templates:list",
+    scope: "pki:templates:view",
     createScope: "pki:templates:create",
   },
   {
     value: "nginx",
     label: "Nginx Config",
     icon: FileCode,
-    scope: "proxy:list",
-    createScope: "proxy:edit",
+    scope: "proxy:templates:view",
+    createScope: "proxy:templates:create",
   },
 ] as const;
 
 export function TemplatesPage() {
   const { tab: tabParam } = useParams<{ tab?: string }>();
   const navigate = useNavigate();
-  const { hasScope } = useAuthStore();
+  const { hasScope, hasScopedAccess } = useAuthStore();
 
   const pkiCreateRef = useRef<(() => void) | null>(null);
   const nginxCreateRef = useRef<(() => void) | null>(null);
 
-  const visibleTabs = TABS.filter((t) => hasScope(t.scope));
+  const visibleTabs = TABS.filter((t) => hasScopedAccess(t.scope));
   const activeTab =
     tabParam && visibleTabs.some((t) => t.value === tabParam)
       ? tabParam
@@ -80,7 +80,7 @@ export function TemplatesPage() {
             onClick: () => pkiCreateRef.current?.(),
           },
         ]
-      : activeTab === "nginx" && hasScope("proxy:edit")
+      : activeTab === "nginx" && hasScope("proxy:templates:create")
         ? [
             {
               label: "Create Template",

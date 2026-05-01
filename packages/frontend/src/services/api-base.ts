@@ -56,6 +56,16 @@ function getLoginRedirectUrl(): string {
 export class ApiClientBase {
   protected cache = new Map<string, CacheEntry>();
   private csrfToken: string | null = null;
+  private sessionGeneration = 0;
+
+  private assertSessionGeneration(generation: number): void {
+    if (generation !== this.sessionGeneration) {
+      throw new ApiRequestError("Session changed", {
+        status: 0,
+        code: "SESSION_CHANGED",
+      });
+    }
+  }
 
   /** Get cached data if fresh enough. */
   getCached<T>(key: string, ttl = DEFAULT_CACHE_TTL): T | undefined {
@@ -84,6 +94,12 @@ export class ApiClientBase {
     }
   }
 
+  resetSessionState(): void {
+    this.cache.clear();
+    this.csrfToken = null;
+    this.sessionGeneration += 1;
+  }
+
   /**
    * Fetch with cache: returns cached data if available, fetches in background to update.
    * Returns [data, isFromCache].
@@ -93,9 +109,11 @@ export class ApiClientBase {
     fetcher: () => Promise<T>,
     ttl = DEFAULT_CACHE_TTL
   ): Promise<T> {
+    const generation = this.sessionGeneration;
     const cached = this.getCached<T>(key, ttl);
     // Always fetch fresh data
     const fresh = fetcher().then((data) => {
+      this.assertSessionGeneration(generation);
       this.setCache(key, data);
       return data;
     });
@@ -116,6 +134,7 @@ export class ApiClientBase {
 
   private async getCsrfToken(): Promise<string> {
     if (this.csrfToken) return this.csrfToken;
+    const generation = this.sessionGeneration;
 
     const response = await fetch("/auth/csrf", {
       cache: "no-store",
@@ -147,6 +166,8 @@ export class ApiClientBase {
       });
     }
 
+    this.assertSessionGeneration(generation);
+
     this.csrfToken = body.csrfToken;
     return body.csrfToken;
   }
@@ -157,6 +178,7 @@ export class ApiClientBase {
     { suppressGlobalStatus = false }: { suppressGlobalStatus?: boolean } = {}
   ): Promise<T> {
     let response: Response;
+    const generation = this.sessionGeneration;
     const method = (options.method || "GET").toUpperCase();
     const headers = new Headers(this.getHeaders());
     if (options.headers) {
@@ -186,6 +208,8 @@ export class ApiClientBase {
     if (response.status < 500 && !suppressGlobalStatus) {
       useAppStatusStore.getState().setMaintenanceActive(false);
     }
+
+    this.assertSessionGeneration(generation);
 
     if (!response.ok) {
       if (response.status >= 500) {
@@ -250,7 +274,9 @@ export class ApiClientBase {
       return undefined as T;
     }
 
-    return response.json();
+    const data = (await response.json()) as T;
+    this.assertSessionGeneration(generation);
+    return data;
   }
 
   protected async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
@@ -265,8 +291,10 @@ export class ApiClientBase {
     // instant stale value; returning cached data here makes refresh actions
     // look successful while leaving the UI stale.
     if (method === "GET") {
+      const generation = this.sessionGeneration;
       const cacheKey = `req:${url}`;
       const data = await this.fetchRaw<T>(url, options);
+      this.assertSessionGeneration(generation);
       this.setCache(cacheKey, data);
       return data;
     }

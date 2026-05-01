@@ -186,7 +186,7 @@ Yes. If `CLICKHOUSE_URL` is empty, the structured logging UI and ingest API are 
 <details>
 <summary><strong>Can API or OAuth tokens expose secrets?</strong></summary>
 
-Only when the owning user already has the required scopes. Sensitive OAuth scopes require explicit opt-in during consent, API/OAuth tokens cannot exceed the user's current effective permissions, and resource-scoped write-capable scopes stay bounded to the same resource when they imply read/list checks. See [SCOPES.md](SCOPES.md).
+Only when the owning user already has the required scopes. Sensitive OAuth scopes require explicit opt-in during consent, API/OAuth tokens cannot exceed the user's current effective permissions, and resource-scoped write-capable scopes stay bounded to the same resource when they imply read/view checks. See [SCOPES.md](SCOPES.md).
 </details>
 
 <details>

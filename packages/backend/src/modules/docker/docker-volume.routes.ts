@@ -44,7 +44,7 @@ export function registerVolumeRoutes(router: OpenAPIHono<AppEnv>) {
 
   // List volumes
   router.openapi(
-    { ...listVolumesRoute, middleware: requireScopeForResource('docker:volumes:list', 'nodeId') },
+    { ...listVolumesRoute, middleware: requireScopeForResource('docker:volumes:view', 'nodeId') },
     async (c) => {
       const service = container.resolve(DockerManagementService);
       const nodeId = c.req.param('nodeId')!;

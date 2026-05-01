@@ -3,8 +3,14 @@ import { container } from '@/container.js';
 import { openApiValidationHook } from '@/lib/openapi.js';
 import { hasScope } from '@/lib/permissions.js';
 import { sanitizeFilename } from '@/lib/utils.js';
+import { AppError } from '@/middleware/error-handler.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
-import { authMiddleware, requireAnyScope, requireScope } from '@/modules/auth/auth.middleware.js';
+import {
+  authMiddleware,
+  requireAnyScope,
+  requireScope,
+  requireScopeForResource,
+} from '@/modules/auth/auth.middleware.js';
 import { CryptoService } from '@/services/crypto.service.js';
 import type { AppEnv } from '@/types.js';
 import {
@@ -32,9 +38,13 @@ export const caRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidation
 
 caRoutes.use('*', authMiddleware);
 
+function caTypeScope(prefix: 'pki:ca:view' | 'pki:ca:revoke', type: string) {
+  return type === 'root' ? `${prefix}:root` : `${prefix}:intermediate`;
+}
+
 // List CAs (tree)
 caRoutes.openapi(
-  { ...listCAsRoute, middleware: requireAnyScope('pki:ca:list:root', 'pki:ca:list:intermediate') },
+  { ...listCAsRoute, middleware: requireAnyScope('pki:ca:view:root', 'pki:ca:view:intermediate') },
   async (c) => {
     const caService = container.resolve(CAService);
     const showSystem = c.req.query('showSystem') === 'true';
@@ -43,7 +53,13 @@ caRoutes.openapi(
       return c.json({ code: 'FORBIDDEN', message: 'Insufficient permissions' }, 403);
     }
     const tree = await caService.getCATree(showSystem);
-    return c.json(tree);
+    return c.json(
+      tree.filter(
+        (ca) =>
+          (ca.type === 'root' && hasScope(scopes, 'pki:ca:view:root')) ||
+          (ca.type === 'intermediate' && hasScope(scopes, 'pki:ca:view:intermediate'))
+      )
+    );
   }
 );
 
@@ -57,6 +73,10 @@ caRoutes.openapi(
     const ca = await caService.getCA(id, {
       includeSystem: hasScope(scopes, 'admin:details:certificates'),
     });
+    const requiredScope = caTypeScope('pki:ca:view', ca.type);
+    if (!hasScope(scopes, requiredScope)) {
+      throw new AppError(403, 'FORBIDDEN', `Missing required scope: ${requiredScope}`);
+    }
     return c.json(ca);
   }
 );
@@ -73,7 +93,7 @@ caRoutes.openapi({ ...createRootCARoute, middleware: requireScope('pki:ca:create
 
 // Create intermediate CA (admin only)
 caRoutes.openapi(
-  { ...createIntermediateCARoute, middleware: requireScope('pki:ca:create:intermediate') },
+  { ...createIntermediateCARoute, middleware: requireScopeForResource('pki:ca:create:intermediate', 'id') },
   async (c) => {
     const caService = container.resolve(CAService);
     const user = c.get('user')!;
@@ -105,6 +125,13 @@ caRoutes.openapi(
     const id = c.req.param('id')!;
     const body = await c.req.json();
     const { reason } = RevokeCASchema.parse(body);
+    const ca = await caService.getCA(id, {
+      includeSystem: hasScope(c.get('effectiveScopes') || [], 'admin:details:certificates'),
+    });
+    const requiredScope = caTypeScope('pki:ca:revoke', ca.type);
+    if (!hasScope(c.get('effectiveScopes') || [], requiredScope)) {
+      throw new AppError(403, 'FORBIDDEN', `Missing required scope: ${requiredScope}`);
+    }
     await caService.revokeCA(id, reason, user.id);
     return c.json({ message: 'CA revoked' });
   }
@@ -117,6 +144,13 @@ caRoutes.openapi(
     const caService = container.resolve(CAService);
     const user = c.get('user')!;
     const id = c.req.param('id')!;
+    const ca = await caService.getCA(id, {
+      includeSystem: hasScope(c.get('effectiveScopes') || [], 'admin:details:certificates'),
+    });
+    const requiredScope = caTypeScope('pki:ca:revoke', ca.type);
+    if (!hasScope(c.get('effectiveScopes') || [], requiredScope)) {
+      throw new AppError(403, 'FORBIDDEN', `Missing required scope: ${requiredScope}`);
+    }
     await caService.deleteCA(id, user.id);
     return c.body(null, 204);
   }

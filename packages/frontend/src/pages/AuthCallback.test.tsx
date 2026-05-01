@@ -9,7 +9,7 @@ import { renderWithRouter } from "@/test/render";
 
 describe("AuthCallback", () => {
   it("loads the current user and redirects after a successful callback", async () => {
-    vi.spyOn(api, "getCurrentUser").mockResolvedValue(makeUser({ scopes: ["nodes:list"] }));
+    vi.spyOn(api, "getCurrentUser").mockResolvedValue(makeUser({ scopes: ["nodes:details"] }));
 
     renderWithRouter(<AuthCallback />, {
       path: "/callback",

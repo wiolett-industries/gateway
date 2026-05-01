@@ -23,8 +23,8 @@ function frontendResourceScopableScopes(): string[] {
   return [...match[1].matchAll(/"([^"]+)"/g)].map((entry) => entry[1]);
 }
 
-function programmaticSurfaceMigration(): string {
-  return readFileSync(join(process.cwd(), 'src/db/migrations/0028_programmatic_api_surface.sql'), 'utf8');
+function listScopeRemovalMigration(): string {
+  return readFileSync(join(process.cwd(), 'src/db/migrations/0030_remove_list_scopes.sql'), 'utf8');
 }
 
 function migratedProgrammaticStoredScopes(scopes: string[]): string[] {
@@ -40,17 +40,17 @@ describe('canonical scope definitions', () => {
     expect(SYSTEM_ADMIN_SCOPES).toEqual([...ALL_SCOPES]);
   });
 
-  it('keeps built-in admin curated instead of auto-inheriting sensitive scopes', () => {
+  it('keeps built-in admin broad while excluding protected operational scopes', () => {
     expect(ADMIN_SCOPES).toContain('settings:gateway:view');
-    expect(ADMIN_SCOPES).toContain('housekeeping:run');
-    expect(ADMIN_SCOPES).toContain('docker:registries:list');
-    expect(ADMIN_SCOPES).toContain('docker:containers:mounts');
-    expect(ADMIN_SCOPES).not.toContain('admin:system');
     expect(ADMIN_SCOPES).not.toContain('settings:gateway:edit');
+    expect(ADMIN_SCOPES).toContain('housekeeping:run');
     expect(ADMIN_SCOPES).not.toContain('housekeeping:configure');
+    expect(ADMIN_SCOPES).toContain('docker:registries:view');
     expect(ADMIN_SCOPES).not.toContain('docker:registries:create');
     expect(ADMIN_SCOPES).not.toContain('docker:registries:edit');
     expect(ADMIN_SCOPES).not.toContain('docker:registries:delete');
+    expect(ADMIN_SCOPES).toContain('docker:containers:mounts');
+    expect(ADMIN_SCOPES).not.toContain('admin:system');
   });
 
   it('grants Docker mount editing only to built-in admin tiers by default', () => {
@@ -120,18 +120,31 @@ describe('canonical scope definitions', () => {
     ]);
   });
 
-  it('keeps the destructive stored-scope cleanup migration aligned with runtime scope rules', () => {
-    const migration = programmaticSurfaceMigration();
+  it('removes obsolete list scopes from stored scope-bearing tables', () => {
+    const migration = listScopeRemovalMigration();
 
-    for (const scope of PROGRAMMATIC_DENIED_BASE_SCOPES) {
-      expect(migration).toContain(`('${scope}')`);
-    }
-    for (const scope of RESOURCE_SCOPABLE) {
-      if (scope === 'docker:containers:mounts') continue;
-      expect(migration).toContain(`('${scope}')`);
-    }
-    for (const scope of ALL_SCOPES) {
-      if (scope === 'docker:containers:mounts') continue;
+    for (const scope of [
+      'pki:ca:list:root',
+      'pki:ca:list:intermediate',
+      'pki:cert:list',
+      'pki:templates:list',
+      'proxy:list',
+      'ssl:cert:list',
+      'acl:list',
+      'nodes:list',
+      'docker:containers:list',
+      'docker:images:list',
+      'docker:volumes:list',
+      'docker:networks:list',
+      'docker:registries:list',
+      'databases:list',
+      'notifications:alerts:list',
+      'notifications:webhooks:list',
+      'notifications:deliveries:list',
+      'logs:environments:list',
+      'logs:tokens:list',
+      'logs:schemas:list',
+    ]) {
       expect(migration).toContain(`('${scope}')`);
     }
     for (const table of [
@@ -143,10 +156,9 @@ describe('canonical scope definitions', () => {
     ]) {
       expect(migration).toContain(`UPDATE "${table}"`);
     }
-    expect(migration).toContain('gateway_canonicalize_scopes');
-    expect(migration).toContain("scope LIKE denied.scope || ':%'");
-    expect(migration).toContain('parsed.base_scope IS NOT NULL');
-    expect(migration).not.toContain('split_part(scope');
+    expect(migration).toContain('"requested_scopes"');
+    expect(migration).toContain("scope_value LIKE obsolete.scope || ':%'");
+    expect(migration).not.toContain('proxy:view');
   });
 
   it('models the stored-scope migration behavior for denied suffixes and overlapping resource scopes', () => {

@@ -50,7 +50,7 @@ export function PkiTemplatesTab({
   onCreateRef?: (fn: () => void) => void;
 }) {
   const { hasScope } = useAuthStore();
-  const canListTemplates = hasScope("pki:templates:list");
+  const canListTemplates = hasScope("pki:templates:view");
   const canCreateTemplates = hasScope("pki:templates:create");
   const canEditTemplates = hasScope("pki:templates:edit");
   const canDeleteTemplates = hasScope("pki:templates:delete");

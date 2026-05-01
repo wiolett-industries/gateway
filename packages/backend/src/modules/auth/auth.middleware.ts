@@ -3,6 +3,7 @@ import { getCookie } from 'hono/cookie';
 import { HTTPException } from 'hono/http-exception';
 import { container, TOKENS } from '@/container.js';
 import type { DrizzleClient } from '@/db/client.js';
+import { hasScopeBase } from '@/lib/permissions.js';
 import { resolveLiveUser } from '@/modules/auth/live-session-user.js';
 import { OAuthService } from '@/modules/oauth/oauth.service.js';
 import { TokensService } from '@/modules/tokens/tokens.service.js';
@@ -192,6 +193,16 @@ export function requireScope(scope: string): MiddlewareHandler<AppEnv> {
     const scopes = c.get('effectiveScopes');
     if (!scopes || !TokensService.hasScope(scopes, scope)) {
       throw new HTTPException(403, { message: `Missing required scope: ${scope}` });
+    }
+    await next();
+  };
+}
+
+export function requireScopeBase(scopeBase: string): MiddlewareHandler<AppEnv> {
+  return async (c, next) => {
+    const scopes = c.get('effectiveScopes');
+    if (!scopes || !hasScopeBase(scopes, scopeBase)) {
+      throw new HTTPException(403, { message: `Missing required scope: ${scopeBase}` });
     }
     await next();
   };

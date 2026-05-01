@@ -62,7 +62,7 @@ afterEach(() => {
 });
 
 describe('PKI template route permissions', () => {
-  it('rejects template listing without pki:templates:list', async () => {
+  it('rejects template listing without pki:templates:view', async () => {
     const listTemplates = vi.fn().mockResolvedValue([TEMPLATE]);
     registerServices(['pki:templates:create'], { listTemplates });
 
@@ -74,7 +74,7 @@ describe('PKI template route permissions', () => {
 
   it('rejects template details without pki:templates:view', async () => {
     const getTemplate = vi.fn().mockResolvedValue(TEMPLATE);
-    registerServices(['pki:templates:list'], { getTemplate });
+    registerServices(['pki:templates:create'], { getTemplate });
 
     const response = await createApp().request(`/api/templates/${TEMPLATE_ID}`, {
       headers: authHeaders(),
@@ -84,9 +84,9 @@ describe('PKI template route permissions', () => {
     expect(getTemplate).not.toHaveBeenCalled();
   });
 
-  it('allows template listing with pki:templates:list', async () => {
+  it('allows template listing with pki:templates:view', async () => {
     const listTemplates = vi.fn().mockResolvedValue([TEMPLATE]);
-    registerServices(['pki:templates:list'], { listTemplates });
+    registerServices(['pki:templates:view'], { listTemplates });
 
     const response = await createApp().request('/api/templates', { headers: authHeaders() });
 

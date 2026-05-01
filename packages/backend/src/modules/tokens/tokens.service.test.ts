@@ -59,18 +59,18 @@ describe('TokensService.validateToken', () => {
   it('bounds token scopes by the token owner current group after demotion', async () => {
     const db = createDb({
       userGroupId: 'viewer-group',
-      tokenScopes: ['admin:users', 'nodes:list'],
+      tokenScopes: ['admin:users', 'nodes:details'],
       groups: [
-        { id: 'admin-group', name: 'admin', parentId: null, scopes: ['admin:users', 'nodes:list'] },
-        { id: 'viewer-group', name: 'viewer', parentId: null, scopes: ['nodes:list'] },
+        { id: 'admin-group', name: 'admin', parentId: null, scopes: ['admin:users', 'nodes:details'] },
+        { id: 'viewer-group', name: 'viewer', parentId: null, scopes: ['nodes:details'] },
       ],
     });
 
     const result = await createService(db).validateToken('gw_test_token');
 
     expect(result?.user.groupName).toBe('viewer');
-    expect(result?.user.scopes).toEqual(['nodes:list']);
-    expect(result?.scopes).toEqual(['nodes:list']);
+    expect(result?.user.scopes).toEqual(['nodes:details']);
+    expect(result?.scopes).toEqual(['nodes:details']);
   });
 
   it('allows only the currently granted resource when a broad token owner is narrowed', async () => {
@@ -91,33 +91,33 @@ describe('TokensService.validateToken', () => {
       tokenScopes: ['status-page:manage', 'admin:users'],
       groups: [
         { id: 'parent-group', name: 'parent', parentId: null, scopes: ['status-page:manage'] },
-        { id: 'child-group', name: 'child', parentId: 'parent-group', scopes: ['nodes:list'] },
+        { id: 'child-group', name: 'child', parentId: 'parent-group', scopes: ['nodes:details'] },
       ],
     });
 
     const result = await createService(db).validateToken('gw_test_token');
 
-    expect(result?.user.scopes).toEqual(['nodes:list', 'status-page:manage']);
+    expect(result?.user.scopes).toEqual(['nodes:details', 'status-page:manage']);
     expect(result?.scopes).toEqual(['status-page:manage']);
   });
 
   it('filters user-only AI scopes from existing tokens', async () => {
     const db = createDb({
       userGroupId: 'admin-group',
-      tokenScopes: ['feat:ai:use', 'feat:ai:configure', 'nodes:list'],
+      tokenScopes: ['feat:ai:use', 'feat:ai:configure', 'nodes:details'],
       groups: [
         {
           id: 'admin-group',
           name: 'admin',
           parentId: null,
-          scopes: ['feat:ai:use', 'feat:ai:configure', 'nodes:list'],
+          scopes: ['feat:ai:use', 'feat:ai:configure', 'nodes:details'],
         },
       ],
     });
 
     const result = await createService(db).validateToken('gw_test_token');
 
-    expect(result?.scopes).toEqual(['nodes:list']);
+    expect(result?.scopes).toEqual(['nodes:details']);
   });
 });
 
@@ -132,7 +132,7 @@ describe('TokensService.updateToken', () => {
             id: '22222222-2222-4222-8222-222222222222',
             userId: USER_ID,
             name: 'CI',
-            scopes: ['nodes:list'],
+            scopes: ['nodes:details'],
           }),
         },
       },

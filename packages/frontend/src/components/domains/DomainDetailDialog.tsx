@@ -71,7 +71,8 @@ export function DomainDetailDialog({
   onUpdated,
 }: DomainDetailDialogProps) {
   const { hasScope } = useAuthStore();
-  const canEdit = hasScope("proxy:edit");
+  const canEdit = hasScope("domains:edit");
+  const canIssueCert = canEdit && hasScope("ssl:cert:issue");
   const [domain, setDomain] = useState<DomainWithUsage | null>(null);
   const [description, setDescription] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -274,7 +275,7 @@ export function DomainDetailDialog({
             </div>
 
             {/* Issue cert action */}
-            {canEdit &&
+            {canIssueCert &&
               domain.usage.sslCertificates.length === 0 &&
               domain.dnsStatus === "valid" && (
                 <Button

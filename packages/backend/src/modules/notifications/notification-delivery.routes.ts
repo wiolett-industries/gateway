@@ -28,7 +28,7 @@ deliveryRoutes.openapi(
   {
     ...listNotificationDeliveriesRoute,
     middleware: requireAnyScope(
-      'notifications:deliveries:list',
+      'notifications:deliveries:view',
       'notifications:deliveries:view',
       'notifications:view',
       'notifications:manage'
@@ -47,7 +47,7 @@ deliveryRoutes.openapi(
   {
     ...notificationDeliveryStatsRoute,
     middleware: requireAnyScope(
-      'notifications:deliveries:list',
+      'notifications:deliveries:view',
       'notifications:deliveries:view',
       'notifications:view',
       'notifications:manage'
@@ -67,7 +67,7 @@ deliveryRoutes.openapi(
     ...getNotificationDeliveryRoute,
     middleware: requireAnyScope(
       'notifications:deliveries:view',
-      'notifications:deliveries:list',
+      'notifications:deliveries:view',
       'notifications:view',
       'notifications:manage'
     ),

@@ -115,7 +115,7 @@ Important behavior:
 
 - Token scopes cannot exceed the owning user's permissions.
 - Effective scopes are bounded by the owner at request time.
-- Write-capable scopes satisfy matching read/list/view checks, but resource-scoped grants stay limited to the same resource.
+- Write-capable scopes satisfy matching read/view checks, but resource-scoped grants stay limited to the same resource.
 - Create-only and destructive-only scopes do not imply browse access.
 - Sensitive reveal or export operations require explicit scopes.
 - API tokens are not accepted by the MCP endpoint.
@@ -150,7 +150,7 @@ The `mcp:use` scope is a user-account capability gate. The owning user must have
 
 ### Scope Rules
 
-Write-capable scopes satisfy matching read/list/view checks so users can operate on resources they are allowed to modify. Resource-scoped grants stay bounded to the same resource, and create-only or destructive-only scopes do not grant browse access by themselves.
+Write-capable scopes satisfy matching read/view checks so users can operate on resources they are allowed to modify. Resource-scoped grants stay bounded to the same resource, and create-only or destructive-only scopes do not grant browse access by themselves.
 
 For the complete scope list, implication behavior, delegability, and manual OAuth opt-in scopes, see [SCOPES.md](../SCOPES.md).
 

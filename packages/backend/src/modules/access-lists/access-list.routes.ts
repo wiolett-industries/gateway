@@ -1,7 +1,13 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
 import { openApiValidationHook } from '@/lib/openapi.js';
-import { authMiddleware, requireScope } from '@/modules/auth/auth.middleware.js';
+import { getResourceScopedIds, hasScope } from '@/lib/permissions.js';
+import {
+  authMiddleware,
+  requireScope,
+  requireScopeBase,
+  requireScopeForResource,
+} from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import {
   createAccessListRoute,
@@ -18,21 +24,28 @@ export const accessListRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiVa
 accessListRoutes.use('*', authMiddleware);
 
 // List access lists
-accessListRoutes.openapi({ ...listAccessListsRoute, middleware: requireScope('acl:list') }, async (c) => {
+accessListRoutes.openapi({ ...listAccessListsRoute, middleware: requireScopeBase('acl:view') }, async (c) => {
   const accessListService = container.resolve(AccessListService);
   const rawQuery = c.req.query();
   const query = AccessListQuerySchema.parse(rawQuery);
-  const result = await accessListService.list(query);
+  const scopes = c.get('effectiveScopes') || [];
+  const result = await accessListService.list(
+    query,
+    hasScope(scopes, 'acl:view') ? undefined : { allowedIds: getResourceScopedIds(scopes, 'acl:view') }
+  );
   return c.json(result);
 });
 
 // Get access list detail
-accessListRoutes.openapi({ ...getAccessListRoute, middleware: requireScope('acl:view') }, async (c) => {
-  const accessListService = container.resolve(AccessListService);
-  const id = c.req.param('id')!;
-  const accessList = await accessListService.get(id);
-  return c.json({ data: accessList });
-});
+accessListRoutes.openapi(
+  { ...getAccessListRoute, middleware: requireScopeForResource('acl:view', 'id') },
+  async (c) => {
+    const accessListService = container.resolve(AccessListService);
+    const id = c.req.param('id')!;
+    const accessList = await accessListService.get(id);
+    return c.json({ data: accessList });
+  }
+);
 
 // Create access list
 accessListRoutes.openapi({ ...createAccessListRoute, middleware: requireScope('acl:create') }, async (c) => {
@@ -45,21 +58,27 @@ accessListRoutes.openapi({ ...createAccessListRoute, middleware: requireScope('a
 });
 
 // Update access list
-accessListRoutes.openapi({ ...updateAccessListRoute, middleware: requireScope('acl:edit') }, async (c) => {
-  const accessListService = container.resolve(AccessListService);
-  const user = c.get('user')!;
-  const id = c.req.param('id')!;
-  const body = await c.req.json();
-  const input = UpdateAccessListSchema.parse(body);
-  const accessList = await accessListService.update(id, input, user.id);
-  return c.json({ data: accessList });
-});
+accessListRoutes.openapi(
+  { ...updateAccessListRoute, middleware: requireScopeForResource('acl:edit', 'id') },
+  async (c) => {
+    const accessListService = container.resolve(AccessListService);
+    const user = c.get('user')!;
+    const id = c.req.param('id')!;
+    const body = await c.req.json();
+    const input = UpdateAccessListSchema.parse(body);
+    const accessList = await accessListService.update(id, input, user.id);
+    return c.json({ data: accessList });
+  }
+);
 
 // Delete access list
-accessListRoutes.openapi({ ...deleteAccessListRoute, middleware: requireScope('acl:delete') }, async (c) => {
-  const accessListService = container.resolve(AccessListService);
-  const user = c.get('user')!;
-  const id = c.req.param('id')!;
-  await accessListService.delete(id, user.id);
-  return c.body(null, 204);
-});
+accessListRoutes.openapi(
+  { ...deleteAccessListRoute, middleware: requireScopeForResource('acl:delete', 'id') },
+  async (c) => {
+    const accessListService = container.resolve(AccessListService);
+    const user = c.get('user')!;
+    const id = c.req.param('id')!;
+    await accessListService.delete(id, user.id);
+    return c.body(null, 204);
+  }
+);

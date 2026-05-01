@@ -28,7 +28,7 @@ describe("AdminNodes", () => {
     });
 
     useAuthStore.setState({
-      user: makeUser({ scopes: ["nodes:list", "nodes:create"] }),
+      user: makeUser({ scopes: ["nodes:details", "nodes:create"] }),
       isAuthenticated: true,
       isLoading: false,
     });

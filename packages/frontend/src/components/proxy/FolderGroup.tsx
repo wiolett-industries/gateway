@@ -202,7 +202,6 @@ export function FolderGroup({
                       onToggle={onToggleHost}
                       togglingIds={togglingIds}
                       onMoveToFolder={onMoveHostToFolder}
-                      canDrag={canReorder}
                     />
                   ))}
                 </tbody>
@@ -220,7 +219,6 @@ export function FolderGroup({
                     onToggle={onToggleHost}
                     togglingIds={togglingIds}
                     onMoveToFolder={onMoveHostToFolder}
-                    canDrag={canReorder}
                   />
                 ))}
               </tbody>

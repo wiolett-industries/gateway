@@ -186,7 +186,7 @@ Gateway уже ориентирован на production operations, а не на
 <details>
 <summary><strong>Могут ли API или OAuth tokens раскрывать secrets?</strong></summary>
 
-Только если владелец уже имеет нужные scopes. Sensitive OAuth scopes требуют явного opt-in во время consent, API/OAuth tokens не могут превышать текущие effective permissions пользователя, а resource-scoped write-capable scopes остаются ограничены тем же resource, когда они подразумевают read/list checks. См. [SCOPES.md](SCOPES.md).
+Только если владелец уже имеет нужные scopes. Sensitive OAuth scopes требуют явного opt-in во время consent, API/OAuth tokens не могут превышать текущие effective permissions пользователя, а resource-scoped write-capable scopes остаются ограничены тем же resource, когда они подразумевают read/view checks. См. [SCOPES.md](SCOPES.md).
 </details>
 
 <details>
