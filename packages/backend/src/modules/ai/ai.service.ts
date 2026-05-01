@@ -998,7 +998,8 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
             labels: a.labels,
             command: a.command,
           },
-          user.id
+          user.id,
+          user.scopes
         );
         return { success: true, message: 'Container created', data };
       }
@@ -1050,7 +1051,9 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
       case 'deploy_docker_deployment': {
         const { DockerDeploymentService } = await import('@/modules/docker/docker-deployment.service.js');
         const input = DockerDeploymentDeploySchema.parse(args);
-        const data = await container.resolve(DockerDeploymentService).deploy(a.nodeId, a.deploymentId, input, user.id);
+        const data = await container
+          .resolve(DockerDeploymentService)
+          .deploy(a.nodeId, a.deploymentId, input, user.id, 'manual', user.scopes);
         return { success: true, message: 'Deployment rollout started', data };
       }
       case 'switch_docker_deployment_slot': {
@@ -1058,14 +1061,14 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
         const input = DockerDeploymentSwitchSchema.parse(args);
         const data = await container
           .resolve(DockerDeploymentService)
-          .switchToSlot(a.nodeId, a.deploymentId, input, user.id);
+          .switchToSlot(a.nodeId, a.deploymentId, input, user.id, undefined, user.scopes);
         return { success: true, message: `Deployment switched to ${input.slot}`, data };
       }
       case 'rollback_docker_deployment': {
         const { DockerDeploymentService } = await import('@/modules/docker/docker-deployment.service.js');
         const data = await container
           .resolve(DockerDeploymentService)
-          .rollback(a.nodeId, a.deploymentId, a.force === true, user.id);
+          .rollback(a.nodeId, a.deploymentId, a.force === true, user.id, user.scopes);
         return { success: true, message: 'Deployment rolled back', data };
       }
       case 'stop_docker_deployment_slot': {
@@ -1090,7 +1093,13 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
         await this.dockerService.renameContainer(a.nodeId, a.containerId, a.name, user.id);
         return { success: true };
       case 'duplicate_docker_container': {
-        const dupData = await this.dockerService.duplicateContainer(a.nodeId, a.containerId, a.name, user.id);
+        const dupData = await this.dockerService.duplicateContainer(
+          a.nodeId,
+          a.containerId,
+          a.name,
+          user.id,
+          user.scopes
+        );
         return { success: true, message: 'Container duplicated', data: dupData };
       }
       case 'get_docker_container_stats':
@@ -1104,7 +1113,9 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
         const lastSlash = currentImage.lastIndexOf('/');
         const imageName = lastColon > lastSlash ? currentImage.slice(0, lastColon) : currentImage;
         const targetRef = `${imageName}:${a.imageTag}`;
-        await this.dockerService.recreateWithConfig(a.nodeId, a.containerId, { image: targetRef }, user.id);
+        await this.dockerService.recreateWithConfig(a.nodeId, a.containerId, { image: targetRef }, user.id, {
+          actorScopes: user.scopes,
+        });
         return { success: true, message: `Container updating to ${targetRef}` };
       }
       case 'get_docker_container_logs':

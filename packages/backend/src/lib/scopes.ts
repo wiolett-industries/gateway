@@ -97,6 +97,7 @@ export const ALL_SCOPES = [
   'docker:containers:files',
   'docker:containers:secrets',
   'docker:containers:webhooks',
+  'docker:containers:mounts',
   // ── Docker: Images ───────────────────────────────────────────────
   'docker:images:list',
   'docker:images:pull',
@@ -276,6 +277,7 @@ export const ADMIN_SCOPES: readonly string[] = [
   'docker:containers:files',
   'docker:containers:secrets',
   'docker:containers:webhooks',
+  'docker:containers:mounts',
   'docker:images:list',
   'docker:images:pull',
   'docker:images:delete',
@@ -530,6 +532,7 @@ export const RESOURCE_SCOPABLE: readonly string[] = [
   'docker:containers:files',
   'docker:containers:secrets',
   'docker:containers:webhooks',
+  'docker:containers:mounts',
   // Docker images
   'docker:images:list',
   'docker:images:pull',
@@ -584,6 +587,7 @@ export const MANUAL_APPROVAL_SCOPES = [
   'docker:containers:console',
   'docker:containers:files',
   'docker:containers:secrets',
+  'docker:containers:mounts',
   'databases:query:read',
   'databases:query:write',
   'databases:query:admin',

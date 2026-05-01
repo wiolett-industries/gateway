@@ -1,55 +1,147 @@
 import { describe, expect, it } from 'vitest';
-import { assertNoDockerSocketMountsInConfig, isDangerousDockerSocketPath } from './docker-socket-mount.guard.js';
+import {
+  assertDockerMountChangeAllowed,
+  normalizeMountDefinitionsFromConfig,
+  normalizeMountDefinitionsFromInspect,
+} from './docker-socket-mount.guard.js';
 
-describe('Docker socket mount guard', () => {
-  it('detects Docker-compatible daemon socket paths', () => {
-    expect(isDangerousDockerSocketPath('/var/run/docker.sock')).toBe(true);
-    expect(isDangerousDockerSocketPath('/run/snap.docker/dockerd.sock')).toBe(true);
-    expect(isDangerousDockerSocketPath('/run/containerd/containerd.sock')).toBe(true);
-    expect(isDangerousDockerSocketPath('/var/snap/docker/current/run/dockerd.sock')).toBe(true);
-    expect(isDangerousDockerSocketPath('/srv/app/data.sock')).toBe(false);
-  });
-
-  it('detects ancestors and descendants of daemon socket directories', () => {
-    expect(isDangerousDockerSocketPath('/var/snap/docker')).toBe(true);
-    expect(isDangerousDockerSocketPath('/var/snap/docker/current')).toBe(true);
-    expect(isDangerousDockerSocketPath('/var/snap/docker/current/run')).toBe(true);
-    expect(isDangerousDockerSocketPath('/var/snap/docker/current/run/private')).toBe(true);
-    expect(isDangerousDockerSocketPath('/run/containerd')).toBe(true);
-  });
-
-  it('allows ordinary descendants of broad runtime directories', () => {
-    expect(isDangerousDockerSocketPath('/run/secrets')).toBe(false);
-    expect(isDangerousDockerSocketPath('/run/app/app.sock')).toBe(false);
-    expect(isDangerousDockerSocketPath('/run/docker-data')).toBe(false);
-    expect(isDangerousDockerSocketPath('/var/run/app')).toBe(false);
-  });
-
-  it('rejects container create and recreate mount configs that expose daemon sockets', () => {
+describe('Docker mount scope guard', () => {
+  it('requires docker:containers:mounts when creating with any mount definition', () => {
     expect(() =>
-      assertNoDockerSocketMountsInConfig({
-        mounts: [{ hostPath: '/run/snap.docker/dockerd.sock', containerPath: '/docker.sock' }],
+      assertDockerMountChangeAllowed({
+        nodeId: 'node-1',
+        actorScopes: ['docker:containers:create:node-1'],
+        currentDefinitions: [],
+        nextConfig: { mounts: [{ hostPath: '/srv/app/config', containerPath: '/config' }] },
       })
-    ).toThrowError(/daemon sockets/);
+    ).toThrowError(/docker:containers:mounts/);
   });
 
-  it('checks volumes even when mounts are also present', () => {
+  it('allows creating with mounts when the actor has mount scope', () => {
     expect(() =>
-      assertNoDockerSocketMountsInConfig({
-        mounts: [{ hostPath: '/srv/app/config', containerPath: '/config' }],
-        volumes: [{ hostPath: '/var/run/docker.sock', containerPath: '/docker.sock' }],
-      })
-    ).toThrowError(/daemon sockets/);
-  });
-
-  it('allows named volumes and ordinary host binds', () => {
-    expect(() =>
-      assertNoDockerSocketMountsInConfig({
-        volumes: [
-          { name: 'app-data', containerPath: '/data' },
-          { hostPath: '/srv/app/config', containerPath: '/config', readOnly: true },
-        ],
+      assertDockerMountChangeAllowed({
+        nodeId: 'node-1',
+        actorScopes: ['docker:containers:mounts:node-1'],
+        currentDefinitions: [],
+        nextConfig: { volumes: [{ name: 'app-data', containerPath: '/data' }] },
       })
     ).not.toThrow();
+  });
+
+  it('does not hardcode host path deny rules once the actor has mount scope', () => {
+    expect(() =>
+      assertDockerMountChangeAllowed({
+        nodeId: 'node-1',
+        actorScopes: ['docker:containers:mounts:node-1'],
+        currentDefinitions: [],
+        nextConfig: { mounts: [{ hostPath: '/var/run/docker.sock', containerPath: '/docker.sock' }] },
+      })
+    ).not.toThrow();
+  });
+
+  it('requires mount scope when duplicating a mounted source container', () => {
+    const sourceDefinitions = normalizeMountDefinitionsFromInspect({
+      Mounts: [{ Type: 'bind', Source: '/srv/app/config', Destination: '/config', RW: true }],
+    });
+
+    expect(() =>
+      assertDockerMountChangeAllowed({
+        nodeId: 'node-1',
+        actorScopes: ['docker:containers:create:node-1'],
+        currentDefinitions: [],
+        nextDefinitions: sourceDefinitions,
+      })
+    ).toThrowError(/docker:containers:mounts/);
+  });
+
+  it('allows normal updates that omit mount fields', () => {
+    const currentDefinitions = normalizeMountDefinitionsFromInspect({
+      Mounts: [{ Type: 'bind', Source: '/srv/app/config', Destination: '/config', RW: false }],
+    });
+
+    expect(
+      assertDockerMountChangeAllowed({
+        nodeId: 'node-1',
+        actorScopes: ['docker:containers:edit:node-1'],
+        currentDefinitions,
+        nextConfig: { image: 'nginx:latest' } as never,
+        useCurrentWhenNextMissing: true,
+      })
+    ).toEqual({ mountsChanged: false });
+  });
+
+  it('allows recreates that preserve equivalent bind and volume definitions', () => {
+    const currentDefinitions = normalizeMountDefinitionsFromInspect({
+      Mounts: [
+        { Type: 'bind', Source: '/srv/app/config', Destination: '/config', RW: false },
+        { Type: 'volume', Name: 'app-data', Destination: '/data', RW: true },
+      ],
+    });
+    const nextDefinitions = normalizeMountDefinitionsFromConfig({
+      mounts: [
+        { hostPath: '/srv/app/config', containerPath: '/config', readOnly: true },
+        { name: 'app-data', containerPath: '/data', readOnly: false },
+      ],
+    });
+
+    expect(
+      assertDockerMountChangeAllowed({
+        nodeId: 'node-1',
+        actorScopes: ['docker:containers:manage:node-1'],
+        currentDefinitions,
+        nextConfig: {},
+        currentInspect: null,
+        useCurrentWhenNextMissing: true,
+      })
+    ).toEqual({ mountsChanged: false });
+    expect(currentDefinitions).toEqual(nextDefinitions);
+  });
+
+  it('requires mount scope when source, target, mode, or volume name changes', () => {
+    const currentDefinitions = normalizeMountDefinitionsFromConfig({
+      mounts: [{ hostPath: '/srv/app/config', containerPath: '/config', readOnly: true }],
+    });
+
+    for (const nextConfig of [
+      { mounts: [{ hostPath: '/srv/other/config', containerPath: '/config', readOnly: true }] },
+      { mounts: [{ hostPath: '/srv/app/config', containerPath: '/settings', readOnly: true }] },
+      { mounts: [{ hostPath: '/srv/app/config', containerPath: '/config', readOnly: false }] },
+      { mounts: [{ name: 'app-data', containerPath: '/config', readOnly: true }] },
+    ]) {
+      expect(() =>
+        assertDockerMountChangeAllowed({
+          nodeId: 'node-1',
+          actorScopes: ['docker:containers:manage:node-1'],
+          currentDefinitions,
+          nextConfig,
+        })
+      ).toThrowError(/docker:containers:mounts/);
+    }
+  });
+
+  it('treats unmodeled bind options as part of the mount definition', () => {
+    const currentDefinitions = normalizeMountDefinitionsFromInspect({
+      HostConfig: { Binds: ['/srv/app/config:/config:ro,z'] },
+      Mounts: [{ Type: 'bind', Source: '/srv/app/config', Destination: '/config', RW: false }],
+    });
+
+    expect(
+      assertDockerMountChangeAllowed({
+        nodeId: 'node-1',
+        actorScopes: ['docker:containers:manage:node-1'],
+        currentDefinitions,
+        nextConfig: { image: 'nginx:latest' } as never,
+        useCurrentWhenNextMissing: true,
+      })
+    ).toEqual({ mountsChanged: false });
+
+    expect(() =>
+      assertDockerMountChangeAllowed({
+        nodeId: 'node-1',
+        actorScopes: ['docker:containers:manage:node-1'],
+        currentDefinitions,
+        nextConfig: { mounts: [{ hostPath: '/srv/app/config', containerPath: '/config', readOnly: true }] },
+      })
+    ).toThrowError(/docker:containers:mounts/);
   });
 });

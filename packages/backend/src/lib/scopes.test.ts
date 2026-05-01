@@ -10,6 +10,7 @@ import {
   isApiTokenScope,
   isValidBaseScope,
   MANUAL_APPROVAL_SCOPES,
+  OPERATOR_SCOPES,
   PROGRAMMATIC_DENIED_BASE_SCOPES,
   RESOURCE_SCOPABLE,
   SYSTEM_ADMIN_SCOPES,
@@ -43,12 +44,20 @@ describe('canonical scope definitions', () => {
     expect(ADMIN_SCOPES).toContain('settings:gateway:view');
     expect(ADMIN_SCOPES).toContain('housekeeping:run');
     expect(ADMIN_SCOPES).toContain('docker:registries:list');
+    expect(ADMIN_SCOPES).toContain('docker:containers:mounts');
     expect(ADMIN_SCOPES).not.toContain('admin:system');
     expect(ADMIN_SCOPES).not.toContain('settings:gateway:edit');
     expect(ADMIN_SCOPES).not.toContain('housekeeping:configure');
     expect(ADMIN_SCOPES).not.toContain('docker:registries:create');
     expect(ADMIN_SCOPES).not.toContain('docker:registries:edit');
     expect(ADMIN_SCOPES).not.toContain('docker:registries:delete');
+  });
+
+  it('grants Docker mount editing only to built-in admin tiers by default', () => {
+    expect(SYSTEM_ADMIN_SCOPES).toContain('docker:containers:mounts');
+    expect(ADMIN_SCOPES).toContain('docker:containers:mounts');
+    expect(OPERATOR_SCOPES).not.toContain('docker:containers:mounts');
+    expect(ALL_SCOPES).toContain('docker:containers:mounts');
   });
 
   it('removes deprecated housekeeping scope and rejects admin:system for API tokens', () => {
@@ -80,6 +89,7 @@ describe('canonical scope definitions', () => {
       'docker:containers:console',
       'docker:containers:files',
       'docker:containers:secrets',
+      'docker:containers:mounts',
       'databases:query:read',
       'databases:query:write',
       'databases:query:admin',
@@ -117,9 +127,11 @@ describe('canonical scope definitions', () => {
       expect(migration).toContain(`('${scope}')`);
     }
     for (const scope of RESOURCE_SCOPABLE) {
+      if (scope === 'docker:containers:mounts') continue;
       expect(migration).toContain(`('${scope}')`);
     }
     for (const scope of ALL_SCOPES) {
+      if (scope === 'docker:containers:mounts') continue;
       expect(migration).toContain(`('${scope}')`);
     }
     for (const table of [

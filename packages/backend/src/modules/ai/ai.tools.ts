@@ -980,7 +980,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
         },
         volumes: {
           type: 'array',
-          description: 'Volume mounts',
+          description: 'Volume mounts. Supplying mounts also requires docker:containers:mounts for the node.',
           items: {
             type: 'object',
             properties: {

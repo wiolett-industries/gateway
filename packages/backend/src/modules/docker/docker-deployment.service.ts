@@ -27,7 +27,7 @@ import type {
 import type { DockerHealthCheckDto, DockerHealthCheckService } from './docker-health-check.service.js';
 import type { DockerRegistryAuthCandidate, DockerRegistryService } from './docker-registry.service.js';
 import type { DockerSecretService } from './docker-secret.service.js';
-import { assertNoDockerSocketMountsInConfig } from './docker-socket-mount.guard.js';
+import { assertDockerMountChangeAllowed, normalizeMountDefinitionsFromConfig } from './docker-socket-mount.guard.js';
 import type { DockerTaskService } from './docker-task.service.js';
 
 export const DOCKER_DEPLOYMENT_MANAGED_LABEL = 'wiolett.gateway.deployment.managed';
@@ -416,7 +416,7 @@ export class DockerDeploymentService {
     return this.loadDeployment(nodeId, deploymentId);
   }
 
-  async create(nodeId: string, input: DockerDeploymentCreateInput, userId: string) {
+  async create(nodeId: string, input: DockerDeploymentCreateInput, userId: string, actorScopes: string[] = []) {
     await assertNodeAllowsServiceCreation(this.db, nodeId, 'docker');
     await this.validateDockerNode(nodeId);
     normalizeRoutes(input.routes);
@@ -441,7 +441,7 @@ export class DockerDeploymentService {
       restartPolicy: input.restartPolicy,
       runtime: input.runtime,
     };
-    assertNoDockerSocketMountsInConfig(desiredConfig);
+    assertDockerMountChangeAllowed({ nodeId, actorScopes, nextConfig: desiredConfig, currentDefinitions: [] });
 
     await this.db.transaction(async (tx) => {
       await tx.insert(dockerDeployments).values({
@@ -590,7 +590,13 @@ export class DockerDeploymentService {
     }
   }
 
-  async update(nodeId: string, deploymentId: string, input: DockerDeploymentUpdateInput, userId: string) {
+  async update(
+    nodeId: string,
+    deploymentId: string,
+    input: DockerDeploymentUpdateInput,
+    userId: string,
+    actorScopes: string[] = []
+  ) {
     await this.validateDockerNode(nodeId);
     const current = await this.loadDeployment(nodeId, deploymentId);
     if (input.name && input.name !== current.name) await this.assertNameAvailable(nodeId, input.name, deploymentId);
@@ -599,7 +605,12 @@ export class DockerDeploymentService {
     const desiredConfig = input.desiredConfig
       ? { ...current.desiredConfig, ...input.desiredConfig }
       : current.desiredConfig;
-    assertNoDockerSocketMountsInConfig(desiredConfig);
+    assertDockerMountChangeAllowed({
+      nodeId,
+      actorScopes,
+      nextConfig: desiredConfig,
+      currentDefinitions: normalizeMountDefinitionsFromConfig(current.desiredConfig),
+    });
 
     if (routes && !deploymentRoutesEqual(current.routes, routes)) {
       try {
@@ -664,7 +675,8 @@ export class DockerDeploymentService {
     deploymentId: string,
     input: DockerDeploymentDeployInput,
     userId: string | null,
-    source = 'manual'
+    source = 'manual',
+    actorScopes: string[] = []
   ) {
     await this.validateDockerNode(nodeId);
     const deployment = await this.loadDeployment(nodeId, deploymentId);
@@ -677,7 +689,12 @@ export class DockerDeploymentService {
       image: targetImage,
       env: input.env ?? deployment.desiredConfig.env,
     };
-    assertNoDockerSocketMountsInConfig(desiredConfig);
+    assertDockerMountChangeAllowed({
+      nodeId,
+      actorScopes,
+      nextConfig: desiredConfig,
+      currentDefinitions: normalizeMountDefinitionsFromConfig(deployment.desiredConfig),
+    });
     let task: Awaited<ReturnType<DockerTaskService['create']>> | null = null;
     let release: DeploymentReleaseRow | null = null;
 
@@ -755,7 +772,8 @@ export class DockerDeploymentService {
       source?: string;
       registryId?: string;
       desiredConfig?: DockerDeploymentDesiredConfig;
-    }
+    },
+    actorScopes: string[] = []
   ) {
     await this.validateDockerNode(nodeId);
     const deployment = await this.loadDeployment(nodeId, deploymentId);
@@ -772,7 +790,12 @@ export class DockerDeploymentService {
       ...releaseContext?.desiredConfig,
       image: releaseContext?.image ?? deployment.desiredConfig.image,
     };
-    assertNoDockerSocketMountsInConfig(desiredConfig);
+    assertDockerMountChangeAllowed({
+      nodeId,
+      actorScopes,
+      nextConfig: desiredConfig,
+      currentDefinitions: normalizeMountDefinitionsFromConfig(deployment.desiredConfig),
+    });
     const daemonDesiredConfig = await this.desiredConfigWithSecrets(nodeId, deploymentId, desiredConfig);
     const registryAuthCandidates = await this.registry.resolveAuthCandidatesForImagePull(
       nodeId,
@@ -885,7 +908,13 @@ export class DockerDeploymentService {
     }
   }
 
-  async rollback(nodeId: string, deploymentId: string, force: boolean, userId: string | null) {
+  async rollback(
+    nodeId: string,
+    deploymentId: string,
+    force: boolean,
+    userId: string | null,
+    actorScopes: string[] = []
+  ) {
     const deployment = await this.loadDeployment(nodeId, deploymentId);
     this.requireDeploymentIdle(deployment);
     this.setTransition(deployment, 'rolling_back');
@@ -895,12 +924,24 @@ export class DockerDeploymentService {
         throw new AppError(409, 'ROLLBACK_UNAVAILABLE', 'Rollback slot does not have a previous image');
       }
       const desiredConfig = rollbackSlot.desiredConfig ?? { ...deployment.desiredConfig, image: rollbackSlot.image };
-      assertNoDockerSocketMountsInConfig(desiredConfig);
-      await this.switchToSlot(nodeId, deploymentId, { slot: inactiveSlot(deployment.activeSlot), force }, userId, {
-        image: desiredConfig.image,
-        source: 'rollback',
-        desiredConfig,
+      assertDockerMountChangeAllowed({
+        nodeId,
+        actorScopes,
+        nextConfig: desiredConfig,
+        currentDefinitions: normalizeMountDefinitionsFromConfig(deployment.desiredConfig),
       });
+      await this.switchToSlot(
+        nodeId,
+        deploymentId,
+        { slot: inactiveSlot(deployment.activeSlot), force },
+        userId,
+        {
+          image: desiredConfig.image,
+          source: 'rollback',
+          desiredConfig,
+        },
+        actorScopes
+      );
     } finally {
       this.clearTransition(deployment);
     }

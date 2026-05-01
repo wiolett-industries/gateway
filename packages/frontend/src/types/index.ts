@@ -661,6 +661,7 @@ export const RESOURCE_SCOPABLE_SCOPES = [
   "docker:containers:files",
   "docker:containers:secrets",
   "docker:containers:webhooks",
+  "docker:containers:mounts",
   "docker:images:list",
   "docker:images:pull",
   "docker:images:delete",
@@ -1269,6 +1270,12 @@ export const TOKEN_SCOPES = [
     value: "docker:containers:webhooks",
     label: "Container Webhooks",
     desc: "View and manage container webhook update triggers",
+    group: "Docker: Containers",
+  },
+  {
+    value: "docker:containers:mounts",
+    label: "Container Mounts",
+    desc: "Add, remove, or change container and deployment mounts",
     group: "Docker: Containers",
   },
   // Docker: Images

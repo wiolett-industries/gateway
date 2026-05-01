@@ -304,8 +304,8 @@ describe('OAuthService.updateUserAuthorizationScopes', () => {
     );
 
     expect(updateCalls.some((call) => call.table === oauthRefreshTokens)).toBe(true);
-    expect(refreshToken.scopes).toEqual(['nodes:details:node-1']);
-    expect(authorization?.scopes).toEqual(['nodes:details:node-1']);
+    expect(refreshToken.scopes).toEqual(['nodes:details:node-1', 'nodes:list']);
+    expect(authorization?.scopes).toEqual(['nodes:details:node-1', 'nodes:list']);
     expect(auditLog).toHaveBeenCalledWith(
       expect.objectContaining({
         action: 'oauth.authorization_update',

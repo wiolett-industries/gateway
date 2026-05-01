@@ -40,7 +40,8 @@ Container workflows:
 
 - List containers across managed Docker nodes.
 - Start, stop, restart, recreate, duplicate, rename, and remove containers.
-- Edit image, command, environment variables, secrets, labels, ports, mounts, restart policy, and runtime limits.
+- Edit image, command, environment variables, secrets, labels, ports, restart policy, and runtime limits.
+- Edit mounts only with the dedicated `docker:containers:mounts` scope. Existing mounts are preserved during normal image, environment, and webhook updates.
 - Browse container logs with search and follow mode.
 - Open an interactive container console.
 - Browse and edit container files when permitted.
@@ -57,7 +58,7 @@ Deployment workflows:
 
 Safety controls:
 
-- Docker socket mounts are guarded to prevent accidentally exposing host Docker control inside managed containers.
+- Mount editing is separated from normal container editing because host bind mounts can expose sensitive host data or control surfaces.
 - Secrets are masked by default.
 - Dangerous operations are permission-scoped and audited.
 

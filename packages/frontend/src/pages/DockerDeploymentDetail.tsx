@@ -203,6 +203,9 @@ export function DockerDeploymentDetail() {
   const canUseEnvironment =
     hasScope("docker:containers:environment") ||
     !!(nodeId && hasScope(`docker:containers:environment:${nodeId}`));
+  const canEditMounts =
+    hasScope("docker:containers:mounts") ||
+    !!(nodeId && hasScope(`docker:containers:mounts:${nodeId}`));
 
   const [deployment, setDeployment] = useState<DockerDeployment | null>(null);
   const [activeInspect, setActiveInspect] = useState<InspectData | null>(null);
@@ -692,6 +695,7 @@ export function DockerDeploymentDetail() {
                 onHealthCheckSaved={(healthCheck) =>
                   setDeployment((current) => (current ? { ...current, healthCheck } : current))
                 }
+                canEditMounts={canEditMounts}
                 runAction={runAction}
               />
             </TabsContent>
@@ -980,6 +984,7 @@ function DeploymentSettings({
   webhook,
   setWebhook,
   onHealthCheckSaved,
+  canEditMounts,
   runAction,
 }: {
   deployment: DockerDeployment;
@@ -988,6 +993,7 @@ function DeploymentSettings({
   webhook: DockerWebhook | null;
   setWebhook: (webhook: DockerWebhook | null) => void;
   onHealthCheckSaved: (healthCheck: DockerHealthCheck) => void;
+  canEditMounts: boolean;
   runAction: (name: string, fn: () => Promise<void>) => Promise<void>;
 }) {
   const initialEntrypoint = useMemo(
@@ -1231,7 +1237,7 @@ function DeploymentSettings({
       />
 
       <VolumeMountsSection
-        canEdit
+        canEdit={canEditMounts}
         mounts={mounts}
         setMounts={setMounts}
         mountsChanged={mountsChanged}

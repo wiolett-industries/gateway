@@ -23,7 +23,7 @@ import {
 } from './docker-runtime-limits.js';
 import type { DockerRuntimeSettingsService } from './docker-runtime-settings.service.js';
 import type { DockerSecretService } from './docker-secret.service.js';
-import { assertNoDockerSocketMountsInConfig } from './docker-socket-mount.guard.js';
+import { assertDockerMountChangeAllowed, normalizeMountDefinitionsFromInspect } from './docker-socket-mount.guard.js';
 import type { DockerTaskService } from './docker-task.service.js';
 import type { DockerWebhookService } from './docker-webhook.service.js';
 
@@ -725,10 +725,10 @@ export class DockerManagementService {
     return data;
   }
 
-  async createContainer(nodeId: string, config: Record<string, unknown>, userId: string) {
+  async createContainer(nodeId: string, config: Record<string, unknown>, userId: string, actorScopes: string[] = []) {
     await assertNodeAllowsServiceCreation(this.db, nodeId, 'docker');
     await this.validateDockerNode(nodeId);
-    assertNoDockerSocketMountsInConfig(config);
+    assertDockerMountChangeAllowed({ nodeId, actorScopes, nextConfig: config, currentDefinitions: [] });
     const registryId = typeof config.registryId === 'string' ? config.registryId : null;
     delete config.registryId;
     const requestedName = (config.name as string | undefined)?.trim();
@@ -951,11 +951,24 @@ export class DockerManagementService {
     this.emitContainer(nodeId, newName, containerId, 'renamed', { oldName });
   }
 
-  async duplicateContainer(nodeId: string, containerId: string, name: string, userId: string) {
+  async duplicateContainer(
+    nodeId: string,
+    containerId: string,
+    name: string,
+    userId: string,
+    actorScopes: string[] = []
+  ) {
     await assertNodeAllowsServiceCreation(this.db, nodeId, 'docker');
     await this.validateDockerNode(nodeId);
     await this.assertNotManagedDeploymentInternal(nodeId, containerId);
     const sourceName = await this.resolveContainerName(nodeId, containerId);
+    const inspect = await this.inspectContainer(nodeId, containerId);
+    assertDockerMountChangeAllowed({
+      nodeId,
+      actorScopes,
+      currentDefinitions: [],
+      nextDefinitions: normalizeMountDefinitionsFromInspect(inspect),
+    });
     this.requireNoTransition(nodeId, sourceName);
     await this.assertNameAvailable(nodeId, name);
     this.setTransition(nodeId, name, 'creating');
@@ -995,10 +1008,24 @@ export class DockerManagementService {
     return data;
   }
 
-  async updateContainer(nodeId: string, containerId: string, config: Record<string, unknown>, userId: string) {
+  async updateContainer(
+    nodeId: string,
+    containerId: string,
+    config: Record<string, unknown>,
+    userId: string,
+    actorScopes: string[] = []
+  ) {
     await this.validateDockerNode(nodeId);
     await this.assertNotManagedDeploymentInternal(nodeId, containerId);
     const name = await this.resolveContainerName(nodeId, containerId);
+    const inspect = await this.inspectContainer(nodeId, containerId);
+    assertDockerMountChangeAllowed({
+      nodeId,
+      actorScopes,
+      nextConfig: config,
+      currentInspect: inspect,
+      useCurrentWhenNextMissing: true,
+    });
     const expectedState = await this.resolveExpectedRecreateState(nodeId, containerId);
     if (this.environmentService) {
       const storedEnv = await this.environmentService.getDecryptedMap(nodeId, name);
@@ -1118,7 +1145,7 @@ export class DockerManagementService {
     containerId: string,
     config: Record<string, unknown>,
     userId: string,
-    options?: { skipImagePull?: boolean; skipWebhookCleanup?: boolean }
+    options?: { skipImagePull?: boolean; skipWebhookCleanup?: boolean; actorScopes?: string[] }
   ) {
     await this.validateDockerNode(nodeId);
     await this.assertNotManagedDeploymentInternal(nodeId, containerId);
@@ -1126,7 +1153,14 @@ export class DockerManagementService {
     const expectedState = await this.resolveExpectedRecreateState(nodeId, containerId);
     this.requireNoTransition(nodeId, name);
     config = await this.applyPersistedRuntimeSettingsToConfig(nodeId, name, config);
-    assertNoDockerSocketMountsInConfig(config);
+    const inspect = await this.inspectContainer(nodeId, containerId);
+    assertDockerMountChangeAllowed({
+      nodeId,
+      actorScopes: options?.actorScopes ?? [],
+      nextConfig: config,
+      currentInspect: inspect,
+      useCurrentWhenNextMissing: true,
+    });
     await this.validateRuntimeResourceConfig(nodeId, containerId, config);
     this.setTransition(nodeId, name, 'recreating');
     this.emitTransition(nodeId, name, containerId, 'recreating');

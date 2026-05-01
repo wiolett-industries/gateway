@@ -80,6 +80,8 @@ export function SettingsTab({
   const invalidate = useDockerStore((s) => s.invalidate);
   const canEdit =
     hasScope("docker:containers:edit") || hasScope(`docker:containers:edit:${nodeId}`);
+  const canEditMounts =
+    hasScope("docker:containers:mounts") || hasScope(`docker:containers:mounts:${nodeId}`);
   const canManageNetworks = hasScope("docker:networks:edit");
   const canListNetworks = hasScope("docker:networks:list");
   const recreatesRunningContainer =
@@ -777,7 +779,7 @@ export function SettingsTab({
 
       {/* ─── Volume Mounts ────────────────────────────────────────── */}
       <VolumeMountsSection
-        canEdit={canEdit}
+        canEdit={canEdit && canEditMounts}
         mounts={mounts}
         setMounts={setMounts}
         mountsChanged={mountsChanged}

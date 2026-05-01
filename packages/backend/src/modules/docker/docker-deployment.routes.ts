@@ -145,7 +145,8 @@ export function registerDockerDeploymentRoutes(router: OpenAPIHono<AppEnv>) {
       const data = await service.create(
         c.req.param('nodeId')!,
         DockerDeploymentCreateSchema.parse(await c.req.json()),
-        user.id
+        user.id,
+        c.get('effectiveScopes') || []
       );
       return c.json({ data }, 201);
     }
@@ -169,7 +170,8 @@ export function registerDockerDeploymentRoutes(router: OpenAPIHono<AppEnv>) {
         c.req.param('nodeId')!,
         c.req.param('deploymentId')!,
         DockerDeploymentUpdateSchema.parse(await c.req.json()),
-        user.id
+        user.id,
+        c.get('effectiveScopes') || []
       );
       return c.json({ data });
     }
@@ -234,7 +236,9 @@ export function registerDockerDeploymentRoutes(router: OpenAPIHono<AppEnv>) {
         c.req.param('nodeId')!,
         c.req.param('deploymentId')!,
         DockerDeploymentDeploySchema.parse(await c.req.json().catch(() => ({}))),
-        user.id
+        user.id,
+        'manual',
+        c.get('effectiveScopes') || []
       );
       return c.json({ data });
     }
@@ -249,7 +253,9 @@ export function registerDockerDeploymentRoutes(router: OpenAPIHono<AppEnv>) {
         c.req.param('nodeId')!,
         c.req.param('deploymentId')!,
         DockerDeploymentSwitchSchema.parse(await c.req.json()),
-        user.id
+        user.id,
+        undefined,
+        c.get('effectiveScopes') || []
       );
       return c.json({ data });
     }
@@ -265,7 +271,8 @@ export function registerDockerDeploymentRoutes(router: OpenAPIHono<AppEnv>) {
         c.req.param('nodeId')!,
         c.req.param('deploymentId')!,
         body.force === true,
-        user.id
+        user.id,
+        c.get('effectiveScopes') || []
       );
       return c.json({ data });
     }

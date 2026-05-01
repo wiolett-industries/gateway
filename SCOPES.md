@@ -6,7 +6,7 @@ All scopes follow `domain:resource:action[:qualifier]`. Resource-scopable scopes
 
 | Group | Description |
 |-------|-------------|
-| `system-admin` | All 136 scopes, including protected `admin:system`. |
+| `system-admin` | All 137 scopes, including protected `admin:system`. |
 | `admin` | Curated broad access; excludes `admin:system`, `settings:gateway:edit`, `housekeeping:configure`, and Docker registry create/edit/delete defaults. |
 | `operator` | Operational access for day-to-day PKI, proxy, SSL, ACL, node, Docker container, database, notification, and logging read/query work. |
 | `viewer` | Read-only list/view access. |
@@ -125,6 +125,7 @@ Gateway evaluates scopes with exact, broad, resource-scoped, and implied-scope r
 | `docker:containers:files` | Yes |
 | `docker:containers:secrets` | Yes |
 | `docker:containers:webhooks` | Yes |
+| `docker:containers:mounts` | Yes |
 | `docker:images:list` | Yes |
 | `docker:images:pull` | Yes |
 | `docker:images:delete` | Yes |
@@ -187,7 +188,7 @@ Gateway evaluates scopes with exact, broad, resource-scoped, and implied-scope r
 
 ## API Token Delegation
 
-API and OAuth tokens can be granted 122 of the 136 scopes. They cannot be granted:
+API and OAuth tokens can be granted 123 of the 137 scopes. They cannot be granted:
 
 | Scope | Reason |
 |-------|--------|
@@ -227,6 +228,7 @@ OAuth consent leaves high-risk scopes unchecked by default. The user must explic
 | `docker:containers:console` | Can open an interactive console in containers. |
 | `docker:containers:files` | Can read and write container filesystem contents. |
 | `docker:containers:secrets` | Can reveal and manage encrypted container/deployment secrets. |
+| `docker:containers:mounts` | Can add, remove, or change container/deployment mounts. |
 | `databases:query:read` | Can read data from saved database connections. |
 | `databases:query:write` | Can modify data in saved database connections. |
 | `databases:query:admin` | Can run administrative database commands. |

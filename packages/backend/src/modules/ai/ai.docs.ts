@@ -543,6 +543,7 @@ Gateway uses a group-based permission system with nested group inheritance. Each
 | docker:containers:files | Browse/edit container files (resource-scopable) |
 | docker:containers:secrets | Manage encrypted secrets (resource-scopable) |
 | docker:containers:webhooks | Configure CI/CD webhook URLs |
+| docker:containers:mounts | Add, remove, or change container/deployment mounts (resource-scopable) |
 
 ### Docker: Images
 | Scope | Description |
