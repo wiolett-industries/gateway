@@ -10,6 +10,7 @@ coverage/
 TODO.md
 todo.md
 security_best_practices_report.md
+.reports/
 
 # Nx
 .nx/cache
