@@ -1,7 +1,9 @@
+import { randomUUID } from 'node:crypto';
 import type { WSContext } from 'hono/ws';
 import { container, TOKENS } from '@/container.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { canUseAI } from '@/lib/permissions.js';
+import { withRateLimitRedisTimeout } from '@/lib/rate-limit-timeout.js';
 import { SessionService } from '@/services/session.service.js';
 import type { User } from '@/types.js';
 import { AIService } from './ai.service.js';
@@ -9,6 +11,7 @@ import { AISettingsService } from './ai.settings.service.js';
 import type { PageContext, WSClientMessage, WSServerMessage } from './ai.types.js';
 
 const logger = createChildLogger('AI-WebSocket');
+const RATE_LIMIT_PIPELINE_RESULT_COUNT = 4;
 
 type RedisClient = ReturnType<typeof import('@/services/cache.service.js').createRedisClient>;
 
@@ -51,10 +54,34 @@ async function authenticateFromSession(sessionId: string): Promise<User | null> 
   return freshUser;
 }
 
-async function checkRateLimit(userId: string): Promise<{ allowed: boolean; retryAfter: number }> {
+interface AIRateLimitResult {
+  allowed: boolean;
+  retryAfter: number;
+  unavailable?: boolean;
+}
+
+function getRateLimitCount(results: unknown): number {
+  if (!Array.isArray(results)) throw new Error('Redis pipeline returned no results');
+  if (results.length !== RATE_LIMIT_PIPELINE_RESULT_COUNT) {
+    throw new Error('Redis pipeline returned incomplete results');
+  }
+  for (const result of results) {
+    if (!Array.isArray(result) || result.length < 2) {
+      throw new Error('Redis pipeline returned malformed result');
+    }
+    const [error] = result;
+    if (error) throw error;
+  }
+  const count = results[1]?.[1];
+  if (typeof count !== 'number' || !Number.isFinite(count)) {
+    throw new Error('Redis pipeline returned invalid request count');
+  }
+  return count;
+}
+
+async function checkRateLimit(userId: string): Promise<AIRateLimitResult> {
   const settingsService = container.resolve(AISettingsService);
   const config = await settingsService.getConfig();
-  const redis = container.resolve<RedisClient>(TOKENS.RedisClient);
 
   const key = `ai-ratelimit:${userId}`;
   const now = Date.now();
@@ -62,22 +89,25 @@ async function checkRateLimit(userId: string): Promise<{ allowed: boolean; retry
   const windowStart = now - windowMs;
 
   try {
+    const redis = container.resolve<RedisClient>(TOKENS.RedisClient);
     const pipeline = redis.pipeline();
     pipeline.zremrangebyscore(key, 0, windowStart);
     pipeline.zcard(key);
-    pipeline.zadd(key, now, `${now}-${Math.random()}`);
+    pipeline.zadd(key, now, `${now}-${randomUUID()}`);
     pipeline.expire(key, config.rateLimitWindowSeconds + 1);
 
-    const results = await pipeline.exec();
-    if (!results) return { allowed: true, retryAfter: 0 };
+    const results = await withRateLimitRedisTimeout(pipeline.exec());
+    const requestCount = getRateLimitCount(results);
 
-    const requestCount = (results[1]?.[1] as number) || 0;
     if (requestCount >= config.rateLimitMax) {
       return { allowed: false, retryAfter: config.rateLimitWindowSeconds };
     }
     return { allowed: true, retryAfter: 0 };
-  } catch {
-    return { allowed: true, retryAfter: 0 };
+  } catch (error) {
+    logger.warn('AI rate limiter unavailable', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return { allowed: false, retryAfter: 0, unavailable: true };
   }
 }
 
@@ -229,6 +259,16 @@ export function createWSHandlers() {
       if (msg.type === 'chat') {
         const rateCheck = await checkRateLimit(user.id);
         if (!rateCheck.allowed) {
+          if (rateCheck.unavailable) {
+            send(ws, {
+              type: 'error',
+              requestId: msg.requestId,
+              code: 'RATE_LIMIT_UNAVAILABLE',
+              message: 'Gateway is temporarily unavailable',
+            });
+            send(ws, { type: 'done', requestId: msg.requestId });
+            return;
+          }
           send(ws, { type: 'rate_limited', retryAfter: rateCheck.retryAfter });
           return;
         }

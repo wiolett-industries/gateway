@@ -74,6 +74,8 @@ The installer writes `.env`. Important settings:
 
 See [.env.example](../.env.example) for the full development reference.
 
+Redis is required infrastructure. Gateway uses it for sessions, cache, and rate limiting; if Redis is unavailable, `/health` returns `503` and Redis-backed rate-limited API/auth/public surfaces fail closed with `RATE_LIMIT_UNAVAILABLE`.
+
 ## Container Log Rotation
 
 The installer can add Docker Compose logging limits for Gateway services. This is separate from the optional ClickHouse structured logging feature.
@@ -325,7 +327,7 @@ If Gateway cannot start:
 - Check `docker compose ps`.
 - Check app logs with `docker compose logs app`.
 - Verify `.env` values.
-- Verify PostgreSQL, Redis, and ClickHouse health.
+- Verify PostgreSQL, Redis, and ClickHouse health. Redis outages intentionally make `/health` fail and API/auth/public rate-limited endpoints return `503` until rate limiting is enforceable again.
 
 If a node does not connect:
 

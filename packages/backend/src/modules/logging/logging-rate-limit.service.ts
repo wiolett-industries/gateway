@@ -1,8 +1,19 @@
 import type { Env } from '@/config/env.js';
+import { createChildLogger } from '@/lib/logger.js';
+import { withRateLimitRedisTimeout } from '@/lib/rate-limit-timeout.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { RedisClient } from '@/services/cache.service.js';
 
 type RateScope = 'global' | 'token' | 'environment';
+
+const logger = createChildLogger('LoggingRateLimit');
+
+function rateLimitUnavailable(error?: unknown): AppError {
+  logger.warn('Logging rate limiter unavailable', {
+    error: error instanceof Error ? error.message : error == null ? undefined : String(error),
+  });
+  return new AppError(503, 'RATE_LIMIT_UNAVAILABLE', 'Gateway is temporarily unavailable');
+}
 
 export class LoggingRateLimitService {
   constructor(
@@ -70,10 +81,32 @@ export class LoggingRateLimitService {
     windowSeconds: number,
     scope: RateScope
   ): Promise<void> {
-    const count = await this.redis.incrby(key, amount);
-    if (count === amount) await this.redis.expire(key, windowSeconds);
+    let count: number;
+    try {
+      count = await withRateLimitRedisTimeout(this.redis.incrby(key, amount));
+      if (typeof count !== 'number' || !Number.isFinite(count)) {
+        throw new Error('Redis returned invalid logging rate-limit count');
+      }
+      if (count === amount) {
+        const expireResult = await withRateLimitRedisTimeout(this.redis.expire(key, windowSeconds));
+        if (expireResult !== 1) {
+          throw new Error('Redis failed to set logging rate-limit expiry');
+        }
+      }
+    } catch (error) {
+      throw rateLimitUnavailable(error);
+    }
+
     if (count > limit) {
-      const ttl = await this.redis.ttl(key);
+      let ttl: number;
+      try {
+        ttl = await withRateLimitRedisTimeout(this.redis.ttl(key));
+        if (typeof ttl !== 'number' || !Number.isFinite(ttl)) {
+          throw new Error('Redis returned invalid logging rate-limit TTL');
+        }
+      } catch (error) {
+        throw rateLimitUnavailable(error);
+      }
       throw new AppError(429, 'LOGGING_RATE_LIMIT_EXCEEDED', 'Logging ingest rate limit exceeded', {
         scope,
         retryAfterSeconds: ttl > 0 ? ttl : windowSeconds,

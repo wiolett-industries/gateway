@@ -230,7 +230,7 @@ The production stack includes:
 |---------|---------|
 | `app` | Gateway backend, frontend, API, OAuth, MCP, WebSockets, and gRPC server. |
 | `postgres` | Main database. |
-| `redis` | Sessions, cache, and rate limiting. |
+| `redis` | Required sessions, cache, and rate limiting dependency. Gateway health and rate-limited endpoints fail closed when Redis is unavailable. |
 | `clickhouse` | Structured logging storage. |
 
 The generated Gateway stack exposes:

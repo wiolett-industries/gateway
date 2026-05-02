@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { container, TOKENS } from '@/container.js';
+import { RATE_LIMIT_REDIS_TIMEOUT_MS } from '@/lib/rate-limit-timeout.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AppEnv } from '@/types.js';
 import { createRateLimiter } from './rate-limit.js';
@@ -12,6 +13,7 @@ interface Entry {
 
 class MemoryRedis {
   readonly sets = new Map<string, Entry[]>();
+  readonly zaddMembers: string[] = [];
 
   pipeline() {
     return new MemoryPipeline(this);
@@ -40,6 +42,7 @@ class MemoryPipeline {
 
   zadd(key: string, score: number, member: string) {
     this.ops.push(() => {
+      this.redis.zaddMembers.push(member);
       const entries = this.redis.sets.get(key) ?? [];
       entries.push({ score, member });
       this.redis.sets.set(key, entries);
@@ -58,9 +61,95 @@ class MemoryPipeline {
   }
 }
 
-function registerRedis(redis = new MemoryRedis()) {
+class NullExecRedis {
+  pipeline() {
+    return {
+      zremrangebyscore: () => this.pipeline(),
+      zcard: () => this.pipeline(),
+      zadd: () => this.pipeline(),
+      expire: () => this.pipeline(),
+      exec: async () => null,
+    };
+  }
+}
+
+class ThrowingExecRedis {
+  pipeline() {
+    return {
+      zremrangebyscore: () => this.pipeline(),
+      zcard: () => this.pipeline(),
+      zadd: () => this.pipeline(),
+      expire: () => this.pipeline(),
+      exec: async () => {
+        throw new Error('redis down');
+      },
+    };
+  }
+}
+
+class ErrorTupleRedis {
+  pipeline() {
+    return {
+      zremrangebyscore: () => this.pipeline(),
+      zcard: () => this.pipeline(),
+      zadd: () => this.pipeline(),
+      expire: () => this.pipeline(),
+      exec: async () => [[new Error('redis command failed'), null]],
+    };
+  }
+}
+
+class MalformedCountRedis {
+  pipeline() {
+    return {
+      zremrangebyscore: () => this.pipeline(),
+      zcard: () => this.pipeline(),
+      zadd: () => this.pipeline(),
+      expire: () => this.pipeline(),
+      exec: async () => [
+        [null, 0],
+        [null, 'not-a-number'],
+        [null, 1],
+        [null, 1],
+      ],
+    };
+  }
+}
+
+class TruncatedResultsRedis {
+  pipeline() {
+    return {
+      zremrangebyscore: () => this.pipeline(),
+      zcard: () => this.pipeline(),
+      zadd: () => this.pipeline(),
+      expire: () => this.pipeline(),
+      exec: async () => [
+        [null, 0],
+        [null, 0],
+      ],
+    };
+  }
+}
+
+class HangingExecRedis {
+  pipeline() {
+    return {
+      zremrangebyscore: () => this.pipeline(),
+      zcard: () => this.pipeline(),
+      zadd: () => this.pipeline(),
+      expire: () => this.pipeline(),
+      exec: async () => new Promise<never>(() => {}),
+    };
+  }
+}
+
+function registerRedis<T>(redis: T): T {
   container.registerInstance(TOKENS.RedisClient, redis as any);
   return redis;
+}
+
+function registerMemoryRedis(): MemoryRedis {
+  return registerRedis(new MemoryRedis());
 }
 
 function createTestApp() {
@@ -80,7 +169,7 @@ afterEach(() => {
 
 describe('createRateLimiter', () => {
   it('rejects requests after the configured sliding-window limit', async () => {
-    registerRedis();
+    registerMemoryRedis();
     const app = createTestApp();
     app.use('*', createRateLimiter({ windowMs: 60_000, maxRequests: 2, keyPrefix: 'test:limit' }));
     app.get('/', (c) => c.text('ok'));
@@ -96,7 +185,7 @@ describe('createRateLimiter', () => {
   });
 
   it('keeps global and route-specific buckets independent', async () => {
-    registerRedis();
+    registerMemoryRedis();
     const app = createTestApp();
     app.use('/api/*', createRateLimiter({ windowMs: 60_000, maxRequests: 10, keyPrefix: 'test:global' }));
     app.use('/api/auth/*', createRateLimiter({ windowMs: 60_000, maxRequests: 1, keyPrefix: 'test:auth' }));
@@ -109,5 +198,109 @@ describe('createRateLimiter', () => {
 
     expect((await app.request('/api/auth/login', { headers: { 'x-real-ip': '192.0.2.20' } })).status).toBe(429);
     expect((await app.request('/api/other', { headers: { 'x-real-ip': '192.0.2.20' } })).status).toBe(200);
+  });
+
+  it('uses crypto-random UUID members for Redis sorted-set entries', async () => {
+    const redis = registerMemoryRedis();
+    const app = createTestApp();
+    app.use('*', createRateLimiter({ windowMs: 60_000, maxRequests: 2, keyPrefix: 'test:limit' }));
+    app.get('/', (c) => c.text('ok'));
+
+    await app.request('/', { headers: { 'x-real-ip': '192.0.2.30' } });
+
+    expect(redis.zaddMembers).toHaveLength(1);
+    expect(redis.zaddMembers[0]).toMatch(
+      /^\d+-[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+    );
+  });
+
+  it('fails closed when Redis pipeline returns null', async () => {
+    registerRedis(new NullExecRedis());
+    const app = createTestApp();
+    app.use('*', createRateLimiter({ windowMs: 60_000, maxRequests: 2, keyPrefix: 'test:null' }));
+    app.get('/', (c) => c.text('ok'));
+
+    const response = await app.request('/', { headers: { 'x-real-ip': '192.0.2.40' } });
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ code: 'RATE_LIMIT_UNAVAILABLE' });
+  });
+
+  it('fails closed when Redis is not registered', async () => {
+    const app = createTestApp();
+    app.use('*', createRateLimiter({ windowMs: 60_000, maxRequests: 2, keyPrefix: 'test:missing' }));
+    app.get('/', (c) => c.text('ok'));
+
+    const response = await app.request('/', { headers: { 'x-real-ip': '192.0.2.45' } });
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ code: 'RATE_LIMIT_UNAVAILABLE' });
+  });
+
+  it('fails closed when Redis pipeline execution throws', async () => {
+    registerRedis(new ThrowingExecRedis());
+    const app = createTestApp();
+    app.use('*', createRateLimiter({ windowMs: 60_000, maxRequests: 2, keyPrefix: 'test:throw' }));
+    app.get('/', (c) => c.text('ok'));
+
+    const response = await app.request('/', { headers: { 'x-real-ip': '192.0.2.50' } });
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ code: 'RATE_LIMIT_UNAVAILABLE' });
+  });
+
+  it('fails closed when Redis pipeline includes a command error', async () => {
+    registerRedis(new ErrorTupleRedis());
+    const app = createTestApp();
+    app.use('*', createRateLimiter({ windowMs: 60_000, maxRequests: 2, keyPrefix: 'test:tuple' }));
+    app.get('/', (c) => c.text('ok'));
+
+    const response = await app.request('/', { headers: { 'x-real-ip': '192.0.2.60' } });
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ code: 'RATE_LIMIT_UNAVAILABLE' });
+  });
+
+  it('fails closed when Redis pipeline returns a malformed count', async () => {
+    registerRedis(new MalformedCountRedis());
+    const app = createTestApp();
+    app.use('*', createRateLimiter({ windowMs: 60_000, maxRequests: 2, keyPrefix: 'test:malformed' }));
+    app.get('/', (c) => c.text('ok'));
+
+    const response = await app.request('/', { headers: { 'x-real-ip': '192.0.2.70' } });
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ code: 'RATE_LIMIT_UNAVAILABLE' });
+  });
+
+  it('fails closed when Redis pipeline returns incomplete results', async () => {
+    registerRedis(new TruncatedResultsRedis());
+    const app = createTestApp();
+    app.use('*', createRateLimiter({ windowMs: 60_000, maxRequests: 2, keyPrefix: 'test:truncated' }));
+    app.get('/', (c) => c.text('ok'));
+
+    const response = await app.request('/', { headers: { 'x-real-ip': '192.0.2.80' } });
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ code: 'RATE_LIMIT_UNAVAILABLE' });
+  });
+
+  it('fails closed when Redis pipeline execution stalls', async () => {
+    vi.useFakeTimers();
+    try {
+      registerRedis(new HangingExecRedis());
+      const app = createTestApp();
+      app.use('*', createRateLimiter({ windowMs: 60_000, maxRequests: 2, keyPrefix: 'test:timeout' }));
+      app.get('/', (c) => c.text('ok'));
+
+      const responsePromise = app.request('/', { headers: { 'x-real-ip': '192.0.2.90' } });
+      await vi.advanceTimersByTimeAsync(RATE_LIMIT_REDIS_TIMEOUT_MS);
+      const response = await responsePromise;
+
+      expect(response.status).toBe(503);
+      expect(await response.json()).toMatchObject({ code: 'RATE_LIMIT_UNAVAILABLE' });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

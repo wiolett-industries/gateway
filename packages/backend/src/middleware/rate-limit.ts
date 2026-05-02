@@ -1,10 +1,16 @@
+import { randomUUID } from 'node:crypto';
 import type { MiddlewareHandler } from 'hono';
 import { type Env, getEnv } from '@/config/env.js';
 import { container, TOKENS } from '@/container.js';
+import { createChildLogger } from '@/lib/logger.js';
+import { withRateLimitRedisTimeout } from '@/lib/rate-limit-timeout.js';
 import { getClientIpForContext } from '@/lib/request-ip.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { RedisClient } from '@/services/cache.service.js';
 import type { AppEnv } from '@/types.js';
+
+const logger = createChildLogger('RateLimit');
+const RATE_LIMIT_PIPELINE_RESULT_COUNT = 4;
 
 interface RateLimitConfig {
   windowMs: number;
@@ -14,12 +20,43 @@ interface RateLimitConfig {
 
 type RateLimitSelector = (env: Env) => number;
 
+function rateLimitUnavailable(error?: unknown): AppError {
+  logger.warn('Rate limiter unavailable', {
+    error: error instanceof Error ? error.message : error == null ? undefined : String(error),
+  });
+  return new AppError(503, 'RATE_LIMIT_UNAVAILABLE', 'Gateway is temporarily unavailable');
+}
+
+function getPipelineCount(results: unknown): number {
+  if (!Array.isArray(results)) {
+    throw rateLimitUnavailable(new Error('Redis pipeline returned no results'));
+  }
+  if (results.length !== RATE_LIMIT_PIPELINE_RESULT_COUNT) {
+    throw rateLimitUnavailable(new Error('Redis pipeline returned incomplete results'));
+  }
+
+  for (const result of results) {
+    if (!Array.isArray(result) || result.length < 2) {
+      throw rateLimitUnavailable(new Error('Redis pipeline returned malformed result'));
+    }
+    const [error] = result;
+    if (error) {
+      throw rateLimitUnavailable(error);
+    }
+  }
+
+  const count = results[1]?.[1];
+  if (typeof count !== 'number' || !Number.isFinite(count)) {
+    throw rateLimitUnavailable(new Error('Redis pipeline returned invalid request count'));
+  }
+
+  return count;
+}
+
 export function createRateLimiter(config: RateLimitConfig): MiddlewareHandler<AppEnv> {
   const { windowMs, maxRequests, keyPrefix = 'ratelimit' } = config;
 
   return async (c, next) => {
-    const redis = container.resolve<RedisClient>(TOKENS.RedisClient);
-
     const clientIp = (await getClientIpForContext(c)) || 'unknown';
 
     const key = `${keyPrefix}:${clientIp}`;
@@ -27,20 +64,15 @@ export function createRateLimiter(config: RateLimitConfig): MiddlewareHandler<Ap
     const windowStart = now - windowMs;
 
     try {
+      const redis = container.resolve<RedisClient>(TOKENS.RedisClient);
       const pipeline = redis.pipeline();
       pipeline.zremrangebyscore(key, 0, windowStart);
       pipeline.zcard(key);
-      pipeline.zadd(key, now, `${now}-${Math.random()}`);
+      pipeline.zadd(key, now, `${now}-${randomUUID()}`);
       pipeline.expire(key, Math.ceil(windowMs / 1000));
 
-      const results = await pipeline.exec();
-
-      if (!results) {
-        await next();
-        return;
-      }
-
-      const requestCount = (results[1]?.[1] as number) || 0;
+      const results = await withRateLimitRedisTimeout(pipeline.exec());
+      const requestCount = getPipelineCount(results);
 
       c.res.headers.set('X-RateLimit-Limit', String(maxRequests));
       c.res.headers.set('X-RateLimit-Remaining', String(Math.max(0, maxRequests - requestCount - 1)));
@@ -55,7 +87,7 @@ export function createRateLimiter(config: RateLimitConfig): MiddlewareHandler<Ap
       if (error instanceof AppError) {
         throw error;
       }
-      await next();
+      throw rateLimitUnavailable(error);
     }
   };
 }

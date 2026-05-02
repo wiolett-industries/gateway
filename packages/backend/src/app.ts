@@ -12,7 +12,7 @@ import { requestId } from 'hono/request-id';
 import { secureHeaders } from 'hono/secure-headers';
 
 import { getEnv, isDevelopment } from '@/config/env.js';
-import { container } from '@/container.js';
+import { container, TOKENS } from '@/container.js';
 import { tags as openApiTags, openApiValidationHook, securitySchemes } from '@/lib/openapi.js';
 import { auditContextMiddleware } from '@/middleware/audit-context.js';
 import { errorHandler } from '@/middleware/error-handler.js';
@@ -69,10 +69,12 @@ import { publicStatusPageRoutes, statusPageRoutes } from '@/modules/status-page/
 import { StatusPageService } from '@/modules/status-page/status-page.service.js';
 import { systemRoutes } from '@/modules/system/system.routes.js';
 import { tokensRoutes } from '@/modules/tokens/tokens.routes.js';
+import type { RedisClient } from '@/services/cache.service.js';
 import type { AppEnv } from '@/types.js';
 import { authenticateEventsConnection, createEventsWSHandlers } from '@/ws/events.ws.js';
 
 const STATUS_PREVIEW_PREFIX = '/_status-preview';
+const HEALTH_REDIS_TIMEOUT_MS = 1000;
 
 function requestBodyLimit(maxSize: number): MiddlewareHandler<AppEnv> {
   return bodyLimit({
@@ -113,6 +115,22 @@ async function isStatusHostRequest(hostHeader: string | undefined): Promise<bool
     return await container.resolve(StatusPageService).isStatusHost(hostHeader);
   } catch {
     return false;
+  }
+}
+
+async function getRedisHealth(): Promise<'ok' | 'unavailable'> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const redis = container.resolve<RedisClient>(TOKENS.RedisClient);
+    const timeoutPromise = new Promise<'timeout'>((resolve) => {
+      timeout = setTimeout(() => resolve('timeout'), HEALTH_REDIS_TIMEOUT_MS);
+    });
+    const result = await Promise.race([redis.ping(), timeoutPromise]);
+    return result === 'PONG' ? 'ok' : 'unavailable';
+  } catch {
+    return 'unavailable';
+  } finally {
+    if (timeout) clearTimeout(timeout);
   }
 }
 
@@ -186,11 +204,17 @@ export function createApp() {
   app.onError(errorHandler);
 
   // Health check
-  app.get('/health', (c) => {
-    return c.json({
-      status: 'ok',
-      timestamp: new Date().toISOString(),
-    });
+  app.get('/health', async (c) => {
+    const redis = await getRedisHealth();
+    const healthy = redis === 'ok';
+    return c.json(
+      {
+        status: healthy ? 'ok' : 'unavailable',
+        timestamp: new Date().toISOString(),
+        dependencies: { redis },
+      },
+      healthy ? 200 : 503
+    );
   });
 
   app.use('*', async (c, next) => {

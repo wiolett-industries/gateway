@@ -51,6 +51,7 @@ function endpoint() {
 
 async function fetchStatus(): Promise<PublicStatusPageDto> {
   const response = await fetch(endpoint(), { cache: "no-store", credentials: "include" });
+  if (response.status === 503) throw new Error("Status page temporarily unavailable");
   if (!response.ok) throw new Error("Status page unavailable");
   const body = (await response.json()) as { data: PublicStatusPageDto };
   return body.data;
@@ -179,7 +180,7 @@ function App() {
     };
   }, []);
 
-  if (error && !data) {
+  if (error) {
     return (
       <main className="shell">
         <section className="hero">
