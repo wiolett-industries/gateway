@@ -4,6 +4,7 @@ IFS=$'\n\t'
 
 # ── Defaults ──────────────────────────────────────────────────────────
 DEFAULT_IMAGE="registry.gitlab.wiolett.net/wiolett/gateway"
+CLICKHOUSE_IMAGE_REF="${CLICKHOUSE_IMAGE_REF:-clickhouse/clickhouse-server:26.2.10.10}"
 GITLAB_API_URL="${GITLAB_API_URL:-https://gitlab.wiolett.net}"
 GITLAB_PROJECT_PATH="${GITLAB_PROJECT_PATH:-wiolett/gateway}"
 GITLAB_API="${GITLAB_API_URL}/api/v4/projects/$(echo "$GITLAB_PROJECT_PATH" | sed 's|/|%2F|g')"
@@ -1062,7 +1063,7 @@ ${logging_block}
 ${logging_block}
 
   clickhouse:
-    image: clickhouse/clickhouse-server:latest
+    image: ${CLICKHOUSE_IMAGE_REF}
     restart: unless-stopped
     environment:
       CLICKHOUSE_DB: \${CLICKHOUSE_DATABASE:-gateway_logs}
@@ -1150,7 +1151,7 @@ ${logging_block}
 ${logging_block}
 
   clickhouse:
-    image: clickhouse/clickhouse-server:latest
+    image: ${CLICKHOUSE_IMAGE_REF}
     restart: unless-stopped
     environment:
       CLICKHOUSE_DB: \${CLICKHOUSE_DATABASE:-gateway_logs}
