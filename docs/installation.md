@@ -233,6 +233,8 @@ The production stack includes:
 | `redis` | Required sessions, cache, and rate limiting dependency. Gateway health and rate-limited endpoints fail closed when Redis is unavailable. |
 | `clickhouse` | Structured logging storage. |
 
+The bundled ClickHouse service uses a pinned image tag; treat ClickHouse upgrades as explicit version changes, not automatic `latest` pulls.
+
 The generated Gateway stack exposes:
 
 - `3000/tcp` for the Gateway UI/API app. In direct or behind-NAT deployments, keep this reachable from the local network and configure your external reverse proxy to forward the public Gateway domain to this port. When the installer configures local nginx for the Gateway domain, the app port is bound to localhost behind nginx instead of being exposed publicly.

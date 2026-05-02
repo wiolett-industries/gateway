@@ -182,6 +182,10 @@ CLICKHOUSE_LOGS_TABLE=logs
 CLICKHOUSE_REQUEST_TIMEOUT_MS=5000
 ```
 
+### ClickHouse Image Upgrades
+
+Gateway pins the bundled ClickHouse container to an explicit `clickhouse/clickhouse-server` release tag instead of using `latest`. Upgrade ClickHouse intentionally by changing the pinned tag in `docker-compose.yml`, `docker-compose.dev.yml`, and `scripts/install.sh`, then test startup and log search against existing ClickHouse data before rolling the change into production.
+
 If logging is disabled:
 
 - `GET /api/logging/status` returns `enabled: false`.
