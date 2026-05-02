@@ -42,6 +42,7 @@ export function DockerRegistriesSection({ nodesList }: DockerRegistriesSectionPr
   const [regUrl, setRegUrl] = useState("");
   const [regUsername, setRegUsername] = useState("");
   const [regPassword, setRegPassword] = useState("");
+  const [regTrustedAuthRealm, setRegTrustedAuthRealm] = useState("");
   const [regScope, setRegScope] = useState<"global" | "node">("global");
   const [regNodeId, setRegNodeId] = useState("");
   const [regSaving, setRegSaving] = useState(false);
@@ -70,6 +71,7 @@ export function DockerRegistriesSection({ nodesList }: DockerRegistriesSectionPr
     setRegUrl("");
     setRegUsername("");
     setRegPassword("");
+    setRegTrustedAuthRealm("");
     setRegScope("global");
     setRegNodeId("");
     setRegDialogOpen(true);
@@ -82,6 +84,7 @@ export function DockerRegistriesSection({ nodesList }: DockerRegistriesSectionPr
     setRegUrl(r.url);
     setRegUsername(r.username ?? "");
     setRegPassword("");
+    setRegTrustedAuthRealm(r.trustedAuthRealm ?? "");
     setRegScope(r.scope);
     setRegNodeId(r.nodeId ?? "");
     setRegDialogOpen(true);
@@ -101,6 +104,7 @@ export function DockerRegistriesSection({ nodesList }: DockerRegistriesSectionPr
         url: regUrl.trim(),
         username: regUsername.trim() || undefined,
         password: regPassword || undefined,
+        trustedAuthRealm: regTrustedAuthRealm.trim(),
         scope: regScope,
         nodeId: regScope === "node" ? regNodeId || undefined : undefined,
       };
@@ -115,6 +119,7 @@ export function DockerRegistriesSection({ nodesList }: DockerRegistriesSectionPr
             url: regUrl.trim(),
             username: regUsername.trim() || undefined,
             password: regPassword || undefined,
+            trustedAuthRealm: regTrustedAuthRealm.trim() || undefined,
           });
           if (!testResult.ok) {
             toast.error(
@@ -220,6 +225,11 @@ export function DockerRegistriesSection({ nodesList }: DockerRegistriesSectionPr
                         {r.url}
                         {r.username && ` (${r.username})`}
                       </p>
+                      {r.trustedAuthRealm && (
+                        <p className="text-xs text-muted-foreground">
+                          Token service: {r.trustedAuthRealm}
+                        </p>
+                      )}
                     </div>
                   </div>
                   <div
@@ -314,6 +324,21 @@ export function DockerRegistriesSection({ nodesList }: DockerRegistriesSectionPr
                 onChange={(e) => setRegPassword(e.target.value)}
                 placeholder={regEditId ? "(unchanged)" : "password or token"}
               />
+            </div>
+            <div>
+              <label className="text-sm font-medium">
+                Trusted Token Service{" "}
+                <span className="text-muted-foreground font-normal">(optional)</span>
+              </label>
+              <Input
+                className="mt-1"
+                value={regTrustedAuthRealm}
+                onChange={(e) => setRegTrustedAuthRealm(e.target.value)}
+                placeholder="https://auth.registry.example.com"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                HTTPS origin that may receive these credentials for Bearer token exchange.
+              </p>
             </div>
             <div>
               <label className="text-sm font-medium">Scope</label>

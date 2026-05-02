@@ -72,6 +72,7 @@ export class DockerRegistryService {
       url: string;
       username?: string;
       password?: string;
+      trustedAuthRealm?: string;
       scope: string;
       nodeId?: string;
     },
@@ -91,6 +92,7 @@ export class DockerRegistryService {
         url: input.url,
         username: input.username ?? null,
         encryptedPassword,
+        trustedAuthRealm: input.trustedAuthRealm?.trim() || null,
         scope: input.scope,
         nodeId: input.nodeId ?? null,
       })
@@ -116,6 +118,7 @@ export class DockerRegistryService {
       url?: string;
       username?: string;
       password?: string;
+      trustedAuthRealm?: string;
       scope?: string;
       nodeId?: string;
     },
@@ -128,6 +131,7 @@ export class DockerRegistryService {
     if (input.name !== undefined) updates.name = input.name;
     if (input.url !== undefined) updates.url = input.url;
     if (input.username !== undefined) updates.username = input.username;
+    if (input.trustedAuthRealm !== undefined) updates.trustedAuthRealm = input.trustedAuthRealm.trim() || null;
     if (input.scope !== undefined) updates.scope = input.scope;
     if (input.nodeId !== undefined) updates.nodeId = input.nodeId;
 
@@ -180,12 +184,12 @@ export class DockerRegistryService {
         ? `Basic ${Buffer.from(`${row.username}:${this.decryptPassword(row.encryptedPassword)}`).toString('base64')}`
         : '';
 
-    return this.testRegistryConnection(row.url, basicAuth);
+    return this.testRegistryConnection(row.url, basicAuth, row.trustedAuthRealm);
   }
 
-  async testConnectionDirect(url: string, username?: string, password?: string) {
+  async testConnectionDirect(url: string, username?: string, password?: string, trustedAuthRealm?: string) {
     const basicAuth = username && password ? `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}` : '';
-    return this.testRegistryConnection(url, basicAuth);
+    return this.testRegistryConnection(url, basicAuth, trustedAuthRealm);
   }
 
   private normalizeRegistryBaseUrl(rawUrl: string): URL {
@@ -203,8 +207,25 @@ export class DockerRegistryService {
     };
   }
 
-  private isAllowedBearerRealm(registryBaseUrl: URL, tokenUrl: URL): boolean {
+  private trustedRealmOrigin(rawRealm?: string | null): string | null {
+    const trimmed = rawRealm?.trim();
+    if (!trimmed) return null;
+
+    try {
+      const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+      const trustedUrl = new URL(withScheme);
+      if (trustedUrl.protocol !== 'https:') return null;
+      return trustedUrl.origin.toLowerCase();
+    } catch {
+      return null;
+    }
+  }
+
+  private isAllowedBearerRealm(registryBaseUrl: URL, tokenUrl: URL, trustedAuthRealm?: string | null): boolean {
     if (tokenUrl.protocol !== 'https:') return false;
+    const trustedOrigin = this.trustedRealmOrigin(trustedAuthRealm);
+    if (trustedOrigin && tokenUrl.origin.toLowerCase() === trustedOrigin) return true;
+
     if (tokenUrl.hostname.toLowerCase() !== registryBaseUrl.hostname.toLowerCase()) return false;
 
     const registryPort = registryBaseUrl.port || (registryBaseUrl.protocol === 'https:' ? '443' : registryBaseUrl.port);
@@ -213,7 +234,11 @@ export class DockerRegistryService {
     return registryPort === tokenPort;
   }
 
-  private async testRegistryConnection(rawUrl: string, basicAuth: string): Promise<RegistryConnectionTestResult> {
+  private async testRegistryConnection(
+    rawUrl: string,
+    basicAuth: string,
+    trustedAuthRealm?: string | null
+  ): Promise<RegistryConnectionTestResult> {
     try {
       const baseUrl = this.normalizeRegistryBaseUrl(rawUrl);
       const basePath = baseUrl.pathname.replace(/\/+$/, '');
@@ -243,11 +268,12 @@ export class DockerRegistryService {
               return { success: false, status: 401, statusText: 'Authentication failed: invalid Bearer realm' };
             }
 
-            if (!this.isAllowedBearerRealm(baseUrl, tokenUrl)) {
+            if (!this.isAllowedBearerRealm(baseUrl, tokenUrl, trustedAuthRealm)) {
               return {
                 success: false,
                 status: 401,
-                statusText: 'Authentication failed: Bearer realm is not trusted for this registry',
+                statusText:
+                  'Authentication failed: Bearer realm is not trusted for this registry. Configure a trusted token service origin if this registry uses a separate auth service.',
               };
             }
 

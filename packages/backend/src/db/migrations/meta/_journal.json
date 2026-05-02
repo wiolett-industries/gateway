@@ -218,6 +218,13 @@
       "when": 1777593600000,
       "tag": "0030_remove_list_scopes",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1777680000000,
+      "tag": "0031_docker_registry_trusted_auth_realm",
+      "breakpoints": true
     }
   ]
 }

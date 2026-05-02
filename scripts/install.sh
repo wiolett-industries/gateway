@@ -97,6 +97,36 @@ error() {
     exit 1
 }
 
+validate_clickhouse_image_ref() {
+    if [[ -z "${CLICKHOUSE_IMAGE_REF}" ]]; then
+        error "CLICKHOUSE_IMAGE_REF must not be empty."
+    fi
+
+    if [[ "${CLICKHOUSE_IMAGE_REF}" =~ [[:space:][:cntrl:]] ]]; then
+        error "CLICKHOUSE_IMAGE_REF must not contain whitespace or control characters."
+    fi
+
+    if [[ ! "${CLICKHOUSE_IMAGE_REF}" =~ ^[A-Za-z0-9][A-Za-z0-9._/:@+-]*$ ]]; then
+        error "CLICKHOUSE_IMAGE_REF contains unsupported characters."
+    fi
+
+    if [[ "${CLICKHOUSE_IMAGE_REF}" == *"@"* ]]; then
+        if [[ ! "${CLICKHOUSE_IMAGE_REF}" =~ ^[A-Za-z0-9][A-Za-z0-9._/:+-]*@sha256:[A-Fa-f0-9]{64}$ ]]; then
+            error "CLICKHOUSE_IMAGE_REF digest must use @sha256:<64 hex characters>."
+        fi
+        return
+    fi
+
+    local image_leaf="${CLICKHOUSE_IMAGE_REF##*/}"
+    if [[ ! "${image_leaf}" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*:([A-Za-z0-9_][A-Za-z0-9._-]{0,127})$ ]]; then
+        error "CLICKHOUSE_IMAGE_REF must include exactly one explicit tag on the image name, or a sha256 digest."
+    fi
+
+    if [[ "${image_leaf##*:}" == "latest" ]]; then
+        error "CLICKHOUSE_IMAGE_REF must not use the mutable latest tag."
+    fi
+}
+
 run_quiet() {
     if "$@" >>"$LOG_FILE" 2>&1; then
         return 0
@@ -990,6 +1020,7 @@ LOGEOF
 
 # ── Write docker-compose.yml ─────────────────────────────────────────
 write_compose() {
+    validate_clickhouse_image_ref
     backup_if_exists "docker-compose.yml"
 
     local logging_block=""
@@ -1063,7 +1094,7 @@ ${logging_block}
 ${logging_block}
 
   clickhouse:
-    image: ${CLICKHOUSE_IMAGE_REF}
+    image: "${CLICKHOUSE_IMAGE_REF}"
     restart: unless-stopped
     environment:
       CLICKHOUSE_DB: \${CLICKHOUSE_DATABASE:-gateway_logs}
@@ -1151,7 +1182,7 @@ ${logging_block}
 ${logging_block}
 
   clickhouse:
-    image: ${CLICKHOUSE_IMAGE_REF}
+    image: "${CLICKHOUSE_IMAGE_REF}"
     restart: unless-stopped
     environment:
       CLICKHOUSE_DB: \${CLICKHOUSE_DATABASE:-gateway_logs}

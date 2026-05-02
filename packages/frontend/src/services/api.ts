@@ -2685,6 +2685,7 @@ class ApiClient extends ApiClientBase {
     url: string;
     username?: string;
     password?: string;
+    trustedAuthRealm?: string;
     scope?: string;
     nodeId?: string;
   }): Promise<DockerRegistry> {
@@ -2703,6 +2704,7 @@ class ApiClient extends ApiClientBase {
       url: string;
       username?: string;
       password?: string;
+      trustedAuthRealm?: string;
       scope?: string;
       nodeId?: string;
     }>
@@ -2732,6 +2734,7 @@ class ApiClient extends ApiClientBase {
     url: string;
     username?: string;
     password?: string;
+    trustedAuthRealm?: string;
   }): Promise<{ ok: boolean; error?: string }> {
     const result = await this.unwrapData(
       this.request<{ data: { success?: boolean; error?: string; statusText?: string } }>(

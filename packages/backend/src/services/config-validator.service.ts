@@ -16,7 +16,7 @@ export class ConfigValidatorService {
 
   /**
    * Directives that must never appear anywhere in user-supplied advanced config snippets.
-   * Each entry is checked as a case-insensitive prefix of a trimmed line.
+   * Each entry is checked against the parsed directive name.
    */
   private static readonly ADVANCED_ALWAYS_FORBIDDEN_DIRECTIVES: readonly string[] = [
     'load_module',
@@ -29,7 +29,7 @@ export class ConfigValidatorService {
     'worker_processes',
     'daemon',
     'master_process',
-    'env ',
+    'env',
     'ssl_certificate',
     'ssl_certificate_key',
     'internal',
@@ -47,7 +47,7 @@ export class ConfigValidatorService {
     'worker_processes',
     'daemon',
     'master_process',
-    'env ',
+    'env',
     'auth_basic_user_file',
     'content_by_lua',
   ];
@@ -69,6 +69,23 @@ export class ConfigValidatorService {
   private static readonly LOCATION_OPEN_RE = /^location\b(?<rest>.*)$/i;
 
   private static readonly ROOT_LOCATION_PATTERNS: readonly RegExp[] = [/^\/$/, /^=\s*\/$/, /^\^~\s*\/$/];
+
+  private static directiveName(tokenText: string): string {
+    return tokenText.trim().split(/\s+/)[0]?.toLowerCase() ?? '';
+  }
+
+  private static matchesForbiddenDirective(tokenText: string, directive: string): boolean {
+    const name = ConfigValidatorService.directiveName(tokenText);
+    const forbidden = directive.trim().toLowerCase();
+    if (!name || !forbidden) return false;
+    if (forbidden === 'lua_') {
+      return name.startsWith('lua_') || name.includes('_by_lua');
+    }
+    if (forbidden.endsWith('_') || forbidden === 'content_by_lua') {
+      return name.startsWith(forbidden);
+    }
+    return name === forbidden;
+  }
 
   private static isRootLocation(rest: string): boolean {
     const normalized = rest.trim().replace(/\s+/g, ' ');
@@ -190,10 +207,11 @@ export class ConfigValidatorService {
     if (rawMode) {
       if (!bypassRawValidation) {
         for (const token of tokens) {
-          const trimmed = token.type === 'blockClose' ? '' : token.text.trim().toLowerCase();
+          if (token.type === 'blockClose') continue;
+          const trimmed = token.text.trim().toLowerCase();
           if (trimmed === '') continue;
           for (const directive of ConfigValidatorService.RAW_FORBIDDEN_DIRECTIVES) {
-            if (trimmed.startsWith(directive.toLowerCase())) {
+            if (ConfigValidatorService.matchesForbiddenDirective(token.text, directive)) {
               errors.push(`Forbidden directive "${directive.trim()}" found on line ${token.line}`);
             }
           }
@@ -216,14 +234,14 @@ export class ConfigValidatorService {
         const isTopLevel = blockStack.length === 0;
 
         for (const directive of ConfigValidatorService.ADVANCED_ALWAYS_FORBIDDEN_DIRECTIVES) {
-          if (trimmed.startsWith(directive.toLowerCase())) {
+          if (ConfigValidatorService.matchesForbiddenDirective(token.text, directive)) {
             errors.push(`Forbidden directive "${directive.trim()}" found on line ${token.line}`);
           }
         }
 
         if (isTopLevel) {
           for (const directive of ConfigValidatorService.TOP_LEVEL_FORBIDDEN_DIRECTIVES) {
-            if (trimmed.startsWith(directive.toLowerCase())) {
+            if (ConfigValidatorService.matchesForbiddenDirective(token.text, directive)) {
               errors.push(`Forbidden top-level directive "${directive.trim()}" found on line ${token.line}`);
             }
           }

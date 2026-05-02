@@ -2447,6 +2447,7 @@ export interface DockerRegistry {
   name: string;
   url: string;
   username?: string;
+  trustedAuthRealm?: string | null;
   scope: "global" | "node";
   nodeId?: string;
   createdAt: string;

@@ -54,6 +54,14 @@ function normalizeProxyValidationOptions(validationOptions: ProxyValidationInput
     : validationOptions;
 }
 
+function rawConfigAuditDetails(input: { rawConfig?: unknown }, options: ProxyValidationOptions) {
+  if (input.rawConfig === undefined) return {};
+  return {
+    rawConfigChanged: true,
+    rawValidationBypassed: options.bypassRawValidation === true,
+  };
+}
+
 function stripProxyHealthHistory<T extends { healthHistory?: unknown }>(host: T): Omit<T, 'healthHistory'> {
   const { healthHistory: _healthHistory, ...rest } = host;
   return rest;
@@ -265,7 +273,7 @@ export class ProxyService {
       action: 'proxy_host.create',
       resourceType: 'proxy_host',
       resourceId: host.id,
-      details: { type: host.type, domainNames: host.domainNames },
+      details: { type: host.type, domainNames: host.domainNames, ...rawConfigAuditDetails(input, options) },
     });
 
     logger.info('Created proxy host', { hostId: host.id, domains: host.domainNames });
@@ -394,7 +402,7 @@ export class ProxyService {
       action: 'proxy_host.update',
       resourceType: 'proxy_host',
       resourceId: id,
-      details: { changes: Object.keys(input) },
+      details: { changes: Object.keys(input), ...rawConfigAuditDetails(input, options) },
     });
 
     logger.info('Updated proxy host', { hostId: id });

@@ -169,6 +169,7 @@ export const RegistryCreateSchema = z.object({
   url: z.string().min(1),
   username: z.string().optional(),
   password: z.string().optional(),
+  trustedAuthRealm: z.string().optional(),
   scope: z.enum(['global', 'node']).default('global'),
   nodeId: z.string().uuid().optional(),
 });

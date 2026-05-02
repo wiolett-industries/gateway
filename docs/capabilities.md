@@ -47,6 +47,7 @@ Container workflows:
 - Browse and edit container files when permitted.
 - Manage Docker images and cleanup old images.
 - Manage private registry credentials and image registry mappings.
+- Configure a trusted HTTPS token-service origin only for registries whose Bearer auth service is intentionally hosted on a separate origin.
 
 Deployment workflows:
 

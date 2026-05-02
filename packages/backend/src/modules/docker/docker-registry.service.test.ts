@@ -16,6 +16,7 @@ function createSavedRegistryConnectionService(rowOverride: Partial<Record<string
     url: 'https://registry.example.com',
     username: 'user',
     encryptedPassword: '{}',
+    trustedAuthRealm: null,
     scope: 'global',
     nodeId: null,
     createdAt: new Date(),
@@ -50,6 +51,7 @@ describe('DockerRegistryService image registry mappings', () => {
         url: 'https://registry.example.com',
         username: 'generic',
         encryptedPassword: '{}',
+        trustedAuthRealm: null,
         scope: 'global',
         nodeId: null,
         createdAt: new Date(),
@@ -61,6 +63,7 @@ describe('DockerRegistryService image registry mappings', () => {
         url: 'https://registry.example.com',
         username: 'team',
         encryptedPassword: '{}',
+        trustedAuthRealm: null,
         scope: 'global',
         nodeId: null,
         createdAt: new Date(),
@@ -186,6 +189,81 @@ describe('DockerRegistryService connection tests', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     const result = await service.testConnectionDirect('https://registry.example.com', 'user', 'password');
+
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(401);
+    expect(result.statusText).toContain('Bearer realm');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows saved registry token exchange to an explicitly trusted https realm origin', async () => {
+    const service = createSavedRegistryConnectionService({ trustedAuthRealm: 'https://auth.registry.example.net' });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response('', {
+          status: 401,
+          headers: {
+            'www-authenticate': 'Bearer realm="https://auth.registry.example.net/token",service="registry.example.com"',
+          },
+        })
+      )
+      .mockResolvedValueOnce(new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await service.testConnection('registry-1');
+
+    expect(result).toEqual({ success: true, status: 200, statusText: 'Authenticated (token exchange)' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      'https://auth.registry.example.net/token?service=registry.example.com',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: expect.stringMatching(/^Basic /),
+        }),
+      })
+    );
+  });
+
+  it('allows direct token exchange only when the trusted realm origin matches exactly', async () => {
+    const service = createSavedRegistryConnectionService();
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      new Response('', {
+        status: 401,
+        headers: {
+          'www-authenticate': 'Bearer realm="https://auth.registry.example.net/token",service="registry.example.com"',
+        },
+      })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await service.testConnectionDirect(
+      'https://registry.example.com',
+      'user',
+      'password',
+      'https://other.registry.example.net'
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(401);
+    expect(result.statusText).toContain('Bearer realm');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not treat non-https trusted realm origins as trusted', async () => {
+    const service = createSavedRegistryConnectionService({ trustedAuthRealm: 'http://auth.registry.example.net' });
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      new Response('', {
+        status: 401,
+        headers: {
+          'www-authenticate': 'Bearer realm="https://auth.registry.example.net/token",service="registry.example.com"',
+        },
+      })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await service.testConnection('registry-1');
 
     expect(result.success).toBe(false);
     expect(result.status).toBe(401);

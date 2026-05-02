@@ -675,7 +675,12 @@ describe('AIService MCP audit behavior', () => {
     );
 
     expect(result.error).toBeUndefined();
-    expect(proxyService.updateProxyHost).toHaveBeenCalledWith('proxy-1', { enabled: false }, USER.id, false);
+    expect(proxyService.updateProxyHost).toHaveBeenCalledWith(
+      'proxy-1',
+      { enabled: false },
+      USER.id,
+      expect.objectContaining({ bypassAdvancedValidation: false })
+    );
   });
 
   it('executes blue/green deployment lifecycle tools through the deployment service', async () => {

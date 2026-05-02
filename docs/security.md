@@ -134,6 +134,8 @@ Gateway stores several kinds of sensitive data:
 
 Sensitive values are encrypted where the product needs to recover them, and hashed where Gateway only needs to verify them. UI and API responses avoid returning raw secrets unless the caller has the explicit reveal/export scope for that operation.
 
+Docker registry credentials are sent to a Bearer token service only when the challenge realm is on the same HTTPS registry host or matches the registry's explicitly configured trusted HTTPS token-service origin.
+
 ## Network Exposure
 
 The intended deployment model is narrow:

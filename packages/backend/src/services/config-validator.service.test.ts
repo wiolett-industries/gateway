@@ -85,6 +85,33 @@ server {
     expect(result.errors).toContain('Forbidden directive "include" found on line 2');
   });
 
+  it.each([
+    'ssl_certificate_by_lua_block { ngx.say(1) }',
+    'ssl_certificate_by_lua_file /tmp/a.lua;',
+  ])('rejects lua execution directives in advanced mode: %s', (snippet) => {
+    const result = service.validate(snippet);
+
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContain('Forbidden directive "lua_" found on line 1');
+  });
+
+  it.each([
+    'ssl_certificate_by_lua_block { ngx.say(1) }',
+    'access_by_lua_file /tmp/a.lua;',
+  ])('rejects lua execution directives in raw mode without bypass: %s', (snippet) => {
+    const result = service.validate(snippet, true);
+
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContain('Forbidden directive "lua_" found on line 1');
+  });
+
+  it.each(['env FOO;', 'env\tFOO;'])('rejects raw env directives with nginx whitespace: %s', (snippet) => {
+    const result = service.validate(snippet, true);
+
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContain('Forbidden directive "env" found on line 1');
+  });
+
   it('allows raw mode dangerous directives only with raw bypass', () => {
     const result = service.validate(
       `

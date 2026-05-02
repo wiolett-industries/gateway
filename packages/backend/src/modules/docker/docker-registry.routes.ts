@@ -58,7 +58,13 @@ export function registerRegistryRoutes(router: OpenAPIHono<AppEnv>) {
   router.openapi({ ...testRegistryDirectRoute, middleware: requireScope('docker:registries:edit') }, async (c) => {
     const service = container.resolve(DockerRegistryService);
     const body = await c.req.json();
-    const data = await service.testConnectionDirect(body.url, body.username, body.password);
+    const input = RegistryCreateSchema.partial().parse(body);
+    const data = await service.testConnectionDirect(
+      input.url ?? '',
+      input.username,
+      input.password,
+      input.trustedAuthRealm
+    );
     return c.json({ data });
   });
 
