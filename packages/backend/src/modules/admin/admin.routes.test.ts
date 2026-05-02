@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { container, TOKENS } from '@/container.js';
 import type { DrizzleClient } from '@/db/client.js';
 import { errorHandler } from '@/middleware/error-handler.js';
+import { AuditService } from '@/modules/audit/audit.service.js';
 import { AuthSettingsService } from '@/modules/auth/auth.settings.service.js';
 import { GroupService } from '@/modules/groups/group.service.js';
 import { McpSettingsService } from '@/modules/mcp/mcp-settings.service.js';
@@ -84,7 +85,12 @@ describe('admin Gateway settings route permissions', () => {
   it('allows reading Gateway settings with settings:gateway:view without admin:users', async () => {
     registerSession(['settings:gateway:view']);
     container.registerInstance(AuthSettingsService, {
-      getConfig: vi.fn().mockResolvedValue({ oidcAutoCreateUsers: false, oidcDefaultGroupId: null }),
+      getConfig: vi.fn().mockResolvedValue({
+        oidcAutoCreateUsers: false,
+        oidcDefaultGroupId: null,
+        oidcRequireVerifiedEmail: true,
+        oauthExtendedCallbackCompatibility: false,
+      }),
     } as unknown as AuthSettingsService);
     container.registerInstance(McpSettingsService, {
       getConfig: vi.fn().mockResolvedValue({ serverEnabled: true }),
@@ -112,6 +118,8 @@ describe('admin Gateway settings route permissions', () => {
     expect(await response.json()).toEqual({
       oidcAutoCreateUsers: false,
       oidcDefaultGroupId: null,
+      oidcRequireVerifiedEmail: true,
+      oauthExtendedCallbackCompatibility: false,
       mcpServerEnabled: true,
       networkSecurity: {
         clientIpSource: 'auto',
@@ -139,5 +147,96 @@ describe('admin Gateway settings route permissions', () => {
     });
 
     expect(response.status).toBe(403);
+  });
+
+  it('allows editing verified OIDC email requirement with settings:gateway:edit', async () => {
+    registerSession(['settings:gateway:edit']);
+    const updateConfig = vi.fn().mockResolvedValue({
+      oidcAutoCreateUsers: true,
+      oidcDefaultGroupId: 'group-1',
+      oidcRequireVerifiedEmail: true,
+    });
+    container.registerInstance(AuthSettingsService, {
+      updateConfig,
+    } as unknown as AuthSettingsService);
+    container.registerInstance(McpSettingsService, {
+      updateConfig: vi.fn().mockResolvedValue({ serverEnabled: true }),
+      getConfig: vi.fn().mockResolvedValue({ serverEnabled: true }),
+    } as unknown as McpSettingsService);
+    container.registerInstance(NetworkSettingsService, {
+      getConfig: vi.fn().mockResolvedValue({
+        clientIpSource: 'auto',
+        trustedProxyCidrs: [],
+        trustCloudflareHeaders: false,
+      }),
+    } as unknown as NetworkSettingsService);
+    container.registerInstance(OutboundWebhookPolicyService, {
+      getConfig: vi.fn().mockResolvedValue({
+        allowPrivateNetworks: true,
+        allowedPrivateCidrs: [],
+      }),
+    } as unknown as OutboundWebhookPolicyService);
+    container.registerInstance(GroupService, {
+      listGroups: vi.fn().mockResolvedValue([]),
+    } as unknown as GroupService);
+    container.registerInstance(AuditService, {
+      log: vi.fn().mockResolvedValue(undefined),
+    } as unknown as AuditService);
+
+    const response = await createApp().request('/api/admin/auth-settings', {
+      method: 'PUT',
+      headers: sessionHeaders(),
+      body: JSON.stringify({ oidcRequireVerifiedEmail: true }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(updateConfig).toHaveBeenCalledWith(expect.objectContaining({ oidcRequireVerifiedEmail: true }));
+  });
+
+  it('allows editing OAuth extended callback compatibility with settings:gateway:edit', async () => {
+    registerSession(['settings:gateway:view', 'settings:gateway:edit']);
+    const updateConfig = vi.fn().mockResolvedValue({
+      oidcAutoCreateUsers: true,
+      oidcDefaultGroupId: null,
+      oidcRequireVerifiedEmail: true,
+      oauthExtendedCallbackCompatibility: true,
+    });
+    container.registerInstance(AuthSettingsService, {
+      updateConfig,
+    } as unknown as AuthSettingsService);
+    container.registerInstance(McpSettingsService, {
+      updateConfig: vi.fn().mockResolvedValue({ serverEnabled: true }),
+    } as unknown as McpSettingsService);
+    container.registerInstance(NetworkSettingsService, {
+      getConfig: vi.fn().mockResolvedValue({
+        clientIpSource: 'auto',
+        trustedProxyCidrs: [],
+        trustCloudflareHeaders: false,
+      }),
+    } as unknown as NetworkSettingsService);
+    container.registerInstance(OutboundWebhookPolicyService, {
+      getConfig: vi.fn().mockResolvedValue({
+        allowPrivateNetworks: true,
+        allowedPrivateCidrs: [],
+      }),
+    } as unknown as OutboundWebhookPolicyService);
+    container.registerInstance(GroupService, {
+      listGroups: vi.fn().mockResolvedValue([]),
+    } as unknown as GroupService);
+    container.registerInstance(AuditService, {
+      log: vi.fn().mockResolvedValue(undefined),
+    } as unknown as AuditService);
+
+    const response = await createApp().request('/api/admin/auth-settings', {
+      method: 'PUT',
+      headers: sessionHeaders(),
+      body: JSON.stringify({ oauthExtendedCallbackCompatibility: true }),
+    });
+    const body = (await response.json()) as Record<string, unknown>;
+
+    expect(response.status).toBe(200);
+    expect(updateConfig).toHaveBeenCalledWith(expect.objectContaining({ oauthExtendedCallbackCompatibility: true }));
+    expect(body.oauthExtendedCallbackCompatibility).toBe(true);
+    expect(body.oidcRequireVerifiedEmail).toBe(true);
   });
 });

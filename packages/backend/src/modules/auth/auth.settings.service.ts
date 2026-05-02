@@ -4,11 +4,15 @@ import { permissionGroups, settings } from '@/db/schema/index.js';
 
 const AUTH_SETTINGS_DEFAULTS = {
   'auth:oidc_auto_create_users': true,
+  'auth:oidc_require_verified_email': false,
+  'auth:oauth_extended_callback_compatibility': false,
 } as const;
 
 export interface AuthProvisioningSettings {
   oidcAutoCreateUsers: boolean;
   oidcDefaultGroupId: string;
+  oidcRequireVerifiedEmail: boolean;
+  oauthExtendedCallbackCompatibility: boolean;
 }
 
 export class AuthSettingsService {
@@ -21,19 +25,39 @@ export class AuthSettingsService {
     );
 
     const defaultGroupId = await this.resolveDefaultGroupId();
+    const requireVerifiedEmail = await this.getSetting<boolean>(
+      'auth:oidc_require_verified_email',
+      AUTH_SETTINGS_DEFAULTS['auth:oidc_require_verified_email']
+    );
+    const oauthExtendedCallbackCompatibility = await this.getSetting<boolean>(
+      'auth:oauth_extended_callback_compatibility',
+      AUTH_SETTINGS_DEFAULTS['auth:oauth_extended_callback_compatibility']
+    );
 
     return {
       oidcAutoCreateUsers: autoCreateUsers,
       oidcDefaultGroupId: defaultGroupId,
+      oidcRequireVerifiedEmail: requireVerifiedEmail,
+      oauthExtendedCallbackCompatibility,
     };
   }
 
   async updateConfig(updates: {
     oidcAutoCreateUsers?: boolean;
     oidcDefaultGroupId?: string;
+    oidcRequireVerifiedEmail?: boolean;
+    oauthExtendedCallbackCompatibility?: boolean;
   }): Promise<AuthProvisioningSettings> {
     if (updates.oidcAutoCreateUsers !== undefined) {
       await this.setSetting('auth:oidc_auto_create_users', updates.oidcAutoCreateUsers);
+    }
+
+    if (updates.oidcRequireVerifiedEmail !== undefined) {
+      await this.setSetting('auth:oidc_require_verified_email', updates.oidcRequireVerifiedEmail);
+    }
+
+    if (updates.oauthExtendedCallbackCompatibility !== undefined) {
+      await this.setSetting('auth:oauth_extended_callback_compatibility', updates.oauthExtendedCallbackCompatibility);
     }
 
     if (updates.oidcDefaultGroupId !== undefined) {
@@ -47,6 +71,13 @@ export class AuthSettingsService {
     }
 
     return this.getConfig();
+  }
+
+  async getOAuthExtendedCallbackCompatibility(): Promise<boolean> {
+    return this.getSetting<boolean>(
+      'auth:oauth_extended_callback_compatibility',
+      AUTH_SETTINGS_DEFAULTS['auth:oauth_extended_callback_compatibility']
+    );
   }
 
   async resolveDefaultGroupId(): Promise<string> {

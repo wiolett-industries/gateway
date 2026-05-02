@@ -19,6 +19,8 @@ export const UpdateBlockSchema = z.object({
 export const UpdateAuthProvisioningSettingsSchema = z.object({
   oidcAutoCreateUsers: z.boolean().optional(),
   oidcDefaultGroupId: z.string().uuid().optional(),
+  oidcRequireVerifiedEmail: z.boolean().optional(),
+  oauthExtendedCallbackCompatibility: z.boolean().optional(),
   mcpServerEnabled: z.boolean().optional(),
   networkSecurity: z
     .object({

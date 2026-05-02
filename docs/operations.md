@@ -80,6 +80,8 @@ See [.env.example](../.env.example) for the full development reference.
 
 Redis is required infrastructure. Gateway uses it for sessions, cache, and rate limiting; if Redis is unavailable, `/health` returns `503` and Redis-backed rate-limited API/auth/public surfaces fail closed with `RATE_LIMIT_UNAVAILABLE`.
 
+`OIDC_SCOPES` should normally include `openid email profile`. The `email` scope requests `email` and `email_verified`, but providers differ in whether `email_verified` is present in the ID token and whether it is true by default. Authentik, for example, may require explicit mapping/configuration before `email_verified=true` is emitted. Leave **Require verified OIDC email** disabled unless your IdP emits reliable verified-email claims.
+
 ## Update Signing Operations
 
 Gateway and daemon automatic updates require signed release manifests. Release CI must have `UPDATE_SIGNING_PRIVATE_KEY_PEM_B64` set to a base64-encoded Ed25519 private key PEM. The corresponding public key is compiled into Gateway and daemon binaries.
@@ -136,6 +138,10 @@ Important behavior:
 ### OAuth
 
 Gateway supports OAuth 2.0 Authorization Code + PKCE for public clients.
+
+Dynamic OAuth client registration is intended for public local clients such as CLIs and MCP clients. By default, newly registered clients may use only loopback callback URLs (`localhost`, `127.0.0.1`, or `::1`). This keeps automatic CLI login working without allowing arbitrary external callback origins.
+
+Admins can enable OAuth extended callback compatibility in Gateway settings when a client requires an external HTTPS callback URL. When enabled, unverified OAuth clients may register HTTPS callback URLs outside loopback. The consent screen warns users whenever an authorization result will be sent to an external callback origin.
 
 OAuth access tokens are resource-bound:
 

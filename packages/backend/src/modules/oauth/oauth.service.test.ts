@@ -1,9 +1,10 @@
 import { createHash } from 'node:crypto';
 import 'reflect-metadata';
 import { describe, expect, it, vi } from 'vitest';
-import { oauthAccessTokens, oauthAuthorizationCodes, oauthRefreshTokens } from '@/db/schema/index.js';
+import { oauthAccessTokens, oauthAuthorizationCodes, oauthClients, oauthRefreshTokens } from '@/db/schema/index.js';
+import type { AuthSettingsService } from '@/modules/auth/auth.settings.service.js';
 import type { User } from '@/types.js';
-import { OAuthService } from './oauth.service.js';
+import { isLoopbackRedirectUri, OAuthService } from './oauth.service.js';
 
 vi.mock('@/config/env.js', () => ({
   getEnv: () => ({
@@ -31,11 +32,13 @@ function createService(options?: {
   groupScopes?: string[];
   authorizationCode?: any;
   pendingConsent?: any;
+  oauthExtendedCallbackCompatibility?: boolean;
+  client?: any;
 }) {
   const cacheSet = vi.fn().mockResolvedValue(undefined);
   const cacheGet = vi.fn().mockResolvedValue(options?.pendingConsent ?? null);
   const cacheDelete = vi.fn().mockResolvedValue(undefined);
-  const client = {
+  const client = options?.client ?? {
     clientId: 'goc_client',
     clientName: 'Gateway OAuth CLI Test',
     clientUri: null,
@@ -88,9 +91,18 @@ function createService(options?: {
     insert: vi.fn((table) => ({
       values: vi.fn((values) => {
         insertCalls.push({ table, values });
-        return {
-          returning: vi.fn().mockResolvedValue([{ id: 'refresh-new' }]),
-        };
+        const returning = vi.fn().mockResolvedValue(
+          table === oauthClients
+            ? [
+                {
+                  ...values,
+                  id: 'client-row-1',
+                  createdAt: new Date('2026-04-29T10:00:00Z'),
+                },
+              ]
+            : [{ id: 'refresh-new' }]
+        );
+        return { returning };
       }),
     })),
     update: vi.fn((table) => ({
@@ -121,10 +133,22 @@ function createService(options?: {
   };
 
   const auditLog = vi.fn().mockResolvedValue(undefined);
+  const authSettingsService = {
+    getConfig: vi.fn().mockResolvedValue({
+      oidcAutoCreateUsers: true,
+      oidcDefaultGroupId: 'viewer-group',
+      oidcRequireVerifiedEmail: false,
+      oauthExtendedCallbackCompatibility: options?.oauthExtendedCallbackCompatibility ?? false,
+    }),
+    getOAuthExtendedCallbackCompatibility: vi
+      .fn()
+      .mockResolvedValue(options?.oauthExtendedCallbackCompatibility ?? false),
+  } as unknown as AuthSettingsService;
   const service = new OAuthService(
     db as any,
     { set: cacheSet, get: cacheGet, delete: cacheDelete } as any,
-    { log: auditLog } as any
+    { log: auditLog } as any,
+    authSettingsService
   );
   return { service, cacheSet, cacheGet, cacheDelete, auditLog, db, updateCalls, insertCalls };
 }
@@ -134,6 +158,53 @@ function s256(verifier: string): string {
 }
 
 describe('OAuthService.registerClient', () => {
+  it('allows anonymous dynamic registration for loopback callbacks by default', async () => {
+    const { service } = createService({ oauthExtendedCallbackCompatibility: false });
+
+    await expect(
+      service.registerClient({
+        redirect_uris: ['http://127.0.0.1:39231/callback', 'http://localhost:39232/callback'],
+        token_endpoint_auth_method: 'none',
+        client_name: 'Local CLI',
+      })
+    ).resolves.toMatchObject({
+      redirect_uris: ['http://127.0.0.1:39231/callback', 'http://localhost:39232/callback'],
+    });
+  });
+
+  it('allows IPv6 loopback callback URLs by default', () => {
+    expect(isLoopbackRedirectUri('http://[::1]:39231/callback')).toBe(true);
+  });
+
+  it('rejects external HTTPS callbacks by default during dynamic registration', async () => {
+    const { service } = createService({ oauthExtendedCallbackCompatibility: false });
+
+    await expect(
+      service.registerClient({
+        redirect_uris: ['https://client.example.com/callback'],
+        token_endpoint_auth_method: 'none',
+        client_name: 'External App',
+      })
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'INVALID_REDIRECT_URI',
+    });
+  });
+
+  it('allows external HTTPS callbacks when extended compatibility is enabled', async () => {
+    const { service } = createService({ oauthExtendedCallbackCompatibility: true });
+
+    await expect(
+      service.registerClient({
+        redirect_uris: ['https://client.example.com/callback'],
+        token_endpoint_auth_method: 'none',
+        client_name: 'External App',
+      })
+    ).resolves.toMatchObject({
+      redirect_uris: ['https://client.example.com/callback'],
+    });
+  });
+
   it('rejects unsafe redirect URI schemes before storing the client', async () => {
     const { service, db } = createService();
 
@@ -144,7 +215,7 @@ describe('OAuthService.registerClient', () => {
           token_endpoint_auth_method: 'none',
           client_name: 'Unsafe Client',
         })
-      ).rejects.toThrow('Redirect URI must use HTTPS or loopback HTTP');
+      ).rejects.toMatchObject({ code: 'INVALID_REDIRECT_URI' });
     }
 
     expect(db.insert).not.toHaveBeenCalled();
@@ -152,6 +223,60 @@ describe('OAuthService.registerClient', () => {
 });
 
 describe('OAuthService.createConsentRequest', () => {
+  it('blocks existing external callback clients when extended compatibility is disabled', async () => {
+    const { service } = createService({
+      oauthExtendedCallbackCompatibility: false,
+      client: {
+        clientId: 'goc_client',
+        clientName: 'External App',
+        clientUri: null,
+        logoUri: null,
+        redirectUris: ['https://client.example.com/callback'],
+      },
+    });
+
+    await expect(
+      service.createConsentRequest(USER, {
+        response_type: 'code',
+        client_id: 'goc_client',
+        redirect_uri: 'https://client.example.com/callback',
+        code_challenge: 'a'.repeat(43),
+        code_challenge_method: 'S256',
+        scope: 'nodes:details',
+      })
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'INVALID_REDIRECT_URI',
+    });
+  });
+
+  it('marks pending consent for external callbacks when compatibility is enabled', async () => {
+    const { service } = createService({
+      oauthExtendedCallbackCompatibility: true,
+      client: {
+        clientId: 'goc_client',
+        clientName: 'External App',
+        clientUri: null,
+        logoUri: null,
+        redirectUris: ['https://client.example.com/callback'],
+      },
+    });
+
+    await expect(
+      service.createConsentRequest(USER, {
+        response_type: 'code',
+        client_id: 'goc_client',
+        redirect_uri: 'https://client.example.com/callback',
+        code_challenge: 'a'.repeat(43),
+        code_challenge_method: 'S256',
+        scope: 'nodes:details',
+      })
+    ).resolves.toMatchObject({
+      redirectUri: 'https://client.example.com/callback',
+      redirectUriIsExternal: true,
+    });
+  });
+
   it('infers the MCP resource when an OAuth client requests mcp:use without a resource parameter', async () => {
     const { service, cacheSet } = createService();
 
@@ -229,6 +354,36 @@ describe('OAuthService.createConsentRequest', () => {
       'docker:containers:secrets',
       'pki:cert:export',
     ]);
+  });
+});
+
+describe('OAuthService.getConsentRequest', () => {
+  it('blocks cached external callback consent after compatibility is disabled', async () => {
+    const { service } = createService({
+      oauthExtendedCallbackCompatibility: false,
+      pendingConsent: {
+        id: 'request-1',
+        userId: USER.id,
+        clientId: 'goc_client',
+        clientName: 'External App',
+        clientUri: null,
+        logoUri: null,
+        redirectUri: 'https://client.example.com/callback',
+        redirectUriIsExternal: true,
+        requestedScopes: ['nodes:details'],
+        grantableScopes: ['nodes:details'],
+        unavailableScopes: [],
+        manualApprovalScopes: [],
+        codeChallenge: 'challenge',
+        resource: 'https://gateway.example.com/api',
+        expiresAt: Date.now() + 60_000,
+      },
+    });
+
+    await expect(service.getConsentRequest('request-1', USER)).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'INVALID_REDIRECT_URI',
+    });
   });
 });
 

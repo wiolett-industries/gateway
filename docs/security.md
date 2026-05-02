@@ -32,6 +32,8 @@ The first-run setup creates Gateway groups and maps users to permissions. OIDC i
 
 `SETUP_TOKEN` is only accepted by `/api/setup/*` before Gateway has any real non-system user. After first-run configuration creates a real user, the setup API returns 404 and bootstrap actions must use the authenticated UI/API. Keep the token out of tickets and chat because it is still privileged during the bootstrap window.
 
+Gateway binds OIDC users by the provider subject (`sub`) after first login. Manually pre-created users are initially claimed by matching the email asserted by the configured OIDC provider, so this flow assumes the provider is enterprise-controlled and authoritative for email assignment. Administrators can enable **Require verified OIDC email** to require `email_verified=true` for future auto-created users and pre-created user claims. Existing subject-bound users continue to authenticate by `sub`; when verified-email mode is enabled, Gateway does not replace a stored email with a changed unverified email claim.
+
 ## Node Trust Uses PKI And mTLS
 
 Managed hosts run small daemons for nginx, Docker, or monitoring. Those daemons do not expose a management API to the network. Instead, they connect outbound to Gateway on the gRPC control-plane port, normally `9443/tcp`. Gateway daemon gRPC is always TLS; there is no plaintext development or production mode.
@@ -122,6 +124,8 @@ Gateway intentionally separates token families:
 REST API tokens are not accepted by the MCP endpoint. MCP accepts only OAuth access tokens issued for the Gateway MCP resource. Logging ingest tokens can write logs only to their logging environment.
 
 OAuth consent also treats dangerous scopes differently: high-risk scopes are visible but unchecked by default and must be explicitly selected.
+
+Gateway keeps dynamic OAuth registration enabled for local public-client UX, but defaults registration and authorization to loopback callbacks only. External HTTPS callbacks require the explicit OAuth extended callback compatibility setting, and the consent screen marks those requests with an additional high-risk warning.
 
 ## Secret Handling
 

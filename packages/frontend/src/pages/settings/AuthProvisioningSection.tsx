@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { confirm } from "@/components/common/ConfirmDialog";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -19,8 +20,10 @@ interface AuthProvisioningSectionProps {
 export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProps) {
   const [settings, setSettings] = useState<AuthProvisioningSettings | null>(null);
   const [isSavingAutoCreate, setIsSavingAutoCreate] = useState(false);
+  const [isSavingVerifiedEmail, setIsSavingVerifiedEmail] = useState(false);
   const [isSavingGroup, setIsSavingGroup] = useState(false);
   const [isSavingMcp, setIsSavingMcp] = useState(false);
+  const [isSavingOAuthCompatibility, setIsSavingOAuthCompatibility] = useState(false);
   const [isSavingNetwork, setIsSavingNetwork] = useState(false);
   const [isSavingWebhookPolicy, setIsSavingWebhookPolicy] = useState(false);
   const [trustedProxyCidrs, setTrustedProxyCidrs] = useState("");
@@ -83,6 +86,27 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
     }
   };
 
+  const handleToggleRequireVerifiedEmail = async (checked: boolean) => {
+    if (!settings || !canEdit) return;
+    setIsSavingVerifiedEmail(true);
+    const previous = settings;
+    setSettings({ ...settings, oidcRequireVerifiedEmail: checked });
+    try {
+      const updated = await api.updateAuthProvisioningSettings({
+        oidcRequireVerifiedEmail: checked,
+      });
+      setSettings(updated);
+      toast.success("OIDC email verification setting updated");
+    } catch (err) {
+      setSettings(previous);
+      toast.error(
+        err instanceof Error ? err.message : "Failed to update OIDC email verification setting"
+      );
+    } finally {
+      setIsSavingVerifiedEmail(false);
+    }
+  };
+
   const handleToggleMcpServer = async (checked: boolean) => {
     if (!settings || !canEdit) return;
     setIsSavingMcp(true);
@@ -97,6 +121,39 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
       toast.error(err instanceof Error ? err.message : "Failed to update MCP server setting");
     } finally {
       setIsSavingMcp(false);
+    }
+  };
+
+  const handleToggleOAuthCompatibility = async (checked: boolean) => {
+    if (!settings || !canEdit) return;
+
+    if (checked) {
+      const ok = await confirm({
+        title: "Enable OAuth extended callback compatibility?",
+        description:
+          "Unverified OAuth clients will be allowed to register external HTTPS callback URLs, and authorization results may be sent to external origins.",
+        confirmLabel: "Enable",
+        variant: "destructive",
+      });
+      if (!ok) return;
+    }
+
+    setIsSavingOAuthCompatibility(true);
+    const previous = settings;
+    setSettings({ ...settings, oauthExtendedCallbackCompatibility: checked });
+    try {
+      const updated = await api.updateAuthProvisioningSettings({
+        oauthExtendedCallbackCompatibility: checked,
+      });
+      setSettings(updated);
+      toast.success("OAuth compatibility setting updated");
+    } catch (err) {
+      setSettings(previous);
+      toast.error(
+        err instanceof Error ? err.message : "Failed to update OAuth compatibility setting"
+      );
+    } finally {
+      setIsSavingOAuthCompatibility(false);
     }
   };
 
@@ -192,6 +249,19 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
             onChange={handleToggleAutoCreate}
           />
         </div>
+        <div className="flex items-center justify-between gap-4 px-4 py-3">
+          <div>
+            <p className="text-sm font-medium">Require verified OIDC email</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Require email_verified=true for future auto-created users and pre-created user claims
+            </p>
+          </div>
+          <Switch
+            checked={settings.oidcRequireVerifiedEmail}
+            disabled={!canEdit || isSavingVerifiedEmail}
+            onChange={handleToggleRequireVerifiedEmail}
+          />
+        </div>
         <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
           <div>
             <p className="text-sm font-medium">Default group for new OIDC users</p>
@@ -229,6 +299,20 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
             checked={settings.mcpServerEnabled}
             disabled={!canEdit || isSavingMcp}
             onChange={handleToggleMcpServer}
+          />
+        </div>
+        <div className="flex items-center justify-between gap-4 px-4 py-3">
+          <div>
+            <p className="text-sm font-medium">OAuth extended callback compatibility</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Allow unverified OAuth clients to register external HTTPS callback URLs. Leave
+              disabled for loopback-only CLI and MCP clients.
+            </p>
+          </div>
+          <Switch
+            checked={settings.oauthExtendedCallbackCompatibility}
+            disabled={!canEdit || isSavingOAuthCompatibility}
+            onChange={handleToggleOAuthCompatibility}
           />
         </div>
         <div className="divide-y divide-border">

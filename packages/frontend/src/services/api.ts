@@ -552,6 +552,8 @@ class ApiClient extends ApiClientBase {
   async updateAuthProvisioningSettings(data: {
     oidcAutoCreateUsers?: boolean;
     oidcDefaultGroupId?: string;
+    oidcRequireVerifiedEmail?: boolean;
+    oauthExtendedCallbackCompatibility?: boolean;
     mcpServerEnabled?: boolean;
     networkSecurity?: Partial<AuthProvisioningSettings["networkSecurity"]>;
     outboundWebhookPolicy?: Partial<AuthProvisioningSettings["outboundWebhookPolicy"]>;

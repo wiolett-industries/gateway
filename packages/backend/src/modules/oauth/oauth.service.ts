@@ -16,6 +16,7 @@ import {
 } from '@/lib/scopes.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
+import type { AuthSettingsService } from '@/modules/auth/auth.settings.service.js';
 import { resolveLiveUser } from '@/modules/auth/live-session-user.js';
 import type { CacheService } from '@/services/cache.service.js';
 import type { User } from '@/types.js';
@@ -35,6 +36,7 @@ type PendingConsent = {
   clientUri: string | null;
   logoUri: string | null;
   redirectUri: string;
+  redirectUriIsExternal: boolean;
   state?: string;
   requestedScopes: string[];
   grantableScopes: string[];
@@ -93,11 +95,24 @@ function publicMetadata(input: OAuthClientRegistrationInput): Record<string, unk
   );
 }
 
-function isLoopbackHost(hostname: string): boolean {
-  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' || hostname === '[::1]';
+export function isLoopbackRedirectUri(uri: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(uri);
+  } catch {
+    return false;
+  }
+
+  const hostname = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  const isLoopbackHost = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+  return isLoopbackHost && (parsed.protocol === 'http:' || parsed.protocol === 'https:');
 }
 
-function assertRedirectUriAllowed(uri: string): void {
+export function isExternalRedirectUri(uri: string): boolean {
+  return !isLoopbackRedirectUri(uri);
+}
+
+function assertRedirectUriAllowed(uri: string, extendedCompatibility: boolean): void {
   let parsed: URL;
   try {
     parsed = new URL(uri);
@@ -105,9 +120,15 @@ function assertRedirectUriAllowed(uri: string): void {
     throw new AppError(400, 'INVALID_REDIRECT_URI', 'Invalid redirect URI');
   }
 
-  if (parsed.protocol === 'https:') return;
-  if (parsed.protocol === 'http:' && isLoopbackHost(parsed.hostname)) return;
-  throw new AppError(400, 'INVALID_REDIRECT_URI', 'Redirect URI must use HTTPS or loopback HTTP');
+  if (isLoopbackRedirectUri(uri)) return;
+  if (extendedCompatibility && parsed.protocol === 'https:') return;
+  throw new AppError(
+    400,
+    'INVALID_REDIRECT_URI',
+    extendedCompatibility
+      ? 'Redirect URI must use HTTPS or loopback HTTP'
+      : 'OAuth dynamic registration allows only loopback callback URLs unless extended compatibility is enabled'
+  );
 }
 
 @injectable()
@@ -115,7 +136,8 @@ export class OAuthService {
   constructor(
     @inject(TOKENS.DrizzleClient) private readonly db: DrizzleClient,
     private readonly cacheService: CacheService,
-    private readonly auditService: AuditService
+    private readonly auditService: AuditService,
+    private readonly authSettingsService: AuthSettingsService
   ) {}
 
   getIssuerUrl(): string {
@@ -145,7 +167,8 @@ export class OAuthService {
   }
 
   async registerClient(input: OAuthClientRegistrationInput) {
-    for (const uri of input.redirect_uris) assertRedirectUriAllowed(uri);
+    const oauthExtendedCallbackCompatibility = await this.authSettingsService.getOAuthExtendedCallbackCompatibility();
+    for (const uri of input.redirect_uris) assertRedirectUriAllowed(uri, oauthExtendedCallbackCompatibility);
 
     const clientId = `goc_${randomBytes(18).toString('base64url')}`;
     const clientName = input.client_name?.trim() || 'OAuth Client';
@@ -192,6 +215,8 @@ export class OAuthService {
     if (!client.redirectUris.includes(query.redirect_uri)) {
       throw new AppError(400, 'INVALID_REDIRECT_URI', 'Redirect URI is not registered for this client');
     }
+    const oauthExtendedCallbackCompatibility = await this.authSettingsService.getOAuthExtendedCallbackCompatibility();
+    assertRedirectUriAllowed(query.redirect_uri, oauthExtendedCallbackCompatibility);
 
     const rawRequestedScopes = parseScopeString(query.scope);
     const requestedMcpAccess = rawRequestedScopes.includes('mcp:use');
@@ -225,6 +250,7 @@ export class OAuthService {
       clientUri: client.clientUri,
       logoUri: client.logoUri,
       redirectUri: query.redirect_uri,
+      redirectUriIsExternal: isExternalRedirectUri(query.redirect_uri),
       state: query.state,
       requestedScopes,
       grantableScopes,
@@ -247,6 +273,8 @@ export class OAuthService {
     if (pending.userId !== user.id) {
       throw new AppError(403, 'OAUTH_REQUEST_USER_MISMATCH', 'This OAuth request belongs to another account');
     }
+    const oauthExtendedCallbackCompatibility = await this.authSettingsService.getOAuthExtendedCallbackCompatibility();
+    assertRedirectUriAllowed(pending.redirectUri, oauthExtendedCallbackCompatibility);
 
     this.assertMcpResourceAllowed(user, pending.resource);
     const grantableScopes = canonicalizeScopes(boundScopes(pending.requestedScopes, user.scopes)).filter((scope) =>
@@ -257,6 +285,7 @@ export class OAuthService {
     );
     return {
       ...pending,
+      redirectUriIsExternal: pending.redirectUriIsExternal ?? isExternalRedirectUri(pending.redirectUri),
       grantableScopes,
       unavailableScopes,
       manualApprovalScopes: getManualApprovalScopes(grantableScopes),

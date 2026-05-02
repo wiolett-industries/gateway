@@ -10,6 +10,15 @@ describe('UpdateAuthProvisioningSettingsSchema', () => {
     expect(result.success).toBe(true);
   });
 
+  it('accepts auth provisioning compatibility toggles', () => {
+    const result = UpdateAuthProvisioningSettingsSchema.safeParse({
+      oidcRequireVerifiedEmail: true,
+      oauthExtendedCallbackCompatibility: true,
+    });
+
+    expect(result.success).toBe(true);
+  });
+
   it('rejects invalid trusted proxy CIDRs', () => {
     const result = UpdateAuthProvisioningSettingsSchema.safeParse({
       networkSecurity: {

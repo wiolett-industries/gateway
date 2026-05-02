@@ -141,7 +141,7 @@ export async function initializeContainer(): Promise<void> {
   const authService = new AuthService(db, sessionService, cacheService, authSettingsService, auditService);
   container.registerInstance(AuthService, authService);
 
-  const oauthService = new OAuthService(db, cacheService, auditService);
+  const oauthService = new OAuthService(db, cacheService, auditService, authSettingsService);
   container.registerInstance(OAuthService, oauthService);
 
   const templatesService = new TemplatesService(db);

@@ -20,6 +20,31 @@ const logger = createChildLogger('AuthService');
 const PKCE_STATE_PREFIX = 'oidc:pkce:';
 const PRECREATED_SUBJECT_PREFIX = 'manual:';
 
+export interface NormalizedOidcClaims {
+  oidcSubject: string;
+  email: string | null;
+  emailVerified: boolean;
+  name: string | null;
+  avatarUrl: string | null;
+}
+
+export function normalizeOidcClaims(claims: Record<string, unknown> | undefined | null): NormalizedOidcClaims {
+  const subject = typeof claims?.sub === 'string' ? claims.sub : '';
+  if (!subject) {
+    throw new Error('No subject claim in ID token');
+  }
+
+  const email = typeof claims?.email === 'string' ? claims.email.trim().toLowerCase() : '';
+
+  return {
+    oidcSubject: subject,
+    email: email || null,
+    emailVerified: claims?.email_verified === true,
+    name: typeof claims?.name === 'string' && claims.name.trim() ? claims.name : null,
+    avatarUrl: typeof claims?.picture === 'string' && claims.picture.trim() ? claims.picture : null,
+  };
+}
+
 interface OIDCState {
   codeVerifier: string;
   state: string;
@@ -123,18 +148,8 @@ export class AuthService {
         expectedState: state,
       });
 
-      const claims = tokens.claims();
-
-      if (!claims?.sub) {
-        throw new Error('No subject claim in ID token');
-      }
-
-      const user = await this.findOrCreateUser({
-        oidcSubject: claims.sub,
-        email: claims.email as string,
-        name: (claims.name as string) || null,
-        avatarUrl: (claims.picture as string) || null,
-      });
+      const normalizedClaims = normalizeOidcClaims(tokens.claims() as Record<string, unknown> | undefined | null);
+      const user = await this.findOrCreateUser(normalizedClaims);
 
       const { sessionId } = await this.sessionService.createSession(user, tokens.access_token, tokens.refresh_token);
 
@@ -151,28 +166,29 @@ export class AuthService {
     }
   }
 
-  private async findOrCreateUser(data: {
-    oidcSubject: string;
-    email: string;
-    name: string | null;
-    avatarUrl: string | null;
-  }): Promise<User> {
-    const normalizedEmail = data.email.trim().toLowerCase();
+  private async findOrCreateUser(data: NormalizedOidcClaims): Promise<User> {
+    const normalizedEmail = data.email;
 
     const existingUser = await this.db.query.users.findFirst({
       where: eq(users.oidcSubject, data.oidcSubject),
     });
 
     if (existingUser) {
+      const authSettings = await this.authSettingsService.getConfig();
+      const canSyncEmail =
+        normalizedEmail !== null &&
+        (!authSettings.oidcRequireVerifiedEmail || data.emailVerified || existingUser.email === normalizedEmail);
+      const nextEmail = canSyncEmail ? normalizedEmail : existingUser.email;
+
       if (
-        existingUser.email !== normalizedEmail ||
+        existingUser.email !== nextEmail ||
         existingUser.name !== data.name ||
         existingUser.avatarUrl !== data.avatarUrl
       ) {
         const [updatedUser] = await this.db
           .update(users)
           .set({
-            email: normalizedEmail,
+            email: nextEmail,
             name: data.name,
             avatarUrl: data.avatarUrl,
             updatedAt: new Date(),
@@ -186,7 +202,12 @@ export class AuthService {
           resourceType: 'user',
           resourceId: updatedUser.id,
           details: {
-            emailChanged: existingUser.email !== normalizedEmail,
+            oidcSubject: data.oidcSubject,
+            emailChanged: existingUser.email !== nextEmail,
+            emailClaimIgnored:
+              normalizedEmail !== null && existingUser.email !== normalizedEmail && nextEmail === existingUser.email,
+            emailClaimMissing: normalizedEmail === null,
+            emailVerified: data.emailVerified,
             nameChanged: existingUser.name !== data.name,
             avatarChanged: existingUser.avatarUrl !== data.avatarUrl,
           },
@@ -198,11 +219,17 @@ export class AuthService {
       return this.mapDbUserToUser(existingUser);
     }
 
+    if (!normalizedEmail) {
+      throw new Error('No email claim in ID token');
+    }
+
     const precreatedUser = await this.db.query.users.findFirst({
       where: eq(users.email, normalizedEmail),
     });
 
     if (precreatedUser?.oidcSubject.startsWith(PRECREATED_SUBJECT_PREFIX)) {
+      await this.requireVerifiedEmailForNonBootstrap(data);
+      const previousSubject = precreatedUser.oidcSubject;
       const [claimedUser] = await this.db
         .update(users)
         .set({
@@ -225,7 +252,12 @@ export class AuthService {
         action: 'auth.user_claimed',
         resourceType: 'user',
         resourceId: claimedUser.id,
-        details: { email: claimedUser.email },
+        details: {
+          email: claimedUser.email,
+          previousOidcSubject: previousSubject,
+          oidcSubject: data.oidcSubject,
+          emailVerified: data.emailVerified,
+        },
       });
 
       this.emitUser(claimedUser.id, 'updated');
@@ -241,12 +273,16 @@ export class AuthService {
       .from(users)
       .where(not(like(users.oidcSubject, 'system:%')));
 
-    const group =
-      userCount === 0
-        ? await this.db.query.permissionGroups.findFirst({
-            where: eq(permissionGroups.name, 'system-admin'),
-          })
-        : await this.resolveOidcProvisioningGroup();
+    const isBootstrapUser = userCount === 0;
+    if (!isBootstrapUser) {
+      await this.requireVerifiedEmailForNonBootstrap(data);
+    }
+
+    const group = isBootstrapUser
+      ? await this.db.query.permissionGroups.findFirst({
+          where: eq(permissionGroups.name, 'system-admin'),
+        })
+      : await this.resolveOidcProvisioningGroup();
 
     if (!group) {
       throw new Error('Default OIDC group not found. Has the migration been run?');
@@ -269,12 +305,29 @@ export class AuthService {
       action: 'auth.user_provisioned',
       resourceType: 'user',
       resourceId: createdUser.id,
-      details: { email: createdUser.email, group: group.name },
+      details: {
+        email: createdUser.email,
+        group: group.name,
+        oidcSubject: data.oidcSubject,
+        emailVerified: data.emailVerified,
+        bootstrap: isBootstrapUser,
+      },
     });
     this.emitUser(createdUser.id, 'created');
     const mapped = await this.mapDbUserToUser(createdUser);
     this.emitPermissions(mapped.id, mapped.scopes, mapped.groupId);
     return mapped;
+  }
+
+  private async requireVerifiedEmailForNonBootstrap(data: NormalizedOidcClaims): Promise<void> {
+    const authSettings = await this.authSettingsService.getConfig();
+    if (!authSettings.oidcRequireVerifiedEmail || data.emailVerified) return;
+
+    throw new AppError(
+      403,
+      'OIDC_EMAIL_NOT_VERIFIED',
+      'OIDC email verification is required for this account. Contact an administrator.'
+    );
   }
 
   private async resolveOidcProvisioningGroup() {

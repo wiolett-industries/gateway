@@ -269,6 +269,10 @@ oauthRoutes.get('/consent/:requestId', async (c) => {
     grantableScopes: pending.grantableScopes,
     unavailableScopes: pending.unavailableScopes,
     manualApprovalScopes: pending.manualApprovalScopes,
+    redirect: {
+      uri: pending.redirectUri,
+      isExternal: pending.redirectUriIsExternal,
+    },
     resource: pending.resource,
     resourceInfo: resourceInfo(pending.resource),
     expiresAt: new Date(pending.expiresAt).toISOString(),

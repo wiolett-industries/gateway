@@ -24,6 +24,10 @@ const preview: OAuthConsentPreview = {
   grantableScopes: ["nodes:details", "docker:containers:view"],
   unavailableScopes: ["admin:users"],
   manualApprovalScopes: [],
+  redirect: {
+    uri: "http://127.0.0.1:8765/callback",
+    isExternal: false,
+  },
   resource: "https://gateway.example.com/api",
   resourceInfo: {
     resource: "https://gateway.example.com/api",
@@ -80,6 +84,26 @@ describe("OAuthConsent", () => {
 
     expect(approve).toHaveBeenCalledWith("request-1", ["docker:containers:view"]);
     expect(await screen.findByText("stop before navigation")).toBeInTheDocument();
+  });
+
+  it("shows a red warning when the OAuth callback goes to an external origin", async () => {
+    vi.spyOn(api, "getOAuthConsent").mockResolvedValue({
+      ...preview,
+      redirect: {
+        uri: "https://client.example.com/callback",
+        isExternal: true,
+      },
+    });
+
+    renderWithRouter(<OAuthConsent />, {
+      path: "/oauth/consent",
+      route: "/oauth/consent?request=request-1",
+    });
+
+    expect(await screen.findByText(/External OAuth callback/i)).toBeInTheDocument();
+    expect(screen.getByText(/authorization result will be sent to/i)).toHaveTextContent(
+      "client.example.com"
+    );
   });
 
   it("delivers the callback in the background and shows a result screen", async () => {
@@ -143,6 +167,94 @@ describe("OAuthConsent", () => {
       await userEvent.click(screen.getByRole("button", { name: /Authorize/i }));
 
       expect(hrefSetter).toHaveBeenCalledWith("http://127.0.0.1:8765/callback?code=abc");
+    } finally {
+      Object.defineProperty(window, "location", {
+        configurable: true,
+        value: originalLocation,
+      });
+    }
+  });
+
+  it("uses top-level navigation for external callback approvals", async () => {
+    vi.spyOn(api, "getOAuthConsent").mockResolvedValue({
+      ...preview,
+      redirect: {
+        uri: "https://client.example.com/callback",
+        isExternal: true,
+      },
+    });
+    vi.spyOn(api, "approveOAuthConsent").mockResolvedValue({
+      redirectUrl: "https://client.example.com/callback?code=abc",
+    });
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const hrefSetter = vi.fn();
+    const originalLocation = window.location;
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { ...originalLocation, href: "" },
+    });
+    Object.defineProperty(window.location, "href", {
+      configurable: true,
+      set: hrefSetter,
+      get: () => "",
+    });
+
+    try {
+      renderWithRouter(<OAuthConsent />, {
+        path: "/oauth/consent",
+        route: "/oauth/consent?request=request-1",
+      });
+
+      await screen.findByText("Authorize Gateway API access");
+      await userEvent.click(screen.getByRole("button", { name: /Authorize/i }));
+
+      expect(hrefSetter).toHaveBeenCalledWith("https://client.example.com/callback?code=abc");
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(window, "location", {
+        configurable: true,
+        value: originalLocation,
+      });
+    }
+  });
+
+  it("uses top-level navigation for external callback denials", async () => {
+    vi.spyOn(api, "getOAuthConsent").mockResolvedValue({
+      ...preview,
+      redirect: {
+        uri: "https://client.example.com/callback",
+        isExternal: true,
+      },
+    });
+    vi.spyOn(api, "denyOAuthConsent").mockResolvedValue({
+      redirectUrl: "https://client.example.com/callback?error=access_denied",
+    });
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const hrefSetter = vi.fn();
+    const originalLocation = window.location;
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { ...originalLocation, href: "" },
+    });
+    Object.defineProperty(window.location, "href", {
+      configurable: true,
+      set: hrefSetter,
+      get: () => "",
+    });
+
+    try {
+      renderWithRouter(<OAuthConsent />, {
+        path: "/oauth/consent",
+        route: "/oauth/consent?request=request-1",
+      });
+
+      await screen.findByText("Authorize Gateway API access");
+      await userEvent.click(screen.getByRole("button", { name: /Deny/i }));
+
+      expect(hrefSetter).toHaveBeenCalledWith(
+        "https://client.example.com/callback?error=access_denied"
+      );
+      expect(fetchSpy).not.toHaveBeenCalled();
     } finally {
       Object.defineProperty(window, "location", {
         configurable: true,

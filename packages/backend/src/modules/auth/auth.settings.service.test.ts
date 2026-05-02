@@ -1,0 +1,61 @@
+import { describe, expect, it, vi } from 'vitest';
+import { AuthSettingsService } from './auth.settings.service.js';
+
+function createDb(initialSettings: Record<string, unknown> = {}) {
+  const stored = new Map(Object.entries(initialSettings));
+  const db: any = {
+    query: {
+      permissionGroups: {
+        findFirst: vi.fn().mockResolvedValue({ id: 'viewer-group', name: 'viewer' }),
+      },
+    },
+    select: vi.fn(),
+    insert: vi.fn(() => ({
+      values: vi.fn((values: { key: string; value: unknown }) => ({
+        onConflictDoUpdate: vi.fn(async () => {
+          stored.set(values.key, values.value);
+        }),
+      })),
+    })),
+    currentKey: null as string | null,
+  };
+
+  db.select.mockImplementation(() => ({
+    from: vi.fn(() => ({
+      where: vi.fn((condition: { queryChunks?: Array<{ value?: unknown }> }) => {
+        db.currentKey =
+          condition?.queryChunks?.find((chunk) => typeof chunk.value === 'string')?.value?.toString() ?? null;
+        return {
+          limit: vi.fn(async () =>
+            db.currentKey && stored.has(db.currentKey) ? [{ key: db.currentKey, value: stored.get(db.currentKey) }] : []
+          ),
+        };
+      }),
+    })),
+  }));
+
+  return { db, stored };
+}
+
+describe('AuthSettingsService', () => {
+  it('defaults OAuth extended callback compatibility to disabled', async () => {
+    const { db } = createDb();
+    const service = new AuthSettingsService(db);
+
+    await expect(service.getConfig()).resolves.toMatchObject({
+      oauthExtendedCallbackCompatibility: false,
+    });
+  });
+
+  it('persists OAuth extended callback compatibility updates', async () => {
+    const { db } = createDb();
+    const service = new AuthSettingsService(db);
+
+    await service.updateConfig({ oauthExtendedCallbackCompatibility: true });
+
+    await expect(service.getConfig()).resolves.toMatchObject({
+      oauthExtendedCallbackCompatibility: true,
+    });
+    await expect(service.getOAuthExtendedCallbackCompatibility()).resolves.toBe(true);
+  });
+});

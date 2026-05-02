@@ -46,6 +46,8 @@ export interface AuthProvisioningGroupOption {
 export interface AuthProvisioningSettings {
   oidcAutoCreateUsers: boolean;
   oidcDefaultGroupId: string;
+  oidcRequireVerifiedEmail: boolean;
+  oauthExtendedCallbackCompatibility: boolean;
   mcpServerEnabled: boolean;
   networkSecurity: {
     clientIpSource: "auto" | "direct" | "reverse_proxy" | "cloudflare";
@@ -83,6 +85,10 @@ export interface OAuthConsentPreview {
   grantableScopes: string[];
   unavailableScopes: string[];
   manualApprovalScopes: string[];
+  redirect: {
+    uri: string;
+    isExternal: boolean;
+  };
   resource: string;
   resourceInfo: {
     resource: string;

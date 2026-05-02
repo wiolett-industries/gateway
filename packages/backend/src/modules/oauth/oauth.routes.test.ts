@@ -56,6 +56,22 @@ function registerOAuthService(overrides: Partial<OAuthService> = {}) {
     createConsentRequest: vi.fn().mockResolvedValue({
       id: 'request-1',
     }),
+    getConsentRequest: vi.fn().mockResolvedValue({
+      id: 'request-1',
+      clientId: 'goc_client',
+      clientName: 'External App',
+      clientUri: null,
+      logoUri: null,
+      redirectUri: 'https://client.example.com/callback',
+      redirectUriIsExternal: true,
+      userId: USER.id,
+      requestedScopes: ['nodes:details'],
+      grantableScopes: ['nodes:details'],
+      unavailableScopes: [],
+      manualApprovalScopes: [],
+      resource: 'https://gateway.example.com/api',
+      expiresAt: Date.now() + 60_000,
+    }),
     exchangeToken: vi.fn().mockResolvedValue({
       access_token: 'gwo_access',
       token_type: 'Bearer',
@@ -307,5 +323,22 @@ describe('OAuth client and token routes', () => {
     });
 
     expect(response.status).toBe(200);
+  });
+});
+
+describe('OAuth consent routes', () => {
+  it('returns redirect callback information in the consent preview', async () => {
+    registerSession();
+
+    const response = await createApp().request('/api/oauth/consent/request-1', {
+      headers: { Cookie: 'session_id=session-1' },
+    });
+    const body = (await response.json()) as JsonRecord;
+
+    expect(response.status).toBe(200);
+    expect(body.redirect).toEqual({
+      uri: 'https://client.example.com/callback',
+      isExternal: true,
+    });
   });
 });

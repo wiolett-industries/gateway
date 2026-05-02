@@ -73,6 +73,14 @@ export function OAuthConsent() {
   const hasManualApprovalScopes = (preview?.manualApprovalScopes.length ?? 0) > 0;
 
   const resourceLabel = preview?.resourceInfo.name ?? "Gateway API";
+  const redirectHost = useMemo(() => {
+    if (!preview?.redirect.uri) return null;
+    try {
+      return new URL(preview.redirect.uri).host;
+    } catch {
+      return preview.redirect.uri;
+    }
+  }, [preview?.redirect.uri]);
 
   const setScopeSelected = (scope: string, checked: boolean) => {
     setSelectedScopes((current) =>
@@ -101,6 +109,10 @@ export function OAuthConsent() {
     setIsSubmitting(true);
     try {
       const result = await api.approveOAuthConsent(requestId, selectedScopes);
+      if (preview?.redirect.isExternal) {
+        window.location.href = result.redirectUrl;
+        return;
+      }
       const delivered = await deliverRedirect(result.redirectUrl);
       if (!delivered) {
         window.location.href = result.redirectUrl;
@@ -119,6 +131,10 @@ export function OAuthConsent() {
     setIsSubmitting(true);
     try {
       const result = await api.denyOAuthConsent(requestId);
+      if (preview?.redirect.isExternal) {
+        window.location.href = result.redirectUrl;
+        return;
+      }
       const delivered = await deliverRedirect(result.redirectUrl);
       if (!delivered) {
         window.location.href = result.redirectUrl;
@@ -240,6 +256,18 @@ export function OAuthConsent() {
               </p>
             </div>
           </section>
+
+          {preview.redirect.isExternal && (
+            <section className="bg-destructive/10 p-5">
+              <div className="flex items-center gap-3">
+                <AlertTriangle className="h-5 w-5 shrink-0 text-destructive" />
+                <p className="text-sm font-semibold text-destructive">
+                  External OAuth callback. If you authorize this request, the authorization result
+                  will be sent to {redirectHost ?? "an external callback URL"}.
+                </p>
+              </div>
+            </section>
+          )}
 
           {hasManualApprovalScopes && (
             <section className="bg-destructive/10 p-5">
