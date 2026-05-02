@@ -71,7 +71,36 @@ location /api/ {
     expect(result.errors).toContain('Forbidden directive "include" found on line 2');
   });
 
-  it('skips directive blacklist in raw mode', () => {
+  it('rejects dangerous directives in raw mode by default', () => {
+    const result = service.validate(
+      `
+server {
+  include /etc/nginx/conf.d/private.conf;
+}
+`.trim(),
+      true
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContain('Forbidden directive "include" found on line 2');
+  });
+
+  it('allows raw mode dangerous directives only with raw bypass', () => {
+    const result = service.validate(
+      `
+server {
+  include /etc/nginx/conf.d/private.conf;
+}
+`.trim(),
+      true,
+      true
+    );
+
+    expect(result.valid).toBe(true);
+    expect(result.errors).toEqual([]);
+  });
+
+  it('does not apply advanced top-level restrictions to raw mode', () => {
     const result = service.validate(
       `
 location / {
@@ -83,5 +112,27 @@ location / {
 
     expect(result.valid).toBe(true);
     expect(result.errors).toEqual([]);
+  });
+
+  it('allows ssl certificate directives in raw mode without bypass', () => {
+    const result = service.validate(
+      `
+server {
+  ssl_certificate /etc/nginx/certs/fullchain.pem;
+  ssl_certificate_key /etc/nginx/certs/privkey.pem;
+}
+`.trim(),
+      true
+    );
+
+    expect(result.valid).toBe(true);
+    expect(result.errors).toEqual([]);
+  });
+
+  it('keeps advanced snippet ssl key directives forbidden', () => {
+    const result = service.validate('ssl_certificate_key /etc/nginx/certs/privkey.pem;');
+
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContain('Forbidden directive "ssl_certificate_key" found on line 1');
   });
 });

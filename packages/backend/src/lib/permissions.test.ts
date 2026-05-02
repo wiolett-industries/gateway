@@ -40,6 +40,12 @@ describe('Scope-based permissions', () => {
     it('does not let an exact scope grant a different exact scope with the same prefix', () => {
       expect(hasScope(['proxy:advanced'], 'proxy:advanced:bypass')).toBe(false);
       expect(hasScope(['proxy:advanced:bypass'], 'proxy:advanced:bypass:host-1')).toBe(true);
+      expect(hasScope(['proxy:raw:bypass'], 'proxy:raw:bypass:host-1')).toBe(true);
+      expect(hasScope(['proxy:raw:bypass:host-1'], 'proxy:raw:bypass:host-1')).toBe(true);
+      expect(hasScope(['proxy:raw:bypass:host-1'], 'proxy:raw:bypass:host-2')).toBe(false);
+      expect(hasScope(['proxy:raw:bypass:host-1'], 'proxy:raw:write:host-1')).toBe(false);
+      expect(hasScope(['proxy:raw:write:host-1'], 'proxy:raw:bypass:host-1')).toBe(false);
+      expect(hasScope(['proxy:advanced:bypass:host-1'], 'proxy:raw:bypass:host-1')).toBe(false);
     });
 
     it('lets write scopes satisfy matching read scopes', () => {

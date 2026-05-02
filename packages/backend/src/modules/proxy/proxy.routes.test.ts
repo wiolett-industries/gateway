@@ -180,7 +180,137 @@ describe('proxy routes programmatic raw config handling', () => {
     });
 
     expect(response.status).toBe(200);
-    expect(mocks.proxyService.validateAdvancedConfig).toHaveBeenCalledWith('server {}', true, false);
+    expect(mocks.proxyService.validateAdvancedConfig).toHaveBeenCalledWith('server {}', true, false, false);
+  });
+
+  it('passes raw bypass only when browser session has proxy raw bypass scope', async () => {
+    mocks.authType = 'session';
+    mocks.scopes = ['proxy:raw:write:host-1', 'proxy:raw:bypass:host-1'];
+
+    const response = await createApp().request('/validate-config', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer gw_token',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        snippet: 'include /etc/nginx/conf.d/private.conf;',
+        mode: 'raw',
+        proxyHostId: 'host-1',
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(mocks.proxyService.validateAdvancedConfig).toHaveBeenCalledWith(
+      'include /etc/nginx/conf.d/private.conf;',
+      true,
+      false,
+      true
+    );
+  });
+
+  it('does not let proxy advanced bypass bypass raw validation', async () => {
+    mocks.authType = 'session';
+    mocks.scopes = ['proxy:raw:write:host-1', 'proxy:advanced:bypass:host-1'];
+
+    const response = await createApp().request('/validate-config', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer gw_token',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        snippet: 'include /etc/nginx/conf.d/private.conf;',
+        mode: 'raw',
+        proxyHostId: 'host-1',
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(mocks.proxyService.validateAdvancedConfig).toHaveBeenCalledWith(
+      'include /etc/nginx/conf.d/private.conf;',
+      true,
+      false,
+      false
+    );
+  });
+
+  it('does not let raw bypass alone grant raw validation access', async () => {
+    mocks.authType = 'session';
+    mocks.scopes = ['proxy:raw:bypass:host-1'];
+
+    const response = await createApp().request('/validate-config', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer gw_token',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        snippet: 'include /etc/nginx/conf.d/private.conf;',
+        mode: 'raw',
+        proxyHostId: 'host-1',
+      }),
+    });
+
+    expect(response.status).toBe(403);
+    expect(mocks.proxyService.validateAdvancedConfig).not.toHaveBeenCalled();
+  });
+
+  it('passes raw bypass to service when creating a host with raw config', async () => {
+    mocks.authType = 'session';
+    mocks.scopes = ['proxy:create', 'proxy:raw:write', 'proxy:raw:bypass'];
+
+    const response = await createApp().request('/', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer gw_token',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        nodeId: '11111111-1111-4111-8111-111111111111',
+        domainNames: ['raw.example.com'],
+        forwardHost: 'upstream',
+        forwardPort: 8080,
+        rawConfig: 'include /etc/nginx/conf.d/private.conf;',
+      }),
+    });
+
+    expect(response.status).toBe(201);
+    expect(mocks.proxyService.createProxyHost).toHaveBeenCalledWith(
+      expect.objectContaining({ rawConfig: 'include /etc/nginx/conf.d/private.conf;' }),
+      'user-1',
+      {
+        bypassAdvancedValidation: false,
+        bypassRawValidation: true,
+      }
+    );
+  });
+
+  it('passes resource-scoped raw bypass to service when updating raw config', async () => {
+    mocks.authType = 'session';
+    mocks.scopes = ['proxy:edit:host-1', 'proxy:raw:write:host-1', 'proxy:raw:bypass:host-1'];
+
+    const response = await createApp().request('/host-1', {
+      method: 'PUT',
+      headers: {
+        Authorization: 'Bearer gw_token',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        rawConfig: 'include /etc/nginx/conf.d/private.conf;',
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(mocks.proxyService.updateProxyHost).toHaveBeenCalledWith(
+      'host-1',
+      expect.objectContaining({ rawConfig: 'include /etc/nginx/conf.d/private.conf;' }),
+      'user-1',
+      {
+        bypassAdvancedValidation: false,
+        bypassRawValidation: true,
+      }
+    );
   });
 
   it('requires raw write scope when a browser session creates a host with raw config', async () => {

@@ -42,6 +42,11 @@ describe("scope editor utilities", () => {
     expect(scopeMatches(["proxy:advanced"], "proxy:advanced:bypass")).toBe(false);
     expect(scopeMatches(["proxy:advanced:bypass:host-1"], "proxy:advanced")).toBe(false);
     expect(scopeMatches(["proxy:advanced:bypass"], "proxy:advanced:bypass:host-1")).toBe(true);
+    expect(scopeMatches(["proxy:raw:bypass"], "proxy:raw:bypass:host-1")).toBe(true);
+    expect(scopeMatches(["proxy:raw:bypass:host-1"], "proxy:raw:bypass:host-1")).toBe(true);
+    expect(scopeMatches(["proxy:raw:bypass:host-1"], "proxy:raw:bypass:host-2")).toBe(false);
+    expect(scopeMatches(["proxy:raw:bypass:host-1"], "proxy:raw:write:host-1")).toBe(false);
+    expect(scopeMatches(["proxy:raw:write:host-1"], "proxy:raw:bypass:host-1")).toBe(false);
   });
 
   it("lets write scopes satisfy matching read scopes", () => {

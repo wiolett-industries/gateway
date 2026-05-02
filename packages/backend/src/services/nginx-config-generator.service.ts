@@ -407,8 +407,12 @@ export class NginxConfigGenerator {
   // Advanced config validation
   // -----------------------------------------------------------------------
 
-  validateAdvancedConfig(snippet: string, rawMode = false): { valid: boolean; errors: string[] } {
-    return this.configValidator.validate(snippet, rawMode);
+  validateAdvancedConfig(
+    snippet: string,
+    rawMode = false,
+    bypassRawValidation = false
+  ): { valid: boolean; errors: string[] } {
+    return this.configValidator.validate(snippet, rawMode, bypassRawValidation);
   }
 
   // -----------------------------------------------------------------------

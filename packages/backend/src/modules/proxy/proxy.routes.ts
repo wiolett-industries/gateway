@@ -104,13 +104,17 @@ proxyRoutes.openapi({ ...createProxyHostRoute, middleware: requireScope('proxy:c
     throw new AppError(403, 'FORBIDDEN', 'Advanced config requires proxy:advanced scope');
   }
   const bypassAdvancedValidation = hasScope(scopes, 'proxy:advanced:bypass');
+  const bypassRawValidation = hasScope(scopes, 'proxy:raw:bypass');
   if (requestTogglesRawProxyConfig(input) && !hasScope(scopes, 'proxy:raw:toggle')) {
     throw new AppError(403, 'FORBIDDEN', 'Enabling raw mode requires proxy:raw:toggle scope');
   }
   if (input.rawConfig !== undefined && !hasScope(scopes, 'proxy:raw:write')) {
     throw new AppError(403, 'FORBIDDEN', 'Writing raw config requires proxy:raw:write scope');
   }
-  const host = await proxyService.createProxyHost(input, user.id, bypassAdvancedValidation);
+  const host = await proxyService.createProxyHost(input, user.id, {
+    bypassAdvancedValidation,
+    bypassRawValidation,
+  });
   if (isProgrammaticAuth(c)) return c.json({ data: stripRawProxyConfig(host as any) }, 201);
   return c.json({ data: host }, 201);
 });
@@ -131,6 +135,7 @@ proxyRoutes.openapi({ ...updateProxyHostRoute, middleware: requireScopeForResour
     throw new AppError(403, 'FORBIDDEN', 'Advanced config requires proxy:advanced scope');
   }
   const bypassAdvancedValidation = hasScope(scopes, `proxy:advanced:bypass:${id}`);
+  const bypassRawValidation = hasScope(scopes, `proxy:raw:bypass:${id}`);
   if (requestTogglesRawProxyConfig(input)) {
     if (!hasScope(scopes, `proxy:raw:toggle:${id}`) && !hasScope(scopes, 'proxy:raw:toggle')) {
       throw new AppError(403, 'FORBIDDEN', 'Toggling raw mode requires proxy:raw:toggle scope');
@@ -141,7 +146,10 @@ proxyRoutes.openapi({ ...updateProxyHostRoute, middleware: requireScopeForResour
       throw new AppError(403, 'FORBIDDEN', 'Writing raw config requires proxy:raw:write scope');
     }
   }
-  const host = await proxyService.updateProxyHost(id, input, user.id, bypassAdvancedValidation);
+  const host = await proxyService.updateProxyHost(id, input, user.id, {
+    bypassAdvancedValidation,
+    bypassRawValidation,
+  });
   if (isProgrammaticAuth(c)) return c.json({ data: stripRawProxyConfig(host as any) });
   return c.json({ data: host });
 });
@@ -207,11 +215,13 @@ proxyRoutes.openapi(validateProxyConfigRoute, async (c) => {
     );
   }
 
-  const bypassScope = proxyHostId ? `proxy:advanced:bypass:${proxyHostId}` : 'proxy:advanced:bypass';
+  const bypassAdvancedScope = proxyHostId ? `proxy:advanced:bypass:${proxyHostId}` : 'proxy:advanced:bypass';
+  const bypassRawScope = proxyHostId ? `proxy:raw:bypass:${proxyHostId}` : 'proxy:raw:bypass';
   const result = await proxyService.validateAdvancedConfig(
     snippet,
     mode === 'raw',
-    mode === 'advanced' && hasScope(scopes, bypassScope)
+    mode === 'advanced' && hasScope(scopes, bypassAdvancedScope),
+    mode === 'raw' && hasScope(scopes, bypassRawScope)
   );
   return c.json({ data: result });
 });

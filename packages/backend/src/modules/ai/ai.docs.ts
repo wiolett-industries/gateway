@@ -285,6 +285,7 @@ Gateway manages nginx reverse proxies through daemon nodes running on remote ser
 - The rawConfig field is used directly as the nginx server block content
 - Useful for complex configurations that templates can't express
 - Requires proxy:raw:toggle and proxy:raw:write scopes
+- proxy:raw:bypass can bypass dangerous raw directive validation for the same proxy host
 - Use get_proxy_rendered_config to see the current generated config before switching to raw mode
 
 ## Monitoring
@@ -458,6 +459,7 @@ Gateway uses a group-based permission system with nested group inheritance. Each
 | proxy:raw:read | View raw nginx config in browser-only raw config workflows (resource-scopable) |
 | proxy:raw:write | Write raw nginx config (resource-scopable) |
 | proxy:raw:toggle | Enable/disable raw config mode (resource-scopable) |
+| proxy:raw:bypass | Bypass dangerous raw nginx directive restrictions; browser/session-only (resource-scopable) |
 | proxy:advanced | Edit advanced nginx snippets (resource-scopable) |
 | proxy:advanced:bypass | Bypass advanced nginx snippet restrictions (resource-scopable) |
 
@@ -759,7 +761,7 @@ Gateway can store and operate external Postgres and Redis connections directly f
   api: `# Gateway REST API
 
 Gateway provides REST access for external scripts, CI/CD pipelines, CLI tools, and integrations without a browser session.
-Programmatic REST clients can use either Gateway API tokens (\`gw_\`) or OAuth Authorization Code + PKCE access tokens (\`gwo_\`). AI assistant access, AI configuration, MCP user access, auth administration, raw nginx config, gateway settings, node raw config, and \`proxy:advanced:bypass\` cannot be delegated to API/OAuth tokens. MCP clients use OAuth access tokens for the MCP resource with ordinary delegated API scopes; the owning user account must have \`mcp:use\`.
+Programmatic REST clients can use either Gateway API tokens (\`gw_\`) or OAuth Authorization Code + PKCE access tokens (\`gwo_\`). AI assistant access, AI configuration, MCP user access, auth administration, raw nginx config, gateway settings, node raw config, \`proxy:raw:bypass\`, and \`proxy:advanced:bypass\` cannot be delegated to API/OAuth tokens. MCP clients use OAuth access tokens for the MCP resource with ordinary delegated API scopes; the owning user account must have \`mcp:use\`.
 
 ## Creating an API Token
 1. Go to **Settings** page → **API Tokens** section

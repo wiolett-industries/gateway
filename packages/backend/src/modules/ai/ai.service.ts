@@ -857,7 +857,7 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
           _ac && hasScope(user.scopes, `proxy:advanced:${proxyHostId}`)
             ? { ...updateFields, advancedConfig: _ac }
             : updateFields;
-        return this.proxyService.updateProxyHost(proxyHostId, fields, user.id, bypassAdvancedValidation);
+        return this.proxyService.updateProxyHost(proxyHostId, fields, user.id, { bypassAdvancedValidation });
       }
       case 'delete_proxy_host':
         await this.proxyService.deleteProxyHost(a.proxyHostId, user.id);
@@ -994,7 +994,10 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
         if (!(rawHost as any).rawConfigEnabled) {
           throw new Error('Raw mode is not enabled on this proxy host. Enable it first with toggle_proxy_raw_mode.');
         }
-        return this.proxyService.updateProxyHost(a.proxyHostId, { rawConfig: a.rawConfig } as any, user.id);
+        const bypassRawValidation = hasScope(user.scopes, `proxy:raw:bypass:${a.proxyHostId}`);
+        return this.proxyService.updateProxyHost(a.proxyHostId, { rawConfig: a.rawConfig } as any, user.id, {
+          bypassRawValidation,
+        });
       }
       case 'toggle_proxy_raw_mode':
         return this.proxyService.updateProxyHost(a.proxyHostId, { rawConfigEnabled: a.enabled } as any, user.id);

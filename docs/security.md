@@ -101,7 +101,7 @@ Authorization uses granular scopes:
 - Write-capable scopes satisfy matching read/view checks, but resource-scoped grants stay bounded to the same resource.
 - Create-only and destructive-only scopes do not grant browse access by themselves.
 
-Sensitive operations have dedicated scopes. Examples include Docker mount editing, Docker secret reveal, database credential reveal, certificate export, node console access, container file access, and audit log access.
+Sensitive operations have dedicated scopes. Examples include Docker mount editing, Docker secret reveal, database credential reveal, certificate export, node console access, container file access, raw nginx validation bypass, and audit log access.
 
 Docker mount editing is guarded by `docker:containers:mounts`. Gateway does not maintain a hardcoded host-path denylist for this scope; users granted it for a node are trusted to define host bind mounts for that node, including high-risk control surfaces such as Docker sockets.
 

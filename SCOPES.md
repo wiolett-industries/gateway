@@ -6,7 +6,7 @@ All scopes follow `domain:resource:action[:qualifier]`. Resource-scopable scopes
 
 | Group | Description |
 |-------|-------------|
-| `system-admin` | All 132 scopes, including protected `admin:system`. |
+| `system-admin` | All 133 scopes, including protected `admin:system`. |
 | `admin` | Curated broad access, excluding `admin:system`, gateway settings edit, housekeeping configure, and Docker registry mutation defaults. |
 | `operator` | Operational access for day-to-day PKI, proxy, SSL, ACL, node, Docker container, database, notification, and logging read/query work. |
 | `viewer` | Read-only view/discovery access. |
@@ -77,6 +77,7 @@ Legacy global nginx management routes under `/api/monitoring/nginx/*` are no lon
 | `proxy:raw:read` | Yes |
 | `proxy:raw:write` | Yes |
 | `proxy:raw:toggle` | Yes |
+| `proxy:raw:bypass` | Yes |
 | `proxy:advanced` | Yes |
 | `proxy:advanced:bypass` | Yes |
 | `proxy:folders:manage` |  |
@@ -187,7 +188,7 @@ Legacy global nginx management routes under `/api/monitoring/nginx/*` are no lon
 
 ## API Token Delegation
 
-API and OAuth tokens can be granted 118 of the 132 scopes. They cannot be granted:
+API and OAuth tokens can be granted 118 of the 133 scopes. They cannot be granted:
 
 | Scope | Reason |
 |-------|--------|
@@ -202,6 +203,7 @@ API and OAuth tokens can be granted 118 of the 132 scopes. They cannot be grante
 | `proxy:raw:read` | Raw nginx config is session-only. |
 | `proxy:raw:write` | Raw nginx config is session-only. |
 | `proxy:raw:toggle` | Raw nginx mode is session-only. |
+| `proxy:raw:bypass` | Dangerous raw nginx directive bypass is session-only. |
 | `proxy:advanced:bypass` | Unrestricted advanced nginx snippets are session-only. |
 | `nodes:config:view` | Global node nginx config is session-only. |
 | `nodes:config:edit` | Global node nginx config is session-only. |
@@ -223,6 +225,7 @@ OAuth consent leaves high-risk scopes unchecked by default. The user must explic
 | `ssl:cert:delete` | Can remove deployed SSL certificates. |
 | `ssl:cert:revoke` | Can revoke SSL certificates. |
 | `ssl:cert:export` | Reserved for SSL certificate export capability. |
+| `proxy:raw:bypass` | Can bypass dangerous directive validation for raw nginx config. |
 | `nodes:console` | Can open an interactive shell on nodes. |
 | `docker:containers:console` | Can open an interactive console in containers. |
 | `docker:containers:files` | Can read and write container filesystem contents. |
