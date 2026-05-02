@@ -17,6 +17,13 @@ export interface DockerRegistryAuthCandidate {
   authJson: string;
 }
 
+interface RegistryConnectionTestResult {
+  success: boolean;
+  status?: number;
+  statusText?: string;
+  error?: string;
+}
+
 export class DockerRegistryService {
   private eventBus?: EventBusService;
 
@@ -168,13 +175,49 @@ export class DockerRegistryService {
     const [row] = await this.db.select().from(dockerRegistries).where(eq(dockerRegistries.id, id)).limit(1);
     if (!row) throw new AppError(404, 'NOT_FOUND', 'Docker registry not found');
 
+    const basicAuth =
+      row.username && row.encryptedPassword
+        ? `Basic ${Buffer.from(`${row.username}:${this.decryptPassword(row.encryptedPassword)}`).toString('base64')}`
+        : '';
+
+    return this.testRegistryConnection(row.url, basicAuth);
+  }
+
+  async testConnectionDirect(url: string, username?: string, password?: string) {
+    const basicAuth = username && password ? `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}` : '';
+    return this.testRegistryConnection(url, basicAuth);
+  }
+
+  private normalizeRegistryBaseUrl(rawUrl: string): URL {
+    const trimmed = rawUrl.trim().replace(/\/+$/, '');
+    const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+    return new URL(withScheme);
+  }
+
+  private parseBearerChallenge(wwwAuthenticate: string): { realm: string | null; service: string | null } {
+    const realmMatch = wwwAuthenticate.match(/realm="([^"]+)"/i);
+    const serviceMatch = wwwAuthenticate.match(/service="([^"]+)"/i);
+    return {
+      realm: realmMatch?.[1] ?? null,
+      service: serviceMatch?.[1] ?? null,
+    };
+  }
+
+  private isAllowedBearerRealm(registryBaseUrl: URL, tokenUrl: URL): boolean {
+    if (tokenUrl.protocol !== 'https:') return false;
+    if (tokenUrl.hostname.toLowerCase() !== registryBaseUrl.hostname.toLowerCase()) return false;
+
+    const registryPort = registryBaseUrl.port || (registryBaseUrl.protocol === 'https:' ? '443' : registryBaseUrl.port);
+    const tokenPort = tokenUrl.port || '443';
+
+    return registryPort === tokenPort;
+  }
+
+  private async testRegistryConnection(rawUrl: string, basicAuth: string): Promise<RegistryConnectionTestResult> {
     try {
-      const baseUrl = row.url.replace(/\/+$/, '');
-      const v2Url = `${baseUrl}/v2/`;
-      const basicAuth =
-        row.username && row.encryptedPassword
-          ? `Basic ${Buffer.from(`${row.username}:${this.decryptPassword(row.encryptedPassword)}`).toString('base64')}`
-          : '';
+      const baseUrl = this.normalizeRegistryBaseUrl(rawUrl);
+      const basePath = baseUrl.pathname.replace(/\/+$/, '');
+      const v2Url = new URL(`${basePath}/v2/`, baseUrl);
 
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 10000);
@@ -182,7 +225,7 @@ export class DockerRegistryService {
         // Step 1: Hit /v2/ to check if registry is reachable
         const headers: Record<string, string> = {};
         if (basicAuth) headers.Authorization = basicAuth;
-        const response = await fetch(v2Url, { headers, signal: controller.signal });
+        const response = await fetch(v2Url.toString(), { headers, signal: controller.signal });
 
         if (response.ok) {
           return { success: true, status: response.status, statusText: 'OK' };
@@ -190,13 +233,25 @@ export class DockerRegistryService {
 
         // Step 2: If 401 with Bearer challenge, do Docker token exchange
         if (response.status === 401 && basicAuth) {
-          const wwwAuth = response.headers.get('www-authenticate') || '';
-          const realmMatch = wwwAuth.match(/realm="([^"]+)"/);
-          const serviceMatch = wwwAuth.match(/service="([^"]+)"/);
+          const challenge = this.parseBearerChallenge(response.headers.get('www-authenticate') || '');
 
-          if (realmMatch) {
-            const tokenUrl = new URL(realmMatch[1]);
-            if (serviceMatch) tokenUrl.searchParams.set('service', serviceMatch[1]);
+          if (challenge.realm) {
+            let tokenUrl: URL;
+            try {
+              tokenUrl = new URL(challenge.realm);
+            } catch {
+              return { success: false, status: 401, statusText: 'Authentication failed: invalid Bearer realm' };
+            }
+
+            if (!this.isAllowedBearerRealm(baseUrl, tokenUrl)) {
+              return {
+                success: false,
+                status: 401,
+                statusText: 'Authentication failed: Bearer realm is not trusted for this registry',
+              };
+            }
+
+            if (challenge.service) tokenUrl.searchParams.set('service', challenge.service);
             const tokenResp = await fetch(tokenUrl.toString(), {
               headers: { Authorization: basicAuth },
               signal: controller.signal,
@@ -224,53 +279,6 @@ export class DockerRegistryService {
         success: false,
         error: error instanceof Error ? error.message : 'Connection failed',
       };
-    }
-  }
-
-  async testConnectionDirect(url: string, username?: string, password?: string) {
-    try {
-      const baseUrl = url.replace(/\/+$/, '');
-      const v2Url = `${baseUrl}/v2/`;
-      const basicAuth =
-        username && password ? `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}` : '';
-
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10000);
-      try {
-        const headers: Record<string, string> = {};
-        if (basicAuth) headers.Authorization = basicAuth;
-        const response = await fetch(v2Url, { headers, signal: controller.signal });
-
-        if (response.ok) {
-          return { success: true, status: response.status, statusText: 'OK' };
-        }
-
-        if (response.status === 401 && basicAuth) {
-          const wwwAuth = response.headers.get('www-authenticate') || '';
-          const realmMatch = wwwAuth.match(/realm="([^"]+)"/);
-          const serviceMatch = wwwAuth.match(/service="([^"]+)"/);
-
-          if (realmMatch) {
-            const tokenUrl = new URL(realmMatch[1]);
-            if (serviceMatch) tokenUrl.searchParams.set('service', serviceMatch[1]);
-            const tokenResp = await fetch(tokenUrl.toString(), {
-              headers: { Authorization: basicAuth },
-              signal: controller.signal,
-            });
-            if (tokenResp.ok) {
-              return { success: true, status: 200, statusText: 'Authenticated (token exchange)' };
-            }
-            return { success: false, status: tokenResp.status, statusText: 'Authentication failed' };
-          }
-          return { success: false, status: 401, statusText: 'Authentication failed' };
-        }
-
-        return { success: false, status: response.status, statusText: response.statusText };
-      } finally {
-        clearTimeout(timeout);
-      }
-    } catch (error) {
-      return { success: false, error: error instanceof Error ? error.message : 'Connection failed' };
     }
   }
 
