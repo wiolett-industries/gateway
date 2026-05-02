@@ -61,6 +61,7 @@ services:
       - ACME_RENEWAL_CRON=${ACME_RENEWAL_CRON:-0 3 * * *}
       - EXPIRY_CHECK_CRON=${EXPIRY_CHECK_CRON:-0 6 * * *}
       - GRPC_PORT=${GRPC_PORT:-9443}
+      - GRPC_TLS_AUTO_DIR=${GRPC_TLS_AUTO_DIR:-/var/lib/gateway/tls}
       - GRPC_TLS_CERT=${GRPC_TLS_CERT:-}
       - GRPC_TLS_KEY=${GRPC_TLS_KEY:-}
       - APP_VERSION=${GATEWAY_VERSION:-dev}

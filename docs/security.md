@@ -32,7 +32,7 @@ The first-run setup creates Gateway groups and maps users to permissions. OIDC i
 
 ## Node Trust Uses PKI And mTLS
 
-Managed hosts run small daemons for nginx, Docker, or monitoring. Those daemons do not expose a management API to the network. Instead, they connect outbound to Gateway on the gRPC control-plane port, normally `9443/tcp`.
+Managed hosts run small daemons for nginx, Docker, or monitoring. Those daemons do not expose a management API to the network. Instead, they connect outbound to Gateway on the gRPC control-plane port, normally `9443/tcp`. Gateway daemon gRPC is always TLS; there is no plaintext development or production mode.
 
 Long-term daemon trust is based on Gateway's internal node PKI:
 
@@ -47,6 +47,8 @@ Long-term daemon trust is based on Gateway's internal node PKI:
 9. Gateway identifies the node from the verified mTLS client certificate.
 
 After enrollment, the token is not the node's identity. The certificate is.
+
+Gateway normally auto-issues its gRPC server certificate from the internal system CA and stores it under `GRPC_TLS_AUTO_DIR` (`/var/lib/gateway/tls` by default). Custom `GRPC_TLS_CERT` and `GRPC_TLS_KEY` paths are advanced configuration and must point to a server certificate issued by the Gateway system CA, because enrolled daemons trust that CA for ongoing mTLS connections.
 
 ## Why This Prevents Node Hijacking
 

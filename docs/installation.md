@@ -210,6 +210,9 @@ The installer writes `.env`. Important variables:
 | `SESSION_SECRET` | Long random secret for sessions. |
 | `PKI_MASTER_KEY` | 64-character hex key used to encrypt PKI material. |
 | `GRPC_PORT` | Gateway gRPC port for daemon connections. |
+| `GRPC_TLS_AUTO_DIR` | Directory for Gateway's auto-issued internal gRPC TLS certificate and key. |
+| `GRPC_TLS_CERT` | Optional custom gRPC TLS certificate issued by Gateway's system CA. |
+| `GRPC_TLS_KEY` | Optional custom gRPC TLS private key paired with `GRPC_TLS_CERT`. |
 | `ACME_EMAIL` | Let's Encrypt account email. |
 | `ACME_STAGING` | Whether to use Let's Encrypt staging. |
 | `HEALTH_CHECK_INTERVAL_SECONDS` | Proxy health check interval. |

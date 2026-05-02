@@ -9,6 +9,15 @@ const optionalClickHouseUrlSchema = z
   .refine((value) => value === '' || z.string().url().safeParse(value).success, {
     message: 'CLICKHOUSE_URL must be a URL when provided',
   });
+const optionalNonEmptyString = z.preprocess(
+  (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+  z.string().optional()
+);
+const nonEmptyStringWithDefault = (fallback: string) =>
+  z.preprocess(
+    (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+    z.string().optional().default(fallback)
+  );
 
 const envSchema = z.object({
   // Server
@@ -120,8 +129,9 @@ const envSchema = z.object({
 
   // gRPC server for daemon communication
   GRPC_PORT: z.coerce.number().default(9443),
-  GRPC_TLS_CERT: z.string().optional(),
-  GRPC_TLS_KEY: z.string().optional(),
+  GRPC_TLS_CERT: optionalNonEmptyString,
+  GRPC_TLS_KEY: optionalNonEmptyString,
+  GRPC_TLS_AUTO_DIR: nonEmptyStringWithDefault('/var/lib/gateway/tls'),
 });
 
 export type Env = z.infer<typeof envSchema>;

@@ -9,6 +9,7 @@ import { createChildLogger } from '@/lib/logger.js';
 import type { CAService } from '@/modules/pki/ca.service.js';
 import type { CertService } from '@/modules/pki/cert.service.js';
 import type { CryptoService } from './crypto.service.js';
+import { validateGrpcServerCertificate } from './grpc-server-certificate.js';
 
 const logger = createChildLogger('SystemCA');
 
@@ -83,8 +84,10 @@ export class SystemCAService {
     if (existsSync(certPath) && existsSync(keyPath)) {
       try {
         const certPem = readFileSync(certPath, 'utf-8');
+        const keyPem = readFileSync(keyPath, 'utf-8');
         if (certPem.includes('BEGIN CERTIFICATE')) {
           const cert = new x509.X509Certificate(certPem);
+          validateGrpcServerCertificate(certPem, keyPem, await this.getSystemCACertPem());
           const remaining = cert.notAfter.getTime() - Date.now();
           if (remaining > 7 * 24 * 60 * 60 * 1000) {
             logger.debug('Reusing existing gRPC server cert', {
@@ -96,8 +99,8 @@ export class SystemCAService {
             remaining: `${Math.round(remaining / 3600000)}h`,
           });
         }
-      } catch {
-        // Files exist but can't read/parse — regenerate
+      } catch (err) {
+        logger.warn('Existing gRPC server TLS material is invalid; regenerating', { error: (err as Error).message });
       }
     }
 

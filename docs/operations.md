@@ -62,9 +62,10 @@ The installer writes `.env`. Important settings:
 | `PKI_MASTER_KEY` | 64-character hex key for encrypted PKI material. |
 | `RATE_LIMIT_WINDOW_MS` | Default rate-limit window. |
 | `RATE_LIMIT_MAX_REQUESTS` | Default request limit. |
-| `GRPC_PORT` | gRPC port for daemon connections. |
-| `GRPC_TLS_CERT` | Optional custom gRPC TLS cert. |
-| `GRPC_TLS_KEY` | Optional custom gRPC TLS key. |
+| `GRPC_PORT` | TLS-only gRPC port for daemon connections. |
+| `GRPC_TLS_AUTO_DIR` | Directory for Gateway's auto-issued internal gRPC TLS certificate and key. |
+| `GRPC_TLS_CERT` | Optional custom gRPC TLS certificate issued by Gateway's system CA. |
+| `GRPC_TLS_KEY` | Optional custom gRPC TLS private key paired with `GRPC_TLS_CERT`. |
 | `ACME_EMAIL` | Let's Encrypt account email. |
 | `ACME_STAGING` | Use Let's Encrypt staging. |
 | `HEALTH_CHECK_INTERVAL_SECONDS` | Proxy health check interval. |

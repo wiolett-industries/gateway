@@ -8,6 +8,7 @@ import { createChildLogger } from '@/lib/logger.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { CAService } from '@/modules/pki/ca.service.js';
 import type { CryptoService } from '@/services/crypto.service.js';
+import { validateGrpcServerCertificate } from '@/services/grpc-server-certificate.js';
 import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import type { NodeRegistryService } from '@/services/node-registry.service.js';
 import type { SystemCAService } from '@/services/system-ca.service.js';
@@ -72,6 +73,30 @@ export interface GrpcServerDeps {
 
 let server: grpc.Server | null = null;
 
+export async function createGrpcServerCredentials(
+  tlsCertPath: string | undefined,
+  tlsKeyPath: string | undefined,
+  systemCA: SystemCAService
+): Promise<grpc.ServerCredentials> {
+  if (!tlsCertPath || !tlsKeyPath) {
+    throw new Error('gRPC server requires TLS certificate and key paths');
+  }
+
+  const cert = readFileSync(tlsCertPath);
+  const key = readFileSync(tlsKeyPath);
+  const caPem = await systemCA.getSystemCACertPem();
+
+  if (!caPem) {
+    throw new Error('gRPC server requires the Gateway system CA certificate for daemon mTLS');
+  }
+  validateGrpcServerCertificate(cert, key, caPem);
+
+  // checkClientCertificate=false keeps enrollment open for new nodes, while
+  // still requesting and validating client certs when enrolled daemons present them.
+  const provider = new StaticCertificateProvider(Buffer.from(caPem), cert, key);
+  return (grpc.experimental as any).createCertificateProviderServerCredentials(provider, provider, false);
+}
+
 export async function startGrpcServer(
   port: number,
   tlsCertPath: string | undefined,
@@ -100,37 +125,8 @@ export async function startGrpcServer(
   server.addService(gatewayV1.NodeControl.service, createControlHandlers(deps));
   server.addService(gatewayV1.LogStream.service, createLogStreamHandlers(deps));
 
-  // Server credentials with mTLS support
-  let credentials: grpc.ServerCredentials;
-  if (tlsCertPath && tlsKeyPath) {
-    const cert = readFileSync(tlsCertPath);
-    const key = readFileSync(tlsKeyPath);
-
-    // Load system CA cert so gRPC verifies client certs against it.
-    // checkClientCertificate=false keeps enrollment open (new nodes have no cert yet),
-    // but any client cert that IS presented gets validated against the CA.
-    let caCert: Buffer | null = null;
-    try {
-      const caPem = await deps.systemCA.getSystemCACertPem();
-      if (caPem) {
-        caCert = Buffer.from(caPem);
-        logger.info('gRPC mTLS enabled — client certs verified against system CA');
-      }
-    } catch (err) {
-      logger.warn('Could not load system CA cert for mTLS', { error: (err as Error).message });
-    }
-
-    if (caCert) {
-      const provider = new StaticCertificateProvider(caCert, cert, key);
-      credentials = (grpc.experimental as any).createCertificateProviderServerCredentials(provider, provider, false);
-    } else {
-      credentials = grpc.ServerCredentials.createSsl(null, [{ cert_chain: cert, private_key: key }], false);
-    }
-    logger.info('gRPC server using TLS');
-  } else {
-    credentials = grpc.ServerCredentials.createInsecure();
-    logger.warn('gRPC server using INSECURE credentials (no TLS configured)');
-  }
+  const credentials = await createGrpcServerCredentials(tlsCertPath, tlsKeyPath, deps.systemCA);
+  logger.info('gRPC server using TLS with Gateway system CA client certificate validation');
 
   return new Promise((resolvePromise, reject) => {
     server!.bindAsync(`0.0.0.0:${port}`, credentials, (err, boundPort) => {

@@ -17,7 +17,9 @@ RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 WORKDIR /app
 
 RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 nodejs
+    adduser --system --uid 1001 nodejs && \
+    mkdir -p /var/lib/gateway/tls && \
+    chown -R nodejs:nodejs /var/lib/gateway
 
 COPY --from=builder /app/package.json ./
 COPY --from=builder /app/node_modules ./node_modules
