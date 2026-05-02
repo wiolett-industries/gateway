@@ -41,6 +41,19 @@ function matchesExpectedBody(body: string, expectedBody: string, mode: HealthChe
 
 type ProxyHostRow = typeof proxyHosts.$inferSelect;
 
+type ProxyValidationOptions = {
+  bypassAdvancedValidation?: boolean;
+  bypassRawValidation?: boolean;
+};
+
+type ProxyValidationInput = boolean | ProxyValidationOptions;
+
+function normalizeProxyValidationOptions(validationOptions: ProxyValidationInput = {}): ProxyValidationOptions {
+  return typeof validationOptions === 'boolean'
+    ? { bypassAdvancedValidation: validationOptions, bypassRawValidation: false }
+    : validationOptions;
+}
+
 function stripProxyHealthHistory<T extends { healthHistory?: unknown }>(host: T): Omit<T, 'healthHistory'> {
   const { healthHistory: _healthHistory, ...rest } = host;
   return rest;
@@ -145,7 +158,9 @@ export class ProxyService {
   // Create
   // -----------------------------------------------------------------------
 
-  async createProxyHost(input: CreateProxyHostInput, userId: string, bypassAdvancedValidation = false) {
+  async createProxyHost(input: CreateProxyHostInput, userId: string, validationOptions: ProxyValidationInput = {}) {
+    const options = normalizeProxyValidationOptions(validationOptions);
+
     // 0. Require a node assignment
     if (!input.nodeId) {
       throw new AppError(400, 'NODE_REQUIRED', 'A node must be selected for the proxy host');
@@ -153,7 +168,7 @@ export class ProxyService {
     await assertNodeAllowsServiceCreation(this.db, input.nodeId, 'nginx');
 
     // 0b. Validate advanced config if provided
-    if (input.advancedConfig && !bypassAdvancedValidation) {
+    if (input.advancedConfig && !options.bypassAdvancedValidation) {
       const validation = this.configGenerator.validateAdvancedConfig(input.advancedConfig);
       if (!validation.valid) {
         throw new AppError(
@@ -161,6 +176,16 @@ export class ProxyService {
           'INVALID_ADVANCED_CONFIG',
           `Advanced config is invalid: ${validation.errors.join(', ')}`
         );
+      }
+    }
+    if ((input as any).rawConfig) {
+      const validation = this.configGenerator.validateAdvancedConfig(
+        (input as any).rawConfig,
+        true,
+        options.bypassRawValidation === true
+      );
+      if (!validation.valid) {
+        throw new AppError(400, 'INVALID_RAW_CONFIG', `Raw config is invalid: ${validation.errors.join(', ')}`);
       }
     }
 
@@ -259,9 +284,16 @@ export class ProxyService {
   // Update
   // -----------------------------------------------------------------------
 
-  async updateProxyHost(id: string, input: UpdateProxyHostInput, userId: string, bypassAdvancedValidation = false) {
+  async updateProxyHost(
+    id: string,
+    input: UpdateProxyHostInput,
+    userId: string,
+    validationOptions: ProxyValidationInput = {}
+  ) {
+    const options = normalizeProxyValidationOptions(validationOptions);
+
     // 0. Validate advanced config if provided
-    if (input.advancedConfig && !bypassAdvancedValidation) {
+    if (input.advancedConfig && !options.bypassAdvancedValidation) {
       const validation = this.configGenerator.validateAdvancedConfig(input.advancedConfig);
       if (!validation.valid) {
         throw new AppError(
@@ -269,6 +301,16 @@ export class ProxyService {
           'INVALID_ADVANCED_CONFIG',
           `Advanced config is invalid: ${validation.errors.join(', ')}`
         );
+      }
+    }
+    if ((input as any).rawConfig) {
+      const validation = this.configGenerator.validateAdvancedConfig(
+        (input as any).rawConfig,
+        true,
+        options.bypassRawValidation === true
+      );
+      if (!validation.valid) {
+        throw new AppError(400, 'INVALID_RAW_CONFIG', `Raw config is invalid: ${validation.errors.join(', ')}`);
       }
     }
 
@@ -897,13 +939,18 @@ export class ProxyService {
   // Validate advanced config snippet
   // -----------------------------------------------------------------------
 
-  async validateAdvancedConfig(snippet: string, rawMode = false, bypassAdvancedValidation = false) {
+  async validateAdvancedConfig(
+    snippet: string,
+    rawMode = false,
+    bypassAdvancedValidation = false,
+    bypassRawValidation = false
+  ) {
     if (!rawMode && bypassAdvancedValidation) {
       return { valid: true, errors: [] };
     }
 
     // Basic static checks first
-    const staticResult = this.configGenerator.validateAdvancedConfig(snippet, rawMode);
+    const staticResult = this.configGenerator.validateAdvancedConfig(snippet, rawMode, bypassRawValidation);
     if (!staticResult.valid) return staticResult;
 
     // Do not run backend-local nginx -t for raw mode. Raw configs can contain

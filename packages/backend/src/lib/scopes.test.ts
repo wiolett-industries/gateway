@@ -50,6 +50,8 @@ describe('canonical scope definitions', () => {
     expect(ADMIN_SCOPES).not.toContain('docker:registries:edit');
     expect(ADMIN_SCOPES).not.toContain('docker:registries:delete');
     expect(ADMIN_SCOPES).toContain('docker:containers:mounts');
+    expect(ADMIN_SCOPES).toContain('proxy:raw:bypass');
+    expect(OPERATOR_SCOPES).not.toContain('proxy:raw:bypass');
     expect(ADMIN_SCOPES).not.toContain('admin:system');
   });
 
@@ -67,11 +69,13 @@ describe('canonical scope definitions', () => {
     expect(API_TOKEN_SCOPES).not.toContain('admin:users');
     expect(API_TOKEN_SCOPES).not.toContain('settings:gateway:edit');
     expect(API_TOKEN_SCOPES).not.toContain('proxy:raw:write');
+    expect(API_TOKEN_SCOPES).not.toContain('proxy:raw:bypass');
     expect(API_TOKEN_SCOPES).not.toContain('proxy:advanced:bypass');
     expect(isApiTokenScope('admin:system')).toBe(false);
     expect(isApiTokenScope('mcp:use')).toBe(false);
     expect(isApiTokenScope('admin:users')).toBe(false);
     expect(isApiTokenScope('proxy:raw:write:host-1')).toBe(false);
+    expect(isApiTokenScope('proxy:raw:bypass:host-1')).toBe(false);
   });
 
   it('keeps OAuth manual approval scopes focused on high-risk delegated access', () => {
@@ -85,6 +89,7 @@ describe('canonical scope definitions', () => {
       'ssl:cert:delete',
       'ssl:cert:revoke',
       'ssl:cert:export',
+      'proxy:raw:bypass',
       'nodes:console',
       'docker:containers:console',
       'docker:containers:files',

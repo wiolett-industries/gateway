@@ -636,6 +636,7 @@ export const RESOURCE_SCOPABLE_SCOPES = [
   "proxy:raw:read",
   "proxy:raw:write",
   "proxy:raw:toggle",
+  "proxy:raw:bypass",
   "proxy:templates:view",
   "proxy:templates:edit",
   "proxy:templates:delete",
@@ -851,6 +852,12 @@ const RAW_TOKEN_SCOPES = [
     value: "proxy:raw:toggle",
     label: "Toggle Raw Config",
     desc: "Switch between managed and raw config mode",
+    group: "Proxy Hosts",
+  },
+  {
+    value: "proxy:raw:bypass",
+    label: "Bypass Raw Config Restrictions",
+    desc: "Save raw nginx config without dangerous directive restrictions",
     group: "Proxy Hosts",
   },
   {
@@ -1497,6 +1504,7 @@ const PROGRAMMATIC_DENIED_SCOPE_VALUES = new Set<string>([
   "proxy:raw:read",
   "proxy:raw:write",
   "proxy:raw:toggle",
+  "proxy:raw:bypass",
   "proxy:advanced:bypass",
   "nodes:config:view",
   "nodes:config:edit",

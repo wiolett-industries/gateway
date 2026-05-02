@@ -18,7 +18,7 @@ export class ConfigValidatorService {
    * Directives that must never appear anywhere in user-supplied advanced config snippets.
    * Each entry is checked as a case-insensitive prefix of a trimmed line.
    */
-  private static readonly ALWAYS_FORBIDDEN_DIRECTIVES: readonly string[] = [
+  private static readonly ADVANCED_ALWAYS_FORBIDDEN_DIRECTIVES: readonly string[] = [
     'load_module',
     'lua_',
     'perl_',
@@ -34,6 +34,20 @@ export class ConfigValidatorService {
     'ssl_certificate_key',
     'internal',
     'satisfy',
+    'auth_basic_user_file',
+    'content_by_lua',
+  ];
+
+  private static readonly RAW_FORBIDDEN_DIRECTIVES: readonly string[] = [
+    'load_module',
+    'lua_',
+    'perl_',
+    'include',
+    'pid',
+    'worker_processes',
+    'daemon',
+    'master_process',
+    'env ',
     'auth_basic_user_file',
     'content_by_lua',
   ];
@@ -155,7 +169,7 @@ export class ConfigValidatorService {
    * 4. No excessively long lines (> 4096 chars)
    * 5. Maximum snippet length (64 KB)
    */
-  validate(snippet: string, rawMode = false): { valid: boolean; errors: string[] } {
+  validate(snippet: string, rawMode = false, bypassRawValidation = false): { valid: boolean; errors: string[] } {
     const errors: string[] = [];
     const nginxSnippet = rawMode ? snippet : ConfigValidatorService.stripHandlebarsExpressions(snippet);
 
@@ -170,10 +184,22 @@ export class ConfigValidatorService {
       errors.push(`Config exceeds maximum length of ${maxLen / 1024} KB`);
     }
 
-    // 3. Forbidden directives (skip in raw mode — user controls the entire config)
+    // 3. Forbidden directives
     const lines = snippet.split('\n');
-    if (!rawMode) {
-      const tokens = ConfigValidatorService.tokenize(nginxSnippet);
+    const tokens = ConfigValidatorService.tokenize(nginxSnippet);
+    if (rawMode) {
+      if (!bypassRawValidation) {
+        for (const token of tokens) {
+          const trimmed = token.type === 'blockClose' ? '' : token.text.trim().toLowerCase();
+          if (trimmed === '') continue;
+          for (const directive of ConfigValidatorService.RAW_FORBIDDEN_DIRECTIVES) {
+            if (trimmed.startsWith(directive.toLowerCase())) {
+              errors.push(`Forbidden directive "${directive.trim()}" found on line ${token.line}`);
+            }
+          }
+        }
+      }
+    } else {
       const blockStack: Array<{ type: 'location'; root: boolean } | { type: 'other' }> = [];
 
       for (const token of tokens) {
@@ -189,7 +215,7 @@ export class ConfigValidatorService {
 
         const isTopLevel = blockStack.length === 0;
 
-        for (const directive of ConfigValidatorService.ALWAYS_FORBIDDEN_DIRECTIVES) {
+        for (const directive of ConfigValidatorService.ADVANCED_ALWAYS_FORBIDDEN_DIRECTIVES) {
           if (trimmed.startsWith(directive.toLowerCase())) {
             errors.push(`Forbidden directive "${directive.trim()}" found on line ${token.line}`);
           }
