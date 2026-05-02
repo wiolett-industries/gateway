@@ -16,6 +16,7 @@ import type { McpAuthContext } from './mcp-types.js';
 const MCP_EXCLUDED_TOOLS = new Set(['ask_question', 'internal_documentation', 'web_search']);
 const BROAD_ONLY_TOOL_SCOPES = new Set(['create_proxy_host']);
 const DIRECT_DATABASE_VIEW_TOOLS = new Set(['list_databases', 'get_database_connection']);
+const DIRECT_RAW_READ_TOOLS = new Set(['get_proxy_rendered_config']);
 const DIRECT_DATABASE_VIEW_AND_QUERY_TOOLS = new Set([
   'query_postgres_read',
   'execute_postgres_sql',
@@ -65,6 +66,9 @@ function hasToolScope(scopes: string[], tool: AIToolDefinition): boolean {
   if (DIRECT_DATABASE_VIEW_TOOLS.has(tool.name)) {
     return hasDirectScopeBase(scopes, tool.requiredScope);
   }
+  if (DIRECT_RAW_READ_TOOLS.has(tool.name)) {
+    return hasDirectScopeBase(scopes, tool.requiredScope);
+  }
   if (DIRECT_DATABASE_VIEW_AND_QUERY_TOOLS.has(tool.name)) {
     return hasDirectDatabaseViewForQueryTool(scopes, tool.requiredScope);
   }
@@ -78,6 +82,13 @@ function hasToolScopeForArgs(scopes: string[], tool: AIToolDefinition, args: Rec
   const anyRequirements = ANY_SCOPE_TOOL_REQUIREMENTS[tool.name];
   if (anyRequirements) return anyRequirements.some((scope) => hasScope(scopes, scope));
   if (DIRECT_DATABASE_VIEW_TOOLS.has(tool.name)) {
+    const resourceId = getToolAuthorizationResourceId(tool.name, args);
+    if (scopes.includes(tool.requiredScope)) return true;
+    return resourceId
+      ? scopes.includes(`${tool.requiredScope}:${resourceId}`)
+      : scopes.some((scope) => scope.startsWith(`${tool.requiredScope}:`));
+  }
+  if (DIRECT_RAW_READ_TOOLS.has(tool.name)) {
     const resourceId = getToolAuthorizationResourceId(tool.name, args);
     if (scopes.includes(tool.requiredScope)) return true;
     return resourceId

@@ -27,31 +27,18 @@ import {
   UpdateFolderSchema,
 } from './folder.schemas.js';
 import { FolderService } from './folder.service.js';
+import {
+  redactFolderTreeRawProxyConfigForBrowserResponse,
+  redactGroupedRawProxyConfigForBrowserResponse,
+  stripFolderTreeRawProxyConfigForProgrammaticResponse,
+  stripGroupedRawProxyConfigForProgrammaticResponse,
+} from './raw-visibility.js';
 
 export const folderRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
 
 folderRoutes.use('*', authMiddleware);
 
-function stripRawProxyConfig<T extends Record<string, unknown>>(host: T): Omit<T, 'rawConfig' | 'rawConfigEnabled'> {
-  const { rawConfig: _rawConfig, rawConfigEnabled: _rawConfigEnabled, ...rest } = host;
-  return rest;
-}
-
-export function stripGroupedRawConfigForProgrammaticResponse(
-  result: Awaited<ReturnType<FolderService['getGroupedHosts']>>
-) {
-  const stripFolder = (folder: any): any => ({
-    ...folder,
-    hosts: folder.hosts.map((host: any) => stripRawProxyConfig(host)),
-    children: folder.children.map(stripFolder),
-  });
-
-  return {
-    ...result,
-    folders: result.folders.map(stripFolder),
-    ungroupedHosts: result.ungroupedHosts.map((host: any) => stripRawProxyConfig(host)),
-  };
-}
+export { stripGroupedRawProxyConfigForProgrammaticResponse as stripGroupedRawConfigForProgrammaticResponse } from './raw-visibility.js';
 
 function requireFolderListAccess(scopes: string[]) {
   if (!hasScopeBase(scopes, 'proxy:view') && !hasScope(scopes, 'proxy:folders:manage')) {
@@ -72,7 +59,15 @@ folderRoutes.openapi(listProxyFoldersRoute, async (c) => {
       ? { includeAllFolders: canManageFolders }
       : { allowedHostIds: getResourceScopedIds(scopes, 'proxy:view') }
   );
-  return c.json({ data: tree });
+  if (isProgrammaticAuth(c)) {
+    return c.json({ data: stripFolderTreeRawProxyConfigForProgrammaticResponse(tree) });
+  }
+  return c.json({
+    data: redactFolderTreeRawProxyConfigForBrowserResponse(tree, (host) => {
+      const hostId = typeof host.id === 'string' ? host.id : undefined;
+      return scopes.includes('proxy:raw:read') || (hostId ? scopes.includes(`proxy:raw:read:${hostId}`) : false);
+    }),
+  });
 });
 
 // Get grouped hosts
@@ -89,8 +84,13 @@ folderRoutes.openapi(groupedProxyHostsRoute, async (c) => {
       ? { includeAllFolders: canManageFolders }
       : { allowedHostIds: getResourceScopedIds(scopes, 'proxy:view'), includeAllFolders: canManageFolders }
   );
-  if (isProgrammaticAuth(c)) return c.json({ data: stripGroupedRawConfigForProgrammaticResponse(result) });
-  return c.json({ data: result });
+  if (isProgrammaticAuth(c)) return c.json({ data: stripGroupedRawProxyConfigForProgrammaticResponse(result) });
+  return c.json({
+    data: redactGroupedRawProxyConfigForBrowserResponse(result, (host) => {
+      const hostId = typeof host.id === 'string' ? host.id : undefined;
+      return scopes.includes('proxy:raw:read') || (hostId ? scopes.includes(`proxy:raw:read:${hostId}`) : false);
+    }),
+  });
 });
 
 // --- Static POST routes ---

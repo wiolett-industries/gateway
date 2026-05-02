@@ -4,7 +4,7 @@ import { eq } from 'drizzle-orm';
 import { nodes } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
 import type { EnrollRequest, EnrollResponse, RenewCertRequest, RenewCertResponse } from '../generated/types.js';
-import { extractNodeIdFromCert } from '../interceptors/auth.js';
+import { extractDaemonCertificateIdentity, normalizeCertificateSerial } from '../interceptors/auth.js';
 import type { GrpcServerDeps } from '../server.js';
 
 const logger = createChildLogger('GrpcEnrollment');
@@ -90,14 +90,14 @@ export function createEnrollmentHandlers(deps: GrpcServerDeps) {
         const req = call.request;
         logger.info('Certificate renewal request', { nodeId: req.nodeId });
 
-        const certNodeId = extractNodeIdFromCert(call as any);
-        if (!certNodeId) {
-          callback({ code: 16, message: 'mTLS client certificate is required for certificate renewal' });
+        const certIdentity = extractDaemonCertificateIdentity(call as any);
+        if (!certIdentity) {
+          callback({ code: 16, message: 'Authorized mTLS client certificate is required for certificate renewal' });
           return;
         }
-        if (certNodeId !== req.nodeId) {
+        if (certIdentity.nodeId !== req.nodeId) {
           logger.warn('Certificate renewal rejected: cert CN does not match requested nodeId', {
-            certNodeId,
+            certNodeId: certIdentity.nodeId,
             requestedNodeId: req.nodeId,
           });
           callback({ code: 7, message: 'Client certificate does not match requested node' });
@@ -121,6 +121,17 @@ export function createEnrollmentHandlers(deps: GrpcServerDeps) {
         // Reject if node is in pending status (never completed enrollment)
         if (node.status === 'pending') {
           callback({ code: 7, message: 'Node enrollment not complete' });
+          return;
+        }
+
+        const storedSerial = normalizeCertificateSerial(node.certificateSerial);
+        if (storedSerial !== certIdentity.serialNumber) {
+          logger.warn('Certificate renewal rejected: certificate serial does not match enrolled node', {
+            nodeId: req.nodeId,
+            presentedSerial: certIdentity.serialNumber,
+            storedSerial,
+          });
+          callback({ code: 7, message: 'Client certificate is not the current enrolled certificate for this node' });
           return;
         }
 
@@ -165,6 +176,39 @@ export function createEnrollmentHandlers(deps: GrpcServerDeps) {
           clientKey: Buffer.from(certResult.keyPem),
           certExpiresAt: String(Math.floor(certResult.expiresAt.getTime() / 1000)),
         });
+
+        // The active CommandStream was authenticated with the old certificate.
+        // Remove and close it after returning the renewed cert so the daemon reconnects
+        // with credentials matching the newly stored serial.
+        deps.registry.deregister(req.nodeId, connectedNode.commandStream).catch((deregisterErr) => {
+          logger.warn('Failed to deregister command stream after cert renewal', {
+            nodeId: req.nodeId,
+            error: deregisterErr instanceof Error ? deregisterErr.message : String(deregisterErr),
+          });
+        });
+
+        for (const [kind, stream] of [
+          ['log', connectedNode.logStream],
+          ['command', connectedNode.commandStream],
+        ] as const) {
+          if (!stream) continue;
+          try {
+            stream.end();
+          } catch (streamErr) {
+            logger.warn(`Failed to end ${kind} stream after cert renewal`, {
+              nodeId: req.nodeId,
+              error: streamErr instanceof Error ? streamErr.message : String(streamErr),
+            });
+          }
+          try {
+            (stream as any).destroy?.();
+          } catch (streamErr) {
+            logger.warn(`Failed to destroy ${kind} stream after cert renewal`, {
+              nodeId: req.nodeId,
+              error: streamErr instanceof Error ? streamErr.message : String(streamErr),
+            });
+          }
+        }
       } catch (err) {
         logger.error('Certificate renewal failed', { error: (err as Error).message });
         callback({ code: 13, message: `Renewal failed: ${(err as Error).message}` });

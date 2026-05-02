@@ -9,10 +9,17 @@ import { daemonLogRelay } from '@/modules/monitoring/log-relay.service.js';
 import { NotificationEvaluatorService } from '@/modules/notifications/notification-evaluator.service.js';
 import { ProxyService } from '@/modules/proxy/proxy.service.js';
 import type { DaemonMessage, GatewayCommand } from '../generated/types.js';
-import { extractNodeIdFromCert } from '../interceptors/auth.js';
+import { extractDaemonCertificateIdentity, normalizeCertificateSerial } from '../interceptors/auth.js';
 import type { GrpcServerDeps } from '../server.js';
 
 const logger = createChildLogger('GrpcControl');
+const pendingCommandRegistrations = new Map<string, symbol>();
+
+function clearPendingCommandRegistration(nodeId: string, token: symbol): void {
+  if (pendingCommandRegistrations.get(nodeId) === token) {
+    pendingCommandRegistrations.delete(nodeId);
+  }
+}
 
 // Throttle health history writes — track last recorded timestamp per node
 const lastRecordedTs = new Map<string, number>();
@@ -85,78 +92,161 @@ export function createControlHandlers(deps: GrpcServerDeps) {
   return {
     CommandStream(stream: ServerDuplexStream<DaemonMessage, GatewayCommand>) {
       let nodeId: string | null = null;
+      let closed = false;
+      let registering = false;
+      const isCurrentCommandStream = () =>
+        !!nodeId && !closed && deps.registry.getNode(nodeId)?.commandStream === stream;
+      const endStaleStream = async () => {
+        closed = true;
+        if (nodeId && deps.registry.getNode(nodeId)?.commandStream === stream) {
+          await deps.registry.deregister(nodeId, stream as any);
+        }
+        stream.end();
+      };
+      const failRegisteredStream = async (reason: string, err?: unknown) => {
+        closed = true;
+        logger.error(reason, {
+          nodeId,
+          error: err instanceof Error ? err.message : err ? String(err) : undefined,
+        });
+        if (nodeId) {
+          await deps.registry.deregister(nodeId, stream as any);
+        }
+        stream.end();
+        (stream as any).destroy?.();
+      };
+      const isClaimedStreamCurrent = (claimedNodeId: string) =>
+        !closed && deps.registry.getNode(claimedNodeId)?.commandStream === stream;
 
       stream.on('data', async (msg: DaemonMessage) => {
         try {
+          if (closed) return;
           if (msg.register) {
             // First message must be RegisterMessage
-            nodeId = msg.register.nodeId;
+            if (nodeId || registering) {
+              logger.warn('Duplicate node registration message ignored', { nodeId: nodeId ?? msg.register.nodeId });
+              await endStaleStream();
+              return;
+            }
+            registering = true;
+            const claimedNodeId = msg.register.nodeId;
+            const registrationToken = Symbol(claimedNodeId);
+            pendingCommandRegistrations.set(claimedNodeId, registrationToken);
 
-            // Verify mTLS cert CN matches claimed nodeId (prevents node impersonation)
-            const certNodeId = extractNodeIdFromCert(stream as any);
-            if (!certNodeId) {
-              logger.error('Node registration rejected: missing verified mTLS client certificate', {
-                claimedNodeId: nodeId,
+            // Verify mTLS cert CN and serial match the enrolled node (prevents node impersonation).
+            const certIdentity = extractDaemonCertificateIdentity(stream as any);
+            if (!certIdentity) {
+              logger.error('Node registration rejected: missing or unauthorized mTLS client certificate', {
+                claimedNodeId,
               });
+              registering = false;
+              clearPendingCommandRegistration(claimedNodeId, registrationToken);
               stream.end();
               return;
             }
-            if (certNodeId !== nodeId) {
+            if (certIdentity.nodeId !== claimedNodeId) {
               logger.error('Node ID mismatch: cert CN does not match claimed nodeId', {
-                certNodeId,
-                claimedNodeId: nodeId,
+                certNodeId: certIdentity.nodeId,
+                claimedNodeId,
               });
+              registering = false;
+              clearPendingCommandRegistration(claimedNodeId, registrationToken);
               stream.end();
               return;
             }
 
             logger.info('Node registering', {
-              nodeId,
+              nodeId: claimedNodeId,
               hostname: msg.register.hostname,
               nginxVersion: msg.register.nginxVersion,
               configVersionHash: msg.register.configVersionHash,
-              certVerified: !!certNodeId,
+              certVerified: true,
             });
 
             // Look up node from DB — read stored hash BEFORE updating
             const [node] = await deps.db
-              .select({ type: nodes.type, configVersionHash: nodes.configVersionHash })
+              .select({
+                type: nodes.type,
+                configVersionHash: nodes.configVersionHash,
+                certificateSerial: nodes.certificateSerial,
+                status: nodes.status,
+              })
               .from(nodes)
-              .where(eq(nodes.id, nodeId))
+              .where(eq(nodes.id, claimedNodeId))
               .limit(1);
 
             if (!node) {
-              logger.error('Unknown node ID during registration', { nodeId });
+              logger.error('Unknown node ID during registration', { nodeId: claimedNodeId });
+              registering = false;
+              clearPendingCommandRegistration(claimedNodeId, registrationToken);
               stream.end();
               return;
             }
 
+            if (node.status === 'pending') {
+              logger.error('Node registration rejected: enrollment is not complete', { nodeId: claimedNodeId });
+              registering = false;
+              clearPendingCommandRegistration(claimedNodeId, registrationToken);
+              stream.end();
+              return;
+            }
+            if (!node.certificateSerial) {
+              logger.error('Node registration rejected: node has no stored certificate serial', {
+                nodeId: claimedNodeId,
+              });
+              registering = false;
+              clearPendingCommandRegistration(claimedNodeId, registrationToken);
+              stream.end();
+              return;
+            }
+            const storedSerial = normalizeCertificateSerial(node.certificateSerial);
+            if (storedSerial !== certIdentity.serialNumber) {
+              logger.error('Node registration rejected: certificate serial does not match enrolled node', {
+                nodeId: claimedNodeId,
+                presentedSerial: certIdentity.serialNumber,
+                storedSerial,
+              });
+              registering = false;
+              clearPendingCommandRegistration(claimedNodeId, registrationToken);
+              stream.end();
+              return;
+            }
+
+            if (closed || pendingCommandRegistrations.get(claimedNodeId) !== registrationToken) {
+              registering = false;
+              clearPendingCommandRegistration(claimedNodeId, registrationToken);
+              stream.end();
+              return;
+            }
             const nodeType = node.type as 'nginx' | 'bastion' | 'monitoring' | 'docker';
             const gatewayHash = node.configVersionHash;
 
             try {
               await deps.registry.register(
-                nodeId,
+                claimedNodeId,
                 nodeType,
                 msg.register.hostname,
                 msg.register.configVersionHash,
-                stream as any
+                stream as any,
+                { isCurrentRegistration: () => pendingCommandRegistrations.get(claimedNodeId) === registrationToken }
               );
             } catch (err) {
               const reason = (err as Error).message;
-              logger.error('Registration rejected', { nodeId, error: reason });
-              // Send rejection reason as a command so daemon can detect it and exit
-              try {
-                stream.write({
-                  commandId: '__registration_rejected__',
-                  applyConfig: { hostId: '', configContent: reason, testOnly: false },
-                });
-              } catch {
-                /* stream may already be dead */
-              }
+              logger.error('Registration rejected', { nodeId: claimedNodeId, error: reason });
+              registering = false;
+              clearPendingCommandRegistration(claimedNodeId, registrationToken);
               stream.end();
               return;
             }
+            if (closed) {
+              await deps.registry.deregister(claimedNodeId, stream as any);
+              registering = false;
+              clearPendingCommandRegistration(claimedNodeId, registrationToken);
+              return;
+            }
+            nodeId = claimedNodeId;
+            registering = false;
+            clearPendingCommandRegistration(claimedNodeId, registrationToken);
 
             // Update DB with latest info — do NOT overwrite configVersionHash
             // (the gateway's stored hash is authoritative, set by FullSync)
@@ -168,50 +258,56 @@ export function createControlHandlers(deps: GrpcServerDeps) {
               !isMinorCompatible(appVersion, msg.register.daemonVersion);
             if (versionMismatch) {
               logger.warn('Daemon version mismatch', {
-                nodeId,
+                nodeId: claimedNodeId,
                 gatewayVersion: appVersion,
                 daemonVersion: msg.register.daemonVersion,
               });
             }
 
-            await deps.db
-              .update(nodes)
-              .set({
-                hostname: msg.register.hostname,
-                daemonVersion: msg.register.daemonVersion,
-                capabilities: {
-                  ...(msg.register.nginxVersion ? { nginxVersion: msg.register.nginxVersion } : {}),
-                  ...(msg.register.daemonType ? { daemonType: msg.register.daemonType } : {}),
-                  ...((msg.register as any).dockerVersion
-                    ? { dockerVersion: (msg.register as any).dockerVersion }
-                    : {}),
-                  ...(msg.register.capabilities?.includes('docker_deployments_v1')
-                    ? { dockerDeploymentsV1: true, capabilities: msg.register.capabilities }
-                    : {}),
-                  cpuModel: msg.register.cpuModel || undefined,
-                  cpuCores: msg.register.cpuCores || undefined,
-                  architecture: msg.register.architecture || undefined,
-                  kernelVersion: msg.register.kernelVersion || undefined,
-                  versionMismatch,
-                },
-                lastSeenAt: new Date(),
-                updatedAt: new Date(),
-              })
-              .where(eq(nodes.id, nodeId));
+            try {
+              await deps.db
+                .update(nodes)
+                .set({
+                  hostname: msg.register.hostname,
+                  daemonVersion: msg.register.daemonVersion,
+                  capabilities: {
+                    ...(msg.register.nginxVersion ? { nginxVersion: msg.register.nginxVersion } : {}),
+                    ...(msg.register.daemonType ? { daemonType: msg.register.daemonType } : {}),
+                    ...((msg.register as any).dockerVersion
+                      ? { dockerVersion: (msg.register as any).dockerVersion }
+                      : {}),
+                    ...(msg.register.capabilities?.includes('docker_deployments_v1')
+                      ? { dockerDeploymentsV1: true, capabilities: msg.register.capabilities }
+                      : {}),
+                    cpuModel: msg.register.cpuModel || undefined,
+                    cpuCores: msg.register.cpuCores || undefined,
+                    architecture: msg.register.architecture || undefined,
+                    kernelVersion: msg.register.kernelVersion || undefined,
+                    versionMismatch,
+                  },
+                  lastSeenAt: new Date(),
+                  updatedAt: new Date(),
+                })
+                .where(eq(nodes.id, claimedNodeId));
+            } catch (err) {
+              await failRegisteredStream('Node registration metadata update failed', err);
+              return;
+            }
 
             try {
               const { DaemonUpdateService } = await import('@/services/daemon-update.service.js');
               const daemonUpdateService = container.resolve(DaemonUpdateService);
-              await daemonUpdateService.clearNodeUpdateInProgressOnReconnect(nodeId);
+              await daemonUpdateService.clearNodeUpdateInProgressOnReconnect(claimedNodeId);
             } catch (err) {
               logger.warn('Failed to reconcile node update lock on register', {
-                nodeId,
+                nodeId: claimedNodeId,
                 error: err instanceof Error ? err.message : String(err),
               });
             }
+            if (!isClaimedStreamCurrent(claimedNodeId)) return;
 
             logger.info('Node connected', {
-              nodeId,
+              nodeId: claimedNodeId,
               hostname: msg.register.hostname,
               daemonVersion: msg.register.daemonVersion,
               nginxVersion: msg.register.nginxVersion,
@@ -219,6 +315,7 @@ export function createControlHandlers(deps: GrpcServerDeps) {
 
             // Enable daemon log streaming on connect (fire-and-forget via stream)
             try {
+              if (!isClaimedStreamCurrent(claimedNodeId)) return;
               stream.write({ commandId: '', setDaemonLogStream: { enabled: true, minLevel: 'info', tailLines: 0 } });
             } catch {
               // stream may not be ready yet
@@ -227,280 +324,308 @@ export function createControlHandlers(deps: GrpcServerDeps) {
             // Compare config hash and trigger full resync if different (nginx nodes only)
             if (nodeType === 'nginx' && gatewayHash && gatewayHash !== msg.register.configVersionHash) {
               logger.info('Config hash mismatch, triggering full resync', {
-                nodeId,
+                nodeId: claimedNodeId,
                 daemonHash: msg.register.configVersionHash,
                 gatewayHash,
               });
               // Async resync — don't block registration
               setImmediate(async () => {
                 try {
+                  if (!isClaimedStreamCurrent(claimedNodeId)) return;
                   const proxyService = container.resolve(ProxyService);
-                  await proxyService.resyncAllHostsOnNode(nodeId!);
+                  await proxyService.resyncAllHostsOnNode(claimedNodeId);
                 } catch (err) {
-                  logger.error('Full resync failed', { nodeId, error: (err as Error).message });
+                  logger.error('Full resync failed', { nodeId: claimedNodeId, error: (err as Error).message });
                 }
               });
             }
-          } else if (msg.commandResult && nodeId) {
-            // Intercept traffic stats results (fire-and-forget, not correlated)
-            if (
-              msg.commandResult.commandId?.startsWith('traffic-') &&
-              msg.commandResult.success &&
-              msg.commandResult.detail
-            ) {
-              try {
-                const node = deps.registry.getNode(nodeId);
-                if (node) node.lastTrafficStats = JSON.parse(msg.commandResult.detail);
-              } catch {
-                /* ignore parse errors */
-              }
-            } else if (
-              msg.commandResult.commandId?.startsWith('log_stream:') &&
-              msg.commandResult.success &&
-              msg.commandResult.detail
-            ) {
-              // Route log stream chunks to registered WebSocket handlers
-              try {
-                const parsed = JSON.parse(msg.commandResult.detail);
-                if (parsed.type === 'log_stream' && parsed.containerId) {
-                  const key = `${nodeId}:${parsed.containerId}`;
-                  deps.registry.handleLogStream(key, parsed.lines ?? [], !!parsed.ended);
-                }
-              } catch {
-                /* ignore parse errors */
-              }
-            } else {
-              deps.registry.handleCommandResult(nodeId, msg.commandResult);
+          } else {
+            const activeNodeId = nodeId;
+            if (!activeNodeId || deps.registry.getNode(activeNodeId)?.commandStream !== stream) {
+              await endStaleStream();
+              return;
             }
-          } else if (msg.healthReport && nodeId) {
-            const healthData = {
-              nginxRunning: msg.healthReport.nginxRunning,
-              configValid: msg.healthReport.configValid,
-              nginxUptimeSeconds: Number(msg.healthReport.nginxUptimeSeconds),
-              workerCount: msg.healthReport.workerCount,
-              nginxVersion: msg.healthReport.nginxVersion,
-              cpuPercent: msg.healthReport.cpuPercent,
-              memoryBytes: Number(msg.healthReport.memoryBytes),
-              diskFreeBytes: Number(msg.healthReport.diskFreeBytes),
-              timestamp: Number(msg.healthReport.timestamp),
-              loadAverage1m: (msg.healthReport as any).loadAverage_1m ?? msg.healthReport.loadAverage1m ?? 0,
-              loadAverage5m: (msg.healthReport as any).loadAverage_5m ?? msg.healthReport.loadAverage5m ?? 0,
-              loadAverage15m: (msg.healthReport as any).loadAverage_15m ?? msg.healthReport.loadAverage15m ?? 0,
-              systemMemoryTotalBytes: Number(msg.healthReport.systemMemoryTotalBytes ?? 0),
-              systemMemoryUsedBytes: Number(msg.healthReport.systemMemoryUsedBytes ?? 0),
-              systemMemoryAvailableBytes: Number(msg.healthReport.systemMemoryAvailableBytes ?? 0),
-              swapTotalBytes: Number(msg.healthReport.swapTotalBytes ?? 0),
-              swapUsedBytes: Number(msg.healthReport.swapUsedBytes ?? 0),
-              systemUptimeSeconds: Number(msg.healthReport.systemUptimeSeconds ?? 0),
-              openFileDescriptors: Number(msg.healthReport.openFileDescriptors ?? 0),
-              maxFileDescriptors: Number(msg.healthReport.maxFileDescriptors ?? 0),
-              diskMounts: (msg.healthReport.diskMounts ?? []).map((m: any) => ({
-                mountPoint: m.mountPoint,
-                filesystem: m.filesystem,
-                device: m.device,
-                totalBytes: Number(m.totalBytes ?? 0),
-                usedBytes: Number(m.usedBytes ?? 0),
-                freeBytes: Number(m.freeBytes ?? 0),
-                usagePercent: m.usagePercent ?? 0,
-              })),
-              diskReadBytes: Number(msg.healthReport.diskReadBytes ?? 0),
-              diskWriteBytes: Number(msg.healthReport.diskWriteBytes ?? 0),
-              networkInterfaces: (msg.healthReport.networkInterfaces ?? []).map((n: any) => ({
-                name: n.name,
-                rxBytes: Number(n.rxBytes ?? 0),
-                txBytes: Number(n.txBytes ?? 0),
-                rxPackets: Number(n.rxPackets ?? 0),
-                txPackets: Number(n.txPackets ?? 0),
-                rxErrors: Number(n.rxErrors ?? 0),
-                txErrors: Number(n.txErrors ?? 0),
-              })),
-              nginxRssBytes: Number(msg.healthReport.nginxRssBytes ?? 0),
-              errorRate4xx: (msg.healthReport as any).errorRate_4xx ?? msg.healthReport.errorRate4xx ?? 0,
-              errorRate5xx: (msg.healthReport as any).errorRate_5xx ?? msg.healthReport.errorRate5xx ?? 0,
-              // Docker-specific fields
-              ...(msg.healthReport.dockerVersion ? { dockerVersion: msg.healthReport.dockerVersion } : {}),
-              ...(msg.healthReport.containersRunning != null
-                ? { containersRunning: msg.healthReport.containersRunning }
-                : {}),
-              ...(msg.healthReport.containersStopped != null
-                ? { containersStopped: msg.healthReport.containersStopped }
-                : {}),
-              ...(msg.healthReport.containersTotal != null
-                ? { containersTotal: msg.healthReport.containersTotal }
-                : {}),
-              ...(msg.healthReport.containerStats?.length
-                ? {
-                    containerStats: msg.healthReport.containerStats.map((c: any) => ({
-                      containerId: c.containerId,
-                      name: c.name,
-                      image: c.image,
-                      state: c.state,
-                      cpuPercent: c.cpuPercent ?? 0,
-                      memoryUsageBytes: Number(c.memoryUsageBytes ?? 0),
-                      memoryLimitBytes: Number(c.memoryLimitBytes ?? 0),
-                      networkRxBytes: Number(c.networkRxBytes ?? 0),
-                      networkTxBytes: Number(c.networkTxBytes ?? 0),
-                      blockReadBytes: Number(c.blockReadBytes ?? 0),
-                      blockWriteBytes: Number(c.blockWriteBytes ?? 0),
-                      pids: c.pids ?? 0,
-                      metricsAvailable: hasDockerMetricSample(c),
-                    })),
+            if (msg.commandResult) {
+              // Intercept traffic stats results (fire-and-forget, not correlated)
+              if (
+                msg.commandResult.commandId?.startsWith('traffic-') &&
+                msg.commandResult.success &&
+                msg.commandResult.detail
+              ) {
+                try {
+                  const node = deps.registry.getNode(activeNodeId);
+                  if (node) node.lastTrafficStats = JSON.parse(msg.commandResult.detail);
+                } catch {
+                  /* ignore parse errors */
+                }
+              } else if (
+                msg.commandResult.commandId?.startsWith('log_stream:') &&
+                msg.commandResult.success &&
+                msg.commandResult.detail
+              ) {
+                // Route log stream chunks to registered WebSocket handlers
+                try {
+                  const parsed = JSON.parse(msg.commandResult.detail);
+                  if (parsed.type === 'log_stream' && parsed.containerId) {
+                    const key = `${activeNodeId}:${parsed.containerId}`;
+                    deps.registry.handleLogStream(key, parsed.lines ?? [], !!parsed.ended);
                   }
-                : {}),
-            };
-
-            const connectedNode = deps.registry.getNode(nodeId);
-            const previousContainerStats = Array.isArray((connectedNode?.lastHealthReport as any)?.containerStats)
-              ? (((connectedNode?.lastHealthReport as any)?.containerStats as any[]) ?? [])
-              : [];
-            const nextContainerStats = Array.isArray((healthData as any).containerStats)
-              ? (((healthData as any).containerStats as any[]) ?? [])
-              : [];
-
-            if (connectedNode?.type === 'docker') {
-              const nextContainerIds = new Set(
-                nextContainerStats.map((container: any) => String(container.containerId))
-              );
-              for (const change of diffDockerContainerStateReports(previousContainerStats, nextContainerStats)) {
-                deps.registry.publishDockerContainerChanged(nodeId, change.containerId, change.name, change.state, {
-                  observe: !nextContainerIds.has(change.containerId),
-                });
+                } catch {
+                  /* ignore parse errors */
+                }
+              } else {
+                deps.registry.handleCommandResult(activeNodeId, msg.commandResult);
               }
+            } else if (msg.healthReport) {
+              const healthData = {
+                nginxRunning: msg.healthReport.nginxRunning,
+                configValid: msg.healthReport.configValid,
+                nginxUptimeSeconds: Number(msg.healthReport.nginxUptimeSeconds),
+                workerCount: msg.healthReport.workerCount,
+                nginxVersion: msg.healthReport.nginxVersion,
+                cpuPercent: msg.healthReport.cpuPercent,
+                memoryBytes: Number(msg.healthReport.memoryBytes),
+                diskFreeBytes: Number(msg.healthReport.diskFreeBytes),
+                timestamp: Number(msg.healthReport.timestamp),
+                loadAverage1m: (msg.healthReport as any).loadAverage_1m ?? msg.healthReport.loadAverage1m ?? 0,
+                loadAverage5m: (msg.healthReport as any).loadAverage_5m ?? msg.healthReport.loadAverage5m ?? 0,
+                loadAverage15m: (msg.healthReport as any).loadAverage_15m ?? msg.healthReport.loadAverage15m ?? 0,
+                systemMemoryTotalBytes: Number(msg.healthReport.systemMemoryTotalBytes ?? 0),
+                systemMemoryUsedBytes: Number(msg.healthReport.systemMemoryUsedBytes ?? 0),
+                systemMemoryAvailableBytes: Number(msg.healthReport.systemMemoryAvailableBytes ?? 0),
+                swapTotalBytes: Number(msg.healthReport.swapTotalBytes ?? 0),
+                swapUsedBytes: Number(msg.healthReport.swapUsedBytes ?? 0),
+                systemUptimeSeconds: Number(msg.healthReport.systemUptimeSeconds ?? 0),
+                openFileDescriptors: Number(msg.healthReport.openFileDescriptors ?? 0),
+                maxFileDescriptors: Number(msg.healthReport.maxFileDescriptors ?? 0),
+                diskMounts: (msg.healthReport.diskMounts ?? []).map((m: any) => ({
+                  mountPoint: m.mountPoint,
+                  filesystem: m.filesystem,
+                  device: m.device,
+                  totalBytes: Number(m.totalBytes ?? 0),
+                  usedBytes: Number(m.usedBytes ?? 0),
+                  freeBytes: Number(m.freeBytes ?? 0),
+                  usagePercent: m.usagePercent ?? 0,
+                })),
+                diskReadBytes: Number(msg.healthReport.diskReadBytes ?? 0),
+                diskWriteBytes: Number(msg.healthReport.diskWriteBytes ?? 0),
+                networkInterfaces: (msg.healthReport.networkInterfaces ?? []).map((n: any) => ({
+                  name: n.name,
+                  rxBytes: Number(n.rxBytes ?? 0),
+                  txBytes: Number(n.txBytes ?? 0),
+                  rxPackets: Number(n.rxPackets ?? 0),
+                  txPackets: Number(n.txPackets ?? 0),
+                  rxErrors: Number(n.rxErrors ?? 0),
+                  txErrors: Number(n.txErrors ?? 0),
+                })),
+                nginxRssBytes: Number(msg.healthReport.nginxRssBytes ?? 0),
+                errorRate4xx: (msg.healthReport as any).errorRate_4xx ?? msg.healthReport.errorRate4xx ?? 0,
+                errorRate5xx: (msg.healthReport as any).errorRate_5xx ?? msg.healthReport.errorRate5xx ?? 0,
+                // Docker-specific fields
+                ...(msg.healthReport.dockerVersion ? { dockerVersion: msg.healthReport.dockerVersion } : {}),
+                ...(msg.healthReport.containersRunning != null
+                  ? { containersRunning: msg.healthReport.containersRunning }
+                  : {}),
+                ...(msg.healthReport.containersStopped != null
+                  ? { containersStopped: msg.healthReport.containersStopped }
+                  : {}),
+                ...(msg.healthReport.containersTotal != null
+                  ? { containersTotal: msg.healthReport.containersTotal }
+                  : {}),
+                ...(msg.healthReport.containerStats?.length
+                  ? {
+                      containerStats: msg.healthReport.containerStats.map((c: any) => ({
+                        containerId: c.containerId,
+                        name: c.name,
+                        image: c.image,
+                        state: c.state,
+                        cpuPercent: c.cpuPercent ?? 0,
+                        memoryUsageBytes: Number(c.memoryUsageBytes ?? 0),
+                        memoryLimitBytes: Number(c.memoryLimitBytes ?? 0),
+                        networkRxBytes: Number(c.networkRxBytes ?? 0),
+                        networkTxBytes: Number(c.networkTxBytes ?? 0),
+                        blockReadBytes: Number(c.blockReadBytes ?? 0),
+                        blockWriteBytes: Number(c.blockWriteBytes ?? 0),
+                        pids: c.pids ?? 0,
+                        metricsAvailable: hasDockerMetricSample(c),
+                      })),
+                    }
+                  : {}),
+              };
 
-              for (const container of nextContainerStats) {
-                if (!container.containerId) continue;
-                deps.registry.observeDockerContainerState(
-                  nodeId,
-                  container.containerId,
-                  container.name,
-                  container.state
+              const connectedNode = deps.registry.getNode(activeNodeId);
+              const previousContainerStats = Array.isArray((connectedNode?.lastHealthReport as any)?.containerStats)
+                ? (((connectedNode?.lastHealthReport as any)?.containerStats as any[]) ?? [])
+                : [];
+              const nextContainerStats = Array.isArray((healthData as any).containerStats)
+                ? (((healthData as any).containerStats as any[]) ?? [])
+                : [];
+
+              if (connectedNode?.type === 'docker') {
+                const nextContainerIds = new Set(
+                  nextContainerStats.map((container: any) => String(container.containerId))
                 );
+                for (const change of diffDockerContainerStateReports(previousContainerStats, nextContainerStats)) {
+                  deps.registry.publishDockerContainerChanged(
+                    activeNodeId,
+                    change.containerId,
+                    change.name,
+                    change.state,
+                    {
+                      observe: !nextContainerIds.has(change.containerId),
+                    }
+                  );
+                }
+
+                for (const container of nextContainerStats) {
+                  if (!container.containerId) continue;
+                  deps.registry.observeDockerContainerState(
+                    activeNodeId,
+                    container.containerId,
+                    container.name,
+                    container.state
+                  );
+                }
               }
-            }
 
-            deps.registry.updateHealthReport(nodeId, healthData);
+              deps.registry.updateHealthReport(activeNodeId, healthData);
 
-            // Evaluate notification alert rules (fire-and-forget, don't block health persistence)
-            try {
-              const evaluator = container.resolve(NotificationEvaluatorService);
-              evaluator.evaluateHealthReport(nodeId, healthData).catch((err) => {
-                logger.error('Alert evaluation failed', { nodeId, error: (err as Error).message });
-              });
-              evaluator
-                .observeStatefulEvent(
-                  'node',
-                  'online',
-                  { type: 'node', id: nodeId, name: connectedNode?.hostname ?? nodeId },
-                  { hostname: connectedNode?.hostname ?? nodeId }
-                )
-                .catch((err) => {
-                  logger.error('Stateful event observation failed', { nodeId, error: (err as Error).message });
-                });
-            } catch (resolveErr) {
-              logger.error('Evaluator resolve failed', { error: (resolveErr as Error).message });
-            }
-
-            // Persist health report and restore online status if node was marked offline (e.g. after missed reports)
-            const [currentRow] = await deps.db
-              .select({ status: nodes.status })
-              .from(nodes)
-              .where(eq(nodes.id, nodeId))
-              .limit(1);
-
-            const updatePayload: Record<string, unknown> = {
-              lastHealthReport: healthData,
-              lastSeenAt: new Date(),
-            };
-            if (currentRow?.status === 'offline') {
-              updatePayload.status = 'online';
-              updatePayload.updatedAt = new Date();
-              logger.info('Node resumed health reports, restored to online', { nodeId });
-            }
-
-            await deps.db.update(nodes).set(updatePayload).where(eq(nodes.id, nodeId));
-
-            // Publish status restoration event after DB write
-            if (currentRow?.status === 'offline') {
-              const connectedNode = deps.registry.getNode(nodeId);
-              deps.registry.publishNodeChanged(nodeId, 'online', connectedNode?.hostname);
-            }
-
-            // Record health history entry (same format as proxy health checks)
-            const nowMs = Date.now();
-            const lastTs = lastRecordedTs.get(nodeId) ?? 0;
-            if (nowMs - lastTs >= HEALTH_HISTORY_MIN_INTERVAL_MS) {
-              const isHealthy =
-                connectedNode?.type === 'nginx' ? healthData.nginxRunning && healthData.configValid : true;
-              const status = isHealthy ? 'online' : 'degraded';
-
+              // Evaluate notification alert rules (fire-and-forget, don't block health persistence)
               try {
-                const [histRow] = await deps.db
-                  .select({ healthHistory: nodes.healthHistory })
-                  .from(nodes)
-                  .where(eq(nodes.id, nodeId))
-                  .limit(1);
-
-                const history = compactHealthHistory(
-                  [
-                    ...((histRow?.healthHistory as Array<{ ts: string; status: string }>) ?? []),
-                    { ts: new Date(nowMs).toISOString(), status },
-                  ],
-                  { nowMs }
-                );
-
-                await deps.db.update(nodes).set({ healthHistory: history }).where(eq(nodes.id, nodeId));
-                lastRecordedTs.set(nodeId, nowMs);
-              } catch (err) {
-                logger.warn('Failed to update health history', { nodeId, error: (err as Error).message });
+                const evaluator = container.resolve(NotificationEvaluatorService);
+                evaluator.evaluateHealthReport(activeNodeId, healthData).catch((err) => {
+                  logger.error('Alert evaluation failed', { nodeId: activeNodeId, error: (err as Error).message });
+                });
+                evaluator
+                  .observeStatefulEvent(
+                    'node',
+                    'online',
+                    { type: 'node', id: activeNodeId, name: connectedNode?.hostname ?? activeNodeId },
+                    { hostname: connectedNode?.hostname ?? activeNodeId }
+                  )
+                  .catch((err) => {
+                    logger.error('Stateful event observation failed', {
+                      nodeId: activeNodeId,
+                      error: (err as Error).message,
+                    });
+                  });
+              } catch (resolveErr) {
+                logger.error('Evaluator resolve failed', { error: (resolveErr as Error).message });
               }
-            }
-          } else if (msg.statsReport && nodeId) {
-            deps.registry.updateStatsReport(nodeId, {
-              activeConnections: Number(msg.statsReport.activeConnections),
-              accepts: Number(msg.statsReport.accepts),
-              handled: Number(msg.statsReport.handled),
-              requests: Number(msg.statsReport.requests),
-              reading: msg.statsReport.reading,
-              writing: msg.statsReport.writing,
-              waiting: msg.statsReport.waiting,
-              timestamp: Number(msg.statsReport.timestamp),
-            });
 
-            await deps.db
-              .update(nodes)
-              .set({
-                lastStatsReport: {
-                  activeConnections: Number(msg.statsReport.activeConnections),
-                  accepts: Number(msg.statsReport.accepts),
-                  handled: Number(msg.statsReport.handled),
-                  requests: Number(msg.statsReport.requests),
-                  reading: msg.statsReport.reading,
-                  writing: msg.statsReport.writing,
-                  waiting: msg.statsReport.waiting,
-                  timestamp: Number(msg.statsReport.timestamp),
-                },
+              // Persist health report and restore online status if node was marked offline (e.g. after missed reports)
+              const [currentRow] = await deps.db
+                .select({ status: nodes.status })
+                .from(nodes)
+                .where(eq(nodes.id, activeNodeId))
+                .limit(1);
+              if (!isCurrentCommandStream()) {
+                await endStaleStream();
+                return;
+              }
+
+              const updatePayload: Record<string, unknown> = {
+                lastHealthReport: healthData,
                 lastSeenAt: new Date(),
-              })
-              .where(eq(nodes.id, nodeId));
-          } else if (msg.daemonLog && nodeId) {
-            // Relay daemon operational logs to SSE consumers
-            daemonLogRelay.emit('log', {
-              nodeId,
-              timestamp: msg.daemonLog.timestamp || new Date().toISOString(),
-              level: msg.daemonLog.level,
-              message: msg.daemonLog.message,
-              component: msg.daemonLog.component,
-              fields: msg.daemonLog.fields || {},
-            });
-            logger.debug('Daemon log', {
-              nodeId,
-              level: msg.daemonLog.level,
-              component: msg.daemonLog.component,
-              message: msg.daemonLog.message,
-            });
-          } else if (msg.execOutput && nodeId) {
-            // Route exec output to registered WebSocket handler
-            deps.registry.handleExecOutput(msg.execOutput.execId, msg.execOutput);
+              };
+              if (currentRow?.status === 'offline') {
+                updatePayload.status = 'online';
+                updatePayload.updatedAt = new Date();
+                logger.info('Node resumed health reports, restored to online', { nodeId: activeNodeId });
+              }
+
+              await deps.db.update(nodes).set(updatePayload).where(eq(nodes.id, activeNodeId));
+              if (!isCurrentCommandStream()) return;
+
+              // Publish status restoration event after DB write
+              if (currentRow?.status === 'offline') {
+                const connectedNode = deps.registry.getNode(activeNodeId);
+                deps.registry.publishNodeChanged(activeNodeId, 'online', connectedNode?.hostname);
+              }
+
+              // Record health history entry (same format as proxy health checks)
+              const nowMs = Date.now();
+              const lastTs = lastRecordedTs.get(activeNodeId) ?? 0;
+              if (nowMs - lastTs >= HEALTH_HISTORY_MIN_INTERVAL_MS) {
+                const isHealthy =
+                  connectedNode?.type === 'nginx' ? healthData.nginxRunning && healthData.configValid : true;
+                const status = isHealthy ? 'online' : 'degraded';
+
+                try {
+                  const [histRow] = await deps.db
+                    .select({ healthHistory: nodes.healthHistory })
+                    .from(nodes)
+                    .where(eq(nodes.id, activeNodeId))
+                    .limit(1);
+                  if (!isCurrentCommandStream()) return;
+
+                  const history = compactHealthHistory(
+                    [
+                      ...((histRow?.healthHistory as Array<{ ts: string; status: string }>) ?? []),
+                      { ts: new Date(nowMs).toISOString(), status },
+                    ],
+                    { nowMs }
+                  );
+
+                  await deps.db.update(nodes).set({ healthHistory: history }).where(eq(nodes.id, activeNodeId));
+                  if (!isCurrentCommandStream()) return;
+                  lastRecordedTs.set(activeNodeId, nowMs);
+                } catch (err) {
+                  logger.warn('Failed to update health history', {
+                    nodeId: activeNodeId,
+                    error: (err as Error).message,
+                  });
+                }
+              }
+            } else if (msg.statsReport) {
+              deps.registry.updateStatsReport(activeNodeId, {
+                activeConnections: Number(msg.statsReport.activeConnections),
+                accepts: Number(msg.statsReport.accepts),
+                handled: Number(msg.statsReport.handled),
+                requests: Number(msg.statsReport.requests),
+                reading: msg.statsReport.reading,
+                writing: msg.statsReport.writing,
+                waiting: msg.statsReport.waiting,
+                timestamp: Number(msg.statsReport.timestamp),
+              });
+
+              await deps.db
+                .update(nodes)
+                .set({
+                  lastStatsReport: {
+                    activeConnections: Number(msg.statsReport.activeConnections),
+                    accepts: Number(msg.statsReport.accepts),
+                    handled: Number(msg.statsReport.handled),
+                    requests: Number(msg.statsReport.requests),
+                    reading: msg.statsReport.reading,
+                    writing: msg.statsReport.writing,
+                    waiting: msg.statsReport.waiting,
+                    timestamp: Number(msg.statsReport.timestamp),
+                  },
+                  lastSeenAt: new Date(),
+                })
+                .where(eq(nodes.id, activeNodeId));
+              if (!isCurrentCommandStream()) return;
+            } else if (msg.daemonLog) {
+              // Relay daemon operational logs to SSE consumers
+              daemonLogRelay.emit('log', {
+                nodeId: activeNodeId,
+                timestamp: msg.daemonLog.timestamp || new Date().toISOString(),
+                level: msg.daemonLog.level,
+                message: msg.daemonLog.message,
+                component: msg.daemonLog.component,
+                fields: msg.daemonLog.fields || {},
+              });
+              logger.debug('Daemon log', {
+                nodeId: activeNodeId,
+                level: msg.daemonLog.level,
+                component: msg.daemonLog.component,
+                message: msg.daemonLog.message,
+              });
+            } else if (msg.execOutput) {
+              // Route exec output to registered WebSocket handler
+              deps.registry.handleExecOutput(msg.execOutput.execId, msg.execOutput);
+            }
           }
         } catch (err) {
           logger.error('Error processing daemon message', { nodeId, error: (err as Error).message });
@@ -508,6 +633,7 @@ export function createControlHandlers(deps: GrpcServerDeps) {
       });
 
       stream.on('end', async () => {
+        closed = true;
         if (nodeId) {
           logger.info('Node stream ended', { nodeId });
           lastRecordedTs.delete(nodeId);
@@ -523,6 +649,7 @@ export function createControlHandlers(deps: GrpcServerDeps) {
       });
 
       stream.on('error', async (err) => {
+        closed = true;
         if (nodeId) {
           logger.warn('Node stream error', { nodeId, error: err.message });
           lastRecordedTs.delete(nodeId);

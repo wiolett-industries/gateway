@@ -11,4 +11,9 @@ describe('MCP tool scope filtering', () => {
     expect(toolNames(['databases:view:db-1', 'databases:query:read:db-2'])).not.toContain('query_postgres_read');
     expect(toolNames(['databases:view:db-1', 'databases:query:read:db-1'])).toContain('query_postgres_read');
   });
+
+  it('does not advertise rendered proxy config reads through raw write implication', () => {
+    expect(toolNames(['proxy:raw:write:proxy-1'])).not.toContain('get_proxy_rendered_config');
+    expect(toolNames(['proxy:raw:read:proxy-1'])).toContain('get_proxy_rendered_config');
+  });
 });

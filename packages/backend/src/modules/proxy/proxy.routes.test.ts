@@ -76,6 +76,12 @@ function createApp() {
   return app;
 }
 
+function expectNoRawFields(value: unknown) {
+  const serialized = JSON.stringify(value);
+  expect(serialized).not.toContain('rawConfig');
+  expect(serialized).not.toContain('rawConfigEnabled');
+}
+
 describe('proxy routes programmatic raw config handling', () => {
   beforeEach(() => {
     mocks.authType = 'api-token';
@@ -98,6 +104,7 @@ describe('proxy routes programmatic raw config handling', () => {
 
     expect(listBody.data[0]).not.toHaveProperty('rawConfig');
     expect(listBody.data[0]).not.toHaveProperty('rawConfigEnabled');
+    expectNoRawFields(listBody);
 
     const detailResponse = await proxyRoutes.request('/host-1', {
       headers: { Authorization: 'Bearer gw_token' },
@@ -106,6 +113,7 @@ describe('proxy routes programmatic raw config handling', () => {
 
     expect(detailBody.data).not.toHaveProperty('rawConfig');
     expect(detailBody.data).not.toHaveProperty('rawConfigEnabled');
+    expectNoRawFields(detailBody);
   });
 
   it('redacts raw config from browser detail response without raw read scope', async () => {
@@ -120,6 +128,106 @@ describe('proxy routes programmatic raw config handling', () => {
     expect(response.status).toBe(200);
     expect(body.data.rawConfig).toBeNull();
     expect(body.data.rawConfigEnabled).toBe(true);
+  });
+
+  it('returns raw config to browser detail response with raw read scope', async () => {
+    mocks.authType = 'session';
+    mocks.scopes = ['proxy:view:host-1', 'proxy:raw:read:host-1'];
+
+    const response = await createApp().request('/host-1', {
+      headers: { Authorization: 'Bearer gw_token' },
+    });
+    const body = (await response.json()) as { data: Record<string, unknown> };
+
+    expect(response.status).toBe(200);
+    expect(body.data.rawConfig).toBe('server {}');
+    expect(body.data.rawConfigEnabled).toBe(true);
+  });
+
+  it('redacts raw config from browser write and toggle responses without explicit raw read scope', async () => {
+    mocks.authType = 'session';
+    mocks.scopes = ['proxy:create', 'proxy:raw:write'];
+
+    const createResponse = await createApp().request('/', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer gw_token',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        nodeId: '11111111-1111-4111-8111-111111111111',
+        domainNames: ['raw.example.com'],
+        forwardHost: 'upstream',
+        forwardPort: 8080,
+        rawConfig: 'server {}',
+      }),
+    });
+    const createBody = (await createResponse.json()) as { data: Record<string, unknown> };
+
+    expect(createResponse.status).toBe(201);
+    expect(createBody.data.rawConfig).toBeNull();
+    expect(createBody.data.rawConfigEnabled).toBe(true);
+
+    mocks.scopes = ['proxy:edit:host-1', 'proxy:raw:write:host-1'];
+    const updateResponse = await createApp().request('/host-1', {
+      method: 'PUT',
+      headers: {
+        Authorization: 'Bearer gw_token',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        rawConfig: 'server {}',
+      }),
+    });
+    const updateBody = (await updateResponse.json()) as { data: Record<string, unknown> };
+
+    expect(updateResponse.status).toBe(200);
+    expect(updateBody.data.rawConfig).toBeNull();
+    expect(updateBody.data.rawConfigEnabled).toBe(true);
+
+    mocks.scopes = ['proxy:edit:host-1'];
+    const toggleResponse = await createApp().request('/host-1/toggle', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer gw_token',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ enabled: false }),
+    });
+    const toggleBody = (await toggleResponse.json()) as { data: Record<string, unknown> };
+
+    expect(toggleResponse.status).toBe(200);
+    expect(toggleBody.data.rawConfig).toBeNull();
+    expect(toggleBody.data.rawConfigEnabled).toBe(true);
+  });
+
+  it('strips raw config fields from programmatic create update and toggle responses', async () => {
+    const createResponse = await jsonRequest('POST', '/', {
+      nodeId: '11111111-1111-4111-8111-111111111111',
+      domainNames: ['app.example.com'],
+      forwardHost: 'upstream',
+      forwardPort: 8080,
+    });
+    const createBody = (await createResponse.json()) as { data: Record<string, unknown> };
+
+    expect(createResponse.status).toBe(201);
+    expectNoRawFields(createBody);
+
+    const updateResponse = await jsonRequest('PUT', '/host-1', {
+      forwardHost: 'upstream',
+    });
+    const updateBody = (await updateResponse.json()) as { data: Record<string, unknown> };
+
+    expect(updateResponse.status).toBe(200);
+    expectNoRawFields(updateBody);
+
+    const toggleResponse = await jsonRequest('POST', '/host-1/toggle', {
+      enabled: false,
+    });
+    const toggleBody = (await toggleResponse.json()) as { data: Record<string, unknown> };
+
+    expect(toggleResponse.status).toBe(200);
+    expectNoRawFields(toggleBody);
   });
 
   it('rejects raw config create and update requests from programmatic auth', async () => {
@@ -155,6 +263,18 @@ describe('proxy routes programmatic raw config handling', () => {
 
   it('rejects rendered raw config reads from programmatic auth', async () => {
     const response = await proxyRoutes.request('/host-1/rendered-config', {
+      headers: { Authorization: 'Bearer gw_token' },
+    });
+
+    expect(response.status).toBe(403);
+    expect(mocks.proxyService.getRenderedConfig).not.toHaveBeenCalled();
+  });
+
+  it('requires explicit raw read scope for rendered raw config reads', async () => {
+    mocks.authType = 'session';
+    mocks.scopes = ['proxy:raw:write:host-1'];
+
+    const response = await createApp().request('/host-1/rendered-config', {
       headers: { Authorization: 'Bearer gw_token' },
     });
 

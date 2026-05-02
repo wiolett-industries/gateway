@@ -67,6 +67,7 @@ import { ProxyService } from '@/modules/proxy/proxy.service.js';
 import { NetworkSettingsService } from '@/modules/settings/network-settings.service.js';
 import { OutboundWebhookPolicyService } from '@/modules/settings/outbound-webhook-policy.service.js';
 import { SetupService } from '@/modules/setup/setup.service.js';
+import { SetupTokenPolicyService } from '@/modules/setup/setup-token-policy.js';
 import { ACMEService } from '@/modules/ssl/acme.service.js';
 import { SSLService } from '@/modules/ssl/ssl.service.js';
 import { StatusIncidentEvaluatorService } from '@/modules/status-page/status-incident-evaluator.service.js';
@@ -422,6 +423,9 @@ export async function initializeContainer(): Promise<void> {
   container.registerInstance(DomainsService, domainsService);
 
   // Setup service (bootstrap management SSL)
+  const setupTokenPolicyService = new SetupTokenPolicyService(db);
+  container.registerInstance(SetupTokenPolicyService, setupTokenPolicyService);
+
   const setupService = new SetupService(db, sslService, proxyService, domainsService);
   container.registerInstance(SetupService, setupService);
 

@@ -58,6 +58,8 @@ describe('Scope-based permissions', () => {
     it('does not let create-only or destructive action scopes satisfy read scopes', () => {
       expect(hasScope(['proxy:create'], 'proxy:view')).toBe(false);
       expect(hasScope(['proxy:delete'], 'proxy:view')).toBe(false);
+      expect(hasScope(['proxy:raw:write'], 'proxy:raw:read')).toBe(false);
+      expect(hasScope(['proxy:raw:write:host-1'], 'proxy:raw:read:host-1')).toBe(false);
       expect(hasScope(['notifications:webhooks:create'], 'notifications:webhooks:view')).toBe(false);
       expect(hasScope(['databases:create'], 'databases:view')).toBe(false);
       expect(hasScope(['databases:credentials:reveal'], 'databases:view')).toBe(false);
@@ -94,6 +96,7 @@ describe('Scope-based permissions', () => {
     it('matches resource-scoped variants without treating sibling scopes as matches', () => {
       expect(hasScopeBase(['proxy:edit:host-1'], 'proxy:edit')).toBe(true);
       expect(hasScopeBase(['proxy:edit:host-1'], 'proxy:view')).toBe(true);
+      expect(hasScopeBase(['proxy:raw:write:host-1'], 'proxy:raw:read')).toBe(false);
       expect(hasScopeBase(['proxy:advanced:bypass:host-1'], 'proxy:advanced')).toBe(false);
     });
   });

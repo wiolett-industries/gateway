@@ -12,6 +12,20 @@ import type { EventBusService } from '@/services/event-bus.service.js';
 
 const logger = createChildLogger('NodeRegistry');
 
+function closeStream(stream: { end?: () => void; destroy?: () => void } | null | undefined): void {
+  if (!stream) return;
+  try {
+    stream.end?.();
+  } catch {
+    /* ignore */
+  }
+  try {
+    stream.destroy?.();
+  } catch {
+    /* ignore */
+  }
+}
+
 export interface ConnectedNode {
   connectionId: string;
   nodeId: string;
@@ -182,25 +196,35 @@ export class NodeRegistryService {
     type: 'nginx' | 'bastion' | 'monitoring' | 'docker',
     hostname: string,
     configVersionHash: string,
-    commandStream: ServerDuplexStream<DaemonMessage, GatewayCommand>
+    commandStream: ServerDuplexStream<DaemonMessage, GatewayCommand>,
+    options: { isCurrentRegistration?: () => boolean } = {}
   ): Promise<void> {
     const connectionId = randomUUID();
+
+    if (options.isCurrentRegistration && !options.isCurrentRegistration()) {
+      throw new Error('Registration superseded');
+    }
+
+    await this.db
+      .update(nodes)
+      .set({
+        status: 'online',
+        lastSeenAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(nodes.id, nodeId));
+
+    if (options.isCurrentRegistration && !options.isCurrentRegistration()) {
+      throw new Error('Registration superseded');
+    }
 
     // Replace stale/overlapping connection for the same node ID.
     const existing = this.nodes.get(nodeId);
     if (existing) {
       logger.warn('Replacing existing daemon connection for node', { nodeId, hostname });
       this.cleanupPendingCommands(existing);
-      try {
-        existing.commandStream.end();
-      } catch {
-        /* ignore */
-      }
-      try {
-        (existing.commandStream as any).destroy?.();
-      } catch {
-        /* ignore */
-      }
+      closeStream(existing.logStream as any);
+      closeStream(existing.commandStream as any);
     }
 
     this.nodes.set(nodeId, {
@@ -218,15 +242,6 @@ export class NodeRegistryService {
       configVersionHash,
       pendingCommands: new Map(),
     });
-
-    await this.db
-      .update(nodes)
-      .set({
-        status: 'online',
-        lastSeenAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(eq(nodes.id, nodeId));
 
     logger.info('Node registered', { nodeId, type, hostname });
     this.eventBus?.publish('node.changed', { id: nodeId, action: 'updated', status: 'online', hostname });

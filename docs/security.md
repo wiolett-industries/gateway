@@ -30,6 +30,8 @@ This is intentional:
 
 The first-run setup creates Gateway groups and maps users to permissions. OIDC identities then receive Gateway capabilities through those groups.
 
+`SETUP_TOKEN` is only accepted by `/api/setup/*` before Gateway has any real non-system user. After first-run configuration creates a real user, the setup API returns 404 and bootstrap actions must use the authenticated UI/API. Keep the token out of tickets and chat because it is still privileged during the bootstrap window.
+
 ## Node Trust Uses PKI And mTLS
 
 Managed hosts run small daemons for nginx, Docker, or monitoring. Those daemons do not expose a management API to the network. Instead, they connect outbound to Gateway on the gRPC control-plane port, normally `9443/tcp`. Gateway daemon gRPC is always TLS; there is no plaintext development or production mode.

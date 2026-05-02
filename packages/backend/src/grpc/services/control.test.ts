@@ -1,5 +1,263 @@
-import { describe, expect, it } from 'vitest';
-import { diffDockerContainerStateReports } from './control.js';
+import { EventEmitter } from 'node:events';
+import { describe, expect, it, vi } from 'vitest';
+import { createControlHandlers, diffDockerContainerStateReports } from './control.js';
+
+vi.mock('@/config/env.js', () => ({
+  getEnv: () => ({ APP_VERSION: 'dev' }),
+}));
+
+vi.mock('@/container.js', () => ({
+  container: {
+    resolve: vi.fn(() => ({
+      clearNodeUpdateInProgressOnReconnect: vi.fn(),
+      resyncAllHostsOnNode: vi.fn(),
+    })),
+  },
+}));
+
+vi.mock('@/services/daemon-update.service.js', () => ({
+  DaemonUpdateService: class DaemonUpdateService {},
+}));
+
+const nodeId = '11111111-1111-4111-8111-111111111111';
+
+function makeDbNode(
+  node: null | { type?: string; configVersionHash?: string | null; certificateSerial?: string | null; status?: string }
+) {
+  return {
+    select: vi.fn(() => ({
+      from: vi.fn(() => ({
+        where: vi.fn(() => ({
+          limit: vi.fn(async () =>
+            node
+              ? [
+                  {
+                    type: node.type ?? 'nginx',
+                    configVersionHash: node.configVersionHash ?? null,
+                    certificateSerial: 'certificateSerial' in node ? node.certificateSerial : 'aa01',
+                    status: node.status ?? 'online',
+                  },
+                ]
+              : []
+          ),
+        })),
+      })),
+    })),
+    update: vi.fn(() => ({
+      set: vi.fn(() => ({
+        where: vi.fn(async () => undefined),
+      })),
+    })),
+  } as any;
+}
+
+function makeDelayedDbNode(
+  node: null | { type?: string; configVersionHash?: string | null; certificateSerial?: string | null; status?: string }
+) {
+  let resolveRows!: (
+    rows: Array<{
+      type: string;
+      configVersionHash: string | null;
+      certificateSerial: string | null;
+      status: string;
+    }>
+  ) => void;
+  const rowsPromise = new Promise<
+    Array<{
+      type: string;
+      configVersionHash: string | null;
+      certificateSerial: string | null;
+      status: string;
+    }>
+  >((resolve) => {
+    resolveRows = resolve;
+  });
+
+  return {
+    db: {
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({
+            limit: vi.fn(() => rowsPromise),
+          })),
+        })),
+      })),
+      update: vi.fn(() => ({
+        set: vi.fn(() => ({
+          where: vi.fn(async () => undefined),
+        })),
+      })),
+    } as any,
+    resolveRows: () =>
+      resolveRows(
+        node
+          ? [
+              {
+                type: node.type ?? 'nginx',
+                configVersionHash: node.configVersionHash ?? null,
+                certificateSerial: 'certificateSerial' in node ? (node.certificateSerial ?? null) : 'aa01',
+                status: node.status ?? 'online',
+              },
+            ]
+          : []
+      ),
+  };
+}
+
+function makeQueuedDbNode(
+  node: null | { type?: string; configVersionHash?: string | null; certificateSerial?: string | null; status?: string }
+) {
+  const resolvers: Array<() => void> = [];
+  const rowsPromise = () =>
+    new Promise<
+      Array<{
+        type: string;
+        configVersionHash: string | null;
+        certificateSerial: string | null;
+        status: string;
+      }>
+    >((resolve) => {
+      resolvers.push(() => {
+        resolve(
+          node
+            ? [
+                {
+                  type: node.type ?? 'nginx',
+                  configVersionHash: node.configVersionHash ?? null,
+                  certificateSerial: 'certificateSerial' in node ? (node.certificateSerial ?? null) : 'aa01',
+                  status: node.status ?? 'online',
+                },
+              ]
+            : []
+        );
+      });
+    });
+
+  return {
+    db: {
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({
+            limit: vi.fn(rowsPromise),
+          })),
+        })),
+      })),
+      update: vi.fn(() => ({
+        set: vi.fn(() => ({
+          where: vi.fn(async () => undefined),
+        })),
+      })),
+    } as any,
+    resolveNext: () => resolvers.shift()?.(),
+  };
+}
+
+function makeDbNodeWithFailingRegistrationMetadataUpdate() {
+  let updateCount = 0;
+  return {
+    select: vi.fn(() => ({
+      from: vi.fn(() => ({
+        where: vi.fn(() => ({
+          limit: vi.fn(async () => [
+            {
+              type: 'nginx',
+              configVersionHash: null,
+              certificateSerial: 'aa01',
+              status: 'online',
+            },
+          ]),
+        })),
+      })),
+    })),
+    update: vi.fn(() => ({
+      set: vi.fn(() => ({
+        where: vi.fn(async () => {
+          updateCount += 1;
+          if (updateCount === 1) throw new Error('metadata update failed');
+        }),
+      })),
+    })),
+  } as any;
+}
+
+function makeStream(options: {
+  cn?: string;
+  serialNumber?: string;
+  authorized?: boolean;
+  includeAuthorized?: boolean;
+}) {
+  const socket: Record<string, unknown> = {
+    authorizationError: options.authorized === false ? 'SELF_SIGNED_CERT_IN_CHAIN' : null,
+    getPeerCertificate: () => ({
+      subject: { CN: options.cn ?? nodeId },
+      serialNumber: options.serialNumber ?? 'aa01',
+    }),
+  };
+  if (options.includeAuthorized !== false) {
+    socket.authorized = options.authorized ?? true;
+  }
+
+  return Object.assign(new EventEmitter(), {
+    write: vi.fn(),
+    end: vi.fn(),
+    getPeer: () => '127.0.0.1:12345',
+    handler: {
+      http2Stream: {
+        session: {
+          socket,
+        },
+      },
+    },
+  }) as any;
+}
+
+function makeDeps(db: any) {
+  let connectedNode: { commandStream: unknown } | undefined;
+  return {
+    db,
+    registry: {
+      register: vi.fn(
+        async (_nodeId: string, type: string, hostname: string, _hash: string, commandStream: unknown) => {
+          connectedNode = { commandStream, type, hostname } as any;
+        }
+      ),
+      deregister: vi.fn(async (_nodeId: string, commandStream?: unknown) => {
+        if (!commandStream || connectedNode?.commandStream === commandStream) connectedNode = undefined;
+      }),
+      getNode: vi.fn(() => connectedNode),
+      handleCommandResult: vi.fn(),
+      handleLogStream: vi.fn(),
+    },
+    dispatch: {},
+    auditService: { log: vi.fn(async () => undefined) },
+    caService: {},
+    cryptoService: {},
+    systemCA: {},
+  } as any;
+}
+
+async function emitRegister(stream: EventEmitter & { end: ReturnType<typeof vi.fn>; write: ReturnType<typeof vi.fn> }) {
+  stream.emit('data', {
+    register: {
+      nodeId,
+      hostname: 'node-1',
+      nginxVersion: '1.27.0',
+      configVersionHash: 'hash-daemon',
+      daemonVersion: 'dev',
+      nginxUptimeSeconds: '10',
+      nginxRunning: true,
+      cpuModel: 'cpu',
+      cpuCores: 2,
+      architecture: 'x64',
+      kernelVersion: '6.0',
+      daemonType: 'nginx',
+      capabilities: [],
+    },
+  });
+  await vi.waitFor(() => {
+    expect(stream.end.mock.calls.length + stream.write.mock.calls.length).toBeGreaterThan(0);
+  });
+}
 
 describe('diffDockerContainerStateReports', () => {
   it('does not emit an exited change for an old ID when the same container name was recreated', () => {
@@ -24,5 +282,279 @@ describe('diffDockerContainerStateReports', () => {
     );
 
     expect(changes).toEqual([{ containerId: 'same-id', name: 'api', state: 'exited' }]);
+  });
+});
+
+describe('CommandStream daemon certificate identity', () => {
+  it('registers a node when authorized cert CN and serial match DB', async () => {
+    const db = makeDbNode({ certificateSerial: 'AA:01' });
+    const deps = makeDeps(db);
+    const stream = makeStream({ serialNumber: 'aa01' });
+
+    createControlHandlers(deps).CommandStream(stream);
+    await emitRegister(stream);
+
+    expect(deps.registry.register).toHaveBeenCalledWith(
+      nodeId,
+      'nginx',
+      'node-1',
+      'hash-daemon',
+      expect.anything(),
+      expect.objectContaining({ isCurrentRegistration: expect.any(Function) })
+    );
+  });
+
+  it('does not register a command stream that ends during async authentication', async () => {
+    const delayed = makeDelayedDbNode({ certificateSerial: 'aa01' });
+    const deps = makeDeps(delayed.db);
+    const stream = makeStream({ serialNumber: 'aa01' });
+
+    createControlHandlers(deps).CommandStream(stream);
+    stream.emit('data', {
+      register: {
+        nodeId,
+        hostname: 'node-1',
+        nginxVersion: '1.27.0',
+        configVersionHash: 'hash-daemon',
+        daemonVersion: 'dev',
+        nginxUptimeSeconds: '10',
+        nginxRunning: true,
+        cpuModel: 'cpu',
+        cpuCores: 2,
+        architecture: 'x64',
+        kernelVersion: '6.0',
+        daemonType: 'nginx',
+        capabilities: [],
+      },
+    });
+    stream.emit('end');
+    delayed.resolveRows();
+
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(deps.registry.register).not.toHaveBeenCalled();
+  });
+
+  it('ignores follow-up messages while registration serial validation is pending', async () => {
+    const delayed = makeDelayedDbNode({ certificateSerial: 'bb01' });
+    const deps = makeDeps(delayed.db);
+    const stream = makeStream({ serialNumber: 'aa01' });
+
+    createControlHandlers(deps).CommandStream(stream);
+    stream.emit('data', {
+      register: {
+        nodeId,
+        hostname: 'node-1',
+        nginxVersion: '1.27.0',
+        configVersionHash: 'hash-daemon',
+        daemonVersion: 'dev',
+        nginxUptimeSeconds: '10',
+        nginxRunning: true,
+        cpuModel: 'cpu',
+        cpuCores: 2,
+        architecture: 'x64',
+        kernelVersion: '6.0',
+        daemonType: 'nginx',
+        capabilities: [],
+      },
+    });
+    stream.emit('data', {
+      commandResult: {
+        commandId: 'cmd-1',
+        success: true,
+        error: '',
+        detail: '',
+      },
+    });
+    delayed.resolveRows();
+
+    await vi.waitFor(() => {
+      expect(stream.end).toHaveBeenCalled();
+    });
+
+    expect(deps.registry.handleCommandResult).not.toHaveBeenCalled();
+    expect(deps.registry.register).not.toHaveBeenCalled();
+  });
+
+  it('does not let an older pending registration replace a newer command stream', async () => {
+    const queued = makeQueuedDbNode({ certificateSerial: 'aa01' });
+    const deps = makeDeps(queued.db);
+    const oldStream = makeStream({ serialNumber: 'aa01' });
+    const newStream = makeStream({ serialNumber: 'aa01' });
+
+    createControlHandlers(deps).CommandStream(oldStream);
+    createControlHandlers(deps).CommandStream(newStream);
+    oldStream.emit('data', {
+      register: {
+        nodeId,
+        hostname: 'old-node',
+        nginxVersion: '1.27.0',
+        configVersionHash: 'old-hash',
+        daemonVersion: 'dev',
+        nginxUptimeSeconds: '10',
+        nginxRunning: true,
+        cpuModel: 'cpu',
+        cpuCores: 2,
+        architecture: 'x64',
+        kernelVersion: '6.0',
+        daemonType: 'nginx',
+        capabilities: [],
+      },
+    });
+    newStream.emit('data', {
+      register: {
+        nodeId,
+        hostname: 'new-node',
+        nginxVersion: '1.27.0',
+        configVersionHash: 'new-hash',
+        daemonVersion: 'dev',
+        nginxUptimeSeconds: '10',
+        nginxRunning: true,
+        cpuModel: 'cpu',
+        cpuCores: 2,
+        architecture: 'x64',
+        kernelVersion: '6.0',
+        daemonType: 'nginx',
+        capabilities: [],
+      },
+    });
+
+    queued.resolveNext();
+    queued.resolveNext();
+
+    await vi.waitFor(() => {
+      expect(deps.registry.register).toHaveBeenCalledTimes(1);
+    });
+
+    expect(deps.registry.register).toHaveBeenCalledWith(
+      nodeId,
+      'nginx',
+      'new-node',
+      'new-hash',
+      newStream,
+      expect.objectContaining({ isCurrentRegistration: expect.any(Function) })
+    );
+    expect(oldStream.end).toHaveBeenCalled();
+  });
+
+  it('deregisters and closes the stream when registration metadata update fails after registry insert', async () => {
+    const db = makeDbNodeWithFailingRegistrationMetadataUpdate();
+    const deps = makeDeps(db);
+    const stream = makeStream({ serialNumber: 'aa01' });
+
+    createControlHandlers(deps).CommandStream(stream);
+    stream.emit('data', {
+      register: {
+        nodeId,
+        hostname: 'node-1',
+        nginxVersion: '1.27.0',
+        configVersionHash: 'hash-daemon',
+        daemonVersion: 'dev',
+        nginxUptimeSeconds: '10',
+        nginxRunning: true,
+        cpuModel: 'cpu',
+        cpuCores: 2,
+        architecture: 'x64',
+        kernelVersion: '6.0',
+        daemonType: 'nginx',
+        capabilities: [],
+      },
+    });
+
+    await vi.waitFor(() => {
+      expect(deps.registry.deregister).toHaveBeenCalledWith(nodeId, stream);
+    });
+    expect(stream.end).toHaveBeenCalled();
+    expect(deps.registry.handleCommandResult).not.toHaveBeenCalled();
+  });
+
+  it('ignores messages from a stream that is no longer the registered command stream', async () => {
+    const db = makeDbNode({ certificateSerial: 'aa01' });
+    const deps = makeDeps(db);
+    const stream = makeStream({ serialNumber: 'aa01' });
+
+    createControlHandlers(deps).CommandStream(stream);
+    await emitRegister(stream);
+    deps.registry.getNode.mockReturnValue({ commandStream: makeStream({ serialNumber: 'aa01' }) });
+
+    stream.emit('data', {
+      commandResult: {
+        commandId: 'cmd-1',
+        success: true,
+        error: '',
+        detail: '',
+      },
+    });
+
+    expect(deps.registry.handleCommandResult).not.toHaveBeenCalled();
+    expect(stream.end).toHaveBeenCalled();
+  });
+
+  it('rejects registration when cert serial does not match DB', async () => {
+    const db = makeDbNode({ certificateSerial: 'bb01' });
+    const deps = makeDeps(db);
+    const stream = makeStream({ serialNumber: 'aa01' });
+
+    createControlHandlers(deps).CommandStream(stream);
+    await emitRegister(stream);
+
+    expect(deps.registry.register).not.toHaveBeenCalled();
+    expect(stream.end).toHaveBeenCalled();
+  });
+
+  it('does not retain claimed node identity after rejected registration', async () => {
+    const db = makeDbNode({ certificateSerial: 'bb01' });
+    const deps = makeDeps(db);
+    const stream = makeStream({ serialNumber: 'aa01' });
+
+    createControlHandlers(deps).CommandStream(stream);
+    await emitRegister(stream);
+    stream.emit('data', {
+      commandResult: {
+        commandId: 'cmd-1',
+        success: true,
+        error: '',
+        detail: '',
+      },
+    });
+
+    expect(deps.registry.register).not.toHaveBeenCalled();
+    expect(deps.registry.handleCommandResult).not.toHaveBeenCalled();
+  });
+
+  it('rejects registration when node certificate serial is missing', async () => {
+    const db = makeDbNode({ certificateSerial: null });
+    const deps = makeDeps(db);
+    const stream = makeStream({ serialNumber: 'aa01' });
+
+    createControlHandlers(deps).CommandStream(stream);
+    await emitRegister(stream);
+
+    expect(deps.registry.register).not.toHaveBeenCalled();
+    expect(stream.end).toHaveBeenCalled();
+  });
+
+  it('rejects registration when node is pending', async () => {
+    const db = makeDbNode({ certificateSerial: 'aa01', status: 'pending' });
+    const deps = makeDeps(db);
+    const stream = makeStream({ serialNumber: 'aa01' });
+
+    createControlHandlers(deps).CommandStream(stream);
+    await emitRegister(stream);
+
+    expect(deps.registry.register).not.toHaveBeenCalled();
+    expect(stream.end).toHaveBeenCalled();
+  });
+
+  it('rejects registration when mTLS authorization state is ambiguous', async () => {
+    const db = makeDbNode({ certificateSerial: 'aa01' });
+    const deps = makeDeps(db);
+    const stream = makeStream({ serialNumber: 'aa01', includeAuthorized: false });
+
+    createControlHandlers(deps).CommandStream(stream);
+    await emitRegister(stream);
+
+    expect(deps.registry.register).not.toHaveBeenCalled();
+    expect(stream.end).toHaveBeenCalled();
   });
 });

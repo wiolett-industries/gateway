@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { OpenAPIHono } from '@hono/zod-openapi';
+import type { Context, MiddlewareHandler } from 'hono';
 import { getEnv } from '@/config/env.js';
 import { container } from '@/container.js';
 import { createChildLogger } from '@/lib/logger.js';
@@ -8,6 +9,7 @@ import { NodesService } from '@/modules/nodes/nodes.service.js';
 import type { AppEnv } from '@/types.js';
 import { setupEnrollNodeRoute, setupManagementSslRoute, setupManagementSslUploadRoute } from './setup.docs.js';
 import { SetupService } from './setup.service.js';
+import { SetupTokenPolicyService } from './setup-token-policy.js';
 
 const logger = createChildLogger('SetupRoutes');
 
@@ -27,6 +29,27 @@ function verifySetupToken(authHeader: string | undefined): boolean {
     return false;
   }
 }
+
+async function setupApiDisabledResponse(c: Context<AppEnv>): Promise<Response | null> {
+  const policy = container.resolve(SetupTokenPolicyService);
+  const enabled = await policy.isSetupApiEnabled();
+  if (enabled) return null;
+
+  const path = new URL(c.req.url).pathname;
+  logger.warn('Disabled setup API endpoint requested after Gateway configuration', {
+    path,
+    method: c.req.method,
+  });
+  return c.notFound();
+}
+
+export const setupApiDisabledMiddleware: MiddlewareHandler<AppEnv> = async (c, next) => {
+  const disabled = await setupApiDisabledResponse(c);
+  if (disabled) return disabled;
+  await next();
+};
+
+setupRoutes.use('*', setupApiDisabledMiddleware);
 
 /**
  * POST /api/setup/management-ssl

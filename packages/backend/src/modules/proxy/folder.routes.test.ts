@@ -62,5 +62,8 @@ describe('folder route programmatic responses', () => {
     expect(result.folders[0].children[0].hosts[0]).not.toHaveProperty('rawConfigEnabled');
     expect(result.ungroupedHosts[0]).not.toHaveProperty('rawConfig');
     expect(result.ungroupedHosts[0]).not.toHaveProperty('rawConfigEnabled');
+    expect(JSON.stringify(result)).not.toContain('rawConfig');
+    expect(JSON.stringify(result)).not.toContain('rawConfigEnabled');
+    expect(JSON.stringify(result)).not.toContain('server {}');
   });
 });

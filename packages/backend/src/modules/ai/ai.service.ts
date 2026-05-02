@@ -23,6 +23,7 @@ import type { CertService } from '@/modules/pki/cert.service.js';
 import type { TemplatesService } from '@/modules/pki/templates.service.js';
 import type { FolderService } from '@/modules/proxy/folder.service.js';
 import type { ProxyService } from '@/modules/proxy/proxy.service.js';
+import { stripRawProxyConfigForProgrammatic } from '@/modules/proxy/raw-visibility.js';
 import type { SSLService } from '@/modules/ssl/ssl.service.js';
 import { SessionService } from '@/services/session.service.js';
 import type { User } from '@/types.js';
@@ -40,6 +41,16 @@ import type {
 const logger = createChildLogger('AIService');
 const BROAD_ONLY_TOOL_SCOPES = new Set(['create_proxy_host']);
 const DIRECT_DATABASE_VIEW_TOOLS = new Set(['list_databases', 'get_database_connection']);
+const DIRECT_RAW_READ_TOOLS = new Set(['get_proxy_rendered_config']);
+const PROXY_HOST_UPDATE_FIELDS = [
+  'domainNames',
+  'forwardHost',
+  'forwardPort',
+  'forwardScheme',
+  'sslEnabled',
+  'sslCertificateId',
+  'enabled',
+] as const;
 const ANY_SCOPE_TOOL_REQUIREMENTS: Record<string, string[]> = {
   list_cas: ['pki:ca:view:root', 'pki:ca:view:intermediate'],
   get_ca: ['pki:ca:view:root', 'pki:ca:view:intermediate'],
@@ -142,6 +153,13 @@ function hasToolExecutionScope(
   if (DIRECT_DATABASE_VIEW_TOOLS.has(toolName)) {
     return scopes.includes(requiredScope) || scopes.some((scope) => scope.startsWith(`${requiredScope}:`));
   }
+  if (DIRECT_RAW_READ_TOOLS.has(toolName)) {
+    const resourceId = getToolAuthorizationResourceId(toolName, args);
+    if (scopes.includes(requiredScope)) return true;
+    return resourceId
+      ? scopes.includes(`${requiredScope}:${resourceId}`)
+      : scopes.some((scope) => scope.startsWith(`${requiredScope}:`));
+  }
   const resourceId = getToolAuthorizationResourceId(toolName, args);
   return resourceId ? hasScopeForResource(scopes, requiredScope, resourceId) : hasScopeBase(scopes, requiredScope);
 }
@@ -167,25 +185,26 @@ function estimateMessagesTokens(messages: Record<string, unknown>[]): number {
 }
 
 function compactProxyHostForAgent(host: Record<string, any>) {
+  const safeHost = stripRawProxyConfigForProgrammatic(host);
   return {
-    id: host.id,
-    type: host.type,
-    domainNames: host.domainNames,
-    enabled: host.enabled,
-    nodeId: host.nodeId,
-    forwardScheme: host.forwardScheme,
-    forwardHost: host.forwardHost,
-    forwardPort: host.forwardPort,
-    sslEnabled: host.sslEnabled,
-    sslForced: host.sslForced,
-    sslCertificateId: host.sslCertificateId,
-    accessListId: host.accessListId,
-    healthCheckEnabled: host.healthCheckEnabled,
-    healthStatus: host.healthStatus,
-    effectiveHealthStatus: host.effectiveHealthStatus,
-    lastHealthCheckAt: host.lastHealthCheckAt,
-    createdAt: host.createdAt,
-    updatedAt: host.updatedAt,
+    id: safeHost.id,
+    type: safeHost.type,
+    domainNames: safeHost.domainNames,
+    enabled: safeHost.enabled,
+    nodeId: safeHost.nodeId,
+    forwardScheme: safeHost.forwardScheme,
+    forwardHost: safeHost.forwardHost,
+    forwardPort: safeHost.forwardPort,
+    sslEnabled: safeHost.sslEnabled,
+    sslForced: safeHost.sslForced,
+    sslCertificateId: safeHost.sslCertificateId,
+    accessListId: safeHost.accessListId,
+    healthCheckEnabled: safeHost.healthCheckEnabled,
+    healthStatus: safeHost.healthStatus,
+    effectiveHealthStatus: safeHost.effectiveHealthStatus,
+    lastHealthCheckAt: safeHost.lastHealthCheckAt,
+    createdAt: safeHost.createdAt,
+    updatedAt: safeHost.updatedAt,
   };
 }
 
@@ -815,49 +834,60 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
       case 'get_proxy_host':
         return compactProxyHostForAgent(await this.proxyService.getProxyHost(a.proxyHostId));
       case 'create_proxy_host':
-        return this.proxyService.createProxyHost(
-          {
-            type: a.type || 'proxy',
-            nodeId: a.nodeId,
-            domainNames: a.domainNames,
-            forwardHost: a.forwardHost,
-            forwardPort: a.forwardPort,
-            forwardScheme: a.forwardScheme || 'http',
-            sslEnabled: a.sslEnabled || false,
-            sslForced: a.sslForced || false,
-            http2Support: a.http2Support || false,
-            websocketSupport: a.websocketSupport || false,
-            sslCertificateId: a.sslCertificateId,
-            redirectUrl: a.redirectUrl,
-            redirectStatusCode: a.redirectStatusCode,
-            customHeaders: a.customHeaders || [],
-            cacheEnabled: a.cacheEnabled || false,
-            cacheOptions: a.cacheOptions,
-            rateLimitEnabled: a.rateLimitEnabled || false,
-            rateLimitOptions: a.rateLimitOptions,
-            customRewrites: [],
-            accessListId: a.accessListId,
-            nginxTemplateId: a.nginxTemplateId,
-            templateVariables: a.templateVariables,
-            healthCheckEnabled: a.healthCheckEnabled || false,
-            healthCheckUrl: a.healthCheckUrl,
-            healthCheckInterval: a.healthCheckInterval,
-            healthCheckExpectedStatus: a.healthCheckExpectedStatus,
-            healthCheckExpectedBody: a.healthCheckExpectedBody,
-          },
-          user.id
+        return compactProxyHostForAgent(
+          await this.proxyService.createProxyHost(
+            {
+              type: a.type || 'proxy',
+              nodeId: a.nodeId,
+              domainNames: a.domainNames,
+              forwardHost: a.forwardHost,
+              forwardPort: a.forwardPort,
+              forwardScheme: a.forwardScheme || 'http',
+              sslEnabled: a.sslEnabled || false,
+              sslForced: a.sslForced || false,
+              http2Support: a.http2Support || false,
+              websocketSupport: a.websocketSupport || false,
+              sslCertificateId: a.sslCertificateId,
+              redirectUrl: a.redirectUrl,
+              redirectStatusCode: a.redirectStatusCode,
+              customHeaders: a.customHeaders || [],
+              cacheEnabled: a.cacheEnabled || false,
+              cacheOptions: a.cacheOptions,
+              rateLimitEnabled: a.rateLimitEnabled || false,
+              rateLimitOptions: a.rateLimitOptions,
+              customRewrites: [],
+              accessListId: a.accessListId,
+              nginxTemplateId: a.nginxTemplateId,
+              templateVariables: a.templateVariables,
+              healthCheckEnabled: a.healthCheckEnabled || false,
+              healthCheckUrl: a.healthCheckUrl,
+              healthCheckInterval: a.healthCheckInterval,
+              healthCheckExpectedStatus: a.healthCheckExpectedStatus,
+              healthCheckExpectedBody: a.healthCheckExpectedBody,
+            },
+            user.id
+          )
         );
       case 'update_proxy_host': {
-        const { proxyHostId, advancedConfig: _ac, ...updateFields } = a;
+        const { proxyHostId, advancedConfig: _ac } = a;
+        if ('rawConfig' in a || 'rawConfigEnabled' in a || a.type === 'raw') {
+          throw new Error('Raw config changes require dedicated raw config tools');
+        }
         if (_ac && !hasScope(user.scopes, `proxy:advanced:${proxyHostId}`)) {
           throw new Error('Advanced config requires proxy:advanced scope');
         }
+        const updateFields = PROXY_HOST_UPDATE_FIELDS.reduce<Record<string, unknown>>((fields, field) => {
+          if (a[field] !== undefined) fields[field] = a[field];
+          return fields;
+        }, {});
         const bypassAdvancedValidation = hasScope(user.scopes, `proxy:advanced:bypass:${proxyHostId}`);
         const fields =
           _ac && hasScope(user.scopes, `proxy:advanced:${proxyHostId}`)
             ? { ...updateFields, advancedConfig: _ac }
             : updateFields;
-        return this.proxyService.updateProxyHost(proxyHostId, fields, user.id, { bypassAdvancedValidation });
+        return compactProxyHostForAgent(
+          await this.proxyService.updateProxyHost(proxyHostId, fields, user.id, { bypassAdvancedValidation })
+        );
       }
       case 'delete_proxy_host':
         await this.proxyService.deleteProxyHost(a.proxyHostId, user.id);
@@ -995,12 +1025,16 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
           throw new Error('Raw mode is not enabled on this proxy host. Enable it first with toggle_proxy_raw_mode.');
         }
         const bypassRawValidation = hasScope(user.scopes, `proxy:raw:bypass:${a.proxyHostId}`);
-        return this.proxyService.updateProxyHost(a.proxyHostId, { rawConfig: a.rawConfig } as any, user.id, {
-          bypassRawValidation,
-        });
+        return compactProxyHostForAgent(
+          await this.proxyService.updateProxyHost(a.proxyHostId, { rawConfig: a.rawConfig } as any, user.id, {
+            bypassRawValidation,
+          })
+        );
       }
       case 'toggle_proxy_raw_mode':
-        return this.proxyService.updateProxyHost(a.proxyHostId, { rawConfigEnabled: a.enabled } as any, user.id);
+        return compactProxyHostForAgent(
+          await this.proxyService.updateProxyHost(a.proxyHostId, { rawConfigEnabled: a.enabled } as any, user.id)
+        );
 
       // ── Permission Groups ──
       case 'list_groups':

@@ -3,7 +3,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { container } from '@/container.js';
 import { AIService } from '@/modules/ai/ai.service.js';
 import { DockerDeploymentService } from '@/modules/docker/docker-deployment.service.js';
+import { ProxyService } from '@/modules/proxy/proxy.service.js';
 import type { User } from '@/types.js';
+import { registerMcpResources } from './mcp-resources.js';
 
 const USER: User = {
   id: '11111111-1111-4111-8111-111111111111',
@@ -208,6 +210,7 @@ describe('AIService MCP audit behavior', () => {
             effectiveHealthStatus: 'online',
             lastHealthCheckAt: new Date('2026-04-30T00:00:00.000Z'),
             rawConfig: 'proxy_set_header X-Test value;',
+            rawConfigEnabled: true,
             createdAt: new Date('2026-04-29T00:00:00.000Z'),
             updatedAt: new Date('2026-04-30T00:00:00.000Z'),
           },
@@ -233,6 +236,182 @@ describe('AIService MCP audit behavior', () => {
     expect(JSON.stringify(result.result)).not.toContain('healthHistory');
     expect(JSON.stringify(result.result)).not.toContain('healthCheckExpectedBody');
     expect(JSON.stringify(result.result)).not.toContain('rawConfig');
+    expect(JSON.stringify(result.result)).not.toContain('rawConfigEnabled');
+    expect(JSON.stringify(result.result)).not.toContain('proxy_set_header X-Test value');
+  });
+
+  it('returns compact proxy host detail payloads without raw config fields', async () => {
+    const auditService = { log: vi.fn().mockResolvedValue(undefined) };
+    const proxyService = {
+      getProxyHost: vi.fn().mockResolvedValue({
+        id: 'proxy-1',
+        type: 'raw',
+        domainNames: ['app.example.com'],
+        enabled: true,
+        nodeId: 'node-1',
+        rawConfig: 'server { proxy_set_header Authorization secret; }',
+        rawConfigEnabled: true,
+      }),
+    };
+    const service = createService({ nodesService: {}, proxyService, auditService });
+
+    const result = await service.executeTool(
+      USER,
+      'get_proxy_host',
+      { proxyHostId: 'proxy-1' },
+      { source: 'mcp', scopes: ['proxy:view:proxy-1'] }
+    );
+
+    expect(result.error).toBeUndefined();
+    expect(result.result).toMatchObject({ id: 'proxy-1', type: 'raw', domainNames: ['app.example.com'] });
+    expect(JSON.stringify(result.result)).not.toContain('rawConfig');
+    expect(JSON.stringify(result.result)).not.toContain('rawConfigEnabled');
+    expect(JSON.stringify(result.result)).not.toContain('proxy_set_header Authorization');
+  });
+
+  it('returns compact proxy mutation payloads without raw config fields', async () => {
+    const auditService = { log: vi.fn().mockResolvedValue(undefined) };
+    const rawProxyHost = {
+      id: 'proxy-1',
+      type: 'raw',
+      domainNames: ['app.example.com'],
+      enabled: true,
+      nodeId: 'node-1',
+      forwardHost: 'app',
+      forwardPort: 3000,
+      rawConfig: 'server { proxy_set_header Authorization secret; }',
+      rawConfigEnabled: true,
+    };
+    const proxyService = {
+      createProxyHost: vi.fn().mockResolvedValue(rawProxyHost),
+      updateProxyHost: vi.fn().mockResolvedValue(rawProxyHost),
+      getProxyHost: vi.fn().mockResolvedValue(rawProxyHost),
+    };
+    const service = createService({ nodesService: {}, proxyService, auditService });
+
+    const results = await Promise.all([
+      service.executeTool(
+        USER,
+        'create_proxy_host',
+        { nodeId: 'node-1', domainNames: ['app.example.com'], forwardHost: 'app', forwardPort: 3000 },
+        { source: 'mcp', scopes: ['proxy:create'] }
+      ),
+      service.executeTool(
+        USER,
+        'update_proxy_host',
+        { proxyHostId: 'proxy-1', enabled: false },
+        { source: 'mcp', scopes: ['proxy:edit:proxy-1'] }
+      ),
+      service.executeTool(
+        USER,
+        'update_proxy_raw_config',
+        { proxyHostId: 'proxy-1', rawConfig: 'server { return 204; }' },
+        { source: 'mcp', scopes: ['proxy:raw:write:proxy-1'] }
+      ),
+      service.executeTool(
+        USER,
+        'toggle_proxy_raw_mode',
+        { proxyHostId: 'proxy-1', enabled: true },
+        { source: 'mcp', scopes: ['proxy:raw:toggle:proxy-1'] }
+      ),
+    ]);
+
+    for (const result of results) {
+      expect(result.error).toBeUndefined();
+      expect(result.result).toMatchObject({ id: 'proxy-1', type: 'raw', domainNames: ['app.example.com'] });
+      expect(JSON.stringify(result.result)).not.toContain('rawConfig');
+      expect(JSON.stringify(result.result)).not.toContain('rawConfigEnabled');
+      expect(JSON.stringify(result.result)).not.toContain('proxy_set_header Authorization');
+    }
+  });
+
+  it('rejects raw proxy field smuggling through generic proxy host updates', async () => {
+    const auditService = { log: vi.fn().mockResolvedValue(undefined) };
+    const proxyService = {
+      updateProxyHost: vi.fn().mockResolvedValue({ id: 'proxy-1' }),
+    };
+    const service = createService({ nodesService: {}, proxyService, auditService });
+
+    const result = await service.executeTool(
+      { ...USER, scopes: ['proxy:edit:proxy-1'] },
+      'update_proxy_host',
+      { proxyHostId: 'proxy-1', rawConfig: 'server { return 204; }' },
+      { source: 'mcp', scopes: ['proxy:edit:proxy-1'], tokenId: 'token-1', tokenPrefix: 'gwo_abc1234' }
+    );
+
+    expect(result.error).toBe('Raw config changes require dedicated raw config tools');
+    expect(proxyService.updateProxyHost).not.toHaveBeenCalled();
+  });
+
+  it('requires explicit raw read scope before returning rendered proxy config through MCP', async () => {
+    const auditService = { log: vi.fn().mockResolvedValue(undefined) };
+    const proxyService = {
+      getProxyHost: vi.fn().mockResolvedValue({ id: 'proxy-1' }),
+      getRenderedConfig: vi.fn().mockResolvedValue('server { return 204; }'),
+    };
+    const service = createService({ nodesService: {}, proxyService, auditService });
+
+    const denied = await service.executeTool(
+      { ...USER, scopes: ['proxy:raw:write:proxy-1'] },
+      'get_proxy_rendered_config',
+      { proxyHostId: 'proxy-1' },
+      { source: 'mcp', scopes: ['proxy:raw:write:proxy-1'], tokenId: 'token-1', tokenPrefix: 'gwo_abc1234' }
+    );
+
+    expect(denied.error).toContain('PERMISSION_DENIED');
+    expect(proxyService.getRenderedConfig).not.toHaveBeenCalled();
+
+    const allowed = await service.executeTool(
+      { ...USER, scopes: ['proxy:raw:read:proxy-1'] },
+      'get_proxy_rendered_config',
+      { proxyHostId: 'proxy-1' },
+      { source: 'mcp', scopes: ['proxy:raw:read:proxy-1'], tokenId: 'token-1', tokenPrefix: 'gwo_abc1234' }
+    );
+
+    expect(allowed.error).toBeUndefined();
+    expect(allowed.result).toEqual({ proxyHostId: 'proxy-1', config: 'server { return 204; }' });
+  });
+
+  it('returns MCP proxy host resources without raw config fields', async () => {
+    const callbacks: Record<string, (uri: URL) => Promise<unknown>> = {};
+    const server = {
+      registerResource: vi.fn((_: string, uri: string, __: unknown, read: (uri: URL) => Promise<unknown>) => {
+        callbacks[uri] = read;
+      }),
+    };
+    container.registerInstance(ProxyService, {
+      listProxyHosts: vi.fn().mockResolvedValue({
+        data: [
+          {
+            id: 'proxy-1',
+            type: 'raw',
+            domainNames: ['app.example.com'],
+            enabled: true,
+            nodeId: 'node-1',
+            forwardHost: 'app',
+            forwardPort: 3000,
+            sslEnabled: false,
+            healthStatus: 'online',
+            effectiveHealthStatus: 'online',
+            rawConfig: 'server { proxy_set_header X-Test value; }',
+            rawConfigEnabled: true,
+          },
+        ],
+        pagination: { total: 1 },
+      }),
+    } as unknown as ProxyService);
+
+    registerMcpResources(server as never, ['proxy:view']);
+
+    const result = (await callbacks['gateway://proxy/hosts'](new URL('gateway://proxy/hosts'))) as {
+      contents: Array<{ text: string }>;
+    };
+    const body = JSON.parse(result.contents[0].text);
+
+    expect(body.hosts[0]).toMatchObject({ id: 'proxy-1', type: 'raw', domainNames: ['app.example.com'] });
+    expect(JSON.stringify(body)).not.toContain('rawConfig');
+    expect(JSON.stringify(body)).not.toContain('rawConfigEnabled');
+    expect(JSON.stringify(body)).not.toContain('proxy_set_header X-Test value');
   });
 
   it('returns compact Docker container list payloads without embedded health check details', async () => {

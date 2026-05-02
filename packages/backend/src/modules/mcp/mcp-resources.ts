@@ -6,6 +6,7 @@ import { LoggingEnvironmentService } from '@/modules/logging/logging-environment
 import { MonitoringService } from '@/modules/monitoring/monitoring.service.js';
 import { NodesService } from '@/modules/nodes/nodes.service.js';
 import { ProxyService } from '@/modules/proxy/proxy.service.js';
+import { stripRawProxyConfigForProgrammatic } from '@/modules/proxy/raw-visibility.js';
 import { SSLService } from '@/modules/ssl/ssl.service.js';
 import { StatusPageService } from '@/modules/status-page/status-page.service.js';
 
@@ -144,18 +145,21 @@ const operationalResources: ResourceDefinition[] = [
         );
       return {
         total: result.pagination.total,
-        hosts: take(result.data).map((host) => ({
-          id: host.id,
-          domainNames: host.domainNames,
-          type: host.type,
-          enabled: host.enabled,
-          nodeId: host.nodeId,
-          forwardHost: host.forwardHost,
-          forwardPort: host.forwardPort,
-          sslEnabled: host.sslEnabled,
-          healthStatus: host.healthStatus,
-          effectiveHealthStatus: (host as { effectiveHealthStatus?: string }).effectiveHealthStatus,
-        })),
+        hosts: take(result.data).map((host) => {
+          const safeHost = stripRawProxyConfigForProgrammatic(host as any);
+          return {
+            id: safeHost.id,
+            domainNames: safeHost.domainNames,
+            type: safeHost.type,
+            enabled: safeHost.enabled,
+            nodeId: safeHost.nodeId,
+            forwardHost: safeHost.forwardHost,
+            forwardPort: safeHost.forwardPort,
+            sslEnabled: safeHost.sslEnabled,
+            healthStatus: safeHost.healthStatus,
+            effectiveHealthStatus: (safeHost as { effectiveHealthStatus?: string }).effectiveHealthStatus,
+          };
+        }),
       };
     },
   },

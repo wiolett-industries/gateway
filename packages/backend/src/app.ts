@@ -63,7 +63,7 @@ import { templateRoutes } from '@/modules/pki/templates.routes.js';
 import { folderRoutes } from '@/modules/proxy/folder.routes.js';
 import { nginxTemplateRoutes } from '@/modules/proxy/nginx-template.routes.js';
 import { proxyRoutes } from '@/modules/proxy/proxy.routes.js';
-import { setupRoutes } from '@/modules/setup/setup.routes.js';
+import { setupApiDisabledMiddleware, setupRoutes } from '@/modules/setup/setup.routes.js';
 import { sslRoutes } from '@/modules/ssl/ssl.routes.js';
 import { publicStatusPageRoutes, statusPageRoutes } from '@/modules/status-page/status-page.routes.js';
 import { StatusPageService } from '@/modules/status-page/status-page.service.js';
@@ -177,6 +177,7 @@ export function createApp() {
     '/api/docker/nodes/:nodeId/containers/:containerId/files/write',
     requestBodyLimit(env.DOCKER_FILE_WRITE_MAX_BODY_BYTES)
   );
+  app.use('/api/setup/*', setupApiDisabledMiddleware);
   app.use('/api/*', requestBodyLimit(env.REQUEST_BODY_MAX_BYTES));
 
   // Rate limiting for API and public PKI routes

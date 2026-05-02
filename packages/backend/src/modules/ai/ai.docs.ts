@@ -90,6 +90,8 @@ When an SSL cert is assigned to a proxy host, Gateway:
 - folderId: organize into folders.
 - nginxTemplateId: use a custom nginx template.
 
+Ordinary list_proxy_hosts and get_proxy_host responses omit rawConfig and rawConfigEnabled. Raw content is only available through explicit raw config read/render tools with raw-read permission.
+
 ## Nginx Config
 Each proxy host generates an nginx server block. Changes are applied by reloading nginx.
 Config templates can customize the generated config (see templates topic).
@@ -284,6 +286,8 @@ Gateway manages nginx reverse proxies through daemon nodes running on remote ser
 - When rawConfigEnabled is true on a proxy host, the template rendering is bypassed entirely
 - The rawConfig field is used directly as the nginx server block content
 - Useful for complex configurations that templates can't express
+- Ordinary proxy host list/detail responses omit rawConfig and rawConfigEnabled
+- Raw content can only be read through explicit raw config read/render paths with raw-read permission
 - Requires proxy:raw:toggle and proxy:raw:write scopes
 - proxy:raw:bypass can bypass dangerous raw directive validation for the same proxy host
 - Use get_proxy_rendered_config to see the current generated config before switching to raw mode

@@ -31,6 +31,11 @@ import {
   ValidateAdvancedConfigSchema,
 } from './proxy.schemas.js';
 import { ProxyService } from './proxy.service.js';
+import {
+  redactRawProxyConfigForBrowser,
+  stripRawProxyConfigArrayForProgrammatic,
+  stripRawProxyConfigForProgrammatic,
+} from './raw-visibility.js';
 
 export const proxyRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
 
@@ -44,13 +49,12 @@ function requestTogglesRawProxyConfig(input: { type?: string; rawConfigEnabled?:
   return input.type === 'raw' || input.rawConfigEnabled !== undefined;
 }
 
-function stripRawProxyConfig<T extends Record<string, unknown>>(host: T): Omit<T, 'rawConfig' | 'rawConfigEnabled'> {
-  const { rawConfig: _rawConfig, rawConfigEnabled: _rawConfigEnabled, ...rest } = host;
-  return rest;
+function canReadRawProxyConfig(scopes: string[], id: string) {
+  return scopes.includes('proxy:raw:read') || scopes.includes(`proxy:raw:read:${id}`);
 }
 
-function redactRawProxyConfig<T extends Record<string, unknown>>(host: T): T {
-  return { ...host, rawConfig: null };
+function serializeProxyHostForBrowser(host: Record<string, unknown>, scopes: string[], id: string) {
+  return canReadRawProxyConfig(scopes, id) ? host : redactRawProxyConfigForBrowser(host);
 }
 
 proxyRoutes.openapi({ ...listProxyHostsRoute, middleware: requireScopeBase('proxy:view') }, async (c) => {
@@ -62,7 +66,7 @@ proxyRoutes.openapi({ ...listProxyHostsRoute, middleware: requireScopeBase('prox
     hasScope(scopes, 'proxy:view') ? undefined : { allowedIds: getResourceScopedIds(scopes, 'proxy:view') }
   );
   if (isProgrammaticAuth(c)) {
-    return c.json({ ...result, data: result.data.map((host: any) => stripRawProxyConfig(host)) });
+    return c.json({ ...result, data: stripRawProxyConfigArrayForProgrammatic(result.data as any[]) });
   }
   return c.json(result);
 });
@@ -71,12 +75,9 @@ proxyRoutes.openapi({ ...getProxyHostRoute, middleware: requireScopeForResource(
   const proxyService = container.resolve(ProxyService);
   const id = c.req.param('id')!;
   const host = await proxyService.getProxyHost(id);
-  if (isProgrammaticAuth(c)) return c.json({ data: stripRawProxyConfig(host as any) });
+  if (isProgrammaticAuth(c)) return c.json({ data: stripRawProxyConfigForProgrammatic(host as any) });
   const scopes = c.get('effectiveScopes') || [];
-  if (!hasScope(scopes, `proxy:raw:read:${id}`) && !hasScope(scopes, 'proxy:raw:read')) {
-    return c.json({ data: redactRawProxyConfig(host as any) });
-  }
-  return c.json({ data: host });
+  return c.json({ data: serializeProxyHostForBrowser(host as any, scopes, id) });
 });
 
 proxyRoutes.openapi(
@@ -115,8 +116,8 @@ proxyRoutes.openapi({ ...createProxyHostRoute, middleware: requireScope('proxy:c
     bypassAdvancedValidation,
     bypassRawValidation,
   });
-  if (isProgrammaticAuth(c)) return c.json({ data: stripRawProxyConfig(host as any) }, 201);
-  return c.json({ data: host }, 201);
+  if (isProgrammaticAuth(c)) return c.json({ data: stripRawProxyConfigForProgrammatic(host as any) }, 201);
+  return c.json({ data: serializeProxyHostForBrowser(host as any, scopes, (host as any).id) }, 201);
 });
 
 proxyRoutes.openapi({ ...updateProxyHostRoute, middleware: requireScopeForResource('proxy:edit', 'id') }, async (c) => {
@@ -150,8 +151,8 @@ proxyRoutes.openapi({ ...updateProxyHostRoute, middleware: requireScopeForResour
     bypassAdvancedValidation,
     bypassRawValidation,
   });
-  if (isProgrammaticAuth(c)) return c.json({ data: stripRawProxyConfig(host as any) });
-  return c.json({ data: host });
+  if (isProgrammaticAuth(c)) return c.json({ data: stripRawProxyConfigForProgrammatic(host as any) });
+  return c.json({ data: serializeProxyHostForBrowser(host as any, scopes, id) });
 });
 
 proxyRoutes.openapi(
@@ -171,14 +172,15 @@ proxyRoutes.openapi({ ...toggleProxyHostRoute, middleware: requireScopeForResour
   const id = c.req.param('id')!;
   const { enabled } = ToggleProxyHostSchema.parse(await c.req.json());
   const host = await proxyService.toggleProxyHost(id, enabled, user.id);
-  if (isProgrammaticAuth(c)) return c.json({ data: stripRawProxyConfig(host as any) });
-  return c.json({ data: host });
+  if (isProgrammaticAuth(c)) return c.json({ data: stripRawProxyConfigForProgrammatic(host as any) });
+  const scopes = c.get('effectiveScopes') || [];
+  return c.json({ data: serializeProxyHostForBrowser(host as any, scopes, id) });
 });
 
 proxyRoutes.openapi({ ...renderedProxyConfigRoute, middleware: sessionOnly }, async (c) => {
   const id = c.req.param('id')!;
   const scopes = c.get('effectiveScopes') || [];
-  if (!hasScope(scopes, `proxy:raw:read:${id}`) && !hasScope(scopes, 'proxy:raw:read')) {
+  if (!scopes.includes(`proxy:raw:read:${id}`) && !scopes.includes('proxy:raw:read')) {
     return c.json({ message: `Missing required scope: proxy:raw:read:${id}` }, 403);
   }
   const proxyService = container.resolve(ProxyService);
