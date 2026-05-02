@@ -14,13 +14,14 @@ From the UI:
 2. Review the available version.
 3. Click **Update**.
 
-Gateway pulls the selected image and recreates its own container.
+Gateway verifies the signed release manifest, pulls the selected image by its immutable digest, updates `GATEWAY_IMAGE_REF`, and recreates its own container. Automatic gateway updates fail closed when the signed manifest is missing, invalid, or does not match the requested version and running image repository.
 
 Manual update:
 
 ```bash
 # Edit .env first, for example:
 # GATEWAY_VERSION=v2.0.0
+# GATEWAY_IMAGE_REF=registry.gitlab.wiolett.net/wiolett/gateway:v2.0.0
 docker compose pull
 docker compose up -d
 ```
@@ -31,11 +32,13 @@ From a node detail page, click **Update** when an update is available.
 
 The update flow:
 
-1. Gateway downloads the daemon binary.
-2. Gateway verifies the SHA256 checksum.
-3. Gateway performs an atomic binary replacement.
-4. Gateway restarts the daemon systemd service.
+1. Gateway fetches and verifies the signed daemon update manifest.
+2. Gateway dispatches the signed manifest, download URL, and verified SHA256 checksum to the daemon.
+3. New daemons verify the signed manifest locally before downloading.
+4. The daemon verifies the downloaded binary checksum, replaces the binary atomically, and exits for systemd restart.
 5. The daemon reconnects and reports its new version.
+
+Existing daemons from before signed-manifest support can perform one transition update. In that case Gateway verifies the signed manifest before dispatch, and the old daemon enforces the verified SHA256 checksum. After that transition, daemon-side signature verification is enforced for future updates.
 
 ## Configuration Reference
 
@@ -48,6 +51,7 @@ The installer writes `.env`. Important settings:
 | `DATABASE_URL` | PostgreSQL connection URL. |
 | `REDIS_URL` | Redis connection URL. |
 | `CLICKHOUSE_URL` | Enables structured logging when set. |
+| `GATEWAY_IMAGE_REF` | Gateway image reference used by Compose. Installer defaults this to `${GATEWAY_IMAGE}:${GATEWAY_VERSION}`; signed self-updates replace it with `image@sha256:<digest>`. |
 | `CLICKHOUSE_USERNAME` | ClickHouse username. |
 | `CLICKHOUSE_PASSWORD` | ClickHouse password. |
 | `CLICKHOUSE_DATABASE` | ClickHouse database. |
@@ -75,6 +79,12 @@ The installer writes `.env`. Important settings:
 See [.env.example](../.env.example) for the full development reference.
 
 Redis is required infrastructure. Gateway uses it for sessions, cache, and rate limiting; if Redis is unavailable, `/health` returns `503` and Redis-backed rate-limited API/auth/public surfaces fail closed with `RATE_LIMIT_UNAVAILABLE`.
+
+## Update Signing Operations
+
+Gateway and daemon automatic updates require signed release manifests. Release CI must have `UPDATE_SIGNING_PRIVATE_KEY_PEM_B64` set to a base64-encoded Ed25519 private key PEM. The corresponding public key is compiled into Gateway and daemon binaries.
+
+If `UPDATE_SIGNING_PRIVATE_KEY_PEM_B64` is missing, gateway and daemon release jobs fail instead of publishing unsigned automatic-update artifacts. To rotate the update signing key, generate a new key pair, update `config/update-trust/update-signing-public-key.pem`, deploy that release, then switch CI to the new private key.
 
 ## Container Log Rotation
 

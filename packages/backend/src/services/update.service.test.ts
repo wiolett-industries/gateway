@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isGatewayReleaseTag, selectLatestGatewayRelease } from './update.service.js';
+import { imageRepositoryFromRef, isGatewayReleaseTag, selectLatestGatewayRelease } from './update.service.js';
 
 describe('UpdateService release selection', () => {
   describe('isGatewayReleaseTag', () => {
@@ -54,5 +54,23 @@ describe('UpdateService release selection', () => {
 
       expect(latest).toBeNull();
     });
+  });
+});
+
+describe('imageRepositoryFromRef', () => {
+  it('removes a mutable tag after a registry port', () => {
+    expect(imageRepositoryFromRef('registry.example.com:5050/wiolett/gateway:v2.3.0')).toBe(
+      'registry.example.com:5050/wiolett/gateway'
+    );
+  });
+
+  it('removes a digest from an immutable image reference', () => {
+    expect(imageRepositoryFromRef('registry.example.com/wiolett/gateway@sha256:abc')).toBe(
+      'registry.example.com/wiolett/gateway'
+    );
+  });
+
+  it('keeps untagged image references unchanged', () => {
+    expect(imageRepositoryFromRef('registry.example.com/wiolett/gateway')).toBe('registry.example.com/wiolett/gateway');
   });
 });

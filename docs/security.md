@@ -172,12 +172,14 @@ Use this baseline for production:
 - Limit `admin:system`, update, secret reveal, certificate export, console, and file-access scopes to trusted operators.
 - Keep daemon setup tokens and generated fingerprints short-lived operationally: copy once, enroll, and do not store setup commands in tickets or chat.
 - Enroll daemons against a direct trusted `9443/tcp` Gateway endpoint, and keep the generated `--gateway-cert-sha256` value when changing only the endpoint host.
-- Keep Gateway and daemons updated.
+- Keep Gateway and daemons updated through signed release manifests. Automatic updates fail closed when the manifest is missing, invalid, or does not match the exact gateway image digest or daemon binary checksum.
 - Review audit logs after sensitive changes.
 
 ## Threat Model Notes
 
 Gateway reduces the risk of node hijacking by pinning first enrollment to the generated Gateway gRPC TLS leaf fingerprint, replacing setup tokens with per-node mTLS certificates, verifying certificate identity on daemon streams, and revoking node certificates on deletion. This is the security property operators should care about most: initial token submission depends on reaching the expected Gateway certificate, and ongoing control of a managed node depends on possession of that node's private key and a certificate that Gateway issued for that exact node identity.
+
+Gateway and daemon self-updates use a compiled Ed25519 public key to verify signed release manifests. The private update signing key must live only in CI as `UPDATE_SIGNING_PRIVATE_KEY_PEM_B64`; it must not be stored in the repository, `.env`, tickets, or chat. Gateway image updates are installed by signed digest, and daemon binary updates are installed only after signed-manifest and SHA256 verification.
 
 Gateway does not remove the need for host security:
 

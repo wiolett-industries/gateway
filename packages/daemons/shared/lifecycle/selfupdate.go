@@ -7,20 +7,54 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
+
+	"github.com/wiolett-industries/gateway/daemon-shared/updateauth"
 )
 
 // SelfUpdate downloads a new binary from downloadURL, verifies its checksum,
 // replaces the current binary, and triggers a restart via systemd.
-func SelfUpdate(downloadURL, targetVersion, expectedChecksum string, logger *slog.Logger) error {
+func SelfUpdate(downloadURL, targetVersion, expectedChecksum, signedManifest, daemonType string, logger *slog.Logger) error {
 	logger.Info("starting self-update",
 		"target_version", targetVersion,
 		"download_url", downloadURL,
 		"arch", runtime.GOARCH,
 	)
+
+	expectedChecksum = strings.ToLower(strings.TrimSpace(expectedChecksum))
+	if expectedChecksum == "" {
+		logger.Error("self-update rejected missing checksum")
+		return fmt.Errorf("missing update checksum")
+	}
+	if signedManifest == "" {
+		logger.Error("self-update rejected missing signed manifest")
+		return fmt.Errorf("missing signed update manifest")
+	}
+	updateURL, err := url.Parse(downloadURL)
+	if err != nil {
+		logger.Error("self-update rejected invalid download URL", "error", err)
+		return fmt.Errorf("parse update download URL: %w", err)
+	}
+	artifactName := path.Base(updateURL.Path)
+	tag := path.Base(path.Dir(updateURL.Path))
+	if _, err := updateauth.VerifyDaemonManifest(signedManifest, updateauth.DaemonExpectation{
+		DaemonType:   daemonType,
+		Version:      targetVersion,
+		Tag:          tag,
+		Arch:         updateauth.NormalizeArch(runtime.GOARCH),
+		ArtifactName: artifactName,
+		DownloadURL:  downloadURL,
+		SHA256:       expectedChecksum,
+	}); err != nil {
+		logger.Error("self-update rejected untrusted manifest", "error", err)
+		return fmt.Errorf("verify signed update manifest: %w", err)
+	}
 
 	// Get current binary path
 	execPath, err := os.Executable()
@@ -73,15 +107,11 @@ func SelfUpdate(downloadURL, targetVersion, expectedChecksum string, logger *slo
 
 	// Verify checksum
 	actualChecksum := hex.EncodeToString(hasher.Sum(nil))
-	if expectedChecksum != "" && actualChecksum != expectedChecksum {
+	if actualChecksum != expectedChecksum {
 		logger.Error("self-update checksum mismatch", "expected", expectedChecksum, "actual", actualChecksum)
 		return fmt.Errorf("checksum mismatch: expected %s, got %s", expectedChecksum, actualChecksum)
 	}
-	if expectedChecksum == "" {
-		logger.Warn("self-update proceeding without checksum verification")
-	} else {
-		logger.Info("self-update checksum verified", "checksum", actualChecksum)
-	}
+	logger.Info("self-update checksum verified", "checksum", actualChecksum)
 
 	// Make executable
 	if err := os.Chmod(tmpPath, 0755); err != nil {

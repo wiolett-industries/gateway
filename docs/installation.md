@@ -249,13 +249,14 @@ From the UI:
 2. Review the available version.
 3. Click **Update**.
 
-Gateway pulls the selected image and recreates its own container.
+Gateway verifies the signed release manifest, pulls the selected image by digest, writes `GATEWAY_IMAGE_REF=<image>@sha256:<digest>`, and recreates its container.
 
 Manual update:
 
 ```bash
 # Edit .env first, for example:
 # GATEWAY_VERSION=v2.0.0
+# GATEWAY_IMAGE_REF=registry.gitlab.wiolett.net/wiolett/gateway:v2.0.0
 docker compose pull
 docker compose up -d
 ```

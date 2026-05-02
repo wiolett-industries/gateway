@@ -9,13 +9,18 @@ variables:
   PNPM_STORE_DIR: ${CI_PROJECT_DIR}/.pnpm-store
   GOCACHE: ${CI_PROJECT_DIR}/.cache/go-build
   GOMODCACHE: ${CI_PROJECT_DIR}/.cache/go-mod
+  NODE_CI_IMAGE: docker.io/library/node:24@sha256:e9891237dfbb1de60ce19e9ff9fac5d73ad9c37da303ad72ff2a425ad1057e71
+  DOCKER_CI_IMAGE: docker.io/library/docker:27@sha256:aa3df78ecf320f5fafdce71c659f1629e96e9de0968305fe1de670e0ca9176ce
+  GOLANG_CI_IMAGE: docker.io/library/golang:1.24@sha256:d2d2bc1c84f7e60d7d2438a3836ae7d0c847f4888464e7ec9ba3a1339a1ee804
+  RELEASE_CLI_IMAGE: registry.gitlab.com/gitlab-org/release-cli@sha256:3f52d526f48e8d10625c722fa6d6423ee82aadeae1b1aa91f07b62551d96dacf
+  CURL_CI_IMAGE: docker.io/curlimages/curl:8.10.1@sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b
 
 .docker-login: &docker-login
   before_script:
     - docker login -u ${CI_REGISTRY_USER} -p ${CI_REGISTRY_PASSWORD} ${CI_REGISTRY}
 
 .pnpm-job: &pnpm-job
-  image: node:24
+  image: ${NODE_CI_IMAGE}
   before_script:
     - corepack enable
     - pnpm config set store-dir ${PNPM_STORE_DIR}
@@ -28,10 +33,11 @@ variables:
       - .pnpm-store
 
 .go-job: &go-job
-  image: golang:1.24
+  image: ${GOLANG_CI_IMAGE}
   before_script:
     - mkdir -p ${GOCACHE} ${GOMODCACHE}
     - cd packages/daemons
+    - ../../scripts/sync-update-trust-anchor.sh
   cache:
     key:
       files:
@@ -63,6 +69,8 @@ variables:
         - nx.json
         - tsconfig.json
         - packages/backend/**/*
+        - config/update-trust/**/*
+        - scripts/sync-update-trust-anchor.sh
 
 .logging-sdk-rules: &logging-sdk-rules
   rules:
@@ -92,6 +100,8 @@ variables:
         - packages/daemons/go.work
         - packages/daemons/nginx/**/*
         - packages/daemons/shared/**/*
+        - config/update-trust/**/*
+        - scripts/sync-update-trust-anchor.sh
 
 .daemon-docker-rules: &daemon-docker-rules
   rules:
@@ -102,6 +112,8 @@ variables:
         - packages/daemons/go.work
         - packages/daemons/docker/**/*
         - packages/daemons/shared/**/*
+        - config/update-trust/**/*
+        - scripts/sync-update-trust-anchor.sh
 
 .daemon-monitoring-rules: &daemon-monitoring-rules
   rules:
@@ -112,6 +124,8 @@ variables:
         - packages/daemons/go.work
         - packages/daemons/monitoring/**/*
         - packages/daemons/shared/**/*
+        - config/update-trust/**/*
+        - scripts/sync-update-trust-anchor.sh
 
 # ── Tests ─────────────────────────────────────────────────────────
 
@@ -163,32 +177,60 @@ test-monitoring-daemon:
 
 build:
   stage: build
-  image: docker:27
+  image: ${DOCKER_CI_IMAGE}
   needs:
     - test-frontend
     - test-backend
   <<: *docker-login
   script:
+    - ./scripts/sync-update-trust-anchor.sh
+    - test -n "${UPDATE_SIGNING_PRIVATE_KEY_PEM_B64}" || (echo "UPDATE_SIGNING_PRIVATE_KEY_PEM_B64 CI variable is required to publish signed gateway updates" && exit 1)
     - |
       echo "Building Gateway ${CI_COMMIT_TAG}..."
       docker build \
-        --cache-from $IMAGE:latest \
         --tag $IMAGE:$CI_COMMIT_TAG \
         --tag $IMAGE:${CI_COMMIT_TAG#v} \
         --tag $IMAGE:latest \
-        --build-arg BUILDKIT_INLINE_CACHE=1 \
         --build-arg APP_VERSION=$CI_COMMIT_TAG \
         .
     - docker push $IMAGE:$CI_COMMIT_TAG
+    - echo "Pushed $IMAGE:$CI_COMMIT_TAG"
+    - |
+      DIGEST=$(docker buildx imagetools inspect "$IMAGE:$CI_COMMIT_TAG" --format '{{.Manifest.Digest}}')
+      test -n "$DIGEST" || (echo "Could not resolve pushed gateway image digest" && exit 1)
+      docker run --rm \
+        -e UPDATE_SIGNING_PRIVATE_KEY_PEM_B64 \
+        -v "$CI_PROJECT_DIR:/workspace" \
+        -w /workspace/packages/daemons \
+        "${GOLANG_CI_IMAGE}" \
+        go run ./shared/cmd/update-trust sign \
+          --kind gateway-image \
+          --version "$CI_COMMIT_TAG" \
+          --tag "$CI_COMMIT_TAG" \
+          --image "$IMAGE" \
+          --digest "$DIGEST" \
+          --git-commit-sha "$CI_COMMIT_SHA" \
+          --git-pipeline-id "$CI_PIPELINE_ID" \
+          --out /workspace/gateway-image.update.json
+      unset UPDATE_SIGNING_PRIVATE_KEY_PEM_B64
+      docker run --rm \
+        -v "$CI_PROJECT_DIR:/workspace" \
+        -w /workspace \
+        "${CURL_CI_IMAGE}" \
+        --fail \
+        --show-error \
+        --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+        --upload-file gateway-image.update.json \
+        "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/gateway/${CI_COMMIT_TAG}/gateway-image.update.json"
     - docker push $IMAGE:${CI_COMMIT_TAG#v}
     - docker push $IMAGE:latest
-    - echo "Pushed $IMAGE:$CI_COMMIT_TAG, $IMAGE:${CI_COMMIT_TAG#v}, $IMAGE:latest"
+    - echo "Pushed $IMAGE:${CI_COMMIT_TAG#v}, $IMAGE:latest after signing"
   rules:
     - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
 
 release:
   stage: release
-  image: registry.gitlab.com/gitlab-org/release-cli:latest
+  image: ${RELEASE_CLI_IMAGE}
   needs:
     - build
   script:
@@ -203,6 +245,12 @@ release:
     tag_name: $CI_COMMIT_TAG
     name: "Gateway ${CI_COMMIT_TAG}"
     description: ./release-notes.md
+    assets:
+      links:
+        - name: gateway-image.update.json
+          url: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/gateway/${CI_COMMIT_TAG}/gateway-image.update.json"
+          filepath: /gateway-image.update.json
+          link_type: other
   rules:
     - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
 
@@ -233,10 +281,11 @@ publish-logging-sdk:
 
 .build-daemon:
   stage: build
-  image: golang:1.24
+  image: ${GOLANG_CI_IMAGE}
   before_script:
     - mkdir -p ${GOCACHE} ${GOMODCACHE}
   script:
+    - ./scripts/sync-update-trust-anchor.sh
     - cd packages/daemons/${DAEMON_DIR}
     - |
       VERSION=$(echo "${CI_COMMIT_TAG}" | sed "s/-${DAEMON_SUFFIX}$//")
@@ -249,20 +298,49 @@ publish-logging-sdk:
           ./cmd/${DAEMON_NAME}
       done
     - cd ../../..
-    - |
-      for GOARCH in amd64 arm64; do
-        echo "Uploading ${DAEMON_NAME}-linux-${GOARCH} to package registry..."
-        curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
-          --upload-file "${DAEMON_NAME}-linux-${GOARCH}" \
-          "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/${DAEMON_NAME}/${CI_COMMIT_TAG}/${DAEMON_NAME}-linux-${GOARCH}"
-      done
+    - test -n "${UPDATE_SIGNING_PRIVATE_KEY_PEM_B64}" || (echo "UPDATE_SIGNING_PRIVATE_KEY_PEM_B64 CI variable is required to publish signed daemon updates" && exit 1)
     - |
       for GOARCH in amd64 arm64; do
         sha256sum "${DAEMON_NAME}-linux-${GOARCH}" >> checksums.txt
       done
-      curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+      VERSION=$(echo "${CI_COMMIT_TAG}" | sed "s/-${DAEMON_SUFFIX}$//")
+      ENCODED_PROJECT_PATH=$(printf '%s' "$CI_PROJECT_PATH" | sed 's#/#%2F#g')
+      for GOARCH in amd64 arm64; do
+        ARTIFACT="${DAEMON_NAME}-linux-${GOARCH}"
+        SHA=$(sha256sum "${ARTIFACT}" | awk '{print $1}')
+        (cd packages/daemons && go run ./shared/cmd/update-trust sign \
+          --kind daemon-binary \
+          --version "$VERSION" \
+          --tag "$CI_COMMIT_TAG" \
+          --daemon-type "$DAEMON_SUFFIX" \
+          --arch "$GOARCH" \
+          --artifact-name "$ARTIFACT" \
+          --download-url "${CI_API_V4_URL}/projects/${ENCODED_PROJECT_PATH}/packages/generic/${DAEMON_NAME}/${CI_COMMIT_TAG}/${ARTIFACT}" \
+          --sha256 "$SHA" \
+          --git-commit-sha "$CI_COMMIT_SHA" \
+          --git-pipeline-id "$CI_PIPELINE_ID" \
+          --out "../../${ARTIFACT}.update.json")
+      done
+      unset UPDATE_SIGNING_PRIVATE_KEY_PEM_B64
+    - |
+      for GOARCH in amd64 arm64; do
+        echo "Uploading ${DAEMON_NAME}-linux-${GOARCH} to package registry..."
+        curl --fail --show-error \
+          --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+          --upload-file "${DAEMON_NAME}-linux-${GOARCH}" \
+          "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/${DAEMON_NAME}/${CI_COMMIT_TAG}/${DAEMON_NAME}-linux-${GOARCH}"
+      done
+      curl --fail --show-error \
+        --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
         --upload-file checksums.txt \
         "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/${DAEMON_NAME}/${CI_COMMIT_TAG}/checksums.txt"
+      for GOARCH in amd64 arm64; do
+        ARTIFACT="${DAEMON_NAME}-linux-${GOARCH}"
+        curl --fail --show-error \
+          --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+          --upload-file "${ARTIFACT}.update.json" \
+          "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/${DAEMON_NAME}/${CI_COMMIT_TAG}/${ARTIFACT}.update.json"
+      done
   cache:
     key:
       files:
@@ -273,11 +351,12 @@ publish-logging-sdk:
   artifacts:
     paths:
       - checksums.txt
+      - "*-daemon-linux-*.update.json"
     expire_in: 1 hour
 
 .release-daemon:
   stage: release
-  image: registry.gitlab.com/gitlab-org/release-cli:latest
+  image: ${RELEASE_CLI_IMAGE}
   script:
     - echo "Creating release for ${DAEMON_NAME} ${CI_COMMIT_TAG}"
     - |
@@ -303,6 +382,14 @@ publish-logging-sdk:
         - name: checksums.txt
           url: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/${DAEMON_NAME}/${CI_COMMIT_TAG}/checksums.txt"
           filepath: /checksums.txt
+          link_type: other
+        - name: "${DAEMON_NAME}-linux-amd64.update.json"
+          url: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/${DAEMON_NAME}/${CI_COMMIT_TAG}/${DAEMON_NAME}-linux-amd64.update.json"
+          filepath: /${DAEMON_NAME}-linux-amd64.update.json
+          link_type: other
+        - name: "${DAEMON_NAME}-linux-arm64.update.json"
+          url: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/${DAEMON_NAME}/${CI_COMMIT_TAG}/${DAEMON_NAME}-linux-arm64.update.json"
+          filepath: /${DAEMON_NAME}-linux-arm64.update.json
           link_type: other
 
 # ── nginx-daemon ──────────────────────────────────────────────────

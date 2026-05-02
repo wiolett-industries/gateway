@@ -225,6 +225,8 @@ pnpm test:daemon
 pnpm lint:daemon
 ```
 
+Run `pnpm proto` whenever `proto/gateway/v1/nginx-daemon.proto` changes. The daemon update command schema is part of the signed update trust boundary, so keep generated Go stubs and backend TypeScript command types aligned.
+
 For full release confidence:
 
 ```bash

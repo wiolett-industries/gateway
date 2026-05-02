@@ -4310,12 +4310,13 @@ func (x *LogUnsubscribe) GetHostId() string {
 }
 
 type UpdateDaemonCommand struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	DownloadUrl   string                 `protobuf:"bytes,1,opt,name=download_url,json=downloadUrl,proto3" json:"download_url,omitempty"`
-	TargetVersion string                 `protobuf:"bytes,2,opt,name=target_version,json=targetVersion,proto3" json:"target_version,omitempty"`
-	Checksum      string                 `protobuf:"bytes,3,opt,name=checksum,proto3" json:"checksum,omitempty"` // sha256 of the binary
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	DownloadUrl    string                 `protobuf:"bytes,1,opt,name=download_url,json=downloadUrl,proto3" json:"download_url,omitempty"`
+	TargetVersion  string                 `protobuf:"bytes,2,opt,name=target_version,json=targetVersion,proto3" json:"target_version,omitempty"`
+	Checksum       string                 `protobuf:"bytes,3,opt,name=checksum,proto3" json:"checksum,omitempty"`                                   // sha256 of the binary
+	SignedManifest string                 `protobuf:"bytes,4,opt,name=signed_manifest,json=signedManifest,proto3" json:"signed_manifest,omitempty"` // signed update manifest envelope
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *UpdateDaemonCommand) Reset() {
@@ -4365,6 +4366,13 @@ func (x *UpdateDaemonCommand) GetTargetVersion() string {
 func (x *UpdateDaemonCommand) GetChecksum() string {
 	if x != nil {
 		return x.Checksum
+	}
+	return ""
+}
+
+func (x *UpdateDaemonCommand) GetSignedManifest() string {
+	if x != nil {
+		return x.SignedManifest
 	}
 	return ""
 }
@@ -4738,11 +4746,12 @@ const file_gateway_v1_nginx_daemon_proto_rawDesc = "" +
 	"\n" +
 	"tail_lines\x18\x02 \x01(\x05R\ttailLines\")\n" +
 	"\x0eLogUnsubscribe\x12\x17\n" +
-	"\ahost_id\x18\x01 \x01(\tR\x06hostId\"{\n" +
+	"\ahost_id\x18\x01 \x01(\tR\x06hostId\"\xa4\x01\n" +
 	"\x13UpdateDaemonCommand\x12!\n" +
 	"\fdownload_url\x18\x01 \x01(\tR\vdownloadUrl\x12%\n" +
 	"\x0etarget_version\x18\x02 \x01(\tR\rtargetVersion\x12\x1a\n" +
-	"\bchecksum\x18\x03 \x01(\tR\bchecksum2\xa2\x01\n" +
+	"\bchecksum\x18\x03 \x01(\tR\bchecksum\x12'\n" +
+	"\x0fsigned_manifest\x18\x04 \x01(\tR\x0esignedManifest2\xa2\x01\n" +
 	"\x0eNodeEnrollment\x12?\n" +
 	"\x06Enroll\x12\x19.gateway.v1.EnrollRequest\x1a\x1a.gateway.v1.EnrollResponse\x12O\n" +
 	"\x10RenewCertificate\x12\x1c.gateway.v1.RenewCertRequest\x1a\x1d.gateway.v1.RenewCertResponse2Y\n" +

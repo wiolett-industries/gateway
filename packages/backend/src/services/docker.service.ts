@@ -246,6 +246,33 @@ export class DockerService {
   }
 
   /**
+   * Pull a Docker image by immutable reference, e.g. registry/app@sha256:...
+   */
+  async pullImageRef(imageRef: string): Promise<void> {
+    logger.info('Pulling Docker image by reference', { imageRef });
+    const res = await this.request(
+      'POST',
+      `${API_VERSION}/images/create?fromImage=${encodeURIComponent(imageRef)}`,
+      undefined,
+      300_000
+    );
+    if (res.statusCode !== 200) {
+      throw new Error(`Docker image pull failed (${res.statusCode}): ${res.body}`);
+    }
+    const lines = res.body.trim().split('\n');
+    const last = lines[lines.length - 1];
+    try {
+      const parsed = JSON.parse(last) as { error?: string };
+      if (parsed.error) {
+        throw new Error(`Docker image pull error: ${parsed.error}`);
+      }
+    } catch (e) {
+      if (e instanceof Error && e.message.startsWith('Docker image pull error')) throw e;
+    }
+    logger.info('Image reference pulled successfully', { imageRef });
+  }
+
+  /**
    * Inspect the container this app is running in.
    * Uses HOSTNAME env var which Docker sets to the short container ID.
    */

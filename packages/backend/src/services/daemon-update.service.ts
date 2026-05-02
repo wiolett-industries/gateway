@@ -5,6 +5,12 @@ import { nodes } from '@/db/schema/nodes.js';
 import { settings } from '@/db/schema/settings.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { compareSemver, isNewerVersion } from '@/lib/semver.js';
+import {
+  normalizeGitLabApiUrl,
+  type TrustedDaemonUpdateArtifact,
+  trustedGitLabPackagePrefix,
+  verifyDaemonUpdateManifest,
+} from '@/lib/update-artifact-trust.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
 
@@ -64,14 +70,16 @@ export interface DaemonUpdateStatus {
 
 export class DaemonUpdateService {
   private readonly gitlabReleasesUrl: string;
+  private readonly gitlabApiUrl: string;
   private eventBus?: EventBusService;
 
   constructor(
     private readonly db: DrizzleClient,
     private readonly env: Env
   ) {
+    this.gitlabApiUrl = normalizeGitLabApiUrl(this.env.GITLAB_API_URL);
     const encodedPath = encodeURIComponent(this.env.GITLAB_PROJECT_PATH);
-    this.gitlabReleasesUrl = `${this.env.GITLAB_API_URL}/api/v4/projects/${encodedPath}/releases`;
+    this.gitlabReleasesUrl = `${this.gitlabApiUrl}/api/v4/projects/${encodedPath}/releases`;
   }
 
   setEventBus(eventBus: EventBusService) {
@@ -232,13 +240,58 @@ export class DaemonUpdateService {
   getDownloadUrl(daemonType: DaemonType, tag: string, arch: string): string {
     const daemonName = DAEMON_NAME_MAP[daemonType];
     const encodedPath = encodeURIComponent(this.env.GITLAB_PROJECT_PATH);
-    return `${this.env.GITLAB_API_URL}/api/v4/projects/${encodedPath}/packages/generic/${daemonName}/${tag}/${this.getBinaryName(daemonType, arch)}`;
+    return `${this.gitlabApiUrl}/api/v4/projects/${encodedPath}/packages/generic/${daemonName}/${tag}/${this.getBinaryName(daemonType, arch)}`;
   }
 
-  getChecksumsUrl(daemonType: DaemonType, tag: string): string {
+  async prepareTrustedDaemonUpdate(
+    daemonType: DaemonType,
+    tag: string,
+    version: string,
+    arch: string
+  ): Promise<TrustedDaemonUpdateArtifact> {
+    const normalizedArch = this.normalizePackageArch(arch);
+    const artifactName = this.getBinaryName(daemonType, normalizedArch);
+    const downloadUrl = this.getDownloadUrl(daemonType, tag, normalizedArch);
+    const manifestUrl = this.getManifestUrl(daemonType, tag, normalizedArch);
+
+    const response = await fetch(manifestUrl, {
+      headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok) {
+      throw new AppError(
+        502,
+        'UNTRUSTED_UPDATE_ARTIFACT',
+        `Failed to fetch daemon update manifest: ${response.status}`
+      );
+    }
+
+    const signedManifest = await response.text();
+    try {
+      return verifyDaemonUpdateManifest(signedManifest, {
+        daemonType,
+        version,
+        tag,
+        arch: normalizedArch,
+        artifactName,
+        downloadUrl,
+        trustedPackagePrefix: trustedGitLabPackagePrefix(this.gitlabApiUrl, this.env.GITLAB_PROJECT_PATH),
+      });
+    } catch (error) {
+      logger.warn('Daemon update manifest verification failed', {
+        daemonType,
+        tag,
+        arch: normalizedArch,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw new AppError(502, 'UNTRUSTED_UPDATE_ARTIFACT', 'Daemon update artifact is not trusted');
+    }
+  }
+
+  getManifestUrl(daemonType: DaemonType, tag: string, arch: string): string {
     const daemonName = DAEMON_NAME_MAP[daemonType];
     const encodedPath = encodeURIComponent(this.env.GITLAB_PROJECT_PATH);
-    return `${this.env.GITLAB_API_URL}/api/v4/projects/${encodedPath}/packages/generic/${daemonName}/${tag}/checksums.txt`;
+    return `${this.gitlabApiUrl}/api/v4/projects/${encodedPath}/packages/generic/${daemonName}/${tag}/${this.getBinaryName(daemonType, arch)}.update.json`;
   }
 
   getBinaryName(daemonType: DaemonType, arch: string): string {

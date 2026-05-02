@@ -462,4 +462,5 @@ message UpdateDaemonCommand {
   string download_url = 1;
   string target_version = 2;
   string checksum = 3;        // sha256 of the binary
+  string signed_manifest = 4; // signed update manifest envelope
 }

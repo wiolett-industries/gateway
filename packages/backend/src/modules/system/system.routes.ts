@@ -71,12 +71,13 @@ systemRoutes.openapi({ ...performSystemUpdateRoute, middleware: sessionOnly }, a
   if (version !== status.latestVersion) {
     return c.json({ code: 'VERSION_MISMATCH', message: 'Requested version does not match available update' }, 400);
   }
+  const artifact = await updateService.prepareGatewayUpdate(version);
 
   // Respond immediately, then trigger the update asynchronously.
   // The container will be replaced — the response must be sent first.
   eventBus.publish('system.update.changed', { updating: true, targetVersion: version });
   setTimeout(() => {
-    updateService.performUpdate(version).catch((err) => {
+    updateService.performUpdate(version, artifact).catch((err) => {
       eventBus.publish('system.update.changed', { updating: false, targetVersion: version });
       logger.error('Update failed', {
         error: err instanceof Error ? err.message : String(err),
@@ -158,26 +159,17 @@ systemRoutes.openapi({ ...updateDaemonRoute, middleware: sessionOnly }, async (c
   if (!release) return c.json({ error: 'No release found for this daemon type' }, 404);
 
   const arch = (((node.capabilities ?? {}) as Record<string, unknown>).architecture as string) ?? 'amd64';
-  const downloadUrl = service.getDownloadUrl(daemonType, release.tagName, arch);
-
-  // Fetch checksum from checksums.txt
-  let checksum = '';
-  try {
-    const checksumUrl = service.getChecksumsUrl(daemonType, release.tagName);
-    const resp = await fetch(checksumUrl, { signal: AbortSignal.timeout(10_000) });
-    if (resp.ok) {
-      const text = await resp.text();
-      const daemonName = service.getBinaryName(daemonType, arch);
-      const line = text.split('\n').find((l) => l.includes(daemonName));
-      if (line) checksum = line.split(/\s+/)[0];
-    }
-  } catch {
-    logger.warn('Failed to fetch checksum for daemon update', { nodeId, daemonType });
-  }
+  const artifact = await service.prepareTrustedDaemonUpdate(daemonType, release.tagName, release.version, arch);
 
   await service.markNodeUpdateInProgress(nodeId, release.version);
   try {
-    const result = await dispatch.sendUpdateDaemonCommand(nodeId, downloadUrl, release.version, checksum);
+    const result = await dispatch.sendUpdateDaemonCommand(
+      nodeId,
+      artifact.downloadUrl,
+      release.version,
+      artifact.checksum,
+      artifact.signedManifest
+    );
     if (!result.success) {
       await service.clearNodeUpdateInProgress(nodeId);
       return c.json({ error: result.error || 'Failed to start daemon update' }, 502);

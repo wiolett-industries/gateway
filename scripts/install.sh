@@ -809,6 +809,7 @@ write_env() {
 # Image
 GATEWAY_IMAGE=${GATEWAY_IMAGE:-$DEFAULT_IMAGE}
 GATEWAY_VERSION=${VERSION}
+GATEWAY_IMAGE_REF=${GATEWAY_IMAGE:-$DEFAULT_IMAGE}:${VERSION}
 
 # Compose project directory (used by self-update)
 COMPOSE_PROJECT_DIR=$(pwd)
@@ -1004,7 +1005,7 @@ write_compose() {
         cat > docker-compose.yml << COMPOSEEOF
 services:
   app:
-    image: \${GATEWAY_IMAGE}:\${GATEWAY_VERSION}
+    image: \${GATEWAY_IMAGE_REF}
     restart: unless-stopped
     ports:
       - "127.0.0.1:3000:3000"
@@ -1092,7 +1093,7 @@ COMPOSEEOF
         cat > docker-compose.yml << COMPOSEEOF
 services:
   app:
-    image: \${GATEWAY_IMAGE}:\${GATEWAY_VERSION}
+    image: \${GATEWAY_IMAGE_REF}
     restart: unless-stopped
     ports:
       - "\${BIND_HOST:-0.0.0.0}:3000:3000"

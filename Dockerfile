@@ -1,4 +1,6 @@
-FROM node:24-alpine AS base
+ARG NODE_IMAGE=docker.io/library/node:24-alpine@sha256:d1b3b4da11eefd5941e7f0b9cf17783fc99d9c6fc34884a665f40a06dbdfc94f
+
+FROM ${NODE_IMAGE} AS base
 
 RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 
@@ -34,7 +36,7 @@ COPY packages/backend/ packages/backend/
 RUN pnpm --filter backend build
 
 # ── Production image ────────────────────────────────────────────────
-FROM node:24-alpine AS production
+FROM ${NODE_IMAGE} AS production
 
 ARG APP_VERSION=dev
 ENV APP_VERSION=$APP_VERSION
@@ -53,6 +55,7 @@ RUN pnpm install --prod --no-frozen-lockfile
 # Copy backend build
 COPY --from=backend-builder /app/packages/backend/dist ./dist
 COPY --from=backend-builder /app/packages/backend/src/db/migrations ./src/db/migrations
+COPY config/update-trust/update-signing-public-key.pem ./dist/lib/update-signing-public-key.pem
 
 # Copy proto file (loaded at runtime by @grpc/proto-loader)
 COPY proto/ ./proto/

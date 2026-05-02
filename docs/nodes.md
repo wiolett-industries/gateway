@@ -160,7 +160,9 @@ From the UI:
 2. Review runtime and version status.
 3. Click **Update** when an update is available.
 
-Gateway downloads the new daemon binary, verifies its SHA256 checksum, replaces the binary atomically, and restarts the systemd service.
+Gateway verifies the signed daemon release manifest before dispatching an update. New daemons verify the signed manifest locally, download the binary, verify its SHA256 checksum, replace the binary atomically, and exit so systemd restarts the service.
+
+Daemons installed before signed-manifest support can perform one transition update: Gateway verifies the signed manifest and sends the verified checksum, while the old daemon enforces the checksum. After that update, daemon-side signature verification is enforced.
 
 Daemon releases are versioned independently by daemon type.
 
@@ -169,8 +171,8 @@ Daemon releases are versioned independently by daemon type.
 Manual setup is useful for locked-down hosts or custom packaging.
 
 1. Create a node in Gateway and copy the enrollment token plus the Gateway certificate fingerprint.
-2. Download the daemon binary and `checksums.txt` from the release package.
-3. Verify the SHA256 checksum.
+2. Download the daemon binary, `checksums.txt`, and the matching `*.update.json` signed manifest from the release package.
+3. Verify the signed manifest with the compiled Wiolett update public key, then verify the SHA256 checksum.
 4. Install the binary.
 5. Write `/etc/<daemon-name>/config.yaml`.
 6. Create and start a systemd service.
@@ -182,6 +184,8 @@ curl -fsSL "https://gitlab.wiolett.net/api/v4/projects/wiolett%2Fgateway/package
   -o /tmp/nginx-daemon-linux-amd64
 curl -fsSL "https://gitlab.wiolett.net/api/v4/projects/wiolett%2Fgateway/packages/generic/nginx-daemon/v2.0.0-nginx/checksums.txt" \
   -o /tmp/nginx-daemon-checksums.txt
+curl -fsSL "https://gitlab.wiolett.net/api/v4/projects/wiolett%2Fgateway/packages/generic/nginx-daemon/v2.0.0-nginx/nginx-daemon-linux-amd64.update.json" \
+  -o /tmp/nginx-daemon-linux-amd64.update.json
 
 expected=$(awk '/nginx-daemon-linux-amd64/ { print $1 }' /tmp/nginx-daemon-checksums.txt)
 actual=$(sha256sum /tmp/nginx-daemon-linux-amd64 | awk '{ print $1 }')
@@ -189,6 +193,8 @@ actual=$(sha256sum /tmp/nginx-daemon-linux-amd64 | awk '{ print $1 }')
 
 install -m 755 /tmp/nginx-daemon-linux-amd64 /usr/local/bin/nginx-daemon
 ```
+
+`checksums.txt` alone is not sufficient for automatic updates. Gateway and new daemons require the signed `*.update.json` manifest to establish release provenance.
 
 Then enroll and start:
 

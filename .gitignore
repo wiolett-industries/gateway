@@ -20,6 +20,13 @@ security_best_practices_report.md
 # Go
 packages/daemons/nginx/bin/
 packages/daemons/nginx/nginx-daemon
+packages/daemons/shared/updateauth/update-signing-public-key.pem
+
+# Update signing keygen outputs
+private.pem
+private.pem.b64
+update-signing-private.pem
+update-signing-private.pem.b64
 
 .memory/memory.db*
 .memory/memories/

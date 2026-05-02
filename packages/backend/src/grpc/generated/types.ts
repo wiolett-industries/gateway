@@ -419,4 +419,5 @@ export interface UpdateDaemonCommand {
   downloadUrl: string;
   targetVersion: string;
   checksum: string;
+  signedManifest: string;
 }

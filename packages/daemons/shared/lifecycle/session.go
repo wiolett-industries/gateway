@@ -125,7 +125,14 @@ func runSession(ctx context.Context, conn *grpc.ClientConn, d *DaemonBase) error
 			// command to the gateway, then exit so systemd restarts the daemon.
 			updateCmd := cmd.GetUpdateDaemon()
 			result := &pb.CommandResult{CommandId: cmd.CommandId, Success: true}
-			if err := SelfUpdate(updateCmd.DownloadUrl, updateCmd.TargetVersion, updateCmd.Checksum, d.logger); err != nil {
+			if err := SelfUpdate(
+				updateCmd.DownloadUrl,
+				updateCmd.TargetVersion,
+				updateCmd.Checksum,
+				updateCmd.SignedManifest,
+				d.plugin.Type(),
+				d.logger,
+			); err != nil {
 				result.Success = false
 				result.Error = err.Error()
 			}

@@ -5,7 +5,13 @@
   "targets": {
     "build": {
       "command": "pnpm --filter backend build",
-      "inputs": ["{projectRoot}/src/**/*", "{projectRoot}/tsconfig.json", "{projectRoot}/package.json"],
+      "inputs": [
+        "{projectRoot}/src/**/*",
+        "{projectRoot}/tsconfig.json",
+        "{projectRoot}/package.json",
+        "{workspaceRoot}/config/update-trust/**/*",
+        "{workspaceRoot}/scripts/sync-update-trust-anchor.sh"
+      ],
       "outputs": ["{projectRoot}/dist"],
       "cache": true
     },
@@ -19,7 +25,12 @@
     },
     "test": {
       "command": "pnpm --filter backend test",
-      "inputs": ["{projectRoot}/src/**/*", "{projectRoot}/vitest.config.*"],
+      "inputs": [
+        "{projectRoot}/src/**/*",
+        "{projectRoot}/vitest.config.*",
+        "{workspaceRoot}/config/update-trust/**/*",
+        "{workspaceRoot}/scripts/sync-update-trust-anchor.sh"
+      ],
       "cache": true
     },
     "lint": {
@@ -28,13 +39,20 @@
         "{projectRoot}/src/**/*",
         "{projectRoot}/biome.json",
         "{projectRoot}/package.json",
-        "{projectRoot}/vitest.config.*"
+        "{projectRoot}/vitest.config.*",
+        "{workspaceRoot}/config/update-trust/**/*",
+        "{workspaceRoot}/scripts/sync-update-trust-anchor.sh"
       ],
       "cache": true
     },
     "typecheck": {
       "command": "pnpm --filter backend typecheck",
-      "inputs": ["{projectRoot}/src/**/*", "{projectRoot}/tsconfig.json"],
+      "inputs": [
+        "{projectRoot}/src/**/*",
+        "{projectRoot}/tsconfig.json",
+        "{workspaceRoot}/config/update-trust/**/*",
+        "{workspaceRoot}/scripts/sync-update-trust-anchor.sh"
+      ],
       "cache": true
     },
     "db:generate": {

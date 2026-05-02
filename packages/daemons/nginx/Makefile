@@ -5,9 +5,12 @@ PROTO_DIR := ../../../proto
 SHARED_OUT_DIR := ../shared/gatewayv1
 BINARY := bin/nginx-daemon
 
-.PHONY: all build test lint clean proto
+.PHONY: all build test lint clean proto trust-anchor
 
 all: proto build
+
+trust-anchor:
+	../../../scripts/sync-update-trust-anchor.sh
 
 proto:
 	@mkdir -p $(SHARED_OUT_DIR)
@@ -19,13 +22,13 @@ proto:
 		--go-grpc_opt=module=$(SHARED_MODULE)/gatewayv1 \
 		gateway/v1/nginx-daemon.proto
 
-build:
+build: trust-anchor
 	CGO_ENABLED=0 go build -ldflags "-s -w -X $(MODULE)/internal/daemon.Version=$(VERSION)" -o $(BINARY) ./cmd/nginx-daemon
 
-test:
+test: trust-anchor
 	go test ./...
 
-lint:
+lint: trust-anchor
 	go vet ./...
 
 clean:

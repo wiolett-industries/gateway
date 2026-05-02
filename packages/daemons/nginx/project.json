@@ -12,20 +12,38 @@
     "build": {
       "command": "make -C packages/daemons/nginx build",
       "dependsOn": ["proto"],
-      "inputs": ["{projectRoot}/**/*.go", "{projectRoot}/go.mod", "{projectRoot}/go.sum"],
+      "inputs": [
+        "{projectRoot}/**/*.go",
+        "{projectRoot}/go.mod",
+        "{projectRoot}/go.sum",
+        "{workspaceRoot}/packages/daemons/shared/**/*",
+        "{workspaceRoot}/config/update-trust/**/*",
+        "{workspaceRoot}/scripts/sync-update-trust-anchor.sh"
+      ],
       "outputs": ["{projectRoot}/bin/nginx-daemon"],
       "cache": true
     },
     "test": {
-      "command": "cd packages/daemons/nginx && CGO_ENABLED=0 go test ./...",
+      "command": "scripts/sync-update-trust-anchor.sh && cd packages/daemons/nginx && CGO_ENABLED=0 go test ./...",
       "dependsOn": ["proto"],
-      "inputs": ["{projectRoot}/**/*.go", "{projectRoot}/**/*_test.go"],
+      "inputs": [
+        "{projectRoot}/**/*.go",
+        "{projectRoot}/**/*_test.go",
+        "{workspaceRoot}/packages/daemons/shared/**/*",
+        "{workspaceRoot}/config/update-trust/**/*",
+        "{workspaceRoot}/scripts/sync-update-trust-anchor.sh"
+      ],
       "cache": true
     },
     "lint": {
-      "command": "cd packages/daemons/nginx && CGO_ENABLED=0 go vet ./...",
+      "command": "scripts/sync-update-trust-anchor.sh && cd packages/daemons/nginx && CGO_ENABLED=0 go vet ./...",
       "dependsOn": ["proto"],
-      "inputs": ["{projectRoot}/**/*.go"],
+      "inputs": [
+        "{projectRoot}/**/*.go",
+        "{workspaceRoot}/packages/daemons/shared/**/*",
+        "{workspaceRoot}/config/update-trust/**/*",
+        "{workspaceRoot}/scripts/sync-update-trust-anchor.sh"
+      ],
       "cache": true
     },
     "clean": {
