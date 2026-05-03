@@ -269,11 +269,6 @@ publish-logging-sdk:
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
       changes:
-        - package.json
-        - pnpm-lock.yaml
-        - pnpm-workspace.yaml
-        - nx.json
-        - tsconfig.json
         - packages/logging-sdk/**/*
 
 # ── Daemon builds (shared template) ───────────────────────────────
