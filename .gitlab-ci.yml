@@ -196,27 +196,20 @@ build:
     - docker push $IMAGE:$CI_COMMIT_TAG
     - echo "Pushed $IMAGE:$CI_COMMIT_TAG"
     - |
+      apk add --no-cache go curl
       DIGEST=$(docker buildx imagetools inspect "$IMAGE:$CI_COMMIT_TAG" --format '{{.Manifest.Digest}}')
       test -n "$DIGEST" || (echo "Could not resolve pushed gateway image digest" && exit 1)
-      docker run --rm \
-        -e UPDATE_SIGNING_PRIVATE_KEY_PEM_B64 \
-        -v "$CI_PROJECT_DIR:/workspace" \
-        -w /workspace/packages/daemons \
-        "${GOLANG_CI_IMAGE}" \
-        go run ./shared/cmd/update-trust sign \
-          --kind gateway-image \
-          --version "$CI_COMMIT_TAG" \
-          --tag "$CI_COMMIT_TAG" \
-          --image "$IMAGE" \
-          --digest "$DIGEST" \
-          --git-commit-sha "$CI_COMMIT_SHA" \
-          --git-pipeline-id "$CI_PIPELINE_ID" \
-          --out /workspace/gateway-image.update.json
+      (cd packages/daemons && go run ./shared/cmd/update-trust sign \
+        --kind gateway-image \
+        --version "$CI_COMMIT_TAG" \
+        --tag "$CI_COMMIT_TAG" \
+        --image "$IMAGE" \
+        --digest "$DIGEST" \
+        --git-commit-sha "$CI_COMMIT_SHA" \
+        --git-pipeline-id "$CI_PIPELINE_ID" \
+        --out ../../gateway-image.update.json)
       unset UPDATE_SIGNING_PRIVATE_KEY_PEM_B64
-      docker run --rm \
-        -v "$CI_PROJECT_DIR:/workspace" \
-        -w /workspace \
-        "${CURL_CI_IMAGE}" \
+      curl \
         --fail \
         --show-error \
         --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
