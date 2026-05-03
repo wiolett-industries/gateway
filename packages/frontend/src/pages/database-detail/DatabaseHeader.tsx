@@ -46,28 +46,55 @@ export function DatabaseHeader({
   onRevealCredentials,
   onRemove,
 }: DatabaseHeaderProps) {
+  const menuItems = (
+    <>
+      {canEdit && (
+        <DropdownMenuItem onClick={onOpenSettings}>
+          <Settings className="h-3.5 w-3.5 mr-2" />
+          Settings
+        </DropdownMenuItem>
+      )}
+      {canEdit && (canReveal || canDelete) && <DropdownMenuSeparator />}
+      {canReveal && (
+        <DropdownMenuItem onClick={onRevealCredentials}>
+          <KeyRound className="h-3.5 w-3.5 mr-2" />
+          Reveal credentials
+        </DropdownMenuItem>
+      )}
+      {canReveal && canDelete && <DropdownMenuSeparator />}
+      {canDelete && (
+        <DropdownMenuItem onClick={onRemove} className="text-destructive">
+          <Trash2 className="h-3.5 w-3.5 mr-2" />
+          Remove
+        </DropdownMenuItem>
+      )}
+    </>
+  );
+
   return (
-    <div className="flex flex-wrap items-center justify-between gap-2 shrink-0">
-      <div className="flex items-center gap-3 min-w-0">
-        <Button variant="ghost" size="icon" onClick={onBack}>
+    <div className="flex shrink-0 items-center justify-between gap-3">
+      <div className="flex min-w-0 flex-1 items-center gap-3">
+        <Button variant="ghost" size="icon" className="shrink-0" onClick={onBack}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold">{database.name}</h1>
-            <Badge variant={HEALTH_BADGE[healthStatus] ?? "secondary"}>
+          <div className="flex min-w-0 items-center gap-2">
+            <h1 className="truncate text-2xl font-bold">{database.name}</h1>
+            <Badge variant={HEALTH_BADGE[healthStatus] ?? "secondary"} className="shrink-0">
               {formatHealthStatusLabel(healthStatus)}
             </Badge>
-            <Badge variant="secondary">{database.type}</Badge>
+            <Badge variant="secondary" className="shrink-0">
+              {database.type}
+            </Badge>
           </div>
-          <p className="text-sm text-muted-foreground">
+          <p className="break-all text-sm text-muted-foreground">
             {database.host}:{database.port}
             {database.databaseName ? ` · ${database.databaseName}` : ""}
           </p>
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="hidden items-center gap-2 sm:flex">
         <Button variant="outline" size="icon" onClick={onOpenPin}>
           <Pin className="h-4 w-4" />
         </Button>
@@ -84,30 +111,33 @@ export function DatabaseHeader({
                 <EllipsisVertical className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              {canEdit && (
-                <DropdownMenuItem onClick={onOpenSettings}>
-                  <Settings className="h-3.5 w-3.5 mr-2" />
-                  Settings
-                </DropdownMenuItem>
-              )}
-              {canEdit && (canReveal || canDelete) && <DropdownMenuSeparator />}
-              {canReveal && (
-                <DropdownMenuItem onClick={onRevealCredentials}>
-                  <KeyRound className="h-3.5 w-3.5 mr-2" />
-                  Reveal credentials
-                </DropdownMenuItem>
-              )}
-              {canReveal && canDelete && <DropdownMenuSeparator />}
-              {canDelete && (
-                <DropdownMenuItem onClick={onRemove} className="text-destructive">
-                  <Trash2 className="h-3.5 w-3.5 mr-2" />
-                  Remove
-                </DropdownMenuItem>
-              )}
-            </DropdownMenuContent>
+            <DropdownMenuContent align="end">{menuItems}</DropdownMenuContent>
           </DropdownMenu>
         )}
+      </div>
+
+      <div className="ml-auto flex shrink-0 sm:hidden">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="icon" aria-label="Database actions">
+              <EllipsisVertical className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={onOpenPin}>
+              <Pin className="h-3.5 w-3.5 mr-2" />
+              Pin
+            </DropdownMenuItem>
+            {canEdit && (
+              <DropdownMenuItem onClick={onTest}>
+                <RefreshCw className="h-3.5 w-3.5 mr-2" />
+                Test
+              </DropdownMenuItem>
+            )}
+            {(canEdit || canReveal || canDelete) && <DropdownMenuSeparator />}
+            {menuItems}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </div>
   );

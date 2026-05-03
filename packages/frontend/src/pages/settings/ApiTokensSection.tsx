@@ -220,10 +220,10 @@ export function ApiTokensSection({
               {tokens.map((token) => (
                 <div
                   key={token.id}
-                  className="flex cursor-pointer flex-col gap-3 p-4 transition-colors hover:bg-accent/50 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
+                  className="flex cursor-pointer items-center justify-between gap-3 p-4 transition-colors hover:bg-accent/50 sm:gap-4"
                   onClick={() => openTokenEdit(token)}
                 >
-                  <div className="flex items-center gap-3 min-w-0">
+                  <div className="flex min-w-0 items-center gap-3">
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center border border-border bg-muted">
                       <Key className="h-4 w-4 text-muted-foreground" />
                     </div>
@@ -246,7 +246,7 @@ export function ApiTokensSection({
                   <Button
                     variant="outline"
                     size="icon"
-                    className="self-start sm:self-auto"
+                    className="shrink-0"
                     onClick={(e) => {
                       e.stopPropagation();
                       handleRevokeToken(token);

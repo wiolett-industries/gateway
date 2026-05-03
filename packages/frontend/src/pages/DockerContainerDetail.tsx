@@ -18,6 +18,7 @@ import { useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { PageTransition } from "@/components/common/PageTransition";
+import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -463,6 +464,89 @@ export function DockerContainerDetail() {
   const baseState = container.State?.Status ?? (container.State?.Running ? "running" : "stopped");
   const state = transition ?? baseState;
   const image = container.Config?.Image ?? "";
+  const actionDisabled = actionLoading || !!transition;
+  const headerActions = [
+    {
+      label: "Pin",
+      icon: <Pin className="h-4 w-4" />,
+      onClick: () => setPinOpen(true),
+    },
+    ...(baseState !== "running" && canManage
+      ? [
+          {
+            label: "Start",
+            icon: <Play className="h-4 w-4" />,
+            onClick: () =>
+              doAction(() => api.startContainer(nodeId!, containerId!), "Container started"),
+            disabled: actionDisabled,
+          },
+        ]
+      : []),
+    ...(baseState === "running" && canManage
+      ? [
+          {
+            label: "Stop",
+            icon: <Square className="h-4 w-4" />,
+            onClick: () =>
+              doAction(() => api.stopContainer(nodeId!, containerId!), "Container stopping"),
+            disabled: actionDisabled,
+          },
+          {
+            label: "Restart",
+            icon: <RotateCcw className="h-4 w-4" />,
+            onClick: () =>
+              doAction(() => api.restartContainer(nodeId!, containerId!), "Container restarting"),
+            disabled: actionDisabled,
+          },
+        ]
+      : []),
+    ...(canEdit
+      ? [
+          {
+            label: "Rename",
+            icon: <Type className="h-4 w-4" />,
+            onClick: openRename,
+            disabled: actionDisabled,
+            separatorBefore: true,
+          },
+        ]
+      : []),
+    ...(canCreate
+      ? [
+          {
+            label: "Duplicate",
+            icon: <Copy className="h-4 w-4" />,
+            onClick: handleDuplicate,
+            disabled: actionDisabled,
+          },
+        ]
+      : []),
+    ...(baseState === "running" && canManage
+      ? [
+          {
+            label: "Kill",
+            icon: <Skull className="h-4 w-4" />,
+            onClick: () =>
+              doAction(() => api.killContainer(nodeId!, containerId!), "Container killed"),
+            disabled: actionDisabled,
+            destructive: true,
+            separatorBefore: true,
+          },
+        ]
+      : []),
+    ...(canDelete
+      ? [
+          {
+            label: "Remove",
+            icon: <Trash2 className="h-4 w-4" />,
+            onClick: handleRemove,
+            disabled: actionDisabled,
+            destructive: true,
+            separatorBefore: baseState !== "running" || !canManage,
+          },
+        ]
+      : []),
+  ];
 
   const isTerminalTab = activeTab === "console" || activeTab === "logs";
   const isStopped = baseState !== "running";
@@ -479,23 +563,30 @@ export function DockerContainerDetail() {
         }`}
       >
         {/* Header */}
-        <div className="flex flex-wrap items-center justify-between gap-2 shrink-0">
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" onClick={() => navigate("/docker")}>
+        <div className="flex shrink-0 items-center justify-between gap-3">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="shrink-0"
+              onClick={() => navigate("/docker")}
+            >
               <ArrowLeft className="h-4 w-4" />
             </Button>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-2xl font-bold">{name}</h1>
-                <Badge variant={STATUS_BADGE[state] ?? "secondary"}>{state}</Badge>
+            <div className="min-w-0">
+              <div className="flex min-w-0 items-center gap-2">
+                <h1 className="truncate text-2xl font-bold">{name}</h1>
+                <Badge variant={STATUS_BADGE[state] ?? "secondary"} className="shrink-0">
+                  {state}
+                </Badge>
               </div>
-              <p className="text-sm text-muted-foreground">
+              <p className="break-all text-sm text-muted-foreground">
                 {image} &middot; {(container.Id ?? containerId ?? "").slice(0, 12)}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <ResponsiveHeaderActions actions={headerActions}>
             <Button variant="outline" size="icon" onClick={() => setPinOpen(true)}>
               <Pin className="h-4 w-4" />
             </Button>
@@ -503,7 +594,7 @@ export function DockerContainerDetail() {
               <Button
                 variant="outline"
                 size="default"
-                disabled={actionLoading || !!transition}
+                disabled={actionDisabled}
                 onClick={() =>
                   doAction(() => api.startContainer(nodeId!, containerId!), "Container started")
                 }
@@ -517,7 +608,7 @@ export function DockerContainerDetail() {
                 <Button
                   variant="outline"
                   size="default"
-                  disabled={actionLoading || !!transition}
+                  disabled={actionDisabled}
                   onClick={() =>
                     doAction(() => api.stopContainer(nodeId!, containerId!), "Container stopping")
                   }
@@ -528,7 +619,7 @@ export function DockerContainerDetail() {
                 <Button
                   variant="outline"
                   size="default"
-                  disabled={actionLoading || !!transition}
+                  disabled={actionDisabled}
                   onClick={() =>
                     doAction(
                       () => api.restartContainer(nodeId!, containerId!),
@@ -543,7 +634,7 @@ export function DockerContainerDetail() {
             )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="icon" disabled={actionLoading || !!transition}>
+                <Button variant="outline" size="icon" disabled={actionDisabled}>
                   <EllipsisVertical className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
@@ -585,7 +676,7 @@ export function DockerContainerDetail() {
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
-          </div>
+          </ResponsiveHeaderActions>
         </div>
 
         {healthCheck?.enabled && (

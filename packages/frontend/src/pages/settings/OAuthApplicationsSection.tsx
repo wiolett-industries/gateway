@@ -259,7 +259,7 @@ export function OAuthApplicationsSection({
             {authorizations.map((authorization) => (
               <div
                 key={`${authorization.clientId}:${authorization.resource}`}
-                className="flex cursor-pointer flex-col gap-3 p-4 transition-colors hover:bg-accent/50 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
+                className="flex cursor-pointer items-center justify-between gap-3 p-4 transition-colors hover:bg-accent/50 sm:gap-4"
                 onClick={() => openDetails(authorization)}
               >
                 <div className="flex min-w-0 items-center gap-3">
@@ -309,7 +309,7 @@ export function OAuthApplicationsSection({
                 <Button
                   variant="outline"
                   size="icon"
-                  className="self-start sm:self-auto"
+                  className="shrink-0"
                   aria-label={`Disconnect ${authorization.clientName}`}
                   onClick={(event) => {
                     event.stopPropagation();

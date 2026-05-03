@@ -50,6 +50,44 @@ function parseOptionalNumber(value: string): number | null {
   return Number.isFinite(parsed) ? parsed : Number.NaN;
 }
 
+function sameRuntimeBaseline(a: RuntimeFormValues, b: RuntimeFormValues) {
+  return (
+    a.restartPolicy === b.restartPolicy &&
+    a.maxRetries === b.maxRetries &&
+    a.memoryMB === b.memoryMB &&
+    a.memSwapMB === b.memSwapMB &&
+    a.cpuCount === b.cpuCount &&
+    a.cpuShares === b.cpuShares &&
+    a.pidsLimit === b.pidsLimit
+  );
+}
+
+type RecreateBaseline = {
+  imageTag: string;
+  ports: string;
+  mounts: string;
+  entrypoint: string;
+  command: string;
+  workingDir: string;
+  user: string;
+  hostname: string;
+  labels: string;
+};
+
+function sameRecreateBaseline(a: RecreateBaseline, b: RecreateBaseline) {
+  return (
+    a.imageTag === b.imageTag &&
+    a.ports === b.ports &&
+    a.mounts === b.mounts &&
+    a.entrypoint === b.entrypoint &&
+    a.command === b.command &&
+    a.workingDir === b.workingDir &&
+    a.user === b.user &&
+    a.hostname === b.hostname &&
+    a.labels === b.labels
+  );
+}
+
 function deriveCurrentNanoCPUs(hostConfig: Record<string, any>): number {
   const nanoCPUs = Number(hostConfig.NanoCPUs ?? 0);
   if (Number.isFinite(nanoCPUs) && nanoCPUs > 0) return nanoCPUs;
@@ -253,6 +291,7 @@ export function SettingsTab({
 
   useEffect(() => {
     const previous = previousRuntimeServerBaselineRef.current;
+    const baselineChanged = !sameRuntimeBaseline(previous, runtimeServerBaseline);
     const formMatchesPrevious =
       restartPolicy === previous.restartPolicy &&
       maxRetries === previous.maxRetries &&
@@ -265,7 +304,7 @@ export function SettingsTab({
     baselineRef.current = runtimeServerBaseline;
     previousRuntimeServerBaselineRef.current = runtimeServerBaseline;
 
-    if (!formMatchesPrevious) return;
+    if (!baselineChanged || !formMatchesPrevious) return;
     setRestartPolicy(runtimeServerBaseline.restartPolicy);
     setMaxRetries(runtimeServerBaseline.maxRetries);
     setMemoryMB(runtimeServerBaseline.memoryMB);
@@ -286,6 +325,7 @@ export function SettingsTab({
 
   useEffect(() => {
     const previous = previousRecreateBaselineRef.current;
+    const baselineChanged = !sameRecreateBaseline(previous, recreateBaseline);
     const formMatchesPrevious =
       imageTag === previous.imageTag &&
       JSON.stringify(ports) === previous.ports &&
@@ -299,7 +339,7 @@ export function SettingsTab({
 
     previousRecreateBaselineRef.current = recreateBaseline;
 
-    if (!formMatchesPrevious) return;
+    if (!baselineChanged || !formMatchesPrevious) return;
     setImageTag(parsedTag);
     setPorts(initialPorts);
     setMounts(initialMounts);

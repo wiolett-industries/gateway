@@ -454,6 +454,7 @@ export function DashboardLayout() {
           <AISidePanel isMobile />
           <Toaster position="bottom-center" />
           <CommandPalette open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} />
+          <ConfirmDialog />
         </div>
       </TooltipProvider>
     );

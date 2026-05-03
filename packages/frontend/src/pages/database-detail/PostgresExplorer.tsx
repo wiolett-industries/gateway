@@ -673,10 +673,10 @@ export function PostgresExplorer({
   return (
     <div className={`flex flex-col flex-1 min-h-0 ${focused ? "gap-0" : "gap-4"}`}>
       {!focused && (
-        <div className="flex flex-wrap items-end gap-3 shrink-0">
-          <div>
+        <div className="grid shrink-0 grid-cols-[minmax(0,0.9fr)_minmax(0,1.25fr)_auto] items-end gap-2 sm:flex sm:flex-wrap sm:gap-3">
+          <div className="min-w-0">
             <Select value={schema} onValueChange={setSchema} disabled={loadingSchemas}>
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="w-full sm:w-[180px]">
                 <SelectValue placeholder={loadingSchemas ? "Loading schemas..." : "Schema"} />
               </SelectTrigger>
               <SelectContent>
@@ -688,9 +688,9 @@ export function PostgresExplorer({
               </SelectContent>
             </Select>
           </div>
-          <div>
+          <div className="min-w-0">
             <Select value={table} onValueChange={setTable} disabled={loadingTables || !schema}>
-              <SelectTrigger className="w-[260px]">
+              <SelectTrigger className="w-full sm:w-[260px]">
                 <SelectValue placeholder={loadingTables ? "Loading tables..." : "Table"} />
               </SelectTrigger>
               <SelectContent>
@@ -704,11 +704,14 @@ export function PostgresExplorer({
           </div>
           <Button
             variant="outline"
+            size="icon"
+            className="sm:w-auto sm:px-4"
             onClick={() => void refreshRows()}
             disabled={refreshing || loadingExplorer || !table}
+            title="Refresh"
           >
             <RefreshCw className={`h-4 w-4 ${refreshing || loadingRows ? "animate-spin" : ""}`} />
-            Refresh
+            <span className="hidden sm:inline">Refresh</span>
           </Button>
         </div>
       )}

@@ -19,6 +19,7 @@ import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { DetailRow } from "@/components/common/DetailRow";
 import { PageTransition } from "@/components/common/PageTransition";
+import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
 import { DockerHealthCheckSection } from "@/components/docker/DockerHealthCheckSection";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -442,6 +443,110 @@ export function DockerDeploymentDetail() {
 
   if (!deployment) return null;
 
+  const actionDisabled = !!action || serviceBusy;
+  const headerActions = [
+    {
+      label: "Pin",
+      icon: <Pin className="h-4 w-4" />,
+      onClick: () => setPinOpen(true),
+    },
+    ...(isStopped && canManage
+      ? [
+          {
+            label: "Start",
+            icon: <Play className="h-4 w-4" />,
+            onClick: () =>
+              runAction("start", async () => {
+                await api.startDockerDeployment(nodeId, deployment.id);
+                toast.success("Deployment started");
+              }),
+            disabled: actionDisabled,
+          },
+        ]
+      : []),
+    ...(!isStopped && canManage
+      ? [
+          {
+            label: "Stop",
+            icon: <Square className="h-4 w-4" />,
+            onClick: () =>
+              runAction("stop", async () => {
+                await api.stopDockerDeployment(nodeId, deployment.id);
+                toast.success("Deployment stopped");
+              }),
+            disabled: actionDisabled,
+          },
+          {
+            label: "Restart",
+            icon: <RotateCcw className="h-4 w-4" />,
+            onClick: () =>
+              runAction("restart", async () => {
+                await api.restartDockerDeployment(nodeId, deployment.id);
+                toast.success("Deployment restarted");
+              }),
+            disabled: actionDisabled,
+          },
+        ]
+      : []),
+    ...(canManage
+      ? [
+          {
+            label: "Rollback",
+            icon: <RotateCcw className="h-4 w-4" />,
+            onClick: () =>
+              runAction("rollback", async () => {
+                await api.rollbackDockerDeployment(nodeId, deployment.id);
+                toast.success("Rollback started");
+              }),
+            disabled: actionDisabled,
+            separatorBefore: true,
+          },
+        ]
+      : []),
+    ...(!isStopped && canManage && drainingSlot?.containerId
+      ? [
+          {
+            label: "Stop draining slot",
+            icon: <Square className="h-4 w-4" />,
+            onClick: () =>
+              runAction(`stop-${drainingSlot.slot}`, async () => {
+                await api.stopDockerDeploymentSlot(nodeId, deployment.id, drainingSlot.slot);
+                toast.success("Draining slot stopped");
+              }),
+            disabled: actionDisabled,
+          },
+        ]
+      : []),
+    ...(!isStopped && canManage
+      ? [
+          {
+            label: "Kill",
+            icon: <Skull className="h-4 w-4" />,
+            onClick: () =>
+              runAction("kill", async () => {
+                await api.killDockerDeployment(nodeId, deployment.id);
+                toast.success("Deployment killed");
+              }),
+            disabled: actionDisabled,
+            destructive: true,
+            separatorBefore: !drainingSlot?.containerId,
+          },
+        ]
+      : []),
+    ...(canDelete
+      ? [
+          {
+            label: "Remove",
+            icon: <Trash2 className="h-4 w-4" />,
+            onClick: removeDeployment,
+            disabled: actionDisabled,
+            destructive: true,
+            separatorBefore: isStopped || !canManage,
+          },
+        ]
+      : []),
+  ];
+
   return (
     <PageTransition>
       <div
@@ -449,32 +554,41 @@ export function DockerDeploymentDetail() {
           isTerminalTab ? "overflow-hidden" : "overflow-y-auto"
         }`}
       >
-        <div className="flex flex-wrap items-center justify-between gap-2 shrink-0">
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" onClick={() => navigate("/docker")}>
+        <div className="flex shrink-0 items-center justify-between gap-3">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="shrink-0"
+              onClick={() => navigate("/docker")}
+            >
               <ArrowLeft className="h-4 w-4" />
             </Button>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-2xl font-bold">{deployment.name}</h1>
-                <Badge variant={statusVariant(serviceState)}>{serviceState}</Badge>
-                <Badge variant="outline">blue/green</Badge>
+            <div className="min-w-0">
+              <div className="flex min-w-0 items-center gap-2">
+                <h1 className="truncate text-2xl font-bold">{deployment.name}</h1>
+                <Badge variant={statusVariant(serviceState)} className="shrink-0">
+                  {serviceState}
+                </Badge>
+                <Badge variant="outline" className="shrink-0">
+                  blue/green
+                </Badge>
               </div>
-              <p className="text-sm text-muted-foreground">
+              <p className="break-all text-sm text-muted-foreground">
                 {active?.image ?? deployment.desiredConfig.image} &middot; active{" "}
                 {deployment.activeSlot}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <ResponsiveHeaderActions actions={headerActions}>
             <Button variant="outline" size="icon" onClick={() => setPinOpen(true)}>
               <Pin className="h-4 w-4" />
             </Button>
             {isStopped && canManage && (
               <Button
                 variant="outline"
-                disabled={!!action || serviceBusy}
+                disabled={actionDisabled}
                 onClick={() =>
                   runAction("start", async () => {
                     await api.startDockerDeployment(nodeId, deployment.id);
@@ -490,7 +604,7 @@ export function DockerDeploymentDetail() {
               <>
                 <Button
                   variant="outline"
-                  disabled={!!action || serviceBusy}
+                  disabled={actionDisabled}
                   onClick={() =>
                     runAction("stop", async () => {
                       await api.stopDockerDeployment(nodeId, deployment.id);
@@ -503,7 +617,7 @@ export function DockerDeploymentDetail() {
                 </Button>
                 <Button
                   variant="outline"
-                  disabled={!!action || serviceBusy}
+                  disabled={actionDisabled}
                   onClick={() =>
                     runAction("restart", async () => {
                       await api.restartDockerDeployment(nodeId, deployment.id);
@@ -518,7 +632,7 @@ export function DockerDeploymentDetail() {
             )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="icon" disabled={!!action || serviceBusy}>
+                <Button variant="outline" size="icon" disabled={actionDisabled}>
                   <EllipsisVertical className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
@@ -581,7 +695,7 @@ export function DockerDeploymentDetail() {
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
-          </div>
+          </ResponsiveHeaderActions>
         </div>
 
         {deployment.healthCheck?.enabled && (
@@ -962,21 +1076,23 @@ function DeploymentSlots({
 
 function ReleaseRow({ release }: { release: DockerDeploymentRelease }) {
   return (
-    <div className="flex items-center justify-between px-4 py-3 gap-4">
-      <div className="min-w-0">
-        <div className="flex items-center gap-2">
+    <div className="grid gap-2 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-4">
+      <div className="min-w-0 space-y-1">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
           <span className="text-sm capitalize">{release.triggerSource}</span>
-          <span className="text-sm text-muted-foreground">
+          <span className="inline-flex min-w-0 items-center text-sm text-muted-foreground">
             {release.fromSlot ?? "-"}
-            <ArrowRight className="mx-1.5 inline h-3.5 w-3.5 align-[-2px]" />
+            <ArrowRight className="mx-1.5 h-3.5 w-3.5 shrink-0" />
             {release.toSlot ?? "-"}
           </span>
         </div>
         <p className="text-xs text-muted-foreground font-mono truncate">{release.image ?? "-"}</p>
       </div>
-      <div className="flex items-center gap-2 shrink-0">
+      <div className="flex min-w-0 flex-wrap items-center gap-2 sm:justify-end">
         <Badge variant={statusVariant(release.status)}>{release.status}</Badge>
-        <span className="text-sm text-muted-foreground">{formatDate(release.createdAt)}</span>
+        <span className="text-sm text-muted-foreground tabular-nums">
+          {formatDate(release.createdAt)}
+        </span>
       </div>
     </div>
   );
