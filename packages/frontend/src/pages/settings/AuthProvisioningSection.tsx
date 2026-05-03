@@ -228,92 +228,115 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
   if (!settings) return null;
 
   return (
-    <div className="border border-border bg-card">
-      <div className="border-b border-border p-4">
-        <h2 className="font-semibold">Gateway settings</h2>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          Configure sign-in provisioning, control-plane access, and network trust
-        </p>
+    <div className="space-y-4">
+      <div className="border border-border bg-card">
+        <div className="border-b border-border p-4">
+          <h2 className="font-semibold">Identity provisioning</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            OIDC sign-in behavior for Gateway users
+          </p>
+        </div>
+        <div className="divide-y divide-border">
+          <div className="flex items-center justify-between gap-4 px-4 py-3">
+            <div>
+              <p className="text-sm font-medium">Auto-create users on OIDC sign-in</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                If disabled, only pre-created users can sign in through OIDC
+              </p>
+            </div>
+            <Switch
+              checked={settings.oidcAutoCreateUsers}
+              disabled={!canEdit || isSavingAutoCreate}
+              onChange={handleToggleAutoCreate}
+            />
+          </div>
+          <div className="flex items-center justify-between gap-4 px-4 py-3">
+            <div>
+              <p className="text-sm font-medium">Require verified OIDC email</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Require email_verified=true for future auto-created users and pre-created user
+                claims
+              </p>
+            </div>
+            <Switch
+              checked={settings.oidcRequireVerifiedEmail}
+              disabled={!canEdit || isSavingVerifiedEmail}
+              onChange={handleToggleRequireVerifiedEmail}
+            />
+          </div>
+          <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+            <div>
+              <p className="text-sm font-medium">Default group for new OIDC users</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Applied to newly auto-created users after the first real administrator signs in
+              </p>
+            </div>
+            <div className="w-full shrink-0 sm:w-64">
+              <Select
+                value={settings.oidcDefaultGroupId}
+                disabled={!canEdit || isSavingGroup}
+                onValueChange={handleChangeGroup}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={selectedGroup?.name ?? "Select group"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {settings.availableGroups.map((group) => (
+                    <SelectItem key={group.id} value={group.id}>
+                      {group.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </div>
       </div>
-      <div className="divide-y divide-border">
-        <div className="flex items-center justify-between gap-4 px-4 py-3">
-          <div>
-            <p className="text-sm font-medium">Auto-create users on OIDC sign-in</p>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              If disabled, only pre-created users can sign in through OIDC
-            </p>
-          </div>
-          <Switch
-            checked={settings.oidcAutoCreateUsers}
-            disabled={!canEdit || isSavingAutoCreate}
-            onChange={handleToggleAutoCreate}
-          />
+
+      <div className="border border-border bg-card">
+        <div className="border-b border-border p-4">
+          <h2 className="font-semibold">OAuth and MCP access</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Remote client compatibility and tool access
+          </p>
         </div>
-        <div className="flex items-center justify-between gap-4 px-4 py-3">
-          <div>
-            <p className="text-sm font-medium">Require verified OIDC email</p>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Require email_verified=true for future auto-created users and pre-created user claims
-            </p>
+        <div className="divide-y divide-border">
+          <div className="flex items-center justify-between gap-4 px-4 py-3">
+            <div>
+              <p className="text-sm font-medium">Enable MCP server</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Allow MCP-enabled user accounts to access the remote MCP endpoint with OAuth
+              </p>
+            </div>
+            <Switch
+              checked={settings.mcpServerEnabled}
+              disabled={!canEdit || isSavingMcp}
+              onChange={handleToggleMcpServer}
+            />
           </div>
-          <Switch
-            checked={settings.oidcRequireVerifiedEmail}
-            disabled={!canEdit || isSavingVerifiedEmail}
-            onChange={handleToggleRequireVerifiedEmail}
-          />
-        </div>
-        <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-          <div>
-            <p className="text-sm font-medium">Default group for new OIDC users</p>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Applied to newly auto-created users after the first real administrator signs in
-            </p>
-          </div>
-          <div className="w-full shrink-0 sm:w-64">
-            <Select
-              value={settings.oidcDefaultGroupId}
-              disabled={!canEdit || isSavingGroup}
-              onValueChange={handleChangeGroup}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder={selectedGroup?.name ?? "Select group"} />
-              </SelectTrigger>
-              <SelectContent>
-                {settings.availableGroups.map((group) => (
-                  <SelectItem key={group.id} value={group.id}>
-                    {group.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="flex items-center justify-between gap-4 px-4 py-3">
+            <div>
+              <p className="text-sm font-medium">OAuth extended callback compatibility</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Allow unverified OAuth clients to register external HTTPS callback URLs. Leave
+                disabled for loopback-only CLI and MCP clients.
+              </p>
+            </div>
+            <Switch
+              checked={settings.oauthExtendedCallbackCompatibility}
+              disabled={!canEdit || isSavingOAuthCompatibility}
+              onChange={handleToggleOAuthCompatibility}
+            />
           </div>
         </div>
-        <div className="flex items-center justify-between gap-4 px-4 py-3">
-          <div>
-            <p className="text-sm font-medium">Enable MCP server</p>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Allow MCP-enabled user accounts to access the remote MCP endpoint with OAuth
-            </p>
-          </div>
-          <Switch
-            checked={settings.mcpServerEnabled}
-            disabled={!canEdit || isSavingMcp}
-            onChange={handleToggleMcpServer}
-          />
-        </div>
-        <div className="flex items-center justify-between gap-4 px-4 py-3">
-          <div>
-            <p className="text-sm font-medium">OAuth extended callback compatibility</p>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Allow unverified OAuth clients to register external HTTPS callback URLs. Leave
-              disabled for loopback-only CLI and MCP clients.
-            </p>
-          </div>
-          <Switch
-            checked={settings.oauthExtendedCallbackCompatibility}
-            disabled={!canEdit || isSavingOAuthCompatibility}
-            onChange={handleToggleOAuthCompatibility}
-          />
+      </div>
+
+      <div className="border border-border bg-card">
+        <div className="border-b border-border p-4">
+          <h2 className="font-semibold">Network trust</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Client address detection for rate limits and audit records
+          </p>
         </div>
         <div className="divide-y divide-border">
           <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
@@ -424,7 +447,17 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
               }
             />
           </div>
+        </div>
+      </div>
 
+      <div className="border border-border bg-card">
+        <div className="border-b border-border p-4">
+          <h2 className="font-semibold">Outbound webhook policy</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Private-network delivery rules for notification webhooks
+          </p>
+        </div>
+        <div className="divide-y divide-border">
           <div className="flex items-center justify-between gap-4 px-4 py-3">
             <div>
               <p className="text-sm font-medium">Allow private network webhooks</p>

@@ -4,6 +4,7 @@ import { confirm } from "@/components/common/ConfirmDialog";
 import { PageTransition } from "@/components/common/PageTransition";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { deriveAllowedResourceIdsByScope, scopeMatches } from "@/lib/scope-utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
@@ -28,6 +29,12 @@ export function Settings() {
     setShowUpdateNotifications,
     showSystemCertificates,
     setShowSystemCertificates,
+    aiBypassCreateApprovals,
+    setAIBypassCreateApprovals,
+    aiBypassEditApprovals,
+    setAIBypassEditApprovals,
+    aiBypassDeleteApprovals,
+    setAIBypassDeleteApprovals,
   } = useUIStore();
   const [nodesList, setNodesList] = useState<Node[]>([]);
   const [proxyHostsList, setProxyHostsList] = useState<ProxyHost[]>([]);
@@ -94,158 +101,178 @@ export function Settings() {
           <p className="text-sm text-muted-foreground">Account and application settings</p>
         </div>
 
-        {/* Profile */}
-        <div className="border border-border bg-card">
-          <div className="border-b border-border p-4">
-            <h2 className="font-semibold">Profile</h2>
-          </div>
-          {user && (
-            <div className="flex items-center gap-4 p-4">
-              <div className="h-10 w-10 bg-muted flex items-center justify-center shrink-0">
-                <span className="text-sm font-medium text-muted-foreground">
-                  {(user.name || user.email).charAt(0).toUpperCase()}
-                </span>
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium">{user.name || "Not set"}</p>
-                <p className="text-xs text-muted-foreground">{user.email}</p>
-              </div>
-              <Badge variant="secondary" className="text-xs capitalize">
-                {user.groupName}
-              </Badge>
-            </div>
-          )}
-        </div>
+        <Tabs defaultValue="preferences" className="flex flex-col">
+          <TabsList className="shrink-0">
+            <TabsTrigger value="preferences">Preferences</TabsTrigger>
+            <TabsTrigger value="gateway">Gateway settings</TabsTrigger>
+            <TabsTrigger value="features">Features</TabsTrigger>
+          </TabsList>
 
-        {/* Preferences */}
-        <div className="border border-border bg-card">
-          <div className="border-b border-border p-4">
-            <h2 className="font-semibold">Preferences</h2>
-          </div>
-          <div className="divide-y divide-border">
-            <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-              <div>
-                <p className="text-sm font-medium">Theme</p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Choose how the interface looks
-                </p>
-              </div>
-              <div className="flex w-fit shrink-0 gap-0 border border-border">
-                {(["light", "dark", "system"] as const).map((t) => (
-                  <button
-                    key={t}
-                    onClick={() => setTheme(t)}
-                    className={`flex items-center gap-2 px-4 py-2 text-sm capitalize transition-colors ${
-                      theme === t
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-transparent text-muted-foreground hover:text-foreground hover:bg-accent"
-                    }`}
-                  >
-                    {t === "light" && <Sun className="h-3.5 w-3.5" />}
-                    {t === "dark" && <Moon className="h-3.5 w-3.5" />}
-                    {t}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="flex items-center justify-between gap-4 px-4 py-3">
-              <div>
-                <p className="text-sm font-medium">Update notifications</p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Show update banners in sidebar and dashboard
-                </p>
-              </div>
-              <Switch checked={showUpdateNotifications} onChange={setShowUpdateNotifications} />
-            </div>
-            {canViewSystemCertificates && (
-              <div className="flex items-center justify-between gap-4 px-4 py-3">
-                <div>
-                  <p className="text-sm font-medium">Show system certificates</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Include internal PKI and SSL certificates in lists and dashboard counts
-                  </p>
+          <TabsContent value="preferences" className="pb-0">
+            <div className="space-y-4">
+              <div className="border border-border bg-card">
+                <div className="border-b border-border p-4">
+                  <h2 className="font-semibold">Profile</h2>
                 </div>
-                <Switch
-                  checked={showSystemCertificates}
-                  onChange={handleToggleSystemCertificates}
-                />
+                {user && (
+                  <div className="flex items-center gap-4 p-4">
+                    <div className="h-10 w-10 bg-muted flex items-center justify-center shrink-0">
+                      <span className="text-sm font-medium text-muted-foreground">
+                        {(user.name || user.email).charAt(0).toUpperCase()}
+                      </span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium">{user.name || "Not set"}</p>
+                      <p className="text-xs text-muted-foreground">{user.email}</p>
+                    </div>
+                    <Badge variant="secondary" className="text-xs capitalize">
+                      {user.groupName}
+                    </Badge>
+                  </div>
+                )}
               </div>
-            )}
-            {canUseAI && (
-              <>
-                <AIBypassRow
-                  label="AI: bypass create approvals"
-                  description="Allow AI to create resources without confirmation"
-                  checked={useUIStore.getState().aiBypassCreateApprovals}
-                  onChange={(v) => useUIStore.getState().setAIBypassCreateApprovals(v)}
+
+              <div className="border border-border bg-card">
+                <div className="border-b border-border p-4">
+                  <h2 className="font-semibold">Preferences</h2>
+                </div>
+                <div className="divide-y divide-border">
+                  <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                    <div>
+                      <p className="text-sm font-medium">Theme</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Choose how the interface looks
+                      </p>
+                    </div>
+                    <div className="flex w-fit shrink-0 gap-0 border border-border">
+                      {(["light", "dark", "system"] as const).map((t) => (
+                        <button
+                          key={t}
+                          type="button"
+                          onClick={() => setTheme(t)}
+                          className={`flex items-center gap-2 px-4 py-2 text-sm capitalize transition-colors ${
+                            theme === t
+                              ? "bg-primary text-primary-foreground"
+                              : "bg-transparent text-muted-foreground hover:text-foreground hover:bg-accent"
+                          }`}
+                        >
+                          {t === "light" && <Sun className="h-3.5 w-3.5" />}
+                          {t === "dark" && <Moon className="h-3.5 w-3.5" />}
+                          {t}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between gap-4 px-4 py-3">
+                    <div>
+                      <p className="text-sm font-medium">Update notifications</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Show update banners in sidebar and dashboard
+                      </p>
+                    </div>
+                    <Switch
+                      checked={showUpdateNotifications}
+                      onChange={setShowUpdateNotifications}
+                    />
+                  </div>
+                  {canViewSystemCertificates && (
+                    <div className="flex items-center justify-between gap-4 px-4 py-3">
+                      <div>
+                        <p className="text-sm font-medium">Show system certificates</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Include internal PKI and SSL certificates in lists and dashboard counts
+                        </p>
+                      </div>
+                      <Switch
+                        checked={showSystemCertificates}
+                        onChange={handleToggleSystemCertificates}
+                      />
+                    </div>
+                  )}
+                  {canUseAI && (
+                    <>
+                      <AIBypassRow
+                        label="AI: bypass create approvals"
+                        description="Allow AI to create resources without confirmation"
+                        checked={aiBypassCreateApprovals}
+                        onChange={setAIBypassCreateApprovals}
+                      />
+                      <AIBypassRow
+                        label="AI: bypass edit approvals"
+                        description="Allow AI to modify resources without confirmation"
+                        checked={aiBypassEditApprovals}
+                        onChange={setAIBypassEditApprovals}
+                        dangerous
+                      />
+                      <AIBypassRow
+                        label="AI: bypass delete approvals"
+                        description="Allow AI to delete resources without confirmation"
+                        checked={aiBypassDeleteApprovals}
+                        onChange={setAIBypassDeleteApprovals}
+                        dangerous
+                      />
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <ApiTokensSection
+                user={user}
+                nodesList={nodesList}
+                proxyHostsList={proxyHostsList}
+                databasesList={databasesList}
+                loggingSchemasList={loggingSchemasList}
+              />
+
+              <OAuthApplicationsSection
+                nodesList={nodesList}
+                proxyHostsList={proxyHostsList}
+                databasesList={databasesList}
+                loggingSchemasList={loggingSchemasList}
+              />
+            </div>
+          </TabsContent>
+
+          <TabsContent value="gateway" className="pb-0">
+            <div className="space-y-4">
+              {canViewGatewaySettings && (
+                <AuthProvisioningSection canEdit={canEditGatewaySettings} />
+              )}
+
+              {canManageRegistries && <DockerRegistriesSection nodesList={nodesList} />}
+
+              {canViewLicense ? (
+                <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                  <UpdateSection canUpdate={canUpdate} />
+                  <LicenseSection canManage={canManageLicense} />
+                </div>
+              ) : (
+                <UpdateSection canUpdate={canUpdate} />
+              )}
+            </div>
+          </TabsContent>
+
+          <TabsContent value="features" className="pb-0">
+            <div className="space-y-4">
+              {canConfigAI && <AIConfigSection />}
+
+              {canViewStatusPage && <StatusPageSection nodesList={nodesList} />}
+
+              {canViewHousekeeping && (
+                <HousekeepingSection
+                  canRun={canRunHousekeeping}
+                  canConfigure={canConfigureHousekeeping}
                 />
-                <AIBypassRow
-                  label="AI: bypass edit approvals"
-                  description="Allow AI to modify resources without confirmation"
-                  checked={useUIStore.getState().aiBypassEditApprovals}
-                  onChange={(v) => useUIStore.getState().setAIBypassEditApprovals(v)}
-                  dangerous
-                />
-                <AIBypassRow
-                  label="AI: bypass delete approvals"
-                  description="Allow AI to delete resources without confirmation"
-                  checked={useUIStore.getState().aiBypassDeleteApprovals}
-                  onChange={(v) => useUIStore.getState().setAIBypassDeleteApprovals(v)}
-                  dangerous
-                />
-              </>
-            )}
-          </div>
-        </div>
+              )}
 
-        {/* API Tokens */}
-        <ApiTokensSection
-          user={user}
-          nodesList={nodesList}
-          proxyHostsList={proxyHostsList}
-          databasesList={databasesList}
-          loggingSchemasList={loggingSchemasList}
-        />
-
-        {/* OAuth Applications */}
-        <OAuthApplicationsSection
-          nodesList={nodesList}
-          proxyHostsList={proxyHostsList}
-          databasesList={databasesList}
-          loggingSchemasList={loggingSchemasList}
-        />
-
-        {/* Gateway settings */}
-        {canViewGatewaySettings && <AuthProvisioningSection canEdit={canEditGatewaySettings} />}
-
-        {/* AI Assistant */}
-        {canConfigAI && <AIConfigSection />}
-
-        {/* Docker Registries */}
-        {canManageRegistries && <DockerRegistriesSection nodesList={nodesList} />}
-
-        {/* Status Page */}
-        {canViewStatusPage && <StatusPageSection nodesList={nodesList} />}
-
-        {/* Housekeeping */}
-        {canViewHousekeeping && (
-          <HousekeepingSection
-            canRun={canRunHousekeeping}
-            canConfigure={canConfigureHousekeeping}
-          />
-        )}
-
-        {canViewLicense ? (
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-            {/* Update + About */}
-            <UpdateSection canUpdate={canUpdate} />
-
-            {/* License */}
-            <LicenseSection canManage={canManageLicense} />
-          </div>
-        ) : (
-          <UpdateSection canUpdate={canUpdate} />
-        )}
+              {!canConfigAI && !canViewStatusPage && !canViewHousekeeping && (
+                <div className="border border-border bg-card p-6 text-center text-sm text-muted-foreground">
+                  No feature settings available for your account.
+                </div>
+              )}
+            </div>
+          </TabsContent>
+        </Tabs>
 
         <p className="text-center text-xs text-muted-foreground">
           Powered by{" "}

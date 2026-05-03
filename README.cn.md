@@ -144,13 +144,15 @@ Gateway 已经面向 production operations，而不是狭窄的 MVP。当前方�
 - [x] PostgreSQL and Redis database explorer with encrypted saved credentials.
 - [x] Status pages, notifications, audit logs, RBAC, API tokens, OAuth PKCE, and remote MCP access.
 - [x] Optional ClickHouse-backed structured logging and optional AI assistant.
-- [x] Gateway and daemon update workflows with checksum-verified daemon binaries.
+- [x] View-based, resource-scoped permission model with filtered list visibility.
+- [x] Hardened OIDC/OAuth flows, setup lockout, fail-closed public endpoints, and signed update trust.
+- [x] Gateway and daemon update workflows with signature-verified artifacts.
+- [x] Settings workspace organized around preferences, gateway configuration, and feature controls.
 
 计划中的工作：
 
 - [ ] Bastion and SSH management daemon for controlled host access.
 - [ ] CLI for scriptable programmatic control from terminals and CI/CD jobs.
-- [ ] Settings page and permission scopes UX redesign.
 - [ ] Plugin system for extending Gateway with new integrations and operational modules.
 - [ ] Per-user AI assistant quotas and richer usage reporting.
 - [ ] Local username/password authentication as an OIDC alternative.
