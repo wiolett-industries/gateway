@@ -2507,10 +2507,22 @@ export interface DockerWebhook {
   containerName: string;
   token: string;
   enabled: boolean;
-  cleanupEnabled: boolean;
-  retentionCount: number;
+  targetType?: "container" | "deployment";
+  deploymentId?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface DockerImageCleanupSettings {
+  id: string | null;
+  nodeId: string;
+  targetType: "container" | "deployment";
+  containerName: string | null;
+  deploymentId: string | null;
+  enabled: boolean;
+  retentionCount: number;
+  createdAt: string | null;
+  updatedAt: string | null;
 }
 
 export interface DaemonNodeUpdateStatus {

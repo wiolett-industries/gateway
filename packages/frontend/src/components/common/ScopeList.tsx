@@ -104,7 +104,9 @@ function getResourceOptions(
     }));
   }
   if (scope.startsWith("docker:")) {
-    return (nodes ?? []).map((n) => ({ id: n.id, label: n.displayName || n.hostname }));
+    return (nodes ?? [])
+      .filter((n) => n.type === "docker")
+      .map((n) => ({ id: n.id, label: n.displayName || n.hostname }));
   }
   if (scope.startsWith("nodes:")) {
     return (nodes ?? []).map((n) => ({ id: n.id, label: n.displayName || n.hostname }));

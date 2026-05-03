@@ -1,5 +1,5 @@
 import { Database as DatabaseIcon, Plus, RefreshCw } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/common/EmptyState";
@@ -23,6 +23,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import type { DatabaseConnection } from "@/types";
@@ -40,6 +42,46 @@ const HEALTH_BADGE: Record<string, "success" | "secondary" | "warning" | "destru
   unknown: "secondary",
 };
 
+const DATABASE_TAG_COLORS = {
+  blue: "bg-blue-500/15 text-blue-600 dark:bg-blue-500/15 dark:text-blue-400",
+  red: "bg-red-500/15 text-red-600 dark:bg-red-500/15 dark:text-red-400",
+  green: "bg-emerald-500/15 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400",
+  yellow: "bg-amber-500/15 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400",
+  purple: "bg-violet-500/15 text-violet-600 dark:bg-violet-500/15 dark:text-violet-400",
+  pink: "bg-pink-500/15 text-pink-600 dark:bg-pink-500/15 dark:text-pink-400",
+  orange: "bg-orange-500/15 text-orange-600 dark:bg-orange-500/15 dark:text-orange-400",
+  gray: "bg-zinc-500/15 text-zinc-600 dark:bg-zinc-500/15 dark:text-zinc-300",
+} as const;
+
+type DatabaseTagColor = keyof typeof DATABASE_TAG_COLORS;
+
+interface ParsedDatabaseTag {
+  raw: string;
+  label: string;
+  color: DatabaseTagColor;
+}
+
+function parseDatabaseTag(raw: string): ParsedDatabaseTag {
+  const trimmed = raw.trim();
+  const colonIndex = trimmed.indexOf(":");
+  if (colonIndex > 0) {
+    const color = trimmed.slice(0, colonIndex).toLowerCase();
+    const label = trimmed.slice(colonIndex + 1).trim();
+    if (color in DATABASE_TAG_COLORS && label) {
+      return { raw, label, color: color as DatabaseTagColor };
+    }
+  }
+  return { raw, label: trimmed, color: "blue" };
+}
+
+function estimateTagWidth(tag: ParsedDatabaseTag): number {
+  return Math.min(180, Math.max(44, tag.label.length * 7 + 24));
+}
+
+function estimateMoreWidth(count: number): number {
+  return 44 + String(count).length * 7;
+}
+
 function formatLastCheck(dateStr: string | null): string {
   if (!dateStr) return "Never";
   const date = new Date(dateStr);
@@ -54,25 +96,88 @@ function formatHealthLabel(status: DatabaseConnection["healthStatus"]): string {
   return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
-function DatabaseTagSummary({ tags }: { tags: string[] }) {
-  if (tags.length === 0) return null;
+function DatabaseTagSummary({ tags, type }: { tags: string[]; type: DatabaseConnection["type"] }) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const typeRef = useRef<HTMLSpanElement | null>(null);
+  const [containerWidth, setContainerWidth] = useState<number | null>(null);
+  const [typeWidth, setTypeWidth] = useState<number | null>(null);
+  const parsedTags = useMemo(() => tags.map(parseDatabaseTag), [tags]);
+  const visibleCount = useMemo(() => {
+    if (parsedTags.length <= 2 && containerWidth === null) return parsedTags.length;
+    if (containerWidth === null || containerWidth <= 0) return Math.min(2, parsedTags.length);
 
-  const primaryTag = tags[0]!;
-  const extraCount = tags.length - 1;
+    const gapWidth = 8;
+    const availableWidth = Math.max(0, containerWidth - (typeWidth ?? 0) - gapWidth);
+    let usedWidth = 0;
+    let count = 0;
+
+    for (let index = 0; index < parsedTags.length; index += 1) {
+      const remaining = parsedTags.length - index - 1;
+      const tagWidth = estimateTagWidth(parsedTags[index]!);
+      const moreWidth = remaining > 0 ? estimateMoreWidth(remaining) + gapWidth : 0;
+      const nextWidth = usedWidth + (count > 0 ? gapWidth : 0) + tagWidth;
+      if (nextWidth + moreWidth > availableWidth) break;
+      usedWidth = nextWidth;
+      count += 1;
+    }
+
+    return Math.max(1, count);
+  }, [containerWidth, parsedTags, typeWidth]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    const typeBadge = typeRef.current;
+    if (!container || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      setContainerWidth(container.getBoundingClientRect().width);
+      if (typeBadge) setTypeWidth(typeBadge.getBoundingClientRect().width);
+    });
+    observer.observe(container);
+    if (typeBadge) observer.observe(typeBadge);
+    return () => observer.disconnect();
+  }, []);
+
+  const visibleTags = parsedTags.slice(0, visibleCount);
+  const hiddenTags = parsedTags.slice(visibleCount);
 
   return (
-    <div className="flex items-center gap-2 shrink-0">
-      <Badge
-        variant="info"
-        className="max-w-[180px] min-w-0 shrink-0 overflow-hidden text-ellipsis whitespace-nowrap text-xs"
-        title={primaryTag}
-      >
-        {primaryTag}
-      </Badge>
-      {extraCount > 0 && (
-        <Badge variant="secondary" className="shrink-0">
-          +{extraCount}
+    <div ref={containerRef} className="flex min-w-0 flex-1 items-center justify-end gap-2">
+      <span ref={typeRef} className="inline-flex shrink-0">
+        <Badge variant="secondary" className="text-xs uppercase">
+          {type}
         </Badge>
+      </span>
+      {visibleTags.map((tag, index) => (
+        <Badge
+          key={`${tag.raw}:${index}`}
+          variant="secondary"
+          className={cn("max-w-[180px] text-xs", DATABASE_TAG_COLORS[tag.color])}
+          title={tag.raw}
+        >
+          {tag.label}
+        </Badge>
+      ))}
+      {hiddenTags.length > 0 && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Badge variant="secondary" className="h-6 shrink-0 px-2 text-xs">
+              +{hiddenTags.length}
+            </Badge>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-xs">
+            <div className="flex flex-wrap gap-1.5">
+              {hiddenTags.map((tag, index) => (
+                <Badge
+                  key={`${tag.raw}:${visibleCount + index}`}
+                  variant="secondary"
+                  className={cn("max-w-[180px] text-xs", DATABASE_TAG_COLORS[tag.color])}
+                >
+                  {tag.label}
+                </Badge>
+              ))}
+            </div>
+          </TooltipContent>
+        </Tooltip>
       )}
     </div>
   );
@@ -258,11 +363,8 @@ export function Databases() {
                     </p>
                   </div>
 
-                  <div className="flex items-center gap-2 shrink-0">
-                    <Badge variant="secondary" className="text-xs uppercase shrink-0">
-                      {row.type}
-                    </Badge>
-                    <DatabaseTagSummary tags={row.tags} />
+                  <div className="flex min-w-0 w-[58%] shrink-0 items-center justify-end gap-2">
+                    <DatabaseTagSummary tags={row.tags} type={row.type} />
                     <Badge variant="outline" className="text-xs shrink-0">
                       {formatLastCheck(row.lastHealthCheckAt)}
                     </Badge>

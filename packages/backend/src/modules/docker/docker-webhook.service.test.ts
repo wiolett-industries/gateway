@@ -41,17 +41,22 @@ describe('DockerWebhookService', () => {
       rememberImageRegistry: vi.fn().mockResolvedValue(undefined),
     };
 
+    const cleanup = {
+      scheduleCleanupForContainer: vi.fn().mockResolvedValue(undefined),
+    };
+
     const service = new DockerWebhookService(
       {} as never,
       docker as never,
       tasks as never,
       { log: vi.fn().mockResolvedValue({}) } as never,
       dispatch as never,
-      registry as never
+      registry as never,
+      cleanup as never
     );
     const getByContainer = vi.spyOn(service, 'getByContainer').mockResolvedValue(null as never);
 
-    return { dispatch, docker, getByContainer, registry, service };
+    return { cleanup, dispatch, docker, getByContainer, registry, service };
   }
 
   it('passes resolved registry auth to webhook image pulls', async () => {
@@ -87,44 +92,5 @@ describe('DockerWebhookService', () => {
       null,
       { skipImagePull: true, skipWebhookCleanup: true }
     );
-  });
-
-  it('uses webhook retention cleanup after manual recreates', async () => {
-    vi.useFakeTimers();
-    try {
-      const { docker, getByContainer, service } = createService();
-      getByContainer.mockResolvedValue({
-        cleanupEnabled: true,
-        retentionCount: 2,
-      } as never);
-      docker.listImages.mockResolvedValue([
-        {
-          Id: 'sha-new',
-          RepoTags: ['registry.example.com/team/app:new'],
-          Created: 300,
-        },
-        {
-          Id: 'sha-previous',
-          RepoTags: ['registry.example.com/team/app:previous'],
-          Created: 200,
-        },
-        {
-          Id: 'sha-old',
-          RepoTags: ['registry.example.com/team/app:old'],
-          Created: 100,
-        },
-      ]);
-      docker.listContainers.mockResolvedValue([{ ImageID: 'sha-new' }]);
-
-      const cleanup = service.scheduleCleanupForRecreate('node-1', 'app', 'registry.example.com/team/app:new');
-      await vi.advanceTimersByTimeAsync(5000);
-      await cleanup;
-
-      expect(docker.removeImage).toHaveBeenCalledWith('node-1', 'sha-old', false, 'system');
-      expect(docker.removeImage).not.toHaveBeenCalledWith('node-1', 'sha-previous', false, 'system');
-      expect(docker.removeImage).not.toHaveBeenCalledWith('node-1', 'sha-new', false, 'system');
-    } finally {
-      vi.useRealTimers();
-    }
   });
 });

@@ -5,11 +5,15 @@ import { requireScopeForResource } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import {
   deleteContainerWebhookRoute,
+  getContainerImageCleanupRoute,
   getContainerWebhookRoute,
   regenerateContainerWebhookRoute,
   triggerDockerWebhookRoute,
+  upsertContainerImageCleanupRoute,
   upsertContainerWebhookRoute,
 } from './docker.docs.js';
+import { ImageCleanupUpsertSchema } from './docker-image-cleanup.schemas.js';
+import { DockerImageCleanupService } from './docker-image-cleanup.service.js';
 import { WebhookTriggerSchema, WebhookUpsertSchema } from './docker-webhook.schemas.js';
 import { DockerWebhookService } from './docker-webhook.service.js';
 
@@ -64,6 +68,35 @@ export function registerWebhookConfigRoutes(router: OpenAPIHono<AppEnv>) {
       const containerName = decodeURIComponent(c.req.param('containerName')!);
       const user = c.get('user')!;
       const data = await service.regenerateToken(nodeId, containerName, user.id);
+      return c.json({ data });
+    }
+  );
+
+  router.openapi(
+    { ...getContainerImageCleanupRoute, middleware: requireScopeForResource('docker:containers:edit', 'nodeId') },
+    async (c) => {
+      const service = container.resolve(DockerImageCleanupService);
+      const nodeId = c.req.param('nodeId')!;
+      const containerName = decodeURIComponent(c.req.param('containerName')!);
+      const data = await service.getForContainer(nodeId, containerName);
+      return c.json({ data });
+    }
+  );
+
+  router.openapi(
+    {
+      ...upsertContainerImageCleanupRoute,
+      middleware: requireScopeForResource('docker:containers:edit', 'nodeId'),
+    },
+    async (c) => {
+      const service = container.resolve(DockerImageCleanupService);
+      const nodeId = c.req.param('nodeId')!;
+      const containerName = decodeURIComponent(c.req.param('containerName')!);
+      const data = await service.upsertForContainer(
+        nodeId,
+        containerName,
+        ImageCleanupUpsertSchema.parse(await c.req.json())
+      );
       return c.json({ data });
     }
   );

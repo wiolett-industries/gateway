@@ -45,6 +45,7 @@ import {
   ReorderDockerFoldersSchema,
   UpdateDockerFolderSchema,
 } from './docker-folder.schemas.js';
+import { ImageCleanupUpsertSchema } from './docker-image-cleanup.schemas.js';
 import { WebhookTriggerSchema, WebhookUpsertSchema } from './docker-webhook.schemas.js';
 
 export const nodeParams = pathParamSchema('nodeId');
@@ -382,6 +383,22 @@ export const regenerateDeploymentWebhookRoute = appRoute({
   tags: ['Docker Deployments'],
   summary: 'Regenerate deployment webhook token',
   request: { params: deploymentParams },
+  responses: okJson(UnknownDataResponseSchema),
+});
+export const getDeploymentImageCleanupRoute = appRoute({
+  method: 'get',
+  path: '/nodes/{nodeId}/deployments/{deploymentId}/image-cleanup',
+  tags: ['Docker Deployments'],
+  summary: 'Get deployment image cleanup settings',
+  request: { params: deploymentParams },
+  responses: okJson(UnknownDataResponseSchema),
+});
+export const upsertDeploymentImageCleanupRoute = appRoute({
+  method: 'put',
+  path: '/nodes/{nodeId}/deployments/{deploymentId}/image-cleanup',
+  tags: ['Docker Deployments'],
+  summary: 'Configure deployment image cleanup',
+  request: { params: deploymentParams, ...jsonBody(ImageCleanupUpsertSchema) },
   responses: okJson(UnknownDataResponseSchema),
 });
 export const listDeploymentSecretsRoute = appRoute({
@@ -736,5 +753,21 @@ export const regenerateContainerWebhookRoute = appRoute({
   tags: ['Docker Webhooks'],
   summary: 'Regenerate container webhook token',
   request: { params: containerNameParams },
+  responses: okJson(UnknownDataResponseSchema),
+});
+export const getContainerImageCleanupRoute = appRoute({
+  method: 'get',
+  path: '/nodes/{nodeId}/containers/{containerName}/image-cleanup',
+  tags: ['Docker Image Cleanup'],
+  summary: 'Get container image cleanup settings',
+  request: { params: containerNameParams },
+  responses: okJson(UnknownDataResponseSchema),
+});
+export const upsertContainerImageCleanupRoute = appRoute({
+  method: 'put',
+  path: '/nodes/{nodeId}/containers/{containerName}/image-cleanup',
+  tags: ['Docker Image Cleanup'],
+  summary: 'Configure container image cleanup',
+  request: { params: containerNameParams, ...jsonBody(ImageCleanupUpsertSchema) },
   responses: okJson(UnknownDataResponseSchema),
 });

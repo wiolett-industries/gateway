@@ -25,6 +25,7 @@ import type {
   DockerDeploymentUpdateInput,
 } from './docker-deployment.schemas.js';
 import type { DockerHealthCheckDto, DockerHealthCheckService } from './docker-health-check.service.js';
+import type { DockerImageCleanupService } from './docker-image-cleanup.service.js';
 import type { DockerRegistryAuthCandidate, DockerRegistryService } from './docker-registry.service.js';
 import type { DockerSecretService } from './docker-secret.service.js';
 import { assertDockerMountChangeAllowed, normalizeMountDefinitionsFromConfig } from './docker-socket-mount.guard.js';
@@ -136,6 +137,7 @@ function imageWithTag(image: string, tag?: string) {
 export class DockerDeploymentService {
   private eventBus?: EventBusService;
   private healthCheckService?: DockerHealthCheckService;
+  private imageCleanupService?: DockerImageCleanupService;
   private deploymentTransitions = new Map<string, DeploymentTransition>();
 
   constructor(
@@ -154,6 +156,10 @@ export class DockerDeploymentService {
 
   setHealthCheckService(service: DockerHealthCheckService) {
     this.healthCheckService = service;
+  }
+
+  setImageCleanupService(service: DockerImageCleanupService) {
+    this.imageCleanupService = service;
   }
 
   private emit(action: string, deploymentId: string, nodeId: string, extra?: Record<string, unknown>) {
@@ -737,6 +743,7 @@ export class DockerDeploymentService {
         progress: `Deployed ${targetImage}`,
         completedAt: new Date(),
       });
+      this.imageCleanupService?.scheduleCleanupForDeployment(nodeId, deploymentId, targetImage).catch(() => {});
     } catch (err) {
       const error = err instanceof Error ? err.message : 'Deployment failed';
       await Promise.all([
@@ -1233,25 +1240,19 @@ export class DockerDeploymentService {
     return deployment.webhook ?? null;
   }
 
-  async upsertWebhook(
-    nodeId: string,
-    deploymentId: string,
-    input: { cleanupEnabled?: boolean; retentionCount?: number },
-    userId: string
-  ) {
+  async upsertWebhook(nodeId: string, deploymentId: string, input: { enabled?: boolean }, userId: string) {
     const deployment = await this.loadDeployment(nodeId, deploymentId);
     const existing = deployment.webhook;
     if (existing) {
       const [updated] = await this.db
         .update(dockerWebhooks)
         .set({
-          cleanupEnabled: input.cleanupEnabled ?? existing.cleanupEnabled,
-          retentionCount: input.retentionCount ?? existing.retentionCount,
-          enabled: true,
+          enabled: input.enabled ?? existing.enabled,
           updatedAt: new Date(),
         })
         .where(eq(dockerWebhooks.id, existing.id))
         .returning();
+      this.emitWebhook('updated', updated);
       return updated;
     }
     const [created] = await this.db
@@ -1261,8 +1262,7 @@ export class DockerDeploymentService {
         containerName: deployment.name,
         targetType: 'deployment',
         deploymentId,
-        cleanupEnabled: input.cleanupEnabled ?? false,
-        retentionCount: input.retentionCount ?? 2,
+        enabled: input.enabled ?? true,
       })
       .returning();
     await this.audit.log({
@@ -1272,6 +1272,7 @@ export class DockerDeploymentService {
       resourceId: deploymentId,
       details: { nodeId, name: deployment.name },
     });
+    this.emitWebhook('created', created);
     return created;
   }
 
@@ -1286,6 +1287,7 @@ export class DockerDeploymentService {
       resourceId: deploymentId,
       details: { nodeId },
     });
+    this.emitWebhook('deleted', webhook);
   }
 
   async regenerateWebhook(nodeId: string, deploymentId: string, userId: string) {
@@ -1303,7 +1305,13 @@ export class DockerDeploymentService {
       resourceId: deploymentId,
       details: { nodeId },
     });
+    this.emitWebhook('updated', updated);
     return updated;
+  }
+
+  private emitWebhook(action: string, data: typeof dockerWebhooks.$inferSelect) {
+    const { token: _token, ...safeData } = data;
+    this.eventBus?.publish('docker.webhook.changed', { ...safeData, action });
   }
 
   async triggerWebhook(webhookId: string, tag?: string) {

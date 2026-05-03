@@ -9,6 +9,7 @@ import type { EventBusService } from '@/services/event-bus.service.js';
 import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import type { DockerManagementService } from './docker.service.js';
 import type { DockerDeploymentService } from './docker-deployment.service.js';
+import type { DockerImageCleanupService } from './docker-image-cleanup.service.js';
 import type { DockerRegistryService } from './docker-registry.service.js';
 import type { DockerTaskService } from './docker-task.service.js';
 
@@ -24,6 +25,7 @@ export class DockerWebhookService {
     private audit: AuditService,
     private dispatch: NodeDispatchService,
     private registry: DockerRegistryService,
+    private cleanup: DockerImageCleanupService,
     private deployments?: DockerDeploymentService
   ) {}
 
@@ -62,20 +64,13 @@ export class DockerWebhookService {
     return row ?? null;
   }
 
-  async upsert(
-    nodeId: string,
-    containerName: string,
-    input: { cleanupEnabled?: boolean; retentionCount?: number },
-    userId: string
-  ) {
+  async upsert(nodeId: string, containerName: string, input: { enabled?: boolean }, userId: string) {
     const existing = await this.getByContainer(nodeId, containerName);
     if (existing) {
       const [updated] = await this.db
         .update(dockerWebhooks)
         .set({
-          cleanupEnabled: input.cleanupEnabled ?? existing.cleanupEnabled,
-          retentionCount: input.retentionCount ?? existing.retentionCount,
-          enabled: true,
+          enabled: input.enabled ?? existing.enabled,
           updatedAt: new Date(),
         })
         .where(eq(dockerWebhooks.id, existing.id))
@@ -90,8 +85,7 @@ export class DockerWebhookService {
         nodeId,
         containerName,
         targetType: 'container',
-        cleanupEnabled: input.cleanupEnabled ?? false,
-        retentionCount: input.retentionCount ?? 2,
+        enabled: input.enabled ?? true,
       })
       .returning();
 
@@ -261,8 +255,7 @@ export class DockerWebhookService {
       })
       .catch(() => {});
 
-    // Async cleanup if webhook config exists and cleanup enabled
-    this.scheduleCleanup(nodeId, containerName, imageName).catch(() => {});
+    this.cleanup.scheduleCleanupForContainer(nodeId, containerName, imageName).catch(() => {});
 
     const message = `Updating ${containerName} to ${targetRef}`;
     logger.info(message, { nodeId, containerId, webhookId });
@@ -288,93 +281,6 @@ export class DockerWebhookService {
     });
   }
 
-  // ─── Image cleanup ────────────────────────────────────────────────
-
-  async scheduleCleanupForRecreate(nodeId: string, containerName: string, imageRef: string | undefined) {
-    const image = imageRef?.trim();
-    if (!image) return;
-
-    const { imageName } = parseImageRef(image);
-    try {
-      await this.scheduleCleanup(nodeId, containerName, imageName);
-    } catch (err) {
-      logger.warn('Image cleanup scheduling failed', {
-        nodeId,
-        containerName,
-        imageName,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
-
-  private async scheduleCleanup(nodeId: string, containerName: string, imageName: string) {
-    const webhook = await this.getByContainer(nodeId, containerName);
-    if (!webhook?.cleanupEnabled) return;
-    // Small delay to let the recreate complete
-    await new Promise((r) => setTimeout(r, 5000));
-    await this.performCleanup(nodeId, imageName, webhook.retentionCount);
-  }
-
-  private async performCleanup(nodeId: string, imageName: string, retentionCount: number) {
-    try {
-      // List all images on the node
-      const images = await this.docker.listImages(nodeId);
-      if (!Array.isArray(images)) return;
-
-      // Filter to same image name
-      const matching: Array<{ id: string; tag: string; created: number }> = [];
-      for (const img of images) {
-        const tags: string[] = img.RepoTags ?? img.repoTags ?? [];
-        for (const t of tags) {
-          const colonIdx = t.lastIndexOf(':');
-          if (colonIdx === -1) continue;
-          const name = t.slice(0, colonIdx);
-          const tagPart = t.slice(colonIdx + 1);
-          if (name === imageName || normalizeImageName(name) === normalizeImageName(imageName)) {
-            matching.push({ id: img.Id ?? img.id, tag: tagPart, created: img.Created ?? img.created ?? 0 });
-          }
-        }
-      }
-
-      if (matching.length <= retentionCount) return;
-
-      // List all containers to find in-use images
-      const containers = await this.docker.listContainers(nodeId);
-      const inUseImageIds = new Set<string>();
-      if (Array.isArray(containers)) {
-        for (const c of containers) {
-          if (c.ImageID ?? c.imageId) inUseImageIds.add(c.ImageID ?? c.imageId);
-        }
-      }
-
-      // Sort by creation date desc, keep retentionCount, remove the rest
-      matching.sort((a, b) => b.created - a.created);
-      const toRemove = matching.slice(retentionCount);
-
-      for (const img of toRemove) {
-        if (inUseImageIds.has(img.id)) {
-          logger.debug('Skipping cleanup of in-use image', { imageId: img.id, tag: img.tag });
-          continue;
-        }
-        try {
-          await this.docker.removeImage(nodeId, img.id, false, 'system');
-          logger.info('Cleaned up old image', { imageId: img.id, tag: img.tag, imageName });
-        } catch (err) {
-          logger.debug('Failed to remove old image (may be referenced)', {
-            imageId: img.id,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        }
-      }
-    } catch (err) {
-      logger.warn('Image cleanup failed', {
-        nodeId,
-        imageName,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
-
   // ─── Helpers ──────────────────────────────────────────────────────
 
   private emit(action: string, data: Record<string, unknown>) {
@@ -395,16 +301,6 @@ function parseImageRef(ref: string): { imageName: string; currentTag: string } {
     return { imageName: ref, currentTag: 'latest' };
   }
   return { imageName: ref.slice(0, lastColon), currentTag: ref.slice(lastColon + 1) };
-}
-
-/** Normalize image name for comparison (strip docker.io/library/ etc.) */
-function normalizeImageName(name: string): string {
-  return name
-    .replace(/^docker\.io\/library\//, '')
-    .replace(/^index\.docker\.io\/library\//, '')
-    .replace(/^docker\.io\//, '')
-    .replace(/^index\.docker\.io\//, '')
-    .replace(/^library\//, '');
 }
 
 function isRegistryRetryablePullError(error?: string): boolean {

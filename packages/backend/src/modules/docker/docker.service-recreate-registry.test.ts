@@ -86,10 +86,10 @@ describe('DockerManagementService recreate registry auth', () => {
       rememberImageRegistry: vi.fn().mockResolvedValue(undefined),
     };
     service.setRegistryService(registry as never);
-    const webhook = {
-      scheduleCleanupForRecreate: vi.fn().mockResolvedValue(undefined),
+    const imageCleanup = {
+      scheduleCleanupForContainer: vi.fn().mockResolvedValue(undefined),
     };
-    service.setWebhookService(webhook as never);
+    service.setImageCleanupService(imageCleanup as never);
 
     await service.recreateWithConfig('node-1', 'container-1', { image: 'registry.example.com/team/app:new' }, 'user-1');
 
@@ -121,7 +121,7 @@ describe('DockerManagementService recreate registry auth', () => {
       'registry.example.com/team/app:new',
       'registry-stazion'
     );
-    expect(webhook.scheduleCleanupForRecreate).toHaveBeenCalledWith(
+    expect(imageCleanup.scheduleCleanupForContainer).toHaveBeenCalledWith(
       'node-1',
       'app',
       'registry.example.com/team/app:new'

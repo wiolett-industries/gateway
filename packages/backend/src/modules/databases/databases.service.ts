@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { count, desc, eq, ilike, inArray, or, type SQL } from 'drizzle-orm';
+import { asc, count, eq, ilike, inArray, or, type SQL } from 'drizzle-orm';
 import Redis from 'ioredis';
 import pg from 'pg';
 import type { DrizzleClient } from '@/db/client.js';
@@ -749,7 +749,7 @@ export class DatabaseConnectionService {
         .select()
         .from(databaseConnections)
         .where(where)
-        .orderBy(desc(databaseConnections.updatedAt))
+        .orderBy(asc(databaseConnections.name), asc(databaseConnections.id))
         .limit(query.limit)
         .offset((query.page - 1) * query.limit),
       this.db.select({ count: count() }).from(databaseConnections).where(where),
@@ -1629,7 +1629,10 @@ export class DatabaseConnectionService {
   }
 
   async listAllRows() {
-    return this.db.select().from(databaseConnections).orderBy(desc(databaseConnections.updatedAt));
+    return this.db
+      .select()
+      .from(databaseConnections)
+      .orderBy(asc(databaseConnections.name), asc(databaseConnections.id));
   }
 
   async updateHealth(

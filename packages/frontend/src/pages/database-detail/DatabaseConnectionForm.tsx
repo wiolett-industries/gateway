@@ -201,10 +201,14 @@ export function DatabaseConnectionForm({
       <div className="space-y-1.5">
         <label className="text-sm font-medium">Tags</label>
         <Input
-          placeholder="team, production, analytics"
+          placeholder="team, red:production, green:analytics"
           value={draft.tags}
           onChange={(e) => set("tags", e.target.value)}
         />
+        <p className="text-xs text-muted-foreground">
+          Use color:name for colored tags. Supported colors: blue, red, green, yellow, purple, pink,
+          orange, gray.
+        </p>
       </div>
 
       {metadataOnly && draft.type === "postgres" && (

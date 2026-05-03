@@ -25,6 +25,7 @@ import { DockerDeploymentService } from '@/modules/docker/docker-deployment.serv
 import { DockerEnvironmentService } from '@/modules/docker/docker-environment.service.js';
 import { DockerFolderService } from '@/modules/docker/docker-folder.service.js';
 import { DockerHealthCheckService } from '@/modules/docker/docker-health-check.service.js';
+import { DockerImageCleanupService } from '@/modules/docker/docker-image-cleanup.service.js';
 import { DockerRegistryService } from '@/modules/docker/docker-registry.service.js';
 import { DockerRuntimeSettingsService } from '@/modules/docker/docker-runtime-settings.service.js';
 import { DockerSecretService } from '@/modules/docker/docker-secret.service.js';
@@ -296,6 +297,10 @@ export async function initializeContainer(): Promise<void> {
   container.registerInstance(DockerDeploymentService, dockerDeploymentService);
   const dockerHealthCheckService = new DockerHealthCheckService(db, nodeDispatch);
   container.registerInstance(DockerHealthCheckService, dockerHealthCheckService);
+  const dockerImageCleanupService = new DockerImageCleanupService(db, dockerManagementService);
+  container.registerInstance(DockerImageCleanupService, dockerImageCleanupService);
+  dockerManagementService.setImageCleanupService(dockerImageCleanupService);
+  dockerDeploymentService.setImageCleanupService(dockerImageCleanupService);
   const dockerWebhookService = new DockerWebhookService(
     db,
     dockerManagementService,
@@ -303,10 +308,10 @@ export async function initializeContainer(): Promise<void> {
     auditService,
     nodeDispatch,
     dockerRegistryService,
+    dockerImageCleanupService,
     dockerDeploymentService
   );
   container.registerInstance(DockerWebhookService, dockerWebhookService);
-  dockerManagementService.setWebhookService(dockerWebhookService);
 
   dockerManagementService.setTaskService(dockerTaskService);
   dockerManagementService.setEnvironmentService(dockerEnvironmentService);
@@ -322,6 +327,7 @@ export async function initializeContainer(): Promise<void> {
   });
   dockerDeploymentService.setEventBus(eventBus);
   dockerHealthCheckService.setEventBus(eventBus);
+  dockerImageCleanupService.setEventBus(eventBus);
   dockerDeploymentService.setHealthCheckService(dockerHealthCheckService);
   dockerManagementService.setHealthCheckService(dockerHealthCheckService);
   dockerWebhookService.setEventBus(eventBus);

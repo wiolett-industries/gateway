@@ -18,7 +18,13 @@ import { formatBytes } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
-import type { DockerHealthCheck, DockerNetwork, DockerWebhook, NodeDetail } from "@/types";
+import type {
+  DockerHealthCheck,
+  DockerImageCleanupSettings,
+  DockerNetwork,
+  DockerWebhook,
+  NodeDetail,
+} from "@/types";
 import type { InspectData } from "./helpers";
 import { LabelsSection } from "./LabelsSection";
 import { type PortMapping, PortMappingsSection } from "./PortMappingsSection";
@@ -110,26 +116,32 @@ export function SettingsTab({
   const initShares = currentCpuShares > 0 ? String(currentCpuShares) : "";
   const initPids = currentPidsLimit > 0 ? String(currentPidsLimit) : "";
 
-  const [restartPolicy, setRestartPolicy] = useState(currentRestartPolicy);
-  const [maxRetries, setMaxRetries] = useState(String(currentMaxRetries));
-  const [memoryMB, setMemoryMB] = useState(initMem);
-  const [memSwapMB, setMemSwapMB] = useState(initSwap);
-  const [cpuCount, setCpuCount] = useState(initCpu);
-  const [cpuShares, setCpuShares] = useState(initShares);
-  const [pidsLimit, setPidsLimit] = useState(initPids);
+  const runtimeServerBaseline: RuntimeFormValues = useMemo(
+    () => ({
+      restartPolicy: currentRestartPolicy,
+      maxRetries: String(currentMaxRetries),
+      memoryMB: initMem,
+      memSwapMB: initSwap,
+      cpuCount: initCpu,
+      cpuShares: initShares,
+      pidsLimit: initPids,
+    }),
+    [currentRestartPolicy, currentMaxRetries, initMem, initSwap, initCpu, initShares, initPids]
+  );
+
+  const [restartPolicy, setRestartPolicy] = useState(runtimeServerBaseline.restartPolicy);
+  const [maxRetries, setMaxRetries] = useState(runtimeServerBaseline.maxRetries);
+  const [memoryMB, setMemoryMB] = useState(runtimeServerBaseline.memoryMB);
+  const [memSwapMB, setMemSwapMB] = useState(runtimeServerBaseline.memSwapMB);
+  const [cpuCount, setCpuCount] = useState(runtimeServerBaseline.cpuCount);
+  const [cpuShares, setCpuShares] = useState(runtimeServerBaseline.cpuShares);
+  const [pidsLimit, setPidsLimit] = useState(runtimeServerBaseline.pidsLimit);
   const [liveLoading, setLiveLoading] = useState(false);
   const [nodeDetail, setNodeDetail] = useState<NodeDetail | null>(null);
 
   // Baseline snapshot — updated after successful live apply
-  const baselineRef = useRef<RuntimeFormValues>({
-    restartPolicy: currentRestartPolicy,
-    maxRetries: String(currentMaxRetries),
-    memoryMB: initMem,
-    memSwapMB: initSwap,
-    cpuCount: initCpu,
-    cpuShares: initShares,
-    pidsLimit: initPids,
-  });
+  const baselineRef = useRef<RuntimeFormValues>(runtimeServerBaseline);
+  const previousRuntimeServerBaselineRef = useRef<RuntimeFormValues>(runtimeServerBaseline);
 
   // ── Recreate settings state ──
   const portBindings = (hostConfig.PortBindings ?? {}) as Record<
@@ -187,7 +199,6 @@ export function SettingsTab({
   }, [currentImage]);
 
   const [imageTag, setImageTag] = useState(parsedTag);
-  useEffect(() => setImageTag(parsedTag), [parsedTag]);
   const imageTagChanged = imageTag !== parsedTag;
 
   const initialEntrypoint = (config.Entrypoint ?? []) as string[];
@@ -216,6 +227,7 @@ export function SettingsTab({
 
   const recreateBaseline = useMemo(
     () => ({
+      imageTag: parsedTag,
       ports: JSON.stringify(initialPorts),
       mounts: JSON.stringify(initialMounts),
       entrypoint: initialEntrypoint.join(" "),
@@ -234,8 +246,90 @@ export function SettingsTab({
       initialPorts,
       initialUser,
       initialWorkdir,
+      parsedTag,
     ]
   );
+  const previousRecreateBaselineRef = useRef(recreateBaseline);
+
+  useEffect(() => {
+    const previous = previousRuntimeServerBaselineRef.current;
+    const formMatchesPrevious =
+      restartPolicy === previous.restartPolicy &&
+      maxRetries === previous.maxRetries &&
+      memoryMB === previous.memoryMB &&
+      memSwapMB === previous.memSwapMB &&
+      cpuCount === previous.cpuCount &&
+      cpuShares === previous.cpuShares &&
+      pidsLimit === previous.pidsLimit;
+
+    baselineRef.current = runtimeServerBaseline;
+    previousRuntimeServerBaselineRef.current = runtimeServerBaseline;
+
+    if (!formMatchesPrevious) return;
+    setRestartPolicy(runtimeServerBaseline.restartPolicy);
+    setMaxRetries(runtimeServerBaseline.maxRetries);
+    setMemoryMB(runtimeServerBaseline.memoryMB);
+    setMemSwapMB(runtimeServerBaseline.memSwapMB);
+    setCpuCount(runtimeServerBaseline.cpuCount);
+    setCpuShares(runtimeServerBaseline.cpuShares);
+    setPidsLimit(runtimeServerBaseline.pidsLimit);
+  }, [
+    cpuCount,
+    cpuShares,
+    maxRetries,
+    memoryMB,
+    memSwapMB,
+    pidsLimit,
+    restartPolicy,
+    runtimeServerBaseline,
+  ]);
+
+  useEffect(() => {
+    const previous = previousRecreateBaselineRef.current;
+    const formMatchesPrevious =
+      imageTag === previous.imageTag &&
+      JSON.stringify(ports) === previous.ports &&
+      JSON.stringify(mounts) === previous.mounts &&
+      entrypoint === previous.entrypoint &&
+      command === previous.command &&
+      workingDir === previous.workingDir &&
+      user === previous.user &&
+      hostname === previous.hostname &&
+      JSON.stringify(labels) === previous.labels;
+
+    previousRecreateBaselineRef.current = recreateBaseline;
+
+    if (!formMatchesPrevious) return;
+    setImageTag(parsedTag);
+    setPorts(initialPorts);
+    setMounts(initialMounts);
+    setEntrypoint(initialEntrypoint.join(" "));
+    setCommand(initialCmd.join(" "));
+    setWorkingDir(initialWorkdir);
+    setUser(initialUser);
+    setHostname(initialHostname);
+    setLabels(Object.entries(initialLabels).map(([key, value]) => ({ key, value })));
+  }, [
+    command,
+    entrypoint,
+    hostname,
+    imageTag,
+    initialCmd,
+    initialEntrypoint,
+    initialHostname,
+    initialLabels,
+    initialMounts,
+    initialPorts,
+    initialUser,
+    initialWorkdir,
+    labels,
+    mounts,
+    parsedTag,
+    ports,
+    recreateBaseline,
+    user,
+    workingDir,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -939,11 +1033,21 @@ export function SettingsTab({
         )}
       </div>
 
-      {/* ─── Webhook ─────────────────────────────────────────────── */}
-      {(hasScope("docker:containers:webhooks") ||
-        hasScope(`docker:containers:webhooks:${nodeId}`)) && (
-        <WebhookSection nodeId={nodeId} containerName={containerName} />
-      )}
+      {/* ─── Webhook / Image Cleanup ─────────────────────────────── */}
+      {(() => {
+        const canManageWebhooks =
+          hasScope("docker:containers:webhooks") ||
+          hasScope(`docker:containers:webhooks:${nodeId}`);
+        if (!canManageWebhooks && !canEdit) return null;
+        return (
+          <WebhookSection
+            nodeId={nodeId}
+            containerName={containerName}
+            allowWebhook={canManageWebhooks}
+            allowCleanup={canEdit}
+          />
+        );
+      })()}
     </div>
   );
 }
@@ -959,6 +1063,8 @@ type WebhookSectionProps =
       initialWebhook?: never;
       onWebhookChange?: never;
       disabled?: boolean;
+      allowWebhook?: boolean;
+      allowCleanup?: boolean;
     }
   | {
       nodeId: string;
@@ -968,10 +1074,14 @@ type WebhookSectionProps =
       initialWebhook?: DockerWebhook | null;
       onWebhookChange?: (webhook: DockerWebhook | null) => void;
       disabled?: boolean;
+      allowWebhook?: boolean;
+      allowCleanup?: boolean;
     };
 
 export function WebhookSection(props: WebhookSectionProps) {
   const isDeployment = props.target === "deployment";
+  const allowWebhook = props.allowWebhook ?? true;
+  const allowCleanup = props.allowCleanup ?? true;
   const nodeId = props.nodeId;
   const targetName = isDeployment ? props.deploymentId : props.containerName;
   const onWebhookChange = isDeployment ? props.onWebhookChange : undefined;
@@ -983,6 +1093,7 @@ export function WebhookSection(props: WebhookSectionProps) {
   const [copiedCurl, setCopiedCurl] = useState(false);
 
   // Cleanup config local state
+  const [cleanup, setCleanup] = useState<DockerImageCleanupSettings | null>(null);
   const [cleanupEnabled, setCleanupEnabled] = useState(false);
   const [retentionCount, setRetentionCount] = useState("2");
 
@@ -996,78 +1107,107 @@ export function WebhookSection(props: WebhookSectionProps) {
     [isDeployment, onWebhookChange]
   );
 
-  const fetchWebhook = useCallback(async () => {
+  const fetchSettings = useCallback(async () => {
+    const webhookRequest = allowWebhook
+      ? isDeployment
+        ? api.getDeploymentWebhook(nodeId, targetName)
+        : api.getContainerWebhook(nodeId, targetName)
+      : Promise.resolve(null);
+    const cleanupRequest = allowCleanup
+      ? isDeployment
+        ? api.getDeploymentImageCleanup(nodeId, targetName)
+        : api.getContainerImageCleanup(nodeId, targetName)
+      : Promise.resolve(null);
+
     try {
-      const data = isDeployment
-        ? await api.getDeploymentWebhook(nodeId, targetName)
-        : await api.getContainerWebhook(nodeId, targetName);
-      setWebhook(data);
-      if (data) {
-        setCleanupEnabled(data.cleanupEnabled);
-        setRetentionCount(String(data.retentionCount));
+      const [webhookResult, cleanupResult] = await Promise.allSettled([
+        webhookRequest,
+        cleanupRequest,
+      ]);
+      if (webhookResult.status === "fulfilled") {
+        setWebhook(webhookResult.value);
       }
-    } catch {
-      // Ignore — not configured
+      if (cleanupResult.status === "fulfilled" && cleanupResult.value) {
+        setCleanup(cleanupResult.value);
+        setCleanupEnabled(cleanupResult.value.enabled);
+        setRetentionCount(String(cleanupResult.value.retentionCount));
+      }
     } finally {
       setLoading(false);
     }
-  }, [isDeployment, nodeId, setWebhook, targetName]);
+  }, [allowCleanup, allowWebhook, isDeployment, nodeId, setWebhook, targetName]);
 
   useEffect(() => {
-    fetchWebhook();
-  }, [fetchWebhook]);
+    fetchSettings();
+  }, [fetchSettings]);
 
   useRealtime("docker.webhook.changed", (payload: unknown) => {
     const p = payload as Record<string, unknown>;
     if (
+      allowWebhook &&
       p.nodeId === nodeId &&
       (isDeployment
         ? p.deploymentId === targetName || p.targetId === targetName
         : p.containerName === targetName)
     ) {
-      fetchWebhook();
+      fetchSettings();
     }
   });
 
-  const webhookUrl = webhook
+  useRealtime("docker.image-cleanup.changed", (payload: unknown) => {
+    const p = payload as Record<string, unknown>;
+    if (
+      allowCleanup &&
+      p.nodeId === nodeId &&
+      (isDeployment
+        ? p.targetType === "deployment" && p.deploymentId === targetName
+        : p.targetType === "container" && p.containerName === targetName)
+    ) {
+      setCleanup(p as unknown as DockerImageCleanupSettings);
+      setCleanupEnabled(Boolean(p.enabled));
+      setRetentionCount(String(p.retentionCount ?? 2));
+    }
+  });
+
+  const webhookEnabled = !!webhook?.enabled;
+  const webhookUrl = webhookEnabled
     ? `${window.location.origin}/api/webhooks/docker/${webhook.token}`
     : "";
-  const curlExample = webhook
+  const curlExample = webhookEnabled
     ? `curl -X POST ${webhookUrl} \\\n  -H "Content-Type: application/json" \\\n  -d '{"tag":"v1.0.0"}'`
     : "";
 
   const handleEnable = async () => {
     try {
       const data = isDeployment
-        ? await api.upsertDeploymentWebhook(nodeId, targetName, {})
-        : await api.upsertContainerWebhook(nodeId, targetName, {});
+        ? await api.upsertDeploymentWebhook(nodeId, targetName, { enabled: true })
+        : await api.upsertContainerWebhook(nodeId, targetName, { enabled: true });
       setWebhook(data);
-      setCleanupEnabled(data.cleanupEnabled);
-      setRetentionCount(String(data.retentionCount));
-      toast.success("Webhook enabled");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to enable webhook");
     }
   };
 
   const autoSave = useCallback(
-    async (patch: { cleanupEnabled?: boolean; retentionCount?: number }) => {
+    async (patch: { enabled?: boolean; retentionCount?: number }) => {
       try {
         const data = isDeployment
-          ? await api.upsertDeploymentWebhook(nodeId, targetName, patch)
-          : await api.upsertContainerWebhook(nodeId, targetName, patch);
-        setWebhook(data);
+          ? await api.upsertDeploymentImageCleanup(nodeId, targetName, patch)
+          : await api.upsertContainerImageCleanup(nodeId, targetName, patch);
+        setCleanup(data);
+        setCleanupEnabled(data.enabled);
+        setRetentionCount(String(data.retentionCount));
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Failed to save");
       }
     },
-    [isDeployment, nodeId, setWebhook, targetName]
+    [isDeployment, nodeId, targetName]
   );
 
   const handleCleanupToggle = useCallback(
     (v: boolean) => {
       setCleanupEnabled(v);
-      autoSave({ cleanupEnabled: v });
+      autoSave({ enabled: v });
     },
     [autoSave]
   );
@@ -1075,10 +1215,10 @@ export function WebhookSection(props: WebhookSectionProps) {
   const handleRetentionBlur = useCallback(() => {
     const v = Math.max(1, Math.min(50, Number(retentionCount) || 2));
     setRetentionCount(String(v));
-    if (webhook && v !== webhook.retentionCount) {
+    if (cleanupEnabled && v !== cleanup?.retentionCount) {
       autoSave({ retentionCount: v });
     }
-  }, [retentionCount, webhook, autoSave]);
+  }, [autoSave, cleanup?.retentionCount, cleanupEnabled, retentionCount]);
 
   const handleRegenerate = async () => {
     const ok = await confirm({
@@ -1102,9 +1242,9 @@ export function WebhookSection(props: WebhookSectionProps) {
 
   const handleDisable = async () => {
     const ok = await confirm({
-      title: "Disable Webhook",
+      title: "Disable Webhook URL",
       description:
-        "This will delete the webhook configuration and URL. CI pipelines using this URL will stop working. Continue?",
+        "This will disable the current webhook URL. CI pipelines using this URL will stop working. Image cleanup settings are managed separately. Continue?",
       confirmLabel: "Disable",
       variant: "destructive",
     });
@@ -1116,7 +1256,6 @@ export function WebhookSection(props: WebhookSectionProps) {
         await api.deleteContainerWebhook(nodeId, targetName);
       }
       setWebhook(null);
-      toast.success("Webhook disabled");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to disable");
     }
@@ -1134,6 +1273,7 @@ export function WebhookSection(props: WebhookSectionProps) {
   };
 
   if (loading) return null;
+  if (!allowWebhook && !allowCleanup) return null;
 
   const handleToggle = async (enabled: boolean) => {
     if (enabled) {
@@ -1144,83 +1284,97 @@ export function WebhookSection(props: WebhookSectionProps) {
   };
 
   return (
-    <div className="border border-border bg-card overflow-hidden">
-      <div
-        className={`flex items-center justify-between px-4 py-3 ${webhook ? "border-b border-border" : ""}`}
-      >
-        <div>
-          <h3 className="text-sm font-semibold">Webhook</h3>
-          <p className="text-xs text-muted-foreground">
-            Trigger {isDeployment ? "deployment" : "container"} updates from CI pipelines
-          </p>
-        </div>
-        <Switch checked={!!webhook} onChange={handleToggle} disabled={props.disabled} />
-      </div>
-
-      {webhook && (
-        <div className="divide-y divide-border">
-          {/* Webhook URL */}
-          <div className="flex items-center justify-between gap-4 px-4 py-3">
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium">Webhook URL</p>
-              <div className="flex gap-1.5 mt-1.5">
-                <Input
-                  className="h-8 text-xs font-mono flex-1"
-                  value={webhookUrl}
-                  readOnly
-                  onClick={(e) => (e.target as HTMLInputElement).select()}
-                />
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-8 w-8 shrink-0"
-                  onClick={() => copyToClipboard(webhookUrl, "url")}
-                >
-                  {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-8 w-8 shrink-0"
-                  onClick={handleRegenerate}
-                  title="Regenerate URL"
-                >
-                  <RefreshCw className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            </div>
-          </div>
-
-          {/* curl example */}
-          <div className="px-4 py-3">
-            <p className="text-sm font-medium">Example</p>
-            <div className="relative mt-1.5">
-              <pre className="bg-muted/50 border border-border rounded-md p-3 text-xs font-mono overflow-x-auto whitespace-pre">
-                {curlExample}
-              </pre>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="absolute top-1.5 right-1.5 h-6 w-6"
-                onClick={() => copyToClipboard(curlExample, "curl")}
-              >
-                {copiedCurl ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-              </Button>
-            </div>
-          </div>
-
-          {/* Auto-cleanup toggle */}
-          <div className="flex items-center justify-between gap-4 px-4 py-3">
+    <>
+      {allowWebhook && (
+        <div className="border border-border bg-card overflow-hidden">
+          <div
+            className={`flex items-center justify-between px-4 py-3 ${webhookEnabled ? "border-b border-border" : ""}`}
+          >
             <div>
-              <p className="text-sm font-medium">Auto-cleanup old images</p>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Remove old image versions after updates
+              <h3 className="text-sm font-semibold">Webhook</h3>
+              <p className="text-xs text-muted-foreground">
+                Trigger {isDeployment ? "deployment" : "container"} updates from CI pipelines
               </p>
             </div>
-            <Switch checked={cleanupEnabled} onChange={handleCleanupToggle} />
+            <Switch checked={webhookEnabled} onChange={handleToggle} disabled={props.disabled} />
           </div>
 
-          {/* Retention count */}
+          {webhookEnabled && (
+            <div className="divide-y divide-border">
+              {/* Webhook URL */}
+              <div className="flex items-center justify-between gap-4 px-4 py-3">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium">Webhook URL</p>
+                  <div className="flex gap-1.5 mt-1.5">
+                    <Input
+                      className="h-8 text-xs font-mono flex-1"
+                      value={webhookUrl}
+                      readOnly
+                      onClick={(e) => (e.target as HTMLInputElement).select()}
+                    />
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-8 w-8 shrink-0"
+                      onClick={() => copyToClipboard(webhookUrl, "url")}
+                    >
+                      {copied ? (
+                        <Check className="h-3.5 w-3.5" />
+                      ) : (
+                        <Copy className="h-3.5 w-3.5" />
+                      )}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-8 w-8 shrink-0"
+                      onClick={handleRegenerate}
+                      title="Regenerate URL"
+                    >
+                      <RefreshCw className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              {/* curl example */}
+              <div className="px-4 py-3">
+                <p className="text-sm font-medium">Example</p>
+                <div className="relative mt-1.5">
+                  <pre className="bg-muted/50 border border-border rounded-md p-3 text-xs font-mono overflow-x-auto whitespace-pre">
+                    {curlExample}
+                  </pre>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="absolute top-1.5 right-1.5 h-6 w-6"
+                    onClick={() => copyToClipboard(curlExample, "curl")}
+                  >
+                    {copiedCurl ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {allowCleanup && (
+        <div className="border border-border bg-card overflow-hidden">
+          <div className="flex items-center justify-between border-b border-border px-4 py-3">
+            <div>
+              <h3 className="text-sm font-semibold">Image Cleanup</h3>
+              <p className="text-xs text-muted-foreground">
+                Remove old image versions after manual or webhook updates
+              </p>
+            </div>
+            <Switch
+              checked={cleanupEnabled}
+              onChange={handleCleanupToggle}
+              disabled={props.disabled}
+            />
+          </div>
+
           <div className="flex items-center justify-between gap-4 px-4 py-3">
             <div>
               <p
@@ -1237,7 +1391,7 @@ export function WebhookSection(props: WebhookSectionProps) {
               className="h-8 text-xs w-20 shrink-0"
               value={retentionCount}
               onChange={(e) => setRetentionCount(e.target.value)}
-              disabled={!cleanupEnabled}
+              disabled={!cleanupEnabled || props.disabled}
               min={1}
               max={50}
               onBlur={handleRetentionBlur}
@@ -1245,7 +1399,7 @@ export function WebhookSection(props: WebhookSectionProps) {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
 

@@ -15,6 +15,7 @@ import { DOCKER_DEPLOYMENT_MANAGED_LABEL } from './docker-deployment.service.js'
 import type { DockerEnvironmentService } from './docker-environment.service.js';
 import type { DockerFolderService } from './docker-folder.service.js';
 import type { DockerHealthCheckService } from './docker-health-check.service.js';
+import type { DockerImageCleanupService } from './docker-image-cleanup.service.js';
 import type { DockerRegistryAuthCandidate, DockerRegistryService } from './docker-registry.service.js';
 import {
   type ContainerRuntimeConfig,
@@ -25,7 +26,6 @@ import type { DockerRuntimeSettingsService } from './docker-runtime-settings.ser
 import type { DockerSecretService } from './docker-secret.service.js';
 import { assertDockerMountChangeAllowed, normalizeMountDefinitionsFromInspect } from './docker-socket-mount.guard.js';
 import type { DockerTaskService } from './docker-task.service.js';
-import type { DockerWebhookService } from './docker-webhook.service.js';
 
 const logger = createChildLogger('DockerManagementService');
 
@@ -61,7 +61,7 @@ export class DockerManagementService {
   private deploymentService?: DockerDeploymentService;
   private healthCheckService?: DockerHealthCheckService;
   private registryService?: DockerRegistryService;
-  private webhookService?: DockerWebhookService;
+  private imageCleanupService?: DockerImageCleanupService;
   private eventBus?: EventBusService;
   private evaluator?: NotificationEvaluatorService;
 
@@ -104,8 +104,8 @@ export class DockerManagementService {
     this.registryService = registryService;
   }
 
-  setWebhookService(webhookService: DockerWebhookService) {
-    this.webhookService = webhookService;
+  setImageCleanupService(imageCleanupService: DockerImageCleanupService) {
+    this.imageCleanupService = imageCleanupService;
   }
 
   setEventBus(eventBus: EventBusService) {
@@ -1203,7 +1203,7 @@ export class DockerManagementService {
         details: { nodeId },
       });
       if (!options?.skipWebhookCleanup && typeof config.image === 'string') {
-        this.webhookService?.scheduleCleanupForRecreate(nodeId, name, config.image).catch(() => {});
+        this.imageCleanupService?.scheduleCleanupForContainer(nodeId, name, config.image).catch(() => {});
       }
 
       this.watchRecreateByName(nodeId, name, containerId, task?.id, 'Container recreated', expectedState);

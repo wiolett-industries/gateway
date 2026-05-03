@@ -13,7 +13,7 @@ import {
   Terminal as TerminalIcon,
   Trash2,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
@@ -192,6 +192,9 @@ export function DockerDeploymentDetail() {
   const canEdit =
     hasScope("docker:containers:edit") ||
     !!(nodeId && hasScope(`docker:containers:edit:${nodeId}`));
+  const canManageWebhooks =
+    hasScope("docker:containers:webhooks") ||
+    !!(nodeId && hasScope(`docker:containers:webhooks:${nodeId}`));
   const canViewContainer =
     hasScope("docker:containers:view") ||
     !!(nodeId && hasScope(`docker:containers:view:${nodeId}`));
@@ -697,6 +700,7 @@ export function DockerDeploymentDetail() {
                   setDeployment((current) => (current ? { ...current, healthCheck } : current))
                 }
                 canEditMounts={canEditMounts}
+                canManageWebhooks={canManageWebhooks}
                 runAction={runAction}
               />
             </TabsContent>
@@ -986,6 +990,7 @@ function DeploymentSettings({
   setWebhook,
   onHealthCheckSaved,
   canEditMounts,
+  canManageWebhooks,
   runAction,
 }: {
   deployment: DockerDeployment;
@@ -995,6 +1000,7 @@ function DeploymentSettings({
   setWebhook: (webhook: DockerWebhook | null) => void;
   onHealthCheckSaved: (healthCheck: DockerHealthCheck) => void;
   canEditMounts: boolean;
+  canManageWebhooks: boolean;
   runAction: (name: string, fn: () => Promise<void>) => Promise<void>;
 }) {
   const initialEntrypoint = useMemo(
@@ -1028,19 +1034,59 @@ function DeploymentSettings({
     () => normalizeLabels((deployment.desiredConfig as any).labels),
     [deployment.desiredConfig]
   );
+  const runtime = ((deployment.desiredConfig as any).runtime ?? {}) as Record<string, any>;
+  const deploymentBaseline = useMemo(
+    () => ({
+      image: deployment.desiredConfig.image,
+      entrypoint: initialEntrypoint,
+      command: initialCommand,
+      workingDir: initialWorkingDir,
+      user: initialUser,
+      ports: JSON.stringify(initialPorts),
+      readinessRouteIndex: initialReadinessRouteIndex,
+      mounts: JSON.stringify(initialMounts),
+      labels: JSON.stringify(initialLabels),
+      restartPolicy: deployment.desiredConfig.restartPolicy ?? "unless-stopped",
+      maxRetries: String(runtime.maxRetries ?? 0),
+      memoryMB: runtime.memoryMB ? String(runtime.memoryMB) : "",
+      memSwapMB: runtime.memSwapMB ? String(runtime.memSwapMB) : "",
+      cpuCount: runtime.cpuCount ? String(runtime.cpuCount) : "",
+      cpuShares: runtime.cpuShares ? String(runtime.cpuShares) : "",
+      pidsLimit: runtime.pidsLimit ? String(runtime.pidsLimit) : "",
+      drainSeconds: String(deployment.drainSeconds),
+    }),
+    [
+      deployment.desiredConfig.image,
+      deployment.desiredConfig.restartPolicy,
+      deployment.drainSeconds,
+      initialCommand,
+      initialEntrypoint,
+      initialLabels,
+      initialMounts,
+      initialPorts,
+      initialReadinessRouteIndex,
+      initialUser,
+      initialWorkingDir,
+      runtime.cpuCount,
+      runtime.cpuShares,
+      runtime.maxRetries,
+      runtime.memSwapMB,
+      runtime.memoryMB,
+      runtime.pidsLimit,
+    ]
+  );
   const [image, setImage] = useState(deployment.desiredConfig.image);
   const [entrypoint, setEntrypoint] = useState(initialEntrypoint);
   const [command, setCommand] = useState(initialCommand);
   const [workingDir, setWorkingDir] = useState(initialWorkingDir);
   const [user, setUser] = useState(initialUser);
   const [ports, setPorts] = useState<PortMapping[]>(initialPorts);
-  const [readinessRouteIndex] = useState(initialReadinessRouteIndex);
+  const [readinessRouteIndex, setReadinessRouteIndex] = useState(initialReadinessRouteIndex);
   const [mounts, setMounts] = useState<MountEntry[]>(initialMounts);
   const [labels, setLabels] = useState<Array<{ key: string; value: string }>>(initialLabels);
   const [restartPolicy, setRestartPolicy] = useState(
     deployment.desiredConfig.restartPolicy ?? "unless-stopped"
   );
-  const runtime = ((deployment.desiredConfig as any).runtime ?? {}) as Record<string, any>;
   const [maxRetries, setMaxRetries] = useState(String(runtime.maxRetries ?? 0));
   const [memoryMB, setMemoryMB] = useState(runtime.memoryMB ? String(runtime.memoryMB) : "");
   const [memSwapMB, setMemSwapMB] = useState(runtime.memSwapMB ? String(runtime.memSwapMB) : "");
@@ -1048,8 +1094,74 @@ function DeploymentSettings({
   const [cpuShares, setCpuShares] = useState(runtime.cpuShares ? String(runtime.cpuShares) : "");
   const [pidsLimit, setPidsLimit] = useState(runtime.pidsLimit ? String(runtime.pidsLimit) : "");
   const [drainSeconds, setDrainSeconds] = useState(String(deployment.drainSeconds));
+  const previousDeploymentBaselineRef = useRef(deploymentBaseline);
   const inputCell =
     "h-9 text-xs font-mono border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring";
+
+  useEffect(() => {
+    const previous = previousDeploymentBaselineRef.current;
+    const formMatchesPrevious =
+      image === previous.image &&
+      entrypoint === previous.entrypoint &&
+      command === previous.command &&
+      workingDir === previous.workingDir &&
+      user === previous.user &&
+      JSON.stringify(ports) === previous.ports &&
+      readinessRouteIndex === previous.readinessRouteIndex &&
+      JSON.stringify(mounts) === previous.mounts &&
+      JSON.stringify(labels) === previous.labels &&
+      restartPolicy === previous.restartPolicy &&
+      maxRetries === previous.maxRetries &&
+      memoryMB === previous.memoryMB &&
+      memSwapMB === previous.memSwapMB &&
+      cpuCount === previous.cpuCount &&
+      cpuShares === previous.cpuShares &&
+      pidsLimit === previous.pidsLimit &&
+      drainSeconds === previous.drainSeconds;
+
+    previousDeploymentBaselineRef.current = deploymentBaseline;
+
+    if (!formMatchesPrevious) return;
+    setImage(deploymentBaseline.image);
+    setEntrypoint(deploymentBaseline.entrypoint);
+    setCommand(deploymentBaseline.command);
+    setWorkingDir(deploymentBaseline.workingDir);
+    setUser(deploymentBaseline.user);
+    setPorts(initialPorts);
+    setReadinessRouteIndex(deploymentBaseline.readinessRouteIndex);
+    setMounts(initialMounts);
+    setLabels(initialLabels);
+    setRestartPolicy(deploymentBaseline.restartPolicy);
+    setMaxRetries(deploymentBaseline.maxRetries);
+    setMemoryMB(deploymentBaseline.memoryMB);
+    setMemSwapMB(deploymentBaseline.memSwapMB);
+    setCpuCount(deploymentBaseline.cpuCount);
+    setCpuShares(deploymentBaseline.cpuShares);
+    setPidsLimit(deploymentBaseline.pidsLimit);
+    setDrainSeconds(deploymentBaseline.drainSeconds);
+  }, [
+    command,
+    cpuCount,
+    cpuShares,
+    deploymentBaseline,
+    drainSeconds,
+    entrypoint,
+    image,
+    initialLabels,
+    initialMounts,
+    initialPorts,
+    labels,
+    maxRetries,
+    memoryMB,
+    memSwapMB,
+    mounts,
+    pidsLimit,
+    ports,
+    readinessRouteIndex,
+    restartPolicy,
+    user,
+    workingDir,
+  ]);
 
   const executionChanged =
     image !== deployment.desiredConfig.image ||
@@ -1269,6 +1381,8 @@ function DeploymentSettings({
         initialWebhook={webhook}
         onWebhookChange={setWebhook}
         disabled={!!action}
+        allowWebhook={canManageWebhooks}
+        allowCleanup
       />
     </div>
   );

@@ -12,6 +12,7 @@ import {
   deployDeploymentRoute,
   deploymentActionRoute,
   deploymentWebhookRoute,
+  getDeploymentImageCleanupRoute,
   getDeploymentRoute,
   listDeploymentSecretsRoute,
   listDeploymentsRoute,
@@ -21,6 +22,7 @@ import {
   switchDeploymentRoute,
   updateDeploymentRoute,
   updateDeploymentSecretRoute,
+  upsertDeploymentImageCleanupRoute,
   upsertDeploymentWebhookRoute,
 } from './docker.docs.js';
 import { SecretCreateSchema, SecretUpdateSchema } from './docker.schemas.js';
@@ -31,6 +33,8 @@ import {
   DockerDeploymentUpdateSchema,
 } from './docker-deployment.schemas.js';
 import { DockerDeploymentService } from './docker-deployment.service.js';
+import { ImageCleanupUpsertSchema } from './docker-image-cleanup.schemas.js';
+import { DockerImageCleanupService } from './docker-image-cleanup.service.js';
 import { DockerSecretService } from './docker-secret.service.js';
 import { WebhookUpsertSchema } from './docker-webhook.schemas.js';
 
@@ -402,6 +406,36 @@ export function registerDockerDeploymentRoutes(router: OpenAPIHono<AppEnv>) {
       const service = container.resolve(DockerDeploymentService);
       const user = c.get('user')!;
       const data = await service.regenerateWebhook(c.req.param('nodeId')!, c.req.param('deploymentId')!, user.id);
+      return c.json({ data });
+    }
+  );
+
+  router.openapi(
+    {
+      ...getDeploymentImageCleanupRoute,
+      middleware: requireScopeForResource('docker:containers:edit', 'nodeId'),
+    },
+    async (c) => {
+      const nodeId = c.req.param('nodeId')!;
+      const deploymentId = c.req.param('deploymentId')!;
+      await container.resolve(DockerDeploymentService).get(nodeId, deploymentId);
+      const data = await container.resolve(DockerImageCleanupService).getForDeployment(nodeId, deploymentId);
+      return c.json({ data });
+    }
+  );
+
+  router.openapi(
+    {
+      ...upsertDeploymentImageCleanupRoute,
+      middleware: requireScopeForResource('docker:containers:edit', 'nodeId'),
+    },
+    async (c) => {
+      const nodeId = c.req.param('nodeId')!;
+      const deploymentId = c.req.param('deploymentId')!;
+      await container.resolve(DockerDeploymentService).get(nodeId, deploymentId);
+      const data = await container
+        .resolve(DockerImageCleanupService)
+        .upsertForDeployment(nodeId, deploymentId, ImageCleanupUpsertSchema.parse(await c.req.json()));
       return c.json({ data });
     }
   );

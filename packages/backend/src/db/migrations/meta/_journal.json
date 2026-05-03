@@ -225,6 +225,13 @@
       "when": 1777680000000,
       "tag": "0031_docker_registry_trusted_auth_realm",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1777766400000,
+      "tag": "0032_docker_image_cleanup_settings",
+      "breakpoints": true
     }
   ]
 }

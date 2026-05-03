@@ -26,6 +26,7 @@ import type {
   DockerFolderTreeNode,
   DockerHealthCheck,
   DockerImage,
+  DockerImageCleanupSettings,
   DockerNetwork,
   DockerRegistry,
   DockerSecret,
@@ -2800,7 +2801,7 @@ class ApiClient extends ApiClientBase {
   async upsertContainerWebhook(
     nodeId: string,
     containerName: string,
-    input: { cleanupEnabled?: boolean; retentionCount?: number }
+    input: { enabled?: boolean }
   ): Promise<DockerWebhook> {
     return this.unwrapData(
       this.request<{ data: DockerWebhook }>(
@@ -2826,6 +2827,30 @@ class ApiClient extends ApiClientBase {
     );
   }
 
+  async getContainerImageCleanup(
+    nodeId: string,
+    containerName: string
+  ): Promise<DockerImageCleanupSettings> {
+    return this.unwrapData(
+      this.request<{ data: DockerImageCleanupSettings }>(
+        `/docker/nodes/${nodeId}/containers/${encodeURIComponent(containerName)}/image-cleanup`
+      )
+    );
+  }
+
+  async upsertContainerImageCleanup(
+    nodeId: string,
+    containerName: string,
+    input: { enabled?: boolean; retentionCount?: number }
+  ): Promise<DockerImageCleanupSettings> {
+    return this.unwrapData(
+      this.request<{ data: DockerImageCleanupSettings }>(
+        `/docker/nodes/${nodeId}/containers/${encodeURIComponent(containerName)}/image-cleanup`,
+        { method: "PUT", body: JSON.stringify(input) }
+      )
+    );
+  }
+
   async getDeploymentWebhook(nodeId: string, deploymentId: string): Promise<DockerWebhook | null> {
     const result = await this.request<{ data: DockerWebhook | null }>(
       `/docker/nodes/${nodeId}/deployments/${deploymentId}/webhook`
@@ -2836,7 +2861,7 @@ class ApiClient extends ApiClientBase {
   async upsertDeploymentWebhook(
     nodeId: string,
     deploymentId: string,
-    input: { cleanupEnabled?: boolean; retentionCount?: number }
+    input: { enabled?: boolean }
   ): Promise<DockerWebhook> {
     return this.unwrapData(
       this.request<{ data: DockerWebhook }>(
@@ -2860,6 +2885,30 @@ class ApiClient extends ApiClientBase {
       this.request<{ data: DockerWebhook }>(
         `/docker/nodes/${nodeId}/deployments/${deploymentId}/webhook/regenerate`,
         { method: "POST" }
+      )
+    );
+  }
+
+  async getDeploymentImageCleanup(
+    nodeId: string,
+    deploymentId: string
+  ): Promise<DockerImageCleanupSettings> {
+    return this.unwrapData(
+      this.request<{ data: DockerImageCleanupSettings }>(
+        `/docker/nodes/${nodeId}/deployments/${deploymentId}/image-cleanup`
+      )
+    );
+  }
+
+  async upsertDeploymentImageCleanup(
+    nodeId: string,
+    deploymentId: string,
+    input: { enabled?: boolean; retentionCount?: number }
+  ): Promise<DockerImageCleanupSettings> {
+    return this.unwrapData(
+      this.request<{ data: DockerImageCleanupSettings }>(
+        `/docker/nodes/${nodeId}/deployments/${deploymentId}/image-cleanup`,
+        { method: "PUT", body: JSON.stringify(input) }
       )
     );
   }
