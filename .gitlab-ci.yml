@@ -196,10 +196,18 @@ build:
     - docker push $IMAGE:$CI_COMMIT_TAG
     - echo "Pushed $IMAGE:$CI_COMMIT_TAG"
     - |
-      apk add --no-cache go curl
+      apk add --no-cache curl
       DIGEST=$(docker buildx imagetools inspect "$IMAGE:$CI_COMMIT_TAG" --format '{{.Manifest.Digest}}')
       test -n "$DIGEST" || (echo "Could not resolve pushed gateway image digest" && exit 1)
-      (cd packages/daemons && go run ./shared/cmd/update-trust sign \
+      SIGNER_CONTAINER=$(docker create \
+        -e UPDATE_SIGNING_PRIVATE_KEY_PEM_B64 \
+        -e CI_COMMIT_TAG \
+        -e IMAGE \
+        -e DIGEST="$DIGEST" \
+        -e CI_COMMIT_SHA \
+        -e CI_PIPELINE_ID \
+        "${GOLANG_CI_IMAGE}" \
+        sh -lc 'cd /tmp/daemons && go run ./shared/cmd/update-trust sign \
         --kind gateway-image \
         --version "$CI_COMMIT_TAG" \
         --tag "$CI_COMMIT_TAG" \
@@ -207,7 +215,11 @@ build:
         --digest "$DIGEST" \
         --git-commit-sha "$CI_COMMIT_SHA" \
         --git-pipeline-id "$CI_PIPELINE_ID" \
-        --out ../../gateway-image.update.json)
+        --out /tmp/gateway-image.update.json')
+      docker cp packages/daemons "${SIGNER_CONTAINER}:/tmp/daemons"
+      docker start -a "${SIGNER_CONTAINER}"
+      docker cp "${SIGNER_CONTAINER}:/tmp/gateway-image.update.json" gateway-image.update.json
+      docker rm "${SIGNER_CONTAINER}"
       unset UPDATE_SIGNING_PRIVATE_KEY_PEM_B64
       curl \
         --fail \
