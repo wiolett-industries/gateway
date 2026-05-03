@@ -148,11 +148,10 @@ export function RuntimeSection({
               min={0}
               max={maxMemoryMB ?? undefined}
             />
-            {maxMemoryBytes && maxMemoryBytes > 0 && (
-              <p className="text-[11px] text-muted-foreground">
-                Max: {formatBytes(maxMemoryBytes)}
-              </p>
-            )}
+            <p className="min-h-4 text-[11px] text-muted-foreground">
+              Max:{" "}
+              {maxMemoryBytes && maxMemoryBytes > 0 ? formatBytes(maxMemoryBytes) : "detecting..."}
+            </p>
           </div>
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-muted-foreground">Swap (MB)</label>
@@ -166,11 +165,10 @@ export function RuntimeSection({
               min={-1}
               max={maxSwapMB ?? undefined}
             />
-            {maxSwapBytes && maxSwapBytes > 0 && (
-              <p className="text-[11px] text-muted-foreground">
-                Max extra swap: {formatBytes(maxSwapBytes)}
-              </p>
-            )}
+            <p className="min-h-4 text-[11px] text-muted-foreground">
+              Max extra swap:{" "}
+              {maxSwapBytes && maxSwapBytes > 0 ? formatBytes(maxSwapBytes) : "detecting..."}
+            </p>
           </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

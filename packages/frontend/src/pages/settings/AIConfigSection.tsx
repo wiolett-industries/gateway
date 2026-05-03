@@ -37,11 +37,15 @@ interface AIConfigState {
 }
 
 export function AIConfigSection() {
-  const [aiConfig, setAiConfig] = useState<AIConfigState | null>(null);
+  const [aiConfig, setAiConfig] = useState<AIConfigState | null>(
+    () => api.getCached<AIConfigState>("settings:ai-config") ?? null
+  );
   const [aiApiKey, setAiApiKey] = useState("");
   const [aiWebSearchKey, setAiWebSearchKey] = useState("");
   const [aiToolsModalOpen, setAiToolsModalOpen] = useState(false);
-  const [aiSavedConfig, setAiSavedConfig] = useState<AIConfigState | null>(null);
+  const [aiSavedConfig, setAiSavedConfig] = useState<AIConfigState | null>(
+    () => api.getCached<AIConfigState>("settings:ai-config") ?? null
+  );
 
   const aiHasChanges = (() => {
     if (!aiConfig || !aiSavedConfig) return false;
@@ -65,6 +69,7 @@ export function AIConfigSection() {
   const loadAIConfig = useCallback(async () => {
     try {
       const config = (await api.getAIConfig()) as any;
+      api.setCache("settings:ai-config", config);
       setAiConfig(config);
       setAiSavedConfig(config);
     } catch {
@@ -75,7 +80,12 @@ export function AIConfigSection() {
   const updateAIConfig = async (partial: Record<string, unknown>) => {
     try {
       const updated = (await api.updateAIConfig(partial)) as any;
-      setAiConfig((prev) => (prev ? { ...prev, ...updated } : null));
+      setAiConfig((prev) => {
+        if (!prev) return null;
+        const next = { ...prev, ...updated };
+        api.setCache("settings:ai-config", next);
+        return next;
+      });
       api
         .getAIStatus()
         .then((s) => useAIStore.getState().setEnabled(s.enabled))

@@ -21,17 +21,18 @@ export function Sparkline({
   minValue = 0,
   maxValue,
 }: SparklineProps) {
-  if (data.length < 2) return null;
+  if (data.length === 0) return null;
+  const values = data.length === 1 ? [data[0]!, data[0]!] : data;
 
-  const min = Math.min(minValue, ...data);
-  const max = maxValue != null ? Math.max(maxValue, ...data) : Math.max(...data);
+  const min = Math.min(minValue, ...values);
+  const max = maxValue != null ? Math.max(maxValue, ...values) : Math.max(...values);
   const range = max - min || 1;
   const stroke = 1.5;
   const top = stroke; // reserve space for stroke at peak
 
-  const points = data
+  const points = values
     .map((value, i) => {
-      const x = (i / (data.length - 1)) * width;
+      const x = (i / (values.length - 1)) * width;
       const y = top + (height - top) - ((value - min) / range) * (height - top);
       return `${x},${y}`;
     })

@@ -83,9 +83,16 @@ export function getStatusPreviewUrl() {
 export function StatusPageSection({ nodesList }: StatusPageSectionProps) {
   const { hasScope } = useAuthStore();
   const canManage = hasScope("status-page:manage");
-  const [config, setConfig] = useState<StatusPageConfig>(DEFAULT_CONFIG);
-  const [sslCerts, setSslCerts] = useState<SSLCertificate[]>([]);
-  const [proxyTemplates, setProxyTemplates] = useState<StatusPageProxyTemplateOption[]>([]);
+  const [config, setConfig] = useState<StatusPageConfig>(
+    () => api.getCached<StatusPageConfig>("settings:status-page-config") ?? DEFAULT_CONFIG
+  );
+  const [sslCerts, setSslCerts] = useState<SSLCertificate[]>(
+    () => api.getCached<SSLCertificate[]>("settings:status-page-ssl-certs") ?? []
+  );
+  const [proxyTemplates, setProxyTemplates] = useState<StatusPageProxyTemplateOption[]>(
+    () =>
+      api.getCached<StatusPageProxyTemplateOption[]>("settings:status-page-proxy-templates") ?? []
+  );
   const [savingSettings, setSavingSettings] = useState(false);
 
   const onlineNginxNodes = useMemo(
@@ -96,6 +103,7 @@ export function StatusPageSection({ nodesList }: StatusPageSectionProps) {
   const loadStatusPage = useCallback(async () => {
     try {
       const settings = await api.getStatusPageSettings();
+      api.setCache("settings:status-page-config", settings);
       setConfig(settings);
     } catch {
       /* optional feature; ignore until user opens it */
@@ -104,7 +112,9 @@ export function StatusPageSection({ nodesList }: StatusPageSectionProps) {
 
   const loadProxyTemplates = useCallback(async () => {
     try {
-      setProxyTemplates(await api.listStatusPageProxyTemplates());
+      const templates = await api.listStatusPageProxyTemplates();
+      api.setCache("settings:status-page-proxy-templates", templates);
+      setProxyTemplates(templates);
     } catch {
       setProxyTemplates([]);
     }
@@ -115,7 +125,10 @@ export function StatusPageSection({ nodesList }: StatusPageSectionProps) {
     loadProxyTemplates();
     api
       .listSSLCertificates({ limit: 100 })
-      .then((res) => setSslCerts(res.data ?? []))
+      .then((res) => {
+        api.setCache("settings:status-page-ssl-certs", res.data ?? []);
+        setSslCerts(res.data ?? []);
+      })
       .catch(() => {});
   }, [loadProxyTemplates, loadStatusPage]);
 
@@ -131,6 +144,7 @@ export function StatusPageSection({ nodesList }: StatusPageSectionProps) {
     setSavingSettings(true);
     try {
       const updated = await api.updateStatusPageSettings(patch);
+      api.setCache("settings:status-page-config", updated);
       setConfig(updated);
       toast.success("Status page settings updated");
     } catch (err) {

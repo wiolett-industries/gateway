@@ -334,35 +334,51 @@ function AlertsTab({
   const [editingRule, setEditingRule] = useState<AlertRule | null>(null);
   const lastHandledCreateToken = useRef(0);
 
-  const load = useCallback(async () => {
-    if (!canRead) {
-      setRules([]);
-      setIsLoading(false);
-      return;
-    }
-    setIsLoading(true);
-    try {
-      setRules((await api.listAlertRules({ limit: 100 })).data);
-    } catch {
-      toast.error("Failed to load alerts");
-    } finally {
-      setIsLoading(false);
-    }
-  }, [canRead]);
+  const load = useCallback(
+    async (options?: { showLoading?: boolean }) => {
+      if (!canRead) {
+        setRules([]);
+        setIsLoading(false);
+        return;
+      }
+      if (options?.showLoading !== false) setIsLoading(true);
+      try {
+        setRules((await api.listAlertRules({ limit: 100 })).data);
+      } catch {
+        toast.error("Failed to load alerts");
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [canRead]
+  );
 
   useEffect(() => {
     load();
   }, [load]);
 
   useRealtime("notification.alert-rule.changed", () => {
-    load();
+    load({ showLoading: false });
   });
 
   const toggle = async (rule: AlertRule) => {
+    const nextEnabled = !rule.enabled;
+    setRules((prev) =>
+      prev.map((candidate) =>
+        candidate.id === rule.id ? { ...candidate, enabled: nextEnabled } : candidate
+      )
+    );
     try {
-      await api.updateAlertRule(rule.id, { enabled: !rule.enabled });
-      load();
+      const updated = await api.updateAlertRule(rule.id, { enabled: nextEnabled });
+      setRules((prev) =>
+        prev.map((candidate) => (candidate.id === updated.id ? updated : candidate))
+      );
     } catch {
+      setRules((prev) =>
+        prev.map((candidate) =>
+          candidate.id === rule.id ? { ...candidate, enabled: rule.enabled } : candidate
+        )
+      );
       toast.error("Failed to toggle");
     }
   };

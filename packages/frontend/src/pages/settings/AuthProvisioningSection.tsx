@@ -18,7 +18,9 @@ interface AuthProvisioningSectionProps {
 }
 
 export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProps) {
-  const [settings, setSettings] = useState<AuthProvisioningSettings | null>(null);
+  const [settings, setSettings] = useState<AuthProvisioningSettings | null>(
+    () => api.getCached<AuthProvisioningSettings>("settings:auth-provisioning") ?? null
+  );
   const [isSavingAutoCreate, setIsSavingAutoCreate] = useState(false);
   const [isSavingVerifiedEmail, setIsSavingVerifiedEmail] = useState(false);
   const [isSavingGroup, setIsSavingGroup] = useState(false);
@@ -26,14 +28,25 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
   const [isSavingOAuthCompatibility, setIsSavingOAuthCompatibility] = useState(false);
   const [isSavingNetwork, setIsSavingNetwork] = useState(false);
   const [isSavingWebhookPolicy, setIsSavingWebhookPolicy] = useState(false);
-  const [trustedProxyCidrs, setTrustedProxyCidrs] = useState("");
-  const [webhookPrivateCidrs, setWebhookPrivateCidrs] = useState("");
+  const [trustedProxyCidrs, setTrustedProxyCidrs] = useState(
+    () =>
+      api
+        .getCached<AuthProvisioningSettings>("settings:auth-provisioning")
+        ?.networkSecurity.trustedProxyCidrs.join(", ") ?? ""
+  );
+  const [webhookPrivateCidrs, setWebhookPrivateCidrs] = useState(
+    () =>
+      api
+        .getCached<AuthProvisioningSettings>("settings:auth-provisioning")
+        ?.outboundWebhookPolicy.allowedPrivateCidrs.join(", ") ?? ""
+  );
   const skipNextCidrsBlur = useRef(false);
   const skipNextWebhookCidrsBlur = useRef(false);
 
   const load = useCallback(async () => {
     try {
       const settingsData = await api.getAuthProvisioningSettings();
+      api.setCache("settings:auth-provisioning", settingsData);
       setSettings(settingsData);
       setTrustedProxyCidrs(settingsData.networkSecurity.trustedProxyCidrs.join(", "));
       setWebhookPrivateCidrs(settingsData.outboundWebhookPolicy.allowedPrivateCidrs.join(", "));
@@ -52,6 +65,11 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
     [settings]
   );
 
+  const applySettings = (updated: AuthProvisioningSettings) => {
+    api.setCache("settings:auth-provisioning", updated);
+    setSettings(updated);
+  };
+
   const handleToggleAutoCreate = async (checked: boolean) => {
     if (!settings || !canEdit) return;
     setIsSavingAutoCreate(true);
@@ -59,7 +77,7 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
     setSettings({ ...settings, oidcAutoCreateUsers: checked });
     try {
       const updated = await api.updateAuthProvisioningSettings({ oidcAutoCreateUsers: checked });
-      setSettings(updated);
+      applySettings(updated);
       toast.success("Gateway settings updated");
     } catch (err) {
       setSettings(previous);
@@ -76,7 +94,7 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
     setSettings({ ...settings, oidcDefaultGroupId: groupId });
     try {
       const updated = await api.updateAuthProvisioningSettings({ oidcDefaultGroupId: groupId });
-      setSettings(updated);
+      applySettings(updated);
       toast.success("Default OIDC group updated");
     } catch (err) {
       setSettings(previous);
@@ -95,7 +113,7 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
       const updated = await api.updateAuthProvisioningSettings({
         oidcRequireVerifiedEmail: checked,
       });
-      setSettings(updated);
+      applySettings(updated);
       toast.success("OIDC email verification setting updated");
     } catch (err) {
       setSettings(previous);
@@ -114,7 +132,7 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
     setSettings({ ...settings, mcpServerEnabled: checked });
     try {
       const updated = await api.updateAuthProvisioningSettings({ mcpServerEnabled: checked });
-      setSettings(updated);
+      applySettings(updated);
       toast.success("MCP server setting updated");
     } catch (err) {
       setSettings(previous);
@@ -145,7 +163,7 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
       const updated = await api.updateAuthProvisioningSettings({
         oauthExtendedCallbackCompatibility: checked,
       });
-      setSettings(updated);
+      applySettings(updated);
       toast.success("OAuth compatibility setting updated");
     } catch (err) {
       setSettings(previous);
@@ -169,7 +187,7 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
       const updated = await api.updateAuthProvisioningSettings({
         networkSecurity: nextNetworkSecurity,
       });
-      setSettings(updated);
+      applySettings(updated);
       setTrustedProxyCidrs(updated.networkSecurity.trustedProxyCidrs.join(", "));
       toast.success("Network settings updated");
     } catch (err) {
@@ -203,7 +221,7 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
       const updated = await api.updateAuthProvisioningSettings({
         outboundWebhookPolicy: nextPolicy,
       });
-      setSettings(updated);
+      applySettings(updated);
       setWebhookPrivateCidrs(updated.outboundWebhookPolicy.allowedPrivateCidrs.join(", "));
       toast.success("Outbound webhook policy updated");
     } catch (err) {

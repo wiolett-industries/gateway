@@ -35,7 +35,9 @@ export function DockerRegistriesSection({ nodesList }: DockerRegistriesSectionPr
   const canEditRegistry = hasScope("docker:registries:edit");
   const canDeleteRegistry = hasScope("docker:registries:delete");
   const canTestRegistry = canEditRegistry;
-  const [registries, setRegistries] = useState<DockerRegistry[]>([]);
+  const [registries, setRegistries] = useState<DockerRegistry[]>(
+    () => api.getCached<DockerRegistry[]>("settings:docker-registries") ?? []
+  );
   const [regDialogOpen, setRegDialogOpen] = useState(false);
   const [regEditId, setRegEditId] = useState<string | null>(null);
   const [regName, setRegName] = useState("");
@@ -51,6 +53,7 @@ export function DockerRegistriesSection({ nodesList }: DockerRegistriesSectionPr
   const loadRegistries = useCallback(async () => {
     try {
       const data = await api.listDockerRegistries();
+      api.setCache("settings:docker-registries", data ?? []);
       setRegistries(data ?? []);
     } catch {
       /* ignore */

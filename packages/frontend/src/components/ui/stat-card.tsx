@@ -60,7 +60,7 @@ export function StatCard({
         )}
         {subtitle && <p className="text-[10px] text-muted-foreground">{subtitle}</p>}
       </div>
-      {history.length >= 2 && (
+      {history.length >= 1 && (
         <Sparkline
           data={history}
           width={200}

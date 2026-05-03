@@ -70,8 +70,12 @@ export function OAuthApplicationsSection({
 }: OAuthApplicationsSectionProps) {
   const { cas } = useCAStore();
   const { user } = useAuthStore();
-  const [authorizations, setAuthorizations] = useState<OAuthAuthorization[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [authorizations, setAuthorizations] = useState<OAuthAuthorization[]>(
+    () => api.getCached<OAuthAuthorization[]>("settings:oauth-authorizations") ?? []
+  );
+  const [loading, setLoading] = useState(
+    () => api.getCached<OAuthAuthorization[]>("settings:oauth-authorizations") === undefined
+  );
   const [revokingKey, setRevokingKey] = useState<string | null>(null);
   const [selectedAuthorization, setSelectedAuthorization] = useState<OAuthAuthorization | null>(
     null
@@ -118,7 +122,9 @@ export function OAuthApplicationsSection({
 
   const load = useCallback(async () => {
     try {
-      setAuthorizations(await api.listOAuthAuthorizations());
+      const data = await api.listOAuthAuthorizations();
+      api.setCache("settings:oauth-authorizations", data ?? []);
+      setAuthorizations(data);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to load OAuth applications");
     } finally {
@@ -189,11 +195,13 @@ export function OAuthApplicationsSection({
         selectedAuthorization.resource,
         finalEditableScopes
       );
-      setAuthorizations((current) =>
-        current.map((item) =>
+      setAuthorizations((current) => {
+        const next = current.map((item) =>
           item.clientId === updated.clientId && item.resource === updated.resource ? updated : item
-        )
-      );
+        );
+        api.setCache("settings:oauth-authorizations", next);
+        return next;
+      });
       const parsed = parseScopesForForm(updated.scopes);
       setSelectedAuthorization(updated);
       setEditableBaseScopes(parsed.baseScopes);
@@ -220,12 +228,14 @@ export function OAuthApplicationsSection({
     setRevokingKey(key);
     try {
       await api.revokeOAuthAuthorization(authorization.clientId, authorization.resource);
-      setAuthorizations((current) =>
-        current.filter(
+      setAuthorizations((current) => {
+        const next = current.filter(
           (item) =>
             item.clientId !== authorization.clientId || item.resource !== authorization.resource
-        )
-      );
+        );
+        api.setCache("settings:oauth-authorizations", next);
+        return next;
+      });
       setSelectedAuthorization((current) =>
         current?.clientId === authorization.clientId && current.resource === authorization.resource
           ? null

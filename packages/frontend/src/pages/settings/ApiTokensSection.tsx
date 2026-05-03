@@ -43,7 +43,9 @@ export function ApiTokensSection({
   loggingSchemasList,
 }: ApiTokensSectionProps) {
   const { cas } = useCAStore();
-  const [tokens, setTokens] = useState<ApiToken[]>([]);
+  const [tokens, setTokens] = useState<ApiToken[]>(
+    () => api.getCached<ApiToken[]>("settings:api-tokens") ?? []
+  );
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [newTokenName, setNewTokenName] = useState("");
   const [selectedScopes, setSelectedScopes] = useState<string[]>([]);
@@ -79,6 +81,7 @@ export function ApiTokensSection({
   const loadTokens = useCallback(async () => {
     try {
       const data = await api.listTokens();
+      api.setCache("settings:api-tokens", data ?? []);
       setTokens(data || []);
     } catch {
       // ignore

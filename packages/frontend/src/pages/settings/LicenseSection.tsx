@@ -109,8 +109,12 @@ function LicenseSummary({ status }: { status: LicenseStatusView }) {
 }
 
 export function LicenseSection({ canManage }: LicenseSectionProps) {
-  const [status, setStatus] = useState<LicenseStatusView | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [status, setStatus] = useState<LicenseStatusView | null>(
+    () => api.getCached<LicenseStatusView>("settings:license-status") ?? null
+  );
+  const [loading, setLoading] = useState(
+    () => api.getCached<LicenseStatusView>("settings:license-status") === undefined
+  );
   const [checking, setChecking] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [licenseKey, setLicenseKey] = useState("");
@@ -118,7 +122,9 @@ export function LicenseSection({ canManage }: LicenseSectionProps) {
 
   const loadStatus = useCallback(async () => {
     try {
-      setStatus(await api.getLicenseStatus());
+      const data = await api.getLicenseStatus();
+      api.setCache("settings:license-status", data);
+      setStatus(data);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to load license status");
     } finally {
@@ -134,6 +140,7 @@ export function LicenseSection({ canManage }: LicenseSectionProps) {
     setChecking(true);
     try {
       const updated = await api.checkLicense();
+      api.setCache("settings:license-status", updated);
       setStatus(updated);
       toast.success("License checked");
     } catch (err) {
@@ -148,6 +155,7 @@ export function LicenseSection({ canManage }: LicenseSectionProps) {
     setSaving(true);
     try {
       const updated = await api.activateLicense(licenseKey.trim());
+      api.setCache("settings:license-status", updated);
       setStatus(updated);
       setLicenseKey("");
       setDialogOpen(false);
@@ -172,7 +180,9 @@ export function LicenseSection({ canManage }: LicenseSectionProps) {
     });
     if (!ok) return;
     try {
-      setStatus(await api.clearLicenseKey());
+      const updated = await api.clearLicenseKey();
+      api.setCache("settings:license-status", updated);
+      setStatus(updated);
       toast.success("License deactivated");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to deactivate license");

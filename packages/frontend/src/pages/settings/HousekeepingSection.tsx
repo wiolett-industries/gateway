@@ -66,6 +66,7 @@ export function HousekeepingSection({ canRun, canConfigure }: HousekeepingSectio
     if (!canConfigure) return;
     try {
       const updated = await api.updateHousekeepingConfig(partial);
+      api.setCache("housekeeping:config", updated);
       setHkConfig(updated);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to update config");

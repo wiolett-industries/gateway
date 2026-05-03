@@ -580,7 +580,7 @@ export default function App() {
               <Route path="/databases" element={<DatabasesPageGuard />} />
               <Route path="/databases/:id/:tab?" element={<DatabaseDetailGuard />} />
               <Route path="/logging/:section?/:id?/:tab?" element={<LoggingPageGuard />} />
-              <Route path="/settings" element={<Settings />} />
+              <Route path="/settings/:tab?" element={<Settings />} />
               <Route
                 path="/admin/users"
                 element={scoped("admin:users", <Navigate to="/administration/users" replace />)}

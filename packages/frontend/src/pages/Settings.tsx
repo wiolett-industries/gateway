@@ -1,5 +1,6 @@
 import { Moon, Sun } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { PageTransition } from "@/components/common/PageTransition";
 import { Badge } from "@/components/ui/badge";
@@ -20,7 +21,16 @@ import { OAuthApplicationsSection } from "./settings/OAuthApplicationsSection";
 import { StatusPageSection } from "./settings/StatusPageSection";
 import { UpdateSection } from "./settings/UpdateSection";
 
+const SETTINGS_TABS = ["preferences", "gateway", "features"] as const;
+type SettingsTab = (typeof SETTINGS_TABS)[number];
+
+function isSettingsTab(value: string | null | undefined): value is SettingsTab {
+  return SETTINGS_TABS.includes(value as SettingsTab);
+}
+
 export function Settings() {
+  const { tab: tabParam } = useParams<{ tab?: string }>();
+  const navigate = useNavigate();
   const { user, hasScope } = useAuthStore();
   const {
     theme,
@@ -40,6 +50,7 @@ export function Settings() {
   const [proxyHostsList, setProxyHostsList] = useState<ProxyHost[]>([]);
   const [databasesList, setDatabasesList] = useState<DatabaseConnection[]>([]);
   const [loggingSchemasList, setLoggingSchemasList] = useState<LoggingSchema[]>([]);
+  const activeTab: SettingsTab = isSettingsTab(tabParam) ? tabParam : "preferences";
 
   const canUpdate = hasScope("admin:update");
   const canViewGatewaySettings = hasScope("settings:gateway:view");
@@ -81,6 +92,79 @@ export function Settings() {
     }
   }, [userScopes]);
 
+  useEffect(() => {
+    api
+      .listTokens()
+      .then((data) => api.setCache("settings:api-tokens", data ?? []))
+      .catch(() => {});
+    api
+      .listOAuthAuthorizations()
+      .then((data) => api.setCache("settings:oauth-authorizations", data ?? []))
+      .catch(() => {});
+
+    if (canViewGatewaySettings) {
+      api
+        .getAuthProvisioningSettings()
+        .then((data) => api.setCache("settings:auth-provisioning", data))
+        .catch(() => {});
+    }
+    if (canManageRegistries) {
+      api
+        .listDockerRegistries()
+        .then((data) => api.setCache("settings:docker-registries", data ?? []))
+        .catch(() => {});
+    }
+    if (canViewLicense) {
+      api
+        .getLicenseStatus()
+        .then((data) => api.setCache("settings:license-status", data))
+        .catch(() => {});
+    }
+    if (canConfigAI) {
+      api
+        .getAIConfig()
+        .then((data) => api.setCache("settings:ai-config", data))
+        .catch(() => {});
+    }
+    if (canViewStatusPage) {
+      api
+        .getStatusPageSettings()
+        .then((data) => api.setCache("settings:status-page-config", data))
+        .catch(() => {});
+      api
+        .listStatusPageProxyTemplates()
+        .then((data) => api.setCache("settings:status-page-proxy-templates", data ?? []))
+        .catch(() => {});
+      api
+        .listSSLCertificates({ limit: 100 })
+        .then((res) => api.setCache("settings:status-page-ssl-certs", res.data ?? []))
+        .catch(() => {});
+    }
+    if (canViewHousekeeping) {
+      api
+        .getHousekeepingConfig()
+        .then((data) => api.setCache("housekeeping:config", data))
+        .catch(() => {});
+      api
+        .getHousekeepingStats()
+        .then((data) => api.setCache("housekeeping:stats", data))
+        .catch(() => {});
+    }
+  }, [
+    canConfigAI,
+    canManageRegistries,
+    canViewGatewaySettings,
+    canViewHousekeeping,
+    canViewLicense,
+    canViewStatusPage,
+  ]);
+
+  useEffect(() => {
+    if (tabParam && !isSettingsTab(tabParam)) {
+      navigate("/settings", { replace: true });
+    }
+  }, [navigate, tabParam]);
+
   const handleToggleSystemCertificates = (checked: boolean) => {
     setShowSystemCertificates(checked);
     api.invalidateCache("req:/api/cas");
@@ -93,6 +177,10 @@ export function Settings() {
     api.invalidateCache("dashboard:stats:");
   };
 
+  const handleTabChange = (value: string) => {
+    navigate(value === "preferences" ? "/settings" : `/settings/${value}`);
+  };
+
   return (
     <PageTransition>
       <div className="h-full overflow-y-auto p-6 space-y-4">
@@ -101,7 +189,7 @@ export function Settings() {
           <p className="text-sm text-muted-foreground">Account and application settings</p>
         </div>
 
-        <Tabs defaultValue="preferences" className="flex flex-col">
+        <Tabs value={activeTab} onValueChange={handleTabChange} className="flex flex-col">
           <TabsList className="shrink-0">
             <TabsTrigger value="preferences">Preferences</TabsTrigger>
             <TabsTrigger value="gateway">Gateway settings</TabsTrigger>

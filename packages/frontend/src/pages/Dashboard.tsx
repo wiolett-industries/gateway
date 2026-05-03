@@ -376,7 +376,7 @@ export function Dashboard() {
                     </span>
                   </div>
                   <Link
-                    to="/settings"
+                    to="/settings/gateway"
                     className="flex items-center gap-1 text-sm font-medium hover:underline"
                     style={{ color: "rgb(234 179 8)" }}
                   >

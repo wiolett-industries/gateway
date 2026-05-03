@@ -533,7 +533,7 @@ export function SidebarContent({
                     size="icon"
                     className="h-8 w-8"
                     style={{ backgroundColor: "rgb(234 179 8)", color: "#111" }}
-                    onClick={() => navigate("/settings")}
+                    onClick={() => navigate("/settings/gateway")}
                   >
                     <ArrowUpCircle className="h-4 w-4" />
                   </Button>
@@ -836,7 +836,7 @@ export function SidebarContent({
               <>
                 <div className="px-2 py-2">
                   <Link
-                    to="/settings"
+                    to="/settings/gateway"
                     onClick={onNavigate}
                     className="flex items-center gap-2 px-3 py-2 text-sm font-medium transition-colors"
                     style={{ backgroundColor: "rgb(234 179 8)", color: "#111" }}
