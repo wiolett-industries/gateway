@@ -297,6 +297,16 @@ publish-logging-sdk:
           -o ../../../${DAEMON_NAME}-linux-${GOARCH} \
           ./cmd/${DAEMON_NAME}
       done
+      HOST_ARCH=$(go env GOHOSTARCH)
+      case "${HOST_ARCH}" in
+        amd64|arm64)
+          BUILT_VERSION=$(../../../${DAEMON_NAME}-linux-${HOST_ARCH} version | awk '{print $2}')
+          test "${BUILT_VERSION}" = "${VERSION}" || (echo "${DAEMON_NAME} version mismatch: expected ${VERSION}, got ${BUILT_VERSION}" && exit 1)
+          ;;
+        *)
+          echo "Skipping daemon version runtime assertion for unsupported host architecture ${HOST_ARCH}"
+          ;;
+      esac
     - cd ../../..
     - test -n "${UPDATE_SIGNING_PRIVATE_KEY_PEM_B64}" || (echo "UPDATE_SIGNING_PRIVATE_KEY_PEM_B64 CI variable is required to publish signed daemon updates" && exit 1)
     - |
@@ -402,7 +412,7 @@ build-nginx-daemon:
     DAEMON_DIR: nginx
     DAEMON_NAME: nginx-daemon
     DAEMON_SUFFIX: nginx
-    LDFLAGS_VERSION_PKG: github.com/wiolett/gateway/nginx-daemon/internal/daemon
+    LDFLAGS_VERSION_PKG: github.com/wiolett-industries/gateway/nginx-daemon/internal/daemon
   rules:
     - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+-nginx$/
 

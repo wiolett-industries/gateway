@@ -64,6 +64,9 @@ services:
       - GRPC_TLS_AUTO_DIR=${GRPC_TLS_AUTO_DIR:-/var/lib/gateway/tls}
       - GRPC_TLS_CERT=${GRPC_TLS_CERT:-}
       - GRPC_TLS_KEY=${GRPC_TLS_KEY:-}
+      - GRPC_TLS_EXTRA_SANS=${GRPC_TLS_EXTRA_SANS:-}
+      - PUBLIC_IPV4=${PUBLIC_IPV4:-}
+      - PUBLIC_IPV6=${PUBLIC_IPV6:-}
       - APP_VERSION=${GATEWAY_VERSION:-dev}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

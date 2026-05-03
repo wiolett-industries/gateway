@@ -159,11 +159,17 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
   },
 
   setDockerNodes: (nodes) =>
-    set({
-      dockerNodes: nodes.filter(
+    set((state) => {
+      const dockerNodes = nodes.filter(
         (n) => n.status === "online" && n.isConnected && !isNodeIncompatible(n)
-      ),
-      dockerNodesLoaded: true,
+      );
+      return {
+        dockerNodes,
+        selectedNodeId: dockerNodes.some((node) => node.id === state.selectedNodeId)
+          ? state.selectedNodeId
+          : null,
+        dockerNodesLoaded: true,
+      };
     }),
 
   setFilters: (newFilters) => {

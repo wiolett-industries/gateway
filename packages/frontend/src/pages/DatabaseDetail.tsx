@@ -319,6 +319,7 @@ export function DatabaseDetail() {
                 <PostgresExplorer
                   database={database}
                   canWrite={canWrite || canAdmin}
+                  canAdmin={canAdmin}
                   focused={explorerFocused}
                   onToggleFocus={() => setExplorerFocused((current) => !current)}
                 />

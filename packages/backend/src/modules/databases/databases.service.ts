@@ -1330,12 +1330,20 @@ export class DatabaseConnectionService {
   }
 
   async executePostgresSql(id: string, sqlText: string, userId: string, options: { maxRows?: number } = {}) {
+    const maxRows = Math.min(Math.max(Math.trunc(options.maxRows ?? 500), 1), 2000);
+    const statements = splitPostgresStatements(sqlText);
+    if (statements.length > POSTGRES_RESULT_SET_MAX) {
+      throw new AppError(
+        400,
+        'POSTGRES_STATEMENT_LIMIT_EXCEEDED',
+        `Postgres SQL execution is limited to ${POSTGRES_RESULT_SET_MAX} statements per request`
+      );
+    }
+
     return this.withPostgresPool(id, 'query', async (pool) => {
-      const maxRows = Math.min(Math.max(Math.trunc(options.maxRows ?? 500), 1), 2000);
-      const statements = splitPostgresStatements(sqlText);
       const client = await pool.connect();
       const entries: Array<pg.QueryResult & { durationMs: number }> = [];
-      let responseTruncated = statements.length > POSTGRES_RESULT_SET_MAX;
+      let responseTruncated = false;
       try {
         await client.query(`SET statement_timeout = ${POSTGRES_QUERY_TIMEOUT_MS}`);
         for (const [index, statement] of statements.entries()) {

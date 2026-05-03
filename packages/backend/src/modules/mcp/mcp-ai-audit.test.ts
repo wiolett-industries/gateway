@@ -664,6 +664,106 @@ describe('AIService MCP audit behavior', () => {
     expect(databaseService.executePostgresSql).toHaveBeenCalledWith('db-1', 'select 1', USER.id);
   });
 
+  it('blocks non-read Postgres SQL through the read-only database tool', async () => {
+    const auditService = { log: vi.fn().mockResolvedValue(undefined) };
+    const databaseService = {
+      executePostgresSql: vi.fn().mockResolvedValue({ rows: [{ ok: true }] }),
+    };
+    const service = createService({ nodesService: {}, databaseService, auditService });
+
+    const result = await service.executeTool(
+      { ...USER, scopes: ['databases:view', 'databases:query:read'] },
+      'query_postgres_read',
+      {
+        databaseId: 'db-1',
+        sql: 'delete from users where id = 1',
+      }
+    );
+
+    expect(result.error).toContain('INVALID_SQL_INTENT');
+    expect(databaseService.executePostgresSql).not.toHaveBeenCalled();
+  });
+
+  it('requires admin query scope for administrative Postgres SQL through AI/MCP execution', async () => {
+    const auditService = { log: vi.fn().mockResolvedValue(undefined) };
+    const databaseService = {
+      executePostgresSql: vi.fn().mockResolvedValue({ rows: [{ ok: true }] }),
+    };
+    const service = createService({ nodesService: {}, databaseService, auditService });
+
+    const denied = await service.executeTool(
+      { ...USER, scopes: ['databases:view', 'databases:query:write'] },
+      'execute_postgres_sql',
+      {
+        databaseId: 'db-1',
+        sql: 'alter table users add column disabled boolean',
+      }
+    );
+
+    expect(denied.error).toContain('PERMISSION_DENIED: Missing required scope databases:query:admin:db-1');
+    expect(databaseService.executePostgresSql).not.toHaveBeenCalled();
+
+    const allowed = await service.executeTool(
+      { ...USER, scopes: ['databases:view', 'databases:query:admin'] },
+      'execute_postgres_sql',
+      {
+        databaseId: 'db-1',
+        sql: 'alter table users add column disabled boolean',
+      }
+    );
+
+    expect(allowed.error).toBeUndefined();
+    expect(databaseService.executePostgresSql).toHaveBeenCalledWith(
+      'db-1',
+      'alter table users add column disabled boolean',
+      USER.id
+    );
+  });
+
+  it('allows read-only SQL through the generic Postgres execution tool with read query scope', async () => {
+    const auditService = { log: vi.fn().mockResolvedValue(undefined) };
+    const databaseService = {
+      executePostgresSql: vi.fn().mockResolvedValue({ rows: [{ ok: true }] }),
+    };
+    const service = createService({ nodesService: {}, databaseService, auditService });
+
+    const result = await service.executeTool(
+      { ...USER, scopes: ['databases:view:db-1', 'databases:query:read:db-1'] },
+      'execute_postgres_sql',
+      {
+        databaseId: 'db-1',
+        sql: 'select 1',
+      }
+    );
+
+    expect(result.error).toBeUndefined();
+    expect(databaseService.executePostgresSql).toHaveBeenCalledWith('db-1', 'select 1', USER.id);
+  });
+
+  it('allows write SQL through the generic Postgres execution tool with write query scope', async () => {
+    const auditService = { log: vi.fn().mockResolvedValue(undefined) };
+    const databaseService = {
+      executePostgresSql: vi.fn().mockResolvedValue({ rows: [{ ok: true }] }),
+    };
+    const service = createService({ nodesService: {}, databaseService, auditService });
+
+    const result = await service.executeTool(
+      { ...USER, scopes: ['databases:view:db-1', 'databases:query:write:db-1'] },
+      'execute_postgres_sql',
+      {
+        databaseId: 'db-1',
+        sql: 'update users set disabled = true where id = 1',
+      }
+    );
+
+    expect(result.error).toBeUndefined();
+    expect(databaseService.executePostgresSql).toHaveBeenCalledWith(
+      'db-1',
+      'update users set disabled = true where id = 1',
+      USER.id
+    );
+  });
+
   it('filters database list tools to delegated resource-scoped view grants', async () => {
     const auditService = { log: vi.fn().mockResolvedValue(undefined) };
     const databaseService = {

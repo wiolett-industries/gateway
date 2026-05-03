@@ -7,10 +7,9 @@ import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderAct
 import { Button } from "@/components/ui/button";
 import { RefreshButton } from "@/components/ui/refresh-button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { api } from "@/services/api";
+import { type DockerViewNodeScope, loadVisibleDockerNodes } from "@/lib/docker-node-access";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
-import { isNodeIncompatible } from "@/types";
 import { DockerContainers } from "./DockerContainers";
 import { DockerImages } from "./DockerImages";
 import { DockerNetworks } from "./DockerNetworks";
@@ -25,10 +24,19 @@ const TABS = [
   { value: "tasks", label: "Tasks", icon: ListTodo, scope: "docker:tasks" },
 ] as const;
 
+const DOCKER_NODE_SCOPES_BY_TAB: Partial<
+  Record<(typeof TABS)[number]["value"], DockerViewNodeScope[]>
+> = {
+  containers: ["docker:containers:view"],
+  images: ["docker:images:view"],
+  volumes: ["docker:volumes:view"],
+  networks: ["docker:networks:view"],
+};
+
 export function Docker() {
   const { tab: tabParam } = useParams<{ tab?: string }>();
   const navigate = useNavigate();
-  const { hasScope, hasScopedAccess } = useAuthStore();
+  const { hasScope, hasScopedAccess, user } = useAuthStore();
   const setSelectedNode = useDockerStore((s) => s.setSelectedNode);
   const setDockerNodes = useDockerStore((s) => s.setDockerNodes);
   const fetchTasks = useDockerStore((s) => s.fetchTasks);
@@ -72,16 +80,13 @@ export function Docker() {
 
   // Fetch docker nodes on mount, store in zustand for multi-node fetching
   useEffect(() => {
-    if (!hasScopedAccess("nodes:details")) return;
-    api
-      .listNodes({ type: "docker", limit: 100 })
-      .then((r) => {
-        setDockerNodes(
-          r.data.filter((n) => n.status === "online" && n.isConnected && !isNodeIncompatible(n))
-        );
-      })
+    const scopeBases =
+      DOCKER_NODE_SCOPES_BY_TAB[activeTab as keyof typeof DOCKER_NODE_SCOPES_BY_TAB];
+    if (!scopeBases) return;
+    loadVisibleDockerNodes(user?.scopes ?? [], scopeBases, hasScopedAccess("nodes:details"))
+      .then(setDockerNodes)
       .catch(() => toast.error("Failed to load Docker nodes"));
-  }, [hasScopedAccess, setDockerNodes]);
+  }, [activeTab, hasScopedAccess, setDockerNodes, user?.scopes]);
 
   const handleTabChange = (value: string) => {
     navigate(`/docker/${value}`, { replace: true });

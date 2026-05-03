@@ -81,6 +81,12 @@ describe('normalizeOidcClaims', () => {
     });
   });
 
+  it('rejects subjects in the reserved Gateway system namespace', () => {
+    expect(() => normalizeOidcClaims({ sub: 'system:external-user', email: 'user@example.com' })).toThrow(
+      'OIDC subject uses a reserved Gateway namespace'
+    );
+  });
+
   it('normalizes email and treats only boolean true as verified', () => {
     expect(
       normalizeOidcClaims({

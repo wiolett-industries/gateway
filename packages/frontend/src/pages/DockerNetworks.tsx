@@ -29,11 +29,11 @@ import {
 } from "@/components/ui/select";
 import { TruncateStart } from "@/components/ui/truncate-start";
 import { useRealtime } from "@/hooks/use-realtime";
+import { loadVisibleDockerNodes } from "@/lib/docker-node-access";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
 import type { DockerNetwork, Node } from "@/types";
-import { isNodeIncompatible } from "@/types";
 
 export function DockerNetworks({
   embedded,
@@ -47,7 +47,7 @@ export function DockerNetworks({
   fixedNodeId?: string;
 } = {}) {
   const navigate = useNavigate();
-  const { hasScope } = useAuthStore();
+  const { hasScope, hasScopedAccess, user } = useAuthStore();
   const { networks, selectedNodeId, setSelectedNode, fetchNetworks } = useDockerStore();
   const isLoading = useDockerStore((s) => s.loading.networks);
   const storeDockerNodes = useDockerStore((s) => s.dockerNodes);
@@ -142,9 +142,10 @@ export function DockerNetworks({
     }
 
     try {
-      const r = await api.listNodes({ type: "docker", limit: 100 });
-      const onlineNodes = r.data.filter(
-        (n) => n.status === "online" && n.isConnected && !isNodeIncompatible(n)
+      const onlineNodes = await loadVisibleDockerNodes(
+        user?.scopes ?? [],
+        ["docker:networks:view"],
+        hasScopedAccess("nodes:details")
       );
       setDockerNodes(onlineNodes);
       useDockerStore.getState().setDockerNodes(onlineNodes);
@@ -152,7 +153,7 @@ export function DockerNetworks({
     } catch {
       toast.error("Failed to load Docker nodes");
     }
-  }, [dockerNodesLoaded, embedded, fixedNodeId, setSelectedNode]);
+  }, [dockerNodesLoaded, embedded, fixedNodeId, hasScopedAccess, setSelectedNode, user?.scopes]);
 
   useEffect(() => {
     void loadNetworkNodes();

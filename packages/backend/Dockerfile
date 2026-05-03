@@ -24,6 +24,7 @@ RUN addgroup --system --gid 1001 nodejs && \
 COPY --from=builder /app/package.json ./
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/config/update-trust/update-signing-public-key.pem ./dist/lib/update-signing-public-key.pem
 COPY --from=builder /app/src/db/migrations ./src/db/migrations
 
 USER nodejs

@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { AppError } from '@/middleware/error-handler.js';
-import { mapDatabaseDriverError } from './databases.service.js';
+import { DatabaseConnectionService, mapDatabaseDriverError } from './databases.service.js';
 
 describe('mapDatabaseDriverError', () => {
   it('maps postgres authentication failures to 401', () => {
@@ -48,5 +48,24 @@ describe('mapDatabaseDriverError', () => {
   it('returns null for unknown errors', () => {
     const mapped = mapDatabaseDriverError(new Error('unexpected socket blowup'), 'postgres', 'connect');
     expect(mapped).toBeNull();
+  });
+});
+
+describe('DatabaseConnectionService.executePostgresSql', () => {
+  it('rejects Postgres SQL batches above the response result limit before executing any statement', async () => {
+    const service = new DatabaseConnectionService({} as never, { log: vi.fn() } as never, {} as never);
+    const pool = {
+      connect: vi.fn(),
+    };
+    const getPostgresPool = vi.spyOn(service, 'getPostgresPool').mockResolvedValue(pool as never);
+
+    const sql = Array.from({ length: 11 }, (_, index) => `select ${index}`).join('; ');
+
+    await expect(service.executePostgresSql('db-1', sql, 'user-1')).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'POSTGRES_STATEMENT_LIMIT_EXCEEDED',
+    });
+    expect(getPostgresPool).not.toHaveBeenCalled();
+    expect(pool.connect).not.toHaveBeenCalled();
   });
 });

@@ -38,12 +38,12 @@ import {
 } from "@/components/ui/select";
 import { useIsMobile } from "@/hooks/use-is-mobile";
 import { useRealtime } from "@/hooks/use-realtime";
+import { loadVisibleDockerNodes } from "@/lib/docker-node-access";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
 import { useDockerFolderStore } from "@/stores/docker-folders";
 import type { DockerFolderTreeNode, Node } from "@/types";
-import { isNodeIncompatible } from "@/types";
 import { DockerDeployDialog } from "./DockerDeployDialog";
 import { containerDisplayName } from "./docker-detail/helpers";
 
@@ -130,7 +130,7 @@ export function DockerContainers({
   onRefreshRef?: (fn: () => void) => void;
   fixedNodeId?: string;
 } = {}) {
-  const { hasScope, hasScopedAccess } = useAuthStore();
+  const { hasScope, hasScopedAccess, user } = useAuthStore();
   const containers = useDockerStore((s) => s.containers) as DockerContainerRowData[];
   const previousContainersRef = useRef(containers);
   const selectedNodeId = useDockerStore((s) => s.selectedNodeId);
@@ -208,9 +208,10 @@ export function DockerContainers({
   const loadDockerNodes = useCallback(async () => {
     setNodesLoading(true);
     try {
-      const r = await api.listNodes({ type: "docker", limit: 100 });
-      const compatible = r.data.filter(
-        (n) => n.status === "online" && n.isConnected && !isNodeIncompatible(n)
+      const compatible = await loadVisibleDockerNodes(
+        user?.scopes ?? [],
+        ["docker:containers:view"],
+        hasScopedAccess("nodes:details")
       );
       setDockerNodes(compatible);
       useDockerStore.getState().setDockerNodes(compatible);
@@ -219,7 +220,7 @@ export function DockerContainers({
     } finally {
       setNodesLoading(false);
     }
-  }, []);
+  }, [hasScopedAccess, user?.scopes]);
 
   useEffect(() => {
     if (embedded) {
@@ -716,13 +717,11 @@ export function DockerContainers({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="__all__">All nodes</SelectItem>
-                {(embedded ? storeDockerNodes : dockerNodes)
-                  .filter((node) => !isNodeIncompatible(node))
-                  .map((node) => (
-                    <SelectItem key={node.id} value={node.id}>
-                      {node.displayName || node.hostname}
-                    </SelectItem>
-                  ))}
+                {(embedded ? storeDockerNodes : dockerNodes).map((node) => (
+                  <SelectItem key={node.id} value={node.id}>
+                    {node.displayName || node.hostname}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
             <Select value={filters.status} onValueChange={(value) => setFilters({ status: value })}>

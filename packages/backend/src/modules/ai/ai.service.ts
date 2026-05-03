@@ -6,7 +6,7 @@ import { isPrivateUrl } from '@/lib/utils.js';
 import type { AccessListService } from '@/modules/access-lists/access-list.service.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { AuthService } from '@/modules/auth/auth.service.js';
-import type { DatabaseConnectionService } from '@/modules/databases/databases.service.js';
+import { type DatabaseConnectionService, inferPostgresIntent } from '@/modules/databases/databases.service.js';
 import type { DockerManagementService } from '@/modules/docker/docker.service.js';
 import {
   DockerDeploymentDeploySchema,
@@ -1321,10 +1321,10 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
         this.ensureDirectDatabaseScope(user, 'databases:view', a.databaseId);
         return this.databaseService.get(a.databaseId);
       case 'query_postgres_read':
-        this.ensureDatabaseQueryScopes(user, 'databases:query:read', a.databaseId);
+        this.ensureReadOnlyPostgresQuery(user, a.databaseId, a.sql);
         return this.databaseService.executePostgresSql(a.databaseId, a.sql, user.id);
       case 'execute_postgres_sql':
-        this.ensureDatabaseQueryScopes(user, 'databases:query:write', a.databaseId);
+        this.ensurePostgresQueryIntentScope(user, a.databaseId, a.sql);
         return this.databaseService.executePostgresSql(a.databaseId, a.sql, user.id);
       case 'browse_redis_keys':
         this.ensureDatabaseQueryScopes(user, 'databases:query:read', a.databaseId);
@@ -1481,6 +1481,25 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
   private ensureDatabaseQueryScopes(user: User, queryScope: string, databaseId: string) {
     this.ensureDirectDatabaseScope(user, 'databases:view', databaseId);
     this.ensureDatabaseScope(user, queryScope, databaseId);
+  }
+
+  private ensureReadOnlyPostgresQuery(user: User, databaseId: string, sql: string) {
+    const intent = inferPostgresIntent(sql);
+    if (intent !== 'read') {
+      throw new Error('INVALID_SQL_INTENT: query_postgres_read only allows read-only Postgres SQL');
+    }
+    this.ensureDatabaseQueryScopes(user, 'databases:query:read', databaseId);
+  }
+
+  private ensurePostgresQueryIntentScope(user: User, databaseId: string, sql: string) {
+    const intent = inferPostgresIntent(sql);
+    const queryScope =
+      intent === 'read'
+        ? 'databases:query:read'
+        : intent === 'write'
+          ? 'databases:query:write'
+          : 'databases:query:admin';
+    this.ensureDatabaseQueryScopes(user, queryScope, databaseId);
   }
 
   private ensureDirectDatabaseScope(user: User, baseScope: string, databaseId: string) {

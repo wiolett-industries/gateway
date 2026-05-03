@@ -3,13 +3,8 @@ import { streamSSE } from 'hono/streaming';
 import { container } from '@/container.js';
 import { openApiValidationHook } from '@/lib/openapi.js';
 import { getResourceScopedIds, hasScope } from '@/lib/permissions.js';
-import {
-  authMiddleware,
-  requireScope,
-  requireScopeBase,
-  requireScopeForResource,
-  sessionOnly,
-} from '@/modules/auth/auth.middleware.js';
+import { AppError } from '@/middleware/error-handler.js';
+import { authMiddleware, requireScope, requireScopeForResource, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import {
   daemonLogRelay,
   getDaemonLogHistory,
@@ -45,6 +40,40 @@ import { NodesService } from './nodes.service.js';
 export const nodesRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
 
 nodesRoutes.use('*', authMiddleware);
+
+const BROAD_DOCKER_VIEW_SCOPES = [
+  'docker:containers:view',
+  'docker:images:view',
+  'docker:volumes:view',
+  'docker:networks:view',
+] as const;
+
+function hasBroadDockerNodeListAccess(scopes: string[]) {
+  return BROAD_DOCKER_VIEW_SCOPES.some((scope) => hasScope(scopes, scope));
+}
+
+function compactDockerNodeForDockerAccess(node: Record<string, unknown>) {
+  const capabilities = node.capabilities as Record<string, unknown> | null | undefined;
+  return {
+    id: node.id,
+    type: node.type,
+    hostname: node.hostname,
+    displayName: node.displayName,
+    status: node.status,
+    serviceCreationLocked: node.serviceCreationLocked,
+    daemonVersion: node.daemonVersion,
+    osInfo: null,
+    configVersionHash: null,
+    capabilities: capabilities?.versionMismatch ? { versionMismatch: true } : {},
+    lastSeenAt: node.lastSeenAt,
+    lastHealthReport: null,
+    lastStatsReport: null,
+    metadata: {},
+    isConnected: node.isConnected,
+    createdAt: node.createdAt,
+    updatedAt: node.updatedAt,
+  };
+}
 
 function compactMonitoringHistorySnapshot(snapshot: any) {
   const health = snapshot?.health ?? {};
@@ -89,14 +118,23 @@ function compactMonitoringHistorySnapshot(snapshot: any) {
   };
 }
 
-nodesRoutes.openapi({ ...listNodesRoute, middleware: requireScopeBase('nodes:details') }, async (c) => {
+nodesRoutes.openapi(listNodesRoute, async (c) => {
   const service = container.resolve(NodesService);
   const query = NodeListQuerySchema.parse(c.req.query());
   const scopes = c.get('effectiveScopes') || [];
+  const hasNodeDetails = hasScope(scopes, 'nodes:details');
+  const allowedNodeIds = getResourceScopedIds(scopes, 'nodes:details');
+  const canListDockerNodes = query.type === 'docker' && hasBroadDockerNodeListAccess(scopes);
+  if (!hasNodeDetails && allowedNodeIds.length === 0 && !canListDockerNodes) {
+    throw new AppError(403, 'FORBIDDEN', 'Missing required node access scope');
+  }
   const result = await service.list(
     query,
-    hasScope(scopes, 'nodes:details') ? undefined : { allowedIds: getResourceScopedIds(scopes, 'nodes:details') }
+    hasNodeDetails || canListDockerNodes ? undefined : { allowedIds: allowedNodeIds }
   );
+  if (canListDockerNodes && !hasNodeDetails) {
+    return c.json({ ...result, data: result.data.map((node) => compactDockerNodeForDockerAccess(node as any)) });
+  }
   return c.json(result);
 });
 

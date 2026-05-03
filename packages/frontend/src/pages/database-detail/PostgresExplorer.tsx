@@ -146,11 +146,13 @@ function secondaryColumnTypeLabel(column: PostgresTableMetadata["columns"][numbe
 export function PostgresExplorer({
   database,
   canWrite,
+  canAdmin,
   focused,
   onToggleFocus,
 }: {
   database: DatabaseConnection;
   canWrite: boolean;
+  canAdmin: boolean;
   focused: boolean;
   onToggleFocus: () => void;
 }) {
@@ -418,7 +420,7 @@ export function PostgresExplorer({
     : "";
   const gridWidth = metadata ? `max(100%, ${metadata.columns.length * columnMinWidth}px)` : "100%";
   const currentTableType = tables.find((candidate) => candidate.name === table)?.type;
-  const canChangeColumnTypes = canWrite && currentTableType === "table";
+  const canChangeColumnTypes = canAdmin && currentTableType === "table";
 
   useEffect(() => {
     if (metadata && sortBy && !metadata.columns.some((column) => column.name === sortBy)) {
@@ -1251,7 +1253,7 @@ export function PostgresExplorer({
                 ? "Saving runs PostgreSQL ALTER TABLE. PostgreSQL may reject incompatible or dependent changes."
                 : currentTableType === "view"
                   ? "Views are read-only in this editor."
-                  : "You can inspect column types, but changing them requires database write permission."}
+                  : "You can inspect column types, but changing them requires database admin query permission."}
             </p>
             {canChangeColumnTypes && (
               <div className="flex shrink-0 justify-end gap-2">

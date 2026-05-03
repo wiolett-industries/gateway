@@ -433,6 +433,53 @@ describe('proxy routes programmatic raw config handling', () => {
     );
   });
 
+  it('allows browser raw-only updates with raw write scope and without proxy edit scope', async () => {
+    mocks.authType = 'session';
+    mocks.scopes = ['proxy:raw:write:host-1'];
+
+    const response = await createApp().request('/host-1', {
+      method: 'PUT',
+      headers: {
+        Authorization: 'Bearer gw_token',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        rawConfig: 'server {}',
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(mocks.proxyService.updateProxyHost).toHaveBeenCalledWith(
+      'host-1',
+      expect.objectContaining({ rawConfig: 'server {}' }),
+      'user-1',
+      {
+        bypassAdvancedValidation: false,
+        bypassRawValidation: false,
+      }
+    );
+  });
+
+  it('does not allow raw-only permission to update normal proxy settings', async () => {
+    mocks.authType = 'session';
+    mocks.scopes = ['proxy:raw:write:host-1'];
+
+    const response = await createApp().request('/host-1', {
+      method: 'PUT',
+      headers: {
+        Authorization: 'Bearer gw_token',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        rawConfig: 'server {}',
+        forwardHost: 'other-upstream',
+      }),
+    });
+
+    expect(response.status).toBe(403);
+    expect(mocks.proxyService.updateProxyHost).not.toHaveBeenCalled();
+  });
+
   it('requires raw write scope when a browser session creates a host with raw config', async () => {
     mocks.authType = 'session';
 

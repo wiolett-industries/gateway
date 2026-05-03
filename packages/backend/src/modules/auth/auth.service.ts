@@ -1,4 +1,4 @@
-import { count, eq, like, not } from 'drizzle-orm';
+import { count, eq, not } from 'drizzle-orm';
 import * as client from 'openid-client';
 import { inject, injectable } from 'tsyringe';
 import { getEnv } from '@/config/env.js';
@@ -19,6 +19,8 @@ const logger = createChildLogger('AuthService');
 
 const PKCE_STATE_PREFIX = 'oidc:pkce:';
 const PRECREATED_SUBJECT_PREFIX = 'manual:';
+const SYSTEM_SUBJECT_PREFIX = 'system:';
+const GATEWAY_SYSTEM_OIDC_SUBJECT = 'system:gateway-setup';
 
 export interface NormalizedOidcClaims {
   oidcSubject: string;
@@ -32,6 +34,9 @@ export function normalizeOidcClaims(claims: Record<string, unknown> | undefined 
   const subject = typeof claims?.sub === 'string' ? claims.sub : '';
   if (!subject) {
     throw new Error('No subject claim in ID token');
+  }
+  if (subject.startsWith(SYSTEM_SUBJECT_PREFIX)) {
+    throw new Error('OIDC subject uses a reserved Gateway namespace');
   }
 
   const email = typeof claims?.email === 'string' ? claims.email.trim().toLowerCase() : '';
@@ -266,12 +271,12 @@ export class AuthService {
       return mapped;
     }
 
-    // Check if this is the first real user — assign system-admin group
-    // Exclude system users (e.g. system:gateway-setup) from the count
+    // Check if this is the first real user — assign system-admin group.
+    // Exclude only Gateway's own deterministic system user from the count.
     const [{ count: userCount }] = await this.db
       .select({ count: count() })
       .from(users)
-      .where(not(like(users.oidcSubject, 'system:%')));
+      .where(not(eq(users.oidcSubject, GATEWAY_SYSTEM_OIDC_SUBJECT)));
 
     const isBootstrapUser = userCount === 0;
     if (!isBootstrapUser) {

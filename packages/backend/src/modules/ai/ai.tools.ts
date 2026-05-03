@@ -1567,7 +1567,8 @@ export const AI_TOOLS: AIToolDefinition[] = [
   },
   {
     name: 'execute_postgres_sql',
-    description: 'Run a single mutating or administrative SQL statement against a saved Postgres connection.',
+    description:
+      'Run a SQL statement against a saved Postgres connection. Required permission is inferred from the SQL intent: read, write, or admin.',
     parameters: {
       type: 'object',
       properties: {
@@ -1578,7 +1579,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: true,
     category: 'Databases',
-    requiredScope: 'databases:query:write',
+    requiredScope: 'databases:query:read',
     invalidateStores: [],
   },
   {

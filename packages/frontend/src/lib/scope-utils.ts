@@ -8,7 +8,6 @@ const IMPLIED_SCOPES_BY_REQUIRED_SCOPE: Record<string, readonly string[]> = {
   "pki:templates:view": ["pki:templates:edit"],
   "proxy:view": ["proxy:edit"],
   "proxy:templates:view": ["proxy:templates:edit"],
-  "proxy:raw:read": ["proxy:raw:write"],
   "acl:view": ["acl:edit"],
   "nodes:details": ["nodes:rename"],
   "nodes:config:view": ["nodes:config:edit"],

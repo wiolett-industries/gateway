@@ -49,6 +49,11 @@ function requestTogglesRawProxyConfig(input: { type?: string; rawConfigEnabled?:
   return input.type === 'raw' || input.rawConfigEnabled !== undefined;
 }
 
+function requestOnlyUpdatesRawProxyConfig(input: Record<string, unknown>): boolean {
+  const rawKeys = new Set(['rawConfig']);
+  return Object.keys(input).length > 0 && Object.keys(input).every((key) => rawKeys.has(key));
+}
+
 function canReadRawProxyConfig(scopes: string[], id: string) {
   return scopes.includes('proxy:raw:read') || scopes.includes(`proxy:raw:read:${id}`);
 }
@@ -120,7 +125,7 @@ proxyRoutes.openapi({ ...createProxyHostRoute, middleware: requireScope('proxy:c
   return c.json({ data: serializeProxyHostForBrowser(host as any, scopes, (host as any).id) }, 201);
 });
 
-proxyRoutes.openapi({ ...updateProxyHostRoute, middleware: requireScopeForResource('proxy:edit', 'id') }, async (c) => {
+proxyRoutes.openapi(updateProxyHostRoute, async (c) => {
   const proxyService = container.resolve(ProxyService);
   const user = c.get('user')!;
   const id = c.req.param('id')!;
@@ -132,6 +137,10 @@ proxyRoutes.openapi({ ...updateProxyHostRoute, middleware: requireScopeForResour
     );
   }
   const scopes = c.get('effectiveScopes') || [];
+  const rawOnlyUpdate = requestOnlyUpdatesRawProxyConfig(input);
+  if (!rawOnlyUpdate && !hasScope(scopes, `proxy:edit:${id}`)) {
+    throw new AppError(403, 'FORBIDDEN', 'Editing proxy host settings requires proxy:edit scope');
+  }
   if (input.advancedConfig && !hasScope(scopes, `proxy:advanced:${id}`)) {
     throw new AppError(403, 'FORBIDDEN', 'Advanced config requires proxy:advanced scope');
   }

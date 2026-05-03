@@ -29,12 +29,12 @@ import {
 } from "@/components/ui/select";
 import { TruncateStart } from "@/components/ui/truncate-start";
 import { useRealtime } from "@/hooks/use-realtime";
+import { loadVisibleDockerNodes } from "@/lib/docker-node-access";
 import { formatBytes, formatCreated } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
 import type { DockerRegistry, Node } from "@/types";
-import { isNodeIncompatible } from "@/types";
 
 export function DockerImages({
   embedded,
@@ -48,7 +48,7 @@ export function DockerImages({
   fixedNodeId?: string;
 } = {}) {
   const navigate = useNavigate();
-  const { hasScope } = useAuthStore();
+  const { hasScope, hasScopedAccess, user } = useAuthStore();
   const { images, selectedNodeId, setSelectedNode, fetchImages } = useDockerStore();
   const isLoading = useDockerStore((s) => s.loading.images);
   const storeDockerNodes = useDockerStore((s) => s.dockerNodes);
@@ -134,9 +134,10 @@ export function DockerImages({
     }
 
     try {
-      const r = await api.listNodes({ type: "docker", limit: 100 });
-      const onlineNodes = r.data.filter(
-        (n) => n.status === "online" && n.isConnected && !isNodeIncompatible(n)
+      const onlineNodes = await loadVisibleDockerNodes(
+        user?.scopes ?? [],
+        ["docker:images:view"],
+        hasScopedAccess("nodes:details")
       );
       setDockerNodes(onlineNodes);
       useDockerStore.getState().setDockerNodes(onlineNodes);
@@ -144,7 +145,7 @@ export function DockerImages({
     } catch {
       toast.error("Failed to load Docker nodes");
     }
-  }, [dockerNodesLoaded, embedded, fixedNodeId, setSelectedNode]);
+  }, [dockerNodesLoaded, embedded, fixedNodeId, hasScopedAccess, setSelectedNode, user?.scopes]);
 
   useEffect(() => {
     void loadImagePageState();

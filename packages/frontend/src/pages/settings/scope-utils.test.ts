@@ -59,6 +59,8 @@ describe("scope editor utilities", () => {
   it("does not let create-only or destructive action scopes satisfy read scopes", () => {
     expect(scopeMatches(["proxy:create"], "proxy:view")).toBe(false);
     expect(scopeMatches(["proxy:delete"], "proxy:view")).toBe(false);
+    expect(scopeMatches(["proxy:raw:write"], "proxy:raw:read")).toBe(false);
+    expect(scopeMatches(["proxy:raw:write:host-1"], "proxy:raw:read:host-1")).toBe(false);
     expect(scopeMatches(["notifications:webhooks:create"], "notifications:webhooks:view")).toBe(
       false
     );

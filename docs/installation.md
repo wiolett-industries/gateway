@@ -213,6 +213,7 @@ The installer writes `.env`. Important variables:
 | `PKI_MASTER_KEY` | 64-character hex key used to encrypt PKI material. |
 | `GRPC_PORT` | Gateway gRPC port for daemon connections. |
 | `GRPC_TLS_AUTO_DIR` | Directory for Gateway's auto-issued internal gRPC TLS certificate and key. |
+| `GRPC_TLS_EXTRA_SANS` | Extra comma-separated DNS names or IP addresses for the auto-issued gRPC server certificate. Gateway also includes `APP_URL` host and configured public IPs automatically. |
 | `GRPC_TLS_CERT` | Optional custom gRPC TLS certificate issued by Gateway's system CA. |
 | `GRPC_TLS_KEY` | Optional custom gRPC TLS private key paired with `GRPC_TLS_CERT`. |
 | `ACME_EMAIL` | Let's Encrypt account email. |

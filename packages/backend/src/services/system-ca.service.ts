@@ -1,3 +1,4 @@
+import { X509Certificate as NodeX509Certificate } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { dirname } from 'node:path';
@@ -15,6 +16,58 @@ const logger = createChildLogger('SystemCA');
 
 const SYSTEM_USER_ID = '00000000-0000-0000-0000-000000000000';
 const SYSTEM_CA_CN = 'Gateway Node CA';
+
+function collectGrpcServerSans(): string[] {
+  const values = ['localhost', hostname(), '127.0.0.1'];
+
+  const appUrl = process.env.APP_URL;
+  if (appUrl) {
+    try {
+      values.push(new URL(appUrl).hostname);
+    } catch {
+      logger.warn('Ignoring invalid APP_URL while building gRPC TLS SANs', { appUrl });
+    }
+  }
+
+  if (process.env.PUBLIC_IPV4) values.push(process.env.PUBLIC_IPV4);
+  if (process.env.PUBLIC_IPV6) values.push(process.env.PUBLIC_IPV6);
+  values.push(
+    ...(process.env.GRPC_TLS_EXTRA_SANS?.split(',')
+      .map((s) => s.trim())
+      .filter(Boolean) ?? [])
+  );
+
+  return [...new Set(values.map(normalizeGrpcServerSan).filter(Boolean))];
+}
+
+function normalizeGrpcServerSan(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed.startsWith('[') && trimmed.endsWith(']') && trimmed.slice(1, -1).includes(':')) {
+    return trimmed.slice(1, -1);
+  }
+  return trimmed;
+}
+
+function certificateHasExpectedSans(certPem: string, expectedSans: readonly string[]): boolean {
+  const subjectAltName = new NodeX509Certificate(certPem).subjectAltName ?? '';
+  const dnsSans = new Set<string>();
+  const ipSans = new Set<string>();
+  for (const entry of subjectAltName.split(/,\s*/)) {
+    if (entry.startsWith('DNS:')) dnsSans.add(entry.slice('DNS:'.length).trim());
+    if (entry.startsWith('IP Address:')) ipSans.add(entry.slice('IP Address:'.length).trim());
+  }
+  const expectedDnsSans = new Set<string>();
+  const expectedIpSans = new Set<string>();
+  for (const san of expectedSans) {
+    (/^[\d.]+$/.test(san) || san.includes(':') ? expectedIpSans : expectedDnsSans).add(san);
+  }
+  return (
+    dnsSans.size === expectedDnsSans.size &&
+    ipSans.size === expectedIpSans.size &&
+    [...expectedDnsSans].every((san) => dnsSans.has(san)) &&
+    [...expectedIpSans].every((san) => ipSans.has(san))
+  );
+}
 
 export class SystemCAService {
   constructor(
@@ -80,6 +133,7 @@ export class SystemCAService {
    * Returns the cert/key file paths. Reuses existing files if still valid.
    */
   async ensureGrpcServerCert(certPath: string, keyPath: string): Promise<{ certPath: string; keyPath: string }> {
+    const expectedSans = collectGrpcServerSans();
     // Reuse if files exist and cert is still valid (> 7 days remaining)
     if (existsSync(certPath) && existsSync(keyPath)) {
       try {
@@ -88,16 +142,20 @@ export class SystemCAService {
         if (certPem.includes('BEGIN CERTIFICATE')) {
           const cert = new x509.X509Certificate(certPem);
           validateGrpcServerCertificate(certPem, keyPem, await this.getSystemCACertPem());
-          const remaining = cert.notAfter.getTime() - Date.now();
-          if (remaining > 7 * 24 * 60 * 60 * 1000) {
-            logger.debug('Reusing existing gRPC server cert', {
-              expiresAt: cert.notAfter.toISOString(),
+          if (!certificateHasExpectedSans(certPem, expectedSans)) {
+            logger.info('Existing gRPC server cert is missing required SANs, regenerating', { expectedSans });
+          } else {
+            const remaining = cert.notAfter.getTime() - Date.now();
+            if (remaining > 7 * 24 * 60 * 60 * 1000) {
+              logger.debug('Reusing existing gRPC server cert', {
+                expiresAt: cert.notAfter.toISOString(),
+              });
+              return { certPath, keyPath };
+            }
+            logger.info('gRPC server cert expiring soon, regenerating', {
+              remaining: `${Math.round(remaining / 3600000)}h`,
             });
-            return { certPath, keyPath };
           }
-          logger.info('gRPC server cert expiring soon, regenerating', {
-            remaining: `${Math.round(remaining / 3600000)}h`,
-          });
         }
       } catch (err) {
         logger.warn('Existing gRPC server TLS material is invalid; regenerating', { error: (err as Error).message });
@@ -107,21 +165,13 @@ export class SystemCAService {
     logger.info('Issuing gRPC server TLS certificate from system CA...');
 
     const caId = await this.getSystemCAId();
-    const host = hostname();
 
     const result = await this.certService.issueCertificate(
       {
         caId,
         type: 'tls-server',
         commonName: 'gateway-grpc',
-        sans: [
-          'localhost',
-          host,
-          '127.0.0.1',
-          ...(process.env.GRPC_TLS_EXTRA_SANS?.split(',')
-            .map((s) => s.trim())
-            .filter(Boolean) ?? []),
-        ],
+        sans: expectedSans,
         keyAlgorithm: 'ecdsa-p256',
         validityDays: 365,
       },

@@ -337,7 +337,7 @@ databaseRoutes.openapi(
 databaseRoutes.openapi(
   { ...addPostgresColumnRoute, middleware: requireScopeForResource('databases:view', 'id') },
   async (c) => {
-    ensureAnyDatabaseScope(c, c.req.param('id')!, ['databases:query:write', 'databases:query:admin']);
+    ensureAnyDatabaseScope(c, c.req.param('id')!, ['databases:query:admin']);
     const service = container.resolve(DatabaseConnectionService);
     const user = c.get('user')!;
     const input = AddPostgresColumnSchema.parse(await c.req.json());
@@ -356,7 +356,7 @@ databaseRoutes.openapi(
 databaseRoutes.openapi(
   { ...deletePostgresColumnRoute, middleware: requireScopeForResource('databases:view', 'id') },
   async (c) => {
-    ensureAnyDatabaseScope(c, c.req.param('id')!, ['databases:query:write', 'databases:query:admin']);
+    ensureAnyDatabaseScope(c, c.req.param('id')!, ['databases:query:admin']);
     const service = container.resolve(DatabaseConnectionService);
     const user = c.get('user')!;
     const input = DeletePostgresColumnSchema.parse(await c.req.json());
@@ -374,7 +374,7 @@ databaseRoutes.openapi(
 databaseRoutes.openapi(
   { ...updatePostgresColumnTypeRoute, middleware: requireScopeForResource('databases:view', 'id') },
   async (c) => {
-    ensureAnyDatabaseScope(c, c.req.param('id')!, ['databases:query:write', 'databases:query:admin']);
+    ensureAnyDatabaseScope(c, c.req.param('id')!, ['databases:query:admin']);
     const service = container.resolve(DatabaseConnectionService);
     const user = c.get('user')!;
     const input = UpdatePostgresColumnTypeSchema.parse(await c.req.json());
