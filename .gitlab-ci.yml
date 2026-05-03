@@ -1,6 +1,8 @@
 stages:
   - test
   - build
+  - sign
+  - publish
   - release
 
 variables:
@@ -184,7 +186,6 @@ build:
   <<: *docker-login
   script:
     - ./scripts/sync-update-trust-anchor.sh
-    - test -n "${UPDATE_SIGNING_PRIVATE_KEY_PEM_B64}" || (echo "UPDATE_SIGNING_PRIVATE_KEY_PEM_B64 CI variable is required to publish signed gateway updates" && exit 1)
     - |
       echo "Building Gateway ${CI_COMMIT_TAG}..."
       docker build \
@@ -196,37 +197,71 @@ build:
     - docker push $IMAGE:$CI_COMMIT_TAG
     - echo "Pushed $IMAGE:$CI_COMMIT_TAG"
     - |
-      apk add --no-cache curl
       DIGEST=$(docker buildx imagetools inspect "$IMAGE:$CI_COMMIT_TAG" --format '{{.Manifest.Digest}}')
       test -n "$DIGEST" || (echo "Could not resolve pushed gateway image digest" && exit 1)
-      SIGNER_CONTAINER=$(docker create \
-        -e UPDATE_SIGNING_PRIVATE_KEY_PEM_B64 \
-        -e CI_COMMIT_TAG \
-        -e IMAGE \
-        -e DIGEST="$DIGEST" \
-        -e CI_COMMIT_SHA \
-        -e CI_PIPELINE_ID \
-        "${GOLANG_CI_IMAGE}" \
-        sh -lc 'cd /tmp/daemons && go run ./shared/cmd/update-trust sign \
+      printf 'GATEWAY_IMAGE_DIGEST=%s\n' "$DIGEST" > gateway-image.env
+  artifacts:
+    reports:
+      dotenv: gateway-image.env
+    paths:
+      - gateway-image.env
+    expire_in: 1 hour
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+
+sign-gateway-update:
+  stage: sign
+  extends: .go-job
+  needs:
+    - job: build
+      artifacts: true
+  script:
+    - test -n "${UPDATE_SIGNING_PRIVATE_KEY_PEM_B64}" || (echo "UPDATE_SIGNING_PRIVATE_KEY_PEM_B64 CI variable is required to publish signed gateway updates" && exit 1)
+    - test -n "${GATEWAY_IMAGE_DIGEST}" || (echo "GATEWAY_IMAGE_DIGEST artifact is required to sign gateway updates" && exit 1)
+    - |
+      go run ./shared/cmd/update-trust sign \
         --kind gateway-image \
         --version "$CI_COMMIT_TAG" \
         --tag "$CI_COMMIT_TAG" \
         --image "$IMAGE" \
-        --digest "$DIGEST" \
+        --digest "$GATEWAY_IMAGE_DIGEST" \
         --git-commit-sha "$CI_COMMIT_SHA" \
         --git-pipeline-id "$CI_PIPELINE_ID" \
-        --out /tmp/gateway-image.update.json')
-      docker cp packages/daemons "${SIGNER_CONTAINER}:/tmp/daemons"
-      docker start -a "${SIGNER_CONTAINER}"
-      docker cp "${SIGNER_CONTAINER}:/tmp/gateway-image.update.json" gateway-image.update.json
-      docker rm "${SIGNER_CONTAINER}"
-      unset UPDATE_SIGNING_PRIVATE_KEY_PEM_B64
+        --out ../../gateway-image.update.json
+  artifacts:
+    paths:
+      - gateway-image.update.json
+    expire_in: 1 hour
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+
+upload-gateway-update:
+  stage: publish
+  image: ${CURL_CI_IMAGE}
+  needs:
+    - job: sign-gateway-update
+      artifacts: true
+  script:
+    - |
       curl \
         --fail \
         --show-error \
         --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
         --upload-file gateway-image.update.json \
         "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/gateway/${CI_COMMIT_TAG}/gateway-image.update.json"
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+
+publish-gateway-aliases:
+  stage: publish
+  image: ${DOCKER_CI_IMAGE}
+  needs:
+    - upload-gateway-update
+  <<: *docker-login
+  script:
+    - docker pull $IMAGE:$CI_COMMIT_TAG
+    - docker tag $IMAGE:$CI_COMMIT_TAG $IMAGE:${CI_COMMIT_TAG#v}
+    - docker tag $IMAGE:$CI_COMMIT_TAG $IMAGE:latest
     - docker push $IMAGE:${CI_COMMIT_TAG#v}
     - docker push $IMAGE:latest
     - echo "Pushed $IMAGE:${CI_COMMIT_TAG#v}, $IMAGE:latest after signing"
@@ -237,7 +272,8 @@ release:
   stage: release
   image: ${RELEASE_CLI_IMAGE}
   needs:
-    - build
+    - upload-gateway-update
+    - publish-gateway-aliases
   script:
     - echo "Creating release ${CI_COMMIT_TAG}"
     - |
