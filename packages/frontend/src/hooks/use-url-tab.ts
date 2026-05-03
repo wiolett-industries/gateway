@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
+import { useStableNavigate } from "@/hooks/use-stable-navigate";
 
 /**
  * Syncs active tab state with the URL path.
@@ -10,7 +11,7 @@ export function useUrlTab(
   defaultTab: string,
   buildUrl: (tab: string) => string
 ): [string, (tab: string) => void] {
-  const navigate = useNavigate();
+  const navigate = useStableNavigate();
   const { tab: tabParam } = useParams<{ tab?: string }>();
   const validTabsKey = validTabs.join("\0");
   const validTabSet = useMemo(

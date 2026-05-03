@@ -1,6 +1,6 @@
 import { ArrowLeft, ArrowUpCircle, EllipsisVertical, Pencil, Pin, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { PageTransition } from "@/components/common/PageTransition";
@@ -26,6 +26,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useRealtime } from "@/hooks/use-realtime";
+import { useStableNavigate } from "@/hooks/use-stable-navigate";
 import { useUrlTab } from "@/hooks/use-url-tab";
 import { api } from "@/services/api";
 import { ApiRequestError } from "@/services/api-base";
@@ -64,7 +65,7 @@ const STATUS_BADGE: Record<
 
 export function AdminNodeDetail() {
   const { id } = useParams<{ id: string; tab?: string }>();
-  const navigate = useNavigate();
+  const navigate = useStableNavigate();
   const { hasScope } = useAuthStore();
 
   const [node, setNode] = useState<NodeDetail | null>(null);

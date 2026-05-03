@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
@@ -10,6 +10,7 @@ import { HealthBars } from "@/components/ui/health-bars";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useRealtime } from "@/hooks/use-realtime";
+import { useStableNavigate } from "@/hooks/use-stable-navigate";
 import { useUrlTab } from "@/hooks/use-url-tab";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
@@ -24,7 +25,7 @@ import { PostgresExplorer } from "./database-detail/PostgresExplorer";
 
 export function DatabaseDetail() {
   const { id } = useParams<{ id: string; tab?: string }>();
-  const navigate = useNavigate();
+  const navigate = useStableNavigate();
   const { hasScope } = useAuthStore();
   const [database, setDatabase] = useState<DatabaseConnection | null>(null);
   const [loading, setLoading] = useState(true);

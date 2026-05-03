@@ -1,5 +1,10 @@
 import { createPrivateKey, X509Certificate } from 'node:crypto';
-import forge from 'node-forge';
+import {
+  BasicConstraintsExtension,
+  ExtendedKeyUsage,
+  ExtendedKeyUsageExtension,
+  X509Certificate as PeculiarX509Certificate,
+} from '@peculiar/x509';
 
 export function validateGrpcServerCertificate(
   certificatePem: string | Buffer,
@@ -19,13 +24,13 @@ export function validateGrpcServerCertificate(
     if (!cert.checkPrivateKey(createPrivateKey(privateKeyPem))) {
       throw new Error('private key does not match certificate');
     }
-    const forgeCert = forge.pki.certificateFromPem(certificatePem.toString());
-    const basicConstraints = forgeCert.getExtension('basicConstraints') as { cA?: boolean } | undefined;
-    if (cert.ca || basicConstraints?.cA) {
+    const parsedCert = new PeculiarX509Certificate(certificatePem.toString());
+    const basicConstraints = parsedCert.getExtension(BasicConstraintsExtension);
+    if (cert.ca || basicConstraints?.ca) {
       throw new Error('certificate must be an end-entity TLS server certificate');
     }
-    const extKeyUsage = forgeCert.getExtension('extKeyUsage') as { serverAuth?: boolean } | undefined;
-    if (!extKeyUsage?.serverAuth) {
+    const extKeyUsage = parsedCert.getExtension(ExtendedKeyUsageExtension);
+    if (!extKeyUsage?.usages.includes(ExtendedKeyUsage.serverAuth)) {
       throw new Error('certificate must allow TLS server authentication');
     }
 

@@ -1,6 +1,6 @@
 import { ArrowLeft, Pencil, Pin, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
@@ -14,6 +14,7 @@ import { HealthBars } from "@/components/ui/health-bars";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useRealtime } from "@/hooks/use-realtime";
+import { useStableNavigate } from "@/hooks/use-stable-navigate";
 import { useUrlTab } from "@/hooks/use-url-tab";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
@@ -44,7 +45,7 @@ import { SettingsTab } from "./proxy-detail/SettingsTab";
 // ── Main Component ──────────────────────────────────────────────
 export function ProxyHostDetail() {
   const { id } = useParams<{ id: string; tab?: string }>();
-  const navigate = useNavigate();
+  const navigate = useStableNavigate();
   const { hasScope } = useAuthStore();
   const canViewAdvancedConfig = !!id && hasScope(`proxy:advanced:${id}`);
   const canViewRawConfig = !!id && hasScope(`proxy:raw:read:${id}`);
