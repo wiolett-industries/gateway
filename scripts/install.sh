@@ -304,6 +304,13 @@ run_quiet() {
     error "Command failed: $*\n  Check ${LOG_FILE} for details."
 }
 
+apt_install_quiet() {
+    DEBIAN_FRONTEND=noninteractive run_quiet apt-get \
+        -o Dpkg::Options::=--force-confnew \
+        -o Dpkg::Options::=--force-confmiss \
+        install -y "$@"
+}
+
 run_privileged_quiet() {
     if [ "$(id -u)" -eq 0 ]; then
         run_quiet "$@"
@@ -1485,31 +1492,6 @@ YUMEOF
     fi
 }
 
-ensure_nginx_package_config() {
-    mkdir -p /etc/nginx/conf.d /etc/nginx/sites-enabled /var/log/nginx /var/www/html
-
-    if [ ! -f /etc/nginx/nginx.conf ]; then
-        cat > /etc/nginx/nginx.conf << 'NGINXPKGEOF'
-worker_processes auto;
-pid /run/nginx.pid;
-
-events {
-    worker_connections 1024;
-}
-
-http {
-    default_type application/octet-stream;
-    access_log /var/log/nginx/access.log;
-    error_log /var/log/nginx/error.log;
-    sendfile on;
-    keepalive_timeout 65;
-    include /etc/nginx/conf.d/*.conf;
-    include /etc/nginx/sites-enabled/*;
-}
-NGINXPKGEOF
-    fi
-}
-
 # ── Install Nginx on Host ────────────────────────────────────────────
 install_nginx() {
     title "Installing Nginx"
@@ -1547,8 +1529,7 @@ install_nginx() {
             info "Installing ${custom_pkg}..."
             if command -v apt-get &>/dev/null; then
                 run_quiet apt-get update
-                ensure_nginx_package_config
-                run_quiet apt-get install -y "$custom_pkg"
+                apt_install_quiet "$custom_pkg"
             elif command -v yum &>/dev/null; then
                 run_quiet yum install -y "$custom_pkg"
             elif command -v dnf &>/dev/null; then
@@ -1560,8 +1541,7 @@ install_nginx() {
             info "Installing nginx..."
             if command -v apt-get &>/dev/null; then
                 run_quiet apt-get update
-                ensure_nginx_package_config
-                run_quiet apt-get install -y nginx
+                apt_install_quiet nginx
             elif command -v yum &>/dev/null; then
                 run_quiet yum install -y nginx
             elif command -v dnf &>/dev/null; then
