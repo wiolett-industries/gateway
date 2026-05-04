@@ -47,7 +47,7 @@ export const setupManagementSslRoute = appRoute({
   tags: ['Setup'],
   summary: 'Bootstrap management SSL with ACME before Gateway is configured',
   description:
-    'Bootstrap-only endpoint. After Gateway has a real non-system user, this endpoint returns 404; use authenticated SSL UI/API flows instead.',
+    'Bootstrap-only endpoint. After setup is completed or has been open for one hour, this endpoint returns 404; use authenticated SSL UI/API flows instead.',
   security: [{ bearerAuth: [] }],
   request: jsonBody(ManagementSslSchema),
   responses: okJson(UnknownDataResponseSchema),
@@ -59,7 +59,7 @@ export const setupEnrollNodeRoute = appRoute({
   tags: ['Setup'],
   summary: 'Enroll a node during first-run bootstrap',
   description:
-    'Bootstrap-only endpoint. After Gateway has a real non-system user, this endpoint returns 404; use authenticated node enrollment UI/API flows instead.',
+    'Bootstrap-only endpoint. After setup is completed or has been open for one hour, this endpoint returns 404; use authenticated node enrollment UI/API flows instead.',
   security: [{ bearerAuth: [] }],
   request: jsonBody(EnrollNodeSchema),
   responses: okJson(EnrollNodeResponseSchema),
@@ -71,8 +71,19 @@ export const setupManagementSslUploadRoute = appRoute({
   tags: ['Setup'],
   summary: 'Bootstrap management SSL with an uploaded certificate before Gateway is configured',
   description:
-    'Bootstrap-only endpoint. After Gateway has a real non-system user, this endpoint returns 404; use authenticated SSL UI/API flows instead.',
+    'Bootstrap-only endpoint. After setup is completed or has been open for one hour, this endpoint returns 404; use authenticated SSL UI/API flows instead.',
   security: [{ bearerAuth: [] }],
   request: jsonBody(ManagementSslUploadSchema),
+  responses: okJson(UnknownDataResponseSchema),
+});
+
+export const setupCompleteRoute = appRoute({
+  method: 'post',
+  path: '/complete',
+  tags: ['Setup'],
+  summary: 'Mark first-run setup complete',
+  description:
+    'Bootstrap-only endpoint. The installer calls this after the setup flow finishes so setup-token endpoints close without racing the first user login. New installer-created setup windows also expire automatically one hour after first start.',
+  security: [{ bearerAuth: [] }],
   responses: okJson(UnknownDataResponseSchema),
 });

@@ -30,7 +30,7 @@ This is intentional:
 
 The first-run setup creates Gateway groups and maps users to permissions. OIDC identities then receive Gateway capabilities through those groups.
 
-`SETUP_TOKEN` is only accepted by `/api/setup/*` before Gateway has any real non-system user. After first-run configuration creates a real user, the setup API returns 404 and bootstrap actions must use the authenticated UI/API. Keep the token out of tickets and chat because it is still privileged during the bootstrap window.
+`SETUP_TOKEN` is only accepted by `/api/setup/*` during the bootstrap window opened by the installer-written `SETUP_BOOTSTRAP=true` flag. The installer marks setup complete when it finishes; if setup is abandoned, the bootstrap window closes automatically one hour after first start. After that, the setup API returns 404 and bootstrap actions must use the authenticated UI/API. Keep the token out of tickets and chat because it is privileged during that bootstrap window.
 
 Gateway binds OIDC users by the provider subject (`sub`) after first login. Manually pre-created users are initially claimed by matching the email asserted by the configured OIDC provider, so this flow assumes the provider is enterprise-controlled and authoritative for email assignment. Administrators can enable **Require verified OIDC email** to require `email_verified=true` for future auto-created users and pre-created user claims. Existing subject-bound users continue to authenticate by `sub`; when verified-email mode is enabled, Gateway does not replace a stored email with a changed unverified email claim.
 

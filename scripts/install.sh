@@ -61,6 +61,7 @@ OPT_NGINX_VERSION="${GATEWAY_NGINX_VERSION:-system}"
 
 # Resolved during install
 SETUP_WITH_DOMAIN=0
+EXISTING_ENV_DETECTED=0
 DATABASE_MODE="local"
 LOGGING_MODE="local"
 DATABASE_URL=""
@@ -244,6 +245,22 @@ env_value() {
     local name="$1"
     [ -f .env ] || return 0
     grep -E "^${name}=" .env | tail -1 | cut -d= -f2- || true
+}
+
+set_env_value() {
+    local name="$1"
+    local value="$2"
+    local tmp
+
+    [ -f .env ] || return 0
+    tmp=$(mktemp_compat /tmp/gateway-env)
+    if grep -q "^${name}=" .env; then
+        sed "s|^${name}=.*|${name}=${value}|" .env > "$tmp"
+        cat "$tmp" > .env
+    else
+        printf '\n%s=%s\n' "$name" "$value" >> .env
+    fi
+    rm -f "$tmp"
 }
 
 infer_storage_config_from_env() {
@@ -1035,6 +1052,10 @@ generate_secrets() {
         CLICKHOUSE_PASSWORD="${CLICKHOUSE_PASSWORD:-${OPT_CLICKHOUSE_PASSWORD:-}}"
     fi
     SETUP_TOKEN=$(openssl rand -hex 32)
+    SETUP_BOOTSTRAP="true"
+    if [ "$EXISTING_ENV_DETECTED" -eq 1 ]; then
+        SETUP_BOOTSTRAP="false"
+    fi
 
     info "PKI Master Key generated"
     info "Session secret generated"
@@ -1154,6 +1175,7 @@ GRPC_TLS_EXTRA_SANS=${GRPC_EXTRA_SANS}
 
 # Setup token (for bootstrap API — management SSL provisioning)
 SETUP_TOKEN=${SETUP_TOKEN}
+SETUP_BOOTSTRAP=${SETUP_BOOTSTRAP:-false}
 
 # Updates
 APP_VERSION=\${GATEWAY_VERSION}
@@ -1638,19 +1660,25 @@ DEFAULTEOF
     if [ -z "$enroll_token" ] || [ -z "$gateway_cert_sha256" ]; then
         warn "Could not auto-enroll node. You can install the daemon manually:"
         echo -e "  ${GRAY}curl -sSL ${GITLAB_API_URL}/${GITLAB_PROJECT_PATH}/-/raw/main/scripts/setup-daemon.sh | sudo bash${NC}"
+        return 1
     else
         info "Downloading and running daemon setup script..."
         local daemon_script
+        local setup_status=1
         daemon_script=$(mktemp_compat /tmp/gateway-setup-daemon)
         if curl -fsSL "${GITLAB_API_URL}/${GITLAB_PROJECT_PATH}/-/raw/main/scripts/setup-node.sh" -o "$daemon_script" 2>>"$LOG_FILE"; then
             chmod +x "$daemon_script"
-            bash "$daemon_script" -y --gateway "127.0.0.1:9443" --token "$enroll_token" --gateway-cert-sha256 "$gateway_cert_sha256" 2>>"$LOG_FILE" && \
-                success "Nginx daemon installed and enrolled" || \
+            if bash "$daemon_script" -y --gateway "127.0.0.1:9443" --token "$enroll_token" --gateway-cert-sha256 "$gateway_cert_sha256" 2>>"$LOG_FILE"; then
+                success "Nginx daemon installed and enrolled"
+                setup_status=0
+            else
                 warn "Daemon setup failed. Check ${LOG_FILE} and retry manually."
+            fi
         else
             warn "Could not download daemon setup script."
         fi
         rm -f "$daemon_script"
+        return "$setup_status"
     fi
 }
 
@@ -1661,7 +1689,7 @@ bootstrap_ssl() {
 
     # Only for FQDN domains
     if [ "$domain" = "localhost" ] || ! echo "$domain" | grep -q '\.'; then
-        return
+        return 0
     fi
 
     echo ""
@@ -1686,7 +1714,7 @@ bootstrap_ssl() {
         choice=$(prompt_input "Choose" "1")
         case "$choice" in
             2) ssl_method="custom" ;;
-            3) info "Skipping SSL setup."; return ;;
+            3) info "Skipping SSL setup."; return 0 ;;
             *) ssl_method="letsencrypt" ;;
         esac
     fi
@@ -1708,11 +1736,11 @@ bootstrap_ssl() {
 
         if [ ! -f "$cert_file" ]; then
             warn "Certificate file not found: ${cert_file}"
-            return
+            return 1
         fi
         if [ ! -f "$key_file" ]; then
             warn "Key file not found: ${key_file}"
-            return
+            return 1
         fi
 
         info "Uploading custom certificate for ${domain}..."
@@ -1737,7 +1765,7 @@ if(process.argv[4]) d.chainPem=process.argv[4];
 console.log(JSON.stringify(d));
 " "$domain" "$cert_pem" "$key_pem" "$chain_pem" 2>/dev/null) || {
             warn "Failed to encode certificate. Ensure python3 or node is available."
-            return
+            return 1
         }
 
         http_code=$(curl -s -o /tmp/gateway_ssl_response.json -w "%{http_code}" \
@@ -1761,18 +1789,46 @@ console.log(JSON.stringify(d));
     if [ "$http_code" = "200" ]; then
         success "SSL certificate configured!"
         info "Management UI is now accessible at https://${domain}"
+        rm -f /tmp/gateway_ssl_response.json
+        return 0
     else
         local response
         response=$(cat /tmp/gateway_ssl_response.json 2>/dev/null || echo "No response")
         warn "SSL setup failed (HTTP ${http_code})."
         echo -e "  ${GRAY}Response: ${response}${NC}"
-        if [ "$ssl_method" = "letsencrypt" ]; then
+        if [ "$http_code" = "404" ]; then
+            echo -e "  ${GRAY}The setup API is already locked or expired. Configure SSL from the authenticated Gateway UI.${NC}"
+        elif [ "$ssl_method" = "letsencrypt" ]; then
             echo -e "  ${GRAY}Ensure DNS for ${domain} points to this server.${NC}"
         fi
         echo -e "  ${GRAY}You can configure SSL later from the Gateway UI.${NC}"
     fi
 
     rm -f /tmp/gateway_ssl_response.json
+    return 1
+}
+
+mark_setup_complete() {
+    local http_code
+    http_code=$(curl -s -o /tmp/gateway_setup_complete_response.json -w "%{http_code}" \
+        -X POST "http://localhost:3000/api/setup/complete" \
+        -H "Authorization: Bearer ${SETUP_TOKEN}" \
+        -H "Content-Type: application/json" \
+        --max-time 15 2>>"$LOG_FILE") || true
+
+    if [ "$http_code" = "200" ]; then
+        info "Setup API locked."
+        SETUP_BOOTSTRAP=false
+        set_env_value SETUP_BOOTSTRAP false
+    else
+        local response
+        response=$(cat /tmp/gateway_setup_complete_response.json 2>/dev/null || echo "No response")
+        warn "Could not lock setup API automatically (HTTP ${http_code})."
+        echo -e "  ${GRAY}Response: ${response}${NC}"
+        echo -e "  ${GRAY}Setup API also locks automatically one hour after first start.${NC}"
+    fi
+
+    rm -f /tmp/gateway_setup_complete_response.json
 }
 
 # ── Summary ───────────────────────────────────────────────────────────
@@ -1794,7 +1850,7 @@ show_summary() {
     echo -e "  ${GRAY}Useful commands:${NC}"
     echo -e "  ${GRAY}  docker compose logs -f          View logs${NC}"
     echo -e "  ${GRAY}  docker compose restart           Restart services${NC}"
-    echo -e "  ${GRAY}  docker compose pull && \\${NC}"
+    echo -e "  ${GRAY}  docker compose pull && ${NC}"
     echo -e "  ${GRAY}    docker compose up -d           Update to latest version${NC}"
 
     if [ "$SETUP_WITH_DOMAIN" -eq 1 ]; then
@@ -2044,6 +2100,7 @@ main() {
 
     # Check for existing installation
     if [ -f .env ]; then
+        EXISTING_ENV_DETECTED=1
         echo ""
         warn "Existing .env file detected."
         if [[ "$NON_INTERACTIVE" -eq 1 ]]; then
@@ -2082,23 +2139,37 @@ main() {
     if [[ "$OPT_SKIP_START" -eq 0 ]]; then
         start_services
 
-        if [ "$SETUP_WITH_DOMAIN" -eq 1 ]; then
-            install_nginx
-            # Wait for daemon to register with Gateway before requesting SSL
-            info "Waiting for daemon to connect..."
-            for i in $(seq 1 15); do
-                if curl -sf "http://localhost:3000/api/setup/enroll-node" -X OPTIONS >/dev/null 2>&1; then
-                    # Check if any nginx node is online
-                    local node_check
-                    node_check=$(curl -sf -H "Authorization: Bearer ${SETUP_TOKEN}" \
-                        "http://localhost:3000/api/nodes?type=nginx&status=online&limit=1" 2>/dev/null) || true
-                    if echo "$node_check" | grep -q '"status":"online"'; then
-                        break
-                    fi
+        if [[ "${SETUP_BOOTSTRAP:-false}" == "true" || "${SETUP_BOOTSTRAP:-false}" == "1" ]]; then
+            local setup_complete_ready=1
+            if [ "$SETUP_WITH_DOMAIN" -eq 1 ]; then
+                if ! install_nginx; then
+                    setup_complete_ready=0
                 fi
-                sleep 2
-            done
-            bootstrap_ssl "$DOMAIN"
+                # Wait for daemon to register with Gateway before requesting SSL
+                info "Waiting for daemon to connect..."
+                for i in $(seq 1 15); do
+                    if curl -sf "http://localhost:3000/api/setup/enroll-node" -X OPTIONS >/dev/null 2>&1; then
+                        # Check if any nginx node is online
+                        local node_check
+                        node_check=$(curl -sf -H "Authorization: Bearer ${SETUP_TOKEN}" \
+                            "http://localhost:3000/api/nodes?type=nginx&status=online&limit=1" 2>/dev/null) || true
+                        if echo "$node_check" | grep -q '"status":"online"'; then
+                            break
+                        fi
+                    fi
+                    sleep 2
+                done
+                if ! bootstrap_ssl "$DOMAIN"; then
+                    setup_complete_ready=0
+                fi
+            fi
+            if [ "$setup_complete_ready" -eq 1 ]; then
+                mark_setup_complete
+            else
+                warn "Setup API left open for recovery; it will lock automatically one hour after first start."
+            fi
+        else
+            info "Setup API bootstrap is disabled for this existing installation."
         fi
     else
         info "Skipping service start (--skip-start)."

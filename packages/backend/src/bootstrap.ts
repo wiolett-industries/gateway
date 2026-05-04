@@ -429,7 +429,8 @@ export async function initializeContainer(): Promise<void> {
   container.registerInstance(DomainsService, domainsService);
 
   // Setup service (bootstrap management SSL)
-  const setupTokenPolicyService = new SetupTokenPolicyService(db);
+  const setupTokenPolicyService = new SetupTokenPolicyService(db, env.SETUP_BOOTSTRAP);
+  await setupTokenPolicyService.ensureSetupStarted();
   container.registerInstance(SetupTokenPolicyService, setupTokenPolicyService);
 
   const setupService = new SetupService(db, sslService, proxyService, domainsService);

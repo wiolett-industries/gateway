@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   },
   policy: {
     isSetupApiEnabled: vi.fn(),
+    markSetupComplete: vi.fn(),
   },
   setupService: {
     bootstrapManagementSSL: vi.fn(),
@@ -70,6 +71,7 @@ describe('setup routes bootstrap-only policy', () => {
     mocks.env.SETUP_TOKEN = 'setup-secret';
     mocks.env.ACME_STAGING = false;
     mocks.policy.isSetupApiEnabled.mockResolvedValue(true);
+    mocks.policy.markSetupComplete.mockResolvedValue(undefined);
     mocks.setupService.bootstrapManagementSSL.mockResolvedValue({ status: 'configured' });
     mocks.setupService.bootstrapManagementSSLUpload.mockResolvedValue({ status: 'configured' });
     mocks.nodesService.create.mockResolvedValue({
@@ -171,5 +173,38 @@ describe('setup routes bootstrap-only policy', () => {
 
     expect(response.status).toBe(401);
     expect(mocks.nodesService.create).not.toHaveBeenCalled();
+  });
+
+  it('marks setup complete with a valid setup token', async () => {
+    const response = await createApp().request('/api/setup/complete', {
+      method: 'POST',
+      headers: authHeaders(),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ data: { status: 'completed' } });
+    expect(mocks.policy.markSetupComplete).toHaveBeenCalledOnce();
+  });
+
+  it('rejects setup completion with an invalid setup token', async () => {
+    const response = await createApp().request('/api/setup/complete', {
+      method: 'POST',
+      headers: authHeaders('wrong-token'),
+    });
+
+    expect(response.status).toBe(401);
+    expect(mocks.policy.markSetupComplete).not.toHaveBeenCalled();
+  });
+
+  it('returns 404 for setup completion after setup is locked', async () => {
+    mocks.policy.isSetupApiEnabled.mockResolvedValue(false);
+
+    const response = await createApp().request('/api/setup/complete', {
+      method: 'POST',
+      headers: authHeaders(),
+    });
+
+    expect(response.status).toBe(404);
+    expect(mocks.policy.markSetupComplete).not.toHaveBeenCalled();
   });
 });

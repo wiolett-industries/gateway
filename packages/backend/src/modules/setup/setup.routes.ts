@@ -7,7 +7,12 @@ import { createChildLogger } from '@/lib/logger.js';
 import { openApiValidationHook } from '@/lib/openapi.js';
 import { NodesService } from '@/modules/nodes/nodes.service.js';
 import type { AppEnv } from '@/types.js';
-import { setupEnrollNodeRoute, setupManagementSslRoute, setupManagementSslUploadRoute } from './setup.docs.js';
+import {
+  setupCompleteRoute,
+  setupEnrollNodeRoute,
+  setupManagementSslRoute,
+  setupManagementSslUploadRoute,
+} from './setup.docs.js';
 import { SetupService } from './setup.service.js';
 import { SetupTokenPolicyService } from './setup-token-policy.js';
 
@@ -36,7 +41,7 @@ async function setupApiDisabledResponse(c: Context<AppEnv>): Promise<Response | 
   if (enabled) return null;
 
   const path = new URL(c.req.url).pathname;
-  logger.warn('Disabled setup API endpoint requested after Gateway configuration', {
+  logger.warn('Disabled setup API endpoint requested after setup lockout', {
     path,
     method: c.req.method,
   });
@@ -158,4 +163,20 @@ setupRoutes.openapi(setupManagementSslUploadRoute, async (c) => {
     logger.error('Management SSL (BYO cert) bootstrap failed', { domain, error: message });
     return c.json({ error: message }, 500);
   }
+});
+
+/**
+ * POST /api/setup/complete
+ *
+ * Mark setup complete once the installer finishes its bootstrap work.
+ * Protected by SETUP_TOKEN (not session auth).
+ */
+setupRoutes.openapi(setupCompleteRoute, async (c) => {
+  if (!verifySetupToken(c.req.header('Authorization'))) {
+    return c.json({ error: 'Invalid or missing setup token' }, 401);
+  }
+
+  const policy = container.resolve(SetupTokenPolicyService);
+  await policy.markSetupComplete();
+  return c.json({ data: { status: 'completed' } });
 });

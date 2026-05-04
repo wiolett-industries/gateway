@@ -126,6 +126,10 @@ const envSchema = z.object({
 
   // Setup token for bootstrap API (management SSL provisioning)
   SETUP_TOKEN: z.string().optional(),
+  SETUP_BOOTSTRAP: z
+    .string()
+    .default('false')
+    .transform((v) => v === 'true' || v === '1'),
 
   // gRPC server for daemon communication
   GRPC_PORT: z.coerce.number().default(9443),

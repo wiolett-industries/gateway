@@ -59,7 +59,7 @@ After the installer completes:
 3. Complete any first-run setup steps.
 4. Add a node from **Nodes > Add Node**.
 
-The installer uses `SETUP_TOKEN` only as a local bridge into the freshly started backend during first-run setup. Once Gateway has a real user, `/api/setup/*` is disabled with 404; later node enrollment and SSL changes are performed through authenticated Gateway UI/API flows.
+The installer uses `SETUP_TOKEN` only as a local bridge into the freshly started backend during first-run setup. New installs also write `SETUP_BOOTSTRAP=true`, which lets the backend open a one-hour setup window on first start. The setup API stays available until the installer marks setup complete, or until that window expires if setup is abandoned. After that, `/api/setup/*` returns 404 and later node enrollment or SSL changes must use authenticated Gateway UI/API flows.
 
 ## Non-Interactive Install
 
