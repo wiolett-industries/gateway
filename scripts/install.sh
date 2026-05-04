@@ -1485,6 +1485,48 @@ YUMEOF
     fi
 }
 
+ensure_nginx_package_config() {
+    mkdir -p /etc/nginx/conf.d /etc/nginx/sites-enabled /var/log/nginx /var/www/html
+
+    if [ ! -f /etc/nginx/mime.types ]; then
+        cat > /etc/nginx/mime.types << 'MIMEEOF'
+types {
+    text/html                                        html htm shtml;
+    text/css                                         css;
+    text/xml                                         xml;
+    image/gif                                        gif;
+    image/jpeg                                       jpeg jpg;
+    application/javascript                           js;
+    application/json                                 json;
+    image/png                                        png;
+    image/svg+xml                                    svg svgz;
+}
+MIMEEOF
+    fi
+
+    if [ ! -f /etc/nginx/nginx.conf ]; then
+        cat > /etc/nginx/nginx.conf << 'NGINXPKGEOF'
+worker_processes auto;
+pid /run/nginx.pid;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+    access_log /var/log/nginx/access.log;
+    error_log /var/log/nginx/error.log;
+    sendfile on;
+    keepalive_timeout 65;
+    include /etc/nginx/conf.d/*.conf;
+    include /etc/nginx/sites-enabled/*;
+}
+NGINXPKGEOF
+    fi
+}
+
 # ── Install Nginx on Host ────────────────────────────────────────────
 install_nginx() {
     title "Installing Nginx"
@@ -1522,6 +1564,7 @@ install_nginx() {
             info "Installing ${custom_pkg}..."
             if command -v apt-get &>/dev/null; then
                 run_quiet apt-get update
+                ensure_nginx_package_config
                 run_quiet apt-get install -y "$custom_pkg"
             elif command -v yum &>/dev/null; then
                 run_quiet yum install -y "$custom_pkg"
@@ -1534,6 +1577,7 @@ install_nginx() {
             info "Installing nginx..."
             if command -v apt-get &>/dev/null; then
                 run_quiet apt-get update
+                ensure_nginx_package_config
                 run_quiet apt-get install -y nginx
             elif command -v yum &>/dev/null; then
                 run_quiet yum install -y nginx
