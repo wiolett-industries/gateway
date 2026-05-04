@@ -913,6 +913,32 @@ install_daemon() {
 }
 
 # ── Step 5: Install and enroll ───────────────────────────────────────
+reset_existing_enrollment_for_token() {
+    if [[ -z "$ENROLL_TOKEN" ]]; then
+        return
+    fi
+
+    if [[ ! -d /etc/nginx-daemon/certs && ! -f /var/lib/nginx-daemon/state.json ]]; then
+        return
+    fi
+
+    local backup_dir="/var/lib/nginx-daemon/enrollment-backup.$(date +%Y%m%d_%H%M%S)"
+    log "Fresh enrollment token provided — replacing existing nginx-daemon enrollment state..."
+    mkdir -p "$backup_dir"
+
+    if [[ -d /etc/nginx-daemon/certs ]]; then
+        cp -a /etc/nginx-daemon/certs "$backup_dir/certs"
+        rm -rf /etc/nginx-daemon/certs
+    fi
+
+    if [[ -f /var/lib/nginx-daemon/state.json ]]; then
+        cp -a /var/lib/nginx-daemon/state.json "$backup_dir/state.json"
+        rm -f /var/lib/nginx-daemon/state.json
+    fi
+
+    ok "Backed up previous enrollment state to ${backup_dir}"
+}
+
 enroll_daemon() {
     local target="/usr/local/bin/nginx-daemon"
 
@@ -923,6 +949,8 @@ enroll_daemon() {
             sed -i "s|stub_status_url: \".*\"|stub_status_url: \"${STUB_STATUS_URL}\"|" /etc/nginx-daemon/config.yaml
         fi
     fi
+
+    reset_existing_enrollment_for_token
 
     # Check if already enrolled (certs exist)
     if [[ -f /etc/nginx-daemon/certs/node.pem && -f /var/lib/nginx-daemon/state.json ]]; then

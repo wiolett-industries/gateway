@@ -44,7 +44,7 @@ curl -sSL https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/scripts/install.
 
 За NAT или существующим внешним reverse proxy публикуйте `3000/tcp` только в локальной сети и настройте внешний proxy на передачу публичного домена Gateway к `http://<gateway-lan-ip>:3000`. Если installer Gateway настраивает nginx рядом с Gateway для домена Gateway, для доступа к UI/API нужен только `443/tcp`. Managed nodes все равно подключаются исходяще к Gateway на `9443/tcp`; входящие management-порты им не нужны.
 
-Инсталлятор спросит домен, OIDC provider, SSL mode, resource profile и настройки log rotation. После завершения откройте Gateway, войдите в систему и добавьте первый узел.
+Инсталлятор спросит домен, OIDC provider, размещение PostgreSQL, режим structured logging, SSL mode, resource profile и настройки log rotation. После завершения откройте Gateway, войдите в систему и добавьте первый узел.
 
 Флаги, non-interactive installs, custom SSL, OIDC details, updates и node setup описаны в [installation guide](docs/installation.md).
 
@@ -103,8 +103,9 @@ Gateway запускается как Docker stack на control-plane серве
 ```text
                 Gateway server
         +-----------------------------+
-        | app + postgres + redis      |
-        | optional clickhouse         |
+        | app + redis                 |
+        | postgres local or remote    |
+        | clickhouse local/remote/off |
         | gRPC :9443                  |
         +-------------+---------------+
                       |

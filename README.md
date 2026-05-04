@@ -44,7 +44,7 @@ Expose the ports that match your deployment:
 
 Behind NAT or an existing external reverse proxy, publish `3000/tcp` only on the local network and configure the external proxy to forward the public Gateway domain to `http://<gateway-lan-ip>:3000`. If you let the installer configure nginx alongside Gateway for the Gateway domain, only `443/tcp` is required for UI/API access. Managed nodes still connect outbound to Gateway on `9443/tcp`; they do not need inbound management ports.
 
-The installer asks for your domain, OIDC provider, SSL mode, resource profile, and log rotation settings. When it finishes, open Gateway, sign in, and add your first node.
+The installer asks for your domain, OIDC provider, PostgreSQL location, structured logging mode, SSL mode, resource profile, and log rotation settings. When it finishes, open Gateway, sign in, and add your first node.
 
 For flags, non-interactive installs, custom SSL, OIDC details, updates, and node setup, read the [installation guide](docs/installation.md).
 
@@ -103,8 +103,9 @@ Gateway runs as a Docker stack on the control-plane server. Managed hosts run sm
 ```text
                 Gateway server
         +-----------------------------+
-        | app + postgres + redis      |
-        | optional clickhouse         |
+        | app + redis                 |
+        | postgres local or remote    |
+        | clickhouse local/remote/off |
         | gRPC :9443                  |
         +-------------+---------------+
                       |

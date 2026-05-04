@@ -43,6 +43,8 @@ The installer walks through:
 
 - Deployment domain.
 - OIDC issuer and client settings.
+- PostgreSQL location: local container or remote PostgreSQL URL.
+- Structured logging mode: local ClickHouse, remote ClickHouse, or disabled.
 - SSL mode.
 - ACME email and staging mode.
 - Docker resource profile.
@@ -83,12 +85,74 @@ Common flags:
 | `--oidc-client-secret` | `GATEWAY_OIDC_CLIENT_SECRET` | OIDC client secret. |
 | `--acme-staging` | `GATEWAY_ACME_STAGING` | Use Let's Encrypt staging. |
 | `--resource-profile` | `GATEWAY_RESOURCE_PROFILE` | Docker resource profile. |
+| `--remote-database` | `GATEWAY_DATABASE_MODE=remote` | Use an existing remote PostgreSQL database. |
+| `--database-url` | `GATEWAY_DATABASE_URL` | Remote PostgreSQL connection URL. |
+| `--logging-mode` | `GATEWAY_LOGGING_MODE` | Structured logging mode: `local`, `remote`, or `disabled`. |
+| `--clickhouse-url` | `GATEWAY_CLICKHOUSE_URL` | Remote ClickHouse HTTP URL. |
+| `--clickhouse-username` | `GATEWAY_CLICKHOUSE_USERNAME` | Remote ClickHouse username. |
+| `--clickhouse-password` | `GATEWAY_CLICKHOUSE_PASSWORD` | Remote ClickHouse password. |
+| `--clickhouse-database` | `GATEWAY_CLICKHOUSE_DATABASE` | ClickHouse database name. |
+| `--clickhouse-table` | `GATEWAY_CLICKHOUSE_LOGS_TABLE` | ClickHouse logs table name. |
+| `--disable-logging` | `GATEWAY_DISABLE_LOGGING=1` | Disable ClickHouse-backed structured logging. |
 | `--log-max-size` | `GATEWAY_LOG_MAX_SIZE` | Max Docker container log file size. |
 | `--log-max-file` | `GATEWAY_LOG_MAX_FILE` | Max number of rotated Docker log files. |
 | `--no-log-rotation` | `GATEWAY_LOG_ROTATION=N` | Disable installer-managed Docker log rotation. |
 | `--version` | `GATEWAY_VERSION` | Gateway version tag. |
 
 Run the installer with `--help` for the full list.
+
+## Database And Logging Storage
+
+Gateway always needs PostgreSQL and Redis. The installer always runs Redis locally, but PostgreSQL can be either installed by the generated Docker Compose stack or supplied as a remote database URL.
+
+Interactive installs ask:
+
+- Install and configure PostgreSQL here.
+- Use a remote PostgreSQL database.
+
+For non-interactive remote PostgreSQL installs:
+
+```bash
+curl -sSL https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/scripts/install.sh | bash -s -- -y \
+  --domain gw.example.com \
+  --oidc-issuer https://id.example.com \
+  --oidc-client-id gateway \
+  --oidc-client-secret your-secret \
+  --acme-email admin@example.com \
+  --database-url postgresql://gateway:secret@db.example.com:5432/gateway
+```
+
+Structured logging is optional. The installer supports:
+
+- Local ClickHouse in the generated Docker Compose stack.
+- Remote ClickHouse through `CLICKHOUSE_URL`.
+- Disabled logging, which writes an empty `CLICKHOUSE_URL` and omits the ClickHouse service.
+
+For non-interactive remote ClickHouse:
+
+```bash
+curl -sSL https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/scripts/install.sh | bash -s -- -y \
+  --domain gw.example.com \
+  --oidc-issuer https://id.example.com \
+  --oidc-client-id gateway \
+  --oidc-client-secret your-secret \
+  --acme-email admin@example.com \
+  --clickhouse-url https://clickhouse.example.com:8123 \
+  --clickhouse-username gateway \
+  --clickhouse-password secret
+```
+
+To disable structured logging:
+
+```bash
+curl -sSL https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/scripts/install.sh | bash -s -- -y \
+  --domain gw.example.com \
+  --oidc-issuer https://id.example.com \
+  --oidc-client-id gateway \
+  --oidc-client-secret your-secret \
+  --acme-email admin@example.com \
+  --disable-logging
+```
 
 ## Docker Log Rotation
 
@@ -200,7 +264,7 @@ The installer writes `.env`. Important variables:
 | `APP_URL` | Public Gateway URL. |
 | `DATABASE_URL` | PostgreSQL connection URL. |
 | `REDIS_URL` | Redis connection URL. |
-| `CLICKHOUSE_URL` | Enables structured logging when set. |
+| `CLICKHOUSE_URL` | Enables structured logging when set; leave empty to disable logging. |
 | `CLICKHOUSE_USERNAME` | ClickHouse username. |
 | `CLICKHOUSE_PASSWORD` | ClickHouse password. |
 | `CLICKHOUSE_DATABASE` | ClickHouse database. |
@@ -232,9 +296,9 @@ The production stack includes:
 | Service | Purpose |
 |---------|---------|
 | `app` | Gateway backend, frontend, API, OAuth, MCP, WebSockets, and gRPC server. |
-| `postgres` | Main database. |
+| `postgres` | Main database, only when local PostgreSQL is selected. |
 | `redis` | Required sessions, cache, and rate limiting dependency. Gateway health and rate-limited endpoints fail closed when Redis is unavailable. |
-| `clickhouse` | Structured logging storage. |
+| `clickhouse` | Structured logging storage, only when local ClickHouse is selected. |
 
 The bundled ClickHouse service uses a pinned image tag; treat ClickHouse upgrades as explicit version changes, not automatic `latest` pulls.
 

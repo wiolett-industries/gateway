@@ -34,6 +34,17 @@ OPT_SSL_KEY="${GATEWAY_SSL_KEY:-}"
 OPT_SSL_CHAIN="${GATEWAY_SSL_CHAIN:-}"
 OPT_WITH_DOMAIN="${GATEWAY_WITH_DOMAIN:-}"
 
+# Storage topology
+OPT_DATABASE_MODE="${GATEWAY_DATABASE_MODE:-local}"
+OPT_DATABASE_URL="${GATEWAY_DATABASE_URL:-}"
+OPT_LOGGING_MODE="${GATEWAY_LOGGING_MODE:-local}"
+OPT_CLICKHOUSE_URL="${GATEWAY_CLICKHOUSE_URL:-${CLICKHOUSE_URL:-}}"
+OPT_CLICKHOUSE_USERNAME="${GATEWAY_CLICKHOUSE_USERNAME:-${CLICKHOUSE_USERNAME:-gateway}}"
+OPT_CLICKHOUSE_PASSWORD="${GATEWAY_CLICKHOUSE_PASSWORD:-${CLICKHOUSE_PASSWORD:-}}"
+OPT_CLICKHOUSE_DATABASE="${GATEWAY_CLICKHOUSE_DATABASE:-${CLICKHOUSE_DATABASE:-gateway_logs}}"
+OPT_CLICKHOUSE_LOGS_TABLE="${GATEWAY_CLICKHOUSE_LOGS_TABLE:-${CLICKHOUSE_LOGS_TABLE:-logs}}"
+OPT_DISABLE_LOGGING="${GATEWAY_DISABLE_LOGGING:-0}"
+
 # Resource profile: small, medium, large, custom (default: medium)
 OPT_RESOURCE_PROFILE="${GATEWAY_RESOURCE_PROFILE:-medium}"
 
@@ -50,6 +61,13 @@ OPT_NGINX_VERSION="${GATEWAY_NGINX_VERSION:-system}"
 
 # Resolved during install
 SETUP_WITH_DOMAIN=0
+DATABASE_MODE="local"
+LOGGING_MODE="local"
+DATABASE_URL=""
+CLICKHOUSE_URL=""
+CLICKHOUSE_USERNAME="gateway"
+CLICKHOUSE_DATABASE="gateway_logs"
+CLICKHOUSE_LOGS_TABLE="logs"
 
 # Resource limits (set by profile)
 APP_MEM_LIMIT=""
@@ -125,6 +143,141 @@ validate_clickhouse_image_ref() {
     if [[ "${image_leaf##*:}" == "latest" ]]; then
         error "CLICKHOUSE_IMAGE_REF must not use the mutable latest tag."
     fi
+}
+
+validate_single_line_value() {
+    local name="$1"
+    local value="$2"
+    if [[ "$value" =~ [[:cntrl:]] ]]; then
+        error "${name} must not contain control characters."
+    fi
+}
+
+validate_database_url() {
+    validate_single_line_value "DATABASE_URL" "$1"
+    if [[ -z "$1" ]]; then
+        error "Remote database mode requires DATABASE_URL."
+    fi
+    if [[ ! "$1" =~ ^postgres(ql)?://[^[:space:]]+$ ]]; then
+        error "DATABASE_URL must be a postgres:// or postgresql:// URL without whitespace."
+    fi
+}
+
+validate_clickhouse_url() {
+    validate_single_line_value "CLICKHOUSE_URL" "$1"
+    if [[ -z "$1" ]]; then
+        error "Remote ClickHouse mode requires CLICKHOUSE_URL."
+    fi
+    if [[ ! "$1" =~ ^https?://[^[:space:]]+$ ]]; then
+        error "CLICKHOUSE_URL must be an http:// or https:// URL without whitespace."
+    fi
+}
+
+validate_clickhouse_identifier() {
+    local name="$1"
+    local value="$2"
+    validate_single_line_value "$name" "$value"
+    if [[ ! "$value" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+        error "${name} must be a valid ClickHouse identifier."
+    fi
+}
+
+normalize_storage_config() {
+    DATABASE_MODE="${OPT_DATABASE_MODE:-local}"
+    LOGGING_MODE="${OPT_LOGGING_MODE:-local}"
+
+    if [[ -n "$OPT_DATABASE_URL" ]]; then
+        DATABASE_MODE="remote"
+    fi
+
+    if [[ "$OPT_DISABLE_LOGGING" =~ ^(1|true|TRUE|yes|YES|y|Y)$ ]]; then
+        LOGGING_MODE="disabled"
+    elif [[ -n "$OPT_CLICKHOUSE_URL" && "${OPT_LOGGING_MODE:-local}" = "local" ]]; then
+        LOGGING_MODE="remote"
+    fi
+
+    case "$DATABASE_MODE" in
+        local)
+            DATABASE_URL=""
+            ;;
+        remote)
+            validate_database_url "$OPT_DATABASE_URL"
+            DATABASE_URL="$OPT_DATABASE_URL"
+            ;;
+        *)
+            error "GATEWAY_DATABASE_MODE must be local or remote."
+            ;;
+    esac
+
+    case "$LOGGING_MODE" in
+        local)
+            CLICKHOUSE_URL="http://clickhouse:8123"
+            CLICKHOUSE_USERNAME="gateway"
+            CLICKHOUSE_DATABASE="gateway_logs"
+            CLICKHOUSE_LOGS_TABLE="logs"
+            ;;
+        remote)
+            validate_clickhouse_url "$OPT_CLICKHOUSE_URL"
+            validate_single_line_value "CLICKHOUSE_USERNAME" "$OPT_CLICKHOUSE_USERNAME"
+            validate_single_line_value "CLICKHOUSE_PASSWORD" "$OPT_CLICKHOUSE_PASSWORD"
+            validate_clickhouse_identifier "CLICKHOUSE_DATABASE" "$OPT_CLICKHOUSE_DATABASE"
+            validate_clickhouse_identifier "CLICKHOUSE_LOGS_TABLE" "$OPT_CLICKHOUSE_LOGS_TABLE"
+            CLICKHOUSE_URL="$OPT_CLICKHOUSE_URL"
+            CLICKHOUSE_USERNAME="$OPT_CLICKHOUSE_USERNAME"
+            CLICKHOUSE_PASSWORD="$OPT_CLICKHOUSE_PASSWORD"
+            CLICKHOUSE_DATABASE="$OPT_CLICKHOUSE_DATABASE"
+            CLICKHOUSE_LOGS_TABLE="$OPT_CLICKHOUSE_LOGS_TABLE"
+            ;;
+        disabled)
+            CLICKHOUSE_URL=""
+            CLICKHOUSE_USERNAME="${OPT_CLICKHOUSE_USERNAME:-gateway}"
+            CLICKHOUSE_DATABASE="${OPT_CLICKHOUSE_DATABASE:-gateway_logs}"
+            CLICKHOUSE_LOGS_TABLE="${OPT_CLICKHOUSE_LOGS_TABLE:-logs}"
+            ;;
+        *)
+            error "GATEWAY_LOGGING_MODE must be local, remote, or disabled."
+            ;;
+    esac
+}
+
+env_value() {
+    local name="$1"
+    [ -f .env ] || return 0
+    grep -E "^${name}=" .env | tail -1 | cut -d= -f2- || true
+}
+
+infer_storage_config_from_env() {
+    local existing_database_url existing_clickhouse_url
+    existing_database_url="$(env_value "DATABASE_URL")"
+    existing_clickhouse_url="$(env_value "CLICKHOUSE_URL")"
+
+    DATABASE_MODE="local"
+    if [[ -n "$existing_database_url" && ! "$existing_database_url" =~ @postgres(:|/) ]]; then
+        DATABASE_MODE="remote"
+    fi
+
+    LOGGING_MODE="local"
+    if grep -q '^CLICKHOUSE_URL=' .env; then
+        if [[ -z "$existing_clickhouse_url" ]]; then
+            LOGGING_MODE="disabled"
+        elif [[ "$existing_clickhouse_url" != "http://clickhouse:8123" ]]; then
+            LOGGING_MODE="remote"
+        fi
+    fi
+}
+
+prompt_required_input() {
+    local prompt="$1"
+    local default="${2:-}"
+    local value
+    while true; do
+        value=$(prompt_input "$prompt" "$default")
+        if [ -n "$value" ]; then
+            echo "$value"
+            return
+        fi
+        warn "A value is required." >&2
+    done
 }
 
 run_quiet() {
@@ -685,12 +838,16 @@ gather_config() {
         OIDC_CLIENT_SECRET="${OPT_OIDC_CLIENT_SECRET:-}"
         OIDC_REDIRECT_URI="${APP_URL}/auth/callback"
 
+        normalize_storage_config
+
         # Resource profile from env/flag
         apply_resource_profile "$OPT_RESOURCE_PROFILE"
 
         info "Mode: $([ "$SETUP_WITH_DOMAIN" -eq 1 ] && echo "domain + nginx" || echo "direct access")"
         [ "$SETUP_WITH_DOMAIN" -eq 1 ] && info "Domain: ${DOMAIN}"
         [ -n "$OIDC_ISSUER" ] && info "OIDC issuer: ${OIDC_ISSUER}" || warn "OIDC not configured. Set OIDC_* variables in .env before starting."
+        info "Database: ${DATABASE_MODE}"
+        info "Structured logging: ${LOGGING_MODE}"
         info "Resource profile: ${OPT_RESOURCE_PROFILE} (app=${APP_MEM_LIMIT}, pg=${PG_MEM_LIMIT}, redis=${REDIS_MEM_LIMIT}, clickhouse=${CLICKHOUSE_MEM_LIMIT})"
         return
     fi
@@ -756,6 +913,64 @@ gather_config() {
 
     echo ""
 
+    # Database
+    echo -e "  ${BRAND_MINT}Database:${NC}"
+    echo -e "  ${GRAY}  1) Install and configure PostgreSQL here  [default]${NC}"
+    echo -e "  ${GRAY}  2) Use a remote PostgreSQL database${NC}"
+    echo ""
+    local database_choice
+    database_choice=$(prompt_input "Choose" "1")
+    if [ "$database_choice" = "2" ]; then
+        DATABASE_MODE="remote"
+        DATABASE_URL=$(prompt_required_input "PostgreSQL URL" "")
+        validate_database_url "$DATABASE_URL"
+    else
+        DATABASE_MODE="local"
+        DATABASE_URL=""
+    fi
+
+    echo ""
+
+    # Structured logging
+    echo -e "  ${BRAND_MINT}Structured logging:${NC}"
+    echo -e "  ${GRAY}  1) Install and configure ClickHouse here  [default]${NC}"
+    echo -e "  ${GRAY}  2) Use a remote ClickHouse database${NC}"
+    echo -e "  ${GRAY}  3) Disable structured logging${NC}"
+    echo ""
+    local logging_choice
+    logging_choice=$(prompt_input "Choose" "1")
+    case "$logging_choice" in
+        2)
+            LOGGING_MODE="remote"
+            CLICKHOUSE_URL=$(prompt_required_input "ClickHouse URL" "")
+            CLICKHOUSE_USERNAME=$(prompt_input "ClickHouse username" "gateway")
+            CLICKHOUSE_PASSWORD=$(prompt_secret "ClickHouse password")
+            CLICKHOUSE_DATABASE=$(prompt_input "ClickHouse database" "gateway_logs")
+            CLICKHOUSE_LOGS_TABLE=$(prompt_input "ClickHouse logs table" "logs")
+            validate_clickhouse_url "$CLICKHOUSE_URL"
+            validate_single_line_value "CLICKHOUSE_USERNAME" "$CLICKHOUSE_USERNAME"
+            validate_single_line_value "CLICKHOUSE_PASSWORD" "$CLICKHOUSE_PASSWORD"
+            validate_clickhouse_identifier "CLICKHOUSE_DATABASE" "$CLICKHOUSE_DATABASE"
+            validate_clickhouse_identifier "CLICKHOUSE_LOGS_TABLE" "$CLICKHOUSE_LOGS_TABLE"
+            ;;
+        3)
+            LOGGING_MODE="disabled"
+            CLICKHOUSE_URL=""
+            CLICKHOUSE_USERNAME="gateway"
+            CLICKHOUSE_DATABASE="gateway_logs"
+            CLICKHOUSE_LOGS_TABLE="logs"
+            ;;
+        *)
+            LOGGING_MODE="local"
+            CLICKHOUSE_URL="http://clickhouse:8123"
+            CLICKHOUSE_USERNAME="gateway"
+            CLICKHOUSE_DATABASE="gateway_logs"
+            CLICKHOUSE_LOGS_TABLE="logs"
+            ;;
+    esac
+
+    echo ""
+
     # Resource profile
     echo -e "  ${BRAND_MINT}Resource profile:${NC}"
     echo -e "  ${GRAY}  1) Small  — App: 1GB, Postgres: 512MB, Redis: 256MB, ClickHouse: 1GB${NC}"
@@ -779,6 +994,8 @@ gather_config() {
     esac
 
     info "Resources: app=${APP_MEM_LIMIT}, postgres=${PG_MEM_LIMIT}, redis=${REDIS_MEM_LIMIT}, clickhouse=${CLICKHOUSE_MEM_LIMIT}"
+    info "Database: ${DATABASE_MODE}"
+    info "Structured logging: ${LOGGING_MODE}"
 
     echo ""
 
@@ -808,13 +1025,21 @@ generate_secrets() {
     PKI_MASTER_KEY=$(openssl rand -hex 32)
     SESSION_SECRET=$(openssl rand -hex 32)
     DB_PASSWORD=$(openssl rand -hex 16)
-    CLICKHOUSE_PASSWORD=$(openssl rand -hex 16)
+    if [ "$DATABASE_MODE" = "local" ]; then
+        DATABASE_URL="postgres://gateway:${DB_PASSWORD}@postgres:5432/gateway"
+    fi
+
+    if [ "$LOGGING_MODE" = "local" ]; then
+        CLICKHOUSE_PASSWORD=$(openssl rand -hex 16)
+    else
+        CLICKHOUSE_PASSWORD="${CLICKHOUSE_PASSWORD:-${OPT_CLICKHOUSE_PASSWORD:-}}"
+    fi
     SETUP_TOKEN=$(openssl rand -hex 32)
 
     info "PKI Master Key generated"
     info "Session secret generated"
-    info "Database password generated"
-    info "ClickHouse password generated"
+    [ "$DATABASE_MODE" = "local" ] && info "Database password generated"
+    [ "$LOGGING_MODE" = "local" ] && info "ClickHouse password generated"
     info "Setup token generated"
 
     # Build gRPC TLS SANs (domain + public IP so external daemons can connect)
@@ -853,17 +1078,17 @@ BIND_HOST=0.0.0.0
 
 # Database
 DB_PASSWORD=${DB_PASSWORD}
-DATABASE_URL=postgres://gateway:${DB_PASSWORD}@postgres:5432/gateway
+DATABASE_URL=${DATABASE_URL}
 
 # Redis
 REDIS_URL=redis://redis:6379
 
 # ClickHouse (external structured logging)
-CLICKHOUSE_URL=http://clickhouse:8123
-CLICKHOUSE_USERNAME=gateway
+CLICKHOUSE_URL=${CLICKHOUSE_URL}
+CLICKHOUSE_USERNAME=${CLICKHOUSE_USERNAME}
 CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
-CLICKHOUSE_DATABASE=gateway_logs
-CLICKHOUSE_LOGS_TABLE=logs
+CLICKHOUSE_DATABASE=${CLICKHOUSE_DATABASE}
+CLICKHOUSE_LOGS_TABLE=${CLICKHOUSE_LOGS_TABLE}
 CLICKHOUSE_REQUEST_TIMEOUT_MS=5000
 
 # Logging ingest guardrails
@@ -1018,9 +1243,106 @@ LOGEOF
     fi
 }
 
+compose_depends_on() {
+    echo "    depends_on:"
+    if [ "$DATABASE_MODE" = "local" ]; then
+        echo "      postgres:"
+        echo "        condition: service_healthy"
+    fi
+    echo "      redis:"
+    echo "        condition: service_healthy"
+    if [ "$LOGGING_MODE" = "local" ]; then
+        echo "      clickhouse:"
+        echo "        condition: service_healthy"
+    fi
+}
+
+compose_postgres_service() {
+    [ "$DATABASE_MODE" = "local" ] || return 0
+    cat << COMPOSEEOF
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: gateway
+      POSTGRES_USER: gateway
+      POSTGRES_PASSWORD: \${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    mem_limit: ${PG_MEM_LIMIT}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gateway -d gateway"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+${logging_block}
+COMPOSEEOF
+}
+
+compose_redis_service() {
+    cat << COMPOSEEOF
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    mem_limit: ${REDIS_MEM_LIMIT}
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+${logging_block}
+COMPOSEEOF
+}
+
+compose_clickhouse_service() {
+    [ "$LOGGING_MODE" = "local" ] || return 0
+    cat << COMPOSEEOF
+
+  clickhouse:
+    image: "${CLICKHOUSE_IMAGE_REF}"
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_DB: \${CLICKHOUSE_DATABASE:-gateway_logs}
+      CLICKHOUSE_USER: \${CLICKHOUSE_USERNAME:-gateway}
+      CLICKHOUSE_PASSWORD: \${CLICKHOUSE_PASSWORD:-gateway}
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    mem_limit: ${CLICKHOUSE_MEM_LIMIT}
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "clickhouse-client --user \"\$\${CLICKHOUSE_USER:-gateway}\" --password \"\$\${CLICKHOUSE_PASSWORD:-gateway}\" --query 'SELECT 1'",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+${logging_block}
+COMPOSEEOF
+}
+
+compose_volumes() {
+    echo "volumes:"
+    if [ "$DATABASE_MODE" = "local" ]; then
+        echo "  postgres_data:"
+    fi
+    echo "  redis_data:"
+    if [ "$LOGGING_MODE" = "local" ]; then
+        echo "  clickhouse_data:"
+    fi
+}
+
 # ── Write docker-compose.yml ─────────────────────────────────────────
 write_compose() {
-    validate_clickhouse_image_ref
+    if [ "$LOGGING_MODE" = "local" ]; then
+        validate_clickhouse_image_ref
+    fi
     backup_if_exists "docker-compose.yml"
 
     local logging_block=""
@@ -1032,116 +1354,28 @@ write_compose() {
         max-file: \"${OPT_LOG_MAX_FILE}\""
     fi
 
+    local app_port
     if [ "$SETUP_WITH_DOMAIN" -eq 1 ]; then
-        # With domain: do NOT expose :3000 externally, expose gRPC
-        cat > docker-compose.yml << COMPOSEEOF
-services:
-  app:
-    image: \${GATEWAY_IMAGE_REF}
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:3000:3000"
-      - "\${BIND_HOST:-0.0.0.0}:9443:9443"
-    env_file: .env
-    mem_limit: ${APP_MEM_LIMIT}
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ./docker-compose.yml:/app/docker-compose.yml:ro
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      clickhouse:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/health || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
-${logging_block}
-
-  postgres:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: gateway
-      POSTGRES_USER: gateway
-      POSTGRES_PASSWORD: \${DB_PASSWORD}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    mem_limit: ${PG_MEM_LIMIT}
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U gateway -d gateway"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-${logging_block}
-
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-    command: redis-server --appendonly yes
-    volumes:
-      - redis_data:/data
-    mem_limit: ${REDIS_MEM_LIMIT}
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-${logging_block}
-
-  clickhouse:
-    image: "${CLICKHOUSE_IMAGE_REF}"
-    restart: unless-stopped
-    environment:
-      CLICKHOUSE_DB: \${CLICKHOUSE_DATABASE:-gateway_logs}
-      CLICKHOUSE_USER: \${CLICKHOUSE_USERNAME:-gateway}
-      CLICKHOUSE_PASSWORD: \${CLICKHOUSE_PASSWORD:-gateway}
-    volumes:
-      - clickhouse_data:/var/lib/clickhouse
-    mem_limit: ${CLICKHOUSE_MEM_LIMIT}
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "clickhouse-client --user \"\$\${CLICKHOUSE_USER:-gateway}\" --password \"\$\${CLICKHOUSE_PASSWORD:-gateway}\" --query 'SELECT 1'",
-        ]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 20s
-${logging_block}
-
-volumes:
-  postgres_data:
-  redis_data:
-  clickhouse_data:
-COMPOSEEOF
+        app_port='      - "127.0.0.1:3000:3000"'
     else
-        # Without domain: expose :3000 externally + gRPC
-        cat > docker-compose.yml << COMPOSEEOF
+        app_port='      - "${BIND_HOST:-0.0.0.0}:3000:3000"'
+    fi
+
+    {
+        cat << COMPOSEEOF
 services:
   app:
     image: \${GATEWAY_IMAGE_REF}
     restart: unless-stopped
     ports:
-      - "\${BIND_HOST:-0.0.0.0}:3000:3000"
+${app_port}
       - "\${BIND_HOST:-0.0.0.0}:9443:9443"
     env_file: .env
     mem_limit: ${APP_MEM_LIMIT}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./docker-compose.yml:/app/docker-compose.yml:ro
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      clickhouse:
-        condition: service_healthy
+$(compose_depends_on)
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/health || exit 1"]
       interval: 10s
@@ -1149,66 +1383,12 @@ services:
       retries: 10
       start_period: 30s
 ${logging_block}
-
-  postgres:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: gateway
-      POSTGRES_USER: gateway
-      POSTGRES_PASSWORD: \${DB_PASSWORD}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    mem_limit: ${PG_MEM_LIMIT}
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U gateway -d gateway"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-${logging_block}
-
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-    command: redis-server --appendonly yes
-    volumes:
-      - redis_data:/data
-    mem_limit: ${REDIS_MEM_LIMIT}
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-${logging_block}
-
-  clickhouse:
-    image: "${CLICKHOUSE_IMAGE_REF}"
-    restart: unless-stopped
-    environment:
-      CLICKHOUSE_DB: \${CLICKHOUSE_DATABASE:-gateway_logs}
-      CLICKHOUSE_USER: \${CLICKHOUSE_USERNAME:-gateway}
-      CLICKHOUSE_PASSWORD: \${CLICKHOUSE_PASSWORD:-gateway}
-    volumes:
-      - clickhouse_data:/var/lib/clickhouse
-    mem_limit: ${CLICKHOUSE_MEM_LIMIT}
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "clickhouse-client --user \"\$\${CLICKHOUSE_USER:-gateway}\" --password \"\$\${CLICKHOUSE_PASSWORD:-gateway}\" --query 'SELECT 1'",
-        ]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 20s
-${logging_block}
-
-volumes:
-  postgres_data:
-  redis_data:
-  clickhouse_data:
 COMPOSEEOF
-    fi
+        compose_postgres_service
+        compose_redis_service
+        compose_clickhouse_service
+        compose_volumes
+    } > docker-compose.yml
 
     info "docker-compose.yml"
 }
@@ -1464,7 +1644,7 @@ DEFAULTEOF
         daemon_script=$(mktemp_compat /tmp/gateway-setup-daemon)
         if curl -fsSL "${GITLAB_API_URL}/${GITLAB_PROJECT_PATH}/-/raw/main/scripts/setup-node.sh" -o "$daemon_script" 2>>"$LOG_FILE"; then
             chmod +x "$daemon_script"
-            bash "$daemon_script" -y --gateway "localhost:9443" --token "$enroll_token" --gateway-cert-sha256 "$gateway_cert_sha256" 2>>"$LOG_FILE" && \
+            bash "$daemon_script" -y --gateway "127.0.0.1:9443" --token "$enroll_token" --gateway-cert-sha256 "$gateway_cert_sha256" 2>>"$LOG_FILE" && \
                 success "Nginx daemon installed and enrolled" || \
                 warn "Daemon setup failed. Check ${LOG_FILE} and retry manually."
         else
@@ -1696,6 +1876,45 @@ main() {
                 OPT_RESOURCE_PROFILE="$2"
                 shift 2
                 ;;
+            --remote-database)
+                OPT_DATABASE_MODE="remote"
+                shift
+                ;;
+            --database-url)
+                OPT_DATABASE_URL="$2"
+                OPT_DATABASE_MODE="remote"
+                shift 2
+                ;;
+            --logging-mode)
+                OPT_LOGGING_MODE="$2"
+                shift 2
+                ;;
+            --clickhouse-url)
+                OPT_CLICKHOUSE_URL="$2"
+                OPT_LOGGING_MODE="remote"
+                shift 2
+                ;;
+            --clickhouse-username)
+                OPT_CLICKHOUSE_USERNAME="$2"
+                shift 2
+                ;;
+            --clickhouse-password)
+                OPT_CLICKHOUSE_PASSWORD="$2"
+                shift 2
+                ;;
+            --clickhouse-database)
+                OPT_CLICKHOUSE_DATABASE="$2"
+                shift 2
+                ;;
+            --clickhouse-table)
+                OPT_CLICKHOUSE_LOGS_TABLE="$2"
+                shift 2
+                ;;
+            --disable-logging)
+                OPT_LOGGING_MODE="disabled"
+                OPT_DISABLE_LOGGING=1
+                shift
+                ;;
             --log-max-size)
                 OPT_LOG_MAX_SIZE="$2"
                 shift 2
@@ -1753,6 +1972,15 @@ main() {
                 echo "  --ssl-key <path>        Custom SSL private key PEM file"
                 echo "  --ssl-chain <path>      Custom SSL chain PEM file (optional)"
                 echo "  --resource-profile <p>  Resource profile: small, medium, large, custom"
+                echo "  --remote-database       Use a remote PostgreSQL database"
+                echo "  --database-url <url>    Remote PostgreSQL URL"
+                echo "  --logging-mode <mode>   Structured logging: local, remote, disabled"
+                echo "  --clickhouse-url <url>  Remote ClickHouse HTTP URL"
+                echo "  --clickhouse-username <u> ClickHouse username (default: gateway)"
+                echo "  --clickhouse-password <p> ClickHouse password"
+                echo "  --clickhouse-database <db> ClickHouse database (default: gateway_logs)"
+                echo "  --clickhouse-table <t>  ClickHouse logs table (default: logs)"
+                echo "  --disable-logging       Disable structured logging"
                 echo "  --log-max-size <size>   Max log file size (default: 50m)"
                 echo "  --log-max-file <n>      Max number of log files (default: 3)"
                 echo "  --no-log-rotation       Disable Docker log rotation"
@@ -1764,6 +1992,11 @@ main() {
                 echo "  GITLAB_API_URL          GitLab instance URL"
                 echo "  GITLAB_PROJECT_PATH     GitLab project path"
                 echo "  GATEWAY_RESOURCE_PROFILE  Resource profile (small/medium/large/custom)"
+                echo "  GATEWAY_DATABASE_MODE   Database mode (local/remote)"
+                echo "  GATEWAY_DATABASE_URL    Remote PostgreSQL URL"
+                echo "  GATEWAY_LOGGING_MODE    Structured logging mode (local/remote/disabled)"
+                echo "  GATEWAY_CLICKHOUSE_URL  Remote ClickHouse HTTP URL"
+                echo "  GATEWAY_DISABLE_LOGGING Disable structured logging when true/1"
                 echo "  GATEWAY_LOG_ROTATION    Enable log rotation (Y/N, default: Y)"
                 echo "  GATEWAY_LOG_MAX_SIZE    Max log size (default: 50m)"
                 echo "  GATEWAY_LOG_MAX_FILE    Max log files (default: 3)"
@@ -1822,6 +2055,7 @@ main() {
                 apply_resource_profile "medium"
             fi
             title "Writing Files"
+            infer_storage_config_from_env
             ensure_clickhouse_env
             write_compose
             if [[ "$OPT_SKIP_START" -eq 0 ]]; then
