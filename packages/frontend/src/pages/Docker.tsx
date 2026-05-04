@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { type DockerViewNodeScope, loadVisibleDockerNodes } from "@/lib/docker-node-access";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
+import type { Node as GatewayNode } from "@/types";
 import { DockerContainers } from "./DockerContainers";
 import { DockerImages } from "./DockerImages";
 import { DockerNetworks } from "./DockerNetworks";
@@ -39,6 +40,10 @@ export function Docker() {
   const { hasScope, hasScopedAccess, user } = useAuthStore();
   const setSelectedNode = useDockerStore((s) => s.setSelectedNode);
   const setDockerNodes = useDockerStore((s) => s.setDockerNodes);
+  const fetchContainers = useDockerStore((s) => s.fetchContainers);
+  const fetchImages = useDockerStore((s) => s.fetchImages);
+  const fetchVolumes = useDockerStore((s) => s.fetchVolumes);
+  const fetchNetworks = useDockerStore((s) => s.fetchNetworks);
   const fetchTasks = useDockerStore((s) => s.fetchTasks);
   const loading = useDockerStore((s) => s.loading);
 
@@ -56,6 +61,7 @@ export function Docker() {
   const visibleTabs = TABS.filter(
     (t) => hasScopedAccess(t.scope) || (t.value === "containers" && canManageContainerFolders)
   );
+  const visibleTabKey = visibleTabs.map((tab) => tab.value).join("|");
   const activeTab =
     tabParam && visibleTabs.some((t) => t.value === tabParam)
       ? tabParam
@@ -87,6 +93,58 @@ export function Docker() {
       .then(setDockerNodes)
       .catch(() => toast.error("Failed to load Docker nodes"));
   }, [activeTab, hasScopedAccess, setDockerNodes, user?.scopes]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const preload = async () => {
+      for (const tab of visibleTabKey.split("|").filter(Boolean)) {
+        if (tab === activeTab) continue;
+        if (cancelled) return;
+        const scopeBases = DOCKER_NODE_SCOPES_BY_TAB[tab as keyof typeof DOCKER_NODE_SCOPES_BY_TAB];
+        let nodeIdOverride: string | null | undefined;
+        let nodesOverride: GatewayNode[] | undefined;
+        if (scopeBases) {
+          try {
+            const nodes = await loadVisibleDockerNodes(
+              user?.scopes ?? [],
+              scopeBases,
+              hasScopedAccess("nodes:details")
+            );
+            if (cancelled) return;
+            const selectedNodeId = useDockerStore.getState().selectedNodeId;
+            nodeIdOverride = nodes.some((node) => node.id === selectedNodeId)
+              ? selectedNodeId
+              : null;
+            nodesOverride = nodes;
+          } catch {
+            continue;
+          }
+        }
+
+        if (tab === "containers") await fetchContainers(nodeIdOverride, "", nodesOverride);
+        if (tab === "images") await fetchImages(nodeIdOverride, "", nodesOverride);
+        if (tab === "volumes") await fetchVolumes(nodeIdOverride, "", nodesOverride);
+        if (tab === "networks") await fetchNetworks(nodeIdOverride, "", nodesOverride);
+        if (tab === "tasks") await fetchTasks(null);
+      }
+    };
+
+    void preload();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeTab,
+    fetchContainers,
+    fetchImages,
+    fetchNetworks,
+    fetchTasks,
+    fetchVolumes,
+    hasScopedAccess,
+    user?.scopes,
+    visibleTabKey,
+  ]);
 
   const handleTabChange = (value: string) => {
     navigate(`/docker/${value}`, { replace: true });

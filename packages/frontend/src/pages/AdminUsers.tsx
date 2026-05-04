@@ -52,8 +52,9 @@ export function AdminUsers({
   const navigate = useNavigate();
   const { user: currentUser, hasScope } = useAuthStore();
   const cachedUsers = api.getCached<User[]>("admin:users");
+  const cachedGroups = api.getCached<PermissionGroup[]>("admin:groups");
   const [users, setUsers] = useState<User[]>(cachedUsers ?? []);
-  const [groups, setGroups] = useState<PermissionGroup[]>([]);
+  const [groups, setGroups] = useState<PermissionGroup[]>(cachedGroups ?? []);
   const [isLoading, setIsLoading] = useState(!cachedUsers);
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -71,6 +72,7 @@ export function AdminUsers({
   const loadUsers = useCallback(async () => {
     try {
       const data = await api.listUsers();
+      api.setCache("admin:users", data || []);
       setUsers(data || []);
     } catch {
       toast.error("Failed to load users");
@@ -86,7 +88,10 @@ export function AdminUsers({
   useEffect(() => {
     api
       .listGroups()
-      .then(setGroups)
+      .then((data) => {
+        api.setCache("admin:groups", data);
+        setGroups(data);
+      })
       .catch(() => {});
   }, []);
 
@@ -106,7 +111,10 @@ export function AdminUsers({
   useRealtime("group.changed", () => {
     api
       .listGroups()
-      .then(setGroups)
+      .then((data) => {
+        api.setCache("admin:groups", data);
+        setGroups(data);
+      })
       .catch(() => {});
     reloadUsers();
   });

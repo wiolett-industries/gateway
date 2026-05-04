@@ -186,19 +186,39 @@ function DatabaseTagSummary({ tags, type }: { tags: string[]; type: DatabaseConn
 export function Databases() {
   const navigate = useNavigate();
   const { hasScope, hasScopedAccess, isLoading: authLoading } = useAuthStore();
-  const [rows, setRows] = useState<DatabaseConnection[]>([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<"all" | "postgres" | "redis">("all");
   const [healthFilter, setHealthFilter] = useState<
     "all" | "online" | "offline" | "degraded" | "unknown"
   >("all");
+  const databaseCacheKey = useMemo(
+    () => `databases:list:${search}:${typeFilter}:${healthFilter}`,
+    [healthFilter, search, typeFilter]
+  );
+  const [rows, setRows] = useState<DatabaseConnection[]>(
+    () =>
+      api.getCached<DatabaseConnection[]>("databases:list::all:all") ??
+      api.getCached<DatabaseConnection[]>("databases:list") ??
+      []
+  );
+  const [loading, setLoading] = useState(
+    () =>
+      api.getCached<DatabaseConnection[]>("databases:list::all:all") === undefined &&
+      api.getCached<DatabaseConnection[]>("databases:list") === undefined
+  );
   const [createOpen, setCreateOpen] = useState(false);
   const [draft, setDraft] = useState<DatabaseConnectionDraft>(draftFromConnection(null));
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
-    setLoading(true);
+    const cachedRows = api.getCached<DatabaseConnection[]>(databaseCacheKey);
+    if (cachedRows) {
+      setRows(cachedRows);
+      setLoading(false);
+    } else {
+      setRows([]);
+      setLoading(true);
+    }
     try {
       const result = await api.listDatabases({
         limit: 200,
@@ -206,13 +226,17 @@ export function Databases() {
         type: typeFilter === "all" ? undefined : typeFilter,
         healthStatus: healthFilter === "all" ? undefined : healthFilter,
       });
+      api.setCache(databaseCacheKey, result.data);
+      if (search === "" && typeFilter === "all" && healthFilter === "all") {
+        api.setCache("databases:list", result.data);
+      }
       setRows(result.data);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to load databases");
     } finally {
       setLoading(false);
     }
-  }, [healthFilter, search, typeFilter]);
+  }, [databaseCacheKey, healthFilter, search, typeFilter]);
 
   useEffect(() => {
     void load();

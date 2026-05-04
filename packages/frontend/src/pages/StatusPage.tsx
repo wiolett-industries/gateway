@@ -174,14 +174,33 @@ export function StatusPage() {
   const canDeleteIncidents = hasScope("status-page:incidents:delete");
   const activeTab = tabParam && TABS.some((tab) => tab.value === tabParam) ? tabParam : "services";
 
-  const [config, setConfig] = useState<StatusPageConfig>(DEFAULT_CONFIG);
-  const [services, setServices] = useState<StatusPageServiceItem[]>([]);
-  const [incidents, setIncidents] = useState<StatusPageIncident[]>([]);
-  const [nodes, setNodes] = useState<Node[]>([]);
-  const [proxies, setProxies] = useState<ProxyHost[]>([]);
-  const [databases, setDatabases] = useState<DatabaseConnection[]>([]);
-  const [dockerTargets, setDockerTargets] = useState<DockerContainer[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [config, setConfig] = useState<StatusPageConfig>(
+    () => api.getCached<StatusPageConfig>("status-page:config") ?? DEFAULT_CONFIG
+  );
+  const [services, setServices] = useState<StatusPageServiceItem[]>(
+    () => api.getCached<StatusPageServiceItem[]>("status-page:services") ?? []
+  );
+  const [incidents, setIncidents] = useState<StatusPageIncident[]>(
+    () => api.getCached<StatusPageIncident[]>("status-page:incidents") ?? []
+  );
+  const [nodes, setNodes] = useState<Node[]>(
+    () => api.getCached<Node[]>("status-page:source-nodes") ?? []
+  );
+  const [proxies, setProxies] = useState<ProxyHost[]>(
+    () => api.getCached<ProxyHost[]>("status-page:source-proxies") ?? []
+  );
+  const [databases, setDatabases] = useState<DatabaseConnection[]>(
+    () => api.getCached<DatabaseConnection[]>("status-page:source-databases") ?? []
+  );
+  const [dockerTargets, setDockerTargets] = useState<DockerContainer[]>(
+    () => api.getCached<DockerContainer[]>("status-page:source-docker-targets") ?? []
+  );
+  const [loading, setLoading] = useState(
+    () =>
+      api.getCached<StatusPageConfig>("status-page:config") === undefined ||
+      api.getCached<StatusPageServiceItem[]>("status-page:services") === undefined ||
+      api.getCached<StatusPageIncident[]>("status-page:incidents") === undefined
+  );
   const [sourceOptionsLoading, setSourceOptionsLoading] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
   const [serviceOpen, setServiceOpen] = useState(false);
@@ -194,6 +213,7 @@ export function StatusPage() {
     setSourceOptionsLoading(true);
     try {
       const nodeRows = await api.listNodes({ limit: 100 }).then((res) => res.data ?? []);
+      api.setCache("status-page:source-nodes", nodeRows);
       setNodes(nodeRows);
       const dockerNodes = nodeRows.filter((node) => node.type === "docker");
       const [dockerResults, proxyRows, databaseRows] = await Promise.all([
@@ -206,9 +226,13 @@ export function StatusPage() {
         api.listProxyHosts({ limit: 100 }).then((res) => res.data ?? []),
         api.listDatabases({ limit: 200 }).then((res) => res.data ?? []),
       ]);
-      setDockerTargets(
-        dockerResults.flatMap((result) => (result.status === "fulfilled" ? result.value : []))
+      const nextDockerTargets = dockerResults.flatMap((result) =>
+        result.status === "fulfilled" ? result.value : []
       );
+      api.setCache("status-page:source-docker-targets", nextDockerTargets);
+      api.setCache("status-page:source-proxies", proxyRows);
+      api.setCache("status-page:source-databases", databaseRows);
+      setDockerTargets(nextDockerTargets);
       setProxies(proxyRows);
       setDatabases(databaseRows);
     } finally {
@@ -217,13 +241,22 @@ export function StatusPage() {
   }, []);
 
   const loadStatusPage = useCallback(async () => {
-    setLoading(true);
+    const cachedConfig = api.getCached<StatusPageConfig>("status-page:config");
+    const cachedServices = api.getCached<StatusPageServiceItem[]>("status-page:services");
+    const cachedIncidents = api.getCached<StatusPageIncident[]>("status-page:incidents");
+    if (cachedConfig) setConfig(cachedConfig);
+    if (cachedServices) setServices(cachedServices);
+    if (cachedIncidents) setIncidents(cachedIncidents);
+    setLoading(!(cachedConfig && cachedServices && cachedIncidents));
     try {
       const [settings, serviceRows, incidentRows] = await Promise.all([
         api.getStatusPageSettings(),
         api.listStatusPageServices(),
         api.listStatusPageIncidents({ status: "all", limit: 50 }),
       ]);
+      api.setCache("status-page:config", settings);
+      api.setCache("status-page:services", serviceRows);
+      api.setCache("status-page:incidents", incidentRows);
       setConfig(settings);
       setServices(serviceRows);
       setIncidents(incidentRows);
@@ -307,6 +340,7 @@ export function StatusPage() {
     setSavingConfig(true);
     try {
       const updated = await api.updateStatusPageSettings(patch);
+      api.setCache("status-page:config", updated);
       setConfig(updated);
       toast.success("Status page details updated");
     } catch (err) {

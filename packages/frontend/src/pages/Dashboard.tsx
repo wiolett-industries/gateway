@@ -26,19 +26,9 @@ import { RecentActivityCard } from "./dashboard/RecentActivityCard";
 export function Dashboard() {
   const { user, hasScope, hasScopedAccess } = useAuthStore();
   const { cas, fetchCAs, isLoading: casLoading } = useCAStore();
-  const [activity, setActivity] = useState<AuditLogEntry[]>([]);
-  const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [healthHosts, setHealthHosts] = useState<ProxyHost[]>([]);
-  const [statsLoading, setStatsLoading] = useState(true);
-  const [activityLoading, setActivityLoading] = useState(hasScope("admin:audit"));
-  const [nodesLoading, setNodesLoading] = useState(hasScopedAccess("nodes:details"));
-  const [healthLoading, setHealthLoading] = useState(hasScopedAccess("proxy:view"));
-  const [expiringItems, setExpiringItems] = useState<ExpiringItem[]>([]);
-  const [nodesList, setNodesList] = useState<Node[]>([]);
   const nodeRefreshTick = useNodesStore((s) => s.refreshTick);
   const dashboardPinnedIds = usePinnedNodesStore((s) => s.dashboardNodeIds);
   const dashboardPinnedProxyIds = usePinnedProxiesStore((s) => s.dashboardProxyIds);
-  const [pinnedProxyHosts, setPinnedProxyHosts] = useState<ProxyHost[]>([]);
   const updateStatus = useUpdateStore((s) => s.status);
   const showUpdateNotifications = useUIStore((s) => s.showUpdateNotifications);
   const canViewSystemCertificates = useAuthStore((s) => s.hasScope("admin:details:certificates"));
@@ -47,6 +37,43 @@ export function Dashboard() {
   const cacheScopeKey = useMemo(
     () => `${user?.id ?? "anonymous"}:${[...(user?.scopes ?? [])].sort().join(",")}`,
     [user?.id, user?.scopes]
+  );
+  const statsCacheKey = `dashboard:stats:${cacheScopeKey}:${showSystemCertificates ? "system" : "default"}`;
+  const healthCacheKey = `dashboard:health:${cacheScopeKey}`;
+  const activityCacheKey = `dashboard:activity:${cacheScopeKey}`;
+  const nodesCacheKey = `dashboard:nodes:${cacheScopeKey}`;
+  const pinnedProxyIdsKey = useMemo(
+    () => [...dashboardPinnedProxyIds].sort().join(","),
+    [dashboardPinnedProxyIds]
+  );
+  const pinnedProxiesCacheKey = `dashboard:pinned-proxies:${cacheScopeKey}:${pinnedProxyIdsKey}`;
+  const [activity, setActivity] = useState<AuditLogEntry[]>(
+    () => api.getCached<AuditLogEntry[]>(activityCacheKey) ?? []
+  );
+  const [stats, setStats] = useState<DashboardStats | null>(
+    () => api.getCached<DashboardStats>(statsCacheKey) ?? null
+  );
+  const [healthHosts, setHealthHosts] = useState<ProxyHost[]>(
+    () => api.getCached<ProxyHost[]>(healthCacheKey) ?? []
+  );
+  const [statsLoading, setStatsLoading] = useState(
+    () => api.getCached<DashboardStats>(statsCacheKey) === undefined
+  );
+  const [activityLoading, setActivityLoading] = useState(
+    () => hasScope("admin:audit") && api.getCached<AuditLogEntry[]>(activityCacheKey) === undefined
+  );
+  const [nodesLoading, setNodesLoading] = useState(
+    () => hasScopedAccess("nodes:details") && api.getCached<Node[]>(nodesCacheKey) === undefined
+  );
+  const [healthLoading, setHealthLoading] = useState(
+    () => hasScopedAccess("proxy:view") && api.getCached<ProxyHost[]>(healthCacheKey) === undefined
+  );
+  const [expiringItems, setExpiringItems] = useState<ExpiringItem[]>([]);
+  const [nodesList, setNodesList] = useState<Node[]>(
+    () => api.getCached<Node[]>(nodesCacheKey) ?? []
+  );
+  const [pinnedProxyHosts, setPinnedProxyHosts] = useState<ProxyHost[]>(
+    () => api.getCached<ProxyHost[]>(pinnedProxiesCacheKey) ?? []
   );
   const canViewNodeDetails = useCallback(
     (nodeId: string) => hasScope("nodes:details") || hasScope(`nodes:details:${nodeId}`),
@@ -60,47 +87,55 @@ export function Dashboard() {
 
   const refreshNodes = useCallback(() => {
     if (!hasScopedAccess("nodes:details")) {
+      setNodesList([]);
       setNodesLoading(false);
       return;
+    }
+    const cachedNodes = api.getCached<Node[]>(nodesCacheKey);
+    if (cachedNodes) {
+      setNodesList(cachedNodes);
+      setNodesLoading(false);
+    } else {
+      setNodesList([]);
+      setNodesLoading(true);
     }
     api
       .listNodes({ limit: 100 })
       .then((r) => {
         const nodes = r.data ?? [];
+        api.setCache(nodesCacheKey, nodes);
         setNodesList(nodes);
         usePinnedNodesStore.getState().removeOrphans(nodes.map((n) => n.id));
       })
       .catch(() => {})
       .finally(() => setNodesLoading(false));
-  }, [hasScopedAccess]);
+  }, [hasScopedAccess, nodesCacheKey]);
 
   const refreshStats = useCallback(() => {
-    const statsCacheKey = `dashboard:stats:${cacheScopeKey}:${showSystemCertificates ? "system" : "default"}`;
     return api
       .getDashboardStats(showSystemCertificates)
       .then((data) => {
         api.setCache(statsCacheKey, data);
         setStats(data);
       })
-      .catch(() => {
-        setStats(null);
-      });
-  }, [cacheScopeKey, showSystemCertificates]);
+      .catch(() => {});
+  }, [showSystemCertificates, statsCacheKey]);
 
   const refreshHealthOverview = useCallback(() => {
     if (!hasScopedAccess("proxy:view")) {
+      setHealthHosts([]);
       setHealthLoading(false);
       return Promise.resolve();
     }
     return api
       .getHealthOverview()
       .then((hosts) => {
-        api.setCache(`dashboard:health:${cacheScopeKey}`, hosts || []);
+        api.setCache(healthCacheKey, hosts || []);
         setHealthHosts(hosts || []);
       })
-      .catch(() => setHealthHosts([]))
+      .catch(() => {})
       .finally(() => setHealthLoading(false));
-  }, [cacheScopeKey, hasScopedAccess]);
+  }, [hasScopedAccess, healthCacheKey]);
 
   const refreshExpiringSSL = useCallback(() => {
     if (!hasScopedAccess("ssl:cert:view")) return Promise.resolve();
@@ -149,18 +184,23 @@ export function Dashboard() {
       setPinnedProxyHosts([]);
       return Promise.resolve();
     }
-    if (!hasScopedAccess("proxy:view")) return Promise.resolve();
+    if (!hasScopedAccess("proxy:view")) {
+      setPinnedProxyHosts([]);
+      return Promise.resolve();
+    }
     return api
       .listProxyHosts({ limit: 100 })
       .then((r) => {
         const hosts = r.data ?? [];
-        setPinnedProxyHosts(
-          hosts.filter((p) => dashboardPinnedProxyIds.includes(p.id) && canViewProxyDetails(p.id))
+        const visiblePinned = hosts.filter(
+          (p) => dashboardPinnedProxyIds.includes(p.id) && canViewProxyDetails(p.id)
         );
+        api.setCache(pinnedProxiesCacheKey, visiblePinned);
+        setPinnedProxyHosts(visiblePinned);
         usePinnedProxiesStore.getState().removeOrphans(hosts.map((p) => p.id));
       })
       .catch(() => {});
-  }, [canViewProxyDetails, dashboardPinnedProxyIds, hasScopedAccess]);
+  }, [canViewProxyDetails, dashboardPinnedProxyIds, hasScopedAccess, pinnedProxiesCacheKey]);
 
   useEffect(() => {
     if (canViewCAs) {
@@ -168,43 +208,67 @@ export function Dashboard() {
     }
 
     if (hasScope("admin:audit")) {
+      const cachedActivity = api.getCached<AuditLogEntry[]>(activityCacheKey);
+      if (cachedActivity) {
+        setActivity(cachedActivity);
+        setActivityLoading(false);
+      } else {
+        setActivity([]);
+        setActivityLoading(true);
+      }
       api
         .getAuditLog({ limit: 6 })
-        .then((r) => setActivity(r.data || []))
+        .then((r) => {
+          const next = r.data || [];
+          api.setCache(activityCacheKey, next);
+          setActivity(next);
+        })
         .catch(() => {})
         .finally(() => setActivityLoading(false));
     } else {
+      setActivity([]);
       setActivityLoading(false);
     }
 
     // Use cached stats immediately, then refetch
-    const statsCacheKey = `dashboard:stats:${cacheScopeKey}:${showSystemCertificates ? "system" : "default"}`;
     const cachedStats = api.getCached<DashboardStats>(statsCacheKey);
     if (cachedStats) {
       setStats(cachedStats);
       setStatsLoading(false);
+    } else {
+      setStats(null);
+      setStatsLoading(true);
     }
     refreshStats().finally(() => setStatsLoading(false));
 
     if (hasScopedAccess("proxy:view")) {
-      const cachedHealth = api.getCached<ProxyHost[]>(`dashboard:health:${cacheScopeKey}`);
-      if (cachedHealth) setHealthHosts(cachedHealth);
+      const cachedHealth = api.getCached<ProxyHost[]>(healthCacheKey);
+      if (cachedHealth) {
+        setHealthHosts(cachedHealth);
+      } else {
+        setHealthHosts([]);
+        setHealthLoading(true);
+      }
       refreshHealthOverview();
+    } else {
+      setHealthHosts([]);
+      setHealthLoading(false);
     }
 
     refreshExpiringSSL();
     refreshExpiringPKI();
   }, [
-    cacheScopeKey,
+    activityCacheKey,
     fetchCAs,
     hasScope,
     hasScopedAccess,
+    healthCacheKey,
     canViewCAs,
     refreshExpiringPKI,
     refreshExpiringSSL,
     refreshHealthOverview,
     refreshStats,
-    showSystemCertificates,
+    statsCacheKey,
   ]);
 
   // Fetch/refetch nodes — also triggers on nodeRefreshTick from RealtimeBridge
@@ -349,7 +413,7 @@ export function Dashboard() {
     cas: { total: totalCAs, active: activeCAs },
   };
 
-  if (casLoading && statsLoading) {
+  if (casLoading && statsLoading && !stats) {
     return <LoadingSpinner />;
   }
 
@@ -395,7 +459,9 @@ export function Dashboard() {
 
           {/* Pinned Proxy Host Cards */}
           {pinnedProxyHosts
-            .filter((proxy) => canViewProxyDetails(proxy.id))
+            .filter(
+              (proxy) => dashboardPinnedProxyIds.includes(proxy.id) && canViewProxyDetails(proxy.id)
+            )
             .map((proxy) => (
               <PinnedProxyCard key={proxy.id} proxy={proxy} />
             ))}

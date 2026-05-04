@@ -64,13 +64,29 @@ interface DockerState {
   setFilters: (filters: Partial<DockerFilters>) => void;
   resetFilters: () => void;
 
-  fetchContainers: (nodeIdOverride?: string | null, searchOverride?: string) => Promise<void>;
+  fetchContainers: (
+    nodeIdOverride?: string | null,
+    searchOverride?: string,
+    nodesOverride?: Node[]
+  ) => Promise<void>;
   /** Fetch containers bypassing API cache — use during transitions */
   forceFetchContainers: (nodeIdOverride?: string | null, searchOverride?: string) => Promise<void>;
-  fetchImages: (nodeIdOverride?: string | null, searchOverride?: string) => Promise<void>;
-  fetchVolumes: (nodeIdOverride?: string | null, searchOverride?: string) => Promise<void>;
-  fetchNetworks: (nodeIdOverride?: string | null, searchOverride?: string) => Promise<void>;
-  fetchTasks: () => Promise<void>;
+  fetchImages: (
+    nodeIdOverride?: string | null,
+    searchOverride?: string,
+    nodesOverride?: Node[]
+  ) => Promise<void>;
+  fetchVolumes: (
+    nodeIdOverride?: string | null,
+    searchOverride?: string,
+    nodesOverride?: Node[]
+  ) => Promise<void>;
+  fetchNetworks: (
+    nodeIdOverride?: string | null,
+    searchOverride?: string,
+    nodesOverride?: Node[]
+  ) => Promise<void>;
+  fetchTasks: (nodeIdOverride?: string | null) => Promise<void>;
   fetchRegistries: () => Promise<void>;
 
   invalidate: (...resources: DockerResource[]) => Promise<void>;
@@ -180,9 +196,10 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
     set({ filters: { search: "", status: "all" } });
   },
 
-  fetchContainers: async (nodeIdOverride, searchOverride) => {
+  fetchContainers: async (nodeIdOverride, searchOverride, nodesOverride) => {
     const requestId = ++dockerRequestIds.containers;
     const { selectedNodeId, dockerNodes, filters } = get();
+    const nodesForFetch = nodesOverride ?? dockerNodes;
     const effectiveNodeId = nodeIdOverride ?? selectedNodeId;
     const search = searchOverride ?? filters.search;
     const scope = dockerContainerScope(effectiveNodeId, search);
@@ -194,7 +211,7 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
     try {
       if (effectiveNodeId) {
         const data = await api.listDockerContainers(effectiveNodeId, { search });
-        const node = dockerNodes.find((n) => n.id === effectiveNodeId);
+        const node = nodesForFetch.find((n) => n.id === effectiveNodeId);
         const items = tagWithNode(
           normList<DockerContainer>(data),
           effectiveNodeId,
@@ -208,7 +225,7 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
         }));
       } else {
         const items = await fetchAllNodes(
-          dockerNodes,
+          nodesForFetch,
           (nid) => api.listDockerContainers(nid, { search }),
           normList<DockerContainer>
         );
@@ -270,16 +287,17 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
     }
   },
 
-  fetchImages: async (nodeIdOverride, searchOverride) => {
+  fetchImages: async (nodeIdOverride, searchOverride, nodesOverride) => {
     const requestId = ++dockerRequestIds.images;
     const { selectedNodeId, dockerNodes, filters } = get();
+    const nodesForFetch = nodesOverride ?? dockerNodes;
     const effectiveNodeId = nodeIdOverride ?? selectedNodeId;
     const search = searchOverride ?? filters.search;
     set((state) => loadingState(state.loading, "images", get().images.length === 0));
     try {
       if (effectiveNodeId) {
         const data = await api.listDockerImages(effectiveNodeId, { search });
-        const node = dockerNodes.find((n) => n.id === effectiveNodeId);
+        const node = nodesForFetch.find((n) => n.id === effectiveNodeId);
         if (requestId !== dockerRequestIds.images) return;
         set((state) => ({
           images: tagWithNode(
@@ -291,7 +309,7 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
         }));
       } else {
         const items = await fetchAllNodes(
-          dockerNodes,
+          nodesForFetch,
           (nid) => api.listDockerImages(nid, { search }),
           normList<DockerImage>
         );
@@ -307,16 +325,17 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
     }
   },
 
-  fetchVolumes: async (nodeIdOverride, searchOverride) => {
+  fetchVolumes: async (nodeIdOverride, searchOverride, nodesOverride) => {
     const requestId = ++dockerRequestIds.volumes;
     const { selectedNodeId, dockerNodes, filters } = get();
+    const nodesForFetch = nodesOverride ?? dockerNodes;
     const effectiveNodeId = nodeIdOverride ?? selectedNodeId;
     const search = searchOverride ?? filters.search;
     set((state) => loadingState(state.loading, "volumes", get().volumes.length === 0));
     try {
       if (effectiveNodeId) {
         const data = await api.listDockerVolumes(effectiveNodeId, { search });
-        const node = dockerNodes.find((n) => n.id === effectiveNodeId);
+        const node = nodesForFetch.find((n) => n.id === effectiveNodeId);
         if (requestId !== dockerRequestIds.volumes) return;
         set((state) => ({
           volumes: tagWithNode(
@@ -328,7 +347,7 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
         }));
       } else {
         const items = await fetchAllNodes(
-          dockerNodes,
+          nodesForFetch,
           (nid) => api.listDockerVolumes(nid, { search }),
           normList<DockerVolume>
         );
@@ -344,16 +363,17 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
     }
   },
 
-  fetchNetworks: async (nodeIdOverride, searchOverride) => {
+  fetchNetworks: async (nodeIdOverride, searchOverride, nodesOverride) => {
     const requestId = ++dockerRequestIds.networks;
     const { selectedNodeId, dockerNodes, filters } = get();
+    const nodesForFetch = nodesOverride ?? dockerNodes;
     const effectiveNodeId = nodeIdOverride ?? selectedNodeId;
     const search = searchOverride ?? filters.search;
     set((state) => loadingState(state.loading, "networks", get().networks.length === 0));
     try {
       if (effectiveNodeId) {
         const data = await api.listDockerNetworks(effectiveNodeId, { search });
-        const node = dockerNodes.find((n) => n.id === effectiveNodeId);
+        const node = nodesForFetch.find((n) => n.id === effectiveNodeId);
         if (requestId !== dockerRequestIds.networks) return;
         set((state) => ({
           networks: tagWithNode(
@@ -365,7 +385,7 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
         }));
       } else {
         const items = await fetchAllNodes(
-          dockerNodes,
+          nodesForFetch,
           (nid) => api.listDockerNetworks(nid, { search }),
           normList<DockerNetwork>
         );
@@ -381,13 +401,14 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
     }
   },
 
-  fetchTasks: async () => {
+  fetchTasks: async (nodeIdOverride) => {
     const requestId = ++dockerRequestIds.tasks;
     set((state) => loadingState(state.loading, "tasks", get().tasks.length === 0));
     try {
       const { selectedNodeId } = get();
+      const effectiveNodeId = nodeIdOverride ?? selectedNodeId;
       const data = await api.listDockerTasks(
-        selectedNodeId ? { nodeId: selectedNodeId } : undefined
+        effectiveNodeId ? { nodeId: effectiveNodeId } : undefined
       );
       if (requestId !== dockerRequestIds.tasks) return;
       set((state) => ({

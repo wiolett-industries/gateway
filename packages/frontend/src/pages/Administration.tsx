@@ -6,6 +6,7 @@ import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderAct
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useUrlTab } from "@/hooks/use-url-tab";
+import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { AdminGroups } from "./AdminGroups";
 import { AdminUsers } from "./AdminUsers";
@@ -41,6 +42,44 @@ export function Administration() {
       setActiveTab(availableTabs[0]);
     }
   }, [activeTab, availableTabs, setActiveTab]);
+
+  useEffect(() => {
+    if (canUsers) {
+      api
+        .listUsers()
+        .then((data) => api.setCache("admin:users", data || []))
+        .catch(() => {});
+    }
+    if (canGroups || canUsers) {
+      api
+        .listGroups()
+        .then((data) => api.setCache("admin:groups", data))
+        .catch(() => {});
+    }
+    if (canGroups) {
+      api
+        .listNodes({ limit: 100 })
+        .then((result) => api.setCache("admin:scope-nodes", result.data ?? []))
+        .catch(() => {});
+      api
+        .listProxyHosts({ limit: 100 })
+        .then((result) => api.setCache("admin:scope-proxy-hosts", result.data ?? []))
+        .catch(() => {});
+      api
+        .listDatabases({ limit: 200 })
+        .then((result) => api.setCache("admin:scope-databases", result.data ?? []))
+        .catch(() => {});
+    }
+    if (canAudit) {
+      api
+        .getAuditLog({ page: 1, limit: 100 })
+        .then((result) => {
+          api.setCache("admin:audit:all:all:all::", result.data || []);
+          api.setCache("admin:audit:all:all:all:::total", result.pagination?.total ?? 0);
+        })
+        .catch(() => {});
+    }
+  }, [canAudit, canGroups, canUsers]);
 
   if (availableTabs.length === 0) {
     return <Navigate to="/" replace />;

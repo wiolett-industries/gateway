@@ -207,6 +207,30 @@ export function Notifications() {
   const [openCreateWebhookToken, setOpenCreateWebhookToken] = useState(0);
   const [refreshDeliveriesToken, setRefreshDeliveriesToken] = useState(0);
 
+  useEffect(() => {
+    if (canReadAlerts) {
+      api
+        .listAlertRules({ limit: 100 })
+        .then((result) => api.setCache("notifications:alerts", result.data ?? []))
+        .catch(() => {});
+    }
+    if (canReadWebhooks) {
+      api
+        .listWebhooks({ limit: 100 })
+        .then((result) => api.setCache("notifications:webhooks", result.data ?? []))
+        .catch(() => {});
+    }
+    if (canViewDeliveries) {
+      api
+        .listDeliveries({ page: 1, limit: DELIVERY_PAGE_SIZE })
+        .then((result) => {
+          api.setCache("notifications:deliveries:all", result.data ?? []);
+          api.setCache("notifications:deliveries:all:has-more", (result.totalPages ?? 1) > 1);
+        })
+        .catch(() => {});
+    }
+  }, [canReadAlerts, canReadWebhooks, canViewDeliveries]);
+
   const headerAction =
     activeTab === "alerts" && canManageAlerts ? (
       <Button onClick={() => setOpenCreateAlertToken((v) => v + 1)}>
@@ -328,8 +352,12 @@ function AlertsTab({
   canManage: boolean;
   openCreateToken: number;
 }) {
-  const [rules, setRules] = useState<AlertRule[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [rules, setRules] = useState<AlertRule[]>(() =>
+    canRead ? (api.getCached<AlertRule[]>("notifications:alerts") ?? []) : []
+  );
+  const [isLoading, setIsLoading] = useState(
+    () => canRead && api.getCached<AlertRule[]>("notifications:alerts") === undefined
+  );
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<AlertRule | null>(null);
   const lastHandledCreateToken = useRef(0);
@@ -343,7 +371,9 @@ function AlertsTab({
       }
       if (options?.showLoading !== false) setIsLoading(true);
       try {
-        setRules((await api.listAlertRules({ limit: 100 })).data);
+        const data = (await api.listAlertRules({ limit: 100 })).data;
+        api.setCache("notifications:alerts", data);
+        setRules(data);
       } catch {
         toast.error("Failed to load alerts");
       } finally {
@@ -370,9 +400,11 @@ function AlertsTab({
     );
     try {
       const updated = await api.updateAlertRule(rule.id, { enabled: nextEnabled });
-      setRules((prev) =>
-        prev.map((candidate) => (candidate.id === updated.id ? updated : candidate))
-      );
+      setRules((prev) => {
+        const next = prev.map((candidate) => (candidate.id === updated.id ? updated : candidate));
+        api.setCache("notifications:alerts", next);
+        return next;
+      });
     } catch {
       setRules((prev) =>
         prev.map((candidate) =>
@@ -419,12 +451,14 @@ function AlertsTab({
 
   if (isLoading) return <LoadingSpinner />;
 
+  const visibleRules = canRead ? rules : [];
+
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
         Alerts define conditions that trigger notifications to webhooks.
       </p>
-      {rules.length === 0 ? (
+      {visibleRules.length === 0 ? (
         <EmptyState message="No alerts configured. Create an alert to start receiving notifications." />
       ) : (
         <div className="border border-border bg-card">
@@ -443,7 +477,7 @@ function AlertsTab({
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {rules.map((r) => (
+                {visibleRules.map((r) => (
                   <tr
                     key={r.id}
                     className={
@@ -1456,41 +1490,65 @@ function WebhooksTab({
   canManage: boolean;
   openCreateToken: number;
 }) {
-  const [webhooks, setWebhooks] = useState<NotificationWebhook[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [webhooks, setWebhooks] = useState<NotificationWebhook[]>(() =>
+    canRead ? (api.getCached<NotificationWebhook[]>("notifications:webhooks") ?? []) : []
+  );
+  const [isLoading, setIsLoading] = useState(
+    () => canRead && api.getCached<NotificationWebhook[]>("notifications:webhooks") === undefined
+  );
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingWh, setEditingWh] = useState<NotificationWebhook | null>(null);
   const lastHandledCreateToken = useRef(0);
 
-  const load = useCallback(async () => {
-    if (!canRead) {
-      setWebhooks([]);
-      setIsLoading(false);
-      return;
-    }
-    setIsLoading(true);
-    try {
-      setWebhooks((await api.listWebhooks({ limit: 100 })).data);
-    } catch {
-      toast.error("Failed to load webhooks");
-    } finally {
-      setIsLoading(false);
-    }
-  }, [canRead]);
+  const load = useCallback(
+    async (options?: { showLoading?: boolean }) => {
+      if (!canRead) {
+        setWebhooks([]);
+        setIsLoading(false);
+        return;
+      }
+      if (options?.showLoading !== false) setIsLoading(true);
+      try {
+        const data = (await api.listWebhooks({ limit: 100 })).data;
+        api.setCache("notifications:webhooks", data);
+        setWebhooks(data);
+      } catch {
+        toast.error("Failed to load webhooks");
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [canRead]
+  );
 
   useEffect(() => {
     load();
   }, [load]);
 
   useRealtime("notification.webhook.changed", () => {
-    load();
+    load({ showLoading: false });
   });
 
   const toggle = async (wh: NotificationWebhook) => {
+    const nextEnabled = !wh.enabled;
+    setWebhooks((prev) =>
+      prev.map((candidate) =>
+        candidate.id === wh.id ? { ...candidate, enabled: nextEnabled } : candidate
+      )
+    );
     try {
-      await api.updateWebhook(wh.id, { enabled: !wh.enabled });
-      load();
+      const updated = await api.updateWebhook(wh.id, { enabled: nextEnabled });
+      setWebhooks((prev) => {
+        const next = prev.map((candidate) => (candidate.id === updated.id ? updated : candidate));
+        api.setCache("notifications:webhooks", next);
+        return next;
+      });
     } catch {
+      setWebhooks((prev) =>
+        prev.map((candidate) =>
+          candidate.id === wh.id ? { ...candidate, enabled: wh.enabled } : candidate
+        )
+      );
       toast.error("Failed");
     }
   };
@@ -1542,12 +1600,14 @@ function WebhooksTab({
 
   if (isLoading) return <LoadingSpinner />;
 
+  const visibleWebhooks = canRead ? webhooks : [];
+
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
         Webhooks define where and how notifications are delivered.
       </p>
-      {webhooks.length === 0 ? (
+      {visibleWebhooks.length === 0 ? (
         <EmptyState message="No webhooks configured. Create a webhook to configure notification delivery." />
       ) : (
         <div className="border border-border bg-card">
@@ -1564,7 +1624,7 @@ function WebhooksTab({
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {webhooks.map((wh) => (
+                {visibleWebhooks.map((wh) => (
                   <tr
                     key={wh.id}
                     className={
@@ -1984,8 +2044,12 @@ function WebhookDialog({
 // ── Delivery Log Tab ────────────────────────────────────────────────
 
 function DeliveryLogTab({ refreshToken }: { refreshToken: number }) {
-  const [deliveries, setDeliveries] = useState<WebhookDelivery[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [deliveries, setDeliveries] = useState<WebhookDelivery[]>(
+    () => api.getCached<WebhookDelivery[]>("notifications:deliveries:all") ?? []
+  );
+  const [isLoading, setIsLoading] = useState(
+    () => api.getCached<WebhookDelivery[]>("notifications:deliveries:all") === undefined
+  );
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [searchInput, setSearchInput] = useState("");
@@ -2003,9 +2067,20 @@ function DeliveryLogTab({ refreshToken }: { refreshToken: number }) {
     async (resetTo: WebhookDelivery[] | null) => {
       const nextPage = resetTo ? 1 : pageRef.current + 1;
       const requestId = ++requestIdRef.current;
+      const cacheKey = `notifications:deliveries:${statusFilter}`;
       if (resetTo) {
-        setIsLoading(true);
-        setHasMore(true);
+        const cached = api.getCached<WebhookDelivery[]>(cacheKey);
+        if (cached) {
+          pageRef.current = 1;
+          setDeliveries(cached);
+          setIsLoading(false);
+          setHasMore(api.getCached<boolean>(`${cacheKey}:has-more`) ?? true);
+        } else {
+          pageRef.current = 0;
+          setDeliveries([]);
+          setIsLoading(true);
+          setHasMore(true);
+        }
       } else {
         setLoadingMore(true);
       }
@@ -2019,7 +2094,14 @@ function DeliveryLogTab({ refreshToken }: { refreshToken: number }) {
         const fetched = result.data || [];
         const totalPages = result.totalPages ?? 1;
         pageRef.current = nextPage;
-        setDeliveries((prev) => (resetTo ? fetched : [...prev, ...fetched]));
+        setDeliveries((prev) => {
+          const next = resetTo ? fetched : [...prev, ...fetched];
+          if (resetTo) {
+            api.setCache(cacheKey, next);
+            api.setCache(`${cacheKey}:has-more`, nextPage < totalPages);
+          }
+          return next;
+        });
         setHasMore(nextPage < totalPages);
       } catch {
         toast.error("Failed to load deliveries");

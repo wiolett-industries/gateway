@@ -108,15 +108,6 @@ export function Logging() {
   const { section, id, tab } = useParams<{ section?: string; id?: string; tab?: string }>();
   const navigate = useNavigate();
   const { user, hasAnyScope, hasScopedAccess } = useAuthStore();
-  const [status, setStatus] = useState<LoggingFeatureStatus | null>(null);
-  const [environments, setEnvironments] = useState<LoggingEnvironment[]>([]);
-  const [schemas, setSchemas] = useState<LoggingSchema[]>([]);
-  const [environmentSearch, setEnvironmentSearch] = useState("");
-  const [schemaSearch, setSchemaSearch] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [environmentDialogOpen, setEnvironmentDialogOpen] = useState(false);
-  const [schemaDialogOpen, setSchemaDialogOpen] = useState(false);
-
   const isEnvironmentDetail = section === "environments" && !!id;
   const isSchemaDetail = section === "schemas" && !!id;
   const canAccessEnvironments =
@@ -135,6 +126,33 @@ export function Logging() {
     (hasAnyScope("logs:schemas:view", "logs:manage") ||
       scopeMatches(userScopes, `logs:schemas:view:${id}`));
   const canAccessLoggingSettings = canAccessEnvironments || canAccessSchemas;
+  const [status, setStatus] = useState<LoggingFeatureStatus | null>(
+    () => api.getCached<LoggingFeatureStatus>("logging:status") ?? null
+  );
+  const [environments, setEnvironments] = useState<LoggingEnvironment[]>(() =>
+    canAccessEnvironments ? (api.getCached<LoggingEnvironment[]>("logging:environments") ?? []) : []
+  );
+  const [schemas, setSchemas] = useState<LoggingSchema[]>(() =>
+    canListSchemas ? (api.getCached<LoggingSchema[]>("logging:schemas") ?? []) : []
+  );
+  const [environmentSearch, setEnvironmentSearch] = useState("");
+  const [schemaSearch, setSchemaSearch] = useState("");
+  const [statusLoading, setStatusLoading] = useState(
+    () => api.getCached<LoggingFeatureStatus>("logging:status") === undefined
+  );
+  const [environmentsLoading, setEnvironmentsLoading] = useState(
+    () =>
+      canAccessEnvironments &&
+      api.getCached<LoggingEnvironment[]>("logging:environments") === undefined
+  );
+  const [schemasLoading, setSchemasLoading] = useState(
+    () =>
+      (canListSchemas || canViewSelectedSchema) &&
+      api.getCached<LoggingSchema[]>("logging:schemas") === undefined
+  );
+  const [environmentDialogOpen, setEnvironmentDialogOpen] = useState(false);
+  const [schemaDialogOpen, setSchemaDialogOpen] = useState(false);
+
   const visibleTopTabs = useMemo(
     () =>
       TOP_TABS.filter((item) => {
@@ -157,8 +175,11 @@ export function Logging() {
     ? requestedTopTab
     : defaultTopTab;
   const activeEnvironmentTab = ENV_TABS.includes(tab as any) ? tab! : "logs";
-  const selectedEnvironment = environments.find((environment) => environment.id === id) ?? null;
-  const selectedSchema = schemas.find((schema) => schema.id === id) ?? null;
+  const visibleEnvironments = canAccessEnvironments ? environments : [];
+  const visibleSchemas = canListSchemas || canViewSelectedSchema ? schemas : [];
+  const selectedEnvironment =
+    visibleEnvironments.find((environment) => environment.id === id) ?? null;
+  const selectedSchema = visibleSchemas.find((schema) => schema.id === id) ?? null;
 
   const canCreateEnvironment = hasAnyScope("logs:environments:create", "logs:manage");
   const canCreateSchema = hasAnyScope("logs:schemas:create", "logs:manage");
@@ -198,7 +219,17 @@ export function Logging() {
     hasAnyScope("logs:schemas:delete", `logs:schemas:delete:${selectedSchema.id}`, "logs:manage");
 
   const load = useCallback(async () => {
-    setLoading(true);
+    const cachedStatus = api.getCached<LoggingFeatureStatus>("logging:status");
+    const cachedEnvironments = api.getCached<LoggingEnvironment[]>("logging:environments");
+    const cachedSchemas = api.getCached<LoggingSchema[]>("logging:schemas");
+    if (cachedStatus) setStatus(cachedStatus);
+    if (canAccessEnvironments && cachedEnvironments) setEnvironments(cachedEnvironments);
+    if (!canAccessEnvironments) setEnvironments([]);
+    if (canListSchemas && cachedSchemas) setSchemas(cachedSchemas);
+    if (!canListSchemas && !canViewSelectedSchema) setSchemas([]);
+    setStatusLoading(cachedStatus === undefined);
+    setEnvironmentsLoading(canAccessEnvironments && cachedEnvironments === undefined);
+    setSchemasLoading((canListSchemas || canViewSelectedSchema) && cachedSchemas === undefined);
     try {
       const [featureStatus, environmentList, schemaList] = await Promise.all([
         api.getLoggingStatus(),
@@ -209,13 +240,18 @@ export function Logging() {
             ? api.getLoggingSchema(id).then((schema) => [schema])
             : Promise.resolve([]),
       ]);
+      api.setCache("logging:status", featureStatus);
+      if (canAccessEnvironments) api.setCache("logging:environments", environmentList);
+      if (canListSchemas) api.setCache("logging:schemas", schemaList);
       setStatus(featureStatus);
       setEnvironments(environmentList);
       setSchemas(schemaList);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to load logging");
     } finally {
-      setLoading(false);
+      setStatusLoading(false);
+      setEnvironmentsLoading(false);
+      setSchemasLoading(false);
     }
   }, [canAccessEnvironments, canListSchemas, canViewSelectedSchema, id]);
 
@@ -231,23 +267,23 @@ export function Logging() {
 
   const filteredEnvironments = useMemo(() => {
     const needle = environmentSearch.trim().toLowerCase();
-    if (!needle) return environments;
-    return environments.filter(
+    if (!needle) return visibleEnvironments;
+    return visibleEnvironments.filter(
       (environment) =>
         environment.name.toLowerCase().includes(needle) ||
         environment.slug.toLowerCase().includes(needle) ||
         (environment.schemaName ?? "").toLowerCase().includes(needle)
     );
-  }, [environments, environmentSearch]);
+  }, [environmentSearch, visibleEnvironments]);
 
   const filteredSchemas = useMemo(() => {
     const needle = schemaSearch.trim().toLowerCase();
-    if (!needle) return schemas;
-    return schemas.filter(
+    if (!needle) return visibleSchemas;
+    return visibleSchemas.filter(
       (schema) =>
         schema.name.toLowerCase().includes(needle) || schema.slug.toLowerCase().includes(needle)
     );
-  }, [schemaSearch, schemas]);
+  }, [schemaSearch, visibleSchemas]);
 
   const createEnvironment = async (data: Partial<LoggingEnvironment>) => {
     const created = await api.createLoggingEnvironment({
@@ -267,11 +303,21 @@ export function Logging() {
     setEnvironments((current) =>
       current.map((environment) => (environment.id === updated.id ? updated : environment))
     );
+    api.setCache(
+      "logging:environments",
+      (api.getCached<LoggingEnvironment[]>("logging:environments") ?? environments).map(
+        (environment) => (environment.id === updated.id ? updated : environment)
+      )
+    );
   };
 
   const createSchema = async (data: Partial<LoggingSchema>) => {
     const created = await api.createLoggingSchema(data);
-    setSchemas((current) => [...current, created].sort((a, b) => a.name.localeCompare(b.name)));
+    setSchemas((current) => {
+      const next = [...current, created].sort((a, b) => a.name.localeCompare(b.name));
+      api.setCache("logging:schemas", next);
+      return next;
+    });
     toast.success("Logging schema created");
     if (hasAnyScope("logs:schemas:view", `logs:schemas:view:${created.id}`, "logs:manage")) {
       navigate(`/logging/schemas/${created.id}`);
@@ -282,7 +328,11 @@ export function Logging() {
 
   const updateSchema = async (schemaId: string, data: Partial<LoggingSchema>) => {
     const updated = await api.updateLoggingSchema(schemaId, data);
-    setSchemas((current) => current.map((schema) => (schema.id === updated.id ? updated : schema)));
+    setSchemas((current) => {
+      const next = current.map((schema) => (schema.id === updated.id ? updated : schema));
+      api.setCache("logging:schemas", next);
+      return next;
+    });
     toast.success("Logging schema updated");
   };
 
@@ -309,7 +359,7 @@ export function Logging() {
         environment={selectedEnvironment}
         schemas={schemas}
         status={status}
-        loading={loading}
+        loading={environmentsLoading}
         activeTab={activeEnvironmentTab as (typeof ENV_TABS)[number]}
         canEdit={canEditEnvironment}
         canDelete={canDeleteEnvironment}
@@ -330,7 +380,7 @@ export function Logging() {
     return (
       <LoggingSchemaDetail
         schema={selectedSchema}
-        loading={loading}
+        loading={schemasLoading}
         canEdit={canEditSchema}
         canDelete={canDeleteSchema}
         onSave={(patch) => updateSchema(id!, patch)}
@@ -343,7 +393,12 @@ export function Logging() {
     );
   }
 
-  const activeTabLoading = loading;
+  const activeTabLoading =
+    topTab === "environments"
+      ? environmentsLoading
+      : topTab === "schemas"
+        ? schemasLoading
+        : statusLoading;
 
   return (
     <PageTransition>
@@ -412,7 +467,7 @@ export function Logging() {
             <LoggingEnvironmentsTab
               environments={filteredEnvironments}
               search={environmentSearch}
-              loading={loading}
+              loading={environmentsLoading}
               canCreate={canCreateEnvironment}
               onSearchChange={setEnvironmentSearch}
               onCreate={() => setEnvironmentDialogOpen(true)}
@@ -424,7 +479,7 @@ export function Logging() {
             <LoggingSchemasTab
               schemas={filteredSchemas}
               search={schemaSearch}
-              loading={loading}
+              loading={schemasLoading}
               canCreate={canCreateSchema}
               canEdit={(schema) =>
                 hasAnyScope("logs:schemas:edit", `logs:schemas:edit:${schema.id}`, "logs:manage")

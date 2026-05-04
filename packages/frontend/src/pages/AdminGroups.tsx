@@ -95,12 +95,24 @@ export function AdminGroups({
   const navigate = useNavigate();
   const { user, hasScope } = useAuthStore();
   const { cas, fetchCAs } = useCAStore();
-  const [nodesList, setNodesList] = useState<Node[]>([]);
-  const [proxyHostsList, setProxyHostsList] = useState<ProxyHost[]>([]);
-  const [databasesList, setDatabasesList] = useState<DatabaseConnection[]>([]);
-  const [loggingSchemasList, setLoggingSchemasList] = useState<LoggingSchema[]>([]);
-  const [groups, setGroups] = useState<PermissionGroup[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [nodesList, setNodesList] = useState<Node[]>(
+    () => api.getCached<Node[]>("admin:scope-nodes") ?? []
+  );
+  const [proxyHostsList, setProxyHostsList] = useState<ProxyHost[]>(
+    () => api.getCached<ProxyHost[]>("admin:scope-proxy-hosts") ?? []
+  );
+  const [databasesList, setDatabasesList] = useState<DatabaseConnection[]>(
+    () => api.getCached<DatabaseConnection[]>("admin:scope-databases") ?? []
+  );
+  const [loggingSchemasList, setLoggingSchemasList] = useState<LoggingSchema[]>(
+    () => api.getCached<LoggingSchema[]>("admin:scope-logging-schemas") ?? []
+  );
+  const [groups, setGroups] = useState<PermissionGroup[]>(
+    () => api.getCached<PermissionGroup[]>("admin:groups") ?? []
+  );
+  const [isLoading, setIsLoading] = useState(
+    () => api.getCached<PermissionGroup[]>("admin:groups") === undefined
+  );
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingGroup, setEditingGroup] = useState<PermissionGroup | null>(null);
   const [formName, setFormName] = useState("");
@@ -148,6 +160,7 @@ export function AdminGroups({
   const fetchGroups = useCallback(async () => {
     try {
       const data = await api.listGroups();
+      api.setCache("admin:groups", data);
       setGroups(data);
     } catch {
       toast.error("Failed to load groups");
@@ -161,15 +174,24 @@ export function AdminGroups({
     fetchCAs();
     api
       .listNodes({ limit: 100 })
-      .then((r) => setNodesList(r.data ?? []))
+      .then((r) => {
+        api.setCache("admin:scope-nodes", r.data ?? []);
+        setNodesList(r.data ?? []);
+      })
       .catch(() => {});
     api
       .listProxyHosts({ limit: 100 })
-      .then((r) => setProxyHostsList(r.data ?? []))
+      .then((r) => {
+        api.setCache("admin:scope-proxy-hosts", r.data ?? []);
+        setProxyHostsList(r.data ?? []);
+      })
       .catch(() => {});
     api
       .listDatabases({ limit: 200 })
-      .then((r) => setDatabasesList(r.data ?? []))
+      .then((r) => {
+        api.setCache("admin:scope-databases", r.data ?? []);
+        setDatabasesList(r.data ?? []);
+      })
       .catch(() => {});
     if (
       scopeMatches(userScopes, "logs:schemas:view") ||
@@ -178,7 +200,10 @@ export function AdminGroups({
     ) {
       api
         .listLoggingSchemas()
-        .then(setLoggingSchemasList)
+        .then((data) => {
+          api.setCache("admin:scope-logging-schemas", data);
+          setLoggingSchemasList(data);
+        })
         .catch(() => {});
     }
   }, [fetchGroups, fetchCAs, userScopes]);
@@ -198,21 +223,30 @@ export function AdminGroups({
   useRealtime("node.changed", () => {
     api
       .listNodes({ limit: 100 })
-      .then((r) => setNodesList(r.data ?? []))
+      .then((r) => {
+        api.setCache("admin:scope-nodes", r.data ?? []);
+        setNodesList(r.data ?? []);
+      })
       .catch(() => {});
   });
 
   useRealtime("proxy.host.changed", () => {
     api
       .listProxyHosts({ limit: 100 })
-      .then((r) => setProxyHostsList(r.data ?? []))
+      .then((r) => {
+        api.setCache("admin:scope-proxy-hosts", r.data ?? []);
+        setProxyHostsList(r.data ?? []);
+      })
       .catch(() => {});
   });
 
   useRealtime("database.changed", () => {
     api
       .listDatabases({ limit: 200 })
-      .then((r) => setDatabasesList(r.data ?? []))
+      .then((r) => {
+        api.setCache("admin:scope-databases", r.data ?? []);
+        setDatabasesList(r.data ?? []);
+      })
       .catch(() => {});
   });
 

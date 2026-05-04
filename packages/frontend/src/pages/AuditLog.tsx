@@ -54,6 +54,7 @@ const DEFAULT_AUDIT_VIEW_CONFIG: AuditViewConfig = {
   excludedActions: [],
   excludedResourceTypes: [],
 };
+const DEFAULT_AUDIT_CACHE_KEY = "admin:audit:all:all:all::";
 const AUDIT_ACTION_OPTIONS = [
   "access_list.create",
   "access_list.delete",
@@ -422,17 +423,29 @@ export function AuditLog({
   embedded?: boolean;
   headerActionsTarget?: HTMLElement | null;
 }) {
-  const [entries, setEntries] = useState<AuditLogEntry[]>([]);
+  const initialViewConfig = useMemo(() => readAuditViewConfig(), []);
+  const initialAuditCacheKey =
+    initialViewConfig.excludedActions.length > 0 ||
+    initialViewConfig.excludedResourceTypes.length > 0
+      ? `admin:audit:all:all:all:${initialViewConfig.excludedActions.join(",")}:${initialViewConfig.excludedResourceTypes.join(",")}`
+      : DEFAULT_AUDIT_CACHE_KEY;
+  const [entries, setEntries] = useState<AuditLogEntry[]>(
+    () => api.getCached<AuditLogEntry[]>(initialAuditCacheKey) ?? []
+  );
   const [selectedEntry, setSelectedEntry] = useState<AuditLogEntry | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(
+    () => api.getCached<AuditLogEntry[]>(initialAuditCacheKey) === undefined
+  );
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
-  const [total, setTotal] = useState(0);
+  const [total, setTotal] = useState(
+    () => api.getCached<number>(`${initialAuditCacheKey}:total`) ?? 0
+  );
   const [actionFilter, setActionFilter] = useState("all");
   const [resourceFilter, setResourceFilter] = useState("all");
   const [userFilter, setUserFilter] = useState("all");
   const [knownUsers, setKnownUsers] = useState<AuditUserOption[]>([]);
-  const [viewConfig, setViewConfig] = useState<AuditViewConfig>(() => readAuditViewConfig());
+  const [viewConfig, setViewConfig] = useState<AuditViewConfig>(initialViewConfig);
   const [draftViewConfig, setDraftViewConfig] = useState<AuditViewConfig>(viewConfig);
   const [configOpen, setConfigOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
@@ -477,6 +490,11 @@ export function AuditLog({
   );
   const hiddenFilterCount =
     viewConfig.excludedActions.length + viewConfig.excludedResourceTypes.length;
+  const auditCacheKey = useMemo(
+    () =>
+      `admin:audit:${actionFilter}:${resourceFilter}:${userFilter}:${viewConfig.excludedActions.join(",")}:${viewConfig.excludedResourceTypes.join(",")}`,
+    [actionFilter, resourceFilter, userFilter, viewConfig]
+  );
 
   const rememberUsers = useCallback((items: AuditLogEntry[]) => {
     setKnownUsers((prev) => {
@@ -494,8 +512,21 @@ export function AuditLog({
       const nextPage = resetTo ? 1 : pageRef.current + 1;
       const requestId = ++requestIdRef.current;
       if (resetTo) {
-        setIsLoading(true);
-        setHasMore(true);
+        const cached = api.getCached<AuditLogEntry[]>(auditCacheKey);
+        if (cached) {
+          const cachedTotal = api.getCached<number>(`${auditCacheKey}:total`) ?? cached.length;
+          pageRef.current = 1;
+          setEntries(cached);
+          setTotal(cachedTotal);
+          setHasMore(cached.length < cachedTotal);
+          setIsLoading(false);
+        } else {
+          pageRef.current = 0;
+          setEntries([]);
+          setTotal(0);
+          setIsLoading(true);
+          setHasMore(true);
+        }
       } else {
         setLoadingMore(true);
       }
@@ -513,9 +544,17 @@ export function AuditLog({
         const fetched: AuditLogEntry[] = result.data || [];
         rememberUsers(fetched);
         const totalPages = result.pagination?.totalPages ?? 1;
-        setTotal(result.pagination?.total ?? 0);
+        const nextTotal = result.pagination?.total ?? 0;
+        setTotal(nextTotal);
         pageRef.current = nextPage;
-        setEntries((prev) => (resetTo ? fetched : [...prev, ...fetched]));
+        setEntries((prev) => {
+          const next = resetTo ? fetched : [...prev, ...fetched];
+          if (resetTo) {
+            api.setCache(auditCacheKey, next);
+            api.setCache(`${auditCacheKey}:total`, nextTotal);
+          }
+          return next;
+        });
         setHasMore(nextPage < totalPages);
       } catch {
         /* ignore */
@@ -526,7 +565,7 @@ export function AuditLog({
         }
       }
     },
-    [actionFilter, resourceFilter, userFilter, viewConfig, rememberUsers]
+    [actionFilter, auditCacheKey, resourceFilter, userFilter, viewConfig, rememberUsers]
   );
 
   const openConfigureDialog = () => {

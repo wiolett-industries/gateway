@@ -34,7 +34,7 @@ export function RecentActivityCard({
             <p className="text-sm text-muted-foreground">Loading activity...</p>
           </div>
         </div>
-      ) : activity.length > 0 ? (
+      ) : hasScope("admin:audit") && activity.length > 0 ? (
         <div className="overflow-x-auto -mb-px">
           <table className="w-full">
             <thead>
