@@ -43,6 +43,19 @@ type DockerPlugin struct {
 	logStreamCancel map[string]context.CancelFunc // containerId -> cancel
 }
 
+func dockerTimeoutProvided(configJSON string) bool {
+	if configJSON == "" {
+		return false
+	}
+	var payload struct {
+		TimeoutProvided bool `json:"timeoutProvided"`
+	}
+	if err := json.Unmarshal([]byte(configJSON), &payload); err != nil {
+		return false
+	}
+	return payload.TimeoutProvided
+}
+
 // NewDockerPlugin creates a new DockerPlugin with the given configuration.
 func NewDockerPlugin(cfg *config.Config) *DockerPlugin {
 	return &DockerPlugin{cfg: cfg}
@@ -207,8 +220,9 @@ func (p *DockerPlugin) handleContainerCommand(cmd *pb.DockerContainerCommand, re
 
 	case "stop":
 		timeout := int(cmd.TimeoutSeconds)
-		if timeout <= 0 {
-			timeout = 10
+		timeoutProvided := dockerTimeoutProvided(cmd.ConfigJson)
+		if timeout < 0 || (timeout == 0 && !timeoutProvided) {
+			timeout = defaultContainerStopTimeoutSeconds
 		}
 		// Run async to avoid blocking the command handler
 		containerID := cmd.ContainerId
@@ -220,8 +234,9 @@ func (p *DockerPlugin) handleContainerCommand(cmd *pb.DockerContainerCommand, re
 
 	case "restart":
 		timeout := int(cmd.TimeoutSeconds)
-		if timeout <= 0 {
-			timeout = 10
+		timeoutProvided := dockerTimeoutProvided(cmd.ConfigJson)
+		if timeout < 0 || (timeout == 0 && !timeoutProvided) {
+			timeout = defaultContainerStopTimeoutSeconds
 		}
 		containerID := cmd.ContainerId
 		go func() {
@@ -453,7 +468,7 @@ func (p *DockerPlugin) handleContainerCommand(cmd *pb.DockerContainerCommand, re
 			return
 		}
 		containerID := cmd.ContainerId
-		task, err := p.taskMgr.Submit(containerID, "recreate", 5*time.Minute, func(taskCtx context.Context) error {
+		task, err := p.taskMgr.Submit(containerID, "recreate", 10*time.Minute, func(taskCtx context.Context) error {
 			return p.client.RecreateWithConfig(taskCtx, containerID, cmd.ConfigJson)
 		})
 		if err != nil {

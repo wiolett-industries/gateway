@@ -36,6 +36,7 @@ export function LogsTab({
   const [lines, setLines] = useState<string[]>([]);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [historyPrependVersion, setHistoryPrependVersion] = useState(0);
   const [, setWsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(true);
   const wsRef = useRef<WebSocket | null>(null);
@@ -141,6 +142,7 @@ export function LogsTab({
     setIsConnecting(true);
     setWsConnected(false);
     setLines([]);
+    setHistoryPrependVersion(0);
     setHasMore(true);
     setLoadingMore(false);
     terminalErrorRef.current = false;
@@ -157,7 +159,11 @@ export function LogsTab({
           setHasMore(msg.hasMore ?? false);
           setIsConnecting(false);
         } else if (msg.type === "history") {
-          setLines((prev) => [...processLogs(msg.lines ?? []), ...prev]);
+          const historyLines = processLogs(msg.lines ?? []);
+          setLines((prev) => [...historyLines, ...prev]);
+          if (historyLines.length > 0) {
+            setHistoryPrependVersion((version) => version + 1);
+          }
           setHasMore(msg.hasMore ?? false);
           setLoadingMore(false);
         } else if (msg.type === "new") {
@@ -351,6 +357,7 @@ export function LogsTab({
       <VirtualLogList
         lines={lines}
         keyFn={(_, i) => i}
+        prependVersion={historyPrependVersion}
         renderLine={(line) => (
           <div className="whitespace-pre-wrap break-all leading-5 px-4 font-mono text-xs text-foreground/80">
             <AnsiText text={line as string} />

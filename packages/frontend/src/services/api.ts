@@ -2271,17 +2271,17 @@ class ApiClient extends ApiClientBase {
     });
   }
 
-  async stopContainer(nodeId: string, containerId: string, timeout = 30): Promise<void> {
+  async stopContainer(nodeId: string, containerId: string, timeout?: number): Promise<void> {
     await this.request<void>(`/docker/nodes/${nodeId}/containers/${containerId}/stop`, {
       method: "POST",
-      body: JSON.stringify({ timeout }),
+      body: JSON.stringify(timeout === undefined ? {} : { timeout }),
     });
   }
 
-  async restartContainer(nodeId: string, containerId: string, timeout = 30): Promise<void> {
+  async restartContainer(nodeId: string, containerId: string, timeout?: number): Promise<void> {
     await this.request<void>(`/docker/nodes/${nodeId}/containers/${containerId}/restart`, {
       method: "POST",
-      body: JSON.stringify({ timeout }),
+      body: JSON.stringify(timeout === undefined ? {} : { timeout }),
     });
   }
 

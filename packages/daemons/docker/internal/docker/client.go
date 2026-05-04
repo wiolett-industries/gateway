@@ -21,6 +21,8 @@ import (
 	"github.com/moby/moby/client"
 )
 
+const defaultContainerStopTimeoutSeconds = 20
+
 // Client wraps the Docker SDK client with convenience methods.
 type Client struct {
 	cli    *client.Client
@@ -299,8 +301,17 @@ func (c *Client) containerLogsWithUntil(ctx context.Context, id string, tail int
 		return c.ContainerLogs(ctx, id, 0, timestamps, since, until)
 	}
 
-	// Try expanding time windows: 1h, 6h, 24h, 7d, then all
-	windows := []time.Duration{1 * time.Hour, 6 * time.Hour, 24 * time.Hour, 7 * 24 * time.Hour}
+	// Try expanding time windows. Start small so busy containers do not require
+	// parsing an hour of logs just to return the previous page.
+	windows := []time.Duration{
+		30 * time.Second,
+		2 * time.Minute,
+		10 * time.Minute,
+		1 * time.Hour,
+		6 * time.Hour,
+		24 * time.Hour,
+		7 * 24 * time.Hour,
+	}
 
 	for _, window := range windows {
 		windowSince := untilTime.Add(-window).Format(time.RFC3339Nano)
@@ -405,17 +416,18 @@ func (c *Client) ContainerLogsFollow(ctx context.Context, id string, tail int, t
 // ContainerCreateConfig is the JSON structure accepted by CreateContainer.
 // It maps closely to the Docker API container creation parameters.
 type ContainerCreateConfig struct {
-	Name       string            `json:"name"`
-	Image      string            `json:"image"`
-	Cmd        []string          `json:"cmd,omitempty"`
-	Entrypoint []string          `json:"entrypoint,omitempty"`
-	Env        []string          `json:"env,omitempty"`
-	Labels     map[string]string `json:"labels,omitempty"`
-	WorkingDir string            `json:"working_dir,omitempty"`
-	User       string            `json:"user,omitempty"`
-	Hostname   string            `json:"hostname,omitempty"`
-	Tty        bool              `json:"tty,omitempty"`
-	OpenStdin  bool              `json:"open_stdin,omitempty"`
+	Name        string            `json:"name"`
+	Image       string            `json:"image"`
+	Cmd         []string          `json:"cmd,omitempty"`
+	Entrypoint  []string          `json:"entrypoint,omitempty"`
+	Env         []string          `json:"env,omitempty"`
+	Labels      map[string]string `json:"labels,omitempty"`
+	WorkingDir  string            `json:"working_dir,omitempty"`
+	User        string            `json:"user,omitempty"`
+	Hostname    string            `json:"hostname,omitempty"`
+	StopTimeout *int              `json:"stopTimeout,omitempty"`
+	Tty         bool              `json:"tty,omitempty"`
+	OpenStdin   bool              `json:"open_stdin,omitempty"`
 
 	// Host config
 	Binds         []string          `json:"binds,omitempty"`
@@ -440,16 +452,17 @@ func (c *Client) CreateContainer(ctx context.Context, configJSON string) (string
 		return "", "", fmt.Errorf("image is required")
 	}
 	containerCfg := &container.Config{
-		Image:      cfg.Image,
-		Cmd:        cfg.Cmd,
-		Entrypoint: cfg.Entrypoint,
-		Env:        cfg.Env,
-		Labels:     cfg.Labels,
-		WorkingDir: cfg.WorkingDir,
-		User:       cfg.User,
-		Hostname:   cfg.Hostname,
-		Tty:        cfg.Tty,
-		OpenStdin:  cfg.OpenStdin,
+		Image:       cfg.Image,
+		Cmd:         cfg.Cmd,
+		Entrypoint:  cfg.Entrypoint,
+		Env:         cfg.Env,
+		Labels:      cfg.Labels,
+		WorkingDir:  cfg.WorkingDir,
+		User:        cfg.User,
+		Hostname:    cfg.Hostname,
+		StopTimeout: cfg.StopTimeout,
+		Tty:         cfg.Tty,
+		OpenStdin:   cfg.OpenStdin,
 	}
 
 	hostCfg := &container.HostConfig{
@@ -742,6 +755,7 @@ func (c *Client) RecreateWithConfig(ctx context.Context, id string, configJSON s
 		User          string            `json:"user"`
 		Hostname      string            `json:"hostname"`
 		Labels        map[string]string `json:"labels"`
+		StopTimeout   *int              `json:"stopTimeout"`
 		RestartPolicy *string           `json:"restartPolicy"`
 		MaxRetries    *int              `json:"maxRetries"`
 		MemoryLimit   *int64            `json:"memoryLimit"`
@@ -838,6 +852,9 @@ func (c *Client) RecreateWithConfig(ctx context.Context, id string, configJSON s
 	if params.Labels != nil {
 		insp.Config.Labels = params.Labels
 	}
+	if params.StopTimeout != nil {
+		insp.Config.StopTimeout = params.StopTimeout
+	}
 
 	// Apply runtime overrides to HostConfig so they persist after recreation.
 	if params.RestartPolicy != nil {
@@ -902,8 +919,10 @@ func (c *Client) recreateContainer(
 	wasRunning := insp.State != nil && insp.State.Running
 
 	if wasRunning {
-		// Stop the container (10s grace period, then SIGKILL)
-		timeoutSec := 10
+		timeoutSec := defaultContainerStopTimeoutSeconds
+		if insp.Config != nil && insp.Config.StopTimeout != nil && *insp.Config.StopTimeout >= 0 {
+			timeoutSec = *insp.Config.StopTimeout
+		}
 		if _, err := c.cli.ContainerStop(ctx, insp.ID, client.ContainerStopOptions{Timeout: &timeoutSec}); err != nil {
 			return fmt.Errorf("stop container: %w", err)
 		}

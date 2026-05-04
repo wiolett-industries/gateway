@@ -61,8 +61,19 @@ describe('nodesRoutes list access', () => {
     );
   });
 
-  it('still rejects node listing without node or broad Docker access', async () => {
+  it('allows resource-scoped Docker view scopes to discover their Docker node', async () => {
     mocks.scopes = ['docker:containers:view:node-1'];
+
+    const response = await createApp().request('/?type=docker&limit=100');
+
+    expect(response.status).toBe(200);
+    expect(mocks.nodesService.list).toHaveBeenCalledWith(expect.objectContaining({ type: 'docker', limit: 100 }), {
+      allowedIds: ['node-1'],
+    });
+  });
+
+  it('still rejects node listing without node or Docker access', async () => {
+    mocks.scopes = [];
 
     const response = await createApp().request('/?type=docker&limit=100');
 

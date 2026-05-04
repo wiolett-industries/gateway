@@ -14,6 +14,11 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { useRealtime } from "@/hooks/use-realtime";
+import {
+  type DockerRuntimeCapacity,
+  loadDockerRuntimeCapacity,
+  UNKNOWN_DOCKER_RUNTIME_CAPACITY,
+} from "@/lib/docker-runtime-capacity";
 import { formatBytes } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
@@ -23,7 +28,6 @@ import type {
   DockerImageCleanupSettings,
   DockerNetwork,
   DockerWebhook,
-  NodeDetail,
 } from "@/types";
 import type { InspectData } from "./helpers";
 import { LabelsSection } from "./LabelsSection";
@@ -68,6 +72,7 @@ type RecreateBaseline = {
   mounts: string;
   entrypoint: string;
   command: string;
+  stopTimeout: string;
   workingDir: string;
   user: string;
   hostname: string;
@@ -81,6 +86,7 @@ function sameRecreateBaseline(a: RecreateBaseline, b: RecreateBaseline) {
     a.mounts === b.mounts &&
     a.entrypoint === b.entrypoint &&
     a.command === b.command &&
+    a.stopTimeout === b.stopTimeout &&
     a.workingDir === b.workingDir &&
     a.user === b.user &&
     a.hostname === b.hostname &&
@@ -175,7 +181,9 @@ export function SettingsTab({
   const [cpuShares, setCpuShares] = useState(runtimeServerBaseline.cpuShares);
   const [pidsLimit, setPidsLimit] = useState(runtimeServerBaseline.pidsLimit);
   const [liveLoading, setLiveLoading] = useState(false);
-  const [nodeDetail, setNodeDetail] = useState<NodeDetail | null>(null);
+  const [runtimeCapacity, setRuntimeCapacity] = useState<DockerRuntimeCapacity>(
+    UNKNOWN_DOCKER_RUNTIME_CAPACITY
+  );
 
   // Baseline snapshot — updated after successful live apply
   const baselineRef = useRef<RuntimeFormValues>(runtimeServerBaseline);
@@ -228,19 +236,27 @@ export function SettingsTab({
   );
   const currentImage = (config.Image ?? "") as string;
   const { imageName: parsedImageName, tag: parsedTag } = useMemo(() => {
+    if (currentImage.includes("@")) {
+      return { imageName: currentImage, tag: "" };
+    }
     const lastColon = currentImage.lastIndexOf(":");
     const lastSlash = currentImage.lastIndexOf("/");
     if (lastColon === -1 || lastSlash > lastColon) {
-      return { imageName: currentImage, tag: "latest" };
+      return { imageName: currentImage, tag: "" };
     }
     return { imageName: currentImage.slice(0, lastColon), tag: currentImage.slice(lastColon + 1) };
   }, [currentImage]);
 
   const [imageTag, setImageTag] = useState(parsedTag);
   const imageTagChanged = imageTag !== parsedTag;
+  const imageTagLocked = parsedImageName.includes("@");
 
   const initialEntrypoint = (config.Entrypoint ?? []) as string[];
   const initialCmd = (config.Cmd ?? []) as string[];
+  const initialStopTimeout =
+    typeof config.StopTimeout === "number" && Number.isFinite(config.StopTimeout)
+      ? String(config.StopTimeout)
+      : "20";
   const initialWorkdir = (config.WorkingDir ?? "") as string;
   const initialUser = (config.User ?? "") as string;
   const initialHostname = (config.Hostname ?? "") as string;
@@ -250,6 +266,7 @@ export function SettingsTab({
   const [mounts, setMounts] = useState<MountEntry[]>(initialMounts);
   const [entrypoint, setEntrypoint] = useState(initialEntrypoint.join(" "));
   const [command, setCommand] = useState(initialCmd.join(" "));
+  const [stopTimeout, setStopTimeout] = useState(initialStopTimeout);
   const [workingDir, setWorkingDir] = useState(initialWorkdir);
   const [user, setUser] = useState(initialUser);
   const [hostname, setHostname] = useState(initialHostname);
@@ -270,6 +287,7 @@ export function SettingsTab({
       mounts: JSON.stringify(initialMounts),
       entrypoint: initialEntrypoint.join(" "),
       command: initialCmd.join(" "),
+      stopTimeout: initialStopTimeout,
       workingDir: initialWorkdir,
       user: initialUser,
       hostname: initialHostname,
@@ -282,6 +300,7 @@ export function SettingsTab({
       initialLabels,
       initialMounts,
       initialPorts,
+      initialStopTimeout,
       initialUser,
       initialWorkdir,
       parsedTag,
@@ -332,6 +351,7 @@ export function SettingsTab({
       JSON.stringify(mounts) === previous.mounts &&
       entrypoint === previous.entrypoint &&
       command === previous.command &&
+      stopTimeout === previous.stopTimeout &&
       workingDir === previous.workingDir &&
       user === previous.user &&
       hostname === previous.hostname &&
@@ -345,6 +365,7 @@ export function SettingsTab({
     setMounts(initialMounts);
     setEntrypoint(initialEntrypoint.join(" "));
     setCommand(initialCmd.join(" "));
+    setStopTimeout(initialStopTimeout);
     setWorkingDir(initialWorkdir);
     setUser(initialUser);
     setHostname(initialHostname);
@@ -360,6 +381,7 @@ export function SettingsTab({
     initialLabels,
     initialMounts,
     initialPorts,
+    initialStopTimeout,
     initialUser,
     initialWorkdir,
     labels,
@@ -367,40 +389,21 @@ export function SettingsTab({
     parsedTag,
     ports,
     recreateBaseline,
+    stopTimeout,
     user,
     workingDir,
   ]);
 
   useEffect(() => {
     let cancelled = false;
-    void api
-      .getNode(nodeId)
-      .then((node) => {
-        if (!cancelled) setNodeDetail(node);
-      })
-      .catch(() => {
-        if (!cancelled) setNodeDetail(null);
-      });
+    void loadDockerRuntimeCapacity(nodeId).then((capacity) => {
+      if (!cancelled) setRuntimeCapacity(capacity);
+    });
 
     return () => {
       cancelled = true;
     };
   }, [nodeId]);
-
-  const runtimeCapacity = useMemo(() => {
-    const caps = (nodeDetail?.capabilities ?? {}) as Record<string, unknown>;
-    const cpuCoresRaw = Number(caps.cpuCores ?? 0);
-    const maxCpuCount = Number.isFinite(cpuCoresRaw) && cpuCoresRaw > 0 ? cpuCoresRaw : null;
-    const health = nodeDetail?.liveHealthReport ?? nodeDetail?.lastHealthReport ?? null;
-    const memoryBytesRaw = Number(health?.systemMemoryTotalBytes ?? 0);
-    const swapBytesRaw = Number(health?.swapTotalBytes ?? 0);
-
-    return {
-      maxCpuCount,
-      maxMemoryBytes: Number.isFinite(memoryBytesRaw) && memoryBytesRaw > 0 ? memoryBytesRaw : null,
-      maxSwapBytes: Number.isFinite(swapBytesRaw) && swapBytesRaw > 0 ? swapBytesRaw : null,
-    };
-  }, [nodeDetail]);
 
   const runtimeValidationError = useMemo(() => {
     const parsedMemoryMB = parseOptionalNumber(memoryMB);
@@ -434,10 +437,15 @@ export function SettingsTab({
     }
 
     const maxSwapMB =
-      runtimeCapacity.maxSwapBytes && runtimeCapacity.maxSwapBytes > 0
+      runtimeCapacity.maxSwapBytes !== null && runtimeCapacity.maxSwapBytes >= 0
         ? runtimeCapacity.maxSwapBytes / 1048576
         : null;
-    if (maxSwapMB && parsedSwapMB !== null && parsedSwapMB !== -1 && parsedSwapMB > maxSwapMB) {
+    if (
+      maxSwapMB !== null &&
+      parsedSwapMB !== null &&
+      parsedSwapMB !== -1 &&
+      parsedSwapMB > maxSwapMB
+    ) {
       return `Swap cannot exceed node swap (${formatBytes(runtimeCapacity.maxSwapBytes ?? 0)}).`;
     }
 
@@ -451,6 +459,20 @@ export function SettingsTab({
 
     return null;
   }, [cpuCount, memSwapMB, memoryMB, runtimeCapacity]);
+
+  const executionValidationError = useMemo(() => {
+    const parsedStopTimeout = parseOptionalNumber(stopTimeout);
+    if (
+      Number.isNaN(parsedStopTimeout) ||
+      parsedStopTimeout === null ||
+      !Number.isInteger(parsedStopTimeout) ||
+      parsedStopTimeout < 0 ||
+      parsedStopTimeout > 300
+    ) {
+      return "Stop grace must be a whole number from 0 to 300 seconds.";
+    }
+    return null;
+  }, [stopTimeout]);
 
   const buildRuntimePayload = useCallback(() => {
     return buildRuntimePayloadFromForm(
@@ -531,6 +553,7 @@ export function SettingsTab({
   const execChanged =
     entrypoint !== recreateBaseline.entrypoint ||
     command !== recreateBaseline.command ||
+    stopTimeout !== recreateBaseline.stopTimeout ||
     workingDir !== recreateBaseline.workingDir ||
     user !== recreateBaseline.user ||
     hostname !== recreateBaseline.hostname;
@@ -567,12 +590,17 @@ export function SettingsTab({
         setRecreateLoading(false);
         return;
       }
+      if (executionValidationError) {
+        toast.error(executionValidationError);
+        setRecreateLoading(false);
+        return;
+      }
 
       const payload: Record<string, unknown> = {};
 
       // Include new image if tag changed
       if (imageTagChanged) {
-        payload.image = `${parsedImageName}:${imageTag}`;
+        payload.image = imageTag.trim() ? `${parsedImageName}:${imageTag.trim()}` : parsedImageName;
       }
 
       // Only send fields that changed
@@ -602,6 +630,9 @@ export function SettingsTab({
       if (command !== recreateBaseline.command) {
         const cmd = command.trim();
         payload.command = cmd ? parseShellWords(cmd) : [];
+      }
+      if (stopTimeout !== recreateBaseline.stopTimeout) {
+        payload.stopTimeout = Number(stopTimeout);
       }
       if (workingDir !== recreateBaseline.workingDir) payload.workingDir = workingDir;
       if (user !== recreateBaseline.user) payload.user = user;
@@ -634,6 +665,7 @@ export function SettingsTab({
     command,
     containerId,
     entrypoint,
+    executionValidationError,
     hostname,
     imageTag,
     imageTagChanged,
@@ -652,6 +684,7 @@ export function SettingsTab({
     recreateBaseline,
     recreatesRunningContainer,
     runtimeValidationError,
+    stopTimeout,
     user,
     workingDir,
   ]);
@@ -812,6 +845,7 @@ export function SettingsTab({
                 disabled={
                   recreateLoading ||
                   !hasRecreateChanges ||
+                  !!executionValidationError ||
                   (hasRuntimeChanges && !!runtimeValidationError)
                 }
               >
@@ -836,8 +870,8 @@ export function SettingsTab({
                   className="h-8 text-xs font-mono"
                   value={imageTag}
                   onChange={(e) => setImageTag(e.target.value)}
-                  placeholder="latest"
-                  disabled={!canEdit}
+                  placeholder={imageTagLocked ? "digest" : "latest"}
+                  disabled={!canEdit || imageTagLocked}
                   style={imageTagChanged ? { borderColor: "rgb(234 179 8)" } : undefined}
                 />
               </div>
@@ -888,15 +922,36 @@ export function SettingsTab({
                 />
               </div>
             </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Command</label>
-              <Input
-                className="h-8 text-xs font-mono"
-                value={command}
-                onChange={(e) => setCommand(e.target.value)}
-                placeholder="nginx -g daemon off;"
-                disabled={!canEdit}
-              />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Command</label>
+                <Input
+                  className="h-8 text-xs font-mono"
+                  value={command}
+                  onChange={(e) => setCommand(e.target.value)}
+                  placeholder="nginx -g daemon off;"
+                  disabled={!canEdit}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Stop Grace (s)</label>
+                <Input
+                  className="h-8 text-xs font-mono"
+                  type="number"
+                  min={0}
+                  max={300}
+                  step={1}
+                  value={stopTimeout}
+                  onChange={(e) => setStopTimeout(e.target.value)}
+                  placeholder="20"
+                  disabled={!canEdit}
+                  style={
+                    stopTimeout !== recreateBaseline.stopTimeout
+                      ? { borderColor: "rgb(234 179 8)" }
+                      : undefined
+                  }
+                />
+              </div>
             </div>
           </div>
         </div>

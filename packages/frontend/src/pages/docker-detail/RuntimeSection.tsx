@@ -63,7 +63,8 @@ export function RuntimeSection({
 }: RuntimeSectionProps) {
   const maxMemoryMB =
     maxMemoryBytes && maxMemoryBytes > 0 ? Math.floor(maxMemoryBytes / 1048576) : null;
-  const maxSwapMB = maxSwapBytes && maxSwapBytes > 0 ? Math.floor(maxSwapBytes / 1048576) : null;
+  const maxSwapMB =
+    maxSwapBytes !== null && maxSwapBytes >= 0 ? Math.floor(maxSwapBytes / 1048576) : null;
 
   return (
     <div className="border border-border bg-card overflow-hidden">
@@ -167,7 +168,9 @@ export function RuntimeSection({
             />
             <p className="min-h-4 text-[11px] text-muted-foreground">
               Max extra swap:{" "}
-              {maxSwapBytes && maxSwapBytes > 0 ? formatBytes(maxSwapBytes) : "detecting..."}
+              {maxSwapBytes !== null && maxSwapBytes >= 0
+                ? formatBytes(maxSwapBytes)
+                : "detecting..."}
             </p>
           </div>
         </div>

@@ -39,6 +39,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useRealtime } from "@/hooks/use-realtime";
 import { useStableNavigate } from "@/hooks/use-stable-navigate";
 import { useUrlTab } from "@/hooks/use-url-tab";
+import {
+  type DockerRuntimeCapacity,
+  loadDockerRuntimeCapacity,
+  UNKNOWN_DOCKER_RUNTIME_CAPACITY,
+} from "@/lib/docker-runtime-capacity";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { usePinnedContainersStore } from "@/stores/pinned-containers";
@@ -54,6 +59,7 @@ import { EnvironmentTab } from "./docker-detail/EnvironmentTab";
 import { FilesTab } from "./docker-detail/FilesTab";
 import {
   copyToClipboard,
+  formatBytes,
   formatDate,
   type InspectData,
   STATUS_BADGE,
@@ -126,6 +132,31 @@ function transitionForAction(name: string) {
 
 function shortId(value?: string | null) {
   return value ? value.slice(0, 12) : "-";
+}
+
+function splitImageRef(imageRef: string) {
+  const digestIndex = imageRef.indexOf("@");
+  if (digestIndex >= 0) {
+    return { imageName: imageRef, tag: "" };
+  }
+
+  const lastColon = imageRef.lastIndexOf(":");
+  const lastSlash = imageRef.lastIndexOf("/");
+  if (lastColon === -1 || lastSlash > lastColon) {
+    return { imageName: imageRef, tag: "" };
+  }
+
+  return { imageName: imageRef.slice(0, lastColon), tag: imageRef.slice(lastColon + 1) };
+}
+
+function joinImageRef(imageName: string, tag: string) {
+  return tag.trim() ? `${imageName}:${tag.trim()}` : imageName;
+}
+
+function parseOptionalNumber(value: string): number | null {
+  if (value.trim() === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : Number.NaN;
 }
 
 function normalizeMounts(mounts: unknown): MountEntry[] {
@@ -1151,9 +1182,14 @@ function DeploymentSettings({
     [deployment.desiredConfig]
   );
   const runtime = ((deployment.desiredConfig as any).runtime ?? {}) as Record<string, any>;
+  const desiredImageParts = useMemo(
+    () => splitImageRef(deployment.desiredConfig.image),
+    [deployment.desiredConfig.image]
+  );
   const deploymentBaseline = useMemo(
     () => ({
-      image: deployment.desiredConfig.image,
+      imageName: desiredImageParts.imageName,
+      imageTag: desiredImageParts.tag,
       entrypoint: initialEntrypoint,
       command: initialCommand,
       workingDir: initialWorkingDir,
@@ -1172,9 +1208,10 @@ function DeploymentSettings({
       drainSeconds: String(deployment.drainSeconds),
     }),
     [
-      deployment.desiredConfig.image,
       deployment.desiredConfig.restartPolicy,
       deployment.drainSeconds,
+      desiredImageParts.imageName,
+      desiredImageParts.tag,
       initialCommand,
       initialEntrypoint,
       initialLabels,
@@ -1191,7 +1228,7 @@ function DeploymentSettings({
       runtime.pidsLimit,
     ]
   );
-  const [image, setImage] = useState(deployment.desiredConfig.image);
+  const [imageTag, setImageTag] = useState(desiredImageParts.tag);
   const [entrypoint, setEntrypoint] = useState(initialEntrypoint);
   const [command, setCommand] = useState(initialCommand);
   const [workingDir, setWorkingDir] = useState(initialWorkingDir);
@@ -1210,14 +1247,28 @@ function DeploymentSettings({
   const [cpuShares, setCpuShares] = useState(runtime.cpuShares ? String(runtime.cpuShares) : "");
   const [pidsLimit, setPidsLimit] = useState(runtime.pidsLimit ? String(runtime.pidsLimit) : "");
   const [drainSeconds, setDrainSeconds] = useState(String(deployment.drainSeconds));
+  const [runtimeCapacity, setRuntimeCapacity] = useState<DockerRuntimeCapacity>(
+    UNKNOWN_DOCKER_RUNTIME_CAPACITY
+  );
   const previousDeploymentBaselineRef = useRef(deploymentBaseline);
   const inputCell =
     "h-9 text-xs font-mono border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring";
 
   useEffect(() => {
+    let cancelled = false;
+    void loadDockerRuntimeCapacity(nodeId).then((capacity) => {
+      if (!cancelled) setRuntimeCapacity(capacity);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [nodeId]);
+
+  useEffect(() => {
     const previous = previousDeploymentBaselineRef.current;
     const formMatchesPrevious =
-      image === previous.image &&
+      imageTag === previous.imageTag &&
       entrypoint === previous.entrypoint &&
       command === previous.command &&
       workingDir === previous.workingDir &&
@@ -1238,7 +1289,7 @@ function DeploymentSettings({
     previousDeploymentBaselineRef.current = deploymentBaseline;
 
     if (!formMatchesPrevious) return;
-    setImage(deploymentBaseline.image);
+    setImageTag(deploymentBaseline.imageTag);
     setEntrypoint(deploymentBaseline.entrypoint);
     setCommand(deploymentBaseline.command);
     setWorkingDir(deploymentBaseline.workingDir);
@@ -1262,7 +1313,7 @@ function DeploymentSettings({
     deploymentBaseline,
     drainSeconds,
     entrypoint,
-    image,
+    imageTag,
     initialLabels,
     initialMounts,
     initialPorts,
@@ -1279,8 +1330,10 @@ function DeploymentSettings({
     workingDir,
   ]);
 
+  const nextImage = joinImageRef(deploymentBaseline.imageName, imageTag);
+  const imageTagLocked = deploymentBaseline.imageName.includes("@");
   const executionChanged =
-    image !== deployment.desiredConfig.image ||
+    nextImage !== deployment.desiredConfig.image ||
     entrypoint !== initialEntrypoint ||
     command !== initialCommand ||
     workingDir !== initialWorkingDir ||
@@ -1303,6 +1356,61 @@ function DeploymentSettings({
     cpuShares !== (runtime.cpuShares ? String(runtime.cpuShares) : "") ||
     pidsLimit !== (runtime.pidsLimit ? String(runtime.pidsLimit) : "");
 
+  const runtimeValidationError = useMemo(() => {
+    const parsedMemoryMB = parseOptionalNumber(memoryMB);
+    if (Number.isNaN(parsedMemoryMB) || (parsedMemoryMB !== null && parsedMemoryMB < 0)) {
+      return "Memory limit must be a non-negative number.";
+    }
+
+    const parsedSwapMB = memSwapMB === "-1" ? -1 : parseOptionalNumber(memSwapMB);
+    if (
+      Number.isNaN(parsedSwapMB) ||
+      (parsedSwapMB !== null && parsedSwapMB !== -1 && parsedSwapMB < 0)
+    ) {
+      return "Swap must be -1 or a non-negative number.";
+    }
+
+    const parsedCpuCount = parseOptionalNumber(cpuCount);
+    if (Number.isNaN(parsedCpuCount) || (parsedCpuCount !== null && parsedCpuCount < 0)) {
+      return "CPU limit must be a non-negative number.";
+    }
+
+    if ((parsedSwapMB === -1 || (parsedSwapMB ?? 0) > 0) && !parsedMemoryMB) {
+      return "Set a memory limit before configuring swap.";
+    }
+
+    const maxMemoryMB =
+      runtimeCapacity.maxMemoryBytes && runtimeCapacity.maxMemoryBytes > 0
+        ? runtimeCapacity.maxMemoryBytes / 1048576
+        : null;
+    if (maxMemoryMB && parsedMemoryMB !== null && parsedMemoryMB > maxMemoryMB) {
+      return `Memory limit cannot exceed node memory (${formatBytes(runtimeCapacity.maxMemoryBytes ?? 0)}).`;
+    }
+
+    const maxSwapMB =
+      runtimeCapacity.maxSwapBytes !== null && runtimeCapacity.maxSwapBytes >= 0
+        ? runtimeCapacity.maxSwapBytes / 1048576
+        : null;
+    if (
+      maxSwapMB !== null &&
+      parsedSwapMB !== null &&
+      parsedSwapMB !== -1 &&
+      parsedSwapMB > maxSwapMB
+    ) {
+      return `Swap cannot exceed node swap (${formatBytes(runtimeCapacity.maxSwapBytes ?? 0)}).`;
+    }
+
+    if (
+      runtimeCapacity.maxCpuCount &&
+      parsedCpuCount !== null &&
+      parsedCpuCount > runtimeCapacity.maxCpuCount
+    ) {
+      return `CPU limit cannot exceed node CPU capacity (${runtimeCapacity.maxCpuCount} cores).`;
+    }
+
+    return null;
+  }, [cpuCount, memSwapMB, memoryMB, runtimeCapacity]);
+
   return (
     <div className="space-y-6 pb-6">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -1323,10 +1431,10 @@ function DeploymentSettings({
           setCpuShares={setCpuShares}
           pidsLimit={pidsLimit}
           setPidsLimit={setPidsLimit}
-          maxMemoryBytes={null}
-          maxSwapBytes={null}
-          maxCpuCount={null}
-          runtimeValidationError={null}
+          maxMemoryBytes={runtimeCapacity.maxMemoryBytes}
+          maxSwapBytes={runtimeCapacity.maxSwapBytes}
+          maxCpuCount={runtimeCapacity.maxCpuCount}
+          runtimeValidationError={runtimeValidationError}
           hasRuntimeChanges={runtimeChanged}
           liveLoading={!!action}
           onApply={() =>
@@ -1355,7 +1463,7 @@ function DeploymentSettings({
               size="sm"
               style={{ backgroundColor: "rgb(234 179 8)", color: "#111" }}
               className="hover:opacity-90 disabled:opacity-50"
-              disabled={!!action || !settingsChanged || !image.trim()}
+              disabled={!!action || !settingsChanged || !nextImage.trim()}
               onClick={() =>
                 runAction("update-execution", async () => {
                   const labelMap: Record<string, string> = {};
@@ -1364,7 +1472,7 @@ function DeploymentSettings({
                   }
                   await api.updateDockerDeployment(nodeId, deployment.id, {
                     desiredConfig: {
-                      image: image.trim(),
+                      image: nextImage,
                       entrypoint: entrypoint.trim() ? entrypoint.trim().split(/\s+/) : [],
                       command: command.trim() ? command.trim().split(/\s+/) : [],
                       workingDir,
@@ -1394,12 +1502,28 @@ function DeploymentSettings({
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-muted-foreground">Image</label>
                 <Input
-                  className="h-8 text-xs font-mono"
-                  value={image}
-                  onChange={(e) => setImage(e.target.value)}
-                  placeholder="nginx:alpine"
+                  className="h-8 text-xs font-mono bg-muted/50"
+                  value={deploymentBaseline.imageName}
+                  disabled
                 />
               </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Tag</label>
+                <Input
+                  className="h-8 text-xs font-mono"
+                  value={imageTag}
+                  onChange={(e) => setImageTag(e.target.value)}
+                  placeholder={imageTagLocked ? "digest" : "latest"}
+                  disabled={imageTagLocked}
+                  style={
+                    nextImage !== deployment.desiredConfig.image
+                      ? { borderColor: "rgb(234 179 8)" }
+                      : undefined
+                  }
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-muted-foreground">Drain Seconds</label>
                 <Input
@@ -1409,8 +1533,6 @@ function DeploymentSettings({
                   onChange={(event) => setDrainSeconds(event.target.value)}
                 />
               </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-muted-foreground">Entrypoint</label>
                 <Input
@@ -1431,8 +1553,6 @@ function DeploymentSettings({
                   placeholder="/app"
                 />
               </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-muted-foreground">User</label>
                 <Input
@@ -1442,15 +1562,15 @@ function DeploymentSettings({
                   placeholder="root"
                 />
               </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Command</label>
-                <Input
-                  className="h-8 text-xs font-mono"
-                  value={command}
-                  onChange={(e) => setCommand(e.target.value)}
-                  placeholder="nginx -g daemon off;"
-                />
-              </div>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Command</label>
+              <Input
+                className="h-8 text-xs font-mono"
+                value={command}
+                onChange={(e) => setCommand(e.target.value)}
+                placeholder="nginx -g daemon off;"
+              />
             </div>
           </div>
         </div>

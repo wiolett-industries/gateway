@@ -1038,6 +1038,12 @@ export const AI_TOOLS: AIToolDefinition[] = [
           enum: ['no', 'always', 'unless-stopped', 'on-failure'],
           description: 'Default: no',
         },
+        stopTimeout: {
+          type: 'integer',
+          minimum: 0,
+          maximum: 300,
+          description: 'Container stop grace period in seconds, 0-300. Default: Gateway fallback 20 seconds.',
+        },
         labels: { type: 'object', description: 'Container labels as key-value pairs' },
         command: { type: 'array', items: { type: 'string' }, description: 'Override container command' },
       },
@@ -1282,7 +1288,12 @@ export const AI_TOOLS: AIToolDefinition[] = [
       properties: {
         nodeId: { type: 'string', description: 'Docker node ID' },
         containerId: { type: 'string', description: 'Container ID' },
-        timeout: { type: 'number', description: 'Seconds to wait before killing (default 30)' },
+        timeout: {
+          type: 'integer',
+          minimum: 0,
+          maximum: 300,
+          description: 'Seconds to wait before killing. If omitted, uses the container stop grace setting, then 20.',
+        },
       },
       required: ['nodeId', 'containerId'],
     },
@@ -1299,7 +1310,12 @@ export const AI_TOOLS: AIToolDefinition[] = [
       properties: {
         nodeId: { type: 'string', description: 'Docker node ID' },
         containerId: { type: 'string', description: 'Container ID' },
-        timeout: { type: 'number', description: 'Seconds to wait before killing (default 30)' },
+        timeout: {
+          type: 'integer',
+          minimum: 0,
+          maximum: 300,
+          description: 'Seconds to wait before killing. If omitted, uses the container stop grace setting, then 20.',
+        },
       },
       required: ['nodeId', 'containerId'],
     },

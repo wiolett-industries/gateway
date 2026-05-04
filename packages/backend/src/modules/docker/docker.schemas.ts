@@ -10,6 +10,8 @@ const ContainerNameSchema = z
     'Invalid container name (must start with alphanumeric, then alphanumerics, _, ., or -)'
   );
 const DOCKER_CONTAINER_PORTS_MAX = 256;
+const DOCKER_STOP_TIMEOUT_MAX_SECONDS = 300;
+const DockerStopTimeoutSchema = z.number().int().min(0).max(DOCKER_STOP_TIMEOUT_MAX_SECONDS);
 
 // Container create
 export const ContainerCreateSchema = z.object({
@@ -39,6 +41,7 @@ export const ContainerCreateSchema = z.object({
   env: z.record(z.string()).optional(),
   networks: z.array(z.string()).optional(),
   restartPolicy: z.enum(['no', 'always', 'unless-stopped', 'on-failure']).default('no'),
+  stopTimeout: DockerStopTimeoutSchema.optional(),
   labels: z.record(z.string()).optional(),
   command: z.array(z.string()).optional(),
 });
@@ -90,6 +93,7 @@ export const ContainerRecreateSchema = z.object({
   user: z.string().optional(),
   hostname: z.string().optional(),
   labels: z.record(z.string()).optional(),
+  stopTimeout: DockerStopTimeoutSchema.optional(),
   restartPolicy: z.enum(['no', 'always', 'unless-stopped', 'on-failure']).optional(),
   maxRetries: z.number().int().min(0).optional(),
   memoryLimit: z.number().int().min(0).optional(),
@@ -100,7 +104,7 @@ export const ContainerRecreateSchema = z.object({
 });
 
 // Container action params
-export const ContainerStopSchema = z.object({ timeout: z.number().default(30) });
+export const ContainerStopSchema = z.object({ timeout: DockerStopTimeoutSchema.optional() });
 export const ContainerKillSchema = z.object({ signal: z.string().default('SIGKILL') });
 export const ContainerRenameSchema = z.object({ name: ContainerNameSchema });
 export const ContainerDuplicateSchema = z.object({ name: ContainerNameSchema });

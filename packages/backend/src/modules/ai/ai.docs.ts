@@ -680,7 +680,8 @@ Gateway provides Portainer-like Docker container management through a daemon run
 
 ## Settings
 - **Runtime (live-update)**: restart policy, memory limit, CPU shares, PID limit — applied without recreation
-- **Requires recreate**: port mappings, volume mounts, entrypoint, command, working dir, hostname, labels, image tag
+- **Requires recreate**: port mappings, volume mounts, entrypoint, command, stop grace period, working dir, hostname, labels, image tag
+- **Stop grace period**: container-level Docker stop timeout in seconds (0-300). Stop/restart tools use this configured value when no explicit timeout is supplied, falling back to 20 seconds.
 
 ## Images, Volumes, Networks
 - Images: list, pull from registries, remove, prune unused

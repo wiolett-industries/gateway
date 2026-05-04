@@ -7,6 +7,7 @@ import type { AccessListService } from '@/modules/access-lists/access-list.servi
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { AuthService } from '@/modules/auth/auth.service.js';
 import { type DatabaseConnectionService, inferPostgresIntent } from '@/modules/databases/databases.service.js';
+import { ContainerCreateSchema, ContainerStopSchema } from '@/modules/docker/docker.schemas.js';
 import type { DockerManagementService } from '@/modules/docker/docker.service.js';
 import {
   DockerDeploymentDeploySchema,
@@ -1120,22 +1121,19 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
 
       // ── Docker ──
       case 'create_docker_container': {
-        const data = await this.dockerService.createContainer(
-          a.nodeId,
-          {
-            image: a.image,
-            name: a.name,
-            ports: a.ports,
-            volumes: a.volumes,
-            env: a.env,
-            networks: a.networks,
-            restartPolicy: a.restartPolicy ?? 'no',
-            labels: a.labels,
-            command: a.command,
-          },
-          user.id,
-          user.scopes
-        );
+        const input = ContainerCreateSchema.parse({
+          image: a.image,
+          name: a.name,
+          ports: a.ports,
+          volumes: a.volumes,
+          env: a.env,
+          networks: a.networks,
+          restartPolicy: a.restartPolicy ?? 'no',
+          stopTimeout: a.stopTimeout,
+          labels: a.labels,
+          command: a.command,
+        });
+        const data = await this.dockerService.createContainer(a.nodeId, input, user.id, user.scopes);
         return { success: true, message: 'Container created', data };
       }
       case 'list_docker_containers': {
@@ -1216,10 +1214,20 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
         await this.dockerService.startContainer(a.nodeId, a.containerId, user.id);
         return { success: true };
       case 'stop_docker_container':
-        await this.dockerService.stopContainer(a.nodeId, a.containerId, a.timeout || 30, user.id);
+        await this.dockerService.stopContainer(
+          a.nodeId,
+          a.containerId,
+          ContainerStopSchema.parse({ timeout: a.timeout }).timeout,
+          user.id
+        );
         return { success: true, message: 'Container stopping' };
       case 'restart_docker_container':
-        await this.dockerService.restartContainer(a.nodeId, a.containerId, a.timeout || 30, user.id);
+        await this.dockerService.restartContainer(
+          a.nodeId,
+          a.containerId,
+          ContainerStopSchema.parse({ timeout: a.timeout }).timeout,
+          user.id
+        );
         return { success: true, message: 'Container restarting' };
       case 'remove_docker_container':
         await this.dockerService.removeContainer(a.nodeId, a.containerId, a.force ?? false, user.id);

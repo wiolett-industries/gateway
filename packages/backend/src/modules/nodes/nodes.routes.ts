@@ -48,12 +48,44 @@ const BROAD_DOCKER_VIEW_SCOPES = [
   'docker:networks:view',
 ] as const;
 
+const RESOURCE_SCOPED_DOCKER_NODE_SCOPES = [
+  'docker:containers:view',
+  'docker:containers:create',
+  'docker:containers:manage',
+  'docker:containers:delete',
+  'docker:containers:edit',
+  'docker:containers:environment',
+  'docker:containers:secrets',
+  'docker:containers:files',
+  'docker:containers:webhooks',
+  'docker:containers:mounts',
+  'docker:images:view',
+  'docker:images:pull',
+  'docker:images:delete',
+  'docker:volumes:view',
+  'docker:volumes:create',
+  'docker:volumes:delete',
+  'docker:networks:view',
+  'docker:networks:create',
+  'docker:networks:delete',
+  'docker:networks:edit',
+] as const;
+
 function hasBroadDockerNodeListAccess(scopes: string[]) {
   return BROAD_DOCKER_VIEW_SCOPES.some((scope) => hasScope(scopes, scope));
 }
 
+function getDockerResourceScopedNodeIds(scopes: string[]) {
+  const ids = new Set<string>();
+  for (const scope of RESOURCE_SCOPED_DOCKER_NODE_SCOPES) {
+    for (const id of getResourceScopedIds(scopes, scope)) ids.add(id);
+  }
+  return [...ids];
+}
+
 function compactDockerNodeForDockerAccess(node: Record<string, unknown>) {
   const capabilities = node.capabilities as Record<string, unknown> | null | undefined;
+  const health = node.lastHealthReport as Record<string, unknown> | null | undefined;
   return {
     id: node.id,
     type: node.type,
@@ -64,9 +96,17 @@ function compactDockerNodeForDockerAccess(node: Record<string, unknown>) {
     daemonVersion: node.daemonVersion,
     osInfo: null,
     configVersionHash: null,
-    capabilities: capabilities?.versionMismatch ? { versionMismatch: true } : {},
+    capabilities: {
+      ...(capabilities?.versionMismatch ? { versionMismatch: true } : {}),
+      ...(capabilities?.cpuCores !== undefined ? { cpuCores: capabilities.cpuCores } : {}),
+    },
     lastSeenAt: node.lastSeenAt,
-    lastHealthReport: null,
+    lastHealthReport: health
+      ? {
+          systemMemoryTotalBytes: health.systemMemoryTotalBytes,
+          swapTotalBytes: health.swapTotalBytes,
+        }
+      : null,
     lastStatsReport: null,
     metadata: {},
     isConnected: node.isConnected,
@@ -124,15 +164,21 @@ nodesRoutes.openapi(listNodesRoute, async (c) => {
   const scopes = c.get('effectiveScopes') || [];
   const hasNodeDetails = hasScope(scopes, 'nodes:details');
   const allowedNodeIds = getResourceScopedIds(scopes, 'nodes:details');
-  const canListDockerNodes = query.type === 'docker' && hasBroadDockerNodeListAccess(scopes);
+  const dockerScopedNodeIds = query.type === 'docker' ? getDockerResourceScopedNodeIds(scopes) : [];
+  const canListAllDockerNodes = query.type === 'docker' && hasBroadDockerNodeListAccess(scopes);
+  const canListDockerNodes = canListAllDockerNodes || dockerScopedNodeIds.length > 0;
   if (!hasNodeDetails && allowedNodeIds.length === 0 && !canListDockerNodes) {
     throw new AppError(403, 'FORBIDDEN', 'Missing required node access scope');
   }
+  const scopedNodeIds =
+    query.type === 'docker' && !canListAllDockerNodes
+      ? [...new Set([...allowedNodeIds, ...dockerScopedNodeIds])]
+      : allowedNodeIds;
   const result = await service.list(
     query,
-    hasNodeDetails || canListDockerNodes ? undefined : { allowedIds: allowedNodeIds }
+    hasNodeDetails || canListAllDockerNodes ? undefined : { allowedIds: scopedNodeIds }
   );
-  if (canListDockerNodes && !hasNodeDetails) {
+  if (query.type === 'docker' && canListDockerNodes && !hasNodeDetails) {
     return c.json({ ...result, data: result.data.map((node) => compactDockerNodeForDockerAccess(node as any)) });
   }
   return c.json(result);

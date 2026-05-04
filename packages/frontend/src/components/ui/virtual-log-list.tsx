@@ -1,11 +1,13 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { type ReactNode, useEffect, useLayoutEffect, useRef } from "react";
+import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef } from "react";
 
 interface VirtualLogListProps<T> {
   lines: T[];
   /** Render one line into a row's content. Wrap your own per-row styling here. */
   renderLine: (line: T, index: number) => ReactNode;
   keyFn: (line: T, index: number) => string | number;
+  /** Increment when older history has been prepended to lines. */
+  prependVersion?: number;
   /** Estimated row height in pixels (default 18 — matches `text-xs leading-5`) */
   estimateLineHeight?: number;
   /** Called when the user scrolls near the top — page in older history. */
@@ -25,6 +27,7 @@ export function VirtualLogList<T>({
   lines,
   renderLine,
   keyFn,
+  prependVersion = 0,
   estimateLineHeight = 18,
   onLoadMore,
   hasMore = false,
@@ -33,14 +36,18 @@ export function VirtualLogList<T>({
   className,
 }: VirtualLogListProps<T>) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const rowsRef = useRef<HTMLDivElement>(null);
   const isAtBottomRef = useRef(true);
   /**
    * Snapshot taken before lines change so we can preserve the user's
    * apparent scroll position when older history is prepended.
    */
-  const prependFix = useRef<{ prevHeight: number; prevTop: number; prevCount: number } | null>(
-    null
-  );
+  const prependFix = useRef<{ prevHeight: number; prevTop: number } | null>(null);
+
+  const getRowsHeight = useCallback(() => {
+    const rowsHeight = rowsRef.current?.offsetHeight ?? 0;
+    return rowsHeight > 0 ? rowsHeight : (scrollRef.current?.scrollHeight ?? 0);
+  }, []);
 
   const virtualizer = useVirtualizer({
     count: lines.length,
@@ -63,9 +70,8 @@ export function VirtualLogList<T>({
         if (items.length > 0 && items[0].index < TOP_LOAD_THRESHOLD) {
           // Snapshot scroll geometry so we can compensate after the prepend
           prependFix.current = {
-            prevHeight: el.scrollHeight,
+            prevHeight: getRowsHeight(),
             prevTop: el.scrollTop,
-            prevCount: lines.length,
           };
           onLoadMore();
         }
@@ -73,27 +79,35 @@ export function VirtualLogList<T>({
     };
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => el.removeEventListener("scroll", onScroll);
-  }, [hasMore, loadingMore, onLoadMore, virtualizer, lines.length]);
+  }, [getRowsHeight, hasMore, loadingMore, onLoadMore, virtualizer]);
 
   // Auto-follow: when new lines append AND we were at the bottom, stick.
   // When older lines prepend, restore the user's apparent scroll position.
   const prevLineCountRef = useRef(lines.length);
+  const prevPrependVersionRef = useRef(prependVersion);
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     const prev = prevLineCountRef.current;
     const cur = lines.length;
     prevLineCountRef.current = cur;
+    const didPrepend = prependVersion !== prevPrependVersionRef.current;
+    prevPrependVersionRef.current = prependVersion;
 
-    if (cur > prev && prependFix.current && prependFix.current.prevCount === prev) {
+    if (didPrepend && prependFix.current) {
       // History was prepended — keep the viewport visually pinned where it was
       const fix = prependFix.current;
       prependFix.current = null;
-      requestAnimationFrame(() => {
-        const delta = el.scrollHeight - fix.prevHeight;
-        el.scrollTop = fix.prevTop + delta;
-      });
+      const delta = getRowsHeight() - fix.prevHeight;
+      el.scrollTop = fix.prevTop + delta;
       return;
+    }
+
+    if (!didPrepend && prependFix.current) {
+      prependFix.current = {
+        prevHeight: getRowsHeight(),
+        prevTop: el.scrollTop,
+      };
     }
 
     if (cur > prev && isAtBottomRef.current && cur > 0) {
@@ -115,7 +129,7 @@ export function VirtualLogList<T>({
     if (cur === 0) {
       isAtBottomRef.current = true;
     }
-  }, [lines.length, virtualizer]);
+  }, [getRowsHeight, lines.length, prependVersion, virtualizer]);
 
   if (lines.length === 0 && emptyState) {
     return (
@@ -133,7 +147,7 @@ export function VirtualLogList<T>({
       {loadingMore && hasMore && (
         <div className="text-center text-xs text-muted-foreground py-2">Loading more…</div>
       )}
-      <div style={{ height: totalSize, position: "relative" }}>
+      <div ref={rowsRef} style={{ height: totalSize, position: "relative" }}>
         {virtualItems.map((vi) => {
           const line = lines[vi.index];
           if (line === undefined) return null;
