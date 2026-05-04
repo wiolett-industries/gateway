@@ -73,11 +73,8 @@ server {
     listen [::]:80;
 {{/unless}}
 {{#if sslEnabled}}
-    listen 443 ssl;
-    listen [::]:443 ssl;
-{{#if http2Support}}
-    http2 on;
-{{/if}}
+    listen 443 ssl{{#if http2Support}} http2{{/if}};
+    listen [::]:443 ssl{{#if http2Support}} http2{{/if}};
 {{/if}}
     server_name {{serverNames}};
 
@@ -186,11 +183,8 @@ const BUILTIN_REDIRECT_TEMPLATE = `server {
 {{#if sslEnabled}}
 
 server {
-    listen 443 ssl;
-    listen [::]:443 ssl;
-{{#if http2Support}}
-    http2 on;
-{{/if}}
+    listen 443 ssl{{#if http2Support}} http2{{/if}};
+    listen [::]:443 ssl{{#if http2Support}} http2{{/if}};
     server_name {{serverNames}};
 
 {{#if sslCertPath}}
@@ -238,11 +232,8 @@ const BUILTIN_DEAD_TEMPLATE = `server {
 {{#if sslEnabled}}
 
 server {
-    listen 443 ssl;
-    listen [::]:443 ssl;
-{{#if http2Support}}
-    http2 on;
-{{/if}}
+    listen 443 ssl{{#if http2Support}} http2{{/if}};
+    listen [::]:443 ssl{{#if http2Support}} http2{{/if}};
     server_name {{serverNames}};
 
 {{#if sslCertPath}}

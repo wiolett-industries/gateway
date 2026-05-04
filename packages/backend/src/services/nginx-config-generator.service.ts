@@ -143,11 +143,8 @@ export class NginxConfigGenerator {
     }
 
     if (host.sslEnabled) {
-      lines.push('    listen 443 ssl;');
-      lines.push('    listen [::]:443 ssl;');
-      if (host.http2Support) {
-        lines.push('    http2 on;');
-      }
+      lines.push(`    listen 443 ssl${host.http2Support ? ' http2' : ''};`);
+      lines.push(`    listen [::]:443 ssl${host.http2Support ? ' http2' : ''};`);
     }
 
     lines.push(`    server_name ${serverNames};`);
@@ -322,11 +319,8 @@ export class NginxConfigGenerator {
     if (host.sslEnabled) {
       lines.push('');
       lines.push('server {');
-      lines.push('    listen 443 ssl;');
-      lines.push('    listen [::]:443 ssl;');
-      if (host.http2Support) {
-        lines.push('    http2 on;');
-      }
+      lines.push(`    listen 443 ssl${host.http2Support ? ' http2' : ''};`);
+      lines.push(`    listen [::]:443 ssl${host.http2Support ? ' http2' : ''};`);
       lines.push(`    server_name ${serverNames};`);
       lines.push('');
 
@@ -375,11 +369,8 @@ export class NginxConfigGenerator {
     if (host.sslEnabled) {
       lines.push('');
       lines.push('server {');
-      lines.push('    listen 443 ssl;');
-      lines.push('    listen [::]:443 ssl;');
-      if (host.http2Support) {
-        lines.push('    http2 on;');
-      }
+      lines.push(`    listen 443 ssl${host.http2Support ? ' http2' : ''};`);
+      lines.push(`    listen [::]:443 ssl${host.http2Support ? ' http2' : ''};`);
       lines.push(`    server_name ${serverNames};`);
       lines.push('');
       if (host.sslCertPath) lines.push(`    ssl_certificate ${host.sslCertPath};`);
