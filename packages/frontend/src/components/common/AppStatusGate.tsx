@@ -1,4 +1,4 @@
-import { AlertTriangle, RotateCw, ServerCrash } from "lucide-react";
+import { AlertTriangle, RotateCw, ServerCrash, XCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useAppStatusStore } from "@/stores/app-status";
@@ -123,6 +123,43 @@ function GatewayUpdatingScreen() {
   );
 }
 
+function GatewayUpdateErrorScreen() {
+  const error = useAppStatusStore((s) => s.gatewayUpdateError);
+  const clearGatewayUpdateError = useAppStatusStore((s) => s.clearGatewayUpdateError);
+
+  if (!error) return null;
+
+  return (
+    <div className="fixed inset-0 z-[205] flex min-h-screen items-center justify-center bg-background px-4">
+      <div className="w-full max-w-sm space-y-8 text-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="flex h-12 w-12 items-center justify-center border border-destructive/30 bg-destructive/5 text-destructive">
+            <XCircle className="h-6 w-6" />
+          </div>
+          <h2 className="text-lg font-semibold text-foreground">Update Failed</h2>
+          <p className="text-sm text-muted-foreground">
+            {error.targetVersion
+              ? `Gateway could not start the update to ${error.targetVersion}.`
+              : "Gateway could not start the update."}
+          </p>
+          <p className="border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+            {error.message}
+          </p>
+        </div>
+
+        <div className="space-y-3">
+          <Button onClick={clearGatewayUpdateError} className="w-full">
+            Return to Gateway
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            No restart was started. You can retry the update after resolving the error.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function RateLimitScreen() {
   const rateLimitedUntil = useAppStatusStore((s) => s.rateLimitedUntil);
   const clearRateLimit = useAppStatusStore((s) => s.clearRateLimit);
@@ -172,6 +209,7 @@ function RateLimitScreen() {
 export function AppStatusGate() {
   const maintenanceActive = useAppStatusStore((s) => s.maintenanceActive);
   const gatewayUpdatingActive = useAppStatusStore((s) => s.gatewayUpdatingActive);
+  const gatewayUpdateError = useAppStatusStore((s) => s.gatewayUpdateError);
   const rateLimitedUntil = useAppStatusStore((s) => s.rateLimitedUntil);
   const [showMaintenanceScreen, setShowMaintenanceScreen] = useState(false);
 
@@ -189,6 +227,7 @@ export function AppStatusGate() {
   }, [maintenanceActive]);
 
   if (rateLimitedUntil != null) return <RateLimitScreen />;
+  if (gatewayUpdateError) return <GatewayUpdateErrorScreen />;
   if (gatewayUpdatingActive) return <GatewayUpdatingScreen />;
   if (showMaintenanceScreen) return <MaintenanceScreen />;
   return null;

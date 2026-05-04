@@ -20,6 +20,7 @@ export function resetTestStores() {
     maintenanceActive: false,
     gatewayUpdatingActive: false,
     gatewayUpdatingTargetVersion: null,
+    gatewayUpdateError: null,
     rateLimitedUntil: null,
   });
 

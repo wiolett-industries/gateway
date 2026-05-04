@@ -1,6 +1,7 @@
 const invalidateCache = vi.fn();
 const invalidateNodes = vi.fn();
 const invalidatePinnedNodes = vi.fn();
+const removePinnedDatabase = vi.fn();
 
 vi.mock("@/services/api", () => ({
   api: {
@@ -17,6 +18,12 @@ vi.mock("@/stores/nodes", () => ({
 vi.mock("@/stores/pinned-nodes", () => ({
   usePinnedNodesStore: {
     getState: () => ({ invalidate: invalidatePinnedNodes }),
+  },
+}));
+
+vi.mock("@/stores/pinned-databases", () => ({
+  usePinnedDatabasesStore: {
+    getState: () => ({ removePin: removePinnedDatabase }),
   },
 }));
 
@@ -62,6 +69,7 @@ describe("eventStream", () => {
     invalidateCache.mockClear();
     invalidateNodes.mockClear();
     invalidatePinnedNodes.mockClear();
+    removePinnedDatabase.mockClear();
     MockWebSocket.instances = [];
     vi.stubGlobal("WebSocket", MockWebSocket);
   });
@@ -142,6 +150,28 @@ describe("eventStream", () => {
     expect(invalidatePinnedNodes).toHaveBeenCalledTimes(1);
     expect(handler).toHaveBeenCalledTimes(1);
     expect(handler).toHaveBeenCalledWith({ id: "node-1", status: "online" });
+
+    unsubscribe();
+  });
+
+  it("removes deleted database pins from database.changed events", async () => {
+    const { eventStream } = await import("@/services/event-stream");
+    const handler = vi.fn();
+
+    const unsubscribe = eventStream.subscribe("database.changed", handler);
+    eventStream.start();
+    vi.runAllTimers();
+
+    const socket = MockWebSocket.instances[0];
+    expect(socket).toBeDefined();
+    socket.open();
+
+    const payload = { id: "db-1", action: "deleted" };
+    socket.emit({ type: "event", channel: "database.changed", payload });
+
+    expect(invalidateCache).toHaveBeenCalledWith("req:/api/databases");
+    expect(removePinnedDatabase).toHaveBeenCalledWith("db-1");
+    expect(handler).toHaveBeenCalledWith(payload);
 
     unsubscribe();
   });

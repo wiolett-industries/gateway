@@ -45,6 +45,7 @@ import { useRealtime } from "@/hooks/use-realtime";
 import { deriveAllowedResourceIdsByScope } from "@/lib/scope-utils";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
+import { ApiRequestError } from "@/services/api-base";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
 import { usePinnedContainersStore } from "@/stores/pinned-containers";
@@ -240,11 +241,9 @@ export function SidebarContent({
     api
       .listNodes({ limit: 100 })
       .then((r) => {
-        const allIds = r.data.map((n) => n.id);
         setPinnedNodes(
           r.data.filter((n) => sidebarPinnedIds.includes(n.id) && canViewNodeDetails(n.id))
         );
-        usePinnedNodesStore.getState().removeOrphans(allIds);
       })
       .catch(() => {});
   }, [canViewNodeDetails, sidebarPinnedIds]);
@@ -267,13 +266,11 @@ export function SidebarContent({
     api
       .listProxyHosts({ limit: 100 })
       .then((r) => {
-        const allIds = (r.data ?? []).map((p) => p.id);
         setPinnedProxies(
           (r.data ?? []).filter(
             (p) => sidebarPinnedProxyIds.includes(p.id) && canViewProxyDetails(p.id)
           )
         );
-        usePinnedProxiesStore.getState().removeOrphans(allIds);
       })
       .catch(() => {});
   }, [canViewProxyDetails, sidebarPinnedProxyIds, pinnedProxyRefreshTick]);
@@ -285,8 +282,6 @@ export function SidebarContent({
       .listDatabases({ limit: 200 })
       .then((r) => {
         const all = r.data ?? [];
-        const allIds = all.map((db) => db.id);
-        usePinnedDatabasesStore.getState().removeOrphans(allIds);
         for (const db of all) {
           if (!sidebarPinnedDatabaseIds.includes(db.id)) continue;
           if (!canViewDatabaseDetails(db.id)) continue;
@@ -313,27 +308,66 @@ export function SidebarContent({
     sidebarPinnedDatabaseIds,
   ]);
 
-  // Clean up orphaned pinned containers on mount
+  useEffect(() => {
+    if (sidebarPinnedDatabaseIds.length === 0) return;
+    let cancelled = false;
+    for (const databaseId of sidebarPinnedDatabaseIds) {
+      if (!canViewDatabaseDetails(databaseId)) continue;
+      api
+        .getDatabase(databaseId)
+        .then((db) => {
+          if (cancelled) return;
+          const existing = pinnedDatabaseMeta[db.id];
+          if (
+            existing?.name === db.name &&
+            existing.type === db.type &&
+            existing.healthStatus === db.healthStatus
+          ) {
+            return;
+          }
+          usePinnedDatabasesStore.getState().updateMeta(db.id, {
+            name: db.name,
+            type: db.type,
+            healthStatus: db.healthStatus,
+          });
+        })
+        .catch((error) => {
+          if (cancelled) return;
+          if (error instanceof ApiRequestError && error.status === 404) {
+            usePinnedDatabasesStore.getState().removePin(databaseId);
+          }
+        });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [canViewDatabaseDetails, pinnedDatabaseMeta, sidebarPinnedDatabaseIds]);
+
   useEffect(() => {
     if (sidebarPinnedContainerIds.length === 0) return;
-    const entries = sidebarPinnedContainerIds
-      .map((cid) => ({ cid, meta: pinnedContainerMeta[cid] }))
-      .filter((e) => e.meta);
-    const nodeIds = [...new Set(entries.map((e) => e.meta!.nodeId))];
-    if (nodeIds.length === 0) return;
-
-    Promise.all(nodeIds.map((nid) => api.listDockerContainers(nid).catch(() => [])))
-      .then((results) => {
-        if (
-          results.some((containers) => containers.some((container) => container._listTruncated))
-        ) {
-          return;
+    let cancelled = false;
+    for (const containerId of sidebarPinnedContainerIds) {
+      const meta = pinnedContainerMeta[containerId];
+      if (!meta || !canViewContainerDetails(meta.nodeId)) continue;
+      const request =
+        meta.kind === "deployment"
+          ? api.getDockerDeployment(meta.nodeId, containerId)
+          : api.inspectContainer(meta.nodeId, containerId);
+      request.catch((error) => {
+        if (cancelled) return;
+        if (error instanceof ApiRequestError && error.status === 404) {
+          usePinnedContainersStore.getState().removePin(containerId);
         }
-        const validIds = results.flat().map((c) => c.id);
-        usePinnedContainersStore.getState().removeOrphans(validIds);
-      })
-      .catch(() => {});
-  }, [sidebarPinnedContainerIds, pinnedContainerMeta]);
+      });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [canViewContainerDetails, pinnedContainerMeta, sidebarPinnedContainerIds]);
+
+  useRealtime(sidebarPinnedDatabaseIds.length > 0 ? "database.changed" : null, () => {});
+  useRealtime(sidebarPinnedContainerIds.length > 0 ? "docker.container.changed" : null, () => {});
+  useRealtime(sidebarPinnedContainerIds.length > 0 ? "docker.deployment.changed" : null, () => {});
 
   const handleLogout = async () => {
     try {

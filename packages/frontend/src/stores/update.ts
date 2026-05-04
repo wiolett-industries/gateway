@@ -68,8 +68,13 @@ export const useUpdateStore = create<UpdateState>()((set, get) => ({
           return s;
         });
       }, 300_000);
-    } catch {
-      useAppStatusStore.getState().clearGatewayUpdating();
+    } catch (error) {
+      useAppStatusStore
+        .getState()
+        .setGatewayUpdateError(
+          error instanceof Error ? error.message : "Gateway update could not be started",
+          version
+        );
       set({ isUpdating: false });
     }
   },

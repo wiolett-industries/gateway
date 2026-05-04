@@ -1,6 +1,7 @@
 import { api } from "@/services/api";
 import { useNodesStore } from "@/stores/nodes";
 import { usePinnedContainersStore } from "@/stores/pinned-containers";
+import { usePinnedDatabasesStore } from "@/stores/pinned-databases";
 import { usePinnedNodesStore } from "@/stores/pinned-nodes";
 import { usePinnedProxiesStore } from "@/stores/pinned-proxies";
 
@@ -196,6 +197,10 @@ class EventStream {
           api.invalidateCache("req:/api/notifications/webhooks");
         } else if (msg.channel === "database.changed") {
           api.invalidateCache("req:/api/databases");
+          const payload = msg.payload as { action?: string; id?: string } | undefined;
+          if (payload?.action === "deleted" && payload.id) {
+            usePinnedDatabasesStore.getState().removePin(payload.id);
+          }
         } else if (msg.channel.startsWith("docker.")) {
           api.invalidateCache("req:/api/docker");
           if (msg.channel === "docker.container.changed") {

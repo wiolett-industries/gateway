@@ -105,7 +105,6 @@ export function Dashboard() {
         const nodes = r.data ?? [];
         api.setCache(nodesCacheKey, nodes);
         setNodesList(nodes);
-        usePinnedNodesStore.getState().removeOrphans(nodes.map((n) => n.id));
       })
       .catch(() => {})
       .finally(() => setNodesLoading(false));
@@ -197,7 +196,6 @@ export function Dashboard() {
         );
         api.setCache(pinnedProxiesCacheKey, visiblePinned);
         setPinnedProxyHosts(visiblePinned);
-        usePinnedProxiesStore.getState().removeOrphans(hosts.map((p) => p.id));
       })
       .catch(() => {});
   }, [canViewProxyDetails, dashboardPinnedProxyIds, hasScopedAccess, pinnedProxiesCacheKey]);

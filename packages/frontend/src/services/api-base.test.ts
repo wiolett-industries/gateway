@@ -145,13 +145,22 @@ describe("ApiClientBase", () => {
     expect(headers.has("Authorization")).toBe(false);
   });
 
-  it("does not enter maintenance mode for ordinary 5xx API responses", async () => {
+  it("preserves JSON error details and does not enter maintenance mode for ordinary 5xx API responses", async () => {
     const client = new TestApiClient();
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(null, { status: 503 }));
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          code: "UNTRUSTED_UPDATE_ARTIFACT",
+          message: "Gateway update artifact is not trusted",
+        }),
+        { status: 502, headers: { "Content-Type": "application/json" } }
+      )
+    );
 
     await expect(client.getThing()).rejects.toMatchObject({
-      status: 503,
-      code: "SERVICE_UNAVAILABLE",
+      message: "Gateway update artifact is not trusted",
+      status: 502,
+      code: "UNTRUSTED_UPDATE_ARTIFACT",
     } satisfies Partial<ApiRequestError>);
     expect(useAppStatusStore.getState().maintenanceActive).toBe(false);
   });

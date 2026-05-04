@@ -5,6 +5,7 @@ import type { User } from "@/types";
 type AuthContextResetCallback = () => void;
 
 let authContextResetCallback: AuthContextResetCallback | null = null;
+export const AUTH_CONTEXT_STORAGE_KEY = "gateway-auth-context-key";
 
 export function registerAuthContextReset(callback: AuthContextResetCallback) {
   authContextResetCallback = callback;
@@ -13,6 +14,30 @@ export function registerAuthContextReset(callback: AuthContextResetCallback) {
 function authContextKey(user: User | null): string {
   if (!user) return "anonymous";
   return `${user.id}:${[...user.scopes].sort().join(",")}:${user.isBlocked ? "blocked" : "active"}`;
+}
+
+function getStoredAuthContextKey(): string | null {
+  try {
+    return window.localStorage.getItem(AUTH_CONTEXT_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function setStoredAuthContextKey(key: string): void {
+  try {
+    window.localStorage.setItem(AUTH_CONTEXT_STORAGE_KEY, key);
+  } catch {
+    // Storage may be unavailable in private or embedded contexts.
+  }
+}
+
+function clearStoredAuthContextKey(): void {
+  try {
+    window.localStorage.removeItem(AUTH_CONTEXT_STORAGE_KEY);
+  } catch {
+    // Storage may be unavailable in private or embedded contexts.
+  }
 }
 
 interface AuthState {
@@ -35,8 +60,19 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   isLoading: true,
 
   setUser: (user) => {
-    if (authContextKey(get().user) !== authContextKey(user)) {
-      authContextResetCallback?.();
+    const currentUser = get().user;
+    if (!user) {
+      if (currentUser) {
+        authContextResetCallback?.();
+      }
+      clearStoredAuthContextKey();
+    } else {
+      const nextKey = authContextKey(user);
+      const currentKey = currentUser ? authContextKey(currentUser) : getStoredAuthContextKey();
+      if (currentKey && currentKey !== nextKey) {
+        authContextResetCallback?.();
+      }
+      setStoredAuthContextKey(nextKey);
     }
     set({
       user,
@@ -47,9 +83,13 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   setLoading: (isLoading) => set({ isLoading }),
 
   login: (user) => {
-    if (authContextKey(get().user) !== authContextKey(user)) {
+    const currentUser = get().user;
+    const nextKey = authContextKey(user);
+    const currentKey = currentUser ? authContextKey(currentUser) : getStoredAuthContextKey();
+    if (currentKey && currentKey !== nextKey) {
       authContextResetCallback?.();
     }
+    setStoredAuthContextKey(nextKey);
     set({
       user,
       isAuthenticated: true,
@@ -58,9 +98,11 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   },
 
   logout: () => {
-    if (get().user || get().isAuthenticated) {
+    const hasStoredContext = !!getStoredAuthContextKey();
+    if (get().user || get().isAuthenticated || hasStoredContext) {
       authContextResetCallback?.();
     }
+    clearStoredAuthContextKey();
     set({
       user: null,
       isAuthenticated: false,

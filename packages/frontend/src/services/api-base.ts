@@ -213,9 +213,17 @@ export class ApiClientBase {
 
     if (!response.ok) {
       if (response.status >= 500) {
-        throw new ApiRequestError("Service unavailable", {
-          status: response.status,
+        const parsedError = await response.json().catch(() => ({
           code: "SERVICE_UNAVAILABLE",
+          message: "Service unavailable",
+        }));
+        const error: ApiError =
+          parsedError && typeof parsedError === "object"
+            ? (parsedError as ApiError)
+            : { code: "SERVICE_UNAVAILABLE", message: "Service unavailable" };
+        throw new ApiRequestError(error.message || "Service unavailable", {
+          status: response.status,
+          code: error.code || "SERVICE_UNAVAILABLE",
         });
       }
 
