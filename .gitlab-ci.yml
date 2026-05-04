@@ -197,8 +197,8 @@ build:
     - docker push $IMAGE:$CI_COMMIT_TAG
     - echo "Pushed $IMAGE:$CI_COMMIT_TAG"
     - |
-      DIGEST=$(docker buildx imagetools inspect "$IMAGE:$CI_COMMIT_TAG" --format '{{.Manifest.Digest}}')
-      test -n "$DIGEST" || (echo "Could not resolve pushed gateway image digest" && exit 1)
+      DIGEST=$(docker buildx imagetools inspect "$IMAGE:$CI_COMMIT_TAG" | awk '/^Digest:[[:space:]]*sha256:/ {print $2; exit}')
+      echo "$DIGEST" | grep -Eq '^sha256:[a-f0-9]{64}$' || (echo "Could not resolve valid pushed gateway image digest" && exit 1)
       printf '%s\n' "$DIGEST" > gateway-image.digest
   artifacts:
     paths:
