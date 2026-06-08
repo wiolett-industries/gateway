@@ -3,6 +3,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { container } from '@/container.js';
 import { AIService } from '@/modules/ai/ai.service.js';
 import { DockerDeploymentService } from '@/modules/docker/docker-deployment.service.js';
+import { DockerRegistryService } from '@/modules/docker/docker-registry.service.js';
+import { LoggingEnvironmentService } from '@/modules/logging/logging-environment.service.js';
+import { LoggingSchemaService } from '@/modules/logging/logging-schema.service.js';
 import { ProxyService } from '@/modules/proxy/proxy.service.js';
 import type { User } from '@/types.js';
 import { registerMcpResources } from './mcp-resources.js';
@@ -24,6 +27,7 @@ function createService({
   proxyService = {},
   dockerService = {},
   databaseService = {},
+  templatesService = {},
   caService = {},
   auditService,
 }: {
@@ -31,6 +35,7 @@ function createService({
   proxyService?: Record<string, ReturnType<typeof vi.fn>>;
   dockerService?: Record<string, ReturnType<typeof vi.fn>>;
   databaseService?: Record<string, ReturnType<typeof vi.fn>>;
+  templatesService?: Record<string, ReturnType<typeof vi.fn>>;
   caService?: Record<string, ReturnType<typeof vi.fn>>;
   auditService: { log: ReturnType<typeof vi.fn> };
 }) {
@@ -38,7 +43,7 @@ function createService({
     {} as never,
     caService as never,
     {} as never,
-    {} as never,
+    templatesService as never,
     proxyService as never,
     {} as never,
     {} as never,
@@ -129,6 +134,58 @@ describe('AIService MCP audit behavior', () => {
 
     expect(result.error).toBeUndefined();
     expect(auditService.log).not.toHaveBeenCalled();
+  });
+
+  it('passes explicit Docker registry selection through MCP image pulls', async () => {
+    const registryId = '22222222-2222-4222-8222-222222222222';
+    const auditService = { log: vi.fn().mockResolvedValue(undefined) };
+    const dockerService = {
+      pullImage: vi.fn().mockResolvedValue({ taskId: 'task-1' }),
+    };
+    const registryService = {
+      resolveAuthForImagePull: vi.fn().mockResolvedValue({
+        registryId,
+        url: 'registry.example.com',
+        authJson: 'encoded-auth',
+      }),
+    };
+    container.registerInstance(DockerRegistryService, registryService as never);
+    const service = createService({ nodesService: {}, dockerService, auditService });
+
+    const result = await service.executeTool(
+      USER,
+      'pull_docker_image',
+      { nodeId: 'node-1', imageRef: 'team/app:v1', registryId },
+      { source: 'mcp', scopes: ['docker:images:pull:node-1'] }
+    );
+
+    expect(result.error).toBeUndefined();
+    expect(registryService.resolveAuthForImagePull).toHaveBeenCalledWith('node-1', 'team/app:v1', registryId);
+    expect(dockerService.pullImage).toHaveBeenCalledWith(
+      'node-1',
+      'registry.example.com/team/app:v1',
+      'encoded-auth',
+      USER.id,
+      registryId
+    );
+  });
+
+  it('enforces operation-specific scopes inside aggregated MCP tools', async () => {
+    const auditService = { log: vi.fn().mockResolvedValue(undefined) };
+    const dockerService = {
+      updateContainerEnv: vi.fn(),
+    };
+    const service = createService({ nodesService: {}, dockerService, auditService });
+
+    const result = await service.executeTool(
+      USER,
+      'manage_docker_container_config',
+      { operation: 'update_env', nodeId: 'node-1', containerId: 'container-1', env: { FOO: 'bar' } },
+      { source: 'mcp', scopes: ['docker:containers:view:node-1'] }
+    );
+
+    expect(result.error).toContain('PERMISSION_DENIED');
+    expect(dockerService.updateContainerEnv).not.toHaveBeenCalled();
   });
 
   it('returns compact node list payloads without bulky health report blobs', async () => {
@@ -808,6 +865,149 @@ describe('AIService MCP audit behavior', () => {
     expect(databaseService.list).not.toHaveBeenCalled();
   });
 
+  it('requires admin query scope for Postgres schema changes through aggregate tools', async () => {
+    const auditService = { log: vi.fn().mockResolvedValue(undefined) };
+    const databaseService = {
+      addPostgresColumn: vi.fn().mockResolvedValue({ ok: true }),
+    };
+    const service = createService({ nodesService: {}, databaseService, auditService });
+
+    const denied = await service.executeTool(
+      { ...USER, scopes: ['databases:view:db-1', 'databases:query:write:db-1'] },
+      'manage_postgres_data',
+      {
+        operation: 'add_column',
+        databaseId: 'db-1',
+        schema: 'public',
+        table: 'users',
+        column: 'flags',
+        dataType: 'jsonb',
+      },
+      {
+        source: 'mcp',
+        scopes: ['databases:view:db-1', 'databases:query:write:db-1'],
+        tokenId: 'token-1',
+        tokenPrefix: 'gwo_abc1234',
+      }
+    );
+
+    expect(denied.error).toContain('PERMISSION_DENIED');
+    expect(databaseService.addPostgresColumn).not.toHaveBeenCalled();
+
+    const allowed = await service.executeTool(
+      { ...USER, scopes: ['databases:view:db-1', 'databases:query:admin:db-1'] },
+      'manage_postgres_data',
+      {
+        operation: 'add_column',
+        databaseId: 'db-1',
+        schema: 'public',
+        table: 'users',
+        column: 'flags',
+        dataType: 'jsonb',
+      },
+      {
+        source: 'mcp',
+        scopes: ['databases:view:db-1', 'databases:query:admin:db-1'],
+        tokenId: 'token-1',
+        tokenPrefix: 'gwo_abc1234',
+      }
+    );
+
+    expect(allowed.error).toBeUndefined();
+    expect(databaseService.addPostgresColumn).toHaveBeenCalledWith(
+      'db-1',
+      'public',
+      'users',
+      'flags',
+      'jsonb',
+      USER.id
+    );
+  });
+
+  it('filters find_resource logging matches to delegated resource-scoped grants', async () => {
+    const auditService = { log: vi.fn().mockResolvedValue(undefined) };
+    const envList = vi.fn().mockResolvedValue([{ id: 'env-1', name: 'prod logs', slug: 'prod' }]);
+    const schemaList = vi.fn().mockResolvedValue([
+      { id: 'schema-1', name: 'prod schema', slug: 'prod-schema' },
+      { id: 'schema-2', name: 'prod private schema', slug: 'prod-private' },
+    ]);
+    container.registerInstance(LoggingEnvironmentService, { list: envList } as unknown as LoggingEnvironmentService);
+    container.registerInstance(LoggingSchemaService, { list: schemaList } as unknown as LoggingSchemaService);
+    const service = createService({ nodesService: {}, auditService });
+
+    const result = await service.executeTool(
+      { ...USER, scopes: ['logs:environments:view:env-1', 'logs:schemas:view:schema-1'] },
+      'find_resource',
+      { query: 'prod', types: ['logging_environment', 'logging_schema'] },
+      {
+        source: 'mcp',
+        scopes: ['logs:environments:view:env-1', 'logs:schemas:view:schema-1'],
+        tokenId: 'token-1',
+        tokenPrefix: 'gwo_abc1234',
+      }
+    );
+
+    expect(result.error).toBeUndefined();
+    expect(envList).toHaveBeenCalledWith({ search: 'prod', allowedIds: ['env-1'] });
+    expect(schemaList).toHaveBeenCalledWith({ search: 'prod' });
+    expect((result.result as { results: Array<{ id: string }> }).results).toEqual([
+      {
+        type: 'logging_environment',
+        id: 'env-1',
+        name: 'prod logs',
+        nodeId: undefined,
+        summary: { id: 'env-1', name: 'prod logs', slug: 'prod' },
+      },
+      {
+        type: 'logging_schema',
+        id: 'schema-1',
+        name: 'prod schema',
+        nodeId: undefined,
+        summary: { id: 'schema-1', name: 'prod schema', slug: 'prod-schema' },
+      },
+    ]);
+  });
+
+  it('filters direct manage_logging list operations to delegated resource-scoped grants', async () => {
+    const auditService = { log: vi.fn().mockResolvedValue(undefined) };
+    const envList = vi.fn().mockResolvedValue([{ id: 'env-1', name: 'prod logs', slug: 'prod' }]);
+    const schemaList = vi.fn().mockResolvedValue([
+      { id: 'schema-1', name: 'prod schema', slug: 'prod-schema' },
+      { id: 'schema-2', name: 'prod private schema', slug: 'prod-private' },
+    ]);
+    container.registerInstance(LoggingEnvironmentService, { list: envList } as unknown as LoggingEnvironmentService);
+    container.registerInstance(LoggingSchemaService, { list: schemaList } as unknown as LoggingSchemaService);
+    const service = createService({ nodesService: {}, auditService });
+
+    const environments = await service.executeTool(
+      { ...USER, scopes: ['logs:environments:view:env-1'] },
+      'manage_logging',
+      { resource: 'environment', operation: 'list', search: 'prod' },
+      {
+        source: 'mcp',
+        scopes: ['logs:environments:view:env-1'],
+        tokenId: 'token-1',
+        tokenPrefix: 'gwo_abc1234',
+      }
+    );
+    const schemas = await service.executeTool(
+      { ...USER, scopes: ['logs:schemas:view:schema-1'] },
+      'manage_logging',
+      { resource: 'schema', operation: 'list', search: 'prod' },
+      {
+        source: 'mcp',
+        scopes: ['logs:schemas:view:schema-1'],
+        tokenId: 'token-1',
+        tokenPrefix: 'gwo_abc1234',
+      }
+    );
+
+    expect(environments.error).toBeUndefined();
+    expect(envList).toHaveBeenCalledWith({ search: 'prod', allowedIds: ['env-1'] });
+    expect(schemas.error).toBeUndefined();
+    expect(schemas.result).toEqual([{ id: 'schema-1', name: 'prod schema', slug: 'prod-schema' }]);
+  });
+
   it('does not authorize proxy host creation from a node-scoped proxy:create grant', async () => {
     const auditService = { log: vi.fn().mockResolvedValue(undefined) };
     const proxyService = {
@@ -880,6 +1080,44 @@ describe('AIService MCP audit behavior', () => {
     const result = await service.executeTool({ ...USER, scopes: ['pki:ca:view:intermediate'] }, 'list_cas', {});
 
     expect(result.result).toEqual([{ id: 'int-1', type: 'intermediate', commonName: 'Intermediate' }]);
+  });
+
+  it('binds aggregate PKI template reads to the requested template id', async () => {
+    const auditService = { log: vi.fn().mockResolvedValue(undefined) };
+    const templatesService = {
+      getTemplate: vi.fn().mockResolvedValue({ id: 'template-2' }),
+    };
+    const service = createService({ nodesService: {}, templatesService, auditService });
+
+    const denied = await service.executeTool(
+      { ...USER, scopes: ['pki:templates:view:template-1'] },
+      'manage_template',
+      { operation: 'get', templateId: 'template-2' },
+      {
+        source: 'mcp',
+        scopes: ['pki:templates:view:template-1'],
+        tokenId: 'token-1',
+        tokenPrefix: 'gwo_abc1234',
+      }
+    );
+
+    expect(denied.error).toContain('PERMISSION_DENIED');
+    expect(templatesService.getTemplate).not.toHaveBeenCalled();
+
+    const allowed = await service.executeTool(
+      { ...USER, scopes: ['pki:templates:view'] },
+      'manage_template',
+      { operation: 'get', templateId: 'template-2' },
+      {
+        source: 'mcp',
+        scopes: ['pki:templates:view'],
+        tokenId: 'token-1',
+        tokenPrefix: 'gwo_abc1234',
+      }
+    );
+
+    expect(allowed.error).toBeUndefined();
+    expect(templatesService.getTemplate).toHaveBeenCalledWith('template-2');
   });
 
   it('enforces target CA type before deleting CAs through AI/MCP tools', async () => {

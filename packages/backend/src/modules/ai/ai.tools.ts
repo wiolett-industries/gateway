@@ -10,11 +10,95 @@ const DIRECT_DATABASE_VIEW_AND_QUERY_TOOLS = new Set([
   'get_redis_key',
   'set_redis_key',
   'execute_redis_command',
+  'manage_postgres_data',
+  'manage_redis_data',
 ]);
 const ANY_SCOPE_TOOL_REQUIREMENTS: Record<string, string[]> = {
+  find_resource: [
+    'nodes:details',
+    'proxy:view',
+    'proxy:templates:view',
+    'ssl:cert:view',
+    'domains:view',
+    'acl:view',
+    'pki:ca:view:root',
+    'pki:ca:view:intermediate',
+    'pki:cert:view',
+    'pki:templates:view',
+    'docker:containers:view',
+    'docker:images:view',
+    'docker:volumes:view',
+    'docker:networks:view',
+    'docker:registries:view',
+    'databases:view',
+    'logs:environments:view',
+    'logs:schemas:view',
+    'status-page:view',
+    'notifications:view',
+  ],
   list_cas: ['pki:ca:view:root', 'pki:ca:view:intermediate'],
   get_ca: ['pki:ca:view:root', 'pki:ca:view:intermediate'],
   delete_ca: ['pki:ca:revoke:root', 'pki:ca:revoke:intermediate'],
+  manage_ca: ['pki:ca:create:root', 'pki:ca:create:intermediate'],
+  manage_certificate: ['pki:cert:view', 'pki:cert:issue', 'pki:cert:export'],
+  manage_template: ['pki:templates:view', 'pki:templates:edit'],
+  manage_proxy_template: [
+    'proxy:templates:view',
+    'proxy:templates:create',
+    'proxy:templates:edit',
+    'proxy:templates:delete',
+  ],
+  manage_ssl_certificate: ['ssl:cert:view', 'ssl:cert:issue', 'ssl:cert:delete'],
+  manage_domain: ['domains:view', 'domains:edit'],
+  manage_access_list: ['acl:view', 'acl:edit'],
+  manage_docker_registry: [
+    'docker:registries:view',
+    'docker:registries:create',
+    'docker:registries:edit',
+    'docker:registries:delete',
+  ],
+  manage_docker_volume: ['docker:volumes:create', 'docker:volumes:delete'],
+  manage_docker_network: ['docker:networks:create', 'docker:networks:edit', 'docker:networks:delete'],
+  manage_docker_container_config: [
+    'docker:containers:view',
+    'docker:containers:environment',
+    'docker:containers:files',
+    'docker:containers:secrets',
+    'docker:containers:webhooks',
+    'docker:containers:edit',
+  ],
+  manage_database_connection: [
+    'databases:view',
+    'databases:create',
+    'databases:edit',
+    'databases:delete',
+    'databases:credentials:reveal',
+  ],
+  manage_postgres_data: ['databases:query:read', 'databases:query:write'],
+  manage_redis_data: ['databases:query:read', 'databases:query:write', 'databases:query:admin'],
+  manage_logging: [
+    'logs:environments:view',
+    'logs:environments:create',
+    'logs:environments:edit',
+    'logs:environments:delete',
+    'logs:tokens:view',
+    'logs:tokens:create',
+    'logs:tokens:delete',
+    'logs:schemas:view',
+    'logs:schemas:create',
+    'logs:schemas:edit',
+    'logs:schemas:delete',
+    'logs:read',
+    'logs:manage',
+  ],
+  manage_status_page: [
+    'status-page:view',
+    'status-page:manage',
+    'status-page:incidents:create',
+    'status-page:incidents:update',
+    'status-page:incidents:resolve',
+    'status-page:incidents:delete',
+  ],
 };
 
 function hasDirectScopeBase(userScopes: string[], requiredScope: string): boolean {
@@ -37,10 +121,67 @@ function hasDirectDatabaseViewForQueryTool(userScopes: string[], queryScope: str
 
 function hasAnyRequiredToolScope(userScopes: string[], toolName: string): boolean {
   const requirements = ANY_SCOPE_TOOL_REQUIREMENTS[toolName];
-  return !!requirements && requirements.some((scope) => hasScope(userScopes, scope));
+  return !!requirements && requirements.some((scope) => hasScopeBase(userScopes, scope));
 }
 
 export const AI_TOOLS: AIToolDefinition[] = [
+  // ── Discovery ──
+  {
+    name: 'find_resource',
+    description:
+      'Search Gateway resources by name, hostname, domain, ID, image, or other visible identifiers across the resources this token can read. Returns compact, permission-filtered matches with resource type, id, name, nodeId when applicable, and safe summary fields.',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Search text, resource name, hostname, domain, ID, image, or key fragment.',
+        },
+        types: {
+          type: 'array',
+          items: {
+            type: 'string',
+            enum: [
+              'node',
+              'proxy_host',
+              'proxy_template',
+              'ssl_certificate',
+              'domain',
+              'access_list',
+              'ca',
+              'pki_certificate',
+              'pki_template',
+              'docker_container',
+              'docker_deployment',
+              'docker_image',
+              'docker_volume',
+              'docker_network',
+              'docker_registry',
+              'database',
+              'logging_environment',
+              'logging_schema',
+              'status_page_service',
+              'status_page_incident',
+              'notification_rule',
+              'notification_webhook',
+            ],
+          },
+          description: 'Optional resource types to search. Omit to search all readable resource types.',
+        },
+        nodeId: { type: 'string', description: 'Optional node UUID to constrain Docker resource searches.' },
+        limit: {
+          type: 'number',
+          description: 'Maximum matches to return across all resource types (default 25, max 50).',
+        },
+      },
+      required: ['query'],
+    },
+    destructive: false,
+    category: 'Discovery',
+    requiredScope: 'nodes:details',
+    invalidateStores: [],
+  },
+
   // ── PKI - Certificate Authorities ──
   {
     name: 'list_cas',
@@ -135,6 +276,26 @@ export const AI_TOOLS: AIToolDefinition[] = [
     destructive: true,
     category: 'PKI - Certificate Authorities',
     requiredScope: 'pki:ca:revoke:root',
+    invalidateStores: ['ca'],
+  },
+  {
+    name: 'manage_ca',
+    description:
+      'Manage Certificate Authorities beyond create/delete. Operations: update. CA type-specific view/revoke/create scopes are enforced where needed.',
+    parameters: {
+      type: 'object',
+      properties: {
+        operation: { type: 'string', enum: ['update'] },
+        caId: { type: 'string' },
+        crlDistributionUrl: { type: ['string', 'null'] },
+        caIssuersUrl: { type: ['string', 'null'] },
+        maxValidityDays: { type: 'number' },
+      },
+      required: ['operation', 'caId'],
+    },
+    destructive: true,
+    category: 'PKI - Certificate Authorities',
+    requiredScope: 'pki:ca:create:root',
     invalidateStores: ['ca'],
   },
 
@@ -235,6 +396,31 @@ export const AI_TOOLS: AIToolDefinition[] = [
     requiredScope: 'pki:cert:revoke',
     invalidateStores: ['certificates', 'ca'],
   },
+  {
+    name: 'manage_certificate',
+    description:
+      'Manage PKI certificates beyond generated issuance. Operations: issue_from_csr, export, chain. Operation-specific pki:cert:* scopes are enforced.',
+    parameters: {
+      type: 'object',
+      properties: {
+        operation: { type: 'string', enum: ['issue_from_csr', 'export', 'chain'] },
+        certificateId: { type: 'string' },
+        caId: { type: 'string' },
+        templateId: { type: 'string' },
+        type: { type: 'string', enum: ['tls-server', 'tls-client', 'code-signing', 'email'] },
+        csrPem: { type: 'string' },
+        validityDays: { type: 'number' },
+        overrideSans: { type: 'array', items: { type: 'string' } },
+        format: { type: 'string', enum: ['pem', 'der', 'pkcs12', 'jks'] },
+        passphrase: { type: 'string' },
+      },
+      required: ['operation'],
+    },
+    destructive: true,
+    category: 'PKI - Certificates',
+    requiredScope: 'pki:cert:view',
+    invalidateStores: ['certificates', 'ca'],
+  },
 
   // ── PKI - Templates ──
   {
@@ -283,6 +469,28 @@ export const AI_TOOLS: AIToolDefinition[] = [
     destructive: true,
     category: 'PKI - Templates',
     requiredScope: 'pki:templates:delete',
+    invalidateStores: ['templates'],
+  },
+  {
+    name: 'manage_template',
+    description: 'Get or update a PKI certificate template. Operations: get, update.',
+    parameters: {
+      type: 'object',
+      properties: {
+        operation: { type: 'string', enum: ['get', 'update'] },
+        templateId: { type: 'string' },
+        name: { type: 'string' },
+        type: { type: 'string', enum: ['tls-server', 'tls-client', 'code-signing', 'email'] },
+        keyAlgorithm: { type: 'string', enum: ['rsa-2048', 'rsa-4096', 'ecdsa-p256', 'ecdsa-p384'] },
+        validityDays: { type: 'number' },
+        keyUsage: { type: 'array', items: { type: 'string' } },
+        extendedKeyUsage: { type: 'array', items: { type: 'string' } },
+      },
+      required: ['operation', 'templateId'],
+    },
+    destructive: true,
+    category: 'PKI - Templates',
+    requiredScope: 'pki:templates:view',
     invalidateStores: ['templates'],
   },
 
@@ -470,6 +678,28 @@ export const AI_TOOLS: AIToolDefinition[] = [
     requiredScope: 'proxy:folders:manage',
     invalidateStores: ['proxy'],
   },
+  {
+    name: 'manage_proxy_template',
+    description:
+      'Manage custom nginx proxy templates. Operations: list, get, create, update, delete, clone. Operation-specific proxy:templates:* scopes are enforced.',
+    parameters: {
+      type: 'object',
+      properties: {
+        operation: { type: 'string', enum: ['list', 'get', 'create', 'update', 'delete', 'clone'] },
+        templateId: { type: 'string' },
+        name: { type: 'string' },
+        description: { type: 'string' },
+        type: { type: 'string', enum: ['proxy', 'redirect', '404'] },
+        content: { type: 'string' },
+        variables: { type: 'array', items: { type: 'object' } },
+      },
+      required: ['operation'],
+    },
+    destructive: true,
+    category: 'Reverse Proxy',
+    requiredScope: 'proxy:templates:view',
+    invalidateStores: ['proxy'],
+  },
 
   // ── SSL Certificates ──
   {
@@ -532,6 +762,27 @@ export const AI_TOOLS: AIToolDefinition[] = [
     requiredScope: 'ssl:cert:issue',
     invalidateStores: ['ssl'],
   },
+  {
+    name: 'manage_ssl_certificate',
+    description:
+      'Manage SSL certificates beyond listing/request/link. Operations: get, upload, renew, verify_dns, delete. Operation-specific ssl:cert:* scopes are enforced.',
+    parameters: {
+      type: 'object',
+      properties: {
+        operation: { type: 'string', enum: ['get', 'upload', 'renew', 'verify_dns', 'delete'] },
+        sslCertificateId: { type: 'string' },
+        name: { type: 'string' },
+        certificatePem: { type: 'string' },
+        privateKeyPem: { type: 'string' },
+        chainPem: { type: 'string' },
+      },
+      required: ['operation'],
+    },
+    destructive: true,
+    category: 'SSL Certificates',
+    requiredScope: 'ssl:cert:view',
+    invalidateStores: ['ssl'],
+  },
 
   // ── Domains ──
   {
@@ -579,6 +830,23 @@ export const AI_TOOLS: AIToolDefinition[] = [
     destructive: true,
     category: 'Domains',
     requiredScope: 'domains:delete',
+    invalidateStores: ['domains'],
+  },
+  {
+    name: 'manage_domain',
+    description: 'Get, update, or re-check DNS for a registered domain. Operations: get, update, check_dns.',
+    parameters: {
+      type: 'object',
+      properties: {
+        operation: { type: 'string', enum: ['get', 'update', 'check_dns'] },
+        domainId: { type: 'string' },
+        description: { type: ['string', 'null'] },
+      },
+      required: ['operation', 'domainId'],
+    },
+    destructive: true,
+    category: 'Domains',
+    requiredScope: 'domains:view',
     invalidateStores: ['domains'],
   },
 
@@ -643,6 +911,28 @@ export const AI_TOOLS: AIToolDefinition[] = [
     destructive: true,
     category: 'Access Lists',
     requiredScope: 'acl:delete',
+    invalidateStores: ['accessLists'],
+  },
+  {
+    name: 'manage_access_list',
+    description:
+      'Get or update an access list. Operations: get, update. Update accepts name, description, ipRules, basicAuthEnabled, and basicAuthUsers.',
+    parameters: {
+      type: 'object',
+      properties: {
+        operation: { type: 'string', enum: ['get', 'update'] },
+        accessListId: { type: 'string' },
+        name: { type: 'string' },
+        description: { type: ['string', 'null'] },
+        ipRules: { type: 'array', items: { type: 'object' } },
+        basicAuthEnabled: { type: 'boolean' },
+        basicAuthUsers: { type: 'array', items: { type: 'object' } },
+      },
+      required: ['operation', 'accessListId'],
+    },
+    destructive: true,
+    category: 'Access Lists',
+    requiredScope: 'acl:view',
     invalidateStores: ['accessLists'],
   },
 
@@ -1003,6 +1293,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
       properties: {
         nodeId: { type: 'string', description: 'Docker node ID' },
         image: { type: 'string', description: 'Image reference (e.g. nginx:latest, ubuntu:24.04)' },
+        registryId: { type: 'string', description: 'Optional Docker registry UUID for pulling the image' },
         name: { type: 'string', description: 'Container name (optional, auto-generated if omitted)' },
         ports: {
           type: 'array',
@@ -1453,6 +1744,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
       properties: {
         nodeId: { type: 'string', description: 'Docker node ID' },
         imageRef: { type: 'string', description: 'Image reference (e.g. nginx:latest, ghcr.io/org/app:v2)' },
+        registryId: { type: 'string', description: 'Optional Docker registry UUID for pulling the image' },
       },
       required: ['nodeId', 'imageRef'],
     },
@@ -1526,6 +1818,147 @@ export const AI_TOOLS: AIToolDefinition[] = [
     destructive: false,
     category: 'Docker',
     requiredScope: 'docker:networks:view',
+    invalidateStores: [],
+  },
+  {
+    name: 'manage_docker_registry',
+    description:
+      'Manage saved Docker registries. Operations: list, get, create, update, delete, test, test_direct. Mutating operations require the corresponding docker:registries:* scope.',
+    parameters: {
+      type: 'object',
+      properties: {
+        operation: {
+          type: 'string',
+          enum: ['list', 'get', 'create', 'update', 'delete', 'test', 'test_direct'],
+        },
+        registryId: { type: 'string', description: 'Registry UUID for get/update/delete/test' },
+        nodeId: { type: 'string', description: 'Optional node filter for list, or node scoped registry owner' },
+        name: { type: 'string' },
+        url: { type: 'string' },
+        username: { type: 'string' },
+        password: { type: 'string' },
+        trustedAuthRealm: { type: 'string' },
+        scope: { type: 'string', enum: ['global', 'node'] },
+      },
+      required: ['operation'],
+    },
+    destructive: true,
+    category: 'Docker',
+    requiredScope: 'docker:registries:view',
+    invalidateStores: [],
+  },
+  {
+    name: 'manage_docker_volume',
+    description:
+      'Create or delete Docker volumes on a node. Operations: create, delete. Listing is available via list_docker_volumes.',
+    parameters: {
+      type: 'object',
+      properties: {
+        operation: { type: 'string', enum: ['create', 'delete'] },
+        nodeId: { type: 'string' },
+        name: { type: 'string' },
+        driver: { type: 'string' },
+        labels: { type: 'object' },
+        force: { type: 'boolean' },
+      },
+      required: ['operation', 'nodeId', 'name'],
+    },
+    destructive: true,
+    category: 'Docker',
+    requiredScope: 'docker:volumes:create',
+    invalidateStores: [],
+  },
+  {
+    name: 'manage_docker_network',
+    description:
+      'Create, delete, connect, or disconnect Docker networks on a node. Listing is available via list_docker_networks.',
+    parameters: {
+      type: 'object',
+      properties: {
+        operation: { type: 'string', enum: ['create', 'delete', 'connect', 'disconnect'] },
+        nodeId: { type: 'string' },
+        networkId: { type: 'string', description: 'Network ID or name for delete/connect/disconnect' },
+        name: { type: 'string', description: 'Network name for create' },
+        driver: { type: 'string' },
+        subnet: { type: 'string' },
+        gateway: { type: 'string' },
+        containerId: { type: 'string' },
+      },
+      required: ['operation', 'nodeId'],
+    },
+    destructive: true,
+    category: 'Docker',
+    requiredScope: 'docker:networks:create',
+    invalidateStores: [],
+  },
+  {
+    name: 'manage_docker_task',
+    description: 'List or get Docker background tasks for image pulls, container updates, and webhook actions.',
+    parameters: {
+      type: 'object',
+      properties: {
+        operation: { type: 'string', enum: ['list', 'get'] },
+        taskId: { type: 'string' },
+        nodeId: { type: 'string' },
+        status: { type: 'string' },
+        type: { type: 'string' },
+      },
+      required: ['operation'],
+    },
+    destructive: false,
+    category: 'Docker',
+    requiredScope: 'docker:tasks',
+    invalidateStores: [],
+  },
+  {
+    name: 'manage_docker_container_config',
+    description:
+      'Manage container env, files, secrets, webhooks, and HTTP health checks. Operation-specific scopes are enforced: environment/files/secrets/webhooks/edit/view.',
+    parameters: {
+      type: 'object',
+      properties: {
+        operation: {
+          type: 'string',
+          enum: [
+            'get_env',
+            'update_env',
+            'list_files',
+            'read_file',
+            'write_file',
+            'list_secrets',
+            'create_secret',
+            'update_secret',
+            'delete_secret',
+            'get_webhook',
+            'upsert_webhook',
+            'delete_webhook',
+            'regenerate_webhook_token',
+            'get_health_check',
+            'upsert_health_check',
+            'test_health_check',
+          ],
+        },
+        targetType: { type: 'string', enum: ['container', 'deployment'], description: 'Defaults to container' },
+        nodeId: { type: 'string' },
+        containerId: { type: 'string' },
+        containerName: { type: 'string' },
+        deploymentId: { type: 'string' },
+        secretId: { type: 'string' },
+        key: { type: 'string' },
+        value: { type: 'string' },
+        reveal: { type: 'boolean' },
+        env: { type: 'object', description: 'Environment key/value map for update_env' },
+        removeEnv: { type: 'array', items: { type: 'string' } },
+        path: { type: 'string', description: 'Container file path' },
+        content: { type: 'string', description: 'Base64-encoded file content for write_file' },
+        enabled: { type: 'boolean', description: 'Webhook or health check enabled state' },
+        healthCheck: { type: 'object', description: 'Docker health check configuration' },
+      },
+      required: ['operation', 'nodeId'],
+    },
+    destructive: true,
+    category: 'Docker',
+    requiredScope: 'docker:containers:view',
     invalidateStores: [],
   },
 
@@ -1668,6 +2101,167 @@ export const AI_TOOLS: AIToolDefinition[] = [
     destructive: true,
     category: 'Databases',
     requiredScope: 'databases:query:admin',
+    invalidateStores: [],
+  },
+  {
+    name: 'manage_database_connection',
+    description:
+      'Manage saved database connections. Operations: create, update, delete, test, reveal_credentials, health_history. Operation-specific database scopes are enforced.',
+    parameters: {
+      type: 'object',
+      properties: {
+        operation: {
+          type: 'string',
+          enum: ['create', 'update', 'delete', 'test', 'reveal_credentials', 'health_history'],
+        },
+        databaseId: { type: 'string', description: 'Database connection UUID for update/delete/test/reveal/history' },
+        type: { type: 'string', enum: ['postgres', 'redis'] },
+        name: { type: 'string' },
+        description: { type: 'string' },
+        tags: { type: 'array', items: { type: 'string' } },
+        manualSizeLimitMb: { type: 'number' },
+        config: {
+          type: 'object',
+          description:
+            'Connection config. Postgres: connectionString or host/port/database/username/password/sslEnabled. Redis: connectionString or host/port/username/password/db/tlsEnabled.',
+        },
+      },
+      required: ['operation'],
+    },
+    destructive: true,
+    category: 'Databases',
+    requiredScope: 'databases:view',
+    invalidateStores: [],
+  },
+  {
+    name: 'manage_postgres_data',
+    description:
+      'Explore and edit Postgres data for a saved connection. Operations: list_schemas, list_tables, table_metadata, browse_rows, insert_row, update_row, delete_row, add_column, update_column_type, delete_column.',
+    parameters: {
+      type: 'object',
+      properties: {
+        operation: {
+          type: 'string',
+          enum: [
+            'list_schemas',
+            'list_tables',
+            'table_metadata',
+            'browse_rows',
+            'insert_row',
+            'update_row',
+            'delete_row',
+            'add_column',
+            'update_column_type',
+            'delete_column',
+          ],
+        },
+        databaseId: { type: 'string' },
+        schema: { type: 'string' },
+        table: { type: 'string' },
+        page: { type: 'number' },
+        limit: { type: 'number' },
+        sortBy: { type: 'string' },
+        sortOrder: { type: 'string', enum: ['asc', 'desc'] },
+        searchColumn: { type: 'string' },
+        searchOperation: { type: 'string', enum: ['like', 'equals', 'notEquals', 'greaterThan', 'lessThan'] },
+        searchValue: { type: 'string' },
+        values: { type: 'object' },
+        primaryKey: { type: 'object' },
+        column: { type: 'string' },
+        dataType: { type: 'string' },
+      },
+      required: ['operation', 'databaseId'],
+    },
+    destructive: true,
+    category: 'Databases',
+    requiredScope: 'databases:query:read',
+    invalidateStores: [],
+  },
+  {
+    name: 'manage_redis_data',
+    description:
+      'Explore and edit Redis data for a saved connection. Operations: scan_keys, get_key, set_key, delete_key, expire_key, execute_command. Command intent controls required read/write/admin query scope.',
+    parameters: {
+      type: 'object',
+      properties: {
+        operation: {
+          type: 'string',
+          enum: ['scan_keys', 'get_key', 'set_key', 'delete_key', 'expire_key', 'execute_command'],
+        },
+        databaseId: { type: 'string' },
+        cursor: { type: 'number' },
+        limit: { type: 'number' },
+        search: { type: 'string' },
+        key: { type: 'string' },
+        type: { type: 'string' },
+        value: {},
+        ttlSeconds: { type: 'number' },
+        command: { type: 'string' },
+        offset: { type: 'number' },
+        maxStringBytes: { type: 'number' },
+      },
+      required: ['operation', 'databaseId'],
+    },
+    destructive: true,
+    category: 'Databases',
+    requiredScope: 'databases:query:read',
+    invalidateStores: [],
+  },
+
+  // ── Logging ──
+  {
+    name: 'manage_logging',
+    description:
+      'Manage external logging environments, schemas, ingest tokens, metadata, facets, and search. Operation-specific logs:* scopes are enforced.',
+    parameters: {
+      type: 'object',
+      properties: {
+        resource: { type: 'string', enum: ['environment', 'schema', 'token', 'logs', 'metadata', 'facets'] },
+        operation: {
+          type: 'string',
+          enum: ['list', 'get', 'create', 'update', 'delete', 'search', 'facets', 'metadata'],
+        },
+        environmentId: { type: 'string' },
+        schemaId: { type: 'string' },
+        tokenId: { type: 'string' },
+        search: { type: 'string' },
+        payload: { type: 'object', description: 'Create/update/search/facets body matching the logging API schema' },
+      },
+      required: ['resource', 'operation'],
+    },
+    destructive: true,
+    category: 'Logging',
+    requiredScope: 'logs:environments:view',
+    invalidateStores: [],
+  },
+
+  // ── Status Page ──
+  {
+    name: 'manage_status_page',
+    description:
+      'Manage the status page settings, service list, incidents, incident updates, proxy template options, and preview. Operation-specific status-page:* scopes are enforced.',
+    parameters: {
+      type: 'object',
+      properties: {
+        resource: {
+          type: 'string',
+          enum: ['settings', 'proxy_templates', 'services', 'incidents', 'incident_updates', 'preview'],
+        },
+        operation: {
+          type: 'string',
+          enum: ['get', 'list', 'update', 'create', 'delete', 'resolve', 'promote', 'create_update', 'preview'],
+        },
+        serviceId: { type: 'string' },
+        incidentId: { type: 'string' },
+        status: { type: 'string', enum: ['active', 'resolved', 'all'] },
+        limit: { type: 'number' },
+        payload: { type: 'object', description: 'Create/update body matching the status page API schema' },
+      },
+      required: ['resource', 'operation'],
+    },
+    destructive: true,
+    category: 'Status Page',
+    requiredScope: 'status-page:view',
     invalidateStores: [],
   },
 
@@ -1989,11 +2583,11 @@ export function getOpenAITools(
     if (t.name === 'web_search' && !webSearchEnabled) return false;
     // Every tool must have a requiredScope — reject tools without one
     if (!t.requiredScope) return false;
-    if (ANY_SCOPE_TOOL_REQUIREMENTS[t.name]) return hasAnyRequiredToolScope(userScopes, t.name);
-    if (DIRECT_DATABASE_VIEW_TOOLS.has(t.name)) return hasDirectScopeBase(userScopes, t.requiredScope);
     if (DIRECT_DATABASE_VIEW_AND_QUERY_TOOLS.has(t.name)) {
       return hasDirectDatabaseViewForQueryTool(userScopes, t.requiredScope);
     }
+    if (ANY_SCOPE_TOOL_REQUIREMENTS[t.name]) return hasAnyRequiredToolScope(userScopes, t.name);
+    if (DIRECT_DATABASE_VIEW_TOOLS.has(t.name)) return hasDirectScopeBase(userScopes, t.requiredScope);
     return BROAD_ONLY_TOOL_SCOPES.has(t.name)
       ? hasScope(userScopes, t.requiredScope)
       : hasScopeBase(userScopes, t.requiredScope);

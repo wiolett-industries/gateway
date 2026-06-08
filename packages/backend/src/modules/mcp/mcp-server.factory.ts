@@ -10,6 +10,8 @@ export interface CreateMcpServerOptions {
   scopes: string[];
   tokenId: string;
   tokenPrefix: string;
+  mcpSessionId?: string;
+  issuedMcpSessionId?: string;
   authType?: 'oauth' | 'api-token';
   clientId?: string;
 }
@@ -35,6 +37,8 @@ export function createMcpServer(options: CreateMcpServerOptions) {
       scopes: options.scopes,
       tokenId: options.tokenId,
       tokenPrefix: options.tokenPrefix,
+      mcpSessionId: options.mcpSessionId,
+      issuedMcpSessionId: options.issuedMcpSessionId,
       authType: options.authType,
       clientId: options.clientId,
     },

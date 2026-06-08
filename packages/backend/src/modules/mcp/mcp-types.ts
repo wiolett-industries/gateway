@@ -5,6 +5,8 @@ export interface McpAuthContext {
   scopes: string[];
   tokenId: string;
   tokenPrefix: string;
+  mcpSessionId?: string;
+  issuedMcpSessionId?: string;
   authType?: 'oauth' | 'api-token';
   clientId?: string;
 }

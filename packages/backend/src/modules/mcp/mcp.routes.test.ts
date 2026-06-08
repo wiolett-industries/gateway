@@ -11,6 +11,7 @@ import { TokensService } from '@/modules/tokens/tokens.service.js';
 import type { AppEnv, User } from '@/types.js';
 import { mcpRoutes } from './mcp.routes.js';
 import { McpSettingsService } from './mcp-settings.service.js';
+import { resetMcpDiscoveryStateForTests } from './mcp-tools.js';
 
 type JsonRecord = Record<string, any>;
 
@@ -81,19 +82,25 @@ function registerOAuth(scopes: string[] | null = null, user: User = USER) {
   } as unknown as OAuthService);
 }
 
-function mcpHeaders(token = 'gwo_valid') {
+function mcpHeaders(token = 'gwo_valid', mcpSessionId?: string) {
   return {
     Authorization: `Bearer ${token}`,
     Accept: 'application/json, text/event-stream',
     'Content-Type': 'application/json',
     'MCP-Protocol-Version': '2025-11-25',
+    ...(mcpSessionId ? { 'Mcp-Session-Id': mcpSessionId } : {}),
   };
 }
 
-async function mcpRequest(method: string, params: Record<string, unknown> = {}, token = 'gwo_valid') {
+async function mcpRequest(
+  method: string,
+  params: Record<string, unknown> = {},
+  token = 'gwo_valid',
+  mcpSessionId?: string
+) {
   const response = await createApp().request('/api/mcp', {
     method: 'POST',
-    headers: mcpHeaders(token),
+    headers: mcpHeaders(token, mcpSessionId),
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
   });
   return {
@@ -108,6 +115,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  resetMcpDiscoveryStateForTests();
   container.reset();
 });
 
@@ -191,6 +199,7 @@ describe('MCP route authentication', () => {
     const { response, body } = await mcpRequest('tools/list', {}, 'gwo_valid');
 
     expect(response.status).toBe(200);
+    expect(response.headers.get('mcp-session-id')).toBeTruthy();
     const names = body.result.tools.map((tool: { name: string }) => tool.name);
     expect(names).toContain('list_nodes');
   });
@@ -333,6 +342,8 @@ describe('MCP tools', () => {
   it('uses corrected granular scopes when listing template and access-list tools', async () => {
     registerToken(['pki:templates:create', 'pki:templates:delete', 'acl:create']);
 
+    await mcpRequest('tools/call', { name: 'discover_tools', arguments: { category: 'certificates' } });
+    await mcpRequest('tools/call', { name: 'discover_tools', arguments: { category: 'proxy' } });
     const { body } = await mcpRequest('tools/list');
     const names = body.result.tools.map((tool: { name: string }) => tool.name);
 
@@ -346,6 +357,7 @@ describe('MCP tools', () => {
     const executeTool = vi.fn().mockResolvedValue({ result: { id: 'host-1' }, invalidateStores: [] });
     container.registerInstance(AIService, { executeTool } as unknown as AIService);
 
+    await mcpRequest('tools/call', { name: 'discover_tools', arguments: { category: 'proxy' } });
     const list = await mcpRequest('tools/list');
     const names = list.body.result.tools.map((tool: { name: string }) => tool.name);
     expect(names).toContain('update_proxy_host');
@@ -384,6 +396,7 @@ describe('MCP tools', () => {
   it('lists blue/green deployment tools under Docker container scopes', async () => {
     registerToken(['docker:containers:view', 'docker:containers:view', 'docker:containers:manage']);
 
+    await mcpRequest('tools/call', { name: 'discover_tools', arguments: { category: 'docker' } });
     const { body } = await mcpRequest('tools/list');
     const names = body.result.tools.map((tool: { name: string }) => tool.name);
 
@@ -397,6 +410,117 @@ describe('MCP tools', () => {
     expect(names).toContain('switch_docker_deployment_slot');
     expect(names).toContain('rollback_docker_deployment');
     expect(names).toContain('stop_docker_deployment_slot');
+  });
+
+  it('keeps specialized MCP tools hidden until their toolset is discovered', async () => {
+    registerToken(['docker:containers:view', 'docker:containers:manage']);
+
+    const initial = await mcpRequest('tools/list');
+    let names = initial.body.result.tools.map((tool: { name: string }) => tool.name);
+    expect(names).toContain('discover_tools');
+    expect(names).toContain('find_resource');
+    expect(names).not.toContain('list_docker_deployments');
+
+    const discovered = await mcpRequest('tools/call', {
+      name: 'discover_tools',
+      arguments: { category: 'docker' },
+    });
+    expect(discovered.body.result.isError).not.toBe(true);
+    expect(JSON.parse(discovered.body.result.content[0].text).activeToolsets).toContain('docker');
+
+    const refreshed = await mcpRequest('tools/list');
+    names = refreshed.body.result.tools.map((tool: { name: string }) => tool.name);
+    expect(names).toContain('list_docker_deployments');
+  });
+
+  it('isolates discovered toolsets by MCP session id when the client echoes the session header', async () => {
+    registerToken(['docker:containers:view', 'docker:containers:manage']);
+
+    const firstSessionList = await mcpRequest('tools/list');
+    const secondSessionList = await mcpRequest('tools/list');
+    const firstSessionId = firstSessionList.response.headers.get('mcp-session-id');
+    const secondSessionId = secondSessionList.response.headers.get('mcp-session-id');
+    expect(firstSessionId).toBeTruthy();
+    expect(secondSessionId).toBeTruthy();
+    expect(firstSessionId).not.toBe(secondSessionId);
+
+    await mcpRequest(
+      'tools/call',
+      {
+        name: 'discover_tools',
+        arguments: { category: 'docker' },
+      },
+      'gwo_valid',
+      firstSessionId ?? undefined
+    );
+
+    const firstRefreshed = await mcpRequest('tools/list', {}, 'gwo_valid', firstSessionId ?? undefined);
+    const secondRefreshed = await mcpRequest('tools/list', {}, 'gwo_valid', secondSessionId ?? undefined);
+    const firstNames = firstRefreshed.body.result.tools.map((tool: { name: string }) => tool.name);
+    const secondNames = secondRefreshed.body.result.tools.map((tool: { name: string }) => tool.name);
+
+    expect(firstNames).toContain('list_docker_deployments');
+    expect(secondNames).not.toContain('list_docker_deployments');
+  });
+
+  it('carries no-header discovery state into the session id issued on that response', async () => {
+    registerToken(['docker:containers:view', 'docker:containers:manage']);
+
+    const discovered = await mcpRequest('tools/call', {
+      name: 'discover_tools',
+      arguments: { category: 'docker' },
+    });
+    const issuedSessionId = discovered.response.headers.get('mcp-session-id');
+    expect(issuedSessionId).toBeTruthy();
+
+    const refreshed = await mcpRequest('tools/list', {}, 'gwo_valid', issuedSessionId ?? undefined);
+    const names = refreshed.body.result.tools.map((tool: { name: string }) => tool.name);
+
+    expect(names).toContain('list_docker_deployments');
+  });
+
+  it('does not share no-header discovery mutations with an already issued MCP session', async () => {
+    registerToken(['docker:containers:view', 'docker:containers:manage', 'proxy:edit:host-1']);
+
+    const discovered = await mcpRequest('tools/call', {
+      name: 'discover_tools',
+      arguments: { category: 'docker' },
+    });
+    const issuedSessionId = discovered.response.headers.get('mcp-session-id');
+    expect(issuedSessionId).toBeTruthy();
+
+    await mcpRequest('tools/call', {
+      name: 'discover_tools',
+      arguments: { category: 'proxy' },
+    });
+
+    const sessionList = await mcpRequest('tools/list', {}, 'gwo_valid', issuedSessionId ?? undefined);
+    const names = sessionList.body.result.tools.map((tool: { name: string }) => tool.name);
+
+    expect(names).toContain('list_docker_deployments');
+    expect(names).not.toContain('update_proxy_host');
+  });
+
+  it('ignores arbitrary MCP session ids that were not issued for the token/client', async () => {
+    registerToken(['docker:containers:view', 'docker:containers:manage']);
+
+    const discovered = await mcpRequest(
+      'tools/call',
+      {
+        name: 'discover_tools',
+        arguments: { category: 'docker' },
+      },
+      'gwo_valid',
+      'client-picked-session'
+    );
+    const issuedSessionId = discovered.response.headers.get('mcp-session-id');
+    expect(issuedSessionId).toBeTruthy();
+    expect(issuedSessionId).not.toBe('client-picked-session');
+
+    const arbitraryList = await mcpRequest('tools/list', {}, 'gwo_valid', 'client-picked-session');
+    const names = arbitraryList.body.result.tools.map((tool: { name: string }) => tool.name);
+
+    expect(names).not.toContain('list_docker_deployments');
   });
 });
 

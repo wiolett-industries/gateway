@@ -3,29 +3,87 @@ import { container } from '@/container.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { getResourceScopedIds, hasScope, hasScopeBase, hasScopeForResource } from '@/lib/permissions.js';
 import { isPrivateUrl } from '@/lib/utils.js';
+import { UpdateAccessListSchema } from '@/modules/access-lists/access-list.schemas.js';
 import type { AccessListService } from '@/modules/access-lists/access-list.service.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { AuthService } from '@/modules/auth/auth.service.js';
-import { type DatabaseConnectionService, inferPostgresIntent } from '@/modules/databases/databases.service.js';
-import { ContainerCreateSchema, ContainerStopSchema } from '@/modules/docker/docker.schemas.js';
+import {
+  AddPostgresColumnSchema,
+  BrowsePostgresRowsQuerySchema,
+  CreateDatabaseConnectionSchema,
+  DeletePostgresColumnSchema,
+  PostgresObjectSchema,
+  RedisExpireKeySchema,
+  RedisGetKeyQuerySchema,
+  RedisScanKeysQuerySchema,
+  RedisSetKeySchema,
+  UpdateDatabaseConnectionSchema,
+  UpdatePostgresColumnTypeSchema,
+} from '@/modules/databases/databases.schemas.js';
+import {
+  type DatabaseConnectionService,
+  inferPostgresIntent,
+  inferRedisIntent,
+} from '@/modules/databases/databases.service.js';
+import {
+  ContainerCreateSchema,
+  ContainerStopSchema,
+  DockerHealthCheckUpsertSchema,
+  EnvUpdateSchema,
+  FileBrowseSchema,
+  FileWriteSchema,
+  ImagePullSchema,
+  NetworkConnectSchema,
+  NetworkCreateSchema,
+  RegistryCreateSchema,
+  RegistryUpdateSchema,
+  SecretCreateSchema,
+  SecretUpdateSchema,
+  VolumeCreateSchema,
+} from '@/modules/docker/docker.schemas.js';
 import type { DockerManagementService } from '@/modules/docker/docker.service.js';
 import {
   DockerDeploymentDeploySchema,
   DockerDeploymentSwitchSchema,
 } from '@/modules/docker/docker-deployment.schemas.js';
+import { UpdateDomainSchema } from '@/modules/domains/domain.schemas.js';
 import type { DomainsService } from '@/modules/domains/domain.service.js';
 import type { GroupService } from '@/modules/groups/group.service.js';
+import {
+  CreateLoggingEnvironmentSchema,
+  CreateLoggingSchemaSchema,
+  CreateLoggingTokenSchema,
+  LoggingFacetsQuerySchema,
+  LoggingSearchSchema,
+  UpdateLoggingEnvironmentSchema,
+  UpdateLoggingSchemaSchema,
+} from '@/modules/logging/logging.schemas.js';
 import type { MonitoringService } from '@/modules/monitoring/monitoring.service.js';
 import type { NodesService } from '@/modules/nodes/nodes.service.js';
-import { CreateIntermediateCASchema, CreateRootCASchema } from '@/modules/pki/ca.schemas.js';
+import { CreateIntermediateCASchema, CreateRootCASchema, UpdateCASchema } from '@/modules/pki/ca.schemas.js';
 import type { CAService } from '@/modules/pki/ca.service.js';
-import { IssueCertificateSchema } from '@/modules/pki/cert.schemas.js';
+import {
+  ExportCertificateQuerySchema,
+  IssueCertFromCSRSchema,
+  IssueCertificateSchema,
+} from '@/modules/pki/cert.schemas.js';
 import type { CertService } from '@/modules/pki/cert.service.js';
 import type { TemplatesService } from '@/modules/pki/templates.service.js';
 import type { FolderService } from '@/modules/proxy/folder.service.js';
+import { CreateNginxTemplateSchema, UpdateNginxTemplateSchema } from '@/modules/proxy/nginx-template.schemas.js';
 import type { ProxyService } from '@/modules/proxy/proxy.service.js';
 import { stripRawProxyConfigForProgrammatic } from '@/modules/proxy/raw-visibility.js';
+import { UploadCertSchema } from '@/modules/ssl/ssl.schemas.js';
 import type { SSLService } from '@/modules/ssl/ssl.service.js';
+import {
+  CreateStatusPageIncidentSchema,
+  CreateStatusPageIncidentUpdateSchema,
+  CreateStatusPageServiceSchema,
+  IncidentListQuerySchema,
+  StatusPageSettingsSchema,
+  UpdateStatusPageIncidentSchema,
+  UpdateStatusPageServiceSchema,
+} from '@/modules/status-page/status-page.schemas.js';
 import { SessionService } from '@/services/session.service.js';
 import type { User } from '@/types.js';
 import { DOC_TOPIC_SCOPES, getInternalDocumentation, INTERNAL_DOCS } from './ai.docs.js';
@@ -53,9 +111,91 @@ const PROXY_HOST_UPDATE_FIELDS = [
   'enabled',
 ] as const;
 const ANY_SCOPE_TOOL_REQUIREMENTS: Record<string, string[]> = {
+  find_resource: [
+    'nodes:details',
+    'proxy:view',
+    'proxy:templates:view',
+    'ssl:cert:view',
+    'domains:view',
+    'acl:view',
+    'pki:ca:view:root',
+    'pki:ca:view:intermediate',
+    'pki:cert:view',
+    'pki:templates:view',
+    'docker:containers:view',
+    'docker:images:view',
+    'docker:volumes:view',
+    'docker:networks:view',
+    'docker:registries:view',
+    'databases:view',
+    'logs:environments:view',
+    'logs:schemas:view',
+    'status-page:view',
+    'notifications:view',
+  ],
   list_cas: ['pki:ca:view:root', 'pki:ca:view:intermediate'],
   get_ca: ['pki:ca:view:root', 'pki:ca:view:intermediate'],
   delete_ca: ['pki:ca:revoke:root', 'pki:ca:revoke:intermediate'],
+  manage_ca: ['pki:ca:create:root', 'pki:ca:create:intermediate'],
+  manage_certificate: ['pki:cert:view', 'pki:cert:issue', 'pki:cert:export'],
+  manage_template: ['pki:templates:view', 'pki:templates:edit'],
+  manage_proxy_template: [
+    'proxy:templates:view',
+    'proxy:templates:create',
+    'proxy:templates:edit',
+    'proxy:templates:delete',
+  ],
+  manage_ssl_certificate: ['ssl:cert:view', 'ssl:cert:issue', 'ssl:cert:delete'],
+  manage_domain: ['domains:view', 'domains:edit'],
+  manage_access_list: ['acl:view', 'acl:edit'],
+  manage_docker_registry: [
+    'docker:registries:view',
+    'docker:registries:create',
+    'docker:registries:edit',
+    'docker:registries:delete',
+  ],
+  manage_docker_volume: ['docker:volumes:create', 'docker:volumes:delete'],
+  manage_docker_network: ['docker:networks:create', 'docker:networks:edit', 'docker:networks:delete'],
+  manage_docker_container_config: [
+    'docker:containers:view',
+    'docker:containers:environment',
+    'docker:containers:files',
+    'docker:containers:secrets',
+    'docker:containers:webhooks',
+    'docker:containers:edit',
+  ],
+  manage_database_connection: [
+    'databases:view',
+    'databases:create',
+    'databases:edit',
+    'databases:delete',
+    'databases:credentials:reveal',
+  ],
+  manage_postgres_data: ['databases:query:read', 'databases:query:write'],
+  manage_redis_data: ['databases:query:read', 'databases:query:write', 'databases:query:admin'],
+  manage_logging: [
+    'logs:environments:view',
+    'logs:environments:create',
+    'logs:environments:edit',
+    'logs:environments:delete',
+    'logs:tokens:view',
+    'logs:tokens:create',
+    'logs:tokens:delete',
+    'logs:schemas:view',
+    'logs:schemas:create',
+    'logs:schemas:edit',
+    'logs:schemas:delete',
+    'logs:read',
+    'logs:manage',
+  ],
+  manage_status_page: [
+    'status-page:view',
+    'status-page:manage',
+    'status-page:incidents:create',
+    'status-page:incidents:update',
+    'status-page:incidents:resolve',
+    'status-page:incidents:delete',
+  ],
 };
 
 function caTypeViewScope(type: string): 'pki:ca:view:root' | 'pki:ca:view:intermediate' {
@@ -149,7 +289,7 @@ function hasToolExecutionScope(
 ): boolean {
   if (!requiredScope) return false;
   const anyRequirements = ANY_SCOPE_TOOL_REQUIREMENTS[toolName];
-  if (anyRequirements) return anyRequirements.some((scope) => hasScope(scopes, scope));
+  if (anyRequirements) return anyRequirements.some((scope) => hasScopeBase(scopes, scope));
   if (BROAD_ONLY_TOOL_SCOPES.has(toolName)) return hasScope(scopes, requiredScope);
   if (DIRECT_DATABASE_VIEW_TOOLS.has(toolName)) {
     return scopes.includes(requiredScope) || scopes.some((scope) => scope.startsWith(`${requiredScope}:`));
@@ -324,6 +464,11 @@ function compactDockerImageForAgent(image: Record<string, any>) {
     sharedSize: image.sharedSize ?? image.SharedSize,
     containers: image.containers ?? image.Containers,
   };
+}
+
+function hasRegistryHost(imageRef: string) {
+  const firstSegment = imageRef.split('/')[0] ?? '';
+  return firstSegment === 'localhost' || firstSegment.includes('.') || firstSegment.includes(':');
 }
 
 function compactDockerVolumeForAgent(volume: Record<string, any>) {
@@ -735,6 +880,10 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
     const a = args as any; // shorthand for repeated casts
 
     switch (toolName) {
+      // ── Discovery ──
+      case 'find_resource':
+        return this.findResource(user, args);
+
       // ── PKI - CAs ──
       case 'list_cas':
         return (await this.caService.getCATree()).filter((ca: { type: string }) =>
@@ -764,6 +913,17 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
         await this.caService.deleteCA(a.caId, user.id);
         return { success: true };
       }
+      case 'manage_ca': {
+        const ca = await this.caService.getCA(a.caId);
+        const requiredScope = ca.type === 'root' ? 'pki:ca:create:root' : 'pki:ca:create:intermediate';
+        if (!hasScope(user.scopes, requiredScope)) {
+          throw new Error(`PERMISSION_DENIED: Missing required scope ${requiredScope}`);
+        }
+        if (a.operation === 'update') {
+          return this.caService.updateCA(a.caId, UpdateCASchema.parse(args), user.id);
+        }
+        throw new Error(`Unsupported CA operation: ${String(a.operation)}`);
+      }
 
       // ── PKI - Certificates ──
       case 'list_certificates':
@@ -792,6 +952,53 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
       case 'revoke_certificate':
         await this.certService.revokeCertificate(a.certificateId, a.reason, user.id);
         return { success: true, message: 'Certificate revoked.' };
+      case 'manage_certificate': {
+        if (a.operation === 'issue_from_csr') {
+          this.ensureToolScope(user, 'pki:cert:issue');
+          return this.certService.issueCertificateFromCSR(IssueCertFromCSRSchema.parse(args), user.id);
+        }
+        if (a.operation === 'chain') {
+          this.ensureToolScopeForResource(user, 'pki:cert:view', String(a.certificateId));
+          const cert = await this.certService.getCertificate(a.certificateId);
+          const chainPems: string[] = [];
+          let currentCaId: string | null = cert.caId;
+          while (currentCaId) {
+            const ca = await this.caService.getCA(currentCaId);
+            chainPems.push(ca.certificatePem);
+            currentCaId = ca.parentId;
+          }
+          return { certificatePem: cert.certificatePem, chainPem: [cert.certificatePem, ...chainPems].join('\n') };
+        }
+        if (a.operation === 'export') {
+          this.ensureToolScopeForResource(user, 'pki:cert:export', String(a.certificateId));
+          const input = ExportCertificateQuerySchema.parse(args);
+          const cert = await this.certService.getCertificate(a.certificateId);
+          const { ExportService } = await import('@/modules/pki/export.service.js');
+          const exportService = container.resolve(ExportService);
+          if (input.format === 'pem') return { format: 'pem', content: cert.certificatePem };
+          if (input.format === 'der') {
+            return { format: 'der', contentBase64: exportService.exportDER(cert.certificatePem).toString('base64') };
+          }
+          if (!input.passphrase) throw new Error('PASSPHRASE_REQUIRED');
+          const privateKey = await this.certService.getCertificatePrivateKey(a.certificateId);
+          if (input.format === 'pkcs12') {
+            if (!privateKey) throw new Error('NO_PRIVATE_KEY');
+            return {
+              format: 'pkcs12',
+              contentBase64: exportService
+                .exportPKCS12(cert.certificatePem, privateKey, input.passphrase)
+                .toString('base64'),
+            };
+          }
+          return {
+            format: 'jks',
+            contentBase64: exportService
+              .exportJKS(cert.certificatePem, privateKey, input.passphrase, cert.commonName)
+              .toString('base64'),
+          };
+        }
+        throw new Error(`Unsupported certificate operation: ${String(a.operation)}`);
+      }
 
       // ── PKI - Templates ──
       case 'list_templates':
@@ -816,6 +1023,24 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
       case 'delete_template':
         await this.templatesService.deleteTemplate(a.templateId);
         return { success: true };
+      case 'manage_template': {
+        if (a.operation === 'get') {
+          this.ensureToolScopeForResource(user, 'pki:templates:view', String(a.templateId));
+          return this.templatesService.getTemplate(a.templateId);
+        }
+        if (a.operation === 'update') {
+          this.ensureToolScope(user, 'pki:templates:edit');
+          return this.templatesService.updateTemplate(a.templateId, {
+            name: a.name,
+            certType: a.type,
+            keyAlgorithm: a.keyAlgorithm,
+            validityDays: a.validityDays,
+            keyUsage: a.keyUsage,
+            extKeyUsage: a.extendedKeyUsage,
+          });
+        }
+        throw new Error(`Unsupported PKI template operation: ${String(a.operation)}`);
+      }
 
       // ── Reverse Proxy ──
       case 'list_proxy_hosts': {
@@ -907,6 +1132,39 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
       case 'delete_proxy_folder':
         await this.folderService.deleteFolder(a.folderId, user.id);
         return { success: true };
+      case 'manage_proxy_template': {
+        const { NginxTemplateService } = await import('@/modules/proxy/nginx-template.service.js');
+        const templateService = container.resolve(NginxTemplateService);
+        if (a.operation === 'list') {
+          this.ensureToolScope(user, 'proxy:templates:view');
+          return templateService.listTemplates({
+            allowedIds: allowedResourceIdsForScopes(user.scopes, 'proxy:templates:view'),
+          });
+        }
+        if (a.operation === 'get') {
+          this.ensureToolScopeForResource(user, 'proxy:templates:view', String(a.templateId));
+          return templateService.getTemplate(a.templateId);
+        }
+        if (a.operation === 'create') {
+          this.ensureToolScope(user, 'proxy:templates:create');
+          return templateService.createTemplate(CreateNginxTemplateSchema.parse(args), user.id);
+        }
+        if (a.operation === 'update') {
+          this.ensureToolScopeForResource(user, 'proxy:templates:edit', String(a.templateId));
+          return templateService.updateTemplate(a.templateId, UpdateNginxTemplateSchema.parse(args), user.id);
+        }
+        if (a.operation === 'delete') {
+          this.ensureToolScopeForResource(user, 'proxy:templates:delete', String(a.templateId));
+          await templateService.deleteTemplate(a.templateId, user.id);
+          return { success: true };
+        }
+        if (a.operation === 'clone') {
+          this.ensureToolScopeForResource(user, 'proxy:templates:edit', String(a.templateId));
+          this.ensureToolScope(user, 'proxy:templates:create');
+          return templateService.cloneTemplate(a.templateId, user.id);
+        }
+        throw new Error(`Unsupported proxy template operation: ${String(a.operation)}`);
+      }
 
       // ── SSL Certificates ──
       case 'list_ssl_certificates':
@@ -926,6 +1184,30 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
           },
           user.id
         );
+      case 'manage_ssl_certificate': {
+        if (a.operation === 'get') {
+          this.ensureToolScopeForResource(user, 'ssl:cert:view', String(a.sslCertificateId));
+          return this.sslService.getCert(a.sslCertificateId);
+        }
+        if (a.operation === 'upload') {
+          this.ensureToolScope(user, 'ssl:cert:issue');
+          return this.sslService.uploadCert(UploadCertSchema.parse(args), user.id);
+        }
+        if (a.operation === 'renew') {
+          this.ensureToolScopeForResource(user, 'ssl:cert:issue', String(a.sslCertificateId));
+          return this.sslService.renewCert(a.sslCertificateId, user.id);
+        }
+        if (a.operation === 'verify_dns') {
+          this.ensureToolScopeForResource(user, 'ssl:cert:issue', String(a.sslCertificateId));
+          return this.sslService.completeDNS01Verification(a.sslCertificateId, user.id);
+        }
+        if (a.operation === 'delete') {
+          this.ensureToolScopeForResource(user, 'ssl:cert:delete', String(a.sslCertificateId));
+          await this.sslService.deleteCert(a.sslCertificateId, user.id);
+          return { success: true };
+        }
+        throw new Error(`Unsupported SSL certificate operation: ${String(a.operation)}`);
+      }
 
       // ── Domains ──
       case 'list_domains':
@@ -939,6 +1221,20 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
       case 'delete_domain':
         await this.domainsService.deleteDomain(a.domainId, user.id);
         return { success: true };
+      case 'manage_domain':
+        if (a.operation === 'get') {
+          this.ensureToolScopeForResource(user, 'domains:view', String(a.domainId));
+          return this.domainsService.getDomain(a.domainId);
+        }
+        if (a.operation === 'update') {
+          this.ensureToolScopeForResource(user, 'domains:edit', String(a.domainId));
+          return this.domainsService.updateDomain(a.domainId, UpdateDomainSchema.parse(args), user.id);
+        }
+        if (a.operation === 'check_dns') {
+          this.ensureToolScopeForResource(user, 'domains:edit', String(a.domainId));
+          return this.domainsService.checkDns(a.domainId);
+        }
+        throw new Error(`Unsupported domain operation: ${String(a.operation)}`);
 
       // ── Access Lists ──
       case 'list_access_lists':
@@ -966,6 +1262,16 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
       case 'delete_access_list':
         await this.accessListService.delete(a.accessListId, user.id);
         return { success: true };
+      case 'manage_access_list':
+        if (a.operation === 'get') {
+          this.ensureToolScopeForResource(user, 'acl:view', String(a.accessListId));
+          return this.accessListService.get(a.accessListId);
+        }
+        if (a.operation === 'update') {
+          this.ensureToolScopeForResource(user, 'acl:edit', String(a.accessListId));
+          return this.accessListService.update(a.accessListId, UpdateAccessListSchema.parse(args), user.id);
+        }
+        throw new Error(`Unsupported access list operation: ${String(a.operation)}`);
 
       // ── Nodes ──
       case 'list_nodes': {
@@ -1123,6 +1429,7 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
       case 'create_docker_container': {
         const input = ContainerCreateSchema.parse({
           image: a.image,
+          registryId: a.registryId,
           name: a.name,
           ports: a.ports,
           volumes: a.volumes,
@@ -1274,11 +1581,22 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
           : images;
       }
       case 'pull_docker_image': {
-        const { NodeDispatchService: PullNDS } = await import('@/services/node-dispatch.service.js');
-        const pullDispatch = container.resolve(PullNDS);
-        const pullRes = await pullDispatch.sendDockerImageCommand(a.nodeId, 'pull', { imageRef: a.imageRef }, 600000);
-        if (!pullRes.success) return { error: `Failed to pull ${a.imageRef}: ${pullRes.error}` };
-        return { success: true, message: `Pulled ${a.imageRef}` };
+        const input = ImagePullSchema.parse({ imageRef: a.imageRef, registryId: a.registryId });
+        const { DockerRegistryService } = await import('@/modules/docker/docker-registry.service.js');
+        const registryService = container.resolve(DockerRegistryService);
+        const auth = await registryService.resolveAuthForImagePull(a.nodeId, input.imageRef, input.registryId);
+        let finalImageRef = input.imageRef;
+        if (auth && !hasRegistryHost(input.imageRef)) {
+          finalImageRef = `${auth.url}/${input.imageRef}`;
+        }
+        const data = await this.dockerService.pullImage(
+          a.nodeId,
+          finalImageRef,
+          auth?.authJson,
+          user.id,
+          auth?.registryId
+        );
+        return { success: true, message: `Pulling ${finalImageRef}`, data };
       }
       case 'remove_docker_image':
         await this.dockerService.removeImage(a.nodeId, a.imageId, a.force ?? false, user.id);
@@ -1307,6 +1625,108 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
             )
           : networks;
       }
+      case 'manage_docker_registry': {
+        const { DockerRegistryService } = await import('@/modules/docker/docker-registry.service.js');
+        const registryService = container.resolve(DockerRegistryService);
+        const operation = String(a.operation);
+        switch (operation) {
+          case 'list':
+            this.ensureToolScope(user, 'docker:registries:view');
+            return registryService.list(typeof a.nodeId === 'string' ? a.nodeId : undefined);
+          case 'get':
+            this.ensureToolScope(user, 'docker:registries:view');
+            return registryService.get(String(a.registryId));
+          case 'create':
+            this.ensureToolScope(user, 'docker:registries:create');
+            return registryService.create(RegistryCreateSchema.parse(args), user.id);
+          case 'update':
+            this.ensureToolScope(user, 'docker:registries:edit');
+            return registryService.update(String(a.registryId), RegistryUpdateSchema.parse(args), user.id);
+          case 'delete':
+            this.ensureToolScope(user, 'docker:registries:delete');
+            await registryService.delete(String(a.registryId), user.id);
+            return { success: true };
+          case 'test':
+            this.ensureToolScope(user, 'docker:registries:edit');
+            return registryService.testConnection(String(a.registryId));
+          case 'test_direct':
+            this.ensureToolScope(user, 'docker:registries:edit');
+            return registryService.testConnectionDirect(
+              String(a.url),
+              typeof a.username === 'string' ? a.username : undefined,
+              typeof a.password === 'string' ? a.password : undefined,
+              typeof a.trustedAuthRealm === 'string' ? a.trustedAuthRealm : undefined
+            );
+          default:
+            throw new Error(`Unsupported Docker registry operation: ${operation}`);
+        }
+      }
+      case 'manage_docker_volume': {
+        const operation = String(a.operation);
+        if (operation === 'create') {
+          this.ensureToolScopeForResource(user, 'docker:volumes:create', String(a.nodeId));
+          const input = VolumeCreateSchema.parse(args);
+          return this.dockerService.createVolume(String(a.nodeId), input, user.id);
+        }
+        if (operation === 'delete') {
+          this.ensureToolScopeForResource(user, 'docker:volumes:delete', String(a.nodeId));
+          await this.dockerService.removeVolume(String(a.nodeId), String(a.name), Boolean(a.force), user.id);
+          return { success: true };
+        }
+        throw new Error(`Unsupported Docker volume operation: ${operation}`);
+      }
+      case 'manage_docker_network': {
+        const operation = String(a.operation);
+        if (operation === 'create') {
+          this.ensureToolScopeForResource(user, 'docker:networks:create', String(a.nodeId));
+          const input = NetworkCreateSchema.parse(args);
+          return this.dockerService.createNetwork(String(a.nodeId), input, user.id);
+        }
+        if (operation === 'delete') {
+          this.ensureToolScopeForResource(user, 'docker:networks:delete', String(a.nodeId));
+          await this.dockerService.removeNetwork(String(a.nodeId), String(a.networkId), user.id);
+          return { success: true };
+        }
+        if (operation === 'connect') {
+          this.ensureToolScopeForResource(user, 'docker:networks:edit', String(a.nodeId));
+          const input = NetworkConnectSchema.parse(args);
+          await this.dockerService.connectContainerToNetwork(
+            String(a.nodeId),
+            String(a.networkId),
+            input.containerId,
+            user.id
+          );
+          return { success: true };
+        }
+        if (operation === 'disconnect') {
+          this.ensureToolScopeForResource(user, 'docker:networks:edit', String(a.nodeId));
+          const input = NetworkConnectSchema.parse(args);
+          await this.dockerService.disconnectContainerFromNetwork(
+            String(a.nodeId),
+            String(a.networkId),
+            input.containerId,
+            user.id
+          );
+          return { success: true };
+        }
+        throw new Error(`Unsupported Docker network operation: ${operation}`);
+      }
+      case 'manage_docker_task': {
+        this.ensureToolScope(user, 'docker:tasks');
+        const { DockerTaskService } = await import('@/modules/docker/docker-task.service.js');
+        const taskService = container.resolve(DockerTaskService);
+        if (a.operation === 'get') return taskService.get(String(a.taskId));
+        if (a.operation === 'list') {
+          return taskService.list({
+            nodeId: typeof a.nodeId === 'string' ? a.nodeId : undefined,
+            status: typeof a.status === 'string' ? a.status : undefined,
+            type: typeof a.type === 'string' ? a.type : undefined,
+          });
+        }
+        throw new Error(`Unsupported Docker task operation: ${String(a.operation)}`);
+      }
+      case 'manage_docker_container_config':
+        return this.manageDockerContainerConfig(user, args);
 
       // ── Databases ──
       case 'list_databases': {
@@ -1346,6 +1766,16 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
       case 'execute_redis_command':
         this.ensureDatabaseQueryScopes(user, 'databases:query:admin', a.databaseId);
         return this.databaseService.executeRedisCommand(a.databaseId, a.command, user.id);
+      case 'manage_database_connection':
+        return this.manageDatabaseConnection(user, args);
+      case 'manage_postgres_data':
+        return this.managePostgresData(user, args);
+      case 'manage_redis_data':
+        return this.manageRedisData(user, args);
+      case 'manage_logging':
+        return this.manageLogging(user, args);
+      case 'manage_status_page':
+        return this.manageStatusPage(user, args);
 
       // ── Ask Question (handled client-side, backend just passes through) ──
       case 'ask_question':
@@ -1478,6 +1908,796 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
       default:
         throw new Error(`Tool not implemented: ${toolName}`);
     }
+  }
+
+  private async findResource(user: User, args: Record<string, unknown>) {
+    const query = String(args.query ?? '').trim();
+    if (!query) throw new Error('query is required');
+
+    const requestedTypes = Array.isArray(args.types)
+      ? new Set(args.types.map((type) => String(type).trim()).filter(Boolean))
+      : new Set<string>();
+    const typeWanted = (...types: string[]) =>
+      requestedTypes.size === 0 || types.some((type) => requestedTypes.has(type));
+    const limitValue = typeof args.limit === 'number' ? args.limit : Number(args.limit);
+    const limit = Number.isFinite(limitValue) ? Math.min(Math.max(Math.trunc(limitValue), 1), 50) : 25;
+    const results: Array<Record<string, unknown>> = [];
+    const errors: Array<{ type: string; error: string }> = [];
+
+    const itemsOf = (value: unknown): Record<string, any>[] => {
+      if (Array.isArray(value)) return value as Record<string, any>[];
+      if (value && typeof value === 'object' && Array.isArray((value as any).data)) return (value as any).data;
+      return [];
+    };
+    const add = (
+      type: string,
+      item: Record<string, any>,
+      options: { id?: unknown; name?: unknown; nodeId?: unknown; skipMatch?: boolean } = {}
+    ) => {
+      if (results.length >= limit) return;
+      if (
+        !options.skipMatch &&
+        !textMatchesSearch(
+          [
+            options.id,
+            options.name,
+            item.id,
+            item.name,
+            item.title,
+            item.hostname,
+            item.domain,
+            item.domainNames,
+            item.commonName,
+            item.serialNumber,
+            item.repoTags,
+            item.image,
+            item.status,
+          ],
+          query
+        )
+      ) {
+        return;
+      }
+      const id = String(options.id ?? item.id ?? item.name ?? item.domain ?? '');
+      results.push({
+        type,
+        id,
+        name:
+          options.name ?? item.name ?? item.title ?? item.hostname ?? item.domain ?? item.commonName ?? item.id ?? id,
+        nodeId: options.nodeId ?? item.nodeId,
+        summary: item,
+      });
+    };
+    const collect = async (
+      type: string,
+      toolName: string,
+      toolArgs: Record<string, unknown>,
+      map: (item: Record<string, any>) => { id?: unknown; name?: unknown; nodeId?: unknown } = () => ({})
+    ) => {
+      if (results.length >= limit) return;
+      try {
+        const serviceFiltered = toolArgs.search === query;
+        for (const item of itemsOf(await this.executeToolInternal(user, toolName, toolArgs))) {
+          add(type, item, { ...map(item), skipMatch: serviceFiltered });
+          if (results.length >= limit) break;
+        }
+      } catch (err) {
+        errors.push({ type, error: err instanceof Error ? err.message : 'search failed' });
+      }
+    };
+    const flattenCas = (cas: Record<string, any>[]): Record<string, any>[] =>
+      cas.flatMap((ca) => [ca, ...(Array.isArray(ca.children) ? flattenCas(ca.children) : [])]);
+
+    if (typeWanted('node') && hasScopeBase(user.scopes, 'nodes:details')) {
+      await collect('node', 'list_nodes', { search: query, limit }, (node) => ({
+        id: node.id,
+        name: node.displayName || node.hostname,
+      }));
+    }
+    if (typeWanted('proxy_host') && hasScopeBase(user.scopes, 'proxy:view')) {
+      await collect('proxy_host', 'list_proxy_hosts', { search: query, limit }, (host) => ({
+        id: host.id,
+        name: Array.isArray(host.domainNames) ? host.domainNames.join(', ') : host.id,
+        nodeId: host.nodeId,
+      }));
+    }
+    if (typeWanted('proxy_template') && hasScopeBase(user.scopes, 'proxy:templates:view')) {
+      await collect('proxy_template', 'manage_proxy_template', { operation: 'list' });
+    }
+    if (typeWanted('ssl_certificate') && hasScopeBase(user.scopes, 'ssl:cert:view')) {
+      await collect('ssl_certificate', 'list_ssl_certificates', { search: query, limit }, (cert) => ({
+        id: cert.id,
+        name: cert.name || cert.commonName || (Array.isArray(cert.domains) ? cert.domains.join(', ') : cert.id),
+      }));
+    }
+    if (typeWanted('domain') && hasScopeBase(user.scopes, 'domains:view')) {
+      await collect('domain', 'list_domains', { search: query, limit }, (domain) => ({
+        id: domain.id,
+        name: domain.domain,
+      }));
+    }
+    if (typeWanted('access_list') && hasScopeBase(user.scopes, 'acl:view')) {
+      await collect('access_list', 'list_access_lists', { search: query, limit });
+    }
+    if (
+      typeWanted('ca') &&
+      (hasScope(user.scopes, 'pki:ca:view:root') || hasScope(user.scopes, 'pki:ca:view:intermediate'))
+    ) {
+      try {
+        for (const ca of flattenCas(itemsOf(await this.executeToolInternal(user, 'list_cas', {})))) {
+          add('ca', ca, { id: ca.id, name: ca.commonName });
+          if (results.length >= limit) break;
+        }
+      } catch (err) {
+        errors.push({ type: 'ca', error: err instanceof Error ? err.message : 'search failed' });
+      }
+    }
+    if (typeWanted('pki_certificate') && hasScopeBase(user.scopes, 'pki:cert:view')) {
+      await collect('pki_certificate', 'list_certificates', { search: query, limit }, (cert) => ({
+        id: cert.id,
+        name: cert.commonName || cert.serialNumber,
+      }));
+    }
+    if (typeWanted('pki_template') && hasScopeBase(user.scopes, 'pki:templates:view')) {
+      await collect('pki_template', 'list_templates', {}, (template) => ({
+        id: template.id,
+        name: template.name,
+      }));
+    }
+    if (typeWanted('database') && hasScopeBase(user.scopes, 'databases:view')) {
+      await collect('database', 'list_databases', { search: query, limit }, (database) => ({
+        id: database.id,
+        name: database.name,
+      }));
+    }
+    if (typeWanted('logging_environment') && hasScopeBase(user.scopes, 'logs:environments:view')) {
+      await collect('logging_environment', 'manage_logging', {
+        resource: 'environment',
+        operation: 'list',
+        search: query,
+        allowedIds:
+          hasScope(user.scopes, 'logs:manage') || hasScope(user.scopes, 'logs:environments:view')
+            ? undefined
+            : getResourceScopedIds(user.scopes, 'logs:environments:view'),
+      });
+    }
+    if (typeWanted('logging_schema') && hasScopeBase(user.scopes, 'logs:schemas:view')) {
+      await collect('logging_schema', 'manage_logging', {
+        resource: 'schema',
+        operation: 'list',
+        search: query,
+        allowedIds:
+          hasScope(user.scopes, 'logs:manage') || hasScope(user.scopes, 'logs:schemas:view')
+            ? undefined
+            : getResourceScopedIds(user.scopes, 'logs:schemas:view'),
+      });
+    }
+    if (typeWanted('status_page_service') && hasScope(user.scopes, 'status-page:view')) {
+      await collect('status_page_service', 'manage_status_page', { resource: 'services', operation: 'list' });
+    }
+    if (typeWanted('status_page_incident') && hasScope(user.scopes, 'status-page:view')) {
+      await collect('status_page_incident', 'manage_status_page', {
+        resource: 'incidents',
+        operation: 'list',
+        page: 1,
+        limit,
+      });
+    }
+    if (typeWanted('notification_rule') && hasScope(user.scopes, 'notifications:view')) {
+      await collect('notification_rule', 'list_alert_rules', {});
+    }
+    if (typeWanted('notification_webhook') && hasScope(user.scopes, 'notifications:view')) {
+      await collect('notification_webhook', 'list_webhooks', {});
+    }
+
+    const dockerTypes = ['docker_container', 'docker_deployment', 'docker_image', 'docker_volume', 'docker_network'];
+    if (dockerTypes.some((type) => typeWanted(type))) {
+      const nodeIds = await this.findDockerSearchNodeIds(
+        user,
+        typeof args.nodeId === 'string' ? args.nodeId : undefined
+      );
+      for (const nodeId of nodeIds) {
+        if (results.length >= limit) break;
+        if (typeWanted('docker_container') && hasScopeForResource(user.scopes, 'docker:containers:view', nodeId)) {
+          await collect('docker_container', 'list_docker_containers', { nodeId, search: query }, (container) => ({
+            id: container.id,
+            name: container.name,
+            nodeId,
+          }));
+        }
+        if (typeWanted('docker_deployment') && hasScopeForResource(user.scopes, 'docker:containers:view', nodeId)) {
+          await collect('docker_deployment', 'list_docker_deployments', { nodeId, search: query }, (deployment) => ({
+            id: deployment.id,
+            name: deployment.name,
+            nodeId,
+          }));
+        }
+        if (typeWanted('docker_image') && hasScopeForResource(user.scopes, 'docker:images:view', nodeId)) {
+          await collect('docker_image', 'list_docker_images', { nodeId, search: query }, (image) => ({
+            id: image.id,
+            name: Array.isArray(image.repoTags) ? image.repoTags[0] : image.id,
+            nodeId,
+          }));
+        }
+        if (typeWanted('docker_volume') && hasScopeForResource(user.scopes, 'docker:volumes:view', nodeId)) {
+          await collect('docker_volume', 'list_docker_volumes', { nodeId, search: query }, (volume) => ({
+            id: volume.name,
+            name: volume.name,
+            nodeId,
+          }));
+        }
+        if (typeWanted('docker_network') && hasScopeForResource(user.scopes, 'docker:networks:view', nodeId)) {
+          await collect('docker_network', 'list_docker_networks', { nodeId, search: query }, (network) => ({
+            id: network.id,
+            name: network.name,
+            nodeId,
+          }));
+        }
+      }
+    }
+    if (typeWanted('docker_registry') && hasScopeBase(user.scopes, 'docker:registries:view')) {
+      await collect('docker_registry', 'manage_docker_registry', { operation: 'list' });
+    }
+
+    return {
+      query,
+      results,
+      total: results.length,
+      truncated: results.length >= limit,
+      errors: errors.length > 0 ? errors : undefined,
+    };
+  }
+
+  private async findDockerSearchNodeIds(user: User, nodeId?: string) {
+    const dockerViewScopes = [
+      'docker:containers:view',
+      'docker:images:view',
+      'docker:volumes:view',
+      'docker:networks:view',
+    ];
+    if (nodeId) {
+      return dockerViewScopes.some((scope) => hasScopeForResource(user.scopes, scope, nodeId)) ? [nodeId] : [];
+    }
+    const broadAccess = dockerViewScopes.some((scope) => hasScope(user.scopes, scope));
+    const scopedIds = broadAccess
+      ? undefined
+      : [...new Set(dockerViewScopes.flatMap((scope) => getResourceScopedIds(user.scopes, scope)))];
+    if (scopedIds?.length === 0) return [];
+    const nodeIds: string[] = [];
+    let page = 1;
+    let totalPages = 1;
+    do {
+      const nodes = await this.nodesService.list(
+        { type: 'docker', page, limit: 100 },
+        scopedIds ? { allowedIds: scopedIds } : undefined
+      );
+      nodeIds.push(...nodes.data.map((node) => node.id));
+      totalPages = nodes.totalPages;
+      page += 1;
+    } while (page <= totalPages);
+    return nodeIds;
+  }
+
+  private ensureToolScope(user: User, scope: string) {
+    if (!hasScope(user.scopes, scope)) {
+      throw new Error(`PERMISSION_DENIED: Missing required scope ${scope}`);
+    }
+  }
+
+  private ensureToolScopeForResource(user: User, baseScope: string, resourceId: string) {
+    if (!hasScopeForResource(user.scopes, baseScope, resourceId)) {
+      throw new Error(`PERMISSION_DENIED: Missing required scope ${baseScope}:${resourceId}`);
+    }
+  }
+
+  private async manageDockerContainerConfig(user: User, args: Record<string, unknown>) {
+    const operation = String(args.operation);
+    const nodeId = String(args.nodeId);
+    const targetType = args.targetType === 'deployment' ? 'deployment' : 'container';
+    const deploymentId = String(args.deploymentId ?? '');
+    const containerName = String(args.containerName ?? '');
+    const containerId = String(args.containerId ?? '');
+    const secretContainerName = targetType === 'deployment' ? `deployment:${deploymentId}` : containerName;
+
+    if (operation === 'get_env') {
+      this.ensureToolScopeForResource(user, 'docker:containers:environment', nodeId);
+      return this.dockerService.getContainerEnv(nodeId, containerId);
+    }
+    if (operation === 'update_env') {
+      this.ensureToolScopeForResource(user, 'docker:containers:environment', nodeId);
+      const input = EnvUpdateSchema.parse(args);
+      return this.dockerService.updateContainerEnv(nodeId, containerId, input.env, input.removeEnv, user.id);
+    }
+    if (operation === 'list_files') {
+      this.ensureToolScopeForResource(user, 'docker:containers:files', nodeId);
+      const input = FileBrowseSchema.parse(args);
+      return this.dockerService.listDirectory(nodeId, containerId, input.path);
+    }
+    if (operation === 'read_file') {
+      this.ensureToolScopeForResource(user, 'docker:containers:files', nodeId);
+      const input = FileBrowseSchema.parse(args);
+      return this.dockerService.readFile(nodeId, containerId, input.path);
+    }
+    if (operation === 'write_file') {
+      this.ensureToolScopeForResource(user, 'docker:containers:files', nodeId);
+      const input = FileWriteSchema.parse(args);
+      await this.dockerService.writeFile(nodeId, containerId, input.path, input.content, user.id);
+      return { success: true };
+    }
+    if (operation.endsWith('_secret') || operation === 'list_secrets') {
+      this.ensureToolScopeForResource(user, 'docker:containers:secrets', nodeId);
+      const { DockerSecretService } = await import('@/modules/docker/docker-secret.service.js');
+      const secretService = container.resolve(DockerSecretService);
+      if (targetType === 'deployment') {
+        const { DockerDeploymentService } = await import('@/modules/docker/docker-deployment.service.js');
+        await container.resolve(DockerDeploymentService).get(nodeId, deploymentId);
+      }
+      if (operation === 'list_secrets') {
+        return secretService.list(nodeId, secretContainerName, Boolean(args.reveal));
+      }
+      if (operation === 'create_secret') {
+        const input = SecretCreateSchema.parse(args);
+        return secretService.create(nodeId, secretContainerName, input.key, input.value, user.id);
+      }
+      if (operation === 'update_secret') {
+        const input = SecretUpdateSchema.parse(args);
+        return secretService.update(String(args.secretId), nodeId, input.value, user.id, secretContainerName);
+      }
+      if (operation === 'delete_secret') {
+        await secretService.delete(String(args.secretId), nodeId, user.id, secretContainerName);
+        return { success: true };
+      }
+    }
+    if (operation.includes('webhook')) {
+      this.ensureToolScopeForResource(user, 'docker:containers:webhooks', nodeId);
+      if (targetType === 'deployment') {
+        const { DockerDeploymentService } = await import('@/modules/docker/docker-deployment.service.js');
+        const deploymentService = container.resolve(DockerDeploymentService);
+        if (operation === 'get_webhook') return deploymentService.getWebhook(nodeId, deploymentId);
+        if (operation === 'upsert_webhook') {
+          return deploymentService.upsertWebhook(
+            nodeId,
+            deploymentId,
+            { enabled: args.enabled as boolean | undefined },
+            user.id
+          );
+        }
+        if (operation === 'delete_webhook') {
+          await deploymentService.deleteWebhook(nodeId, deploymentId, user.id);
+          return { success: true };
+        }
+        if (operation === 'regenerate_webhook_token') {
+          return deploymentService.regenerateWebhook(nodeId, deploymentId, user.id);
+        }
+      }
+      const { DockerWebhookService } = await import('@/modules/docker/docker-webhook.service.js');
+      const webhookService = container.resolve(DockerWebhookService);
+      if (operation === 'get_webhook') return webhookService.getByContainer(nodeId, containerName);
+      if (operation === 'upsert_webhook')
+        return webhookService.upsert(nodeId, containerName, { enabled: args.enabled as boolean | undefined }, user.id);
+      if (operation === 'delete_webhook') {
+        await webhookService.remove(nodeId, containerName, user.id);
+        return { success: true };
+      }
+      if (operation === 'regenerate_webhook_token') {
+        return webhookService.regenerateToken(nodeId, containerName, user.id);
+      }
+    }
+    if (operation.includes('health_check')) {
+      const readOnly = operation === 'get_health_check';
+      this.ensureToolScopeForResource(user, readOnly ? 'docker:containers:view' : 'docker:containers:edit', nodeId);
+      const { DockerHealthCheckService } = await import('@/modules/docker/docker-health-check.service.js');
+      const healthService = container.resolve(DockerHealthCheckService);
+      const input =
+        args.healthCheck && typeof args.healthCheck === 'object'
+          ? DockerHealthCheckUpsertSchema.parse(args.healthCheck)
+          : undefined;
+      if (targetType === 'deployment') {
+        if (operation === 'get_health_check') return healthService.getDeployment(nodeId, deploymentId);
+        if (operation === 'upsert_health_check')
+          return healthService.upsertDeployment(
+            nodeId,
+            deploymentId,
+            DockerHealthCheckUpsertSchema.parse(args.healthCheck ?? {})
+          );
+        if (operation === 'test_health_check') return healthService.testDeployment(nodeId, deploymentId, input);
+      }
+      if (operation === 'get_health_check') return healthService.getContainer(nodeId, containerName);
+      if (operation === 'upsert_health_check')
+        return healthService.upsertContainer(
+          nodeId,
+          containerName,
+          DockerHealthCheckUpsertSchema.parse(args.healthCheck ?? {})
+        );
+      if (operation === 'test_health_check') return healthService.testContainer(nodeId, containerName, input);
+    }
+
+    throw new Error(`Unsupported Docker container config operation: ${operation}`);
+  }
+
+  private async manageDatabaseConnection(user: User, args: Record<string, unknown>) {
+    const operation = String(args.operation);
+    const databaseId = String(args.databaseId ?? '');
+    if (operation === 'create') {
+      this.ensureToolScope(user, 'databases:create');
+      return this.databaseService.create(CreateDatabaseConnectionSchema.parse(args), user.id);
+    }
+    if (operation === 'update') {
+      this.ensureDirectDatabaseScope(user, 'databases:edit', databaseId);
+      return this.databaseService.update(databaseId, UpdateDatabaseConnectionSchema.parse(args), user.id);
+    }
+    if (operation === 'delete') {
+      this.ensureDirectDatabaseScope(user, 'databases:delete', databaseId);
+      await this.databaseService.delete(databaseId, user.id);
+      return { success: true };
+    }
+    if (operation === 'test') {
+      this.ensureDirectDatabaseScope(user, 'databases:view', databaseId);
+      return this.databaseService.testSavedConnection(databaseId, user.id);
+    }
+    if (operation === 'reveal_credentials') {
+      this.ensureDirectDatabaseScope(user, 'databases:credentials:reveal', databaseId);
+      return this.databaseService.revealCredentials(databaseId);
+    }
+    if (operation === 'health_history') {
+      this.ensureDirectDatabaseScope(user, 'databases:view', databaseId);
+      return this.databaseService.getHealthHistory(databaseId);
+    }
+    throw new Error(`Unsupported database connection operation: ${operation}`);
+  }
+
+  private async managePostgresData(user: User, args: Record<string, unknown>) {
+    const operation = String(args.operation);
+    const databaseId = String(args.databaseId);
+    if (operation === 'list_schemas') {
+      this.ensureDatabaseQueryScopes(user, 'databases:query:read', databaseId);
+      return this.databaseService.listPostgresSchemas(databaseId);
+    }
+    if (operation === 'list_tables') {
+      this.ensureDatabaseQueryScopes(user, 'databases:query:read', databaseId);
+      return this.databaseService.listPostgresTables(databaseId, String(args.schema));
+    }
+    if (operation === 'table_metadata') {
+      this.ensureDatabaseQueryScopes(user, 'databases:query:read', databaseId);
+      const input = BrowsePostgresRowsQuerySchema.pick({ schema: true, table: true }).parse(args);
+      return this.databaseService.getPostgresTableMetadata(databaseId, input.schema, input.table);
+    }
+    if (operation === 'browse_rows') {
+      this.ensureDatabaseQueryScopes(user, 'databases:query:read', databaseId);
+      const input = BrowsePostgresRowsQuerySchema.parse(args);
+      return this.databaseService.browsePostgresRows(
+        databaseId,
+        input.schema,
+        input.table,
+        input.page,
+        input.limit,
+        input.sortBy,
+        input.sortOrder,
+        input.searchColumn
+          ? { column: input.searchColumn, operation: input.searchOperation ?? 'like', value: input.searchValue ?? '' }
+          : undefined
+      );
+    }
+    if (operation === 'insert_row') {
+      this.ensureDatabaseQueryScopes(user, 'databases:query:write', databaseId);
+      const input = BrowsePostgresRowsQuerySchema.pick({ schema: true, table: true }).parse(args);
+      return this.databaseService.insertPostgresRow(
+        databaseId,
+        input.schema,
+        input.table,
+        PostgresObjectSchema.parse(args.values ?? {}),
+        user.id
+      );
+    }
+    if (operation === 'update_row') {
+      this.ensureDatabaseQueryScopes(user, 'databases:query:write', databaseId);
+      const input = BrowsePostgresRowsQuerySchema.pick({ schema: true, table: true }).parse(args);
+      return this.databaseService.updatePostgresRow(
+        databaseId,
+        input.schema,
+        input.table,
+        PostgresObjectSchema.parse(args.primaryKey ?? {}),
+        PostgresObjectSchema.parse(args.values ?? {}),
+        user.id
+      );
+    }
+    if (operation === 'delete_row') {
+      this.ensureDatabaseQueryScopes(user, 'databases:query:write', databaseId);
+      const input = BrowsePostgresRowsQuerySchema.pick({ schema: true, table: true }).parse(args);
+      return this.databaseService.deletePostgresRow(
+        databaseId,
+        input.schema,
+        input.table,
+        PostgresObjectSchema.parse(args.primaryKey ?? {}),
+        user.id
+      );
+    }
+    if (operation === 'add_column') {
+      this.ensureDatabaseQueryScopes(user, 'databases:query:admin', databaseId);
+      const input = AddPostgresColumnSchema.parse(args);
+      return this.databaseService.addPostgresColumn(
+        databaseId,
+        input.schema,
+        input.table,
+        input.column,
+        input.dataType,
+        user.id
+      );
+    }
+    if (operation === 'update_column_type') {
+      this.ensureDatabaseQueryScopes(user, 'databases:query:admin', databaseId);
+      const input = UpdatePostgresColumnTypeSchema.parse(args);
+      return this.databaseService.updatePostgresColumnType(
+        databaseId,
+        input.schema,
+        input.table,
+        input.column,
+        input.dataType,
+        user.id
+      );
+    }
+    if (operation === 'delete_column') {
+      this.ensureDatabaseQueryScopes(user, 'databases:query:admin', databaseId);
+      const input = DeletePostgresColumnSchema.parse(args);
+      return this.databaseService.deletePostgresColumn(databaseId, input.schema, input.table, input.column, user.id);
+    }
+    throw new Error(`Unsupported Postgres operation: ${operation}`);
+  }
+
+  private async manageRedisData(user: User, args: Record<string, unknown>) {
+    const operation = String(args.operation);
+    const databaseId = String(args.databaseId);
+    if (operation === 'scan_keys') {
+      this.ensureDatabaseQueryScopes(user, 'databases:query:read', databaseId);
+      const input = RedisScanKeysQuerySchema.parse(args);
+      return this.databaseService.scanRedisKeys(databaseId, input.cursor, input.limit, input.search, input.type);
+    }
+    if (operation === 'get_key') {
+      this.ensureDatabaseQueryScopes(user, 'databases:query:read', databaseId);
+      const input = RedisGetKeyQuerySchema.parse(args);
+      return this.databaseService.getRedisKey(databaseId, input.key, input);
+    }
+    if (operation === 'set_key') {
+      this.ensureDatabaseQueryScopes(user, 'databases:query:write', databaseId);
+      const input = RedisSetKeySchema.parse(args);
+      return this.databaseService.setRedisKey(
+        databaseId,
+        input.key,
+        input.type,
+        input.value,
+        input.ttlSeconds,
+        user.id
+      );
+    }
+    if (operation === 'delete_key') {
+      this.ensureDatabaseQueryScopes(user, 'databases:query:write', databaseId);
+      const input = RedisGetKeyQuerySchema.parse(args);
+      return this.databaseService.deleteRedisKey(databaseId, input.key, user.id);
+    }
+    if (operation === 'expire_key') {
+      this.ensureDatabaseQueryScopes(user, 'databases:query:write', databaseId);
+      const input = RedisExpireKeySchema.parse(args);
+      return this.databaseService.expireRedisKey(databaseId, input.key, input.ttlSeconds, user.id);
+    }
+    if (operation === 'execute_command') {
+      const command = String(args.command ?? '');
+      const intent = inferRedisIntent(command);
+      this.ensureDatabaseQueryScopes(
+        user,
+        intent === 'read'
+          ? 'databases:query:read'
+          : intent === 'write'
+            ? 'databases:query:write'
+            : 'databases:query:admin',
+        databaseId
+      );
+      return this.databaseService.executeRedisCommand(databaseId, command, user.id);
+    }
+    throw new Error(`Unsupported Redis operation: ${operation}`);
+  }
+
+  private ensureLoggingScope(user: User, baseScope: string, resourceId?: string) {
+    if (hasScope(user.scopes, 'logs:manage')) return;
+    if (resourceId ? hasScopeForResource(user.scopes, baseScope, resourceId) : hasScopeBase(user.scopes, baseScope)) {
+      return;
+    }
+    throw new Error(
+      `PERMISSION_DENIED: Missing required scope ${resourceId ? `${baseScope}:${resourceId}` : baseScope}`
+    );
+  }
+
+  private async manageLogging(user: User, args: Record<string, unknown>) {
+    const resource = String(args.resource);
+    const operation = String(args.operation);
+    const payload = (args.payload && typeof args.payload === 'object' ? args.payload : {}) as Record<string, unknown>;
+    if (resource === 'environment') {
+      const { LoggingEnvironmentService } = await import('@/modules/logging/logging-environment.service.js');
+      const service = container.resolve(LoggingEnvironmentService);
+      const id = String(args.environmentId ?? '');
+      if (operation === 'list') {
+        this.ensureLoggingScope(user, 'logs:environments:view');
+        const allowedIds =
+          hasScope(user.scopes, 'logs:manage') || hasScope(user.scopes, 'logs:environments:view')
+            ? undefined
+            : getResourceScopedIds(user.scopes, 'logs:environments:view');
+        return service.list({
+          search: typeof args.search === 'string' ? args.search : undefined,
+          allowedIds,
+        });
+      }
+      if (operation === 'get') {
+        this.ensureLoggingScope(user, 'logs:environments:view', id);
+        return service.get(id);
+      }
+      if (operation === 'create') {
+        this.ensureLoggingScope(user, 'logs:environments:create');
+        return service.create(CreateLoggingEnvironmentSchema.parse(payload), user.id);
+      }
+      if (operation === 'update') {
+        this.ensureLoggingScope(user, 'logs:environments:edit', id);
+        return service.update(id, UpdateLoggingEnvironmentSchema.parse(payload), user.id);
+      }
+      if (operation === 'delete') {
+        this.ensureLoggingScope(user, 'logs:environments:delete', id);
+        await service.delete(id, user.id);
+        return { success: true };
+      }
+    }
+    if (resource === 'schema') {
+      const { LoggingSchemaService } = await import('@/modules/logging/logging-schema.service.js');
+      const service = container.resolve(LoggingSchemaService);
+      const id = String(args.schemaId ?? '');
+      if (operation === 'list') {
+        this.ensureLoggingScope(user, 'logs:schemas:view');
+        const schemas = await service.list({ search: typeof args.search === 'string' ? args.search : undefined });
+        if (hasScope(user.scopes, 'logs:manage') || hasScope(user.scopes, 'logs:schemas:view')) return schemas;
+        const allowedIds = new Set(getResourceScopedIds(user.scopes, 'logs:schemas:view'));
+        return schemas.filter((schema) => allowedIds.has(schema.id));
+      }
+      if (operation === 'get') {
+        this.ensureLoggingScope(user, 'logs:schemas:view', id);
+        return service.get(id);
+      }
+      if (operation === 'create') {
+        this.ensureLoggingScope(user, 'logs:schemas:create');
+        return service.create(CreateLoggingSchemaSchema.parse(payload), user.id);
+      }
+      if (operation === 'update') {
+        this.ensureLoggingScope(user, 'logs:schemas:edit', id);
+        return service.update(id, UpdateLoggingSchemaSchema.parse(payload), user.id);
+      }
+      if (operation === 'delete') {
+        this.ensureLoggingScope(user, 'logs:schemas:delete', id);
+        await service.delete(id, user.id);
+        return { success: true };
+      }
+    }
+    if (resource === 'token') {
+      const { LoggingTokenService } = await import('@/modules/logging/logging-token.service.js');
+      const service = container.resolve(LoggingTokenService);
+      const environmentId = String(args.environmentId ?? '');
+      this.ensureLoggingScope(
+        user,
+        operation === 'list'
+          ? 'logs:tokens:view'
+          : operation === 'create'
+            ? 'logs:tokens:create'
+            : 'logs:tokens:delete',
+        environmentId
+      );
+      if (operation === 'list') return service.list(environmentId);
+      if (operation === 'create')
+        return service.create(environmentId, CreateLoggingTokenSchema.parse(payload), user.id);
+      if (operation === 'delete') {
+        await service.delete(environmentId, String(args.tokenId), user.id);
+        return { success: true };
+      }
+    }
+    if (resource === 'logs' && operation === 'search') {
+      this.ensureLoggingScope(user, 'logs:read', String(args.environmentId));
+      const { LoggingFeatureService } = await import('@/modules/logging/logging-feature.service.js');
+      container.resolve(LoggingFeatureService).requireAvailableForStorage();
+      const { LoggingSearchService } = await import('@/modules/logging/logging-search.service.js');
+      return container
+        .resolve(LoggingSearchService)
+        .search(String(args.environmentId), LoggingSearchSchema.parse(payload) as any);
+    }
+    if (resource === 'facets' || operation === 'facets') {
+      this.ensureLoggingScope(user, 'logs:read', String(args.environmentId));
+      const { LoggingFeatureService } = await import('@/modules/logging/logging-feature.service.js');
+      container.resolve(LoggingFeatureService).requireAvailableForStorage();
+      const { LoggingSearchService } = await import('@/modules/logging/logging-search.service.js');
+      return container
+        .resolve(LoggingSearchService)
+        .facets(String(args.environmentId), LoggingFacetsQuerySchema.parse(payload));
+    }
+    if (resource === 'metadata' || operation === 'metadata') {
+      this.ensureLoggingScope(user, 'logs:read', String(args.environmentId));
+      const { LoggingMetadataService } = await import('@/modules/logging/logging-metadata.service.js');
+      return container.resolve(LoggingMetadataService).get(String(args.environmentId));
+    }
+    throw new Error(`Unsupported logging operation: ${resource}.${operation}`);
+  }
+
+  private async manageStatusPage(user: User, args: Record<string, unknown>) {
+    const { StatusPageService } = await import('@/modules/status-page/status-page.service.js');
+    const service = container.resolve(StatusPageService);
+    const resource = String(args.resource);
+    const operation = String(args.operation);
+    const payload = (args.payload && typeof args.payload === 'object' ? args.payload : {}) as Record<string, unknown>;
+    if (resource === 'settings') {
+      if (operation === 'get') {
+        this.ensureToolScope(user, 'status-page:view');
+        return service.getConfig();
+      }
+      if (operation === 'update') {
+        this.ensureToolScope(user, 'status-page:manage');
+        return service.updateSettings(StatusPageSettingsSchema.parse(payload), user.id);
+      }
+    }
+    if (resource === 'proxy_templates' && operation === 'list') {
+      this.ensureToolScope(user, 'status-page:view');
+      return service.listProxyTemplates();
+    }
+    if (resource === 'services') {
+      if (operation === 'list') {
+        this.ensureToolScope(user, 'status-page:view');
+        return service.listServices();
+      }
+      if (operation === 'create') {
+        this.ensureToolScope(user, 'status-page:manage');
+        return service.createService(CreateStatusPageServiceSchema.parse(payload), user.id);
+      }
+      if (operation === 'update') {
+        this.ensureToolScope(user, 'status-page:manage');
+        return service.updateService(String(args.serviceId), UpdateStatusPageServiceSchema.parse(payload), user.id);
+      }
+      if (operation === 'delete') {
+        this.ensureToolScope(user, 'status-page:manage');
+        await service.deleteService(String(args.serviceId), user.id);
+        return { success: true };
+      }
+    }
+    if (resource === 'incidents') {
+      if (operation === 'list') {
+        this.ensureToolScope(user, 'status-page:view');
+        return service.listIncidents(IncidentListQuerySchema.parse(args));
+      }
+      if (operation === 'create') {
+        this.ensureToolScope(user, 'status-page:incidents:create');
+        return service.createManualIncident(CreateStatusPageIncidentSchema.parse(payload), user.id);
+      }
+      if (operation === 'update') {
+        this.ensureToolScope(user, 'status-page:incidents:update');
+        return service.updateIncident(String(args.incidentId), UpdateStatusPageIncidentSchema.parse(payload), user.id);
+      }
+      if (operation === 'delete') {
+        this.ensureToolScope(user, 'status-page:incidents:delete');
+        await service.deleteIncident(String(args.incidentId), user.id);
+        return { success: true };
+      }
+      if (operation === 'resolve') {
+        this.ensureToolScope(user, 'status-page:incidents:resolve');
+        return service.resolveIncident(String(args.incidentId), user.id);
+      }
+      if (operation === 'promote') {
+        this.ensureToolScope(user, 'status-page:incidents:create');
+        return service.promoteIncident(String(args.incidentId), user.id);
+      }
+    }
+    if (resource === 'incident_updates' && operation === 'create_update') {
+      this.ensureToolScope(user, 'status-page:incidents:update');
+      return service.createIncidentUpdate(
+        String(args.incidentId),
+        CreateStatusPageIncidentUpdateSchema.parse(payload),
+        user.id
+      );
+    }
+    if (resource === 'preview' || operation === 'preview') {
+      this.ensureToolScope(user, 'status-page:view');
+      return service.getPreviewDto();
+    }
+    throw new Error(`Unsupported status page operation: ${resource}.${operation}`);
   }
 
   private ensureDatabaseScope(user: User, baseScope: string, databaseId: string) {
