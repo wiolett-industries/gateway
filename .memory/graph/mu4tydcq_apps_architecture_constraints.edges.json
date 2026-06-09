@@ -1,0 +1,55 @@
+{
+  "file_name": "mu4tydcq_apps_architecture_constraints",
+  "edges": [
+    {
+      "from_id": "mu4tydcq",
+      "to_id": "35fip13o",
+      "relation": "same_area",
+      "weight": 0.9,
+      "reason": "Base MVP architecture constraints for App-scoped resources and resource lifecycle.",
+      "source": "auto",
+      "created_at": 1780866541284,
+      "updated_at": 1780866541284
+    },
+    {
+      "from_id": "mu4tydcq",
+      "to_id": "map4m3kd",
+      "relation": "same_area",
+      "weight": 0.7,
+      "reason": "Deletion policy for Apps with app-scoped resources complements ownership constraints.",
+      "source": "auto",
+      "created_at": 1780866541284,
+      "updated_at": 1780866541284
+    },
+    {
+      "from_id": "mu4tydcq",
+      "to_id": "ebbuf7r6",
+      "relation": "related_to",
+      "weight": 0.65,
+      "reason": "Both define app-scoped vs global resource visibility in API surface.",
+      "source": "auto",
+      "created_at": 1780866541284,
+      "updated_at": 1780866541284
+    },
+    {
+      "from_id": "mu4tydcq",
+      "to_id": "7z9tx2d9",
+      "relation": "same_area",
+      "weight": 0.6,
+      "reason": "Global vs app-scoped resource states align with Gateway resource model described in MVP.",
+      "source": "auto",
+      "created_at": 1780866541284,
+      "updated_at": 1780866541284
+    },
+    {
+      "from_id": "mu4tydcq",
+      "to_id": "duqpv8b7",
+      "relation": "same_area",
+      "weight": 0.6,
+      "reason": "App ownership restrictions on Node resources align with gateway-owned infrastructure separation.",
+      "source": "auto",
+      "created_at": 1780866541284,
+      "updated_at": 1780866541284
+    }
+  ]
+}

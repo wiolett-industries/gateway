@@ -1,0 +1,15 @@
+{
+  "file_name": "qz6ixfnq_docker_registry_fallback",
+  "edges": [
+    {
+      "from_id": "qz6ixfnq",
+      "to_id": "ov8vmocj",
+      "relation": "related_to",
+      "weight": 0.5,
+      "reason": "TLS/cert management for daemon-adjacent surfaces aligns with OAuth/security considerations in iop65o1t.",
+      "source": "auto",
+      "created_at": 1780942239151,
+      "updated_at": 1780942239151
+    }
+  ]
+}

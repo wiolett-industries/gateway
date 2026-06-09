@@ -1,0 +1,25 @@
+{
+  "file_name": "35fip13o_gateway_permissions_mvp",
+  "edges": [
+    {
+      "from_id": "35fip13o",
+      "to_id": "7z9tx2d9",
+      "relation": "uses_service",
+      "weight": 0.85,
+      "reason": "Defines global vs app-scoped resource states used by gateway apps, aligning with MVP resource scoping.",
+      "source": "auto",
+      "created_at": 1780866388844,
+      "updated_at": 1780866388844
+    },
+    {
+      "from_id": "35fip13o",
+      "to_id": "map4m3kd",
+      "relation": "depends_on",
+      "weight": 0.75,
+      "reason": "Deletion policy requires manual unlink/detach before App deletion, relevant to MVP lifecycle.",
+      "source": "auto",
+      "created_at": 1780866388844,
+      "updated_at": 1780866388844
+    }
+  ]
+}
