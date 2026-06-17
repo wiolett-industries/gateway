@@ -39,6 +39,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useRealtime } from "@/hooks/use-realtime";
 import { useStableNavigate } from "@/hooks/use-stable-navigate";
 import { useUrlTab } from "@/hooks/use-url-tab";
+import { stripRegistryHostFromImageName } from "@/lib/docker-image-ref";
 import {
   type DockerRuntimeCapacity,
   loadDockerRuntimeCapacity,
@@ -1503,7 +1504,7 @@ function DeploymentSettings({
                 <label className="text-xs font-medium text-muted-foreground">Image</label>
                 <Input
                   className="h-8 text-xs font-mono bg-muted/50"
-                  value={deploymentBaseline.imageName}
+                  value={stripRegistryHostFromImageName(deploymentBaseline.imageName)}
                   disabled
                 />
               </div>

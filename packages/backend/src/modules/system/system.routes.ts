@@ -4,6 +4,7 @@ import { container } from '@/container.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { openApiValidationHook } from '@/lib/openapi.js';
 import { hasScope } from '@/lib/permissions.js';
+import { AppError } from '@/middleware/error-handler.js';
 import { authMiddleware, requireScope, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import { DaemonUpdateService } from '@/services/daemon-update.service.js';
 import { EventBusService } from '@/services/event-bus.service.js';
@@ -152,11 +153,11 @@ systemRoutes.openapi({ ...updateDaemonRoute, middleware: sessionOnly }, async (c
   const db = container.resolve<any>(TOKENS.DrizzleClient);
 
   const [node] = await db.select().from(nodesTable).where(eq(nodesTable.id, nodeId)).limit(1);
-  if (!node) return c.json({ error: 'Node not found' }, 404);
+  if (!node) throw new AppError(404, 'NODE_NOT_FOUND', 'Node not found');
 
   const daemonType = node.type as 'nginx' | 'docker' | 'monitoring';
   const release = await service.getLatestRelease(daemonType);
-  if (!release) return c.json({ error: 'No release found for this daemon type' }, 404);
+  if (!release) throw new AppError(404, 'RELEASE_NOT_FOUND', 'No release found for this daemon type');
 
   const arch = (((node.capabilities ?? {}) as Record<string, unknown>).architecture as string) ?? 'amd64';
   const artifact = await service.prepareTrustedDaemonUpdate(daemonType, release.tagName, release.version, arch);
@@ -172,7 +173,7 @@ systemRoutes.openapi({ ...updateDaemonRoute, middleware: sessionOnly }, async (c
     );
     if (!result.success) {
       await service.clearNodeUpdateInProgress(nodeId);
-      return c.json({ error: result.error || 'Failed to start daemon update' }, 502);
+      throw new AppError(502, 'DAEMON_UPDATE_START_FAILED', result.error || 'Failed to start daemon update');
     }
   } catch (error) {
     await service.clearNodeUpdateInProgress(nodeId);

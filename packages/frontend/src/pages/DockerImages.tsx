@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/select";
 import { TruncateStart } from "@/components/ui/truncate-start";
 import { useRealtime } from "@/hooks/use-realtime";
+import { formatDisplayImageRef } from "@/lib/docker-image-ref";
 import { loadVisibleDockerNodes } from "@/lib/docker-node-access";
 import { formatBytes, formatCreated } from "@/lib/utils";
 import { api } from "@/services/api";
@@ -273,7 +274,7 @@ export function DockerImages({
         width: "minmax(0, 1.45fr)",
         render: (img: any) => {
           const tags = img.repoTags ?? img.RepoTags ?? [];
-          const tag = tags.length > 0 ? tags[0] : "<none>:<none>";
+          const tag = tags.length > 0 ? formatDisplayImageRef(tags[0]) : "<none>:<none>";
           return (
             <div className="flex items-center gap-3 min-w-0">
               <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-muted shrink-0">
@@ -322,7 +323,7 @@ export function DockerImages({
         width: "6.5rem",
         render: (img: any) => {
           const tags = img.repoTags ?? img.RepoTags ?? [];
-          const tag = tags.length > 0 ? tags[0] : "<none>:<none>";
+          const rawTag = tags.length > 0 ? tags[0] : "<none>:<none>";
           const containerCount = img.containers ?? img.Containers ?? 0;
           const isUsed = containerCount > 0;
           return isUsed ? (
@@ -331,7 +332,7 @@ export function DockerImages({
               className="text-xs w-fit cursor-pointer hover:opacity-80"
               onClick={(e: React.MouseEvent) => {
                 e.stopPropagation();
-                showUsage(tag, (img as any)._nodeId);
+                showUsage(rawTag, (img as any)._nodeId);
               }}
             >
               In use

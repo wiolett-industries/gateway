@@ -42,6 +42,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useRealtime } from "@/hooks/use-realtime";
 import { useStableNavigate } from "@/hooks/use-stable-navigate";
 import { useUrlTab } from "@/hooks/use-url-tab";
+import { formatDisplayImageRef } from "@/lib/docker-image-ref";
 import { api } from "@/services/api";
 import { ApiRequestError } from "@/services/api-base";
 import { useAuthStore } from "@/stores/auth";
@@ -139,6 +140,9 @@ export function DockerContainerDetail() {
   const [actionLoading, setActionLoading] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState("");
+  const [localMutationTransition, setLocalMutationTransition] = useState<
+    "updating" | "recreating" | null
+  >(null);
 
   // Pin
   const [pinOpen, setPinOpen] = useState(false);
@@ -164,6 +168,9 @@ export function DockerContainerDetail() {
       try {
         const data = await api.inspectContainer(nodeId, containerId, noCache);
         setContainer(data);
+        if ((data as any)?._transition) {
+          setLocalMutationTransition(null);
+        }
         // Keep pinned meta in sync
         if (usePinnedContainersStore.getState().isPinnedSidebar(containerId)) {
           const cName =
@@ -229,7 +236,7 @@ export function DockerContainerDetail() {
         })
       : "";
 
-    const attempts = [0, 250, 750, 1500, 2500];
+    const attempts = [0, 250, 750, 1500, 2500, 3500];
     for (const delayMs of attempts) {
       if (delayMs > 0) {
         await new Promise((resolve) => setTimeout(resolve, delayMs));
@@ -266,6 +273,7 @@ export function DockerContainerDetail() {
         });
 
         if (nextSignature !== previousSignature || (next as any)?._transition) {
+          setLocalMutationTransition(null);
           return;
         }
       } catch {
@@ -273,6 +281,14 @@ export function DockerContainerDetail() {
       }
     }
   }, [containerId, nodeId]);
+
+  const beginMutationTransition = useCallback((transition: "updating" | "recreating") => {
+    setLocalMutationTransition(transition);
+  }, []);
+
+  const clearMutationTransition = useCallback(() => {
+    setLocalMutationTransition(null);
+  }, []);
 
   // Realtime: refetch on any container.changed event for this container's name.
   // Also handle the recreate ID migration for every open tab.
@@ -300,6 +316,7 @@ export function DockerContainerDetail() {
       id?: string;
       oldId?: string;
       action?: string;
+      transition?: string | null;
     };
     if (!ev || ev.nodeId !== nodeId) return;
     const matchesName = containerName && ev.name === containerName;
@@ -307,6 +324,7 @@ export function DockerContainerDetail() {
     if (!matchesName && !matchesId) return;
 
     if (ev.action === "recreated" && ev.id && ev.oldId && ev.id !== containerId) {
+      setLocalMutationTransition(null);
       // Migrate any pinned references and rewrite the URL so this tab now
       // points at the new container ID.
       try {
@@ -318,10 +336,14 @@ export function DockerContainerDetail() {
       return;
     }
     if (ev.action === "removed" && (ev.id === containerId || ev.name === containerName)) {
+      setLocalMutationTransition(null);
       // Container was deleted by someone else — bounce back to the list
       toast.info("Container was removed");
       navigate("/docker");
       return;
+    }
+    if (ev.action === "transitioning" && !ev.transition) {
+      setLocalMutationTransition(null);
     }
     void fetchContainer(true);
   });
@@ -339,51 +361,11 @@ export function DockerContainerDetail() {
     void fetchHealthCheck();
   });
 
-  const currentTransition = container?._transition as string | undefined;
-
-  // Auto-navigate to overview and close popouts when container stops or enters transition
-  const currentBaseState =
-    container?.State?.Status ?? (container?.State?.Running ? "running" : "stopped");
-  useEffect(() => {
-    if (!container) return; // Don't reset tabs while data is loading
-    const needsRunning = new Set(["console", "files", "stats"]);
-    const shouldDisable = currentBaseState !== "running" || !!currentTransition;
-    if (!shouldDisable) return;
-
-    if (needsRunning.has(activeTab)) {
-      setActiveTab("overview");
-    }
-
-    // Close any open popout windows for this container
-    if (containerId) {
-      try {
-        const consoleChannel = new BroadcastChannel(`docker-console:${containerId}`);
-        consoleChannel.postMessage({ type: "request-close" });
-        consoleChannel.close();
-      } catch {
-        /* */
-      }
-      try {
-        const logsChannel = new BroadcastChannel(`docker-logs:${containerId}`);
-        logsChannel.postMessage({ type: "request-close" });
-        logsChannel.close();
-      } catch {
-        /* */
-      }
-    }
-  }, [activeTab, container, containerId, currentBaseState, currentTransition, setActiveTab]);
-
   useEffect(() => {
     if (!visibleTabs.includes(activeTab)) {
       setActiveTab("overview");
     }
   }, [activeTab, setActiveTab, visibleTabs]);
-
-  if (isLoading || !container) {
-    return (
-      <div className="flex items-center justify-center py-16 text-muted-foreground">Loading...</div>
-    );
-  }
 
   // ── Action helpers ──
   const doAction = async (fn: () => Promise<void>, successMsg: string) => {
@@ -403,7 +385,7 @@ export function DockerContainerDetail() {
   const handleRemove = async () => {
     const ok = await confirm({
       title: "Remove Container",
-      description: `Remove "${containerDisplayName(container.Name ?? "")}"? This cannot be undone.`,
+      description: `Remove "${containerDisplayName(container?.Name ?? "")}"? This cannot be undone.`,
       confirmLabel: "Remove",
     });
     if (!ok) return;
@@ -421,7 +403,7 @@ export function DockerContainerDetail() {
   };
 
   const handleDuplicate = async () => {
-    const dName = `${containerDisplayName(container.Name ?? "")}-copy`;
+    const dName = `${containerDisplayName(container?.Name ?? "")}-copy`;
     setActionLoading(true);
     try {
       const result = await api.duplicateContainer(nodeId!, containerId!, dName);
@@ -439,7 +421,7 @@ export function DockerContainerDetail() {
   };
 
   const openRename = () => {
-    setRenameValue(containerDisplayName(container.Name ?? ""));
+    setRenameValue(containerDisplayName(container?.Name ?? ""));
     setRenameOpen(true);
   };
 
@@ -459,17 +441,52 @@ export function DockerContainerDetail() {
     }
   };
 
-  const name = containerDisplayName(container.Name ?? "");
-  const transition = container._transition as string | undefined;
-  const baseState = container.State?.Status ?? (container.State?.Running ? "running" : "stopped");
-  const state = transition ?? baseState;
-  const image = container.Config?.Image ?? "";
-  const actionDisabled = actionLoading || !!transition;
+  const name = containerDisplayName(container?.Name ?? "");
+  const transition = container?._transition as string | undefined;
+  const effectiveTransition = transition ?? localMutationTransition ?? undefined;
+  const baseState = container?.State?.Status ?? (container?.State?.Running ? "running" : "stopped");
+  const state = effectiveTransition ?? baseState;
+  const image = container?.Config?.Image ?? "";
+  const actionDisabled = actionLoading || !!effectiveTransition;
+  const currentTransition = effectiveTransition;
+  const currentBaseState = baseState;
+
+  // Auto-navigate to overview and close popouts when container stops or enters transition
+  useEffect(() => {
+    const needsRunning = new Set(["console", "files", "stats"]);
+    const shouldDisable = currentBaseState !== "running" || !!currentTransition;
+    if (!shouldDisable) return;
+
+    if (needsRunning.has(activeTab)) {
+      setActiveTab("overview");
+    }
+
+    if (containerId) {
+      try {
+        const consoleChannel = new BroadcastChannel(`docker-console:${containerId}`);
+        consoleChannel.postMessage({ type: "request-close" });
+        consoleChannel.close();
+      } catch {}
+      try {
+        const logsChannel = new BroadcastChannel(`docker-logs:${containerId}`);
+        logsChannel.postMessage({ type: "request-close" });
+        logsChannel.close();
+      } catch {}
+    }
+  }, [activeTab, containerId, currentBaseState, currentTransition, setActiveTab]);
+
+  if (isLoading || !container) {
+    return (
+      <div className="flex items-center justify-center py-16 text-muted-foreground">Loading...</div>
+    );
+  }
+
   const headerActions = [
     {
       label: "Pin",
       icon: <Pin className="h-4 w-4" />,
       onClick: () => setPinOpen(true),
+      disabled: actionDisabled,
     },
     ...(baseState !== "running" && canManage
       ? [
@@ -552,7 +569,10 @@ export function DockerContainerDetail() {
   const isStopped = baseState !== "running";
   const isTabDisabled = (tab: string) => {
     const needsRunning = new Set(["console", "files", "stats"]);
-    return needsRunning.has(tab) && (!!transition || isStopped);
+    if (tab === "environment" || tab === "settings") {
+      return !!effectiveTransition;
+    }
+    return needsRunning.has(tab) && (!!effectiveTransition || isStopped);
   };
 
   return (
@@ -581,13 +601,19 @@ export function DockerContainerDetail() {
                 </Badge>
               </div>
               <p className="break-all text-sm text-muted-foreground">
-                {image} &middot; {(container.Id ?? containerId ?? "").slice(0, 12)}
+                {formatDisplayImageRef(image)} &middot;{" "}
+                {(container.Id ?? containerId ?? "").slice(0, 12)}
               </p>
             </div>
           </div>
 
           <ResponsiveHeaderActions actions={headerActions}>
-            <Button variant="outline" size="icon" onClick={() => setPinOpen(true)}>
+            <Button
+              variant="outline"
+              size="icon"
+              disabled={actionDisabled}
+              onClick={() => setPinOpen(true)}
+            >
               <Pin className="h-4 w-4" />
             </Button>
             {baseState !== "running" && canManage && (
@@ -716,10 +742,12 @@ export function DockerContainerDetail() {
               </TabsTrigger>
             )}
             {(canUseEnvironment || canUseSecrets) && (
-              <TabsTrigger value="environment">Environment</TabsTrigger>
+              <TabsTrigger value="environment" disabled={isTabDisabled("environment")}>
+                Environment
+              </TabsTrigger>
             )}
             {canEdit && (
-              <TabsTrigger value="settings">
+              <TabsTrigger value="settings" disabled={isTabDisabled("settings")}>
                 <Settings className="h-3.5 w-3.5 mr-1" />
                 Settings
               </TabsTrigger>
@@ -765,7 +793,9 @@ export function DockerContainerDetail() {
                 nodeId={nodeId!}
                 containerId={containerId!}
                 containerState={state}
-                disabled={!!transition}
+                disabled={!!effectiveTransition}
+                onMutationStart={beginMutationTransition}
+                onMutationEnd={clearMutationTransition}
                 onRecreating={refreshAfterMutation}
               />
             </TabsContent>
@@ -776,10 +806,12 @@ export function DockerContainerDetail() {
                 nodeId={nodeId!}
                 containerId={containerId!}
                 data={container}
+                onMutationStart={beginMutationTransition}
+                onMutationEnd={clearMutationTransition}
                 onRecreating={refreshAfterMutation}
                 onRefresh={refreshAfterMutation}
                 onHealthCheckSaved={setHealthCheck}
-                transition={transition}
+                transition={effectiveTransition}
               />
             </TabsContent>
           )}
@@ -804,6 +836,7 @@ export function DockerContainerDetail() {
               </div>
               <Switch
                 checked={isPinnedSidebar(containerId!)}
+                disabled={!!effectiveTransition}
                 onChange={() => {
                   toggleSidebar(containerId!, { nodeId: nodeId!, name, state: baseState });
                   usePinnedContainersStore.getState().invalidate();
@@ -821,6 +854,7 @@ export function DockerContainerDetail() {
           </DialogHeader>
           <Input
             value={renameValue}
+            disabled={!!effectiveTransition}
             onChange={(e) => setRenameValue(e.target.value)}
             placeholder="New container name"
             onKeyDown={(e) => {
@@ -832,7 +866,10 @@ export function DockerContainerDetail() {
             <Button variant="outline" onClick={() => setRenameOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleRename} disabled={actionLoading || !renameValue.trim()}>
+            <Button
+              onClick={handleRename}
+              disabled={actionLoading || !!effectiveTransition || !renameValue.trim()}
+            >
               Rename
             </Button>
           </DialogFooter>

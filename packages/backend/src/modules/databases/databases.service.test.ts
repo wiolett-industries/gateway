@@ -45,6 +45,29 @@ describe('mapDatabaseDriverError', () => {
     expect(mapped?.code).toBe('DATABASE_QUERY_FAILED');
   });
 
+  it('maps other postgres query driver errors to 400 so the UI sees the real message', () => {
+    const error = Object.assign(new Error('invalid input value for enum order_status: "oops"'), {
+      code: 'ZZZZZ',
+      severity: 'ERROR',
+    });
+    const mapped = mapDatabaseDriverError(error, 'postgres', 'query');
+
+    expect(mapped).toBeInstanceOf(AppError);
+    expect(mapped?.statusCode).toBe(400);
+    expect(mapped?.code).toBe('DATABASE_QUERY_FAILED');
+    expect(mapped?.message).toContain('invalid input value for enum');
+  });
+
+  it('does not remap operational postgres query failures as client query errors', () => {
+    const error = Object.assign(new Error('terminating connection due to administrator command'), {
+      code: '57P01',
+      severity: 'FATAL',
+    });
+    const mapped = mapDatabaseDriverError(error, 'postgres', 'query');
+
+    expect(mapped).toBeNull();
+  });
+
   it('returns null for unknown errors', () => {
     const mapped = mapDatabaseDriverError(new Error('unexpected socket blowup'), 'postgres', 'connect');
     expect(mapped).toBeNull();
@@ -67,5 +90,81 @@ describe('DatabaseConnectionService.executePostgresSql', () => {
     });
     expect(getPostgresPool).not.toHaveBeenCalled();
     expect(pool.connect).not.toHaveBeenCalled();
+  });
+
+  it('casts update row parameters using column metadata types', async () => {
+    const log = vi.fn().mockResolvedValue(undefined);
+    const service = new DatabaseConnectionService({} as never, { log } as never, {} as never);
+    const pool = {
+      query: vi.fn().mockResolvedValue({ rows: [{ id: '1' }] }),
+    };
+    vi.spyOn(service, 'getPostgresPool').mockResolvedValue(pool as never);
+    vi.spyOn(service, 'getPostgresTableMetadata').mockResolvedValue({
+      schema: 'public',
+      table: 'orders',
+      columns: [
+        {
+          name: 'id',
+          dataType: 'bigint',
+          udtName: 'int8',
+          udtSchema: 'pg_catalog',
+          nullable: false,
+          isPrimaryKey: true,
+          hasDefault: false,
+        },
+        {
+          name: 'status',
+          dataType: 'USER-DEFINED',
+          udtName: 'order_status',
+          udtSchema: 'public',
+          nullable: false,
+          isPrimaryKey: false,
+          hasDefault: false,
+        },
+        {
+          name: 'scheduled_for',
+          dataType: 'date',
+          udtName: 'date',
+          udtSchema: 'pg_catalog',
+          nullable: true,
+          isPrimaryKey: false,
+          hasDefault: false,
+        },
+        {
+          name: 'attempts',
+          dataType: 'smallint',
+          udtName: 'int2',
+          udtSchema: 'pg_catalog',
+          nullable: false,
+          isPrimaryKey: false,
+          hasDefault: false,
+        },
+      ],
+      primaryKey: ['id'],
+      hasPrimaryKey: true,
+    });
+
+    await service.updatePostgresRow(
+      'db-1',
+      'public',
+      'orders',
+      { id: '1' },
+      { id: '1', status: 'queued', scheduled_for: '2026-06-18', attempts: '2' },
+      'user-1'
+    );
+
+    expect(pool.query).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'set "status" = $1::"public"."order_status", "scheduled_for" = $2::date, "attempts" = $3::smallint'
+      ),
+      ['queued', '2026-06-18', '2', '1']
+    );
+    expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('where "id" = $4::bigint'), [
+      'queued',
+      '2026-06-18',
+      '2',
+      '1',
+    ]);
+    expect(log).toHaveBeenCalled();
   });
 });

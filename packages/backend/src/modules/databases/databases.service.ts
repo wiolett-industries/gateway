@@ -210,7 +210,40 @@ const DATABASE_CONNECTIVITY_ERROR_CODES = new Set([
 
 const POSTGRES_CONNECTIVITY_CODES = new Set(['3D000']);
 const POSTGRES_QUERY_CODES = new Set(['22007', '22P02', '42601', '42703', '42883', '42P01']);
+const POSTGRES_QUERY_CODE_PREFIXES = ['22', '23'];
+const POSTGRES_QUERY_MESSAGE_PATTERNS = [
+  /invalid input/i,
+  /syntax error/i,
+  /violates .* constraint/i,
+  /duplicate key/i,
+  /null value .* violates/i,
+  /does not exist/i,
+  /cannot cast/i,
+  /malformed/i,
+];
 const REDIS_QUERY_MESSAGES = [/unknown command/i, /wrong number of arguments/i, /wrongtype/i];
+const POSTGRES_CASTABLE_DATA_TYPES = new Set([
+  'smallint',
+  'integer',
+  'bigint',
+  'numeric',
+  'real',
+  'double precision',
+  'boolean',
+  'date',
+  'time without time zone',
+  'time with time zone',
+  'timestamp without time zone',
+  'timestamp with time zone',
+  'uuid',
+  'json',
+  'jsonb',
+  'bytea',
+  'inet',
+  'cidr',
+  'macaddr',
+  'xml',
+]);
 
 export function mapDatabaseDriverError(
   error: unknown,
@@ -220,7 +253,15 @@ export function mapDatabaseDriverError(
   if (error instanceof AppError) return error;
   if (!(error instanceof Error)) return null;
 
-  const driverError = error as Error & { code?: string; errno?: string | number };
+  const driverError = error as Error & {
+    code?: string;
+    errno?: string | number;
+    severity?: string;
+    detail?: string;
+    schema?: string;
+    table?: string;
+    column?: string;
+  };
   const code =
     typeof driverError.code === 'string'
       ? driverError.code
@@ -269,7 +310,47 @@ export function mapDatabaseDriverError(
     return new AppError(400, 'DATABASE_QUERY_FAILED', message);
   }
 
+  if (
+    operation === 'query' &&
+    provider === 'postgres' &&
+    ((typeof code === 'string' && POSTGRES_QUERY_CODE_PREFIXES.some((prefix) => code.startsWith(prefix))) ||
+      ((typeof driverError.severity === 'string' ||
+        typeof driverError.detail === 'string' ||
+        typeof driverError.schema === 'string' ||
+        typeof driverError.table === 'string' ||
+        typeof driverError.column === 'string') &&
+        POSTGRES_QUERY_MESSAGE_PATTERNS.some((pattern) => pattern.test(message))))
+  ) {
+    return new AppError(400, 'DATABASE_QUERY_FAILED', message);
+  }
+
   return null;
+}
+
+function normalizeDatabaseTypeName(typeName: string) {
+  return typeName.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function postgresParameterCastSql(column: { dataType: string; udtName: string; udtSchema?: string }): string | null {
+  const normalizedDataType = normalizeDatabaseTypeName(column.dataType);
+  if (normalizedDataType === 'user-defined') {
+    if (!column.udtName) return null;
+    const schemaPrefix = column.udtSchema ? `${quoteIdent(column.udtSchema)}.` : '';
+    return `${schemaPrefix}${quoteIdent(column.udtName)}`;
+  }
+  if (normalizedDataType === 'array') {
+    if (!column.udtName) return null;
+    const elementType = column.udtName.startsWith('_') ? column.udtName.slice(1) : column.udtName;
+    if (!elementType) return null;
+    const schemaPrefix = column.udtSchema ? `${quoteIdent(column.udtSchema)}.` : '';
+    return `${schemaPrefix}${quoteIdent(elementType)}[]`;
+  }
+  return POSTGRES_CASTABLE_DATA_TYPES.has(normalizedDataType) ? normalizedDataType : null;
+}
+
+function postgresParameterSql(index: number, column: { dataType: string; udtName: string; udtSchema?: string }) {
+  const castSql = postgresParameterCastSql(column);
+  return castSql ? `$${index}::${castSql}` : `$${index}`;
 }
 
 function quoteIdent(identifier: string): string {
@@ -1021,13 +1102,14 @@ export class DatabaseConnectionService {
         column_name: string;
         data_type: string;
         udt_name: string;
+        udt_schema: string;
         is_nullable: 'YES' | 'NO';
         column_default: string | null;
         is_identity: 'YES' | 'NO';
         is_generated: 'ALWAYS' | 'NEVER';
         ordinal_position: number;
       }>(
-        `select column_name, data_type, udt_name, is_nullable, column_default, is_identity, is_generated, ordinal_position
+        `select column_name, data_type, udt_name, udt_schema, is_nullable, column_default, is_identity, is_generated, ordinal_position
            from information_schema.columns
           where table_schema = $1 and table_name = $2
           order by ordinal_position asc`,
@@ -1058,6 +1140,7 @@ export class DatabaseConnectionService {
           name: column.column_name,
           dataType: column.data_type,
           udtName: column.udt_name,
+          udtSchema: column.udt_schema,
           nullable: column.is_nullable === 'YES',
           isPrimaryKey: pkSet.has(column.column_name),
           hasDefault:
@@ -1130,6 +1213,7 @@ export class DatabaseConnectionService {
   async insertPostgresRow(id: string, schema: string, table: string, values: Record<string, unknown>, userId: string) {
     return this.withPostgresPool(id, 'query', async (pool) => {
       const metadata = await this.getPostgresTableMetadata(id, schema, table);
+      const columnByName = new Map(metadata.columns.map((column) => [column.name, column]));
       const allowedColumns = metadata.columns.map((column) => column.name).filter((name) => name in values);
       if (allowedColumns.length === 0) {
         throw new AppError(400, 'INVALID_ROW', 'At least one column value is required');
@@ -1139,7 +1223,9 @@ export class DatabaseConnectionService {
       const schemaSql = quoteIdent(schema);
       const tableSql = quoteIdent(table);
       const sql = `insert into ${schemaSql}.${tableSql} (${allowedColumns.map(quoteIdent).join(', ')})
-        values (${allowedColumns.map((_, index) => `$${index + 1}`).join(', ')})
+        values (${allowedColumns
+          .map((column, index) => postgresParameterSql(index + 1, columnByName.get(column)!))
+          .join(', ')})
         returning *`;
       const result = await pool.query(sql, params);
       await this.auditService.log({
@@ -1164,6 +1250,7 @@ export class DatabaseConnectionService {
   ) {
     return this.withPostgresPool(id, 'query', async (pool) => {
       const metadata = await this.getPostgresTableMetadata(id, schema, table);
+      const columnByName = new Map(metadata.columns.map((column) => [column.name, column]));
       if (!metadata.hasPrimaryKey) {
         throw new AppError(400, 'PRIMARY_KEY_REQUIRED', 'Row updates require a primary key');
       }
@@ -1186,9 +1273,17 @@ export class DatabaseConnectionService {
         ...updateColumns.map((column) => values[column]),
         ...keyColumns.map((column) => primaryKey[column]),
       ];
-      const setSql = updateColumns.map((column, index) => `${quoteIdent(column)} = $${index + 1}`).join(', ');
+      const setSql = updateColumns
+        .map((column, index) => `${quoteIdent(column)} = ${postgresParameterSql(index + 1, columnByName.get(column)!)}`)
+        .join(', ');
       const whereSql = keyColumns
-        .map((column, index) => `${quoteIdent(column)} = $${updateColumns.length + index + 1}`)
+        .map(
+          (column, index) =>
+            `${quoteIdent(column)} = ${postgresParameterSql(
+              updateColumns.length + index + 1,
+              columnByName.get(column)!
+            )}`
+        )
         .join(' and ');
 
       const result = await pool.query(
@@ -1219,6 +1314,7 @@ export class DatabaseConnectionService {
   ) {
     return this.withPostgresPool(id, 'query', async (pool) => {
       const metadata = await this.getPostgresTableMetadata(id, schema, table);
+      const columnByName = new Map(metadata.columns.map((column) => [column.name, column]));
       if (!metadata.hasPrimaryKey) {
         throw new AppError(400, 'PRIMARY_KEY_REQUIRED', 'Row deletes require a primary key');
       }
@@ -1229,7 +1325,9 @@ export class DatabaseConnectionService {
         }
       }
       const params = keyColumns.map((column) => primaryKey[column]);
-      const whereSql = keyColumns.map((column, index) => `${quoteIdent(column)} = $${index + 1}`).join(' and ');
+      const whereSql = keyColumns
+        .map((column, index) => `${quoteIdent(column)} = ${postgresParameterSql(index + 1, columnByName.get(column)!)}`)
+        .join(' and ');
       await pool.query(`delete from ${quoteIdent(schema)}.${quoteIdent(table)} where ${whereSql}`, params);
       await this.auditService.log({
         userId,

@@ -124,6 +124,32 @@ export function ProxyHostDetail() {
   const [isLoadingRaw, setIsLoadingRaw] = useState(false);
   const [isSavingRaw, setIsSavingRaw] = useState(false);
 
+  const syncHostState = useCallback((data: ProxyHost) => {
+    setHost(data);
+    setCustomHeaders(data.customHeaders || []);
+    setCacheEnabled(data.cacheEnabled);
+    setCacheMaxAge(data.cacheOptions?.maxAge || 3600);
+    setRateLimitEnabled(data.rateLimitEnabled);
+    setRateLimitRPS(data.rateLimitOptions?.requestsPerSecond || 100);
+    setRateLimitBurst(data.rateLimitOptions?.burst || 200);
+    setCustomRewrites(data.customRewrites || []);
+    setAccessListId(data.accessListId || "");
+    setHealthCheckUrl(data.healthCheckUrl || "/");
+    setHealthCheckExpectedStatus(data.healthCheckExpectedStatus ?? null);
+    setHealthCheckExpectedBody(data.healthCheckExpectedBody || "");
+    setHealthCheckBodyMatchMode(data.healthCheckBodyMatchMode || "includes");
+    setHealthCheckSlowThreshold(data.healthCheckSlowThreshold ?? 3);
+    setNginxTemplateId(data.nginxTemplateId || "");
+    setTemplateVariables(data.templateVariables || {});
+    setTemplateForwardScheme(data.forwardScheme || "http");
+    setTemplateForwardHost(data.forwardHost || "");
+    setTemplateForwardPort(data.forwardPort || 80);
+    setTemplateRedirectUrl(data.redirectUrl || "");
+    setTemplateRedirectStatusCode(data.redirectStatusCode || 301);
+    setAdvancedConfig(data.advancedConfig || "");
+    setRawConfig(data.rawConfig || "");
+  }, []);
+
   // ── Load host ─────────────────────────────────────────────────
   const loadHost = useCallback(
     async (silent = false) => {
@@ -132,32 +158,8 @@ export function ProxyHostDetail() {
       try {
         const data = await api.getProxyHost(id);
         const history = data.healthCheckEnabled ? await api.getProxyHostHealthHistory(id) : [];
-        setHost(data);
+        syncHostState(data);
         setHealthHistory(history);
-        // Sync local state from host
-        setCustomHeaders(data.customHeaders || []);
-        setCacheEnabled(data.cacheEnabled);
-        setCacheMaxAge(data.cacheOptions?.maxAge || 3600);
-        setRateLimitEnabled(data.rateLimitEnabled);
-        setRateLimitRPS(data.rateLimitOptions?.requestsPerSecond || 100);
-        setRateLimitBurst(data.rateLimitOptions?.burst || 200);
-        setCustomRewrites(data.customRewrites || []);
-        setAccessListId(data.accessListId || "");
-        setHealthCheckUrl(data.healthCheckUrl || "/");
-
-        setHealthCheckExpectedStatus(data.healthCheckExpectedStatus ?? null);
-        setHealthCheckExpectedBody(data.healthCheckExpectedBody || "");
-        setHealthCheckBodyMatchMode(data.healthCheckBodyMatchMode || "includes");
-        setHealthCheckSlowThreshold(data.healthCheckSlowThreshold ?? 3);
-        setNginxTemplateId(data.nginxTemplateId || "");
-        setTemplateVariables(data.templateVariables || {});
-        setTemplateForwardScheme(data.forwardScheme || "http");
-        setTemplateForwardHost(data.forwardHost || "");
-        setTemplateForwardPort(data.forwardPort || 80);
-        setTemplateRedirectUrl(data.redirectUrl || "");
-        setTemplateRedirectStatusCode(data.redirectStatusCode || 301);
-        setAdvancedConfig(data.advancedConfig || "");
-        setRawConfig(data.rawConfig || "");
       } catch (err) {
         if (err instanceof ApiRequestError && err.status === 404) {
           usePinnedProxiesStore.getState().removePin(id);
@@ -170,7 +172,7 @@ export function ProxyHostDetail() {
         if (!silent) setIsLoading(false);
       }
     },
-    [id, navigate]
+    [id, navigate, syncHostState]
   );
 
   useEffect(() => {
@@ -504,9 +506,10 @@ export function ProxyHostDetail() {
     setIsSavingAdvanced(true);
     try {
       const updated = await api.updateProxyHost(id, {
-        advancedConfig: advancedConfig || undefined,
+        advancedConfig: advancedConfig === "" ? null : advancedConfig,
       });
       setHost(updated);
+      setAdvancedConfig(updated.advancedConfig || "");
       toast.success("Advanced config saved");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to save advanced config");
@@ -555,6 +558,27 @@ export function ProxyHostDetail() {
   // ── Derived values ────────────────────────────────────────────
   const isRawMode = host?.rawConfigEnabled ?? false;
   const isSystemHost = host?.isSystem ?? false;
+
+  const handleAccessListChange = useCallback(
+    async (value: string) => {
+      if (!id) return;
+
+      setAccessListId(value);
+
+      try {
+        const updated = await api.updateProxyHost(id, {
+          accessListId: value === "" ? null : value,
+        });
+        setHost(updated);
+        setAccessListId(updated.accessListId || "");
+        toast.success("Access list updated");
+      } catch (err) {
+        setAccessListId(host?.accessListId || "");
+        toast.error(err instanceof Error ? err.message : "Failed to update");
+      }
+    },
+    [host?.accessListId, id]
+  );
 
   // Track changes per section
   const hasHeadersChanged = useMemo(
@@ -643,9 +667,7 @@ export function ProxyHostDetail() {
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-2xl font-bold">{host.domainNames[0] || "Proxy Host"}</h1>
-                <Badge variant={TYPE_BADGE[host.type] ?? "default"} className="capitalize">
-                  {host.type}
-                </Badge>
+                <Badge variant={TYPE_BADGE[host.type] ?? "default"}>{host.type}</Badge>
                 {(() => {
                   const eff = effectiveHealthStatus(host);
                   return (
@@ -787,19 +809,7 @@ export function ProxyHostDetail() {
                 isSavingCustom={isSavingCustom}
                 accessListId={accessListId}
                 accessLists={accessLists}
-                onAccessListChange={(v) => {
-                  setAccessListId(v);
-                  if (!id) return;
-                  api
-                    .updateProxyHost(id, { accessListId: v || undefined })
-                    .then((updated) => {
-                      setHost(updated);
-                      toast.success("Access list updated");
-                    })
-                    .catch((err) =>
-                      toast.error(err instanceof Error ? err.message : "Failed to update")
-                    );
-                }}
+                onAccessListChange={handleAccessListChange}
                 sslCerts={sslCerts}
                 onSslCertificateChange={handleSslCertificateChange}
                 nginxTemplates={userTemplates}

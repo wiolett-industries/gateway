@@ -562,12 +562,17 @@ export function PostgresExplorer({
         const key = getRowKey(metadata, row);
         const draft = draftRows[key];
         if (!draft) continue;
+        const changedValues = Object.fromEntries(
+          metadata.columns
+            .filter((column) => !valuesEqual(draft[column.name], row[column.name]))
+            .map((column) => [column.name, draft[column.name]])
+        );
         await api.updatePostgresRow(
           database.id,
           schema,
           table,
           buildPrimaryKey(metadata, row),
-          draft
+          changedValues
         );
       }
       for (const pendingRow of validPendingRows) {

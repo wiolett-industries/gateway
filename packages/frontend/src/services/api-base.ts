@@ -34,6 +34,18 @@ export class ApiRequestError extends Error {
   }
 }
 
+function extractApiErrorMessage(payload: unknown, fallback: string): string {
+  if (!payload || typeof payload !== "object") return fallback;
+  const candidate = payload as { message?: unknown; error?: unknown };
+  if (typeof candidate.message === "string" && candidate.message.trim()) {
+    return candidate.message;
+  }
+  if (typeof candidate.error === "string" && candidate.error.trim()) {
+    return candidate.error;
+  }
+  return fallback;
+}
+
 function getRetryAfterSeconds(response: Response): number {
   const retryAfter = Number(response.headers.get("Retry-After"));
   if (Number.isFinite(retryAfter) && retryAfter > 0) return retryAfter;
@@ -221,7 +233,7 @@ export class ApiClientBase {
           parsedError && typeof parsedError === "object"
             ? (parsedError as ApiError)
             : { code: "SERVICE_UNAVAILABLE", message: "Service unavailable" };
-        throw new ApiRequestError(error.message || "Service unavailable", {
+        throw new ApiRequestError(extractApiErrorMessage(parsedError, "Service unavailable"), {
           status: response.status,
           code: error.code || "SERVICE_UNAVAILABLE",
         });
@@ -261,7 +273,7 @@ export class ApiClientBase {
             code: "ACCOUNT_BLOCKED",
           });
         }
-        throw new ApiRequestError("Insufficient permissions", {
+        throw new ApiRequestError(extractApiErrorMessage(body, "Insufficient permissions"), {
           status: response.status,
           code: "FORBIDDEN",
         });
@@ -272,7 +284,7 @@ export class ApiClientBase {
         message: "An unknown error occurred",
       }));
 
-      throw new ApiRequestError(error.message, {
+      throw new ApiRequestError(extractApiErrorMessage(error, "An unknown error occurred"), {
         status: response.status,
         code: error.code,
       });

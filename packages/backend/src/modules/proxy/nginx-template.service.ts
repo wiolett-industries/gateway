@@ -105,8 +105,10 @@ server {
 {{#each accessList.ipRules}}
     {{sanitize this.type}} {{sanitize this.value}};
 {{/each}}
+{{#if accessListHasIpRules}}
     deny all;
 
+{{/if}}
 {{/if}}
     location / {
         set $upstream_target {{upstream}};
@@ -591,6 +593,7 @@ export class NginxTemplateService {
       customHeaders: host.customHeaders,
       customRewrites: host.customRewrites,
       accessList: host.accessList,
+      accessListHasIpRules: (host.accessList?.ipRules?.length ?? 0) > 0,
       logPath: `${NGINX_LOGS_PREFIX}/proxy-${host.id}`,
       // Merge custom template variables (sanitized — user-defined values override defaults)
       ...this.sanitizeTemplateVariables(host.templateVariables ?? {}),

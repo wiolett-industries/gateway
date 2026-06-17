@@ -17,6 +17,8 @@ export function EnvironmentTab({
   containerId,
   containerState,
   disabled,
+  onMutationStart,
+  onMutationEnd,
   onRecreating,
   serviceEnv,
   onSaveServiceEnv,
@@ -25,6 +27,8 @@ export function EnvironmentTab({
   containerId: string;
   containerState?: string;
   disabled?: boolean;
+  onMutationStart?: (transition: "updating" | "recreating") => void;
+  onMutationEnd?: () => void;
   onRecreating?: () => void | Promise<void>;
   serviceEnv?: Record<string, string>;
   onSaveServiceEnv?: (env: Record<string, string>) => Promise<void>;
@@ -228,7 +232,7 @@ export function EnvironmentTab({
     if (!ok) return;
 
     setIsSaving(true);
-    onRecreating?.();
+    onMutationStart?.("updating");
     try {
       // 1. Flush secret changes to DB
       if (hasSecretsChanges) {
@@ -292,6 +296,7 @@ export function EnvironmentTab({
           setOriginalEnv(entries);
           setRawText(entries.join("\n"));
           toast.success("Environment updated");
+          onMutationEnd?.();
           setIsSaving(false);
           return;
         }
@@ -315,9 +320,11 @@ export function EnvironmentTab({
         await Promise.resolve(onRecreating?.());
       } else {
         toast.success("Secrets updated — changes will apply on next container recreate");
+        onMutationEnd?.();
       }
       setIsSaving(false);
     } catch (err) {
+      onMutationEnd?.();
       toast.error(err instanceof Error ? err.message : "Failed to update environment");
       setIsSaving(false);
     }
@@ -399,7 +406,7 @@ export function EnvironmentTab({
 
   return (
     <div
-      className={`${rawMode ? "flex flex-col flex-1 min-h-0" : "pb-6 space-y-4"} ${disabled ? "pointer-events-none opacity-60" : ""}`}
+      className={`${rawMode ? "flex flex-col flex-1 min-h-0" : "pb-6 space-y-4"} ${disabled || isSaving ? "pointer-events-none opacity-60" : ""}`}
     >
       {canEdit && (
         <div

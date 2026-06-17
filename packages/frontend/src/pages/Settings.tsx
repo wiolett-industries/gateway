@@ -213,7 +213,7 @@ export function Settings() {
                       <p className="text-sm font-medium">{user.name || "Not set"}</p>
                       <p className="text-xs text-muted-foreground">{user.email}</p>
                     </div>
-                    <Badge variant="secondary" className="text-xs capitalize">
+                    <Badge variant="secondary" className="text-xs">
                       {user.groupName}
                     </Badge>
                   </div>

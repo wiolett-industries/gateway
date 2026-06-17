@@ -5,6 +5,7 @@ import { getEnv } from '@/config/env.js';
 import { container } from '@/container.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { openApiValidationHook } from '@/lib/openapi.js';
+import { AppError } from '@/middleware/error-handler.js';
 import { NodesService } from '@/modules/nodes/nodes.service.js';
 import type { AppEnv } from '@/types.js';
 import {
@@ -65,17 +66,17 @@ setupRoutes.use('*', setupApiDisabledMiddleware);
  */
 setupRoutes.openapi(setupManagementSslRoute, async (c) => {
   if (!verifySetupToken(c.req.header('Authorization'))) {
-    return c.json({ error: 'Invalid or missing setup token' }, 401);
+    throw new AppError(401, 'SETUP_TOKEN_INVALID', 'Invalid or missing setup token');
   }
 
   const body = await c.req.json<{ domain: string }>();
   if (!body.domain || typeof body.domain !== 'string') {
-    return c.json({ error: 'Missing domain' }, 400);
+    throw new AppError(400, 'DOMAIN_REQUIRED', 'Missing domain');
   }
 
   const domain = body.domain.toLowerCase().trim();
   if (domain === 'localhost' || !domain.includes('.')) {
-    return c.json({ error: 'Must be a fully qualified domain name' }, 400);
+    throw new AppError(400, 'INVALID_DOMAIN', 'Must be a fully qualified domain name');
   }
 
   const env = getEnv();
@@ -89,7 +90,7 @@ setupRoutes.openapi(setupManagementSslRoute, async (c) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     logger.error('Management SSL bootstrap failed', { domain, error: message });
-    return c.json({ error: message }, 500);
+    throw new AppError(500, 'SETUP_MANAGEMENT_SSL_FAILED', message);
   }
 });
 
@@ -102,7 +103,7 @@ setupRoutes.openapi(setupManagementSslRoute, async (c) => {
  */
 setupRoutes.openapi(setupEnrollNodeRoute, async (c) => {
   if (!verifySetupToken(c.req.header('Authorization'))) {
-    return c.json({ error: 'Invalid or missing setup token' }, 401);
+    throw new AppError(401, 'SETUP_TOKEN_INVALID', 'Invalid or missing setup token');
   }
 
   const body = await c.req.json<{ type?: string; hostname?: string }>();
@@ -117,7 +118,7 @@ setupRoutes.openapi(setupEnrollNodeRoute, async (c) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     logger.error('Node enrollment via setup token failed', { error: message });
-    return c.json({ error: message }, 500);
+    throw new AppError(500, 'SETUP_ENROLL_NODE_FAILED', message);
   }
 });
 
@@ -129,7 +130,7 @@ setupRoutes.openapi(setupEnrollNodeRoute, async (c) => {
  */
 setupRoutes.openapi(setupManagementSslUploadRoute, async (c) => {
   if (!verifySetupToken(c.req.header('Authorization'))) {
-    return c.json({ error: 'Invalid or missing setup token' }, 401);
+    throw new AppError(401, 'SETUP_TOKEN_INVALID', 'Invalid or missing setup token');
   }
 
   const body = await c.req.json<{
@@ -140,12 +141,12 @@ setupRoutes.openapi(setupManagementSslUploadRoute, async (c) => {
   }>();
 
   if (!body.domain || !body.certificatePem || !body.privateKeyPem) {
-    return c.json({ error: 'Missing domain, certificatePem, or privateKeyPem' }, 400);
+    throw new AppError(400, 'SETUP_CERT_INPUT_REQUIRED', 'Missing domain, certificatePem, or privateKeyPem');
   }
 
   const domain = body.domain.toLowerCase().trim();
   if (domain === 'localhost' || !domain.includes('.')) {
-    return c.json({ error: 'Must be a fully qualified domain name' }, 400);
+    throw new AppError(400, 'INVALID_DOMAIN', 'Must be a fully qualified domain name');
   }
 
   try {
@@ -161,7 +162,7 @@ setupRoutes.openapi(setupManagementSslUploadRoute, async (c) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     logger.error('Management SSL (BYO cert) bootstrap failed', { domain, error: message });
-    return c.json({ error: message }, 500);
+    throw new AppError(500, 'SETUP_MANAGEMENT_SSL_UPLOAD_FAILED', message);
   }
 });
 
@@ -173,7 +174,7 @@ setupRoutes.openapi(setupManagementSslUploadRoute, async (c) => {
  */
 setupRoutes.openapi(setupCompleteRoute, async (c) => {
   if (!verifySetupToken(c.req.header('Authorization'))) {
-    return c.json({ error: 'Invalid or missing setup token' }, 401);
+    throw new AppError(401, 'SETUP_TOKEN_INVALID', 'Invalid or missing setup token');
   }
 
   const policy = container.resolve(SetupTokenPolicyService);

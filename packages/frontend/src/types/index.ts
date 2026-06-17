@@ -1780,6 +1780,7 @@ export interface PostgresTableColumn {
   name: string;
   dataType: string;
   udtName: string;
+  udtSchema: string;
   nullable: boolean;
   isPrimaryKey: boolean;
   hasDefault: boolean;
@@ -1847,7 +1848,7 @@ export interface CreateProxyHostRequest {
   rateLimitEnabled?: boolean;
   rateLimitOptions?: RateLimitOptions;
   customRewrites?: RewriteRule[];
-  advancedConfig?: string;
+  advancedConfig?: string | null;
   rawConfig?: string;
   rawConfigEnabled?: boolean;
   accessListId?: string | null;

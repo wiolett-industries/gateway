@@ -181,7 +181,7 @@ folderRoutes.openapi({ ...deleteProxyFolderRoute, middleware: requireScope('prox
 });
 
 // Clone folder's proxy host
-folderRoutes.openapi({ ...cloneProxyFolderRoute, middleware: requireScope('proxy:folders:manage') }, async (c) => {
+folderRoutes.openapi({ ...cloneProxyFolderRoute, middleware: requireScope('proxy:folders:manage') }, async (_c) => {
   // Placeholder for future clone functionality
-  return c.json({ error: 'Not implemented' }, 501);
+  throw new AppError(501, 'NOT_IMPLEMENTED', 'Not implemented');
 });

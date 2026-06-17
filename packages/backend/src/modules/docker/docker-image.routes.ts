@@ -1,5 +1,6 @@
 import type { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
+import { AppError } from '@/middleware/error-handler.js';
 import { requireScopeForResource } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import {
@@ -15,6 +16,12 @@ import { DockerRegistryService } from './docker-registry.service.js';
 
 const DOCKER_RESOURCE_LIST_MAX = 1000;
 const DOCKER_IMAGE_REF_PREVIEW_MAX = 20;
+
+function dockerCommandErrorMessage(result: { error?: string; detail?: string }, fallback: string) {
+  if (typeof result.error === 'string' && result.error.trim()) return result.error.trim();
+  if (typeof result.detail === 'string' && result.detail.trim()) return result.detail.trim();
+  return fallback;
+}
 
 function compactImageListItem(image: Record<string, any>) {
   const repoTags = image.repoTags ?? image.RepoTags;
@@ -135,7 +142,7 @@ export function registerImageRoutes(router: OpenAPIHono<AppEnv>) {
         600000
       );
       if (!result.success) {
-        return c.json({ error: result.error || `Failed to pull ${finalImageRef}` }, 400);
+        throw new AppError(400, 'PULL_FAILED', dockerCommandErrorMessage(result, `Failed to pull ${finalImageRef}`));
       }
       await registryService.rememberImageRegistry(nodeId, finalImageRef, auth?.registryId);
       return c.json({ data: { success: true, imageRef: finalImageRef } });

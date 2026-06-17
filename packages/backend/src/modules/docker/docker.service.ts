@@ -31,6 +31,12 @@ const logger = createChildLogger('DockerManagementService');
 const DEFAULT_CONTAINER_STOP_TIMEOUT_SECONDS = 20;
 const CONTAINER_LIFECYCLE_TIMEOUT_BUFFER_SECONDS = 30;
 
+function dockerDispatchErrorMessage(result: { error?: string; detail?: string }, fallback: string) {
+  if (typeof result.error === 'string' && result.error.trim()) return result.error.trim();
+  if (typeof result.detail === 'string' && result.detail.trim()) return result.detail.trim();
+  return fallback;
+}
+
 export type ContainerTransition = 'creating' | 'stopping' | 'restarting' | 'killing' | 'recreating' | 'updating';
 
 type ContainerAction =
@@ -310,6 +316,14 @@ export class DockerManagementService {
 
   private async failTask(taskId: string | undefined, error: string, nodeId?: string, containerName?: string) {
     if (nodeId && containerName) this.clearTransition(nodeId, containerName);
+    if (nodeId && containerName) {
+      this.eventBus?.publish('docker.container.changed', {
+        nodeId,
+        name: containerName,
+        action: 'transitioning',
+        transition: null,
+      });
+    }
     if (taskId && this.taskService) {
       await this.taskService.update(taskId, { status: 'failed', error, completedAt: new Date() }).catch(() => {});
     }
@@ -610,6 +624,7 @@ export class DockerManagementService {
         if (match) {
           const newId = match.id ?? match.Id;
           const state = match.state ?? match.State ?? '';
+          const status = match.status ?? match.Status ?? '';
 
           if (newId !== oldContainerId && state === expectedState) {
             // Recreation complete — new container reached the expected post-recreate state
@@ -621,6 +636,23 @@ export class DockerManagementService {
                 .catch(() => {});
             }
             this.emitContainer(nodeId, containerName, newId, 'recreated', { oldId: oldContainerId });
+            return;
+          }
+
+          const normalizedState = String(state).toLowerCase();
+          const normalizedExpectedState = String(expectedState).toLowerCase();
+          if (
+            newId !== oldContainerId &&
+            ['exited', 'dead'].includes(normalizedState) &&
+            normalizedState !== normalizedExpectedState
+          ) {
+            clearInterval(poll);
+            await this.failTask(
+              taskId,
+              `Replacement container failed to start (${status || state})`,
+              nodeId,
+              containerName
+            );
             return;
           }
         }
@@ -648,7 +680,7 @@ export class DockerManagementService {
 
   private parseResult(result: { success: boolean; error?: string; detail?: string }) {
     if (!result.success) {
-      throw new AppError(502, 'DISPATCH_ERROR', result.error || 'Command failed on daemon');
+      throw new AppError(502, 'DISPATCH_ERROR', dockerDispatchErrorMessage(result, 'Command failed on daemon'));
     }
     try {
       return result.detail ? JSON.parse(result.detail) : null;

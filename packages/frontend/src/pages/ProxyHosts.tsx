@@ -8,7 +8,7 @@ import {
 } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { FolderPlus, Plus } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
@@ -75,6 +75,12 @@ function UngroupedDropZone({
   );
 }
 
+function pruneEmptyFolders<T extends { children: T[]; hosts: Array<unknown> }>(folders: T[]): T[] {
+  return folders
+    .map((folder) => ({ ...folder, children: pruneEmptyFolders(folder.children) }))
+    .filter((folder) => folder.hosts.length > 0 || folder.children.length > 0);
+}
+
 export function ProxyHosts() {
   const navigate = useNavigate();
   const { hasScope, hasScopedAccess } = useAuthStore();
@@ -106,7 +112,8 @@ export function ProxyHosts() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const isMobile = useIsMobile();
   const canManageFolders = hasScope("proxy:folders:manage");
-  const canReorderFolders = canManageFolders && !isMobile;
+  const isSearchFiltering = filters.search.trim() !== "";
+  const canReorderFolders = canManageFolders && !isMobile && !isSearchFiltering;
   const canCreateProxyHost = hasScope("proxy:create");
   const canShowHostActions =
     canManageFolders || hasScopedAccess("proxy:edit") || hasScopedAccess("proxy:delete");
@@ -131,6 +138,10 @@ export function ProxyHosts() {
 
   const hasActiveFilters =
     filters.type !== "all" || filters.healthStatus !== "all" || filters.search !== "";
+  const visibleFolders = useMemo(
+    () => (filters.search.trim() ? pruneEmptyFolders(folders) : folders),
+    [filters.search, folders]
+  );
 
   const handleToggle = async (id: string, currentEnabled: boolean) => {
     setTogglingIds((prev) => new Set(prev).add(id));
@@ -199,6 +210,7 @@ export function ProxyHosts() {
 
   const handleDragEnd = async (event: DragEndEvent) => {
     setActiveDrag(null);
+    if (isSearchFiltering) return;
     const { active, over } = event;
     if (!over) return;
 
@@ -471,7 +483,7 @@ export function ProxyHosts() {
               <p className="text-sm text-muted-foreground">Loading proxy hosts...</p>
             </div>
           </div>
-        ) : folders.length > 0 || ungroupedHosts.length > 0 ? (
+        ) : visibleFolders.length > 0 || ungroupedHosts.length > 0 ? (
           canManageFolders ? (
             <DndContext
               sensors={sensors}
@@ -488,12 +500,12 @@ export function ProxyHosts() {
                   </table>
 
                   {/* Folders */}
-                  {folders.length > 0 && (
+                  {visibleFolders.length > 0 && (
                     <SortableContext
-                      items={folders.map((folder) => `folder-${folder.id}`)}
+                      items={visibleFolders.map((folder) => `folder-${folder.id}`)}
                       strategy={verticalListSortingStrategy}
                     >
-                      {folders.map((folder) => (
+                      {visibleFolders.map((folder) => (
                         <FolderGroup
                           key={folder.id}
                           folder={folder}
@@ -520,9 +532,9 @@ export function ProxyHosts() {
                   )}
 
                   {/* Ungrouped hosts — always visible when folders exist so it's a drop target */}
-                  {(folders.length > 0 || ungroupedHosts.length > 0) && (
+                  {(visibleFolders.length > 0 || ungroupedHosts.length > 0) && (
                     <UngroupedDropZone disabled={!canReorderFolders}>
-                      {folders.length > 0 && (
+                      {visibleFolders.length > 0 && (
                         <div
                           className={`flex items-center gap-2 px-3 py-2 ${
                             ungroupedHosts.length > 0 ? "border-b border-border" : ""
@@ -574,12 +586,12 @@ export function ProxyHosts() {
                 </table>
 
                 {/* Folders */}
-                {folders.length > 0 && (
+                {visibleFolders.length > 0 && (
                   <SortableContext
-                    items={folders.map((folder) => `folder-${folder.id}`)}
+                    items={visibleFolders.map((folder) => `folder-${folder.id}`)}
                     strategy={verticalListSortingStrategy}
                   >
-                    {folders.map((folder) => (
+                    {visibleFolders.map((folder) => (
                       <FolderGroup
                         key={folder.id}
                         folder={folder}
@@ -606,9 +618,9 @@ export function ProxyHosts() {
                 )}
 
                 {/* Ungrouped hosts — always visible when folders exist so it's a drop target */}
-                {(folders.length > 0 || ungroupedHosts.length > 0) && (
+                {(visibleFolders.length > 0 || ungroupedHosts.length > 0) && (
                   <UngroupedDropZone disabled={!canReorderFolders}>
-                    {folders.length > 0 && (
+                    {visibleFolders.length > 0 && (
                       <div
                         className={`flex items-center gap-2 px-3 py-2 ${
                           ungroupedHosts.length > 0 ? "border-b border-border" : ""

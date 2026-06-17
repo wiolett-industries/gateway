@@ -12,6 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { TruncateStart } from "@/components/ui/truncate-start";
+import { formatDisplayImageRef } from "@/lib/docker-image-ref";
 import { formatCreated } from "@/lib/utils";
 import { containerDisplayName, STATUS_BADGE } from "@/pages/docker-detail/helpers";
 import type { DockerContainer } from "@/types";
@@ -122,7 +123,10 @@ export function DockerContainerRow({
         </div>
       </td>
       <td className="p-3 text-sm text-muted-foreground">
-        <TruncateStart text={container.image} className="text-muted-foreground" />
+        <TruncateStart
+          text={formatDisplayImageRef(container.image)}
+          className="text-muted-foreground"
+        />
       </td>
       {showNode && (
         <td className="p-3">

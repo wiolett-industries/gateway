@@ -1,6 +1,7 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
 import { openApiValidationHook } from '@/lib/openapi.js';
+import { AppError } from '@/middleware/error-handler.js';
 import { requireScopeForResource } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import {
@@ -113,7 +114,7 @@ dockerWebhookTriggerRoutes.openapi(triggerDockerWebhookRoute, async (c) => {
   // Look up webhook by token
   const webhook = await service.getByToken(token);
   if (!webhook?.enabled) {
-    return c.json({ error: 'Invalid or disabled webhook' }, 404);
+    throw new AppError(404, 'WEBHOOK_NOT_FOUND', 'Invalid or disabled webhook');
   }
 
   // Parse optional tag from body
@@ -144,7 +145,7 @@ dockerWebhookTriggerRoutes.openapi(triggerDockerWebhookRoute, async (c) => {
     : null;
 
   if (!match) {
-    return c.json({ error: `Container "${webhook.containerName}" not found on node` }, 404);
+    throw new AppError(404, 'CONTAINER_NOT_FOUND', `Container "${webhook.containerName}" not found on node`);
   }
 
   const containerId: string = match.id ?? match.Id;

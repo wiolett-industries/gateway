@@ -1,0 +1,55 @@
+{
+  "file_name": "3b6g7z3k_gateway_database_viewer",
+  "edges": [
+    {
+      "from_id": "3b6g7z3k",
+      "to_id": "4tmpz7of",
+      "relation": "same_area",
+      "weight": 0.4944,
+      "reason": "The memories share tags or vocabulary from the same area.",
+      "source": "auto",
+      "created_at": 1781735132483,
+      "updated_at": 1781735132483
+    },
+    {
+      "from_id": "3b6g7z3k",
+      "to_id": "ip47mets",
+      "relation": "same_area",
+      "weight": 0.4059,
+      "reason": "The memories share tags or vocabulary from the same area.",
+      "source": "auto",
+      "created_at": 1781735132483,
+      "updated_at": 1781735132483
+    },
+    {
+      "from_id": "3b6g7z3k",
+      "to_id": "h9ebt64w",
+      "relation": "same_area",
+      "weight": 0.3947,
+      "reason": "The memories share tags or vocabulary from the same area.",
+      "source": "auto",
+      "created_at": 1781735132483,
+      "updated_at": 1781735132483
+    },
+    {
+      "from_id": "3b6g7z3k",
+      "to_id": "123u7vfm",
+      "relation": "related_to",
+      "weight": 0.3646,
+      "reason": "The memories are similar enough to be useful related context.",
+      "source": "auto",
+      "created_at": 1781735132483,
+      "updated_at": 1781735132483
+    },
+    {
+      "from_id": "3b6g7z3k",
+      "to_id": "7rchqhpz",
+      "relation": "related_to",
+      "weight": 0.3435,
+      "reason": "The memories are similar enough to be useful related context.",
+      "source": "auto",
+      "created_at": 1781735132483,
+      "updated_at": 1781735132483
+    }
+  ]
+}

@@ -57,12 +57,20 @@ export function formatHealthStatusLabel(
 }
 
 export function isNumericColumn(column: PostgresTableColumn): boolean {
+  const normalized = `${column.dataType} ${column.udtName}`.toLowerCase();
   return (
-    column.dataType.includes("integer") ||
-    column.dataType.includes("numeric") ||
-    column.dataType.includes("double") ||
-    column.dataType.includes("real") ||
-    column.dataType.includes("decimal")
+    normalized.includes("smallint") ||
+    normalized.includes("integer") ||
+    normalized.includes("bigint") ||
+    normalized.includes("numeric") ||
+    normalized.includes("double") ||
+    normalized.includes("real") ||
+    normalized.includes("decimal") ||
+    normalized.includes("int2") ||
+    normalized.includes("int4") ||
+    normalized.includes("int8") ||
+    normalized.includes("float4") ||
+    normalized.includes("float8")
   );
 }
 
@@ -113,7 +121,11 @@ export function coerceCellInput(column: PostgresTableColumn, raw: string): unkno
     if (raw.toLowerCase() === "false") return false;
     return raw;
   }
-  if (isNumericColumn(column) && !Number.isNaN(Number(raw))) return Number(raw);
+  if (isNumericColumn(column) && !Number.isNaN(Number(raw))) {
+    const numeric = Number(raw);
+    if (Number.isSafeInteger(numeric)) return numeric;
+    if (!Number.isInteger(numeric)) return numeric;
+  }
   if (column.dataType === "json" || column.dataType === "jsonb") {
     try {
       return JSON.parse(raw);

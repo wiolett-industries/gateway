@@ -1,0 +1,35 @@
+{
+  "file_name": "4tmpz7of_gateway_docker_failure",
+  "edges": [
+    {
+      "from_id": "4tmpz7of",
+      "to_id": "kk05lizc",
+      "relation": "derived_from",
+      "weight": 0.4,
+      "reason": "env persistence/rollback patterns complement docker container recreate/update flows described in docker failure pattern",
+      "source": "auto",
+      "created_at": 1781721387827,
+      "updated_at": 1781721387827
+    },
+    {
+      "from_id": "4tmpz7of",
+      "to_id": "pi5nk0rf",
+      "relation": "same_area",
+      "weight": 0.35,
+      "reason": "design-system-viewer and design-system frontend migration touches fall under gateway design-system modernization efforts",
+      "source": "auto",
+      "created_at": 1781721387827,
+      "updated_at": 1781721387827
+    },
+    {
+      "from_id": "4tmpz7of",
+      "to_id": "qz6ixfnq",
+      "relation": "related_to",
+      "weight": 0.3,
+      "reason": "Docker registry credential inference cautions affect container pull workflows referenced by gateway/docker content",
+      "source": "auto",
+      "created_at": 1781721387827,
+      "updated_at": 1781721387827
+    }
+  ]
+}

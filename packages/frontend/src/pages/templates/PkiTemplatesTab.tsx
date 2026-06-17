@@ -305,7 +305,7 @@ export function PkiTemplatesTab({
                   {template.description || "No description"}
                 </p>
                 <div className="flex flex-wrap gap-1">
-                  <Badge variant="secondary" className="text-xs capitalize">
+                  <Badge variant="secondary" className="text-xs">
                     {template.certType}
                   </Badge>
                   <Badge variant="secondary" className="text-xs">

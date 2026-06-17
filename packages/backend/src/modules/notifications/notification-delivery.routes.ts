@@ -2,6 +2,7 @@ import { OpenAPIHono } from '@hono/zod-openapi';
 import { z } from 'zod';
 import { container } from '@/container.js';
 import { openApiValidationHook } from '@/lib/openapi.js';
+import { AppError } from '@/middleware/error-handler.js';
 import { authMiddleware, requireAnyScope } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import {
@@ -75,7 +76,7 @@ deliveryRoutes.openapi(
   async (c) => {
     const service = container.resolve(NotificationDeliveryService);
     const delivery = await service.getById(c.req.param('id')!);
-    if (!delivery) return c.json({ error: 'Not found' }, 404);
+    if (!delivery) throw new AppError(404, 'DELIVERY_NOT_FOUND', 'Not found');
     return c.json({ data: delivery });
   }
 );

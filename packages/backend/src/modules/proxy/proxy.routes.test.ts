@@ -460,6 +460,37 @@ describe('proxy routes programmatic raw config handling', () => {
     );
   });
 
+  it('passes explicit nulls through when clearing access list and advanced config', async () => {
+    mocks.authType = 'session';
+    mocks.scopes = ['proxy:edit:host-1', 'proxy:advanced:host-1'];
+
+    const response = await createApp().request('/host-1', {
+      method: 'PUT',
+      headers: {
+        Authorization: 'Bearer gw_token',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        accessListId: null,
+        advancedConfig: null,
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(mocks.proxyService.updateProxyHost).toHaveBeenCalledWith(
+      'host-1',
+      expect.objectContaining({
+        accessListId: null,
+        advancedConfig: null,
+      }),
+      'user-1',
+      {
+        bypassAdvancedValidation: false,
+        bypassRawValidation: false,
+      }
+    );
+  });
+
   it('does not allow raw-only permission to update normal proxy settings', async () => {
     mocks.authType = 'session';
     mocks.scopes = ['proxy:raw:write:host-1'];

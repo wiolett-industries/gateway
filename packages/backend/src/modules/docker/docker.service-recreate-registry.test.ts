@@ -127,4 +127,135 @@ describe('DockerManagementService recreate registry auth', () => {
       'registry.example.com/team/app:new'
     );
   });
+
+  it('fails recreate promptly when the replacement container exits before reaching running', async () => {
+    vi.useFakeTimers();
+
+    try {
+      const dispatch = {
+        sendDockerContainerCommand: vi.fn(async (_nodeId: string, action: string) => {
+          if (action === 'list') {
+            return {
+              success: true,
+              detail: JSON.stringify([
+                {
+                  id: 'container-2',
+                  name: '/app',
+                  state: 'exited',
+                  status: 'Exited (127) 1 second ago',
+                },
+              ]),
+            };
+          }
+          return { success: false, error: `unexpected action ${action}` };
+        }),
+        sendDockerImageCommand: vi.fn(),
+      };
+      const service = new DockerManagementService(
+        dbWithOnlineDockerNode() as never,
+        { log: vi.fn().mockResolvedValue(undefined) } as never,
+        dispatch as never,
+        { getNode: vi.fn().mockReturnValue({ id: 'node-1' }) } as never
+      );
+      const update = vi.fn().mockResolvedValue(undefined);
+      const publish = vi.fn();
+      service.setTaskService({ update } as never);
+      service.setEventBus({ publish } as never);
+
+      (
+        service as unknown as {
+          watchRecreateByName: (
+            nodeId: string,
+            containerName: string,
+            oldContainerId: string,
+            taskId: string | undefined,
+            progress: string,
+            expectedState: string,
+            timeoutMs?: number
+          ) => void;
+        }
+      ).watchRecreateByName('node-1', 'app', 'container-1', 'task-1', 'Container recreated', 'running', 60000);
+
+      await vi.advanceTimersByTimeAsync(2000);
+
+      expect(update).toHaveBeenCalledWith(
+        'task-1',
+        expect.objectContaining({
+          status: 'failed',
+          error: 'Replacement container failed to start (Exited (127) 1 second ago)',
+        })
+      );
+      expect(publish).toHaveBeenCalledWith(
+        'docker.container.changed',
+        expect.objectContaining({
+          nodeId: 'node-1',
+          name: 'app',
+          action: 'transitioning',
+          transition: null,
+        })
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('fails recreate promptly when a stopped-container replacement exits before reaching created', async () => {
+    vi.useFakeTimers();
+
+    try {
+      const dispatch = {
+        sendDockerContainerCommand: vi.fn(async (_nodeId: string, action: string) => {
+          if (action === 'list') {
+            return {
+              success: true,
+              detail: JSON.stringify([
+                {
+                  id: 'container-2',
+                  name: '/app',
+                  state: 'exited',
+                  status: 'Exited (0) 1 second ago',
+                },
+              ]),
+            };
+          }
+          return { success: false, error: `unexpected action ${action}` };
+        }),
+        sendDockerImageCommand: vi.fn(),
+      };
+      const service = new DockerManagementService(
+        dbWithOnlineDockerNode() as never,
+        { log: vi.fn().mockResolvedValue(undefined) } as never,
+        dispatch as never,
+        { getNode: vi.fn().mockReturnValue({ id: 'node-1' }) } as never
+      );
+      const update = vi.fn().mockResolvedValue(undefined);
+      service.setTaskService({ update } as never);
+
+      (
+        service as unknown as {
+          watchRecreateByName: (
+            nodeId: string,
+            containerName: string,
+            oldContainerId: string,
+            taskId: string | undefined,
+            progress: string,
+            expectedState: string,
+            timeoutMs?: number
+          ) => void;
+        }
+      ).watchRecreateByName('node-1', 'app', 'container-1', 'task-1', 'Container recreated', 'created', 60000);
+
+      await vi.advanceTimersByTimeAsync(2000);
+
+      expect(update).toHaveBeenCalledWith(
+        'task-1',
+        expect.objectContaining({
+          status: 'failed',
+          error: 'Replacement container failed to start (Exited (0) 1 second ago)',
+        })
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

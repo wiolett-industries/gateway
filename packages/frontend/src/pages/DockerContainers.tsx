@@ -317,8 +317,8 @@ export function DockerContainers({
     [folders, filteredContainers]
   );
   const folderTree = useMemo(
-    () => (fixedNodeId ? pruneEmptyFolders(rawFolderTree) : rawFolderTree),
-    [fixedNodeId, rawFolderTree]
+    () => (fixedNodeId || filters.search.trim() ? pruneEmptyFolders(rawFolderTree) : rawFolderTree),
+    [filters.search, fixedNodeId, rawFolderTree]
   );
 
   const folderIds = useMemo(() => new Set(folders.map((folder) => folder.id)), [folders]);
@@ -333,8 +333,9 @@ export function DockerContainers({
   );
 
   const hasActiveFilters = filters.search !== "" || filters.status !== "all";
+  const isSearchFiltering = filters.search.trim() !== "";
   const canManageFolders = !fixedNodeId && hasScope("docker:containers:folders:manage");
-  const canDragFolders = canManageFolders && !isMobile;
+  const canDragFolders = canManageFolders && !isMobile && !isSearchFiltering;
   const canManageRuntime = hasScopedAccess("docker:containers:manage");
   const showActionsColumn = canManageFolders || canManageRuntime;
   const showNodeColumn = !fixedNodeId;
@@ -543,7 +544,7 @@ export function DockerContainers({
 
   const handleDragEnd = async (event: DragEndEvent) => {
     setActiveDrag(null);
-    if (!canManageFolders) return;
+    if (!canManageFolders || isSearchFiltering) return;
     const { active, over } = event;
     if (!over) return;
 

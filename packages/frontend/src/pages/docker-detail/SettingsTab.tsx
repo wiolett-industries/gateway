@@ -19,6 +19,7 @@ import {
   loadDockerRuntimeCapacity,
   UNKNOWN_DOCKER_RUNTIME_CAPACITY,
 } from "@/lib/docker-runtime-capacity";
+import { parseShellWords } from "@/lib/shell-words";
 import { formatBytes } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
@@ -113,6 +114,8 @@ export function SettingsTab({
   nodeId,
   containerId,
   data,
+  onMutationStart,
+  onMutationEnd,
   onRecreating,
   onRefresh,
   onHealthCheckSaved,
@@ -121,6 +124,8 @@ export function SettingsTab({
   nodeId: string;
   containerId: string;
   data: InspectData;
+  onMutationStart?: (transition: "updating" | "recreating") => void;
+  onMutationEnd?: () => void;
   onRecreating?: () => void | Promise<void>;
   onRefresh?: () => void | Promise<void>;
   onHealthCheckSaved?: (healthCheck: DockerHealthCheck) => void;
@@ -492,14 +497,17 @@ export function SettingsTab({
   // ── Live update handler ──
   const handleLiveUpdate = useCallback(async () => {
     setLiveLoading(true);
+    onMutationStart?.("updating");
     try {
       if (runtimeValidationError) {
+        onMutationEnd?.();
         toast.error(runtimeValidationError);
         return;
       }
 
       const payload = buildRuntimePayload();
       if (!payload) {
+        onMutationEnd?.();
         toast.info("No changes to apply");
         return;
       }
@@ -510,9 +518,14 @@ export function SettingsTab({
           ? "Settings applied (no restart needed)"
           : "Container runtime configuration saved"
       );
-      if (!recreatesRunningContainer) {
+      if (recreatesRunningContainer) {
         invalidate("containers", "tasks");
-        await Promise.resolve(onRecreating?.());
+        await Promise.resolve(onRefresh?.());
+        onMutationEnd?.();
+      } else {
+        invalidate("containers", "tasks");
+        await Promise.resolve(onRefresh?.());
+        onMutationEnd?.();
       }
 
       // Update baseline so hasRuntimeChanges becomes false immediately
@@ -526,6 +539,7 @@ export function SettingsTab({
         pidsLimit,
       };
     } catch (err) {
+      onMutationEnd?.();
       toast.error(err instanceof Error ? err.message : "Failed to apply settings");
     } finally {
       setLiveLoading(false);
@@ -538,12 +552,14 @@ export function SettingsTab({
     memoryMB,
     memSwapMB,
     nodeId,
-    onRecreating,
+    onRefresh,
     pidsLimit,
     recreatesRunningContainer,
     restartPolicy,
     cpuCount,
     cpuShares,
+    onMutationEnd,
+    onMutationStart,
     runtimeValidationError,
   ]);
 
@@ -584,13 +600,16 @@ export function SettingsTab({
     if (!ok) return;
 
     setRecreateLoading(true);
+    onMutationStart?.("recreating");
     try {
       if (hasRuntimeChanges && runtimeValidationError) {
+        onMutationEnd?.();
         toast.error(runtimeValidationError);
         setRecreateLoading(false);
         return;
       }
       if (executionValidationError) {
+        onMutationEnd?.();
         toast.error(executionValidationError);
         setRecreateLoading(false);
         return;
@@ -658,6 +677,7 @@ export function SettingsTab({
       await Promise.resolve(onRecreating?.());
       setRecreateLoading(false);
     } catch (err) {
+      onMutationEnd?.();
       toast.error(err instanceof Error ? err.message : "Failed to recreate container");
       setRecreateLoading(false);
     }
@@ -687,6 +707,8 @@ export function SettingsTab({
     stopTimeout,
     user,
     workingDir,
+    onMutationEnd,
+    onMutationStart,
   ]);
 
   // ── Shared input styles ──
@@ -1496,26 +1518,4 @@ export function WebhookSection(props: WebhookSectionProps) {
       )}
     </>
   );
-}
-
-// ── Helpers ──────────────────────────────────────────────────────
-
-function parseShellWords(input: string): string[] {
-  const words: string[] = [];
-  let current = "";
-  let inQuotes = false;
-  for (const ch of input) {
-    if (ch === '"') {
-      inQuotes = !inQuotes;
-    } else if (ch === " " && !inQuotes) {
-      if (current) {
-        words.push(current);
-        current = "";
-      }
-    } else {
-      current += ch;
-    }
-  }
-  if (current) words.push(current);
-  return words;
 }

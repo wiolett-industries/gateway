@@ -3,6 +3,7 @@ import { deleteCookie, setCookie } from 'hono/cookie';
 import { getEnv, isDevelopment } from '@/config/env.js';
 import { container } from '@/container.js';
 import { openApiValidationHook } from '@/lib/openapi.js';
+import { AppError } from '@/middleware/error-handler.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
 import { SessionService } from '@/services/session.service.js';
 import type { AppEnv } from '@/types.js';
@@ -178,7 +179,7 @@ authRoutes.openapi(currentUserRoute, async (c) => {
   const effectiveScopes = c.get('effectiveScopes') || user?.scopes || [];
 
   if (!user) {
-    return c.json({ error: 'User not found' }, 404);
+    throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
   }
 
   return c.json({

@@ -1,6 +1,7 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
 import { openApiValidationHook } from '@/lib/openapi.js';
+import { AppError } from '@/middleware/error-handler.js';
 import { authMiddleware, requireAnyScope } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import {
@@ -87,7 +88,7 @@ webhookRoutes.openapi(
   async (c) => {
     const { bodyTemplate } = await c.req.json();
     if (typeof bodyTemplate !== 'string') {
-      return c.json({ error: 'bodyTemplate is required' }, 400);
+      throw new AppError(400, 'BODY_TEMPLATE_REQUIRED', 'bodyTemplate is required');
     }
     const sampleEvent = buildSampleEvent();
     const context = buildTemplateContext(sampleEvent);
