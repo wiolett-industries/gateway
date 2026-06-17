@@ -153,6 +153,11 @@ OAuth access tokens are resource-bound:
 
 An OAuth access token for the API resource cannot call MCP. An OAuth access token for the MCP resource cannot call normal REST API routes.
 
+Gateway intentionally treats the two OAuth resources differently:
+
+- Gateway API OAuth keeps expiring access tokens and refresh-token renewal.
+- Gateway MCP OAuth is intended for long-lived MCP and AI clients. MCP authorizations issue a long-lived access token and do not depend on refresh-token renewal during normal use.
+
 OAuth authorizations are managed in **Settings > OAuth Applications**. If the same client has grants for both API and MCP resources, Gateway displays them as separate rows.
 
 ### MCP
@@ -335,7 +340,7 @@ For the full security model, including daemon PKI, mTLS enrollment, token bounda
 - Prefer OIDC with MFA enforced at the identity provider.
 - Grant users only the groups and scopes they need.
 - Separate read, write, reveal, export, and destructive scopes.
-- Treat API tokens, OAuth refresh tokens, and logging tokens as secrets.
+- Treat API tokens, OAuth access tokens, OAuth refresh tokens, and logging tokens as secrets.
 - Use OAuth resource separation for API and MCP clients.
 - Review audit logs after sensitive operations.
 - Keep daemon update capability limited to trusted admins.

@@ -437,18 +437,18 @@ describe('OAuthService.approveConsent', () => {
 });
 
 describe('OAuthService.updateUserAuthorizationScopes', () => {
-  it('updates active authorization scopes bounded by the current user scopes', async () => {
-    const refreshToken = {
+  it('updates MCP access-only authorizations bounded by the current user scopes', async () => {
+    const accessToken = {
       clientId: 'goc_client',
       userId: USER.id,
       scopes: ['nodes:details'],
       resource: 'https://gateway.example.com/api/mcp',
-      expiresAt: new Date(Date.now() + 60_000),
+      expiresAt: null,
       createdAt: new Date('2026-04-29T10:00:00Z'),
       revokedAt: null,
     };
     const { service, auditLog, updateCalls } = createService({
-      refreshTokens: [refreshToken],
+      accessTokens: [accessToken],
     });
 
     const authorization = await service.updateUserAuthorizationScopes(
@@ -458,8 +458,8 @@ describe('OAuthService.updateUserAuthorizationScopes', () => {
       ['nodes:details']
     );
 
-    expect(updateCalls.some((call) => call.table === oauthRefreshTokens)).toBe(true);
-    expect(refreshToken.scopes).toEqual(['nodes:details']);
+    expect(updateCalls.some((call) => call.table === oauthAccessTokens)).toBe(true);
+    expect(accessToken.scopes).toEqual(['nodes:details']);
     expect(authorization?.scopes).toEqual(['nodes:details']);
     expect(auditLog).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -518,6 +518,18 @@ describe('OAuthService.listUserAuthorizations', () => {
           revokedAt: null,
         },
       ],
+      accessTokens: [
+        {
+          clientId: 'goc_client',
+          userId: USER.id,
+          scopes: ['nodes:details'],
+          resource: 'https://gateway.example.com/api/mcp',
+          expiresAt: null,
+          createdAt: new Date('2026-04-29T11:00:00Z'),
+          revokedAt: null,
+          lastUsedAt: new Date('2026-04-29T11:30:00Z'),
+        },
+      ],
     });
 
     const authorizations = await service.listUserAuthorizations(USER.id);
@@ -548,6 +560,30 @@ describe('OAuthService.listUserAuthorizations', () => {
     const [authorization] = await service.listUserAuthorizations(USER.id);
 
     expect(authorization.scopes).toEqual(['nodes:details:node-1']);
+  });
+
+  it('keeps MCP access-only authorizations visible with no expiry', async () => {
+    const { service } = createService({
+      accessTokens: [
+        {
+          clientId: 'goc_client',
+          userId: USER.id,
+          scopes: ['nodes:details'],
+          resource: 'https://gateway.example.com/api/mcp',
+          expiresAt: null,
+          createdAt: new Date('2026-04-29T10:00:00Z'),
+          revokedAt: null,
+          lastUsedAt: new Date('2026-04-29T11:00:00Z'),
+        },
+      ],
+    });
+
+    const [authorization] = await service.listUserAuthorizations(USER.id);
+
+    expect(authorization.resource).toBe('https://gateway.example.com/api/mcp');
+    expect(authorization.activeAccessTokens).toBe(1);
+    expect(authorization.activeRefreshTokens).toBe(0);
+    expect(authorization.expiresAt).toBeNull();
   });
 });
 
@@ -580,6 +616,47 @@ describe('OAuthService.exchangeToken authorization code flow', () => {
     expect(result.scope).toBe('nodes:details');
     expect(updateCalls.some((call) => call.table === oauthAuthorizationCodes)).toBe(true);
     expect(insertCalls).toHaveLength(2);
+  });
+
+  it('issues an MCP access token without refresh metadata', async () => {
+    const verifier = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ';
+    const { service, insertCalls } = createService({
+      authorizationCode: {
+        id: 'code-1',
+        clientId: 'goc_client',
+        userId: USER.id,
+        redirectUri: 'http://127.0.0.1:8765/callback',
+        codeChallenge: s256(verifier),
+        scopes: ['nodes:details'],
+        resource: 'https://gateway.example.com/api/mcp',
+        usedAt: null,
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+    });
+
+    const result = await service.exchangeToken({
+      grant_type: 'authorization_code',
+      client_id: 'goc_client',
+      code: 'gwo_code',
+      redirect_uri: 'http://127.0.0.1:8765/callback',
+      code_verifier: verifier,
+    });
+
+    expect(result.token_type).toBe('Bearer');
+    expect(result.scope).toBe('nodes:details');
+    expect(result.expires_in).toBeUndefined();
+    expect(result.refresh_token).toBeUndefined();
+    expect(insertCalls).toHaveLength(1);
+    expect(insertCalls[0]).toEqual(
+      expect.objectContaining({
+        table: oauthAccessTokens,
+        values: expect.objectContaining({
+          resource: 'https://gateway.example.com/api/mcp',
+          refreshTokenId: null,
+          expiresAt: null,
+        }),
+      })
+    );
   });
 
   it('rejects an authorization code when the PKCE verifier does not match the stored S256 challenge', async () => {
@@ -654,6 +731,57 @@ describe('OAuthService.revokeToken', () => {
         action: 'oauth.token_refresh',
         resourceId: 'goc_client',
       })
+    );
+  });
+
+  it('converts a legacy MCP refresh token into a long-lived access token', async () => {
+    const { service, insertCalls, updateCalls } = createService({
+      refreshToken: {
+        id: 'refresh-1',
+        tokenHash: 'hash',
+        clientId: 'goc_client',
+        userId: USER.id,
+        scopes: ['nodes:details'],
+        resource: 'https://gateway.example.com/api/mcp',
+        revokedAt: null,
+        replacedByTokenId: null,
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+      revokedRefreshRows: [{ id: 'refresh-1', clientId: 'goc_client', userId: USER.id, resource: null }],
+    });
+
+    const result = await service.exchangeToken({
+      grant_type: 'refresh_token',
+      client_id: 'goc_client',
+      refresh_token: 'gwr_mcp',
+    });
+
+    expect(result.token_type).toBe('Bearer');
+    expect(result.scope).toBe('nodes:details');
+    expect(result.expires_in).toBeUndefined();
+    expect(result.refresh_token).toBeUndefined();
+    expect(insertCalls).toHaveLength(1);
+    expect(insertCalls[0]).toEqual(
+      expect.objectContaining({
+        table: oauthAccessTokens,
+        values: expect.objectContaining({
+          resource: 'https://gateway.example.com/api/mcp',
+          refreshTokenId: null,
+          expiresAt: null,
+        }),
+      })
+    );
+    expect(updateCalls).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          table: oauthRefreshTokens,
+          values: expect.objectContaining({ revokedAt: expect.any(Date) }),
+        }),
+        expect.objectContaining({
+          table: oauthRefreshTokens,
+          values: { replacedByTokenId: null },
+        }),
+      ])
     );
   });
 

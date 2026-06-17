@@ -38,17 +38,12 @@ describe("auth store session reset callback", () => {
   it("resets client state when initial hydration belongs to a different stored auth context", () => {
     const reset = vi.fn();
     registerAuthContextReset(reset);
-    window.localStorage.setItem(
-      AUTH_CONTEXT_STORAGE_KEY,
-      "user-2:proxy:view:active"
-    );
+    window.localStorage.setItem(AUTH_CONTEXT_STORAGE_KEY, "user-2:proxy:view:active");
 
     useAuthStore.getState().setUser(USER);
 
     expect(reset).toHaveBeenCalledTimes(1);
-    expect(window.localStorage.getItem(AUTH_CONTEXT_STORAGE_KEY)).toBe(
-      "user-1:proxy:view:active"
-    );
+    expect(window.localStorage.getItem(AUTH_CONTEXT_STORAGE_KEY)).toBe("user-1:proxy:view:active");
   });
 
   it("runs when an existing authenticated identity or scopes change", () => {

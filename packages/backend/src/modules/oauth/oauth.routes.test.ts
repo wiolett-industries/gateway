@@ -134,6 +134,7 @@ describe('OAuth metadata routes', () => {
     expect(body.authorization_endpoint).toBe('https://gateway.example.com/api/oauth/authorize');
     expect(body.token_endpoint).toBe('https://gateway.example.com/api/oauth/token');
     expect(body.registration_endpoint).toBe('https://gateway.example.com/api/oauth/register');
+    expect(body.grant_types_supported).toEqual(['authorization_code', 'refresh_token']);
     expect(body.token_endpoint_auth_methods_supported).toEqual(['none']);
     expect(body.code_challenge_methods_supported).toEqual(['S256']);
   });
@@ -150,6 +151,7 @@ describe('OAuth metadata routes', () => {
       expect(response.status).toBe(200);
       expect(body.authorization_endpoint).toBe('https://gateway.example.com/api/oauth/authorize/api/mcp');
       expect(body.token_endpoint).toBe('https://gateway.example.com/api/oauth/token');
+      expect(body.grant_types_supported).toEqual(['authorization_code']);
     }
   });
 
@@ -163,6 +165,7 @@ describe('OAuth metadata routes', () => {
 
     expect(response.status).toBe(200);
     expect(body.authorization_endpoint).toBe('https://gateway.example.com/api/oauth/authorize/api/mcp');
+    expect(body.grant_types_supported).toEqual(['authorization_code']);
   });
 
   it('advertises the API protected resource metadata', async () => {
@@ -310,6 +313,34 @@ describe('OAuth client and token routes', () => {
     expect(body.access_token).toBe('gwo_access');
     expect(body.refresh_token).toBe('gwr_refresh');
     expect(body.scope).toBe('nodes:details docker:containers:view');
+  });
+
+  it('returns MCP token responses without refresh metadata', async () => {
+    registerOAuthService({
+      exchangeToken: vi.fn().mockResolvedValue({
+        access_token: 'gwo_mcp_access',
+        token_type: 'Bearer',
+        scope: 'nodes:details',
+      }),
+    });
+
+    const response = await createApp().request('/api/oauth/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        client_id: 'goc_client',
+        code: 'gwo_code',
+        redirect_uri: 'http://127.0.0.1:39231/callback',
+        code_verifier: 'a'.repeat(43),
+      }).toString(),
+    });
+    const body = (await response.json()) as JsonRecord;
+
+    expect(response.status).toBe(200);
+    expect(body.access_token).toBe('gwo_mcp_access');
+    expect(body.refresh_token).toBeUndefined();
+    expect(body.expires_in).toBeUndefined();
   });
 
   it('revokes tokens without exposing whether the token existed', async () => {

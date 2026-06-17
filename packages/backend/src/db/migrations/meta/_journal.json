@@ -232,6 +232,13 @@
       "when": 1777766400000,
       "tag": "0032_docker_image_cleanup_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1781715300000,
+      "tag": "0033_oauth_access_token_nullable_expiry",
+      "breakpoints": true
     }
   ]
 }

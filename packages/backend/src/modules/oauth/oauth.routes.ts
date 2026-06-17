@@ -71,6 +71,8 @@ function authorizationServerMetadata(resource?: string) {
     resource === service.getMcpResourceUrl()
       ? new URL('/api/oauth/authorize/api/mcp', issuer).href
       : new URL('/api/oauth/authorize', issuer).href;
+  const grantTypesSupported =
+    resource === service.getMcpResourceUrl() ? ['authorization_code'] : ['authorization_code', 'refresh_token'];
   return {
     issuer,
     authorization_endpoint: authorizationEndpoint,
@@ -79,7 +81,7 @@ function authorizationServerMetadata(resource?: string) {
     revocation_endpoint: new URL('/api/oauth/revoke', issuer).href,
     scopes_supported: supportedScopes(resource),
     response_types_supported: ['code'],
-    grant_types_supported: ['authorization_code', 'refresh_token'],
+    grant_types_supported: grantTypesSupported,
     token_endpoint_auth_methods_supported: ['none'],
     revocation_endpoint_auth_methods_supported: ['none'],
     code_challenge_methods_supported: ['S256'],

@@ -86,7 +86,7 @@ export const oauthAccessTokens = pgTable(
     refreshTokenId: uuid('refresh_token_id').references(() => oauthRefreshTokens.id, { onDelete: 'set null' }),
     scopes: jsonb('scopes').$type<string[]>().notNull(),
     resource: text('resource'),
-    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

@@ -218,7 +218,7 @@ export function OAuthApplicationsSection({
   const disconnect = async (authorization: OAuthAuthorization) => {
     const ok = await confirm({
       title: "Disconnect OAuth application",
-      description: `Revoke OAuth access for "${authorization.clientName}"? Existing access and refresh tokens for this application will stop working.`,
+      description: `Revoke OAuth access for "${authorization.clientName}"? Existing OAuth tokens for this application will stop working.`,
       confirmLabel: "Disconnect",
       variant: "destructive",
     });
@@ -312,7 +312,7 @@ export function OAuthApplicationsSection({
                         : ""}
                       {authorization.expiresAt
                         ? ` · Expires ${formatDate(authorization.expiresAt)}`
-                        : ""}
+                        : " · No expiry"}
                     </p>
                   </div>
                 </div>
@@ -392,7 +392,7 @@ export function OAuthApplicationsSection({
                   }
                 />
                 <InfoItem
-                  label="Active grants"
+                  label="Refresh grants"
                   value={String(selectedAuthorization.activeRefreshTokens)}
                 />
                 <InfoItem

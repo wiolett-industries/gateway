@@ -30,6 +30,11 @@ OAuth tokens are bound to exactly one resource:
 
 The REST API accepts browser sessions, `gw_` API tokens, and `gwo_` OAuth tokens issued for the Gateway API resource. The MCP endpoint accepts only `gwo_` OAuth tokens issued for the Gateway MCP resource; API tokens, browser cookies, and logging tokens are rejected.
 
+OAuth lifetime behavior is resource-specific:
+
+- Gateway API OAuth uses expiring access tokens and refresh-token renewal.
+- Gateway MCP OAuth is intended for long-lived MCP access and does not rely on refresh-token churn during normal use.
+
 Delegated API/OAuth scopes are always bounded by the owning user's current effective scopes. Revoking or editing a user's group permissions also reduces the effective permissions of that user's existing tokens.
 
 ## Scope Evaluation Behavior

@@ -35,8 +35,8 @@ export const mcpAuthMiddleware: MiddlewareHandler<AppEnv> = async (c, next) => {
   if (token.startsWith('gwo_')) {
     const result = await oauthService.validateAccessToken(token, { resource: oauthService.getMcpResourceUrl() });
     if (!result) {
-      challenge('invalid_token', 'Invalid or expired OAuth access token');
-      throw new HTTPException(401, { message: 'Invalid or expired OAuth access token' });
+      challenge('invalid_token', 'Invalid OAuth access token');
+      throw new HTTPException(401, { message: 'Invalid OAuth access token' });
     }
     if (result.scopes.length === 0) {
       throw new HTTPException(403, { message: 'MCP requires at least one effective OAuth token scope' });

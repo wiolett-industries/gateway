@@ -1,10 +1,10 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { and, eq, gt, inArray, isNull, or } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { inject, injectable } from 'tsyringe';
 import { getEnv } from '@/config/env.js';
 import { TOKENS } from '@/container.js';
 import type { DrizzleClient } from '@/db/client.js';
-import { oauthAccessTokens, oauthAuthorizationCodes, oauthClients, oauthRefreshTokens } from '@/db/schema/index.js';
+import { oauthAuthorizationCodes, oauthClients } from '@/db/schema/index.js';
 import { boundScopes, hasScope, isScopeSubset } from '@/lib/permissions.js';
 import {
   canonicalizeScopes,
@@ -21,12 +21,11 @@ import { resolveLiveUser } from '@/modules/auth/live-session-user.js';
 import type { CacheService } from '@/services/cache.service.js';
 import type { User } from '@/types.js';
 import type { OAuthAuthorizeQuery, OAuthClientRegistrationInput, OAuthTokenRequest } from './oauth.schemas.js';
+import { hashSecret, OAuthTokenLifecycle, randomSecret } from './oauth-token-lifecycle.js';
 
 const CONSENT_PREFIX = 'oauth:consent:';
 const CONSENT_TTL_SECONDS = 600;
 const AUTH_CODE_TTL_SECONDS = 300;
-const ACCESS_TOKEN_TTL_SECONDS = 900;
-const REFRESH_TOKEN_TTL_SECONDS = 60 * 60 * 24 * 30;
 
 type PendingConsent = {
   id: string;
@@ -46,14 +45,6 @@ type PendingConsent = {
   resource: string;
   expiresAt: number;
 };
-
-function hashSecret(raw: string): string {
-  return createHash('sha256').update(raw).digest('hex');
-}
-
-function randomSecret(prefix: string): string {
-  return `${prefix}${randomBytes(32).toString('base64url')}`;
-}
 
 function pkceChallenge(verifier: string): string {
   return createHash('sha256').update(verifier).digest('base64url');
@@ -77,16 +68,6 @@ function stripNonDelegableMcpScope(scopes: string[]): string[] {
 
 function getManualApprovalScopes(scopes: string[]): string[] {
   return scopes.filter((scope) => MANUAL_APPROVAL_SCOPE_SET.has(extractBaseScope(scope))).sort();
-}
-
-function resourceWhere(
-  table: typeof oauthAccessTokens | typeof oauthRefreshTokens,
-  resource: string,
-  apiResource: string
-) {
-  return resource === apiResource
-    ? or(isNull(table.resource), eq(table.resource, resource))
-    : eq(table.resource, resource);
 }
 
 function publicMetadata(input: OAuthClientRegistrationInput): Record<string, unknown> {
@@ -133,12 +114,24 @@ function assertRedirectUriAllowed(uri: string, extendedCompatibility: boolean): 
 
 @injectable()
 export class OAuthService {
+  private readonly tokenLifecycle: OAuthTokenLifecycle;
+
   constructor(
     @inject(TOKENS.DrizzleClient) private readonly db: DrizzleClient,
     private readonly cacheService: CacheService,
     private readonly auditService: AuditService,
     private readonly authSettingsService: AuthSettingsService
-  ) {}
+  ) {
+    this.tokenLifecycle = new OAuthTokenLifecycle({
+      db: this.db,
+      auditService: this.auditService,
+      getApiResourceUrl: () => this.getApiResourceUrl(),
+      getMcpResourceUrl: () => this.getMcpResourceUrl(),
+      getClient: (clientId) => this.getClient(clientId),
+      isSupportedResource: (resource) => this.isSupportedResource(resource),
+      assertMcpResourceAllowed: (user, resource) => this.assertMcpResourceAllowed(user, resource),
+    });
+  }
 
   getIssuerUrl(): string {
     return new URL(getEnv().APP_URL).origin;
@@ -160,8 +153,12 @@ export class OAuthService {
     return resource === this.getApiResourceUrl() || resource === this.getMcpResourceUrl();
   }
 
+  private isMcpResource(resource: string): boolean {
+    return resource === this.getMcpResourceUrl();
+  }
+
   private assertMcpResourceAllowed(user: User, resource: string): void {
-    if (resource === this.getMcpResourceUrl() && !hasScope(user.scopes, 'mcp:use')) {
+    if (this.isMcpResource(resource) && !hasScope(user.scopes, 'mcp:use')) {
       throw new AppError(403, 'MCP_NOT_ALLOWED', 'Your account is not allowed to use MCP');
     }
   }
@@ -224,10 +221,12 @@ export class OAuthService {
     if (delegableRequestedScopes.length === 0) {
       throw new AppError(400, 'INVALID_SCOPE', 'At least one OAuth scope is required');
     }
+
     const invalidScopes = delegableRequestedScopes.filter((scope) => !isValidBaseScope(scope));
     if (invalidScopes.length > 0) {
       throw new AppError(400, 'INVALID_SCOPE', `Scopes are not recognized: ${invalidScopes.join(', ')}`);
     }
+
     const requestedScopes = canonicalizeScopes(delegableRequestedScopes);
     const resource = query.resource ?? (requestedMcpAccess ? this.getMcpResourceUrl() : this.getApiResourceUrl());
     if (!this.isSupportedResource(resource)) {
@@ -273,6 +272,7 @@ export class OAuthService {
     if (pending.userId !== user.id) {
       throw new AppError(403, 'OAUTH_REQUEST_USER_MISMATCH', 'This OAuth request belongs to another account');
     }
+
     const oauthExtendedCallbackCompatibility = await this.authSettingsService.getOAuthExtendedCallbackCompatibility();
     assertRedirectUriAllowed(pending.redirectUri, oauthExtendedCallbackCompatibility);
 
@@ -283,6 +283,7 @@ export class OAuthService {
     const unavailableScopes = pending.requestedScopes.filter(
       (scope) => !hasScope(user.scopes, scope) || !isApiTokenScope(scope)
     );
+
     return {
       ...pending,
       redirectUriIsExternal: pending.redirectUriIsExternal ?? isExternalRedirectUri(pending.redirectUri),
@@ -355,7 +356,7 @@ export class OAuthService {
 
   async exchangeToken(input: OAuthTokenRequest) {
     if (input.grant_type === 'authorization_code') return this.exchangeAuthorizationCode(input);
-    return this.exchangeRefreshToken(input);
+    return this.tokenLifecycle.exchangeRefreshToken(input);
   }
 
   private async exchangeAuthorizationCode(input: OAuthTokenRequest) {
@@ -390,7 +391,8 @@ export class OAuthService {
       .where(and(eq(oauthAuthorizationCodes.id, code.id), isNull(oauthAuthorizationCodes.usedAt)))
       .returning({ id: oauthAuthorizationCodes.id });
     if (!usedCode) throw new AppError(400, 'INVALID_GRANT', 'Authorization code already used');
-    const issued = await this.issueTokens({
+
+    const issued = await this.tokenLifecycle.issueTokens({
       clientId: code.clientId,
       userId: code.userId,
       scopes,
@@ -399,448 +401,23 @@ export class OAuthService {
     return issued.response;
   }
 
-  private async exchangeRefreshToken(input: OAuthTokenRequest) {
-    if (!input.refresh_token) throw new AppError(400, 'INVALID_REQUEST', 'Refresh token is required');
-    const existing = await this.db.query.oauthRefreshTokens.findFirst({
-      where: eq(oauthRefreshTokens.tokenHash, hashSecret(input.refresh_token)),
-    });
-    if (!existing || existing.clientId !== input.client_id || existing.expiresAt.getTime() < Date.now()) {
-      throw new AppError(400, 'INVALID_GRANT', 'Invalid refresh token');
-    }
-    if (existing.revokedAt || existing.replacedByTokenId) {
-      await this.revokeRefreshTokenFamily(existing);
-      throw new AppError(400, 'INVALID_GRANT', 'Invalid refresh token');
-    }
-    if (input.resource && input.resource !== (existing.resource ?? this.getApiResourceUrl())) {
-      throw new AppError(400, 'INVALID_TARGET', 'Resource does not match the refresh token');
-    }
-
-    const user = await resolveLiveUser(this.db, existing.userId);
-    if (!user || user.isBlocked) throw new AppError(400, 'INVALID_GRANT', 'User is no longer active');
-    const resource = existing.resource ?? this.getApiResourceUrl();
-    this.assertMcpResourceAllowed(user, resource);
-    const scopes = canonicalizeScopes(boundScopes(existing.scopes, user.scopes)).filter((scope) =>
-      isApiTokenScope(scope)
-    );
-    if (scopes.length === 0) throw new AppError(400, 'INVALID_GRANT', 'User can no longer grant these scopes');
-
-    const issued = await this.db
-      .transaction(async (tx) => {
-        const now = new Date();
-        const [rotatedToken] = await tx
-          .update(oauthRefreshTokens)
-          .set({ revokedAt: now })
-          .where(
-            and(
-              eq(oauthRefreshTokens.id, existing.id),
-              isNull(oauthRefreshTokens.revokedAt),
-              isNull(oauthRefreshTokens.replacedByTokenId)
-            )
-          )
-          .returning({ id: oauthRefreshTokens.id });
-        if (!rotatedToken) {
-          throw new AppError(400, 'REFRESH_TOKEN_REPLAY', 'Refresh token already used');
-        }
-
-        const issuedTokens = await this.issueTokens(
-          {
-            clientId: existing.clientId,
-            userId: existing.userId,
-            scopes,
-            resource,
-          },
-          tx
-        );
-        await tx
-          .update(oauthRefreshTokens)
-          .set({ replacedByTokenId: issuedTokens.refreshTokenId })
-          .where(eq(oauthRefreshTokens.id, existing.id));
-        return issuedTokens;
-      })
-      .catch(async (error) => {
-        if (error instanceof AppError && error.code === 'REFRESH_TOKEN_REPLAY') {
-          await this.revokeRefreshTokenFamily(existing);
-          throw new AppError(400, 'INVALID_GRANT', 'Refresh token already used');
-        }
-        throw error;
-      });
-
-    await this.auditService.log({
-      userId: existing.userId,
-      action: 'oauth.token_refresh',
-      resourceType: 'oauth-client',
-      resourceId: existing.clientId,
-      details: { scopes },
-    });
-    return issued.response;
-  }
-
-  private async revokeRefreshTokenFamily(
-    seed: { id: string; clientId: string; userId: string; resource: string | null },
-    now = new Date()
-  ): Promise<string[]> {
-    const apiResource = this.getApiResourceUrl();
-    const familyTokens = await this.db.query.oauthRefreshTokens.findMany({
-      where: and(
-        eq(oauthRefreshTokens.clientId, seed.clientId),
-        eq(oauthRefreshTokens.userId, seed.userId),
-        resourceWhere(oauthRefreshTokens, seed.resource ?? apiResource, apiResource)
-      ),
-    });
-    const family = new Set<string>([seed.id]);
-    let changed = true;
-    while (changed) {
-      changed = false;
-      for (const token of familyTokens) {
-        if (family.has(token.id) || (token.replacedByTokenId && family.has(token.replacedByTokenId))) {
-          if (!family.has(token.id)) {
-            family.add(token.id);
-            changed = true;
-          }
-          if (token.replacedByTokenId && !family.has(token.replacedByTokenId)) {
-            family.add(token.replacedByTokenId);
-            changed = true;
-          }
-        }
-      }
-    }
-
-    const ids = [...family];
-    await Promise.all([
-      this.db.update(oauthRefreshTokens).set({ revokedAt: now }).where(inArray(oauthRefreshTokens.id, ids)),
-      this.db.update(oauthAccessTokens).set({ revokedAt: now }).where(inArray(oauthAccessTokens.refreshTokenId, ids)),
-    ]);
-    return ids;
-  }
-
-  private async issueTokens(
-    input: { clientId: string; userId: string; scopes: string[]; resource: string },
-    db: Pick<DrizzleClient, 'insert'> = this.db
-  ) {
-    const accessToken = randomSecret('gwo_');
-    const refreshToken = randomSecret('gwr_');
-    const now = Date.now();
-    const scopes = canonicalizeScopes(input.scopes);
-    const [refresh] = await db
-      .insert(oauthRefreshTokens)
-      .values({
-        tokenHash: hashSecret(refreshToken),
-        tokenPrefix: refreshToken.slice(0, 12),
-        clientId: input.clientId,
-        userId: input.userId,
-        scopes,
-        resource: input.resource,
-        expiresAt: new Date(now + REFRESH_TOKEN_TTL_SECONDS * 1000),
-      })
-      .returning();
-    await db.insert(oauthAccessTokens).values({
-      tokenHash: hashSecret(accessToken),
-      tokenPrefix: accessToken.slice(0, 12),
-      clientId: input.clientId,
-      userId: input.userId,
-      refreshTokenId: refresh.id,
-      scopes,
-      resource: input.resource,
-      expiresAt: new Date(now + ACCESS_TOKEN_TTL_SECONDS * 1000),
-    });
-
-    return {
-      refreshTokenId: refresh.id,
-      response: {
-        access_token: accessToken,
-        token_type: 'Bearer',
-        expires_in: ACCESS_TOKEN_TTL_SECONDS,
-        scope: scopes.join(' '),
-        refresh_token: refreshToken,
-      },
-    };
-  }
-
   async validateAccessToken(rawToken: string, options: { resource?: string } = {}) {
-    const token = await this.db.query.oauthAccessTokens.findFirst({
-      where: and(eq(oauthAccessTokens.tokenHash, hashSecret(rawToken)), isNull(oauthAccessTokens.revokedAt)),
-    });
-    if (!token || token.expiresAt.getTime() < Date.now()) return null;
-    if (options.resource && (token.resource ?? this.getApiResourceUrl()) !== options.resource) return null;
-
-    const user = await resolveLiveUser(this.db, token.userId);
-    if (!user || user.isBlocked) return null;
-    const scopes = canonicalizeScopes(boundScopes(token.scopes, user.scopes)).filter((scope) => isApiTokenScope(scope));
-
-    this.db
-      .update(oauthAccessTokens)
-      .set({ lastUsedAt: new Date() })
-      .where(eq(oauthAccessTokens.id, token.id))
-      .execute()
-      .catch(() => {});
-
-    return {
-      user,
-      scopes,
-      tokenId: token.id,
-      tokenPrefix: token.tokenPrefix,
-      clientId: token.clientId,
-    };
+    return this.tokenLifecycle.validateAccessToken(rawToken, options);
   }
 
   async revokeToken(rawToken: string, clientId?: string): Promise<void> {
-    const tokenHash = hashSecret(rawToken);
-    const now = new Date();
-    const accessWhere = clientId
-      ? and(eq(oauthAccessTokens.tokenHash, tokenHash), eq(oauthAccessTokens.clientId, clientId))
-      : eq(oauthAccessTokens.tokenHash, tokenHash);
-    const refreshWhere = clientId
-      ? and(eq(oauthRefreshTokens.tokenHash, tokenHash), eq(oauthRefreshTokens.clientId, clientId))
-      : eq(oauthRefreshTokens.tokenHash, tokenHash);
-    const revokedRefreshTokens = await this.db
-      .update(oauthRefreshTokens)
-      .set({ revokedAt: now })
-      .where(refreshWhere)
-      .returning({
-        id: oauthRefreshTokens.id,
-        clientId: oauthRefreshTokens.clientId,
-        userId: oauthRefreshTokens.userId,
-        resource: oauthRefreshTokens.resource,
-      });
-    const accessRevocations = [this.db.update(oauthAccessTokens).set({ revokedAt: now }).where(accessWhere)];
-    if (revokedRefreshTokens.length > 0) {
-      await Promise.all(revokedRefreshTokens.map((token) => this.revokeRefreshTokenFamily(token, now)));
-    }
-    await Promise.all(accessRevocations);
+    return this.tokenLifecycle.revokeToken(rawToken, clientId);
   }
 
   async listUserAuthorizations(userId: string) {
-    const now = new Date();
-    const [refreshTokens, accessTokens, user] = await Promise.all([
-      this.db.query.oauthRefreshTokens.findMany({
-        where: and(
-          eq(oauthRefreshTokens.userId, userId),
-          isNull(oauthRefreshTokens.revokedAt),
-          gt(oauthRefreshTokens.expiresAt, now)
-        ),
-      }),
-      this.db.query.oauthAccessTokens.findMany({
-        where: and(
-          eq(oauthAccessTokens.userId, userId),
-          isNull(oauthAccessTokens.revokedAt),
-          gt(oauthAccessTokens.expiresAt, now)
-        ),
-      }),
-      resolveLiveUser(this.db, userId),
-    ]);
-    const ownerScopes = user?.scopes ?? [];
-
-    const clientIds = [...new Set([...refreshTokens, ...accessTokens].map((token) => token.clientId))];
-    if (clientIds.length === 0) return [];
-
-    const clients = await this.db.query.oauthClients.findMany({
-      where: inArray(oauthClients.clientId, clientIds),
-    });
-    const clientById = new Map(clients.map((client) => [client.clientId, client]));
-    const groups = new Map<
-      string,
-      {
-        clientId: string;
-        resource: string;
-        scopes: Set<string>;
-        createdAt: Date;
-        expiresAt: Date | null;
-        lastUsedAt: Date | null;
-        activeAccessTokens: number;
-        activeRefreshTokens: number;
-      }
-    >();
-
-    const apiResource = this.getApiResourceUrl();
-    const ensure = (clientId: string, resource: string, createdAt: Date) => {
-      const key = `${clientId}\0${resource}`;
-      let group = groups.get(key);
-      if (!group) {
-        group = {
-          clientId,
-          resource,
-          scopes: new Set(),
-          createdAt,
-          expiresAt: null,
-          lastUsedAt: null,
-          activeAccessTokens: 0,
-          activeRefreshTokens: 0,
-        };
-        groups.set(key, group);
-      }
-      if (createdAt < group.createdAt) group.createdAt = createdAt;
-      return group;
-    };
-
-    for (const token of refreshTokens) {
-      const group = ensure(token.clientId, token.resource ?? apiResource, token.createdAt);
-      for (const scope of canonicalizeScopes(boundScopes(token.scopes ?? [], ownerScopes))) {
-        if (isApiTokenScope(scope)) group.scopes.add(scope);
-      }
-      group.activeRefreshTokens += 1;
-      if (!group.expiresAt || token.expiresAt > group.expiresAt) group.expiresAt = token.expiresAt;
-    }
-
-    for (const token of accessTokens) {
-      const group = ensure(token.clientId, token.resource ?? apiResource, token.createdAt);
-      for (const scope of canonicalizeScopes(boundScopes(token.scopes ?? [], ownerScopes))) {
-        if (isApiTokenScope(scope)) group.scopes.add(scope);
-      }
-      group.activeAccessTokens += 1;
-      if (!group.expiresAt || token.expiresAt > group.expiresAt) group.expiresAt = token.expiresAt;
-      if (token.lastUsedAt && (!group.lastUsedAt || token.lastUsedAt > group.lastUsedAt)) {
-        group.lastUsedAt = token.lastUsedAt;
-      }
-    }
-
-    return [...groups.values()]
-      .map((group) => {
-        const client = clientById.get(group.clientId);
-        return {
-          clientId: group.clientId,
-          clientName: client?.clientName ?? 'Unknown OAuth Client',
-          clientUri: client?.clientUri ?? null,
-          logoUri: client?.logoUri ?? null,
-          scopes: canonicalizeScopes([...group.scopes]),
-          resource: group.resource,
-          resources: [group.resource],
-          activeAccessTokens: group.activeAccessTokens,
-          activeRefreshTokens: group.activeRefreshTokens,
-          createdAt: group.createdAt.toISOString(),
-          lastUsedAt: group.lastUsedAt?.toISOString() ?? null,
-          expiresAt: group.expiresAt?.toISOString() ?? null,
-        };
-      })
-      .sort((a, b) => {
-        const aTime = Date.parse(a.lastUsedAt ?? a.createdAt);
-        const bTime = Date.parse(b.lastUsedAt ?? b.createdAt);
-        return bTime - aTime;
-      });
+    return this.tokenLifecycle.listUserAuthorizations(userId);
   }
 
   async revokeUserAuthorization(userId: string, clientId: string, resource: string): Promise<void> {
-    const client = await this.getClient(clientId);
-    const now = new Date();
-    const apiResource = this.getApiResourceUrl();
-    await Promise.all([
-      this.db
-        .update(oauthAccessTokens)
-        .set({ revokedAt: now })
-        .where(
-          and(
-            eq(oauthAccessTokens.userId, userId),
-            eq(oauthAccessTokens.clientId, clientId),
-            resourceWhere(oauthAccessTokens, resource, apiResource)
-          )
-        ),
-      this.db
-        .update(oauthRefreshTokens)
-        .set({ revokedAt: now })
-        .where(
-          and(
-            eq(oauthRefreshTokens.userId, userId),
-            eq(oauthRefreshTokens.clientId, clientId),
-            resourceWhere(oauthRefreshTokens, resource, apiResource)
-          )
-        ),
-    ]);
-    await this.auditService.log({
-      userId,
-      action: 'oauth.authorization_revoke',
-      resourceType: 'oauth-client',
-      resourceId: clientId,
-      details: { clientName: client?.clientName ?? 'Unknown OAuth Client', resource },
-    });
+    return this.tokenLifecycle.revokeUserAuthorization(userId, clientId, resource);
   }
 
   async updateUserAuthorizationScopes(user: User, clientId: string, resource: string, requestedScopes: string[]) {
-    const client = await this.getClient(clientId);
-    if (!client) throw new AppError(404, 'OAUTH_CLIENT_NOT_FOUND', 'OAuth client not found');
-    if (!this.isSupportedResource(resource)) {
-      throw new AppError(400, 'INVALID_TARGET', 'OAuth authorization is not available for this resource');
-    }
-    const canonicalRequestedScopes = canonicalizeScopes(stripNonDelegableMcpScope(requestedScopes));
-    if (canonicalRequestedScopes.length === 0) {
-      throw new AppError(400, 'INVALID_SCOPE', 'At least one scope is required');
-    }
-
-    const invalidScopes = requestedScopes.filter((scope) => !isValidBaseScope(scope));
-    if (invalidScopes.length > 0) {
-      throw new AppError(400, 'INVALID_SCOPE', `Scopes are not recognized: ${invalidScopes.join(', ')}`);
-    }
-
-    const now = new Date();
-    const apiResource = this.getApiResourceUrl();
-    const [refreshTokens, accessTokens] = await Promise.all([
-      this.db.query.oauthRefreshTokens.findMany({
-        where: and(
-          eq(oauthRefreshTokens.userId, user.id),
-          eq(oauthRefreshTokens.clientId, clientId),
-          isNull(oauthRefreshTokens.revokedAt),
-          gt(oauthRefreshTokens.expiresAt, now),
-          resourceWhere(oauthRefreshTokens, resource, apiResource)
-        ),
-      }),
-      this.db.query.oauthAccessTokens.findMany({
-        where: and(
-          eq(oauthAccessTokens.userId, user.id),
-          eq(oauthAccessTokens.clientId, clientId),
-          isNull(oauthAccessTokens.revokedAt),
-          gt(oauthAccessTokens.expiresAt, now),
-          resourceWhere(oauthAccessTokens, resource, apiResource)
-        ),
-      }),
-    ]);
-    if (refreshTokens.length === 0 && accessTokens.length === 0) {
-      throw new AppError(404, 'OAUTH_AUTHORIZATION_NOT_FOUND', 'OAuth authorization not found');
-    }
-
-    this.assertMcpResourceAllowed(user, resource);
-    const scopes = canonicalizeScopes(boundScopes(canonicalRequestedScopes, user.scopes)).filter((scope) =>
-      isApiTokenScope(scope)
-    );
-    if (scopes.length === 0) {
-      throw new AppError(400, 'INVALID_SCOPE', `No selected scopes are grantable for resource ${resource}`);
-    }
-
-    await Promise.all([
-      this.db
-        .update(oauthRefreshTokens)
-        .set({ scopes })
-        .where(
-          and(
-            eq(oauthRefreshTokens.userId, user.id),
-            eq(oauthRefreshTokens.clientId, clientId),
-            isNull(oauthRefreshTokens.revokedAt),
-            gt(oauthRefreshTokens.expiresAt, now),
-            resourceWhere(oauthRefreshTokens, resource, apiResource)
-          )
-        ),
-      this.db
-        .update(oauthAccessTokens)
-        .set({ scopes })
-        .where(
-          and(
-            eq(oauthAccessTokens.userId, user.id),
-            eq(oauthAccessTokens.clientId, clientId),
-            isNull(oauthAccessTokens.revokedAt),
-            gt(oauthAccessTokens.expiresAt, now),
-            resourceWhere(oauthAccessTokens, resource, apiResource)
-          )
-        ),
-    ]);
-
-    await this.auditService.log({
-      userId: user.id,
-      action: 'oauth.authorization_update',
-      resourceType: 'oauth-client',
-      resourceId: clientId,
-      details: { clientName: client.clientName, resource, scopes },
-    });
-
-    const [authorization] = (await this.listUserAuthorizations(user.id)).filter(
-      (item) => item.clientId === clientId && item.resource === resource
-    );
-    return authorization;
+    return this.tokenLifecycle.updateUserAuthorizationScopes(user, clientId, resource, requestedScopes);
   }
 }
