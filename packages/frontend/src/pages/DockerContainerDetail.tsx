@@ -55,22 +55,20 @@ import { EnvironmentTab } from "./docker-detail/EnvironmentTab";
 import { FilesTab } from "./docker-detail/FilesTab";
 import { containerDisplayName, type InspectData, STATUS_BADGE } from "./docker-detail/helpers";
 import { LogsTab } from "./docker-detail/LogsTab";
+import {
+  buildContainerMutationSnapshot,
+  shouldSettleMutationTransition,
+  useContainerMutationTransition,
+} from "./docker-detail/mutation-transition";
 import { OverviewTab } from "./docker-detail/OverviewTab";
 import { SettingsTab } from "./docker-detail/SettingsTab";
 import { StatsTab } from "./docker-detail/StatsTab";
+import { useContainerDetailRealtime } from "./docker-detail/useContainerDetailRealtime";
 
-function deriveCurrentNanoCPUs(hostConfig: Record<string, any>): number {
-  const nanoCPUs = Number(hostConfig.NanoCPUs ?? 0);
-  if (Number.isFinite(nanoCPUs) && nanoCPUs > 0) return nanoCPUs;
-
-  const cpuQuota = Number(hostConfig.CPUQuota ?? 0);
-  const cpuPeriod = Number(hostConfig.CPUPeriod ?? 0);
-  if (Number.isFinite(cpuQuota) && Number.isFinite(cpuPeriod) && cpuQuota > 0 && cpuPeriod > 0) {
-    return Math.round((cpuQuota / cpuPeriod) * 1e9);
-  }
-
-  return 0;
-}
+export {
+  buildContainerMutationSnapshot,
+  shouldSettleMutationTransition,
+} from "./docker-detail/mutation-transition";
 
 // ── Main Page ────────────────────────────────────────────────────
 
@@ -140,9 +138,6 @@ export function DockerContainerDetail() {
   const [actionLoading, setActionLoading] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState("");
-  const [localMutationTransition, setLocalMutationTransition] = useState<
-    "updating" | "recreating" | null
-  >(null);
 
   // Pin
   const [pinOpen, setPinOpen] = useState(false);
@@ -160,6 +155,9 @@ export function DockerContainerDetail() {
     ],
     [canEdit, canUseConsole, canUseEnvironment, canUseFiles, canUseSecrets, canViewContainer]
   );
+  const backendTransition = container?._transition as string | undefined;
+  const { effectiveTransition, beginMutationTransition, clearMutationTransition } =
+    useContainerMutationTransition(backendTransition);
 
   const fetchContainer = useCallback(
     async (silent = false, noCache = false) => {
@@ -169,7 +167,7 @@ export function DockerContainerDetail() {
         const data = await api.inspectContainer(nodeId, containerId, noCache);
         setContainer(data);
         if ((data as any)?._transition) {
-          setLocalMutationTransition(null);
+          clearMutationTransition();
         }
         // Keep pinned meta in sync
         if (usePinnedContainersStore.getState().isPinnedSidebar(containerId)) {
@@ -190,7 +188,7 @@ export function DockerContainerDetail() {
         if (!silent) setIsLoading(false);
       }
     },
-    [nodeId, containerId, navigate, updateMeta]
+    [clearMutationTransition, nodeId, containerId, navigate, updateMeta]
   );
 
   useEffect(() => {
@@ -209,32 +207,7 @@ export function DockerContainerDetail() {
     if (!nodeId || !containerId) return;
 
     const before = containerRef.current;
-    const beforeConfig = (before?.Config ?? {}) as Record<string, any>;
-    const beforeHostConfig = (before?.HostConfig ?? {}) as Record<string, any>;
-    const beforeState = (before?.State ?? {}) as Record<string, any>;
-    const previousSignature = before
-      ? JSON.stringify({
-          id: before.Id ?? "",
-          image: beforeConfig.Image ?? "",
-          env: beforeConfig.Env ?? [],
-          ports: beforeHostConfig.PortBindings ?? {},
-          mounts: before.Mounts ?? [],
-          entrypoint: beforeConfig.Entrypoint ?? [],
-          cmd: beforeConfig.Cmd ?? [],
-          workingDir: beforeConfig.WorkingDir ?? "",
-          user: beforeConfig.User ?? "",
-          hostname: beforeConfig.Hostname ?? "",
-          labels: beforeConfig.Labels ?? {},
-          restartPolicy: beforeHostConfig.RestartPolicy ?? {},
-          memory: beforeHostConfig.Memory ?? 0,
-          memorySwap: beforeHostConfig.MemorySwap ?? 0,
-          nanoCPUs: deriveCurrentNanoCPUs(beforeHostConfig),
-          cpuShares: beforeHostConfig.CpuShares ?? 0,
-          pidsLimit: beforeHostConfig.PidsLimit ?? 0,
-          transition: (before as any)?._transition ?? null,
-          state: beforeState.Status ?? "",
-        })
-      : "";
+    const previousSignature = buildContainerMutationSnapshot(before);
 
     const attempts = [0, 250, 750, 1500, 2500, 3500];
     for (const delayMs of attempts) {
@@ -246,49 +219,15 @@ export function DockerContainerDetail() {
         const next = await api.inspectContainer(nodeId, containerId, true);
         setContainer(next);
         containerRef.current = next;
-        const nextConfig = (next.Config ?? {}) as Record<string, any>;
-        const nextHostConfig = (next.HostConfig ?? {}) as Record<string, any>;
-        const nextState = (next.State ?? {}) as Record<string, any>;
-
-        const nextSignature = JSON.stringify({
-          id: next.Id ?? "",
-          image: nextConfig.Image ?? "",
-          env: nextConfig.Env ?? [],
-          ports: nextHostConfig.PortBindings ?? {},
-          mounts: next.Mounts ?? [],
-          entrypoint: nextConfig.Entrypoint ?? [],
-          cmd: nextConfig.Cmd ?? [],
-          workingDir: nextConfig.WorkingDir ?? "",
-          user: nextConfig.User ?? "",
-          hostname: nextConfig.Hostname ?? "",
-          labels: nextConfig.Labels ?? {},
-          restartPolicy: nextHostConfig.RestartPolicy ?? {},
-          memory: nextHostConfig.Memory ?? 0,
-          memorySwap: nextHostConfig.MemorySwap ?? 0,
-          nanoCPUs: deriveCurrentNanoCPUs(nextHostConfig),
-          cpuShares: nextHostConfig.CpuShares ?? 0,
-          pidsLimit: nextHostConfig.PidsLimit ?? 0,
-          transition: (next as any)?._transition ?? null,
-          state: nextState.Status ?? "",
-        });
-
-        if (nextSignature !== previousSignature || (next as any)?._transition) {
-          setLocalMutationTransition(null);
+        if (shouldSettleMutationTransition(previousSignature, next)) {
+          clearMutationTransition();
           return;
         }
       } catch {
         // Realtime/delete handlers already deal with hard failures; keep polling briefly.
       }
     }
-  }, [containerId, nodeId]);
-
-  const beginMutationTransition = useCallback((transition: "updating" | "recreating") => {
-    setLocalMutationTransition(transition);
-  }, []);
-
-  const clearMutationTransition = useCallback(() => {
-    setLocalMutationTransition(null);
-  }, []);
+  }, [clearMutationTransition, containerId, nodeId]);
 
   // Realtime: refetch on any container.changed event for this container's name.
   // Also handle the recreate ID migration for every open tab.
@@ -308,44 +247,14 @@ export function DockerContainerDetail() {
   useEffect(() => {
     void fetchHealthCheck();
   }, [fetchHealthCheck]);
-
-  useRealtime("docker.container.changed", (payload) => {
-    const ev = payload as {
-      nodeId?: string;
-      name?: string;
-      id?: string;
-      oldId?: string;
-      action?: string;
-      transition?: string | null;
-    };
-    if (!ev || ev.nodeId !== nodeId) return;
-    const matchesName = containerName && ev.name === containerName;
-    const matchesId = ev.id === containerId || ev.oldId === containerId;
-    if (!matchesName && !matchesId) return;
-
-    if (ev.action === "recreated" && ev.id && ev.oldId && ev.id !== containerId) {
-      setLocalMutationTransition(null);
-      // Migrate any pinned references and rewrite the URL so this tab now
-      // points at the new container ID.
-      try {
-        usePinnedContainersStore.getState().migrateId(ev.oldId, ev.id);
-      } catch {
-        /* ignore */
-      }
-      navigate(`/docker/containers/${nodeId}/${ev.id}/${activeTab}`, { replace: true });
-      return;
-    }
-    if (ev.action === "removed" && (ev.id === containerId || ev.name === containerName)) {
-      setLocalMutationTransition(null);
-      // Container was deleted by someone else — bounce back to the list
-      toast.info("Container was removed");
-      navigate("/docker");
-      return;
-    }
-    if (ev.action === "transitioning" && !ev.transition) {
-      setLocalMutationTransition(null);
-    }
-    void fetchContainer(true);
+  useContainerDetailRealtime({
+    nodeId,
+    containerId,
+    containerName,
+    activeTab,
+    navigate,
+    fetchContainer,
+    clearMutationTransition,
   });
 
   useRealtime("docker.health.changed", (payload) => {
@@ -442,8 +351,6 @@ export function DockerContainerDetail() {
   };
 
   const name = containerDisplayName(container?.Name ?? "");
-  const transition = container?._transition as string | undefined;
-  const effectiveTransition = transition ?? localMutationTransition ?? undefined;
   const baseState = container?.State?.Status ?? (container?.State?.Running ? "running" : "stopped");
   const state = effectiveTransition ?? baseState;
   const image = container?.Config?.Image ?? "";

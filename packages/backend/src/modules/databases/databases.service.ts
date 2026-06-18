@@ -11,11 +11,13 @@ import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { CryptoService } from '@/services/crypto.service.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
 import type { PaginatedResponse } from '@/types.js';
+import { type DatabaseOperation, type DatabaseType, mapDatabaseDriverError } from './database-error-mapping.js';
 import type {
   CreateDatabaseConnectionInput,
   DatabaseListQuery,
   UpdateDatabaseConnectionInput,
 } from './databases.schemas.js';
+import { postgresParameterSql, quoteIdent } from './postgres-row-sql.js';
 
 const { Pool } = pg;
 const DATABASE_HEALTH_HISTORY_MIN_INTERVAL_MS = 30_000;
@@ -137,9 +139,10 @@ function compactPostgresRows(rows: Record<string, unknown>[], maxRows: number) {
   return { rows: output, truncated };
 }
 
-export type DatabaseType = 'postgres' | 'redis';
 export type DatabaseHealthStatus = 'online' | 'offline' | 'degraded' | 'unknown';
-export type DatabaseOperation = 'connect' | 'query';
+export type { DatabaseOperation, DatabaseType } from './database-error-mapping.js';
+export { mapDatabaseDriverError } from './database-error-mapping.js';
+
 type PostgresRowSearchOperation = 'like' | 'equals' | 'notEquals' | 'greaterThan' | 'lessThan';
 
 interface PostgresRowSearchFilter {
@@ -192,172 +195,6 @@ export interface DatabaseConnectionView {
   updatedById: string | null;
   createdAt: string;
   updatedAt: string;
-}
-
-const DATABASE_CONNECTIVITY_ERROR_CODES = new Set([
-  'ECONNREFUSED',
-  'ECONNRESET',
-  'ENOTFOUND',
-  'EHOSTUNREACH',
-  'ETIMEDOUT',
-  'ENETUNREACH',
-  'EPIPE',
-  'SELF_SIGNED_CERT_IN_CHAIN',
-  'DEPTH_ZERO_SELF_SIGNED_CERT',
-  'CERT_HAS_EXPIRED',
-  'ERR_TLS_CERT_ALTNAME_INVALID',
-]);
-
-const POSTGRES_CONNECTIVITY_CODES = new Set(['3D000']);
-const POSTGRES_QUERY_CODES = new Set(['22007', '22P02', '42601', '42703', '42883', '42P01']);
-const POSTGRES_QUERY_CODE_PREFIXES = ['22', '23'];
-const POSTGRES_QUERY_MESSAGE_PATTERNS = [
-  /invalid input/i,
-  /syntax error/i,
-  /violates .* constraint/i,
-  /duplicate key/i,
-  /null value .* violates/i,
-  /does not exist/i,
-  /cannot cast/i,
-  /malformed/i,
-];
-const REDIS_QUERY_MESSAGES = [/unknown command/i, /wrong number of arguments/i, /wrongtype/i];
-const POSTGRES_CASTABLE_DATA_TYPES = new Set([
-  'smallint',
-  'integer',
-  'bigint',
-  'numeric',
-  'real',
-  'double precision',
-  'boolean',
-  'date',
-  'time without time zone',
-  'time with time zone',
-  'timestamp without time zone',
-  'timestamp with time zone',
-  'uuid',
-  'json',
-  'jsonb',
-  'bytea',
-  'inet',
-  'cidr',
-  'macaddr',
-  'xml',
-]);
-
-export function mapDatabaseDriverError(
-  error: unknown,
-  provider: DatabaseType,
-  operation: DatabaseOperation
-): AppError | null {
-  if (error instanceof AppError) return error;
-  if (!(error instanceof Error)) return null;
-
-  const driverError = error as Error & {
-    code?: string;
-    errno?: string | number;
-    severity?: string;
-    detail?: string;
-    schema?: string;
-    table?: string;
-    column?: string;
-  };
-  const code =
-    typeof driverError.code === 'string'
-      ? driverError.code
-      : typeof driverError.errno === 'string'
-        ? driverError.errno
-        : undefined;
-  const message = driverError.message || `${provider} ${operation} failed`;
-  const lowerMessage = message.toLowerCase();
-
-  if (
-    (provider === 'postgres' &&
-      (code === '28P01' ||
-        lowerMessage.includes('password authentication failed') ||
-        lowerMessage.includes('no pg_hba.conf entry'))) ||
-    (provider === 'redis' &&
-      (lowerMessage.includes('wrongpass') ||
-        lowerMessage.includes('authentication required') ||
-        lowerMessage.includes('invalid username-password') ||
-        lowerMessage.includes('auth <password> called without any password configured') ||
-        lowerMessage.includes('noauth')))
-  ) {
-    return new AppError(401, 'DATABASE_AUTH_FAILED', message);
-  }
-
-  if (
-    DATABASE_CONNECTIVITY_ERROR_CODES.has(code ?? '') ||
-    (provider === 'postgres' && POSTGRES_CONNECTIVITY_CODES.has(code ?? '')) ||
-    lowerMessage.includes('database does not exist') ||
-    lowerMessage.includes('getaddrinfo') ||
-    lowerMessage.includes('connect timeout') ||
-    lowerMessage.includes('connection terminated unexpectedly') ||
-    lowerMessage.includes('server does not support ssl') ||
-    lowerMessage.includes('self signed certificate') ||
-    lowerMessage.includes('certificate has expired') ||
-    lowerMessage.includes('unable to verify the first certificate') ||
-    lowerMessage.includes('connection is closed')
-  ) {
-    return new AppError(422, 'DATABASE_CONNECTION_FAILED', message);
-  }
-
-  if (
-    operation === 'query' &&
-    ((provider === 'postgres' && POSTGRES_QUERY_CODES.has(code ?? '')) ||
-      (provider === 'redis' && REDIS_QUERY_MESSAGES.some((pattern) => pattern.test(message))))
-  ) {
-    return new AppError(400, 'DATABASE_QUERY_FAILED', message);
-  }
-
-  if (
-    operation === 'query' &&
-    provider === 'postgres' &&
-    ((typeof code === 'string' && POSTGRES_QUERY_CODE_PREFIXES.some((prefix) => code.startsWith(prefix))) ||
-      ((typeof driverError.severity === 'string' ||
-        typeof driverError.detail === 'string' ||
-        typeof driverError.schema === 'string' ||
-        typeof driverError.table === 'string' ||
-        typeof driverError.column === 'string') &&
-        POSTGRES_QUERY_MESSAGE_PATTERNS.some((pattern) => pattern.test(message))))
-  ) {
-    return new AppError(400, 'DATABASE_QUERY_FAILED', message);
-  }
-
-  return null;
-}
-
-function normalizeDatabaseTypeName(typeName: string) {
-  return typeName.trim().toLowerCase().replace(/\s+/g, ' ');
-}
-
-function postgresParameterCastSql(column: { dataType: string; udtName: string; udtSchema?: string }): string | null {
-  const normalizedDataType = normalizeDatabaseTypeName(column.dataType);
-  if (normalizedDataType === 'user-defined') {
-    if (!column.udtName) return null;
-    const schemaPrefix = column.udtSchema ? `${quoteIdent(column.udtSchema)}.` : '';
-    return `${schemaPrefix}${quoteIdent(column.udtName)}`;
-  }
-  if (normalizedDataType === 'array') {
-    if (!column.udtName) return null;
-    const elementType = column.udtName.startsWith('_') ? column.udtName.slice(1) : column.udtName;
-    if (!elementType) return null;
-    const schemaPrefix = column.udtSchema ? `${quoteIdent(column.udtSchema)}.` : '';
-    return `${schemaPrefix}${quoteIdent(elementType)}[]`;
-  }
-  return POSTGRES_CASTABLE_DATA_TYPES.has(normalizedDataType) ? normalizedDataType : null;
-}
-
-function postgresParameterSql(index: number, column: { dataType: string; udtName: string; udtSchema?: string }) {
-  const castSql = postgresParameterCastSql(column);
-  return castSql ? `$${index}::${castSql}` : `$${index}`;
-}
-
-function quoteIdent(identifier: string): string {
-  if (!/^[A-Za-z_][A-Za-z0-9_$]*$/.test(identifier)) {
-    throw new AppError(400, 'INVALID_IDENTIFIER', `Invalid identifier: ${identifier}`);
-  }
-  return `"${identifier.replace(/"/g, '""')}"`;
 }
 
 const POSTGRES_COLUMN_TYPE_SQL = new Map<string, string>([

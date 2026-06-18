@@ -1,0 +1,72 @@
+import { describe, expect, it } from "vitest";
+import {
+  buildContainerMutationSnapshot,
+  shouldSettleMutationTransition,
+} from "./DockerContainerDetail";
+
+function makeContainer(overrides: Record<string, unknown> = {}) {
+  return {
+    Id: "container-1",
+    Mounts: [],
+    Config: {
+      Image: "registry.example.com/app:latest",
+      Env: ["FOO=bar"],
+      Entrypoint: ["/entrypoint.sh"],
+      Cmd: ["node", "server.js"],
+      WorkingDir: "/app",
+      User: "node",
+      Hostname: "app",
+      Labels: { service: "backend" },
+    },
+    HostConfig: {
+      PortBindings: { "3000/tcp": [{ HostIp: "", HostPort: "3000" }] },
+      RestartPolicy: { Name: "always" },
+      Memory: 256 * 1048576,
+      MemorySwap: 512 * 1048576,
+      NanoCPUs: 2 * 1e9,
+      CpuShares: 512,
+      PidsLimit: 64,
+    },
+    State: {
+      Status: "running",
+    },
+    ...overrides,
+  };
+}
+
+describe("DockerContainerDetail mutation snapshot helpers", () => {
+  it("does not settle when the inspected container payload is unchanged", () => {
+    const before = makeContainer();
+    const signature = buildContainerMutationSnapshot(before);
+
+    expect(shouldSettleMutationTransition(signature, makeContainer())).toBe(false);
+  });
+
+  it("settles when the inspected payload changes after a mutation", () => {
+    const before = makeContainer();
+    const signature = buildContainerMutationSnapshot(before);
+
+    expect(
+      shouldSettleMutationTransition(
+        signature,
+        makeContainer({
+          HostConfig: {
+            ...before.HostConfig,
+            Memory: 512 * 1048576,
+          },
+        })
+      )
+    ).toBe(true);
+  });
+
+  it("settles immediately when the backend reports an active transition", () => {
+    const signature = buildContainerMutationSnapshot(makeContainer());
+
+    expect(
+      shouldSettleMutationTransition(signature, {
+        ...makeContainer(),
+        _transition: "updating",
+      })
+    ).toBe(true);
+  });
+});

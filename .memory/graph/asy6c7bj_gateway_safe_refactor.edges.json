@@ -1,0 +1,25 @@
+{
+  "file_name": "asy6c7bj_gateway_safe_refactor",
+  "edges": [
+    {
+      "from_id": "asy6c7bj",
+      "to_id": "4tmpz7of",
+      "relation": "same_area",
+      "weight": 0.58,
+      "reason": "gateway docker mutation safety patterns and transition handling; same domain as docker detail mutations.",
+      "source": "auto",
+      "created_at": 1781739700729,
+      "updated_at": 1781739700729
+    },
+    {
+      "from_id": "asy6c7bj",
+      "to_id": "3b6g7z3k",
+      "relation": "related_to",
+      "weight": 0.5,
+      "reason": "gateway database viewer patterns; both touch Postgres interaction and error UX pathways in gateway.",
+      "source": "auto",
+      "created_at": 1781739700729,
+      "updated_at": 1781739700729
+    }
+  ]
+}

@@ -1,0 +1,125 @@
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { vi } from "vitest";
+import { api } from "@/services/api";
+import { useAuthStore } from "@/stores/auth";
+import { useDockerStore } from "@/stores/docker";
+import { makeUser } from "@/test/fixtures";
+import { SettingsTab } from "./SettingsTab";
+
+vi.mock("@/hooks/use-realtime", () => ({
+  useRealtime: vi.fn(),
+}));
+
+vi.mock("@/lib/docker-runtime-capacity", () => ({
+  loadDockerRuntimeCapacity: vi.fn().mockResolvedValue({
+    maxCpuCount: null,
+    maxMemoryBytes: null,
+    maxSwapBytes: null,
+  }),
+  UNKNOWN_DOCKER_RUNTIME_CAPACITY: {
+    maxCpuCount: null,
+    maxMemoryBytes: null,
+    maxSwapBytes: null,
+  },
+}));
+
+vi.mock("./RuntimeSection", () => ({
+  RuntimeSection: ({
+    restartPolicy,
+    setRestartPolicy,
+    hasRuntimeChanges,
+    liveLoading,
+    onApply,
+  }: {
+    restartPolicy: string;
+    setRestartPolicy: (value: string) => void;
+    hasRuntimeChanges: boolean;
+    liveLoading: boolean;
+    onApply: () => void;
+  }) => (
+    <div>
+      <div data-testid="restart-policy">{restartPolicy}</div>
+      <button type="button" onClick={() => setRestartPolicy("always")}>
+        Change runtime
+      </button>
+      <button type="button" disabled={!hasRuntimeChanges || liveLoading} onClick={onApply}>
+        Apply runtime
+      </button>
+    </div>
+  ),
+}));
+
+vi.mock("./PortMappingsSection", () => ({
+  PortMappingsSection: () => null,
+}));
+
+vi.mock("./VolumeMountsSection", () => ({
+  VolumeMountsSection: () => null,
+}));
+
+vi.mock("./LabelsSection", () => ({
+  LabelsSection: () => null,
+}));
+
+vi.mock("@/components/docker/DockerHealthCheckSection", () => ({
+  DockerHealthCheckSection: () => null,
+}));
+
+describe("docker detail SettingsTab", () => {
+  it("clears the local mutation lock through refresh callbacks when saving runtime settings for a stopped container", async () => {
+    vi.spyOn(api, "liveUpdateContainer").mockResolvedValue({});
+    const invalidate = vi.fn().mockResolvedValue(undefined);
+    useDockerStore.setState({ invalidate });
+    useAuthStore.setState({
+      user: makeUser({ scopes: ["docker:containers:edit"] }),
+      isAuthenticated: true,
+      isLoading: false,
+    });
+
+    const onMutationStart = vi.fn();
+    const onMutationEnd = vi.fn();
+    const onRefresh = vi.fn().mockResolvedValue(undefined);
+    const onRecreating = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <SettingsTab
+        nodeId="node-1"
+        containerId="container-1"
+        data={{
+          Id: "container-1",
+          Name: "/app",
+          State: { Status: "exited", Running: false },
+          Config: { Image: "registry.example.com/team/app:latest", Entrypoint: [], Cmd: [] },
+          HostConfig: {
+            RestartPolicy: { Name: "no", MaximumRetryCount: 0 },
+            Memory: 0,
+            MemorySwap: 0,
+            NanoCPUs: 0,
+            CpuShares: 0,
+            PidsLimit: 0,
+            PortBindings: {},
+          },
+          Mounts: [],
+        }}
+        onMutationStart={onMutationStart}
+        onMutationEnd={onMutationEnd}
+        onRefresh={onRefresh}
+        onRecreating={onRecreating}
+      />
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Change runtime" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply runtime" }));
+
+    await waitFor(() => {
+      expect(api.liveUpdateContainer).toHaveBeenCalledWith("node-1", "container-1", {
+        restartPolicy: "always",
+      });
+    });
+    expect(onMutationStart).toHaveBeenCalledWith("updating");
+    expect(onRefresh).toHaveBeenCalled();
+    expect(onMutationEnd).toHaveBeenCalled();
+    expect(onRecreating).not.toHaveBeenCalled();
+    expect(invalidate).toHaveBeenCalledWith("containers", "tasks");
+  });
+});

@@ -19,7 +19,6 @@ import {
   loadDockerRuntimeCapacity,
   UNKNOWN_DOCKER_RUNTIME_CAPACITY,
 } from "@/lib/docker-runtime-capacity";
-import { parseShellWords } from "@/lib/shell-words";
 import { formatBytes } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
@@ -35,7 +34,10 @@ import { LabelsSection } from "./LabelsSection";
 import { type PortMapping, PortMappingsSection } from "./PortMappingsSection";
 import { RuntimeSection } from "./RuntimeSection";
 import { buildRuntimePayloadFromForm, type RuntimeFormValues } from "./runtime-payload";
+import { buildRecreatePayloadFromForm, type RecreateBaseline } from "./settings-payload";
 import { type MountEntry, VolumeMountsSection } from "./VolumeMountsSection";
+
+export { buildRecreatePayloadFromForm } from "./settings-payload";
 
 function normalizeDockerNetwork(network: DockerNetwork | Record<string, unknown>): DockerNetwork {
   const raw = network as Record<string, unknown>;
@@ -66,19 +68,6 @@ function sameRuntimeBaseline(a: RuntimeFormValues, b: RuntimeFormValues) {
     a.pidsLimit === b.pidsLimit
   );
 }
-
-type RecreateBaseline = {
-  imageTag: string;
-  ports: string;
-  mounts: string;
-  entrypoint: string;
-  command: string;
-  stopTimeout: string;
-  workingDir: string;
-  user: string;
-  hostname: string;
-  labels: string;
-};
 
 function sameRecreateBaseline(a: RecreateBaseline, b: RecreateBaseline) {
   return (
@@ -615,57 +604,26 @@ export function SettingsTab({
         return;
       }
 
-      const payload: Record<string, unknown> = {};
-
-      // Include new image if tag changed
-      if (imageTagChanged) {
-        payload.image = imageTag.trim() ? `${parsedImageName}:${imageTag.trim()}` : parsedImageName;
-      }
-
-      // Only send fields that changed
-      if (portsChanged) {
-        payload.ports = ports
-          .filter((p) => p.containerPort)
-          .map((p) => ({
-            hostPort: Number(p.hostPort) || 0,
-            containerPort: Number(p.containerPort),
-            protocol: p.protocol,
-          }));
-      }
-      if (mountsChanged) {
-        payload.mounts = mounts
-          .filter((m) => m.containerPath)
-          .map((m) => ({
-            hostPath: m.hostPath,
-            containerPath: m.containerPath,
-            name: m.name,
-            readOnly: m.readOnly,
-          }));
-      }
-      if (entrypoint !== recreateBaseline.entrypoint) {
-        const ep = entrypoint.trim();
-        payload.entrypoint = ep ? parseShellWords(ep) : [];
-      }
-      if (command !== recreateBaseline.command) {
-        const cmd = command.trim();
-        payload.command = cmd ? parseShellWords(cmd) : [];
-      }
-      if (stopTimeout !== recreateBaseline.stopTimeout) {
-        payload.stopTimeout = Number(stopTimeout);
-      }
-      if (workingDir !== recreateBaseline.workingDir) payload.workingDir = workingDir;
-      if (user !== recreateBaseline.user) payload.user = user;
-      if (hostname !== recreateBaseline.hostname) payload.hostname = hostname;
-      if (labelsChanged) {
-        const labelMap: Record<string, string> = {};
-        for (const l of labels) {
-          if (l.key.trim()) labelMap[l.key.trim()] = l.value;
-        }
-        payload.labels = labelMap;
-      }
-      if (hasRuntimeChanges) {
-        Object.assign(payload, buildRuntimePayload() ?? {});
-      }
+      const payload = buildRecreatePayloadFromForm({
+        parsedImageName,
+        imageTag,
+        imageTagChanged,
+        portsChanged,
+        ports,
+        mountsChanged,
+        mounts,
+        entrypoint,
+        command,
+        stopTimeout,
+        workingDir,
+        user,
+        hostname,
+        labelsChanged,
+        labels,
+        hasRuntimeChanges,
+        runtimePayload: buildRuntimePayload(),
+        recreateBaseline,
+      });
 
       await api.recreateWithConfig(nodeId, containerId, payload);
       toast.success(

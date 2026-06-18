@@ -16,6 +16,7 @@ import type { DockerEnvironmentService } from './docker-environment.service.js';
 import type { DockerFolderService } from './docker-folder.service.js';
 import type { DockerHealthCheckService } from './docker-health-check.service.js';
 import type { DockerImageCleanupService } from './docker-image-cleanup.service.js';
+import { dockerDispatchErrorMessage, getReplacementContainerFailureMessage } from './docker-recreate-watch.js';
 import type { DockerRegistryAuthCandidate, DockerRegistryService } from './docker-registry.service.js';
 import {
   type ContainerRuntimeConfig,
@@ -30,12 +31,6 @@ import type { DockerTaskService } from './docker-task.service.js';
 const logger = createChildLogger('DockerManagementService');
 const DEFAULT_CONTAINER_STOP_TIMEOUT_SECONDS = 20;
 const CONTAINER_LIFECYCLE_TIMEOUT_BUFFER_SECONDS = 30;
-
-function dockerDispatchErrorMessage(result: { error?: string; detail?: string }, fallback: string) {
-  if (typeof result.error === 'string' && result.error.trim()) return result.error.trim();
-  if (typeof result.detail === 'string' && result.detail.trim()) return result.detail.trim();
-  return fallback;
-}
 
 export type ContainerTransition = 'creating' | 'stopping' | 'restarting' | 'killing' | 'recreating' | 'updating';
 
@@ -624,7 +619,6 @@ export class DockerManagementService {
         if (match) {
           const newId = match.id ?? match.Id;
           const state = match.state ?? match.State ?? '';
-          const status = match.status ?? match.Status ?? '';
 
           if (newId !== oldContainerId && state === expectedState) {
             // Recreation complete — new container reached the expected post-recreate state
@@ -639,20 +633,10 @@ export class DockerManagementService {
             return;
           }
 
-          const normalizedState = String(state).toLowerCase();
-          const normalizedExpectedState = String(expectedState).toLowerCase();
-          if (
-            newId !== oldContainerId &&
-            ['exited', 'dead'].includes(normalizedState) &&
-            normalizedState !== normalizedExpectedState
-          ) {
+          const replacementFailure = getReplacementContainerFailureMessage(match, oldContainerId, expectedState);
+          if (replacementFailure) {
             clearInterval(poll);
-            await this.failTask(
-              taskId,
-              `Replacement container failed to start (${status || state})`,
-              nodeId,
-              containerName
-            );
+            await this.failTask(taskId, replacementFailure, nodeId, containerName);
             return;
           }
         }

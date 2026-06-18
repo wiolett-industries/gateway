@@ -39,8 +39,10 @@ import {
   TYPE_BADGE,
 } from "./proxy-detail/helpers";
 import { LogsTab } from "./proxy-detail/LogsTab";
+import { saveProxyHostAccessList, saveProxyHostAdvancedConfig } from "./proxy-detail/mutations";
 import { RawConfigTab } from "./proxy-detail/RawConfigTab";
 import { SettingsTab } from "./proxy-detail/SettingsTab";
+import { deriveProxyHostDetailFormState } from "./proxy-detail/state";
 
 // ── Main Component ──────────────────────────────────────────────
 export function ProxyHostDetail() {
@@ -125,29 +127,30 @@ export function ProxyHostDetail() {
   const [isSavingRaw, setIsSavingRaw] = useState(false);
 
   const syncHostState = useCallback((data: ProxyHost) => {
+    const nextState = deriveProxyHostDetailFormState(data);
     setHost(data);
-    setCustomHeaders(data.customHeaders || []);
-    setCacheEnabled(data.cacheEnabled);
-    setCacheMaxAge(data.cacheOptions?.maxAge || 3600);
-    setRateLimitEnabled(data.rateLimitEnabled);
-    setRateLimitRPS(data.rateLimitOptions?.requestsPerSecond || 100);
-    setRateLimitBurst(data.rateLimitOptions?.burst || 200);
-    setCustomRewrites(data.customRewrites || []);
-    setAccessListId(data.accessListId || "");
-    setHealthCheckUrl(data.healthCheckUrl || "/");
-    setHealthCheckExpectedStatus(data.healthCheckExpectedStatus ?? null);
-    setHealthCheckExpectedBody(data.healthCheckExpectedBody || "");
-    setHealthCheckBodyMatchMode(data.healthCheckBodyMatchMode || "includes");
-    setHealthCheckSlowThreshold(data.healthCheckSlowThreshold ?? 3);
-    setNginxTemplateId(data.nginxTemplateId || "");
-    setTemplateVariables(data.templateVariables || {});
-    setTemplateForwardScheme(data.forwardScheme || "http");
-    setTemplateForwardHost(data.forwardHost || "");
-    setTemplateForwardPort(data.forwardPort || 80);
-    setTemplateRedirectUrl(data.redirectUrl || "");
-    setTemplateRedirectStatusCode(data.redirectStatusCode || 301);
-    setAdvancedConfig(data.advancedConfig || "");
-    setRawConfig(data.rawConfig || "");
+    setCustomHeaders(nextState.customHeaders);
+    setCacheEnabled(nextState.cacheEnabled);
+    setCacheMaxAge(nextState.cacheMaxAge);
+    setRateLimitEnabled(nextState.rateLimitEnabled);
+    setRateLimitRPS(nextState.rateLimitRPS);
+    setRateLimitBurst(nextState.rateLimitBurst);
+    setCustomRewrites(nextState.customRewrites);
+    setAccessListId(nextState.accessListId);
+    setHealthCheckUrl(nextState.healthCheckUrl);
+    setHealthCheckExpectedStatus(nextState.healthCheckExpectedStatus);
+    setHealthCheckExpectedBody(nextState.healthCheckExpectedBody);
+    setHealthCheckBodyMatchMode(nextState.healthCheckBodyMatchMode);
+    setHealthCheckSlowThreshold(nextState.healthCheckSlowThreshold);
+    setNginxTemplateId(nextState.nginxTemplateId);
+    setTemplateVariables(nextState.templateVariables);
+    setTemplateForwardScheme(nextState.templateForwardScheme);
+    setTemplateForwardHost(nextState.templateForwardHost);
+    setTemplateForwardPort(nextState.templateForwardPort);
+    setTemplateRedirectUrl(nextState.templateRedirectUrl);
+    setTemplateRedirectStatusCode(nextState.templateRedirectStatusCode);
+    setAdvancedConfig(nextState.advancedConfig);
+    setRawConfig(nextState.rawConfig);
   }, []);
 
   // ── Load host ─────────────────────────────────────────────────
@@ -505,9 +508,7 @@ export function ProxyHostDetail() {
     }
     setIsSavingAdvanced(true);
     try {
-      const updated = await api.updateProxyHost(id, {
-        advancedConfig: advancedConfig === "" ? null : advancedConfig,
-      });
+      const updated = await saveProxyHostAdvancedConfig(api, id, advancedConfig);
       setHost(updated);
       setAdvancedConfig(updated.advancedConfig || "");
       toast.success("Advanced config saved");
@@ -566,9 +567,7 @@ export function ProxyHostDetail() {
       setAccessListId(value);
 
       try {
-        const updated = await api.updateProxyHost(id, {
-          accessListId: value === "" ? null : value,
-        });
+        const updated = await saveProxyHostAccessList(api, id, value);
         setHost(updated);
         setAccessListId(updated.accessListId || "");
         toast.success("Access list updated");
