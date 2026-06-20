@@ -6,24 +6,7 @@ import { UpdateAccessListSchema } from '@/modules/access-lists/access-list.schem
 import type { AccessListService } from '@/modules/access-lists/access-list.service.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { AuthService } from '@/modules/auth/auth.service.js';
-import {
-  AddPostgresColumnSchema,
-  BrowsePostgresRowsQuerySchema,
-  CreateDatabaseConnectionSchema,
-  DeletePostgresColumnSchema,
-  PostgresObjectSchema,
-  RedisExpireKeySchema,
-  RedisGetKeyQuerySchema,
-  RedisScanKeysQuerySchema,
-  RedisSetKeySchema,
-  UpdateDatabaseConnectionSchema,
-  UpdatePostgresColumnTypeSchema,
-} from '@/modules/databases/databases.schemas.js';
-import {
-  type DatabaseConnectionService,
-  inferPostgresIntent,
-  inferRedisIntent,
-} from '@/modules/databases/databases.service.js';
+import type { DatabaseConnectionService } from '@/modules/databases/databases.service.js';
 import {
   ContainerCreateSchema,
   ContainerStopSchema,
@@ -84,6 +67,7 @@ import {
 } from '@/modules/status-page/status-page.schemas.js';
 import { SessionService } from '@/services/session.service.js';
 import type { User } from '@/types.js';
+import { DATABASE_TOOL_NAMES, executeDatabaseTool } from './ai.database-tools.js';
 import { DOC_TOPIC_SCOPES, getInternalDocumentation, INTERNAL_DOCS } from './ai.docs.js';
 import { findResource } from './ai.resource-search.js';
 import {
@@ -100,7 +84,6 @@ import {
   compactDockerVolumeForAgent,
   compactProxyHostForAgent,
   dashboardStatsOptionsForScopes,
-  directResourceIdsForScopes,
   dockerContainerMatchesSearch,
   dockerDeploymentMatchesSearch,
   dockerImageMatchesSearch,
@@ -389,6 +372,10 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
     // Tool args come from LLM JSON — use explicit casts to match service input types.
     // The services themselves validate the data, so loose typing here is acceptable.
     const a = args as any; // shorthand for repeated casts
+
+    if (DATABASE_TOOL_NAMES.has(toolName)) {
+      return executeDatabaseTool({ databaseService: this.databaseService }, user, toolName, args);
+    }
 
     switch (toolName) {
       // ── Discovery ──
@@ -1247,50 +1234,6 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
       case 'manage_docker_container_config':
         return this.manageDockerContainerConfig(user, args);
 
-      // ── Databases ──
-      case 'list_databases': {
-        const allowedIds = directResourceIdsForScopes(user.scopes, 'databases:view');
-        if (allowedIds?.length === 0) {
-          throw new Error('PERMISSION_DENIED: Missing required scope databases:view');
-        }
-        return this.databaseService.list(
-          {
-            page: 1,
-            limit: 100,
-            search: a.search,
-            type: a.type,
-            healthStatus: a.healthStatus,
-          },
-          { allowedIds }
-        );
-      }
-      case 'get_database_connection':
-        this.ensureDirectDatabaseScope(user, 'databases:view', a.databaseId);
-        return this.databaseService.get(a.databaseId);
-      case 'query_postgres_read':
-        this.ensureReadOnlyPostgresQuery(user, a.databaseId, a.sql);
-        return this.databaseService.executePostgresSql(a.databaseId, a.sql, user.id);
-      case 'execute_postgres_sql':
-        this.ensurePostgresQueryIntentScope(user, a.databaseId, a.sql);
-        return this.databaseService.executePostgresSql(a.databaseId, a.sql, user.id);
-      case 'browse_redis_keys':
-        this.ensureDatabaseQueryScopes(user, 'databases:query:read', a.databaseId);
-        return this.databaseService.scanRedisKeys(a.databaseId, 0, 100, a.search, a.type);
-      case 'get_redis_key':
-        this.ensureDatabaseQueryScopes(user, 'databases:query:read', a.databaseId);
-        return this.databaseService.getRedisKey(a.databaseId, a.key);
-      case 'set_redis_key':
-        this.ensureDatabaseQueryScopes(user, 'databases:query:write', a.databaseId);
-        return this.databaseService.setRedisKey(a.databaseId, a.key, a.type, a.value, a.ttlSeconds, user.id);
-      case 'execute_redis_command':
-        this.ensureDatabaseQueryScopes(user, 'databases:query:admin', a.databaseId);
-        return this.databaseService.executeRedisCommand(a.databaseId, a.command, user.id);
-      case 'manage_database_connection':
-        return this.manageDatabaseConnection(user, args);
-      case 'manage_postgres_data':
-        return this.managePostgresData(user, args);
-      case 'manage_redis_data':
-        return this.manageRedisData(user, args);
       case 'manage_logging':
         return this.manageLogging(user, args);
       case 'manage_status_page':
@@ -1566,187 +1509,6 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
     throw new Error(`Unsupported Docker container config operation: ${operation}`);
   }
 
-  private async manageDatabaseConnection(user: User, args: Record<string, unknown>) {
-    const operation = String(args.operation);
-    const databaseId = String(args.databaseId ?? '');
-    if (operation === 'create') {
-      this.ensureToolScope(user, 'databases:create');
-      return this.databaseService.create(CreateDatabaseConnectionSchema.parse(args), user.id);
-    }
-    if (operation === 'update') {
-      this.ensureDirectDatabaseScope(user, 'databases:edit', databaseId);
-      return this.databaseService.update(databaseId, UpdateDatabaseConnectionSchema.parse(args), user.id);
-    }
-    if (operation === 'delete') {
-      this.ensureDirectDatabaseScope(user, 'databases:delete', databaseId);
-      await this.databaseService.delete(databaseId, user.id);
-      return { success: true };
-    }
-    if (operation === 'test') {
-      this.ensureDirectDatabaseScope(user, 'databases:view', databaseId);
-      return this.databaseService.testSavedConnection(databaseId, user.id);
-    }
-    if (operation === 'reveal_credentials') {
-      this.ensureDirectDatabaseScope(user, 'databases:credentials:reveal', databaseId);
-      return this.databaseService.revealCredentials(databaseId);
-    }
-    if (operation === 'health_history') {
-      this.ensureDirectDatabaseScope(user, 'databases:view', databaseId);
-      return this.databaseService.getHealthHistory(databaseId);
-    }
-    throw new Error(`Unsupported database connection operation: ${operation}`);
-  }
-
-  private async managePostgresData(user: User, args: Record<string, unknown>) {
-    const operation = String(args.operation);
-    const databaseId = String(args.databaseId);
-    if (operation === 'list_schemas') {
-      this.ensureDatabaseQueryScopes(user, 'databases:query:read', databaseId);
-      return this.databaseService.listPostgresSchemas(databaseId);
-    }
-    if (operation === 'list_tables') {
-      this.ensureDatabaseQueryScopes(user, 'databases:query:read', databaseId);
-      return this.databaseService.listPostgresTables(databaseId, String(args.schema));
-    }
-    if (operation === 'table_metadata') {
-      this.ensureDatabaseQueryScopes(user, 'databases:query:read', databaseId);
-      const input = BrowsePostgresRowsQuerySchema.pick({ schema: true, table: true }).parse(args);
-      return this.databaseService.getPostgresTableMetadata(databaseId, input.schema, input.table);
-    }
-    if (operation === 'browse_rows') {
-      this.ensureDatabaseQueryScopes(user, 'databases:query:read', databaseId);
-      const input = BrowsePostgresRowsQuerySchema.parse(args);
-      return this.databaseService.browsePostgresRows(
-        databaseId,
-        input.schema,
-        input.table,
-        input.page,
-        input.limit,
-        input.sortBy,
-        input.sortOrder,
-        input.searchColumn
-          ? { column: input.searchColumn, operation: input.searchOperation ?? 'like', value: input.searchValue ?? '' }
-          : undefined
-      );
-    }
-    if (operation === 'insert_row') {
-      this.ensureDatabaseQueryScopes(user, 'databases:query:write', databaseId);
-      const input = BrowsePostgresRowsQuerySchema.pick({ schema: true, table: true }).parse(args);
-      return this.databaseService.insertPostgresRow(
-        databaseId,
-        input.schema,
-        input.table,
-        PostgresObjectSchema.parse(args.values ?? {}),
-        user.id
-      );
-    }
-    if (operation === 'update_row') {
-      this.ensureDatabaseQueryScopes(user, 'databases:query:write', databaseId);
-      const input = BrowsePostgresRowsQuerySchema.pick({ schema: true, table: true }).parse(args);
-      return this.databaseService.updatePostgresRow(
-        databaseId,
-        input.schema,
-        input.table,
-        PostgresObjectSchema.parse(args.primaryKey ?? {}),
-        PostgresObjectSchema.parse(args.values ?? {}),
-        user.id
-      );
-    }
-    if (operation === 'delete_row') {
-      this.ensureDatabaseQueryScopes(user, 'databases:query:write', databaseId);
-      const input = BrowsePostgresRowsQuerySchema.pick({ schema: true, table: true }).parse(args);
-      return this.databaseService.deletePostgresRow(
-        databaseId,
-        input.schema,
-        input.table,
-        PostgresObjectSchema.parse(args.primaryKey ?? {}),
-        user.id
-      );
-    }
-    if (operation === 'add_column') {
-      this.ensureDatabaseQueryScopes(user, 'databases:query:admin', databaseId);
-      const input = AddPostgresColumnSchema.parse(args);
-      return this.databaseService.addPostgresColumn(
-        databaseId,
-        input.schema,
-        input.table,
-        input.column,
-        input.dataType,
-        user.id
-      );
-    }
-    if (operation === 'update_column_type') {
-      this.ensureDatabaseQueryScopes(user, 'databases:query:admin', databaseId);
-      const input = UpdatePostgresColumnTypeSchema.parse(args);
-      return this.databaseService.updatePostgresColumnType(
-        databaseId,
-        input.schema,
-        input.table,
-        input.column,
-        input.dataType,
-        user.id
-      );
-    }
-    if (operation === 'delete_column') {
-      this.ensureDatabaseQueryScopes(user, 'databases:query:admin', databaseId);
-      const input = DeletePostgresColumnSchema.parse(args);
-      return this.databaseService.deletePostgresColumn(databaseId, input.schema, input.table, input.column, user.id);
-    }
-    throw new Error(`Unsupported Postgres operation: ${operation}`);
-  }
-
-  private async manageRedisData(user: User, args: Record<string, unknown>) {
-    const operation = String(args.operation);
-    const databaseId = String(args.databaseId);
-    if (operation === 'scan_keys') {
-      this.ensureDatabaseQueryScopes(user, 'databases:query:read', databaseId);
-      const input = RedisScanKeysQuerySchema.parse(args);
-      return this.databaseService.scanRedisKeys(databaseId, input.cursor, input.limit, input.search, input.type);
-    }
-    if (operation === 'get_key') {
-      this.ensureDatabaseQueryScopes(user, 'databases:query:read', databaseId);
-      const input = RedisGetKeyQuerySchema.parse(args);
-      return this.databaseService.getRedisKey(databaseId, input.key, input);
-    }
-    if (operation === 'set_key') {
-      this.ensureDatabaseQueryScopes(user, 'databases:query:write', databaseId);
-      const input = RedisSetKeySchema.parse(args);
-      return this.databaseService.setRedisKey(
-        databaseId,
-        input.key,
-        input.type,
-        input.value,
-        input.ttlSeconds,
-        user.id
-      );
-    }
-    if (operation === 'delete_key') {
-      this.ensureDatabaseQueryScopes(user, 'databases:query:write', databaseId);
-      const input = RedisGetKeyQuerySchema.parse(args);
-      return this.databaseService.deleteRedisKey(databaseId, input.key, user.id);
-    }
-    if (operation === 'expire_key') {
-      this.ensureDatabaseQueryScopes(user, 'databases:query:write', databaseId);
-      const input = RedisExpireKeySchema.parse(args);
-      return this.databaseService.expireRedisKey(databaseId, input.key, input.ttlSeconds, user.id);
-    }
-    if (operation === 'execute_command') {
-      const command = String(args.command ?? '');
-      const intent = inferRedisIntent(command);
-      this.ensureDatabaseQueryScopes(
-        user,
-        intent === 'read'
-          ? 'databases:query:read'
-          : intent === 'write'
-            ? 'databases:query:write'
-            : 'databases:query:admin',
-        databaseId
-      );
-      return this.databaseService.executeRedisCommand(databaseId, command, user.id);
-    }
-    throw new Error(`Unsupported Redis operation: ${operation}`);
-  }
-
   private ensureLoggingScope(user: User, baseScope: string, resourceId?: string) {
     if (hasScope(user.scopes, 'logs:manage')) return;
     if (resourceId ? hasScopeForResource(user.scopes, baseScope, resourceId) : hasScopeBase(user.scopes, baseScope)) {
@@ -1949,42 +1711,6 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
       return service.getPreviewDto();
     }
     throw new Error(`Unsupported status page operation: ${resource}.${operation}`);
-  }
-
-  private ensureDatabaseScope(user: User, baseScope: string, databaseId: string) {
-    if (!hasScope(user.scopes, `${baseScope}:${databaseId}`)) {
-      throw new Error(`PERMISSION_DENIED: Missing required scope ${baseScope}:${databaseId}`);
-    }
-  }
-
-  private ensureDatabaseQueryScopes(user: User, queryScope: string, databaseId: string) {
-    this.ensureDirectDatabaseScope(user, 'databases:view', databaseId);
-    this.ensureDatabaseScope(user, queryScope, databaseId);
-  }
-
-  private ensureReadOnlyPostgresQuery(user: User, databaseId: string, sql: string) {
-    const intent = inferPostgresIntent(sql);
-    if (intent !== 'read') {
-      throw new Error('INVALID_SQL_INTENT: query_postgres_read only allows read-only Postgres SQL');
-    }
-    this.ensureDatabaseQueryScopes(user, 'databases:query:read', databaseId);
-  }
-
-  private ensurePostgresQueryIntentScope(user: User, databaseId: string, sql: string) {
-    const intent = inferPostgresIntent(sql);
-    const queryScope =
-      intent === 'read'
-        ? 'databases:query:read'
-        : intent === 'write'
-          ? 'databases:query:write'
-          : 'databases:query:admin';
-    this.ensureDatabaseQueryScopes(user, queryScope, databaseId);
-  }
-
-  private ensureDirectDatabaseScope(user: User, baseScope: string, databaseId: string) {
-    if (!user.scopes.includes(baseScope) && !user.scopes.includes(`${baseScope}:${databaseId}`)) {
-      throw new Error(`PERMISSION_DENIED: Missing required scope ${baseScope}:${databaseId}`);
-    }
   }
 
   /**
