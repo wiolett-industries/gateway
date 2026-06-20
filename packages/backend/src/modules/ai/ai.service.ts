@@ -56,15 +56,6 @@ import { CreateNginxTemplateSchema, UpdateNginxTemplateSchema } from '@/modules/
 import type { ProxyService } from '@/modules/proxy/proxy.service.js';
 import { UploadCertSchema } from '@/modules/ssl/ssl.schemas.js';
 import type { SSLService } from '@/modules/ssl/ssl.service.js';
-import {
-  CreateStatusPageIncidentSchema,
-  CreateStatusPageIncidentUpdateSchema,
-  CreateStatusPageServiceSchema,
-  IncidentListQuerySchema,
-  StatusPageSettingsSchema,
-  UpdateStatusPageIncidentSchema,
-  UpdateStatusPageServiceSchema,
-} from '@/modules/status-page/status-page.schemas.js';
 import { SessionService } from '@/services/session.service.js';
 import type { User } from '@/types.js';
 import { DATABASE_TOOL_NAMES, executeDatabaseTool } from './ai.database-tools.js';
@@ -100,6 +91,7 @@ import {
   trimToTokenBudget,
 } from './ai.service-helpers.js';
 import type { AISettingsService } from './ai.settings.service.js';
+import { manageStatusPageTool } from './ai.status-page-tools.js';
 import { buildAISystemPrompt } from './ai.system-prompt.js';
 import { AI_TOOLS, getOpenAITools, isDestructiveTool, TOOL_STORE_INVALIDATION_MAP } from './ai.tools.js';
 import type {
@@ -1114,7 +1106,7 @@ export class AIService {
       case 'manage_logging':
         return this.manageLogging(user, args);
       case 'manage_status_page':
-        return this.manageStatusPage(user, args);
+        return manageStatusPageTool(user, args);
 
       // ── Ask Question (handled client-side, backend just passes through) ──
       case 'ask_question':
@@ -1391,87 +1383,6 @@ export class AIService {
       return container.resolve(LoggingMetadataService).get(String(args.environmentId));
     }
     throw new Error(`Unsupported logging operation: ${resource}.${operation}`);
-  }
-
-  private async manageStatusPage(user: User, args: Record<string, unknown>) {
-    const { StatusPageService } = await import('@/modules/status-page/status-page.service.js');
-    const service = container.resolve(StatusPageService);
-    const resource = String(args.resource);
-    const operation = String(args.operation);
-    const payload = (args.payload && typeof args.payload === 'object' ? args.payload : {}) as Record<string, unknown>;
-    if (resource === 'settings') {
-      if (operation === 'get') {
-        this.ensureToolScope(user, 'status-page:view');
-        return service.getConfig();
-      }
-      if (operation === 'update') {
-        this.ensureToolScope(user, 'status-page:manage');
-        return service.updateSettings(StatusPageSettingsSchema.parse(payload), user.id);
-      }
-    }
-    if (resource === 'proxy_templates' && operation === 'list') {
-      this.ensureToolScope(user, 'status-page:view');
-      return service.listProxyTemplates();
-    }
-    if (resource === 'services') {
-      if (operation === 'list') {
-        this.ensureToolScope(user, 'status-page:view');
-        return service.listServices();
-      }
-      if (operation === 'create') {
-        this.ensureToolScope(user, 'status-page:manage');
-        return service.createService(CreateStatusPageServiceSchema.parse(payload), user.id);
-      }
-      if (operation === 'update') {
-        this.ensureToolScope(user, 'status-page:manage');
-        return service.updateService(String(args.serviceId), UpdateStatusPageServiceSchema.parse(payload), user.id);
-      }
-      if (operation === 'delete') {
-        this.ensureToolScope(user, 'status-page:manage');
-        await service.deleteService(String(args.serviceId), user.id);
-        return { success: true };
-      }
-    }
-    if (resource === 'incidents') {
-      if (operation === 'list') {
-        this.ensureToolScope(user, 'status-page:view');
-        return service.listIncidents(IncidentListQuerySchema.parse(args));
-      }
-      if (operation === 'create') {
-        this.ensureToolScope(user, 'status-page:incidents:create');
-        return service.createManualIncident(CreateStatusPageIncidentSchema.parse(payload), user.id);
-      }
-      if (operation === 'update') {
-        this.ensureToolScope(user, 'status-page:incidents:update');
-        return service.updateIncident(String(args.incidentId), UpdateStatusPageIncidentSchema.parse(payload), user.id);
-      }
-      if (operation === 'delete') {
-        this.ensureToolScope(user, 'status-page:incidents:delete');
-        await service.deleteIncident(String(args.incidentId), user.id);
-        return { success: true };
-      }
-      if (operation === 'resolve') {
-        this.ensureToolScope(user, 'status-page:incidents:resolve');
-        return service.resolveIncident(String(args.incidentId), user.id);
-      }
-      if (operation === 'promote') {
-        this.ensureToolScope(user, 'status-page:incidents:create');
-        return service.promoteIncident(String(args.incidentId), user.id);
-      }
-    }
-    if (resource === 'incident_updates' && operation === 'create_update') {
-      this.ensureToolScope(user, 'status-page:incidents:update');
-      return service.createIncidentUpdate(
-        String(args.incidentId),
-        CreateStatusPageIncidentUpdateSchema.parse(payload),
-        user.id
-      );
-    }
-    if (resource === 'preview' || operation === 'preview') {
-      this.ensureToolScope(user, 'status-page:view');
-      return service.getPreviewDto();
-    }
-    throw new Error(`Unsupported status page operation: ${resource}.${operation}`);
   }
 
   /**
