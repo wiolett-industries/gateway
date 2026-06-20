@@ -24,6 +24,100 @@ function createService(dispatch: { sendDockerContainerCommand: ReturnType<typeof
 }
 
 describe('DockerManagementService runtime settings', () => {
+  it('clears persisted runtime settings when live update receives default runtime values', async () => {
+    const inspect = {
+      Id: 'container-1',
+      Name: '/api',
+      Config: {
+        Labels: {},
+        Env: [],
+      },
+      HostConfig: {},
+      State: { Status: 'exited' },
+    };
+    const dispatch = {
+      sendDockerContainerCommand: vi.fn().mockResolvedValue({
+        success: true,
+        detail: JSON.stringify(inspect),
+      }),
+    };
+    const service = createService(dispatch);
+    const replace = vi.fn().mockResolvedValue(undefined);
+    service.setRuntimeSettingsService({
+      get: vi
+        .fn()
+        .mockResolvedValueOnce({
+          restartPolicy: 'always',
+          memoryLimit: 268_435_456,
+          memorySwap: -1,
+          nanoCPUs: 500_000_000,
+          cpuShares: 512,
+          pidsLimit: 128,
+        })
+        .mockResolvedValueOnce(null),
+      replace,
+    } as never);
+
+    await service.liveUpdateContainer(
+      'node-1',
+      'container-1',
+      {
+        restartPolicy: 'no',
+        maxRetries: 0,
+        memoryLimit: 0,
+        memorySwap: 0,
+        nanoCPUs: 0,
+        cpuShares: 0,
+        pidsLimit: 0,
+      },
+      'user-1'
+    );
+
+    expect(replace).toHaveBeenCalledWith('node-1', 'api', {});
+    expect(dispatch.sendDockerContainerCommand).not.toHaveBeenCalledWith('node-1', 'live_update', expect.anything());
+  });
+
+  it('merges partial runtime setting updates with persisted values', async () => {
+    const inspect = {
+      Id: 'container-1',
+      Name: '/api',
+      Config: {
+        Labels: {},
+        Env: [],
+      },
+      HostConfig: {},
+      State: { Status: 'exited' },
+    };
+    const dispatch = {
+      sendDockerContainerCommand: vi.fn().mockResolvedValue({
+        success: true,
+        detail: JSON.stringify(inspect),
+      }),
+    };
+    const service = createService(dispatch);
+    const replace = vi.fn().mockResolvedValue(undefined);
+    service.setRuntimeSettingsService({
+      get: vi
+        .fn()
+        .mockResolvedValueOnce({
+          restartPolicy: 'on-failure',
+          maxRetries: 3,
+          memoryLimit: 268_435_456,
+        })
+        .mockResolvedValueOnce(null),
+      replace,
+    } as never);
+
+    await service.liveUpdateContainer('node-1', 'container-1', { nanoCPUs: 750_000_000 }, 'user-1');
+
+    expect(replace).toHaveBeenCalledWith('node-1', 'api', {
+      restartPolicy: 'on-failure',
+      maxRetries: 3,
+      memoryLimit: 268_435_456,
+      nanoCPUs: 750_000_000,
+    });
+  });
+
   it('applies persisted runtime settings to inspect results without dropping existing HostConfig fields', async () => {
     const dispatch = {
       sendDockerContainerCommand: vi.fn().mockResolvedValue({

@@ -32,6 +32,7 @@ import {
 } from './docker-read-operations.js';
 import { dockerDispatchErrorMessage, getReplacementContainerFailureMessage } from './docker-recreate-watch.js';
 import type { DockerRegistryAuthCandidate, DockerRegistryService } from './docker-registry.service.js';
+import { extractRuntimeConfig, mergeRuntimeConfig } from './docker-runtime-config.js';
 import { applyRuntimeSettingsToInspect } from './docker-runtime-inspect.js';
 import {
   type ContainerRuntimeConfig,
@@ -425,59 +426,6 @@ export class DockerManagementService {
     };
   }
 
-  private extractRuntimeConfig(config: Record<string, unknown>): ContainerRuntimeConfig {
-    return {
-      restartPolicy:
-        typeof config.restartPolicy === 'string'
-          ? (config.restartPolicy as ContainerRuntimeConfig['restartPolicy'])
-          : undefined,
-      maxRetries: typeof config.maxRetries === 'number' ? config.maxRetries : undefined,
-      memoryLimit: typeof config.memoryLimit === 'number' ? config.memoryLimit : undefined,
-      memorySwap: typeof config.memorySwap === 'number' ? config.memorySwap : undefined,
-      nanoCPUs: typeof config.nanoCPUs === 'number' ? config.nanoCPUs : undefined,
-      cpuShares: typeof config.cpuShares === 'number' ? config.cpuShares : undefined,
-      pidsLimit: typeof config.pidsLimit === 'number' ? config.pidsLimit : undefined,
-    };
-  }
-
-  private normalizeRuntimeConfig(config: ContainerRuntimeConfig): ContainerRuntimeConfig {
-    const normalized: ContainerRuntimeConfig = {};
-    if (config.restartPolicy && config.restartPolicy !== 'no') {
-      normalized.restartPolicy = config.restartPolicy;
-    }
-    if ((config.maxRetries ?? 0) > 0) {
-      normalized.maxRetries = config.maxRetries;
-    }
-    if ((config.memoryLimit ?? 0) > 0) {
-      normalized.memoryLimit = config.memoryLimit;
-    }
-    if (config.memorySwap === -1 || (config.memorySwap ?? 0) > 0) {
-      normalized.memorySwap = config.memorySwap;
-    }
-    if ((config.nanoCPUs ?? 0) > 0) {
-      normalized.nanoCPUs = config.nanoCPUs;
-    }
-    if ((config.cpuShares ?? 0) > 0) {
-      normalized.cpuShares = config.cpuShares;
-    }
-    if ((config.pidsLimit ?? 0) > 0) {
-      normalized.pidsLimit = config.pidsLimit;
-    }
-    return normalized;
-  }
-
-  private mergeRuntimeConfig(base: ContainerRuntimeConfig, patch: ContainerRuntimeConfig): ContainerRuntimeConfig {
-    return this.normalizeRuntimeConfig({
-      restartPolicy: patch.restartPolicy ?? base.restartPolicy,
-      maxRetries: patch.maxRetries ?? base.maxRetries,
-      memoryLimit: patch.memoryLimit ?? base.memoryLimit,
-      memorySwap: patch.memorySwap ?? base.memorySwap,
-      nanoCPUs: patch.nanoCPUs ?? base.nanoCPUs,
-      cpuShares: patch.cpuShares ?? base.cpuShares,
-      pidsLimit: patch.pidsLimit ?? base.pidsLimit,
-    });
-  }
-
   private async persistRuntimeSettings(
     nodeId: string,
     containerName: string,
@@ -485,13 +433,13 @@ export class DockerManagementService {
   ): Promise<ContainerRuntimeConfig | null> {
     if (!this.runtimeSettingsService) return null;
 
-    const incoming = this.extractRuntimeConfig(patch);
+    const incoming = extractRuntimeConfig(patch);
     if (Object.values(incoming).every((value) => value === undefined)) {
       return await this.runtimeSettingsService.get(nodeId, containerName);
     }
 
     const existing = (await this.runtimeSettingsService.get(nodeId, containerName)) ?? {};
-    const merged = this.mergeRuntimeConfig(existing, incoming);
+    const merged = mergeRuntimeConfig(existing, incoming);
     await this.runtimeSettingsService.replace(nodeId, containerName, merged);
     return Object.keys(merged).length > 0 ? merged : null;
   }
