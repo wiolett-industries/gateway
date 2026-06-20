@@ -4,7 +4,7 @@ import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
 import { makeUser } from "@/test/fixtures";
-import { SettingsTab } from "./SettingsTab";
+import { SettingsTab, WebhookSection } from "./SettingsTab";
 
 vi.mock("@/hooks/use-realtime", () => ({
   useRealtime: vi.fn(),
@@ -121,5 +121,35 @@ describe("docker detail SettingsTab", () => {
     expect(onMutationEnd).toHaveBeenCalled();
     expect(onRecreating).not.toHaveBeenCalled();
     expect(invalidate).toHaveBeenCalledWith("containers", "tasks");
+  });
+
+  it("loads container webhook and image cleanup settings", async () => {
+    vi.spyOn(api, "getContainerWebhook").mockResolvedValue({
+      id: "webhook-1",
+      nodeId: "node-1",
+      containerName: "app",
+      token: "token-1",
+      enabled: true,
+      createdAt: "2026-06-21T00:00:00.000Z",
+      updatedAt: "2026-06-21T00:00:00.000Z",
+    });
+    vi.spyOn(api, "getContainerImageCleanup").mockResolvedValue({
+      id: "cleanup-1",
+      targetType: "container",
+      nodeId: "node-1",
+      containerName: "app",
+      deploymentId: null,
+      enabled: true,
+      retentionCount: 3,
+      createdAt: "2026-06-21T00:00:00.000Z",
+      updatedAt: "2026-06-21T00:00:00.000Z",
+    });
+
+    render(<WebhookSection nodeId="node-1" containerName="app" />);
+
+    expect(
+      await screen.findByDisplayValue(`${window.location.origin}/api/webhooks/docker/token-1`)
+    ).toBeInTheDocument();
+    expect(screen.getByDisplayValue("3")).toBeInTheDocument();
   });
 });
