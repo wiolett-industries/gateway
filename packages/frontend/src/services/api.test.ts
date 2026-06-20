@@ -64,6 +64,47 @@ describe("api client contract", () => {
     expect(lastJsonBody(fetchMock)).toEqual({ accessListId: null });
   });
 
+  it("serializes oauth consent and authorization requests", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        jsonResponse({
+          client: { id: "client 1", name: "Codex" },
+          scopes: ["proxy:hosts:view"],
+        })
+      )
+      .mockResolvedValueOnce(jsonResponse({ csrfToken: "csrf-token" }))
+      .mockResolvedValueOnce(jsonResponse({ redirectUrl: "/oauth/callback?ok=1" }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: { clientId: "client 1", resource: "https://mcp.example/one", scopes: ["a"] },
+        })
+      );
+
+    await expect(api.getOAuthConsent("request 1/2")).resolves.toMatchObject({
+      client: { id: "client 1" },
+    });
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/oauth/consent/request%201%2F2");
+
+    await expect(api.approveOAuthConsent("request 1/2", ["proxy:hosts:view"])).resolves.toEqual({
+      redirectUrl: "/oauth/callback?ok=1",
+    });
+    expect(fetchMock.mock.calls[2]?.[0]).toBe("/api/oauth/consent/request%201%2F2/approve");
+    expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({ method: "POST" });
+    expect(JSON.parse(String((fetchMock.mock.calls[2]?.[1] as RequestInit).body))).toEqual({
+      scopes: ["proxy:hosts:view"],
+    });
+
+    await expect(
+      api.updateOAuthAuthorization("client 1", "https://mcp.example/one", ["a"])
+    ).resolves.toMatchObject({ clientId: "client 1", resource: "https://mcp.example/one" });
+    expect(fetchMock.mock.calls[3]?.[0]).toBe(
+      "/api/oauth/authorizations/client%201?resource=https%3A%2F%2Fmcp.example%2Fone"
+    );
+    expect(fetchMock.mock.calls[3]?.[1]).toMatchObject({ method: "PATCH" });
+    expect(lastJsonBody(fetchMock)).toEqual({ scopes: ["a"] });
+  });
+
   it("serializes postgres row queries and mutations without changing value types", async () => {
     const primaryKey = { id: 7 };
     const values = { amount: 42, enabled: true, status: "ready", happenedAt: "2026-06-21" };

@@ -36,8 +36,6 @@ import type {
   LoggingSearchRequest,
   LoggingSearchResult,
   NginxTemplate,
-  OAuthAuthorization,
-  OAuthConsentPreview,
   PaginatedResponse,
   PermissionGroup,
   ProxyHost,
@@ -62,14 +60,13 @@ import type {
   UploadCertRequest,
   User,
 } from "@/types";
+import { withAuthApi } from "./api-auth";
 import { API_BASE, ApiClientBase } from "./api-base";
 import { withDatabaseApi } from "./api-databases";
 import { withDockerApi } from "./api-docker";
 import { withProxyApi } from "./api-proxy";
 
-const AUTH_BASE = "/auth";
-
-class ApiClient extends withDockerApi(withDatabaseApi(withProxyApi(ApiClientBase))) {
+class ApiClient extends withAuthApi(withDockerApi(withDatabaseApi(withProxyApi(ApiClientBase)))) {
   /**
    * Prefetch key data for all pages in background.
    * Called once after auth to prime the cache.
@@ -137,80 +134,6 @@ class ApiClient extends withDockerApi(withDatabaseApi(withProxyApi(ApiClientBase
       quiet(this.getAuditLog({ limit: 25 }).then((d) => this.setCache("audit:list", d)));
       quiet(this.listUsers().then((d) => this.setCache("admin:users", d)));
     }
-  }
-
-  // ── Auth ──────────────────────────────────────────────────────────
-
-  async getCurrentUser(): Promise<User> {
-    return this.request<User>("/auth/me");
-  }
-
-  async logout(): Promise<void> {
-    try {
-      await this.request<void>("/auth/logout", { method: "POST" });
-    } finally {
-      this.clearCsrfToken();
-      useAuthStore.getState().logout();
-    }
-  }
-
-  getLoginUrl(): string {
-    return `${AUTH_BASE}/login`;
-  }
-
-  async getOAuthConsent(requestId: string): Promise<OAuthConsentPreview> {
-    return this.request<OAuthConsentPreview>(`/api/oauth/consent/${encodeURIComponent(requestId)}`);
-  }
-
-  async approveOAuthConsent(requestId: string, scopes: string[]): Promise<{ redirectUrl: string }> {
-    return this.request<{ redirectUrl: string }>(
-      `/api/oauth/consent/${encodeURIComponent(requestId)}/approve`,
-      {
-        method: "POST",
-        body: JSON.stringify({ scopes }),
-      }
-    );
-  }
-
-  async denyOAuthConsent(requestId: string): Promise<{ redirectUrl: string }> {
-    return this.request<{ redirectUrl: string }>(
-      `/api/oauth/consent/${encodeURIComponent(requestId)}/deny`,
-      {
-        method: "POST",
-        body: JSON.stringify({}),
-      }
-    );
-  }
-
-  async listOAuthAuthorizations(): Promise<OAuthAuthorization[]> {
-    return this.unwrapData(
-      this.request<{ data: OAuthAuthorization[] }>("/api/oauth/authorizations")
-    );
-  }
-
-  async revokeOAuthAuthorization(clientId: string, resource: string): Promise<void> {
-    await this.request<void>(
-      `/api/oauth/authorizations/${encodeURIComponent(clientId)}?resource=${encodeURIComponent(resource)}`,
-      {
-        method: "DELETE",
-      }
-    );
-  }
-
-  async updateOAuthAuthorization(
-    clientId: string,
-    resource: string,
-    scopes: string[]
-  ): Promise<OAuthAuthorization> {
-    return this.unwrapData(
-      this.request<{ data: OAuthAuthorization }>(
-        `/api/oauth/authorizations/${encodeURIComponent(clientId)}?resource=${encodeURIComponent(resource)}`,
-        {
-          method: "PATCH",
-          body: JSON.stringify({ scopes }),
-        }
-      )
-    );
   }
 
   // ── Certificate Authorities ───────────────────────────────────────
