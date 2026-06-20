@@ -9,7 +9,6 @@ import type { NotificationEvaluatorService } from '@/modules/notifications/notif
 import type { EventBusService } from '@/services/event-bus.service.js';
 import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import type { NodeRegistryService } from '@/services/node-registry.service.js';
-import { DOCKER_LOG_TAIL_MAX } from './docker.schemas.js';
 import type { DockerDeploymentService } from './docker-deployment.service.js';
 import { DOCKER_DEPLOYMENT_MANAGED_LABEL } from './docker-deployment.service.js';
 import type { DockerEnvironmentService } from './docker-environment.service.js';
@@ -22,6 +21,14 @@ import {
   pullImage as pullDockerImage,
   removeImage as removeDockerImage,
 } from './docker-image-operations.js';
+import {
+  getContainerLogs as getDockerContainerLogs,
+  getContainerStats as getDockerContainerStats,
+  getContainerTop as getDockerContainerTop,
+  listDirectory as listDockerDirectory,
+  readFile as readDockerFile,
+  writeFile as writeDockerFile,
+} from './docker-read-operations.js';
 import { dockerDispatchErrorMessage, getReplacementContainerFailureMessage } from './docker-recreate-watch.js';
 import type { DockerRegistryAuthCandidate, DockerRegistryService } from './docker-registry.service.js';
 import { applyRuntimeSettingsToInspect } from './docker-runtime-inspect.js';
@@ -216,6 +223,14 @@ export class DockerManagementService {
       nodeDispatch: this.nodeDispatch,
       auditService: this.auditService,
       eventBus: this.eventBus,
+      parseResult: (result: { success: boolean; error?: string; detail?: string }) => this.parseResult(result),
+    };
+  }
+
+  private readOperationContext() {
+    return {
+      nodeDispatch: this.nodeDispatch,
+      auditService: this.auditService,
       parseResult: (result: { success: boolean; error?: string; detail?: string }) => this.parseResult(result),
     };
   }
@@ -1175,12 +1190,7 @@ export class DockerManagementService {
 
   async getContainerLogs(nodeId: string, containerId: string, tail: number, timestamps: boolean) {
     await this.validateDockerNode(nodeId);
-    const tailLines = Math.min(Math.max(Math.trunc(tail || 100), 1), DOCKER_LOG_TAIL_MAX);
-    const result = await this.nodeDispatch.sendDockerLogsCommand(nodeId, containerId, {
-      tailLines,
-      timestamps,
-    });
-    return this.parseResult(result);
+    return getDockerContainerLogs(this.readOperationContext(), nodeId, containerId, tail, timestamps);
   }
 
   async getContainerEnv(nodeId: string, containerId: string) {
@@ -1573,48 +1583,28 @@ export class DockerManagementService {
 
   async getContainerStats(nodeId: string, containerId: string) {
     await this.validateDockerNode(nodeId);
-    const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'stats', { containerId });
-    return this.parseResult(result);
+    return getDockerContainerStats(this.readOperationContext(), nodeId, containerId);
   }
 
   async getContainerTop(nodeId: string, containerId: string) {
     await this.validateDockerNode(nodeId);
-    const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'top', { containerId });
-    return this.parseResult(result);
+    return getDockerContainerTop(this.readOperationContext(), nodeId, containerId);
   }
 
   // ─── File browser ──────────────────────────────────────────────────
 
   async listDirectory(nodeId: string, containerId: string, path: string) {
     await this.validateDockerNode(nodeId);
-    const result = await this.nodeDispatch.sendDockerFileCommand(nodeId, 'list', { containerId, path });
-    return this.parseResult(result);
+    return listDockerDirectory(this.readOperationContext(), nodeId, containerId, path);
   }
 
   async readFile(nodeId: string, containerId: string, path: string) {
     await this.validateDockerNode(nodeId);
-    const result = await this.nodeDispatch.sendDockerFileCommand(nodeId, 'read', {
-      containerId,
-      path,
-      maxBytes: 1048576,
-    });
-    return this.parseResult(result);
+    return readDockerFile(this.readOperationContext(), nodeId, containerId, path);
   }
 
   async writeFile(nodeId: string, containerId: string, path: string, content: string, userId: string) {
     await this.validateDockerNode(nodeId);
-    const result = await this.nodeDispatch.sendDockerFileCommand(nodeId, 'write', {
-      containerId,
-      path,
-      content,
-    });
-    this.parseResult(result);
-    await this.auditService.log({
-      action: 'docker.file.write',
-      userId,
-      resourceType: 'docker-container',
-      resourceId: containerId,
-      details: { nodeId, path },
-    });
+    await writeDockerFile(this.readOperationContext(), nodeId, containerId, path, content, userId);
   }
 }
