@@ -1,0 +1,155 @@
+import { api } from "@/services/api";
+
+function jsonResponse(body: unknown, init?: ResponseInit) {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+    ...init,
+  });
+}
+
+function lastJsonBody(fetchMock: ReturnType<typeof vi.spyOn>) {
+  const init = fetchMock.mock.calls.at(-1)?.[1] as RequestInit | undefined;
+  return init?.body ? JSON.parse(String(init.body)) : undefined;
+}
+
+describe("api client contract", () => {
+  beforeEach(() => {
+    api.resetSessionState();
+    vi.restoreAllMocks();
+  });
+
+  afterEach(() => {
+    api.resetSessionState();
+    vi.useRealTimers();
+  });
+
+  it("serializes proxy host list filters and unwraps proxy host mutations", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: [{ id: "proxy-1", domainNames: ["app.example.com"] }],
+          total: 1,
+          page: 2,
+        })
+      )
+      .mockResolvedValueOnce(jsonResponse({ csrfToken: "csrf-token" }))
+      .mockResolvedValueOnce(jsonResponse({ data: { id: "proxy-1", accessListId: null } }));
+
+    await expect(
+      api.listProxyHosts({
+        page: 2,
+        limit: 50,
+        search: "app",
+        type: "proxy",
+        healthStatus: "online",
+        enabled: false,
+        sortBy: "domainNames",
+        sortOrder: "asc",
+        nodeId: "node-1",
+      })
+    ).resolves.toMatchObject({ total: 1, page: 2 });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "/api/proxy-hosts?page=2&limit=50&search=app&type=proxy&healthStatus=online&enabled=false&sortBy=domainNames&sortOrder=asc&nodeId=node-1"
+    );
+
+    await expect(api.updateProxyHost("proxy-1", { accessListId: null })).resolves.toEqual({
+      id: "proxy-1",
+      accessListId: null,
+    });
+    expect(fetchMock.mock.calls[2]?.[0]).toBe("/api/proxy-hosts/proxy-1");
+    expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({ method: "PUT" });
+    expect(lastJsonBody(fetchMock)).toEqual({ accessListId: null });
+  });
+
+  it("serializes postgres row queries and mutations without changing value types", async () => {
+    const primaryKey = { id: 7 };
+    const values = { amount: 42, enabled: true, status: "ready", happenedAt: "2026-06-21" };
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: {
+            metadata: { columns: [] },
+            rows: [{ id: 7 }],
+            total: 1,
+            page: 3,
+            limit: 25,
+          },
+        })
+      )
+      .mockResolvedValueOnce(jsonResponse({ csrfToken: "csrf-token" }))
+      .mockResolvedValueOnce(jsonResponse({ data: { id: 7, ...values } }));
+
+    await expect(
+      api.browsePostgresRows("db-1", {
+        schema: "public",
+        table: "orders",
+        page: 3,
+        limit: 25,
+        sortBy: "created_at",
+        sortOrder: "desc",
+        searchColumn: "status",
+        searchOperation: "equals",
+        searchValue: "ready",
+      })
+    ).resolves.toMatchObject({ total: 1, page: 3, limit: 25 });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "/api/databases/db-1/postgres/rows?schema=public&table=orders&page=3&limit=25&sortBy=created_at&sortOrder=desc&searchColumn=status&searchOperation=equals&searchValue=ready"
+    );
+
+    await expect(
+      api.updatePostgresRow("db-1", "public", "orders", primaryKey, values)
+    ).resolves.toMatchObject({ id: 7, amount: 42 });
+    expect(fetchMock.mock.calls[2]?.[0]).toBe("/api/databases/db-1/postgres/rows");
+    expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({ method: "PATCH" });
+    expect(lastJsonBody(fetchMock)).toEqual({
+      schema: "public",
+      table: "orders",
+      primaryKey,
+      values,
+    });
+  });
+
+  it("adds docker list metadata and supports cache-busting container inspect", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-21T12:00:00Z"));
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: [{ id: "container-1", name: "api" }],
+          total: 120,
+          limit: 50,
+          truncated: true,
+        })
+      )
+      .mockResolvedValueOnce(jsonResponse({ data: { id: "container-1", name: "api" } }));
+
+    await expect(
+      api.listDockerContainers("node-1", { search: "api", noCache: true })
+    ).resolves.toEqual([
+      {
+        id: "container-1",
+        name: "api",
+        _listTotal: 120,
+        _listLimit: 50,
+        _listTruncated: true,
+      },
+    ]);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "/api/docker/nodes/node-1/containers?search=api&_t=1782043200000"
+    );
+
+    await expect(api.inspectContainer("node-1", "container-1", true)).resolves.toEqual({
+      id: "container-1",
+      name: "api",
+    });
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      "/api/docker/nodes/node-1/containers/container-1?_t=1782043200000"
+    );
+  });
+});
