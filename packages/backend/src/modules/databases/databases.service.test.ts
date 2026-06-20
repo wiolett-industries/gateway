@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { AppError } from '@/middleware/error-handler.js';
-import { DatabaseConnectionService, mapDatabaseDriverError } from './databases.service.js';
+import {
+  DatabaseConnectionService,
+  inferPostgresIntent,
+  inferRedisIntent,
+  mapDatabaseDriverError,
+} from './databases.service.js';
 
 describe('mapDatabaseDriverError', () => {
   it('maps postgres authentication failures to 401', () => {
@@ -71,6 +76,20 @@ describe('mapDatabaseDriverError', () => {
   it('returns null for unknown errors', () => {
     const mapped = mapDatabaseDriverError(new Error('unexpected socket blowup'), 'postgres', 'connect');
     expect(mapped).toBeNull();
+  });
+});
+
+describe('database query intent inference', () => {
+  it('infers the strongest Postgres intent across batches while ignoring quoted semicolons', () => {
+    expect(inferPostgresIntent("select ';' as semi; show all")).toBe('read');
+    expect(inferPostgresIntent('select * from users; update users set role = $1')).toBe('write');
+    expect(inferPostgresIntent('with deleted as (delete from users returning *) select * from deleted')).toBe('admin');
+  });
+
+  it('infers the strongest Redis command intent across quoted and batched commands', () => {
+    expect(inferRedisIntent('GET "key;with;semicolons"; TTL key')).toBe('read');
+    expect(inferRedisIntent('GET key\nSET key value')).toBe('write');
+    expect(inferRedisIntent('CONFIG GET *')).toBe('admin');
   });
 });
 
