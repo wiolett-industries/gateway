@@ -9,6 +9,7 @@ import type { NotificationEvaluatorService } from '@/modules/notifications/notif
 import type { EventBusService } from '@/services/event-bus.service.js';
 import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import type { NodeRegistryService } from '@/services/node-registry.service.js';
+import { type ContainerTransition, DockerContainerTransitions } from './docker-container-transitions.js';
 import type { DockerDeploymentService } from './docker-deployment.service.js';
 import { DOCKER_DEPLOYMENT_MANAGED_LABEL } from './docker-deployment.service.js';
 import { getContainerEnv as getDockerContainerEnv, normalizeEnvRecord } from './docker-env-operations.js';
@@ -58,7 +59,7 @@ const logger = createChildLogger('DockerManagementService');
 const DEFAULT_CONTAINER_STOP_TIMEOUT_SECONDS = 20;
 const CONTAINER_LIFECYCLE_TIMEOUT_BUFFER_SECONDS = 30;
 
-export type ContainerTransition = 'creating' | 'stopping' | 'restarting' | 'killing' | 'recreating' | 'updating';
+export type { ContainerTransition } from './docker-container-transitions.js';
 
 type ContainerAction =
   | 'created'
@@ -80,7 +81,7 @@ export class DockerManagementService {
    * Keyed by name (not ID) so the badge survives recreate/update, which
    * destroy the old container and create a new one with a different ID.
    */
-  private containerTransitions = new Map<string, ContainerTransition>();
+  private containerTransitions = new DockerContainerTransitions();
 
   private taskService?: DockerTaskService;
   private environmentService?: DockerEnvironmentService;
@@ -296,27 +297,20 @@ export class DockerManagementService {
     throw err;
   }
 
-  private transitionKey(nodeId: string, name: string) {
-    return `${nodeId}:${name}`;
-  }
-
   requireNoTransition(nodeId: string, name: string) {
-    const current = this.containerTransitions.get(this.transitionKey(nodeId, name));
-    if (current) {
-      throw new AppError(409, 'CONTAINER_BUSY', `Container is currently ${current}`);
-    }
+    this.containerTransitions.requireIdle(nodeId, name);
   }
 
   setTransition(nodeId: string, name: string, state: ContainerTransition) {
-    this.containerTransitions.set(this.transitionKey(nodeId, name), state);
+    this.containerTransitions.set(nodeId, name, state);
   }
 
   clearTransition(nodeId: string, name: string) {
-    this.containerTransitions.delete(this.transitionKey(nodeId, name));
+    this.containerTransitions.clear(nodeId, name);
   }
 
   private getTransition(nodeId: string, name: string): ContainerTransition | undefined {
-    return this.containerTransitions.get(this.transitionKey(nodeId, name));
+    return this.containerTransitions.get(nodeId, name);
   }
 
   private async resolveContainerName(nodeId: string, containerId: string): Promise<string> {
