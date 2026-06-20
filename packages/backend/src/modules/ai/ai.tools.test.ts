@@ -53,4 +53,17 @@ describe('AI tool scope filtering', () => {
     expect(toolNames(['feat:ai:use'])).not.toContain('web_search');
     expect(getOpenAITools([], ['feat:ai:use'], true).map((tool) => tool.function.name)).toContain('web_search');
   });
+
+  it('keeps logging and status-page tool registry contracts stable', () => {
+    expect(AI_TOOLS.filter((tool) => tool.category === 'Logging').map((tool) => tool.name)).toEqual(['manage_logging']);
+    expect(AI_TOOLS.filter((tool) => tool.category === 'Status Page').map((tool) => tool.name)).toEqual([
+      'manage_status_page',
+    ]);
+
+    expect(toolNames(['logs:environments:view'])).toContain('manage_logging');
+    expect(toolNames(['status-page:view'])).toContain('manage_status_page');
+    expect(toolNames(['logs:read'])).toContain('manage_logging');
+    expect(isDestructiveTool('manage_logging')).toBe(true);
+    expect(isDestructiveTool('manage_status_page')).toBe(true);
+  });
 });
