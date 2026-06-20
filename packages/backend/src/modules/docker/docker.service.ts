@@ -11,6 +11,7 @@ import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import type { NodeRegistryService } from '@/services/node-registry.service.js';
 import type { DockerDeploymentService } from './docker-deployment.service.js';
 import { DOCKER_DEPLOYMENT_MANAGED_LABEL } from './docker-deployment.service.js';
+import { getContainerEnv as getDockerContainerEnv, normalizeEnvRecord } from './docker-env-operations.js';
 import type { DockerEnvironmentService } from './docker-environment.service.js';
 import type { DockerFolderService } from './docker-folder.service.js';
 import type { DockerHealthCheckService } from './docker-health-check.service.js';
@@ -231,6 +232,15 @@ export class DockerManagementService {
     return {
       nodeDispatch: this.nodeDispatch,
       auditService: this.auditService,
+      parseResult: (result: { success: boolean; error?: string; detail?: string }) => this.parseResult(result),
+    };
+  }
+
+  private envOperationContext() {
+    return {
+      nodeDispatch: this.nodeDispatch,
+      environmentService: this.environmentService,
+      secretService: this.secretService,
       parseResult: (result: { success: boolean; error?: string; detail?: string }) => this.parseResult(result),
     };
   }
@@ -838,7 +848,7 @@ export class DockerManagementService {
     const createdName = (requestedName || data?.name || data?.Name || '') as string;
     const newId = (data?.Id ?? data?.id ?? '') as string;
     if (createdName && this.environmentService) {
-      const env = this.normalizeEnvRecord(config.env);
+      const env = normalizeEnvRecord(config.env);
       if (env) {
         await this.environmentService.replace(nodeId, createdName, env);
       }
@@ -1141,13 +1151,13 @@ export class DockerManagementService {
     if (this.environmentService) {
       const storedEnv = await this.environmentService.getDecryptedMap(nodeId, name);
       if (Object.keys(storedEnv).length > 0) {
-        config.env = { ...storedEnv, ...(this.normalizeEnvRecord(config.env) || {}) };
+        config.env = { ...storedEnv, ...(normalizeEnvRecord(config.env) || {}) };
       }
     }
     if (this.secretService) {
       const secrets = await this.secretService.getDecryptedMap(nodeId, name);
       if (Object.keys(secrets).length > 0) {
-        config.env = { ...(this.normalizeEnvRecord(config.env) || {}), ...secrets };
+        config.env = { ...(normalizeEnvRecord(config.env) || {}), ...secrets };
       }
     }
     config = await this.applyPersistedRuntimeSettingsToConfig(nodeId, name, config);
@@ -1196,35 +1206,7 @@ export class DockerManagementService {
   async getContainerEnv(nodeId: string, containerId: string) {
     await this.validateDockerNode(nodeId);
     await this.assertNotManagedDeploymentInternal(nodeId, containerId);
-    const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'inspect', { containerId });
-    const inspect = this.parseResult(result);
-    const allEnv: string[] = inspect?.Config?.Env || [];
-    const name = (inspect?.Name ?? '').replace(/^\//, '');
-
-    // Strip secret keys from the env array so they only appear in the secrets section
-    let visibleEnv = allEnv;
-    if (this.secretService) {
-      if (name) {
-        const secretKeys = await this.secretService.getSecretKeys(nodeId, name);
-        if (secretKeys.size > 0) {
-          visibleEnv = allEnv.filter((entry) => {
-            const key = entry.split('=')[0];
-            return !secretKeys.has(key);
-          });
-        }
-      }
-    }
-
-    if (this.environmentService && name) {
-      const storedEnv = await this.environmentService.getDecryptedMap(nodeId, name);
-      if (Object.keys(storedEnv).length > 0) {
-        return this.envMapToList(storedEnv);
-      }
-
-      await this.environmentService.seedFromRuntimeIfMissing(nodeId, name, this.envListToMap(visibleEnv));
-    }
-
-    return visibleEnv;
+    return getDockerContainerEnv(this.envOperationContext(), nodeId, containerId);
   }
 
   async liveUpdateContainer(nodeId: string, containerId: string, config: Record<string, unknown>, userId: string) {
@@ -1468,35 +1450,6 @@ export class DockerManagementService {
     });
 
     return data;
-  }
-
-  private normalizeEnvRecord(value: unknown): Record<string, string> | undefined {
-    if (!value || typeof value !== 'object') {
-      return undefined;
-    }
-
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>)
-        .filter(([key]) => key.trim().length > 0)
-        .map(([key, entryValue]) => [key, String(entryValue ?? '')])
-    );
-  }
-
-  private envListToMap(entries: string[]): Record<string, string> {
-    const env: Record<string, string> = {};
-    for (const entry of entries) {
-      const idx = entry.indexOf('=');
-      if (idx === -1) {
-        env[entry] = '';
-      } else {
-        env[entry.slice(0, idx)] = entry.slice(idx + 1);
-      }
-    }
-    return env;
-  }
-
-  private envMapToList(env: Record<string, string>): string[] {
-    return Object.entries(env).map(([key, value]) => `${key}=${value}`);
   }
 
   // ─── Image operations ──────────────────────────────────────────────
