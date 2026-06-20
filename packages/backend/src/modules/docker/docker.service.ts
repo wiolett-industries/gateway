@@ -16,6 +16,12 @@ import type { DockerEnvironmentService } from './docker-environment.service.js';
 import type { DockerFolderService } from './docker-folder.service.js';
 import type { DockerHealthCheckService } from './docker-health-check.service.js';
 import type { DockerImageCleanupService } from './docker-image-cleanup.service.js';
+import {
+  listImages as listDockerImages,
+  pruneImages as pruneDockerImages,
+  pullImage as pullDockerImage,
+  removeImage as removeDockerImage,
+} from './docker-image-operations.js';
 import { dockerDispatchErrorMessage, getReplacementContainerFailureMessage } from './docker-recreate-watch.js';
 import type { DockerRegistryAuthCandidate, DockerRegistryService } from './docker-registry.service.js';
 import { applyRuntimeSettingsToInspect } from './docker-runtime-inspect.js';
@@ -181,8 +187,18 @@ export class DockerManagementService {
     }
   }
 
-  private emitImage(nodeId: string, ref: string, action: 'pulled' | 'removed' | 'pruned') {
-    this.eventBus?.publish('docker.image.changed', { nodeId, ref, action });
+  private imageOperationContext() {
+    return {
+      nodeDispatch: this.nodeDispatch,
+      auditService: this.auditService,
+      taskService: this.taskService,
+      registryService: this.registryService,
+      eventBus: this.eventBus,
+      parseResult: (result: { success: boolean; error?: string; detail?: string }) => this.parseResult(result),
+      createTask: (nodeId: string, containerId: string, containerName: string, type: string) =>
+        this.createTask(nodeId, containerId, containerName, type),
+      longDockerOperationTimeoutMs: DockerManagementService.LONG_DOCKER_OPERATION_TIMEOUT_MS,
+    };
   }
 
   private emitVolume(nodeId: string, name: string, action: 'created' | 'removed' | 'pruned') {
@@ -1466,96 +1482,22 @@ export class DockerManagementService {
 
   async listImages(nodeId: string) {
     await this.validateDockerNode(nodeId);
-    const result = await this.nodeDispatch.sendDockerImageCommand(nodeId, 'list');
-    return this.parseResult(result);
+    return listDockerImages(this.imageOperationContext(), nodeId);
   }
 
   async pullImage(nodeId: string, imageRef: string, registryAuth?: string, userId?: string, registryId?: string) {
     await this.validateDockerNode(nodeId);
-
-    // Create a task and pull in background (non-blocking)
-    const task = await this.createTask(nodeId, '', imageRef, 'pull');
-    if (userId) {
-      await this.auditService.log({
-        action: 'docker.image.pull',
-        userId,
-        resourceType: 'docker-image',
-        details: { nodeId, imageRef },
-      });
-    }
-
-    // Fire pull in background
-    this.nodeDispatch
-      .sendDockerImageCommand(
-        nodeId,
-        'pull',
-        { imageRef, registryAuthJson: registryAuth },
-        DockerManagementService.LONG_DOCKER_OPERATION_TIMEOUT_MS
-      )
-      .then(async (result) => {
-        try {
-          this.parseResult(result);
-        } catch (err) {
-          if (task?.id && this.taskService) {
-            this.taskService
-              .update(task.id, {
-                status: 'failed',
-                error: err instanceof Error ? err.message : 'Pull failed',
-                completedAt: new Date(),
-              })
-              .catch(() => {});
-          }
-          return;
-        }
-        if (task?.id && this.taskService) {
-          this.taskService
-            .update(task.id, { status: 'succeeded', progress: `Pulled ${imageRef}`, completedAt: new Date() })
-            .catch(() => {});
-        }
-        await this.registryService?.rememberImageRegistry?.(nodeId, imageRef, registryId);
-        this.emitImage(nodeId, imageRef, 'pulled');
-      })
-      .catch((err) => {
-        if (task?.id && this.taskService) {
-          this.taskService
-            .update(task.id, {
-              status: 'failed',
-              error: err instanceof Error ? err.message : 'Pull failed',
-              completedAt: new Date(),
-            })
-            .catch(() => {});
-        }
-      });
-
-    return { taskId: task?.id, message: `Pulling ${imageRef}...` };
+    return pullDockerImage(this.imageOperationContext(), nodeId, imageRef, registryAuth, userId, registryId);
   }
 
   async removeImage(nodeId: string, imageId: string, force: boolean, userId: string) {
     await this.validateDockerNode(nodeId);
-    const result = await this.nodeDispatch.sendDockerImageCommand(nodeId, 'remove', { imageRef: imageId, force });
-    this.parseResult(result);
-    await this.auditService.log({
-      action: 'docker.image.remove',
-      userId,
-      resourceType: 'docker-image',
-      resourceId: imageId,
-      details: { nodeId },
-    });
-    this.emitImage(nodeId, imageId, 'removed');
+    await removeDockerImage(this.imageOperationContext(), nodeId, imageId, force, userId);
   }
 
   async pruneImages(nodeId: string, userId: string) {
     await this.validateDockerNode(nodeId);
-    const result = await this.nodeDispatch.sendDockerImageCommand(nodeId, 'prune');
-    const data = this.parseResult(result);
-    await this.auditService.log({
-      action: 'docker.image.prune',
-      userId,
-      resourceType: 'docker-image',
-      details: { nodeId },
-    });
-    this.emitImage(nodeId, '*', 'pruned');
-    return data;
+    return pruneDockerImages(this.imageOperationContext(), nodeId, userId);
   }
 
   // ─── Volume operations ─────────────────────────────────────────────
