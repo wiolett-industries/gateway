@@ -1,0 +1,560 @@
+import { RotateCcw } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
+import { DockerHealthCheckSection } from "@/components/docker/DockerHealthCheckSection";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { stripRegistryHostFromImageName } from "@/lib/docker-image-ref";
+import {
+  type DockerRuntimeCapacity,
+  loadDockerRuntimeCapacity,
+  UNKNOWN_DOCKER_RUNTIME_CAPACITY,
+} from "@/lib/docker-runtime-capacity";
+import { api } from "@/services/api";
+import type { DockerDeployment, DockerHealthCheck, DockerWebhook } from "@/types";
+import { formatBytes } from "../docker-detail/helpers";
+import { LabelsSection } from "../docker-detail/LabelsSection";
+import { type PortMapping, PortMappingsSection } from "../docker-detail/PortMappingsSection";
+import { RuntimeSection } from "../docker-detail/RuntimeSection";
+import { WebhookSection } from "../docker-detail/SettingsTab";
+import { type MountEntry, VolumeMountsSection } from "../docker-detail/VolumeMountsSection";
+
+function splitImageRef(imageRef: string) {
+  const digestIndex = imageRef.indexOf("@");
+  if (digestIndex >= 0) {
+    return { imageName: imageRef, tag: "" };
+  }
+
+  const lastColon = imageRef.lastIndexOf(":");
+  const lastSlash = imageRef.lastIndexOf("/");
+  if (lastColon === -1 || lastSlash > lastColon) {
+    return { imageName: imageRef, tag: "" };
+  }
+
+  return { imageName: imageRef.slice(0, lastColon), tag: imageRef.slice(lastColon + 1) };
+}
+
+function joinImageRef(imageName: string, tag: string) {
+  return tag.trim() ? `${imageName}:${tag.trim()}` : imageName;
+}
+
+function parseOptionalNumber(value: string): number | null {
+  if (value.trim() === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : Number.NaN;
+}
+
+function normalizeMounts(mounts: unknown): MountEntry[] {
+  if (!Array.isArray(mounts)) return [];
+  return mounts.map((mount) => {
+    const value = mount as Partial<MountEntry>;
+    return {
+      hostPath: value.hostPath ?? "",
+      containerPath: value.containerPath ?? "",
+      name: value.name ?? "",
+      readOnly: value.readOnly ?? false,
+    };
+  });
+}
+
+function normalizeLabels(labels: unknown): Array<{ key: string; value: string }> {
+  return Object.entries((labels ?? {}) as Record<string, string>).map(([key, value]) => ({
+    key,
+    value,
+  }));
+}
+
+export function DeploymentSettings({
+  deployment,
+  nodeId,
+  action,
+  webhook,
+  setWebhook,
+  onHealthCheckSaved,
+  canEditMounts,
+  canManageWebhooks,
+  runAction,
+}: {
+  deployment: DockerDeployment;
+  nodeId: string;
+  action: string | null;
+  webhook: DockerWebhook | null;
+  setWebhook: (webhook: DockerWebhook | null) => void;
+  onHealthCheckSaved: (healthCheck: DockerHealthCheck) => void;
+  canEditMounts: boolean;
+  canManageWebhooks: boolean;
+  runAction: (name: string, fn: () => Promise<void>) => Promise<void>;
+}) {
+  const initialEntrypoint = useMemo(
+    () => ((deployment.desiredConfig as any).entrypoint ?? []).join(" "),
+    [deployment.desiredConfig]
+  );
+  const initialCommand = useMemo(
+    () => ((deployment.desiredConfig as any).command ?? []).join(" "),
+    [deployment.desiredConfig]
+  );
+  const initialWorkingDir = (deployment.desiredConfig as any).workingDir ?? "";
+  const initialUser = (deployment.desiredConfig as any).user ?? "";
+  const initialPorts = useMemo(
+    () =>
+      deployment.routes.map((route) => ({
+        hostPort: String(route.hostPort),
+        containerPort: String(route.containerPort),
+        protocol: "tcp" as const,
+      })),
+    [deployment.routes]
+  );
+  const initialReadinessRouteIndex = useMemo(() => {
+    const index = deployment.routes.findIndex((route) => route.isPrimary);
+    return index >= 0 ? index : 0;
+  }, [deployment.routes]);
+  const initialMounts = useMemo(
+    () => normalizeMounts((deployment.desiredConfig as any).mounts),
+    [deployment.desiredConfig]
+  );
+  const initialLabels = useMemo(
+    () => normalizeLabels((deployment.desiredConfig as any).labels),
+    [deployment.desiredConfig]
+  );
+  const runtime = ((deployment.desiredConfig as any).runtime ?? {}) as Record<string, any>;
+  const desiredImageParts = useMemo(
+    () => splitImageRef(deployment.desiredConfig.image),
+    [deployment.desiredConfig.image]
+  );
+  const deploymentBaseline = useMemo(
+    () => ({
+      imageName: desiredImageParts.imageName,
+      imageTag: desiredImageParts.tag,
+      entrypoint: initialEntrypoint,
+      command: initialCommand,
+      workingDir: initialWorkingDir,
+      user: initialUser,
+      ports: JSON.stringify(initialPorts),
+      readinessRouteIndex: initialReadinessRouteIndex,
+      mounts: JSON.stringify(initialMounts),
+      labels: JSON.stringify(initialLabels),
+      restartPolicy: deployment.desiredConfig.restartPolicy ?? "unless-stopped",
+      maxRetries: String(runtime.maxRetries ?? 0),
+      memoryMB: runtime.memoryMB ? String(runtime.memoryMB) : "",
+      memSwapMB: runtime.memSwapMB ? String(runtime.memSwapMB) : "",
+      cpuCount: runtime.cpuCount ? String(runtime.cpuCount) : "",
+      cpuShares: runtime.cpuShares ? String(runtime.cpuShares) : "",
+      pidsLimit: runtime.pidsLimit ? String(runtime.pidsLimit) : "",
+      drainSeconds: String(deployment.drainSeconds),
+    }),
+    [
+      deployment.desiredConfig.restartPolicy,
+      deployment.drainSeconds,
+      desiredImageParts.imageName,
+      desiredImageParts.tag,
+      initialCommand,
+      initialEntrypoint,
+      initialLabels,
+      initialMounts,
+      initialPorts,
+      initialReadinessRouteIndex,
+      initialUser,
+      initialWorkingDir,
+      runtime.cpuCount,
+      runtime.cpuShares,
+      runtime.maxRetries,
+      runtime.memSwapMB,
+      runtime.memoryMB,
+      runtime.pidsLimit,
+    ]
+  );
+  const [imageTag, setImageTag] = useState(desiredImageParts.tag);
+  const [entrypoint, setEntrypoint] = useState(initialEntrypoint);
+  const [command, setCommand] = useState(initialCommand);
+  const [workingDir, setWorkingDir] = useState(initialWorkingDir);
+  const [user, setUser] = useState(initialUser);
+  const [ports, setPorts] = useState<PortMapping[]>(initialPorts);
+  const [readinessRouteIndex, setReadinessRouteIndex] = useState(initialReadinessRouteIndex);
+  const [mounts, setMounts] = useState<MountEntry[]>(initialMounts);
+  const [labels, setLabels] = useState<Array<{ key: string; value: string }>>(initialLabels);
+  const [restartPolicy, setRestartPolicy] = useState(
+    deployment.desiredConfig.restartPolicy ?? "unless-stopped"
+  );
+  const [maxRetries, setMaxRetries] = useState(String(runtime.maxRetries ?? 0));
+  const [memoryMB, setMemoryMB] = useState(runtime.memoryMB ? String(runtime.memoryMB) : "");
+  const [memSwapMB, setMemSwapMB] = useState(runtime.memSwapMB ? String(runtime.memSwapMB) : "");
+  const [cpuCount, setCpuCount] = useState(runtime.cpuCount ? String(runtime.cpuCount) : "");
+  const [cpuShares, setCpuShares] = useState(runtime.cpuShares ? String(runtime.cpuShares) : "");
+  const [pidsLimit, setPidsLimit] = useState(runtime.pidsLimit ? String(runtime.pidsLimit) : "");
+  const [drainSeconds, setDrainSeconds] = useState(String(deployment.drainSeconds));
+  const [runtimeCapacity, setRuntimeCapacity] = useState<DockerRuntimeCapacity>(
+    UNKNOWN_DOCKER_RUNTIME_CAPACITY
+  );
+  const previousDeploymentBaselineRef = useRef(deploymentBaseline);
+  const inputCell =
+    "h-9 text-xs font-mono border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring";
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadDockerRuntimeCapacity(nodeId).then((capacity) => {
+      if (!cancelled) setRuntimeCapacity(capacity);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [nodeId]);
+
+  useEffect(() => {
+    const previous = previousDeploymentBaselineRef.current;
+    const formMatchesPrevious =
+      imageTag === previous.imageTag &&
+      entrypoint === previous.entrypoint &&
+      command === previous.command &&
+      workingDir === previous.workingDir &&
+      user === previous.user &&
+      JSON.stringify(ports) === previous.ports &&
+      readinessRouteIndex === previous.readinessRouteIndex &&
+      JSON.stringify(mounts) === previous.mounts &&
+      JSON.stringify(labels) === previous.labels &&
+      restartPolicy === previous.restartPolicy &&
+      maxRetries === previous.maxRetries &&
+      memoryMB === previous.memoryMB &&
+      memSwapMB === previous.memSwapMB &&
+      cpuCount === previous.cpuCount &&
+      cpuShares === previous.cpuShares &&
+      pidsLimit === previous.pidsLimit &&
+      drainSeconds === previous.drainSeconds;
+
+    previousDeploymentBaselineRef.current = deploymentBaseline;
+
+    if (!formMatchesPrevious) return;
+    setImageTag(deploymentBaseline.imageTag);
+    setEntrypoint(deploymentBaseline.entrypoint);
+    setCommand(deploymentBaseline.command);
+    setWorkingDir(deploymentBaseline.workingDir);
+    setUser(deploymentBaseline.user);
+    setPorts(initialPorts);
+    setReadinessRouteIndex(deploymentBaseline.readinessRouteIndex);
+    setMounts(initialMounts);
+    setLabels(initialLabels);
+    setRestartPolicy(deploymentBaseline.restartPolicy);
+    setMaxRetries(deploymentBaseline.maxRetries);
+    setMemoryMB(deploymentBaseline.memoryMB);
+    setMemSwapMB(deploymentBaseline.memSwapMB);
+    setCpuCount(deploymentBaseline.cpuCount);
+    setCpuShares(deploymentBaseline.cpuShares);
+    setPidsLimit(deploymentBaseline.pidsLimit);
+    setDrainSeconds(deploymentBaseline.drainSeconds);
+  }, [
+    command,
+    cpuCount,
+    cpuShares,
+    deploymentBaseline,
+    drainSeconds,
+    entrypoint,
+    imageTag,
+    initialLabels,
+    initialMounts,
+    initialPorts,
+    labels,
+    maxRetries,
+    memoryMB,
+    memSwapMB,
+    mounts,
+    pidsLimit,
+    ports,
+    readinessRouteIndex,
+    restartPolicy,
+    user,
+    workingDir,
+  ]);
+
+  const nextImage = joinImageRef(deploymentBaseline.imageName, imageTag);
+  const imageTagLocked = deploymentBaseline.imageName.includes("@");
+  const executionChanged =
+    nextImage !== deployment.desiredConfig.image ||
+    entrypoint !== initialEntrypoint ||
+    command !== initialCommand ||
+    workingDir !== initialWorkingDir ||
+    user !== initialUser;
+  const portsChanged = JSON.stringify(ports) !== JSON.stringify(initialPorts);
+  const selectedReadinessRouteIndex =
+    ports.length > 0 ? Math.min(readinessRouteIndex, ports.length - 1) : 0;
+  const mountsChanged = JSON.stringify(mounts) !== JSON.stringify(initialMounts);
+  const labelsChanged = JSON.stringify(labels) !== JSON.stringify(initialLabels);
+  const drainChanged = drainSeconds !== String(deployment.drainSeconds);
+  const settingsChanged =
+    executionChanged || portsChanged || mountsChanged || labelsChanged || drainChanged;
+  const executionCardChanged = executionChanged || drainChanged;
+  const runtimeChanged =
+    restartPolicy !== (deployment.desiredConfig.restartPolicy ?? "unless-stopped") ||
+    maxRetries !== String(runtime.maxRetries ?? 0) ||
+    memoryMB !== (runtime.memoryMB ? String(runtime.memoryMB) : "") ||
+    memSwapMB !== (runtime.memSwapMB ? String(runtime.memSwapMB) : "") ||
+    cpuCount !== (runtime.cpuCount ? String(runtime.cpuCount) : "") ||
+    cpuShares !== (runtime.cpuShares ? String(runtime.cpuShares) : "") ||
+    pidsLimit !== (runtime.pidsLimit ? String(runtime.pidsLimit) : "");
+
+  const runtimeValidationError = useMemo(() => {
+    const parsedMemoryMB = parseOptionalNumber(memoryMB);
+    if (Number.isNaN(parsedMemoryMB) || (parsedMemoryMB !== null && parsedMemoryMB < 0)) {
+      return "Memory limit must be a non-negative number.";
+    }
+
+    const parsedSwapMB = memSwapMB === "-1" ? -1 : parseOptionalNumber(memSwapMB);
+    if (
+      Number.isNaN(parsedSwapMB) ||
+      (parsedSwapMB !== null && parsedSwapMB !== -1 && parsedSwapMB < 0)
+    ) {
+      return "Swap must be -1 or a non-negative number.";
+    }
+
+    const parsedCpuCount = parseOptionalNumber(cpuCount);
+    if (Number.isNaN(parsedCpuCount) || (parsedCpuCount !== null && parsedCpuCount < 0)) {
+      return "CPU limit must be a non-negative number.";
+    }
+
+    if ((parsedSwapMB === -1 || (parsedSwapMB ?? 0) > 0) && !parsedMemoryMB) {
+      return "Set a memory limit before configuring swap.";
+    }
+
+    const maxMemoryMB =
+      runtimeCapacity.maxMemoryBytes && runtimeCapacity.maxMemoryBytes > 0
+        ? runtimeCapacity.maxMemoryBytes / 1048576
+        : null;
+    if (maxMemoryMB && parsedMemoryMB !== null && parsedMemoryMB > maxMemoryMB) {
+      return `Memory limit cannot exceed node memory (${formatBytes(runtimeCapacity.maxMemoryBytes ?? 0)}).`;
+    }
+
+    const maxSwapMB =
+      runtimeCapacity.maxSwapBytes !== null && runtimeCapacity.maxSwapBytes >= 0
+        ? runtimeCapacity.maxSwapBytes / 1048576
+        : null;
+    if (
+      maxSwapMB !== null &&
+      parsedSwapMB !== null &&
+      parsedSwapMB !== -1 &&
+      parsedSwapMB > maxSwapMB
+    ) {
+      return `Swap cannot exceed node swap (${formatBytes(runtimeCapacity.maxSwapBytes ?? 0)}).`;
+    }
+
+    if (
+      runtimeCapacity.maxCpuCount &&
+      parsedCpuCount !== null &&
+      parsedCpuCount > runtimeCapacity.maxCpuCount
+    ) {
+      return `CPU limit cannot exceed node CPU capacity (${runtimeCapacity.maxCpuCount} cores).`;
+    }
+
+    return null;
+  }, [cpuCount, memSwapMB, memoryMB, runtimeCapacity]);
+
+  return (
+    <div className="space-y-6 pb-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <RuntimeSection
+          canEdit
+          appliesLive={false}
+          restartPolicy={restartPolicy}
+          setRestartPolicy={setRestartPolicy}
+          maxRetries={maxRetries}
+          setMaxRetries={setMaxRetries}
+          memoryMB={memoryMB}
+          setMemoryMB={setMemoryMB}
+          memSwapMB={memSwapMB}
+          setMemSwapMB={setMemSwapMB}
+          cpuCount={cpuCount}
+          setCpuCount={setCpuCount}
+          cpuShares={cpuShares}
+          setCpuShares={setCpuShares}
+          pidsLimit={pidsLimit}
+          setPidsLimit={setPidsLimit}
+          maxMemoryBytes={runtimeCapacity.maxMemoryBytes}
+          maxSwapBytes={runtimeCapacity.maxSwapBytes}
+          maxCpuCount={runtimeCapacity.maxCpuCount}
+          runtimeValidationError={runtimeValidationError}
+          hasRuntimeChanges={runtimeChanged}
+          liveLoading={!!action}
+          onApply={() =>
+            runAction("update-runtime", async () => {
+              await api.updateDockerDeployment(nodeId, deployment.id, {
+                desiredConfig: {
+                  restartPolicy,
+                  runtime: { maxRetries, memoryMB, memSwapMB, cpuCount, cpuShares, pidsLimit },
+                },
+              });
+              toast.success("Runtime settings updated");
+            })
+          }
+        />
+
+        <div
+          className="border bg-card overflow-hidden"
+          style={executionCardChanged ? { borderColor: "rgb(234 179 8)" } : undefined}
+        >
+          <div className="flex items-center justify-between border-b border-border px-4 py-3">
+            <div>
+              <h3 className="text-sm font-semibold">Execution</h3>
+              <p className="text-xs text-muted-foreground">Saved to deployment configuration</p>
+            </div>
+            <Button
+              size="sm"
+              style={{ backgroundColor: "rgb(234 179 8)", color: "#111" }}
+              className="hover:opacity-90 disabled:opacity-50"
+              disabled={!!action || !settingsChanged || !nextImage.trim()}
+              onClick={() =>
+                runAction("update-execution", async () => {
+                  const labelMap: Record<string, string> = {};
+                  for (const label of labels) {
+                    if (label.key.trim()) labelMap[label.key.trim()] = label.value;
+                  }
+                  await api.updateDockerDeployment(nodeId, deployment.id, {
+                    desiredConfig: {
+                      image: nextImage,
+                      entrypoint: entrypoint.trim() ? entrypoint.trim().split(/\s+/) : [],
+                      command: command.trim() ? command.trim().split(/\s+/) : [],
+                      workingDir,
+                      user,
+                      mounts,
+                      labels: labelMap,
+                    },
+                    routes: ports
+                      .filter((port) => port.hostPort && port.containerPort)
+                      .map((port, index) => ({
+                        hostPort: Number(port.hostPort),
+                        containerPort: Number(port.containerPort),
+                        isPrimary: index === selectedReadinessRouteIndex,
+                      })),
+                    drainSeconds: Number(drainSeconds),
+                  });
+                  toast.success("Service configuration updated");
+                })
+              }
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              Save
+            </Button>
+          </div>
+          <div className="p-4 space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Image</label>
+                <Input
+                  className="h-8 text-xs font-mono bg-muted/50"
+                  value={stripRegistryHostFromImageName(deploymentBaseline.imageName)}
+                  disabled
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Tag</label>
+                <Input
+                  className="h-8 text-xs font-mono"
+                  value={imageTag}
+                  onChange={(e) => setImageTag(e.target.value)}
+                  placeholder={imageTagLocked ? "digest" : "latest"}
+                  disabled={imageTagLocked}
+                  style={
+                    nextImage !== deployment.desiredConfig.image
+                      ? { borderColor: "rgb(234 179 8)" }
+                      : undefined
+                  }
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Drain Seconds</label>
+                <Input
+                  className="h-8 text-xs"
+                  inputMode="numeric"
+                  value={drainSeconds}
+                  onChange={(event) => setDrainSeconds(event.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Entrypoint</label>
+                <Input
+                  className="h-8 text-xs font-mono"
+                  value={entrypoint}
+                  onChange={(e) => setEntrypoint(e.target.value)}
+                  placeholder="/docker-entrypoint.sh"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">
+                  Working Directory
+                </label>
+                <Input
+                  className="h-8 text-xs font-mono"
+                  value={workingDir}
+                  onChange={(e) => setWorkingDir(e.target.value)}
+                  placeholder="/app"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">User</label>
+                <Input
+                  className="h-8 text-xs font-mono"
+                  value={user}
+                  onChange={(e) => setUser(e.target.value)}
+                  placeholder="root"
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Command</label>
+              <Input
+                className="h-8 text-xs font-mono"
+                value={command}
+                onChange={(e) => setCommand(e.target.value)}
+                placeholder="nginx -g daemon off;"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <PortMappingsSection
+        canEdit
+        ports={ports}
+        setPorts={setPorts}
+        portsChanged={portsChanged}
+        inputCell={inputCell}
+        showProtocol={false}
+      />
+
+      <VolumeMountsSection
+        canEdit={canEditMounts}
+        mounts={mounts}
+        setMounts={setMounts}
+        mountsChanged={mountsChanged}
+        inputCell={inputCell}
+      />
+
+      <LabelsSection
+        canEdit
+        labels={labels}
+        setLabels={setLabels}
+        labelsChanged={labelsChanged}
+        inputCell={inputCell}
+      />
+
+      <DockerHealthCheckSection
+        nodeId={nodeId}
+        target="deployment"
+        deploymentId={deployment.id}
+        initialHealthCheck={deployment.healthCheck ?? null}
+        disabled={!!action}
+        onSaved={onHealthCheckSaved}
+      />
+
+      <WebhookSection
+        nodeId={nodeId}
+        target="deployment"
+        deploymentId={deployment.id}
+        initialWebhook={webhook}
+        onWebhookChange={setWebhook}
+        disabled={!!action}
+        allowWebhook={canManageWebhooks}
+        allowCleanup
+      />
+    </div>
+  );
+}
