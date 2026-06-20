@@ -12,6 +12,11 @@ function notificationToolNamesForScopes(scopes: string[]): string[] {
   return toolNames(scopes).filter((name) => notificationToolNames.has(name));
 }
 
+function databaseToolNamesForScopes(scopes: string[]): string[] {
+  const databaseToolNames = new Set(AI_TOOLS.filter((tool) => tool.category === 'Databases').map((tool) => tool.name));
+  return toolNames(scopes).filter((name) => databaseToolNames.has(name));
+}
+
 describe('AI tool scope filtering', () => {
   it('requires direct database view before advertising database query tools', () => {
     expect(toolNames(['databases:query:read:db-1'])).not.toContain('query_postgres_read');
@@ -65,5 +70,42 @@ describe('AI tool scope filtering', () => {
     expect(toolNames(['logs:read'])).toContain('manage_logging');
     expect(isDestructiveTool('manage_logging')).toBe(true);
     expect(isDestructiveTool('manage_status_page')).toBe(true);
+  });
+
+  it('keeps database tool registry contracts stable', () => {
+    const databaseToolNames = AI_TOOLS.filter((tool) => tool.category === 'Databases').map((tool) => tool.name);
+
+    expect(databaseToolNames).toEqual([
+      'list_databases',
+      'get_database_connection',
+      'query_postgres_read',
+      'execute_postgres_sql',
+      'browse_redis_keys',
+      'get_redis_key',
+      'set_redis_key',
+      'execute_redis_command',
+      'manage_database_connection',
+      'manage_postgres_data',
+      'manage_redis_data',
+    ]);
+    expect(databaseToolNamesForScopes(['databases:view'])).toEqual([
+      'list_databases',
+      'get_database_connection',
+      'manage_database_connection',
+    ]);
+    expect(databaseToolNamesForScopes(['databases:view', 'databases:query:read'])).toEqual([
+      'list_databases',
+      'get_database_connection',
+      'query_postgres_read',
+      'execute_postgres_sql',
+      'browse_redis_keys',
+      'get_redis_key',
+      'manage_database_connection',
+      'manage_postgres_data',
+      'manage_redis_data',
+    ]);
+    expect(isDestructiveTool('query_postgres_read')).toBe(false);
+    expect(isDestructiveTool('execute_postgres_sql')).toBe(true);
+    expect(isDestructiveTool('manage_database_connection')).toBe(true);
   });
 });
