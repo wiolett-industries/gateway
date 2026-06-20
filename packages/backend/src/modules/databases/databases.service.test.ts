@@ -259,3 +259,104 @@ describe('DatabaseConnectionService.executeRedisCommand', () => {
     expect(log).toHaveBeenCalledWith(expect.objectContaining({ action: 'database.redis.command.execute' }));
   });
 });
+
+describe('DatabaseConnectionService connection views', () => {
+  function encryptedConfig(config: Record<string, unknown>) {
+    return JSON.stringify({ payload: JSON.stringify(config) });
+  }
+
+  function createService(row: Record<string, unknown>) {
+    const db = {
+      query: {
+        databaseConnections: {
+          findFirst: vi.fn().mockResolvedValue(row),
+        },
+      },
+    };
+    const cryptoService = {
+      decryptString: vi.fn((payload: { payload: string }) => payload.payload),
+      encryptString: vi.fn((value: string) => ({ payload: value })),
+    };
+    return new DatabaseConnectionService(db as never, { log: vi.fn() } as never, cryptoService as never);
+  }
+
+  it('masks stored database credentials in normal connection views', async () => {
+    const service = createService({
+      id: 'db-1',
+      name: 'Production Postgres',
+      type: 'postgres',
+      description: null,
+      tags: ['prod'],
+      manualSizeLimitMb: 1024,
+      host: 'db.example.com',
+      port: 5432,
+      databaseName: 'app',
+      username: 'app_user',
+      tlsEnabled: true,
+      encryptedConfig: encryptedConfig({
+        type: 'postgres',
+        host: 'db.example.com',
+        port: 5432,
+        database: 'app',
+        username: 'app_user',
+        password: 'secret-password',
+        sslEnabled: true,
+      }),
+      healthStatus: 'online',
+      lastHealthCheckAt: new Date('2026-06-21T10:00:00.000Z'),
+      lastError: null,
+      healthHistory: null,
+      createdById: 'user-1',
+      updatedById: null,
+      createdAt: new Date('2026-06-20T10:00:00.000Z'),
+      updatedAt: new Date('2026-06-21T10:00:00.000Z'),
+    });
+
+    await expect(service.get('db-1')).resolves.toMatchObject({
+      id: 'db-1',
+      hasStoredPassword: true,
+      config: {
+        password: '••••••••',
+        sslEnabled: true,
+      },
+    });
+  });
+
+  it('reveals credentials with an encoded Postgres connection string', async () => {
+    const service = createService({
+      id: 'db-1',
+      name: 'Production Postgres',
+      type: 'postgres',
+      description: null,
+      tags: [],
+      manualSizeLimitMb: null,
+      host: 'db.example.com',
+      port: 5432,
+      databaseName: 'app db',
+      username: 'app user',
+      tlsEnabled: true,
+      encryptedConfig: encryptedConfig({
+        type: 'postgres',
+        host: 'db.example.com',
+        port: 5432,
+        database: 'app db',
+        username: 'app user',
+        password: 'p@ss word',
+        sslEnabled: true,
+      }),
+      healthStatus: 'online',
+      lastHealthCheckAt: null,
+      lastError: null,
+      healthHistory: [],
+      createdById: 'user-1',
+      updatedById: null,
+      createdAt: new Date('2026-06-20T10:00:00.000Z'),
+      updatedAt: new Date('2026-06-21T10:00:00.000Z'),
+    });
+
+    await expect(service.revealCredentials('db-1')).resolves.toMatchObject({
+      password: 'p@ss word',
+      connectionString: 'postgresql://app%20user:p%40ss%20word@db.example.com:5432/app%20db?sslmode=require',
+    });
+  });
+});

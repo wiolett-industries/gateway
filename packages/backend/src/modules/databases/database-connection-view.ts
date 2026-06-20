@@ -1,0 +1,142 @@
+import { createHash } from 'node:crypto';
+import type { DatabaseHealthEntry } from '@/db/schema/index.js';
+import type { DatabaseType } from './database-error-mapping.js';
+
+export type DatabaseHealthStatus = 'online' | 'offline' | 'degraded' | 'unknown';
+
+export interface PostgresConnectionConfig {
+  type: 'postgres';
+  host: string;
+  port: number;
+  database: string;
+  username: string;
+  password: string;
+  sslEnabled: boolean;
+}
+
+export interface RedisConnectionConfig {
+  type: 'redis';
+  host: string;
+  port: number;
+  username: string | null;
+  password: string;
+  db: number;
+  tlsEnabled: boolean;
+}
+
+export type DatabaseConnectionConfig = PostgresConnectionConfig | RedisConnectionConfig;
+
+export interface DatabaseConnectionView {
+  id: string;
+  name: string;
+  type: DatabaseType;
+  description: string | null;
+  tags: string[];
+  manualSizeLimitMb: number | null;
+  host: string;
+  port: number;
+  databaseName: string | null;
+  username: string | null;
+  tlsEnabled: boolean;
+  healthStatus: DatabaseHealthStatus;
+  lastHealthCheckAt: string | null;
+  lastError: string | null;
+  healthHistory?: DatabaseHealthEntry[];
+  hasStoredPassword: boolean;
+  config: Record<string, unknown>;
+  createdById: string;
+  updatedById: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+type DatabaseConnectionRow = {
+  id: string;
+  name: string;
+  type: DatabaseType;
+  description: string | null;
+  tags: unknown;
+  manualSizeLimitMb: number | null;
+  host: string;
+  port: number;
+  databaseName: string | null;
+  username: string | null;
+  tlsEnabled: boolean;
+  healthStatus: DatabaseHealthStatus;
+  lastHealthCheckAt: Date | null;
+  lastError: string | null;
+  healthHistory: unknown;
+  createdById: string;
+  updatedById: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export function maskDatabaseCredential(value: string | null | undefined): string {
+  return value ? '••••••••' : '';
+}
+
+export function hashDatabasePreview(input: string): string {
+  return createHash('sha256').update(input).digest('hex').slice(0, 16);
+}
+
+export function buildDatabaseConnectionString(config: DatabaseConnectionConfig): string {
+  if (config.type === 'postgres') {
+    const protocol = 'postgresql';
+    const sslMode = config.sslEnabled ? '?sslmode=require' : '';
+    return `${protocol}://${encodeURIComponent(config.username)}:${encodeURIComponent(config.password)}@${config.host}:${config.port}/${encodeURIComponent(config.database)}${sslMode}`;
+  }
+  const protocol = config.tlsEnabled ? 'rediss' : 'redis';
+  const auth = config.username
+    ? `${encodeURIComponent(config.username)}:${encodeURIComponent(config.password)}`
+    : `:${encodeURIComponent(config.password)}`;
+  return `${protocol}://${auth}@${config.host}:${config.port}/${config.db}`;
+}
+
+export function toDatabaseConnectionView(
+  row: DatabaseConnectionRow,
+  config: DatabaseConnectionConfig,
+  revealCredentials: boolean,
+  includeHealthHistory = true
+): DatabaseConnectionView {
+  return {
+    id: row.id,
+    name: row.name,
+    type: row.type,
+    description: row.description,
+    tags: (row.tags as string[] | null) ?? [],
+    manualSizeLimitMb: row.manualSizeLimitMb,
+    host: row.host,
+    port: row.port,
+    databaseName: row.databaseName,
+    username: row.username,
+    tlsEnabled: row.tlsEnabled,
+    healthStatus: row.healthStatus,
+    lastHealthCheckAt: row.lastHealthCheckAt?.toISOString() ?? null,
+    lastError: row.lastError,
+    ...(includeHealthHistory ? { healthHistory: (row.healthHistory as DatabaseHealthEntry[] | null) ?? [] } : {}),
+    hasStoredPassword: !!config.password,
+    config:
+      config.type === 'postgres'
+        ? {
+            host: config.host,
+            port: config.port,
+            database: config.database,
+            username: config.username,
+            password: revealCredentials ? config.password : maskDatabaseCredential(config.password),
+            sslEnabled: config.sslEnabled,
+          }
+        : {
+            host: config.host,
+            port: config.port,
+            username: config.username,
+            password: revealCredentials ? config.password : maskDatabaseCredential(config.password),
+            db: config.db,
+            tlsEnabled: config.tlsEnabled,
+          },
+    createdById: row.createdById,
+    updatedById: row.updatedById,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}

@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { asc, count, eq, ilike, inArray, or, type SQL } from 'drizzle-orm';
 import Redis from 'ioredis';
 import pg from 'pg';
@@ -11,6 +10,16 @@ import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { CryptoService } from '@/services/crypto.service.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
 import type { PaginatedResponse } from '@/types.js';
+import {
+  buildDatabaseConnectionString,
+  type DatabaseConnectionConfig,
+  type DatabaseConnectionView,
+  type DatabaseHealthStatus,
+  hashDatabasePreview,
+  type PostgresConnectionConfig,
+  type RedisConnectionConfig,
+  toDatabaseConnectionView,
+} from './database-connection-view.js';
 import { type DatabaseOperation, type DatabaseType, mapDatabaseDriverError } from './database-error-mapping.js';
 import {
   inferPostgresIntent,
@@ -42,7 +51,13 @@ const POSTGRES_RESPONSE_MAX_BYTES = 768 * 1024;
 const REDIS_COMMAND_MAX_COUNT = 20;
 const REDIS_RESPONSE_MAX_BYTES = 512 * 1024;
 
-export type DatabaseHealthStatus = 'online' | 'offline' | 'degraded' | 'unknown';
+export type {
+  DatabaseConnectionConfig,
+  DatabaseConnectionView,
+  DatabaseHealthStatus,
+  PostgresConnectionConfig,
+  RedisConnectionConfig,
+} from './database-connection-view.js';
 export type { DatabaseOperation, DatabaseType } from './database-error-mapping.js';
 export { mapDatabaseDriverError } from './database-error-mapping.js';
 
@@ -52,52 +67,6 @@ interface PostgresRowSearchFilter {
   column: string;
   operation: PostgresRowSearchOperation;
   value: string;
-}
-
-export interface PostgresConnectionConfig {
-  type: 'postgres';
-  host: string;
-  port: number;
-  database: string;
-  username: string;
-  password: string;
-  sslEnabled: boolean;
-}
-
-export interface RedisConnectionConfig {
-  type: 'redis';
-  host: string;
-  port: number;
-  username: string | null;
-  password: string;
-  db: number;
-  tlsEnabled: boolean;
-}
-
-export type DatabaseConnectionConfig = PostgresConnectionConfig | RedisConnectionConfig;
-
-export interface DatabaseConnectionView {
-  id: string;
-  name: string;
-  type: DatabaseType;
-  description: string | null;
-  tags: string[];
-  manualSizeLimitMb: number | null;
-  host: string;
-  port: number;
-  databaseName: string | null;
-  username: string | null;
-  tlsEnabled: boolean;
-  healthStatus: DatabaseHealthStatus;
-  lastHealthCheckAt: string | null;
-  lastError: string | null;
-  healthHistory?: DatabaseHealthEntry[];
-  hasStoredPassword: boolean;
-  config: Record<string, unknown>;
-  createdById: string;
-  updatedById: string | null;
-  createdAt: string;
-  updatedAt: string;
 }
 
 const POSTGRES_COLUMN_TYPE_SQL = new Map<string, string>([
@@ -146,14 +115,6 @@ async function ensurePostgresBaseTable(pool: pg.Pool, schema: string, table: str
   if (tableType === 'VIEW') {
     throw new AppError(400, 'VIEW_NOT_EDITABLE', 'Columns cannot be changed for views');
   }
-}
-
-function maskValue(value: string | null | undefined): string {
-  return value ? '••••••••' : '';
-}
-
-function hashPreview(input: string): string {
-  return createHash('sha256').update(input).digest('hex').slice(0, 16);
 }
 
 export { inferPostgresIntent, inferRedisIntent } from './database-query-intent.js';
@@ -218,7 +179,9 @@ export class DatabaseConnectionService {
       this.db.select({ count: count() }).from(databaseConnections).where(where),
     ]);
 
-    const data = rows.map((row) => this.toView(row, this.decryptConfig(row.encryptedConfig), false, false));
+    const data = rows.map((row) =>
+      toDatabaseConnectionView(row, this.decryptConfig(row.encryptedConfig), false, false)
+    );
     const total = Number(totalCount);
     return {
       data,
@@ -233,7 +196,7 @@ export class DatabaseConnectionService {
 
   async get(id: string, revealCredentials = false): Promise<DatabaseConnectionView> {
     const row = await this.getRow(id);
-    return this.toView(row, this.decryptConfig(row.encryptedConfig), revealCredentials, false);
+    return toDatabaseConnectionView(row, this.decryptConfig(row.encryptedConfig), revealCredentials, false);
   }
 
   async getHealthHistory(id: string): Promise<DatabaseHealthEntry[]> {
@@ -246,7 +209,7 @@ export class DatabaseConnectionService {
     const config = this.decryptConfig(row.encryptedConfig);
     return {
       ...config,
-      connectionString: this.buildConnectionString(config),
+      connectionString: buildDatabaseConnectionString(config),
     };
   }
 
@@ -293,7 +256,7 @@ export class DatabaseConnectionService {
       details: { name: row.name, type: row.type, host: row.host, port: row.port },
     });
     this.emitChange(row.id, 'created', { name: row.name, type: row.type, healthStatus: row.healthStatus });
-    return this.toView(row, normalized, false, false);
+    return toDatabaseConnectionView(row, normalized, false, false);
   }
 
   async update(id: string, input: UpdateDatabaseConnectionInput, userId: string): Promise<DatabaseConnectionView> {
@@ -375,7 +338,7 @@ export class DatabaseConnectionService {
       },
     });
     this.emitChange(id, 'updated', { name: row.name, type: row.type, healthStatus: row.healthStatus });
-    return this.toView(row, mergedConfig, false, false);
+    return toDatabaseConnectionView(row, mergedConfig, false, false);
   }
 
   async delete(id: string, userId: string): Promise<void> {
@@ -864,7 +827,7 @@ export class DatabaseConnectionService {
         details: {
           intent,
           statementCount: statements.length,
-          statementHash: hashPreview(sqlText),
+          statementHash: hashDatabasePreview(sqlText),
           statementPreview: sqlText.trim().slice(0, 160),
         },
       });
@@ -1089,7 +1052,7 @@ export class DatabaseConnectionService {
           intent,
           commandCount: commands.length,
           commands: results.slice(0, 5).map((entry) => entry.command),
-          commandHash: hashPreview(commandText),
+          commandHash: hashDatabasePreview(commandText),
           commandPreview: commandText.slice(0, 160),
         },
       });
@@ -1196,55 +1159,6 @@ export class DatabaseConnectionService {
   private decryptConfig(encryptedConfig: string): DatabaseConnectionConfig {
     const parsed = JSON.parse(encryptedConfig) as { encryptedKey: string; encryptedDek: string };
     return JSON.parse(this.cryptoService.decryptString(parsed)) as DatabaseConnectionConfig;
-  }
-
-  private toView(
-    row: typeof databaseConnections.$inferSelect,
-    config: DatabaseConnectionConfig,
-    revealCredentials: boolean,
-    includeHealthHistory = true
-  ): DatabaseConnectionView {
-    const view = {
-      id: row.id,
-      name: row.name,
-      type: row.type,
-      description: row.description,
-      tags: (row.tags as string[] | null) ?? [],
-      manualSizeLimitMb: row.manualSizeLimitMb,
-      host: row.host,
-      port: row.port,
-      databaseName: row.databaseName,
-      username: row.username,
-      tlsEnabled: row.tlsEnabled,
-      healthStatus: row.healthStatus,
-      lastHealthCheckAt: row.lastHealthCheckAt?.toISOString() ?? null,
-      lastError: row.lastError,
-      ...(includeHealthHistory ? { healthHistory: (row.healthHistory as DatabaseHealthEntry[] | null) ?? [] } : {}),
-      hasStoredPassword: !!config.password,
-      config:
-        config.type === 'postgres'
-          ? {
-              host: config.host,
-              port: config.port,
-              database: config.database,
-              username: config.username,
-              password: revealCredentials ? config.password : maskValue(config.password),
-              sslEnabled: config.sslEnabled,
-            }
-          : {
-              host: config.host,
-              port: config.port,
-              username: config.username,
-              password: revealCredentials ? config.password : maskValue(config.password),
-              db: config.db,
-              tlsEnabled: config.tlsEnabled,
-            },
-      createdById: row.createdById,
-      updatedById: row.updatedById,
-      createdAt: row.createdAt.toISOString(),
-      updatedAt: row.updatedAt.toISOString(),
-    };
-    return view as DatabaseConnectionView;
   }
 
   private normalizePostgres(
@@ -1387,19 +1301,6 @@ export class DatabaseConnectionService {
     }
     const responseMs = Date.now() - started;
     return { status: responseMs >= 1_000 ? 'degraded' : 'online', responseMs };
-  }
-
-  private buildConnectionString(config: DatabaseConnectionConfig): string {
-    if (config.type === 'postgres') {
-      const protocol = 'postgresql';
-      const sslMode = config.sslEnabled ? '?sslmode=require' : '';
-      return `${protocol}://${encodeURIComponent(config.username)}:${encodeURIComponent(config.password)}@${config.host}:${config.port}/${encodeURIComponent(config.database)}${sslMode}`;
-    }
-    const protocol = config.tlsEnabled ? 'rediss' : 'redis';
-    const auth = config.username
-      ? `${encodeURIComponent(config.username)}:${encodeURIComponent(config.password)}`
-      : `:${encodeURIComponent(config.password)}`;
-    return `${protocol}://${auth}@${config.host}:${config.port}/${config.db}`;
   }
 
   async getPostgresPool(id: string): Promise<pg.Pool> {
