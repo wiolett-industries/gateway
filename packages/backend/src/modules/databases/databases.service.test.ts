@@ -186,4 +186,76 @@ describe('DatabaseConnectionService.executePostgresSql', () => {
     ]);
     expect(log).toHaveBeenCalled();
   });
+
+  it('compacts Postgres query rows to the requested maxRows and reports truncation', async () => {
+    const log = vi.fn().mockResolvedValue(undefined);
+    const service = new DatabaseConnectionService({} as never, { log } as never, {} as never);
+    const client = {
+      query: vi.fn(async (sql: string) => {
+        if (sql.startsWith('SET') || sql.startsWith('RESET')) return {};
+        return {
+          command: 'SELECT',
+          rowCount: 3,
+          fields: [{ name: 'id' }, { name: 'payload' }],
+          rows: [
+            { id: 1, payload: 'a' },
+            { id: 2, payload: 'b' },
+            { id: 3, payload: 'c' },
+          ],
+        };
+      }),
+      release: vi.fn(),
+    };
+    const pool = {
+      connect: vi.fn().mockResolvedValue(client),
+    };
+    vi.spyOn(service, 'getPostgresPool').mockResolvedValue(pool as never);
+
+    await expect(service.executePostgresSql('db-1', 'select * from events', 'user-1', { maxRows: 2 })).resolves.toEqual(
+      {
+        results: [
+          expect.objectContaining({
+            command: 'SELECT',
+            rowCount: 3,
+            fields: ['id', 'payload'],
+            rows: [
+              { id: 1, payload: 'a' },
+              { id: 2, payload: 'b' },
+            ],
+            truncated: true,
+            maxRows: 2,
+          }),
+        ],
+        truncated: false,
+        resultLimit: 10,
+      }
+    );
+    expect(client.release).toHaveBeenCalled();
+    expect(log).toHaveBeenCalledWith(expect.objectContaining({ action: 'database.postgres.query' }));
+  });
+});
+
+describe('DatabaseConnectionService.executeRedisCommand', () => {
+  it('compacts oversized Redis command results before returning them', async () => {
+    const log = vi.fn().mockResolvedValue(undefined);
+    const service = new DatabaseConnectionService({} as never, { log } as never, {} as never);
+    const client = {
+      call: vi.fn().mockResolvedValue(Array.from({ length: 600 }, (_, index) => `item-${index}`)),
+    };
+    vi.spyOn(service, 'getRedisClient').mockResolvedValue(client as never);
+
+    await expect(service.executeRedisCommand('db-1', 'LRANGE queue 0 -1', 'user-1')).resolves.toEqual({
+      results: [
+        {
+          command: 'LRANGE',
+          result: Array.from({ length: 500 }, (_, index) => `item-${index}`),
+          truncated: true,
+        },
+      ],
+      truncated: false,
+      commandLimit: 20,
+    });
+    expect(client.call).toHaveBeenCalledWith('LRANGE', 'queue', '0', '-1');
+    expect(log).toHaveBeenCalledWith(expect.objectContaining({ action: 'database.redis.command.execute' }));
+  });
 });
