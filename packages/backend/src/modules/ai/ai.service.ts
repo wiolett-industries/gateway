@@ -7,21 +7,7 @@ import type { AccessListService } from '@/modules/access-lists/access-list.servi
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { AuthService } from '@/modules/auth/auth.service.js';
 import type { DatabaseConnectionService } from '@/modules/databases/databases.service.js';
-import {
-  ContainerCreateSchema,
-  ContainerStopSchema,
-  ImagePullSchema,
-  NetworkConnectSchema,
-  NetworkCreateSchema,
-  RegistryCreateSchema,
-  RegistryUpdateSchema,
-  VolumeCreateSchema,
-} from '@/modules/docker/docker.schemas.js';
 import type { DockerManagementService } from '@/modules/docker/docker.service.js';
-import {
-  DockerDeploymentDeploySchema,
-  DockerDeploymentSwitchSchema,
-} from '@/modules/docker/docker-deployment.schemas.js';
 import { UpdateDomainSchema } from '@/modules/domains/domain.schemas.js';
 import type { DomainsService } from '@/modules/domains/domain.service.js';
 import type { GroupService } from '@/modules/groups/group.service.js';
@@ -45,6 +31,7 @@ import { SessionService } from '@/services/session.service.js';
 import type { User } from '@/types.js';
 import { DATABASE_TOOL_NAMES, executeDatabaseTool } from './ai.database-tools.js';
 import { manageDockerContainerConfigTool } from './ai.docker-config-tools.js';
+import { DOCKER_TOOL_NAMES, executeDockerTool } from './ai.docker-tools.js';
 import { getInternalDocumentation } from './ai.docs.js';
 import { manageLoggingTool } from './ai.logging-tools.js';
 import { executeNotificationTool, NOTIFICATION_TOOL_NAMES } from './ai.notification-tools.js';
@@ -55,22 +42,10 @@ import {
   allowedResourceIdsForScopes,
   caTypeRevokeScope,
   caTypeViewScope,
-  compactAgentList,
-  compactDockerContainerForAgent,
-  compactDockerDeploymentForAgent,
-  compactDockerImageForAgent,
-  compactDockerNetworkForAgent,
-  compactDockerVolumeForAgent,
   compactProxyHostForAgent,
   dashboardStatsOptionsForScopes,
-  dockerContainerMatchesSearch,
-  dockerDeploymentMatchesSearch,
-  dockerImageMatchesSearch,
-  dockerNetworkMatchesSearch,
-  dockerVolumeMatchesSearch,
   estimateTokens,
   getToolResourceId,
-  hasRegistryHost,
   hasToolExecutionScope,
   isMutatingTool,
   PROXY_HOST_UPDATE_FIELDS,
@@ -218,6 +193,19 @@ export class AIService {
 
     if (DATABASE_TOOL_NAMES.has(toolName)) {
       return executeDatabaseTool({ databaseService: this.databaseService }, user, toolName, args);
+    }
+    if (DOCKER_TOOL_NAMES.has(toolName)) {
+      return executeDockerTool(
+        {
+          dockerService: this.dockerService,
+          ensureToolScope: (executionUser, scope) => this.ensureToolScope(executionUser, scope),
+          ensureToolScopeForResource: (executionUser, baseScope, resourceId) =>
+            this.ensureToolScopeForResource(executionUser, baseScope, resourceId),
+        },
+        user,
+        toolName,
+        args
+      );
     }
     if (NOTIFICATION_TOOL_NAMES.has(toolName)) {
       return executeNotificationTool(
@@ -787,306 +775,6 @@ export class AIService {
         return filtered;
       }
 
-      // ── Docker ──
-      case 'create_docker_container': {
-        const input = ContainerCreateSchema.parse({
-          image: a.image,
-          registryId: a.registryId,
-          name: a.name,
-          ports: a.ports,
-          volumes: a.volumes,
-          env: a.env,
-          networks: a.networks,
-          restartPolicy: a.restartPolicy ?? 'no',
-          stopTimeout: a.stopTimeout,
-          labels: a.labels,
-          command: a.command,
-        });
-        const data = await this.dockerService.createContainer(a.nodeId, input, user.id, user.scopes);
-        return { success: true, message: 'Container created', data };
-      }
-      case 'list_docker_containers': {
-        const containers = await this.dockerService.listContainers(a.nodeId);
-        return Array.isArray(containers)
-          ? compactAgentList(
-              containers
-                .filter((container: any) => dockerContainerMatchesSearch(container, a.search))
-                .map((container: any) => compactDockerContainerForAgent(container))
-            )
-          : containers;
-      }
-      case 'get_docker_container':
-        return this.dockerService.inspectContainer(a.nodeId, a.containerId);
-      case 'list_docker_deployments': {
-        const { DockerDeploymentService } = await import('@/modules/docker/docker-deployment.service.js');
-        const deployments = await container.resolve(DockerDeploymentService).listSummary(a.nodeId);
-        return compactAgentList(
-          deployments
-            .filter((deployment: any) => dockerDeploymentMatchesSearch(deployment, a.search))
-            .map((deployment: any) => compactDockerDeploymentForAgent(deployment))
-        );
-      }
-      case 'get_docker_deployment': {
-        const { DockerDeploymentService } = await import('@/modules/docker/docker-deployment.service.js');
-        return container.resolve(DockerDeploymentService).get(a.nodeId, a.deploymentId);
-      }
-      case 'start_docker_deployment': {
-        const { DockerDeploymentService } = await import('@/modules/docker/docker-deployment.service.js');
-        const data = await container.resolve(DockerDeploymentService).start(a.nodeId, a.deploymentId, user.id);
-        return { success: true, message: 'Deployment started', data };
-      }
-      case 'stop_docker_deployment': {
-        const { DockerDeploymentService } = await import('@/modules/docker/docker-deployment.service.js');
-        const data = await container.resolve(DockerDeploymentService).stop(a.nodeId, a.deploymentId, user.id);
-        return { success: true, message: 'Deployment stopped', data };
-      }
-      case 'restart_docker_deployment': {
-        const { DockerDeploymentService } = await import('@/modules/docker/docker-deployment.service.js');
-        const data = await container.resolve(DockerDeploymentService).restart(a.nodeId, a.deploymentId, user.id);
-        return { success: true, message: 'Deployment restarted', data };
-      }
-      case 'kill_docker_deployment': {
-        const { DockerDeploymentService } = await import('@/modules/docker/docker-deployment.service.js');
-        const data = await container.resolve(DockerDeploymentService).kill(a.nodeId, a.deploymentId, user.id);
-        return { success: true, message: 'Deployment killed', data };
-      }
-      case 'deploy_docker_deployment': {
-        const { DockerDeploymentService } = await import('@/modules/docker/docker-deployment.service.js');
-        const input = DockerDeploymentDeploySchema.parse(args);
-        const data = await container
-          .resolve(DockerDeploymentService)
-          .deploy(a.nodeId, a.deploymentId, input, user.id, 'manual', user.scopes);
-        return { success: true, message: 'Deployment rollout started', data };
-      }
-      case 'switch_docker_deployment_slot': {
-        const { DockerDeploymentService } = await import('@/modules/docker/docker-deployment.service.js');
-        const input = DockerDeploymentSwitchSchema.parse(args);
-        const data = await container
-          .resolve(DockerDeploymentService)
-          .switchToSlot(a.nodeId, a.deploymentId, input, user.id, undefined, user.scopes);
-        return { success: true, message: `Deployment switched to ${input.slot}`, data };
-      }
-      case 'rollback_docker_deployment': {
-        const { DockerDeploymentService } = await import('@/modules/docker/docker-deployment.service.js');
-        const data = await container
-          .resolve(DockerDeploymentService)
-          .rollback(a.nodeId, a.deploymentId, a.force === true, user.id, user.scopes);
-        return { success: true, message: 'Deployment rolled back', data };
-      }
-      case 'stop_docker_deployment_slot': {
-        const { DockerDeploymentService } = await import('@/modules/docker/docker-deployment.service.js');
-        const slot = DockerDeploymentSwitchSchema.shape.slot.parse(a.slot);
-        await container.resolve(DockerDeploymentService).stopSlot(a.nodeId, a.deploymentId, slot, user.id);
-        return { success: true, message: `Deployment ${slot} slot stopped` };
-      }
-      case 'start_docker_container':
-        await this.dockerService.startContainer(a.nodeId, a.containerId, user.id);
-        return { success: true };
-      case 'stop_docker_container':
-        await this.dockerService.stopContainer(
-          a.nodeId,
-          a.containerId,
-          ContainerStopSchema.parse({ timeout: a.timeout }).timeout,
-          user.id
-        );
-        return { success: true, message: 'Container stopping' };
-      case 'restart_docker_container':
-        await this.dockerService.restartContainer(
-          a.nodeId,
-          a.containerId,
-          ContainerStopSchema.parse({ timeout: a.timeout }).timeout,
-          user.id
-        );
-        return { success: true, message: 'Container restarting' };
-      case 'remove_docker_container':
-        await this.dockerService.removeContainer(a.nodeId, a.containerId, a.force ?? false, user.id);
-        return { success: true };
-      case 'rename_docker_container':
-        await this.dockerService.renameContainer(a.nodeId, a.containerId, a.name, user.id);
-        return { success: true };
-      case 'duplicate_docker_container': {
-        const dupData = await this.dockerService.duplicateContainer(
-          a.nodeId,
-          a.containerId,
-          a.name,
-          user.id,
-          user.scopes
-        );
-        return { success: true, message: 'Container duplicated', data: dupData };
-      }
-      case 'get_docker_container_stats':
-        return this.dockerService.getContainerStats(a.nodeId, a.containerId);
-      case 'update_docker_container_image': {
-        // Inspect container to get current image and config
-        const inspectData = await this.dockerService.inspectContainer(a.nodeId, a.containerId);
-        const currentImage: string = (inspectData as any)?.Config?.Image ?? '';
-        if (!currentImage) return { error: 'Cannot determine current container image' };
-        const lastColon = currentImage.lastIndexOf(':');
-        const lastSlash = currentImage.lastIndexOf('/');
-        const imageName = lastColon > lastSlash ? currentImage.slice(0, lastColon) : currentImage;
-        const targetRef = `${imageName}:${a.imageTag}`;
-        await this.dockerService.recreateWithConfig(a.nodeId, a.containerId, { image: targetRef }, user.id, {
-          actorScopes: user.scopes,
-        });
-        return { success: true, message: `Container updating to ${targetRef}` };
-      }
-      case 'get_docker_container_logs':
-        return this.dockerService.getContainerLogs(a.nodeId, a.containerId, a.tail || 100, a.timestamps ?? false);
-      case 'list_docker_images': {
-        const images = await this.dockerService.listImages(a.nodeId);
-        return Array.isArray(images)
-          ? compactAgentList(
-              images
-                .filter((image: any) => dockerImageMatchesSearch(image, a.search))
-                .map((image: any) => compactDockerImageForAgent(image))
-            )
-          : images;
-      }
-      case 'pull_docker_image': {
-        const input = ImagePullSchema.parse({ imageRef: a.imageRef, registryId: a.registryId });
-        const { DockerRegistryService } = await import('@/modules/docker/docker-registry.service.js');
-        const registryService = container.resolve(DockerRegistryService);
-        const auth = await registryService.resolveAuthForImagePull(a.nodeId, input.imageRef, input.registryId);
-        let finalImageRef = input.imageRef;
-        if (auth && !hasRegistryHost(input.imageRef)) {
-          finalImageRef = `${auth.url}/${input.imageRef}`;
-        }
-        const data = await this.dockerService.pullImage(
-          a.nodeId,
-          finalImageRef,
-          auth?.authJson,
-          user.id,
-          auth?.registryId
-        );
-        return { success: true, message: `Pulling ${finalImageRef}`, data };
-      }
-      case 'remove_docker_image':
-        await this.dockerService.removeImage(a.nodeId, a.imageId, a.force ?? false, user.id);
-        return { success: true };
-      case 'prune_docker_images': {
-        const pruneData = await this.dockerService.pruneImages(a.nodeId, user.id);
-        return { success: true, message: 'Unused images pruned', data: pruneData };
-      }
-      case 'list_docker_volumes': {
-        const volumes = await this.dockerService.listVolumes(a.nodeId);
-        return Array.isArray(volumes)
-          ? compactAgentList(
-              volumes
-                .filter((volume: any) => dockerVolumeMatchesSearch(volume, a.search))
-                .map((volume: any) => compactDockerVolumeForAgent(volume))
-            )
-          : volumes;
-      }
-      case 'list_docker_networks': {
-        const networks = await this.dockerService.listNetworks(a.nodeId);
-        return Array.isArray(networks)
-          ? compactAgentList(
-              networks
-                .filter((network: any) => dockerNetworkMatchesSearch(network, a.search))
-                .map((network: any) => compactDockerNetworkForAgent(network))
-            )
-          : networks;
-      }
-      case 'manage_docker_registry': {
-        const { DockerRegistryService } = await import('@/modules/docker/docker-registry.service.js');
-        const registryService = container.resolve(DockerRegistryService);
-        const operation = String(a.operation);
-        switch (operation) {
-          case 'list':
-            this.ensureToolScope(user, 'docker:registries:view');
-            return registryService.list(typeof a.nodeId === 'string' ? a.nodeId : undefined);
-          case 'get':
-            this.ensureToolScope(user, 'docker:registries:view');
-            return registryService.get(String(a.registryId));
-          case 'create':
-            this.ensureToolScope(user, 'docker:registries:create');
-            return registryService.create(RegistryCreateSchema.parse(args), user.id);
-          case 'update':
-            this.ensureToolScope(user, 'docker:registries:edit');
-            return registryService.update(String(a.registryId), RegistryUpdateSchema.parse(args), user.id);
-          case 'delete':
-            this.ensureToolScope(user, 'docker:registries:delete');
-            await registryService.delete(String(a.registryId), user.id);
-            return { success: true };
-          case 'test':
-            this.ensureToolScope(user, 'docker:registries:edit');
-            return registryService.testConnection(String(a.registryId));
-          case 'test_direct':
-            this.ensureToolScope(user, 'docker:registries:edit');
-            return registryService.testConnectionDirect(
-              String(a.url),
-              typeof a.username === 'string' ? a.username : undefined,
-              typeof a.password === 'string' ? a.password : undefined,
-              typeof a.trustedAuthRealm === 'string' ? a.trustedAuthRealm : undefined
-            );
-          default:
-            throw new Error(`Unsupported Docker registry operation: ${operation}`);
-        }
-      }
-      case 'manage_docker_volume': {
-        const operation = String(a.operation);
-        if (operation === 'create') {
-          this.ensureToolScopeForResource(user, 'docker:volumes:create', String(a.nodeId));
-          const input = VolumeCreateSchema.parse(args);
-          return this.dockerService.createVolume(String(a.nodeId), input, user.id);
-        }
-        if (operation === 'delete') {
-          this.ensureToolScopeForResource(user, 'docker:volumes:delete', String(a.nodeId));
-          await this.dockerService.removeVolume(String(a.nodeId), String(a.name), Boolean(a.force), user.id);
-          return { success: true };
-        }
-        throw new Error(`Unsupported Docker volume operation: ${operation}`);
-      }
-      case 'manage_docker_network': {
-        const operation = String(a.operation);
-        if (operation === 'create') {
-          this.ensureToolScopeForResource(user, 'docker:networks:create', String(a.nodeId));
-          const input = NetworkCreateSchema.parse(args);
-          return this.dockerService.createNetwork(String(a.nodeId), input, user.id);
-        }
-        if (operation === 'delete') {
-          this.ensureToolScopeForResource(user, 'docker:networks:delete', String(a.nodeId));
-          await this.dockerService.removeNetwork(String(a.nodeId), String(a.networkId), user.id);
-          return { success: true };
-        }
-        if (operation === 'connect') {
-          this.ensureToolScopeForResource(user, 'docker:networks:edit', String(a.nodeId));
-          const input = NetworkConnectSchema.parse(args);
-          await this.dockerService.connectContainerToNetwork(
-            String(a.nodeId),
-            String(a.networkId),
-            input.containerId,
-            user.id
-          );
-          return { success: true };
-        }
-        if (operation === 'disconnect') {
-          this.ensureToolScopeForResource(user, 'docker:networks:edit', String(a.nodeId));
-          const input = NetworkConnectSchema.parse(args);
-          await this.dockerService.disconnectContainerFromNetwork(
-            String(a.nodeId),
-            String(a.networkId),
-            input.containerId,
-            user.id
-          );
-          return { success: true };
-        }
-        throw new Error(`Unsupported Docker network operation: ${operation}`);
-      }
-      case 'manage_docker_task': {
-        this.ensureToolScope(user, 'docker:tasks');
-        const { DockerTaskService } = await import('@/modules/docker/docker-task.service.js');
-        const taskService = container.resolve(DockerTaskService);
-        if (a.operation === 'get') return taskService.get(String(a.taskId));
-        if (a.operation === 'list') {
-          return taskService.list({
-            nodeId: typeof a.nodeId === 'string' ? a.nodeId : undefined,
-            status: typeof a.status === 'string' ? a.status : undefined,
-            type: typeof a.type === 'string' ? a.type : undefined,
-          });
-        }
-        throw new Error(`Unsupported Docker task operation: ${String(a.operation)}`);
-      }
       case 'manage_docker_container_config':
         return manageDockerContainerConfigTool({ dockerService: this.dockerService }, user, args);
 
