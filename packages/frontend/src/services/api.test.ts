@@ -193,4 +193,53 @@ describe("api client contract", () => {
       "/api/docker/nodes/node-1/containers/container-1?_t=1782043200000"
     );
   });
+
+  it("serializes system, license, and housekeeping requests", async () => {
+    const housekeepingConfig = { enabled: true, retentionDays: 14 };
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse({ data: { version: "2.4.0", updateAvailable: false } }))
+      .mockResolvedValueOnce(jsonResponse({ csrfToken: "csrf-token" }))
+      .mockResolvedValueOnce(
+        jsonResponse({ data: { status: "scheduled", targetVersion: "2.4.1" } })
+      )
+      .mockResolvedValueOnce(jsonResponse({ data: { tier: "enterprise", active: true } }))
+      .mockResolvedValueOnce(jsonResponse({ data: { tier: "enterprise", active: true } }))
+      .mockResolvedValueOnce(jsonResponse({ data: housekeepingConfig }))
+      .mockResolvedValueOnce(jsonResponse({ data: { id: "run-1", status: "completed" } }));
+
+    await expect(api.getVersionInfo()).resolves.toMatchObject({ version: "2.4.0" });
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/system/version");
+
+    await expect(api.triggerUpdate("2.4.1")).resolves.toEqual({
+      status: "scheduled",
+      targetVersion: "2.4.1",
+    });
+    expect(fetchMock.mock.calls[2]?.[0]).toBe("/api/system/update");
+    expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({ method: "POST" });
+    expect(JSON.parse(String((fetchMock.mock.calls[2]?.[1] as RequestInit).body))).toEqual({
+      version: "2.4.1",
+    });
+
+    await expect(api.getLicenseStatus()).resolves.toMatchObject({ tier: "enterprise" });
+    expect(fetchMock.mock.calls[3]?.[0]).toBe("/api/system/license/status");
+
+    await expect(api.activateLicense("license-key")).resolves.toMatchObject({ active: true });
+    expect(fetchMock.mock.calls[4]?.[0]).toBe("/api/system/license/activate");
+    expect(fetchMock.mock.calls[4]?.[1]).toMatchObject({ method: "POST" });
+    expect(JSON.parse(String((fetchMock.mock.calls[4]?.[1] as RequestInit).body))).toEqual({
+      licenseKey: "license-key",
+    });
+
+    await expect(api.updateHousekeepingConfig(housekeepingConfig)).resolves.toEqual(
+      housekeepingConfig
+    );
+    expect(fetchMock.mock.calls[5]?.[0]).toBe("/api/housekeeping/config");
+    expect(fetchMock.mock.calls[5]?.[1]).toMatchObject({ method: "PUT" });
+    expect(lastJsonBody(fetchMock)).toEqual(housekeepingConfig);
+
+    await expect(api.runHousekeeping()).resolves.toMatchObject({ id: "run-1" });
+    expect(fetchMock.mock.calls[6]?.[0]).toBe("/api/housekeeping/run");
+    expect(fetchMock.mock.calls[6]?.[1]).toMatchObject({ method: "POST" });
+  });
 });
