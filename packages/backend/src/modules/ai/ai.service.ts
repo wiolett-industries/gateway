@@ -69,6 +69,7 @@ import { SessionService } from '@/services/session.service.js';
 import type { User } from '@/types.js';
 import { DATABASE_TOOL_NAMES, executeDatabaseTool } from './ai.database-tools.js';
 import { getInternalDocumentation } from './ai.docs.js';
+import { executeNotificationTool, NOTIFICATION_TOOL_NAMES } from './ai.notification-tools.js';
 import { findResource } from './ai.resource-search.js';
 import {
   agentPage,
@@ -238,6 +239,19 @@ export class AIService {
 
     if (DATABASE_TOOL_NAMES.has(toolName)) {
       return executeDatabaseTool({ databaseService: this.databaseService }, user, toolName, args);
+    }
+    if (NOTIFICATION_TOOL_NAMES.has(toolName)) {
+      return executeNotificationTool(
+        {
+          notifRuleService: this.notifRuleService,
+          notifWebhookService: this.notifWebhookService,
+          notifDeliveryService: this.notifDeliveryService,
+          notifDispatcherService: this.notifDispatcherService,
+        },
+        user,
+        toolName,
+        args
+      );
     }
 
     switch (toolName) {
@@ -1109,122 +1123,6 @@ export class AIService {
       // ── Documentation ──
       case 'internal_documentation':
         return getInternalDocumentation(a.topic, user.scopes);
-
-      // ── Notifications ──
-      case 'list_alert_rules':
-        if (!this.notifRuleService) return { error: 'Notification service not available' };
-        return this.notifRuleService.list({ page: 1, limit: 100, category: a.category, enabled: a.enabled });
-      case 'get_alert_rule':
-        if (!this.notifRuleService) return { error: 'Notification service not available' };
-        return this.notifRuleService.getById(a.ruleId);
-      case 'create_alert_rule':
-        if (!this.notifRuleService) return { error: 'Notification service not available' };
-        return this.notifRuleService.create(
-          {
-            name: a.name,
-            type: a.type,
-            category: a.category,
-            severity: a.severity,
-            metric: a.metric,
-            metricTarget: a.metricTarget,
-            operator: a.operator,
-            thresholdValue: a.thresholdValue,
-            durationSeconds: a.durationSeconds ?? 0,
-            fireThresholdPercent: a.fireThresholdPercent ?? 100,
-            resolveAfterSeconds: a.resolveAfterSeconds ?? 60,
-            resolveThresholdPercent: a.resolveThresholdPercent ?? 100,
-            eventPattern: a.eventPattern,
-            resourceIds: a.resourceIds ?? [],
-            messageTemplate: a.messageTemplate,
-            webhookIds: a.webhookIds ?? [],
-            cooldownSeconds: a.cooldownSeconds ?? 900,
-            enabled: a.enabled ?? true,
-          },
-          user.id
-        );
-      case 'update_alert_rule':
-        if (!this.notifRuleService) return { error: 'Notification service not available' };
-        return this.notifRuleService.update(
-          a.ruleId,
-          {
-            name: a.name,
-            enabled: a.enabled,
-            severity: a.severity,
-            metric: a.metric,
-            metricTarget: a.metricTarget,
-            operator: a.operator,
-            thresholdValue: a.thresholdValue,
-            durationSeconds: a.durationSeconds,
-            fireThresholdPercent: a.fireThresholdPercent,
-            resolveAfterSeconds: a.resolveAfterSeconds,
-            resolveThresholdPercent: a.resolveThresholdPercent,
-            eventPattern: a.eventPattern,
-            resourceIds: a.resourceIds,
-            messageTemplate: a.messageTemplate,
-            webhookIds: a.webhookIds,
-            cooldownSeconds: a.cooldownSeconds,
-          },
-          user.id
-        );
-      case 'delete_alert_rule':
-        if (!this.notifRuleService) return { error: 'Notification service not available' };
-        return this.notifRuleService.delete(a.ruleId, user.id);
-      case 'list_webhooks':
-        if (!this.notifWebhookService) return { error: 'Notification service not available' };
-        return this.notifWebhookService.list({ page: 1, limit: 100 });
-      case 'create_webhook':
-        if (!this.notifWebhookService) return { error: 'Notification service not available' };
-        return this.notifWebhookService.create(
-          {
-            name: a.name,
-            url: a.url,
-            method: a.method ?? 'POST',
-            templatePreset: a.templatePreset,
-            bodyTemplate: a.bodyTemplate,
-            signingSecret: a.signingSecret,
-            signingHeader: a.signingHeader ?? 'X-Signature-256',
-            enabled: true,
-            headers: {},
-          },
-          user.id
-        );
-      case 'update_webhook':
-        if (!this.notifWebhookService) return { error: 'Notification service not available' };
-        return this.notifWebhookService.update(
-          a.webhookId,
-          {
-            name: a.name,
-            url: a.url,
-            method: a.method,
-            enabled: a.enabled,
-            templatePreset: a.templatePreset,
-            bodyTemplate: a.bodyTemplate,
-            signingSecret: a.signingSecret,
-            signingHeader: a.signingHeader,
-          },
-          user.id
-        );
-      case 'delete_webhook':
-        if (!this.notifWebhookService) return { error: 'Notification service not available' };
-        return this.notifWebhookService.delete(a.webhookId, user.id);
-      case 'test_webhook': {
-        if (!this.notifWebhookService || !this.notifDispatcherService)
-          return { error: 'Notification service not available' };
-        const wh = await this.notifWebhookService.getRaw(a.webhookId);
-        const { buildSampleEvent } = await import('@/modules/notifications/notification-templates.js');
-        return this.notifDispatcherService.dispatch(wh, buildSampleEvent(), true);
-      }
-      case 'list_webhook_deliveries':
-        if (!this.notifDeliveryService) return { error: 'Notification service not available' };
-        return this.notifDeliveryService.list({
-          page: 1,
-          limit: agentPageLimit(a.limit),
-          webhookId: a.webhookId,
-          status: a.status,
-        });
-      case 'get_delivery_stats':
-        if (!this.notifDeliveryService) return { error: 'Notification service not available' };
-        return this.notifDeliveryService.getStats(a.webhookId);
 
       // ── Web Search ──
       case 'web_search':
