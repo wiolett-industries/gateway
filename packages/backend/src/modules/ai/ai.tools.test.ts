@@ -17,6 +17,11 @@ function databaseToolNamesForScopes(scopes: string[]): string[] {
   return toolNames(scopes).filter((name) => databaseToolNames.has(name));
 }
 
+function dockerToolNamesForScopes(scopes: string[]): string[] {
+  const dockerToolNames = new Set(AI_TOOLS.filter((tool) => tool.category === 'Docker').map((tool) => tool.name));
+  return toolNames(scopes).filter((name) => dockerToolNames.has(name));
+}
+
 describe('AI tool scope filtering', () => {
   it('requires direct database view before advertising database query tools', () => {
     expect(toolNames(['databases:query:read:db-1'])).not.toContain('query_postgres_read');
@@ -107,5 +112,86 @@ describe('AI tool scope filtering', () => {
     expect(isDestructiveTool('query_postgres_read')).toBe(false);
     expect(isDestructiveTool('execute_postgres_sql')).toBe(true);
     expect(isDestructiveTool('manage_database_connection')).toBe(true);
+  });
+
+  it('keeps docker tool registry contracts stable', () => {
+    const dockerToolNames = AI_TOOLS.filter((tool) => tool.category === 'Docker').map((tool) => tool.name);
+
+    expect(dockerToolNames).toEqual([
+      'create_docker_container',
+      'list_docker_containers',
+      'get_docker_container',
+      'list_docker_deployments',
+      'get_docker_deployment',
+      'start_docker_deployment',
+      'stop_docker_deployment',
+      'restart_docker_deployment',
+      'kill_docker_deployment',
+      'deploy_docker_deployment',
+      'switch_docker_deployment_slot',
+      'rollback_docker_deployment',
+      'stop_docker_deployment_slot',
+      'start_docker_container',
+      'stop_docker_container',
+      'restart_docker_container',
+      'remove_docker_container',
+      'update_docker_container_image',
+      'rename_docker_container',
+      'duplicate_docker_container',
+      'get_docker_container_stats',
+      'get_docker_container_logs',
+      'list_docker_images',
+      'pull_docker_image',
+      'remove_docker_image',
+      'prune_docker_images',
+      'list_docker_volumes',
+      'list_docker_networks',
+      'manage_docker_registry',
+      'manage_docker_volume',
+      'manage_docker_network',
+      'manage_docker_task',
+      'manage_docker_container_config',
+    ]);
+    expect(dockerToolNamesForScopes(['docker:containers:view'])).toEqual([
+      'list_docker_containers',
+      'get_docker_container',
+      'list_docker_deployments',
+      'get_docker_deployment',
+      'get_docker_container_stats',
+      'get_docker_container_logs',
+      'manage_docker_container_config',
+    ]);
+    expect(dockerToolNamesForScopes(['docker:containers:manage'])).toEqual([
+      'list_docker_containers',
+      'get_docker_container',
+      'list_docker_deployments',
+      'get_docker_deployment',
+      'start_docker_deployment',
+      'stop_docker_deployment',
+      'restart_docker_deployment',
+      'kill_docker_deployment',
+      'deploy_docker_deployment',
+      'switch_docker_deployment_slot',
+      'rollback_docker_deployment',
+      'stop_docker_deployment_slot',
+      'start_docker_container',
+      'stop_docker_container',
+      'restart_docker_container',
+      'update_docker_container_image',
+      'get_docker_container_stats',
+      'get_docker_container_logs',
+      'manage_docker_container_config',
+    ]);
+    expect(dockerToolNamesForScopes(['docker:images:view'])).toEqual(['list_docker_images']);
+    expect(dockerToolNamesForScopes(['docker:volumes:view'])).toEqual(['list_docker_volumes']);
+    expect(dockerToolNamesForScopes(['docker:networks:view'])).toEqual(['list_docker_networks']);
+    expect(AI_TOOLS.find((tool) => tool.name === 'create_docker_container')?.invalidateStores).toEqual(['containers']);
+    expect(AI_TOOLS.find((tool) => tool.name === 'deploy_docker_deployment')?.invalidateStores).toEqual([
+      'containers',
+      'tasks',
+    ]);
+    expect(isDestructiveTool('list_docker_containers')).toBe(false);
+    expect(isDestructiveTool('create_docker_container')).toBe(true);
+    expect(isDestructiveTool('manage_docker_task')).toBe(false);
   });
 });
