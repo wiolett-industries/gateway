@@ -1,7 +1,7 @@
 import OpenAI from 'openai';
 import { container } from '@/container.js';
 import { createChildLogger } from '@/lib/logger.js';
-import { getResourceScopedIds, hasScope, hasScopeBase, hasScopeForResource } from '@/lib/permissions.js';
+import { hasScope, hasScopeBase, hasScopeForResource } from '@/lib/permissions.js';
 import { UpdateAccessListSchema } from '@/modules/access-lists/access-list.schemas.js';
 import type { AccessListService } from '@/modules/access-lists/access-list.service.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
@@ -31,15 +31,6 @@ import {
 import { UpdateDomainSchema } from '@/modules/domains/domain.schemas.js';
 import type { DomainsService } from '@/modules/domains/domain.service.js';
 import type { GroupService } from '@/modules/groups/group.service.js';
-import {
-  CreateLoggingEnvironmentSchema,
-  CreateLoggingSchemaSchema,
-  CreateLoggingTokenSchema,
-  LoggingFacetsQuerySchema,
-  LoggingSearchSchema,
-  UpdateLoggingEnvironmentSchema,
-  UpdateLoggingSchemaSchema,
-} from '@/modules/logging/logging.schemas.js';
 import type { MonitoringService } from '@/modules/monitoring/monitoring.service.js';
 import type { NodesService } from '@/modules/nodes/nodes.service.js';
 import { CreateIntermediateCASchema, CreateRootCASchema, UpdateCASchema } from '@/modules/pki/ca.schemas.js';
@@ -60,6 +51,7 @@ import { SessionService } from '@/services/session.service.js';
 import type { User } from '@/types.js';
 import { DATABASE_TOOL_NAMES, executeDatabaseTool } from './ai.database-tools.js';
 import { getInternalDocumentation } from './ai.docs.js';
+import { manageLoggingTool } from './ai.logging-tools.js';
 import { executeNotificationTool, NOTIFICATION_TOOL_NAMES } from './ai.notification-tools.js';
 import { findResource } from './ai.resource-search.js';
 import {
@@ -1104,7 +1096,7 @@ export class AIService {
         return this.manageDockerContainerConfig(user, args);
 
       case 'manage_logging':
-        return this.manageLogging(user, args);
+        return manageLoggingTool(user, args);
       case 'manage_status_page':
         return manageStatusPageTool(user, args);
 
@@ -1260,129 +1252,6 @@ export class AIService {
     }
 
     throw new Error(`Unsupported Docker container config operation: ${operation}`);
-  }
-
-  private ensureLoggingScope(user: User, baseScope: string, resourceId?: string) {
-    if (hasScope(user.scopes, 'logs:manage')) return;
-    if (resourceId ? hasScopeForResource(user.scopes, baseScope, resourceId) : hasScopeBase(user.scopes, baseScope)) {
-      return;
-    }
-    throw new Error(
-      `PERMISSION_DENIED: Missing required scope ${resourceId ? `${baseScope}:${resourceId}` : baseScope}`
-    );
-  }
-
-  private async manageLogging(user: User, args: Record<string, unknown>) {
-    const resource = String(args.resource);
-    const operation = String(args.operation);
-    const payload = (args.payload && typeof args.payload === 'object' ? args.payload : {}) as Record<string, unknown>;
-    if (resource === 'environment') {
-      const { LoggingEnvironmentService } = await import('@/modules/logging/logging-environment.service.js');
-      const service = container.resolve(LoggingEnvironmentService);
-      const id = String(args.environmentId ?? '');
-      if (operation === 'list') {
-        this.ensureLoggingScope(user, 'logs:environments:view');
-        const allowedIds =
-          hasScope(user.scopes, 'logs:manage') || hasScope(user.scopes, 'logs:environments:view')
-            ? undefined
-            : getResourceScopedIds(user.scopes, 'logs:environments:view');
-        return service.list({
-          search: typeof args.search === 'string' ? args.search : undefined,
-          allowedIds,
-        });
-      }
-      if (operation === 'get') {
-        this.ensureLoggingScope(user, 'logs:environments:view', id);
-        return service.get(id);
-      }
-      if (operation === 'create') {
-        this.ensureLoggingScope(user, 'logs:environments:create');
-        return service.create(CreateLoggingEnvironmentSchema.parse(payload), user.id);
-      }
-      if (operation === 'update') {
-        this.ensureLoggingScope(user, 'logs:environments:edit', id);
-        return service.update(id, UpdateLoggingEnvironmentSchema.parse(payload), user.id);
-      }
-      if (operation === 'delete') {
-        this.ensureLoggingScope(user, 'logs:environments:delete', id);
-        await service.delete(id, user.id);
-        return { success: true };
-      }
-    }
-    if (resource === 'schema') {
-      const { LoggingSchemaService } = await import('@/modules/logging/logging-schema.service.js');
-      const service = container.resolve(LoggingSchemaService);
-      const id = String(args.schemaId ?? '');
-      if (operation === 'list') {
-        this.ensureLoggingScope(user, 'logs:schemas:view');
-        const schemas = await service.list({ search: typeof args.search === 'string' ? args.search : undefined });
-        if (hasScope(user.scopes, 'logs:manage') || hasScope(user.scopes, 'logs:schemas:view')) return schemas;
-        const allowedIds = new Set(getResourceScopedIds(user.scopes, 'logs:schemas:view'));
-        return schemas.filter((schema) => allowedIds.has(schema.id));
-      }
-      if (operation === 'get') {
-        this.ensureLoggingScope(user, 'logs:schemas:view', id);
-        return service.get(id);
-      }
-      if (operation === 'create') {
-        this.ensureLoggingScope(user, 'logs:schemas:create');
-        return service.create(CreateLoggingSchemaSchema.parse(payload), user.id);
-      }
-      if (operation === 'update') {
-        this.ensureLoggingScope(user, 'logs:schemas:edit', id);
-        return service.update(id, UpdateLoggingSchemaSchema.parse(payload), user.id);
-      }
-      if (operation === 'delete') {
-        this.ensureLoggingScope(user, 'logs:schemas:delete', id);
-        await service.delete(id, user.id);
-        return { success: true };
-      }
-    }
-    if (resource === 'token') {
-      const { LoggingTokenService } = await import('@/modules/logging/logging-token.service.js');
-      const service = container.resolve(LoggingTokenService);
-      const environmentId = String(args.environmentId ?? '');
-      this.ensureLoggingScope(
-        user,
-        operation === 'list'
-          ? 'logs:tokens:view'
-          : operation === 'create'
-            ? 'logs:tokens:create'
-            : 'logs:tokens:delete',
-        environmentId
-      );
-      if (operation === 'list') return service.list(environmentId);
-      if (operation === 'create')
-        return service.create(environmentId, CreateLoggingTokenSchema.parse(payload), user.id);
-      if (operation === 'delete') {
-        await service.delete(environmentId, String(args.tokenId), user.id);
-        return { success: true };
-      }
-    }
-    if (resource === 'logs' && operation === 'search') {
-      this.ensureLoggingScope(user, 'logs:read', String(args.environmentId));
-      const { LoggingFeatureService } = await import('@/modules/logging/logging-feature.service.js');
-      container.resolve(LoggingFeatureService).requireAvailableForStorage();
-      const { LoggingSearchService } = await import('@/modules/logging/logging-search.service.js');
-      return container
-        .resolve(LoggingSearchService)
-        .search(String(args.environmentId), LoggingSearchSchema.parse(payload) as any);
-    }
-    if (resource === 'facets' || operation === 'facets') {
-      this.ensureLoggingScope(user, 'logs:read', String(args.environmentId));
-      const { LoggingFeatureService } = await import('@/modules/logging/logging-feature.service.js');
-      container.resolve(LoggingFeatureService).requireAvailableForStorage();
-      const { LoggingSearchService } = await import('@/modules/logging/logging-search.service.js');
-      return container
-        .resolve(LoggingSearchService)
-        .facets(String(args.environmentId), LoggingFacetsQuerySchema.parse(payload));
-    }
-    if (resource === 'metadata' || operation === 'metadata') {
-      this.ensureLoggingScope(user, 'logs:read', String(args.environmentId));
-      const { LoggingMetadataService } = await import('@/modules/logging/logging-metadata.service.js');
-      return container.resolve(LoggingMetadataService).get(String(args.environmentId));
-    }
-    throw new Error(`Unsupported logging operation: ${resource}.${operation}`);
   }
 
   /**
