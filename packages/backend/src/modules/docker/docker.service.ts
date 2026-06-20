@@ -34,6 +34,16 @@ import type { DockerRuntimeSettingsService } from './docker-runtime-settings.ser
 import type { DockerSecretService } from './docker-secret.service.js';
 import { assertDockerMountChangeAllowed, normalizeMountDefinitionsFromInspect } from './docker-socket-mount.guard.js';
 import type { DockerTaskService } from './docker-task.service.js';
+import {
+  connectContainerToNetwork as connectDockerContainerToNetwork,
+  createNetwork as createDockerNetwork,
+  createVolume as createDockerVolume,
+  disconnectContainerFromNetwork as disconnectDockerContainerFromNetwork,
+  listNetworks as listDockerNetworks,
+  listVolumes as listDockerVolumes,
+  removeNetwork as removeDockerNetwork,
+  removeVolume as removeDockerVolume,
+} from './docker-volume-network-operations.js';
 
 const logger = createChildLogger('DockerManagementService');
 const DEFAULT_CONTAINER_STOP_TIMEOUT_SECONDS = 20;
@@ -201,12 +211,13 @@ export class DockerManagementService {
     };
   }
 
-  private emitVolume(nodeId: string, name: string, action: 'created' | 'removed' | 'pruned') {
-    this.eventBus?.publish('docker.volume.changed', { nodeId, name, action });
-  }
-
-  private emitNetwork(nodeId: string, name: string, action: 'created' | 'removed' | 'pruned') {
-    this.eventBus?.publish('docker.network.changed', { nodeId, name, action });
+  private volumeNetworkOperationContext() {
+    return {
+      nodeDispatch: this.nodeDispatch,
+      auditService: this.auditService,
+      eventBus: this.eventBus,
+      parseResult: (result: { success: boolean; error?: string; detail?: string }) => this.parseResult(result),
+    };
   }
 
   /**
@@ -1504,8 +1515,7 @@ export class DockerManagementService {
 
   async listVolumes(nodeId: string) {
     await this.validateDockerNode(nodeId);
-    const result = await this.nodeDispatch.sendDockerVolumeCommand(nodeId, 'list');
-    return this.parseResult(result);
+    return listDockerVolumes(this.volumeNetworkOperationContext(), nodeId);
   }
 
   async createVolume(
@@ -1514,55 +1524,19 @@ export class DockerManagementService {
     userId: string
   ) {
     await this.validateDockerNode(nodeId);
-    const result = await this.nodeDispatch.sendDockerVolumeCommand(nodeId, 'create', config);
-    const data = this.parseResult(result);
-    await this.auditService.log({
-      action: 'docker.volume.create',
-      userId,
-      resourceType: 'docker-volume',
-      details: { nodeId, name: config.name },
-    });
-    this.emitVolume(nodeId, config.name, 'created');
-    return data;
+    return createDockerVolume(this.volumeNetworkOperationContext(), nodeId, config, userId);
   }
 
   async removeVolume(nodeId: string, name: string, force: boolean, userId: string) {
     await this.validateDockerNode(nodeId);
-    const result = await this.nodeDispatch.sendDockerVolumeCommand(nodeId, 'remove', { name, force });
-    this.parseResult(result);
-    await this.auditService.log({
-      action: 'docker.volume.remove',
-      userId,
-      resourceType: 'docker-volume',
-      resourceId: name,
-      details: { nodeId },
-    });
-    this.emitVolume(nodeId, name, 'removed');
+    await removeDockerVolume(this.volumeNetworkOperationContext(), nodeId, name, force, userId);
   }
 
   // ─── Network operations ────────────────────────────────────────────
 
   async listNetworks(nodeId: string) {
     await this.validateDockerNode(nodeId);
-    const result = await this.nodeDispatch.sendDockerNetworkCommand(nodeId, 'list');
-    return this.parseResult(result);
-  }
-
-  private isBuiltInDockerNetwork(name: string) {
-    return ['bridge', 'host', 'none'].includes(name);
-  }
-
-  private async resolveNetworkName(nodeId: string, networkId: string) {
-    const networks = await this.listNetworks(nodeId);
-    if (!Array.isArray(networks)) return networkId;
-
-    const match = networks.find((network: any) => {
-      const id = String(network.id ?? network.Id ?? '');
-      const name = String(network.name ?? network.Name ?? '');
-      return id === networkId || name === networkId;
-    });
-
-    return String(match?.name ?? match?.Name ?? networkId);
+    return listDockerNetworks(this.volumeNetworkOperationContext(), nodeId);
   }
 
   async createNetwork(
@@ -1571,69 +1545,28 @@ export class DockerManagementService {
     userId: string
   ) {
     await this.validateDockerNode(nodeId);
-    const result = await this.nodeDispatch.sendDockerNetworkCommand(nodeId, 'create', {
-      networkId: config.name,
-      driver: config.driver,
-      subnet: config.subnet,
-      gatewayAddr: config.gateway,
-    });
-    const data = this.parseResult(result);
-    await this.auditService.log({
-      action: 'docker.network.create',
-      userId,
-      resourceType: 'docker-network',
-      details: { nodeId, name: config.name },
-    });
-    this.emitNetwork(nodeId, config.name, 'created');
-    return data;
+    return createDockerNetwork(this.volumeNetworkOperationContext(), nodeId, config, userId);
   }
 
   async removeNetwork(nodeId: string, networkId: string, userId: string) {
     await this.validateDockerNode(nodeId);
-    const networkName = await this.resolveNetworkName(nodeId, networkId);
-    if (this.isBuiltInDockerNetwork(networkName)) {
-      throw new AppError(400, 'BUILTIN_NETWORK', 'Built-in Docker networks cannot be removed');
-    }
-    const result = await this.nodeDispatch.sendDockerNetworkCommand(nodeId, 'remove', { networkId });
-    this.parseResult(result);
-    await this.auditService.log({
-      action: 'docker.network.remove',
-      userId,
-      resourceType: 'docker-network',
-      resourceId: networkId,
-      details: { nodeId },
-    });
-    this.emitNetwork(nodeId, networkId, 'removed');
+    await removeDockerNetwork(this.volumeNetworkOperationContext(), nodeId, networkId, userId);
   }
 
   async connectContainerToNetwork(nodeId: string, networkId: string, containerId: string, userId: string) {
     await this.validateDockerNode(nodeId);
-    const result = await this.nodeDispatch.sendDockerNetworkCommand(nodeId, 'connect', { networkId, containerId });
-    this.parseResult(result);
-    await this.auditService.log({
-      action: 'docker.network.connect',
-      userId,
-      resourceType: 'docker-network',
-      resourceId: networkId,
-      details: { nodeId, containerId },
-    });
+    await connectDockerContainerToNetwork(this.volumeNetworkOperationContext(), nodeId, networkId, containerId, userId);
   }
 
   async disconnectContainerFromNetwork(nodeId: string, networkId: string, containerId: string, userId: string) {
     await this.validateDockerNode(nodeId);
-    const networkName = await this.resolveNetworkName(nodeId, networkId);
-    if (this.isBuiltInDockerNetwork(networkName)) {
-      throw new AppError(400, 'BUILTIN_NETWORK', 'Containers cannot be disconnected from built-in Docker networks');
-    }
-    const result = await this.nodeDispatch.sendDockerNetworkCommand(nodeId, 'disconnect', { networkId, containerId });
-    this.parseResult(result);
-    await this.auditService.log({
-      action: 'docker.network.disconnect',
-      userId,
-      resourceType: 'docker-network',
-      resourceId: networkId,
-      details: { nodeId, containerId },
-    });
+    await disconnectDockerContainerFromNetwork(
+      this.volumeNetworkOperationContext(),
+      nodeId,
+      networkId,
+      containerId,
+      userId
+    );
   }
 
   // ─── Container stats ───────────────────────────────────────────────
