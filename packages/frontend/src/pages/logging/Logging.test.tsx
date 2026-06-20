@@ -1,9 +1,12 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { toast } from "sonner";
 import { vi } from "vitest";
+import { Logging } from "@/pages/Logging";
 import { api } from "@/services/api";
+import { useAuthStore } from "@/stores/auth";
+import { makeUser } from "@/test/fixtures";
 import { renderWithRouter } from "@/test/render";
-import type { LoggingEnvironment } from "@/types";
+import type { LoggingEnvironment, LoggingFeatureStatus, LoggingSchema } from "@/types";
 import { LoggingExplorer } from "./LoggingExplorer";
 import { LoggingSchemaEditor } from "./LoggingSchemaEditor";
 import { LoggingTokenPanel } from "./LoggingTokenPanel";
@@ -20,6 +23,12 @@ vi.mock("@/services/api", () => ({
     listLoggingTokens: vi.fn(),
     createLoggingToken: vi.fn(),
     deleteLoggingToken: vi.fn(),
+    getCached: vi.fn(),
+    setCache: vi.fn(),
+    getLoggingStatus: vi.fn(),
+    listLoggingEnvironments: vi.fn(),
+    listLoggingSchemas: vi.fn(),
+    getLoggingSchema: vi.fn(),
     getLoggingMetadata: vi.fn(),
     searchLogs: vi.fn(),
   },
@@ -43,7 +52,51 @@ const environment: LoggingEnvironment = {
   updatedAt: "2026-04-27T00:00:00.000Z",
 };
 
+const featureStatus: LoggingFeatureStatus = {
+  enabled: true,
+  available: true,
+  config: {
+    database: "gateway",
+    table: "logs",
+    requestTimeoutMs: 5000,
+    ingestMaxBodyBytes: 1_048_576,
+    ingestMaxBatchSize: 100,
+    ingestMaxMessageBytes: 8192,
+    ingestMaxLabels: 16,
+    ingestMaxFields: 32,
+    ingestMaxKeyLength: 64,
+    ingestMaxValueBytes: 4096,
+    ingestMaxJsonDepth: 8,
+    rateLimitWindowSeconds: 60,
+    globalRequestsPerWindow: 1000,
+    globalEventsPerWindow: 10_000,
+    tokenRequestsPerWindow: 100,
+    tokenEventsPerWindow: 1000,
+  },
+};
+
+const schema: LoggingSchema = {
+  id: "schema-1",
+  name: "Audit Events",
+  slug: "audit-events",
+  description: null,
+  schemaMode: "reject",
+  fieldSchema: [{ location: "field", key: "statusCode", type: "number", required: false }],
+  createdById: "user-1",
+  createdAt: "2026-04-27T00:00:00.000Z",
+  updatedAt: "2026-04-27T00:00:00.000Z",
+};
+
 describe("Logging UI", () => {
+  beforeEach(() => {
+    vi.mocked(api.getCached).mockReturnValue(undefined);
+    vi.mocked(api.setCache).mockReturnValue(undefined);
+    vi.mocked(api.getLoggingStatus).mockResolvedValue(featureStatus);
+    vi.mocked(api.listLoggingEnvironments).mockResolvedValue([]);
+    vi.mocked(api.listLoggingSchemas).mockResolvedValue([]);
+    vi.mocked(api.getLoggingSchema).mockResolvedValue(schema);
+  });
+
   it("prevents adding schema rows while duplicate keys exist", async () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     renderWithRouter(
@@ -116,5 +169,69 @@ describe("Logging UI", () => {
       expect(screen.getByText("Searching logs...")).toBeInTheDocument();
     });
     expect(screen.getByRole("status")).toBeInTheDocument();
+  });
+
+  it("renders and filters logging environment rows on the main page", async () => {
+    vi.mocked(api.listLoggingEnvironments).mockResolvedValue([
+      environment,
+      {
+        ...environment,
+        id: "env-2",
+        name: "Staging",
+        slug: "staging",
+        schemaName: "Audit Events",
+      },
+    ]);
+    useAuthStore.setState({
+      user: makeUser({
+        scopes: ["logs:environments:view", "logs:schemas:view"],
+      }),
+      isAuthenticated: true,
+      isLoading: false,
+    });
+
+    renderWithRouter(<Logging />, { path: "/logging/:section?", route: "/logging/environments" });
+
+    expect(await screen.findByText("Production")).toBeInTheDocument();
+    expect(screen.getByText("Staging")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText("Search environments..."), {
+      target: { value: "prod" },
+    });
+
+    expect(screen.getByText("Production")).toBeInTheDocument();
+    expect(screen.queryByText("Staging")).not.toBeInTheDocument();
+  });
+
+  it("renders and filters logging schema rows on the main page", async () => {
+    vi.mocked(api.listLoggingSchemas).mockResolvedValue([
+      schema,
+      {
+        ...schema,
+        id: "schema-2",
+        name: "Payments",
+        slug: "payments",
+        fieldSchema: [],
+      },
+    ]);
+    useAuthStore.setState({
+      user: makeUser({
+        scopes: ["logs:schemas:view", "logs:schemas:create"],
+      }),
+      isAuthenticated: true,
+      isLoading: false,
+    });
+
+    renderWithRouter(<Logging />, { path: "/logging/:section?", route: "/logging/schemas" });
+
+    expect(await screen.findByText("Audit Events")).toBeInTheDocument();
+    expect(screen.getByText("Payments")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText("Search schemas..."), {
+      target: { value: "audit" },
+    });
+
+    expect(screen.getByText("Audit Events")).toBeInTheDocument();
+    expect(screen.queryByText("Payments")).not.toBeInTheDocument();
   });
 });
