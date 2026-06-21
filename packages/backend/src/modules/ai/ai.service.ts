@@ -34,6 +34,7 @@ import { executeNotificationTool, NOTIFICATION_TOOL_NAMES } from './ai.notificat
 import { executePkiCaTool, PKI_CA_TOOL_NAMES } from './ai.pki-ca-tools.js';
 import { executePkiCertificateTool, PKI_CERTIFICATE_TOOL_NAMES } from './ai.pki-certificate-tools.js';
 import { executePkiTemplateTool, PKI_TEMPLATE_TOOL_NAMES } from './ai.pki-template-tools.js';
+import { executeProxyTool, PROXY_TOOL_NAMES } from './ai.proxy-tools.js';
 import { findResource } from './ai.resource-search.js';
 import {
   agentPage,
@@ -45,7 +46,6 @@ import {
   getToolResourceId,
   hasToolExecutionScope,
   isMutatingTool,
-  PROXY_HOST_UPDATE_FIELDS,
   redactToolArgs,
   trimToTokenBudget,
 } from './ai.service-helpers.js';
@@ -277,6 +277,14 @@ export class AIService {
         args
       );
     }
+    if (PROXY_TOOL_NAMES.has(toolName)) {
+      return executeProxyTool(
+        { proxyService: this.proxyService, folderService: this.folderService },
+        user,
+        toolName,
+        args
+      );
+    }
 
     switch (toolName) {
       // ── Discovery ──
@@ -291,96 +299,6 @@ export class AIService {
           args
         );
 
-      // ── Reverse Proxy ──
-      case 'list_proxy_hosts': {
-        const result = await this.proxyService.listProxyHosts(
-          {
-            search: a.search,
-            page: agentPage(a.page),
-            limit: agentPageLimit(a.limit),
-          },
-          { allowedIds: allowedResourceIdsForScopes(user.scopes, 'proxy:view') }
-        );
-        return {
-          ...result,
-          data: result.data.map((host: any) => compactProxyHostForAgent(host)),
-        };
-      }
-      case 'get_proxy_host':
-        return compactProxyHostForAgent(await this.proxyService.getProxyHost(a.proxyHostId));
-      case 'create_proxy_host':
-        return compactProxyHostForAgent(
-          await this.proxyService.createProxyHost(
-            {
-              type: a.type || 'proxy',
-              nodeId: a.nodeId,
-              domainNames: a.domainNames,
-              forwardHost: a.forwardHost,
-              forwardPort: a.forwardPort,
-              forwardScheme: a.forwardScheme || 'http',
-              sslEnabled: a.sslEnabled || false,
-              sslForced: a.sslForced || false,
-              http2Support: a.http2Support || false,
-              websocketSupport: a.websocketSupport || false,
-              sslCertificateId: a.sslCertificateId,
-              redirectUrl: a.redirectUrl,
-              redirectStatusCode: a.redirectStatusCode,
-              customHeaders: a.customHeaders || [],
-              cacheEnabled: a.cacheEnabled || false,
-              cacheOptions: a.cacheOptions,
-              rateLimitEnabled: a.rateLimitEnabled || false,
-              rateLimitOptions: a.rateLimitOptions,
-              customRewrites: [],
-              accessListId: a.accessListId,
-              nginxTemplateId: a.nginxTemplateId,
-              templateVariables: a.templateVariables,
-              healthCheckEnabled: a.healthCheckEnabled || false,
-              healthCheckUrl: a.healthCheckUrl,
-              healthCheckInterval: a.healthCheckInterval,
-              healthCheckExpectedStatus: a.healthCheckExpectedStatus,
-              healthCheckExpectedBody: a.healthCheckExpectedBody,
-            },
-            user.id
-          )
-        );
-      case 'update_proxy_host': {
-        const { proxyHostId, advancedConfig: _ac } = a;
-        if ('rawConfig' in a || 'rawConfigEnabled' in a || a.type === 'raw') {
-          throw new Error('Raw config changes require dedicated raw config tools');
-        }
-        if (_ac && !hasScope(user.scopes, `proxy:advanced:${proxyHostId}`)) {
-          throw new Error('Advanced config requires proxy:advanced scope');
-        }
-        const updateFields = PROXY_HOST_UPDATE_FIELDS.reduce<Record<string, unknown>>((fields, field) => {
-          if (a[field] !== undefined) fields[field] = a[field];
-          return fields;
-        }, {});
-        const bypassAdvancedValidation = hasScope(user.scopes, `proxy:advanced:bypass:${proxyHostId}`);
-        const fields =
-          _ac && hasScope(user.scopes, `proxy:advanced:${proxyHostId}`)
-            ? { ...updateFields, advancedConfig: _ac }
-            : updateFields;
-        return compactProxyHostForAgent(
-          await this.proxyService.updateProxyHost(proxyHostId, fields, user.id, { bypassAdvancedValidation })
-        );
-      }
-      case 'delete_proxy_host':
-        await this.proxyService.deleteProxyHost(a.proxyHostId, user.id);
-        return { success: true };
-
-      // ── Proxy Folders ──
-      case 'create_proxy_folder':
-        return this.folderService.createFolder({ name: a.name, parentId: a.parentId }, user.id);
-      case 'move_hosts_to_folder':
-        for (const hostId of a.hostIds || []) {
-          if (!hasScope(user.scopes, `proxy:edit:${hostId}`)) {
-            throw new Error(`PERMISSION_DENIED: Missing required scope proxy:edit:${hostId}`);
-          }
-        }
-        return this.folderService.moveHostsToFolder({ hostIds: a.hostIds, folderId: a.folderId }, user.id);
-      case 'delete_proxy_folder':
-        await this.folderService.deleteFolder(a.folderId, user.id);
-        return { success: true };
       case 'manage_proxy_template': {
         const { NginxTemplateService } = await import('@/modules/proxy/nginx-template.service.js');
         const templateService = container.resolve(NginxTemplateService);
