@@ -32,9 +32,10 @@ import {
   normalizeRoutes,
   shortId,
 } from './docker-deployment-helpers.js';
+import { desiredConfigForRegistryAttempt, isRegistryRetryableError } from './docker-deployment-registry.js';
 import type { DockerHealthCheckDto, DockerHealthCheckService } from './docker-health-check.service.js';
 import type { DockerImageCleanupService } from './docker-image-cleanup.service.js';
-import type { DockerRegistryAuthCandidate, DockerRegistryService } from './docker-registry.service.js';
+import type { DockerRegistryService } from './docker-registry.service.js';
 import type { DockerSecretService } from './docker-secret.service.js';
 import { assertDockerMountChangeAllowed, normalizeMountDefinitionsFromConfig } from './docker-socket-mount.guard.js';
 import type { DockerTaskService } from './docker-task.service.js';
@@ -159,26 +160,6 @@ export class DockerDeploymentService {
     } catch {
       return result.detail;
     }
-  }
-
-  private isRegistryRetryableError(error: unknown): boolean {
-    const message = error instanceof Error ? error.message : String(error);
-    return /pull access denied|repository does not exist|insufficient_scope|authorization|authentication|no basic auth|denied/i.test(
-      message
-    );
-  }
-
-  private desiredConfigForRegistryAttempt(
-    desiredConfig: DockerDeploymentDesiredConfig,
-    registryAuth: DockerRegistryAuthCandidate | null
-  ): DockerDeploymentDesiredConfig {
-    if (!registryAuth || this.hasRegistryHost(desiredConfig.image)) return desiredConfig;
-    return { ...desiredConfig, image: `${registryAuth.url}/${desiredConfig.image}` };
-  }
-
-  private hasRegistryHost(imageRef: string) {
-    const firstSegment = imageRef.split('/')[0] ?? '';
-    return firstSegment === 'localhost' || firstSegment.includes('.') || firstSegment.includes(':');
   }
 
   private async validateDockerNode(nodeId: string, requireCapability = true) {
@@ -448,7 +429,7 @@ export class DockerDeploymentService {
       let successfulRegistryId: string | undefined;
       let deployedDesiredConfig = daemonDesiredConfig;
       for (const registryAuth of registryAttempts) {
-        const attemptDesiredConfig = this.desiredConfigForRegistryAttempt(daemonDesiredConfig, registryAuth);
+        const attemptDesiredConfig = desiredConfigForRegistryAttempt(daemonDesiredConfig, registryAuth);
         const payload = {
           deploymentId: id,
           name: input.name,
@@ -475,7 +456,7 @@ export class DockerDeploymentService {
           deployedDesiredConfig = attemptDesiredConfig;
           break;
         } catch (err) {
-          if (registryAuth === registryAttempts.at(-1) || !this.isRegistryRetryableError(err)) {
+          if (registryAuth === registryAttempts.at(-1) || !isRegistryRetryableError(err)) {
             throw err;
           }
         }
@@ -756,7 +737,7 @@ export class DockerDeploymentService {
     try {
       let successfulRegistryId: string | undefined;
       for (const registryAuth of registryAttempts) {
-        const attemptDesiredConfig = this.desiredConfigForRegistryAttempt(daemonDesiredConfig, registryAuth);
+        const attemptDesiredConfig = desiredConfigForRegistryAttempt(daemonDesiredConfig, registryAuth);
         try {
           const result = await this.dispatch.sendDockerDeploymentCommand(
             nodeId,
@@ -780,7 +761,7 @@ export class DockerDeploymentService {
           successfulDesiredConfig = attemptDesiredConfig;
           break;
         } catch (err) {
-          if (registryAuth === registryAttempts.at(-1) || !this.isRegistryRetryableError(err)) {
+          if (registryAuth === registryAttempts.at(-1) || !isRegistryRetryableError(err)) {
             throw err;
           }
         }
