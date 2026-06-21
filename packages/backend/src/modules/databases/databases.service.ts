@@ -15,27 +15,17 @@ import {
   type DatabaseConnectionConfig,
   type DatabaseConnectionView,
   type DatabaseHealthStatus,
-  hashDatabasePreview,
   type PostgresConnectionConfig,
   type RedisConnectionConfig,
   toDatabaseConnectionView,
 } from './database-connection-view.js';
 import { type DatabaseOperation, type DatabaseType, mapDatabaseDriverError } from './database-error-mapping.js';
 import {
-  inferPostgresIntent,
-  inferRedisSingleCommandIntent,
-  splitPostgresStatements,
-  splitRedisCommands,
-  tokenizeRedisCommand,
-} from './database-query-intent.js';
-import {
-  compactCommandResult,
-  compactForJsonBudget,
-  compactPostgresRows,
-  estimateJsonBytes,
-  REDIS_COMMAND_MAX_BYTES,
-  truncateUtf8,
-} from './database-result-compaction.js';
+  type DatabaseQueryExecutionContext,
+  executePostgresSql as executePostgresSqlOperation,
+  executeRedisCommand as executeRedisCommandOperation,
+} from './database-query-execution.js';
+import { compactForJsonBudget, REDIS_COMMAND_MAX_BYTES, truncateUtf8 } from './database-result-compaction.js';
 import type {
   CreateDatabaseConnectionInput,
   DatabaseListQuery,
@@ -45,11 +35,6 @@ import { postgresParameterSql, quoteIdent } from './postgres-row-sql.js';
 
 const { Pool } = pg;
 const DATABASE_HEALTH_HISTORY_MIN_INTERVAL_MS = 30_000;
-const POSTGRES_QUERY_TIMEOUT_MS = 15_000;
-const POSTGRES_RESULT_SET_MAX = 10;
-const POSTGRES_RESPONSE_MAX_BYTES = 768 * 1024;
-const REDIS_COMMAND_MAX_COUNT = 20;
-const REDIS_RESPONSE_MAX_BYTES = 512 * 1024;
 
 export type {
   DatabaseConnectionConfig,
@@ -132,6 +117,15 @@ export class DatabaseConnectionService {
 
   setEventBus(bus: EventBusService) {
     this.eventBus = bus;
+  }
+
+  private queryExecutionContext(): DatabaseQueryExecutionContext {
+    return {
+      withPostgresPool: (id, operation, fn) => this.withPostgresPool(id, operation, fn),
+      withRedisClient: (id, operation, fn) => this.withRedisClient(id, operation, fn),
+      auditLog: (entry) => this.auditService.log(entry),
+      emitChange: (id, action, extra) => this.emitChange(id, action, extra),
+    };
   }
 
   async list(
@@ -773,71 +767,7 @@ export class DatabaseConnectionService {
   }
 
   async executePostgresSql(id: string, sqlText: string, userId: string, options: { maxRows?: number } = {}) {
-    const maxRows = Math.min(Math.max(Math.trunc(options.maxRows ?? 500), 1), 2000);
-    const statements = splitPostgresStatements(sqlText);
-    if (statements.length > POSTGRES_RESULT_SET_MAX) {
-      throw new AppError(
-        400,
-        'POSTGRES_STATEMENT_LIMIT_EXCEEDED',
-        `Postgres SQL execution is limited to ${POSTGRES_RESULT_SET_MAX} statements per request`
-      );
-    }
-
-    return this.withPostgresPool(id, 'query', async (pool) => {
-      const client = await pool.connect();
-      const entries: Array<pg.QueryResult & { durationMs: number }> = [];
-      let responseTruncated = false;
-      try {
-        await client.query(`SET statement_timeout = ${POSTGRES_QUERY_TIMEOUT_MS}`);
-        for (const [index, statement] of statements.entries()) {
-          const start = Date.now();
-          const entry = await client.query(statement);
-          if (index < POSTGRES_RESULT_SET_MAX) {
-            entries.push({ ...entry, durationMs: Date.now() - start });
-          }
-        }
-      } finally {
-        await client.query('RESET statement_timeout').catch(() => {});
-        client.release();
-      }
-      const results = [];
-      for (const entry of entries) {
-        const compacted = compactPostgresRows(entry.rows, maxRows);
-        const next = {
-          command: entry.command,
-          rowCount: entry.rowCount ?? 0,
-          durationMs: entry.durationMs,
-          fields: entry.fields?.map((field: { name: string }) => field.name) ?? [],
-          rows: compacted.rows,
-          truncated: compacted.truncated,
-          maxRows,
-        };
-        if (estimateJsonBytes([...results, next]) > POSTGRES_RESPONSE_MAX_BYTES) {
-          responseTruncated = true;
-          break;
-        }
-        results.push(next);
-      }
-      const intent = inferPostgresIntent(sqlText);
-      await this.auditService.log({
-        userId,
-        action: 'database.postgres.query',
-        resourceType: 'database',
-        resourceId: id,
-        details: {
-          intent,
-          statementCount: statements.length,
-          statementHash: hashDatabasePreview(sqlText),
-          statementPreview: sqlText.trim().slice(0, 160),
-        },
-      });
-      this.emitChange(id, 'query.executed', {
-        provider: 'postgres',
-        intent,
-        statementCount: statements.length,
-      });
-      return { results, truncated: responseTruncated, resultLimit: POSTGRES_RESULT_SET_MAX };
-    });
+    return executePostgresSqlOperation(this.queryExecutionContext(), id, sqlText, userId, options);
   }
 
   async scanRedisKeys(id: string, cursor: number, limit: number, search?: string, type?: string) {
@@ -1024,46 +954,7 @@ export class DatabaseConnectionService {
   }
 
   async executeRedisCommand(id: string, commandText: string, userId: string) {
-    return this.withRedisClient(id, 'query', async (client) => {
-      const commands = splitRedisCommands(commandText);
-      const results = [];
-      const intents = new Set<'read' | 'write' | 'admin'>();
-      let responseTruncated = commands.length > REDIS_COMMAND_MAX_COUNT;
-      for (const command of commands.slice(0, REDIS_COMMAND_MAX_COUNT)) {
-        const parts = tokenizeRedisCommand(command);
-        const commandName = parts[0]!.toUpperCase();
-        const rawResult = await client.call(parts[0]!, ...parts.slice(1));
-        const { result, truncated } = compactCommandResult(rawResult);
-        const next = { command: commandName, result, truncated };
-        if (estimateJsonBytes([...results, next]) > REDIS_RESPONSE_MAX_BYTES) {
-          responseTruncated = true;
-          break;
-        }
-        results.push(next);
-        intents.add(inferRedisSingleCommandIntent(command));
-      }
-      const intent = intents.has('admin') ? 'admin' : intents.has('write') ? 'write' : 'read';
-      await this.auditService.log({
-        userId,
-        action: 'database.redis.command.execute',
-        resourceType: 'database',
-        resourceId: id,
-        details: {
-          intent,
-          commandCount: commands.length,
-          commands: results.slice(0, 5).map((entry) => entry.command),
-          commandHash: hashDatabasePreview(commandText),
-          commandPreview: commandText.slice(0, 160),
-        },
-      });
-      this.emitChange(id, 'query.executed', {
-        provider: 'redis',
-        intent,
-        commandCount: commands.length,
-        commands: results.slice(0, 5).map((entry) => entry.command),
-      });
-      return { results, truncated: responseTruncated, commandLimit: REDIS_COMMAND_MAX_COUNT };
-    });
+    return executeRedisCommandOperation(this.queryExecutionContext(), id, commandText, userId);
   }
 
   async getDecryptedConfig(id: string): Promise<DatabaseConnectionConfig> {
