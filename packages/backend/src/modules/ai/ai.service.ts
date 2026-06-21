@@ -2,7 +2,6 @@ import OpenAI from 'openai';
 import { container } from '@/container.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { hasScope, hasScopeBase, hasScopeForResource } from '@/lib/permissions.js';
-import { UpdateAccessListSchema } from '@/modules/access-lists/access-list.schemas.js';
 import type { AccessListService } from '@/modules/access-lists/access-list.service.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { AuthService } from '@/modules/auth/auth.service.js';
@@ -28,6 +27,7 @@ import { UploadCertSchema } from '@/modules/ssl/ssl.schemas.js';
 import type { SSLService } from '@/modules/ssl/ssl.service.js';
 import { SessionService } from '@/services/session.service.js';
 import type { User } from '@/types.js';
+import { ACCESS_LIST_TOOL_NAMES, executeAccessListTool } from './ai.access-list-tools.js';
 import { DATABASE_TOOL_NAMES, executeDatabaseTool } from './ai.database-tools.js';
 import { manageDockerContainerConfigTool } from './ai.docker-config-tools.js';
 import { DOCKER_TOOL_NAMES, executeDockerTool } from './ai.docker-tools.js';
@@ -232,6 +232,18 @@ export class AIService {
       return executeDomainTool(
         {
           domainsService: this.domainsService,
+          ensureToolScopeForResource: (executionUser, baseScope, resourceId) =>
+            this.ensureToolScopeForResource(executionUser, baseScope, resourceId),
+        },
+        user,
+        toolName,
+        args
+      );
+    }
+    if (ACCESS_LIST_TOOL_NAMES.has(toolName)) {
+      return executeAccessListTool(
+        {
+          accessListService: this.accessListService,
           ensureToolScopeForResource: (executionUser, baseScope, resourceId) =>
             this.ensureToolScopeForResource(executionUser, baseScope, resourceId),
         },
@@ -578,43 +590,6 @@ export class AIService {
         }
         throw new Error(`Unsupported SSL certificate operation: ${String(a.operation)}`);
       }
-
-      // ── Access Lists ──
-      case 'list_access_lists':
-        return this.accessListService.list(
-          {
-            search: a.search,
-            page: agentPage(a.page),
-            limit: agentPageLimit(a.limit),
-          },
-          { allowedIds: allowedResourceIdsForScopes(user.scopes, 'acl:view') }
-        );
-      case 'create_access_list':
-        return this.accessListService.create(
-          {
-            name: a.name,
-            ipRules: [
-              ...(a.allowIps || []).map((v: string) => ({ value: v, type: 'allow' })),
-              ...(a.denyIps || []).map((v: string) => ({ value: v, type: 'deny' })),
-            ],
-            basicAuthEnabled: a.basicAuthEnabled ?? !!a.basicAuthUsers?.length,
-            basicAuthUsers: a.basicAuthUsers || [],
-          },
-          user.id
-        );
-      case 'delete_access_list':
-        await this.accessListService.delete(a.accessListId, user.id);
-        return { success: true };
-      case 'manage_access_list':
-        if (a.operation === 'get') {
-          this.ensureToolScopeForResource(user, 'acl:view', String(a.accessListId));
-          return this.accessListService.get(a.accessListId);
-        }
-        if (a.operation === 'update') {
-          this.ensureToolScopeForResource(user, 'acl:edit', String(a.accessListId));
-          return this.accessListService.update(a.accessListId, UpdateAccessListSchema.parse(args), user.id);
-        }
-        throw new Error(`Unsupported access list operation: ${String(a.operation)}`);
 
       // ── Raw Config ──
       case 'get_proxy_rendered_config': {
