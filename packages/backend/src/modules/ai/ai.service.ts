@@ -34,6 +34,7 @@ import { manageDockerContainerConfigTool } from './ai.docker-config-tools.js';
 import { DOCKER_TOOL_NAMES, executeDockerTool } from './ai.docker-tools.js';
 import { getInternalDocumentation } from './ai.docs.js';
 import { manageLoggingTool } from './ai.logging-tools.js';
+import { executeNodeTool, NODE_TOOL_NAMES } from './ai.node-tools.js';
 import { executeNotificationTool, NOTIFICATION_TOOL_NAMES } from './ai.notification-tools.js';
 import { findResource } from './ai.resource-search.js';
 import {
@@ -219,6 +220,9 @@ export class AIService {
         toolName,
         args
       );
+    }
+    if (NODE_TOOL_NAMES.has(toolName)) {
+      return executeNodeTool({ nodesService: this.nodesService }, user, toolName, args);
     }
 
     switch (toolName) {
@@ -622,51 +626,6 @@ export class AIService {
           return this.accessListService.update(a.accessListId, UpdateAccessListSchema.parse(args), user.id);
         }
         throw new Error(`Unsupported access list operation: ${String(a.operation)}`);
-
-      // ── Nodes ──
-      case 'list_nodes': {
-        const result = await this.nodesService.list(
-          {
-            search: a.search,
-            type: a.type,
-            status: a.status,
-            page: agentPage(a.page),
-            limit: agentPageLimit(a.limit),
-          },
-          { allowedIds: allowedResourceIdsForScopes(user.scopes, 'nodes:details') }
-        );
-        return {
-          ...result,
-          data: result.data.map((node) => ({
-            id: node.id,
-            type: node.type,
-            hostname: node.hostname,
-            displayName: node.displayName,
-            status: node.status,
-            isConnected: node.isConnected,
-            serviceCreationLocked: node.serviceCreationLocked,
-            daemonVersion: node.daemonVersion,
-            osInfo: node.osInfo,
-            configVersionHash: node.configVersionHash,
-            capabilities: node.capabilities,
-            lastSeenAt: node.lastSeenAt,
-            createdAt: node.createdAt,
-            updatedAt: node.updatedAt,
-          })),
-        };
-      }
-      case 'get_node':
-        return this.nodesService.get(a.nodeId);
-      case 'create_node':
-        return this.nodesService.create(
-          { hostname: a.hostname, type: a.type || 'nginx', displayName: a.displayName },
-          user.id
-        );
-      case 'rename_node':
-        return this.nodesService.update(a.nodeId, { displayName: a.displayName }, user.id);
-      case 'delete_node':
-        await this.nodesService.remove(a.nodeId, user.id);
-        return { success: true };
 
       // ── Raw Config ──
       case 'get_proxy_rendered_config': {
