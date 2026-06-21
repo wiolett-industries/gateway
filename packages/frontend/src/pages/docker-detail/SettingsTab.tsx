@@ -1,18 +1,10 @@
-import { Plus, RotateCcw, Unplug } from "lucide-react";
+import { RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { DockerHealthCheckSection } from "@/components/docker/DockerHealthCheckSection";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { useRealtime } from "@/hooks/use-realtime";
 import {
   type DockerRuntimeCapacity,
   loadDockerRuntimeCapacity,
@@ -22,9 +14,10 @@ import { formatBytes } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
-import type { DockerHealthCheck, DockerNetwork } from "@/types";
+import type { DockerHealthCheck } from "@/types";
 import type { InspectData } from "./helpers";
 import { LabelsSection } from "./LabelsSection";
+import { NetworksSection } from "./NetworksSection";
 import { type PortMapping, PortMappingsSection } from "./PortMappingsSection";
 import { RuntimeSection } from "./RuntimeSection";
 import { buildRuntimePayloadFromForm, type RuntimeFormValues } from "./runtime-payload";
@@ -34,18 +27,6 @@ import { WebhookSection } from "./WebhookSection";
 
 export { buildRecreatePayloadFromForm } from "./settings-payload";
 export { WebhookSection } from "./WebhookSection";
-
-function normalizeDockerNetwork(network: DockerNetwork | Record<string, unknown>): DockerNetwork {
-  const raw = network as Record<string, unknown>;
-  return {
-    id: String(raw.id ?? raw.Id ?? ""),
-    name: String(raw.name ?? raw.Name ?? ""),
-    driver: String(raw.driver ?? raw.Driver ?? ""),
-    scope: String(raw.scope ?? raw.Scope ?? ""),
-    ipam: (raw.ipam ?? raw.IPAM ?? undefined) as DockerNetwork["ipam"],
-    containers: (raw.containers ?? raw.Containers ?? undefined) as DockerNetwork["containers"],
-  };
-}
 
 function parseOptionalNumber(value: string): number | null {
   if (value.trim() === "") return null;
@@ -264,11 +245,6 @@ export function SettingsTab({
     Object.entries(initialLabels).map(([key, value]) => ({ key, value }))
   );
   const [recreateLoading, setRecreateLoading] = useState(false);
-  const [allNetworks, setAllNetworks] = useState<DockerNetwork[]>([]);
-  const [networksLoading, setNetworksLoading] = useState(false);
-  const [networkActionLoading, setNetworkActionLoading] = useState<string | null>(null);
-  const [selectedNetworkId, setSelectedNetworkId] = useState("");
-  const [addingNetwork, setAddingNetwork] = useState(false);
 
   const recreateBaseline = useMemo(
     () => ({
@@ -669,108 +645,6 @@ export function SettingsTab({
   const inputCell =
     "h-9 text-xs font-mono border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring";
 
-  const attachedNetworks = useMemo(
-    () =>
-      Object.entries(
-        (data.NetworkSettings?.Networks ?? {}) as Record<string, Record<string, unknown>>
-      ).map(([name, config]) => ({
-        name,
-        networkId: String(config.NetworkID ?? ""),
-        ipAddress: String(config.IPAddress ?? ""),
-        gateway: String(config.Gateway ?? ""),
-        aliases: Array.isArray(config.Aliases)
-          ? (config.Aliases as unknown[]).map((alias) => String(alias))
-          : [],
-      })),
-    [data.NetworkSettings?.Networks]
-  );
-
-  const attachedNames = useMemo(
-    () => new Set(attachedNetworks.map((network) => network.name)),
-    [attachedNetworks]
-  );
-
-  const availableNetworks = useMemo(
-    () => allNetworks.filter((network) => !attachedNames.has(network.name)),
-    [allNetworks, attachedNames]
-  );
-
-  const isBuiltInDockerNetwork = useCallback(
-    (name: string) => ["bridge", "host", "none"].includes(name),
-    []
-  );
-
-  const loadNetworks = useCallback(async () => {
-    if (!canListNetworks) return;
-    setNetworksLoading(true);
-    try {
-      const networks = await api.listDockerNetworks(nodeId);
-      setAllNetworks((networks ?? []).map((network) => normalizeDockerNetwork(network)));
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to load networks");
-    } finally {
-      setNetworksLoading(false);
-    }
-  }, [canListNetworks, nodeId]);
-
-  useEffect(() => {
-    if (!canListNetworks) return;
-    void loadNetworks();
-  }, [canListNetworks, loadNetworks]);
-
-  useEffect(() => {
-    if (availableNetworks.length === 0) {
-      setSelectedNetworkId("");
-      setAddingNetwork(false);
-      return;
-    }
-    if (!availableNetworks.some((network) => network.id === selectedNetworkId)) {
-      setSelectedNetworkId(availableNetworks[0]?.id ?? "");
-    }
-  }, [availableNetworks, selectedNetworkId]);
-
-  useRealtime("docker.network.changed", (payload) => {
-    const ev = payload as { nodeId?: string };
-    if (!ev || ev.nodeId !== nodeId) return;
-    void loadNetworks();
-  });
-
-  const refreshAfterNetworkChange = useCallback(async () => {
-    await invalidate("containers", "networks");
-    await Promise.all([loadNetworks(), Promise.resolve(onRefresh?.())]);
-  }, [invalidate, loadNetworks, onRefresh]);
-
-  const handleConnectNetwork = useCallback(async () => {
-    if (!selectedNetworkId) return;
-    setNetworkActionLoading(`connect:${selectedNetworkId}`);
-    try {
-      await api.connectContainerToNetwork(nodeId, selectedNetworkId, containerId);
-      toast.success("Network connected");
-      setAddingNetwork(false);
-      await refreshAfterNetworkChange();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to connect network");
-    } finally {
-      setNetworkActionLoading(null);
-    }
-  }, [containerId, nodeId, refreshAfterNetworkChange, selectedNetworkId]);
-
-  const handleDisconnectNetwork = useCallback(
-    async (networkId: string, networkName: string) => {
-      setNetworkActionLoading(`disconnect:${networkId}`);
-      try {
-        await api.disconnectContainerFromNetwork(nodeId, networkId, containerId);
-        toast.success(`Disconnected from ${networkName}`);
-        await refreshAfterNetworkChange();
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Failed to disconnect network");
-      } finally {
-        setNetworkActionLoading(null);
-      }
-    },
-    [containerId, nodeId, refreshAfterNetworkChange]
-  );
-
   return (
     <div
       className={`space-y-6 pb-6 ${recreateLoading || !!transition ? "pointer-events-none opacity-60" : ""}`}
@@ -972,137 +846,14 @@ export function SettingsTab({
       />
 
       {/* ─── Networks ─────────────────────────────────────────────── */}
-      <div className="border border-border bg-card overflow-hidden">
-        <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <div>
-            <h3 className="text-sm font-semibold">Networks</h3>
-            <p className="text-xs text-muted-foreground">
-              Connect this container to additional Docker networks
-            </p>
-          </div>
-          {canManageNetworks && canListNetworks && (
-            <Button
-              size="sm"
-              onClick={() => setAddingNetwork(true)}
-              disabled={addingNetwork || networksLoading || availableNetworks.length === 0}
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Add
-            </Button>
-          )}
-        </div>
-        {attachedNetworks.length > 0 || addingNetwork ? (
-          <>
-            <div
-              className={`grid ${
-                canManageNetworks
-                  ? "grid-cols-[minmax(0,1fr)_120px_120px_36px]"
-                  : "grid-cols-[minmax(0,1fr)_120px_120px]"
-              } border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wider`}
-            >
-              <div className="px-3 py-2">Network</div>
-              <div className="px-3 py-2 border-l border-border">IP</div>
-              <div className="px-3 py-2 border-l border-border">Gateway</div>
-              {canManageNetworks && <div />}
-            </div>
-            <div>
-              {attachedNetworks.map((network) => (
-                <div
-                  key={`${network.name}:${network.networkId}`}
-                  className={`grid ${
-                    canManageNetworks
-                      ? "grid-cols-[minmax(0,1fr)_120px_120px_36px]"
-                      : "grid-cols-[minmax(0,1fr)_120px_120px]"
-                  } border-b border-border last:border-b-0`}
-                >
-                  <div className="flex min-w-0 items-center px-3 py-2 text-sm">
-                    <div className="min-w-0">
-                      <span className="block truncate font-medium">{network.name}</span>
-                      {network.aliases.length > 0 && (
-                        <span className="block truncate text-xs text-muted-foreground">
-                          {network.aliases.join(", ")}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex items-center border-l border-border px-3 py-2 text-xs font-mono text-muted-foreground">
-                    <span className="truncate">{network.ipAddress || "-"}</span>
-                  </div>
-                  <div className="flex items-center border-l border-border px-3 py-2 text-xs font-mono text-muted-foreground">
-                    <span className="truncate">{network.gateway || "-"}</span>
-                  </div>
-                  {canManageNetworks && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-9 w-9 shrink-0 rounded-none border-l border-border"
-                      disabled={
-                        !!networkActionLoading ||
-                        !network.networkId ||
-                        isBuiltInDockerNetwork(network.name)
-                      }
-                      onClick={() => handleDisconnectNetwork(network.networkId, network.name)}
-                    >
-                      <Unplug className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
-                </div>
-              ))}
-              {addingNetwork && (
-                <div
-                  className={`grid ${
-                    canManageNetworks
-                      ? "grid-cols-[minmax(0,1fr)_120px_120px_36px]"
-                      : "grid-cols-[minmax(0,1fr)_120px_120px]"
-                  } border-b border-border last:border-b-0`}
-                >
-                  <div className="min-w-0">
-                    <Select
-                      value={selectedNetworkId}
-                      onValueChange={setSelectedNetworkId}
-                      disabled={
-                        !canManageNetworks || networksLoading || availableNetworks.length === 0
-                      }
-                    >
-                      <SelectTrigger className="h-9 text-xs border-0 rounded-none shadow-none focus:ring-1 focus:ring-inset focus:ring-ring">
-                        <SelectValue
-                          placeholder={networksLoading ? "Loading networks..." : "Select a network"}
-                        />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {availableNetworks.map((network) => (
-                          <SelectItem key={network.id} value={network.id}>
-                            {network.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="flex items-center border-l border-border px-3 py-2 text-xs text-muted-foreground">
-                    -
-                  </div>
-                  <div className="flex items-center border-l border-border px-3 py-2 text-xs text-muted-foreground">
-                    -
-                  </div>
-                  {canManageNetworks && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-9 w-9 shrink-0 rounded-none border-l border-border"
-                      disabled={!selectedNetworkId || networksLoading || !!networkActionLoading}
-                      onClick={handleConnectNetwork}
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
-                </div>
-              )}
-            </div>
-          </>
-        ) : (
-          <div className="py-8 text-center text-muted-foreground text-sm">No networks</div>
-        )}
-      </div>
+      <NetworksSection
+        nodeId={nodeId}
+        containerId={containerId}
+        networks={data.NetworkSettings?.Networks as Record<string, Record<string, unknown>>}
+        canManageNetworks={canManageNetworks}
+        canListNetworks={canListNetworks}
+        onRefresh={onRefresh}
+      />
 
       {/* ─── Webhook / Image Cleanup ─────────────────────────────── */}
       {(() => {
