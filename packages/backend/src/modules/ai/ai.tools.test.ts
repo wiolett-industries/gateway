@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AI_TOOLS, getOpenAITools, isDestructiveTool } from './ai.tools.js';
+import { AI_TOOLS, getOpenAITools, isDestructiveTool, TOOL_STORE_INVALIDATION_MAP } from './ai.tools.js';
 
 function toolNames(scopes: string[]): string[] {
   return getOpenAITools([], scopes, false).map((tool) => tool.function.name);
@@ -23,6 +23,99 @@ function dockerToolNamesForScopes(scopes: string[]): string[] {
 }
 
 describe('AI tool scope filtering', () => {
+  it('keeps core registry ordering, uniqueness, and invalidation contracts stable', () => {
+    expect(new Set(AI_TOOLS.map((tool) => tool.name)).size).toBe(AI_TOOLS.length);
+    expect(AI_TOOLS.slice(0, 55).map((tool) => tool.name)).toEqual([
+      'find_resource',
+      'list_cas',
+      'get_ca',
+      'create_root_ca',
+      'create_intermediate_ca',
+      'delete_ca',
+      'manage_ca',
+      'list_certificates',
+      'get_certificate',
+      'issue_certificate',
+      'revoke_certificate',
+      'manage_certificate',
+      'list_templates',
+      'create_template',
+      'delete_template',
+      'manage_template',
+      'list_proxy_hosts',
+      'get_proxy_host',
+      'create_proxy_host',
+      'update_proxy_host',
+      'delete_proxy_host',
+      'create_proxy_folder',
+      'move_hosts_to_folder',
+      'delete_proxy_folder',
+      'manage_proxy_template',
+      'list_ssl_certificates',
+      'request_acme_cert',
+      'link_internal_cert',
+      'manage_ssl_certificate',
+      'list_domains',
+      'create_domain',
+      'delete_domain',
+      'manage_domain',
+      'list_access_lists',
+      'create_access_list',
+      'delete_access_list',
+      'manage_access_list',
+      'list_nodes',
+      'get_node',
+      'create_node',
+      'rename_node',
+      'delete_node',
+      'get_proxy_rendered_config',
+      'update_proxy_raw_config',
+      'toggle_proxy_raw_mode',
+      'list_users',
+      'update_user_role',
+      'get_audit_log',
+      'get_dashboard_stats',
+      'list_groups',
+      'create_group',
+      'update_group',
+      'delete_group',
+      'ask_question',
+      'internal_documentation',
+    ]);
+    expect(TOOL_STORE_INVALIDATION_MAP.create_root_ca).toEqual(['ca']);
+    expect(TOOL_STORE_INVALIDATION_MAP.manage_certificate).toEqual(['certificates', 'ca']);
+    expect(TOOL_STORE_INVALIDATION_MAP.update_proxy_host).toEqual(['proxy']);
+    expect(TOOL_STORE_INVALIDATION_MAP.manage_ssl_certificate).toEqual(['ssl']);
+    expect(TOOL_STORE_INVALIDATION_MAP.update_user_role).toEqual(['users']);
+    expect(isDestructiveTool('find_resource')).toBe(false);
+    expect(isDestructiveTool('manage_ca')).toBe(true);
+    expect(isDestructiveTool('create_proxy_folder')).toBe(false);
+  });
+
+  it('keeps PKI, proxy, SSL, and administration scope filtering stable', () => {
+    expect(toolNames(['pki:ca:view:root'])).toEqual(expect.arrayContaining(['list_cas', 'get_ca']));
+    expect(toolNames(['pki:cert:view'])).toEqual(
+      expect.arrayContaining(['list_certificates', 'get_certificate', 'manage_certificate'])
+    );
+    expect(toolNames(['pki:templates:view'])).toEqual(expect.arrayContaining(['list_templates', 'manage_template']));
+    expect(toolNames(['proxy:view'])).toEqual(expect.arrayContaining(['list_proxy_hosts', 'get_proxy_host']));
+    expect(toolNames(['proxy:folders:manage'])).toEqual(
+      expect.arrayContaining(['create_proxy_folder', 'move_hosts_to_folder', 'delete_proxy_folder'])
+    );
+    expect(toolNames(['ssl:cert:view'])).toEqual(
+      expect.arrayContaining(['list_ssl_certificates', 'manage_ssl_certificate'])
+    );
+    expect(toolNames(['admin:users'])).toEqual(expect.arrayContaining(['list_users', 'update_user_role']));
+    expect(toolNames(['admin:groups'])).toEqual(
+      expect.arrayContaining(['list_groups', 'create_group', 'update_group', 'delete_group'])
+    );
+    expect(toolNames(['feat:ai:use'])).toEqual(
+      expect.arrayContaining(['get_dashboard_stats', 'ask_question', 'internal_documentation'])
+    );
+    expect(toolNames(['proxy:raw:read:proxy-1'])).toContain('get_proxy_rendered_config');
+    expect(toolNames(['proxy:raw:read:proxy-1'])).not.toContain('update_proxy_raw_config');
+  });
+
   it('requires direct database view before advertising database query tools', () => {
     expect(toolNames(['databases:query:read:db-1'])).not.toContain('query_postgres_read');
     expect(toolNames(['databases:view:db-1', 'databases:query:read:db-2'])).not.toContain('query_postgres_read');
