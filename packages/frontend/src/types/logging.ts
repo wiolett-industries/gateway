@@ -1,0 +1,145 @@
+export type LoggingSchemaMode = "loose" | "strip" | "reject";
+export type LoggingSeverity = "trace" | "debug" | "info" | "warn" | "error" | "fatal";
+export type LoggingFieldType = "string" | "number" | "boolean" | "datetime" | "json";
+
+export interface LoggingFieldDefinition {
+  key: string;
+  location: "label" | "field";
+  type: LoggingFieldType;
+  required: boolean;
+  description?: string;
+}
+
+export interface LoggingEnvironment {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  enabled: boolean;
+  schemaId: string | null;
+  schemaName: string | null;
+  schemaMode: LoggingSchemaMode;
+  retentionDays: number;
+  rateLimitRequestsPerWindow: number | null;
+  rateLimitEventsPerWindow: number | null;
+  fieldSchema: LoggingFieldDefinition[];
+  createdById: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LoggingSchema {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  schemaMode: LoggingSchemaMode;
+  fieldSchema: LoggingFieldDefinition[];
+  createdById: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LoggingIngestToken {
+  id: string;
+  environmentId: string;
+  name: string;
+  tokenPrefix: string;
+  enabled: boolean;
+  lastUsedAt: string | null;
+  expiresAt: string | null;
+  createdById: string | null;
+  createdAt: string;
+  token?: string;
+}
+
+export interface LoggingSearchRequest {
+  from?: string;
+  to?: string;
+  severities?: LoggingSeverity[];
+  services?: string[];
+  sources?: string[];
+  message?: string;
+  messageMatch?: "contains" | "startsWith" | "endsWith";
+  traceId?: string;
+  spanId?: string;
+  requestId?: string;
+  labels?: Record<string, string>;
+  fields?: Record<string, { op: string; value: unknown }>;
+  expression?: LoggingSearchExpression;
+  limit?: number;
+  cursor?: string | null;
+}
+
+export type LoggingSearchExpression =
+  | { type: "and" | "or"; children: LoggingSearchExpression[] }
+  | { type: "not"; child: LoggingSearchExpression }
+  | { type: "text"; value: string; match?: "contains" | "startsWith" | "endsWith" }
+  | { type: "label"; key: string; op: "exists" | "eq" | "neq"; value?: string }
+  | {
+      type: "field";
+      key: string;
+      op: "eq" | "neq" | "contains" | "gt" | "gte" | "lt" | "lte";
+      value: unknown;
+    }
+  | { type: "severity"; op: "eq" | "gt" | "gte" | "lt" | "lte"; value: LoggingSeverity }
+  | {
+      type: "service" | "source" | "traceId" | "spanId" | "requestId";
+      op: "eq" | "neq";
+      value: string;
+    };
+
+export interface LoggingSearchResult {
+  eventId: string;
+  timestamp: string;
+  ingestedAt: string;
+  environmentId: string;
+  severity: LoggingSeverity;
+  message: string;
+  service: string;
+  source: string;
+  traceId: string;
+  spanId: string;
+  requestId: string;
+  labels: Record<string, string>;
+  fields: Record<string, unknown>;
+}
+
+export interface LoggingFacets {
+  services: string[];
+  sources: string[];
+  severities: Array<{ severity: LoggingSeverity; count: number }>;
+  labels: Record<string, string[]>;
+}
+
+export interface LoggingMetadata {
+  services: string[];
+  sources: string[];
+  labelKeys: string[];
+  fieldKeys: string[];
+  labelValues: Record<string, string[]>;
+}
+
+export interface LoggingFeatureStatus {
+  enabled: boolean;
+  available: boolean;
+  reason?: string | null;
+  config?: {
+    database: string;
+    table: string;
+    requestTimeoutMs: number;
+    ingestMaxBodyBytes: number;
+    ingestMaxBatchSize: number;
+    ingestMaxMessageBytes: number;
+    ingestMaxLabels: number;
+    ingestMaxFields: number;
+    ingestMaxKeyLength: number;
+    ingestMaxValueBytes: number;
+    ingestMaxJsonDepth: number;
+    rateLimitWindowSeconds: number;
+    globalRequestsPerWindow: number;
+    globalEventsPerWindow: number;
+    tokenRequestsPerWindow: number;
+    tokenEventsPerWindow: number;
+  };
+}

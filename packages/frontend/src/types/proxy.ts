@@ -1,0 +1,187 @@
+import type { SSLCertificate } from "./ssl";
+
+// Proxy Host Types
+export type ProxyHostType = "proxy" | "redirect" | "404" | "raw";
+export type ForwardScheme = "http" | "https";
+export type HealthStatus = "online" | "offline" | "degraded" | "unknown" | "disabled";
+
+export interface CustomHeader {
+  name: string;
+  value: string;
+}
+
+export interface CacheOptions {
+  maxAge?: number;
+  staleWhileRevalidate?: number;
+}
+
+export interface RateLimitOptions {
+  requestsPerSecond: number;
+  burst?: number;
+}
+
+export interface RewriteRule {
+  source: string;
+  destination: string;
+  type: "permanent" | "temporary";
+}
+
+export interface ProxyHost {
+  id: string;
+  type: ProxyHostType;
+  domainNames: string[];
+  enabled: boolean;
+  forwardHost: string | null;
+  forwardPort: number | null;
+  forwardScheme: ForwardScheme;
+  sslEnabled: boolean;
+  sslForced: boolean;
+  http2Support: boolean;
+  sslCertificateId: string | null;
+  internalCertificateId: string | null;
+  websocketSupport: boolean;
+  redirectUrl: string | null;
+  redirectStatusCode: number;
+  customHeaders: CustomHeader[];
+  cacheEnabled: boolean;
+  cacheOptions: CacheOptions | null;
+  rateLimitEnabled: boolean;
+  rateLimitOptions: RateLimitOptions | null;
+  customRewrites: RewriteRule[];
+  advancedConfig: string | null;
+  rawConfig: string | null;
+  rawConfigEnabled: boolean;
+  accessListId: string | null;
+  folderId: string | null;
+  sortOrder: number;
+  nginxTemplateId: string | null;
+  templateVariables: Record<string, string | number | boolean>;
+  healthCheckEnabled: boolean;
+  healthCheckUrl: string;
+  healthCheckInterval: number;
+  healthCheckExpectedStatus: number | null;
+  healthCheckExpectedBody: string | null;
+  healthCheckBodyMatchMode: "includes" | "exact" | "starts_with" | "ends_with";
+  healthCheckSlowThreshold: number | null;
+  healthStatus: HealthStatus;
+  effectiveHealthStatus?: string;
+  lastHealthCheckAt: string | null;
+  healthHistory?: Array<{ ts: string; status: string; responseMs?: number; slow?: boolean }>;
+  isSystem?: boolean;
+  systemKind?: string | null;
+  createdById: string;
+  createdAt: string;
+  updatedAt: string;
+  // Relations (populated in detail views)
+  sslCertificate?: SSLCertificate;
+  accessList?: AccessList;
+}
+
+// Access List Types
+export interface IPRule {
+  type: "allow" | "deny";
+  value: string;
+}
+
+export interface BasicAuthUser {
+  username: string;
+}
+
+export interface AccessList {
+  id: string;
+  name: string;
+  description: string | null;
+  ipRules: IPRule[];
+  basicAuthEnabled: boolean;
+  basicAuthUsers: BasicAuthUser[];
+  createdAt: string;
+  updatedAt: string;
+  usageCount?: number;
+}
+
+// Request types (Gateway)
+export interface CreateProxyHostRequest {
+  type: ProxyHostType;
+  domainNames: string[];
+  forwardHost?: string;
+  forwardPort?: number;
+  forwardScheme?: ForwardScheme;
+  sslEnabled?: boolean;
+  sslForced?: boolean;
+  http2Support?: boolean;
+  sslCertificateId?: string | null;
+  internalCertificateId?: string | null;
+  websocketSupport?: boolean;
+  redirectUrl?: string;
+  redirectStatusCode?: number;
+  customHeaders?: CustomHeader[];
+  cacheEnabled?: boolean;
+  cacheOptions?: CacheOptions;
+  rateLimitEnabled?: boolean;
+  rateLimitOptions?: RateLimitOptions;
+  customRewrites?: RewriteRule[];
+  advancedConfig?: string | null;
+  rawConfig?: string;
+  rawConfigEnabled?: boolean;
+  accessListId?: string | null;
+  folderId?: string | null;
+  nginxTemplateId?: string | null;
+  templateVariables?: Record<string, string | number | boolean>;
+  healthCheckEnabled?: boolean;
+  healthCheckUrl?: string;
+  healthCheckInterval?: number;
+  healthCheckExpectedStatus?: number;
+  healthCheckExpectedBody?: string | null;
+  healthCheckBodyMatchMode?: "includes" | "exact" | "starts_with" | "ends_with" | null;
+  healthCheckSlowThreshold?: number;
+}
+
+// Proxy Host Folder Types
+export interface ProxyHostFolder {
+  id: string;
+  name: string;
+  parentId: string | null;
+  sortOrder: number;
+  depth: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FolderTreeNode extends ProxyHostFolder {
+  children: FolderTreeNode[];
+  hosts: ProxyHost[];
+}
+
+export interface GroupedProxyHostsResponse {
+  folders: FolderTreeNode[];
+  ungroupedHosts: ProxyHost[];
+  totalHosts: number;
+}
+
+// Nginx Config Template Types
+export interface TemplateVariableDef {
+  name: string;
+  type: "string" | "number" | "boolean";
+  default?: string | number | boolean;
+  description?: string;
+}
+
+export interface NginxTemplate {
+  id: string;
+  name: string;
+  description: string | null;
+  isBuiltin: boolean;
+  type: ProxyHostType;
+  content: string;
+  variables: TemplateVariableDef[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateAccessListRequest {
+  name: string;
+  description?: string;
+  ipRules: IPRule[];
+  basicAuthEnabled?: boolean;
+  basicAuthUsers?: { username: string; password: string }[];
+}
