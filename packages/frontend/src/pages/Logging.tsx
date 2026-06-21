@@ -55,6 +55,11 @@ import { LoggingExplorer } from "./logging/LoggingExplorer";
 import { LoggingSchemaEditor } from "./logging/LoggingSchemaEditor";
 import { LoggingEnvironmentsTab, LoggingSchemasTab } from "./logging/LoggingTabs";
 import { LoggingTokenPanel } from "./logging/LoggingTokenPanel";
+import {
+  isLoggingEnvironmentSettingsDirty,
+  isLoggingSchemaDirty,
+  slugify,
+} from "./logging/logging-state";
 
 const TOP_TABS = [
   { value: "environments", label: "Environments", icon: Database },
@@ -63,43 +68,6 @@ const TOP_TABS = [
 ] as const;
 
 const ENV_TABS = ["logs", "tokens", "settings"] as const;
-
-function slugify(value: string) {
-  return value
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
-
-function normalizedNullableNumber(value: number | null | undefined) {
-  return value ?? null;
-}
-
-function isLoggingEnvironmentSettingsDirty(
-  environment: LoggingEnvironment,
-  draft: Partial<LoggingEnvironment>
-) {
-  return (
-    (draft.schemaId ?? null) !== environment.schemaId ||
-    (draft.enabled ?? environment.enabled) !== environment.enabled ||
-    (draft.retentionDays ?? environment.retentionDays) !== environment.retentionDays ||
-    normalizedNullableNumber(draft.rateLimitRequestsPerWindow) !==
-      normalizedNullableNumber(environment.rateLimitRequestsPerWindow) ||
-    normalizedNullableNumber(draft.rateLimitEventsPerWindow) !==
-      normalizedNullableNumber(environment.rateLimitEventsPerWindow)
-  );
-}
-
-function isLoggingSchemaDirty(schema: LoggingSchema, draft: Partial<LoggingSchema>) {
-  return (
-    (draft.name ?? "") !== schema.name ||
-    (draft.slug ?? "") !== schema.slug ||
-    (draft.description ?? null) !== schema.description ||
-    (draft.schemaMode ?? schema.schemaMode) !== schema.schemaMode ||
-    JSON.stringify(draft.fieldSchema ?? schema.fieldSchema) !== JSON.stringify(schema.fieldSchema)
-  );
-}
 
 export function Logging() {
   const { section, id, tab } = useParams<{ section?: string; id?: string; tab?: string }>();
