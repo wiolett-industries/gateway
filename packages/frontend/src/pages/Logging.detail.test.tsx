@@ -1,0 +1,127 @@
+import { fireEvent, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { vi } from "vitest";
+import { LoggingEnvironmentDetail, LoggingSchemaDetail } from "@/pages/logging/LoggingDetails";
+import { renderWithRouter } from "@/test/render";
+import type { LoggingEnvironment, LoggingFeatureStatus, LoggingSchema } from "@/types";
+
+vi.mock("./logging/LoggingExplorer", () => ({
+  LoggingExplorer: () => <div data-testid="logging-explorer" />,
+}));
+
+vi.mock("./logging/LoggingTokenPanel", () => ({
+  LoggingTokenPanel: () => <div data-testid="logging-token-panel" />,
+}));
+
+function makeSchema(overrides: Partial<LoggingSchema> = {}): LoggingSchema {
+  return {
+    id: "schema-1",
+    name: "Payments",
+    slug: "payments",
+    description: "Payment events",
+    schemaMode: "reject",
+    fieldSchema: [],
+    createdById: null,
+    createdAt: "2026-06-21T00:00:00.000Z",
+    updatedAt: "2026-06-21T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function makeEnvironment(overrides: Partial<LoggingEnvironment> = {}): LoggingEnvironment {
+  return {
+    id: "env-1",
+    name: "Production",
+    slug: "production",
+    description: "Production logs",
+    enabled: true,
+    schemaId: "schema-1",
+    schemaName: "Payments",
+    schemaMode: "reject",
+    fieldSchema: [],
+    retentionDays: 30,
+    rateLimitRequestsPerWindow: 100,
+    rateLimitEventsPerWindow: 1000,
+    createdById: null,
+    createdAt: "2026-06-21T00:00:00.000Z",
+    updatedAt: "2026-06-21T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function makeStatus(): LoggingFeatureStatus {
+  return {
+    enabled: true,
+    available: true,
+  };
+}
+
+describe("Logging detail views", () => {
+  it("saves schema draft changes from the detail form", async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+
+    renderWithRouter(
+      <LoggingSchemaDetail
+        schema={makeSchema()}
+        loading={false}
+        canEdit={true}
+        canDelete={false}
+        onSave={onSave}
+        onDelete={vi.fn()}
+      />,
+      { path: "/logging/schemas/:id", route: "/logging/schemas/schema-1" }
+    );
+
+    const nameInput = screen.getByDisplayValue("Payments");
+    await user.clear(nameInput);
+    await user.type(nameInput, "Payments v2");
+    await user.click(screen.getByRole("button", { name: /save changes/i }));
+
+    await waitFor(() => {
+      expect(onSave).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "Payments v2",
+          slug: "payments",
+          schemaMode: "reject",
+        })
+      );
+    });
+  });
+
+  it("saves environment settings draft changes from the settings tab", async () => {
+    const user = userEvent.setup();
+    const onUpdate = vi.fn().mockResolvedValue(undefined);
+    const environment = makeEnvironment();
+
+    renderWithRouter(
+      <LoggingEnvironmentDetail
+        environment={environment}
+        schemas={[makeSchema()]}
+        status={makeStatus()}
+        loading={false}
+        activeTab="settings"
+        canEdit={true}
+        canDelete={false}
+        canCreateToken={false}
+        canDeleteToken={false}
+        onUpdate={onUpdate}
+        onDelete={vi.fn()}
+      />,
+      { path: "/logging/environments/:id/:tab", route: "/logging/environments/env-1/settings" }
+    );
+
+    const retentionInput = screen.getByDisplayValue("30");
+    fireEvent.change(retentionInput, { target: { value: "45" } });
+    await user.click(screen.getByRole("button", { name: /save changes/i }));
+
+    await waitFor(() => {
+      expect(onUpdate).toHaveBeenCalledWith(
+        "env-1",
+        expect.objectContaining({
+          retentionDays: 45,
+        })
+      );
+    });
+  });
+});
