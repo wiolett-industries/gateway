@@ -8,7 +8,6 @@ import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { AuthService } from '@/modules/auth/auth.service.js';
 import type { DatabaseConnectionService } from '@/modules/databases/databases.service.js';
 import type { DockerManagementService } from '@/modules/docker/docker.service.js';
-import { UpdateDomainSchema } from '@/modules/domains/domain.schemas.js';
 import type { DomainsService } from '@/modules/domains/domain.service.js';
 import type { GroupService } from '@/modules/groups/group.service.js';
 import type { MonitoringService } from '@/modules/monitoring/monitoring.service.js';
@@ -33,6 +32,7 @@ import { DATABASE_TOOL_NAMES, executeDatabaseTool } from './ai.database-tools.js
 import { manageDockerContainerConfigTool } from './ai.docker-config-tools.js';
 import { DOCKER_TOOL_NAMES, executeDockerTool } from './ai.docker-tools.js';
 import { getInternalDocumentation } from './ai.docs.js';
+import { DOMAIN_TOOL_NAMES, executeDomainTool } from './ai.domain-tools.js';
 import { executeGroupTool, GROUP_TOOL_NAMES } from './ai.group-tools.js';
 import { manageLoggingTool } from './ai.logging-tools.js';
 import { executeNodeTool, NODE_TOOL_NAMES } from './ai.node-tools.js';
@@ -227,6 +227,18 @@ export class AIService {
     }
     if (GROUP_TOOL_NAMES.has(toolName)) {
       return executeGroupTool({ groupService: this.groupService }, user, toolName, args);
+    }
+    if (DOMAIN_TOOL_NAMES.has(toolName)) {
+      return executeDomainTool(
+        {
+          domainsService: this.domainsService,
+          ensureToolScopeForResource: (executionUser, baseScope, resourceId) =>
+            this.ensureToolScopeForResource(executionUser, baseScope, resourceId),
+        },
+        user,
+        toolName,
+        args
+      );
     }
 
     switch (toolName) {
@@ -566,33 +578,6 @@ export class AIService {
         }
         throw new Error(`Unsupported SSL certificate operation: ${String(a.operation)}`);
       }
-
-      // ── Domains ──
-      case 'list_domains':
-        return this.domainsService.listDomains({
-          search: a.search,
-          page: agentPage(a.page),
-          limit: agentPageLimit(a.limit),
-        });
-      case 'create_domain':
-        return this.domainsService.createDomain({ domain: a.domain }, user.id);
-      case 'delete_domain':
-        await this.domainsService.deleteDomain(a.domainId, user.id);
-        return { success: true };
-      case 'manage_domain':
-        if (a.operation === 'get') {
-          this.ensureToolScopeForResource(user, 'domains:view', String(a.domainId));
-          return this.domainsService.getDomain(a.domainId);
-        }
-        if (a.operation === 'update') {
-          this.ensureToolScopeForResource(user, 'domains:edit', String(a.domainId));
-          return this.domainsService.updateDomain(a.domainId, UpdateDomainSchema.parse(args), user.id);
-        }
-        if (a.operation === 'check_dns') {
-          this.ensureToolScopeForResource(user, 'domains:edit', String(a.domainId));
-          return this.domainsService.checkDns(a.domainId);
-        }
-        throw new Error(`Unsupported domain operation: ${String(a.operation)}`);
 
       // ── Access Lists ──
       case 'list_access_lists':
