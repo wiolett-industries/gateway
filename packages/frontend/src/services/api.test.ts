@@ -268,6 +268,60 @@ describe("api client contract", () => {
     );
   });
 
+  it("serializes logging environment, search, and facets requests", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse({ data: [{ id: "env-1", name: "Production" }] }))
+      .mockResolvedValueOnce(jsonResponse({ csrfToken: "csrf-token" }))
+      .mockResolvedValueOnce(
+        jsonResponse({ data: [{ id: "log-1", message: "hello" }], nextCursor: "cursor-2" })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: {
+            severities: [{ severity: "info", count: 3 }],
+            services: [{ service: "api", count: 2 }],
+            sources: [],
+            traceIds: [],
+            spanIds: [],
+            requestIds: [],
+            labelKeys: [],
+            fieldKeys: [],
+          },
+        })
+      );
+
+    await expect(api.listLoggingEnvironments({ search: "prod" })).resolves.toEqual([
+      { id: "env-1", name: "Production" },
+    ]);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/logging/environments?search=prod");
+
+    await expect(
+      api.searchLogs("env-1", {
+        message: "hello",
+        limit: 25,
+        fields: { status: { op: "eq", value: 200 } },
+      })
+    ).resolves.toEqual({ data: [{ id: "log-1", message: "hello" }], nextCursor: "cursor-2" });
+    expect(fetchMock.mock.calls[2]?.[0]).toBe("/api/logging/environments/env-1/search");
+    expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({ method: "POST" });
+    expect(lastJsonBody(fetchMock)).toEqual({
+      limit: 25,
+      message: "hello",
+      fields: { status: { op: "eq", value: 200 } },
+    });
+
+    await expect(
+      api.getLoggingFacets("env-1", {
+        from: "2026-06-21T00:00:00.000Z",
+        to: "2026-06-21T01:00:00.000Z",
+      })
+    ).resolves.toMatchObject({ severities: [{ severity: "info", count: 3 }] });
+    expect(fetchMock.mock.calls[3]?.[0]).toBe(
+      "/api/logging/environments/env-1/facets?from=2026-06-21T00%3A00%3A00.000Z&to=2026-06-21T01%3A00%3A00.000Z"
+    );
+  });
+
   it("serializes system, license, and housekeeping requests", async () => {
     const housekeepingConfig = { enabled: true, retentionDays: 14 };
     const fetchMock = vi
