@@ -11,7 +11,6 @@ import type { DomainsService } from '@/modules/domains/domain.service.js';
 import type { GroupService } from '@/modules/groups/group.service.js';
 import type { MonitoringService } from '@/modules/monitoring/monitoring.service.js';
 import type { NodesService } from '@/modules/nodes/nodes.service.js';
-import { CreateIntermediateCASchema, CreateRootCASchema, UpdateCASchema } from '@/modules/pki/ca.schemas.js';
 import type { CAService } from '@/modules/pki/ca.service.js';
 import {
   ExportCertificateQuerySchema,
@@ -37,14 +36,13 @@ import { executeGroupTool, GROUP_TOOL_NAMES } from './ai.group-tools.js';
 import { manageLoggingTool } from './ai.logging-tools.js';
 import { executeNodeTool, NODE_TOOL_NAMES } from './ai.node-tools.js';
 import { executeNotificationTool, NOTIFICATION_TOOL_NAMES } from './ai.notification-tools.js';
+import { executePkiCaTool, PKI_CA_TOOL_NAMES } from './ai.pki-ca-tools.js';
 import { executePkiTemplateTool, PKI_TEMPLATE_TOOL_NAMES } from './ai.pki-template-tools.js';
 import { findResource } from './ai.resource-search.js';
 import {
   agentPage,
   agentPageLimit,
   allowedResourceIdsForScopes,
-  caTypeRevokeScope,
-  caTypeViewScope,
   compactProxyHostForAgent,
   dashboardStatsOptionsForScopes,
   estimateTokens,
@@ -266,6 +264,9 @@ export class AIService {
         args
       );
     }
+    if (PKI_CA_TOOL_NAMES.has(toolName)) {
+      return executePkiCaTool({ caService: this.caService }, user, toolName, args);
+    }
 
     switch (toolName) {
       // ── Discovery ──
@@ -279,47 +280,6 @@ export class AIService {
           user,
           args
         );
-
-      // ── PKI - CAs ──
-      case 'list_cas':
-        return (await this.caService.getCATree()).filter((ca: { type: string }) =>
-          hasScope(user.scopes, caTypeViewScope(ca.type))
-        );
-      case 'get_ca': {
-        const ca = await this.caService.getCA(a.caId);
-        if (!hasScope(user.scopes, caTypeViewScope(ca.type))) {
-          throw new Error(`PERMISSION_DENIED: Missing required scope ${caTypeViewScope(ca.type)}`);
-        }
-        return ca;
-      }
-      case 'create_root_ca': {
-        const rootCaInput = CreateRootCASchema.parse(args);
-        return this.caService.createRootCA(rootCaInput, user.id);
-      }
-      case 'create_intermediate_ca': {
-        const intCaInput = CreateIntermediateCASchema.parse(args);
-        return this.caService.createIntermediateCA(a.parentCaId, intCaInput, user.id);
-      }
-      case 'delete_ca': {
-        const ca = await this.caService.getCA(a.caId);
-        const requiredScope = caTypeRevokeScope(ca.type);
-        if (!hasScope(user.scopes, requiredScope)) {
-          throw new Error(`PERMISSION_DENIED: Missing required scope ${requiredScope}`);
-        }
-        await this.caService.deleteCA(a.caId, user.id);
-        return { success: true };
-      }
-      case 'manage_ca': {
-        const ca = await this.caService.getCA(a.caId);
-        const requiredScope = ca.type === 'root' ? 'pki:ca:create:root' : 'pki:ca:create:intermediate';
-        if (!hasScope(user.scopes, requiredScope)) {
-          throw new Error(`PERMISSION_DENIED: Missing required scope ${requiredScope}`);
-        }
-        if (a.operation === 'update') {
-          return this.caService.updateCA(a.caId, UpdateCASchema.parse(args), user.id);
-        }
-        throw new Error(`Unsupported CA operation: ${String(a.operation)}`);
-      }
 
       // ── PKI - Certificates ──
       case 'list_certificates':
