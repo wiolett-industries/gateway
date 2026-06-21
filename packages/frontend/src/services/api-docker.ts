@@ -6,15 +6,14 @@ import type {
   DockerFolderTreeNode,
   DockerHealthCheck,
   DockerImage,
-  DockerImageCleanupSettings,
   DockerNetwork,
   DockerRegistry,
   DockerSecret,
   DockerTask,
   DockerVolume,
-  DockerWebhook,
   FileEntry,
 } from "@/types";
+import { withDockerWebhookApi } from "./api-docker-webhooks";
 import type { ApiClientBaseConstructor } from "./api-mixins";
 
 type DockerListEnvelope<T> = {
@@ -46,7 +45,7 @@ function withDockerListMeta<T extends object>(response: DockerListEnvelope<T>): 
 }
 
 export function withDockerApi<TBase extends ApiClientBaseConstructor>(Base: TBase) {
-  return class DockerApiClient extends Base {
+  return class DockerApiClient extends withDockerWebhookApi(Base) {
     // ── Docker Folders ─────────────────────────────────────────────
 
     async listDockerFolders(): Promise<DockerFolderTreeNode[]> {
@@ -887,149 +886,6 @@ export function withDockerApi<TBase extends ApiClientBaseConstructor>(Base: TBas
       const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
       const url = `${proto}//${window.location.host}/api/nodes/${nodeId}/exec?shell=${encodeURIComponent(shell)}`;
       return new WebSocket(url);
-    }
-
-    // ── Docker Webhooks ────────────────────────────────────────────
-
-    async getContainerWebhook(
-      nodeId: string,
-      containerName: string
-    ): Promise<DockerWebhook | null> {
-      const result = await this.request<{ data: DockerWebhook | null }>(
-        `/docker/nodes/${nodeId}/containers/${encodeURIComponent(containerName)}/webhook`
-      );
-      return result.data;
-    }
-
-    async upsertContainerWebhook(
-      nodeId: string,
-      containerName: string,
-      input: { enabled?: boolean }
-    ): Promise<DockerWebhook> {
-      return this.unwrapData(
-        this.request<{ data: DockerWebhook }>(
-          `/docker/nodes/${nodeId}/containers/${encodeURIComponent(containerName)}/webhook`,
-          { method: "PUT", body: JSON.stringify(input) }
-        )
-      );
-    }
-
-    async deleteContainerWebhook(nodeId: string, containerName: string): Promise<void> {
-      await this.request<void>(
-        `/docker/nodes/${nodeId}/containers/${encodeURIComponent(containerName)}/webhook`,
-        { method: "DELETE" }
-      );
-    }
-
-    async regenerateWebhookToken(nodeId: string, containerName: string): Promise<DockerWebhook> {
-      return this.unwrapData(
-        this.request<{ data: DockerWebhook }>(
-          `/docker/nodes/${nodeId}/containers/${encodeURIComponent(containerName)}/webhook/regenerate`,
-          { method: "POST" }
-        )
-      );
-    }
-
-    async getContainerImageCleanup(
-      nodeId: string,
-      containerName: string
-    ): Promise<DockerImageCleanupSettings> {
-      return this.unwrapData(
-        this.request<{ data: DockerImageCleanupSettings }>(
-          `/docker/nodes/${nodeId}/containers/${encodeURIComponent(containerName)}/image-cleanup`
-        )
-      );
-    }
-
-    async upsertContainerImageCleanup(
-      nodeId: string,
-      containerName: string,
-      input: { enabled?: boolean; retentionCount?: number }
-    ): Promise<DockerImageCleanupSettings> {
-      return this.unwrapData(
-        this.request<{ data: DockerImageCleanupSettings }>(
-          `/docker/nodes/${nodeId}/containers/${encodeURIComponent(containerName)}/image-cleanup`,
-          { method: "PUT", body: JSON.stringify(input) }
-        )
-      );
-    }
-
-    async getDeploymentWebhook(
-      nodeId: string,
-      deploymentId: string
-    ): Promise<DockerWebhook | null> {
-      const result = await this.request<{ data: DockerWebhook | null }>(
-        `/docker/nodes/${nodeId}/deployments/${deploymentId}/webhook`
-      );
-      return result.data;
-    }
-
-    async upsertDeploymentWebhook(
-      nodeId: string,
-      deploymentId: string,
-      input: { enabled?: boolean }
-    ): Promise<DockerWebhook> {
-      return this.unwrapData(
-        this.request<{ data: DockerWebhook }>(
-          `/docker/nodes/${nodeId}/deployments/${deploymentId}/webhook`,
-          { method: "PUT", body: JSON.stringify(input) }
-        )
-      );
-    }
-
-    async deleteDeploymentWebhook(nodeId: string, deploymentId: string): Promise<void> {
-      await this.request<void>(`/docker/nodes/${nodeId}/deployments/${deploymentId}/webhook`, {
-        method: "DELETE",
-      });
-    }
-
-    async regenerateDeploymentWebhookToken(
-      nodeId: string,
-      deploymentId: string
-    ): Promise<DockerWebhook> {
-      return this.unwrapData(
-        this.request<{ data: DockerWebhook }>(
-          `/docker/nodes/${nodeId}/deployments/${deploymentId}/webhook/regenerate`,
-          { method: "POST" }
-        )
-      );
-    }
-
-    async getDeploymentImageCleanup(
-      nodeId: string,
-      deploymentId: string
-    ): Promise<DockerImageCleanupSettings> {
-      return this.unwrapData(
-        this.request<{ data: DockerImageCleanupSettings }>(
-          `/docker/nodes/${nodeId}/deployments/${deploymentId}/image-cleanup`
-        )
-      );
-    }
-
-    async upsertDeploymentImageCleanup(
-      nodeId: string,
-      deploymentId: string,
-      input: { enabled?: boolean; retentionCount?: number }
-    ): Promise<DockerImageCleanupSettings> {
-      return this.unwrapData(
-        this.request<{ data: DockerImageCleanupSettings }>(
-          `/docker/nodes/${nodeId}/deployments/${deploymentId}/image-cleanup`,
-          { method: "PUT", body: JSON.stringify(input) }
-        )
-      );
-    }
-
-    async pullImageSync(
-      nodeId: string,
-      imageRef: string,
-      registryId?: string
-    ): Promise<{ success: boolean; imageRef: string }> {
-      return this.unwrapData(
-        this.request<{ data: { success: boolean; imageRef: string } }>(
-          `/docker/nodes/${nodeId}/images/pull-sync`,
-          { method: "POST", body: JSON.stringify({ imageRef, registryId }) }
-        )
-      );
     }
 
     // ── Docker Log Stream WebSocket ─────────────────────────────────

@@ -222,6 +222,64 @@ describe("api client contract", () => {
     );
   });
 
+  it("serializes docker webhook, image cleanup, and sync pull requests", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse({ data: null }))
+      .mockResolvedValueOnce(jsonResponse({ csrfToken: "csrf-token" }))
+      .mockResolvedValueOnce(jsonResponse({ data: { id: "webhook-1", enabled: true } }))
+      .mockResolvedValueOnce(jsonResponse({ data: { enabled: false, retentionCount: 2 } }))
+      .mockResolvedValueOnce(jsonResponse({ data: { enabled: true, retentionCount: 5 } }))
+      .mockResolvedValueOnce(
+        jsonResponse({ data: { success: true, imageRef: "team/api:latest" } })
+      );
+
+    await expect(api.getContainerWebhook("node-1", "api/service")).resolves.toBeNull();
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "/api/docker/nodes/node-1/containers/api%2Fservice/webhook"
+    );
+
+    await expect(
+      api.upsertContainerWebhook("node-1", "api/service", { enabled: true })
+    ).resolves.toMatchObject({ id: "webhook-1", enabled: true });
+    expect(fetchMock.mock.calls[2]?.[0]).toBe(
+      "/api/docker/nodes/node-1/containers/api%2Fservice/webhook"
+    );
+    expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({ method: "PUT" });
+    expect(lastJsonBody(fetchMock)).toEqual({ enabled: true });
+
+    await expect(api.getDeploymentImageCleanup("node-1", "deployment-1")).resolves.toEqual({
+      enabled: false,
+      retentionCount: 2,
+    });
+    expect(fetchMock.mock.calls[3]?.[0]).toBe(
+      "/api/docker/nodes/node-1/deployments/deployment-1/image-cleanup"
+    );
+
+    await expect(
+      api.upsertDeploymentImageCleanup("node-1", "deployment-1", {
+        enabled: true,
+        retentionCount: 5,
+      })
+    ).resolves.toEqual({ enabled: true, retentionCount: 5 });
+    expect(fetchMock.mock.calls[4]?.[0]).toBe(
+      "/api/docker/nodes/node-1/deployments/deployment-1/image-cleanup"
+    );
+    expect(fetchMock.mock.calls[4]?.[1]).toMatchObject({ method: "PUT" });
+    expect(lastJsonBody(fetchMock)).toEqual({ enabled: true, retentionCount: 5 });
+
+    await expect(api.pullImageSync("node-1", "team/api:latest", "registry-1")).resolves.toEqual({
+      success: true,
+      imageRef: "team/api:latest",
+    });
+    expect(fetchMock.mock.calls[5]?.[0]).toBe("/api/docker/nodes/node-1/images/pull-sync");
+    expect(fetchMock.mock.calls[5]?.[1]).toMatchObject({ method: "POST" });
+    expect(lastJsonBody(fetchMock)).toEqual({
+      imageRef: "team/api:latest",
+      registryId: "registry-1",
+    });
+  });
+
   it("serializes notification alert, webhook, and delivery requests", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
