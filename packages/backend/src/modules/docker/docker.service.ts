@@ -4,15 +4,29 @@ import { dockerDeployments, nodes } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
-import { assertNodeAllowsServiceCreation } from '@/modules/nodes/service-creation-lock.js';
 import type { NotificationEvaluatorService } from '@/modules/notifications/notification-evaluator.service.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
 import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import type { NodeRegistryService } from '@/services/node-registry.service.js';
+import {
+  createContainer as createDockerContainer,
+  type DockerContainerMutationContext,
+  duplicateContainer as duplicateDockerContainer,
+  killContainer as killDockerContainer,
+  liveUpdateContainer as liveUpdateDockerContainer,
+  recreateWithConfig as recreateDockerContainerWithConfig,
+  removeContainer as removeDockerContainerMutation,
+  renameContainer as renameDockerContainer,
+  restartContainer as restartDockerContainer,
+  startContainer as startDockerContainer,
+  stopContainer as stopDockerContainer,
+  updateContainer as updateDockerContainer,
+  updateContainerEnv as updateDockerContainerEnv,
+} from './docker-container-mutation-operations.js';
 import { type ContainerTransition, DockerContainerTransitions } from './docker-container-transitions.js';
 import type { DockerDeploymentService } from './docker-deployment.service.js';
 import { DOCKER_DEPLOYMENT_MANAGED_LABEL } from './docker-deployment-labels.js';
-import { getContainerEnv as getDockerContainerEnv, normalizeEnvRecord } from './docker-env-operations.js';
+import { getContainerEnv as getDockerContainerEnv } from './docker-env-operations.js';
 import type { DockerEnvironmentService } from './docker-environment.service.js';
 import type { DockerFolderService } from './docker-folder.service.js';
 import type { DockerHealthCheckService } from './docker-health-check.service.js';
@@ -38,17 +52,11 @@ import {
   writeFile as writeDockerFile,
 } from './docker-read-operations.js';
 import { dockerDispatchErrorMessage } from './docker-recreate-watch.js';
-import type { DockerRegistryAuthCandidate, DockerRegistryService } from './docker-registry.service.js';
+import type { DockerRegistryService } from './docker-registry.service.js';
 import { applyRuntimeSettingsToInspect } from './docker-runtime-inspect.js';
-import {
-  applyPersistedDockerRuntimeSettingsToConfig,
-  type DockerRuntimeOperationContext,
-  persistDockerRuntimeSettings,
-  validateDockerRuntimeResourceConfig,
-} from './docker-runtime-operations.js';
+import type { DockerRuntimeOperationContext } from './docker-runtime-operations.js';
 import type { DockerRuntimeSettingsService } from './docker-runtime-settings.service.js';
 import type { DockerSecretService } from './docker-secret.service.js';
-import { assertDockerMountChangeAllowed, normalizeMountDefinitionsFromInspect } from './docker-socket-mount.guard.js';
 import type { DockerTaskService } from './docker-task.service.js';
 import {
   connectContainerToNetwork as connectDockerContainerToNetwork,
@@ -609,273 +617,95 @@ export class DockerManagementService {
     return data;
   }
 
+  private containerMutationContext(): DockerContainerMutationContext {
+    return {
+      db: this.db,
+      auditService: this.auditService,
+      nodeDispatch: this.nodeDispatch,
+      environmentService: this.environmentService,
+      runtimeSettingsService: this.runtimeSettingsService,
+      secretService: this.secretService,
+      registryService: this.registryService,
+      imageCleanupService: this.imageCleanupService,
+      folderService: this.folderService,
+      taskService: this.taskService,
+      longDockerOperationTimeoutMs: DockerManagementService.LONG_DOCKER_OPERATION_TIMEOUT_MS,
+      validateDockerNode: (nodeId) => this.validateDockerNode(nodeId),
+      assertNameAvailable: (nodeId, name) => this.assertNameAvailable(nodeId, name),
+      assertNotManagedDeploymentInternal: (nodeId, containerId) =>
+        this.assertNotManagedDeploymentInternal(nodeId, containerId),
+      translateNameConflict: (err, name) => this.translateNameConflict(err, name),
+      resolveContainerName: (nodeId, containerId) => this.resolveContainerName(nodeId, containerId),
+      resolveExpectedRecreateState: (nodeId, containerId) => this.resolveExpectedRecreateState(nodeId, containerId),
+      resolveContainerStopTimeout: (nodeId, containerId, timeout) =>
+        this.resolveContainerStopTimeout(nodeId, containerId, timeout),
+      resolveStopTimeoutFromInspect: (inspect, config) => this.resolveStopTimeoutFromInspect(inspect, config),
+      lifecycleWatchTimeoutMs: (stopTimeoutSeconds, bufferSeconds) =>
+        this.lifecycleWatchTimeoutMs(stopTimeoutSeconds, bufferSeconds),
+      inspectContainer: (nodeId, containerId) => this.inspectContainer(nodeId, containerId),
+      runtimeOperationContext: () => this.runtimeOperationContext(),
+      requireNoTransition: (nodeId, name) => this.requireNoTransition(nodeId, name),
+      setTransition: (nodeId, name, state) => this.setTransition(nodeId, name, state),
+      clearTransition: (nodeId, name) => this.clearTransition(nodeId, name),
+      emitContainer: (nodeId, name, id, action, extra) => this.emitContainer(nodeId, name, id, action, extra),
+      emitTransition: (nodeId, name, id, transition) => this.emitTransition(nodeId, name, id, transition),
+      createTask: (nodeId, containerId, containerName, type) =>
+        this.createTask(nodeId, containerId, containerName, type),
+      failTask: (taskId, error, nodeId, containerName) => this.failTask(taskId, error, nodeId, containerName),
+      watchTransition: (
+        nodeId,
+        containerId,
+        name,
+        taskId,
+        expectedState,
+        progress,
+        completedAction,
+        timeoutMs,
+        isComplete
+      ) =>
+        this.watchTransition(
+          nodeId,
+          containerId,
+          name,
+          taskId,
+          expectedState,
+          progress,
+          completedAction,
+          timeoutMs,
+          isComplete
+        ),
+      watchRecreateByName: (nodeId, containerName, oldContainerId, taskId, progress, expectedState, timeoutMs) =>
+        this.watchRecreateByName(nodeId, containerName, oldContainerId, taskId, progress, expectedState, timeoutMs),
+      parseResult: (result) => this.parseResult(result),
+    };
+  }
+
   async createContainer(nodeId: string, config: Record<string, unknown>, userId: string, actorScopes: string[] = []) {
-    await assertNodeAllowsServiceCreation(this.db, nodeId, 'docker');
-    await this.validateDockerNode(nodeId);
-    assertDockerMountChangeAllowed({ nodeId, actorScopes, nextConfig: config, currentDefinitions: [] });
-    const registryId = typeof config.registryId === 'string' ? config.registryId : null;
-    delete config.registryId;
-    const requestedName = (config.name as string | undefined)?.trim();
-    if (requestedName) {
-      await this.assertNameAvailable(nodeId, requestedName);
-      this.setTransition(nodeId, requestedName, 'creating');
-    }
-    let data: any;
-    try {
-      if (registryId) {
-        await this.pullConfigImage(nodeId, config, registryId);
-      }
-      const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'create', {
-        configJson: JSON.stringify(config),
-      });
-      data = this.parseResult(result);
-    } catch (err) {
-      if (requestedName) this.clearTransition(nodeId, requestedName);
-      this.translateNameConflict(err, requestedName || '');
-    } finally {
-      if (requestedName) this.clearTransition(nodeId, requestedName);
-    }
-    await this.auditService.log({
-      action: 'docker.container.create',
-      userId,
-      resourceType: 'docker-container',
-      details: { nodeId, name: config.name, image: config.image },
-    });
-    const createdName = (requestedName || data?.name || data?.Name || '') as string;
-    const newId = (data?.Id ?? data?.id ?? '') as string;
-    if (createdName && this.environmentService) {
-      const env = normalizeEnvRecord(config.env);
-      if (env) {
-        await this.environmentService.replace(nodeId, createdName, env);
-      }
-    }
-    if (typeof config.image === 'string') {
-      await this.registryService?.rememberImageRegistry?.(nodeId, config.image, registryId);
-    }
-    if (requestedName && newId) {
-      this.emitContainer(nodeId, requestedName, newId, 'created');
-    }
-    return data;
+    return createDockerContainer(this.containerMutationContext(), nodeId, config, userId, actorScopes);
   }
 
   async startContainer(nodeId: string, containerId: string, userId: string) {
-    await this.validateDockerNode(nodeId);
-    await this.assertNotManagedDeploymentInternal(nodeId, containerId);
-    const name = await this.resolveContainerName(nodeId, containerId);
-    this.requireNoTransition(nodeId, name);
-    if (this.runtimeSettingsService) {
-      const persistedRuntime = await this.runtimeSettingsService.get(nodeId, name);
-      if (persistedRuntime) {
-        await validateDockerRuntimeResourceConfig(
-          this.runtimeOperationContext(),
-          nodeId,
-          containerId,
-          persistedRuntime as Record<string, unknown>
-        );
-        const updateResult = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'live_update', {
-          containerId,
-          configJson: JSON.stringify(persistedRuntime),
-        });
-        this.parseResult(updateResult);
-      }
-    }
-    const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'start', { containerId });
-    this.parseResult(result);
-    await this.auditService.log({
-      action: 'docker.container.start',
-      userId,
-      resourceType: 'docker-container',
-      resourceId: containerId,
-      details: { nodeId },
-    });
-    this.emitContainer(nodeId, name, containerId, 'started');
+    await startDockerContainer(this.containerMutationContext(), nodeId, containerId, userId);
   }
 
   async stopContainer(nodeId: string, containerId: string, timeout: number | undefined, userId: string) {
-    await this.validateDockerNode(nodeId);
-    await this.assertNotManagedDeploymentInternal(nodeId, containerId);
-    const name = await this.resolveContainerName(nodeId, containerId);
-    const stopTimeout = await this.resolveContainerStopTimeout(nodeId, containerId, timeout);
-    this.requireNoTransition(nodeId, name);
-    this.setTransition(nodeId, name, 'stopping');
-    this.emitTransition(nodeId, name, containerId, 'stopping');
-    const task = await this.createTask(nodeId, containerId, name, 'stop');
-    try {
-      const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'stop', {
-        containerId,
-        timeoutSeconds: stopTimeout,
-        configJson: JSON.stringify({ timeoutProvided: true }),
-      });
-      this.parseResult(result);
-    } catch (err) {
-      await this.failTask(task?.id, err instanceof Error ? err.message : 'Failed to stop container', nodeId, name);
-      throw err;
-    }
-    this.watchTransition(
-      nodeId,
-      containerId,
-      name,
-      task?.id,
-      'exited',
-      'Container stopped',
-      'stopped',
-      this.lifecycleWatchTimeoutMs(stopTimeout)
-    );
-    await this.auditService.log({
-      action: 'docker.container.stop',
-      userId,
-      resourceType: 'docker-container',
-      resourceId: containerId,
-      details: { nodeId },
-    });
+    await stopDockerContainer(this.containerMutationContext(), nodeId, containerId, timeout, userId);
   }
 
   async restartContainer(nodeId: string, containerId: string, timeout: number | undefined, userId: string) {
-    await this.validateDockerNode(nodeId);
-    await this.assertNotManagedDeploymentInternal(nodeId, containerId);
-    const name = await this.resolveContainerName(nodeId, containerId);
-    const stopTimeout = await this.resolveContainerStopTimeout(nodeId, containerId, timeout);
-    let previousStartedAt: string | undefined;
-    try {
-      const inspectResult = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'inspect', { containerId });
-      previousStartedAt = this.parseResult(inspectResult)?.State?.StartedAt;
-    } catch {
-      previousStartedAt = undefined;
-    }
-    this.requireNoTransition(nodeId, name);
-    this.setTransition(nodeId, name, 'restarting');
-    this.emitTransition(nodeId, name, containerId, 'restarting');
-    const task = await this.createTask(nodeId, containerId, name, 'restart');
-    try {
-      if (this.runtimeSettingsService) {
-        const persistedRuntime = await this.runtimeSettingsService.get(nodeId, name);
-        if (persistedRuntime) {
-          await validateDockerRuntimeResourceConfig(
-            this.runtimeOperationContext(),
-            nodeId,
-            containerId,
-            persistedRuntime as Record<string, unknown>
-          );
-          const updateResult = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'live_update', {
-            containerId,
-            configJson: JSON.stringify(persistedRuntime),
-          });
-          this.parseResult(updateResult);
-        }
-      }
-      const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'restart', {
-        containerId,
-        timeoutSeconds: stopTimeout,
-        configJson: JSON.stringify({ timeoutProvided: true }),
-      });
-      this.parseResult(result);
-    } catch (err) {
-      await this.failTask(task?.id, err instanceof Error ? err.message : 'Failed to restart container', nodeId, name);
-      throw err;
-    }
-    this.watchTransition(
-      nodeId,
-      containerId,
-      name,
-      task?.id,
-      'running',
-      'Container restarted',
-      'restarted',
-      this.lifecycleWatchTimeoutMs(stopTimeout, 60),
-      (data) => {
-        const state = data?.State;
-        return state?.Status === 'running' && (!previousStartedAt || state.StartedAt !== previousStartedAt);
-      }
-    );
-    await this.auditService.log({
-      action: 'docker.container.restart',
-      userId,
-      resourceType: 'docker-container',
-      resourceId: containerId,
-      details: { nodeId },
-    });
+    await restartDockerContainer(this.containerMutationContext(), nodeId, containerId, timeout, userId);
   }
 
   async killContainer(nodeId: string, containerId: string, signal: string, userId: string) {
-    await this.validateDockerNode(nodeId);
-    await this.assertNotManagedDeploymentInternal(nodeId, containerId);
-    const name = await this.resolveContainerName(nodeId, containerId);
-    this.requireNoTransition(nodeId, name);
-    this.setTransition(nodeId, name, 'killing');
-    this.emitTransition(nodeId, name, containerId, 'killing');
-    const task = await this.createTask(nodeId, containerId, name, 'kill');
-    try {
-      const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'kill', { containerId, signal });
-      this.parseResult(result);
-    } catch (err) {
-      await this.failTask(task?.id, err instanceof Error ? err.message : 'Failed to kill container', nodeId, name);
-      throw err;
-    }
-    this.watchTransition(nodeId, containerId, name, task?.id, 'exited', `Container killed (${signal})`, 'killed');
-    await this.auditService.log({
-      action: 'docker.container.kill',
-      userId,
-      resourceType: 'docker-container',
-      resourceId: containerId,
-      details: { nodeId, signal },
-    });
+    await killDockerContainer(this.containerMutationContext(), nodeId, containerId, signal, userId);
   }
 
   async removeContainer(nodeId: string, containerId: string, force: boolean, userId: string) {
-    await this.validateDockerNode(nodeId);
-    await this.assertNotManagedDeploymentInternal(nodeId, containerId);
-    const name = await this.resolveContainerName(nodeId, containerId);
-    this.requireNoTransition(nodeId, name);
-    const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'remove', { containerId, force });
-    this.parseResult(result);
-    await this.auditService.log({
-      action: 'docker.container.remove',
-      userId,
-      resourceType: 'docker-container',
-      resourceId: containerId,
-      details: { nodeId, force },
-    });
-    if (this.folderService) {
-      await this.folderService.deleteContainerAssignment(nodeId, name);
-    }
-    if (this.runtimeSettingsService) {
-      await this.runtimeSettingsService.delete(nodeId, name);
-    }
-    this.emitContainer(nodeId, name, containerId, 'removed');
+    await removeDockerContainerMutation(this.containerMutationContext(), nodeId, containerId, force, userId);
   }
 
   async renameContainer(nodeId: string, containerId: string, newName: string, userId: string) {
-    await this.validateDockerNode(nodeId);
-    await this.assertNotManagedDeploymentInternal(nodeId, containerId);
-    const oldName = await this.resolveContainerName(nodeId, containerId);
-    this.requireNoTransition(nodeId, oldName);
-    await this.assertNameAvailable(nodeId, newName);
-    this.setTransition(nodeId, newName, 'creating');
-    try {
-      const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'rename', { containerId, newName });
-      this.parseResult(result);
-    } catch (err) {
-      this.translateNameConflict(err, newName);
-    } finally {
-      this.clearTransition(nodeId, newName);
-    }
-    if (this.environmentService) {
-      await this.environmentService.rename(nodeId, oldName, newName);
-    }
-    if (this.runtimeSettingsService) {
-      await this.runtimeSettingsService.rename(nodeId, oldName, newName);
-    }
-    if (this.folderService) {
-      await this.folderService.renameContainerAssignment(nodeId, oldName, newName);
-    }
-    await this.auditService.log({
-      action: 'docker.container.rename',
-      userId,
-      resourceType: 'docker-container',
-      resourceId: containerId,
-      details: { nodeId, name: newName },
-    });
-    this.emitContainer(nodeId, newName, containerId, 'renamed', { oldName });
+    await renameDockerContainer(this.containerMutationContext(), nodeId, containerId, newName, userId);
   }
 
   async duplicateContainer(
@@ -885,54 +715,7 @@ export class DockerManagementService {
     userId: string,
     actorScopes: string[] = []
   ) {
-    await assertNodeAllowsServiceCreation(this.db, nodeId, 'docker');
-    await this.validateDockerNode(nodeId);
-    await this.assertNotManagedDeploymentInternal(nodeId, containerId);
-    const sourceName = await this.resolveContainerName(nodeId, containerId);
-    const inspect = await this.inspectContainer(nodeId, containerId);
-    assertDockerMountChangeAllowed({
-      nodeId,
-      actorScopes,
-      currentDefinitions: [],
-      nextDefinitions: normalizeMountDefinitionsFromInspect(inspect),
-    });
-    this.requireNoTransition(nodeId, sourceName);
-    await this.assertNameAvailable(nodeId, name);
-    this.setTransition(nodeId, name, 'creating');
-    let data: any;
-    try {
-      const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'duplicate', {
-        containerId,
-        newName: name,
-      });
-      data = this.parseResult(result);
-    } catch (err) {
-      this.translateNameConflict(err, name);
-    } finally {
-      this.clearTransition(nodeId, name);
-    }
-
-    // Copy secrets from source container to the new one (keyed by name)
-    if (this.environmentService) {
-      await this.environmentService.copy(nodeId, sourceName, name);
-    }
-    if (this.runtimeSettingsService) {
-      await this.runtimeSettingsService.copy(nodeId, sourceName, name);
-    }
-    if (this.secretService) {
-      await this.secretService.copySecrets(nodeId, sourceName, name, userId);
-    }
-
-    await this.auditService.log({
-      action: 'docker.container.duplicate',
-      userId,
-      resourceType: 'docker-container',
-      resourceId: containerId,
-      details: { nodeId, name },
-    });
-    const newId = (data?.Id ?? data?.id ?? '') as string;
-    if (newId) this.emitContainer(nodeId, name, newId, 'duplicated', { sourceName });
-    return data;
+    return duplicateDockerContainer(this.containerMutationContext(), nodeId, containerId, name, userId, actorScopes);
   }
 
   async updateContainer(
@@ -942,66 +725,7 @@ export class DockerManagementService {
     userId: string,
     actorScopes: string[] = []
   ) {
-    await this.validateDockerNode(nodeId);
-    await this.assertNotManagedDeploymentInternal(nodeId, containerId);
-    const name = await this.resolveContainerName(nodeId, containerId);
-    const inspect = await this.inspectContainer(nodeId, containerId);
-    assertDockerMountChangeAllowed({
-      nodeId,
-      actorScopes,
-      nextConfig: config,
-      currentInspect: inspect,
-      useCurrentWhenNextMissing: true,
-    });
-    const expectedState = await this.resolveExpectedRecreateState(nodeId, containerId);
-    if (this.environmentService) {
-      const storedEnv = await this.environmentService.getDecryptedMap(nodeId, name);
-      if (Object.keys(storedEnv).length > 0) {
-        config.env = { ...storedEnv, ...(normalizeEnvRecord(config.env) || {}) };
-      }
-    }
-    if (this.secretService) {
-      const secrets = await this.secretService.getDecryptedMap(nodeId, name);
-      if (Object.keys(secrets).length > 0) {
-        config.env = { ...(normalizeEnvRecord(config.env) || {}), ...secrets };
-      }
-    }
-    config = await applyPersistedDockerRuntimeSettingsToConfig(this.runtimeOperationContext(), nodeId, name, config);
-    const hasImageChange = typeof config.tag === 'string' && config.tag.length > 0;
-    const updateStopTimeout = this.resolveStopTimeoutFromInspect(inspect as Record<string, any>, config);
-    const updateTimeoutMs = hasImageChange
-      ? DockerManagementService.LONG_DOCKER_OPERATION_TIMEOUT_MS
-      : Math.max(120000, this.lifecycleWatchTimeoutMs(updateStopTimeout, 60));
-    this.requireNoTransition(nodeId, name);
-    this.setTransition(nodeId, name, 'updating');
-    this.emitTransition(nodeId, name, containerId, 'updating');
-    const task = await this.createTask(nodeId, containerId, name, 'update');
-    let data: any;
-    try {
-      const result = await this.nodeDispatch.sendDockerContainerCommand(
-        nodeId,
-        'update',
-        { containerId, configJson: JSON.stringify(config) },
-        updateTimeoutMs
-      );
-      data = this.parseResult(result);
-    } catch (err) {
-      await this.failTask(task?.id, err instanceof Error ? err.message : 'Failed to update container', nodeId, name);
-      throw err;
-    }
-    this.watchRecreateByName(nodeId, name, containerId, task?.id, 'Container updated', expectedState, updateTimeoutMs);
-    await this.auditService.log({
-      action: 'docker.container.update',
-      userId,
-      resourceType: 'docker-container',
-      resourceId: containerId,
-      details: { nodeId },
-    });
-    if (hasImageChange) {
-      const imageRef = this.imageRefWithTag(inspect?.Config?.Image ?? inspect?.Image, config.tag as string);
-      this.imageCleanupService?.scheduleCleanupForContainer(nodeId, name, imageRef).catch(() => {});
-    }
-    return data;
+    return updateDockerContainer(this.containerMutationContext(), nodeId, containerId, config, userId, actorScopes);
   }
 
   async getContainerLogs(nodeId: string, containerId: string, tail: number, timestamps: boolean) {
@@ -1016,28 +740,7 @@ export class DockerManagementService {
   }
 
   async liveUpdateContainer(nodeId: string, containerId: string, config: Record<string, unknown>, userId: string) {
-    await this.validateDockerNode(nodeId);
-    await this.assertNotManagedDeploymentInternal(nodeId, containerId);
-    const name = await this.resolveContainerName(nodeId, containerId);
-    this.requireNoTransition(nodeId, name);
-    await persistDockerRuntimeSettings(this.runtimeOperationContext(), nodeId, name, config);
-    const inspect = await this.inspectContainer(nodeId, containerId);
-    const state = (inspect?.State?.Status ?? '') as string;
-    if (state === 'running') {
-      await validateDockerRuntimeResourceConfig(this.runtimeOperationContext(), nodeId, containerId, config);
-      const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'live_update', {
-        containerId,
-        configJson: JSON.stringify(config),
-      });
-      this.parseResult(result);
-    }
-    await this.auditService.log({
-      action: 'docker.container.live_update',
-      userId,
-      resourceType: 'docker-container',
-      resourceId: containerId,
-      details: { nodeId },
-    });
+    await liveUpdateDockerContainer(this.containerMutationContext(), nodeId, containerId, config, userId);
   }
 
   async recreateWithConfig(
@@ -1047,139 +750,14 @@ export class DockerManagementService {
     userId: string,
     options?: { skipImagePull?: boolean; skipWebhookCleanup?: boolean; actorScopes?: string[] }
   ) {
-    await this.validateDockerNode(nodeId);
-    await this.assertNotManagedDeploymentInternal(nodeId, containerId);
-    const name = await this.resolveContainerName(nodeId, containerId);
-    const expectedState = await this.resolveExpectedRecreateState(nodeId, containerId);
-    this.requireNoTransition(nodeId, name);
-    config = await applyPersistedDockerRuntimeSettingsToConfig(this.runtimeOperationContext(), nodeId, name, config);
-    const inspect = await this.inspectContainer(nodeId, containerId);
-    const recreateStopTimeout = this.resolveStopTimeoutFromInspect(inspect as Record<string, any>, config);
-    assertDockerMountChangeAllowed({
+    return recreateDockerContainerWithConfig(
+      this.containerMutationContext(),
       nodeId,
-      actorScopes: options?.actorScopes ?? [],
-      nextConfig: config,
-      currentInspect: inspect,
-      useCurrentWhenNextMissing: true,
-    });
-    await validateDockerRuntimeResourceConfig(this.runtimeOperationContext(), nodeId, containerId, config);
-    this.setTransition(nodeId, name, 'recreating');
-    this.emitTransition(nodeId, name, containerId, 'recreating');
-    const task = await this.createTask(nodeId, containerId, name, 'recreate');
-
-    // Inject decrypted secrets into the recreate config's env (keyed by container name)
-    if (this.environmentService) {
-      const storedEnv = await this.environmentService.getDecryptedMap(nodeId, name);
-      if (Object.keys(storedEnv).length > 0) {
-        const existingEnv = (config.env as Record<string, string> | undefined) || {};
-        config.env = { ...storedEnv, ...existingEnv };
-      }
-    }
-
-    if (this.secretService) {
-      const secrets = await this.secretService.getDecryptedMap(nodeId, name);
-      if (Object.keys(secrets).length > 0) {
-        const existingEnv = (config.env as Record<string, string> | undefined) || {};
-        config.env = { ...existingEnv, ...secrets };
-      }
-    }
-
-    try {
-      if (!options?.skipImagePull) {
-        await this.pullConfigImage(nodeId, config);
-      }
-
-      const result = await this.nodeDispatch.sendDockerContainerCommand(
-        nodeId,
-        'recreate',
-        { containerId, configJson: JSON.stringify(config) },
-        Math.max(120000, this.lifecycleWatchTimeoutMs(recreateStopTimeout, 60))
-      );
-      const data = this.parseResult(result);
-      await this.auditService.log({
-        action: 'docker.container.recreate',
-        userId,
-        resourceType: 'docker-container',
-        resourceId: containerId,
-        details: { nodeId },
-      });
-      if (!options?.skipWebhookCleanup && typeof config.image === 'string') {
-        this.imageCleanupService?.scheduleCleanupForContainer(nodeId, name, config.image).catch(() => {});
-      }
-
-      this.watchRecreateByName(
-        nodeId,
-        name,
-        containerId,
-        task?.id,
-        'Container recreated',
-        expectedState,
-        this.lifecycleWatchTimeoutMs(recreateStopTimeout, 60)
-      );
-      return data;
-    } catch (err) {
-      this.clearTransition(nodeId, name);
-      if (task && this.taskService) {
-        await this.taskService
-          .update(task.id, {
-            status: 'failed',
-            error: err instanceof Error ? err.message : 'Unknown error',
-            completedAt: new Date(),
-          })
-          .catch(() => {});
-      }
-      throw err;
-    }
-  }
-
-  private async pullConfigImage(nodeId: string, config: Record<string, unknown>, registryId?: string) {
-    const imageRef = typeof config.image === 'string' ? config.image.trim() : '';
-    if (!imageRef) return;
-
-    const authCandidates =
-      (await this.registryService?.resolveAuthCandidatesForImagePull(nodeId, imageRef, registryId)) ?? [];
-    const pullCandidates: Array<DockerRegistryAuthCandidate | null> = authCandidates.length ? authCandidates : [null];
-    let lastError: unknown;
-
-    for (const auth of pullCandidates) {
-      let finalImageRef = imageRef;
-      if (auth && !this.hasRegistryHost(imageRef)) {
-        finalImageRef = `${auth.url}/${imageRef}`;
-      }
-
-      try {
-        const result = await this.nodeDispatch.sendDockerImageCommand(
-          nodeId,
-          'pull',
-          { imageRef: finalImageRef, registryAuthJson: auth?.authJson },
-          DockerManagementService.LONG_DOCKER_OPERATION_TIMEOUT_MS
-        );
-        this.parseResult(result);
-        config.image = finalImageRef;
-        await this.registryService?.rememberImageRegistry?.(nodeId, finalImageRef, auth?.registryId);
-        return;
-      } catch (err) {
-        lastError = err;
-      }
-    }
-
-    throw lastError instanceof Error ? lastError : new AppError(502, 'DISPATCH_ERROR', `Failed to pull ${imageRef}`);
-  }
-
-  private hasRegistryHost(imageRef: string) {
-    const firstSegment = imageRef.split('/')[0] ?? '';
-    return firstSegment === 'localhost' || firstSegment.includes('.') || firstSegment.includes(':');
-  }
-
-  private imageRefWithTag(imageRef: string | undefined, tag: string) {
-    const trimmedTag = tag.trim();
-    if (!imageRef || !trimmedTag) return undefined;
-    const digestIndex = imageRef.indexOf('@');
-    const withoutDigest = digestIndex >= 0 ? imageRef.slice(0, digestIndex) : imageRef;
-    const lastColon = withoutDigest.lastIndexOf(':');
-    const lastSlash = withoutDigest.lastIndexOf('/');
-    const imageName = lastColon >= 0 && lastSlash < lastColon ? withoutDigest.slice(0, lastColon) : withoutDigest;
-    return `${imageName}:${trimmedTag}`;
+      containerId,
+      config,
+      userId,
+      options
+    );
   }
 
   async updateContainerEnv(
@@ -1189,73 +767,7 @@ export class DockerManagementService {
     removeEnv: string[] | undefined,
     userId: string
   ) {
-    await this.validateDockerNode(nodeId);
-    await this.assertNotManagedDeploymentInternal(nodeId, containerId);
-    const name = await this.resolveContainerName(nodeId, containerId);
-    const expectedState = await this.resolveExpectedRecreateState(nodeId, containerId);
-    const updateStopTimeout = await this.resolveContainerStopTimeout(nodeId, containerId, undefined);
-    this.requireNoTransition(nodeId, name);
-
-    // Merge decrypted secrets into the env update so secrets persist across recreate
-    let mergedEnv = env;
-    if (this.secretService) {
-      const secrets = await this.secretService.getDecryptedMap(nodeId, name);
-      if (Object.keys(secrets).length > 0) {
-        mergedEnv = { ...(env || {}), ...secrets };
-        // Never allow removing a secret key via removeEnv
-        if (removeEnv) {
-          const secretKeys = new Set(Object.keys(secrets));
-          removeEnv = removeEnv.filter((k) => !secretKeys.has(k));
-        }
-      }
-    }
-
-    this.setTransition(nodeId, name, 'updating');
-    this.emitTransition(nodeId, name, containerId, 'updating');
-    const task = await this.createTask(nodeId, containerId, name, 'update');
-    let data: any;
-    try {
-      const result = await this.nodeDispatch.sendDockerContainerCommand(
-        nodeId,
-        'update',
-        { containerId, configJson: JSON.stringify({ env: mergedEnv, removeEnv }) },
-        Math.max(60000, this.lifecycleWatchTimeoutMs(updateStopTimeout, 60))
-      );
-      data = this.parseResult(result);
-      if (this.environmentService) {
-        await this.environmentService.replace(nodeId, name, env || {});
-      }
-    } catch (err) {
-      this.clearTransition(nodeId, name);
-      if (task && this.taskService) {
-        await this.taskService
-          .update(task.id, {
-            status: 'failed',
-            error: err instanceof Error ? err.message : 'Unknown error',
-            completedAt: new Date(),
-          })
-          .catch(() => {});
-      }
-      throw err;
-    }
-    this.watchRecreateByName(
-      nodeId,
-      name,
-      containerId,
-      task?.id,
-      'Container env updated',
-      expectedState,
-      this.lifecycleWatchTimeoutMs(updateStopTimeout, 60)
-    );
-    await this.auditService.log({
-      action: 'docker.container.env.update',
-      userId,
-      resourceType: 'docker-container',
-      resourceId: containerId,
-      details: { nodeId },
-    });
-
-    return data;
+    return updateDockerContainerEnv(this.containerMutationContext(), nodeId, containerId, env, removeEnv, userId);
   }
 
   // ─── Image operations ──────────────────────────────────────────────
