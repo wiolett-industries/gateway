@@ -37,6 +37,7 @@ import { executeGroupTool, GROUP_TOOL_NAMES } from './ai.group-tools.js';
 import { manageLoggingTool } from './ai.logging-tools.js';
 import { executeNodeTool, NODE_TOOL_NAMES } from './ai.node-tools.js';
 import { executeNotificationTool, NOTIFICATION_TOOL_NAMES } from './ai.notification-tools.js';
+import { executePkiTemplateTool, PKI_TEMPLATE_TOOL_NAMES } from './ai.pki-template-tools.js';
 import { findResource } from './ai.resource-search.js';
 import {
   agentPage,
@@ -252,6 +253,19 @@ export class AIService {
         args
       );
     }
+    if (PKI_TEMPLATE_TOOL_NAMES.has(toolName)) {
+      return executePkiTemplateTool(
+        {
+          templatesService: this.templatesService,
+          ensureToolScope: (executionUser, scope) => this.ensureToolScope(executionUser, scope),
+          ensureToolScopeForResource: (executionUser, baseScope, resourceId) =>
+            this.ensureToolScopeForResource(executionUser, baseScope, resourceId),
+        },
+        user,
+        toolName,
+        args
+      );
+    }
 
     switch (toolName) {
       // ── Discovery ──
@@ -380,48 +394,6 @@ export class AIService {
           };
         }
         throw new Error(`Unsupported certificate operation: ${String(a.operation)}`);
-      }
-
-      // ── PKI - Templates ──
-      case 'list_templates':
-        return this.templatesService.listTemplates();
-      case 'create_template':
-        return this.templatesService.createTemplate(
-          {
-            name: a.name,
-            certType: a.type,
-            keyAlgorithm: a.keyAlgorithm,
-            validityDays: a.validityDays,
-            keyUsage: a.keyUsage || [],
-            extKeyUsage: a.extendedKeyUsage || [],
-            requireSans: true,
-            sanTypes: ['dns'],
-            crlDistributionPoints: [],
-            certificatePolicies: [],
-            customExtensions: [],
-          },
-          user.id
-        );
-      case 'delete_template':
-        await this.templatesService.deleteTemplate(a.templateId);
-        return { success: true };
-      case 'manage_template': {
-        if (a.operation === 'get') {
-          this.ensureToolScopeForResource(user, 'pki:templates:view', String(a.templateId));
-          return this.templatesService.getTemplate(a.templateId);
-        }
-        if (a.operation === 'update') {
-          this.ensureToolScope(user, 'pki:templates:edit');
-          return this.templatesService.updateTemplate(a.templateId, {
-            name: a.name,
-            certType: a.type,
-            keyAlgorithm: a.keyAlgorithm,
-            validityDays: a.validityDays,
-            keyUsage: a.keyUsage,
-            extKeyUsage: a.extendedKeyUsage,
-          });
-        }
-        throw new Error(`Unsupported PKI template operation: ${String(a.operation)}`);
       }
 
       // ── Reverse Proxy ──
