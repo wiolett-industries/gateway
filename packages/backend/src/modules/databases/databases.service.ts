@@ -31,6 +31,11 @@ import type {
   DatabaseListQuery,
   UpdateDatabaseConnectionInput,
 } from './databases.schemas.js';
+import {
+  ensurePostgresBaseTable,
+  normalizePostgresColumnType,
+  postgresColumnTypeSql,
+} from './postgres-column-operations.js';
 import { postgresParameterSql, quoteIdent } from './postgres-row-sql.js';
 
 const { Pool } = pg;
@@ -52,54 +57,6 @@ interface PostgresRowSearchFilter {
   column: string;
   operation: PostgresRowSearchOperation;
   value: string;
-}
-
-const POSTGRES_COLUMN_TYPE_SQL = new Map<string, string>([
-  ['text', 'text'],
-  ['varchar(255)', 'varchar(255)'],
-  ['varchar(1024)', 'varchar(1024)'],
-  ['char(1)', 'char(1)'],
-  ['boolean', 'boolean'],
-  ['smallint', 'smallint'],
-  ['integer', 'integer'],
-  ['bigint', 'bigint'],
-  ['numeric', 'numeric'],
-  ['numeric(12,2)', 'numeric(12,2)'],
-  ['real', 'real'],
-  ['double precision', 'double precision'],
-  ['date', 'date'],
-  ['time', 'time'],
-  ['time with time zone', 'time with time zone'],
-  ['timestamp', 'timestamp'],
-  ['timestamp with time zone', 'timestamp with time zone'],
-  ['uuid', 'uuid'],
-  ['json', 'json'],
-  ['jsonb', 'jsonb'],
-  ['bytea', 'bytea'],
-  ['inet', 'inet'],
-  ['cidr', 'cidr'],
-  ['macaddr', 'macaddr'],
-  ['xml', 'xml'],
-]);
-
-function normalizePostgresColumnType(dataType: string): string {
-  return dataType.trim().toLowerCase().replace(/\s+/g, ' ');
-}
-
-async function ensurePostgresBaseTable(pool: pg.Pool, schema: string, table: string) {
-  const tableInfo = await pool.query<{ table_type: string }>(
-    `select table_type
-       from information_schema.tables
-      where table_schema = $1 and table_name = $2`,
-    [schema, table]
-  );
-  const tableType = tableInfo.rows[0]?.table_type;
-  if (!tableType) {
-    throw new AppError(404, 'TABLE_NOT_FOUND', 'Table not found');
-  }
-  if (tableType === 'VIEW') {
-    throw new AppError(400, 'VIEW_NOT_EDITABLE', 'Columns cannot be changed for views');
-  }
 }
 
 export { inferPostgresIntent, inferRedisIntent } from './database-query-intent.js';
@@ -690,7 +647,7 @@ export class DatabaseConnectionService {
   ) {
     return this.withPostgresPool(id, 'query', async (pool) => {
       const normalizedType = normalizePostgresColumnType(dataType);
-      const typeSql = POSTGRES_COLUMN_TYPE_SQL.get(normalizedType);
+      const typeSql = postgresColumnTypeSql(normalizedType);
       if (!typeSql) {
         throw new AppError(400, 'INVALID_COLUMN_TYPE', 'Unsupported PostgreSQL column data type');
       }
@@ -723,7 +680,7 @@ export class DatabaseConnectionService {
   async addPostgresColumn(id: string, schema: string, table: string, column: string, dataType: string, userId: string) {
     return this.withPostgresPool(id, 'query', async (pool) => {
       const normalizedType = normalizePostgresColumnType(dataType);
-      const typeSql = POSTGRES_COLUMN_TYPE_SQL.get(normalizedType);
+      const typeSql = postgresColumnTypeSql(normalizedType);
       if (!typeSql) {
         throw new AppError(400, 'INVALID_COLUMN_TYPE', 'Unsupported PostgreSQL column data type');
       }
