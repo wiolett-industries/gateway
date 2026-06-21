@@ -33,7 +33,22 @@ import {
   shortId,
 } from './docker-deployment-helpers.js';
 import { DOCKER_DEPLOYMENT_MANAGED_LABEL, dockerDeploymentLabels } from './docker-deployment-labels.js';
+import {
+  type DockerDeploymentOperationContext,
+  deleteWebhook,
+  getWebhook,
+  kill as killDeployment,
+  regenerateWebhook,
+  remove as removeDeployment,
+  restart as restartDeployment,
+  start as startDeployment,
+  stop as stopDeployment,
+  stopSlot,
+  triggerWebhook,
+  upsertWebhook,
+} from './docker-deployment-operations.js';
 import { desiredConfigForRegistryAttempt, isRegistryRetryableError } from './docker-deployment-registry.js';
+import { toSyntheticRow } from './docker-deployment-synthetic.js';
 import type { DockerHealthCheckDto, DockerHealthCheckService } from './docker-health-check.service.js';
 import type { DockerImageCleanupService } from './docker-image-cleanup.service.js';
 import type { DockerRegistryService } from './docker-registry.service.js';
@@ -300,39 +315,7 @@ export class DockerDeploymentService {
 
   async syntheticRows(nodeId: string) {
     const deployments = await this.listSummary(nodeId);
-    return deployments.map((deployment) => this.toSyntheticRow(deployment));
-  }
-
-  private toSyntheticRow(deployment: DockerDeploymentSummary) {
-    const active = deployment.slots.find((slot) => slot.slot === deployment.activeSlot);
-    const primary = deployment.routes.find((route) => route.isPrimary) ?? deployment.routes[0];
-    return {
-      id: deployment.id,
-      name: deployment.name,
-      image: active?.image ?? deployment.desiredConfig.image,
-      state: deployment.status === 'ready' ? active?.status || 'running' : deployment.status,
-      status: `active ${deployment.activeSlot}`,
-      created: Math.floor(new Date(deployment.createdAt).getTime() / 1000),
-      ports: deployment.routes.map((route) => ({
-        privatePort: route.containerPort,
-        publicPort: route.hostPort,
-        type: 'tcp',
-      })),
-      labels: {},
-      kind: 'deployment',
-      deploymentId: deployment.id,
-      activeSlot: deployment.activeSlot,
-      primaryRoute: primary ? { hostPort: primary.hostPort, containerPort: primary.containerPort } : null,
-      activeSlotContainerId: active?.containerId ?? null,
-      healthCheckId: deployment.healthCheck?.id ?? null,
-      healthCheckEnabled: deployment.healthCheck?.enabled ?? false,
-      healthStatus: deployment.healthCheck?.healthStatus ?? 'unknown',
-      lastHealthCheckAt: deployment.healthCheck?.lastHealthCheckAt ?? null,
-      folderId: null,
-      folderIsSystem: false,
-      folderSortOrder: 0,
-      ...(deployment._transition ? { _transition: deployment._transition } : {}),
-    };
+    return deployments.map((deployment) => toSyntheticRow(deployment));
   }
 
   async get(nodeId: string, deploymentId: string) {
@@ -873,371 +856,65 @@ export class DockerDeploymentService {
     return this.loadDeployment(nodeId, deploymentId);
   }
 
+  private deploymentOperationContext(): DockerDeploymentOperationContext {
+    return {
+      db: this.db,
+      audit: this.audit,
+      dispatch: this.dispatch,
+      eventBus: this.eventBus,
+      validateDockerNode: (nodeId) => this.validateDockerNode(nodeId),
+      loadDeployment: (nodeId, deploymentId) => this.loadDeployment(nodeId, deploymentId),
+      requireDeploymentIdle: (deployment) => this.requireDeploymentIdle(deployment),
+      setTransition: (deployment, transition) => this.setTransition(deployment, transition),
+      clearTransition: (deployment) => this.clearTransition(deployment),
+      parseResult: (result) => this.parseResult(result),
+      emit: (action, deploymentId, nodeId, extra) => this.emit(action, deploymentId, nodeId, extra),
+      deploy: (nodeId, deploymentId, input, userId, source) => this.deploy(nodeId, deploymentId, input, userId, source),
+    };
+  }
+
   async stopSlot(nodeId: string, deploymentId: string, slot: DockerDeploymentSlot, userId: string | null) {
-    await this.validateDockerNode(nodeId);
-    const deployment = await this.loadDeployment(nodeId, deploymentId);
-    this.requireDeploymentIdle(deployment);
-    if (slot === deployment.activeSlot) throw new AppError(409, 'ACTIVE_SLOT', 'Cannot stop the active slot');
-    const result = await this.dispatch.sendDockerDeploymentCommand(nodeId, 'stop_slot', {
-      deploymentId,
-      slot,
-      configJson: JSON.stringify({ deployment, slot }),
-    });
-    this.parseResult(result);
-    await this.db
-      .update(dockerDeploymentSlots)
-      .set({ status: 'stopped', health: 'unknown', drainingUntil: null, updatedAt: new Date() })
-      .where(and(eq(dockerDeploymentSlots.deploymentId, deploymentId), eq(dockerDeploymentSlots.slot, slot)));
-    await this.audit.log({
-      action: 'docker.deployment.slot.stop',
-      userId,
-      resourceType: 'docker-deployment',
-      resourceId: deploymentId,
-      details: { nodeId, slot },
-    });
-    this.emit('slot_stopped', deploymentId, nodeId, { slot });
+    await stopSlot(this.deploymentOperationContext(), nodeId, deploymentId, slot, userId);
   }
 
   async start(nodeId: string, deploymentId: string, userId: string | null) {
-    await this.validateDockerNode(nodeId);
-    const deployment = await this.loadDeployment(nodeId, deploymentId);
-    this.requireDeploymentIdle(deployment);
-    this.setTransition(deployment, 'starting');
-    let data: any;
-    try {
-      const result = await this.dispatch.sendDockerDeploymentCommand(nodeId, 'start', {
-        deploymentId,
-        configJson: JSON.stringify({ deployment }),
-      });
-      data = this.parseResult(result) ?? {};
-    } catch (err) {
-      this.emit('failed', deploymentId, nodeId, { action: 'start', error: err instanceof Error ? err.message : err });
-      throw err;
-    } finally {
-      this.clearTransition(deployment);
-    }
-    await this.db.transaction(async (tx) => {
-      await tx
-        .update(dockerDeployments)
-        .set({ status: 'ready', updatedAt: new Date(), updatedById: userId })
-        .where(eq(dockerDeployments.id, deploymentId));
-      await tx
-        .update(dockerDeploymentSlots)
-        .set({
-          containerId:
-            data.containerId ??
-            deployment.slots.find((slot) => slot.slot === deployment.activeSlot)?.containerId ??
-            null,
-          status: 'running',
-          health: 'healthy',
-          drainingUntil: null,
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(dockerDeploymentSlots.deploymentId, deploymentId),
-            eq(dockerDeploymentSlots.slot, deployment.activeSlot)
-          )
-        );
-      for (const slot of deployment.slots.filter((item) => item.slot !== deployment.activeSlot)) {
-        await tx
-          .update(dockerDeploymentSlots)
-          .set({
-            status: slot.containerId || slot.image ? 'stopped' : 'empty',
-            health: 'unknown',
-            drainingUntil: null,
-            updatedAt: new Date(),
-          })
-          .where(and(eq(dockerDeploymentSlots.deploymentId, deploymentId), eq(dockerDeploymentSlots.slot, slot.slot)));
-      }
-    });
-    await this.audit.log({
-      action: 'docker.deployment.start',
-      userId,
-      resourceType: 'docker-deployment',
-      resourceId: deploymentId,
-      details: { nodeId },
-    });
-    this.emit('started', deploymentId, nodeId);
-    return this.loadDeployment(nodeId, deploymentId);
+    return startDeployment(this.deploymentOperationContext(), nodeId, deploymentId, userId);
   }
 
   async stop(nodeId: string, deploymentId: string, userId: string | null) {
-    await this.validateDockerNode(nodeId);
-    const deployment = await this.loadDeployment(nodeId, deploymentId);
-    this.requireDeploymentIdle(deployment);
-    this.setTransition(deployment, 'stopping');
-    try {
-      const result = await this.dispatch.sendDockerDeploymentCommand(nodeId, 'stop', {
-        deploymentId,
-        configJson: JSON.stringify({ deployment }),
-      });
-      this.parseResult(result);
-    } catch (err) {
-      this.emit('failed', deploymentId, nodeId, { action: 'stop', error: err instanceof Error ? err.message : err });
-      throw err;
-    } finally {
-      this.clearTransition(deployment);
-    }
-    await this.db.transaction(async (tx) => {
-      await tx
-        .update(dockerDeployments)
-        .set({ status: 'stopped', updatedAt: new Date(), updatedById: userId })
-        .where(eq(dockerDeployments.id, deploymentId));
-      await tx
-        .update(dockerDeploymentSlots)
-        .set({ status: 'stopped', health: 'unknown', updatedAt: new Date() })
-        .where(eq(dockerDeploymentSlots.deploymentId, deploymentId));
-      for (const slot of deployment.slots) {
-        if (slot.containerId || slot.image) continue;
-        await tx
-          .update(dockerDeploymentSlots)
-          .set({ status: 'empty', health: 'unknown', drainingUntil: null, updatedAt: new Date() })
-          .where(and(eq(dockerDeploymentSlots.deploymentId, deploymentId), eq(dockerDeploymentSlots.slot, slot.slot)));
-      }
-    });
-    await this.audit.log({
-      action: 'docker.deployment.stop',
-      userId,
-      resourceType: 'docker-deployment',
-      resourceId: deploymentId,
-      details: { nodeId },
-    });
-    this.emit('stopped', deploymentId, nodeId);
-    return this.loadDeployment(nodeId, deploymentId);
+    return stopDeployment(this.deploymentOperationContext(), nodeId, deploymentId, userId);
   }
 
   async restart(nodeId: string, deploymentId: string, userId: string | null) {
-    await this.validateDockerNode(nodeId);
-    const deployment = await this.loadDeployment(nodeId, deploymentId);
-    this.requireDeploymentIdle(deployment);
-    this.setTransition(deployment, 'restarting');
-    let data: any;
-    try {
-      const result = await this.dispatch.sendDockerDeploymentCommand(nodeId, 'restart', {
-        deploymentId,
-        configJson: JSON.stringify({ deployment }),
-      });
-      data = this.parseResult(result) ?? {};
-    } catch (err) {
-      this.emit('failed', deploymentId, nodeId, { action: 'restart', error: err instanceof Error ? err.message : err });
-      throw err;
-    } finally {
-      this.clearTransition(deployment);
-    }
-    await this.db.transaction(async (tx) => {
-      await tx
-        .update(dockerDeployments)
-        .set({ status: 'ready', updatedAt: new Date(), updatedById: userId })
-        .where(eq(dockerDeployments.id, deploymentId));
-      await tx
-        .update(dockerDeploymentSlots)
-        .set({
-          containerId:
-            data.containerId ??
-            deployment.slots.find((slot) => slot.slot === deployment.activeSlot)?.containerId ??
-            null,
-          status: 'running',
-          health: 'healthy',
-          drainingUntil: null,
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(dockerDeploymentSlots.deploymentId, deploymentId),
-            eq(dockerDeploymentSlots.slot, deployment.activeSlot)
-          )
-        );
-      for (const slot of deployment.slots.filter((item) => item.slot !== deployment.activeSlot)) {
-        await tx
-          .update(dockerDeploymentSlots)
-          .set({
-            status: slot.containerId || slot.image ? 'stopped' : 'empty',
-            health: 'unknown',
-            drainingUntil: null,
-            updatedAt: new Date(),
-          })
-          .where(and(eq(dockerDeploymentSlots.deploymentId, deploymentId), eq(dockerDeploymentSlots.slot, slot.slot)));
-      }
-    });
-    await this.audit.log({
-      action: 'docker.deployment.restart',
-      userId,
-      resourceType: 'docker-deployment',
-      resourceId: deploymentId,
-      details: { nodeId },
-    });
-    this.emit('restarted', deploymentId, nodeId);
-    return this.loadDeployment(nodeId, deploymentId);
+    return restartDeployment(this.deploymentOperationContext(), nodeId, deploymentId, userId);
   }
 
   async kill(nodeId: string, deploymentId: string, userId: string | null) {
-    await this.validateDockerNode(nodeId);
-    const deployment = await this.loadDeployment(nodeId, deploymentId);
-    this.requireDeploymentIdle(deployment);
-    this.setTransition(deployment, 'killing');
-    try {
-      const result = await this.dispatch.sendDockerDeploymentCommand(nodeId, 'kill', {
-        deploymentId,
-        configJson: JSON.stringify({ deployment }),
-      });
-      this.parseResult(result);
-    } catch (err) {
-      this.emit('failed', deploymentId, nodeId, { action: 'kill', error: err instanceof Error ? err.message : err });
-      throw err;
-    } finally {
-      this.clearTransition(deployment);
-    }
-    await this.db.transaction(async (tx) => {
-      await tx
-        .update(dockerDeployments)
-        .set({ status: 'stopped', updatedAt: new Date(), updatedById: userId })
-        .where(eq(dockerDeployments.id, deploymentId));
-      await tx
-        .update(dockerDeploymentSlots)
-        .set({ status: 'stopped', health: 'unknown', updatedAt: new Date() })
-        .where(eq(dockerDeploymentSlots.deploymentId, deploymentId));
-      for (const slot of deployment.slots) {
-        if (slot.containerId || slot.image) continue;
-        await tx
-          .update(dockerDeploymentSlots)
-          .set({ status: 'empty', health: 'unknown', drainingUntil: null, updatedAt: new Date() })
-          .where(and(eq(dockerDeploymentSlots.deploymentId, deploymentId), eq(dockerDeploymentSlots.slot, slot.slot)));
-      }
-    });
-    await this.audit.log({
-      action: 'docker.deployment.kill',
-      userId,
-      resourceType: 'docker-deployment',
-      resourceId: deploymentId,
-      details: { nodeId },
-    });
-    this.emit('killed', deploymentId, nodeId);
-    return this.loadDeployment(nodeId, deploymentId);
+    return killDeployment(this.deploymentOperationContext(), nodeId, deploymentId, userId);
   }
 
   async remove(nodeId: string, deploymentId: string, userId: string) {
-    await this.validateDockerNode(nodeId);
-    const deployment = await this.loadDeployment(nodeId, deploymentId);
-    this.requireDeploymentIdle(deployment);
-    this.setTransition(deployment, 'removing');
-    await this.db
-      .update(dockerDeployments)
-      .set({ status: 'deleting', updatedAt: new Date() })
-      .where(eq(dockerDeployments.id, deploymentId));
-    try {
-      const result = await this.dispatch.sendDockerDeploymentCommand(nodeId, 'remove', {
-        deploymentId,
-        configJson: JSON.stringify({ deployment }),
-      });
-      this.parseResult(result);
-      this.clearTransition(deployment);
-      await this.db.delete(dockerDeployments).where(eq(dockerDeployments.id, deploymentId));
-    } catch (err) {
-      this.clearTransition(deployment);
-      await this.db
-        .update(dockerDeployments)
-        .set({ status: deployment.status, updatedAt: new Date() })
-        .where(eq(dockerDeployments.id, deploymentId))
-        .catch(() => {});
-      this.emit('failed', deploymentId, nodeId, { action: 'remove', error: err instanceof Error ? err.message : err });
-      throw err;
-    }
-    await this.audit.log({
-      action: 'docker.deployment.delete',
-      userId,
-      resourceType: 'docker-deployment',
-      resourceId: deploymentId,
-      details: { nodeId, name: deployment.name },
-    });
-    this.emit('deleted', deploymentId, nodeId);
+    await removeDeployment(this.deploymentOperationContext(), nodeId, deploymentId, userId);
   }
 
   async getWebhook(nodeId: string, deploymentId: string) {
-    const deployment = await this.loadDeployment(nodeId, deploymentId);
-    return deployment.webhook ?? null;
+    return getWebhook(this.deploymentOperationContext(), nodeId, deploymentId);
   }
 
   async upsertWebhook(nodeId: string, deploymentId: string, input: { enabled?: boolean }, userId: string) {
-    const deployment = await this.loadDeployment(nodeId, deploymentId);
-    const existing = deployment.webhook;
-    if (existing) {
-      const [updated] = await this.db
-        .update(dockerWebhooks)
-        .set({
-          enabled: input.enabled ?? existing.enabled,
-          updatedAt: new Date(),
-        })
-        .where(eq(dockerWebhooks.id, existing.id))
-        .returning();
-      this.emitWebhook('updated', updated);
-      return updated;
-    }
-    const [created] = await this.db
-      .insert(dockerWebhooks)
-      .values({
-        nodeId,
-        containerName: deployment.name,
-        targetType: 'deployment',
-        deploymentId,
-        enabled: input.enabled ?? true,
-      })
-      .returning();
-    await this.audit.log({
-      action: 'docker.deployment.webhook.created',
-      userId,
-      resourceType: 'docker-deployment',
-      resourceId: deploymentId,
-      details: { nodeId, name: deployment.name },
-    });
-    this.emitWebhook('created', created);
-    return created;
+    return upsertWebhook(this.deploymentOperationContext(), nodeId, deploymentId, input, userId);
   }
 
   async deleteWebhook(nodeId: string, deploymentId: string, userId: string) {
-    const webhook = await this.getWebhook(nodeId, deploymentId);
-    if (!webhook) throw new AppError(404, 'NOT_FOUND', 'Webhook not found');
-    await this.db.delete(dockerWebhooks).where(eq(dockerWebhooks.id, webhook.id));
-    await this.audit.log({
-      action: 'docker.deployment.webhook.deleted',
-      userId,
-      resourceType: 'docker-deployment',
-      resourceId: deploymentId,
-      details: { nodeId },
-    });
-    this.emitWebhook('deleted', webhook);
+    await deleteWebhook(this.deploymentOperationContext(), nodeId, deploymentId, userId);
   }
 
   async regenerateWebhook(nodeId: string, deploymentId: string, userId: string) {
-    const webhook = await this.getWebhook(nodeId, deploymentId);
-    if (!webhook) throw new AppError(404, 'NOT_FOUND', 'Webhook not found');
-    const [updated] = await this.db
-      .update(dockerWebhooks)
-      .set({ token: randomUUID(), updatedAt: new Date() })
-      .where(eq(dockerWebhooks.id, webhook.id))
-      .returning();
-    await this.audit.log({
-      action: 'docker.deployment.webhook.regenerated',
-      userId,
-      resourceType: 'docker-deployment',
-      resourceId: deploymentId,
-      details: { nodeId },
-    });
-    this.emitWebhook('updated', updated);
-    return updated;
-  }
-
-  private emitWebhook(action: string, data: typeof dockerWebhooks.$inferSelect) {
-    const { token: _token, ...safeData } = data;
-    this.eventBus?.publish('docker.webhook.changed', { ...safeData, action });
+    return regenerateWebhook(this.deploymentOperationContext(), nodeId, deploymentId, userId);
   }
 
   async triggerWebhook(webhookId: string, tag?: string) {
-    const [webhook] = await this.db.select().from(dockerWebhooks).where(eq(dockerWebhooks.id, webhookId)).limit(1);
-    if (!webhook?.deploymentId) throw new AppError(404, 'NOT_FOUND', 'Deployment webhook not found');
-    const deployment = await this.loadDeployment(webhook.nodeId, webhook.deploymentId);
-    const result = await this.deploy(webhook.nodeId, webhook.deploymentId, { tag }, null, 'webhook');
-    return { deploymentId: deployment.id, message: `Deploying ${deployment.name}`, deployment: result };
+    return triggerWebhook(this.deploymentOperationContext(), webhookId, tag);
   }
 
   scheduleDrainCleanup(
