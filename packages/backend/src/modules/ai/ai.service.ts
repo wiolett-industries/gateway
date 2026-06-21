@@ -33,6 +33,7 @@ import { DATABASE_TOOL_NAMES, executeDatabaseTool } from './ai.database-tools.js
 import { manageDockerContainerConfigTool } from './ai.docker-config-tools.js';
 import { DOCKER_TOOL_NAMES, executeDockerTool } from './ai.docker-tools.js';
 import { getInternalDocumentation } from './ai.docs.js';
+import { executeGroupTool, GROUP_TOOL_NAMES } from './ai.group-tools.js';
 import { manageLoggingTool } from './ai.logging-tools.js';
 import { executeNodeTool, NODE_TOOL_NAMES } from './ai.node-tools.js';
 import { executeNotificationTool, NOTIFICATION_TOOL_NAMES } from './ai.notification-tools.js';
@@ -223,6 +224,9 @@ export class AIService {
     }
     if (NODE_TOOL_NAMES.has(toolName)) {
       return executeNodeTool({ nodesService: this.nodesService }, user, toolName, args);
+    }
+    if (GROUP_TOOL_NAMES.has(toolName)) {
+      return executeGroupTool({ groupService: this.groupService }, user, toolName, args);
     }
 
     switch (toolName) {
@@ -651,44 +655,6 @@ export class AIService {
         return compactProxyHostForAgent(
           await this.proxyService.updateProxyHost(a.proxyHostId, { rawConfigEnabled: a.enabled } as any, user.id)
         );
-
-      // ── Permission Groups ──
-      case 'list_groups':
-        return this.groupService.listGroups();
-      case 'create_group':
-        await this.groupService.assertCanCreateGroup(
-          {
-            name: a.name,
-            description: a.description,
-            scopes: a.scopes,
-            parentId: a.parentId,
-          },
-          user.scopes
-        );
-        return this.groupService.createGroup({
-          name: a.name,
-          description: a.description,
-          scopes: a.scopes,
-          parentId: a.parentId,
-        });
-      case 'update_group': {
-        const input = {
-          name: a.name,
-          description: a.description,
-          scopes: a.scopes,
-          parentId: a.parentId,
-        };
-        await this.groupService.assertCanUpdateGroup(a.groupId, input, user.scopes);
-        return this.groupService.updateGroup(a.groupId, {
-          name: a.name,
-          description: a.description,
-          scopes: a.scopes,
-          parentId: a.parentId,
-        });
-      }
-      case 'delete_group':
-        await this.groupService.deleteGroup(a.groupId);
-        return { success: true };
 
       // ── Administration ──
       case 'list_users':
