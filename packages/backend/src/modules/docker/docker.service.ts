@@ -24,6 +24,12 @@ import {
   removeImage as removeDockerImage,
 } from './docker-image-operations.js';
 import {
+  type ContainerAction,
+  type DockerLifecycleWatchContext,
+  watchDockerRecreateByName,
+  watchDockerTransition,
+} from './docker-lifecycle-watch.js';
+import {
   getContainerLogs as getDockerContainerLogs,
   getContainerStats as getDockerContainerStats,
   getContainerTop as getDockerContainerTop,
@@ -31,7 +37,7 @@ import {
   readFile as readDockerFile,
   writeFile as writeDockerFile,
 } from './docker-read-operations.js';
-import { dockerDispatchErrorMessage, getReplacementContainerFailureMessage } from './docker-recreate-watch.js';
+import { dockerDispatchErrorMessage } from './docker-recreate-watch.js';
 import type { DockerRegistryAuthCandidate, DockerRegistryService } from './docker-registry.service.js';
 import { applyRuntimeSettingsToInspect } from './docker-runtime-inspect.js';
 import {
@@ -60,18 +66,6 @@ const DEFAULT_CONTAINER_STOP_TIMEOUT_SECONDS = 20;
 const CONTAINER_LIFECYCLE_TIMEOUT_BUFFER_SECONDS = 30;
 
 export type { ContainerTransition } from './docker-container-transitions.js';
-
-type ContainerAction =
-  | 'created'
-  | 'started'
-  | 'stopped'
-  | 'restarted'
-  | 'killed'
-  | 'removed'
-  | 'renamed'
-  | 'updated'
-  | 'recreated'
-  | 'duplicated';
 
 export class DockerManagementService {
   private static readonly LONG_DOCKER_OPERATION_TIMEOUT_MS = 600000; // 10 minutes
@@ -257,6 +251,18 @@ export class DockerManagementService {
     };
   }
 
+  private lifecycleWatchContext(): DockerLifecycleWatchContext {
+    return {
+      nodeDispatch: this.nodeDispatch,
+      taskService: this.taskService,
+      eventBus: this.eventBus,
+      parseResult: (result: { success: boolean; error?: string; detail?: string }) => this.parseResult(result),
+      clearTransition: (nodeId: string, name: string) => this.clearTransition(nodeId, name),
+      emitContainer: (nodeId, name, id, action, extra) => this.emitContainer(nodeId, name, id, action, extra),
+      failTask: (taskId, error, nodeId, containerName) => this.failTask(taskId, error, nodeId, containerName),
+    };
+  }
+
   /**
    * Verify the target name is not already taken on this node.
    * Two-layer guard: (1) blocks if a name-keyed transition is in flight,
@@ -432,36 +438,18 @@ export class DockerManagementService {
     timeoutMs = 60000,
     isComplete?: (inspectData: Record<string, any>) => boolean
   ) {
-    const start = Date.now();
-    const poll = setInterval(async () => {
-      try {
-        const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'inspect', { containerId });
-        const data = this.parseResult(result);
-        const state = data?.State?.Status;
-        const completed = isComplete ? isComplete(data) : state === expectedState;
-        if (completed) {
-          clearInterval(poll);
-          this.clearTransition(nodeId, name);
-          if (taskId && this.taskService) {
-            await this.taskService
-              .update(taskId, { status: 'succeeded', progress, completedAt: new Date() })
-              .catch(() => {});
-          }
-          this.emitContainer(nodeId, name, containerId, completedAction);
-          return;
-        }
-        if (Date.now() - start > timeoutMs) {
-          clearInterval(poll);
-          await this.failTask(taskId, 'Timed out', nodeId, name);
-        }
-      } catch {
-        // Container might not exist during recreate — keep polling
-        if (Date.now() - start > timeoutMs) {
-          clearInterval(poll);
-          await this.failTask(taskId, 'Timed out', nodeId, name);
-        }
-      }
-    }, 2000);
+    watchDockerTransition(
+      this.lifecycleWatchContext(),
+      nodeId,
+      containerId,
+      name,
+      taskId,
+      expectedState,
+      progress,
+      completedAction,
+      timeoutMs,
+      isComplete
+    );
   }
 
   /**
@@ -478,54 +466,16 @@ export class DockerManagementService {
     expectedState: string,
     timeoutMs = 60000
   ) {
-    const start = Date.now();
-    const poll = setInterval(async () => {
-      try {
-        const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'list');
-        const containers = this.parseResult(result);
-        if (!Array.isArray(containers)) return;
-
-        const match = containers.find((c: any) => {
-          const cName = (c.name ?? c.Name ?? '').replace(/^\//, '');
-          return cName === containerName;
-        });
-
-        if (match) {
-          const newId = match.id ?? match.Id;
-          const state = match.state ?? match.State ?? '';
-
-          if (newId !== oldContainerId && state === expectedState) {
-            // Recreation complete — new container reached the expected post-recreate state
-            clearInterval(poll);
-            this.clearTransition(nodeId, containerName);
-            if (taskId && this.taskService) {
-              await this.taskService
-                .update(taskId, { status: 'succeeded', progress, completedAt: new Date() })
-                .catch(() => {});
-            }
-            this.emitContainer(nodeId, containerName, newId, 'recreated', { oldId: oldContainerId });
-            return;
-          }
-
-          const replacementFailure = getReplacementContainerFailureMessage(match, oldContainerId, expectedState);
-          if (replacementFailure) {
-            clearInterval(poll);
-            await this.failTask(taskId, replacementFailure, nodeId, containerName);
-            return;
-          }
-        }
-
-        if (Date.now() - start > timeoutMs) {
-          clearInterval(poll);
-          await this.failTask(taskId, 'Timed out', nodeId, containerName);
-        }
-      } catch {
-        if (Date.now() - start > timeoutMs) {
-          clearInterval(poll);
-          await this.failTask(taskId, 'Timed out', nodeId, containerName);
-        }
-      }
-    }, 2000);
+    watchDockerRecreateByName(
+      this.lifecycleWatchContext(),
+      nodeId,
+      containerName,
+      oldContainerId,
+      taskId,
+      progress,
+      expectedState,
+      timeoutMs
+    );
   }
 
   private async validateDockerNode(nodeId: string) {
