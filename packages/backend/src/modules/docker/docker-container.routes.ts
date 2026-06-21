@@ -49,9 +49,9 @@ import {
   SecretUpdateSchema,
 } from './docker.schemas.js';
 import { DockerManagementService } from './docker.service.js';
+import { DOCKER_DEPLOYMENT_MANAGED_LABEL } from './docker-deployment-labels.js';
 import { DockerSecretService } from './docker-secret.service.js';
 
-const DOCKER_DEPLOYMENT_MANAGED_LABEL = 'wiolett.gateway.deployment.managed';
 const DOCKER_RESOURCE_LIST_MAX = 1000;
 const DOCKER_CONTAINER_PORT_PREVIEW_MAX = 64;
 

@@ -32,6 +32,7 @@ import {
   normalizeRoutes,
   shortId,
 } from './docker-deployment-helpers.js';
+import { DOCKER_DEPLOYMENT_MANAGED_LABEL, dockerDeploymentLabels } from './docker-deployment-labels.js';
 import { desiredConfigForRegistryAttempt, isRegistryRetryableError } from './docker-deployment-registry.js';
 import type { DockerHealthCheckDto, DockerHealthCheckService } from './docker-health-check.service.js';
 import type { DockerImageCleanupService } from './docker-image-cleanup.service.js';
@@ -39,11 +40,6 @@ import type { DockerRegistryService } from './docker-registry.service.js';
 import type { DockerSecretService } from './docker-secret.service.js';
 import { assertDockerMountChangeAllowed, normalizeMountDefinitionsFromConfig } from './docker-socket-mount.guard.js';
 import type { DockerTaskService } from './docker-task.service.js';
-
-export const DOCKER_DEPLOYMENT_MANAGED_LABEL = 'wiolett.gateway.deployment.managed';
-export const DOCKER_DEPLOYMENT_ID_LABEL = 'wiolett.gateway.deployment.id';
-export const DOCKER_DEPLOYMENT_ROLE_LABEL = 'wiolett.gateway.deployment.role';
-export const DOCKER_DEPLOYMENT_SLOT_LABEL = 'wiolett.gateway.deployment.slot';
 
 type DeploymentRow = typeof dockerDeployments.$inferSelect;
 type DeploymentRouteRow = typeof dockerDeploymentRoutes.$inferSelect;
@@ -442,7 +438,7 @@ export class DockerDeploymentService {
           health,
           desiredConfig: attemptDesiredConfig,
           registryAuthJson: registryAuth?.authJson,
-          labels: this.internalLabels(id, 'app', 'blue'),
+          labels: dockerDeploymentLabels(id, 'app', 'blue'),
         };
 
         try {
@@ -1286,14 +1282,5 @@ export class DockerDeploymentService {
     if (currentDrainUntil !== expectedDrainingUntil.getTime()) return;
 
     await this.stopSlot(nodeId, deploymentId, slot, null);
-  }
-
-  private internalLabels(deploymentId: string, role: 'router' | 'app', slot?: DockerDeploymentSlot) {
-    return {
-      [DOCKER_DEPLOYMENT_MANAGED_LABEL]: 'true',
-      [DOCKER_DEPLOYMENT_ID_LABEL]: deploymentId,
-      [DOCKER_DEPLOYMENT_ROLE_LABEL]: role,
-      ...(slot ? { [DOCKER_DEPLOYMENT_SLOT_LABEL]: slot } : {}),
-    };
   }
 }

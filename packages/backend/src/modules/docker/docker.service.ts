@@ -11,7 +11,7 @@ import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import type { NodeRegistryService } from '@/services/node-registry.service.js';
 import { type ContainerTransition, DockerContainerTransitions } from './docker-container-transitions.js';
 import type { DockerDeploymentService } from './docker-deployment.service.js';
-import { DOCKER_DEPLOYMENT_MANAGED_LABEL } from './docker-deployment.service.js';
+import { DOCKER_DEPLOYMENT_MANAGED_LABEL } from './docker-deployment-labels.js';
 import { getContainerEnv as getDockerContainerEnv, normalizeEnvRecord } from './docker-env-operations.js';
 import type { DockerEnvironmentService } from './docker-environment.service.js';
 import type { DockerFolderService } from './docker-folder.service.js';
