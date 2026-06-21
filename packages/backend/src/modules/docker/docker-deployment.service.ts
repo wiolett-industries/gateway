@@ -3,7 +3,6 @@ import { and, desc, eq, ne } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import {
   type DockerDeploymentDesiredConfig,
-  type DockerDeploymentHealthConfig,
   type DockerDeploymentSlot,
   dockerDeploymentReleases,
   dockerDeploymentRoutes,
@@ -24,6 +23,15 @@ import type {
   DockerDeploymentSwitchInput,
   DockerDeploymentUpdateInput,
 } from './docker-deployment.schemas.js';
+import {
+  deploymentRoutesEqual,
+  imageWithTag,
+  inactiveSlot,
+  isBusyDeploymentStatus,
+  normalizeHealth,
+  normalizeRoutes,
+  shortId,
+} from './docker-deployment-helpers.js';
 import type { DockerHealthCheckDto, DockerHealthCheckService } from './docker-health-check.service.js';
 import type { DockerImageCleanupService } from './docker-image-cleanup.service.js';
 import type { DockerRegistryAuthCandidate, DockerRegistryService } from './docker-registry.service.js';
@@ -65,73 +73,6 @@ export interface DockerDeploymentSummary extends DeploymentRow {
   slots: DeploymentSlotRow[];
   healthCheck?: Pick<DockerHealthCheckDto, 'id' | 'enabled' | 'healthStatus' | 'lastHealthCheckAt'> | null;
   _transition?: DeploymentTransition;
-}
-
-function inactiveSlot(slot: DockerDeploymentSlot): DockerDeploymentSlot {
-  return slot === 'blue' ? 'green' : 'blue';
-}
-
-function shortId(id: string) {
-  return id.replace(/-/g, '').slice(0, 12);
-}
-
-function normalizeRoutes(routes: DockerDeploymentCreateInput['routes']) {
-  const primaryCount = routes.filter((route) => route.isPrimary).length;
-  if (primaryCount !== 1) throw new AppError(400, 'INVALID_ROUTES', 'Exactly one route must be primary');
-  const hostPorts = new Set<number>();
-  for (const route of routes) {
-    if (hostPorts.has(route.hostPort)) {
-      throw new AppError(400, 'INVALID_ROUTES', `Host port ${route.hostPort} is duplicated`);
-    }
-    hostPorts.add(route.hostPort);
-  }
-  return routes;
-}
-
-function deploymentRoutesEqual(
-  current: Array<Pick<DeploymentRouteRow, 'hostPort' | 'containerPort' | 'isPrimary'>>,
-  next: Array<Pick<DeploymentRouteRow, 'hostPort' | 'containerPort' | 'isPrimary'>>
-) {
-  if (current.length !== next.length) return false;
-  const serialize = (routes: Array<Pick<DeploymentRouteRow, 'hostPort' | 'containerPort' | 'isPrimary'>>) =>
-    routes
-      .map((route) => `${route.hostPort}:${route.containerPort}:${route.isPrimary ? '1' : '0'}`)
-      .sort()
-      .join('|');
-  return serialize(current) === serialize(next);
-}
-
-function normalizeHealth(health: DockerDeploymentHealthConfig): DockerDeploymentHealthConfig {
-  if (health.statusMin > health.statusMax) {
-    throw new AppError(400, 'INVALID_HEALTH', 'Minimum healthy status cannot be greater than maximum status');
-  }
-  return health;
-}
-
-function isBusyDeploymentStatus(status: string) {
-  return (
-    status === 'creating' ||
-    status === 'deploying' ||
-    status === 'switching' ||
-    status === 'deleting' ||
-    status === 'starting' ||
-    status === 'stopping' ||
-    status === 'restarting' ||
-    status === 'killing' ||
-    status === 'removing' ||
-    status === 'rolling_back'
-  );
-}
-
-function imageWithTag(image: string, tag?: string) {
-  if (!tag) return image;
-  const atDigest = image.indexOf('@');
-  const digestSuffix = atDigest >= 0 ? image.slice(atDigest) : '';
-  const ref = atDigest >= 0 ? image.slice(0, atDigest) : image;
-  const slash = ref.lastIndexOf('/');
-  const colon = ref.lastIndexOf(':');
-  const repo = colon > slash ? ref.slice(0, colon) : ref;
-  return `${repo}:${tag}${digestSuffix}`;
 }
 
 export class DockerDeploymentService {
