@@ -201,4 +201,40 @@ describe("DockerDeploymentDetail", () => {
       });
     });
   });
+
+  it("renders deployment overview and raw config for the active slot", async () => {
+    const deployment = makeDeployment();
+    vi.spyOn(api, "getDockerDeployment").mockResolvedValue(deployment);
+    vi.spyOn(api, "inspectContainer").mockResolvedValue({
+      State: { Status: "running", Running: true },
+    } as never);
+
+    renderWithRouter(<DockerDeploymentDetail />, {
+      path: "/docker/deployments/:nodeId/:deploymentId/:tab",
+      route: "/docker/deployments/node-1/deployment-1/overview",
+      extraRoutes: <Route path="/docker" element={<div>Docker list</div>} />,
+    });
+
+    expect(await screen.findByText("General")).toBeInTheDocument();
+    expect(screen.getByText("Active Slot")).toBeInTheDocument();
+    expect(screen.getByText("Port Mappings")).toBeInTheDocument();
+    expect(screen.getByText("8080 -> 3000")).toBeInTheDocument();
+  });
+
+  it("renders raw deployment config from the config route", async () => {
+    const deployment = makeDeployment();
+    vi.spyOn(api, "getDockerDeployment").mockResolvedValue(deployment);
+    vi.spyOn(api, "inspectContainer").mockResolvedValue({
+      State: { Status: "running", Running: true },
+    } as never);
+
+    renderWithRouter(<DockerDeploymentDetail />, {
+      path: "/docker/deployments/:nodeId/:deploymentId/:tab",
+      route: "/docker/deployments/node-1/deployment-1/config",
+      extraRoutes: <Route path="/docker" element={<div>Docker list</div>} />,
+    });
+
+    expect(await screen.findByText("Deployment Config")).toBeInTheDocument();
+    expect(screen.getByText("Service-level configuration")).toBeInTheDocument();
+  });
 });
