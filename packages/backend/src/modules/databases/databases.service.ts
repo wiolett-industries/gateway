@@ -35,7 +35,19 @@ import {
   normalizePostgresColumnType,
   postgresColumnTypeSql,
 } from './postgres-column-operations.js';
-import { postgresParameterSql, quoteIdent } from './postgres-row-sql.js';
+import {
+  deletePostgresRow as deletePostgresRowOperation,
+  insertPostgresRow as insertPostgresRowOperation,
+  type PostgresRowOperationContext,
+  updatePostgresRow as updatePostgresRowOperation,
+} from './postgres-row-operations.js';
+import { quoteIdent } from './postgres-row-sql.js';
+import {
+  getPostgresTableMetadata as getPostgresTableMetadataOperation,
+  listPostgresSchemas as listPostgresSchemasOperation,
+  listPostgresTables as listPostgresTablesOperation,
+  type PostgresSchemaOperationContext,
+} from './postgres-schema-operations.js';
 import {
   getRedisKey as getRedisKeyOperation,
   type RedisKeyValueType,
@@ -87,6 +99,21 @@ export class DatabaseConnectionService {
       withRedisClient: (id, operation, fn) => this.withRedisClient(id, operation, fn),
       auditLog: (entry) => this.auditService.log(entry),
       emitChange: (id, action, extra) => this.emitChange(id, action, extra),
+    };
+  }
+
+  private postgresRowOperationContext(): PostgresRowOperationContext {
+    return {
+      withPostgresPool: (id, operation, fn) => this.withPostgresPool(id, operation, fn),
+      getPostgresTableMetadata: (id, schema, table) => this.getPostgresTableMetadata(id, schema, table),
+      auditLog: (entry) => this.auditService.log(entry),
+      emitChange: (id, action, extra) => this.emitChange(id, action, extra),
+    };
+  }
+
+  private postgresSchemaOperationContext(): PostgresSchemaOperationContext {
+    return {
+      withPostgresPool: (id, operation, fn) => this.withPostgresPool(id, operation, fn),
     };
   }
 
@@ -367,90 +394,15 @@ export class DatabaseConnectionService {
   }
 
   async listPostgresSchemas(id: string) {
-    return this.withPostgresPool(id, 'query', async (pool) => {
-      const result = await pool.query<{ schema_name: string }>(
-        `select distinct table_schema as schema_name
-           from information_schema.tables
-         where table_schema not in ('information_schema', 'pg_catalog')
-         order by schema_name asc`
-      );
-      return result.rows.map((row) => row.schema_name);
-    });
+    return listPostgresSchemasOperation(this.postgresSchemaOperationContext(), id);
   }
 
   async listPostgresTables(id: string, schema: string) {
-    return this.withPostgresPool(id, 'query', async (pool) => {
-      const result = await pool.query<{
-        table_name: string;
-        table_type: string;
-      }>(
-        `select table_name, table_type
-           from information_schema.tables
-          where table_schema = $1
-          order by table_name asc`,
-        [schema]
-      );
-      return result.rows.map((row) => ({
-        name: row.table_name,
-        type: row.table_type === 'VIEW' ? 'view' : 'table',
-      }));
-    });
+    return listPostgresTablesOperation(this.postgresSchemaOperationContext(), id, schema);
   }
 
   async getPostgresTableMetadata(id: string, schema: string, table: string) {
-    return this.withPostgresPool(id, 'query', async (pool) => {
-      const columns = await pool.query<{
-        column_name: string;
-        data_type: string;
-        udt_name: string;
-        udt_schema: string;
-        is_nullable: 'YES' | 'NO';
-        column_default: string | null;
-        is_identity: 'YES' | 'NO';
-        is_generated: 'ALWAYS' | 'NEVER';
-        ordinal_position: number;
-      }>(
-        `select column_name, data_type, udt_name, udt_schema, is_nullable, column_default, is_identity, is_generated, ordinal_position
-           from information_schema.columns
-          where table_schema = $1 and table_name = $2
-          order by ordinal_position asc`,
-        [schema, table]
-      );
-      if (columns.rows.length === 0) {
-        throw new AppError(404, 'TABLE_NOT_FOUND', 'Table or view not found');
-      }
-
-      const primaryKeys = await pool.query<{ column_name: string }>(
-        `select kcu.column_name
-           from information_schema.table_constraints tc
-           join information_schema.key_column_usage kcu
-             on tc.constraint_name = kcu.constraint_name
-            and tc.table_schema = kcu.table_schema
-          where tc.constraint_type = 'PRIMARY KEY'
-            and tc.table_schema = $1
-            and tc.table_name = $2
-          order by kcu.ordinal_position asc`,
-        [schema, table]
-      );
-
-      const pkSet = new Set(primaryKeys.rows.map((row) => row.column_name));
-      return {
-        schema,
-        table,
-        columns: columns.rows.map((column) => ({
-          name: column.column_name,
-          dataType: column.data_type,
-          udtName: column.udt_name,
-          udtSchema: column.udt_schema,
-          nullable: column.is_nullable === 'YES',
-          isPrimaryKey: pkSet.has(column.column_name),
-          hasDefault:
-            column.column_default !== null || column.is_identity === 'YES' || column.is_generated === 'ALWAYS',
-        })),
-        primaryKey: primaryKeys.rows.map((row) => row.column_name),
-        hasPrimaryKey: primaryKeys.rows.length > 0,
-      };
-    });
+    return getPostgresTableMetadataOperation(this.postgresSchemaOperationContext(), id, schema, table);
   }
 
   async browsePostgresRows(
@@ -512,33 +464,7 @@ export class DatabaseConnectionService {
   }
 
   async insertPostgresRow(id: string, schema: string, table: string, values: Record<string, unknown>, userId: string) {
-    return this.withPostgresPool(id, 'query', async (pool) => {
-      const metadata = await this.getPostgresTableMetadata(id, schema, table);
-      const columnByName = new Map(metadata.columns.map((column) => [column.name, column]));
-      const allowedColumns = metadata.columns.map((column) => column.name).filter((name) => name in values);
-      if (allowedColumns.length === 0) {
-        throw new AppError(400, 'INVALID_ROW', 'At least one column value is required');
-      }
-
-      const params = allowedColumns.map((column) => values[column]);
-      const schemaSql = quoteIdent(schema);
-      const tableSql = quoteIdent(table);
-      const sql = `insert into ${schemaSql}.${tableSql} (${allowedColumns.map(quoteIdent).join(', ')})
-        values (${allowedColumns
-          .map((column, index) => postgresParameterSql(index + 1, columnByName.get(column)!))
-          .join(', ')})
-        returning *`;
-      const result = await pool.query(sql, params);
-      await this.auditService.log({
-        userId,
-        action: 'database.postgres.row.insert',
-        resourceType: 'database',
-        resourceId: id,
-        details: { schema, table, columns: allowedColumns },
-      });
-      this.emitChange(id, 'data.updated', { provider: 'postgres', schema, table });
-      return result.rows[0] ?? null;
-    });
+    return insertPostgresRowOperation(this.postgresRowOperationContext(), id, schema, table, values, userId);
   }
 
   async updatePostgresRow(
@@ -549,61 +475,15 @@ export class DatabaseConnectionService {
     values: Record<string, unknown>,
     userId: string
   ) {
-    return this.withPostgresPool(id, 'query', async (pool) => {
-      const metadata = await this.getPostgresTableMetadata(id, schema, table);
-      const columnByName = new Map(metadata.columns.map((column) => [column.name, column]));
-      if (!metadata.hasPrimaryKey) {
-        throw new AppError(400, 'PRIMARY_KEY_REQUIRED', 'Row updates require a primary key');
-      }
-
-      const keyColumns = metadata.primaryKey;
-      for (const keyColumn of keyColumns) {
-        if (!(keyColumn in primaryKey)) {
-          throw new AppError(400, 'PRIMARY_KEY_REQUIRED', `Missing primary key column "${keyColumn}"`);
-        }
-      }
-
-      const updateColumns = metadata.columns
-        .map((column) => column.name)
-        .filter((column) => column in values && !keyColumns.includes(column));
-      if (updateColumns.length === 0) {
-        throw new AppError(400, 'INVALID_ROW', 'No editable columns provided');
-      }
-
-      const params = [
-        ...updateColumns.map((column) => values[column]),
-        ...keyColumns.map((column) => primaryKey[column]),
-      ];
-      const setSql = updateColumns
-        .map((column, index) => `${quoteIdent(column)} = ${postgresParameterSql(index + 1, columnByName.get(column)!)}`)
-        .join(', ');
-      const whereSql = keyColumns
-        .map(
-          (column, index) =>
-            `${quoteIdent(column)} = ${postgresParameterSql(
-              updateColumns.length + index + 1,
-              columnByName.get(column)!
-            )}`
-        )
-        .join(' and ');
-
-      const result = await pool.query(
-        `update ${quoteIdent(schema)}.${quoteIdent(table)}
-            set ${setSql}
-          where ${whereSql}
-        returning *`,
-        params
-      );
-      await this.auditService.log({
-        userId,
-        action: 'database.postgres.row.update',
-        resourceType: 'database',
-        resourceId: id,
-        details: { schema, table, primaryKey: Object.keys(primaryKey), columns: updateColumns },
-      });
-      this.emitChange(id, 'data.updated', { provider: 'postgres', schema, table });
-      return result.rows[0] ?? null;
-    });
+    return updatePostgresRowOperation(
+      this.postgresRowOperationContext(),
+      id,
+      schema,
+      table,
+      primaryKey,
+      values,
+      userId
+    );
   }
 
   async deletePostgresRow(
@@ -613,33 +493,7 @@ export class DatabaseConnectionService {
     primaryKey: Record<string, unknown>,
     userId: string
   ) {
-    return this.withPostgresPool(id, 'query', async (pool) => {
-      const metadata = await this.getPostgresTableMetadata(id, schema, table);
-      const columnByName = new Map(metadata.columns.map((column) => [column.name, column]));
-      if (!metadata.hasPrimaryKey) {
-        throw new AppError(400, 'PRIMARY_KEY_REQUIRED', 'Row deletes require a primary key');
-      }
-      const keyColumns = metadata.primaryKey;
-      for (const keyColumn of keyColumns) {
-        if (!(keyColumn in primaryKey)) {
-          throw new AppError(400, 'PRIMARY_KEY_REQUIRED', `Missing primary key column "${keyColumn}"`);
-        }
-      }
-      const params = keyColumns.map((column) => primaryKey[column]);
-      const whereSql = keyColumns
-        .map((column, index) => `${quoteIdent(column)} = ${postgresParameterSql(index + 1, columnByName.get(column)!)}`)
-        .join(' and ');
-      await pool.query(`delete from ${quoteIdent(schema)}.${quoteIdent(table)} where ${whereSql}`, params);
-      await this.auditService.log({
-        userId,
-        action: 'database.postgres.row.delete',
-        resourceType: 'database',
-        resourceId: id,
-        details: { schema, table, primaryKey: Object.keys(primaryKey) },
-      });
-      this.emitChange(id, 'data.updated', { provider: 'postgres', schema, table });
-      return { success: true };
-    });
+    return deletePostgresRowOperation(this.postgresRowOperationContext(), id, schema, table, primaryKey, userId);
   }
 
   async updatePostgresColumnType(
