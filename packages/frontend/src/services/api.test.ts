@@ -155,6 +155,34 @@ describe("api client contract", () => {
     });
   });
 
+  it("serializes PKI CA, certificate, and template requests", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse([{ id: "ca-1", name: "Root" }]))
+      .mockResolvedValueOnce(jsonResponse({ csrfToken: "csrf-token" }))
+      .mockResolvedValueOnce(jsonResponse({ data: { id: "cert-1", status: "revoked" } }))
+      .mockResolvedValueOnce(jsonResponse({ data: { id: "template-1", name: "Server" } }));
+
+    await expect(api.listCAs({ showSystem: true })).resolves.toEqual([
+      { id: "ca-1", name: "Root" },
+    ]);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/cas?showSystem=true");
+
+    await expect(api.revokeCertificate("cert-1", "key_compromise")).resolves.toEqual({
+      data: { id: "cert-1", status: "revoked" },
+    });
+    expect(fetchMock.mock.calls[2]?.[0]).toBe("/api/certificates/cert-1/revoke");
+    expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({ method: "POST" });
+    expect(lastJsonBody(fetchMock)).toEqual({ reason: "key_compromise" });
+
+    await expect(api.createTemplate({ name: "Server" })).resolves.toEqual({
+      data: { id: "template-1", name: "Server" },
+    });
+    expect(fetchMock.mock.calls[3]?.[0]).toBe("/api/templates");
+    expect(fetchMock.mock.calls[3]?.[1]).toMatchObject({ method: "POST" });
+    expect(lastJsonBody(fetchMock)).toEqual({ name: "Server" });
+  });
+
   it("adds docker list metadata and supports cache-busting container inspect", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-06-21T12:00:00Z"));
