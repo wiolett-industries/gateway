@@ -31,14 +31,21 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { formatRelativeDate } from "@/lib/utils";
+import {
+  type AuditExportFormat,
+  buildAuditExportFilename,
+  downloadTextFile,
+  formatAuditExport,
+  formatAuditToken,
+  getAuditEntryUserKey,
+  getAuditEntryUserLabel,
+} from "@/pages/audit-log/audit-format";
 import { api } from "@/services/api";
 import type { AuditLogEntry } from "@/types";
 
 const PAGE_SIZE = 100;
 const AUDIT_VIEW_STORAGE_KEY = "gateway:audit-log:view";
 const SYSTEM_USER_FILTER = "system";
-
-type AuditExportFormat = "csv" | "tsv" | "txt" | "html";
 
 interface AuditViewConfig {
   excludedActions: string[];
@@ -219,10 +226,6 @@ const AUDIT_RESOURCE_OPTIONS = [
   "user",
 ] as const;
 
-function formatAuditToken(value: string): string {
-  return value.replace(/[._-]+/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
-}
-
 function readAuditViewConfig(): AuditViewConfig {
   if (typeof window === "undefined") return DEFAULT_AUDIT_VIEW_CONFIG;
   try {
@@ -258,117 +261,6 @@ function localDateTimeToIso(value: string): string | undefined {
   if (!value) return undefined;
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
-}
-
-function getAuditEntryUserKey(entry: AuditLogEntry): string {
-  return entry.userId ?? SYSTEM_USER_FILTER;
-}
-
-function getAuditEntryUserLabel(entry: AuditLogEntry): string {
-  return entry.userName || entry.userEmail || (entry.userId ? entry.userId : "System");
-}
-
-function buildAuditExportFilename(format: AuditExportFormat): string {
-  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-  return `gateway-audit-log-${timestamp}.${format}`;
-}
-
-function downloadTextFile(content: string, filename: string, type: string) {
-  const blob = new Blob([content], { type });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  link.click();
-  URL.revokeObjectURL(url);
-}
-
-function auditEntryToExportRow(entry: AuditLogEntry): string[] {
-  return [
-    new Date(entry.createdAt).toLocaleString(),
-    getAuditEntryUserLabel(entry),
-    entry.userId ?? "",
-    entry.action,
-    entry.resourceType,
-    entry.resourceId ?? "",
-    entry.ipAddress ?? "",
-    entry.userAgent ?? "",
-    JSON.stringify(entry.details ?? {}),
-  ];
-}
-
-const AUDIT_EXPORT_HEADERS = [
-  "Time",
-  "User",
-  "User ID",
-  "Action",
-  "Resource Type",
-  "Resource ID",
-  "IP Address",
-  "User Agent",
-  "Details",
-];
-
-function escapeDelimitedValue(value: string, delimiter: "," | "\t"): string {
-  if (delimiter === "\t") return value.replace(/[\t\r\n]+/g, " ");
-  if (!/[",\r\n]/.test(value)) return value;
-  return `"${value.replace(/"/g, '""')}"`;
-}
-
-function formatDelimitedAuditExport(entries: AuditLogEntry[], delimiter: "," | "\t"): string {
-  const rows = [AUDIT_EXPORT_HEADERS, ...entries.map(auditEntryToExportRow)];
-  return rows
-    .map((row) => row.map((value) => escapeDelimitedValue(value, delimiter)).join(delimiter))
-    .join("\n");
-}
-
-function formatTextAuditExport(entries: AuditLogEntry[]): string {
-  return entries
-    .map((entry) => {
-      const row = auditEntryToExportRow(entry);
-      return AUDIT_EXPORT_HEADERS.map((header, index) => `${header}: ${row[index]}`).join("\n");
-    })
-    .join("\n\n---\n\n");
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-function formatHtmlAuditExport(entries: AuditLogEntry[]): string {
-  const head = AUDIT_EXPORT_HEADERS.map((header) => `<th>${escapeHtml(header)}</th>`).join("");
-  const body = entries
-    .map(
-      (entry) =>
-        `<tr>${auditEntryToExportRow(entry)
-          .map((value) => `<td>${escapeHtml(value)}</td>`)
-          .join("")}</tr>`
-    )
-    .join("");
-  return `<!doctype html><html><head><meta charset="utf-8"><title>Gateway Audit Log</title><style>body{font-family:system-ui,sans-serif;background:#111;color:#eee}table{border-collapse:collapse;width:100%}th,td{border:1px solid #444;padding:6px;text-align:left;vertical-align:top}th{background:#222}</style></head><body><h1>Gateway Audit Log</h1><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></body></html>`;
-}
-
-function formatAuditExport(
-  entries: AuditLogEntry[],
-  format: AuditExportFormat
-): { content: string; type: string } {
-  if (format === "csv") {
-    return { content: formatDelimitedAuditExport(entries, ","), type: "text/csv;charset=utf-8" };
-  }
-  if (format === "tsv") {
-    return {
-      content: formatDelimitedAuditExport(entries, "\t"),
-      type: "text/tab-separated-values;charset=utf-8",
-    };
-  }
-  if (format === "html") {
-    return { content: formatHtmlAuditExport(entries), type: "text/html;charset=utf-8" };
-  }
-  return { content: formatTextAuditExport(entries), type: "text/plain;charset=utf-8" };
 }
 
 const columns: DataTableColumn<AuditLogEntry>[] = [
