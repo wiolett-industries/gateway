@@ -1,0 +1,140 @@
+import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { vi } from "vitest";
+import { api } from "@/services/api";
+import { renderWithRouter } from "@/test/render";
+import type { AlertCategoryDef, AlertRule, NotificationWebhook } from "@/types";
+import { AlertDialog } from "./AlertDialog";
+
+vi.mock("./template-editor", () => ({
+  AnimatedHeight: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  STEP_ANIMATION: {},
+  TemplateCheatsheetLink: () => <button type="button">Template cheatsheet</button>,
+  TemplateEditor: ({ value, onChange }: { value: string; onChange: (value: string) => void }) => (
+    <textarea
+      aria-label="Message Template"
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+    />
+  ),
+  UNIVERSAL_VARIABLES: [],
+}));
+
+function makeCategory(): AlertCategoryDef {
+  return {
+    id: "node",
+    label: "Node",
+    metrics: [
+      {
+        id: "cpu",
+        label: "CPU",
+        unit: "%",
+        defaultOperator: ">",
+        defaultValue: 80,
+        defaultDurationSeconds: 300,
+        defaultResolveAfterSeconds: 60,
+      },
+    ],
+    events: [],
+    variables: [],
+  };
+}
+
+function makeWebhook(): NotificationWebhook {
+  return {
+    id: "webhook-1",
+    name: "Ops",
+    url: "https://example.com/hook",
+    method: "POST",
+    enabled: true,
+    signingSecret: null,
+    signingHeader: null,
+    templatePreset: "custom",
+    bodyTemplate: null,
+    headers: {},
+    createdAt: "2026-06-21T00:00:00.000Z",
+    updatedAt: "2026-06-21T00:00:00.000Z",
+  };
+}
+
+function makeRule(): AlertRule {
+  return {
+    id: "alert-1",
+    name: "CPU High",
+    enabled: true,
+    type: "threshold",
+    category: "node",
+    severity: "warning",
+    metric: "cpu",
+    metricTarget: null,
+    operator: ">",
+    thresholdValue: 80,
+    durationSeconds: 300,
+    fireThresholdPercent: 100,
+    resolveAfterSeconds: 60,
+    resolveThresholdPercent: 100,
+    eventPattern: null,
+    resourceIds: [],
+    messageTemplate: "CPU is high",
+    webhookIds: ["webhook-1"],
+    cooldownSeconds: 900,
+    isBuiltin: false,
+    createdAt: "2026-06-21T00:00:00.000Z",
+    updatedAt: "2026-06-21T00:00:00.000Z",
+  };
+}
+
+describe("AlertDialog", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.spyOn(api, "getAlertCategories").mockResolvedValue([makeCategory()]);
+    vi.spyOn(api, "listWebhooks").mockResolvedValue({
+      data: [makeWebhook()],
+      total: 1,
+      page: 1,
+      limit: 100,
+      totalPages: 1,
+    });
+    vi.spyOn(api, "listNodes").mockResolvedValue({
+      data: [],
+      total: 0,
+      page: 1,
+      limit: 100,
+      totalPages: 0,
+    });
+  });
+
+  it("keeps edit defaults and submits the alert update payload", async () => {
+    const user = userEvent.setup();
+    const updateAlertRule = vi.spyOn(api, "updateAlertRule").mockResolvedValue(makeRule());
+    const onOpenChange = vi.fn();
+    const onSaved = vi.fn();
+
+    renderWithRouter(
+      <AlertDialog open={true} onOpenChange={onOpenChange} rule={makeRule()} onSaved={onSaved} />,
+      { path: "/notifications", route: "/notifications" }
+    );
+
+    await screen.findByDisplayValue("CPU High");
+    await user.click(screen.getByRole("button", { name: /next/i }));
+    await user.click(screen.getByRole("button", { name: /next/i }));
+    await user.click(screen.getByRole("button", { name: /update/i }));
+
+    await waitFor(() => {
+      expect(updateAlertRule).toHaveBeenCalledWith(
+        "alert-1",
+        expect.objectContaining({
+          name: "CPU High",
+          category: "node",
+          type: "threshold",
+          metric: "cpu",
+          thresholdValue: 80,
+          durationSeconds: 300,
+          webhookIds: ["webhook-1"],
+        })
+      );
+    });
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    expect(onSaved).toHaveBeenCalled();
+  });
+});
