@@ -33,13 +33,13 @@ import {
 } from './docker-read-operations.js';
 import { dockerDispatchErrorMessage, getReplacementContainerFailureMessage } from './docker-recreate-watch.js';
 import type { DockerRegistryAuthCandidate, DockerRegistryService } from './docker-registry.service.js';
-import { extractRuntimeConfig, mergeRuntimeConfig } from './docker-runtime-config.js';
 import { applyRuntimeSettingsToInspect } from './docker-runtime-inspect.js';
 import {
-  type ContainerRuntimeConfig,
-  type NodeRuntimeCapacity,
-  validateContainerRuntimeLimits,
-} from './docker-runtime-limits.js';
+  applyPersistedDockerRuntimeSettingsToConfig,
+  type DockerRuntimeOperationContext,
+  persistDockerRuntimeSettings,
+  validateDockerRuntimeResourceConfig,
+} from './docker-runtime-operations.js';
 import type { DockerRuntimeSettingsService } from './docker-runtime-settings.service.js';
 import type { DockerSecretService } from './docker-secret.service.js';
 import { assertDockerMountChangeAllowed, normalizeMountDefinitionsFromInspect } from './docker-socket-mount.guard.js';
@@ -247,6 +247,16 @@ export class DockerManagementService {
     };
   }
 
+  private runtimeOperationContext(): DockerRuntimeOperationContext {
+    return {
+      db: this.db,
+      nodeDispatch: this.nodeDispatch,
+      nodeRegistry: this.nodeRegistry,
+      runtimeSettingsService: this.runtimeSettingsService,
+      parseResult: (result: { success: boolean; error?: string; detail?: string }) => this.parseResult(result),
+    };
+  }
+
   /**
    * Verify the target name is not already taken on this node.
    * Two-layer guard: (1) blocks if a name-keyed transition is in flight,
@@ -370,112 +380,6 @@ export class DockerManagementService {
     if (taskId && this.taskService) {
       await this.taskService.update(taskId, { status: 'failed', error, completedAt: new Date() }).catch(() => {});
     }
-  }
-
-  private normalizePositiveNumber(value: unknown): number | null {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
-  }
-
-  private normalizeNonNegativeNumber(value: unknown): number | null {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
-  }
-
-  private async getNodeRuntimeCapacity(nodeId: string): Promise<NodeRuntimeCapacity> {
-    const [row] = await this.db
-      .select({
-        capabilities: nodes.capabilities,
-        lastHealthReport: nodes.lastHealthReport,
-      })
-      .from(nodes)
-      .where(eq(nodes.id, nodeId))
-      .limit(1);
-
-    if (!row) {
-      throw new AppError(404, 'NOT_FOUND', 'Node not found');
-    }
-
-    const liveHealth = this.nodeRegistry.getNode(nodeId)?.lastHealthReport ?? row.lastHealthReport ?? null;
-    const capabilities = (row.capabilities ?? {}) as Record<string, unknown>;
-
-    return {
-      cpuCores: this.normalizePositiveNumber(capabilities.cpuCores),
-      memoryBytes: this.normalizePositiveNumber(liveHealth?.systemMemoryTotalBytes),
-      swapBytes: this.normalizeNonNegativeNumber(liveHealth?.swapTotalBytes),
-    };
-  }
-
-  private async getCurrentRuntimeConfig(nodeId: string, containerId: string): Promise<ContainerRuntimeConfig> {
-    const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'inspect', { containerId });
-    const data = this.parseResult(result);
-    const hostConfig = (data?.HostConfig ?? {}) as Record<string, unknown>;
-
-    return {
-      memoryLimit: this.normalizeNonNegativeNumber(hostConfig.Memory) ?? 0,
-      memorySwap: hostConfig.MemorySwap === -1 ? -1 : (this.normalizeNonNegativeNumber(hostConfig.MemorySwap) ?? 0),
-      nanoCPUs: this.normalizeNonNegativeNumber(hostConfig.NanoCPUs) ?? 0,
-      cpuQuota: this.normalizeNonNegativeNumber(hostConfig.CPUQuota) ?? 0,
-      cpuPeriod: this.normalizeNonNegativeNumber(hostConfig.CPUPeriod) ?? 0,
-    };
-  }
-
-  private async persistRuntimeSettings(
-    nodeId: string,
-    containerName: string,
-    patch: Record<string, unknown>
-  ): Promise<ContainerRuntimeConfig | null> {
-    if (!this.runtimeSettingsService) return null;
-
-    const incoming = extractRuntimeConfig(patch);
-    if (Object.values(incoming).every((value) => value === undefined)) {
-      return await this.runtimeSettingsService.get(nodeId, containerName);
-    }
-
-    const existing = (await this.runtimeSettingsService.get(nodeId, containerName)) ?? {};
-    const merged = mergeRuntimeConfig(existing, incoming);
-    await this.runtimeSettingsService.replace(nodeId, containerName, merged);
-    return Object.keys(merged).length > 0 ? merged : null;
-  }
-
-  private async applyPersistedRuntimeSettingsToConfig(
-    nodeId: string,
-    containerName: string,
-    config: Record<string, unknown>
-  ): Promise<Record<string, unknown>> {
-    const persisted = await this.persistRuntimeSettings(nodeId, containerName, config);
-    if (!persisted) return config;
-    return { ...persisted, ...config };
-  }
-
-  private applyRuntimeSettingsToInspect(
-    inspect: Record<string, any>,
-    config: ContainerRuntimeConfig | null
-  ): Record<string, any> {
-    return applyRuntimeSettingsToInspect(inspect, config);
-  }
-
-  private async validateRuntimeResourceConfig(nodeId: string, containerId: string, config: Record<string, unknown>) {
-    const resourceConfig: ContainerRuntimeConfig = {
-      memoryLimit: typeof config.memoryLimit === 'number' ? config.memoryLimit : undefined,
-      memorySwap: typeof config.memorySwap === 'number' ? config.memorySwap : undefined,
-      nanoCPUs: typeof config.nanoCPUs === 'number' ? config.nanoCPUs : undefined,
-    };
-
-    if (
-      resourceConfig.memoryLimit === undefined &&
-      resourceConfig.memorySwap === undefined &&
-      resourceConfig.nanoCPUs === undefined
-    ) {
-      return;
-    }
-
-    const [capacity, current] = await Promise.all([
-      this.getNodeRuntimeCapacity(nodeId),
-      this.getCurrentRuntimeConfig(nodeId, containerId),
-    ]);
-
-    validateContainerRuntimeLimits(resourceConfig, current, capacity);
   }
 
   private async resolveContainerStopTimeout(nodeId: string, containerId: string, timeout: number | undefined) {
@@ -748,7 +652,7 @@ export class DockerManagementService {
       if (this.runtimeSettingsService && cName) {
         const persistedRuntime = await this.runtimeSettingsService.get(nodeId, cName);
         if (persistedRuntime) {
-          return this.applyRuntimeSettingsToInspect(data, persistedRuntime);
+          return applyRuntimeSettingsToInspect(data, persistedRuntime);
         }
       }
     }
@@ -812,7 +716,12 @@ export class DockerManagementService {
     if (this.runtimeSettingsService) {
       const persistedRuntime = await this.runtimeSettingsService.get(nodeId, name);
       if (persistedRuntime) {
-        await this.validateRuntimeResourceConfig(nodeId, containerId, persistedRuntime as Record<string, unknown>);
+        await validateDockerRuntimeResourceConfig(
+          this.runtimeOperationContext(),
+          nodeId,
+          containerId,
+          persistedRuntime as Record<string, unknown>
+        );
         const updateResult = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'live_update', {
           containerId,
           configJson: JSON.stringify(persistedRuntime),
@@ -891,7 +800,12 @@ export class DockerManagementService {
       if (this.runtimeSettingsService) {
         const persistedRuntime = await this.runtimeSettingsService.get(nodeId, name);
         if (persistedRuntime) {
-          await this.validateRuntimeResourceConfig(nodeId, containerId, persistedRuntime as Record<string, unknown>);
+          await validateDockerRuntimeResourceConfig(
+            this.runtimeOperationContext(),
+            nodeId,
+            containerId,
+            persistedRuntime as Record<string, unknown>
+          );
           const updateResult = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'live_update', {
             containerId,
             configJson: JSON.stringify(persistedRuntime),
@@ -1102,7 +1016,7 @@ export class DockerManagementService {
         config.env = { ...(normalizeEnvRecord(config.env) || {}), ...secrets };
       }
     }
-    config = await this.applyPersistedRuntimeSettingsToConfig(nodeId, name, config);
+    config = await applyPersistedDockerRuntimeSettingsToConfig(this.runtimeOperationContext(), nodeId, name, config);
     const hasImageChange = typeof config.tag === 'string' && config.tag.length > 0;
     const updateStopTimeout = this.resolveStopTimeoutFromInspect(inspect as Record<string, any>, config);
     const updateTimeoutMs = hasImageChange
@@ -1156,11 +1070,11 @@ export class DockerManagementService {
     await this.assertNotManagedDeploymentInternal(nodeId, containerId);
     const name = await this.resolveContainerName(nodeId, containerId);
     this.requireNoTransition(nodeId, name);
-    await this.persistRuntimeSettings(nodeId, name, config);
+    await persistDockerRuntimeSettings(this.runtimeOperationContext(), nodeId, name, config);
     const inspect = await this.inspectContainer(nodeId, containerId);
     const state = (inspect?.State?.Status ?? '') as string;
     if (state === 'running') {
-      await this.validateRuntimeResourceConfig(nodeId, containerId, config);
+      await validateDockerRuntimeResourceConfig(this.runtimeOperationContext(), nodeId, containerId, config);
       const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'live_update', {
         containerId,
         configJson: JSON.stringify(config),
@@ -1188,7 +1102,7 @@ export class DockerManagementService {
     const name = await this.resolveContainerName(nodeId, containerId);
     const expectedState = await this.resolveExpectedRecreateState(nodeId, containerId);
     this.requireNoTransition(nodeId, name);
-    config = await this.applyPersistedRuntimeSettingsToConfig(nodeId, name, config);
+    config = await applyPersistedDockerRuntimeSettingsToConfig(this.runtimeOperationContext(), nodeId, name, config);
     const inspect = await this.inspectContainer(nodeId, containerId);
     const recreateStopTimeout = this.resolveStopTimeoutFromInspect(inspect as Record<string, any>, config);
     assertDockerMountChangeAllowed({
@@ -1198,7 +1112,7 @@ export class DockerManagementService {
       currentInspect: inspect,
       useCurrentWhenNextMissing: true,
     });
-    await this.validateRuntimeResourceConfig(nodeId, containerId, config);
+    await validateDockerRuntimeResourceConfig(this.runtimeOperationContext(), nodeId, containerId, config);
     this.setTransition(nodeId, name, 'recreating');
     this.emitTransition(nodeId, name, containerId, 'recreating');
     const task = await this.createTask(nodeId, containerId, name, 'recreate');
