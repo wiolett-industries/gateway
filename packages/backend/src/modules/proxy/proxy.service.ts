@@ -1,5 +1,4 @@
 import { and, count, desc, eq, ilike, inArray, sql } from 'drizzle-orm';
-import { getEnv } from '@/config/env.js';
 import type { DrizzleClient } from '@/db/client.js';
 import { accessLists } from '@/db/schema/access-lists.js';
 import { certificates } from '@/db/schema/certificates.js';
@@ -17,23 +16,20 @@ import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import type { PaginatedResponse } from '@/types.js';
 import type { NginxTemplateService } from './nginx-template.service.js';
 import type { CreateProxyHostInput, ProxyHostListQuery, UpdateProxyHostInput } from './proxy.schemas.js';
+import {
+  buildStatusPageSystemHostRollbackData,
+  type CertPaths,
+  getStatusPageUpstream,
+  normalizeProxyValidationOptions,
+  type ProxyValidationInput,
+  rawConfigAuditDetails,
+  stripProxyHealthHistory,
+} from './proxy.service-helpers.js';
+import { runImmediateProxyHealthCheck } from './proxy-health-check.js';
+
+export { __testOnly } from './proxy.service-helpers.js';
 
 const logger = createChildLogger('ProxyService');
-
-type HealthCheckBodyMatchMode = 'includes' | 'exact' | 'starts_with' | 'ends_with';
-
-function matchesExpectedBody(body: string, expectedBody: string, mode: HealthCheckBodyMatchMode): boolean {
-  switch (mode) {
-    case 'exact':
-      return body === expectedBody;
-    case 'starts_with':
-      return body.startsWith(expectedBody);
-    case 'ends_with':
-      return body.endsWith(expectedBody);
-    default:
-      return body.includes(expectedBody);
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -41,70 +37,12 @@ function matchesExpectedBody(body: string, expectedBody: string, mode: HealthChe
 
 type ProxyHostRow = typeof proxyHosts.$inferSelect;
 
-type ProxyValidationOptions = {
-  bypassAdvancedValidation?: boolean;
-  bypassRawValidation?: boolean;
-};
-
-type ProxyValidationInput = boolean | ProxyValidationOptions;
-
-function normalizeProxyValidationOptions(validationOptions: ProxyValidationInput = {}): ProxyValidationOptions {
-  return typeof validationOptions === 'boolean'
-    ? { bypassAdvancedValidation: validationOptions, bypassRawValidation: false }
-    : validationOptions;
-}
-
-function rawConfigAuditDetails(input: { rawConfig?: unknown }, options: ProxyValidationOptions) {
-  if (input.rawConfig === undefined) return {};
-  return {
-    rawConfigChanged: true,
-    rawValidationBypassed: options.bypassRawValidation === true,
-  };
-}
-
-function stripProxyHealthHistory<T extends { healthHistory?: unknown }>(host: T): Omit<T, 'healthHistory'> {
-  const { healthHistory: _healthHistory, ...rest } = host;
-  return rest;
-}
-
-interface CertPaths {
-  sslCertPath: string | null;
-  sslKeyPath: string | null;
-  sslChainPath: string | null;
-}
-
 export interface StatusPageSystemHostInput {
   domain: string;
   nodeId: string;
   sslCertificateId?: string | null;
   nginxTemplateId?: string | null;
   upstreamUrl?: string | null;
-}
-
-function getStatusPageUpstream(upstreamUrl: string | null | undefined): {
-  host: string;
-  port: number;
-  scheme: 'http' | 'https';
-} {
-  const env = getEnv();
-  if (!upstreamUrl) {
-    return { host: '127.0.0.1', port: env.PORT, scheme: 'http' };
-  }
-
-  const url = new URL(upstreamUrl);
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    throw new AppError(400, 'STATUS_PAGE_UPSTREAM_INVALID', 'Status page upstream must use http or https');
-  }
-  if (url.pathname !== '/' || url.search || url.hash) {
-    throw new AppError(
-      400,
-      'STATUS_PAGE_UPSTREAM_INVALID',
-      'Status page upstream must not include path, query, or hash'
-    );
-  }
-  const scheme = url.protocol === 'https:' ? 'https' : 'http';
-  const port = url.port ? Number(url.port) : scheme === 'https' ? 443 : 80;
-  return { host: url.hostname, port, scheme };
 }
 
 // ---------------------------------------------------------------------------
@@ -665,62 +603,7 @@ export class ProxyService {
   // -----------------------------------------------------------------------
 
   private runImmediateHealthCheck(hostId: string): void {
-    // Run after a short delay to allow nginx reload to complete
-    setTimeout(async () => {
-      try {
-        const host = await this.db.query.proxyHosts.findFirst({
-          where: eq(proxyHosts.id, hostId),
-        });
-        if (!host?.healthCheckEnabled || !host.forwardHost || !host.forwardPort) return;
-
-        const scheme = host.forwardScheme || 'http';
-        const path = host.healthCheckUrl || '/';
-        const url = `${scheme}://${host.forwardHost}:${host.forwardPort}${path}`;
-
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 10_000);
-
-        let status: 'online' | 'offline' | 'degraded' = 'offline';
-        try {
-          const response = await fetch(url, {
-            method: 'GET',
-            signal: controller.signal,
-            redirect: 'follow',
-          });
-          clearTimeout(timeout);
-
-          const expectedStatus = (host as any).healthCheckExpectedStatus as number | null;
-          if (expectedStatus) {
-            status = response.status === expectedStatus ? 'online' : 'offline';
-          } else {
-            if (response.status >= 200 && response.status < 300) status = 'online';
-            else if (response.status >= 500) status = 'offline';
-            else status = 'degraded';
-          }
-
-          // Check expected body if configured
-          const expectedBody = (host as any).healthCheckExpectedBody as string | null;
-          const bodyMatchMode =
-            ((host as any).healthCheckBodyMatchMode as HealthCheckBodyMatchMode | null) ?? 'includes';
-          if (expectedBody && status === 'online') {
-            const body = await response.text();
-            if (!matchesExpectedBody(body, expectedBody, bodyMatchMode)) status = 'degraded';
-          }
-        } catch {
-          clearTimeout(timeout);
-          status = 'offline';
-        }
-
-        await this.db
-          .update(proxyHosts)
-          .set({ healthStatus: status, lastHealthCheckAt: new Date() })
-          .where(eq(proxyHosts.id, hostId));
-
-        logger.debug('Immediate health check complete', { hostId, status });
-      } catch (err) {
-        logger.debug('Immediate health check failed', { hostId, error: err });
-      }
-    }, 2000);
+    runImmediateProxyHealthCheck({ db: this.db, hostId, logger });
   }
 
   // -----------------------------------------------------------------------
@@ -850,47 +733,7 @@ export class ProxyService {
       } else if (existing) {
         await this.db
           .update(proxyHosts)
-          .set({
-            type: existing.type,
-            domainNames: existing.domainNames,
-            enabled: existing.enabled,
-            forwardHost: existing.forwardHost,
-            forwardPort: existing.forwardPort,
-            forwardScheme: existing.forwardScheme,
-            sslEnabled: existing.sslEnabled,
-            sslForced: existing.sslForced,
-            http2Support: existing.http2Support,
-            websocketSupport: existing.websocketSupport,
-            sslCertificateId: existing.sslCertificateId,
-            internalCertificateId: existing.internalCertificateId,
-            redirectUrl: existing.redirectUrl,
-            redirectStatusCode: existing.redirectStatusCode,
-            customHeaders: existing.customHeaders,
-            cacheEnabled: existing.cacheEnabled,
-            cacheOptions: existing.cacheOptions,
-            rateLimitEnabled: existing.rateLimitEnabled,
-            rateLimitOptions: existing.rateLimitOptions,
-            customRewrites: existing.customRewrites,
-            advancedConfig: existing.advancedConfig,
-            rawConfig: existing.rawConfig,
-            rawConfigEnabled: existing.rawConfigEnabled,
-            accessListId: existing.accessListId,
-            folderId: existing.folderId,
-            nginxTemplateId: existing.nginxTemplateId,
-            templateVariables: existing.templateVariables,
-            nodeId: existing.nodeId,
-            healthCheckEnabled: existing.healthCheckEnabled,
-            healthCheckUrl: existing.healthCheckUrl,
-            healthCheckInterval: existing.healthCheckInterval,
-            healthCheckExpectedStatus: existing.healthCheckExpectedStatus,
-            healthCheckExpectedBody: existing.healthCheckExpectedBody,
-            healthCheckBodyMatchMode: existing.healthCheckBodyMatchMode,
-            healthCheckSlowThreshold: existing.healthCheckSlowThreshold,
-            healthStatus: existing.healthStatus,
-            isSystem: existing.isSystem,
-            systemKind: existing.systemKind,
-            updatedAt: existing.updatedAt,
-          })
+          .set(buildStatusPageSystemHostRollbackData(existing) as any)
           .where(eq(proxyHosts.id, existing.id));
       }
       throw new AppError(
