@@ -194,6 +194,80 @@ describe("api client contract", () => {
     );
   });
 
+  it("serializes notification alert, webhook, and delivery requests", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: [{ id: "rule-1", name: "CPU High" }],
+          total: 1,
+          page: 2,
+          limit: 25,
+          totalPages: 1,
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: [{ id: "webhook-1", name: "Ops", enabled: false }],
+          total: 1,
+          page: 1,
+          limit: 10,
+          totalPages: 1,
+        })
+      )
+      .mockResolvedValueOnce(jsonResponse({ csrfToken: "csrf-token" }))
+      .mockResolvedValueOnce(jsonResponse({ data: { id: "rule-1", enabled: false } }))
+      .mockResolvedValueOnce(jsonResponse({ data: { rendered: '{"ok":true}', context: {} } }))
+      .mockResolvedValueOnce(
+        jsonResponse({ data: { total: 3, success: 2, failed: 1, retrying: 0 } })
+      );
+
+    await expect(
+      api.listAlertRules({
+        page: 2,
+        limit: 25,
+        type: "threshold",
+        enabled: false,
+        search: "cpu",
+      })
+    ).resolves.toMatchObject({ total: 1, page: 2 });
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "/api/notifications/alert-rules?page=2&limit=25&type=threshold&enabled=false&search=cpu"
+    );
+
+    await expect(api.listWebhooks({ enabled: false, search: "ops" })).resolves.toMatchObject({
+      total: 1,
+    });
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      "/api/notifications/webhooks?enabled=false&search=ops"
+    );
+
+    await expect(api.updateAlertRule("rule-1", { enabled: false })).resolves.toMatchObject({
+      id: "rule-1",
+      enabled: false,
+    });
+    expect(fetchMock.mock.calls[3]?.[0]).toBe("/api/notifications/alert-rules/rule-1");
+    expect(fetchMock.mock.calls[3]?.[1]).toMatchObject({ method: "PUT" });
+    expect(lastJsonBody(fetchMock)).toEqual({ enabled: false });
+
+    await expect(api.previewWebhookTemplate('{"ok":true}')).resolves.toMatchObject({
+      rendered: '{"ok":true}',
+    });
+    expect(fetchMock.mock.calls[4]?.[0]).toBe("/api/notifications/webhooks/preview");
+    expect(fetchMock.mock.calls[4]?.[1]).toMatchObject({ method: "POST" });
+    expect(lastJsonBody(fetchMock)).toEqual({ bodyTemplate: '{"ok":true}' });
+
+    await expect(api.getDeliveryStats("webhook-1")).resolves.toEqual({
+      total: 3,
+      success: 2,
+      failed: 1,
+      retrying: 0,
+    });
+    expect(fetchMock.mock.calls[5]?.[0]).toBe(
+      "/api/notifications/deliveries/stats?webhookId=webhook-1"
+    );
+  });
+
   it("serializes system, license, and housekeeping requests", async () => {
     const housekeepingConfig = { enabled: true, retentionDays: 14 };
     const fetchMock = vi
