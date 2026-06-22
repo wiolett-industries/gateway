@@ -18,6 +18,7 @@ import { AlertService } from '@/modules/audit/alert.service.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
 import { AuthService } from '@/modules/auth/auth.service.js';
 import { AuthSettingsService } from '@/modules/auth/auth.settings.service.js';
+import { DatabaseFolderService } from '@/modules/databases/database-folders.service.js';
 import { DatabaseMonitoringService } from '@/modules/databases/database-monitoring.service.js';
 import { DatabaseConnectionService } from '@/modules/databases/databases.service.js';
 import { DockerManagementService } from '@/modules/docker/docker.service.js';
@@ -48,6 +49,7 @@ import { LoggingTokenService } from '@/modules/logging/logging-token.service.js'
 import { LoggingValidationService } from '@/modules/logging/logging-validation.service.js';
 import { McpSettingsService } from '@/modules/mcp/mcp-settings.service.js';
 import { MonitoringService } from '@/modules/monitoring/monitoring.service.js';
+import { NodeFolderService } from '@/modules/nodes/node-folders.service.js';
 import { NodeMonitoringService } from '@/modules/nodes/node-monitoring.service.js';
 import { NodesService } from '@/modules/nodes/nodes.service.js';
 import { NotificationAlertRuleService } from '@/modules/notifications/notification-alert-rule.service.js';
@@ -261,6 +263,9 @@ export async function initializeContainer(): Promise<void> {
   const nodesService = new NodesService(db, auditService, nodeRegistry, grpcIdentityService);
   container.registerInstance(NodesService, nodesService);
 
+  const nodeFolderService = new NodeFolderService(db, auditService);
+  container.registerInstance(NodeFolderService, nodeFolderService);
+
   const nodeMonitoringService = new NodeMonitoringService(nodeRegistry, cacheService);
   container.registerInstance(NodeMonitoringService, nodeMonitoringService);
 
@@ -336,6 +341,7 @@ export async function initializeContainer(): Promise<void> {
   caService.setEventBus(eventBus);
   certService.setEventBus(eventBus);
   nodesService.setEventBus(eventBus);
+  nodeFolderService.setEventBus(eventBus);
   nodeRegistry.setEventBus(eventBus);
   folderService.setEventBus(eventBus);
   nginxTemplateService.setEventBus(eventBus);
@@ -344,9 +350,13 @@ export async function initializeContainer(): Promise<void> {
   const databaseConnectionService = new DatabaseConnectionService(db, auditService, cryptoService);
   container.registerInstance(DatabaseConnectionService, databaseConnectionService);
 
+  const databaseFolderService = new DatabaseFolderService(db, auditService);
+  container.registerInstance(DatabaseFolderService, databaseFolderService);
+
   const databaseMonitoringService = new DatabaseMonitoringService(databaseConnectionService, cacheService);
   container.registerInstance(DatabaseMonitoringService, databaseMonitoringService);
   databaseConnectionService.setEventBus(eventBus);
+  databaseFolderService.setEventBus(eventBus);
 
   const proxyService = new ProxyService(
     db,

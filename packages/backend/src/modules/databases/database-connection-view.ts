@@ -42,6 +42,8 @@ export interface DatabaseConnectionView {
   lastHealthCheckAt: string | null;
   lastError: string | null;
   healthHistory?: DatabaseHealthEntry[];
+  folderId: string | null;
+  sortOrder: number;
   hasStoredPassword: boolean;
   config: Record<string, unknown>;
   createdById: string;
@@ -66,6 +68,8 @@ type DatabaseConnectionRow = {
   lastHealthCheckAt: Date | null;
   lastError: string | null;
   healthHistory: unknown;
+  folderId: string | null;
+  sortOrder: number;
   createdById: string;
   updatedById: string | null;
   createdAt: Date;
@@ -115,6 +119,8 @@ export function toDatabaseConnectionView(
     lastHealthCheckAt: row.lastHealthCheckAt?.toISOString() ?? null,
     lastError: row.lastError,
     ...(includeHealthHistory ? { healthHistory: (row.healthHistory as DatabaseHealthEntry[] | null) ?? [] } : {}),
+    folderId: row.folderId,
+    sortOrder: row.sortOrder,
     hasStoredPassword: !!config.password,
     config:
       config.type === 'postgres'

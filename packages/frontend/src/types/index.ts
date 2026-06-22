@@ -35,6 +35,7 @@ export {
 export type * from "./notifications";
 export type * from "./pki";
 export type * from "./proxy";
+export type * from "./resource-folders";
 export {
   AI_SCOPE,
   API_TOKEN_SCOPES,

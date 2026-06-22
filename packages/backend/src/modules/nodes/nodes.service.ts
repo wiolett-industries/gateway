@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import bcrypt from 'bcryptjs';
-import { count, eq, ilike, inArray, type SQL } from 'drizzle-orm';
+import { asc, count, eq, ilike, inArray, type SQL } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import { certificates, nodes, proxyHosts } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
@@ -94,12 +94,14 @@ export class NodesService {
         lastHealthReport: nodes.lastHealthReport,
         lastStatsReport: nodes.lastStatsReport,
         metadata: nodes.metadata,
+        folderId: nodes.folderId,
+        sortOrder: nodes.sortOrder,
         createdAt: nodes.createdAt,
         updatedAt: nodes.updatedAt,
       })
       .from(nodes)
       .where(where)
-      .orderBy(nodes.createdAt)
+      .orderBy(asc(nodes.sortOrder), asc(nodes.createdAt))
       .limit(query.limit)
       .offset(offset);
 

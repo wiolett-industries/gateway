@@ -43,6 +43,8 @@ export interface DatabaseConnection {
   lastHealthCheckAt: string | null;
   lastError: string | null;
   healthHistory?: DatabaseHealthEntry[];
+  folderId?: string | null;
+  sortOrder?: number;
   hasStoredPassword: boolean;
   config: PostgresDatabaseConfig | RedisDatabaseConfig;
   createdById: string;

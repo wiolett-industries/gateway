@@ -232,6 +232,17 @@ function NodeDetailGuard() {
   return <AdminNodeDetail />;
 }
 
+function NodesPageGuard() {
+  const hasScope = useAuthStore((s) => s.hasScope);
+  const hasScopedAccess = useAuthStore((s) => s.hasScopedAccess);
+
+  if (!hasScopedAccess("nodes:details") && !hasScope("nodes:folders:manage")) {
+    return <Navigate to="/" replace />;
+  }
+
+  return <AdminNodes />;
+}
+
 function DockerPageGuard() {
   const hasScope = useAuthStore((s) => s.hasScope);
   const hasScopedAccess = useAuthStore((s) => s.hasScopedAccess);
@@ -252,9 +263,11 @@ function DockerPageGuard() {
 }
 
 function DatabasesPageGuard() {
+  const hasScope = useAuthStore((s) => s.hasScope);
   const hasScopedAccess = useAuthStore((s) => s.hasScopedAccess);
 
-  const canAccessDatabases = hasScopedAccess("databases:view");
+  const canAccessDatabases =
+    hasScopedAccess("databases:view") || hasScope("databases:folders:manage");
 
   if (!canAccessDatabases) {
     return <Navigate to="/" replace />;
@@ -601,7 +614,7 @@ export default function App() {
                 path="/admin/groups"
                 element={scoped("admin:groups", <Navigate to="/administration/groups" replace />)}
               />
-              <Route path="/nodes" element={scoped("nodes:details", <AdminNodes />)} />
+              <Route path="/nodes" element={<NodesPageGuard />} />
               <Route path="/nodes/:id/:tab?" element={<NodeDetailGuard />} />
               <Route path="/docker/:tab?" element={<DockerPageGuard />} />
               <Route

@@ -376,6 +376,61 @@ class ApiClient extends withLoggingApi(
     await this.request(`/nodes/${id}`, { method: "DELETE" });
   }
 
+  async listNodeFolders(): Promise<import("@/types").ResourceFolderTreeNode[]> {
+    return this.unwrapData(
+      this.request<{ data: import("@/types").ResourceFolderTreeNode[] }>("/nodes/folders")
+    );
+  }
+
+  async createNodeFolder(data: {
+    name: string;
+    parentId?: string;
+  }): Promise<import("@/types").ResourceFolder> {
+    return this.unwrapData(
+      this.request<{ data: import("@/types").ResourceFolder }>("/nodes/folders", {
+        method: "POST",
+        body: JSON.stringify(data),
+      })
+    );
+  }
+
+  async updateNodeFolder(
+    id: string,
+    data: { name: string }
+  ): Promise<import("@/types").ResourceFolder> {
+    return this.unwrapData(
+      this.request<{ data: import("@/types").ResourceFolder }>(`/nodes/folders/${id}`, {
+        method: "PUT",
+        body: JSON.stringify(data),
+      })
+    );
+  }
+
+  async deleteNodeFolder(id: string): Promise<void> {
+    await this.request(`/nodes/folders/${id}`, { method: "DELETE" });
+  }
+
+  async reorderNodeFolders(items: { id: string; sortOrder: number }[]): Promise<void> {
+    await this.request("/nodes/folders/reorder", {
+      method: "PUT",
+      body: JSON.stringify({ items }),
+    });
+  }
+
+  async moveNodesToFolder(ids: string[], folderId: string | null): Promise<void> {
+    await this.request("/nodes/folders/move-nodes", {
+      method: "POST",
+      body: JSON.stringify({ ids, folderId }),
+    });
+  }
+
+  async reorderNodes(items: { id: string; sortOrder: number }[]): Promise<void> {
+    await this.request("/nodes/folders/reorder-nodes", {
+      method: "PUT",
+      body: JSON.stringify({ items }),
+    });
+  }
+
   createNodeMonitoringStream(nodeId: string): EventSource {
     return new EventSource(`${API_BASE}/nodes/${nodeId}/monitoring/stream`, {
       withCredentials: true,

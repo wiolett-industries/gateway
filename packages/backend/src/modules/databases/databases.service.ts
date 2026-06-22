@@ -156,7 +156,7 @@ export class DatabaseConnectionService {
         .select()
         .from(databaseConnections)
         .where(where)
-        .orderBy(asc(databaseConnections.name), asc(databaseConnections.id))
+        .orderBy(asc(databaseConnections.sortOrder), asc(databaseConnections.name), asc(databaseConnections.id))
         .limit(query.limit)
         .offset((query.page - 1) * query.limit),
       this.db.select({ count: count() }).from(databaseConnections).where(where),

@@ -35,6 +35,7 @@ export const RESOURCE_SCOPABLE_SCOPES = [
   "nodes:rename",
   "nodes:delete",
   "nodes:lock",
+  "nodes:folders:manage",
   "docker:containers:view",
   "docker:containers:create",
   "docker:containers:edit",
@@ -63,6 +64,7 @@ export const RESOURCE_SCOPABLE_SCOPES = [
   "databases:query:write",
   "databases:query:admin",
   "databases:credentials:reveal",
+  "databases:folders:manage",
   "logs:environments:view",
   "logs:environments:edit",
   "logs:environments:delete",
@@ -360,6 +362,12 @@ const RAW_TOKEN_SCOPES = [
     value: "nodes:console",
     label: "Node Console",
     desc: "Open interactive shell on nodes",
+    group: "Nodes",
+  },
+  {
+    value: "nodes:folders:manage",
+    label: "Manage Node Folders",
+    desc: "Create, reorder, and remove node folders",
     group: "Nodes",
   },
   // Administration
@@ -788,6 +796,12 @@ const RAW_TOKEN_SCOPES = [
     value: "databases:credentials:reveal",
     label: "Reveal Database Credentials",
     desc: "Reveal saved database credentials and connection strings",
+    group: "Databases",
+  },
+  {
+    value: "databases:folders:manage",
+    label: "Manage Database Folders",
+    desc: "Create, reorder, and remove database folders",
     group: "Databases",
   },
   {

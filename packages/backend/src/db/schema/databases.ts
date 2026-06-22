@@ -1,4 +1,5 @@
 import { boolean, index, integer, jsonb, pgEnum, pgTable, text, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
+import { databaseConnectionFolders } from './database-connection-folders.js';
 import { users } from './users.js';
 
 export const databaseTypeEnum = pgEnum('database_type', ['postgres', 'redis']);
@@ -30,6 +31,8 @@ export const databaseConnections = pgTable(
     lastHealthCheckAt: timestamp('last_health_check_at', { withTimezone: true }),
     lastError: text('last_error'),
     healthHistory: jsonb('health_history').$type<DatabaseHealthEntry[]>().notNull().default([]),
+    folderId: uuid('folder_id').references(() => databaseConnectionFolders.id, { onDelete: 'set null' }),
+    sortOrder: integer('sort_order').notNull().default(0),
     createdById: uuid('created_by_id')
       .notNull()
       .references(() => users.id, { onDelete: 'restrict' }),
@@ -40,6 +43,7 @@ export const databaseConnections = pgTable(
   (table) => ({
     typeIdx: index('database_connections_type_idx').on(table.type),
     healthIdx: index('database_connections_health_idx').on(table.healthStatus),
+    folderIdx: index('database_connections_folder_idx').on(table.folderId),
     createdByIdx: index('database_connections_created_by_idx').on(table.createdById),
     updatedByIdx: index('database_connections_updated_by_idx').on(table.updatedById),
   })

@@ -406,7 +406,9 @@ export function SidebarContent({
     "notifications:view",
     "notifications:manage"
   );
-  const canAccessDatabases = hasScopedAccess("databases:view");
+  const canAccessDatabases =
+    hasScopedAccess("databases:view") || hasScope("databases:folders:manage");
+  const canAccessNodes = hasScopedAccess("nodes:details") || hasScope("nodes:folders:manage");
   const hasResourceScopedSchemaView = user
     ? (deriveAllowedResourceIdsByScope(user.scopes)["logs:schemas:view"]?.length ?? 0) > 0
     : false;
@@ -450,6 +452,8 @@ export function SidebarContent({
             if (!canAccessAuthorities) return false;
           } else if (item.href === "/notifications") {
             if (!canAccessNotifications) return false;
+          } else if (item.href === "/nodes") {
+            if (!canAccessNodes) return false;
           } else if (item.requiresStatusPageEnabled && !statusPageEnabled) {
             return false;
           } else if (item.href === "/administration") {

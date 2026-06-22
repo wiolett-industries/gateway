@@ -75,13 +75,14 @@ function requiredScopeFor(channel: string): string | null {
   if (channel.startsWith('docker.task')) return 'docker:tasks';
   if (channel.startsWith('docker.webhook')) return 'docker:containers:webhooks';
   if (channel.startsWith('docker.')) return 'docker:containers:view';
+  if (channel === 'database.folder.changed') return 'databases:view';
   if (channel.startsWith('database.')) return 'databases:view';
   if (channel.startsWith('proxy.host')) return 'proxy:view';
   if (channel.startsWith('ssl.cert')) return 'ssl:cert:view';
   if (channel === 'cert.changed') return 'pki:cert:view';
   if (channel === 'ca.changed') return 'pki:ca:view:root';
   if (channel === 'access-list.changed') return 'acl:view';
-  if (channel === 'node.changed') return 'nodes:details';
+  if (channel === 'node.changed' || channel === 'node.folder.changed') return 'nodes:details';
   if (channel === 'user.changed') return 'admin:users';
   if (channel === 'group.changed') return 'admin:groups';
   if (channel === 'notification.alert-rule.changed') return 'notifications:view';
@@ -123,6 +124,9 @@ function hasChannelAccess(scopes: string[], channel: string): boolean {
   if (channel.startsWith('docker.network')) {
     return hasScopeBase(scopes, 'docker:networks:view');
   }
+  if (channel === 'database.folder.changed') {
+    return hasScope(scopes, 'databases:view') || hasScope(scopes, 'databases:folders:manage');
+  }
   if (channel.startsWith('database.')) {
     return scopes.some((scope) =>
       DATABASE_CHANNEL_SCOPE_BASES.some((base) => scope === base || scope.startsWith(`${base}:`))
@@ -130,6 +134,9 @@ function hasChannelAccess(scopes: string[], channel: string): boolean {
   }
   if (channel.startsWith('proxy.host')) {
     return hasScopeBase(scopes, 'proxy:view') || hasScope(scopes, 'proxy:folders:manage');
+  }
+  if (channel === 'node.folder.changed') {
+    return hasScopeBase(scopes, 'nodes:details') || hasScope(scopes, 'nodes:folders:manage');
   }
   if (channel === 'logging.logs.ingested') {
     return hasScopeBase(scopes, 'logs:read');
@@ -265,6 +272,9 @@ function canReceiveChannelPayload(scopes: string[], channel: string, payload: un
   if (channel === 'node.changed') {
     const nodeId = (payload as { id?: string } | undefined)?.id;
     return hasScope(scopes, 'nodes:details') || !!(nodeId && hasScope(scopes, `nodes:details:${nodeId}`));
+  }
+  if (channel === 'node.folder.changed') {
+    return hasScope(scopes, 'nodes:details') || hasScope(scopes, 'nodes:folders:manage');
   }
   if (channel === 'nginx.template.changed') {
     const templateId = (payload as { id?: string } | undefined)?.id;

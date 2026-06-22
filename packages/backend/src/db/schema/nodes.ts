@@ -1,4 +1,5 @@
-import { boolean, index, jsonb, pgEnum, pgTable, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
+import { boolean, index, integer, jsonb, pgEnum, pgTable, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
+import { nodeFolders } from './node-folders.js';
 
 export const nodeTypeEnum = pgEnum('node_type', ['nginx', 'bastion', 'monitoring', 'docker']);
 export const nodeStatusEnum = pgEnum('node_status', ['pending', 'online', 'offline', 'error']);
@@ -106,6 +107,10 @@ export const nodes = pgTable(
     // Extensible metadata
     metadata: jsonb('metadata').$type<Record<string, unknown>>().default({}),
 
+    // Folder / organization
+    folderId: uuid('folder_id').references(() => nodeFolders.id, { onDelete: 'set null' }),
+    sortOrder: integer('sort_order').notNull().default(0),
+
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -113,5 +118,6 @@ export const nodes = pgTable(
     typeIdx: index('node_type_idx').on(table.type),
     statusIdx: index('node_status_idx').on(table.status),
     hostnameIdx: index('node_hostname_idx').on(table.hostname),
+    folderIdx: index('node_folder_idx').on(table.folderId),
   })
 );

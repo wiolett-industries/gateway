@@ -1,6 +1,14 @@
 import { z } from '@hono/zod-openapi';
 import { appRoute, createdJson, IdParamSchema, jsonBody, okJson, UnknownDataResponseSchema } from '@/lib/openapi.js';
 import {
+  CreateResourceFolderSchema,
+  MoveResourceFolderSchema,
+  MoveResourcesToFolderSchema,
+  ReorderResourceFoldersSchema,
+  ReorderResourcesSchema,
+  UpdateResourceFolderSchema,
+} from '@/modules/resource-folders/resource-folder.schemas.js';
+import {
   AddPostgresColumnSchema,
   BrowsePostgresRowsQuerySchema,
   CreateDatabaseConnectionSchema,
@@ -35,6 +43,77 @@ export const listDatabaseConnectionsRoute = appRoute({
   summary: 'List database connections',
   request: { query: DatabaseListQuerySchema },
   responses: okJson(UnknownDataResponseSchema),
+});
+
+export const listDatabaseFoldersRoute = appRoute({
+  method: 'get',
+  path: '/folders',
+  tags: ['Databases'],
+  summary: 'List database folders',
+  responses: okJson(UnknownDataResponseSchema),
+});
+
+export const createDatabaseFolderRoute = appRoute({
+  method: 'post',
+  path: '/folders',
+  tags: ['Databases'],
+  summary: 'Create a database folder',
+  request: jsonBody(CreateResourceFolderSchema),
+  responses: createdJson(UnknownDataResponseSchema),
+});
+
+export const reorderDatabaseFoldersRoute = appRoute({
+  method: 'put',
+  path: '/folders/reorder',
+  tags: ['Databases'],
+  summary: 'Reorder database folders',
+  request: jsonBody(ReorderResourceFoldersSchema),
+  responses: okJson(z.object({ success: z.boolean() })),
+});
+
+export const moveDatabasesToFolderRoute = appRoute({
+  method: 'post',
+  path: '/folders/move-databases',
+  tags: ['Databases'],
+  summary: 'Move database connections to a folder',
+  request: jsonBody(MoveResourcesToFolderSchema),
+  responses: okJson(z.object({ success: z.boolean() })),
+});
+
+export const reorderDatabasesRoute = appRoute({
+  method: 'put',
+  path: '/folders/reorder-databases',
+  tags: ['Databases'],
+  summary: 'Reorder database connections within a folder',
+  request: jsonBody(ReorderResourcesSchema),
+  responses: okJson(z.object({ success: z.boolean() })),
+});
+
+export const updateDatabaseFolderRoute = appRoute({
+  method: 'put',
+  path: '/folders/{id}',
+  tags: ['Databases'],
+  summary: 'Rename a database folder',
+  request: { params: IdParamSchema, ...jsonBody(UpdateResourceFolderSchema) },
+  responses: okJson(UnknownDataResponseSchema),
+});
+
+export const moveDatabaseFolderRoute = appRoute({
+  method: 'put',
+  path: '/folders/{id}/move',
+  tags: ['Databases'],
+  summary: 'Move a database folder',
+  request: { params: IdParamSchema, ...jsonBody(MoveResourceFolderSchema) },
+  responses: okJson(UnknownDataResponseSchema),
+});
+
+export const deleteDatabaseFolderRoute = appRoute({
+  method: 'delete',
+  path: '/folders/{id}',
+  tags: ['Databases'],
+  summary: 'Delete a database folder',
+  request: { params: IdParamSchema },
+  responses: okJson(z.object({ success: z.boolean() })),
 });
 
 export const createDatabaseConnectionRoute = appRoute({

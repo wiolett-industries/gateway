@@ -79,6 +79,8 @@ export interface Node {
   healthHistory?: Array<{ ts: string; status: string }>;
   metadata: Record<string, unknown>;
   isConnected: boolean;
+  folderId?: string | null;
+  sortOrder?: number;
   createdAt: string;
   updatedAt: string;
 }

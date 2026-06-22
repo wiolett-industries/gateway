@@ -10,6 +10,14 @@ import {
   UnknownDataResponseSchema,
 } from '@/lib/openapi.js';
 import {
+  CreateResourceFolderSchema,
+  MoveResourceFolderSchema,
+  MoveResourcesToFolderSchema,
+  ReorderResourceFoldersSchema,
+  ReorderResourcesSchema,
+  UpdateResourceFolderSchema,
+} from '@/modules/resource-folders/resource-folder.schemas.js';
+import {
   CreateNodeSchema,
   NodeListQuerySchema,
   UpdateNodeSchema,
@@ -69,6 +77,77 @@ export const listNodesRoute = appRoute({
   summary: 'List nodes',
   request: { query: NodeListQuerySchema },
   responses: okJson(UnknownDataResponseSchema),
+});
+
+export const listNodeFoldersRoute = appRoute({
+  method: 'get',
+  path: '/folders',
+  tags: ['Nodes'],
+  summary: 'List node folders',
+  responses: okJson(UnknownDataResponseSchema),
+});
+
+export const createNodeFolderRoute = appRoute({
+  method: 'post',
+  path: '/folders',
+  tags: ['Nodes'],
+  summary: 'Create a node folder',
+  request: jsonBody(CreateResourceFolderSchema),
+  responses: createdJson(UnknownDataResponseSchema),
+});
+
+export const reorderNodeFoldersRoute = appRoute({
+  method: 'put',
+  path: '/folders/reorder',
+  tags: ['Nodes'],
+  summary: 'Reorder node folders',
+  request: jsonBody(ReorderResourceFoldersSchema),
+  responses: successJson,
+});
+
+export const moveNodesToFolderRoute = appRoute({
+  method: 'post',
+  path: '/folders/move-nodes',
+  tags: ['Nodes'],
+  summary: 'Move nodes to a folder',
+  request: jsonBody(MoveResourcesToFolderSchema),
+  responses: successJson,
+});
+
+export const reorderNodesRoute = appRoute({
+  method: 'put',
+  path: '/folders/reorder-nodes',
+  tags: ['Nodes'],
+  summary: 'Reorder nodes within a folder',
+  request: jsonBody(ReorderResourcesSchema),
+  responses: successJson,
+});
+
+export const updateNodeFolderRoute = appRoute({
+  method: 'put',
+  path: '/folders/{id}',
+  tags: ['Nodes'],
+  summary: 'Rename a node folder',
+  request: { params: IdParamSchema, ...jsonBody(UpdateResourceFolderSchema) },
+  responses: okJson(UnknownDataResponseSchema),
+});
+
+export const moveNodeFolderRoute = appRoute({
+  method: 'put',
+  path: '/folders/{id}/move',
+  tags: ['Nodes'],
+  summary: 'Move a node folder',
+  request: { params: IdParamSchema, ...jsonBody(MoveResourceFolderSchema) },
+  responses: okJson(UnknownDataResponseSchema),
+});
+
+export const deleteNodeFolderRoute = appRoute({
+  method: 'delete',
+  path: '/folders/{id}',
+  tags: ['Nodes'],
+  summary: 'Delete a node folder',
+  request: { params: IdParamSchema },
+  responses: successJson,
 });
 
 export const getNodeRoute = appRoute({

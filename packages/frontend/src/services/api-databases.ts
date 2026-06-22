@@ -3,6 +3,8 @@ import type {
   PaginatedResponse,
   PostgresTableMetadata,
   RedisKeyRecord,
+  ResourceFolder,
+  ResourceFolderTreeNode,
 } from "@/types";
 import { API_BASE } from "./api-base";
 import type { ApiClientBaseConstructor } from "./api-mixins";
@@ -58,6 +60,55 @@ export function withDatabaseApi<TBase extends ApiClientBaseConstructor>(Base: TB
 
     async deleteDatabase(id: string): Promise<void> {
       await this.request<void>(`/databases/${id}`, { method: "DELETE" });
+    }
+
+    async listDatabaseFolders(): Promise<ResourceFolderTreeNode[]> {
+      return this.unwrapData(
+        this.request<{ data: ResourceFolderTreeNode[] }>("/databases/folders")
+      );
+    }
+
+    async createDatabaseFolder(data: { name: string; parentId?: string }): Promise<ResourceFolder> {
+      return this.unwrapData(
+        this.request<{ data: ResourceFolder }>("/databases/folders", {
+          method: "POST",
+          body: JSON.stringify(data),
+        })
+      );
+    }
+
+    async updateDatabaseFolder(id: string, data: { name: string }): Promise<ResourceFolder> {
+      return this.unwrapData(
+        this.request<{ data: ResourceFolder }>(`/databases/folders/${id}`, {
+          method: "PUT",
+          body: JSON.stringify(data),
+        })
+      );
+    }
+
+    async deleteDatabaseFolder(id: string): Promise<void> {
+      await this.request<void>(`/databases/folders/${id}`, { method: "DELETE" });
+    }
+
+    async reorderDatabaseFolders(items: { id: string; sortOrder: number }[]): Promise<void> {
+      await this.request<void>("/databases/folders/reorder", {
+        method: "PUT",
+        body: JSON.stringify({ items }),
+      });
+    }
+
+    async moveDatabasesToFolder(ids: string[], folderId: string | null): Promise<void> {
+      await this.request<void>("/databases/folders/move-databases", {
+        method: "POST",
+        body: JSON.stringify({ ids, folderId }),
+      });
+    }
+
+    async reorderDatabases(items: { id: string; sortOrder: number }[]): Promise<void> {
+      await this.request<void>("/databases/folders/reorder-databases", {
+        method: "PUT",
+        body: JSON.stringify({ items }),
+      });
     }
 
     async testDatabase(id: string): Promise<{ ok: true; responseMs: number; status: string }> {

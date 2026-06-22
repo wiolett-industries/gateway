@@ -2,7 +2,7 @@ import { OpenAPIHono } from '@hono/zod-openapi';
 import { streamSSE } from 'hono/streaming';
 import { container } from '@/container.js';
 import { openApiValidationHook } from '@/lib/openapi.js';
-import { getResourceScopedIds, hasScope } from '@/lib/permissions.js';
+import { getResourceScopedIds, hasScope, hasScopeBase } from '@/lib/permissions.js';
 import { AppError } from '@/middleware/error-handler.js';
 import { authMiddleware, requireScope, requireScopeForResource, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import {
@@ -12,20 +12,37 @@ import {
   type RelayedDaemonLogEntry,
   type RelayedLogEntry,
 } from '@/modules/monitoring/log-relay.service.js';
+import {
+  CreateResourceFolderSchema,
+  MoveResourceFolderSchema,
+  MoveResourcesToFolderSchema,
+  ReorderResourceFoldersSchema,
+  ReorderResourcesSchema,
+  UpdateResourceFolderSchema,
+} from '@/modules/resource-folders/resource-folder.schemas.js';
 import type { AppEnv } from '@/types.js';
+import { NodeFolderService } from './node-folders.service.js';
 import { NodeMonitoringService } from './node-monitoring.service.js';
 import {
+  createNodeFolderRoute,
   createNodeRoute,
+  deleteNodeFolderRoute,
   deleteNodeRoute,
   getNodeConfigRoute,
   getNodeHealthHistoryRoute,
   getNodeRoute,
+  listNodeFoldersRoute,
   listNodesRoute,
+  moveNodeFolderRoute,
+  moveNodesToFolderRoute,
   nodeDaemonLogsRoute,
   nodeMonitoringStreamRoute,
   nodeNginxLogsRoute,
+  reorderNodeFoldersRoute,
+  reorderNodesRoute,
   testNodeConfigRoute,
   updateNodeConfigRoute,
+  updateNodeFolderRoute,
   updateNodeRoute,
   updateNodeServiceCreationLockRoute,
 } from './nodes.docs.js';
@@ -163,11 +180,12 @@ nodesRoutes.openapi(listNodesRoute, async (c) => {
   const query = NodeListQuerySchema.parse(c.req.query());
   const scopes = c.get('effectiveScopes') || [];
   const hasNodeDetails = hasScope(scopes, 'nodes:details');
+  const canManageFolders = hasScope(scopes, 'nodes:folders:manage');
   const allowedNodeIds = getResourceScopedIds(scopes, 'nodes:details');
   const dockerScopedNodeIds = query.type === 'docker' ? getDockerResourceScopedNodeIds(scopes) : [];
   const canListAllDockerNodes = query.type === 'docker' && hasBroadDockerNodeListAccess(scopes);
   const canListDockerNodes = canListAllDockerNodes || dockerScopedNodeIds.length > 0;
-  if (!hasNodeDetails && allowedNodeIds.length === 0 && !canListDockerNodes) {
+  if (!hasNodeDetails && !canManageFolders && allowedNodeIds.length === 0 && !canListDockerNodes) {
     throw new AppError(403, 'FORBIDDEN', 'Missing required node access scope');
   }
   const scopedNodeIds =
@@ -176,12 +194,82 @@ nodesRoutes.openapi(listNodesRoute, async (c) => {
       : allowedNodeIds;
   const result = await service.list(
     query,
-    hasNodeDetails || canListAllDockerNodes ? undefined : { allowedIds: scopedNodeIds }
+    hasNodeDetails || canManageFolders || canListAllDockerNodes ? undefined : { allowedIds: scopedNodeIds }
   );
   if (query.type === 'docker' && canListDockerNodes && !hasNodeDetails) {
     return c.json({ ...result, data: result.data.map((node) => compactDockerNodeForDockerAccess(node as any)) });
   }
   return c.json(result);
+});
+
+nodesRoutes.openapi(listNodeFoldersRoute, async (c) => {
+  const service = container.resolve(NodeFolderService);
+  const scopes = c.get('effectiveScopes') || [];
+  const canManageFolders = hasScope(scopes, 'nodes:folders:manage');
+  const hasNodeDetails = hasScope(scopes, 'nodes:details');
+  const allowedNodeIds = getResourceScopedIds(scopes, 'nodes:details');
+  if (!canManageFolders && !hasScopeBase(scopes, 'nodes:details')) {
+    throw new AppError(403, 'FORBIDDEN', 'Missing required scope: nodes:details or nodes:folders:manage');
+  }
+  const data = await service.getFolderTree(
+    canManageFolders || hasNodeDetails
+      ? { includeAllFolders: canManageFolders }
+      : { allowedResourceIds: allowedNodeIds }
+  );
+  return c.json({ data });
+});
+
+nodesRoutes.openapi({ ...createNodeFolderRoute, middleware: requireScope('nodes:folders:manage') }, async (c) => {
+  const service = container.resolve(NodeFolderService);
+  const user = c.get('user')!;
+  const input = CreateResourceFolderSchema.parse(await c.req.json());
+  const data = await service.createFolder(input, user.id);
+  return c.json({ data }, 201);
+});
+
+nodesRoutes.openapi({ ...reorderNodeFoldersRoute, middleware: requireScope('nodes:folders:manage') }, async (c) => {
+  const service = container.resolve(NodeFolderService);
+  const input = ReorderResourceFoldersSchema.parse(await c.req.json());
+  await service.reorderFolders(input);
+  return c.json({ success: true });
+});
+
+nodesRoutes.openapi({ ...moveNodesToFolderRoute, middleware: requireScope('nodes:folders:manage') }, async (c) => {
+  const service = container.resolve(NodeFolderService);
+  const user = c.get('user')!;
+  const input = MoveResourcesToFolderSchema.parse(await c.req.json());
+  await service.moveResourcesToFolder(input, user.id);
+  return c.json({ success: true });
+});
+
+nodesRoutes.openapi({ ...reorderNodesRoute, middleware: requireScope('nodes:folders:manage') }, async (c) => {
+  const service = container.resolve(NodeFolderService);
+  const input = ReorderResourcesSchema.parse(await c.req.json());
+  await service.reorderResources(input);
+  return c.json({ success: true });
+});
+
+nodesRoutes.openapi({ ...updateNodeFolderRoute, middleware: requireScope('nodes:folders:manage') }, async (c) => {
+  const service = container.resolve(NodeFolderService);
+  const user = c.get('user')!;
+  const input = UpdateResourceFolderSchema.parse(await c.req.json());
+  const data = await service.updateFolder(c.req.param('id')!, input, user.id);
+  return c.json({ data });
+});
+
+nodesRoutes.openapi({ ...moveNodeFolderRoute, middleware: requireScope('nodes:folders:manage') }, async (c) => {
+  const service = container.resolve(NodeFolderService);
+  const user = c.get('user')!;
+  const input = MoveResourceFolderSchema.parse(await c.req.json());
+  const data = await service.moveFolder(c.req.param('id')!, input, user.id);
+  return c.json({ data });
+});
+
+nodesRoutes.openapi({ ...deleteNodeFolderRoute, middleware: requireScope('nodes:folders:manage') }, async (c) => {
+  const service = container.resolve(NodeFolderService);
+  const user = c.get('user')!;
+  await service.deleteFolder(c.req.param('id')!, user.id);
+  return c.json({ success: true });
 });
 
 nodesRoutes.openapi({ ...getNodeRoute, middleware: requireScopeForResource('nodes:details', 'id') }, async (c) => {
