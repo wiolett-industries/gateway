@@ -367,11 +367,7 @@ export function CADetail() {
                           <td className="p-3">
                             <div className="flex items-center gap-2">
                               <span className="text-sm font-medium">{cert.commonName}</span>
-                              {cert.isSystem && (
-                                <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                                  System
-                                </Badge>
-                              )}
+                              {cert.isSystem && <Badge variant="outline">System</Badge>}
                             </div>
                           </td>
                           <td className="p-3 text-sm text-muted-foreground">{cert.type}</td>

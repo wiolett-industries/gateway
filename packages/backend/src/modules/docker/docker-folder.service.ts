@@ -6,9 +6,13 @@ import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
 import type {
   CreateDockerFolderInput,
+  DockerFolderResourceRef,
+  DockerFolderResourceType,
   MoveDockerContainersToFolderInput,
+  MoveDockerResourcesToFolderInput,
   ReorderDockerContainersInput,
   ReorderDockerFoldersInput,
+  ReorderDockerResourcesInput,
   UpdateDockerFolderInput,
 } from './docker-folder.schemas.js';
 
@@ -88,22 +92,30 @@ export class DockerFolderService {
     this.eventBus?.publish('docker.folder.changed', { action, folderId, nodeIds });
   }
 
-  private async getNextSortOrder(parentId: string | null): Promise<number> {
+  private async getNextSortOrder(resourceType: DockerFolderResourceType, parentId: string | null): Promise<number> {
     const siblings = await this.db
       .select({ sortOrder: dockerContainerFolders.sortOrder })
       .from(dockerContainerFolders)
-      .where(parentId ? eq(dockerContainerFolders.parentId, parentId) : isNull(dockerContainerFolders.parentId))
+      .where(
+        and(
+          eq(dockerContainerFolders.resourceType, resourceType),
+          parentId ? eq(dockerContainerFolders.parentId, parentId) : isNull(dockerContainerFolders.parentId)
+        )
+      )
       .orderBy(desc(dockerContainerFolders.sortOrder))
       .limit(1);
 
     return siblings.length > 0 ? siblings[0].sortOrder + 1 : 0;
   }
 
-  private async getFolderOrThrow(id: string): Promise<FolderRow> {
+  private async getFolderOrThrow(id: string, resourceType?: DockerFolderResourceType): Promise<FolderRow> {
     const folder = await this.db.query.dockerContainerFolders.findFirst({
       where: eq(dockerContainerFolders.id, id),
     });
     if (!folder) throw new AppError(404, 'FOLDER_NOT_FOUND', 'Folder not found');
+    if (resourceType && folder.resourceType !== resourceType) {
+      throw new AppError(400, 'FOLDER_RESOURCE_TYPE_MISMATCH', 'Folder belongs to a different Docker resource type');
+    }
     return folder;
   }
 
@@ -115,9 +127,10 @@ export class DockerFolderService {
 
   async createFolder(input: CreateDockerFolderInput, userId: string) {
     let depth = 0;
+    const resourceType = input.resourceType;
 
     if (input.parentId) {
-      const parent = await this.getFolderOrThrow(input.parentId);
+      const parent = await this.getFolderOrThrow(input.parentId, resourceType);
       this.assertFolderMutable(parent);
       if (parent.depth >= MAX_DEPTH) {
         throw new AppError(400, 'MAX_DEPTH_EXCEEDED', `Maximum folder nesting depth is ${MAX_DEPTH + 1} levels`);
@@ -129,8 +142,9 @@ export class DockerFolderService {
       .insert(dockerContainerFolders)
       .values({
         name: input.name,
+        resourceType,
         parentId: input.parentId ?? null,
-        sortOrder: await this.getNextSortOrder(input.parentId ?? null),
+        sortOrder: await this.getNextSortOrder(resourceType, input.parentId ?? null),
         depth,
         createdById: userId,
       })
@@ -141,7 +155,7 @@ export class DockerFolderService {
       action: 'docker_folder.create',
       resourceType: 'docker_folder',
       resourceId: folder.id,
-      details: { name: folder.name, parentId: folder.parentId },
+      details: { name: folder.name, parentId: folder.parentId, resourceType },
     });
 
     this.emitLayoutChanged('folder_created', folder.id);
@@ -189,6 +203,7 @@ export class DockerFolderService {
   }
 
   async reorderFolders(input: ReorderDockerFoldersInput, userId: string) {
+    const resourceType = input.resourceType;
     const folders = await this.db
       .select()
       .from(dockerContainerFolders)
@@ -201,6 +216,9 @@ export class DockerFolderService {
 
     if (folders.length !== input.items.length) {
       throw new AppError(404, 'FOLDER_NOT_FOUND', 'One or more folders were not found');
+    }
+    if (folders.some((folder) => folder.resourceType !== resourceType)) {
+      throw new AppError(400, 'FOLDER_RESOURCE_TYPE_MISMATCH', 'Folders belong to a different Docker resource type');
     }
 
     const parentIds = [...new Set(folders.map((folder) => folder.parentId ?? null))];
@@ -219,7 +237,7 @@ export class DockerFolderService {
       userId,
       action: 'docker_folder.reorder',
       resourceType: 'docker_folder',
-      details: { items: input.items },
+      details: { items: input.items, folderResourceType: resourceType },
     });
 
     this.emitLayoutChanged(
@@ -230,12 +248,15 @@ export class DockerFolderService {
   }
 
   async getFolderTree(options?: {
+    resourceType?: DockerFolderResourceType;
     includeAllFolders?: boolean;
     allowedNodeIds?: string[];
   }): Promise<DockerFolderTreeNode[]> {
+    const resourceType = options?.resourceType ?? 'container';
     const allFolders = await this.db
       .select()
       .from(dockerContainerFolders)
+      .where(eq(dockerContainerFolders.resourceType, resourceType))
       .orderBy(asc(dockerContainerFolders.depth), asc(dockerContainerFolders.sortOrder));
 
     if (!options?.includeAllFolders && options?.allowedNodeIds) {
@@ -243,7 +264,12 @@ export class DockerFolderService {
       const assignments = await this.db
         .select({ folderId: dockerContainerFolderAssignments.folderId })
         .from(dockerContainerFolderAssignments)
-        .where(inArray(dockerContainerFolderAssignments.nodeId, options.allowedNodeIds));
+        .where(
+          and(
+            eq(dockerContainerFolderAssignments.resourceType, resourceType),
+            inArray(dockerContainerFolderAssignments.nodeId, options.allowedNodeIds)
+          )
+        );
       const visibleIds = new Set(assignments.map((row) => row.folderId).filter((id): id is string => !!id));
       for (const folder of [...allFolders].sort((a, b) => b.depth - a.depth)) {
         if (visibleIds.has(folder.id) && folder.parentId) visibleIds.add(folder.parentId);
@@ -255,30 +281,47 @@ export class DockerFolderService {
   }
 
   async moveContainersToFolder(input: MoveDockerContainersToFolderInput, userId: string) {
+    return this.moveResourcesToFolder(
+      {
+        resourceType: 'container',
+        folderId: input.folderId,
+        items: input.items.map((item) => ({ nodeId: item.nodeId, resourceKey: item.containerName })),
+      },
+      userId
+    );
+  }
+
+  async moveResourcesToFolder(input: MoveDockerResourcesToFolderInput, userId: string) {
+    const resourceType = input.resourceType;
     let targetFolder: FolderRow | null = null;
     if (input.folderId) {
-      targetFolder = await this.getFolderOrThrow(input.folderId);
+      targetFolder = await this.getFolderOrThrow(input.folderId, resourceType);
       if (targetFolder.isSystem) {
         throw new AppError(
           400,
           'SYSTEM_FOLDER_LOCKED',
-          'Containers cannot be moved into protected compose deployment folders'
+          'Resources cannot be moved into protected compose deployment folders'
         );
       }
     }
 
-    const assignmentRows = await this.getAssignmentsForRefs(input.items);
+    const assignmentRows = await this.getAssignmentsForResourceRefs(resourceType, input.items);
     const sourceFolderIds = [...new Set(assignmentRows.map((row) => row.folderId).filter((id): id is string => !!id))];
     if (sourceFolderIds.length > 0) {
       const sourceFolders = await this.db
         .select({ id: dockerContainerFolders.id, isSystem: dockerContainerFolders.isSystem })
         .from(dockerContainerFolders)
-        .where(inArray(dockerContainerFolders.id, sourceFolderIds));
+        .where(
+          and(
+            eq(dockerContainerFolders.resourceType, resourceType),
+            inArray(dockerContainerFolders.id, sourceFolderIds)
+          )
+        );
       if (sourceFolders.some((folder) => folder.isSystem)) {
         throw new AppError(
           400,
           'SYSTEM_FOLDER_LOCKED',
-          'Containers cannot be moved out of protected compose deployment folders'
+          'Resources cannot be moved out of protected compose deployment folders'
         );
       }
     }
@@ -287,7 +330,7 @@ export class DockerFolderService {
       const byNode = new Map<string, string[]>();
       for (const item of input.items) {
         const current = byNode.get(item.nodeId) ?? [];
-        current.push(item.containerName);
+        current.push(item.resourceKey);
         byNode.set(item.nodeId, current);
       }
 
@@ -296,23 +339,33 @@ export class DockerFolderService {
           .select({ sortOrder: dockerContainerFolderAssignments.sortOrder })
           .from(dockerContainerFolderAssignments)
           .where(
-            and(eq(dockerContainerFolderAssignments.nodeId, nodeId), isNull(dockerContainerFolderAssignments.folderId))
+            and(
+              eq(dockerContainerFolderAssignments.nodeId, nodeId),
+              eq(dockerContainerFolderAssignments.resourceType, resourceType),
+              isNull(dockerContainerFolderAssignments.folderId)
+            )
           )
           .orderBy(desc(dockerContainerFolderAssignments.sortOrder))
           .limit(1);
         let nextSortOrder = maxSort.length > 0 ? maxSort[0].sortOrder + 1 : 0;
 
-        for (const name of names) {
+        for (const resourceKey of names) {
           await this.db
             .insert(dockerContainerFolderAssignments)
             .values({
               nodeId,
-              containerName: name,
+              resourceType,
+              resourceKey,
+              containerName: resourceType === 'container' ? resourceKey : null,
               folderId: null,
               sortOrder: nextSortOrder++,
             })
             .onConflictDoUpdate({
-              target: [dockerContainerFolderAssignments.nodeId, dockerContainerFolderAssignments.containerName],
+              target: [
+                dockerContainerFolderAssignments.nodeId,
+                dockerContainerFolderAssignments.resourceType,
+                dockerContainerFolderAssignments.resourceKey,
+              ],
               set: {
                 folderId: null,
                 sortOrder: nextSortOrder - 1,
@@ -325,7 +378,12 @@ export class DockerFolderService {
       const maxSort = await this.db
         .select({ sortOrder: dockerContainerFolderAssignments.sortOrder })
         .from(dockerContainerFolderAssignments)
-        .where(eq(dockerContainerFolderAssignments.folderId, targetFolder.id))
+        .where(
+          and(
+            eq(dockerContainerFolderAssignments.resourceType, resourceType),
+            eq(dockerContainerFolderAssignments.folderId, targetFolder.id)
+          )
+        )
         .orderBy(desc(dockerContainerFolderAssignments.sortOrder))
         .limit(1);
       let nextSortOrder = maxSort.length > 0 ? maxSort[0].sortOrder + 1 : 0;
@@ -335,12 +393,18 @@ export class DockerFolderService {
           .insert(dockerContainerFolderAssignments)
           .values({
             nodeId: item.nodeId,
-            containerName: item.containerName,
+            resourceType,
+            resourceKey: item.resourceKey,
+            containerName: resourceType === 'container' ? item.resourceKey : null,
             folderId: targetFolder.id,
             sortOrder: nextSortOrder++,
           })
           .onConflictDoUpdate({
-            target: [dockerContainerFolderAssignments.nodeId, dockerContainerFolderAssignments.containerName],
+            target: [
+              dockerContainerFolderAssignments.nodeId,
+              dockerContainerFolderAssignments.resourceType,
+              dockerContainerFolderAssignments.resourceKey,
+            ],
             set: {
               folderId: targetFolder.id,
               sortOrder: nextSortOrder - 1,
@@ -352,18 +416,33 @@ export class DockerFolderService {
 
     await this.auditService.log({
       userId,
-      action: 'docker_container.move_to_folder',
-      resourceType: 'docker-container',
-      details: { items: input.items, folderId: input.folderId },
+      action: resourceType === 'container' ? 'docker_container.move_to_folder' : 'docker_resource.move_to_folder',
+      resourceType: 'docker-resource',
+      details: { items: input.items, folderId: input.folderId, folderResourceType: resourceType },
     });
 
-    this.emitLayoutChanged('containers_moved', input.folderId, [...new Set(input.items.map((item) => item.nodeId))]);
+    this.emitLayoutChanged('resources_moved', input.folderId, [...new Set(input.items.map((item) => item.nodeId))]);
   }
 
   async reorderContainers(input: ReorderDockerContainersInput, userId: string) {
-    const assignmentRows = await this.getAssignmentsForRefs(input.items);
+    return this.reorderResources(
+      {
+        resourceType: 'container',
+        items: input.items.map((item) => ({
+          nodeId: item.nodeId,
+          resourceKey: item.containerName,
+          sortOrder: item.sortOrder,
+        })),
+      },
+      userId
+    );
+  }
+
+  async reorderResources(input: ReorderDockerResourcesInput, userId: string) {
+    const resourceType = input.resourceType;
+    const assignmentRows = await this.getAssignmentsForResourceRefs(resourceType, input.items);
     if (assignmentRows.length !== input.items.length) {
-      throw new AppError(400, 'INVALID_REORDER', 'All containers must have persisted placement before reordering');
+      throw new AppError(400, 'INVALID_REORDER', 'All resources must have persisted placement before reordering');
     }
 
     const folderIds = [...new Set(assignmentRows.map((row) => row.folderId ?? null))];
@@ -376,7 +455,12 @@ export class DockerFolderService {
       const folders = await this.db
         .select({ id: dockerContainerFolders.id, isSystem: dockerContainerFolders.isSystem })
         .from(dockerContainerFolders)
-        .where(inArray(dockerContainerFolders.id, nonNullFolderIds));
+        .where(
+          and(
+            eq(dockerContainerFolders.resourceType, resourceType),
+            inArray(dockerContainerFolders.id, nonNullFolderIds)
+          )
+        );
 
       if (folders.some((folder) => folder.isSystem)) {
         throw new AppError(
@@ -394,23 +478,38 @@ export class DockerFolderService {
         .where(
           and(
             eq(dockerContainerFolderAssignments.nodeId, item.nodeId),
-            eq(dockerContainerFolderAssignments.containerName, item.containerName)
+            eq(dockerContainerFolderAssignments.resourceType, resourceType),
+            eq(dockerContainerFolderAssignments.resourceKey, item.resourceKey)
           )
         );
     }
 
     await this.auditService.log({
       userId,
-      action: 'docker_container.reorder_in_folder',
-      resourceType: 'docker-container',
-      details: { items: input.items },
+      action: resourceType === 'container' ? 'docker_container.reorder_in_folder' : 'docker_resource.reorder_in_folder',
+      resourceType: 'docker-resource',
+      details: { items: input.items, folderResourceType: resourceType },
     });
 
-    this.emitLayoutChanged('containers_reordered', null, [...new Set(input.items.map((item) => item.nodeId))]);
+    this.emitLayoutChanged('resources_reordered', null, [...new Set(input.items.map((item) => item.nodeId))]);
   }
 
   async getPlacementsForRefs(items: Array<{ nodeId: string; containerName: string }>) {
-    const assignmentRows = await this.getAssignmentsForRefs(items);
+    const placements = await this.getResourcePlacementsForRefs(
+      'container',
+      items.map((item) => ({ nodeId: item.nodeId, resourceKey: item.containerName }))
+    );
+    return placements.map((placement) => ({
+      nodeId: placement.nodeId,
+      containerName: placement.resourceKey,
+      folderId: placement.folderId,
+      folderIsSystem: placement.folderIsSystem,
+      sortOrder: placement.sortOrder,
+    }));
+  }
+
+  async getResourcePlacementsForRefs(resourceType: DockerFolderResourceType, items: DockerFolderResourceRef[]) {
+    const assignmentRows = await this.getAssignmentsForResourceRefs(resourceType, items);
     if (assignmentRows.length === 0) return [];
 
     const folderIds = assignmentRows.map((row) => row.folderId).filter((id): id is string => !!id);
@@ -419,13 +518,18 @@ export class DockerFolderService {
         ? await this.db
             .select({ id: dockerContainerFolders.id, isSystem: dockerContainerFolders.isSystem })
             .from(dockerContainerFolders)
-            .where(inArray(dockerContainerFolders.id, [...new Set(folderIds)]))
+            .where(
+              and(
+                eq(dockerContainerFolders.resourceType, resourceType),
+                inArray(dockerContainerFolders.id, [...new Set(folderIds)])
+              )
+            )
         : [];
     const folderById = new Map(folders.map((folder) => [folder.id, folder]));
 
     return assignmentRows.map((row) => ({
       nodeId: row.nodeId,
-      containerName: row.containerName,
+      resourceKey: row.resourceKey,
       folderId: row.folderId,
       folderIsSystem: row.folderId ? (folderById.get(row.folderId)?.isSystem ?? false) : false,
       sortOrder: row.sortOrder,
@@ -452,7 +556,13 @@ export class DockerFolderService {
     const existingSystemFolders = await this.db
       .select()
       .from(dockerContainerFolders)
-      .where(and(eq(dockerContainerFolders.nodeId, nodeId), eq(dockerContainerFolders.isSystem, true)));
+      .where(
+        and(
+          eq(dockerContainerFolders.nodeId, nodeId),
+          eq(dockerContainerFolders.resourceType, 'container'),
+          eq(dockerContainerFolders.isSystem, true)
+        )
+      );
 
     const activeProjects = [...composeGroups.keys()];
     const systemFoldersByProject = new Map<string, FolderRow>();
@@ -468,8 +578,9 @@ export class DockerFolderService {
         .insert(dockerContainerFolders)
         .values({
           name: project,
+          resourceType: 'container',
           parentId: null,
-          sortOrder: await this.getNextSortOrder(null),
+          sortOrder: await this.getNextSortOrder('container', null),
           depth: 0,
           isSystem: true,
           nodeId,
@@ -489,12 +600,18 @@ export class DockerFolderService {
           .insert(dockerContainerFolderAssignments)
           .values({
             nodeId,
+            resourceType: 'container',
+            resourceKey: container.name,
             containerName: container.name,
             folderId: folder.id,
             sortOrder: index,
           })
           .onConflictDoUpdate({
-            target: [dockerContainerFolderAssignments.nodeId, dockerContainerFolderAssignments.containerName],
+            target: [
+              dockerContainerFolderAssignments.nodeId,
+              dockerContainerFolderAssignments.resourceType,
+              dockerContainerFolderAssignments.resourceKey,
+            ],
             set: {
               folderId: folder.id,
               sortOrder: index,
@@ -516,6 +633,7 @@ export class DockerFolderService {
         .where(
           and(
             eq(dockerContainerFolderAssignments.nodeId, nodeId),
+            eq(dockerContainerFolderAssignments.resourceType, 'container'),
             inArray(
               dockerContainerFolderAssignments.folderId,
               staleSystemFolders.map((folder) => folder.id)
@@ -533,15 +651,23 @@ export class DockerFolderService {
       }
     }
 
-    const folderRows = await this.db.select().from(dockerContainerFolders);
+    const folderRows = await this.db
+      .select()
+      .from(dockerContainerFolders)
+      .where(eq(dockerContainerFolders.resourceType, 'container'));
     const folderById = new Map(folderRows.map((folder) => [folder.id, folder]));
 
     const assignments = await this.db
       .select()
       .from(dockerContainerFolderAssignments)
-      .where(eq(dockerContainerFolderAssignments.nodeId, nodeId));
+      .where(
+        and(
+          eq(dockerContainerFolderAssignments.nodeId, nodeId),
+          eq(dockerContainerFolderAssignments.resourceType, 'container')
+        )
+      );
 
-    const assignmentByName = new Map(assignments.map((assignment) => [assignment.containerName, assignment]));
+    const assignmentByName = new Map(assignments.map((assignment) => [assignment.resourceKey, assignment]));
 
     return normalized.map((container) => {
       const assignment = assignmentByName.get(container.name);
@@ -556,11 +682,21 @@ export class DockerFolderService {
   }
 
   async renameContainerAssignment(nodeId: string, oldName: string, newName: string) {
+    await this.renameResourceAssignment(nodeId, 'container', oldName, newName);
+  }
+
+  async renameResourceAssignment(
+    nodeId: string,
+    resourceType: DockerFolderResourceType,
+    oldName: string,
+    newName: string
+  ) {
     if (oldName === newName) return;
     const assignment = await this.db.query.dockerContainerFolderAssignments.findFirst({
       where: and(
         eq(dockerContainerFolderAssignments.nodeId, nodeId),
-        eq(dockerContainerFolderAssignments.containerName, oldName)
+        eq(dockerContainerFolderAssignments.resourceType, resourceType),
+        eq(dockerContainerFolderAssignments.resourceKey, oldName)
       ),
     });
     if (!assignment) return;
@@ -570,13 +706,18 @@ export class DockerFolderService {
       .where(
         and(
           eq(dockerContainerFolderAssignments.nodeId, nodeId),
-          eq(dockerContainerFolderAssignments.containerName, newName)
+          eq(dockerContainerFolderAssignments.resourceType, resourceType),
+          eq(dockerContainerFolderAssignments.resourceKey, newName)
         )
       );
 
     await this.db
       .update(dockerContainerFolderAssignments)
-      .set({ containerName: newName, updatedAt: new Date() })
+      .set({
+        resourceKey: newName,
+        containerName: resourceType === 'container' ? newName : null,
+        updatedAt: new Date(),
+      })
       .where(eq(dockerContainerFolderAssignments.id, assignment.id));
   }
 
@@ -586,18 +727,20 @@ export class DockerFolderService {
       .where(
         and(
           eq(dockerContainerFolderAssignments.nodeId, nodeId),
-          eq(dockerContainerFolderAssignments.containerName, containerName)
+          eq(dockerContainerFolderAssignments.resourceType, 'container'),
+          eq(dockerContainerFolderAssignments.resourceKey, containerName)
         )
       );
   }
 
-  private async getAssignmentsForRefs(
-    items: Array<{ nodeId: string; containerName: string }>
+  private async getAssignmentsForResourceRefs(
+    resourceType: DockerFolderResourceType,
+    items: Array<{ nodeId: string; resourceKey: string }>
   ): Promise<AssignmentRow[]> {
     const byNode = new Map<string, string[]>();
     for (const item of items) {
       const list = byNode.get(item.nodeId) ?? [];
-      list.push(item.containerName);
+      list.push(item.resourceKey);
       byNode.set(item.nodeId, list);
     }
 
@@ -609,7 +752,8 @@ export class DockerFolderService {
         .where(
           and(
             eq(dockerContainerFolderAssignments.nodeId, nodeId),
-            inArray(dockerContainerFolderAssignments.containerName, [...new Set(names)])
+            eq(dockerContainerFolderAssignments.resourceType, resourceType),
+            inArray(dockerContainerFolderAssignments.resourceKey, [...new Set(names)])
           )
         );
       rows.push(...found);

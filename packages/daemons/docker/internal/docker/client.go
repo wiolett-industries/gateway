@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/netip"
 	"strconv"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/distribution/reference"
 	"github.com/moby/moby/api/types/container"
+	imagetypes "github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/api/types/volume"
 	"github.com/moby/moby/client"
@@ -433,11 +435,20 @@ type ContainerCreateConfig struct {
 	Binds         []string          `json:"binds,omitempty"`
 	PortBindings  map[string]string `json:"port_bindings,omitempty"` // "80/tcp": "8080"
 	NetworkMode   string            `json:"network_mode,omitempty"`
-	RestartPolicy string            `json:"restart_policy,omitempty"` // "no", "always", "unless-stopped", "on-failure"
-	Privileged    bool              `json:"privileged,omitempty"`
-	CapAdd        []string          `json:"cap_add,omitempty"`
-	CapDrop       []string          `json:"cap_drop,omitempty"`
-	ExtraHosts    []string          `json:"extra_hosts,omitempty"`
+	RestartPolicy string            `json:"restartPolicy,omitempty"` // "no", "always", "unless-stopped", "on-failure"
+	// Backward-compatible alias for older daemon-local config payloads.
+	RestartPolicyLegacy string   `json:"restart_policy,omitempty"`
+	Privileged          bool     `json:"privileged,omitempty"`
+	CapAdd              []string `json:"cap_add,omitempty"`
+	CapDrop             []string `json:"cap_drop,omitempty"`
+	ExtraHosts          []string `json:"extra_hosts,omitempty"`
+}
+
+func (cfg ContainerCreateConfig) effectiveRestartPolicy() string {
+	if cfg.RestartPolicy != "" {
+		return cfg.RestartPolicy
+	}
+	return cfg.RestartPolicyLegacy
 }
 
 // CreateContainer parses configJSON into a container config and creates the container.
@@ -490,8 +501,9 @@ func (c *Client) CreateContainer(ctx context.Context, configJSON string) (string
 	}
 
 	// Parse restart policy
-	if cfg.RestartPolicy != "" {
-		hostCfg.RestartPolicy = container.RestartPolicy{Name: container.RestartPolicyMode(cfg.RestartPolicy)}
+	restartPolicy := cfg.effectiveRestartPolicy()
+	if restartPolicy != "" {
+		hostCfg.RestartPolicy = container.RestartPolicy{Name: container.RestartPolicyMode(restartPolicy)}
 	}
 
 	result, err := c.cli.ContainerCreate(ctx, client.ContainerCreateOptions{
@@ -1071,11 +1083,49 @@ func (c *Client) ListImages(ctx context.Context) (json.RawMessage, error) {
 	if err != nil {
 		return nil, fmt.Errorf("image list: %w", err)
 	}
+	containers, err := c.cli.ContainerList(ctx, client.ContainerListOptions{All: true})
+	if err == nil {
+		result.Items = annotateImageUsage(result.Items, containers.Items)
+	} else if c.logger != nil {
+		c.logger.Warn("failed to calculate Docker image usage", "error", err)
+	}
 	data, err := json.Marshal(result.Items)
 	if err != nil {
 		return nil, fmt.Errorf("marshal images: %w", err)
 	}
 	return data, nil
+}
+
+func annotateImageUsage(images []imagetypes.Summary, containers []container.Summary) []imagetypes.Summary {
+	for idx := range images {
+		var count int64
+		for _, ctr := range containers {
+			if containerUsesImage(ctr, images[idx]) {
+				count++
+			}
+		}
+		images[idx].Containers = count
+	}
+	return images
+}
+
+func containerUsesImage(ctr container.Summary, image imagetypes.Summary) bool {
+	if sameDockerImageID(ctr.ImageID, image.ID) {
+		return true
+	}
+	for _, tag := range image.RepoTags {
+		if tag != "" && tag != "<none>:<none>" && ctr.Image == tag {
+			return true
+		}
+	}
+	return false
+}
+
+func sameDockerImageID(left string, right string) bool {
+	if left == "" || right == "" {
+		return false
+	}
+	return left == right || strings.TrimPrefix(left, "sha256:") == strings.TrimPrefix(right, "sha256:")
 }
 
 // PullImage pulls an image from a registry. registryAuth is base64-encoded
@@ -1139,6 +1189,31 @@ func (c *Client) PruneImages(ctx context.Context) (int64, error) {
 
 // ── Volume Operations ─────────────────────────────────────────────
 
+func (c *Client) collectVolumeUsers(ctx context.Context) map[string][]string {
+	volumeUsers := make(map[string][]string)
+	ctrResult, err := c.cli.ContainerList(ctx, client.ContainerListOptions{All: true})
+	if err != nil {
+		return volumeUsers
+	}
+
+	for _, ctr := range ctrResult.Items {
+		name := ""
+		if len(ctr.Names) > 0 {
+			name = strings.TrimPrefix(ctr.Names[0], "/")
+		}
+		if name == "" {
+			name = ctr.ID
+		}
+		for _, m := range ctr.Mounts {
+			if m.Type == "volume" && m.Name != "" {
+				volumeUsers[m.Name] = append(volumeUsers[m.Name], name)
+			}
+		}
+	}
+
+	return volumeUsers
+}
+
 // ListVolumes returns the list of volumes as raw JSON, enriched with usage info.
 func (c *Client) ListVolumes(ctx context.Context) (json.RawMessage, error) {
 	result, err := c.cli.VolumeList(ctx, client.VolumeListOptions{})
@@ -1146,19 +1221,7 @@ func (c *Client) ListVolumes(ctx context.Context) (json.RawMessage, error) {
 		return nil, fmt.Errorf("volume list: %w", err)
 	}
 
-	// Build a map of volume name → container names that use it
-	volumeUsers := make(map[string][]string)
-	ctrResult, err := c.cli.ContainerList(ctx, client.ContainerListOptions{All: true})
-	if err == nil {
-		for _, ctr := range ctrResult.Items {
-			name := strings.TrimPrefix(ctr.Names[0], "/")
-			for _, m := range ctr.Mounts {
-				if m.Type == "volume" {
-					volumeUsers[m.Name] = append(volumeUsers[m.Name], name)
-				}
-			}
-		}
-	}
+	volumeUsers := c.collectVolumeUsers(ctx)
 
 	type volumeWithUsage struct {
 		volume.Volume
@@ -1178,6 +1241,158 @@ func (c *Client) ListVolumes(ctx context.Context) (json.RawMessage, error) {
 		return nil, fmt.Errorf("marshal volumes: %w", err)
 	}
 	return data, nil
+}
+
+// InspectVolume returns a single volume as raw JSON, enriched with usage info.
+func (c *Client) InspectVolume(ctx context.Context, name string) (json.RawMessage, error) {
+	result, err := c.cli.VolumeInspect(ctx, name, client.VolumeInspectOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("volume inspect: %w", err)
+	}
+	type volumeWithUsage struct {
+		volume.Volume
+		UsedBy []string `json:"UsedBy"`
+	}
+	enriched := volumeWithUsage{Volume: result.Volume}
+	if users, ok := c.collectVolumeUsers(ctx)[result.Volume.Name]; ok {
+		enriched.UsedBy = users
+	}
+	data, err := json.Marshal(enriched)
+	if err != nil {
+		return nil, fmt.Errorf("marshal volume: %w", err)
+	}
+	return data, nil
+}
+
+// RenameVolume emulates rename by creating a new volume, copying contents, then removing the old volume.
+func (c *Client) RenameVolume(ctx context.Context, name string, newName string) error {
+	if strings.TrimSpace(name) == "" || strings.TrimSpace(newName) == "" {
+		return fmt.Errorf("source and target volume names are required")
+	}
+	if name == newName {
+		return nil
+	}
+	if used, err := c.volumeInUse(ctx, name); err != nil {
+		return err
+	} else if used {
+		return fmt.Errorf("volume %q is in use by containers and cannot be renamed", name)
+	}
+
+	source, err := c.cli.VolumeInspect(ctx, name, client.VolumeInspectOptions{})
+	if err != nil {
+		return fmt.Errorf("volume inspect: %w", err)
+	}
+	if _, err := c.cli.VolumeInspect(ctx, newName, client.VolumeInspectOptions{}); err == nil {
+		return fmt.Errorf("target volume %q already exists", newName)
+	}
+
+	if err := c.CreateVolume(ctx, newName, source.Volume.Driver, source.Volume.Labels); err != nil {
+		return err
+	}
+	cleanupTarget := true
+	defer func() {
+		if cleanupTarget {
+			_, _ = c.cli.VolumeRemove(context.Background(), newName, client.VolumeRemoveOptions{Force: true})
+		}
+	}()
+
+	if err := CopyVolumeContents(ctx, c, name, newName); err != nil {
+		return err
+	}
+	if err := c.RemoveVolume(ctx, name, false); err != nil {
+		return err
+	}
+	cleanupTarget = false
+	return nil
+}
+
+// UpdateVolumeLabels recreates an unused volume with new labels while preserving its contents.
+func (c *Client) UpdateVolumeLabels(ctx context.Context, name string, labels map[string]string) error {
+	if strings.TrimSpace(name) == "" {
+		return fmt.Errorf("volume name is required")
+	}
+	if used, err := c.volumeInUse(ctx, name); err != nil {
+		return err
+	} else if used {
+		return fmt.Errorf("volume %q is in use by containers and cannot update labels", name)
+	}
+
+	source, err := c.cli.VolumeInspect(ctx, name, client.VolumeInspectOptions{})
+	if err != nil {
+		return fmt.Errorf("volume inspect: %w", err)
+	}
+
+	nextLabels := maps.Clone(labels)
+	if nextLabels == nil {
+		nextLabels = map[string]string{}
+	}
+	currentLabels := maps.Clone(source.Volume.Labels)
+	if currentLabels == nil {
+		currentLabels = map[string]string{}
+	}
+	if maps.Equal(currentLabels, nextLabels) {
+		return nil
+	}
+
+	tempName := fmt.Sprintf("gateway-labels-%d", time.Now().UnixNano())
+	if err := c.CreateVolume(ctx, tempName, source.Volume.Driver, source.Volume.Labels); err != nil {
+		return err
+	}
+	cleanupTemp := true
+	defer func() {
+		if cleanupTemp {
+			_, _ = c.cli.VolumeRemove(context.Background(), tempName, client.VolumeRemoveOptions{Force: true})
+		}
+	}()
+
+	if err := CopyVolumeContents(ctx, c, name, tempName); err != nil {
+		return err
+	}
+	if err := c.RemoveVolume(ctx, name, false); err != nil {
+		return err
+	}
+	if err := c.CreateVolume(ctx, name, source.Volume.Driver, nextLabels); err != nil {
+		if restoreErr := c.restoreVolumeFromTemp(name, tempName, source.Volume.Driver, source.Volume.Labels); restoreErr != nil {
+			cleanupTemp = false
+			return fmt.Errorf("volume label update failed: %w; restore failed and original data is preserved in temporary volume %q: %v", err, tempName, restoreErr)
+		}
+		return err
+	}
+	if err := CopyVolumeContents(ctx, c, tempName, name); err != nil {
+		cleanupTemp = false
+		return fmt.Errorf("copy volume contents: %w; original data is preserved in temporary volume %q", err, tempName)
+	}
+	if err := c.RemoveVolume(ctx, tempName, false); err != nil {
+		return err
+	}
+	cleanupTemp = false
+	return nil
+}
+
+func (c *Client) restoreVolumeFromTemp(name string, tempName string, driver string, labels map[string]string) error {
+	ctx := context.Background()
+	if err := c.CreateVolume(ctx, name, driver, labels); err != nil {
+		return err
+	}
+	if err := CopyVolumeContents(ctx, c, tempName, name); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *Client) volumeInUse(ctx context.Context, name string) (bool, error) {
+	containers, err := c.cli.ContainerList(ctx, client.ContainerListOptions{All: true})
+	if err != nil {
+		return false, fmt.Errorf("container list: %w", err)
+	}
+	for _, ctr := range containers.Items {
+		for _, m := range ctr.Mounts {
+			if m.Type == "volume" && m.Name == name {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }
 
 // CreateVolume creates a named volume with the given driver and labels.

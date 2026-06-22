@@ -1,5 +1,6 @@
 import { Eye, EyeOff, Lock, Minus, Plus } from "lucide-react";
 import { useState } from "react";
+import { PanelShell } from "@/components/common/PanelShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -68,18 +69,17 @@ export function SecretsSection({
   const isLastSecret = (idx: number) => idx === secretRows.length - 1;
 
   return (
-    <div className="border border-border bg-card">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-        <div className="flex items-center gap-2">
+    <PanelShell
+      className="overflow-visible"
+      title={
+        <span className="flex items-center gap-2">
           <Lock className="h-3.5 w-3.5 text-muted-foreground" />
-          <div>
-            <h3 className="text-sm font-semibold">Secrets</h3>
-            <p className="text-xs text-muted-foreground">
-              Encrypted at rest — injected as env vars on container start
-            </p>
-          </div>
-        </div>
-        {canManageSecrets && (
+          <span>Secrets</span>
+        </span>
+      }
+      description="Encrypted at rest — injected as env vars on container start"
+      actions={
+        canManageSecrets ? (
           <div className="flex items-center gap-2">
             {onSave && (
               <Button size="sm" onClick={onSave} disabled={saveDisabled || isSaving}>
@@ -96,9 +96,9 @@ export function SecretsSection({
               <Plus className="h-3.5 w-3.5" />
             </Button>
           </div>
-        )}
-      </div>
-
+        ) : null
+      }
+    >
       {secretRows.length > 0 && (
         <div className="grid grid-cols-[1fr_1fr] border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wider">
           <div className="px-3 py-2">Key</div>
@@ -202,6 +202,6 @@ export function SecretsSection({
           </p>
         </div>
       )}
-    </div>
+    </PanelShell>
   );
 }

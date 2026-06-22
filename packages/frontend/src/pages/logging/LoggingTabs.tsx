@@ -69,18 +69,18 @@ export function LoggingEnvironmentsTab({
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  <Badge variant="outline" className="text-xs shrink-0">
+                  <Badge variant="outline" className="shrink-0">
                     {environment.schemaName ?? "No schema"}
                   </Badge>
-                  <Badge variant="secondary" className="text-xs uppercase shrink-0">
+                  <Badge variant="secondary" className="uppercase shrink-0">
                     {environment.schemaMode}
                   </Badge>
-                  <Badge variant="outline" className="text-xs shrink-0">
+                  <Badge variant="outline" className="shrink-0">
                     {environment.retentionDays}d
                   </Badge>
                   <Badge
                     variant={environment.enabled ? "success" : "secondary"}
-                    className="text-xs uppercase shrink-0"
+                    className="uppercase shrink-0"
                   >
                     {environment.enabled ? "Enabled" : "Disabled"}
                   </Badge>
@@ -161,13 +161,13 @@ export function LoggingSchemasTab({
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  <Badge variant="secondary" className="text-xs uppercase shrink-0">
+                  <Badge variant="secondary" className="uppercase shrink-0">
                     {schema.schemaMode}
                   </Badge>
-                  <Badge variant="outline" className="text-xs shrink-0">
+                  <Badge variant="outline" className="shrink-0">
                     {schema.fieldSchema.length} fields
                   </Badge>
-                  <Badge variant="outline" className="text-xs shrink-0">
+                  <Badge variant="outline" className="shrink-0">
                     {new Date(schema.updatedAt).toLocaleDateString()}
                   </Badge>
                   {(canEdit(schema) || canDelete(schema)) && (

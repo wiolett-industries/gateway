@@ -169,7 +169,7 @@ export function NodeLogsTab({ nodeId, nodeStatus }: NodeLogsTabProps) {
                   <div className="p-3 text-sm">
                     <Badge
                       variant={LEVEL_VARIANT[entry.level] ?? "secondary"}
-                      className="text-xs uppercase"
+                      className="uppercase"
                     >
                       {entry.level}
                     </Badge>

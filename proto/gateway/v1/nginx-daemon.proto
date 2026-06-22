@@ -323,6 +323,9 @@ message DockerVolumeCommand {
   string driver = 3;
   map<string, string> labels = 4;
   bool force = 5;
+  string path = 6;
+  int64 max_bytes = 7;
+  string new_name = 8;
 }
 
 message DockerNetworkCommand {

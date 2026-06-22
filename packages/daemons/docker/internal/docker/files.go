@@ -10,6 +10,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/moby/moby/api/pkg/stdcopy"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
 )
 
@@ -26,6 +29,8 @@ type FileEntry struct {
 	IsWritable  bool   `json:"isWritable,omitempty"`
 }
 
+const volumeHelperImage = "busybox:latest"
+
 // ListDir lists the contents of a directory inside a container.
 // The path must be absolute and must not contain "..".
 func ListDir(ctx context.Context, c *Client, containerID string, path string) ([]FileEntry, error) {
@@ -40,6 +45,155 @@ func ListDir(ctx context.Context, c *Client, containerID string, path string) ([
 	}
 
 	return parseLsOutput(stdout), nil
+}
+
+// ListVolumeDir lists a directory inside a Docker volume by mounting it into a short-lived helper container.
+func ListVolumeDir(ctx context.Context, c *Client, volumeName string, path string) ([]FileEntry, error) {
+	targetPath, err := volumeTargetPath(path)
+	if err != nil {
+		return nil, err
+	}
+	stdout, err := runVolumeHelper(ctx, c, volumeName, []string{"ls", "-la", targetPath}, 10*1024*1024)
+	if err != nil {
+		return nil, fmt.Errorf("list volume dir: %w", err)
+	}
+	return parseLsOutput(string(stdout)), nil
+}
+
+// ExportVolume returns a gzip-compressed tar archive of the volume contents.
+func ExportVolume(ctx context.Context, c *Client, volumeName string, maxBytes int64) ([]byte, error) {
+	if maxBytes <= 0 {
+		maxBytes = 512 * 1024 * 1024
+	}
+	data, err := runVolumeHelper(ctx, c, volumeName, []string{"tar", "-czf", "-", "-C", "/volume", "."}, maxBytes)
+	if err != nil {
+		return nil, fmt.Errorf("export volume: %w", err)
+	}
+	return data, nil
+}
+
+func CopyVolumeContents(ctx context.Context, c *Client, sourceVolume string, targetVolume string) error {
+	if strings.TrimSpace(sourceVolume) == "" || strings.TrimSpace(targetVolume) == "" {
+		return fmt.Errorf("source and target volume names are required")
+	}
+	_, err := runMountedVolumeHelper(ctx, c, []mount.Mount{
+		{Type: mount.TypeVolume, Source: sourceVolume, Target: "/from", ReadOnly: true},
+		{Type: mount.TypeVolume, Source: targetVolume, Target: "/to"},
+	}, []string{"sh", "-c", "cp -a /from/. /to/"}, 10*1024*1024)
+	if err != nil {
+		return fmt.Errorf("copy volume contents: %w", err)
+	}
+	return nil
+}
+
+func volumeTargetPath(path string) (string, error) {
+	if err := validatePath(path); err != nil {
+		return "", err
+	}
+	cleaned := filepath.Clean(path)
+	if cleaned == "/" {
+		return "/volume", nil
+	}
+	return filepath.Join("/volume", strings.TrimPrefix(cleaned, "/")), nil
+}
+
+func runVolumeHelper(ctx context.Context, c *Client, volumeName string, command []string, maxBytes int64) ([]byte, error) {
+	if strings.TrimSpace(volumeName) == "" {
+		return nil, fmt.Errorf("volume name is required")
+	}
+	return runMountedVolumeHelper(ctx, c, []mount.Mount{
+		{Type: mount.TypeVolume, Source: volumeName, Target: "/volume", ReadOnly: true},
+	}, command, maxBytes)
+}
+
+func runMountedVolumeHelper(ctx context.Context, c *Client, mounts []mount.Mount, command []string, maxBytes int64) ([]byte, error) {
+	if err := ensureVolumeHelperImage(ctx, c); err != nil {
+		return nil, err
+	}
+
+	createCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	created, err := c.cli.ContainerCreate(createCtx, client.ContainerCreateOptions{
+		Config: &container.Config{
+			Image:        volumeHelperImage,
+			Cmd:          command,
+			AttachStdout: true,
+			AttachStderr: true,
+		},
+		HostConfig: &container.HostConfig{
+			Mounts: mounts,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create helper container: %w", err)
+	}
+	containerID := created.ID
+	defer func() {
+		_, _ = c.cli.ContainerRemove(context.Background(), containerID, client.ContainerRemoveOptions{Force: true})
+	}()
+
+	if _, err := c.cli.ContainerStart(ctx, containerID, client.ContainerStartOptions{}); err != nil {
+		return nil, fmt.Errorf("start helper container: %w", err)
+	}
+
+	wait := c.cli.ContainerWait(ctx, containerID, client.ContainerWaitOptions{Condition: container.WaitConditionNotRunning})
+	select {
+	case err := <-wait.Error:
+		if err != nil {
+			return nil, fmt.Errorf("wait helper container: %w", err)
+		}
+	case response := <-wait.Result:
+		logs, logErr := readContainerLogs(ctx, c, containerID, maxBytes)
+		if response.StatusCode != 0 {
+			if logErr != nil {
+				return nil, fmt.Errorf("helper container exited with status %d", response.StatusCode)
+			}
+			return nil, fmt.Errorf("helper container exited with status %d: %s", response.StatusCode, strings.TrimSpace(string(logs)))
+		}
+		return logs, logErr
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+
+	return readContainerLogs(ctx, c, containerID, maxBytes)
+}
+
+func ensureVolumeHelperImage(ctx context.Context, c *Client) error {
+	if _, err := c.cli.ImageInspect(ctx, volumeHelperImage); err == nil {
+		return nil
+	}
+	resp, err := c.cli.ImagePull(ctx, volumeHelperImage, client.ImagePullOptions{})
+	if err != nil {
+		return fmt.Errorf("pull helper image %s: %w", volumeHelperImage, err)
+	}
+	defer resp.Close()
+	_, _ = io.Copy(io.Discard, resp)
+	return nil
+}
+
+func readContainerLogs(ctx context.Context, c *Client, containerID string, maxBytes int64) ([]byte, error) {
+	logs, err := c.cli.ContainerLogs(ctx, containerID, client.ContainerLogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("read helper logs: %w", err)
+	}
+	defer logs.Close()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	reader := io.Reader(logs)
+	if maxBytes > 0 {
+		reader = io.LimitReader(logs, maxBytes)
+	}
+	if _, err := stdcopy.StdCopy(&stdout, &stderr, reader); err != nil {
+		return nil, fmt.Errorf("copy helper logs: %w", err)
+	}
+	if stderr.Len() > 0 {
+		return stdout.Bytes(), fmt.Errorf("%s", strings.TrimSpace(stderr.String()))
+	}
+	return stdout.Bytes(), nil
 }
 
 // ReadFile reads up to maxBytes of a regular file from inside a container.

@@ -280,11 +280,7 @@ function CARows({
               <CornerDownRight className="h-3 w-3 text-muted-foreground shrink-0 ml-0 mr-1" />
             )}
             <span className="text-sm font-medium">{ca.commonName}</span>
-            {ca.isSystem && (
-              <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                System
-              </Badge>
-            )}
+            {ca.isSystem && <Badge variant="outline">System</Badge>}
           </div>
         </td>
         <td className="p-3 text-sm text-muted-foreground">{ca.keyAlgorithm}</td>

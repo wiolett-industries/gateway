@@ -248,7 +248,7 @@ export function CertificateDetail() {
                 <h3 className="font-semibold text-sm">Key Usage</h3>
                 <div className="flex flex-wrap gap-1">
                   {cert.keyUsage.map((ku) => (
-                    <Badge key={ku} variant="secondary" className="text-xs">
+                    <Badge key={ku} variant="secondary">
                       {ku}
                     </Badge>
                   ))}
@@ -262,7 +262,7 @@ export function CertificateDetail() {
                 <h3 className="font-semibold text-sm">Extended Key Usage</h3>
                 <div className="flex flex-wrap gap-1">
                   {cert.extKeyUsage.map((eku) => (
-                    <Badge key={eku} variant="secondary" className="text-xs">
+                    <Badge key={eku} variant="secondary">
                       {eku}
                     </Badge>
                   ))}

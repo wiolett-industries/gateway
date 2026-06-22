@@ -2,6 +2,7 @@ import { Check, Copy, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
+import { PanelShell } from "@/components/common/PanelShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -240,20 +241,15 @@ export function WebhookSection(props: WebhookSectionProps) {
   return (
     <>
       {allowWebhook && (
-        <div className="border border-border bg-card overflow-hidden">
-          <div
-            className={`flex items-center justify-between px-4 py-3 ${webhookEnabled ? "border-b border-border" : ""}`}
-          >
-            <div>
-              <h3 className="text-sm font-semibold">Webhook</h3>
-              <p className="text-xs text-muted-foreground">
-                Trigger {isDeployment ? "deployment" : "container"} updates from CI pipelines
-              </p>
-            </div>
+        <PanelShell
+          title="Webhook"
+          description={`Trigger ${isDeployment ? "deployment" : "container"} updates from CI pipelines`}
+          headerBorder={webhookEnabled}
+          actions={
             <Switch checked={webhookEnabled} onChange={handleToggle} disabled={props.disabled} />
-          </div>
-
-          {webhookEnabled && (
+          }
+        >
+          {webhookEnabled ? (
             <div className="divide-y divide-border">
               <div className="flex items-center justify-between gap-4 px-4 py-3">
                 <div className="min-w-0 flex-1">
@@ -307,26 +303,22 @@ export function WebhookSection(props: WebhookSectionProps) {
                 </div>
               </div>
             </div>
-          )}
-        </div>
+          ) : null}
+        </PanelShell>
       )}
 
       {allowCleanup && (
-        <div className="border border-border bg-card overflow-hidden">
-          <div className="flex items-center justify-between border-b border-border px-4 py-3">
-            <div>
-              <h3 className="text-sm font-semibold">Image Cleanup</h3>
-              <p className="text-xs text-muted-foreground">
-                Remove old image versions after manual or webhook updates
-              </p>
-            </div>
+        <PanelShell
+          title="Image Cleanup"
+          description="Remove old image versions after manual or webhook updates"
+          actions={
             <Switch
               checked={cleanupEnabled}
               onChange={handleCleanupToggle}
               disabled={props.disabled}
             />
-          </div>
-
+          }
+        >
           <div className="flex items-center justify-between gap-4 px-4 py-3">
             <div>
               <p
@@ -349,7 +341,7 @@ export function WebhookSection(props: WebhookSectionProps) {
               onBlur={handleRetentionBlur}
             />
           </div>
-        </div>
+        </PanelShell>
       )}
     </>
   );

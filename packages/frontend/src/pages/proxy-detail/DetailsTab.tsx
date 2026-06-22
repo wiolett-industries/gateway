@@ -51,7 +51,7 @@ export function DetailsTab({ host }: { host: ProxyHost }) {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Badge variant="secondary" className="text-xs uppercase">
+              <Badge variant="secondary" className="uppercase">
                 {nodeInfo.type}
               </Badge>
               <Badge
@@ -62,7 +62,7 @@ export function DetailsTab({ host }: { host: ProxyHost }) {
                       ? "destructive"
                       : "warning"
                 }
-                className="text-xs uppercase"
+                className="uppercase"
               >
                 {nodeInfo.status}
               </Badge>
@@ -86,7 +86,7 @@ export function DetailsTab({ host }: { host: ProxyHost }) {
               value={
                 <div className="flex flex-wrap gap-1 justify-end">
                   {host.domainNames.map((d) => (
-                    <Badge key={d} variant="secondary" className="text-xs">
+                    <Badge key={d} variant="secondary">
                       {d}
                     </Badge>
                   ))}
@@ -118,7 +118,7 @@ export function DetailsTab({ host }: { host: ProxyHost }) {
               {(() => {
                 const eff = effectiveHealthStatus(host);
                 return (
-                  <Badge variant={HEALTH_BADGE[eff] ?? "secondary"} className="text-xs">
+                  <Badge variant={HEALTH_BADGE[eff] ?? "secondary"}>
                     {HEALTH_LABEL[eff] ?? eff}
                   </Badge>
                 );
@@ -162,18 +162,13 @@ export function DetailsTab({ host }: { host: ProxyHost }) {
             <DetailRow label="Name" value={host.sslCertificate.name} />
             <DetailRow
               label="Type"
-              value={
-                <Badge variant="secondary" className="text-xs">
-                  {host.sslCertificate.type}
-                </Badge>
-              }
+              value={<Badge variant="secondary">{host.sslCertificate.type}</Badge>}
             />
             <DetailRow
               label="Status"
               value={
                 <Badge
                   variant={host.sslCertificate.status === "active" ? "success" : "destructive"}
-                  className="text-xs"
                 >
                   {host.sslCertificate.status}
                 </Badge>

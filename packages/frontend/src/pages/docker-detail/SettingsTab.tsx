@@ -2,6 +2,7 @@ import { RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
+import { PanelShell } from "@/components/common/PanelShell";
 import { DockerHealthCheckSection } from "@/components/docker/DockerHealthCheckSection";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -677,16 +678,13 @@ export function SettingsTab({
           onApply={handleLiveUpdate}
         />
 
-        <div
-          className="border bg-card overflow-hidden"
-          style={execChanged || imageTagChanged ? { borderColor: "rgb(234 179 8)" } : undefined}
-        >
-          <div className="flex items-center justify-between border-b border-border px-4 py-3">
-            <div>
-              <h3 className="text-sm font-semibold">Execution</h3>
-              <p className="text-xs text-muted-foreground">Requires container recreation</p>
-            </div>
-            {canEdit && (
+        <PanelShell
+          title="Execution"
+          description="Requires container recreation"
+          dirty={execChanged || imageTagChanged}
+          bodyClassName="p-4 space-y-4"
+          actions={
+            canEdit ? (
               <Button
                 size="sm"
                 style={{ backgroundColor: "rgb(234 179 8)", color: "#111" }}
@@ -702,109 +700,106 @@ export function SettingsTab({
                 <RotateCcw className="h-3.5 w-3.5" />
                 {recreatesRunningContainer ? "Save & Recreate" : "Save"}
               </Button>
-            )}
-          </div>
-          <div className="p-4 space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Image</label>
-                <Input
-                  className="h-8 text-xs font-mono bg-muted/50"
-                  value={parsedImageName}
-                  disabled
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Tag</label>
-                <Input
-                  className="h-8 text-xs font-mono"
-                  value={imageTag}
-                  onChange={(e) => setImageTag(e.target.value)}
-                  placeholder={imageTagLocked ? "digest" : "latest"}
-                  disabled={!canEdit || imageTagLocked}
-                  style={imageTagChanged ? { borderColor: "rgb(234 179 8)" } : undefined}
-                />
-              </div>
+            ) : null
+          }
+        >
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Image</label>
+              <Input
+                className="h-8 text-xs font-mono bg-muted/50"
+                value={parsedImageName}
+                disabled
+              />
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Entrypoint</label>
-                <Input
-                  className="h-8 text-xs font-mono"
-                  value={entrypoint}
-                  onChange={(e) => setEntrypoint(e.target.value)}
-                  placeholder="/docker-entrypoint.sh"
-                  disabled={!canEdit}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">
-                  Working Directory
-                </label>
-                <Input
-                  className="h-8 text-xs font-mono"
-                  value={workingDir}
-                  onChange={(e) => setWorkingDir(e.target.value)}
-                  placeholder="/app"
-                  disabled={!canEdit}
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">User</label>
-                <Input
-                  className="h-8 text-xs font-mono"
-                  value={user}
-                  onChange={(e) => setUser(e.target.value)}
-                  placeholder="root"
-                  disabled={!canEdit}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Hostname</label>
-                <Input
-                  className="h-8 text-xs font-mono"
-                  value={hostname}
-                  onChange={(e) => setHostname(e.target.value)}
-                  placeholder="container-hostname"
-                  disabled={!canEdit}
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Command</label>
-                <Input
-                  className="h-8 text-xs font-mono"
-                  value={command}
-                  onChange={(e) => setCommand(e.target.value)}
-                  placeholder="nginx -g daemon off;"
-                  disabled={!canEdit}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Stop Grace (s)</label>
-                <Input
-                  className="h-8 text-xs font-mono"
-                  type="number"
-                  min={0}
-                  max={300}
-                  step={1}
-                  value={stopTimeout}
-                  onChange={(e) => setStopTimeout(e.target.value)}
-                  placeholder="20"
-                  disabled={!canEdit}
-                  style={
-                    stopTimeout !== recreateBaseline.stopTimeout
-                      ? { borderColor: "rgb(234 179 8)" }
-                      : undefined
-                  }
-                />
-              </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Tag</label>
+              <Input
+                className="h-8 text-xs font-mono"
+                value={imageTag}
+                onChange={(e) => setImageTag(e.target.value)}
+                placeholder={imageTagLocked ? "digest" : "latest"}
+                disabled={!canEdit || imageTagLocked}
+                style={imageTagChanged ? { borderColor: "rgb(234 179 8)" } : undefined}
+              />
             </div>
           </div>
-        </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Entrypoint</label>
+              <Input
+                className="h-8 text-xs font-mono"
+                value={entrypoint}
+                onChange={(e) => setEntrypoint(e.target.value)}
+                placeholder="/docker-entrypoint.sh"
+                disabled={!canEdit}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Working Directory</label>
+              <Input
+                className="h-8 text-xs font-mono"
+                value={workingDir}
+                onChange={(e) => setWorkingDir(e.target.value)}
+                placeholder="/app"
+                disabled={!canEdit}
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">User</label>
+              <Input
+                className="h-8 text-xs font-mono"
+                value={user}
+                onChange={(e) => setUser(e.target.value)}
+                placeholder="root"
+                disabled={!canEdit}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Hostname</label>
+              <Input
+                className="h-8 text-xs font-mono"
+                value={hostname}
+                onChange={(e) => setHostname(e.target.value)}
+                placeholder="container-hostname"
+                disabled={!canEdit}
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Command</label>
+              <Input
+                className="h-8 text-xs font-mono"
+                value={command}
+                onChange={(e) => setCommand(e.target.value)}
+                placeholder="nginx -g daemon off;"
+                disabled={!canEdit}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Stop Grace (s)</label>
+              <Input
+                className="h-8 text-xs font-mono"
+                type="number"
+                min={0}
+                max={300}
+                step={1}
+                value={stopTimeout}
+                onChange={(e) => setStopTimeout(e.target.value)}
+                placeholder="20"
+                disabled={!canEdit}
+                style={
+                  stopTimeout !== recreateBaseline.stopTimeout
+                    ? { borderColor: "rgb(234 179 8)" }
+                    : undefined
+                }
+              />
+            </div>
+          </div>
+        </PanelShell>
       </div>
 
       {/* ─── Port Mappings ────────────────────────────────────────── */}

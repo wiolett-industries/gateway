@@ -214,13 +214,11 @@ export function AccessLists() {
                         </p>
                       </td>
                       <td className="p-3">
-                        <Badge variant="secondary" className="text-xs">
-                          {(al.ipRules || []).length} rules
-                        </Badge>
+                        <Badge variant="secondary">{(al.ipRules || []).length} rules</Badge>
                       </td>
                       <td className="p-3">
                         {al.basicAuthEnabled ? (
-                          <Badge variant="secondary" className="text-xs">
+                          <Badge variant="secondary">
                             {(al.basicAuthUsers || []).length} users
                           </Badge>
                         ) : (

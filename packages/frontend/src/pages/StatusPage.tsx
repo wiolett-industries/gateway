@@ -737,23 +737,13 @@ function IncidentsTab({
             <div className="flex flex-wrap items-center justify-between gap-3 p-4">
               <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <div className="flex min-h-7 flex-wrap items-center gap-2">
-                  <Badge
-                    variant={statusBadge(incident.severity) as never}
-                    className="min-h-7 px-2.5 py-1.5 text-[12px]"
-                  >
+                  <Badge variant={statusBadge(incident.severity) as never}>
                     {incident.severity}
                   </Badge>
-                  <Badge
-                    variant={incident.status === "active" ? "warning" : "secondary"}
-                    className="min-h-7 px-2.5 py-1.5 text-[12px]"
-                  >
+                  <Badge variant={incident.status === "active" ? "warning" : "secondary"}>
                     {incident.status}
                   </Badge>
-                  {incident.type === "automatic" && (
-                    <Badge variant="secondary" className="min-h-7 px-2.5 py-1.5 text-[12px]">
-                      AUTO
-                    </Badge>
-                  )}
+                  {incident.type === "automatic" && <Badge variant="secondary">AUTO</Badge>}
                   <h2 className="m-0 translate-y-px text-base font-medium leading-none">
                     {incident.title}
                   </h2>

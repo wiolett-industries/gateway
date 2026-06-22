@@ -289,9 +289,7 @@ export function OAuthApplicationsSection({
                       <p className="text-sm font-medium text-foreground">
                         {authorization.clientName}
                       </p>
-                      <Badge variant="secondary" className="text-xs">
-                        {resourceLabel(authorization.resource)}
-                      </Badge>
+                      <Badge variant="secondary">{resourceLabel(authorization.resource)}</Badge>
                       {safeHttpUrl(authorization.clientUri) && (
                         <a
                           href={safeHttpUrl(authorization.clientUri)!}
@@ -403,7 +401,7 @@ export function OAuthApplicationsSection({
 
               <div className="flex flex-wrap gap-1.5">
                 {selectedAuthorization.resources.map((resource) => (
-                  <Badge key={resource} variant="secondary" className="text-xs">
+                  <Badge key={resource} variant="secondary">
                     {resourceLabel(resource)}
                   </Badge>
                 ))}

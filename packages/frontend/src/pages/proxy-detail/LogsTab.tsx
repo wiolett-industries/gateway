@@ -178,10 +178,7 @@ export function LogsTab({ hostId }: { hostId: string }) {
                           {entry.timestamp}
                         </td>
                         <td className="p-3 text-sm">
-                          <Badge
-                            variant={isError ? "destructive" : "secondary"}
-                            className="text-[10px]"
-                          >
+                          <Badge variant={isError ? "destructive" : "secondary"}>
                             {isError ? "err" : "acc"}
                           </Badge>
                         </td>
@@ -197,14 +194,9 @@ export function LogsTab({ hostId }: { hostId: string }) {
                         </td>
                         <td className="p-3 text-sm">
                           {isError ? (
-                            <Badge variant="destructive" className="text-[10px]">
-                              {entry.level || "err"}
-                            </Badge>
+                            <Badge variant="destructive">{entry.level || "err"}</Badge>
                           ) : (
-                            <Badge
-                              variant={STATUS_VARIANT[String(entry.status)[0]] ?? "secondary"}
-                              className="text-xs"
-                            >
+                            <Badge variant={STATUS_VARIANT[String(entry.status)[0]] ?? "secondary"}>
                               {entry.status}
                             </Badge>
                           )}

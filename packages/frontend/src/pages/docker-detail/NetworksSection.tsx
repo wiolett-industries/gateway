@@ -1,6 +1,7 @@
 import { Plus, Unplug } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { PanelShell } from "@/components/common/PanelShell";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -156,15 +157,11 @@ export function NetworksSection({
   );
 
   return (
-    <div className="border border-border bg-card overflow-hidden">
-      <div className="flex items-center justify-between border-b border-border px-4 py-3">
-        <div>
-          <h3 className="text-sm font-semibold">Networks</h3>
-          <p className="text-xs text-muted-foreground">
-            Connect this container to additional Docker networks
-          </p>
-        </div>
-        {canManageNetworks && canListNetworks && (
+    <PanelShell
+      title="Networks"
+      description="Connect this container to additional Docker networks"
+      actions={
+        canManageNetworks && canListNetworks ? (
           <Button
             size="sm"
             onClick={() => setAddingNetwork(true)}
@@ -173,8 +170,9 @@ export function NetworksSection({
             <Plus className="h-3.5 w-3.5" />
             Add
           </Button>
-        )}
-      </div>
+        ) : null
+      }
+    >
       {attachedNetworks.length > 0 || addingNetwork ? (
         <>
           <div
@@ -286,6 +284,6 @@ export function NetworksSection({
       ) : (
         <div className="py-8 text-center text-muted-foreground text-sm">No networks</div>
       )}
-    </div>
+    </PanelShell>
   );
 }

@@ -565,6 +565,58 @@ func (p *DockerPlugin) handleVolumeCommand(cmd *pb.DockerVolumeCommand, result *
 		}
 		result.Detail = string(data)
 
+	case "inspect":
+		if cmd.Name == "" {
+			result.Success = false
+			result.Error = "name is required for volume inspect"
+			return
+		}
+		data, err := p.client.InspectVolume(ctx, cmd.Name)
+		if err != nil {
+			result.Success = false
+			result.Error = err.Error()
+			return
+		}
+		result.Detail = string(data)
+
+	case "list-files":
+		if cmd.Name == "" {
+			result.Success = false
+			result.Error = "name is required for volume file list"
+			return
+		}
+		path := cmd.Path
+		if path == "" {
+			path = "/"
+		}
+		entries, err := ListVolumeDir(ctx, p.client, cmd.Name, path)
+		if err != nil {
+			result.Success = false
+			result.Error = err.Error()
+			return
+		}
+		data, err := json.Marshal(entries)
+		if err != nil {
+			result.Success = false
+			result.Error = fmt.Sprintf("marshal entries: %v", err)
+			return
+		}
+		result.Detail = string(data)
+
+	case "export":
+		if cmd.Name == "" {
+			result.Success = false
+			result.Error = "name is required for volume export"
+			return
+		}
+		content, err := ExportVolume(ctx, p.client, cmd.Name, cmd.MaxBytes)
+		if err != nil {
+			result.Success = false
+			result.Error = err.Error()
+			return
+		}
+		result.Detail = encodeBase64(content)
+
 	case "create":
 		if cmd.Name == "" {
 			result.Success = false
@@ -584,6 +636,30 @@ func (p *DockerPlugin) handleVolumeCommand(cmd *pb.DockerVolumeCommand, result *
 			return
 		}
 		if err := p.client.RemoveVolume(ctx, cmd.Name, cmd.Force); err != nil {
+			result.Success = false
+			result.Error = err.Error()
+			return
+		}
+
+	case "rename":
+		if cmd.Name == "" || cmd.NewName == "" {
+			result.Success = false
+			result.Error = "name and new_name are required for volume rename"
+			return
+		}
+		if err := p.client.RenameVolume(ctx, cmd.Name, cmd.NewName); err != nil {
+			result.Success = false
+			result.Error = err.Error()
+			return
+		}
+
+	case "update-labels":
+		if cmd.Name == "" {
+			result.Success = false
+			result.Error = "name is required for volume label update"
+			return
+		}
+		if err := p.client.UpdateVolumeLabels(ctx, cmd.Name, cmd.Labels); err != nil {
 			result.Success = false
 			result.Error = err.Error()
 			return

@@ -1,6 +1,7 @@
 import { Activity, Play, Save } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { PanelShell } from "@/components/common/PanelShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -164,18 +165,13 @@ export function DockerHealthCheckSection({
   };
 
   return (
-    <div
-      className="border border-border bg-card overflow-hidden"
-      style={changed ? { borderColor: "rgb(234 179 8)" } : undefined}
-    >
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
-        <div>
-          <h3 className="text-sm font-semibold">Health Check</h3>
-          <p className="text-xs text-muted-foreground">
-            Gateway HTTP health from a published route
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
+    <PanelShell
+      title="Health Check"
+      description="Gateway HTTP health from a published route"
+      dirty={changed}
+      wrapHeader
+      actions={
+        <>
           <Button
             size="sm"
             variant="outline"
@@ -193,8 +189,9 @@ export function DockerHealthCheckSection({
             <Save className="h-3.5 w-3.5" />
             Save
           </Button>
-        </div>
-      </div>
+        </>
+      }
+    >
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div className="flex items-center gap-2">
           <Activity className="h-4 w-4 text-muted-foreground" />
@@ -360,6 +357,6 @@ export function DockerHealthCheckSection({
           </div>
         </div>
       </div>
-    </div>
+    </PanelShell>
   );
 }

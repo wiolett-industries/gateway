@@ -87,6 +87,59 @@ describe('DockerManagementService volume and network operations', () => {
     });
   });
 
+  it('renames volumes with audit and change events', async () => {
+    const dispatch = {
+      sendDockerVolumeCommand: vi.fn().mockResolvedValue({ success: true }),
+    };
+    const { service, audit, eventBus } = createService(dispatch);
+
+    await service.renameVolume('node-1', 'old-data', 'new-data', 'user-1');
+
+    expect(dispatch.sendDockerVolumeCommand).toHaveBeenCalledWith('node-1', 'rename', {
+      name: 'old-data',
+      newName: 'new-data',
+    });
+    expect(audit.log).toHaveBeenCalledWith({
+      action: 'docker.volume.rename',
+      userId: 'user-1',
+      resourceType: 'docker-volume',
+      resourceId: 'new-data',
+      details: { nodeId: 'node-1', oldName: 'old-data', name: 'new-data' },
+    });
+    expect(eventBus.publish).toHaveBeenCalledWith('docker.volume.changed', {
+      nodeId: 'node-1',
+      name: 'new-data',
+      action: 'renamed',
+      oldName: 'old-data',
+    });
+  });
+
+  it('updates volume labels with audit and change events', async () => {
+    const dispatch = {
+      sendDockerVolumeCommand: vi.fn().mockResolvedValue({ success: true }),
+    };
+    const { service, audit, eventBus } = createService(dispatch);
+
+    await service.updateVolumeLabels('node-1', 'data', { env: 'dev' }, 'user-1');
+
+    expect(dispatch.sendDockerVolumeCommand).toHaveBeenCalledWith('node-1', 'update-labels', {
+      name: 'data',
+      labels: { env: 'dev' },
+    });
+    expect(audit.log).toHaveBeenCalledWith({
+      action: 'docker.volume.labels.update',
+      userId: 'user-1',
+      resourceType: 'docker-volume',
+      resourceId: 'data',
+      details: { nodeId: 'node-1', name: 'data' },
+    });
+    expect(eventBus.publish).toHaveBeenCalledWith('docker.volume.changed', {
+      nodeId: 'node-1',
+      name: 'data',
+      action: 'labels-updated',
+    });
+  });
+
   it('creates networks with daemon field mapping, audit, and change events', async () => {
     const dispatch = {
       sendDockerNetworkCommand: vi.fn().mockResolvedValue({

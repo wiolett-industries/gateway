@@ -28,18 +28,16 @@ export function InlineFolderEditor({
 
   const handleSubmit = () => {
     const trimmed = name.trim();
-    if (trimmed) {
-      onSave(trimmed);
-    }
+    if (trimmed) onSave(trimmed);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") {
       e.preventDefault();
       handleSubmit();
-    } else if (e.key === "Escape") {
-      onCancel();
+      return;
     }
+    if (e.key === "Escape") onCancel();
   };
 
   return (
@@ -49,7 +47,7 @@ export function InlineFolderEditor({
         value={name}
         onChange={(e) => setName(e.target.value)}
         onKeyDown={handleKeyDown}
-        className="h-7 text-sm w-48"
+        className="h-7 w-48 text-sm"
         placeholder="Folder name"
       />
       <Button

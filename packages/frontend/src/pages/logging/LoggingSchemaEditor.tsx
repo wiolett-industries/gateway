@@ -1,6 +1,7 @@
 import { Minus, Plus } from "lucide-react";
 import { useMemo } from "react";
 import { toast } from "sonner";
+import { PanelShell } from "@/components/common/PanelShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -70,28 +71,23 @@ export function LoggingSchemaEditor({
     "h-9 w-full rounded-none border-0 px-3 text-xs shadow-none focus:ring-0 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring";
 
   return (
-    <div className="border border-border bg-card overflow-hidden">
-      <div className="flex items-center justify-between border-b border-border px-4 py-3">
-        <div>
-          <h3 className="text-sm font-semibold">Fields</h3>
-          <p className="text-xs text-muted-foreground">
-            Define accepted labels and typed fields for attached environments
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {canEdit && (
-            <Button
-              variant="outline"
-              onClick={() => {
-                if (invalid) toast.error("Fix duplicate or empty keys before adding more fields");
-                else addField();
-              }}
-            >
-              <Plus className="h-4 w-4" /> Add Field
-            </Button>
-          )}
-        </div>
-      </div>
+    <PanelShell
+      title="Fields"
+      description="Define accepted labels and typed fields for attached environments"
+      actions={
+        canEdit ? (
+          <Button
+            variant="outline"
+            onClick={() => {
+              if (invalid) toast.error("Fix duplicate or empty keys before adding more fields");
+              else addField();
+            }}
+          >
+            <Plus className="h-4 w-4" /> Add Field
+          </Button>
+        ) : null
+      }
+    >
       <div className="overflow-x-auto">
         <div className="grid min-w-[880px] grid-cols-[120px_minmax(160px,1fr)_140px_96px_minmax(220px,1.4fr)_36px] border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wider">
           <div className="px-3 py-2">Location</div>
@@ -195,6 +191,6 @@ export function LoggingSchemaEditor({
           })
         )}
       </div>
-    </div>
+    </PanelShell>
   );
 }

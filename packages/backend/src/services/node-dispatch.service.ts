@@ -229,6 +229,9 @@ export class NodeDispatchService {
       driver?: string;
       labels?: Record<string, string>;
       force?: boolean;
+      path?: string;
+      maxBytes?: number;
+      newName?: string;
     } = {},
     timeoutMs?: number
   ): Promise<CommandResult> {

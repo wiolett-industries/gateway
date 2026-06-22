@@ -146,13 +146,9 @@ export function UpdateSection({ canUpdate }: UpdateSectionProps) {
             label="Status"
             value={
               updateStatus?.updateAvailable ? (
-                <Badge variant="warning" className="text-xs">
-                  Update available
-                </Badge>
+                <Badge variant="warning">Update available</Badge>
               ) : (
-                <Badge variant="success" className="text-xs">
-                  Up to date
-                </Badge>
+                <Badge variant="success">Up to date</Badge>
               )
             }
           />

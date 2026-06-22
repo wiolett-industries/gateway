@@ -1,4 +1,5 @@
 import { Minus, Plus } from "lucide-react";
+import { PanelShell } from "@/components/common/PanelShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -38,22 +39,19 @@ export function VolumeMountsSection({
     setMounts((m) => m.map((entry, idx) => (idx === i ? { ...entry, [field]: val } : entry)));
 
   return (
-    <div
-      className="border bg-card overflow-hidden"
-      style={mountsChanged ? { borderColor: "rgb(234 179 8)" } : undefined}
-    >
-      <div className="flex items-center justify-between border-b border-border px-4 py-3">
-        <div>
-          <h3 className="text-sm font-semibold">Volume Mounts</h3>
-          <p className="text-xs text-muted-foreground">Requires container recreation</p>
-        </div>
-        {canEdit && (
+    <PanelShell
+      title="Volume Mounts"
+      description="Requires container recreation"
+      dirty={mountsChanged}
+      actions={
+        canEdit ? (
           <Button size="sm" onClick={addMount}>
             <Plus className="h-3.5 w-3.5" />
             Add
           </Button>
-        )}
-      </div>
+        ) : null
+      }
+    >
       {mounts.length > 0 ? (
         <>
           <div
@@ -127,6 +125,6 @@ export function VolumeMountsSection({
       ) : (
         <div className="py-8 text-center text-muted-foreground text-sm">No volume mounts</div>
       )}
-    </div>
+    </PanelShell>
   );
 }

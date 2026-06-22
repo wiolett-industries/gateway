@@ -281,6 +281,9 @@ export interface DockerVolumeCommand {
   driver: string;
   labels: Record<string, string>;
   force: boolean;
+  path: string;
+  maxBytes: number;
+  newName: string;
 }
 
 export interface DockerNetworkCommand {

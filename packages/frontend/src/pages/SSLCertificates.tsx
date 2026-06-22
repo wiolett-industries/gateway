@@ -345,11 +345,7 @@ export function SSLCertificates() {
                         <td className="p-3">
                           <div className="flex items-center gap-2">
                             <p className="text-sm font-medium">{cert.name}</p>
-                            {cert.isSystem && (
-                              <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                                System
-                              </Badge>
-                            )}
+                            {cert.isSystem && <Badge variant="outline">System</Badge>}
                           </div>
                         </td>
                         <td className="p-3">

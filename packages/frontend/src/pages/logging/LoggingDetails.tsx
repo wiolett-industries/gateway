@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { PageTransition } from "@/components/common/PageTransition";
+import { PanelShell } from "@/components/common/PanelShell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -505,15 +506,13 @@ function SettingsPanel({
   children: ReactNode;
 }) {
   return (
-    <div className="border border-border bg-card overflow-hidden">
-      <div className="border-b border-border px-4 py-3">
-        <h3 className="text-sm font-semibold">{title}</h3>
-        <p className="text-xs text-muted-foreground">{description}</p>
-      </div>
-      <div className="divide-y divide-border -mb-px [&>*:last-child]:border-b [&>*:last-child]:border-border">
-        {children}
-      </div>
-    </div>
+    <PanelShell
+      title={title}
+      description={description}
+      bodyClassName="divide-y divide-border -mb-px [&>*:last-child]:border-b [&>*:last-child]:border-border"
+    >
+      {children}
+    </PanelShell>
   );
 }
 

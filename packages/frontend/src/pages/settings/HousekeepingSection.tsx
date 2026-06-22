@@ -299,13 +299,9 @@ export function HousekeepingSection({ canRun, canConfigure }: HousekeepingSectio
                       </td>
                       <td className="p-3">
                         {run.overallSuccess ? (
-                          <Badge variant="success" className="text-[10px] px-1.5 py-0">
-                            OK
-                          </Badge>
+                          <Badge variant="success">OK</Badge>
                         ) : (
-                          <Badge variant="destructive" className="text-[10px] px-1.5 py-0">
-                            Errors
-                          </Badge>
+                          <Badge variant="destructive">Errors</Badge>
                         )}
                       </td>
                     </tr>

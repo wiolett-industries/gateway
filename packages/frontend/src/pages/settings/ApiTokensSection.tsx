@@ -233,7 +233,7 @@ export function ApiTokensSection({
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <p className="text-sm font-medium">{token.name}</p>
-                        <Badge variant="secondary" className="text-[10px] py-0.5">
+                        <Badge variant="secondary">
                           {(token.scopes || []).length}{" "}
                           {(token.scopes || []).length === 1 ? "SCOPE" : "SCOPES"}
                         </Badge>

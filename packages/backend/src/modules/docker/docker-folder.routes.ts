@@ -6,20 +6,34 @@ import type { AppEnv } from '@/types.js';
 import {
   createDockerFolderRoute,
   deleteDockerFolderRoute,
+  getDockerFolderPlacementsRoute,
   listDockerFoldersRoute,
   moveDockerContainersRoute,
+  moveDockerResourcesRoute,
   reorderDockerContainersRoute,
   reorderDockerFoldersRoute,
+  reorderDockerResourcesRoute,
   updateDockerFolderRoute,
 } from './docker.docs.js';
 import {
   CreateDockerFolderSchema,
+  DockerFolderPlacementsSchema,
+  DockerFolderResourceTypeSchema,
   MoveDockerContainersToFolderSchema,
+  MoveDockerResourcesToFolderSchema,
   ReorderDockerContainersSchema,
   ReorderDockerFoldersSchema,
+  ReorderDockerResourcesSchema,
   UpdateDockerFolderSchema,
 } from './docker-folder.schemas.js';
 import { DockerFolderService } from './docker-folder.service.js';
+
+const VIEW_SCOPE_BY_RESOURCE_TYPE = {
+  container: 'docker:containers:view',
+  image: 'docker:images:view',
+  network: 'docker:networks:view',
+  volume: 'docker:volumes:view',
+} as const;
 
 function hasAnyDockerScope(scopes: string[], prefix: string): boolean {
   return scopes.some((scope) => scope === prefix || scope.startsWith(`${prefix}:`));
@@ -34,19 +48,21 @@ function requireAnyDockerScope(scopes: string[], prefix: string, message: string
 export function registerDockerFolderRoutes(router: OpenAPIHono<AppEnv>) {
   router.openapi(listDockerFoldersRoute, async (c) => {
     const scopes = c.get('effectiveScopes') || [];
-    if (!hasScopeBase(scopes, 'docker:containers:view') && !hasScope(scopes, 'docker:containers:folders:manage')) {
+    const resourceType = DockerFolderResourceTypeSchema.default('container').parse(c.req.query('resourceType'));
+    const viewScope = VIEW_SCOPE_BY_RESOURCE_TYPE[resourceType];
+    if (!hasScopeBase(scopes, viewScope) && !hasScope(scopes, 'docker:containers:folders:manage')) {
       throw new AppError(
         403,
         'FORBIDDEN',
-        'Docker folders require docker:containers:view or docker:containers:folders:manage'
+        'Docker folders require resource view access or docker:containers:folders:manage'
       );
     }
     const service = container.resolve(DockerFolderService);
     const canManageFolders = hasScope(scopes, 'docker:containers:folders:manage');
     const data = await service.getFolderTree(
-      canManageFolders || hasScope(scopes, 'docker:containers:view')
-        ? { includeAllFolders: canManageFolders }
-        : { allowedNodeIds: getResourceScopedIds(scopes, 'docker:containers:view') }
+      canManageFolders || hasScope(scopes, viewScope)
+        ? { resourceType, includeAllFolders: canManageFolders }
+        : { resourceType, allowedNodeIds: getResourceScopedIds(scopes, viewScope) }
     );
     return c.json({ data });
   });
@@ -78,6 +94,21 @@ export function registerDockerFolderRoutes(router: OpenAPIHono<AppEnv>) {
     const input = ReorderDockerFoldersSchema.parse(body);
     const service = container.resolve(DockerFolderService);
     await service.reorderFolders(input, user.id);
+    return c.json({ success: true });
+  });
+
+  router.openapi(reorderDockerResourcesRoute, async (c) => {
+    const scopes = c.get('effectiveScopes') || [];
+    requireAnyDockerScope(
+      scopes,
+      'docker:containers:folders:manage',
+      'Reordering Docker resources requires docker:containers:folders:manage'
+    );
+    const user = c.get('user')!;
+    const body = await c.req.json();
+    const input = ReorderDockerResourcesSchema.parse(body);
+    const service = container.resolve(DockerFolderService);
+    await service.reorderResources(input, user.id);
     return c.json({ success: true });
   });
 
@@ -151,5 +182,33 @@ export function registerDockerFolderRoutes(router: OpenAPIHono<AppEnv>) {
     const service = container.resolve(DockerFolderService);
     await service.moveContainersToFolder(input, user.id);
     return c.json({ success: true });
+  });
+
+  router.openapi(moveDockerResourcesRoute, async (c) => {
+    const scopes = c.get('effectiveScopes') || [];
+    requireAnyDockerScope(
+      scopes,
+      'docker:containers:folders:manage',
+      'Moving Docker resources between folders requires docker:containers:folders:manage'
+    );
+    const user = c.get('user')!;
+    const body = await c.req.json();
+    const input = MoveDockerResourcesToFolderSchema.parse(body);
+    const service = container.resolve(DockerFolderService);
+    await service.moveResourcesToFolder(input, user.id);
+    return c.json({ success: true });
+  });
+
+  router.openapi(getDockerFolderPlacementsRoute, async (c) => {
+    const scopes = c.get('effectiveScopes') || [];
+    const body = await c.req.json();
+    const input = DockerFolderPlacementsSchema.parse(body);
+    const viewScope = VIEW_SCOPE_BY_RESOURCE_TYPE[input.resourceType];
+    if (!hasScopeBase(scopes, viewScope) && !hasScope(scopes, 'docker:containers:folders:manage')) {
+      throw new AppError(403, 'FORBIDDEN', 'Docker folder placements require resource view access');
+    }
+    const service = container.resolve(DockerFolderService);
+    const data = await service.getResourcePlacementsForRefs(input.resourceType, input.items);
+    return c.json({ data });
   });
 }

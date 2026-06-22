@@ -31,6 +31,8 @@ import {
   SecretCreateSchema,
   SecretUpdateSchema,
   VolumeCreateSchema,
+  VolumeLabelsUpdateSchema,
+  VolumeRenameSchema,
 } from './docker.schemas.js';
 import {
   DockerDeploymentCreateSchema,
@@ -40,9 +42,12 @@ import {
 } from './docker-deployment.schemas.js';
 import {
   CreateDockerFolderSchema,
+  DockerFolderPlacementsSchema,
   MoveDockerContainersToFolderSchema,
+  MoveDockerResourcesToFolderSchema,
   ReorderDockerContainersSchema,
   ReorderDockerFoldersSchema,
+  ReorderDockerResourcesSchema,
   UpdateDockerFolderSchema,
 } from './docker-folder.schemas.js';
 import { ImageCleanupUpsertSchema } from './docker-image-cleanup.schemas.js';
@@ -532,6 +537,46 @@ export const listVolumesRoute = appRoute({
   request: { params: nodeParams, query: dockerListQuery },
   responses: okJson(UnknownDataResponseSchema),
 });
+export const inspectVolumeRoute = appRoute({
+  method: 'get',
+  path: '/nodes/{nodeId}/volumes/{name}',
+  tags: ['Docker Volumes'],
+  summary: 'Inspect a volume',
+  request: { params: volumeParams },
+  responses: okJson(UnknownDataResponseSchema),
+});
+export const listVolumeFilesRoute = appRoute({
+  method: 'get',
+  path: '/nodes/{nodeId}/volumes/{name}/files',
+  tags: ['Docker Volumes'],
+  summary: 'List volume files',
+  request: { params: volumeParams, query: FileBrowseSchema },
+  responses: okJson(UnknownDataResponseSchema),
+});
+export const exportVolumeRoute = appRoute({
+  method: 'get',
+  path: '/nodes/{nodeId}/volumes/{name}/export',
+  tags: ['Docker Volumes'],
+  summary: 'Export a volume',
+  request: { params: volumeParams },
+  responses: okJson(UnknownDataResponseSchema),
+});
+export const renameVolumeRoute = appRoute({
+  method: 'post',
+  path: '/nodes/{nodeId}/volumes/{name}/rename',
+  tags: ['Docker Volumes'],
+  summary: 'Rename a volume',
+  request: { params: volumeParams, ...jsonBody(VolumeRenameSchema) },
+  responses: successJson,
+});
+export const updateVolumeLabelsRoute = appRoute({
+  method: 'put',
+  path: '/nodes/{nodeId}/volumes/{name}/labels',
+  tags: ['Docker Volumes'],
+  summary: 'Update volume labels',
+  request: { params: volumeParams, ...jsonBody(VolumeLabelsUpdateSchema) },
+  responses: successJson,
+});
 export const createVolumeRoute = appRoute({
   method: 'post',
   path: '/nodes/{nodeId}/volumes',
@@ -663,6 +708,7 @@ export const listDockerFoldersRoute = appRoute({
   path: '/folders',
   tags: ['Docker Folders'],
   summary: 'List Docker folders',
+  request: { query: z.object({ resourceType: z.enum(['container', 'image', 'network', 'volume']).optional() }) },
   responses: okJson(UnknownDataResponseSchema),
 });
 export const createDockerFolderRoute = appRoute({
@@ -689,6 +735,14 @@ export const reorderDockerContainersRoute = appRoute({
   request: jsonBody(ReorderDockerContainersSchema),
   responses: successJson,
 });
+export const reorderDockerResourcesRoute = appRoute({
+  method: 'put',
+  path: '/folders/reorder-resources',
+  tags: ['Docker Folders'],
+  summary: 'Reorder resources inside Docker folders',
+  request: jsonBody(ReorderDockerResourcesSchema),
+  responses: successJson,
+});
 export const updateDockerFolderRoute = appRoute({
   method: 'put',
   path: '/folders/{id}',
@@ -712,6 +766,22 @@ export const moveDockerContainersRoute = appRoute({
   summary: 'Move containers into a Docker folder',
   request: jsonBody(MoveDockerContainersToFolderSchema),
   responses: successJson,
+});
+export const moveDockerResourcesRoute = appRoute({
+  method: 'post',
+  path: '/folders/move-resources',
+  tags: ['Docker Folders'],
+  summary: 'Move Docker resources into a folder',
+  request: jsonBody(MoveDockerResourcesToFolderSchema),
+  responses: successJson,
+});
+export const getDockerFolderPlacementsRoute = appRoute({
+  method: 'post',
+  path: '/folders/placements',
+  tags: ['Docker Folders'],
+  summary: 'Get Docker resource folder placements',
+  request: jsonBody(DockerFolderPlacementsSchema),
+  responses: okJson(UnknownDataResponseSchema),
 });
 
 export const triggerDockerWebhookRoute = appRoute({

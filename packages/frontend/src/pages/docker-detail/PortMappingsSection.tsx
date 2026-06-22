@@ -1,4 +1,5 @@
 import { Minus, Plus } from "lucide-react";
+import { PanelShell } from "@/components/common/PanelShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -46,22 +47,19 @@ export function PortMappingsSection({
       : "grid-cols-[1fr_1fr]";
 
   return (
-    <div
-      className="border bg-card overflow-hidden"
-      style={portsChanged ? { borderColor: "rgb(234 179 8)" } : undefined}
-    >
-      <div className="flex items-center justify-between border-b border-border px-4 py-3">
-        <div>
-          <h3 className="text-sm font-semibold">Port Mappings</h3>
-          <p className="text-xs text-muted-foreground">Requires container recreation</p>
-        </div>
-        {canEdit && (
+    <PanelShell
+      title="Port Mappings"
+      description="Requires container recreation"
+      dirty={portsChanged}
+      actions={
+        canEdit ? (
           <Button size="sm" onClick={addPort}>
             <Plus className="h-3.5 w-3.5" />
             Add
           </Button>
-        )}
-      </div>
+        ) : null
+      }
+    >
       {ports.length > 0 ? (
         <>
           <div
@@ -127,6 +125,6 @@ export function PortMappingsSection({
       ) : (
         <div className="py-8 text-center text-muted-foreground text-sm">No port mappings</div>
       )}
-    </div>
+    </PanelShell>
   );
 }

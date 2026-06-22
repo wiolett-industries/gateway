@@ -33,32 +33,44 @@ function hasTruncatedListing(nodes: TreeNode[]): boolean {
 
 // ── Component ────────────────────────────────────────────────────
 
-export function FilesTab({ nodeId, containerId }: { nodeId: string; containerId: string }) {
+export function FilesTab({
+  nodeId,
+  containerId,
+  canBrowse,
+  fetchDirectory,
+}: {
+  nodeId: string;
+  containerId?: string;
+  canBrowse?: boolean;
+  fetchDirectory?: (path: string) => Promise<FileEntry[]>;
+}) {
   const { hasScope } = useAuthStore();
   const canBrowseFiles =
-    hasScope("docker:containers:files") || hasScope(`docker:containers:files:${nodeId}`);
+    canBrowse ??
+    (hasScope("docker:containers:files") || hasScope(`docker:containers:files:${nodeId}`));
   const [roots, setRoots] = useState<TreeNode[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const nodeIdRef = useRef(nodeId);
-  const containerIdRef = useRef(containerId);
+  const containerIdRef = useRef(containerId ?? "");
   nodeIdRef.current = nodeId;
-  containerIdRef.current = containerId;
+  containerIdRef.current = containerId ?? "";
 
-  const fetchDir = useCallback(async (dirPath: string): Promise<TreeNode[]> => {
-    const data: FileEntry[] = await api.listContainerDir(
-      nodeIdRef.current,
-      containerIdRef.current,
-      dirPath
-    );
-    return (data ?? []).map((entry) => ({
-      ...entry,
-      path: dirPath === "/" ? `/${entry.name}` : `${dirPath}/${entry.name}`,
-      children: entry.isDir ? null : [],
-      expanded: false,
-      loading: false,
-    }));
-  }, []);
+  const fetchDir = useCallback(
+    async (dirPath: string): Promise<TreeNode[]> => {
+      const data: FileEntry[] = fetchDirectory
+        ? await fetchDirectory(dirPath)
+        : await api.listContainerDir(nodeIdRef.current, containerIdRef.current, dirPath);
+      return (data ?? []).map((entry) => ({
+        ...entry,
+        path: dirPath === "/" ? `/${entry.name}` : `${dirPath}/${entry.name}`,
+        children: entry.isDir ? null : [],
+        expanded: false,
+        loading: false,
+      }));
+    },
+    [fetchDirectory]
+  );
 
   const hasTruncatedDirectory = hasTruncatedListing(roots);
 
@@ -165,6 +177,7 @@ export function FilesTab({ nodeId, containerId }: { nodeId: string; containerId:
   // Open file in a separate window
   const openFile = useCallback(
     (filePath: string, writable?: boolean) => {
+      if (!containerId) return;
       const params = new URLSearchParams({ path: filePath });
       if (writable) params.set("writable", "1");
       const url = `/docker/file/${nodeId}/${containerId}?${params}`;
@@ -254,11 +267,11 @@ function TreeRow({
   node: TreeNode;
   depth: number;
   onToggle: (path: string) => void;
-  onOpenFile: (path: string, writable?: boolean) => void;
+  onOpenFile?: (path: string, writable?: boolean) => void;
 }) {
   const indent = depth * 20;
   const isNonDirSymlink = node.isSymlink && !node.isDir;
-  const isOpenable = !node.isDir && !isNonDirSymlink && !node.isSpecial;
+  const isOpenable = !!onOpenFile && !node.isDir && !isNonDirSymlink && !node.isSpecial;
 
   const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
@@ -270,7 +283,7 @@ function TreeRow({
     } else if (node.size > MAX_FILE_SIZE) {
       toast.error(`File too large to open (${formatBytes(node.size)}, max 10 MB)`);
     } else {
-      onOpenFile(node.path, node.isWritable);
+      onOpenFile?.(node.path, node.isWritable);
     }
   };
 

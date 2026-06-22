@@ -16,6 +16,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
+import { PanelShell } from "@/components/common/PanelShell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -639,24 +640,17 @@ export function PostgresExplorer({
           </span>
         </div>
       ) : metadata ? (
-        <div
-          className={`border border-border bg-card overflow-hidden flex flex-col min-h-0 max-h-full ${
-            focused ? "border-l-0" : ""
+        <PanelShell
+          className={`flex flex-col min-h-0 max-h-full ${focused ? "border-l-0" : ""}`}
+          title={`${metadata.schema}.${metadata.table}`}
+          description={`${metadata.columns.length} columns${
+            metadata.hasPrimaryKey
+              ? ` · editable grid`
+              : ` · no primary key, existing rows are browse-only`
           }`}
-        >
-          <div className="flex items-center justify-between gap-4 px-4 py-3 border-b border-border">
-            <div>
-              <h3 className="text-sm font-semibold">
-                {metadata.schema}.{metadata.table}
-              </h3>
-              <p className="text-xs text-muted-foreground">
-                {metadata.columns.length} columns
-                {metadata.hasPrimaryKey
-                  ? ` · editable grid`
-                  : ` · no primary key, existing rows are browse-only`}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
+          bodyClassName="flex flex-col min-h-0 flex-1"
+          actions={
+            <>
               <Button
                 variant="outline"
                 size="icon"
@@ -702,9 +696,9 @@ export function PostgresExplorer({
                   {saving ? "Saving..." : `Save${dirtyCount > 0 ? ` (${dirtyCount})` : ""}`}
                 </Button>
               )}
-            </div>
-          </div>
-
+            </>
+          }
+        >
           {metadata.columns.length > 0 && (
             <div className="grid grid-cols-[minmax(180px,260px)_120px_minmax(220px,1fr)_36px] border-b border-border bg-card">
               <Select value={searchColumn} onValueChange={setSearchColumn}>
@@ -771,11 +765,7 @@ export function PostgresExplorer({
                       title={`Sort by ${column.name}`}
                     >
                       <span className="min-w-0 truncate">{column.name}</span>
-                      {column.isPrimaryKey && (
-                        <Badge variant="secondary" className="text-[10px] py-0">
-                          PK
-                        </Badge>
-                      )}
+                      {column.isPrimaryKey && <Badge variant="secondary">PK</Badge>}
                       <span className="ml-auto text-muted-foreground/80">
                         {sortBy === column.name ? (
                           sortOrder === "asc" ? (
@@ -967,7 +957,7 @@ export function PostgresExplorer({
               )}
             </div>
           </div>
-        </div>
+        </PanelShell>
       ) : (
         <div className="border border-border bg-card p-8 text-sm text-muted-foreground">
           No table selected.

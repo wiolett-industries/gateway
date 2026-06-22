@@ -213,10 +213,7 @@ export function DockerRegistriesSection({ nodesList }: DockerRegistriesSectionPr
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <p className="text-sm font-medium">{r.name}</p>
-                        <Badge
-                          variant={r.scope === "global" ? "default" : "secondary"}
-                          className="text-[10px] py-0.5"
-                        >
+                        <Badge variant={r.scope === "global" ? "default" : "secondary"}>
                           {r.scope === "global"
                             ? "Global"
                             : nodesList.find((n) => n.id === r.nodeId)?.displayName ||

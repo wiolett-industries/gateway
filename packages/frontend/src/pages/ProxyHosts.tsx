@@ -1,30 +1,26 @@
-import {
-  DndContext,
-  type DragEndEvent,
-  PointerSensor,
-  useDroppable,
-  useSensor,
-  useSensors,
-} from "@dnd-kit/core";
-import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
-import { FolderPlus, Plus } from "lucide-react";
+import { type DragEndEvent, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
+import { FolderPlus, MoreVertical, Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
 import { FolderCreateDialog } from "@/components/common/FolderCreateDialog";
-import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
+import { ResourceListForm } from "@/components/common/ResourceListForm";
+import type { ResourceListColumn } from "@/components/common/ResourceListLayout";
 import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
-import { SearchFilterBar } from "@/components/common/SearchFilterBar";
 import { CreateProxyHostDialog } from "@/components/proxy/CreateProxyHostDialog";
-import { DragOverlay } from "@/components/proxy/DragOverlay";
-import { FolderGroup } from "@/components/proxy/FolderGroup";
 import { MoveToFolderDialog } from "@/components/proxy/MoveToFolderDialog";
-import { ProxyHostRow } from "@/components/proxy/ProxyHostRow";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Select,
   SelectContent,
@@ -32,12 +28,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { useIsMobile } from "@/hooks/use-is-mobile";
 import { useRealtime } from "@/hooks/use-realtime";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useFolderStore } from "@/stores/folders";
-import type { HealthStatus, ProxyHostType } from "@/types";
+import type { FolderTreeNode, HealthStatus, ProxyHost, ProxyHostType } from "@/types";
 
 const typeOptions: { value: ProxyHostType | "all"; label: string }[] = [
   { value: "all", label: "All types" },
@@ -55,30 +52,23 @@ const healthOptions: { value: HealthStatus | "all"; label: string }[] = [
   { value: "disabled", label: "Disabled" },
 ];
 
-function UngroupedDropZone({
-  children,
-  disabled,
-}: {
-  children: React.ReactNode;
-  disabled?: boolean;
-}) {
-  const { setNodeRef, isOver } = useDroppable({
-    id: "folder-ungrouped",
-    data: { type: "folder", folderId: null },
-    disabled,
-  });
-
-  return (
-    <div ref={setNodeRef} className={isOver ? "bg-accent/30" : ""}>
-      {children}
-    </div>
-  );
-}
-
 function pruneEmptyFolders<T extends { children: T[]; hosts: Array<unknown> }>(folders: T[]): T[] {
   return folders
     .map((folder) => ({ ...folder, children: pruneEmptyFolders(folder.children) }))
     .filter((folder) => folder.hosts.length > 0 || folder.children.length > 0);
+}
+
+function TypeBadge({ type }: { type: ProxyHostType }) {
+  switch (type) {
+    case "proxy":
+      return <Badge variant="secondary">PROXY</Badge>;
+    case "redirect":
+      return <Badge variant="warning">REDIRECT</Badge>;
+    case "404":
+      return <Badge variant="destructive">404</Badge>;
+    default:
+      return <Badge variant="secondary">{type}</Badge>;
+  }
 }
 
 export function ProxyHosts() {
@@ -210,7 +200,7 @@ export function ProxyHosts() {
 
   const handleDragEnd = async (event: DragEndEvent) => {
     setActiveDrag(null);
-    if (isSearchFiltering) return;
+    if (!canManageFolders || isSearchFiltering) return;
     const { active, over } = event;
     if (!over) return;
 
@@ -341,33 +331,147 @@ export function ProxyHosts() {
     return search(folders);
   };
 
-  const colGroup = (
-    <colgroup>
-      <col style={{ width: "30%" }} />
-      <col style={{ width: "25%" }} />
-      <col style={{ width: "10%" }} />
-      <col style={{ width: "8%" }} />
-      <col style={{ width: "10%" }} />
-      <col style={{ width: "8%" }} />
-      {canShowHostActions && <col style={{ width: "56px" }} />}
-    </colgroup>
-  );
+  const canViewHost = (host: ProxyHost) =>
+    hasScope("proxy:view") || hasScope(`proxy:view:${host.id}`);
+  const canEditHost = (host: ProxyHost) =>
+    hasScope("proxy:edit") || hasScope(`proxy:edit:${host.id}`);
 
-  const tableHeaders = (
-    <thead>
-      <tr className="border-b border-border text-left">
-        <th className="p-3 text-xs font-medium text-muted-foreground">Domain Names</th>
-        <th className="p-3 text-xs font-medium text-muted-foreground">Upstream</th>
-        <th className="p-3 text-xs font-medium text-muted-foreground">Type</th>
-        <th className="p-3 text-xs font-medium text-muted-foreground">SSL</th>
-        <th className="p-3 text-xs font-medium text-muted-foreground">Health</th>
-        <th className="p-3 text-xs font-medium text-muted-foreground">Enabled</th>
-        {canShowHostActions && (
-          <th className="w-14 p-3 text-xs font-medium text-muted-foreground"></th>
-        )}
-      </tr>
-    </thead>
-  );
+  const columns: ResourceListColumn<ProxyHost>[] = [
+    {
+      id: "domain-names",
+      label: "Domain Names",
+      width: "24%",
+      renderCell: (host) => (
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium">{host.domainNames[0]}</p>
+          {host.domainNames.length > 1 && (
+            <p className="truncate text-xs text-muted-foreground">
+              +{host.domainNames.length - 1} more
+            </p>
+          )}
+        </div>
+      ),
+    },
+    {
+      id: "upstream",
+      label: "Upstream",
+      width: "22%",
+      cellContentClassName: "text-sm text-muted-foreground",
+      renderCell: (host) =>
+        host.type === "proxy" && host.forwardHost
+          ? `${host.forwardScheme}://${host.forwardHost}:${host.forwardPort}`
+          : host.type === "redirect" && host.redirectUrl
+            ? host.redirectUrl
+            : "—",
+    },
+    {
+      id: "type",
+      label: "Type",
+      width: "10%",
+      renderCell: (host) => <TypeBadge type={host.type} />,
+    },
+    {
+      id: "ssl",
+      label: "SSL",
+      width: "8%",
+      renderCell: (host) =>
+        host.sslEnabled ? (
+          <Badge variant="success">SSL</Badge>
+        ) : (
+          <span className="text-xs text-muted-foreground">—</span>
+        ),
+    },
+    {
+      id: "health",
+      label: "Health",
+      width: "14%",
+      renderCell: (host) => {
+        const status = host.effectiveHealthStatus || host.healthStatus;
+        return (
+          <Badge
+            variant={
+              (
+                {
+                  online: "success",
+                  recovering: "warning",
+                  offline: "destructive",
+                  degraded: "destructive",
+                  unknown: "secondary",
+                  disabled: "secondary",
+                } as Record<string, "success" | "warning" | "destructive" | "secondary">
+              )[status] || "secondary"
+            }
+          >
+            {(
+              {
+                online: "Healthy",
+                recovering: "Recovering",
+                offline: "Offline",
+                degraded: "Degraded",
+                unknown: "Unknown",
+                disabled: "Disabled",
+              } as Record<string, string>
+            )[status] || status}
+          </Badge>
+        );
+      },
+    },
+    {
+      id: "enabled",
+      label: "Enabled",
+      width: "10%",
+      renderCell: (host) => (
+        <div onClick={(e) => e.stopPropagation()}>
+          {host.isSystem ? (
+            <span className="inline-flex h-5 w-9 cursor-not-allowed items-center border border-border bg-primary opacity-50">
+              <span className="inline-block h-4 w-4 translate-x-4 bg-background" />
+            </span>
+          ) : (
+            <div
+              className={togglingIds.has(host.id) ? "pointer-events-none opacity-50" : undefined}
+            >
+              <Switch
+                checked={host.enabled}
+                onChange={(v) => handleToggle(host.id, !v)}
+                disabled={!canEditHost(host)}
+              />
+            </div>
+          )}
+        </div>
+      ),
+    },
+    ...(canShowHostActions
+      ? [
+          {
+            id: "actions",
+            label: "Actions",
+            width: "7.5rem",
+            align: "right" as const,
+            renderCell: (host: ProxyHost) =>
+              canEditHost(host) ? (
+                <div onClick={(e) => e.stopPropagation()}>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" className="h-8 w-8">
+                        <MoreVertical className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => navigate(`/proxy-hosts/${host.id}`)}>
+                        Edit
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={() => setMoveDialogHostId(host.id)}>
+                        Move to folder...
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              ) : null,
+          },
+        ]
+      : []),
+  ];
 
   return (
     <PageTransition>
@@ -424,250 +528,120 @@ export function ProxyHosts() {
           </ResponsiveHeaderActions>
         </div>
 
-        {/* Search and filters */}
-        <SearchFilterBar
-          placeholder="Search by domain name..."
-          search={searchInput}
-          onSearchChange={setSearchInput}
-          onSearchSubmit={handleSearch}
-          hasActiveFilters={hasActiveFilters}
-          onReset={() => {
-            resetFilters();
-            setSearchInput("");
-          }}
-          filters={
-            <>
-              <div className="w-40">
-                <Select
-                  value={filters.type}
-                  onValueChange={(v) => setFilters({ type: v as ProxyHostType | "all" })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {typeOptions.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="w-40">
-                <Select
-                  value={filters.healthStatus}
-                  onValueChange={(v) => setFilters({ healthStatus: v as HealthStatus | "all" })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {healthOptions.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </>
-          }
-        />
-
-        {/* Content */}
-        {isLoading ? (
-          <div className="flex items-center justify-center py-16">
-            <div className="flex flex-col items-center gap-3">
-              <LoadingSpinner className="" />
-              <p className="text-sm text-muted-foreground">Loading proxy hosts...</p>
-            </div>
-          </div>
-        ) : visibleFolders.length > 0 || ungroupedHosts.length > 0 ? (
-          canManageFolders ? (
-            <DndContext
-              sensors={sensors}
-              onDragStart={(event) => setActiveDrag(event.active)}
-              onDragEnd={handleDragEnd}
-              onDragCancel={() => setActiveDrag(null)}
-            >
-              <div className="overflow-x-auto border border-border bg-card">
-                <div className="min-w-[760px]">
-                  {/* Table header */}
-                  <table className="w-full" style={{ tableLayout: "fixed" }}>
-                    {colGroup}
-                    {tableHeaders}
-                  </table>
-
-                  {/* Folders */}
-                  {visibleFolders.length > 0 && (
-                    <SortableContext
-                      items={visibleFolders.map((folder) => `folder-${folder.id}`)}
-                      strategy={verticalListSortingStrategy}
-                    >
-                      {visibleFolders.map((folder) => (
-                        <FolderGroup
-                          key={folder.id}
-                          folder={folder}
-                          depth={0}
-                          expanded={expandedFolderIds.has(folder.id)}
-                          onToggle={() => toggleFolder(folder.id)}
-                          onRename={handleRenameFolder}
-                          onDelete={handleDeleteFolder}
-                          onRequestCreateSubfolder={(parentId) => {
-                            setCreateFolderParentId(parentId);
-                            setCreateFolderOpen(true);
-                          }}
-                          onToggleHost={handleToggle}
-                          togglingIds={togglingIds}
-                          onMoveHostToFolder={(hostId) => setMoveDialogHostId(hostId)}
-                          expandedFolderIds={expandedFolderIds}
-                          onToggleFolder={toggleFolder}
-                          canManage={canManageFolders}
-                          canReorder={canReorderFolders}
-                          colGroup={colGroup}
-                        />
-                      ))}
-                    </SortableContext>
-                  )}
-
-                  {/* Ungrouped hosts — always visible when folders exist so it's a drop target */}
-                  {(visibleFolders.length > 0 || ungroupedHosts.length > 0) && (
-                    <UngroupedDropZone disabled={!canReorderFolders}>
-                      {visibleFolders.length > 0 && (
-                        <div
-                          className={`flex items-center gap-2 px-3 py-2 ${
-                            ungroupedHosts.length > 0 ? "border-b border-border" : ""
-                          }`}
-                        >
-                          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                            Ungrouped
-                          </span>
-                          <Badge variant="secondary" className="text-xs">
-                            {ungroupedHosts.length}
-                          </Badge>
-                        </div>
-                      )}
-                      {ungroupedHosts.length > 0 && (
-                        <SortableContext
-                          items={ungroupedHosts.map((h) => h.id)}
-                          strategy={verticalListSortingStrategy}
-                        >
-                          <table className="w-full" style={{ tableLayout: "fixed" }}>
-                            {colGroup}
-                            <tbody className="[&_tr:last-child]:border-b-0">
-                              {ungroupedHosts.map((host) => (
-                                <ProxyHostRow
-                                  key={host.id}
-                                  host={host}
-                                  onToggle={handleToggle}
-                                  togglingIds={togglingIds}
-                                  onMoveToFolder={(hostId) => setMoveDialogHostId(hostId)}
-                                />
-                              ))}
-                            </tbody>
-                          </table>
-                        </SortableContext>
-                      )}
-                    </UngroupedDropZone>
-                  )}
-                </div>
-              </div>
-
-              <DragOverlay active={activeDrag} colGroup={colGroup} />
-            </DndContext>
-          ) : (
-            <div className="overflow-x-auto border border-border bg-card">
-              <div className="min-w-[760px]">
-                {/* Table header */}
-                <table className="w-full" style={{ tableLayout: "fixed" }}>
-                  {colGroup}
-                  {tableHeaders}
-                </table>
-
-                {/* Folders */}
-                {visibleFolders.length > 0 && (
-                  <SortableContext
-                    items={visibleFolders.map((folder) => `folder-${folder.id}`)}
-                    strategy={verticalListSortingStrategy}
-                  >
-                    {visibleFolders.map((folder) => (
-                      <FolderGroup
-                        key={folder.id}
-                        folder={folder}
-                        depth={0}
-                        expanded={expandedFolderIds.has(folder.id)}
-                        onToggle={() => toggleFolder(folder.id)}
-                        onRename={handleRenameFolder}
-                        onDelete={handleDeleteFolder}
-                        onRequestCreateSubfolder={(parentId) => {
-                          setCreateFolderParentId(parentId);
-                          setCreateFolderOpen(true);
-                        }}
-                        onToggleHost={handleToggle}
-                        togglingIds={togglingIds}
-                        onMoveHostToFolder={(hostId) => setMoveDialogHostId(hostId)}
-                        expandedFolderIds={expandedFolderIds}
-                        onToggleFolder={toggleFolder}
-                        canManage={canManageFolders}
-                        canReorder={canReorderFolders}
-                        colGroup={colGroup}
-                      />
-                    ))}
-                  </SortableContext>
-                )}
-
-                {/* Ungrouped hosts — always visible when folders exist so it's a drop target */}
-                {(visibleFolders.length > 0 || ungroupedHosts.length > 0) && (
-                  <UngroupedDropZone disabled={!canReorderFolders}>
-                    {visibleFolders.length > 0 && (
-                      <div
-                        className={`flex items-center gap-2 px-3 py-2 ${
-                          ungroupedHosts.length > 0 ? "border-b border-border" : ""
-                        }`}
-                      >
-                        <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                          Ungrouped
-                        </span>
-                        <Badge variant="secondary" className="text-xs">
-                          {ungroupedHosts.length}
-                        </Badge>
-                      </div>
-                    )}
-                    {ungroupedHosts.length > 0 && (
-                      <table className="w-full" style={{ tableLayout: "fixed" }}>
-                        {colGroup}
-                        <tbody className="[&_tr:last-child]:border-b-0">
-                          {ungroupedHosts.map((host) => (
-                            <ProxyHostRow
-                              key={host.id}
-                              host={host}
-                              onToggle={handleToggle}
-                              togglingIds={togglingIds}
-                              onMoveToFolder={(hostId) => setMoveDialogHostId(hostId)}
-                            />
-                          ))}
-                        </tbody>
-                      </table>
-                    )}
-                  </UngroupedDropZone>
-                )}
-              </div>
-            </div>
-          )
-        ) : (
-          <EmptyState
-            message="No proxy hosts."
-            {...(canCreateProxyHost
-              ? { actionLabel: "Add one", onAction: () => setCreateDialogOpen(true) }
-              : {})}
-            hasActiveFilters={hasActiveFilters}
-            onReset={() => {
+        <ResourceListForm<FolderTreeNode, ProxyHost>
+          columns={columns}
+          search={{
+            placeholder: "Search by domain name...",
+            search: searchInput,
+            onSearchChange: setSearchInput,
+            onSearchSubmit: handleSearch,
+            hasActiveFilters,
+            onReset: () => {
               resetFilters();
               setSearchInput("");
-            }}
-          />
-        )}
+            },
+            filters: (
+              <>
+                <div className="w-40">
+                  <Select
+                    value={filters.type}
+                    onValueChange={(v) => setFilters({ type: v as ProxyHostType | "all" })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {typeOptions.map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="w-40">
+                  <Select
+                    value={filters.healthStatus}
+                    onValueChange={(v) => setFilters({ healthStatus: v as HealthStatus | "all" })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {healthOptions.map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
+            ),
+          }}
+          loading={isLoading}
+          loadingLabel="Loading proxy hosts..."
+          hasContent={visibleFolders.length > 0 || ungroupedHosts.length > 0}
+          emptyState={
+            <EmptyState
+              message="No proxy hosts."
+              {...(canCreateProxyHost
+                ? { actionLabel: "Add one", onAction: () => setCreateDialogOpen(true) }
+                : {})}
+              hasActiveFilters={hasActiveFilters}
+              onReset={() => {
+                resetFilters();
+                setSearchInput("");
+              }}
+            />
+          }
+          dnd={{
+            sensors,
+            active: activeDrag,
+            onDragStart: (event) => setActiveDrag(event.active),
+            onDragEnd: handleDragEnd,
+            onDragCancel: () => setActiveDrag(null),
+          }}
+          folders={{
+            folders: visibleFolders,
+            ungroupedItems: ungroupedHosts,
+            expandedFolderIds,
+            getFolderId: (folder) => folder.id,
+            getFolderName: (folder) => folder.name,
+            getFolderChildren: (folder) => folder.children,
+            getFolderItems: (folder) => folder.hosts,
+            getFolderSortableId: (folder) => `folder-${folder.id}`,
+            getFolderSortableData: (folder) => ({
+              type: "folder",
+              folderId: folder.id,
+              folder,
+            }),
+            isFolderExpanded: (folder) => expandedFolderIds.has(folder.id),
+            canManageFolder: () => canManageFolders,
+            canReorderFolder: () => canReorderFolders,
+            canCreateSubfolder: (folder) => folder.depth < 2,
+            onToggleFolder: toggleFolder,
+            onRenameFolder: handleRenameFolder,
+            onDeleteFolder: handleDeleteFolder,
+            onRequestCreateSubfolder: (parentId) => {
+              setCreateFolderParentId(parentId);
+              setCreateFolderOpen(true);
+            },
+            ungroupedDroppable: {
+              id: "folder-ungrouped",
+              data: { type: "folder", folderId: null },
+              disabled: !canReorderFolders,
+            },
+          }}
+          items={{
+            getItemId: (host) => host.id,
+            getItemSortableId: (host) => host.id,
+            getItemSortableData: (host) => ({ type: "host", host }),
+            canViewItem: canViewHost,
+            isItemDragDisabled: (host) => !canReorderFolders || !canEditHost(host),
+            onItemClick: (host) => navigate(`/proxy-hosts/${host.id}`),
+          }}
+        />
       </div>
 
       {/* Move to folder dialog */}

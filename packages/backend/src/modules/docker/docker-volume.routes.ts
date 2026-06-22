@@ -1,9 +1,26 @@
 import type { OpenAPIHono } from '@hono/zod-openapi';
+import { HTTPException } from 'hono/http-exception';
 import { container } from '@/container.js';
+import { sanitizeFilename } from '@/lib/utils.js';
 import { requireScopeForResource } from '@/modules/auth/auth.middleware.js';
+import { TokensService } from '@/modules/tokens/tokens.service.js';
 import type { AppEnv } from '@/types.js';
-import { createVolumeRoute, listVolumesRoute, removeVolumeRoute } from './docker.docs.js';
-import { VolumeCreateSchema } from './docker.schemas.js';
+import {
+  createVolumeRoute,
+  exportVolumeRoute,
+  inspectVolumeRoute,
+  listVolumeFilesRoute,
+  listVolumesRoute,
+  removeVolumeRoute,
+  renameVolumeRoute,
+  updateVolumeLabelsRoute,
+} from './docker.docs.js';
+import {
+  FileBrowseSchema,
+  VolumeCreateSchema,
+  VolumeLabelsUpdateSchema,
+  VolumeRenameSchema,
+} from './docker.schemas.js';
 import { DockerManagementService } from './docker.service.js';
 
 const DOCKER_RESOURCE_LIST_MAX = 1000;
@@ -20,6 +37,22 @@ function compactVolumeListItem(volume: Record<string, any>) {
     usedBy: Array.isArray(usedBy) ? usedBy.slice(0, DOCKER_VOLUME_USED_BY_PREVIEW_MAX) : usedBy,
     usedByCount: Array.isArray(usedBy) ? usedBy.length : undefined,
     usedByTruncated: Array.isArray(usedBy) && usedBy.length > DOCKER_VOLUME_USED_BY_PREVIEW_MAX,
+  };
+}
+
+function normalizeVolumeDetailItem(volume: Record<string, any>) {
+  const usedBy = volume.usedBy ?? volume.UsedBy;
+  const normalizedUsedBy = Array.isArray(usedBy) ? usedBy : [];
+  return {
+    name: volume.name ?? volume.Name,
+    driver: volume.driver ?? volume.Driver,
+    mountpoint: volume.mountpoint ?? volume.Mountpoint,
+    labels: volume.labels ?? volume.Labels ?? {},
+    scope: volume.scope ?? volume.Scope,
+    createdAt: volume.createdAt ?? volume.CreatedAt,
+    usedBy: normalizedUsedBy,
+    usedByCount: normalizedUsedBy.length,
+    usedByTruncated: false,
   };
 }
 
@@ -61,6 +94,87 @@ export function registerVolumeRoutes(router: OpenAPIHono<AppEnv>) {
         limit: DOCKER_RESOURCE_LIST_MAX,
         truncated,
       });
+    }
+  );
+
+  // Inspect volume
+  router.openapi(
+    { ...inspectVolumeRoute, middleware: requireScopeForResource('docker:volumes:view', 'nodeId') },
+    async (c) => {
+      const service = container.resolve(DockerManagementService);
+      const nodeId = c.req.param('nodeId')!;
+      const name = c.req.param('name')!;
+      const data = await service.inspectVolume(nodeId, name);
+      return c.json({ data: normalizeVolumeDetailItem(data) });
+    }
+  );
+
+  // List volume files
+  router.openapi(
+    { ...listVolumeFilesRoute, middleware: requireScopeForResource('docker:volumes:view', 'nodeId') },
+    async (c) => {
+      const service = container.resolve(DockerManagementService);
+      const nodeId = c.req.param('nodeId')!;
+      const name = c.req.param('name')!;
+      const rawQuery = Object.fromEntries(new URL(c.req.url).searchParams.entries());
+      const { path } = FileBrowseSchema.parse(rawQuery);
+      const data = await service.listVolumeFiles(nodeId, name, path);
+      return c.json({ data });
+    }
+  );
+
+  // Export volume
+  router.openapi(
+    { ...exportVolumeRoute, middleware: requireScopeForResource('docker:volumes:view', 'nodeId') },
+    async (c) => {
+      const service = container.resolve(DockerManagementService);
+      const nodeId = c.req.param('nodeId')!;
+      const name = c.req.param('name')!;
+      const data = await service.exportVolume(nodeId, name);
+      return new Response(data, {
+        headers: {
+          'Content-Type': 'application/gzip',
+          'Content-Disposition': `attachment; filename="${sanitizeFilename(name)}.tar.gz"`,
+        },
+      });
+    }
+  );
+
+  // Rename volume
+  router.openapi(
+    { ...renameVolumeRoute, middleware: requireScopeForResource('docker:volumes:create', 'nodeId') },
+    async (c) => {
+      const service = container.resolve(DockerManagementService);
+      const nodeId = c.req.param('nodeId')!;
+      const name = c.req.param('name')!;
+      const user = c.get('user')!;
+      const scopes = c.get('effectiveScopes') ?? [];
+      if (!TokensService.hasScope(scopes, `docker:volumes:delete:${nodeId}`)) {
+        throw new HTTPException(403, { message: `Missing required scope: docker:volumes:delete:${nodeId}` });
+      }
+      const body = await c.req.json();
+      const { name: newName } = VolumeRenameSchema.parse(body);
+      await service.renameVolume(nodeId, name, newName, user.id);
+      return c.json({ success: true });
+    }
+  );
+
+  // Update volume labels
+  router.openapi(
+    { ...updateVolumeLabelsRoute, middleware: requireScopeForResource('docker:volumes:create', 'nodeId') },
+    async (c) => {
+      const service = container.resolve(DockerManagementService);
+      const nodeId = c.req.param('nodeId')!;
+      const name = c.req.param('name')!;
+      const user = c.get('user')!;
+      const scopes = c.get('effectiveScopes') ?? [];
+      if (!TokensService.hasScope(scopes, `docker:volumes:delete:${nodeId}`)) {
+        throw new HTTPException(403, { message: `Missing required scope: docker:volumes:delete:${nodeId}` });
+      }
+      const body = await c.req.json();
+      const { labels } = VolumeLabelsUpdateSchema.parse(body);
+      await service.updateVolumeLabels(nodeId, name, labels, user.id);
+      return c.json({ success: true });
     }
   );
 

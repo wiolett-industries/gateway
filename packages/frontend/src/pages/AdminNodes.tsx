@@ -288,45 +288,36 @@ export function AdminNodes() {
                         {formatDaemonVersion(node.daemonVersion)}
                       </p>
                     </div>
-                    <Badge variant="secondary" className="text-xs uppercase shrink-0">
+                    <Badge variant="secondary" className="uppercase shrink-0">
                       {node.type}
                     </Badge>
                     {(node.type === "nginx" || node.type === "docker") &&
                       node.serviceCreationLocked && (
-                        <Badge variant="warning" className="text-xs shrink-0">
+                        <Badge variant="warning" className="shrink-0">
                           LOCKED
                         </Badge>
                       )}
-                    <Badge variant="outline" className="text-xs shrink-0">
+                    <Badge variant="outline" className="shrink-0">
                       {formatLastSeen(node.lastSeenAt)}
                     </Badge>
                     {nodeUpdating ? (
-                      <Badge variant="warning" className="text-xs">
-                        UPDATING
-                      </Badge>
+                      <Badge variant="warning">UPDATING</Badge>
                     ) : isNodeIncompatible(node) ? (
-                      <Badge variant="destructive" className="text-xs">
-                        INCOMPATIBLE
-                      </Badge>
+                      <Badge variant="destructive">INCOMPATIBLE</Badge>
                     ) : (
                       (() => {
                         const typeStatus = daemonUpdates.find((s) => s.daemonType === node.type);
                         const nodeStatus = typeStatus?.nodes.find((n) => n.nodeId === node.id);
                         if (nodeStatus?.updateAvailable && typeStatus?.latestVersion) {
                           return (
-                            <Badge
-                              className="text-xs"
-                              style={{ backgroundColor: "rgb(234 179 8)", color: "#111" }}
-                            >
+                            <Badge style={{ backgroundColor: "rgb(234 179 8)", color: "#111" }}>
                               {typeStatus.latestVersion}
                             </Badge>
                           );
                         }
                         const eStatus = effectiveNodeStatus(node);
                         return (
-                          <Badge variant={STATUS_BADGE[eStatus] || "secondary"} className="text-xs">
-                            {eStatus}
-                          </Badge>
+                          <Badge variant={STATUS_BADGE[eStatus] || "secondary"}>{eStatus}</Badge>
                         );
                       })()
                     )}

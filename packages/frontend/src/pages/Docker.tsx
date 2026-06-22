@@ -49,6 +49,9 @@ export function Docker() {
 
   const deployContainerRef = useRef<(() => void) | null>(null);
   const createFolderRef = useRef<(() => void) | null>(null);
+  const createImageFolderRef = useRef<(() => void) | null>(null);
+  const createVolumeFolderRef = useRef<(() => void) | null>(null);
+  const createNetworkFolderRef = useRef<(() => void) | null>(null);
   const pullImageRef = useRef<(() => void) | null>(null);
   const createVolumeRef = useRef<(() => void) | null>(null);
   const createNetworkRef = useRef<(() => void) | null>(null);
@@ -185,26 +188,56 @@ export function Docker() {
           </>
         );
       case "images":
-        return hasScope("docker:images:pull") ? (
-          <Button onClick={() => pullImageRef.current?.()}>
-            <Plus className="h-4 w-4 mr-1" />
-            Pull Image
-          </Button>
-        ) : null;
+        return (
+          <>
+            {canManageContainerFolders && (
+              <Button variant="outline" onClick={() => createImageFolderRef.current?.()}>
+                <FolderPlus className="h-4 w-4 mr-1" />
+                New Folder
+              </Button>
+            )}
+            {hasScope("docker:images:pull") && (
+              <Button onClick={() => pullImageRef.current?.()}>
+                <Plus className="h-4 w-4 mr-1" />
+                Pull Image
+              </Button>
+            )}
+          </>
+        );
       case "volumes":
-        return hasScope("docker:volumes:create") ? (
-          <Button onClick={() => createVolumeRef.current?.()}>
-            <Plus className="h-4 w-4 mr-1" />
-            Create Volume
-          </Button>
-        ) : null;
+        return (
+          <>
+            {canManageContainerFolders && (
+              <Button variant="outline" onClick={() => createVolumeFolderRef.current?.()}>
+                <FolderPlus className="h-4 w-4 mr-1" />
+                New Folder
+              </Button>
+            )}
+            {hasScope("docker:volumes:create") && (
+              <Button onClick={() => createVolumeRef.current?.()}>
+                <Plus className="h-4 w-4 mr-1" />
+                Create Volume
+              </Button>
+            )}
+          </>
+        );
       case "networks":
-        return hasScope("docker:networks:create") ? (
-          <Button onClick={() => createNetworkRef.current?.()}>
-            <Plus className="h-4 w-4 mr-1" />
-            Create Network
-          </Button>
-        ) : null;
+        return (
+          <>
+            {canManageContainerFolders && (
+              <Button variant="outline" onClick={() => createNetworkFolderRef.current?.()}>
+                <FolderPlus className="h-4 w-4 mr-1" />
+                New Folder
+              </Button>
+            )}
+            {hasScope("docker:networks:create") && (
+              <Button onClick={() => createNetworkRef.current?.()}>
+                <Plus className="h-4 w-4 mr-1" />
+                Create Network
+              </Button>
+            )}
+          </>
+        );
       default:
         return null;
     }
@@ -229,6 +262,15 @@ export function Docker() {
           },
         ]
       : []),
+    ...(activeTab === "images" && canManageContainerFolders
+      ? [
+          {
+            label: "New Folder",
+            icon: <FolderPlus className="h-4 w-4" />,
+            onClick: () => createImageFolderRef.current?.(),
+          },
+        ]
+      : []),
     ...(activeTab === "images" && hasScope("docker:images:pull")
       ? [
           {
@@ -238,12 +280,30 @@ export function Docker() {
           },
         ]
       : []),
+    ...(activeTab === "volumes" && canManageContainerFolders
+      ? [
+          {
+            label: "New Folder",
+            icon: <FolderPlus className="h-4 w-4" />,
+            onClick: () => createVolumeFolderRef.current?.(),
+          },
+        ]
+      : []),
     ...(activeTab === "volumes" && hasScope("docker:volumes:create")
       ? [
           {
             label: "Create Volume",
             icon: <Plus className="h-4 w-4" />,
             onClick: () => createVolumeRef.current?.(),
+          },
+        ]
+      : []),
+    ...(activeTab === "networks" && canManageContainerFolders
+      ? [
+          {
+            label: "New Folder",
+            icon: <FolderPlus className="h-4 w-4" />,
+            onClick: () => createNetworkFolderRef.current?.(),
           },
         ]
       : []),
@@ -318,6 +378,9 @@ export function Docker() {
               onPullRef={(fn) => {
                 pullImageRef.current = fn;
               }}
+              onCreateFolderRef={(fn) => {
+                createImageFolderRef.current = fn;
+              }}
               onRefreshRef={(fn) => {
                 refreshImagesRef.current = fn;
               }}
@@ -329,6 +392,9 @@ export function Docker() {
               onCreateRef={(fn) => {
                 createVolumeRef.current = fn;
               }}
+              onCreateFolderRef={(fn) => {
+                createVolumeFolderRef.current = fn;
+              }}
               onRefreshRef={(fn) => {
                 refreshVolumesRef.current = fn;
               }}
@@ -339,6 +405,9 @@ export function Docker() {
               embedded
               onCreateRef={(fn) => {
                 createNetworkRef.current = fn;
+              }}
+              onCreateFolderRef={(fn) => {
+                createNetworkFolderRef.current = fn;
               }}
               onRefreshRef={(fn) => {
                 refreshNetworksRef.current = fn;

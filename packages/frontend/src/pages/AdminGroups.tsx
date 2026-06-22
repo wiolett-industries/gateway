@@ -575,16 +575,8 @@ function GroupRow({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className="font-medium text-sm">{group.name}</span>
-            {group.isBuiltin && (
-              <Badge variant="secondary" className="text-[10px]">
-                Built-in
-              </Badge>
-            )}
-            {group.parentId && (
-              <Badge variant="outline" className="text-[10px]">
-                Inherits
-              </Badge>
-            )}
+            {group.isBuiltin && <Badge variant="secondary">Built-in</Badge>}
+            {group.parentId && <Badge variant="outline">Inherits</Badge>}
           </div>
           {group.description && (
             <p className="text-sm text-muted-foreground truncate">{group.description}</p>

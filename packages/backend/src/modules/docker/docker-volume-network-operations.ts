@@ -17,6 +17,64 @@ export async function listVolumes(context: DockerVolumeNetworkOperationContext, 
   return context.parseResult(result);
 }
 
+export async function inspectVolume(context: DockerVolumeNetworkOperationContext, nodeId: string, name: string) {
+  const result = await context.nodeDispatch.sendDockerVolumeCommand(nodeId, 'inspect', { name });
+  return context.parseResult(result);
+}
+
+export async function listVolumeFiles(
+  context: DockerVolumeNetworkOperationContext,
+  nodeId: string,
+  name: string,
+  path: string
+) {
+  const result = await context.nodeDispatch.sendDockerVolumeCommand(nodeId, 'list-files', { name, path });
+  return context.parseResult(result);
+}
+
+export async function exportVolume(context: DockerVolumeNetworkOperationContext, nodeId: string, name: string) {
+  const result = await context.nodeDispatch.sendDockerVolumeCommand(nodeId, 'export', { name });
+  return context.parseResult(result);
+}
+
+export async function renameVolume(
+  context: DockerVolumeNetworkOperationContext,
+  nodeId: string,
+  name: string,
+  newName: string,
+  userId: string
+) {
+  const result = await context.nodeDispatch.sendDockerVolumeCommand(nodeId, 'rename', { name, newName });
+  context.parseResult(result);
+  await context.auditService.log({
+    action: 'docker.volume.rename',
+    userId,
+    resourceType: 'docker-volume',
+    resourceId: newName,
+    details: { nodeId, oldName: name, name: newName },
+  });
+  context.eventBus?.publish('docker.volume.changed', { nodeId, name: newName, action: 'renamed', oldName: name });
+}
+
+export async function updateVolumeLabels(
+  context: DockerVolumeNetworkOperationContext,
+  nodeId: string,
+  name: string,
+  labels: Record<string, string>,
+  userId: string
+) {
+  const result = await context.nodeDispatch.sendDockerVolumeCommand(nodeId, 'update-labels', { name, labels });
+  context.parseResult(result);
+  await context.auditService.log({
+    action: 'docker.volume.labels.update',
+    userId,
+    resourceType: 'docker-volume',
+    resourceId: name,
+    details: { nodeId, name },
+  });
+  context.eventBus?.publish('docker.volume.changed', { nodeId, name, action: 'labels-updated' });
+}
+
 export async function createVolume(
   context: DockerVolumeNetworkOperationContext,
   nodeId: string,

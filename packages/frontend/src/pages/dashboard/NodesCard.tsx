@@ -39,11 +39,11 @@ export function NodesCard({ nodesList, hasScope, loading = false }: NodesCardPro
               <span className="text-sm font-medium truncate flex-1">
                 {node.displayName || node.hostname}
               </span>
-              <Badge variant="secondary" className="text-xs uppercase">
+              <Badge variant="secondary" className="uppercase">
                 {node.type}
               </Badge>
               {node.daemonVersion && (
-                <Badge variant="outline" className="text-xs uppercase">
+                <Badge variant="outline" className="uppercase">
                   {node.daemonVersion}
                 </Badge>
               )}
@@ -58,7 +58,7 @@ export function NodesCard({ nodesList, hasScope, loading = false }: NodesCardPro
                         ? "secondary"
                         : "destructive";
                 return (
-                  <Badge variant={v} className="text-xs uppercase">
+                  <Badge variant={v} className="uppercase">
                     {s}
                   </Badge>
                 );

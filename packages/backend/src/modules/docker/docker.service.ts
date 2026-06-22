@@ -63,10 +63,15 @@ import {
   createNetwork as createDockerNetwork,
   createVolume as createDockerVolume,
   disconnectContainerFromNetwork as disconnectDockerContainerFromNetwork,
+  exportVolume as exportDockerVolume,
+  inspectVolume as inspectDockerVolume,
   listNetworks as listDockerNetworks,
+  listVolumeFiles as listDockerVolumeFiles,
   listVolumes as listDockerVolumes,
   removeNetwork as removeDockerNetwork,
   removeVolume as removeDockerVolume,
+  renameVolume as renameDockerVolume,
+  updateVolumeLabels as updateDockerVolumeLabels,
 } from './docker-volume-network-operations.js';
 
 const logger = createChildLogger('DockerManagementService');
@@ -797,6 +802,33 @@ export class DockerManagementService {
   async listVolumes(nodeId: string) {
     await this.validateDockerNode(nodeId);
     return listDockerVolumes(this.volumeNetworkOperationContext(), nodeId);
+  }
+
+  async inspectVolume(nodeId: string, name: string) {
+    await this.validateDockerNode(nodeId);
+    return inspectDockerVolume(this.volumeNetworkOperationContext(), nodeId, name);
+  }
+
+  async listVolumeFiles(nodeId: string, name: string, path: string) {
+    await this.validateDockerNode(nodeId);
+    return listDockerVolumeFiles(this.volumeNetworkOperationContext(), nodeId, name, path);
+  }
+
+  async exportVolume(nodeId: string, name: string) {
+    await this.validateDockerNode(nodeId);
+    const base64 = await exportDockerVolume(this.volumeNetworkOperationContext(), nodeId, name);
+    return Buffer.from(String(base64 ?? ''), 'base64');
+  }
+
+  async renameVolume(nodeId: string, name: string, newName: string, userId: string) {
+    await this.validateDockerNode(nodeId);
+    await renameDockerVolume(this.volumeNetworkOperationContext(), nodeId, name, newName, userId);
+    await this.folderService?.renameResourceAssignment(nodeId, 'volume', name, newName);
+  }
+
+  async updateVolumeLabels(nodeId: string, name: string, labels: Record<string, string>, userId: string) {
+    await this.validateDockerNode(nodeId);
+    await updateDockerVolumeLabels(this.volumeNetworkOperationContext(), nodeId, name, labels, userId);
   }
 
   async createVolume(

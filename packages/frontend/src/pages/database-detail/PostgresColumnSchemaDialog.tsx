@@ -98,11 +98,7 @@ export function PostgresColumnSchemaDialog({
                     >
                       {column.name}
                     </span>
-                    {column.isPrimaryKey && (
-                      <Badge variant="secondary" className="text-[10px] py-0">
-                        PK
-                      </Badge>
-                    )}
+                    {column.isPrimaryKey && <Badge variant="secondary">PK</Badge>}
                     <span className="ml-auto truncate text-xs text-muted-foreground">
                       {secondaryTypeLabel}
                     </span>

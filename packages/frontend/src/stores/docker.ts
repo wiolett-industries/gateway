@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { api } from "@/services/api";
 import type {
   DockerContainer,
+  DockerFolderResourceType,
   DockerImage,
   DockerNetwork,
   DockerRegistry,
@@ -33,6 +34,43 @@ function normList<T>(data: unknown): T[] {
 function tagWithNode<T>(items: T[], nodeId: string, nodeName: string): T[] {
   return items.map((item) => ({ ...item, _nodeId: nodeId, _nodeName: nodeName }));
 }
+
+async function attachFolderPlacements<T extends object>(
+  resourceType: Exclude<DockerFolderResourceType, "container">,
+  items: T[],
+  getResourceKey: (item: T) => string | undefined
+): Promise<T[]> {
+  const refs = items
+    .map((item) => ({
+      nodeId: (item as { _nodeId?: string })._nodeId,
+      resourceKey: getResourceKey(item),
+    }))
+    .filter(
+      (item): item is { nodeId: string; resourceKey: string } => !!item.nodeId && !!item.resourceKey
+    );
+  if (refs.length === 0) return items;
+
+  const placements = await api.getDockerFolderPlacements(resourceType, refs);
+  const placementByRef = new Map(
+    placements.map((placement) => [`${placement.nodeId}:${placement.resourceKey}`, placement])
+  );
+
+  return items.map((item) => {
+    const nodeId = (item as { _nodeId?: string })._nodeId;
+    const resourceKey = getResourceKey(item);
+    const placement = nodeId && resourceKey ? placementByRef.get(`${nodeId}:${resourceKey}`) : null;
+    return {
+      ...item,
+      folderId: placement?.folderId ?? null,
+      folderIsSystem: placement?.folderIsSystem ?? false,
+      folderSortOrder: placement?.sortOrder ?? 0,
+    };
+  });
+}
+
+const dockerImageResourceKey = (image: DockerImage) => image.id;
+const dockerVolumeResourceKey = (volume: DockerVolume) => volume.name;
+const dockerNetworkResourceKey = (network: DockerNetwork) => network.id;
 
 interface DockerFilters {
   search: string;
@@ -298,21 +336,24 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
       if (effectiveNodeId) {
         const data = await api.listDockerImages(effectiveNodeId, { search });
         const node = nodesForFetch.find((n) => n.id === effectiveNodeId);
+        const tagged = tagWithNode(
+          normList<DockerImage>(data),
+          effectiveNodeId,
+          node?.displayName || node?.hostname || ""
+        );
+        const items = await attachFolderPlacements("image", tagged, dockerImageResourceKey);
         if (requestId !== dockerRequestIds.images) return;
         set((state) => ({
-          images: tagWithNode(
-            normList<DockerImage>(data),
-            effectiveNodeId,
-            node?.displayName || node?.hostname || ""
-          ),
+          images: items,
           ...loadingState(state.loading, "images", false),
         }));
       } else {
-        const items = await fetchAllNodes(
+        const tagged = await fetchAllNodes(
           nodesForFetch,
           (nid) => api.listDockerImages(nid, { search }),
           normList<DockerImage>
         );
+        const items = await attachFolderPlacements("image", tagged, dockerImageResourceKey);
         if (requestId !== dockerRequestIds.images) return;
         set((state) => ({
           images: items,
@@ -336,21 +377,24 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
       if (effectiveNodeId) {
         const data = await api.listDockerVolumes(effectiveNodeId, { search });
         const node = nodesForFetch.find((n) => n.id === effectiveNodeId);
+        const tagged = tagWithNode(
+          normList<DockerVolume>(data),
+          effectiveNodeId,
+          node?.displayName || node?.hostname || ""
+        );
+        const items = await attachFolderPlacements("volume", tagged, dockerVolumeResourceKey);
         if (requestId !== dockerRequestIds.volumes) return;
         set((state) => ({
-          volumes: tagWithNode(
-            normList<DockerVolume>(data),
-            effectiveNodeId,
-            node?.displayName || node?.hostname || ""
-          ),
+          volumes: items,
           ...loadingState(state.loading, "volumes", false),
         }));
       } else {
-        const items = await fetchAllNodes(
+        const tagged = await fetchAllNodes(
           nodesForFetch,
           (nid) => api.listDockerVolumes(nid, { search }),
           normList<DockerVolume>
         );
+        const items = await attachFolderPlacements("volume", tagged, dockerVolumeResourceKey);
         if (requestId !== dockerRequestIds.volumes) return;
         set((state) => ({
           volumes: items,
@@ -374,21 +418,24 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
       if (effectiveNodeId) {
         const data = await api.listDockerNetworks(effectiveNodeId, { search });
         const node = nodesForFetch.find((n) => n.id === effectiveNodeId);
+        const tagged = tagWithNode(
+          normList<DockerNetwork>(data),
+          effectiveNodeId,
+          node?.displayName || node?.hostname || ""
+        );
+        const items = await attachFolderPlacements("network", tagged, dockerNetworkResourceKey);
         if (requestId !== dockerRequestIds.networks) return;
         set((state) => ({
-          networks: tagWithNode(
-            normList<DockerNetwork>(data),
-            effectiveNodeId,
-            node?.displayName || node?.hostname || ""
-          ),
+          networks: items,
           ...loadingState(state.loading, "networks", false),
         }));
       } else {
-        const items = await fetchAllNodes(
+        const tagged = await fetchAllNodes(
           nodesForFetch,
           (nid) => api.listDockerNetworks(nid, { search }),
           normList<DockerNetwork>
         );
+        const items = await attachFolderPlacements("network", tagged, dockerNetworkResourceKey);
         if (requestId !== dockerRequestIds.networks) return;
         set((state) => ({
           networks: items,

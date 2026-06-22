@@ -315,9 +315,7 @@ export function AIConfigSection() {
                 <div className="flex items-center gap-2">
                   <p className="text-sm font-medium">Web Search</p>
                   {aiConfig.disabledTools.includes("web_search") && (
-                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                      Disabled
-                    </Badge>
+                    <Badge variant="secondary">Disabled</Badge>
                   )}
                 </div>
                 <p className="text-xs text-muted-foreground mt-0.5 mb-2">

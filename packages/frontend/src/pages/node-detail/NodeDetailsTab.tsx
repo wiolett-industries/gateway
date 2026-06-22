@@ -172,7 +172,7 @@ export function NodeDetailsTab({
             <DetailRow
               label="Type"
               value={
-                <Badge variant="secondary" className="text-xs uppercase">
+                <Badge variant="secondary" className="uppercase">
                   {node.type}
                 </Badge>
               }
@@ -209,19 +209,15 @@ export function NodeDetailsTab({
               value={
                 <div className="flex items-center gap-2">
                   {node.daemonVersion ? (
-                    <Badge variant="secondary" className="text-xs uppercase">
+                    <Badge variant="secondary" className="uppercase">
                       {node.daemonVersion}
                     </Badge>
                   ) : (
                     "Unknown"
                   )}
-                  {(caps.versionMismatch as boolean) && (
-                    <Badge variant="warning" className="text-xs">
-                      Mismatch
-                    </Badge>
-                  )}
+                  {(caps.versionMismatch as boolean) && <Badge variant="warning">Mismatch</Badge>}
                   {nodeUpdating && (
-                    <Badge variant="warning" className="text-xs">
+                    <Badge variant="warning">
                       Updating{updateTargetVersion ? ` to ${updateTargetVersion}` : ""}
                     </Badge>
                   )}
@@ -288,11 +284,7 @@ export function NodeDetailsTab({
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-mono">{m.mountPoint}</span>
-                        {m.mountPoint === "/" && (
-                          <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                            ROOT DISK
-                          </Badge>
-                        )}
+                        {m.mountPoint === "/" && <Badge variant="outline">ROOT DISK</Badge>}
                       </div>
                       <span className="text-sm text-muted-foreground">
                         {Math.round(m.usagePercent)}%
@@ -351,7 +343,7 @@ export function NodeDetailsTab({
                           : "—"}
                       </td>
                       <td className="p-3 align-middle">
-                        <Badge variant={host.enabled ? "success" : "secondary"} className="text-xs">
+                        <Badge variant={host.enabled ? "success" : "secondary"}>
                           {host.enabled ? "active" : "disabled"}
                         </Badge>
                       </td>

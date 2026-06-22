@@ -1,4 +1,6 @@
 import { Minus, Plus } from "lucide-react";
+import { EmptyState } from "@/components/common/EmptyState";
+import { PanelShell } from "@/components/common/PanelShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -8,6 +10,8 @@ interface LabelsSectionProps {
   setLabels: React.Dispatch<React.SetStateAction<Array<{ key: string; value: string }>>>;
   labelsChanged: boolean;
   inputCell: string;
+  description?: string | null;
+  action?: React.ReactNode;
 }
 
 export function LabelsSection({
@@ -16,6 +20,8 @@ export function LabelsSection({
   setLabels,
   labelsChanged,
   inputCell,
+  description = "Requires container recreation",
+  action,
 }: LabelsSectionProps) {
   const addLabel = () => setLabels((l) => [...l, { key: "", value: "" }]);
   const removeLabel = (i: number) => setLabels((l) => l.filter((_, idx) => idx !== i));
@@ -23,22 +29,28 @@ export function LabelsSection({
     setLabels((l) => l.map((entry, idx) => (idx === i ? { ...entry, [field]: val } : entry)));
 
   return (
-    <div
-      className="border bg-card overflow-hidden"
-      style={labelsChanged ? { borderColor: "rgb(234 179 8)" } : undefined}
+    <PanelShell
+      title="Labels"
+      description={description}
+      dirty={labelsChanged}
+      actions={
+        <>
+          {action}
+          {canEdit && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={addLabel}
+              aria-label="Add label"
+              title="Add label"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </Button>
+          )}
+        </>
+      }
     >
-      <div className="flex items-center justify-between border-b border-border px-4 py-3">
-        <div>
-          <h3 className="text-sm font-semibold">Labels</h3>
-          <p className="text-xs text-muted-foreground">Requires container recreation</p>
-        </div>
-        {canEdit && (
-          <Button size="sm" onClick={addLabel}>
-            <Plus className="h-3.5 w-3.5" />
-            Add
-          </Button>
-        )}
-      </div>
       {labels.length > 0 ? (
         <>
           <div className="grid grid-cols-[1fr_1fr] border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wider">
@@ -82,8 +94,8 @@ export function LabelsSection({
           </div>
         </>
       ) : (
-        <div className="py-8 text-center text-muted-foreground text-sm">No labels</div>
+        <EmptyState message="No labels" embedded />
       )}
-    </div>
+    </PanelShell>
   );
 }

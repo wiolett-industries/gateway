@@ -143,7 +143,7 @@ function DatabaseTagSummary({ tags, type }: { tags: string[]; type: DatabaseConn
   return (
     <div ref={containerRef} className="flex min-w-0 flex-1 items-center justify-end gap-2">
       <span ref={typeRef} className="inline-flex shrink-0">
-        <Badge variant="secondary" className="text-xs uppercase">
+        <Badge variant="secondary" className="uppercase">
           {type}
         </Badge>
       </span>
@@ -160,7 +160,7 @@ function DatabaseTagSummary({ tags, type }: { tags: string[]; type: DatabaseConn
       {hiddenTags.length > 0 && (
         <Tooltip>
           <TooltipTrigger asChild>
-            <Badge variant="secondary" className="h-6 shrink-0 px-2 text-xs">
+            <Badge variant="secondary" className="shrink-0">
               +{hiddenTags.length}
             </Badge>
           </TooltipTrigger>
@@ -389,12 +389,12 @@ export function Databases() {
 
                   <div className="flex min-w-0 w-[58%] shrink-0 items-center justify-end gap-2">
                     <DatabaseTagSummary tags={row.tags} type={row.type} />
-                    <Badge variant="outline" className="text-xs shrink-0">
+                    <Badge variant="outline" className="shrink-0">
                       {formatLastCheck(row.lastHealthCheckAt)}
                     </Badge>
                     <Badge
                       variant={HEALTH_BADGE[row.healthStatus] ?? "secondary"}
-                      className="text-xs shrink-0 uppercase"
+                      className="shrink-0 uppercase"
                     >
                       {formatHealthLabel(row.healthStatus)}
                     </Badge>

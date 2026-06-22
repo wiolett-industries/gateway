@@ -3012,6 +3012,9 @@ type DockerVolumeCommand struct {
 	Driver        string                 `protobuf:"bytes,3,opt,name=driver,proto3" json:"driver,omitempty"`
 	Labels        map[string]string      `protobuf:"bytes,4,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	Force         bool                   `protobuf:"varint,5,opt,name=force,proto3" json:"force,omitempty"`
+	Path          string                 `protobuf:"bytes,6,opt,name=path,proto3" json:"path,omitempty"`
+	MaxBytes      int64                  `protobuf:"varint,7,opt,name=max_bytes,json=maxBytes,proto3" json:"max_bytes,omitempty"`
+	NewName       string                 `protobuf:"bytes,8,opt,name=new_name,json=newName,proto3" json:"new_name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3079,6 +3082,27 @@ func (x *DockerVolumeCommand) GetForce() bool {
 		return x.Force
 	}
 	return false
+}
+
+func (x *DockerVolumeCommand) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *DockerVolumeCommand) GetMaxBytes() int64 {
+	if x != nil {
+		return x.MaxBytes
+	}
+	return 0
+}
+
+func (x *DockerVolumeCommand) GetNewName() string {
+	if x != nil {
+		return x.NewName
+	}
+	return ""
 }
 
 type DockerNetworkCommand struct {
@@ -4631,13 +4655,16 @@ const file_gateway_v1_nginx_daemon_proto_rawDesc = "" +
 	"\x06action\x18\x01 \x01(\tR\x06action\x12\x1b\n" +
 	"\timage_ref\x18\x02 \x01(\tR\bimageRef\x12,\n" +
 	"\x12registry_auth_json\x18\x03 \x01(\tR\x10registryAuthJson\x12\x14\n" +
-	"\x05force\x18\x04 \x01(\bR\x05force\"\xef\x01\n" +
+	"\x05force\x18\x04 \x01(\bR\x05force\"\xbb\x02\n" +
 	"\x13DockerVolumeCommand\x12\x16\n" +
 	"\x06action\x18\x01 \x01(\tR\x06action\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x16\n" +
 	"\x06driver\x18\x03 \x01(\tR\x06driver\x12C\n" +
 	"\x06labels\x18\x04 \x03(\v2+.gateway.v1.DockerVolumeCommand.LabelsEntryR\x06labels\x12\x14\n" +
-	"\x05force\x18\x05 \x01(\bR\x05force\x1a9\n" +
+	"\x05force\x18\x05 \x01(\bR\x05force\x12\x12\n" +
+	"\x04path\x18\x06 \x01(\tR\x04path\x12\x1b\n" +
+	"\tmax_bytes\x18\a \x01(\x03R\bmaxBytes\x12\x19\n" +
+	"\bnew_name\x18\b \x01(\tR\anewName\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xc3\x01\n" +

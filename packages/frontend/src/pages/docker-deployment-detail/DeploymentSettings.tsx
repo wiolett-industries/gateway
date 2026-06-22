@@ -1,6 +1,7 @@
 import { RotateCcw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { PanelShell } from "@/components/common/PanelShell";
 import { DockerHealthCheckSection } from "@/components/docker/DockerHealthCheckSection";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -385,15 +386,12 @@ export function DeploymentSettings({
           }
         />
 
-        <div
-          className="border bg-card overflow-hidden"
-          style={executionCardChanged ? { borderColor: "rgb(234 179 8)" } : undefined}
-        >
-          <div className="flex items-center justify-between border-b border-border px-4 py-3">
-            <div>
-              <h3 className="text-sm font-semibold">Execution</h3>
-              <p className="text-xs text-muted-foreground">Saved to deployment configuration</p>
-            </div>
+        <PanelShell
+          title="Execution"
+          description="Saved to deployment configuration"
+          dirty={executionCardChanged}
+          bodyClassName="p-4 space-y-4"
+          actions={
             <Button
               size="sm"
               style={{ backgroundColor: "rgb(234 179 8)", color: "#111" }}
@@ -431,84 +429,81 @@ export function DeploymentSettings({
               <RotateCcw className="h-3.5 w-3.5" />
               Save
             </Button>
-          </div>
-          <div className="p-4 space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Image</label>
-                <Input
-                  className="h-8 text-xs font-mono bg-muted/50"
-                  value={stripRegistryHostFromImageName(deploymentBaseline.imageName)}
-                  disabled
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Tag</label>
-                <Input
-                  className="h-8 text-xs font-mono"
-                  value={imageTag}
-                  onChange={(e) => setImageTag(e.target.value)}
-                  placeholder={imageTagLocked ? "digest" : "latest"}
-                  disabled={imageTagLocked}
-                  style={
-                    nextImage !== deployment.desiredConfig.image
-                      ? { borderColor: "rgb(234 179 8)" }
-                      : undefined
-                  }
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Drain Seconds</label>
-                <Input
-                  className="h-8 text-xs"
-                  inputMode="numeric"
-                  value={drainSeconds}
-                  onChange={(event) => setDrainSeconds(event.target.value)}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Entrypoint</label>
-                <Input
-                  className="h-8 text-xs font-mono"
-                  value={entrypoint}
-                  onChange={(e) => setEntrypoint(e.target.value)}
-                  placeholder="/docker-entrypoint.sh"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">
-                  Working Directory
-                </label>
-                <Input
-                  className="h-8 text-xs font-mono"
-                  value={workingDir}
-                  onChange={(e) => setWorkingDir(e.target.value)}
-                  placeholder="/app"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">User</label>
-                <Input
-                  className="h-8 text-xs font-mono"
-                  value={user}
-                  onChange={(e) => setUser(e.target.value)}
-                  placeholder="root"
-                />
-              </div>
+          }
+        >
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Image</label>
+              <Input
+                className="h-8 text-xs font-mono bg-muted/50"
+                value={stripRegistryHostFromImageName(deploymentBaseline.imageName)}
+                disabled
+              />
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Command</label>
+              <label className="text-xs font-medium text-muted-foreground">Tag</label>
               <Input
                 className="h-8 text-xs font-mono"
-                value={command}
-                onChange={(e) => setCommand(e.target.value)}
-                placeholder="nginx -g daemon off;"
+                value={imageTag}
+                onChange={(e) => setImageTag(e.target.value)}
+                placeholder={imageTagLocked ? "digest" : "latest"}
+                disabled={imageTagLocked}
+                style={
+                  nextImage !== deployment.desiredConfig.image
+                    ? { borderColor: "rgb(234 179 8)" }
+                    : undefined
+                }
               />
             </div>
           </div>
-        </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Drain Seconds</label>
+              <Input
+                className="h-8 text-xs"
+                inputMode="numeric"
+                value={drainSeconds}
+                onChange={(event) => setDrainSeconds(event.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Entrypoint</label>
+              <Input
+                className="h-8 text-xs font-mono"
+                value={entrypoint}
+                onChange={(e) => setEntrypoint(e.target.value)}
+                placeholder="/docker-entrypoint.sh"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Working Directory</label>
+              <Input
+                className="h-8 text-xs font-mono"
+                value={workingDir}
+                onChange={(e) => setWorkingDir(e.target.value)}
+                placeholder="/app"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">User</label>
+              <Input
+                className="h-8 text-xs font-mono"
+                value={user}
+                onChange={(e) => setUser(e.target.value)}
+                placeholder="root"
+              />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground">Command</label>
+            <Input
+              className="h-8 text-xs font-mono"
+              value={command}
+              onChange={(e) => setCommand(e.target.value)}
+              placeholder="nginx -g daemon off;"
+            />
+          </div>
+        </PanelShell>
       </div>
 
       <PortMappingsSection

@@ -1,6 +1,9 @@
+export type DockerFolderResourceType = "container" | "image" | "network" | "volume";
+
 export interface DockerContainerFolder {
   id: string;
   name: string;
+  resourceType: DockerFolderResourceType;
   parentId: string | null;
   sortOrder: number;
   depth: number;
@@ -191,9 +194,13 @@ export interface DockerImage {
   repoDigestsTruncated?: boolean;
   size: number;
   created: number;
+  containers?: number;
   _listTruncated?: boolean;
   _listTotal?: number;
   _listLimit?: number;
+  folderId?: string | null;
+  folderIsSystem?: boolean;
+  folderSortOrder?: number;
 }
 
 export interface DockerVolume {
@@ -209,6 +216,9 @@ export interface DockerVolume {
   _listTruncated?: boolean;
   _listTotal?: number;
   _listLimit?: number;
+  folderId?: string | null;
+  folderIsSystem?: boolean;
+  folderSortOrder?: number;
 }
 
 export interface DockerNetwork {
@@ -227,6 +237,9 @@ export interface DockerNetwork {
   _listTruncated?: boolean;
   _listTotal?: number;
   _listLimit?: number;
+  folderId?: string | null;
+  folderIsSystem?: boolean;
+  folderSortOrder?: number;
 }
 
 export interface DockerTask {

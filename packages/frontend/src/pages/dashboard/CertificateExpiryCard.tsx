@@ -62,7 +62,7 @@ export function CertificateExpiryCard({ expiringItems, hasScope }: CertificateEx
               className="flex items-center gap-3 px-4 py-3 hover:bg-muted/50 transition-colors"
             >
               <span className="text-sm font-medium truncate flex-1">{item.name}</span>
-              <Badge variant="secondary" className="text-xs">
+              <Badge variant="secondary">
                 {item.type === "ca" ? "CA" : item.type === "pki" ? "PKI" : "SSL"}
               </Badge>
               <span className="text-xs text-muted-foreground">{formatDate(item.expiresAt)}</span>

@@ -287,9 +287,7 @@ export function DatabaseDetail() {
                   <TabsTrigger value="explorer" disabled>
                     <span className="flex items-center gap-2">
                       Explorer
-                      <Badge variant="secondary" className="text-[10px] py-0.5">
-                        SOON
-                      </Badge>
+                      <Badge variant="secondary">SOON</Badge>
                     </span>
                   </TabsTrigger>
                 ))}

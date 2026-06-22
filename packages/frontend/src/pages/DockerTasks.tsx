@@ -15,6 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useDeferredDialogState } from "@/hooks/use-deferred-dialog-state";
 import { useRealtime } from "@/hooks/use-realtime";
 import { api } from "@/services/api";
 import { useDockerStore } from "@/stores/docker";
@@ -60,7 +61,12 @@ export function DockerTasks({ embedded }: { embedded?: boolean } = {}) {
   const [filterNode, setFilterNode] = useState("all");
   const [filterType, setFilterType] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
-  const [selectedTask, setSelectedTask] = useState<DockerTask | null>(null);
+  const {
+    open: taskDetailsOpen,
+    value: selectedTask,
+    setValue: setSelectedTask,
+    onOpenChange: onTaskDetailsOpenChange,
+  } = useDeferredDialogState<DockerTask>();
 
   const loadTasks = useCallback(async () => {
     await fetchTasks();
@@ -353,7 +359,7 @@ export function DockerTasks({ embedded }: { embedded?: boolean } = {}) {
       )}
 
       {/* Task Detail Dialog */}
-      <Dialog open={!!selectedTask} onOpenChange={(open) => !open && setSelectedTask(null)}>
+      <Dialog open={taskDetailsOpen} onOpenChange={onTaskDetailsOpenChange}>
         <DialogContent className="sm:max-w-md overflow-hidden">
           <DialogHeader>
             <DialogTitle>Task Details</DialogTitle>

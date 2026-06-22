@@ -27,6 +27,7 @@ import { DockerContainerDetail } from "@/pages/DockerContainerDetail";
 import { DockerDeploymentDetail } from "@/pages/DockerDeploymentDetail";
 import { DockerFilePopout } from "@/pages/DockerFilePopout";
 import { DockerLogsPopout } from "@/pages/DockerLogsPopout";
+import { DockerVolumeDetail } from "@/pages/DockerVolumeDetail";
 import { Domains } from "@/pages/Domains";
 import { Logging } from "@/pages/Logging";
 import { LoginPage } from "@/pages/Login";
@@ -139,6 +140,17 @@ function DockerDeploymentDetailGuard() {
   }
 
   return <DockerDeploymentDetail />;
+}
+
+function DockerVolumeDetailGuard() {
+  const { nodeId } = useParams<{ nodeId: string }>();
+  const hasScope = useAuthStore((s) => s.hasScope);
+
+  if (!hasScope("docker:volumes:view") && !(nodeId && hasScope(`docker:volumes:view:${nodeId}`))) {
+    return <Navigate to="/" replace />;
+  }
+
+  return <DockerVolumeDetail />;
 }
 
 function ProxyHostDetailGuard() {
@@ -599,6 +611,10 @@ export default function App() {
               <Route
                 path="/docker/deployments/:nodeId/:deploymentId/:tab?"
                 element={<DockerDeploymentDetailGuard />}
+              />
+              <Route
+                path="/docker/volumes/:nodeId/:volumeName/:tab?"
+                element={<DockerVolumeDetailGuard />}
               />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />

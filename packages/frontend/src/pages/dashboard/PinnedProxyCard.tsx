@@ -40,10 +40,10 @@ export function PinnedProxyCard({ proxy }: PinnedProxyCardProps) {
         </div>
       </div>
       <div className="flex items-center gap-2 shrink-0">
-        <Badge variant="secondary" className="text-xs uppercase">
+        <Badge variant="secondary" className="uppercase">
           {proxy.type}
         </Badge>
-        <Badge variant={statusColor} className="text-xs uppercase">
+        <Badge variant={statusColor} className="uppercase">
           {statusLabel}
         </Badge>
       </div>

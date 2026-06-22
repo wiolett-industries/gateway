@@ -97,7 +97,13 @@ function hasChannelAccess(scopes: string[], channel: string): boolean {
   if (!required) return false;
 
   if (channel === 'docker.folder.changed') {
-    return hasScopeBase(scopes, 'docker:containers:view') || hasScope(scopes, 'docker:containers:folders:manage');
+    return (
+      hasScopeBase(scopes, 'docker:containers:view') ||
+      hasScopeBase(scopes, 'docker:images:view') ||
+      hasScopeBase(scopes, 'docker:volumes:view') ||
+      hasScopeBase(scopes, 'docker:networks:view') ||
+      hasScope(scopes, 'docker:containers:folders:manage')
+    );
   }
   if (channel.startsWith('docker.task')) {
     return hasScope(scopes, 'docker:tasks');
@@ -150,9 +156,26 @@ function isProxyFolderLayoutPayload(payload: unknown): boolean {
 
 function canReceiveChannelPayload(scopes: string[], channel: string, payload: unknown): boolean {
   if (channel === 'docker.folder.changed') {
-    if (hasScope(scopes, 'docker:containers:view') || hasScope(scopes, 'docker:containers:folders:manage')) return true;
+    if (
+      hasScope(scopes, 'docker:containers:view') ||
+      hasScope(scopes, 'docker:images:view') ||
+      hasScope(scopes, 'docker:volumes:view') ||
+      hasScope(scopes, 'docker:networks:view') ||
+      hasScope(scopes, 'docker:containers:folders:manage')
+    ) {
+      return true;
+    }
     const nodeIds = (payload as { nodeIds?: string[] } | undefined)?.nodeIds;
-    return Array.isArray(nodeIds) && nodeIds.some((nodeId) => hasScope(scopes, `docker:containers:view:${nodeId}`));
+    return (
+      Array.isArray(nodeIds) &&
+      nodeIds.some(
+        (nodeId) =>
+          hasScope(scopes, `docker:containers:view:${nodeId}`) ||
+          hasScope(scopes, `docker:images:view:${nodeId}`) ||
+          hasScope(scopes, `docker:volumes:view:${nodeId}`) ||
+          hasScope(scopes, `docker:networks:view:${nodeId}`)
+      )
+    );
   }
   if (channel.startsWith('docker.webhook')) {
     const nodeId = (payload as { nodeId?: string } | undefined)?.nodeId;

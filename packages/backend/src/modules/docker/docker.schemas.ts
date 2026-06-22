@@ -122,6 +122,14 @@ export const VolumeCreateSchema = z.object({
   labels: z.record(z.string()).optional(),
 });
 
+export const VolumeRenameSchema = z.object({
+  name: z.string().min(1),
+});
+
+export const VolumeLabelsUpdateSchema = z.object({
+  labels: z.record(z.string()).default({}),
+});
+
 // Network create
 export const NetworkCreateSchema = z.object({
   name: z.string().min(1),

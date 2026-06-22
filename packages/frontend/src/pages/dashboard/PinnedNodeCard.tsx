@@ -72,7 +72,7 @@ export function PinnedNodeCard({ node, liveHealth, healthHistory }: PinnedNodeCa
           />
           <Badge
             variant={statusColor}
-            className="text-xs uppercase h-6"
+            className="uppercase"
             style={{
               border: `1px solid ${eStatus === "online" ? "rgb(16 185 129)" : eStatus === "degraded" ? "rgb(234 179 8)" : "rgb(248 113 113)"}`,
             }}

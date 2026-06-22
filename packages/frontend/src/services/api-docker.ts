@@ -3,6 +3,7 @@ import type {
   DockerContainer,
   DockerContainerFolder,
   DockerDeployment,
+  DockerFolderResourceType,
   DockerFolderTreeNode,
   DockerHealthCheck,
   DockerImage,
@@ -13,6 +14,7 @@ import type {
   DockerVolume,
   FileEntry,
 } from "@/types";
+import { API_BASE } from "./api-base";
 import { withDockerWebhookApi } from "./api-docker-webhooks";
 import type { ApiClientBaseConstructor } from "./api-mixins";
 
@@ -48,13 +50,20 @@ export function withDockerApi<TBase extends ApiClientBaseConstructor>(Base: TBas
   return class DockerApiClient extends withDockerWebhookApi(Base) {
     // ── Docker Folders ─────────────────────────────────────────────
 
-    async listDockerFolders(): Promise<DockerFolderTreeNode[]> {
-      return this.unwrapData(this.request<{ data: DockerFolderTreeNode[] }>("/docker/folders"));
+    async listDockerFolders(
+      resourceType: DockerFolderResourceType = "container"
+    ): Promise<DockerFolderTreeNode[]> {
+      return this.unwrapData(
+        this.request<{ data: DockerFolderTreeNode[] }>(
+          `/docker/folders?resourceType=${resourceType}`
+        )
+      );
     }
 
     async createDockerFolder(data: {
       name: string;
       parentId?: string;
+      resourceType?: DockerFolderResourceType;
     }): Promise<DockerContainerFolder> {
       return this.unwrapData(
         this.request<{ data: DockerContainerFolder }>("/docker/folders", {
@@ -77,10 +86,24 @@ export function withDockerApi<TBase extends ApiClientBaseConstructor>(Base: TBas
       return this.request<void>(`/docker/folders/${id}`, { method: "DELETE" });
     }
 
-    async reorderDockerFolders(items: { id: string; sortOrder: number }[]): Promise<void> {
+    async reorderDockerFolders(
+      items: { id: string; sortOrder: number }[],
+      resourceType: DockerFolderResourceType = "container"
+    ): Promise<void> {
       return this.request<void>("/docker/folders/reorder", {
         method: "PUT",
-        body: JSON.stringify({ items }),
+        body: JSON.stringify({ items, resourceType }),
+      });
+    }
+
+    async moveDockerResourcesToFolder(
+      resourceType: DockerFolderResourceType,
+      items: Array<{ nodeId: string; resourceKey: string }>,
+      folderId: string | null
+    ): Promise<void> {
+      return this.request<void>("/docker/folders/move-resources", {
+        method: "POST",
+        body: JSON.stringify({ resourceType, items, folderId }),
       });
     }
 
@@ -101,6 +124,44 @@ export function withDockerApi<TBase extends ApiClientBaseConstructor>(Base: TBas
         method: "PUT",
         body: JSON.stringify({ items }),
       });
+    }
+
+    async reorderDockerResources(
+      resourceType: DockerFolderResourceType,
+      items: Array<{ nodeId: string; resourceKey: string; sortOrder: number }>
+    ): Promise<void> {
+      return this.request<void>("/docker/folders/reorder-resources", {
+        method: "PUT",
+        body: JSON.stringify({ resourceType, items }),
+      });
+    }
+
+    async getDockerFolderPlacements(
+      resourceType: DockerFolderResourceType,
+      items: Array<{ nodeId: string; resourceKey: string }>
+    ): Promise<
+      Array<{
+        nodeId: string;
+        resourceKey: string;
+        folderId: string | null;
+        folderIsSystem: boolean;
+        sortOrder: number;
+      }>
+    > {
+      return this.unwrapData(
+        this.request<{
+          data: Array<{
+            nodeId: string;
+            resourceKey: string;
+            folderId: string | null;
+            folderIsSystem: boolean;
+            sortOrder: number;
+          }>;
+        }>("/docker/folders/placements", {
+          method: "POST",
+          body: JSON.stringify({ resourceType, items }),
+        })
+      );
     }
 
     // ── Docker Containers ─────────────────────────────────────────────
@@ -678,6 +739,30 @@ export function withDockerApi<TBase extends ApiClientBaseConstructor>(Base: TBas
       );
     }
 
+    async inspectDockerVolume(nodeId: string, name: string): Promise<DockerVolume> {
+      return this.unwrapData(
+        this.request<{ data: DockerVolume }>(
+          `/docker/nodes/${nodeId}/volumes/${encodeURIComponent(name)}`
+        )
+      );
+    }
+
+    async listVolumeDir(nodeId: string, name: string, path: string): Promise<FileEntry[]> {
+      const response = await this.request<DockerListEnvelope<FileEntry>>(
+        `/docker/nodes/${nodeId}/volumes/${encodeURIComponent(name)}/files?path=${encodeURIComponent(path)}`
+      );
+      return withDockerListMeta(response);
+    }
+
+    async exportDockerVolume(nodeId: string, name: string): Promise<Blob> {
+      const response = await fetch(
+        `${API_BASE}/docker/nodes/${nodeId}/volumes/${encodeURIComponent(name)}/export`,
+        { headers: this.getHeaders() }
+      );
+      if (!response.ok) throw new Error("Failed to export volume");
+      return response.blob();
+    }
+
     async createVolume(
       nodeId: string,
       config: { name: string; driver?: string; labels?: Record<string, string> }
@@ -694,6 +779,30 @@ export function withDockerApi<TBase extends ApiClientBaseConstructor>(Base: TBas
       await this.request<void>(`/docker/nodes/${nodeId}/volumes/${encodeURIComponent(name)}`, {
         method: "DELETE",
       });
+    }
+
+    async renameVolume(nodeId: string, name: string, newName: string): Promise<void> {
+      await this.request<void>(
+        `/docker/nodes/${nodeId}/volumes/${encodeURIComponent(name)}/rename`,
+        {
+          method: "POST",
+          body: JSON.stringify({ name: newName }),
+        }
+      );
+    }
+
+    async updateVolumeLabels(
+      nodeId: string,
+      name: string,
+      labels: Record<string, string>
+    ): Promise<void> {
+      await this.request<void>(
+        `/docker/nodes/${nodeId}/volumes/${encodeURIComponent(name)}/labels`,
+        {
+          method: "PUT",
+          body: JSON.stringify({ labels }),
+        }
+      );
     }
 
     // ── Docker Networks ───────────────────────────────────────────────

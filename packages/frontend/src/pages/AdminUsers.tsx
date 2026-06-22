@@ -261,20 +261,20 @@ export function AdminUsers({
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-medium truncate">{user.name || user.email}</p>
                       {isSelf ? (
-                        <Badge variant="secondary" className="text-[10px] shrink-0">
+                        <Badge variant="secondary" className="shrink-0">
                           You
                         </Badge>
                       ) : isSystemUser ? (
-                        <Badge variant="outline" className="text-[10px] shrink-0">
+                        <Badge variant="outline" className="shrink-0">
                           System
                         </Badge>
                       ) : user.isBlocked ? (
-                        <Badge variant="destructive" className="text-[10px] shrink-0">
+                        <Badge variant="destructive" className="shrink-0">
                           <Ban className="h-2.5 w-2.5 mr-0.5" />
                           Blocked
                         </Badge>
                       ) : (
-                        <Badge variant="secondary" className="text-[10px] shrink-0 invisible">
+                        <Badge variant="secondary" className="shrink-0 invisible">
                           You
                         </Badge>
                       )}
@@ -284,9 +284,7 @@ export function AdminUsers({
 
                   <div className="shrink-0">
                     {isReadOnly ? (
-                      <Badge variant="secondary" className="text-xs">
-                        {user.groupName}
-                      </Badge>
+                      <Badge variant="secondary">{user.groupName}</Badge>
                     ) : (
                       <div className="w-44">
                         <Select

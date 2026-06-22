@@ -211,10 +211,10 @@ export function NginxTemplates({
                     {t.description || "No description"}
                   </p>
                   <div className="flex flex-wrap gap-1">
-                    <Badge variant="secondary" className="text-xs uppercase">
+                    <Badge variant="secondary" className="uppercase">
                       {t.type}
                     </Badge>
-                    {t.isBuiltin && <Badge className="text-xs">Built-in</Badge>}
+                    {t.isBuiltin && <Badge>Built-in</Badge>}
                   </div>
                 </div>
               );

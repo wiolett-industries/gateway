@@ -417,12 +417,12 @@ export function CreateProxyHostDialog({
                     {selectedNode ? (
                       <div className="flex min-w-0 items-center gap-3 pr-2">
                         <span className="min-w-0 flex-1 truncate">{selectedNode.hostname}</span>
-                        <Badge variant="secondary" className="shrink-0 text-xs">
+                        <Badge variant="secondary" className="shrink-0">
                           {selectedNode.type}
                         </Badge>
                         <Badge
                           variant={nodeStatusVariant(selectedNode.status)}
-                          className="shrink-0 text-xs"
+                          className="shrink-0"
                         >
                           {selectedNode.status}
                         </Badge>
@@ -443,12 +443,8 @@ export function CreateProxyHostDialog({
                         <SelectItem key={node.id} value={node.id} disabled={lockedForCreation}>
                           <div className="flex items-center justify-between w-full gap-3">
                             <span className="min-w-0 truncate">{node.hostname}</span>
-                            <Badge variant="secondary" className="text-xs">
-                              {node.type}
-                            </Badge>
-                            <Badge variant={nodeStatusVariant(node.status)} className="text-xs">
-                              {node.status}
-                            </Badge>
+                            <Badge variant="secondary">{node.type}</Badge>
+                            <Badge variant={nodeStatusVariant(node.status)}>{node.status}</Badge>
                           </div>
                         </SelectItem>
                       );

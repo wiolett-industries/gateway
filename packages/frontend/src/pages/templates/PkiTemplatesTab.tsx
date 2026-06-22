@@ -305,35 +305,21 @@ export function PkiTemplatesTab({
                   {template.description || "No description"}
                 </p>
                 <div className="flex flex-wrap gap-1">
-                  <Badge variant="secondary" className="text-xs">
-                    {template.certType}
-                  </Badge>
-                  <Badge variant="secondary" className="text-xs">
-                    {template.keyAlgorithm}
-                  </Badge>
-                  <Badge variant="secondary" className="text-xs">
-                    {template.validityDays}d
-                  </Badge>
-                  {template.isBuiltin && <Badge className="text-xs">Built-in</Badge>}
+                  <Badge variant="secondary">{template.certType}</Badge>
+                  <Badge variant="secondary">{template.keyAlgorithm}</Badge>
+                  <Badge variant="secondary">{template.validityDays}d</Badge>
+                  {template.isBuiltin && <Badge>Built-in</Badge>}
                   {(template.keyUsage?.length ?? 0) > 0 && (
-                    <Badge variant="secondary" className="text-xs">
-                      {template.keyUsage.length} KU
-                    </Badge>
+                    <Badge variant="secondary">{template.keyUsage.length} KU</Badge>
                   )}
                   {(template.extKeyUsage?.length ?? 0) > 0 && (
-                    <Badge variant="secondary" className="text-xs">
-                      {template.extKeyUsage.length} EKU
-                    </Badge>
+                    <Badge variant="secondary">{template.extKeyUsage.length} EKU</Badge>
                   )}
                   {(template.crlDistributionPoints?.length ?? 0) > 0 && (
-                    <Badge variant="secondary" className="text-xs">
-                      CRL
-                    </Badge>
+                    <Badge variant="secondary">CRL</Badge>
                   )}
                   {(template.customExtensions?.length ?? 0) > 0 && (
-                    <Badge variant="secondary" className="text-xs">
-                      {template.customExtensions.length} ext
-                    </Badge>
+                    <Badge variant="secondary">{template.customExtensions.length} ext</Badge>
                   )}
                 </div>
               </div>

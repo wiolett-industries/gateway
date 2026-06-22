@@ -101,7 +101,7 @@ function LicenseSummary({ status }: { status: LicenseStatusView }) {
           </p>
         </div>
       </div>
-      <Badge className="shrink-0 text-xs uppercase" variant={statusVariant(status.status)}>
+      <Badge className="shrink-0 uppercase" variant={statusVariant(status.status)}>
         {statusLabel(status.status)}
       </Badge>
     </div>
@@ -232,7 +232,7 @@ export function LicenseSection({ canManage }: LicenseSectionProps) {
           <DetailRow
             label="Expires"
             value={
-              <Badge variant="secondary" className="text-xs uppercase">
+              <Badge variant="secondary" className="uppercase">
                 {status.expiresAt ? formatDate(status.expiresAt) : "Perpetual"}
               </Badge>
             }
@@ -259,7 +259,7 @@ export function LicenseSection({ canManage }: LicenseSectionProps) {
                   <DetailRow
                     label="Expires"
                     value={
-                      <Badge variant="secondary" className="text-xs uppercase">
+                      <Badge variant="secondary" className="uppercase">
                         {status.expiresAt ? formatDate(status.expiresAt) : "Perpetual"}
                       </Badge>
                     }

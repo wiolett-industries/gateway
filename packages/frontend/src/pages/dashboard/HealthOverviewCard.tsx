@@ -60,7 +60,7 @@ export function HealthOverviewCard({
                     } as const
                   )[(host.effectiveHealthStatus ?? host.healthStatus) as string] || "secondary"
                 }
-                className="text-xs uppercase"
+                className="uppercase"
               >
                 {(host.effectiveHealthStatus ?? host.healthStatus) === "online"
                   ? "healthy"
