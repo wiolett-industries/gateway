@@ -393,7 +393,6 @@ export function DeploymentSettings({
           bodyClassName="p-4 space-y-4"
           actions={
             <Button
-              size="sm"
               style={{ backgroundColor: "rgb(234 179 8)", color: "#111" }}
               className="hover:opacity-90 disabled:opacity-50"
               disabled={!!action || !settingsChanged || !nextImage.trim()}
@@ -433,17 +432,15 @@ export function DeploymentSettings({
         >
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Image</label>
+              <label className="text-xs text-muted-foreground">Image</label>
               <Input
-                className="h-8 text-xs font-mono bg-muted/50"
                 value={stripRegistryHostFromImageName(deploymentBaseline.imageName)}
                 disabled
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Tag</label>
+              <label className="text-xs text-muted-foreground">Tag</label>
               <Input
-                className="h-8 text-xs font-mono"
                 value={imageTag}
                 onChange={(e) => setImageTag(e.target.value)}
                 placeholder={imageTagLocked ? "digest" : "latest"}
@@ -458,46 +455,37 @@ export function DeploymentSettings({
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Drain Seconds</label>
+              <label className="text-xs text-muted-foreground">Drain Seconds</label>
               <Input
-                className="h-8 text-xs"
                 inputMode="numeric"
                 value={drainSeconds}
                 onChange={(event) => setDrainSeconds(event.target.value)}
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Entrypoint</label>
+              <label className="text-xs text-muted-foreground">Entrypoint</label>
               <Input
-                className="h-8 text-xs font-mono"
                 value={entrypoint}
                 onChange={(e) => setEntrypoint(e.target.value)}
                 placeholder="/docker-entrypoint.sh"
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Working Directory</label>
+              <label className="text-xs text-muted-foreground">Working Directory</label>
               <Input
-                className="h-8 text-xs font-mono"
                 value={workingDir}
                 onChange={(e) => setWorkingDir(e.target.value)}
                 placeholder="/app"
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">User</label>
-              <Input
-                className="h-8 text-xs font-mono"
-                value={user}
-                onChange={(e) => setUser(e.target.value)}
-                placeholder="root"
-              />
+              <label className="text-xs text-muted-foreground">User</label>
+              <Input value={user} onChange={(e) => setUser(e.target.value)} placeholder="root" />
             </div>
           </div>
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground">Command</label>
+            <label className="text-xs text-muted-foreground">Command</label>
             <Input
-              className="h-8 text-xs font-mono"
               value={command}
               onChange={(e) => setCommand(e.target.value)}
               placeholder="nginx -g daemon off;"

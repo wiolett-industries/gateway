@@ -9,6 +9,7 @@ import type {
   DockerTask,
   DockerVolume,
   Node,
+  NodeAppearanceColor,
 } from "@/types";
 import { isNodeIncompatible } from "@/types";
 
@@ -31,8 +32,18 @@ function normList<T>(data: unknown): T[] {
 }
 
 /** Tag each item with node info for multi-node display */
-function tagWithNode<T>(items: T[], nodeId: string, nodeName: string): T[] {
-  return items.map((item) => ({ ...item, _nodeId: nodeId, _nodeName: nodeName }));
+function tagWithNode<T>(
+  items: T[],
+  nodeId: string,
+  nodeName: string,
+  nodeColor?: NodeAppearanceColor | null
+): T[] {
+  return items.map((item) => ({
+    ...item,
+    _nodeId: nodeId,
+    _nodeName: nodeName,
+    _nodeColor: nodeColor ?? null,
+  }));
 }
 
 async function attachFolderPlacements<T extends object>(
@@ -99,6 +110,9 @@ interface DockerState {
 
   setSelectedNode: (nodeId: string | null) => void;
   setDockerNodes: (nodes: Node[]) => void;
+  syncNodeAppearance: (
+    node: Pick<Node, "id" | "displayName" | "hostname" | "appearanceColor">
+  ) => void;
   setFilters: (filters: Partial<DockerFilters>) => void;
   resetFilters: () => void;
 
@@ -147,7 +161,7 @@ async function fetchAllNodes<T>(
     nodes.map(async (node) => {
       const data = await fetcher(node.id);
       const items = normalizer(data);
-      return tagWithNode(items, node.id, node.displayName || node.hostname);
+      return tagWithNode(items, node.id, node.displayName || node.hostname, node.appearanceColor);
     })
   );
 
@@ -226,6 +240,38 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
       };
     }),
 
+  syncNodeAppearance: (node) =>
+    set((state) => {
+      type NodeTaggedRow = {
+        _nodeId?: string;
+        _nodeName?: string;
+        _nodeColor?: NodeAppearanceColor | null;
+      };
+      const nodeName = node.displayName || node.hostname;
+      const patchNodeRow = <T extends object>(item: T): T => {
+        const tagged = item as T & NodeTaggedRow;
+        return tagged._nodeId === node.id
+          ? { ...tagged, _nodeName: nodeName, _nodeColor: node.appearanceColor }
+          : item;
+      };
+
+      return {
+        dockerNodes: state.dockerNodes.map((dockerNode) =>
+          dockerNode.id === node.id ? { ...dockerNode, ...node } : dockerNode
+        ),
+        containers: state.containers.map(patchNodeRow),
+        containersByScope: Object.fromEntries(
+          Object.entries(state.containersByScope).map(([scope, containers]) => [
+            scope,
+            containers.map(patchNodeRow),
+          ])
+        ),
+        images: state.images.map(patchNodeRow),
+        volumes: state.volumes.map(patchNodeRow),
+        networks: state.networks.map(patchNodeRow),
+      };
+    }),
+
   setFilters: (newFilters) => {
     set((state) => ({ filters: { ...state.filters, ...newFilters } }));
   },
@@ -253,7 +299,8 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
         const items = tagWithNode(
           normList<DockerContainer>(data),
           effectiveNodeId,
-          node?.displayName || node?.hostname || ""
+          node?.displayName || node?.hostname || "",
+          node?.appearanceColor
         );
         if (requestId !== dockerRequestIds.containers) return;
         set((state) => ({
@@ -298,7 +345,8 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
         const items = tagWithNode(
           normList<DockerContainer>(data),
           effectiveNodeId,
-          node?.displayName || node?.hostname || ""
+          node?.displayName || node?.hostname || "",
+          node?.appearanceColor
         );
         if (requestId !== dockerRequestIds.containers) return;
         set((state) => ({
@@ -339,7 +387,8 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
         const tagged = tagWithNode(
           normList<DockerImage>(data),
           effectiveNodeId,
-          node?.displayName || node?.hostname || ""
+          node?.displayName || node?.hostname || "",
+          node?.appearanceColor
         );
         const items = await attachFolderPlacements("image", tagged, dockerImageResourceKey);
         if (requestId !== dockerRequestIds.images) return;
@@ -380,7 +429,8 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
         const tagged = tagWithNode(
           normList<DockerVolume>(data),
           effectiveNodeId,
-          node?.displayName || node?.hostname || ""
+          node?.displayName || node?.hostname || "",
+          node?.appearanceColor
         );
         const items = await attachFolderPlacements("volume", tagged, dockerVolumeResourceKey);
         if (requestId !== dockerRequestIds.volumes) return;
@@ -421,7 +471,8 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
         const tagged = tagWithNode(
           normList<DockerNetwork>(data),
           effectiveNodeId,
-          node?.displayName || node?.hostname || ""
+          node?.displayName || node?.hostname || "",
+          node?.appearanceColor
         );
         const items = await attachFolderPlacements("network", tagged, dockerNetworkResourceKey);
         if (requestId !== dockerRequestIds.networks) return;

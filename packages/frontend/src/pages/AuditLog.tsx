@@ -4,7 +4,9 @@ import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
+import { PanelShell } from "@/components/common/PanelShell";
 import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 import {
@@ -263,37 +265,109 @@ function localDateTimeToIso(value: string): string | undefined {
   return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
 }
 
+function getAuditUserLabel(entry: AuditLogEntry): string {
+  return entry.userName || entry.userEmail || "System";
+}
+
+function getAuditUserInitials(entry: AuditLogEntry): string {
+  const label = getAuditUserLabel(entry);
+  if (label === "System") return "SY";
+  return label
+    .split(/[\s@._-]+/)
+    .map((part) => part[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+}
+
+function getAuditResourceNameFromDetails(details: AuditLogEntry["details"]): string | null {
+  if (!details) return null;
+  for (const key of [
+    "newName",
+    "name",
+    "displayName",
+    "hostname",
+    "commonName",
+    "cn",
+    "domain",
+    "containerName",
+    "imageRef",
+    "key",
+  ]) {
+    const value = details[key];
+    if (typeof value === "string" && value.trim()) return value;
+  }
+  for (const key of ["domainNames", "domains"]) {
+    const value = details[key];
+    if (!Array.isArray(value)) continue;
+    const names = value.filter((item): item is string => typeof item === "string" && !!item.trim());
+    if (names.length) return names.join(", ");
+  }
+  return null;
+}
+
+function getAuditResourceDisplay(entry: AuditLogEntry): { label: string; title: string } {
+  const resourceName = entry.resourceName ?? getAuditResourceNameFromDetails(entry.details);
+  const resourceValue = resourceName ?? entry.resourceId;
+  const resourceType = formatAuditToken(entry.resourceType);
+  const label = resourceValue ? `${resourceType} / ${resourceValue}` : resourceType;
+  const title =
+    resourceName && entry.resourceId && resourceName !== entry.resourceId
+      ? `${label} (${entry.resourceId})`
+      : label;
+  return { label, title };
+}
+
 const columns: DataTableColumn<AuditLogEntry>[] = [
   {
     key: "user",
     header: "User",
-    width: "200px",
+    width: "minmax(180px, 1fr)",
     truncate: true,
-    render: (entry) => entry.userName || entry.userEmail || "System",
+    render: (entry) => {
+      const label = getAuditUserLabel(entry);
+      const isSystem = label === "System";
+      return (
+        <span className="flex min-w-0 items-center gap-2">
+          <Avatar className="h-7 w-7">
+            <AvatarFallback className="text-[10px]">
+              {isSystem ? <Settings className="h-3.5 w-3.5" /> : getAuditUserInitials(entry)}
+            </AvatarFallback>
+          </Avatar>
+          <span className="truncate">{label}</span>
+        </span>
+      );
+    },
   },
   {
     key: "action",
     header: "Action",
-    width: "240px",
+    width: "minmax(180px, 1fr)",
     render: (entry) => (
-      <span className="font-mono text-xs bg-muted px-1.5 py-0.5">{entry.action}</span>
+      <span title={entry.action} className="text-muted-foreground">
+        {formatAuditToken(entry.action)}
+      </span>
     ),
   },
   {
     key: "resource",
     header: "Resource",
+    width: "minmax(260px, 1.6fr)",
     truncate: true,
-    render: (entry) => (
-      <span className="text-muted-foreground">
-        {entry.resourceType}
-        {entry.resourceId ? ` / ${entry.resourceId.slice(0, 8)}…` : ""}
-      </span>
-    ),
+    render: (entry) => {
+      const resource = getAuditResourceDisplay(entry);
+      return (
+        <span className="text-muted-foreground" title={resource.title}>
+          {resource.label}
+        </span>
+      );
+    },
   },
   {
     key: "ip",
     header: "IP Address",
-    width: "140px",
+    width: "minmax(160px, 0.75fr)",
     render: (entry) => (
       <span className="font-mono text-xs text-muted-foreground">{entry.ipAddress || "—"}</span>
     ),
@@ -301,7 +375,8 @@ const columns: DataTableColumn<AuditLogEntry>[] = [
   {
     key: "time",
     header: "Time",
-    width: "180px",
+    width: "minmax(130px, 0.65fr)",
+    align: "right",
     render: (entry) => (
       <span className="text-muted-foreground">{formatRelativeDate(entry.createdAt)}</span>
     ),
@@ -710,6 +785,7 @@ export function AuditLog({
               onRowClick={setSelectedEntry}
               scrollRef={scrollRef}
               horizontalScroll
+              minWidth="1000px"
               emptyMessage="No audit log entries found"
               footer={
                 <div ref={sentinelRef} className="py-4 text-center text-xs text-muted-foreground">
@@ -943,11 +1019,12 @@ function AuditOptionChecklist({
   emptyMessage?: string;
 }) {
   return (
-    <div className="min-h-0 border border-border">
-      <div className="border-b border-border px-3 py-2">
-        <h3 className="text-sm font-medium">{title}</h3>
-        <p className="text-xs text-muted-foreground">{description}</p>
-      </div>
+    <PanelShell
+      title={title}
+      description={description}
+      className="min-h-0"
+      headerClassName="px-3 py-2"
+    >
       <div className="max-h-72 overflow-y-auto">
         {options.length === 0 ? (
           <p className="px-3 py-4 text-sm text-muted-foreground">{emptyMessage}</p>
@@ -961,7 +1038,7 @@ function AuditOptionChecklist({
                 type="checkbox"
                 checked={selected.includes(option.value)}
                 onChange={() => onToggle(option.value)}
-                className="h-4 w-4 accent-primary"
+                className="form-checkbox"
               />
               <span className="min-w-0 truncate font-mono text-xs" title={option.label}>
                 {option.label}
@@ -970,6 +1047,6 @@ function AuditOptionChecklist({
           ))
         )}
       </div>
-    </div>
+    </PanelShell>
   );
 }

@@ -449,7 +449,7 @@ export function DockerVolumeDetail() {
                   description="Download a tar.gz archive with the current volume contents."
                   headerBorder={false}
                   actions={
-                    <Button size="sm" onClick={handleExport} disabled={exporting}>
+                    <Button onClick={handleExport} disabled={exporting}>
                       <Download className="h-3.5 w-3.5" />
                       {exporting ? "Exporting..." : "Export"}
                     </Button>

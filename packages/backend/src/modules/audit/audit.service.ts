@@ -2,7 +2,29 @@ import { asc, count as countFn, desc, eq, gte, inArray, isNull, lte, notInArray,
 import { inject, injectable } from 'tsyringe';
 import { TOKENS } from '@/container.js';
 import type { DrizzleClient } from '@/db/client.js';
-import { auditLog, users } from '@/db/schema/index.js';
+import {
+  accessLists,
+  apiTokens,
+  auditLog,
+  certificateAuthorities,
+  certificates,
+  databaseConnectionFolders,
+  databaseConnections,
+  dockerContainerFolders,
+  dockerDeployments,
+  dockerRegistries,
+  domains,
+  nginxTemplates,
+  nodeFolders,
+  nodes,
+  notificationAlertRules,
+  notificationWebhooks,
+  permissionGroups,
+  proxyHostFolders,
+  proxyHosts,
+  sslCertificates,
+  users,
+} from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { buildWhere } from '@/lib/utils.js';
 import type { PaginatedResponse } from '@/types.js';
@@ -18,6 +40,21 @@ export interface AuditEntry {
   details?: Record<string, unknown>;
   ipAddress?: string;
   userAgent?: string;
+}
+
+interface AuditLogRow {
+  id: string;
+  userId: string | null;
+  action: string;
+  resourceType: string;
+  resourceId: string | null;
+  resourceName: string | null;
+  details: Record<string, unknown> | null;
+  ipAddress: string | null;
+  userAgent: string | null;
+  createdAt: Date;
+  userName: string | null;
+  userEmail: string | null;
 }
 
 @injectable()
@@ -56,7 +93,7 @@ export class AuditService {
     to?: Date;
     page: number;
     limit: number;
-  }): Promise<PaginatedResponse<typeof auditLog.$inferSelect>> {
+  }): Promise<PaginatedResponse<AuditLogRow>> {
     const conditions = [];
     const actions = uniqueDefined([...(params.actions ?? []), params.action]);
     const resourceTypes = uniqueDefined([...(params.resourceTypes ?? []), params.resourceType]);
@@ -108,10 +145,18 @@ export class AuditService {
       this.db.select({ count: countFn() }).from(auditLog).where(where),
     ]);
 
+    const resourceNames = await this.resolveResourceNames(entries);
+    const data = entries.map((entry) => ({
+      ...entry,
+      resourceName:
+        getResourceNameFromDetails(entry.details) ??
+        resourceNames.get(resourceKey(entry.resourceType, entry.resourceId)) ??
+        null,
+    }));
     const total = Number(totalCount);
 
     return {
-      data: entries,
+      data,
       pagination: {
         page: params.page,
         limit: params.limit,
@@ -132,8 +177,240 @@ export class AuditService {
       .leftJoin(users, eq(auditLog.userId, users.id))
       .orderBy(asc(users.name), asc(users.email), asc(auditLog.userId));
   }
+
+  private async resolveResourceNames(
+    entries: Array<{ resourceType: string; resourceId: string | null }>
+  ): Promise<Map<string, string>> {
+    const idsByType = new Map<string, Set<string>>();
+    for (const entry of entries) {
+      if (!entry.resourceId) continue;
+      const ids = idsByType.get(entry.resourceType) ?? new Set<string>();
+      ids.add(entry.resourceId);
+      idsByType.set(entry.resourceType, ids);
+    }
+
+    const names = new Map<string, string>();
+    const ids = (type: string) => [...(idsByType.get(type) ?? [])];
+
+    const add = (type: string, id: string | null | undefined, name: string | null | undefined) => {
+      if (id && name) names.set(resourceKey(type, id), name);
+    };
+
+    const nodeIds = ids('node');
+    if (nodeIds.length) {
+      const rows = await this.db
+        .select({ id: nodes.id, displayName: nodes.displayName, hostname: nodes.hostname })
+        .from(nodes)
+        .where(inArray(nodes.id, nodeIds));
+      for (const row of rows) add('node', row.id, row.displayName || row.hostname);
+    }
+
+    const nodeFolderIds = ids('node_folder');
+    if (nodeFolderIds.length) {
+      const rows = await this.db
+        .select({ id: nodeFolders.id, name: nodeFolders.name })
+        .from(nodeFolders)
+        .where(inArray(nodeFolders.id, nodeFolderIds));
+      for (const row of rows) add('node_folder', row.id, row.name);
+    }
+
+    const dockerFolderIds = ids('docker_folder');
+    if (dockerFolderIds.length) {
+      const rows = await this.db
+        .select({ id: dockerContainerFolders.id, name: dockerContainerFolders.name })
+        .from(dockerContainerFolders)
+        .where(inArray(dockerContainerFolders.id, dockerFolderIds));
+      for (const row of rows) add('docker_folder', row.id, row.name);
+    }
+
+    const proxyHostIds = ids('proxy_host');
+    if (proxyHostIds.length) {
+      const rows = await this.db
+        .select({ id: proxyHosts.id, domainNames: proxyHosts.domainNames })
+        .from(proxyHosts)
+        .where(inArray(proxyHosts.id, proxyHostIds));
+      for (const row of rows) add('proxy_host', row.id, row.domainNames?.join(', '));
+    }
+
+    const proxyFolderIds = ids('proxy_host_folder');
+    if (proxyFolderIds.length) {
+      const rows = await this.db
+        .select({ id: proxyHostFolders.id, name: proxyHostFolders.name })
+        .from(proxyHostFolders)
+        .where(inArray(proxyHostFolders.id, proxyFolderIds));
+      for (const row of rows) add('proxy_host_folder', row.id, row.name);
+    }
+
+    const caIds = ids('ca');
+    if (caIds.length) {
+      const rows = await this.db
+        .select({ id: certificateAuthorities.id, commonName: certificateAuthorities.commonName })
+        .from(certificateAuthorities)
+        .where(inArray(certificateAuthorities.id, caIds));
+      for (const row of rows) add('ca', row.id, row.commonName);
+    }
+
+    const certificateIds = ids('certificate');
+    if (certificateIds.length) {
+      const rows = await this.db
+        .select({ id: certificates.id, commonName: certificates.commonName })
+        .from(certificates)
+        .where(inArray(certificates.id, certificateIds));
+      for (const row of rows) add('certificate', row.id, row.commonName);
+    }
+
+    const sslIds = ids('ssl_certificate');
+    if (sslIds.length) {
+      const rows = await this.db
+        .select({ id: sslCertificates.id, name: sslCertificates.name })
+        .from(sslCertificates)
+        .where(inArray(sslCertificates.id, sslIds));
+      for (const row of rows) add('ssl_certificate', row.id, row.name);
+    }
+
+    const domainIds = ids('domain');
+    if (domainIds.length) {
+      const rows = await this.db
+        .select({ id: domains.id, domain: domains.domain })
+        .from(domains)
+        .where(inArray(domains.id, domainIds));
+      for (const row of rows) add('domain', row.id, row.domain);
+    }
+
+    const databaseIds = ids('database');
+    if (databaseIds.length) {
+      const rows = await this.db
+        .select({ id: databaseConnections.id, name: databaseConnections.name })
+        .from(databaseConnections)
+        .where(inArray(databaseConnections.id, databaseIds));
+      for (const row of rows) add('database', row.id, row.name);
+    }
+
+    const databaseFolderIds = ids('database_connection_folder');
+    if (databaseFolderIds.length) {
+      const rows = await this.db
+        .select({ id: databaseConnectionFolders.id, name: databaseConnectionFolders.name })
+        .from(databaseConnectionFolders)
+        .where(inArray(databaseConnectionFolders.id, databaseFolderIds));
+      for (const row of rows) add('database_connection_folder', row.id, row.name);
+    }
+
+    const accessListIds = ids('access_list');
+    if (accessListIds.length) {
+      const rows = await this.db
+        .select({ id: accessLists.id, name: accessLists.name })
+        .from(accessLists)
+        .where(inArray(accessLists.id, accessListIds));
+      for (const row of rows) add('access_list', row.id, row.name);
+    }
+
+    const registryIds = ids('docker-registry');
+    if (registryIds.length) {
+      const rows = await this.db
+        .select({ id: dockerRegistries.id, name: dockerRegistries.name })
+        .from(dockerRegistries)
+        .where(inArray(dockerRegistries.id, registryIds));
+      for (const row of rows) add('docker-registry', row.id, row.name);
+    }
+
+    const deploymentIds = ids('docker-deployment');
+    if (deploymentIds.length) {
+      const rows = await this.db
+        .select({ id: dockerDeployments.id, name: dockerDeployments.name })
+        .from(dockerDeployments)
+        .where(inArray(dockerDeployments.id, deploymentIds));
+      for (const row of rows) add('docker-deployment', row.id, row.name);
+    }
+
+    const templateIds = ids('nginx_template');
+    if (templateIds.length) {
+      const rows = await this.db
+        .select({ id: nginxTemplates.id, name: nginxTemplates.name })
+        .from(nginxTemplates)
+        .where(inArray(nginxTemplates.id, templateIds));
+      for (const row of rows) add('nginx_template', row.id, row.name);
+    }
+
+    const tokenIds = ids('api-token');
+    if (tokenIds.length) {
+      const rows = await this.db
+        .select({ id: apiTokens.id, name: apiTokens.name })
+        .from(apiTokens)
+        .where(inArray(apiTokens.id, tokenIds));
+      for (const row of rows) add('api-token', row.id, row.name);
+    }
+
+    const groupIds = ids('permission_group');
+    if (groupIds.length) {
+      const rows = await this.db
+        .select({ id: permissionGroups.id, name: permissionGroups.name })
+        .from(permissionGroups)
+        .where(inArray(permissionGroups.id, groupIds));
+      for (const row of rows) add('permission_group', row.id, row.name);
+    }
+
+    const webhookIds = ids('notification_webhook');
+    if (webhookIds.length) {
+      const rows = await this.db
+        .select({ id: notificationWebhooks.id, name: notificationWebhooks.name })
+        .from(notificationWebhooks)
+        .where(inArray(notificationWebhooks.id, webhookIds));
+      for (const row of rows) add('notification_webhook', row.id, row.name);
+    }
+
+    const ruleIds = ids('notification_alert_rule');
+    if (ruleIds.length) {
+      const rows = await this.db
+        .select({ id: notificationAlertRules.id, name: notificationAlertRules.name })
+        .from(notificationAlertRules)
+        .where(inArray(notificationAlertRules.id, ruleIds));
+      for (const row of rows) add('notification_alert_rule', row.id, row.name);
+    }
+
+    const userIds = ids('user');
+    if (userIds.length) {
+      const rows = await this.db
+        .select({ id: users.id, name: users.name, email: users.email })
+        .from(users)
+        .where(inArray(users.id, userIds));
+      for (const row of rows) add('user', row.id, row.name || row.email);
+    }
+
+    return names;
+  }
 }
 
 function uniqueDefined(values: Array<string | undefined>): string[] {
   return [...new Set(values.map((value) => value?.trim()).filter((value): value is string => !!value))];
+}
+
+function resourceKey(type: string, id: string | null | undefined): string {
+  return `${type}:${id ?? ''}`;
+}
+
+function getResourceNameFromDetails(details: Record<string, unknown> | null): string | null {
+  if (!details) return null;
+  for (const key of [
+    'newName',
+    'name',
+    'displayName',
+    'hostname',
+    'commonName',
+    'cn',
+    'domain',
+    'containerName',
+    'imageRef',
+    'key',
+  ]) {
+    const value = details[key];
+    if (typeof value === 'string' && value.trim()) return value;
+  }
+  for (const key of ['domainNames', 'domains']) {
+    const value = details[key];
+    if (Array.isArray(value)) {
+      const names = value.filter((item): item is string => typeof item === 'string' && !!item.trim());
+      if (names.length) return names.join(', ');
+    }
+  }
+  return null;
 }

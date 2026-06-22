@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { DetailRow } from "@/components/common/DetailRow";
+import { EmptyState } from "@/components/common/EmptyState";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatBytes, formatUptime } from "@/lib/utils";
@@ -187,7 +188,6 @@ export function NodeDetailsTab({
             <h2 className="font-semibold">Runtime</h2>
             {!nodeUpdating && daemonUpdate.available && !pendingUpdateTarget && (
               <Button
-                size="sm"
                 style={{ backgroundColor: "rgb(234 179 8)", color: "#111" }}
                 className="hover:opacity-90 disabled:opacity-50"
                 onClick={handleDaemonUpdate}
@@ -304,7 +304,7 @@ export function NodeDetailsTab({
                 ))}
               </div>
             ) : (
-              <p className="py-6 text-center text-sm text-muted-foreground">No disk data</p>
+              <EmptyState message="No disk data" embedded />
             )}
           </div>
         </div>
@@ -353,9 +353,7 @@ export function NodeDetailsTab({
               </table>
             </div>
           ) : (
-            <p className="py-8 text-center text-sm text-muted-foreground">
-              No proxy hosts assigned yet
-            </p>
+            <EmptyState message="No proxy hosts assigned yet" embedded />
           )}
         </div>
       )}

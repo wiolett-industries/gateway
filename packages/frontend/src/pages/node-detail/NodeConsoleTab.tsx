@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { TerminalConsole } from "@/components/terminal/TerminalConsole";
+import { ConsolePanel } from "@/components/terminal/ConsolePanel";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 
@@ -18,7 +18,9 @@ export function NodeConsoleTab({ nodeId }: { nodeId: string }) {
   }
 
   return (
-    <TerminalConsole
+    <ConsolePanel
+      title="Node Console"
+      description="Interactive shell session on this node"
       wsFactory={wsFactory}
       channelKey={`node-console:${nodeId}`}
       popoutUrl={`/nodes/console/${nodeId}?shell=auto`}

@@ -37,7 +37,7 @@ export function SectionHeader({
           ? "flex flex-wrap items-center justify-between gap-3"
           : "flex items-center justify-between",
         withBorder && "border-b border-border",
-        "px-4 py-3",
+        "bg-muted/60 p-4 dark:bg-muted",
         className
       )}
       {...props}
@@ -49,7 +49,14 @@ export function SectionHeader({
         ) : null}
       </div>
       {rightSlot ? (
-        <div className={cn("flex shrink-0 items-center gap-2", actionsClassName)}>{rightSlot}</div>
+        <div
+          className={cn(
+            "flex shrink-0 items-center gap-2 [&_[data-button]]:h-9 [&_[data-button]]:min-h-9 [&_[data-button].aspect-square]:w-9 [&_[data-button].aspect-square]:min-w-9",
+            actionsClassName
+          )}
+        >
+          {rightSlot}
+        </div>
       ) : null}
     </div>
   );

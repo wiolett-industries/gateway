@@ -1,6 +1,8 @@
-import { Check, Loader2, Play, X } from "lucide-react";
+import { Check, Loader2, Play, Save, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { PanelShell } from "@/components/common/PanelShell";
+import { SimpleTable, type SimpleTableColumn } from "@/components/common/SimpleTable";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -31,14 +33,19 @@ export function HousekeepingSection({ canRun, canConfigure }: HousekeepingSectio
     orphanedCerts: { enabled: false },
     acmeCleanup: { enabled: true },
   });
+  const [hkSavedConfig, setHkSavedConfig] = useState<HousekeepingConfig | null>(null);
   const [hkStats, setHkStats] = useState<HousekeepingStats | null>(null);
   const [hkRunning, setHkRunning] = useState(false);
+  const [hkSaving, setHkSaving] = useState(false);
   const [hkHistoryOpen, setHkHistoryOpen] = useState(false);
   const [hkHistory, setHkHistory] = useState<HousekeepingRunResult[]>([]);
 
   const loadHousekeeping = useCallback(async () => {
     const cachedConfig = api.getCached<HousekeepingConfig>("housekeeping:config");
-    if (cachedConfig) setHkConfig(cachedConfig);
+    if (cachedConfig) {
+      setHkConfig(cachedConfig);
+      setHkSavedConfig(cachedConfig);
+    }
     const cachedStats = api.getCached<HousekeepingStats>("housekeeping:stats");
     if (cachedStats) setHkStats(cachedStats);
     api
@@ -46,6 +53,7 @@ export function HousekeepingSection({ canRun, canConfigure }: HousekeepingSectio
       .then((c) => {
         api.setCache("housekeeping:config", c);
         setHkConfig(c);
+        setHkSavedConfig(c);
       })
       .catch(() => {});
     api
@@ -62,14 +70,24 @@ export function HousekeepingSection({ canRun, canConfigure }: HousekeepingSectio
     loadHousekeeping();
   }, [loadHousekeeping]);
 
-  const updateHkConfig = async (partial: Partial<HousekeepingConfig>) => {
+  const hkHasChanges = hkSavedConfig
+    ? JSON.stringify(hkConfig) !== JSON.stringify(hkSavedConfig)
+    : false;
+
+  const saveHkConfig = async () => {
     if (!canConfigure) return;
+    setHkSaving(true);
     try {
-      const updated = await api.updateHousekeepingConfig(partial);
+      const updated = await api.updateHousekeepingConfig(hkConfig);
       api.setCache("housekeeping:config", updated);
       setHkConfig(updated);
+      setHkSavedConfig(updated);
+      toast.success("Housekeeping settings updated");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to update config");
+      loadHousekeeping();
+    } finally {
+      setHkSaving(false);
     }
   };
 
@@ -94,7 +112,49 @@ export function HousekeepingSection({ canRun, canConfigure }: HousekeepingSectio
     }
   };
 
-  const controlsDisabled = hkRunning || !canConfigure;
+  const controlsDisabled = hkRunning || hkSaving || !canConfigure;
+  const historyColumns: SimpleTableColumn<HousekeepingRunResult>[] = [
+    {
+      id: "time",
+      header: "Time",
+      className: "w-[28%]",
+      cellClassName: "text-muted-foreground whitespace-nowrap",
+      render: (run) => formatRelativeDate(run.startedAt),
+    },
+    {
+      id: "trigger",
+      header: "Trigger",
+      className: "w-[24%]",
+      render: (run) => <Badge variant="secondary">{run.trigger}</Badge>,
+    },
+    {
+      id: "duration",
+      header: "Duration",
+      className: "w-24",
+      cellClassName: "text-muted-foreground whitespace-nowrap",
+      render: (run) => `${(run.totalDurationMs / 1000).toFixed(1)}s`,
+    },
+    {
+      id: "cleaned",
+      header: "Cleaned",
+      className: "w-28",
+      cellClassName: "text-muted-foreground whitespace-nowrap",
+      render: (run) =>
+        `${run.categories.reduce((sum, category) => sum + category.itemsCleaned, 0)} items`,
+    },
+    {
+      id: "status",
+      header: "Status",
+      align: "right",
+      className: "w-20",
+      render: (run) =>
+        run.overallSuccess ? (
+          <Badge variant="success">OK</Badge>
+        ) : (
+          <Badge variant="destructive">Errors</Badge>
+        ),
+    },
+  ];
 
   const handleViewHistory = async () => {
     try {
@@ -108,38 +168,56 @@ export function HousekeepingSection({ canRun, canConfigure }: HousekeepingSectio
 
   return (
     <>
-      <div className="border border-border bg-card">
-        <div className="flex items-center justify-between border-b border-border p-4">
-          <div>
-            <h2 className="font-semibold">Housekeeping</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Automated cleanup of logs, old data, and unused resources
-            </p>
+      <PanelShell
+        title="Housekeeping"
+        description="Automated cleanup of logs, old data, and unused resources"
+        actions={
+          <Button onClick={saveHkConfig} disabled={!hkHasChanges || controlsDisabled}>
+            <Save className="h-4 w-4" />
+            Save
+          </Button>
+        }
+        dirty={hkHasChanges}
+      >
+        <div className="border-b border-border">
+          <div className="flex items-center justify-between gap-4 px-4 py-3">
+            <div>
+              <p className="text-sm font-medium">Enabled</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Enable scheduled automatic cleanup
+              </p>
+            </div>
+            <Switch
+              checked={hkConfig.enabled}
+              onChange={(enabled) => setHkConfig((current) => ({ ...current, enabled }))}
+              disabled={controlsDisabled}
+            />
           </div>
-          <Switch
-            checked={hkConfig.enabled}
-            onChange={(v) => updateHkConfig({ enabled: v })}
-            disabled={controlsDisabled}
-          />
         </div>
         <div
           className={`transition-opacity duration-200 ${!hkConfig.enabled ? "opacity-50 pointer-events-none" : ""}`}
         >
           <div className="p-4 space-y-3">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-              <span className="text-sm font-medium">Schedule</span>
+              <div>
+                <p className="text-sm font-medium">Schedule</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Cron expression for automatic cleanup runs
+                </p>
+              </div>
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                 <Input
-                  className="w-full font-mono sm:w-48"
+                  className="w-full sm:w-48"
                   value={hkConfig.cronExpression}
                   onChange={(e) => setHkConfig({ ...hkConfig, cronExpression: e.target.value })}
-                  onBlur={() => updateHkConfig({ cronExpression: hkConfig.cronExpression })}
                   disabled={!hkConfig.enabled || controlsDisabled}
                 />
                 <Button
-                  size="sm"
                   onClick={handleRunHousekeeping}
-                  disabled={hkRunning || !hkConfig.enabled || !canRun}
+                  disabled={hkRunning || !hkConfig.enabled || !canRun || hkHasChanges}
+                  title={
+                    hkHasChanges ? "Save housekeeping settings before running cleanup" : undefined
+                  }
                 >
                   {hkRunning ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -158,10 +236,18 @@ export function HousekeepingSection({ canRun, canConfigure }: HousekeepingSectio
               stat={hkStats ? formatBytes(hkStats.nginxLogs.totalSizeBytes) : "..."}
               statDetail={hkStats ? `${hkStats.nginxLogs.fileCount} files` : undefined}
               enabled={hkConfig.nginxLogs.enabled}
-              onToggle={(v) => updateHkConfig({ nginxLogs: { ...hkConfig.nginxLogs, enabled: v } })}
+              onToggle={(v) =>
+                setHkConfig((current) => ({
+                  ...current,
+                  nginxLogs: { ...current.nginxLogs, enabled: v },
+                }))
+              }
               retentionDays={hkConfig.nginxLogs.retentionDays}
               onRetentionChange={(v) =>
-                updateHkConfig({ nginxLogs: { ...hkConfig.nginxLogs, retentionDays: v } })
+                setHkConfig((current) => ({
+                  ...current,
+                  nginxLogs: { ...current.nginxLogs, retentionDays: v },
+                }))
               }
               lastResult={hkStats?.lastRun?.categories.find((c) => c.category === "Nginx Logs")}
               disabled={controlsDisabled}
@@ -172,10 +258,18 @@ export function HousekeepingSection({ canRun, canConfigure }: HousekeepingSectio
               stat={hkStats ? hkStats.auditLog.totalRows.toLocaleString() : "..."}
               statDetail="rows"
               enabled={hkConfig.auditLog.enabled}
-              onToggle={(v) => updateHkConfig({ auditLog: { ...hkConfig.auditLog, enabled: v } })}
+              onToggle={(v) =>
+                setHkConfig((current) => ({
+                  ...current,
+                  auditLog: { ...current.auditLog, enabled: v },
+                }))
+              }
               retentionDays={hkConfig.auditLog.retentionDays}
               onRetentionChange={(v) =>
-                updateHkConfig({ auditLog: { ...hkConfig.auditLog, retentionDays: v } })
+                setHkConfig((current) => ({
+                  ...current,
+                  auditLog: { ...current.auditLog, retentionDays: v },
+                }))
               }
               lastResult={hkStats?.lastRun?.categories.find((c) => c.category === "Audit Log")}
               disabled={controlsDisabled}
@@ -187,13 +281,17 @@ export function HousekeepingSection({ canRun, canConfigure }: HousekeepingSectio
               statDetail="entries"
               enabled={hkConfig.dismissedAlerts.enabled}
               onToggle={(v) =>
-                updateHkConfig({ dismissedAlerts: { ...hkConfig.dismissedAlerts, enabled: v } })
+                setHkConfig((current) => ({
+                  ...current,
+                  dismissedAlerts: { ...current.dismissedAlerts, enabled: v },
+                }))
               }
               retentionDays={hkConfig.dismissedAlerts.retentionDays}
               onRetentionChange={(v) =>
-                updateHkConfig({
-                  dismissedAlerts: { ...hkConfig.dismissedAlerts, retentionDays: v },
-                })
+                setHkConfig((current) => ({
+                  ...current,
+                  dismissedAlerts: { ...current.dismissedAlerts, retentionDays: v },
+                }))
               }
               lastResult={hkStats?.lastRun?.categories.find(
                 (c) => c.category === "Dismissed Alerts"
@@ -206,7 +304,9 @@ export function HousekeepingSection({ canRun, canConfigure }: HousekeepingSectio
               stat={hkStats ? String(hkStats.orphanedCerts.count) : "..."}
               statDetail="found"
               enabled={hkConfig.orphanedCerts.enabled}
-              onToggle={(v) => updateHkConfig({ orphanedCerts: { enabled: v } })}
+              onToggle={(v) =>
+                setHkConfig((current) => ({ ...current, orphanedCerts: { enabled: v } }))
+              }
               lastResult={hkStats?.lastRun?.categories.find((c) => c.category === "Orphaned Certs")}
               disabled={controlsDisabled}
             />
@@ -218,7 +318,9 @@ export function HousekeepingSection({ canRun, canConfigure }: HousekeepingSectio
                 hkStats ? `files (${formatBytes(hkStats.acmeChallenges.totalSizeBytes)})` : "files"
               }
               enabled={hkConfig.acmeCleanup.enabled}
-              onToggle={(v) => updateHkConfig({ acmeCleanup: { enabled: v } })}
+              onToggle={(v) =>
+                setHkConfig((current) => ({ ...current, acmeCleanup: { enabled: v } }))
+              }
               lastResult={hkStats?.lastRun?.categories.find(
                 (c) => c.category === "ACME Challenges"
               )}
@@ -232,7 +334,9 @@ export function HousekeepingSection({ canRun, canConfigure }: HousekeepingSectio
                 hkStats ? `old (${formatBytes(hkStats.dockerImages.reclaimableBytes)})` : "old"
               }
               enabled={hkConfig.dockerPrune.enabled}
-              onToggle={(v) => updateHkConfig({ dockerPrune: { enabled: v } })}
+              onToggle={(v) =>
+                setHkConfig((current) => ({ ...current, dockerPrune: { enabled: v } }))
+              }
               lastResult={hkStats?.lastRun?.categories.find((c) => c.category === "Docker Images")}
               disabled={controlsDisabled}
             />
@@ -260,58 +364,23 @@ export function HousekeepingSection({ canRun, canConfigure }: HousekeepingSectio
             </button>
           </div>
         </div>
-      </div>
+      </PanelShell>
 
       {/* Housekeeping History Dialog */}
       <Dialog open={hkHistoryOpen} onOpenChange={setHkHistoryOpen}>
-        <DialogContent className="sm:max-w-2xl">
+        <DialogContent className="max-w-full overflow-x-hidden sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>Run History</DialogTitle>
           </DialogHeader>
-          {hkHistory.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-border text-left">
-                    <th className="p-3 text-xs font-medium text-muted-foreground">Time</th>
-                    <th className="p-3 text-xs font-medium text-muted-foreground">Trigger</th>
-                    <th className="p-3 text-xs font-medium text-muted-foreground">Duration</th>
-                    <th className="p-3 text-xs font-medium text-muted-foreground">Cleaned</th>
-                    <th className="p-3 text-xs font-medium text-muted-foreground">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {hkHistory.map((run, i) => (
-                    <tr key={i}>
-                      <td className="p-3 text-sm text-muted-foreground">
-                        {formatRelativeDate(run.startedAt)}
-                      </td>
-                      <td className="p-3 text-sm">
-                        <span className="font-mono text-xs bg-muted px-1.5 py-0.5 capitalize">
-                          {run.trigger}
-                        </span>
-                      </td>
-                      <td className="p-3 text-sm text-muted-foreground">
-                        {(run.totalDurationMs / 1000).toFixed(1)}s
-                      </td>
-                      <td className="p-3 text-sm text-muted-foreground">
-                        {run.categories.reduce((s, c) => s + c.itemsCleaned, 0)} items
-                      </td>
-                      <td className="p-3">
-                        {run.overallSuccess ? (
-                          <Badge variant="success">OK</Badge>
-                        ) : (
-                          <Badge variant="destructive">Errors</Badge>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <p className="text-center text-sm text-muted-foreground py-8">No runs yet</p>
-          )}
+          <div className="min-w-0 border border-border">
+            <SimpleTable
+              columns={historyColumns}
+              rows={hkHistory}
+              getRowKey={(run, index) => `${run.startedAt}-${index}`}
+              emptyMessage="No runs yet"
+              tableClassName="table-fixed"
+            />
+          </div>
         </DialogContent>
       </Dialog>
     </>
@@ -371,7 +440,7 @@ function HousekeepingCard({
               <span>keep</span>
               <input
                 type="number"
-                className="w-10 bg-transparent border-b border-border text-center text-xs text-foreground tabular-nums outline-none focus:border-primary disabled:opacity-50"
+                className="w-10 border border-input bg-background px-1 text-center text-xs text-foreground tabular-nums outline-none focus:border-primary disabled:opacity-50"
                 min={1}
                 max={365}
                 value={localDays}

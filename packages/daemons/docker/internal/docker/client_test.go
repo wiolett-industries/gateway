@@ -2,10 +2,12 @@ package docker
 
 import (
 	"encoding/json"
+	"net/netip"
 	"testing"
 
 	"github.com/moby/moby/api/types/container"
 	imagetypes "github.com/moby/moby/api/types/image"
+	"github.com/moby/moby/api/types/network"
 )
 
 func TestContainerCreateConfigParsesRestartPolicyFromCamelCase(t *testing.T) {
@@ -72,6 +74,33 @@ func TestApplyNanoCPULimitClearsAllCpuLimits(t *testing.T) {
 	}
 	if resources.CPUQuota != 0 {
 		t.Fatalf("expected CPUQuota to be cleared, got %d", resources.CPUQuota)
+	}
+}
+
+func TestNetworkingConfigForInspectNetworkPreservesBridgeEndpoint(t *testing.T) {
+	insp := &container.InspectResponse{
+		NetworkSettings: &container.NetworkSettings{
+			Networks: map[string]*network.EndpointSettings{
+				"bridge": {NetworkID: "bridge-network", IPAddress: netip.MustParseAddr("172.17.0.2")},
+			},
+		},
+	}
+
+	names := inspectNetworkNames(insp)
+	cfg := networkingConfigForInspectNetwork(insp, names)
+
+	if len(names) != 1 || names[0] != "bridge" {
+		t.Fatalf("expected bridge network name, got %#v", names)
+	}
+	if cfg == nil {
+		t.Fatal("expected networking config")
+	}
+	endpoint := cfg.EndpointsConfig["bridge"]
+	if endpoint == nil {
+		t.Fatalf("expected bridge endpoint in networking config, got %#v", cfg.EndpointsConfig)
+	}
+	if endpoint.NetworkID != "bridge-network" || endpoint.IPAddress.String() != "172.17.0.2" {
+		t.Fatalf("unexpected bridge endpoint: %#v", endpoint)
 	}
 }
 

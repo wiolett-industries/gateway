@@ -32,17 +32,19 @@ import { useIsMobile } from "@/hooks/use-is-mobile";
 import { useRealtime } from "@/hooks/use-realtime";
 import { formatDisplayImageRef } from "@/lib/docker-image-ref";
 import { loadVisibleDockerNodes } from "@/lib/docker-node-access";
+import { nodeBadgeClassName } from "@/lib/node-appearance";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
 import { useDockerFolderStore } from "@/stores/docker-folders";
-import type { DockerContainer, DockerFolderTreeNode, Node } from "@/types";
+import type { DockerContainer, DockerFolderTreeNode, Node, NodeAppearanceColor } from "@/types";
 import { DockerDeployDialog } from "./DockerDeployDialog";
 import { containerDisplayName, STATUS_BADGE } from "./docker-detail/helpers";
 
 interface DockerContainerListItem extends DockerContainer {
   _nodeId: string;
   _nodeName?: string;
+  _nodeColor?: NodeAppearanceColor | null;
 }
 
 interface DockerFolderTreeNodeWithContainers extends DockerFolderTreeNode {
@@ -317,6 +319,7 @@ export function DockerContainers({
   );
 
   const hasActiveFilters = filters.search !== "" || filters.status !== "all";
+  const hasActiveNodeFilter = !fixedNodeId && !!selectedNodeId;
   const isSearchFiltering = filters.search.trim() !== "";
   const canManageFolders = !fixedNodeId && hasScope("docker:containers:folders:manage");
   const canDragFolders = canManageFolders && !isMobile && !isSearchFiltering;
@@ -675,7 +678,9 @@ export function DockerContainers({
             label: "Node",
             width: "15%",
             renderCell: (container: DockerContainerListItem) => (
-              <Badge variant="secondary">{container._nodeName || "-"}</Badge>
+              <Badge variant="secondary" className={nodeBadgeClassName(container._nodeColor)}>
+                {container._nodeName || "-"}
+              </Badge>
             ),
           },
         ]
@@ -791,7 +796,7 @@ export function DockerContainers({
   ];
 
   const canListDockerResources =
-    !!selectedNodeId || useDockerStore.getState().dockerNodes.length > 0 || !!embedded;
+    !!visibleNodeId || useDockerStore.getState().dockerNodes.length > 0 || !!embedded;
 
   const content = (
     <>
@@ -847,30 +852,32 @@ export function DockerContainers({
           },
           onSearchSubmit: handleSearch,
           placeholder: "Search containers by name or image...",
-          hasActiveFilters: searchInput !== "" || filters.status !== "all" || !!selectedNodeId,
+          hasActiveFilters: searchInput !== "" || filters.status !== "all" || hasActiveNodeFilter,
           onReset: () => {
             setSearchInput("");
             resetFilters();
-            setSelectedNode(null);
+            if (!fixedNodeId) setSelectedNode(null);
           },
           filters: (
             <div className="flex items-center gap-3">
-              <Select
-                value={selectedNodeId ?? "__all__"}
-                onValueChange={(value) => setSelectedNode(value === "__all__" ? null : value)}
-              >
-                <SelectTrigger className="w-48">
-                  <SelectValue placeholder="All nodes" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__all__">All nodes</SelectItem>
-                  {(embedded ? storeDockerNodes : dockerNodes).map((node) => (
-                    <SelectItem key={node.id} value={node.id}>
-                      {node.displayName || node.hostname}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {!fixedNodeId && (
+                <Select
+                  value={selectedNodeId ?? "__all__"}
+                  onValueChange={(value) => setSelectedNode(value === "__all__" ? null : value)}
+                >
+                  <SelectTrigger className="w-48">
+                    <SelectValue placeholder="All nodes" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__all__">All nodes</SelectItem>
+                    {(embedded ? storeDockerNodes : dockerNodes).map((node) => (
+                      <SelectItem key={node.id} value={node.id}>
+                        {node.displayName || node.hostname}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
               <Select
                 value={filters.status}
                 onValueChange={(value) => setFilters({ status: value })}
@@ -913,10 +920,11 @@ export function DockerContainers({
           canListDockerResources ? (
             <EmptyState
               message="No containers found on this node."
-              hasActiveFilters={hasActiveFilters}
+              hasActiveFilters={hasActiveFilters || hasActiveNodeFilter}
               onReset={() => {
                 setSearchInput("");
                 resetFilters();
+                if (!fixedNodeId) setSelectedNode(null);
               }}
               actionLabel={hasScope("docker:containers:create") ? "Deploy a container" : undefined}
               onAction={hasScope("docker:containers:create") ? () => openDeploy() : undefined}

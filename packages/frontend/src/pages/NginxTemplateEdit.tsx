@@ -506,7 +506,7 @@ export function NginxTemplateEdit() {
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_10rem] shrink-0">
           <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">Name</label>
+            <label className="text-xs text-muted-foreground">Name</label>
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -515,7 +515,7 @@ export function NginxTemplateEdit() {
             />
           </div>
           <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">Description</label>
+            <label className="text-xs text-muted-foreground">Description</label>
             <Input
               value={description}
               onChange={(e) => setDescription(e.target.value)}
@@ -524,7 +524,7 @@ export function NginxTemplateEdit() {
             />
           </div>
           <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">Host Type</label>
+            <label className="text-xs text-muted-foreground">Host Type</label>
             <Select
               value={type}
               onValueChange={(value) => setType(value as ProxyHostType)}
@@ -688,7 +688,7 @@ export function NginxTemplateEdit() {
                                 })
                               }
                             >
-                              <SelectTrigger className="h-9 w-full text-xs border-0 rounded-none shadow-none focus:ring-1 focus:ring-inset focus:ring-ring">
+                              <SelectTrigger className="h-9 w-full border-0 rounded-none shadow-none focus:ring-1 focus:ring-inset focus:ring-ring">
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
@@ -714,7 +714,7 @@ export function NginxTemplateEdit() {
                                   })
                                 }
                               >
-                                <SelectTrigger className="h-9 w-full text-xs border-0 rounded-none shadow-none focus:ring-1 focus:ring-inset focus:ring-ring">
+                                <SelectTrigger className="h-9 w-full border-0 rounded-none shadow-none focus:ring-1 focus:ring-inset focus:ring-ring">
                                   <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>

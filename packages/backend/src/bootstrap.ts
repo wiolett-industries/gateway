@@ -67,6 +67,7 @@ import { TemplatesService } from '@/modules/pki/templates.service.js';
 import { FolderService } from '@/modules/proxy/folder.service.js';
 import { NginxTemplateService } from '@/modules/proxy/nginx-template.service.js';
 import { ProxyService } from '@/modules/proxy/proxy.service.js';
+import { GeneralSettingsService } from '@/modules/settings/general-settings.service.js';
 import { NetworkSettingsService } from '@/modules/settings/network-settings.service.js';
 import { OutboundWebhookPolicyService } from '@/modules/settings/outbound-webhook-policy.service.js';
 import { SetupService } from '@/modules/setup/setup.service.js';
@@ -131,6 +132,9 @@ export async function initializeContainer(): Promise<void> {
 
   const mcpSettingsService = new McpSettingsService(db);
   container.registerInstance(McpSettingsService, mcpSettingsService);
+
+  const generalSettingsService = new GeneralSettingsService(db);
+  container.registerInstance(GeneralSettingsService, generalSettingsService);
 
   const networkSettingsService = new NetworkSettingsService(db);
   container.registerInstance(NetworkSettingsService, networkSettingsService);
@@ -327,8 +331,8 @@ export async function initializeContainer(): Promise<void> {
   dockerManagementService.setDeploymentService(dockerDeploymentService);
   dockerFolderService.setEventBus(eventBus);
   dockerTaskService.setEventBus(eventBus);
-  void dockerTaskService.markStaleActiveTasksFailed().catch((error) => {
-    logger.warn('Failed to reconcile stale Docker tasks during bootstrap', { error });
+  void dockerTaskService.markActiveTasksLostOnStartup().catch((error) => {
+    logger.warn('Failed to mark interrupted Docker tasks during bootstrap', { error });
   });
   dockerDeploymentService.setEventBus(eventBus);
   dockerHealthCheckService.setEventBus(eventBus);

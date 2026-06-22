@@ -28,6 +28,8 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useRealtime } from "@/hooks/use-realtime";
+import { nodeIconClassNames } from "@/lib/node-appearance";
+import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDaemonUpdatesStore } from "@/stores/daemon-updates";
@@ -209,19 +211,22 @@ export function AdminNodes() {
         id: "name",
         label: "Name",
         width: "34%",
-        renderCell: (node) => (
-          <div className="flex min-w-0 items-center gap-4">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center bg-muted">
-              <Server className="h-5 w-5 text-muted-foreground" />
+        renderCell: (node) => {
+          const iconClassNames = nodeIconClassNames(node.appearanceColor);
+          return (
+            <div className="flex min-w-0 items-center gap-4">
+              <div className={iconClassNames.wrapper}>
+                <Server className={cn("h-5 w-5", iconClassNames.icon)} />
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium">{node.displayName || node.hostname}</p>
+                <p className="truncate text-xs text-muted-foreground">
+                  {node.displayName ? node.hostname : ""} {formatDaemonVersion(node.daemonVersion)}
+                </p>
+              </div>
             </div>
-            <div className="min-w-0">
-              <p className="truncate text-sm font-medium">{node.displayName || node.hostname}</p>
-              <p className="truncate text-xs text-muted-foreground">
-                {node.displayName ? node.hostname : ""} {formatDaemonVersion(node.daemonVersion)}
-              </p>
-            </div>
-          </div>
-        ),
+          );
+        },
       },
       {
         id: "type",

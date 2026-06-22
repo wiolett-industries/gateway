@@ -108,6 +108,7 @@ function compactDockerNodeForDockerAccess(node: Record<string, unknown>) {
     type: node.type,
     hostname: node.hostname,
     displayName: node.displayName,
+    appearanceColor: node.appearanceColor,
     status: node.status,
     serviceCreationLocked: node.serviceCreationLocked,
     daemonVersion: node.daemonVersion,

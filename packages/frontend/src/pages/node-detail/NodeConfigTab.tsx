@@ -136,17 +136,12 @@ export function NodeConfigTab({ nodeId, nodeStatus, actionLocked = false }: Node
         errorLines={errorLines}
       />
       <div className="absolute right-2.5 bottom-2.5 z-10 flex items-center gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleTest}
-          disabled={isTesting || actionLocked}
-        >
+        <Button variant="outline" onClick={handleTest} disabled={isTesting || actionLocked}>
           <RefreshCw className={cn("h-4 w-4", isTesting && "animate-spin")} />
           Validate
         </Button>
         {canManage && (
-          <Button size="sm" onClick={handleSave} disabled={isSaving || !hasChanges || actionLocked}>
+          <Button onClick={handleSave} disabled={isSaving || !hasChanges || actionLocked}>
             <Save className="h-4 w-4" />
             Save
           </Button>

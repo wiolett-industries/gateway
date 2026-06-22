@@ -1063,12 +1063,103 @@ func (p *DockerPlugin) handleFileCommand(cmd *pb.DockerFileCommand, result *pb.C
 			result.Error = "container_id and path are required"
 			return
 		}
-		if len(cmd.Content) == 0 {
+		if err := WriteFile(ctx, p.client, cmd.ContainerId, cmd.Path, cmd.Content); err != nil {
 			result.Success = false
-			result.Error = "content is required"
+			result.Error = err.Error()
 			return
 		}
-		if err := WriteFile(ctx, p.client, cmd.ContainerId, cmd.Path, cmd.Content); err != nil {
+
+	case "create-file":
+		if cmd.ContainerId == "" || cmd.Path == "" {
+			result.Success = false
+			result.Error = "container_id and path are required"
+			return
+		}
+		if err := CreateFile(ctx, p.client, cmd.ContainerId, cmd.Path, cmd.Content); err != nil {
+			result.Success = false
+			result.Error = err.Error()
+			return
+		}
+
+	case "upload-init":
+		if cmd.ContainerId == "" || cmd.Path == "" || cmd.TargetPath == "" {
+			result.Success = false
+			result.Error = "container_id, upload id, and target_path are required"
+			return
+		}
+		if err := InitChunkedFileUpload(ctx, p.client, cmd.ContainerId, cmd.Path, cmd.TargetPath, cmd.MaxBytes); err != nil {
+			result.Success = false
+			result.Error = err.Error()
+			return
+		}
+
+	case "upload-chunk":
+		if cmd.ContainerId == "" || cmd.Path == "" || cmd.TargetPath == "" {
+			result.Success = false
+			result.Error = "container_id, upload id, and target_path are required"
+			return
+		}
+		if err := WriteChunkedFileUpload(ctx, p.client, cmd.ContainerId, cmd.Path, cmd.TargetPath, cmd.MaxBytes, cmd.Content); err != nil {
+			result.Success = false
+			result.Error = err.Error()
+			return
+		}
+
+	case "upload-complete":
+		if cmd.ContainerId == "" || cmd.Path == "" || cmd.TargetPath == "" {
+			result.Success = false
+			result.Error = "container_id, upload id, and target_path are required"
+			return
+		}
+		if err := CompleteChunkedFileUpload(ctx, p.client, cmd.ContainerId, cmd.Path, cmd.TargetPath, cmd.MaxBytes); err != nil {
+			result.Success = false
+			result.Error = err.Error()
+			return
+		}
+
+	case "upload-abort":
+		if cmd.ContainerId == "" || cmd.Path == "" || cmd.TargetPath == "" {
+			result.Success = false
+			result.Error = "container_id, upload id, and target_path are required"
+			return
+		}
+		if err := AbortChunkedFileUpload(ctx, p.client, cmd.ContainerId, cmd.Path, cmd.TargetPath); err != nil {
+			result.Success = false
+			result.Error = err.Error()
+			return
+		}
+
+	case "create-dir":
+		if cmd.ContainerId == "" || cmd.Path == "" {
+			result.Success = false
+			result.Error = "container_id and path are required"
+			return
+		}
+		if err := CreateDirectory(ctx, p.client, cmd.ContainerId, cmd.Path); err != nil {
+			result.Success = false
+			result.Error = err.Error()
+			return
+		}
+
+	case "delete":
+		if cmd.ContainerId == "" || cmd.Path == "" {
+			result.Success = false
+			result.Error = "container_id and path are required"
+			return
+		}
+		if err := DeletePath(ctx, p.client, cmd.ContainerId, cmd.Path); err != nil {
+			result.Success = false
+			result.Error = err.Error()
+			return
+		}
+
+	case "move":
+		if cmd.ContainerId == "" || cmd.Path == "" || cmd.TargetPath == "" {
+			result.Success = false
+			result.Error = "container_id, path, and target_path are required"
+			return
+		}
+		if err := MovePath(ctx, p.client, cmd.ContainerId, cmd.Path, cmd.TargetPath); err != nil {
 			result.Success = false
 			result.Error = err.Error()
 			return

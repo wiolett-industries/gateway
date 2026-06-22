@@ -35,6 +35,7 @@ export async function executeNodeTool(
           type: node.type,
           hostname: node.hostname,
           displayName: node.displayName,
+          appearanceColor: node.appearanceColor,
           status: node.status,
           isConnected: node.isConnected,
           serviceCreationLocked: node.serviceCreationLocked,

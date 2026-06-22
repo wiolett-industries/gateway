@@ -2,7 +2,7 @@ import type { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
 import { requireScope } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
-import { getTaskRoute, listTasksRoute } from './docker.docs.js';
+import { forceCancelTaskRoute, getTaskRoute, listTasksRoute } from './docker.docs.js';
 import { DockerTaskService } from './docker-task.service.js';
 
 export function registerTaskRoutes(router: OpenAPIHono<AppEnv>) {
@@ -23,6 +23,13 @@ export function registerTaskRoutes(router: OpenAPIHono<AppEnv>) {
     const service = container.resolve(DockerTaskService);
     const id = c.req.param('id')!;
     const data = await service.get(id);
+    return c.json({ data });
+  });
+
+  router.openapi({ ...forceCancelTaskRoute, middleware: requireScope('docker:tasks:manage') }, async (c) => {
+    const service = container.resolve(DockerTaskService);
+    const id = c.req.param('id')!;
+    const data = await service.forceCancel(id);
     return c.json({ data });
   });
 }

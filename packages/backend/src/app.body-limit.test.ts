@@ -11,6 +11,7 @@ beforeAll(() => {
   process.env.OIDC_CLIENT_SECRET ||= 'test';
   process.env.OIDC_REDIRECT_URI ||= 'http://localhost/auth/callback';
   process.env.PKI_MASTER_KEY ||= '0000000000000000000000000000000000000000000000000000000000000000';
+  process.env.DOCKER_FILE_WRITE_MAX_BODY_BYTES ||= '3000000';
 });
 
 describe('request body limits', () => {
@@ -29,6 +30,20 @@ describe('request body limits', () => {
     expect(await response.json()).toMatchObject({ code: 'PAYLOAD_TOO_LARGE' });
   }
 
+  async function expectNotPayloadTooLarge(path: string, method: string, body: string) {
+    const { app } = createApp();
+    const response = await app.request(path, {
+      method,
+      headers: {
+        'content-type': 'application/json',
+        'content-length': String(Buffer.byteLength(body)),
+      },
+      body,
+    });
+
+    expect(response.status).not.toBe(413);
+  }
+
   it('rejects oversized OAuth token bodies before route parsing', async () => {
     const body = `grant_type=authorization_code&code=${'x'.repeat(40_000)}`;
     await expectPayloadTooLarge('/api/oauth/token', 'POST', body, 'application/x-www-form-urlencoded');
@@ -38,9 +53,25 @@ describe('request body limits', () => {
     await expectPayloadTooLarge('/api/logging/ingest', 'POST', 'x'.repeat(1_100_000));
   });
 
-  it('rejects oversized Docker file write bodies before route parsing', async () => {
-    await expectPayloadTooLarge(
+  it('does not apply the global API body limit to Docker file write bodies', async () => {
+    await expectNotPayloadTooLarge(
       '/api/docker/nodes/node-1/containers/container-1/files/write',
+      'PUT',
+      'x'.repeat(1_600_000)
+    );
+  });
+
+  it('does not apply the global API body limit to Docker file create bodies', async () => {
+    await expectNotPayloadTooLarge(
+      '/api/docker/nodes/node-1/containers/container-1/files/create',
+      'POST',
+      'x'.repeat(1_600_000)
+    );
+  });
+
+  it('does not apply the global API body limit to Docker file upload chunks', async () => {
+    await expectNotPayloadTooLarge(
+      '/api/docker/nodes/node-1/containers/container-1/files/uploads/upload-123456/chunks?offset=0',
       'PUT',
       'x'.repeat(1_600_000)
     );

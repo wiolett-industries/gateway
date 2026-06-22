@@ -1,5 +1,13 @@
 export type NodeType = "nginx" | "bastion" | "monitoring" | "docker";
 export type NodeStatus = "pending" | "online" | "offline" | "error";
+export type NodeAppearanceColor =
+  | "blue"
+  | "red"
+  | "green"
+  | "yellow"
+  | "purple"
+  | "pink"
+  | "orange";
 
 export interface NodeHealthReport {
   nginxRunning: boolean;
@@ -67,6 +75,7 @@ export interface Node {
   type: NodeType;
   hostname: string;
   displayName: string | null;
+  appearanceColor: NodeAppearanceColor | null;
   status: NodeStatus;
   serviceCreationLocked: boolean;
   daemonVersion: string | null;

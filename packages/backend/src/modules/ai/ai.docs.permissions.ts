@@ -167,6 +167,7 @@ Gateway uses a group-based permission system with nested group inheritance. Each
 | Scope | Description |
 |-------|-------------|
 | docker:tasks | View background tasks |
+| docker:tasks:manage | Force-cancel active background tasks |
 
 ### Databases
 | Scope | Description |

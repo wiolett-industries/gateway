@@ -1,4 +1,5 @@
 import { Minus, Plus } from "lucide-react";
+import { EmptyState } from "@/components/common/EmptyState";
 import { PanelShell } from "@/components/common/PanelShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -53,7 +54,7 @@ export function PortMappingsSection({
       dirty={portsChanged}
       actions={
         canEdit ? (
-          <Button size="sm" onClick={addPort}>
+          <Button onClick={addPort}>
             <Plus className="h-3.5 w-3.5" />
             Add
           </Button>
@@ -63,7 +64,7 @@ export function PortMappingsSection({
       {ports.length > 0 ? (
         <>
           <div
-            className={`grid ${gridColumns} border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wider`}
+            className={`grid ${gridColumns} border-b border-border bg-muted/60 text-xs font-medium text-muted-foreground uppercase tracking-wider dark:bg-muted`}
           >
             <div className="px-3 py-2">Host Port</div>
             <div className="px-3 py-2 border-l border-border">Container Port</div>
@@ -98,7 +99,7 @@ export function PortMappingsSection({
                       onValueChange={(v) => updatePort(i, "protocol", v)}
                       disabled={!canEdit}
                     >
-                      <SelectTrigger className="h-9 text-xs border-0 rounded-none shadow-none focus:ring-1 focus:ring-inset focus:ring-ring">
+                      <SelectTrigger className="h-9 border-0 rounded-none shadow-none focus:ring-1 focus:ring-inset focus:ring-ring">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -123,7 +124,7 @@ export function PortMappingsSection({
           </div>
         </>
       ) : (
-        <div className="py-8 text-center text-muted-foreground text-sm">No port mappings</div>
+        <EmptyState message="No port mappings" embedded />
       )}
     </PanelShell>
   );

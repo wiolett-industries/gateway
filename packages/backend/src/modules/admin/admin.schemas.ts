@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { isValidCidr } from '@/lib/ip-cidr.js';
+import { FILE_UPLOAD_MAX_BYTES, FILE_UPLOAD_MIN_BYTES } from '@/modules/settings/general-settings.service.js';
 import { CLIENT_IP_SOURCE_VALUES } from '@/modules/settings/network-settings.service.js';
 
 export const CreateUserSchema = z.object({
@@ -22,6 +23,11 @@ export const UpdateAuthProvisioningSettingsSchema = z.object({
   oidcRequireVerifiedEmail: z.boolean().optional(),
   oauthExtendedCallbackCompatibility: z.boolean().optional(),
   mcpServerEnabled: z.boolean().optional(),
+  generalSettings: z
+    .object({
+      fileUploadMaxBytes: z.number().int().min(FILE_UPLOAD_MIN_BYTES).max(FILE_UPLOAD_MAX_BYTES).optional(),
+    })
+    .optional(),
   networkSecurity: z
     .object({
       clientIpSource: z.enum(CLIENT_IP_SOURCE_VALUES).optional(),

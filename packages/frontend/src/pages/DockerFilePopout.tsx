@@ -94,8 +94,7 @@ export function DockerFilePopout() {
     if (!nodeId || !containerId || content === null) return;
     setIsSaving(true);
     try {
-      const encoded = btoa(content);
-      await api.writeContainerFile(nodeId, containerId, filePath, encoded);
+      await api.writeContainerFile(nodeId, containerId, filePath, content);
       setSavedContent(content);
       toast.success("File saved");
     } catch (err) {
@@ -146,7 +145,7 @@ export function DockerFilePopout() {
               <Download className="h-3.5 w-3.5" />
             </Button>
             {isWritable && (
-              <Button size="sm" onClick={handleSave} disabled={isSaving || !hasChanges}>
+              <Button onClick={handleSave} disabled={isSaving || !hasChanges}>
                 <Save className="h-3.5 w-3.5" />
                 Save
               </Button>

@@ -224,7 +224,6 @@ export function DeploymentSlots({
               actions={
                 canManage && slot.slot !== deployment.activeSlot ? (
                   <Button
-                    size="sm"
                     disabled={!!action || serviceBusy || !slot.containerId}
                     onClick={() =>
                       runAction(`switch-${slot.slot}`, async () => {

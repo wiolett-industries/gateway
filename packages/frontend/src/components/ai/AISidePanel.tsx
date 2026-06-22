@@ -5,6 +5,7 @@ import { useLocation, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { ResizeHandle } from "@/components/ui/resize-handle";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Textarea } from "@/components/ui/textarea";
 import { useAIStore } from "@/stores/ai";
 import { useUIStore } from "@/stores/ui";
 import type { PageContext } from "@/types/ai";
@@ -308,7 +309,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
             )}
           </AnimatePresence>
           <div className="relative flex">
-            <textarea
+            <Textarea
               ref={textareaRef}
               value={input}
               onChange={handleInputChange}
@@ -316,7 +317,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
               placeholder={isStreaming ? "AI is responding..." : "Ask anything... (/ commands)"}
               disabled={!isConnected || !!retryAfter}
               rows={1}
-              className="block w-full resize-none bg-background px-3 py-2.5 pr-10 text-sm leading-5 placeholder:text-muted-foreground focus:outline-none disabled:opacity-50"
+              className="block min-h-0 resize-none border-0 px-3 py-2.5 pr-10 leading-5 focus-visible:ring-0"
             />
             <button
               className="absolute right-1.5 p-1.5 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-30"

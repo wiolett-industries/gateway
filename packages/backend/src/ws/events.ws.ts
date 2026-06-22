@@ -67,6 +67,7 @@ function requiredScopeFor(channel: string): string | null {
   if (channel === 'docker.folder.changed') return 'docker:containers:view';
   if (channel === 'docker.image-cleanup.changed') return 'docker:containers:edit';
   if (channel === 'docker.registry.changed') return 'docker:registries:view';
+  if (channel === 'docker.file.changed') return 'docker:containers:files';
   if (channel.startsWith('docker.container')) return 'docker:containers:view';
   if (channel.startsWith('docker.image')) return 'docker:images:view';
   if (channel.startsWith('docker.volume')) return 'docker:volumes:view';
@@ -111,6 +112,9 @@ function hasChannelAccess(scopes: string[], channel: string): boolean {
   }
   if (channel.startsWith('docker.container')) {
     return hasScopeBase(scopes, 'docker:containers:view');
+  }
+  if (channel === 'docker.file.changed') {
+    return hasScopeBase(scopes, 'docker:containers:files');
   }
   if (channel === 'docker.image-cleanup.changed') {
     return hasScopeBase(scopes, 'docker:containers:edit');
@@ -204,6 +208,12 @@ function canReceiveChannelPayload(scopes: string[], channel: string, payload: un
     const nodeId = (payload as { nodeId?: string } | undefined)?.nodeId;
     return (
       hasScope(scopes, 'docker:containers:view') || !!(nodeId && hasScope(scopes, `docker:containers:view:${nodeId}`))
+    );
+  }
+  if (channel === 'docker.file.changed') {
+    const nodeId = (payload as { nodeId?: string } | undefined)?.nodeId;
+    return (
+      hasScope(scopes, 'docker:containers:files') || !!(nodeId && hasScope(scopes, `docker:containers:files:${nodeId}`))
     );
   }
   if (channel === 'docker.image-cleanup.changed') {

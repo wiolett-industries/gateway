@@ -21,7 +21,10 @@ import {
   DockerHealthCheckUpsertSchema,
   EnvUpdateSchema,
   FileBrowseSchema,
-  FileWriteSchema,
+  FileMoveSchema,
+  FileUploadChunkQuerySchema,
+  FileUploadCompleteSchema,
+  FileUploadInitSchema,
   ImagePullSchema,
   LogQuerySchema,
   NetworkConnectSchema,
@@ -57,6 +60,7 @@ export const nodeParams = pathParamSchema('nodeId');
 export const containerParams = pathParamSchema('nodeId', 'containerId');
 export const containerNameParams = pathParamSchema('nodeId', 'containerName');
 export const deploymentParams = pathParamSchema('nodeId', 'deploymentId');
+const containerUploadParams = pathParamSchema('nodeId', 'containerId', 'uploadId');
 
 const imageParams = pathParamSchema('nodeId', 'imageId');
 const volumeParams = pathParamSchema('nodeId', 'name');
@@ -273,7 +277,85 @@ export const writeContainerFileRoute = appRoute({
   path: '/nodes/{nodeId}/containers/{containerId}/files/write',
   tags: ['Docker Files'],
   summary: 'Write a container file',
-  request: { params: containerParams, ...jsonBody(FileWriteSchema) },
+  request: { params: containerParams, query: FileBrowseSchema },
+  responses: successJson,
+});
+export const createContainerFileRoute = appRoute({
+  method: 'post',
+  path: '/nodes/{nodeId}/containers/{containerId}/files/create',
+  tags: ['Docker Files'],
+  summary: 'Create a container file',
+  request: { params: containerParams, query: FileBrowseSchema },
+  responses: successJson,
+});
+export const initContainerFileUploadRoute = appRoute({
+  method: 'post',
+  path: '/nodes/{nodeId}/containers/{containerId}/files/uploads',
+  tags: ['Docker Files'],
+  summary: 'Initialize a chunked container file upload',
+  request: { params: containerParams, ...jsonBody(FileUploadInitSchema) },
+  responses: okJson(
+    z.object({
+      data: z.object({
+        uploadId: z.string(),
+        chunkSize: z.number(),
+      }),
+    })
+  ),
+});
+export const uploadContainerFileChunkRoute = appRoute({
+  method: 'put',
+  path: '/nodes/{nodeId}/containers/{containerId}/files/uploads/{uploadId}/chunks',
+  tags: ['Docker Files'],
+  summary: 'Upload one chunk for a container file upload',
+  request: { params: containerUploadParams, query: FileUploadChunkQuerySchema },
+  responses: okJson(
+    z.object({
+      data: z.object({
+        receivedBytes: z.number(),
+        totalBytes: z.number(),
+      }),
+    })
+  ),
+});
+export const completeContainerFileUploadRoute = appRoute({
+  method: 'post',
+  path: '/nodes/{nodeId}/containers/{containerId}/files/uploads/{uploadId}/complete',
+  tags: ['Docker Files'],
+  summary: 'Complete a chunked container file upload',
+  request: { params: containerUploadParams, ...jsonBody(FileUploadCompleteSchema) },
+  responses: successJson,
+});
+export const abortContainerFileUploadRoute = appRoute({
+  method: 'delete',
+  path: '/nodes/{nodeId}/containers/{containerId}/files/uploads/{uploadId}',
+  tags: ['Docker Files'],
+  summary: 'Abort a chunked container file upload',
+  request: { params: containerUploadParams },
+  responses: successJson,
+});
+export const createContainerDirectoryRoute = appRoute({
+  method: 'post',
+  path: '/nodes/{nodeId}/containers/{containerId}/files/directory',
+  tags: ['Docker Files'],
+  summary: 'Create a container directory',
+  request: { params: containerParams, ...jsonBody(FileBrowseSchema) },
+  responses: successJson,
+});
+export const deleteContainerFileRoute = appRoute({
+  method: 'delete',
+  path: '/nodes/{nodeId}/containers/{containerId}/files',
+  tags: ['Docker Files'],
+  summary: 'Delete a container file or directory',
+  request: { params: containerParams, query: FileBrowseSchema },
+  responses: successJson,
+});
+export const moveContainerFileRoute = appRoute({
+  method: 'post',
+  path: '/nodes/{nodeId}/containers/{containerId}/files/move',
+  tags: ['Docker Files'],
+  summary: 'Move a container file or directory',
+  request: { params: containerParams, ...jsonBody(FileMoveSchema) },
   responses: successJson,
 });
 
@@ -699,6 +781,14 @@ export const getTaskRoute = appRoute({
   path: '/tasks/{id}',
   tags: ['Docker Tasks'],
   summary: 'Get a background task',
+  request: { params: taskParams },
+  responses: okJson(UnknownDataResponseSchema),
+});
+export const forceCancelTaskRoute = appRoute({
+  method: 'post',
+  path: '/tasks/{id}/force-cancel',
+  tags: ['Docker Tasks'],
+  summary: 'Force-cancel an active background task',
   request: { params: taskParams },
   responses: okJson(UnknownDataResponseSchema),
 });

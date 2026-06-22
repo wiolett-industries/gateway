@@ -253,6 +253,13 @@
       "when": 1782129600000,
       "tag": "0035_nodes_databases_folders",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1782133200000,
+      "tag": "0036_node_appearance_color",
+      "breakpoints": true
     }
   ]
 }

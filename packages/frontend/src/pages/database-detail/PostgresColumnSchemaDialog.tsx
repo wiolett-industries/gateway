@@ -111,7 +111,7 @@ export function PostgresColumnSchemaDialog({
                       }
                       disabled={!canChangeColumnTypes || changingColumn !== null || markedDeleted}
                     >
-                      <SelectTrigger className="h-9 rounded-none border-0 font-mono text-xs shadow-none focus:ring-1 focus:ring-inset">
+                      <SelectTrigger className="h-9 rounded-none border-0 shadow-none focus:ring-1 focus:ring-inset">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -181,7 +181,7 @@ export function PostgresColumnSchemaDialog({
                       }
                       disabled={changingColumn !== null}
                     >
-                      <SelectTrigger className="h-9 rounded-none border-0 font-mono text-xs shadow-none focus:ring-1 focus:ring-inset">
+                      <SelectTrigger className="h-9 rounded-none border-0 shadow-none focus:ring-1 focus:ring-inset">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>

@@ -21,6 +21,14 @@ export const systemVersionRoute = appRoute({
   responses: okJson(UnknownDataResponseSchema),
 });
 
+export const systemConfigRoute = appRoute({
+  method: 'get',
+  path: '/config',
+  tags: ['System'],
+  summary: 'Get gateway runtime configuration',
+  responses: okJson(UnknownDataResponseSchema),
+});
+
 export const checkSystemUpdateRoute = appRoute({
   method: 'post',
   path: '/check-update',

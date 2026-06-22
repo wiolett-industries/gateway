@@ -33,15 +33,17 @@ import { useDeferredDialogState } from "@/hooks/use-deferred-dialog-state";
 import { useRealtime } from "@/hooks/use-realtime";
 import { formatDisplayImageRef } from "@/lib/docker-image-ref";
 import { loadVisibleDockerNodes } from "@/lib/docker-node-access";
+import { nodeBadgeClassName } from "@/lib/node-appearance";
 import { formatBytes, formatCreated } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
-import type { DockerImage, DockerRegistry, Node } from "@/types";
+import type { DockerImage, DockerRegistry, Node, NodeAppearanceColor } from "@/types";
 
 interface DockerImageListItem extends DockerImage {
   _nodeId: string;
   _nodeName?: string;
+  _nodeColor?: NodeAppearanceColor | null;
 }
 
 interface DockerImageUsageContainer {
@@ -355,7 +357,7 @@ export function DockerImages({
         width: "minmax(0, 1.15fr)",
         renderCell: (img) => (
           <div className="min-w-0">
-            <Badge variant="secondary" className="max-w-full shrink-0">
+            <Badge variant="secondary" className={nodeBadgeClassName((img as any)._nodeColor)}>
               <span className="truncate">{(img as any)._nodeName || "-"}</span>
             </Badge>
           </div>
@@ -652,7 +654,7 @@ export function DockerImages({
 
       {/* Image Details Dialog */}
       <Dialog open={detailsOpen} onOpenChange={onDetailsOpenChange}>
-        <DialogContent className="max-h-[80vh] overflow-y-auto sm:max-w-xl">
+        <DialogContent className="max-h-[80vh] max-w-full overflow-x-hidden overflow-y-auto sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>Image Details</DialogTitle>
             <DialogDescription>
@@ -662,8 +664,8 @@ export function DockerImages({
             </DialogDescription>
           </DialogHeader>
           {detailsImage ? (
-            <div className="space-y-4">
-              <div className="border border-border bg-card divide-y divide-border overflow-hidden">
+            <div className="min-w-0 space-y-4">
+              <div className="min-w-0 divide-y divide-border overflow-hidden border border-border bg-card">
                 {[
                   [
                     "Repository tag",
@@ -682,9 +684,12 @@ export function DockerImages({
                   ["Tags", detailsImage.repoTags?.map(formatDisplayImageRef).join(", ") || "-"],
                   ["Digests", detailsImage.repoDigests?.join(", ") || "-"],
                 ].map(([label, value]) => (
-                  <div key={label} className="flex items-center justify-between px-4 py-3 min-w-0">
-                    <span className="text-sm text-muted-foreground shrink-0">{label}</span>
-                    <span className="text-sm font-mono break-all text-right ml-4 min-w-0">
+                  <div
+                    key={label}
+                    className="grid min-w-0 grid-cols-[minmax(96px,max-content)_minmax(0,1fr)] items-center gap-4 px-4 py-3"
+                  >
+                    <span className="text-sm text-muted-foreground">{label}</span>
+                    <span className="min-w-0 truncate text-right font-mono text-sm" title={value}>
                       {value}
                     </span>
                   </div>

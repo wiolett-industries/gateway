@@ -255,6 +255,7 @@ class ApiClient extends withLoggingApi(
     oidcRequireVerifiedEmail?: boolean;
     oauthExtendedCallbackCompatibility?: boolean;
     mcpServerEnabled?: boolean;
+    generalSettings?: Partial<AuthProvisioningSettings["generalSettings"]>;
     networkSecurity?: Partial<AuthProvisioningSettings["networkSecurity"]>;
     outboundWebhookPolicy?: Partial<AuthProvisioningSettings["outboundWebhookPolicy"]>;
   }): Promise<AuthProvisioningSettings> {
@@ -351,7 +352,13 @@ class ApiClient extends withLoggingApi(
     );
   }
 
-  async updateNode(id: string, data: { displayName?: string }): Promise<import("@/types").Node> {
+  async updateNode(
+    id: string,
+    data: {
+      displayName?: string | null;
+      appearanceColor?: import("@/types").NodeAppearanceColor | null;
+    }
+  ): Promise<import("@/types").Node> {
     return this.unwrapData(
       this.request(`/nodes/${id}`, {
         method: "PATCH",

@@ -1,14 +1,43 @@
 import {
+  DndContext,
+  type DragEndEvent,
+  PointerSensor,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import { CSS } from "@dnd-kit/utilities";
+import {
   ChevronDown,
   ChevronRight,
+  ClipboardCopy,
+  Download,
+  ExternalLink,
   File,
+  FilePlus,
   FileSymlink,
   Folder,
   FolderOpen,
+  FolderPlus,
   Loader2,
+  Trash2,
+  Upload,
 } from "lucide-react";
+import type { ChangeEvent, DragEvent, MouseEvent, ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { confirm } from "@/components/common/ConfirmDialog";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { useRealtime } from "@/hooks/use-realtime";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import type { FileEntry } from "@/types";
@@ -23,12 +52,185 @@ interface TreeNode extends FileEntry {
   loading: boolean;
 }
 
+type ContextMenuState = {
+  x: number;
+  y: number;
+  node: TreeNode | null;
+};
+
+type CreateDialogState = {
+  type: "file" | "folder";
+  directory: string;
+};
+
+type DockerFileChangedPayload = {
+  nodeId?: string;
+  containerId?: string;
+  action?: "created" | "updated" | "deleted" | "moved";
+  path?: string;
+  parentPath?: string;
+  fromPath?: string;
+  toPath?: string;
+  fromParentPath?: string;
+  toParentPath?: string;
+};
+
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const DEFAULT_UPLOAD_MAX_BYTES = 100 * 1024 * 1024;
+const CHUNKED_UPLOAD_THRESHOLD_BYTES = 50 * 1024 * 1024;
+
 function hasTruncatedListing(nodes: TreeNode[]): boolean {
   return nodes.some(
     (node) =>
       node._listTruncated === true ||
       (Array.isArray(node.children) && hasTruncatedListing(node.children))
   );
+}
+
+function isOpenableFile(node: TreeNode) {
+  return !node.isDir && !node.isSymlink && !node.isSpecial && node.size <= MAX_FILE_SIZE;
+}
+
+function parentPath(path: string) {
+  const normalized = path.replace(/\/+$/, "");
+  if (!normalized || normalized === "/") return "/";
+  const index = normalized.lastIndexOf("/");
+  return index <= 0 ? "/" : normalized.slice(0, index);
+}
+
+function normalizeFilePath(path: string) {
+  const normalized = path.replace(/\/+$/, "");
+  return normalized || "/";
+}
+
+function joinPath(directory: string, name: string) {
+  const cleanName = name.trim().replace(/^\/+/, "");
+  return directory === "/" ? `/${cleanName}` : `${directory.replace(/\/+$/, "")}/${cleanName}`;
+}
+
+function sortFileEntries<T extends FileEntry>(entries: T[]) {
+  return [...entries].sort((first, second) => {
+    if (first.isDir !== second.isDir) return first.isDir ? -1 : 1;
+    return first.name.localeCompare(second.name, undefined, {
+      numeric: true,
+      sensitivity: "base",
+    });
+  });
+}
+
+function decodeFilePayload(payload: unknown) {
+  let text = typeof payload === "string" ? payload : JSON.stringify(payload ?? "", null, 2);
+  try {
+    const standardBase64 = normalizeBase64(text);
+    text = decodeURIComponent(escape(atob(standardBase64)));
+  } catch {
+    /* keep original payload */
+  }
+  return text;
+}
+
+function normalizeBase64(value: string) {
+  return value.replace(/-/g, "+").replace(/_/g, "/");
+}
+
+function decodeFilePayloadBytes(payload: unknown) {
+  const text = typeof payload === "string" ? payload : JSON.stringify(payload ?? "");
+  const binary = atob(normalizeBase64(text));
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+}
+
+function isExternalFileDrag(event: DragEvent) {
+  return Array.from(event.dataTransfer.types).includes("Files");
+}
+
+function withMovedNodePaths(node: TreeNode, nextPath: string): TreeNode {
+  return {
+    ...node,
+    path: nextPath,
+    children:
+      node.children?.map((child) => withMovedNodePaths(child, joinPath(nextPath, child.name))) ??
+      node.children,
+  };
+}
+
+function removeTreeNode(
+  nodes: TreeNode[],
+  sourcePath: string
+): { nodes: TreeNode[]; removed: TreeNode | null } {
+  let removed: TreeNode | null = null;
+  const nextNodes: TreeNode[] = [];
+
+  for (const node of nodes) {
+    if (normalizeFilePath(node.path) === sourcePath) {
+      removed = node;
+      continue;
+    }
+
+    if (node.children) {
+      const result = removeTreeNode(node.children, sourcePath);
+      if (result.removed) {
+        removed = result.removed;
+        nextNodes.push({ ...node, children: result.nodes });
+        continue;
+      }
+    }
+
+    nextNodes.push(node);
+  }
+
+  return { nodes: nextNodes, removed };
+}
+
+function insertTreeNode(
+  nodes: TreeNode[],
+  targetDirectory: string,
+  nodeToInsert: TreeNode
+): TreeNode[] {
+  if (targetDirectory === "/") {
+    return sortFileEntries([...nodes, nodeToInsert]);
+  }
+
+  return nodes.map((node) => {
+    if (normalizeFilePath(node.path) === targetDirectory) {
+      if (!node.children) {
+        return node;
+      }
+      return {
+        ...node,
+        children: sortFileEntries([...node.children, nodeToInsert]),
+      };
+    }
+    if (node.children) {
+      return { ...node, children: insertTreeNode(node.children, targetDirectory, nodeToInsert) };
+    }
+    return node;
+  });
+}
+
+function moveTreeNode(
+  nodes: TreeNode[],
+  sourcePath: string,
+  targetDirectory: string,
+  destination: string
+) {
+  const removedResult = removeTreeNode(nodes, sourcePath);
+  if (!removedResult.removed) return nodes;
+  const movedNode = withMovedNodePaths(removedResult.removed, destination);
+  return insertTreeNode(removedResult.nodes, targetDirectory, movedNode);
+}
+
+function isPathPending(path: string, pendingPaths: Set<string>) {
+  const normalized = normalizeFilePath(path);
+  for (const pendingPath of pendingPaths) {
+    if (normalized === pendingPath || normalized.startsWith(`${pendingPath}/`)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 // ── Component ────────────────────────────────────────────────────
@@ -48,20 +250,44 @@ export function FilesTab({
   const canBrowseFiles =
     canBrowse ??
     (hasScope("docker:containers:files") || hasScope(`docker:containers:files:${nodeId}`));
+  const canMutateFiles = !!containerId && !fetchDirectory;
   const [roots, setRoots] = useState<TreeNode[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [isContextMenuVisible, setIsContextMenuVisible] = useState(false);
+  const [createDialog, setCreateDialog] = useState<CreateDialogState | null>(null);
+  const [newEntryName, setNewEntryName] = useState("");
+  const [isCreatingEntry, setIsCreatingEntry] = useState(false);
+  const [pendingMovePaths, setPendingMovePaths] = useState<Set<string>>(() => new Set());
+  const [uploadMaxBytes, setUploadMaxBytes] = useState(
+    () =>
+      api.getCached<{ fileUploadMaxBytes: number }>("system:config")?.fileUploadMaxBytes ??
+      DEFAULT_UPLOAD_MAX_BYTES
+  );
+  const uploadInputRef = useRef<HTMLInputElement | null>(null);
+  const uploadDirectoryRef = useRef("/");
+  const rootsRef = useRef<TreeNode[]>([]);
+  const pendingMovePathsRef = useRef(pendingMovePaths);
+  const contextMenuCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 8 },
+    })
+  );
 
   const nodeIdRef = useRef(nodeId);
   const containerIdRef = useRef(containerId ?? "");
   nodeIdRef.current = nodeId;
   containerIdRef.current = containerId ?? "";
+  rootsRef.current = roots;
+  pendingMovePathsRef.current = pendingMovePaths;
 
   const fetchDir = useCallback(
     async (dirPath: string): Promise<TreeNode[]> => {
       const data: FileEntry[] = fetchDirectory
         ? await fetchDirectory(dirPath)
         : await api.listContainerDir(nodeIdRef.current, containerIdRef.current, dirPath);
-      return (data ?? []).map((entry) => ({
+      return sortFileEntries(data ?? []).map((entry) => ({
         ...entry,
         path: dirPath === "/" ? `/${entry.name}` : `${dirPath}/${entry.name}`,
         children: entry.isDir ? null : [],
@@ -72,7 +298,74 @@ export function FilesTab({
     [fetchDirectory]
   );
 
+  const reloadDirectory = useCallback(
+    async (dirPath: string) => {
+      const children = await fetchDir(dirPath);
+      if (dirPath === "/") {
+        setRoots(children);
+        return;
+      }
+      const updateNodes = (nodes: TreeNode[]): TreeNode[] =>
+        nodes.map((node) => {
+          if (node.path === dirPath) {
+            return { ...node, children, expanded: true, loading: false };
+          }
+          if (node.children) {
+            return { ...node, children: updateNodes(node.children) };
+          }
+          return node;
+        });
+      setRoots((prev) => updateNodes(prev));
+    },
+    [fetchDir]
+  );
+
+  useRealtime(canMutateFiles ? "docker.file.changed" : null, (payload) => {
+    const event = payload as DockerFileChangedPayload;
+    if (event.nodeId !== nodeIdRef.current || event.containerId !== containerIdRef.current) {
+      return;
+    }
+
+    const directories = new Set<string>();
+    if (event.action === "moved") {
+      directories.add(event.fromParentPath ?? parentPath(event.fromPath ?? event.path ?? "/"));
+      directories.add(event.toParentPath ?? parentPath(event.toPath ?? event.path ?? "/"));
+    } else {
+      directories.add(event.parentPath ?? parentPath(event.path ?? "/"));
+    }
+
+    directories.forEach((directory) => {
+      reloadDirectory(directory).catch(() => {
+        /* the next explicit refresh will reconcile the tree */
+      });
+    });
+  });
+
   const hasTruncatedDirectory = hasTruncatedListing(roots);
+
+  const closeContextMenu = useCallback(() => {
+    if (!contextMenu) return;
+    setIsContextMenuVisible(false);
+    if (contextMenuCloseTimerRef.current) {
+      clearTimeout(contextMenuCloseTimerRef.current);
+    }
+    contextMenuCloseTimerRef.current = setTimeout(() => {
+      setContextMenu(null);
+      contextMenuCloseTimerRef.current = null;
+    }, 100);
+  }, [contextMenu]);
+
+  useEffect(() => {
+    api
+      .getSystemConfig()
+      .then((config) => {
+        api.setCache("system:config", config);
+        setUploadMaxBytes(config.fileUploadMaxBytes);
+      })
+      .catch(() => {
+        /* keep fallback limit */
+      });
+  }, []);
 
   // Load root on mount
   useEffect(() => {
@@ -97,6 +390,29 @@ export function FilesTab({
       cancelled = true;
     };
   }, [canBrowseFiles, fetchDir]);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeContextMenu();
+    };
+    window.addEventListener("click", closeContextMenu);
+    window.addEventListener("blur", closeContextMenu);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      window.removeEventListener("click", closeContextMenu);
+      window.removeEventListener("blur", closeContextMenu);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [contextMenu, closeContextMenu]);
+
+  useEffect(() => {
+    return () => {
+      if (contextMenuCloseTimerRef.current) {
+        clearTimeout(contextMenuCloseTimerRef.current);
+      }
+    };
+  }, []);
 
   // Toggle a directory open/closed
   const toggleDir = useCallback(
@@ -191,6 +507,329 @@ export function FilesTab({
     [nodeId, containerId]
   );
 
+  const readFileContent = useCallback(
+    async (filePath: string) => {
+      if (!containerId) throw new Error("Container file operations are unavailable");
+      const payload = await api.readContainerFile(nodeId, containerId, filePath);
+      return decodeFilePayload(payload);
+    },
+    [nodeId, containerId]
+  );
+
+  const readFileBytes = useCallback(
+    async (filePath: string) => {
+      if (!containerId) throw new Error("Container file operations are unavailable");
+      const payload = await api.readContainerFile(nodeId, containerId, filePath);
+      return decodeFilePayloadBytes(payload);
+    },
+    [nodeId, containerId]
+  );
+
+  const openCreateDialog = useCallback(
+    (type: "file" | "folder", directory: string) => {
+      closeContextMenu();
+      setCreateDialog({ type, directory });
+      setNewEntryName("");
+    },
+    [closeContextMenu]
+  );
+
+  const handleCreateEntry = useCallback(async () => {
+    if (!containerId || !createDialog) return;
+    const name = newEntryName.trim();
+    if (!name || name.includes("/")) {
+      toast.error("Enter a name without slashes");
+      return;
+    }
+    const path = joinPath(createDialog.directory, name);
+    setIsCreatingEntry(true);
+    try {
+      if (createDialog.type === "file") {
+        await api.createContainerFile(nodeId, containerId, path, "");
+        toast.success("File created");
+      } else {
+        await api.createContainerDirectory(nodeId, containerId, path);
+        toast.success("Folder created");
+      }
+      setCreateDialog(null);
+      await reloadDirectory(createDialog.directory);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : `Failed to create ${createDialog.type}`);
+    } finally {
+      setIsCreatingEntry(false);
+    }
+  }, [containerId, createDialog, newEntryName, nodeId, reloadDirectory]);
+
+  const handleUploadClick = useCallback(
+    (directory: string) => {
+      closeContextMenu();
+      uploadDirectoryRef.current = directory;
+      uploadInputRef.current?.click();
+    },
+    [closeContextMenu]
+  );
+
+  const uploadFiles = useCallback(
+    async (directory: string, files: globalThis.File[]) => {
+      if (!containerId) return;
+      if (files.length === 0) return;
+      const oversized = files.filter((file) => file.size > uploadMaxBytes);
+      if (oversized.length > 0) {
+        toast.error(
+          oversized.length === 1
+            ? `File too large to upload (${formatBytes(oversized[0].size)}, max ${formatBytes(uploadMaxBytes)})`
+            : `${oversized.length} files are too large to upload (max ${formatBytes(uploadMaxBytes)})`
+        );
+      }
+      const uploadable = files.filter((file) => file.size <= uploadMaxBytes);
+      if (uploadable.length === 0) {
+        return;
+      }
+      const totalBytes = uploadable.reduce((sum, file) => sum + file.size, 0);
+      let completedBytes = 0;
+      let uploaded = 0;
+      const toastId = toast.loading(
+        uploadable.length === 1 ? "Uploading file..." : "Uploading files...",
+        {
+          description: totalBytes > 0 ? `0% of ${formatBytes(totalBytes)}` : "Starting upload",
+          duration: Infinity,
+          dismissible: false,
+        }
+      );
+      try {
+        for (const file of uploadable) {
+          const path = joinPath(directory, file.name);
+          const updateProgress = (fileUploadedBytes: number) => {
+            const currentBytes = Math.min(totalBytes, completedBytes + fileUploadedBytes);
+            const percent = totalBytes > 0 ? Math.round((currentBytes / totalBytes) * 100) : 100;
+            toast.loading(
+              uploadable.length === 1 ? `Uploading ${file.name}...` : "Uploading files...",
+              {
+                id: toastId,
+                description: `${percent}% (${formatBytes(currentBytes)} / ${formatBytes(totalBytes)})`,
+                duration: Infinity,
+                dismissible: false,
+              }
+            );
+          };
+
+          if (file.size > CHUNKED_UPLOAD_THRESHOLD_BYTES) {
+            const { uploadId, chunkSize } = await api.initContainerFileUpload(
+              nodeId,
+              containerId,
+              path,
+              file.size
+            );
+            let chunkOffset = 0;
+            try {
+              while (chunkOffset < file.size) {
+                const chunk = file.slice(chunkOffset, Math.min(file.size, chunkOffset + chunkSize));
+                const offsetForProgress = chunkOffset;
+                await api.uploadContainerFileChunk(
+                  nodeId,
+                  containerId,
+                  uploadId,
+                  chunkOffset,
+                  chunk,
+                  ({ loaded }) => updateProgress(offsetForProgress + loaded)
+                );
+                chunkOffset += chunk.size;
+                updateProgress(chunkOffset);
+              }
+              await api.completeContainerFileUpload(nodeId, containerId, uploadId, path, file.size);
+            } catch (err) {
+              await api
+                .abortContainerFileUpload(nodeId, containerId, uploadId)
+                .catch(() => undefined);
+              throw err;
+            }
+          } else {
+            await api.createContainerFile(nodeId, containerId, path, file, ({ loaded }) => {
+              updateProgress(loaded);
+            });
+          }
+          completedBytes += file.size;
+          uploaded += 1;
+        }
+        toast.success(uploaded === 1 ? "File uploaded" : `${uploaded} files uploaded`, {
+          id: toastId,
+          duration: 5000,
+          dismissible: true,
+        });
+        await reloadDirectory(directory);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to upload file", {
+          id: toastId,
+          duration: 8000,
+          dismissible: true,
+        });
+      }
+    },
+    [containerId, nodeId, reloadDirectory, uploadMaxBytes]
+  );
+
+  const handleUploadChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(event.currentTarget.files ?? []);
+      event.currentTarget.value = "";
+      void uploadFiles(uploadDirectoryRef.current, files);
+    },
+    [uploadFiles]
+  );
+
+  const handleExternalDrop = useCallback(
+    (event: DragEvent, directory: string) => {
+      if (!canMutateFiles || !isExternalFileDrag(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      void uploadFiles(directory, Array.from(event.dataTransfer.files));
+    },
+    [canMutateFiles, uploadFiles]
+  );
+
+  const handleExternalDragOver = useCallback(
+    (event: DragEvent) => {
+      if (!canMutateFiles || !isExternalFileDrag(event)) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
+    },
+    [canMutateFiles]
+  );
+
+  const handleMovePath = useCallback(
+    async (source: TreeNode, targetDirectory: string) => {
+      if (!containerId) return;
+      const normalizedSourcePath = normalizeFilePath(source.path);
+      const normalizedTargetDirectory = normalizeFilePath(targetDirectory);
+      const destination = joinPath(normalizedTargetDirectory, source.name);
+      const normalizedDestination = normalizeFilePath(destination);
+      if (
+        isPathPending(normalizedSourcePath, pendingMovePathsRef.current) ||
+        isPathPending(normalizedTargetDirectory, pendingMovePathsRef.current)
+      ) {
+        return;
+      }
+      if (destination === normalizedSourcePath) return;
+      if (
+        source.isDir &&
+        (normalizedTargetDirectory === normalizedSourcePath ||
+          normalizedTargetDirectory.startsWith(`${normalizedSourcePath}/`))
+      ) {
+        return;
+      }
+      const previousRoots = rootsRef.current;
+      const nextRoots = moveTreeNode(
+        previousRoots,
+        normalizedSourcePath,
+        normalizedTargetDirectory,
+        destination
+      );
+      rootsRef.current = nextRoots;
+      setRoots(nextRoots);
+      setPendingMovePaths((prev) => {
+        const next = new Set(prev);
+        next.add(normalizedDestination);
+        pendingMovePathsRef.current = next;
+        return next;
+      });
+      try {
+        await api.moveContainerFile(nodeId, containerId, source.path, destination);
+      } catch (err) {
+        rootsRef.current = previousRoots;
+        setRoots(previousRoots);
+        toast.error(err instanceof Error ? err.message : "Failed to move file");
+      } finally {
+        setPendingMovePaths((prev) => {
+          const next = new Set(prev);
+          next.delete(normalizedDestination);
+          pendingMovePathsRef.current = next;
+          return next;
+        });
+      }
+    },
+    [containerId, nodeId]
+  );
+
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const source = event.active.data.current?.node as TreeNode | undefined;
+      const targetDirectory = event.over?.data.current?.path as string | undefined;
+      if (!source || !targetDirectory) return;
+      void handleMovePath(source, targetDirectory);
+    },
+    [handleMovePath]
+  );
+
+  const handleCopyFile = useCallback(
+    async (node: TreeNode) => {
+      closeContextMenu();
+      if (!isOpenableFile(node)) return;
+      try {
+        await navigator.clipboard.writeText(await readFileContent(node.path));
+        toast.success("File content copied");
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to copy file");
+      }
+    },
+    [closeContextMenu, readFileContent]
+  );
+
+  const handleDownloadFile = useCallback(
+    async (node: TreeNode) => {
+      closeContextMenu();
+      if (!isOpenableFile(node)) return;
+      try {
+        const bytes = await readFileBytes(node.path);
+        const blob = new Blob([bytes], { type: "application/octet-stream" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = node.name || "file";
+        link.click();
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to download file");
+      }
+    },
+    [closeContextMenu, readFileBytes]
+  );
+
+  const handleDeletePath = useCallback(
+    async (node: TreeNode) => {
+      closeContextMenu();
+      if (!containerId) return;
+      const confirmed = await confirm({
+        title: node.isDir ? "Delete Folder" : "Delete File",
+        description: `Delete "${node.path}"? This cannot be undone.`,
+        confirmLabel: "Delete",
+        variant: "destructive",
+      });
+      if (!confirmed) return;
+      try {
+        await api.deleteContainerFile(nodeId, containerId, node.path);
+        toast.success(node.isDir ? "Folder deleted" : "File deleted");
+        await reloadDirectory(parentPath(node.path));
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to delete");
+      }
+    },
+    [closeContextMenu, containerId, nodeId, reloadDirectory]
+  );
+
+  const openContextMenu = useCallback((event: MouseEvent, node: TreeNode | null) => {
+    if (event.shiftKey) return;
+    if (node && isPathPending(node.path, pendingMovePathsRef.current)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (contextMenuCloseTimerRef.current) {
+      clearTimeout(contextMenuCloseTimerRef.current);
+      contextMenuCloseTimerRef.current = null;
+    }
+    setIsContextMenuVisible(false);
+    setContextMenu({ x: event.clientX, y: event.clientY, node });
+    requestAnimationFrame(() => setIsContextMenuVisible(true));
+  }, []);
+
   if (!canBrowseFiles) {
     return (
       <div className="py-12 text-center text-muted-foreground">
@@ -200,59 +839,272 @@ export function FilesTab({
   }
 
   return (
-    <div className="pb-6">
+    <div className="select-none pb-6">
+      <input
+        ref={uploadInputRef}
+        type="file"
+        className="hidden"
+        multiple
+        onChange={handleUploadChange}
+      />
       {hasTruncatedDirectory && (
         <div className="mb-3 border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
           Some directories are showing only the first{" "}
           {roots.find((entry) => entry._listTruncated)?._listLimit ?? 1000} entries.
         </div>
       )}
-      <div className="border border-border bg-card">
-        <div className="overflow-x-auto -mb-px">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-border text-left">
-                <th className="p-3 text-xs font-medium text-muted-foreground">Name</th>
-                <th className="p-3 text-xs font-medium text-muted-foreground w-24 text-right">
-                  Size
-                </th>
-                <th className="p-3 text-xs font-medium text-muted-foreground w-44">
-                  Last Modified
-                </th>
-                <th className="p-3 text-xs font-medium text-muted-foreground w-28">Mode</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {isLoading && (
-                <tr>
-                  <td colSpan={4} className="p-8 text-center text-muted-foreground text-sm">
-                    <Loader2 className="h-4 w-4 animate-spin inline mr-2" />
-                    Loading...
-                  </td>
-                </tr>
-              )}
-              {!isLoading && roots.length === 0 && (
-                <tr>
-                  <td colSpan={4} className="p-8 text-center text-muted-foreground text-sm">
-                    Empty directory
-                  </td>
-                </tr>
-              )}
-              {!isLoading &&
-                roots.map((node) => (
-                  <TreeRow
-                    key={node.path}
-                    node={node}
-                    depth={0}
-                    onToggle={toggleDir}
-                    onOpenFile={openFile}
-                  />
-                ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+        <RootDropZone
+          disabled={!canMutateFiles}
+          onDropFiles={handleExternalDrop}
+          onDragOverFiles={handleExternalDragOver}
+        >
+          <div className="border border-border bg-card">
+            <div
+              className="overflow-x-auto -mb-px"
+              onContextMenu={(event) => openContextMenu(event, null)}
+            >
+              <table className="w-full">
+                <thead className="bg-muted/60 dark:bg-muted">
+                  <tr className="border-b border-border text-left">
+                    <th className="p-3 text-xs font-medium text-muted-foreground">Name</th>
+                    <th className="p-3 text-xs font-medium text-muted-foreground w-24 text-right">
+                      Size
+                    </th>
+                    <th className="p-3 text-xs font-medium text-muted-foreground w-44">
+                      Last Modified
+                    </th>
+                    <th className="p-3 text-xs font-medium text-muted-foreground w-28">Mode</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {isLoading && (
+                    <tr>
+                      <td colSpan={4} className="p-8 text-center text-muted-foreground text-sm">
+                        <Loader2 className="h-4 w-4 animate-spin inline mr-2" />
+                        Loading...
+                      </td>
+                    </tr>
+                  )}
+                  {!isLoading && roots.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="p-8 text-center text-muted-foreground text-sm">
+                        Empty directory
+                      </td>
+                    </tr>
+                  )}
+                  {!isLoading &&
+                    roots.map((node) => (
+                      <TreeRow
+                        key={node.path}
+                        node={node}
+                        depth={0}
+                        canDrag={canMutateFiles}
+                        pendingMovePaths={pendingMovePaths}
+                        onToggle={toggleDir}
+                        onOpenFile={openFile}
+                        onContextMenu={openContextMenu}
+                        onDropFiles={handleExternalDrop}
+                        onDragOverFiles={handleExternalDragOver}
+                      />
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </RootDropZone>
+      </DndContext>
+      {contextMenu && (
+        <FileContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          node={contextMenu.node}
+          canMutate={canMutateFiles}
+          visible={isContextMenuVisible}
+          onCreateFile={(directory) => openCreateDialog("file", directory)}
+          onCreateFolder={(directory) => openCreateDialog("folder", directory)}
+          onUpload={handleUploadClick}
+          onOpenFile={(node) => {
+            closeContextMenu();
+            openFile(node.path, node.isWritable);
+          }}
+          onCopyFile={handleCopyFile}
+          onDownloadFile={handleDownloadFile}
+          onDelete={handleDeletePath}
+        />
+      )}
+      <Dialog open={!!createDialog} onOpenChange={(open) => !open && setCreateDialog(null)}>
+        <DialogContent className="max-w-[calc(100vw-2rem)] sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {createDialog?.type === "folder" ? "Create Folder" : "Create File"}
+            </DialogTitle>
+          </DialogHeader>
+          <Input
+            autoFocus
+            value={newEntryName}
+            onChange={(event) => setNewEntryName(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") void handleCreateEntry();
+            }}
+            placeholder={createDialog?.type === "folder" ? "folder-name" : "file-name"}
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateDialog(null)}>
+              Cancel
+            </Button>
+            <Button onClick={handleCreateEntry} disabled={isCreatingEntry || !newEntryName.trim()}>
+              {isCreatingEntry && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              Create
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
+  );
+}
+
+function FileContextMenu({
+  x,
+  y,
+  node,
+  canMutate,
+  visible,
+  onCreateFile,
+  onCreateFolder,
+  onUpload,
+  onOpenFile,
+  onCopyFile,
+  onDownloadFile,
+  onDelete,
+}: {
+  x: number;
+  y: number;
+  node: TreeNode | null;
+  canMutate: boolean;
+  visible: boolean;
+  onCreateFile: (directory: string) => void;
+  onCreateFolder: (directory: string) => void;
+  onUpload: (directory: string) => void;
+  onOpenFile: (node: TreeNode) => void;
+  onCopyFile: (node: TreeNode) => void;
+  onDownloadFile: (node: TreeNode) => void;
+  onDelete: (node: TreeNode) => void;
+}) {
+  const targetDirectory = node?.isDir ? node.path : parentPath(node?.path ?? "/");
+  const canOpen = !!node && isOpenableFile(node);
+  const canFileRead = canMutate && canOpen;
+  const menuStyle = {
+    left: Math.max(8, Math.min(x, window.innerWidth - 260)),
+    top: Math.max(8, Math.min(y, window.innerHeight - 320)),
+  };
+
+  return (
+    <div
+      className={`dropdown-content fixed z-50 min-w-60 origin-top-left border bg-popover p-1 text-popover-foreground shadow-sm transition duration-100 ease-out ${
+        visible ? "scale-100 opacity-100" : "scale-95 opacity-0"
+      }`}
+      style={menuStyle}
+      onClick={(event) => event.stopPropagation()}
+      role="menu"
+    >
+      <FileContextMenuItem
+        icon={<FilePlus />}
+        label="Create file"
+        disabled={!canMutate}
+        onSelect={() => onCreateFile(targetDirectory)}
+      />
+      {node?.isDir && (
+        <FileContextMenuItem
+          icon={<FilePlus />}
+          label="Create file in parent"
+          disabled={!canMutate}
+          onSelect={() => onCreateFile(parentPath(node.path))}
+        />
+      )}
+      <FileContextMenuItem
+        icon={<FolderPlus />}
+        label="Create folder"
+        disabled={!canMutate}
+        onSelect={() => onCreateFolder(targetDirectory)}
+      />
+      {node?.isDir && (
+        <FileContextMenuItem
+          icon={<FolderPlus />}
+          label="Create folder in parent"
+          disabled={!canMutate}
+          onSelect={() => onCreateFolder(parentPath(node.path))}
+        />
+      )}
+      <FileContextMenuItem
+        icon={<Upload />}
+        label="Upload file"
+        disabled={!canMutate}
+        onSelect={() => onUpload(targetDirectory)}
+      />
+      <FileContextMenuSeparator />
+      <FileContextMenuItem
+        icon={<ExternalLink />}
+        label="Open file"
+        disabled={!canFileRead}
+        onSelect={() => node && onOpenFile(node)}
+      />
+      <FileContextMenuItem
+        icon={<ClipboardCopy />}
+        label="Copy contents"
+        disabled={!canFileRead}
+        onSelect={() => node && onCopyFile(node)}
+      />
+      <FileContextMenuItem
+        icon={<Download />}
+        label="Download file"
+        disabled={!canFileRead}
+        onSelect={() => node && onDownloadFile(node)}
+      />
+      <FileContextMenuSeparator />
+      <FileContextMenuItem
+        icon={<Trash2 />}
+        label={node?.isDir ? "Delete folder" : "Delete file"}
+        disabled={!canMutate || !node}
+        destructive
+        onSelect={() => node && onDelete(node)}
+      />
+      <FileContextMenuSeparator />
+      <FileContextMenuItem label="Shift + right click for browser menu" disabled />
+    </div>
+  );
+}
+
+function FileContextMenuSeparator() {
+  return <div className="-mx-1 my-1 h-px bg-muted" />;
+}
+
+function FileContextMenuItem({
+  icon,
+  label,
+  disabled,
+  destructive,
+  onSelect = () => {},
+}: {
+  icon?: ReactNode;
+  label: string;
+  disabled?: boolean;
+  destructive?: boolean;
+  onSelect?: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      disabled={disabled}
+      className={`relative flex w-full select-none items-center gap-2 px-2 py-3 text-left text-sm outline-none transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-50 md:py-1.5 [&>svg]:size-4 [&>svg]:shrink-0 ${
+        destructive ? "text-destructive" : ""
+      }`}
+      onClick={onSelect}
+    >
+      {icon}
+      {label}
+    </button>
   );
 }
 
@@ -261,24 +1113,69 @@ export function FilesTab({
 function TreeRow({
   node,
   depth,
+  canDrag,
+  pendingMovePaths,
   onToggle,
   onOpenFile,
+  onContextMenu,
+  onDropFiles,
+  onDragOverFiles,
 }: {
   node: TreeNode;
   depth: number;
+  canDrag: boolean;
+  pendingMovePaths: Set<string>;
   onToggle: (path: string) => void;
   onOpenFile?: (path: string, writable?: boolean) => void;
+  onContextMenu: (event: MouseEvent, node: TreeNode) => void;
+  onDropFiles: (event: DragEvent, directory: string) => void;
+  onDragOverFiles: (event: DragEvent) => void;
 }) {
   const indent = depth * 20;
   const isNonDirSymlink = node.isSymlink && !node.isDir;
   const isOpenable = !!onOpenFile && !node.isDir && !isNonDirSymlink && !node.isSpecial;
-
-  const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+  const isPendingMove = isPathPending(node.path, pendingMovePaths);
+  const canInteract = !isPendingMove;
+  const effectiveCanDrag = canDrag && canInteract;
+  const {
+    attributes,
+    listeners,
+    setNodeRef: setDraggableRef,
+    transform,
+    isDragging,
+  } = useDraggable({
+    id: `file:${node.path}`,
+    data: { node },
+    disabled: !effectiveCanDrag,
+  });
+  const { setNodeRef: setDroppableRef, isOver } = useDroppable({
+    id: `dir:${node.path}`,
+    data: { path: node.path },
+    disabled: !effectiveCanDrag || !node.isDir,
+  });
+  const setRowRef = useCallback(
+    (element: HTMLTableRowElement | null) => {
+      setDraggableRef(element);
+      setDroppableRef(element);
+    },
+    [setDraggableRef, setDroppableRef]
+  );
+  const dragStyle = {
+    transform: CSS.Translate.toString(transform),
+    opacity: isDragging ? 0.3 : isPendingMove ? 0.65 : 1,
+  };
 
   const handleClick = () => {
+    if (!canInteract) return;
     if (node.isDir) {
       onToggle(node.path);
-    } else if (!isOpenable) {
+    }
+  };
+
+  const handleDoubleClick = () => {
+    if (!canInteract) return;
+    if (node.isDir) return;
+    if (!isOpenable) {
       // blocked — symlink or special file
     } else if (node.size > MAX_FILE_SIZE) {
       toast.error(`File too large to open (${formatBytes(node.size)}, max 10 MB)`);
@@ -290,12 +1187,24 @@ function TreeRow({
   return (
     <>
       <tr
+        ref={setRowRef}
+        style={dragStyle}
         className={
           !isOpenable && !node.isDir
             ? "transition-colors"
-            : "hover:bg-accent transition-colors cursor-pointer"
+            : `transition-colors ${canInteract ? "cursor-pointer" : "cursor-wait"} ${
+                isOver ? "bg-accent/30" : canInteract ? "hover:bg-accent" : ""
+              }`
         }
         onClick={handleClick}
+        onDoubleClick={handleDoubleClick}
+        onContextMenu={canInteract ? (event) => onContextMenu(event, node) : undefined}
+        onDragOver={effectiveCanDrag && node.isDir ? onDragOverFiles : undefined}
+        onDrop={
+          effectiveCanDrag && node.isDir ? (event) => onDropFiles(event, node.path) : undefined
+        }
+        {...(effectiveCanDrag ? attributes : {})}
+        {...(effectiveCanDrag ? listeners : {})}
       >
         <td className="p-3 text-sm">
           <div className="flex items-center gap-1.5" style={{ paddingLeft: indent }}>
@@ -343,10 +1252,44 @@ function TreeRow({
             key={child.path}
             node={child}
             depth={depth + 1}
+            canDrag={canDrag}
+            pendingMovePaths={pendingMovePaths}
             onToggle={onToggle}
             onOpenFile={onOpenFile}
+            onContextMenu={onContextMenu}
+            onDropFiles={onDropFiles}
+            onDragOverFiles={onDragOverFiles}
           />
         ))}
     </>
+  );
+}
+
+function RootDropZone({
+  children,
+  disabled,
+  onDropFiles,
+  onDragOverFiles,
+}: {
+  children: ReactNode;
+  disabled: boolean;
+  onDropFiles: (event: DragEvent, directory: string) => void;
+  onDragOverFiles: (event: DragEvent) => void;
+}) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: "dir:/",
+    data: { path: "/" },
+    disabled,
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={isOver ? "bg-accent/30" : undefined}
+      onDragOver={disabled ? undefined : onDragOverFiles}
+      onDrop={disabled ? undefined : (event) => onDropFiles(event, "/")}
+    >
+      {children}
+    </div>
   );
 }

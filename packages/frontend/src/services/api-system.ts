@@ -4,6 +4,7 @@ import type {
   HousekeepingRunResult,
   HousekeepingStats,
   LicenseStatusView,
+  SystemConfig,
   UpdateStatus,
 } from "@/types";
 import type { ApiClientBaseConstructor } from "./api-mixins";
@@ -12,6 +13,10 @@ export function withSystemApi<TBase extends ApiClientBaseConstructor>(Base: TBas
   return class SystemApiClient extends Base {
     async getVersionInfo(): Promise<UpdateStatus> {
       return this.unwrapData(this.request<{ data: UpdateStatus }>("/system/version"));
+    }
+
+    async getSystemConfig(): Promise<SystemConfig> {
+      return this.unwrapData(this.request<{ data: SystemConfig }>("/system/config"));
     }
 
     async checkForUpdates(): Promise<UpdateStatus> {

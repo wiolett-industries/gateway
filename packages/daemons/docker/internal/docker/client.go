@@ -11,6 +11,7 @@ import (
 	"maps"
 	"net/http"
 	"net/netip"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -610,17 +611,21 @@ func (c *Client) DuplicateContainer(ctx context.Context, id string, newName stri
 	}
 	insp := inspResult.Container
 
-	// Clone config, clear runtime fields
-	cfg := insp.Config
+	// Clone config, clear runtime fields.
+	cfg := *insp.Config
 	cfg.Hostname = ""
+	netNames := inspectNetworkNames(&insp)
 	result, err := c.cli.ContainerCreate(ctx, client.ContainerCreateOptions{
-		Config:     cfg,
-		HostConfig: insp.HostConfig,
-		Name:       newName,
+		Config:           &cfg,
+		HostConfig:       insp.HostConfig,
+		NetworkingConfig: networkingConfigForInspectNetwork(&insp, netNames),
+		Name:             newName,
 	})
 	if err != nil {
 		return "", fmt.Errorf("create duplicate container: %w", err)
 	}
+
+	c.connectContainerToAdditionalNetworks(ctx, result.ID, newName, &insp, netNames)
 
 	return result.ID, nil
 }
@@ -984,38 +989,19 @@ func (c *Client) createContainerFromInspect(
 	createConfig.Env = applyEnvChanges(insp.Config.Env, envOverrides, envRemovals)
 	// Preserve all networks the container was connected to.
 	// Docker only allows one network at creation time; the rest are connected after.
-	netNames := make([]string, 0, len(insp.NetworkSettings.Networks))
-	for netName := range insp.NetworkSettings.Networks {
-		netNames = append(netNames, netName)
-	}
-	var netCfg *network.NetworkingConfig
-	if len(netNames) > 0 {
-		ep := insp.NetworkSettings.Networks[netNames[0]]
-		netCfg = &network.NetworkingConfig{
-			EndpointsConfig: map[string]*network.EndpointSettings{netNames[0]: ep},
-		}
-	}
+	netNames := inspectNetworkNames(insp)
 
 	createResult, err := c.cli.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Config:           &createConfig,
 		HostConfig:       insp.HostConfig,
-		NetworkingConfig: netCfg,
+		NetworkingConfig: networkingConfigForInspectNetwork(insp, netNames),
 		Name:             name,
 	})
 	if err != nil {
 		return "", err
 	}
 
-	// Connect to additional networks
-	for _, netName := range netNames[1:] {
-		ep := insp.NetworkSettings.Networks[netName]
-		if _, err := c.cli.NetworkConnect(ctx, netName, client.NetworkConnectOptions{
-			Container:      createResult.ID,
-			EndpointConfig: ep,
-		}); err != nil {
-			c.logger.Warn("reconnect container to network failed", "container", name, "network", netName, "error", err)
-		}
-	}
+	c.connectContainerToAdditionalNetworks(ctx, createResult.ID, name, insp, netNames)
 
 	// Preserve the original running state. A stopped container should stay stopped.
 	if wasRunning {
@@ -1026,6 +1012,57 @@ func (c *Client) createContainerFromInspect(
 	}
 
 	return createResult.ID, nil
+}
+
+func inspectNetworkNames(insp *container.InspectResponse) []string {
+	if insp == nil || insp.NetworkSettings == nil || len(insp.NetworkSettings.Networks) == 0 {
+		return nil
+	}
+
+	netNames := make([]string, 0, len(insp.NetworkSettings.Networks))
+	for netName := range insp.NetworkSettings.Networks {
+		if strings.TrimSpace(netName) != "" {
+			netNames = append(netNames, netName)
+		}
+	}
+	sort.Strings(netNames)
+	return netNames
+}
+
+func networkingConfigForInspectNetwork(
+	insp *container.InspectResponse,
+	netNames []string,
+) *network.NetworkingConfig {
+	if len(netNames) == 0 || insp == nil || insp.NetworkSettings == nil {
+		return nil
+	}
+
+	ep := insp.NetworkSettings.Networks[netNames[0]]
+	return &network.NetworkingConfig{
+		EndpointsConfig: map[string]*network.EndpointSettings{netNames[0]: ep},
+	}
+}
+
+func (c *Client) connectContainerToAdditionalNetworks(
+	ctx context.Context,
+	containerID string,
+	containerName string,
+	insp *container.InspectResponse,
+	netNames []string,
+) {
+	if insp == nil || insp.NetworkSettings == nil {
+		return
+	}
+
+	for _, netName := range netNames[1:] {
+		ep := insp.NetworkSettings.Networks[netName]
+		if _, err := c.cli.NetworkConnect(ctx, netName, client.NetworkConnectOptions{
+			Container:      containerID,
+			EndpointConfig: ep,
+		}); err != nil {
+			c.logger.Warn("reconnect container to network failed", "container", containerName, "network", netName, "error", err)
+		}
+	}
 }
 
 func cloneInspectResponse(src *container.InspectResponse) (*container.InspectResponse, error) {

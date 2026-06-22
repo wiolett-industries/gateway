@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { FILE_UPLOAD_MAX_BYTES } from '@/modules/settings/general-settings.service.js';
 
 // Docker's container name rule: [a-zA-Z0-9][a-zA-Z0-9_.-]+
 const ContainerNameSchema = z
@@ -157,7 +158,7 @@ export const FileBrowseSchema = z.object({
 });
 
 // File write
-export const DOCKER_FILE_WRITE_MAX_BYTES = 1024 * 1024;
+export const DOCKER_FILE_WRITE_MAX_BYTES = FILE_UPLOAD_MAX_BYTES;
 export const DOCKER_FILE_WRITE_MAX_BASE64_LENGTH = Math.ceil(DOCKER_FILE_WRITE_MAX_BYTES / 3) * 4;
 
 export const FileWriteSchema = z.object({
@@ -166,6 +167,34 @@ export const FileWriteSchema = z.object({
     .string()
     .max(DOCKER_FILE_WRITE_MAX_BASE64_LENGTH)
     .regex(/^[A-Za-z0-9+/]*={0,2}$/), // base64-encoded content
+});
+
+export const FileCreateSchema = z.object({
+  path: z.string().min(1),
+  content: z
+    .string()
+    .max(DOCKER_FILE_WRITE_MAX_BASE64_LENGTH)
+    .regex(/^[A-Za-z0-9+/]*={0,2}$/)
+    .optional(),
+});
+
+export const FileUploadInitSchema = z.object({
+  path: z.string().min(1),
+  totalBytes: z.number().int().min(0).max(FILE_UPLOAD_MAX_BYTES),
+});
+
+export const FileUploadChunkQuerySchema = z.object({
+  offset: z.coerce.number().int().min(0),
+});
+
+export const FileUploadCompleteSchema = z.object({
+  path: z.string().min(1),
+  totalBytes: z.number().int().min(0).max(FILE_UPLOAD_MAX_BYTES),
+});
+
+export const FileMoveSchema = z.object({
+  fromPath: z.string().min(1),
+  toPath: z.string().min(1),
 });
 
 // Env update

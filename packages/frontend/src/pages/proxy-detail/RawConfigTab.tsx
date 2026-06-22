@@ -47,10 +47,10 @@ export function RawConfigTab({
         />
         {canManage && (
           <div className="absolute right-2.5 bottom-2.5 z-10 flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={onValidate}>
+            <Button variant="outline" onClick={onValidate}>
               Validate
             </Button>
-            <Button size="sm" onClick={onSaveRaw} disabled={isSavingRaw}>
+            <Button onClick={onSaveRaw} disabled={isSavingRaw}>
               <Save className="h-4 w-4" />
               Save
             </Button>
@@ -69,7 +69,6 @@ export function RawConfigTab({
       <CodeEditor value={renderedConfig} onChange={() => {}} readOnly minHeight="0px" />
       <Button
         variant="outline"
-        size="sm"
         className="absolute right-2.5 bottom-2.5 z-10"
         onClick={onRefreshRendered}
         disabled={isLoadingRaw}

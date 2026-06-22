@@ -123,6 +123,7 @@ export const ALL_SCOPES = [
   'docker:registries:delete',
   // ── Docker: Tasks ────────────────────────────────────────────────
   'docker:tasks',
+  'docker:tasks:manage',
   // ── Databases ────────────────────────────────────────────────────
   'databases:view',
   'databases:create',
@@ -286,6 +287,7 @@ export const ADMIN_SCOPES: readonly string[] = [
   'docker:networks:delete',
   'docker:registries:view',
   'docker:tasks',
+  'docker:tasks:manage',
   'databases:view',
   'databases:create',
   'databases:edit',
@@ -375,6 +377,7 @@ export const OPERATOR_SCOPES: readonly string[] = [
   'docker:networks:view',
   'docker:registries:view',
   'docker:tasks',
+  'docker:tasks:manage',
   'databases:view',
   'databases:create',
   'databases:edit',
@@ -512,6 +515,9 @@ export const RESOURCE_SCOPABLE: readonly string[] = [
   'docker:networks:create',
   'docker:networks:edit',
   'docker:networks:delete',
+  // Docker tasks
+  'docker:tasks',
+  'docker:tasks:manage',
   // Databases
   'databases:view',
   'databases:edit',

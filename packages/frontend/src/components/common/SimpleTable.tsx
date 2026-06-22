@@ -57,12 +57,12 @@ export function SimpleTable<TRow>({
   }
 
   return (
-    <div className={cn("overflow-x-auto", className)}>
+    <div className={cn("min-w-0 max-w-full overflow-x-auto", className)}>
       <table className={cn("w-full text-sm", tableClassName)}>
         <thead>
           <tr
             className={cn(
-              "border-b border-border text-xs uppercase tracking-wider text-muted-foreground",
+              "border-b border-border bg-muted/60 text-xs uppercase tracking-wider text-muted-foreground dark:bg-muted",
               headerRowClassName
             )}
           >

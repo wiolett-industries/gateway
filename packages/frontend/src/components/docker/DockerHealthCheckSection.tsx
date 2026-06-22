@@ -173,7 +173,6 @@ export function DockerHealthCheckSection({
       actions={
         <>
           <Button
-            size="sm"
             variant="outline"
             onClick={test}
             disabled={disabled || loading || testing || !draft.enabled || routeRequired}
@@ -182,7 +181,6 @@ export function DockerHealthCheckSection({
             Test
           </Button>
           <Button
-            size="sm"
             onClick={save}
             disabled={disabled || loading || saving || !changed || routeRequired}
           >
@@ -207,7 +205,7 @@ export function DockerHealthCheckSection({
       <div className="p-4 space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground">Route</label>
+            <label className="text-xs text-muted-foreground">Route</label>
             <Select
               value={selectedRoute}
               onValueChange={(value) => {
@@ -226,7 +224,7 @@ export function DockerHealthCheckSection({
               }}
               disabled={disabled || loading || draft.routeOptions.length === 0}
             >
-              <SelectTrigger className="h-8 text-xs">
+              <SelectTrigger>
                 <SelectValue placeholder="Select route" />
               </SelectTrigger>
               <SelectContent>
@@ -246,13 +244,13 @@ export function DockerHealthCheckSection({
             )}
           </div>
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground">Scheme</label>
+            <label className="text-xs text-muted-foreground">Scheme</label>
             <Select
               value={draft.scheme}
               onValueChange={(scheme) => setField("scheme", scheme as "http" | "https")}
               disabled={disabled || loading}
             >
-              <SelectTrigger className="h-8 text-xs">
+              <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -262,18 +260,16 @@ export function DockerHealthCheckSection({
             </Select>
           </div>
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground">Path</label>
+            <label className="text-xs text-muted-foreground">Path</label>
             <Input
-              className="h-8 text-xs"
               value={draft.path}
               onChange={(event) => setField("path", event.target.value)}
               disabled={disabled || loading}
             />
           </div>
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground">Slow After Ms</label>
+            <label className="text-xs text-muted-foreground">Slow After Ms</label>
             <Input
-              className="h-8 text-xs"
               inputMode="numeric"
               value={draft.slowThreshold}
               onChange={(event) => setField("slowThreshold", Number(event.target.value))}
@@ -284,9 +280,8 @@ export function DockerHealthCheckSection({
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground">Status Min</label>
+            <label className="text-xs text-muted-foreground">Status Min</label>
             <Input
-              className="h-8 text-xs"
               inputMode="numeric"
               value={draft.statusMin}
               onChange={(event) => setField("statusMin", Number(event.target.value))}
@@ -294,9 +289,8 @@ export function DockerHealthCheckSection({
             />
           </div>
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground">Status Max</label>
+            <label className="text-xs text-muted-foreground">Status Max</label>
             <Input
-              className="h-8 text-xs"
               inputMode="numeric"
               value={draft.statusMax}
               onChange={(event) => setField("statusMax", Number(event.target.value))}
@@ -304,9 +298,8 @@ export function DockerHealthCheckSection({
             />
           </div>
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground">Interval Seconds</label>
+            <label className="text-xs text-muted-foreground">Interval Seconds</label>
             <Input
-              className="h-8 text-xs"
               inputMode="numeric"
               value={draft.intervalSeconds}
               onChange={(event) => setField("intervalSeconds", Number(event.target.value))}
@@ -314,9 +307,8 @@ export function DockerHealthCheckSection({
             />
           </div>
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground">Timeout Seconds</label>
+            <label className="text-xs text-muted-foreground">Timeout Seconds</label>
             <Input
-              className="h-8 text-xs"
               inputMode="numeric"
               value={draft.timeoutSeconds}
               onChange={(event) => setField("timeoutSeconds", Number(event.target.value))}
@@ -327,7 +319,7 @@ export function DockerHealthCheckSection({
 
         <div className="grid grid-cols-1 md:grid-cols-[160px_1fr] gap-4">
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground">Body Match</label>
+            <label className="text-xs text-muted-foreground">Body Match</label>
             <Select
               value={draft.bodyMatchMode}
               onValueChange={(mode) =>
@@ -335,7 +327,7 @@ export function DockerHealthCheckSection({
               }
               disabled={disabled || loading}
             >
-              <SelectTrigger className="h-8 text-xs">
+              <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -347,9 +339,8 @@ export function DockerHealthCheckSection({
             </Select>
           </div>
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground">Expected Body</label>
+            <label className="text-xs text-muted-foreground">Expected Body</label>
             <Input
-              className="h-8 text-xs"
               value={draft.expectedBody ?? ""}
               onChange={(event) => setField("expectedBody", event.target.value)}
               disabled={disabled || loading}

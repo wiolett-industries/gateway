@@ -82,7 +82,7 @@ export function SecretsSection({
         canManageSecrets ? (
           <div className="flex items-center gap-2">
             {onSave && (
-              <Button size="sm" onClick={onSave} disabled={saveDisabled || isSaving}>
+              <Button onClick={onSave} disabled={saveDisabled || isSaving}>
                 {saveButtonLabel ?? "Save"}
               </Button>
             )}
@@ -100,7 +100,7 @@ export function SecretsSection({
       }
     >
       {secretRows.length > 0 && (
-        <div className="grid grid-cols-[1fr_1fr] border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wider">
+        <div className="grid grid-cols-[1fr_1fr] border-b border-border bg-muted/60 text-xs font-medium text-muted-foreground uppercase tracking-wider dark:bg-muted">
           <div className="px-3 py-2">Key</div>
           <div className="px-3 py-2 border-l border-border">Value</div>
         </div>
@@ -126,7 +126,7 @@ export function SecretsSection({
                     value={row.key}
                     onChange={(e) => isNew && updateSecretRow(idx, "key", e.target.value)}
                     readOnly={!isNew}
-                    className={`h-9 text-xs font-mono border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring ${
+                    className={`h-9 border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring ${
                       hasKeyError ? "bg-red-500/15 text-red-400" : ""
                     }`}
                     placeholder="SECRET_KEY"
@@ -136,7 +136,7 @@ export function SecretsSection({
                       type={isNew || isRevealed ? "text" : "password"}
                       value={isMasked && !row.dirty ? "" : row.value}
                       onChange={(e) => updateSecretRow(idx, "value", e.target.value)}
-                      className="h-9 text-xs font-mono border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring flex-1 min-w-0"
+                      className="h-9 border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring flex-1 min-w-0"
                       placeholder={isMasked && !row.dirty ? "••••••••" : "secret value"}
                     />
                     {!isNew && (

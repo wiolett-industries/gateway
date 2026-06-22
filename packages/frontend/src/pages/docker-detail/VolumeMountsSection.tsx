@@ -1,4 +1,5 @@
 import { Minus, Plus } from "lucide-react";
+import { EmptyState } from "@/components/common/EmptyState";
 import { PanelShell } from "@/components/common/PanelShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,7 +46,7 @@ export function VolumeMountsSection({
       dirty={mountsChanged}
       actions={
         canEdit ? (
-          <Button size="sm" onClick={addMount}>
+          <Button onClick={addMount}>
             <Plus className="h-3.5 w-3.5" />
             Add
           </Button>
@@ -55,7 +56,7 @@ export function VolumeMountsSection({
       {mounts.length > 0 ? (
         <>
           <div
-            className={`grid ${canEdit ? "grid-cols-[1fr_1fr_100px_36px]" : "grid-cols-[1fr_1fr_100px]"} border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wider`}
+            className={`grid ${canEdit ? "grid-cols-[1fr_1fr_100px_36px]" : "grid-cols-[1fr_1fr_100px]"} border-b border-border bg-muted/60 text-xs font-medium text-muted-foreground uppercase tracking-wider dark:bg-muted`}
           >
             <div className="px-3 py-2">Source</div>
             <div className="px-3 py-2 border-l border-border">Container Path</div>
@@ -99,7 +100,7 @@ export function VolumeMountsSection({
                     onValueChange={(v) => updateMount(i, "readOnly", v === "ro")}
                     disabled={!canEdit}
                   >
-                    <SelectTrigger className="h-9 text-xs border-0 rounded-none shadow-none focus:ring-1 focus:ring-inset focus:ring-ring">
+                    <SelectTrigger className="h-9 border-0 rounded-none shadow-none focus:ring-1 focus:ring-inset focus:ring-ring">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -123,7 +124,7 @@ export function VolumeMountsSection({
           </div>
         </>
       ) : (
-        <div className="py-8 text-center text-muted-foreground text-sm">No volume mounts</div>
+        <EmptyState message="No volume mounts" embedded />
       )}
     </PanelShell>
   );

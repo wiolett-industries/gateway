@@ -362,6 +362,7 @@ message DockerFileCommand {
   string path = 3;
   int64 max_bytes = 4;
   bytes content = 5;
+  string target_path = 6;
 }
 
 message DockerConfigPushCommand {

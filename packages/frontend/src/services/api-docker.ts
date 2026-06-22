@@ -877,12 +877,130 @@ export function withDockerApi<TBase extends ApiClientBaseConstructor>(Base: TBas
     }
 
     async writeContainerFile(nodeId: string, containerId: string, path: string, content: string) {
+      const encoded = new TextEncoder().encode(content);
       return this.unwrapData(
-        this.request<{ data: unknown }>(
-          `/docker/nodes/${nodeId}/containers/${containerId}/files/write`,
-          { method: "PUT", body: JSON.stringify({ path, content }) }
+        this.uploadRaw<{ data: unknown }>(
+          `/docker/nodes/${nodeId}/containers/${containerId}/files/write?path=${encodeURIComponent(path)}`,
+          {
+            method: "PUT",
+            body: encoded,
+            headers: { "Content-Type": "application/octet-stream" },
+          }
         )
       );
+    }
+
+    async createContainerFile(
+      nodeId: string,
+      containerId: string,
+      path: string,
+      content: Blob | BufferSource | string = "",
+      onProgress?: (progress: { loaded: number; total: number }) => void
+    ) {
+      const body =
+        typeof content === "string"
+          ? new TextEncoder().encode(content)
+          : content instanceof Blob
+            ? content
+            : content;
+      return this.uploadRaw<void>(
+        `/docker/nodes/${nodeId}/containers/${containerId}/files/create?path=${encodeURIComponent(path)}`,
+        {
+          method: "POST",
+          body,
+          headers: { "Content-Type": "application/octet-stream" },
+          onProgress,
+        }
+      );
+    }
+
+    async initContainerFileUpload(
+      nodeId: string,
+      containerId: string,
+      path: string,
+      totalBytes: number
+    ): Promise<{ uploadId: string; chunkSize: number }> {
+      return this.unwrapData(
+        this.request<{ data: { uploadId: string; chunkSize: number } }>(
+          `/docker/nodes/${nodeId}/containers/${containerId}/files/uploads`,
+          {
+            method: "POST",
+            body: JSON.stringify({ path, totalBytes }),
+          }
+        )
+      );
+    }
+
+    async uploadContainerFileChunk(
+      nodeId: string,
+      containerId: string,
+      uploadId: string,
+      offset: number,
+      content: Blob,
+      onProgress?: (progress: { loaded: number; total: number }) => void
+    ): Promise<{ receivedBytes: number; totalBytes: number }> {
+      return this.unwrapData(
+        this.uploadRaw<{ data: { receivedBytes: number; totalBytes: number } }>(
+          `/docker/nodes/${nodeId}/containers/${containerId}/files/uploads/${uploadId}/chunks?offset=${offset}`,
+          {
+            method: "PUT",
+            body: content,
+            headers: { "Content-Type": "application/octet-stream" },
+            onProgress,
+          }
+        )
+      );
+    }
+
+    async completeContainerFileUpload(
+      nodeId: string,
+      containerId: string,
+      uploadId: string,
+      path: string,
+      totalBytes: number
+    ): Promise<void> {
+      await this.request<void>(
+        `/docker/nodes/${nodeId}/containers/${containerId}/files/uploads/${uploadId}/complete`,
+        {
+          method: "POST",
+          body: JSON.stringify({ path, totalBytes }),
+        }
+      );
+    }
+
+    async abortContainerFileUpload(
+      nodeId: string,
+      containerId: string,
+      uploadId: string
+    ): Promise<void> {
+      await this.request<void>(
+        `/docker/nodes/${nodeId}/containers/${containerId}/files/uploads/${uploadId}`,
+        { method: "DELETE" }
+      );
+    }
+
+    async createContainerDirectory(nodeId: string, containerId: string, path: string) {
+      return this.request<void>(
+        `/docker/nodes/${nodeId}/containers/${containerId}/files/directory`,
+        {
+          method: "POST",
+          body: JSON.stringify({ path }),
+        }
+      );
+    }
+
+    async deleteContainerFile(nodeId: string, containerId: string, path: string) {
+      return this.request<void>(
+        `/docker/nodes/${nodeId}/containers/${containerId}/files?path=${encodeURIComponent(path)}`,
+        { method: "DELETE" }
+      );
+    }
+
+    async moveContainerFile(nodeId: string, containerId: string, fromPath: string, toPath: string) {
+      return this.request<void>(`/docker/nodes/${nodeId}/containers/${containerId}/files/move`, {
+        method: "POST",
+        body: JSON.stringify({ fromPath, toPath }),
+      });
     }
 
     // ── Docker Registries ─────────────────────────────────────────────
@@ -979,6 +1097,14 @@ export function withDockerApi<TBase extends ApiClientBaseConstructor>(Base: TBas
 
     async getDockerTask(id: string): Promise<DockerTask> {
       return this.unwrapData(this.request<{ data: DockerTask }>(`/docker/tasks/${id}`));
+    }
+
+    async forceCancelDockerTask(id: string): Promise<DockerTask> {
+      return this.unwrapData(
+        this.request<{ data: DockerTask }>(`/docker/tasks/${id}/force-cancel`, {
+          method: "POST",
+        })
+      );
     }
 
     // ── Docker Exec WebSocket ─────────────────────────────────────────

@@ -318,6 +318,7 @@ export interface DockerFileCommand {
   action: string;
   containerId: string;
   path: string;
+  targetPath: string;
   maxBytes: number;
   content?: Buffer;
 }

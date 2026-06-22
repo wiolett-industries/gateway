@@ -18,7 +18,7 @@ import { useDockerStore } from "@/stores/docker";
 import type { DockerHealthCheck } from "@/types";
 import type { InspectData } from "./helpers";
 import { LabelsSection } from "./LabelsSection";
-import { NetworksSection } from "./NetworksSection";
+import { type NetworkEntry, NetworksSection, readAttachedNetworks } from "./NetworksSection";
 import { type PortMapping, PortMappingsSection } from "./PortMappingsSection";
 import { RuntimeSection } from "./RuntimeSection";
 import { buildRuntimePayloadFromForm, type RuntimeFormValues } from "./runtime-payload";
@@ -60,6 +60,30 @@ function sameRecreateBaseline(a: RecreateBaseline, b: RecreateBaseline) {
     a.hostname === b.hostname &&
     a.labels === b.labels
   );
+}
+
+function serializeNetworks(networks: NetworkEntry[]) {
+  return JSON.stringify(
+    networks
+      .map((network) => ({
+        name: network.name,
+        networkId: network.networkId,
+      }))
+      .sort((a, b) => `${a.name}:${a.networkId}`.localeCompare(`${b.name}:${b.networkId}`))
+  );
+}
+
+function validateNetworkDraft(networks: NetworkEntry[]) {
+  if (networks.some((network) => !network.networkId || !network.name)) {
+    return "Select a network before saving.";
+  }
+
+  const names = networks.map((network) => network.name).filter(Boolean);
+  if (new Set(names).size !== names.length) {
+    return "Each network can only be attached once.";
+  }
+
+  return null;
 }
 
 function deriveCurrentNanoCPUs(hostConfig: Record<string, any>): number {
@@ -104,8 +128,10 @@ export function SettingsTab({
     hasScope("docker:containers:edit") || hasScope(`docker:containers:edit:${nodeId}`);
   const canEditMounts =
     hasScope("docker:containers:mounts") || hasScope(`docker:containers:mounts:${nodeId}`);
-  const canManageNetworks = hasScope("docker:networks:edit");
-  const canListNetworks = hasScope("docker:networks:view");
+  const canManageNetworks =
+    hasScope("docker:networks:edit") || hasScope(`docker:networks:edit:${nodeId}`);
+  const canListNetworks =
+    hasScope("docker:networks:view") || hasScope(`docker:networks:view:${nodeId}`);
   const recreatesRunningContainer =
     (data.State?.Status ?? (data.State?.Running ? "running" : "stopped")) === "running";
 
@@ -200,6 +226,13 @@ export function SettingsTab({
       })),
     [data.Mounts]
   );
+  const initialNetworks = useMemo(
+    () =>
+      readAttachedNetworks(
+        data.NetworkSettings?.Networks as Record<string, Record<string, unknown>>
+      ),
+    [data.NetworkSettings?.Networks]
+  );
 
   const config = data.Config ?? {};
   const containerName = useMemo(
@@ -236,6 +269,7 @@ export function SettingsTab({
 
   const [ports, setPorts] = useState<PortMapping[]>(initialPorts);
   const [mounts, setMounts] = useState<MountEntry[]>(initialMounts);
+  const [networks, setNetworks] = useState<NetworkEntry[]>(initialNetworks);
   const [entrypoint, setEntrypoint] = useState(initialEntrypoint.join(" "));
   const [command, setCommand] = useState(initialCmd.join(" "));
   const [stopTimeout, setStopTimeout] = useState(initialStopTimeout);
@@ -246,6 +280,7 @@ export function SettingsTab({
     Object.entries(initialLabels).map(([key, value]) => ({ key, value }))
   );
   const [recreateLoading, setRecreateLoading] = useState(false);
+  const networkBaseline = useMemo(() => serializeNetworks(initialNetworks), [initialNetworks]);
 
   const recreateBaseline = useMemo(
     () => ({
@@ -274,6 +309,9 @@ export function SettingsTab({
     ]
   );
   const previousRecreateBaselineRef = useRef(recreateBaseline);
+  const previousNetworkBaselineRef = useRef(networkBaseline);
+  const networkBaselineRef = useRef(networkBaseline);
+  const networkBaselineEntriesRef = useRef<NetworkEntry[]>(initialNetworks);
 
   useEffect(() => {
     const previous = previousRuntimeServerBaselineRef.current;
@@ -360,6 +398,20 @@ export function SettingsTab({
     user,
     workingDir,
   ]);
+
+  useEffect(() => {
+    const previous = previousNetworkBaselineRef.current;
+    const currentDraft = serializeNetworks(networks);
+    const baselineChanged = previous !== networkBaseline;
+    const formMatchesPrevious = currentDraft === previous;
+
+    previousNetworkBaselineRef.current = networkBaseline;
+    networkBaselineRef.current = networkBaseline;
+    networkBaselineEntriesRef.current = initialNetworks;
+
+    if (!baselineChanged || !formMatchesPrevious) return;
+    setNetworks(initialNetworks);
+  }, [initialNetworks, networkBaseline, networks]);
 
   useEffect(() => {
     let cancelled = false;
@@ -536,8 +588,11 @@ export function SettingsTab({
     user !== recreateBaseline.user ||
     hostname !== recreateBaseline.hostname;
   const labelsChanged = JSON.stringify(labels) !== recreateBaseline.labels;
-  const hasRecreateChanges =
+  const networkValidationError = useMemo(() => validateNetworkDraft(networks), [networks]);
+  const networksChanged = serializeNetworks(networks) !== networkBaselineRef.current;
+  const hasConfigRecreateChanges =
     portsChanged || mountsChanged || execChanged || labelsChanged || imageTagChanged;
+  const hasRecreateChanges = hasConfigRecreateChanges || networksChanged;
 
   // ── Track runtime changes against baseline ──
   const b = baselineRef.current;
@@ -550,30 +605,81 @@ export function SettingsTab({
     cpuShares !== b.cpuShares ||
     pidsLimit !== b.pidsLimit;
 
+  const applyNetworkChanges = useCallback(async () => {
+    const baseline = networkBaselineEntriesRef.current;
+    const baselineByName = new Map(baseline.map((network) => [network.name, network]));
+    const nextByName = new Map(networks.map((network) => [network.name, network]));
+
+    const removed = baseline.filter((network) => !nextByName.has(network.name));
+    const added = networks.filter((network) => !baselineByName.has(network.name));
+
+    for (const network of removed) {
+      await api.disconnectContainerFromNetwork(
+        nodeId,
+        network.networkId || network.name,
+        containerId
+      );
+    }
+    for (const network of added) {
+      await api.connectContainerToNetwork(nodeId, network.networkId || network.name, containerId);
+    }
+
+    const appliedBaseline = serializeNetworks(networks);
+    networkBaselineRef.current = appliedBaseline;
+    previousNetworkBaselineRef.current = appliedBaseline;
+    networkBaselineEntriesRef.current = networks;
+  }, [containerId, networks, nodeId]);
+  const saveRequiresRecreate = hasConfigRecreateChanges && recreatesRunningContainer;
+
   // ── Recreate handler ──
   const handleRecreate = useCallback(async () => {
-    const ok = await confirm({
-      title: recreatesRunningContainer ? "Save & Recreate" : "Save",
-      description: recreatesRunningContainer
-        ? "This will stop and recreate the container with the new configuration. The container will experience downtime. Continue?"
-        : "This will save the new container configuration. The container will remain stopped. Continue?",
-      confirmLabel: recreatesRunningContainer ? "Recreate" : "Save",
-    });
-    if (!ok) return;
+    if (hasConfigRecreateChanges) {
+      const ok = await confirm({
+        title: saveRequiresRecreate ? "Save & Recreate" : "Save",
+        description: saveRequiresRecreate
+          ? "This will stop and recreate the container with the new configuration. The container will experience downtime. Continue?"
+          : "This will save the new container configuration. The container will remain stopped. Continue?",
+        confirmLabel: saveRequiresRecreate ? "Recreate" : "Save",
+      });
+      if (!ok) return;
+    }
 
     setRecreateLoading(true);
-    onMutationStart?.("recreating");
+    if (hasConfigRecreateChanges) {
+      onMutationStart?.("recreating");
+    }
     try {
       if (hasRuntimeChanges && runtimeValidationError) {
-        onMutationEnd?.();
+        if (hasConfigRecreateChanges) onMutationEnd?.();
         toast.error(runtimeValidationError);
         setRecreateLoading(false);
         return;
       }
       if (executionValidationError) {
-        onMutationEnd?.();
+        if (hasConfigRecreateChanges) onMutationEnd?.();
         toast.error(executionValidationError);
         setRecreateLoading(false);
+        return;
+      }
+      if (networksChanged && networkValidationError) {
+        if (hasConfigRecreateChanges) onMutationEnd?.();
+        toast.error(networkValidationError);
+        setRecreateLoading(false);
+        return;
+      }
+
+      if (networksChanged) {
+        await applyNetworkChanges();
+      }
+
+      if (!hasConfigRecreateChanges) {
+        toast.success("Networks saved");
+        setRecreateLoading(false);
+        void Promise.resolve(invalidate("containers", "networks"))
+          .then(() => Promise.resolve(onRefresh?.()))
+          .catch((err) => {
+            toast.error(err instanceof Error ? err.message : "Failed to refresh networks");
+          });
         return;
       }
 
@@ -620,21 +726,27 @@ export function SettingsTab({
     hostname,
     imageTag,
     imageTagChanged,
+    applyNetworkChanges,
     invalidate,
     labels,
     labelsChanged,
     mounts,
     mountsChanged,
     nodeId,
+    networkValidationError,
+    networksChanged,
     onRecreating,
+    onRefresh,
     parsedImageName,
     ports,
     portsChanged,
     buildRuntimePayload,
+    hasConfigRecreateChanges,
     hasRuntimeChanges,
     recreateBaseline,
     recreatesRunningContainer,
     runtimeValidationError,
+    saveRequiresRecreate,
     stopTimeout,
     user,
     workingDir,
@@ -644,7 +756,7 @@ export function SettingsTab({
 
   // ── Shared input styles ──
   const inputCell =
-    "h-9 text-xs font-mono border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring";
+    "h-9 border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring";
 
   return (
     <div
@@ -686,36 +798,31 @@ export function SettingsTab({
           actions={
             canEdit ? (
               <Button
-                size="sm"
                 style={{ backgroundColor: "rgb(234 179 8)", color: "#111" }}
                 className="hover:opacity-90 disabled:opacity-50"
                 onClick={handleRecreate}
                 disabled={
                   recreateLoading ||
                   !hasRecreateChanges ||
+                  (!!networkValidationError && networksChanged) ||
                   !!executionValidationError ||
                   (hasRuntimeChanges && !!runtimeValidationError)
                 }
               >
                 <RotateCcw className="h-3.5 w-3.5" />
-                {recreatesRunningContainer ? "Save & Recreate" : "Save"}
+                {saveRequiresRecreate ? "Save & Recreate" : "Save"}
               </Button>
             ) : null
           }
         >
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Image</label>
-              <Input
-                className="h-8 text-xs font-mono bg-muted/50"
-                value={parsedImageName}
-                disabled
-              />
+              <label className="text-xs text-muted-foreground">Image</label>
+              <Input value={parsedImageName} disabled />
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Tag</label>
+              <label className="text-xs text-muted-foreground">Tag</label>
               <Input
-                className="h-8 text-xs font-mono"
                 value={imageTag}
                 onChange={(e) => setImageTag(e.target.value)}
                 placeholder={imageTagLocked ? "digest" : "latest"}
@@ -726,9 +833,8 @@ export function SettingsTab({
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Entrypoint</label>
+              <label className="text-xs text-muted-foreground">Entrypoint</label>
               <Input
-                className="h-8 text-xs font-mono"
                 value={entrypoint}
                 onChange={(e) => setEntrypoint(e.target.value)}
                 placeholder="/docker-entrypoint.sh"
@@ -736,9 +842,8 @@ export function SettingsTab({
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Working Directory</label>
+              <label className="text-xs text-muted-foreground">Working Directory</label>
               <Input
-                className="h-8 text-xs font-mono"
                 value={workingDir}
                 onChange={(e) => setWorkingDir(e.target.value)}
                 placeholder="/app"
@@ -748,9 +853,8 @@ export function SettingsTab({
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">User</label>
+              <label className="text-xs text-muted-foreground">User</label>
               <Input
-                className="h-8 text-xs font-mono"
                 value={user}
                 onChange={(e) => setUser(e.target.value)}
                 placeholder="root"
@@ -758,9 +862,8 @@ export function SettingsTab({
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Hostname</label>
+              <label className="text-xs text-muted-foreground">Hostname</label>
               <Input
-                className="h-8 text-xs font-mono"
                 value={hostname}
                 onChange={(e) => setHostname(e.target.value)}
                 placeholder="container-hostname"
@@ -770,9 +873,8 @@ export function SettingsTab({
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Command</label>
+              <label className="text-xs text-muted-foreground">Command</label>
               <Input
-                className="h-8 text-xs font-mono"
                 value={command}
                 onChange={(e) => setCommand(e.target.value)}
                 placeholder="nginx -g daemon off;"
@@ -780,9 +882,8 @@ export function SettingsTab({
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Stop Grace (s)</label>
+              <label className="text-xs text-muted-foreground">Stop Grace (s)</label>
               <Input
-                className="h-8 text-xs font-mono"
                 type="number"
                 min={0}
                 max={300}
@@ -820,6 +921,16 @@ export function SettingsTab({
         inputCell={inputCell}
       />
 
+      {/* ─── Networks ─────────────────────────────────────────────── */}
+      <NetworksSection
+        nodeId={nodeId}
+        networks={networks}
+        setNetworks={setNetworks}
+        networksChanged={networksChanged}
+        canManageNetworks={canManageNetworks}
+        canListNetworks={canListNetworks}
+      />
+
       {/* ─── Labels ───────────────────────────────────────────────── */}
       <LabelsSection
         canEdit={canEdit}
@@ -838,16 +949,6 @@ export function SettingsTab({
           onHealthCheckSaved?.(healthCheck);
           invalidate("containers");
         }}
-      />
-
-      {/* ─── Networks ─────────────────────────────────────────────── */}
-      <NetworksSection
-        nodeId={nodeId}
-        containerId={containerId}
-        networks={data.NetworkSettings?.Networks as Record<string, Record<string, unknown>>}
-        canManageNetworks={canManageNetworks}
-        canListNetworks={canListNetworks}
-        onRefresh={onRefresh}
       />
 
       {/* ─── Webhook / Image Cleanup ─────────────────────────────── */}

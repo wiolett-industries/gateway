@@ -32,14 +32,16 @@ import { TruncateStart } from "@/components/ui/truncate-start";
 import { useDeferredDialogState } from "@/hooks/use-deferred-dialog-state";
 import { useRealtime } from "@/hooks/use-realtime";
 import { loadVisibleDockerNodes } from "@/lib/docker-node-access";
+import { nodeBadgeClassName } from "@/lib/node-appearance";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
-import type { DockerNetwork, Node } from "@/types";
+import type { DockerNetwork, Node, NodeAppearanceColor } from "@/types";
 
 interface DockerNetworkListItem extends DockerNetwork {
   _nodeId: string;
   _nodeName?: string;
+  _nodeColor?: NodeAppearanceColor | null;
 }
 
 interface NetworkContainerRow {
@@ -297,7 +299,7 @@ export function DockerNetworks({
         id: "driver",
         label: "Driver",
         width: "7rem",
-        renderCell: (net) => <span className="text-sm text-muted-foreground">{net.driver}</span>,
+        renderCell: (net) => <Badge variant="secondary">{net.driver}</Badge>,
       },
       {
         id: "subnet",
@@ -320,7 +322,7 @@ export function DockerNetworks({
         width: "minmax(0, 1.15fr)",
         renderCell: (n) => (
           <div className="min-w-0">
-            <Badge variant="secondary" className="max-w-full shrink-0">
+            <Badge variant="secondary" className={nodeBadgeClassName((n as any)._nodeColor)}>
               <span className="truncate">{(n as any)._nodeName || "-"}</span>
             </Badge>
           </div>
@@ -606,7 +608,7 @@ export function DockerNetworks({
       </Dialog>
       {/* Network Details Dialog */}
       <Dialog open={networkDetailsOpen} onOpenChange={onNetworkDetailsOpenChange}>
-        <DialogContent className="sm:max-w-xl overflow-hidden">
+        <DialogContent className="max-h-[80vh] max-w-full overflow-x-hidden overflow-y-auto sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>Network Details</DialogTitle>
             <DialogDescription>
@@ -615,7 +617,7 @@ export function DockerNetworks({
           </DialogHeader>
           {selectedNetwork && (
             <div className="min-w-0 space-y-4">
-              <div className="border border-border bg-card divide-y divide-border overflow-hidden">
+              <div className="min-w-0 divide-y divide-border overflow-hidden border border-border bg-card">
                 {[
                   ["Name", selectedNetwork.name],
                   ["Network ID", selectedNetwork.id],
@@ -628,9 +630,12 @@ export function DockerNetworks({
                   ["Ingress", (selectedNetwork as any).ingress ? "Yes" : "No"],
                   ["Containers", String(containerCount(selectedNetwork))],
                 ].map(([label, value]) => (
-                  <div key={label} className="flex items-center justify-between px-4 py-3 min-w-0">
-                    <span className="text-sm text-muted-foreground shrink-0">{label}</span>
-                    <span className="text-sm font-mono break-all text-right ml-4 min-w-0">
+                  <div
+                    key={label}
+                    className="grid min-w-0 grid-cols-[minmax(96px,max-content)_minmax(0,1fr)] items-center gap-4 px-4 py-3"
+                  >
+                    <span className="text-sm text-muted-foreground">{label}</span>
+                    <span className="min-w-0 truncate text-right font-mono text-sm" title={value}>
                       {value}
                     </span>
                   </div>

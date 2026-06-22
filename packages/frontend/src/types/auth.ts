@@ -37,6 +37,9 @@ export interface AuthProvisioningSettings {
   oidcRequireVerifiedEmail: boolean;
   oauthExtendedCallbackCompatibility: boolean;
   mcpServerEnabled: boolean;
+  generalSettings: {
+    fileUploadMaxBytes: number;
+  };
   networkSecurity: {
     clientIpSource: "auto" | "direct" | "reverse_proxy" | "cloudflare";
     trustedProxyCidrs: string[];

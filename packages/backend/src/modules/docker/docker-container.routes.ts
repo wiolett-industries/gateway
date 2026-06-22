@@ -5,21 +5,28 @@ import { requireScopeForResource } from '@/modules/auth/auth.middleware.js';
 import { TokensService } from '@/modules/tokens/tokens.service.js';
 import type { AppEnv } from '@/types.js';
 import {
+  abortContainerFileUploadRoute,
+  completeContainerFileUploadRoute,
   containerEnvRoute,
   containerLogsRoute,
   containerStatsHistoryRoute,
   containerStatsRoute,
   containerTopRoute,
+  createContainerDirectoryRoute,
+  createContainerFileRoute,
   createContainerRoute,
   createContainerSecretRoute,
+  deleteContainerFileRoute,
   deleteContainerSecretRoute,
   duplicateContainerRoute,
+  initContainerFileUploadRoute,
   inspectContainerRoute,
   killContainerRoute,
   listContainerFilesRoute,
   listContainerSecretsRoute,
   listContainersRoute,
   liveUpdateContainerRoute,
+  moveContainerFileRoute,
   readContainerFileRoute,
   recreateContainerRoute,
   removeContainerRoute,
@@ -30,6 +37,7 @@ import {
   updateContainerEnvRoute,
   updateContainerRoute,
   updateContainerSecretRoute,
+  uploadContainerFileChunkRoute,
   writeContainerFileRoute,
 } from './docker.docs.js';
 import {
@@ -43,6 +51,11 @@ import {
   ContainerUpdateSchema,
   EnvUpdateSchema,
   FileBrowseSchema,
+  FileCreateSchema,
+  FileMoveSchema,
+  FileUploadChunkQuerySchema,
+  FileUploadCompleteSchema,
+  FileUploadInitSchema,
   FileWriteSchema,
   LogQuerySchema,
   SecretCreateSchema,
@@ -54,6 +67,20 @@ import { DockerSecretService } from './docker-secret.service.js';
 
 const DOCKER_RESOURCE_LIST_MAX = 1000;
 const DOCKER_CONTAINER_PORT_PREVIEW_MAX = 64;
+
+async function parseFileContentRequest(
+  c: Parameters<Parameters<OpenAPIHono<AppEnv>['openapi']>[1]>[0],
+  schema: typeof FileWriteSchema | typeof FileCreateSchema
+) {
+  const contentType = c.req.header('content-type') ?? '';
+  if (contentType.includes('application/json')) {
+    return schema.parse(await c.req.json());
+  }
+
+  const path = FileBrowseSchema.parse(c.req.query()).path;
+  const content = Buffer.from(await c.req.arrayBuffer());
+  return { path, content };
+}
 
 function compactContainerListItem(container: Record<string, any>) {
   const ports = container.ports ?? container.Ports;
@@ -517,9 +544,118 @@ export function registerContainerRoutes(router: OpenAPIHono<AppEnv>) {
       const nodeId = c.req.param('nodeId')!;
       const containerId = c.req.param('containerId')!;
       const user = c.get('user')!;
-      const body = await c.req.json();
-      const { path, content } = FileWriteSchema.parse(body);
+      const { path, content } = await parseFileContentRequest(c, FileWriteSchema);
+      if (content === undefined) {
+        return c.json({ code: 'INVALID_BODY', message: 'content is required' }, 400);
+      }
       await service.writeFile(nodeId, containerId, path, content, user.id);
+      return c.json({ success: true });
+    }
+  );
+
+  router.openapi(
+    { ...createContainerFileRoute, middleware: requireScopeForResource('docker:containers:files', 'nodeId') },
+    async (c) => {
+      const service = container.resolve(DockerManagementService);
+      const nodeId = c.req.param('nodeId')!;
+      const containerId = c.req.param('containerId')!;
+      const user = c.get('user')!;
+      const { path, content } = await parseFileContentRequest(c, FileCreateSchema);
+      await service.createFile(nodeId, containerId, path, content, user.id);
+      return c.json({ success: true });
+    }
+  );
+
+  router.openapi(
+    { ...initContainerFileUploadRoute, middleware: requireScopeForResource('docker:containers:files', 'nodeId') },
+    async (c) => {
+      const service = container.resolve(DockerManagementService);
+      const nodeId = c.req.param('nodeId')!;
+      const containerId = c.req.param('containerId')!;
+      const user = c.get('user')!;
+      const { path, totalBytes } = FileUploadInitSchema.parse(await c.req.json());
+      const data = await service.initFileUpload(nodeId, containerId, path, totalBytes, user.id);
+      return c.json({ data });
+    }
+  );
+
+  router.openapi(
+    { ...uploadContainerFileChunkRoute, middleware: requireScopeForResource('docker:containers:files', 'nodeId') },
+    async (c) => {
+      const service = container.resolve(DockerManagementService);
+      const nodeId = c.req.param('nodeId')!;
+      const containerId = c.req.param('containerId')!;
+      const uploadId = c.req.param('uploadId')!;
+      const { offset } = FileUploadChunkQuerySchema.parse(c.req.query());
+      const content = Buffer.from(await c.req.arrayBuffer());
+      const data = await service.appendFileUploadChunk(nodeId, containerId, uploadId, offset, content);
+      return c.json({ data });
+    }
+  );
+
+  router.openapi(
+    { ...completeContainerFileUploadRoute, middleware: requireScopeForResource('docker:containers:files', 'nodeId') },
+    async (c) => {
+      const service = container.resolve(DockerManagementService);
+      const nodeId = c.req.param('nodeId')!;
+      const containerId = c.req.param('containerId')!;
+      const uploadId = c.req.param('uploadId')!;
+      const { path, totalBytes } = FileUploadCompleteSchema.parse(await c.req.json());
+      await service.completeFileUpload(nodeId, containerId, uploadId, path, totalBytes);
+      return c.json({ success: true });
+    }
+  );
+
+  router.openapi(
+    { ...abortContainerFileUploadRoute, middleware: requireScopeForResource('docker:containers:files', 'nodeId') },
+    async (c) => {
+      const service = container.resolve(DockerManagementService);
+      const nodeId = c.req.param('nodeId')!;
+      const containerId = c.req.param('containerId')!;
+      const uploadId = c.req.param('uploadId')!;
+      await service.abortFileUpload(nodeId, containerId, uploadId);
+      return c.json({ success: true });
+    }
+  );
+
+  router.openapi(
+    { ...createContainerDirectoryRoute, middleware: requireScopeForResource('docker:containers:files', 'nodeId') },
+    async (c) => {
+      const service = container.resolve(DockerManagementService);
+      const nodeId = c.req.param('nodeId')!;
+      const containerId = c.req.param('containerId')!;
+      const user = c.get('user')!;
+      const body = await c.req.json();
+      const { path } = FileBrowseSchema.parse(body);
+      await service.createDirectory(nodeId, containerId, path, user.id);
+      return c.json({ success: true });
+    }
+  );
+
+  router.openapi(
+    { ...deleteContainerFileRoute, middleware: requireScopeForResource('docker:containers:files', 'nodeId') },
+    async (c) => {
+      const service = container.resolve(DockerManagementService);
+      const nodeId = c.req.param('nodeId')!;
+      const containerId = c.req.param('containerId')!;
+      const user = c.get('user')!;
+      const rawQuery = c.req.query();
+      const { path } = FileBrowseSchema.parse(rawQuery);
+      await service.deleteFile(nodeId, containerId, path, user.id);
+      return c.json({ success: true });
+    }
+  );
+
+  router.openapi(
+    { ...moveContainerFileRoute, middleware: requireScopeForResource('docker:containers:files', 'nodeId') },
+    async (c) => {
+      const service = container.resolve(DockerManagementService);
+      const nodeId = c.req.param('nodeId')!;
+      const containerId = c.req.param('containerId')!;
+      const user = c.get('user')!;
+      const body = await c.req.json();
+      const { fromPath, toPath } = FileMoveSchema.parse(body);
+      await service.moveFile(nodeId, containerId, fromPath, toPath, user.id);
       return c.json({ success: true });
     }
   );

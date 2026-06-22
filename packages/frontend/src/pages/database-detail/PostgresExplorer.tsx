@@ -691,7 +691,7 @@ export function PostgresExplorer({
                 </Button>
               )}
               {canWrite && (
-                <Button size="sm" onClick={() => void saveChanges()} disabled={!canSaveChanges}>
+                <Button onClick={() => void saveChanges()} disabled={!canSaveChanges}>
                   <Save className="h-3.5 w-3.5" />
                   {saving ? "Saving..." : `Save${dirtyCount > 0 ? ` (${dirtyCount})` : ""}`}
                 </Button>
@@ -702,7 +702,7 @@ export function PostgresExplorer({
           {metadata.columns.length > 0 && (
             <div className="grid grid-cols-[minmax(180px,260px)_120px_minmax(220px,1fr)_36px] border-b border-border bg-card">
               <Select value={searchColumn} onValueChange={setSearchColumn}>
-                <SelectTrigger className="h-9 rounded-none border-0 border-r border-border bg-background text-xs shadow-none focus:ring-1 focus:ring-inset">
+                <SelectTrigger className="rounded-none border-0 border-r border-border shadow-none focus:ring-1 focus:ring-inset">
                   <SelectValue placeholder="Column" />
                 </SelectTrigger>
                 <SelectContent className="bg-background text-foreground">
@@ -717,7 +717,7 @@ export function PostgresExplorer({
                 value={searchOperation}
                 onValueChange={(value) => setSearchOperation(value as PostgresSearchOperation)}
               >
-                <SelectTrigger className="h-9 rounded-none border-0 border-r border-border bg-background font-mono text-xs shadow-none focus:ring-1 focus:ring-inset">
+                <SelectTrigger className="rounded-none border-0 border-r border-border shadow-none focus:ring-1 focus:ring-inset">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="bg-background text-foreground">
@@ -734,7 +734,7 @@ export function PostgresExplorer({
                 onKeyDown={(event) => {
                   if (event.key === "Enter") applySearch();
                 }}
-                className="h-9 rounded-none border-0 border-r border-border bg-background font-mono text-xs shadow-none focus-visible:ring-1 focus-visible:ring-inset"
+                className="rounded-none border-0 border-r border-border font-mono text-xs shadow-none focus-visible:ring-1 focus-visible:ring-inset"
                 placeholder="Search value"
               />
               <Button

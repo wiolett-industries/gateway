@@ -30,6 +30,7 @@ type FileEntry struct {
 }
 
 const volumeHelperImage = "busybox:latest"
+const dockerFileUploadBlockBytes int64 = 65536
 
 // ListDir lists the contents of a directory inside a container.
 // The path must be absolute and must not contain "..".
@@ -258,6 +259,205 @@ func dockerWriteFileCommand(path string) []string {
 	return []string{"dd", "of=" + path, "bs=65536"}
 }
 
+func dockerWriteFileChunkCommand(path string, offset int64) ([]string, error) {
+	if offset < 0 {
+		return nil, fmt.Errorf("offset must not be negative")
+	}
+	if offset%dockerFileUploadBlockBytes != 0 {
+		return nil, fmt.Errorf("offset must be aligned to %d bytes", dockerFileUploadBlockBytes)
+	}
+	return []string{
+		"dd",
+		"of=" + path,
+		"bs=" + strconv.FormatInt(dockerFileUploadBlockBytes, 10),
+		"seek=" + strconv.FormatInt(offset/dockerFileUploadBlockBytes, 10),
+		"conv=notrunc",
+	}, nil
+}
+
+func CreateFile(ctx context.Context, c *Client, containerID string, path string, content []byte) error {
+	if err := validateMutablePath(path); err != nil {
+		return err
+	}
+
+	parent := filepath.Dir(filepath.Clean(path))
+	checkCtx, checkCancel := context.WithTimeout(ctx, 5*time.Second)
+	defer checkCancel()
+	if _, err := execInContainer(checkCtx, c, containerID, []string{"test", "-d", parent}); err != nil {
+		return fmt.Errorf("parent directory does not exist: %s", parent)
+	}
+	if _, err := execInContainer(checkCtx, c, containerID, []string{"test", "-w", parent}); err != nil {
+		return fmt.Errorf("parent directory is not writable: %s", parent)
+	}
+	if _, err := execInContainer(checkCtx, c, containerID, []string{"test", "!", "-e", path}); err != nil {
+		return fmt.Errorf("file already exists: %s", path)
+	}
+
+	writeCtx, writeCancel := context.WithTimeout(ctx, 30*time.Second)
+	defer writeCancel()
+	if _, err := execInContainerWithInput(writeCtx, c, containerID, dockerWriteFileCommand(path), content); err != nil {
+		return fmt.Errorf("create file: %w", err)
+	}
+	return nil
+}
+
+func InitChunkedFileUpload(ctx context.Context, c *Client, containerID string, uploadID string, targetPath string, totalBytes int64) error {
+	if totalBytes < 0 {
+		return fmt.Errorf("total bytes must not be negative")
+	}
+	tempPath, cleanTarget, err := uploadTempPath(uploadID, targetPath)
+	if err != nil {
+		return err
+	}
+
+	parent := filepath.Dir(cleanTarget)
+	checkCtx, checkCancel := context.WithTimeout(ctx, 5*time.Second)
+	defer checkCancel()
+	if _, err := execInContainer(checkCtx, c, containerID, []string{"test", "-d", parent}); err != nil {
+		return fmt.Errorf("parent directory does not exist: %s", parent)
+	}
+	if _, err := execInContainer(checkCtx, c, containerID, []string{"test", "-w", parent}); err != nil {
+		return fmt.Errorf("parent directory is not writable: %s", parent)
+	}
+	if _, err := execInContainer(checkCtx, c, containerID, []string{"test", "!", "-e", cleanTarget}); err != nil {
+		return fmt.Errorf("file already exists: %s", cleanTarget)
+	}
+
+	initCtx, initCancel := context.WithTimeout(ctx, 30*time.Second)
+	defer initCancel()
+	if _, err := execInContainer(initCtx, c, containerID, []string{"rm", "-f", tempPath}); err != nil {
+		return fmt.Errorf("remove stale upload temp file: %w", err)
+	}
+	if _, err := execInContainer(initCtx, c, containerID, []string{"touch", tempPath}); err != nil {
+		return fmt.Errorf("create upload temp file: %w", err)
+	}
+	return nil
+}
+
+func WriteChunkedFileUpload(ctx context.Context, c *Client, containerID string, uploadID string, targetPath string, offset int64, content []byte) error {
+	tempPath, _, err := uploadTempPath(uploadID, targetPath)
+	if err != nil {
+		return err
+	}
+	command, err := dockerWriteFileChunkCommand(tempPath, offset)
+	if err != nil {
+		return err
+	}
+
+	writeCtx, writeCancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer writeCancel()
+	if _, err := execInContainerWithInput(writeCtx, c, containerID, command, content); err != nil {
+		return fmt.Errorf("write upload chunk: %w", err)
+	}
+	return nil
+}
+
+func CompleteChunkedFileUpload(ctx context.Context, c *Client, containerID string, uploadID string, targetPath string, totalBytes int64) error {
+	tempPath, cleanTarget, err := uploadTempPath(uploadID, targetPath)
+	if err != nil {
+		return err
+	}
+	if totalBytes < 0 {
+		return fmt.Errorf("total bytes must not be negative")
+	}
+
+	checkCtx, checkCancel := context.WithTimeout(ctx, 5*time.Second)
+	defer checkCancel()
+	if _, err := execInContainer(checkCtx, c, containerID, []string{"test", "!", "-e", cleanTarget}); err != nil {
+		return fmt.Errorf("file already exists: %s", cleanTarget)
+	}
+	sizeText, err := execInContainer(checkCtx, c, containerID, []string{"stat", "-c", "%s", tempPath})
+	if err != nil {
+		return fmt.Errorf("inspect upload temp file: %w", err)
+	}
+	size, err := strconv.ParseInt(strings.TrimSpace(sizeText), 10, 64)
+	if err != nil {
+		return fmt.Errorf("parse upload temp file size: %w", err)
+	}
+	if size != totalBytes {
+		return fmt.Errorf("upload size mismatch: expected %d bytes, got %d bytes", totalBytes, size)
+	}
+
+	completeCtx, completeCancel := context.WithTimeout(ctx, 30*time.Second)
+	defer completeCancel()
+	if _, err := execInContainer(completeCtx, c, containerID, []string{"mv", tempPath, cleanTarget}); err != nil {
+		return fmt.Errorf("complete upload: %w", err)
+	}
+	return nil
+}
+
+func AbortChunkedFileUpload(ctx context.Context, c *Client, containerID string, uploadID string, targetPath string) error {
+	tempPath, _, err := uploadTempPath(uploadID, targetPath)
+	if err != nil {
+		return err
+	}
+	abortCtx, abortCancel := context.WithTimeout(ctx, 30*time.Second)
+	defer abortCancel()
+	if _, err := execInContainer(abortCtx, c, containerID, []string{"rm", "-f", tempPath}); err != nil {
+		return fmt.Errorf("abort upload: %w", err)
+	}
+	return nil
+}
+
+func CreateDirectory(ctx context.Context, c *Client, containerID string, path string) error {
+	if err := validateMutablePath(path); err != nil {
+		return err
+	}
+	parent := filepath.Dir(filepath.Clean(path))
+	checkCtx, checkCancel := context.WithTimeout(ctx, 5*time.Second)
+	defer checkCancel()
+	if _, err := execInContainer(checkCtx, c, containerID, []string{"test", "-d", parent}); err != nil {
+		return fmt.Errorf("parent directory does not exist: %s", parent)
+	}
+	if _, err := execInContainer(checkCtx, c, containerID, []string{"test", "-w", parent}); err != nil {
+		return fmt.Errorf("parent directory is not writable: %s", parent)
+	}
+	if _, err := execInContainer(checkCtx, c, containerID, []string{"mkdir", path}); err != nil {
+		return fmt.Errorf("create directory: %w", err)
+	}
+	return nil
+}
+
+func DeletePath(ctx context.Context, c *Client, containerID string, path string) error {
+	if err := validateMutablePath(path); err != nil {
+		return err
+	}
+	deleteCtx, deleteCancel := context.WithTimeout(ctx, 30*time.Second)
+	defer deleteCancel()
+	if _, err := execInContainer(deleteCtx, c, containerID, []string{"rm", "-rf", path}); err != nil {
+		return fmt.Errorf("delete path: %w", err)
+	}
+	return nil
+}
+
+func MovePath(ctx context.Context, c *Client, containerID string, fromPath string, toPath string) error {
+	cleanFrom, cleanTo, err := validateMovePaths(fromPath, toPath)
+	if err != nil {
+		return err
+	}
+	parent := filepath.Dir(cleanTo)
+	checkCtx, checkCancel := context.WithTimeout(ctx, 5*time.Second)
+	defer checkCancel()
+	if _, err := execInContainer(checkCtx, c, containerID, []string{"test", "-e", cleanFrom}); err != nil {
+		return fmt.Errorf("source path does not exist: %s", cleanFrom)
+	}
+	if _, err := execInContainer(checkCtx, c, containerID, []string{"test", "-d", parent}); err != nil {
+		return fmt.Errorf("target parent directory does not exist: %s", parent)
+	}
+	if _, err := execInContainer(checkCtx, c, containerID, []string{"test", "-w", parent}); err != nil {
+		return fmt.Errorf("target parent directory is not writable: %s", parent)
+	}
+	if _, err := execInContainer(checkCtx, c, containerID, []string{"test", "!", "-e", cleanTo}); err != nil {
+		return fmt.Errorf("target path already exists: %s", cleanTo)
+	}
+	moveCtx, moveCancel := context.WithTimeout(ctx, 30*time.Second)
+	defer moveCancel()
+	if _, err := execInContainer(moveCtx, c, containerID, []string{"mv", cleanFrom, cleanTo}); err != nil {
+		return fmt.Errorf("move path: %w", err)
+	}
+	return nil
+}
+
 // validatePath ensures the path is absolute and does not contain path traversal.
 func validatePath(path string) error {
 	if path == "" {
@@ -271,6 +471,59 @@ func validatePath(path string) error {
 		return fmt.Errorf("path must not contain '..': %s", path)
 	}
 	return nil
+}
+
+func validateMutablePath(path string) error {
+	if err := validatePath(path); err != nil {
+		return err
+	}
+	if filepath.Clean(path) == "/" {
+		return fmt.Errorf("cannot modify root directory")
+	}
+	return nil
+}
+
+func uploadTempPath(uploadID string, targetPath string) (string, string, error) {
+	if err := validateUploadID(uploadID); err != nil {
+		return "", "", err
+	}
+	if err := validateMutablePath(targetPath); err != nil {
+		return "", "", err
+	}
+	cleanTarget := filepath.Clean(targetPath)
+	parent := filepath.Dir(cleanTarget)
+	return filepath.Join(parent, ".gateway-upload-"+uploadID+".tmp"), cleanTarget, nil
+}
+
+func validateUploadID(uploadID string) error {
+	if len(uploadID) < 8 || len(uploadID) > 128 {
+		return fmt.Errorf("invalid upload id")
+	}
+	for _, ch := range uploadID {
+		if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '-' || ch == '_' {
+			continue
+		}
+		return fmt.Errorf("invalid upload id")
+	}
+	return nil
+}
+
+func validateMovePaths(fromPath string, toPath string) (string, string, error) {
+	if err := validateMutablePath(fromPath); err != nil {
+		return "", "", err
+	}
+	if err := validateMutablePath(toPath); err != nil {
+		return "", "", err
+	}
+	cleanFrom := filepath.Clean(fromPath)
+	cleanTo := filepath.Clean(toPath)
+	if cleanFrom == cleanTo {
+		return "", "", fmt.Errorf("source and target paths are the same")
+	}
+	if cleanTo == cleanFrom || strings.HasPrefix(cleanTo, cleanFrom+"/") {
+		return "", "", fmt.Errorf("cannot move a directory into itself")
+	}
+	return cleanFrom, cleanTo, nil
 }
 
 // execInContainer runs a command inside a container and returns stdout as a string.

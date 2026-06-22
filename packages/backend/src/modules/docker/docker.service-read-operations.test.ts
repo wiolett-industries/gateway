@@ -20,13 +20,15 @@ function createService(dispatch: {
   sendDockerLogsCommand?: ReturnType<typeof vi.fn>;
 }) {
   const audit = { log: vi.fn().mockResolvedValue(undefined) };
+  const eventBus = { publish: vi.fn() };
   const service = new DockerManagementService(
     dbWithOnlineDockerNode() as never,
     audit as never,
     dispatch as never,
     { getNode: vi.fn().mockReturnValue({ id: 'node-1' }) } as never
   );
-  return { service, audit };
+  service.setEventBus(eventBus as never);
+  return { service, audit, eventBus };
 }
 
 describe('DockerManagementService read and file operations', () => {
@@ -93,7 +95,7 @@ describe('DockerManagementService read and file operations', () => {
     const dispatch = {
       sendDockerFileCommand: vi.fn().mockResolvedValue({ success: true }),
     };
-    const { service, audit } = createService(dispatch);
+    const { service, audit, eventBus } = createService(dispatch);
 
     await service.writeFile('node-1', 'container-1', '/etc/app.conf', 'enabled=true', 'user-1');
 
@@ -109,5 +111,199 @@ describe('DockerManagementService read and file operations', () => {
       resourceId: 'container-1',
       details: { nodeId: 'node-1', path: '/etc/app.conf' },
     });
+    expect(eventBus.publish).toHaveBeenCalledWith('docker.file.changed', {
+      nodeId: 'node-1',
+      containerId: 'container-1',
+      action: 'updated',
+      path: '/etc/app.conf',
+      kind: 'file',
+      parentPath: '/etc',
+    });
+  });
+
+  it('passes binary file writes through without base64 conversion', async () => {
+    const dispatch = {
+      sendDockerFileCommand: vi.fn().mockResolvedValue({ success: true }),
+    };
+    const { service } = createService(dispatch);
+    const content = Buffer.from([0, 1, 2, 3]);
+
+    await service.writeFile('node-1', 'container-1', '/tmp/blob.bin', content, 'user-1');
+
+    expect(dispatch.sendDockerFileCommand).toHaveBeenCalledWith('node-1', 'write', {
+      containerId: 'container-1',
+      path: '/tmp/blob.bin',
+      content,
+    });
+  });
+
+  it('creates and deletes files through explicit file actions', async () => {
+    const dispatch = {
+      sendDockerFileCommand: vi.fn().mockResolvedValue({ success: true }),
+    };
+    const { service, audit, eventBus } = createService(dispatch);
+
+    await service.createFile('node-1', 'container-1', '/tmp/new.txt', 'SGVsbG8=', 'user-1');
+    await service.createDirectory('node-1', 'container-1', '/tmp/new-dir', 'user-1');
+    await service.deleteFile('node-1', 'container-1', '/tmp/new.txt', 'user-1');
+    await service.moveFile('node-1', 'container-1', '/tmp/new-dir', '/var/new-dir', 'user-1');
+
+    expect(dispatch.sendDockerFileCommand).toHaveBeenNthCalledWith(1, 'node-1', 'create-file', {
+      containerId: 'container-1',
+      path: '/tmp/new.txt',
+      content: 'SGVsbG8=',
+    });
+    expect(dispatch.sendDockerFileCommand).toHaveBeenNthCalledWith(2, 'node-1', 'create-dir', {
+      containerId: 'container-1',
+      path: '/tmp/new-dir',
+    });
+    expect(dispatch.sendDockerFileCommand).toHaveBeenNthCalledWith(3, 'node-1', 'delete', {
+      containerId: 'container-1',
+      path: '/tmp/new.txt',
+    });
+    expect(dispatch.sendDockerFileCommand).toHaveBeenNthCalledWith(4, 'node-1', 'move', {
+      containerId: 'container-1',
+      path: '/tmp/new-dir',
+      targetPath: '/var/new-dir',
+    });
+    expect(audit.log).toHaveBeenCalledWith({
+      action: 'docker.file.create',
+      userId: 'user-1',
+      resourceType: 'docker-container',
+      resourceId: 'container-1',
+      details: { nodeId: 'node-1', path: '/tmp/new.txt' },
+    });
+    expect(audit.log).toHaveBeenCalledWith({
+      action: 'docker.file.create_directory',
+      userId: 'user-1',
+      resourceType: 'docker-container',
+      resourceId: 'container-1',
+      details: { nodeId: 'node-1', path: '/tmp/new-dir' },
+    });
+    expect(audit.log).toHaveBeenCalledWith({
+      action: 'docker.file.delete',
+      userId: 'user-1',
+      resourceType: 'docker-container',
+      resourceId: 'container-1',
+      details: { nodeId: 'node-1', path: '/tmp/new.txt' },
+    });
+    expect(audit.log).toHaveBeenCalledWith({
+      action: 'docker.file.move',
+      userId: 'user-1',
+      resourceType: 'docker-container',
+      resourceId: 'container-1',
+      details: { nodeId: 'node-1', fromPath: '/tmp/new-dir', toPath: '/var/new-dir' },
+    });
+    expect(eventBus.publish).toHaveBeenCalledWith('docker.file.changed', {
+      nodeId: 'node-1',
+      containerId: 'container-1',
+      action: 'created',
+      path: '/tmp/new.txt',
+      kind: 'file',
+      parentPath: '/tmp',
+    });
+    expect(eventBus.publish).toHaveBeenCalledWith('docker.file.changed', {
+      nodeId: 'node-1',
+      containerId: 'container-1',
+      action: 'created',
+      path: '/tmp/new-dir',
+      kind: 'directory',
+      parentPath: '/tmp',
+    });
+    expect(eventBus.publish).toHaveBeenCalledWith('docker.file.changed', {
+      nodeId: 'node-1',
+      containerId: 'container-1',
+      action: 'deleted',
+      path: '/tmp/new.txt',
+      kind: 'unknown',
+      parentPath: '/tmp',
+    });
+    expect(eventBus.publish).toHaveBeenCalledWith('docker.file.changed', {
+      nodeId: 'node-1',
+      containerId: 'container-1',
+      action: 'moved',
+      path: '/var/new-dir',
+      kind: 'unknown',
+      fromPath: '/tmp/new-dir',
+      toPath: '/var/new-dir',
+      fromParentPath: '/tmp',
+      toParentPath: '/var',
+      parentPath: '/var',
+    });
+  });
+
+  it('coordinates chunked file uploads without buffering the full file in gateway', async () => {
+    const dispatch = {
+      sendDockerFileCommand: vi.fn().mockResolvedValue({ success: true }),
+    };
+    const { service, audit, eventBus } = createService(dispatch);
+    const firstChunk = Buffer.from('hello ');
+    const secondChunk = Buffer.from('world');
+
+    const upload = await service.initFileUpload('node-1', 'container-1', '/tmp/big.bin', 11, 'user-1');
+    await expect(
+      service.appendFileUploadChunk('node-1', 'container-1', upload.uploadId, 0, firstChunk)
+    ).resolves.toEqual({ receivedBytes: 6, totalBytes: 11 });
+    await expect(
+      service.appendFileUploadChunk('node-1', 'container-1', upload.uploadId, 6, secondChunk)
+    ).resolves.toEqual({ receivedBytes: 11, totalBytes: 11 });
+    await service.completeFileUpload('node-1', 'container-1', upload.uploadId, '/tmp/big.bin', 11);
+
+    expect(upload.chunkSize).toBeGreaterThan(0);
+    expect(dispatch.sendDockerFileCommand).toHaveBeenNthCalledWith(1, 'node-1', 'upload-init', {
+      containerId: 'container-1',
+      path: upload.uploadId,
+      targetPath: '/tmp/big.bin',
+      maxBytes: 11,
+    });
+    expect(dispatch.sendDockerFileCommand).toHaveBeenNthCalledWith(2, 'node-1', 'upload-chunk', {
+      containerId: 'container-1',
+      path: upload.uploadId,
+      targetPath: '/tmp/big.bin',
+      maxBytes: 0,
+      content: firstChunk,
+    });
+    expect(dispatch.sendDockerFileCommand).toHaveBeenNthCalledWith(3, 'node-1', 'upload-chunk', {
+      containerId: 'container-1',
+      path: upload.uploadId,
+      targetPath: '/tmp/big.bin',
+      maxBytes: 6,
+      content: secondChunk,
+    });
+    expect(dispatch.sendDockerFileCommand).toHaveBeenNthCalledWith(4, 'node-1', 'upload-complete', {
+      containerId: 'container-1',
+      path: upload.uploadId,
+      targetPath: '/tmp/big.bin',
+      maxBytes: 11,
+    });
+    expect(audit.log).toHaveBeenCalledWith({
+      action: 'docker.file.create',
+      userId: 'user-1',
+      resourceType: 'docker-container',
+      resourceId: 'container-1',
+      details: { nodeId: 'node-1', path: '/tmp/big.bin' },
+    });
+    expect(eventBus.publish).toHaveBeenCalledTimes(1);
+    expect(eventBus.publish).toHaveBeenCalledWith('docker.file.changed', {
+      nodeId: 'node-1',
+      containerId: 'container-1',
+      action: 'created',
+      path: '/tmp/big.bin',
+      kind: 'file',
+      parentPath: '/tmp',
+    });
+  });
+
+  it('rejects out-of-order chunked upload offsets', async () => {
+    const dispatch = {
+      sendDockerFileCommand: vi.fn().mockResolvedValue({ success: true }),
+    };
+    const { service } = createService(dispatch);
+
+    const upload = await service.initFileUpload('node-1', 'container-1', '/tmp/big.bin', 11, 'user-1');
+
+    await expect(
+      service.appendFileUploadChunk('node-1', 'container-1', upload.uploadId, 6, Buffer.from('world'))
+    ).rejects.toThrow('Unexpected upload offset');
   });
 });

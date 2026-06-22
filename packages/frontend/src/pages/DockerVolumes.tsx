@@ -29,14 +29,16 @@ import {
 import { TruncateStart } from "@/components/ui/truncate-start";
 import { useRealtime } from "@/hooks/use-realtime";
 import { loadVisibleDockerNodes } from "@/lib/docker-node-access";
+import { nodeBadgeClassName } from "@/lib/node-appearance";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
-import type { DockerVolume, Node } from "@/types";
+import type { DockerVolume, Node, NodeAppearanceColor } from "@/types";
 
 interface DockerVolumeListItem extends DockerVolume {
   _nodeId: string;
   _nodeName?: string;
+  _nodeColor?: NodeAppearanceColor | null;
 }
 
 export function DockerVolumes({
@@ -204,7 +206,7 @@ export function DockerVolumes({
         id: "driver",
         label: "Driver",
         width: "7rem",
-        renderCell: (v) => <span className="text-sm text-muted-foreground">{v.driver}</span>,
+        renderCell: (v) => <Badge variant="secondary">{v.driver}</Badge>,
       },
       {
         id: "node",
@@ -212,7 +214,7 @@ export function DockerVolumes({
         width: "minmax(0, 1.15fr)",
         renderCell: (v) => (
           <div className="min-w-0">
-            <Badge variant="secondary" className="max-w-full shrink-0">
+            <Badge variant="secondary" className={nodeBadgeClassName((v as any)._nodeColor)}>
               <span className="truncate">{(v as any)._nodeName || "-"}</span>
             </Badge>
           </div>

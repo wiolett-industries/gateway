@@ -28,12 +28,15 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useRealtime } from "@/hooks/use-realtime";
 import { useStableNavigate } from "@/hooks/use-stable-navigate";
 import { useUrlTab } from "@/hooks/use-url-tab";
+import { getNodeAppearanceColor, NODE_APPEARANCE_COLOR_OPTIONS } from "@/lib/node-appearance";
+import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
 import { ApiRequestError } from "@/services/api-base";
 import { useAuthStore } from "@/stores/auth";
 import { useDaemonUpdatesStore } from "@/stores/daemon-updates";
+import { useDockerStore } from "@/stores/docker";
 import { usePinnedNodesStore } from "@/stores/pinned-nodes";
-import type { NodeDetail } from "@/types";
+import type { NodeAppearanceColor, NodeDetail } from "@/types";
 import {
   effectiveNodeStatus,
   getNodeUpdateTargetVersion,
@@ -89,10 +92,11 @@ export function AdminNodeDetail() {
     (tab) => `/nodes/${id}/${tab}`
   );
 
-  // Rename dialog
-  const [renameOpen, setRenameOpen] = useState(false);
-  const [renameName, setRenameName] = useState("");
-  const [renaming, setRenaming] = useState(false);
+  // Appearance dialog
+  const [appearanceOpen, setAppearanceOpen] = useState(false);
+  const [appearanceName, setAppearanceName] = useState("");
+  const [appearanceColor, setAppearanceColor] = useState<NodeAppearanceColor | null>(null);
+  const [appearanceSaving, setAppearanceSaving] = useState(false);
   const [checkingUpdates, setCheckingUpdates] = useState(false);
   const [lockSaving, setLockSaving] = useState(false);
   const daemonUpdates = useDaemonUpdatesStore((s) => s.statuses);
@@ -212,21 +216,30 @@ export function AdminNodeDetail() {
     }
   }, [activeTab, nodeUpdating, setActiveTab]);
 
-  const handleRename = async () => {
+  const openAppearanceDialog = () => {
+    if (!node) return;
+    setAppearanceName(node.displayName ?? "");
+    setAppearanceColor(node.appearanceColor ?? null);
+    setAppearanceOpen(true);
+  };
+
+  const handleAppearanceSave = async () => {
     if (!id) return;
-    setRenaming(true);
+    setAppearanceSaving(true);
     try {
       const updated = await api.updateNode(id, {
-        displayName: renameName.trim() || undefined,
+        displayName: appearanceName.trim() || null,
+        appearanceColor,
       });
       setNode((prev) => (prev ? { ...prev, ...updated } : prev));
-      setRenameOpen(false);
+      useDockerStore.getState().syncNodeAppearance(updated);
+      setAppearanceOpen(false);
       usePinnedNodesStore.getState().invalidate();
       toast.success("Node updated");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to update");
     } finally {
-      setRenaming(false);
+      setAppearanceSaving(false);
     }
   };
 
@@ -353,12 +366,9 @@ export function AdminNodeDetail() {
               ...(hasScope("nodes:rename")
                 ? [
                     {
-                      label: "Rename",
+                      label: "Appearance",
                       icon: <Pencil className="h-4 w-4" />,
-                      onClick: () => {
-                        setRenameName(node.displayName ?? "");
-                        setRenameOpen(true);
-                      },
+                      onClick: openAppearanceDialog,
                       disabled: nodeUpdating,
                     },
                   ]
@@ -407,16 +417,9 @@ export function AdminNodeDetail() {
               <Pin className="h-4 w-4" />
             </Button>
             {hasScope("nodes:rename") && (
-              <Button
-                variant="outline"
-                disabled={nodeUpdating}
-                onClick={() => {
-                  setRenameName(node.displayName ?? "");
-                  setRenameOpen(true);
-                }}
-              >
+              <Button variant="outline" disabled={nodeUpdating} onClick={openAppearanceDialog}>
                 <Pencil className="h-4 w-4" />
-                Rename
+                Appearance
               </Button>
             )}
             {(hasScope("admin:update") ||
@@ -608,33 +611,74 @@ export function AdminNodeDetail() {
         </Tabs>
       </div>
 
-      {/* Rename Dialog */}
-      <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
+      {/* Appearance Dialog */}
+      <Dialog open={appearanceOpen} onOpenChange={setAppearanceOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Rename Node</DialogTitle>
+            <DialogTitle>Node Appearance</DialogTitle>
           </DialogHeader>
-          <div>
-            <label className="text-sm font-medium">Display Name</label>
-            <Input
-              className="mt-1"
-              value={renameName}
-              onChange={(e) => setRenameName(e.target.value)}
-              placeholder={node.hostname}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleRename();
-              }}
-            />
-            <p className="mt-1 text-xs text-muted-foreground">
-              Leave empty to use the hostname ({node.hostname})
-            </p>
+          <div className="space-y-5">
+            <div>
+              <label className="text-sm font-medium">Display Name</label>
+              <Input
+                aria-label="Display Name"
+                className="mt-1"
+                value={appearanceName}
+                onChange={(e) => setAppearanceName(e.target.value)}
+                placeholder={node.hostname}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void handleAppearanceSave();
+                }}
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                Leave empty to use the hostname ({node.hostname})
+              </p>
+            </div>
+            <div>
+              <label className="text-sm font-medium">Color</label>
+              <div className="mt-2 grid grid-cols-8 gap-2">
+                <button
+                  type="button"
+                  aria-label="Default color"
+                  className={cn(
+                    "aspect-square w-full border border-input bg-muted",
+                    appearanceColor === null && "border-white"
+                  )}
+                  style={appearanceColor === null ? { borderColor: "#fff" } : undefined}
+                  onClick={() => setAppearanceColor(null)}
+                />
+                {NODE_APPEARANCE_COLOR_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    aria-label={`${option.label} color`}
+                    className={cn(
+                      "aspect-square w-full border border-input",
+                      option.swatchClassName,
+                      appearanceColor === option.value && "border-white"
+                    )}
+                    style={appearanceColor === option.value ? { borderColor: "#fff" } : undefined}
+                    onClick={() => setAppearanceColor(option.value)}
+                  />
+                ))}
+              </div>
+              <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                <span>Preview:</span>
+                <Badge
+                  variant="secondary"
+                  className={getNodeAppearanceColor(appearanceColor)?.badgeClassName}
+                >
+                  {appearanceName.trim() || node.hostname}
+                </Badge>
+              </div>
+            </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setRenameOpen(false)}>
+            <Button variant="outline" onClick={() => setAppearanceOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleRename} disabled={renaming}>
-              {renaming ? "Saving..." : "Save"}
+            <Button onClick={handleAppearanceSave} disabled={appearanceSaving}>
+              {appearanceSaving ? "Saving..." : "Save"}
             </Button>
           </DialogFooter>
         </DialogContent>

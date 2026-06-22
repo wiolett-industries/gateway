@@ -23,37 +23,6 @@ const DialogOverlay = React.forwardRef<
 ));
 DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 
-const DialogContent = React.forwardRef<
-  React.ElementRef<typeof DialogPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
-    hideCloseButton?: boolean;
-  }
->(({ className, children, hideCloseButton, ...props }, ref) => (
-  <DialogPortal>
-    <DialogOverlay>
-      <DialogPrimitive.Content
-        ref={ref}
-        className={cn(
-          "dialog-content relative z-50 grid w-full gap-4 border bg-background p-6 shadow-lg outline-none",
-          "max-h-[85dvh] max-w-none overflow-y-auto",
-          "sm:mx-auto sm:my-auto sm:max-h-none sm:overflow-visible sm:max-w-lg",
-          className
-        )}
-        {...props}
-      >
-        {children}
-        {!hideCloseButton && (
-          <DialogPrimitive.Close className="absolute right-4 top-4 opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none">
-            <X className="h-4 w-4" />
-            <span className="sr-only">Close</span>
-          </DialogPrimitive.Close>
-        )}
-      </DialogPrimitive.Content>
-    </DialogOverlay>
-  </DialogPortal>
-));
-DialogContent.displayName = DialogPrimitive.Content.displayName;
-
 const DialogHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
   <div className={cn("flex flex-col space-y-1.5 text-left", className)} {...props} />
 );
@@ -70,12 +39,139 @@ const DialogFooter = ({ className, ...props }: React.HTMLAttributes<HTMLDivEleme
 );
 DialogFooter.displayName = "DialogFooter";
 
+const DIALOG_OUTER_OVERFLOW_CLASS_RE =
+  /(?:^|\s)(?:[^\s:]+:)*overflow(?:-[xy])?-(?:auto|scroll|hidden|visible|clip)(?=\s|$)/g;
+
+function stripOuterOverflowClasses(className?: string) {
+  return className?.replace(DIALOG_OUTER_OVERFLOW_CLASS_RE, " ").replace(/\s+/g, " ").trim();
+}
+
+function isDialogSlot(child: React.ReactNode, displayName: string) {
+  if (!React.isValidElement(child)) return false;
+  const type = child.type as { displayName?: string };
+  return type.displayName === displayName;
+}
+
+const DialogContent = React.forwardRef<
+  React.ElementRef<typeof DialogPrimitive.Content>,
+  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
+    hideCloseButton?: boolean;
+    unstyled?: boolean;
+  }
+>(({ className, children, hideCloseButton, unstyled, ...props }, ref) => {
+  const [bodyScrolled, setBodyScrolled] = React.useState(false);
+  const contentClassName = stripOuterOverflowClasses(className);
+  const childArray = React.Children.toArray(children);
+  const headerChildren: React.ReactNode[] = [];
+  const footerChildren: React.ReactNode[] = [];
+  const bodyChildren: React.ReactNode[] = [];
+
+  for (const child of childArray) {
+    if (isDialogSlot(child, "DialogHeader")) {
+      headerChildren.push(child);
+    } else if (isDialogSlot(child, "DialogFooter")) {
+      footerChildren.push(child);
+    } else {
+      bodyChildren.push(child);
+    }
+  }
+
+  const hasHeader = headerChildren.length > 0;
+  const hasFooter = footerChildren.length > 0;
+
+  if (unstyled) {
+    return (
+      <DialogPortal>
+        <DialogOverlay>
+          <DialogPrimitive.Content
+            ref={ref}
+            className={cn(
+              "dialog-content relative z-50 grid w-full gap-4 border bg-background p-6 shadow-lg outline-none",
+              "max-h-[85dvh] max-w-none overflow-y-auto",
+              "sm:mx-auto sm:my-auto sm:max-h-none sm:overflow-visible sm:max-w-lg",
+              className
+            )}
+            {...props}
+          >
+            {children}
+            {!hideCloseButton && (
+              <DialogPrimitive.Close className="absolute right-4 top-4 opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none">
+                <X className="h-4 w-4" />
+                <span className="sr-only">Close</span>
+              </DialogPrimitive.Close>
+            )}
+          </DialogPrimitive.Content>
+        </DialogOverlay>
+      </DialogPortal>
+    );
+  }
+
+  return (
+    <DialogPortal>
+      <DialogOverlay>
+        <DialogPrimitive.Content
+          ref={ref}
+          className={cn(
+            "dialog-content relative z-50 flex w-full max-w-none flex-col overflow-hidden border bg-background p-0 shadow-lg outline-none",
+            "max-h-[85dvh]",
+            "sm:mx-auto sm:my-auto sm:max-h-none sm:max-w-lg",
+            contentClassName,
+            "max-sm:flex max-sm:max-h-[85dvh] max-sm:flex-col max-sm:gap-0 max-sm:overflow-hidden max-sm:p-0"
+          )}
+          {...props}
+        >
+          {hasHeader ? (
+            <div
+              className={cn(
+                "flex shrink-0 items-start justify-between gap-4 px-4 pb-4 pt-4 transition-shadow duration-200 ease-out sm:px-6 sm:pt-6",
+                bodyScrolled ? "max-sm:shadow-[inset_0_-1px_0_var(--color-border)]" : ""
+              )}
+            >
+              <div className="min-w-0 flex-1">{headerChildren}</div>
+              {!hideCloseButton && (
+                <DialogPrimitive.Close className="shrink-0 opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none">
+                  <X className="h-4 w-4" />
+                  <span className="sr-only">Close</span>
+                </DialogPrimitive.Close>
+              )}
+            </div>
+          ) : null}
+          {bodyChildren.length > 0 ? (
+            <div
+              className={cn(
+                "min-h-0 min-w-0 flex-1 overflow-y-auto px-4 max-sm:overscroll-contain sm:px-6",
+                bodyChildren.length > 1 && "grid gap-4",
+                hasHeader ? "pt-0" : "pt-4 sm:pt-6",
+                hasFooter ? "pb-0" : "pb-4 sm:pb-6"
+              )}
+              onScroll={(event) => setBodyScrolled(event.currentTarget.scrollTop > 0)}
+            >
+              {bodyChildren}
+            </div>
+          ) : null}
+          {hasFooter ? (
+            <div className="shrink-0 px-4 pb-4 pt-4 sm:px-6 sm:pb-6">{footerChildren}</div>
+          ) : null}
+          {!hideCloseButton && !hasHeader && (
+            <DialogPrimitive.Close className="absolute right-4 top-4 opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none">
+              <X className="h-4 w-4" />
+              <span className="sr-only">Close</span>
+            </DialogPrimitive.Close>
+          )}
+        </DialogPrimitive.Content>
+      </DialogOverlay>
+    </DialogPortal>
+  );
+});
+DialogContent.displayName = DialogPrimitive.Content.displayName;
+
 const DialogTitle = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Title>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Title>
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Title
     ref={ref}
+    data-dialog-title=""
     className={cn("text-lg font-semibold leading-none tracking-tight", className)}
     {...props}
   />
@@ -88,6 +184,7 @@ const DialogDescription = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Description
     ref={ref}
+    data-dialog-description=""
     className={cn("text-sm text-muted-foreground", className)}
     {...props}
   />

@@ -63,6 +63,7 @@ import { templateRoutes } from '@/modules/pki/templates.routes.js';
 import { folderRoutes } from '@/modules/proxy/folder.routes.js';
 import { nginxTemplateRoutes } from '@/modules/proxy/nginx-template.routes.js';
 import { proxyRoutes } from '@/modules/proxy/proxy.routes.js';
+import { GeneralSettingsService } from '@/modules/settings/general-settings.service.js';
 import { setupApiDisabledMiddleware, setupRoutes } from '@/modules/setup/setup.routes.js';
 import { sslRoutes } from '@/modules/ssl/ssl.routes.js';
 import { publicStatusPageRoutes, statusPageRoutes } from '@/modules/status-page/status-page.routes.js';
@@ -75,12 +76,40 @@ import { authenticateEventsConnection, createEventsWSHandlers } from '@/ws/event
 
 const STATUS_PREVIEW_PREFIX = '/_status-preview';
 const HEALTH_REDIS_TIMEOUT_MS = 1000;
+const DOCKER_FILE_BODY_LIMIT_PATH =
+  /^\/api\/docker\/nodes\/[^/]+\/containers\/[^/]+\/files\/(?:write|create|uploads\/[^/]+\/chunks)$/;
 
 function requestBodyLimit(maxSize: number): MiddlewareHandler<AppEnv> {
   return bodyLimit({
     maxSize,
     onError: (c) => c.json({ code: 'PAYLOAD_TOO_LARGE', message: 'Request body too large' }, 413),
   }) as MiddlewareHandler<AppEnv>;
+}
+
+function requestBodyLimitDynamic(resolveMaxSize: () => Promise<number>): MiddlewareHandler<AppEnv> {
+  return async (c, next) => {
+    const maxSize = await resolveMaxSize();
+    await requestBodyLimit(maxSize)(c, next);
+  };
+}
+
+function requestBodyLimitExcept(maxSize: number, except: (path: string) => boolean): MiddlewareHandler<AppEnv> {
+  const limit = requestBodyLimit(maxSize);
+  return async (c, next) => {
+    if (except(c.req.path)) {
+      await next();
+      return;
+    }
+    await limit(c, next);
+  };
+}
+
+async function getFileUploadMaxBodyBytes(fallback: number): Promise<number> {
+  try {
+    return await container.resolve(GeneralSettingsService).getFileUploadMaxBodyBytes();
+  } catch {
+    return fallback;
+  }
 }
 
 const requireAnyEffectiveScope: MiddlewareHandler<AppEnv> = async (c, next) => {
@@ -175,10 +204,21 @@ export function createApp() {
   app.use('/api/logging/ingest/batch', requestBodyLimit(env.LOGGING_INGEST_MAX_BODY_BYTES));
   app.use(
     '/api/docker/nodes/:nodeId/containers/:containerId/files/write',
-    requestBodyLimit(env.DOCKER_FILE_WRITE_MAX_BODY_BYTES)
+    requestBodyLimitDynamic(() => getFileUploadMaxBodyBytes(env.DOCKER_FILE_WRITE_MAX_BODY_BYTES))
+  );
+  app.use(
+    '/api/docker/nodes/:nodeId/containers/:containerId/files/create',
+    requestBodyLimitDynamic(() => getFileUploadMaxBodyBytes(env.DOCKER_FILE_WRITE_MAX_BODY_BYTES))
+  );
+  app.use(
+    '/api/docker/nodes/:nodeId/containers/:containerId/files/uploads/:uploadId/chunks',
+    requestBodyLimitDynamic(() => getFileUploadMaxBodyBytes(env.DOCKER_FILE_WRITE_MAX_BODY_BYTES))
   );
   app.use('/api/setup/*', setupApiDisabledMiddleware);
-  app.use('/api/*', requestBodyLimit(env.REQUEST_BODY_MAX_BYTES));
+  app.use(
+    '/api/*',
+    requestBodyLimitExcept(env.REQUEST_BODY_MAX_BYTES, (path) => DOCKER_FILE_BODY_LIMIT_PATH.test(path))
+  );
 
   // Rate limiting for API and public PKI routes
   app.use('/api/*', rateLimitMiddleware);

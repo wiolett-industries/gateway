@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { DetailRow } from "@/components/common/DetailRow";
+import { PanelShell } from "@/components/common/PanelShell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -191,37 +192,28 @@ export function LicenseSection({ canManage }: LicenseSectionProps) {
 
   if (loading || !status) {
     return (
-      <div className="border border-border bg-card">
-        <div className="flex items-center justify-between border-b border-border p-4">
-          <div>
-            <h2 className="font-semibold">License</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">Loading license status</p>
-          </div>
-          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-        </div>
-      </div>
+      <PanelShell
+        title="License"
+        description="Loading license status"
+        actions={<Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+      />
     );
   }
 
   return (
     <>
-      <div className="border border-border bg-card">
-        <div className="flex items-center justify-between gap-4 border-b border-border p-4">
-          <div>
-            <h2 className="font-semibold">License</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Current Gateway license and activation state
-            </p>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            {canManage && (
-              <Button size="sm" onClick={() => setDialogOpen(true)}>
-                <KeyRound className="h-4 w-4" />
-                Update license
-              </Button>
-            )}
-          </div>
-        </div>
+      <PanelShell
+        title="License"
+        description="Current Gateway license and activation state"
+        actions={
+          canManage ? (
+            <Button onClick={() => setDialogOpen(true)}>
+              <KeyRound className="h-4 w-4" />
+              Update license
+            </Button>
+          ) : null
+        }
+      >
         <LicenseSummary status={status} />
 
         <div className="divide-y divide-border -mb-px [&>*:last-child]:border-b [&>*:last-child]:border-border">
@@ -239,7 +231,7 @@ export function LicenseSection({ canManage }: LicenseSectionProps) {
           />
           <DetailRow label="Last checked" value={formatDate(status.lastCheckedAt)} />
         </div>
-      </div>
+      </PanelShell>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-md">
@@ -281,7 +273,7 @@ export function LicenseSection({ canManage }: LicenseSectionProps) {
                 </div>
               </div>
               <div className="flex justify-end gap-2">
-                <Button size="sm" variant="outline" onClick={handleCheck} disabled={checking}>
+                <Button variant="outline" onClick={handleCheck} disabled={checking}>
                   {checking ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
@@ -289,7 +281,7 @@ export function LicenseSection({ canManage }: LicenseSectionProps) {
                   )}
                   Check
                 </Button>
-                <Button size="sm" variant="destructive" onClick={handleDeactivate}>
+                <Button variant="destructive" onClick={handleDeactivate}>
                   <Trash2 className="h-4 w-4" />
                   Deactivate
                 </Button>

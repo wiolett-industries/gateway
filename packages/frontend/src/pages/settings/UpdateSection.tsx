@@ -5,6 +5,7 @@ import Markdown from "react-markdown";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { DetailRow } from "@/components/common/DetailRow";
+import { PanelShell } from "@/components/common/PanelShell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -58,23 +59,15 @@ export function UpdateSection({ canUpdate }: UpdateSectionProps) {
     <>
       {/* Update available */}
       {updateStatus?.updateAvailable && updateStatus.latestVersion && (
-        <div
-          className="border bg-card xl:col-span-2"
-          style={{ borderColor: "rgb(234 179 8 / 0.6)" }}
-        >
-          <div className="flex items-center justify-between border-b border-border p-4">
-            <div>
-              <h2 className="font-semibold" style={{ color: "rgb(234 179 8)" }}>
-                Update Available
-              </h2>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {updateStatus.latestVersion} is ready to install
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
+        <PanelShell
+          title={<span style={{ color: "rgb(234 179 8)" }}>Update Available</span>}
+          description={`${updateStatus.latestVersion} is ready to install`}
+          className="xl:col-span-2"
+          dirty
+          actions={
+            <>
               {updateStatus.releaseNotes && (
                 <Button
-                  size="sm"
                   variant="outline"
                   onClick={async () => {
                     setReleaseNotesOpen(true);
@@ -94,7 +87,6 @@ export function UpdateSection({ canUpdate }: UpdateSectionProps) {
               )}
               {canUpdate && (
                 <Button
-                  size="sm"
                   onClick={handleUpdate}
                   style={{ backgroundColor: "rgb(234 179 8)", color: "#111" }}
                   className="hover:opacity-90"
@@ -102,24 +94,23 @@ export function UpdateSection({ canUpdate }: UpdateSectionProps) {
                   Update to {updateStatus.latestVersion}
                 </Button>
               )}
-            </div>
-          </div>
+            </>
+          }
+        >
           <div className="divide-y divide-border">
             <DetailRow label="Current version" value={updateStatus.currentVersion} />
             <DetailRow label="New version" value={updateStatus.latestVersion} />
           </div>
-        </div>
+        </PanelShell>
       )}
 
       {/* About */}
-      <div className="border border-border bg-card">
-        <div className="flex items-center justify-between border-b border-border p-4">
-          <div>
-            <h2 className="font-semibold">About</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">Application info and updates</p>
-          </div>
-          {canUpdate && (
-            <Button size="sm" onClick={handleCheckUpdate} disabled={isChecking}>
+      <PanelShell
+        title="About"
+        description="Application info and updates"
+        actions={
+          canUpdate ? (
+            <Button onClick={handleCheckUpdate} disabled={isChecking}>
               {isChecking ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
@@ -127,8 +118,9 @@ export function UpdateSection({ canUpdate }: UpdateSectionProps) {
               )}
               Check for updates
             </Button>
-          )}
-        </div>
+          ) : null
+        }
+      >
         <div className="border-b border-border p-4">
           <div className="flex items-center gap-4">
             <img src="/android-chrome-192x192.png" alt="Gateway" className="h-10 w-10" />
@@ -159,7 +151,7 @@ export function UpdateSection({ canUpdate }: UpdateSectionProps) {
             />
           )}
         </div>
-      </div>
+      </PanelShell>
 
       {/* Updating overlay */}
       {isUpdating &&

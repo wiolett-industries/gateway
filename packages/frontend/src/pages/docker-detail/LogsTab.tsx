@@ -1,6 +1,7 @@
 import { Download, ExternalLink, ScrollText } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { PanelShell } from "@/components/common/PanelShell";
 import { AnsiText } from "@/components/ui/ansi-text";
 import { Button } from "@/components/ui/button";
 import { VirtualLogList } from "@/components/ui/virtual-log-list";
@@ -305,31 +306,30 @@ export function LogsTab({
   // ── Popout active: show placeholder ──
   if (isPopout) {
     return (
-      <div className="flex flex-col flex-1 min-h-0 border border-border bg-card">
-        <div className="flex-1 bg-card flex flex-col items-center justify-center gap-4">
+      <PanelShell className="flex flex-1 flex-col min-h-0" bodyClassName="flex flex-1 flex-col">
+        <div className="flex flex-1 flex-col items-center justify-center gap-4">
           <ScrollText className="h-10 w-10 text-muted-foreground/40" />
           <p className="text-sm text-muted-foreground">Logs are open in a separate window</p>
           <Button variant="outline" size="sm" onClick={bringBack}>
             Bring back here
           </Button>
         </div>
-      </div>
+      </PanelShell>
     );
   }
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 border border-border bg-card">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-border px-4 py-3 shrink-0">
-        <div>
-          <h3 className="text-sm font-semibold">Container Logs</h3>
-          <p className="text-xs text-muted-foreground">
-            {isRunning
-              ? "stdout and stderr output from the container"
-              : `Container is ${containerState ?? "stopped"} — showing last logs`}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
+    <PanelShell
+      title="Container Logs"
+      description={
+        isRunning
+          ? "stdout and stderr output from the container"
+          : `Container is ${containerState ?? "stopped"} — showing last logs`
+      }
+      className="flex flex-1 flex-col min-h-0"
+      bodyClassName="flex min-h-0 flex-1 flex-col"
+      actions={
+        <>
           {lines.length > 0 && (
             <Button
               variant="ghost"
@@ -350,10 +350,9 @@ export function LogsTab({
           >
             <ExternalLink className="h-3.5 w-3.5" />
           </Button>
-        </div>
-      </div>
-
-      {/* Log Output */}
+        </>
+      }
+    >
       <VirtualLogList
         lines={lines}
         keyFn={(_, i) => i}
@@ -422,6 +421,6 @@ export function LogsTab({
           </div>
         }
       />
-    </div>
+    </PanelShell>
   );
 }

@@ -58,6 +58,18 @@ function getRetryAfterSeconds(response: Response): number {
   return 60;
 }
 
+function getXhrRetryAfterSeconds(xhr: XMLHttpRequest): number {
+  const retryAfter = Number(xhr.getResponseHeader("Retry-After"));
+  if (Number.isFinite(retryAfter) && retryAfter > 0) return retryAfter;
+
+  const resetAt = Number(xhr.getResponseHeader("X-RateLimit-Reset"));
+  if (Number.isFinite(resetAt) && resetAt > 0) {
+    return Math.max(1, Math.ceil(resetAt - Date.now() / 1000));
+  }
+
+  return 60;
+}
+
 function getLoginRedirectUrl(): string {
   if (window.location.pathname.startsWith("/oauth/")) {
     return `/auth/login?return_to=${encodeURIComponent(window.location.href)}`;
@@ -327,6 +339,145 @@ export class ApiClientBase {
       }
     }
     return this.fetchRaw<T>(url, options);
+  }
+
+  protected async uploadRaw<T>(
+    endpoint: string,
+    {
+      method = "POST",
+      body,
+      headers,
+      onProgress,
+    }: {
+      method?: "POST" | "PUT";
+      body: XMLHttpRequestBodyInit;
+      headers?: HeadersInit;
+      onProgress?: (progress: { loaded: number; total: number }) => void;
+    }
+  ): Promise<T> {
+    const url =
+      endpoint.startsWith("/auth") || endpoint.startsWith(API_BASE)
+        ? endpoint
+        : `${API_BASE}${endpoint}`;
+    const generation = this.sessionGeneration;
+    const requestHeaders = new Headers(headers);
+    requestHeaders.set("X-CSRF-Token", await this.getCsrfToken());
+
+    return new Promise<T>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open(method, url, true);
+      xhr.withCredentials = true;
+      requestHeaders.forEach((value, key) => xhr.setRequestHeader(key, value));
+
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          onProgress?.({ loaded: event.loaded, total: event.total });
+        }
+      };
+
+      xhr.onerror = () => {
+        useAppStatusStore.getState().setMaintenanceActive(true);
+        reject(
+          new ApiRequestError("Service unavailable", {
+            status: 0,
+            code: "SERVICE_UNAVAILABLE",
+          })
+        );
+      };
+
+      xhr.onload = () => {
+        if (xhr.status < 500) {
+          useAppStatusStore.getState().setMaintenanceActive(false);
+        }
+
+        try {
+          this.assertSessionGeneration(generation);
+        } catch (err) {
+          reject(err);
+          return;
+        }
+
+        const parseJson = () => {
+          if (!xhr.responseText) return undefined;
+          try {
+            return JSON.parse(xhr.responseText) as unknown;
+          } catch {
+            return undefined;
+          }
+        };
+
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve(parseJson() as T);
+          return;
+        }
+
+        const parsedError = parseJson();
+        const errorCode =
+          parsedError && typeof parsedError === "object"
+            ? ((parsedError as ApiError).code ?? undefined)
+            : undefined;
+
+        if (xhr.status === 429) {
+          const retryAfterSeconds = getXhrRetryAfterSeconds(xhr);
+          useAppStatusStore.getState().activateRateLimit(retryAfterSeconds);
+          reject(
+            new ApiRequestError("Too many requests, please try again later", {
+              status: xhr.status,
+              code: "RATE_LIMIT_EXCEEDED",
+              retryAfterSeconds,
+            })
+          );
+          return;
+        }
+
+        if (xhr.status === 401) {
+          this.clearCsrfToken();
+          useAuthStore.getState().logout();
+          window.location.href = getLoginRedirectUrl();
+          reject(
+            new ApiRequestError("Session expired", {
+              status: xhr.status,
+              code: "UNAUTHORIZED",
+            })
+          );
+          return;
+        }
+
+        if (xhr.status === 403) {
+          const message = extractApiErrorMessage(parsedError, "Insufficient permissions");
+          if (message === "Invalid CSRF token") {
+            this.clearCsrfToken();
+          }
+          if (message === "Account is blocked") {
+            window.location.href = "/blocked";
+            reject(
+              new ApiRequestError("Account is blocked", {
+                status: xhr.status,
+                code: "ACCOUNT_BLOCKED",
+              })
+            );
+            return;
+          }
+          reject(
+            new ApiRequestError(message, {
+              status: xhr.status,
+              code: "FORBIDDEN",
+            })
+          );
+          return;
+        }
+
+        const fallback = xhr.status >= 500 ? "Service unavailable" : "An unknown error occurred";
+        reject(
+          new ApiRequestError(extractApiErrorMessage(parsedError, fallback), {
+            status: xhr.status,
+            code: errorCode,
+          })
+        );
+      };
+
+      xhr.send(body);
+    });
   }
 
   /**

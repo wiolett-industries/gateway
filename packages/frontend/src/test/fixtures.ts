@@ -21,6 +21,7 @@ export function makeNode(overrides: Partial<Node> = {}): Node {
     type: "nginx",
     hostname: "edge-1",
     displayName: "Edge 1",
+    appearanceColor: null,
     status: "online",
     serviceCreationLocked: false,
     daemonVersion: "1.0.0",

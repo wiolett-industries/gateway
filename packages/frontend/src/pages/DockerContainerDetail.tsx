@@ -79,7 +79,7 @@ export function DockerContainerDetail() {
     tab?: string;
   }>();
   const navigate = useStableNavigate();
-  const { hasScope } = useAuthStore();
+  const { hasScope, isLoading: authLoading } = useAuthStore();
   const canManage =
     hasScope("docker:containers:manage") ||
     !!(nodeId && hasScope(`docker:containers:manage:${nodeId}`));
@@ -271,10 +271,11 @@ export function DockerContainerDetail() {
   });
 
   useEffect(() => {
+    if (authLoading) return;
     if (!visibleTabs.includes(activeTab)) {
       setActiveTab("overview");
     }
-  }, [activeTab, setActiveTab, visibleTabs]);
+  }, [activeTab, authLoading, setActiveTab, visibleTabs]);
 
   // ── Action helpers ──
   const doAction = async (fn: () => Promise<void>, successMsg: string) => {
@@ -360,6 +361,7 @@ export function DockerContainerDetail() {
 
   // Auto-navigate to overview and close popouts when container stops or enters transition
   useEffect(() => {
+    if (isLoading || !container) return;
     const needsRunning = new Set(["console", "files", "stats"]);
     const shouldDisable = currentBaseState !== "running" || !!currentTransition;
     if (!shouldDisable) return;
@@ -380,7 +382,15 @@ export function DockerContainerDetail() {
         logsChannel.close();
       } catch {}
     }
-  }, [activeTab, containerId, currentBaseState, currentTransition, setActiveTab]);
+  }, [
+    activeTab,
+    container,
+    containerId,
+    currentBaseState,
+    currentTransition,
+    isLoading,
+    setActiveTab,
+  ]);
 
   if (isLoading || !container) {
     return (

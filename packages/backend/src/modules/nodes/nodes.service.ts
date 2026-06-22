@@ -84,6 +84,7 @@ export class NodesService {
         type: nodes.type,
         hostname: nodes.hostname,
         displayName: nodes.displayName,
+        appearanceColor: nodes.appearanceColor,
         status: nodes.status,
         serviceCreationLocked: nodes.serviceCreationLocked,
         daemonVersion: nodes.daemonVersion,
@@ -206,7 +207,8 @@ export class NodesService {
     const [updated] = await this.db
       .update(nodes)
       .set({
-        displayName: input.displayName,
+        displayName: input.displayName === undefined ? existing.displayName : input.displayName,
+        appearanceColor: input.appearanceColor === undefined ? existing.appearanceColor : input.appearanceColor,
         updatedAt: new Date(),
       })
       .where(eq(nodes.id, id))
@@ -217,7 +219,10 @@ export class NodesService {
       action: 'node.update',
       resourceType: 'node',
       resourceId: id,
-      details: { displayName: input.displayName },
+      details: {
+        ...(input.displayName !== undefined ? { displayName: input.displayName } : {}),
+        ...(input.appearanceColor !== undefined ? { appearanceColor: input.appearanceColor } : {}),
+      },
     });
     this.emitNode(id, 'updated');
 

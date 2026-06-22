@@ -123,6 +123,7 @@ const operationalResources: ResourceDefinition[] = [
           id: node.id,
           hostname: node.hostname,
           displayName: node.displayName,
+          appearanceColor: node.appearanceColor,
           type: node.type,
           status: node.status,
           isConnected: node.isConnected,

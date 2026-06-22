@@ -335,8 +335,9 @@ export class NodeDispatchService {
     options: {
       containerId?: string;
       path?: string;
+      targetPath?: string;
       maxBytes?: number;
-      content?: string;
+      content?: string | Buffer;
     } = {}
   ): Promise<CommandResult> {
     if (!['list', 'read'].includes(action)) {
@@ -344,8 +345,10 @@ export class NodeDispatchService {
     }
     const { content, ...rest } = options;
     const payload: Record<string, unknown> = { action, ...rest };
-    if (content != null) {
-      // Content arrives as base64 from the frontend — decode to raw bytes for the proto bytes field
+    if (Buffer.isBuffer(content)) {
+      payload.content = content;
+    } else if (content != null) {
+      // AI/tool calls still use base64 in JSON; REST uploads send raw bytes.
       payload.content = Buffer.from(content, 'base64');
     }
     return this.registry.sendCommand(nodeId, {

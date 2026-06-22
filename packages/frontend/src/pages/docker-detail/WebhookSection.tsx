@@ -256,7 +256,7 @@ export function WebhookSection(props: WebhookSectionProps) {
                   <p className="text-sm font-medium">Webhook URL</p>
                   <div className="flex gap-1.5 mt-1.5">
                     <Input
-                      className="h-8 text-xs font-mono flex-1"
+                      className="flex-1"
                       value={webhookUrl}
                       readOnly
                       onClick={(e) => (e.target as HTMLInputElement).select()}
@@ -332,7 +332,7 @@ export function WebhookSection(props: WebhookSectionProps) {
             </div>
             <Input
               type="number"
-              className="h-8 text-xs w-20 shrink-0"
+              className="w-20 shrink-0"
               value={retentionCount}
               onChange={(e) => setRetentionCount(e.target.value)}
               disabled={!cleanupEnabled || props.disabled}

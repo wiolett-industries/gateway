@@ -8,6 +8,10 @@ export interface UpdateStatus {
   lastCheckedAt: string | null;
 }
 
+export interface SystemConfig {
+  fileUploadMaxBytes: number;
+}
+
 export type LicenseTier = "community" | "homelab" | "enterprise";
 
 export type LicenseStatus =

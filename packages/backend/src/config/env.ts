@@ -76,7 +76,7 @@ const envSchema = z.object({
   // Request body limits
   REQUEST_BODY_MAX_BYTES: z.coerce.number().int().positive().default(2_097_152),
   OAUTH_BODY_MAX_BYTES: z.coerce.number().int().positive().default(32_768),
-  DOCKER_FILE_WRITE_MAX_BODY_BYTES: z.coerce.number().int().positive().default(1_500_000),
+  DOCKER_FILE_WRITE_MAX_BODY_BYTES: z.coerce.number().int().positive().default(150_000_000),
 
   // Session
   SESSION_EXPIRY: z.coerce.number().default(2592000), // 30 days

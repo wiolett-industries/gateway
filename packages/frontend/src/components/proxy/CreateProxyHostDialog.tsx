@@ -536,9 +536,7 @@ export function CreateProxyHostDialog({
                   <div className="p-4 space-y-4">
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                       <div className="space-y-1">
-                        <label className="text-xs font-medium text-muted-foreground">
-                          Forward Host
-                        </label>
+                        <label className="text-xs text-muted-foreground">Forward Host</label>
                         <Input
                           value={forwardHost}
                           onChange={(e) => setForwardHost(e.target.value)}
@@ -546,9 +544,7 @@ export function CreateProxyHostDialog({
                         />
                       </div>
                       <div className="space-y-1">
-                        <label className="text-xs font-medium text-muted-foreground">
-                          Forward Port
-                        </label>
+                        <label className="text-xs text-muted-foreground">Forward Port</label>
                         <NumericInput
                           value={forwardPort}
                           onChange={(v) => setForwardPort(v)}
@@ -557,7 +553,7 @@ export function CreateProxyHostDialog({
                         />
                       </div>
                       <div className="space-y-1">
-                        <label className="text-xs font-medium text-muted-foreground">Scheme</label>
+                        <label className="text-xs text-muted-foreground">Scheme</label>
                         <Select
                           value={forwardScheme}
                           onValueChange={(v) => setForwardScheme(v as ForwardScheme)}
@@ -591,9 +587,7 @@ export function CreateProxyHostDialog({
                   <div className="p-4">
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                       <div className="space-y-1">
-                        <label className="text-xs font-medium text-muted-foreground">
-                          Redirect URL
-                        </label>
+                        <label className="text-xs text-muted-foreground">Redirect URL</label>
                         <Input
                           value={redirectUrl}
                           onChange={(e) => setRedirectUrl(e.target.value)}
@@ -601,9 +595,7 @@ export function CreateProxyHostDialog({
                         />
                       </div>
                       <div className="space-y-1">
-                        <label className="text-xs font-medium text-muted-foreground">
-                          Status Code
-                        </label>
+                        <label className="text-xs text-muted-foreground">Status Code</label>
                         <Select
                           value={String(redirectStatusCode)}
                           onValueChange={(v) => setRedirectStatusCode(Number(v))}
@@ -653,9 +645,7 @@ export function CreateProxyHostDialog({
                     />
                   </div>
                   <div className={cn("px-4 py-3", !sslEnabled && "opacity-50 pointer-events-none")}>
-                    <label className="text-xs font-medium text-muted-foreground">
-                      SSL Certificate
-                    </label>
+                    <label className="text-xs text-muted-foreground">SSL Certificate</label>
                     <Select
                       value={sslCertificateId || "__none__"}
                       onValueChange={(v) => setSslCertificateId(v === "__none__" ? "" : v)}
@@ -696,9 +686,7 @@ export function CreateProxyHostDialog({
                       )}
                     >
                       <div className="space-y-1">
-                        <label className="text-xs font-medium text-muted-foreground">
-                          URL Path
-                        </label>
+                        <label className="text-xs text-muted-foreground">URL Path</label>
                         <Input
                           value={healthCheckUrl}
                           onChange={(e) => setHealthCheckUrl(e.target.value)}
@@ -707,9 +695,7 @@ export function CreateProxyHostDialog({
                         />
                       </div>
                       <div className="space-y-1">
-                        <label className="text-xs font-medium text-muted-foreground">
-                          Expected Status
-                        </label>
+                        <label className="text-xs text-muted-foreground">Expected Status</label>
                         <Input
                           type="number"
                           value={healthCheckExpectedStatus ?? ""}
@@ -723,9 +709,7 @@ export function CreateProxyHostDialog({
                         />
                       </div>
                       <div className="space-y-1 md:col-span-2">
-                        <label className="text-xs font-medium text-muted-foreground">
-                          Expected Body
-                        </label>
+                        <label className="text-xs text-muted-foreground">Expected Body</label>
                         <div className="grid grid-cols-1 gap-2 sm:grid-cols-[11rem_minmax(0,1fr)]">
                           <Select
                             value={healthCheckBodyMatchMode}
@@ -755,9 +739,7 @@ export function CreateProxyHostDialog({
                         </div>
                       </div>
                       <div className="space-y-1">
-                        <label className="text-xs font-medium text-muted-foreground">
-                          Interval (seconds)
-                        </label>
+                        <label className="text-xs text-muted-foreground">Interval (seconds)</label>
                         <NumericInput
                           value={healthCheckInterval}
                           onChange={(v) => setHealthCheckInterval(v)}
@@ -815,7 +797,7 @@ export function CreateProxyHostDialog({
               {folderList.length > 0 && (
                 <div className="border border-border bg-card">
                   <div className="px-4 py-3">
-                    <label className="text-xs font-medium text-muted-foreground">Folder</label>
+                    <label className="text-xs text-muted-foreground">Folder</label>
                     <Select
                       value={folderId || "__none__"}
                       onValueChange={(v) => setFolderId(v === "__none__" ? "" : v)}

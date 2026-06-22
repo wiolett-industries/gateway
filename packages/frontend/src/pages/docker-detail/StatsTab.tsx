@@ -8,6 +8,7 @@ import {
   Users,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { PanelShell } from "@/components/common/PanelShell";
 import { StatCard } from "@/components/ui/stat-card";
 import { api } from "@/services/api";
 import { formatBytes, type InspectData } from "./helpers";
@@ -327,20 +328,20 @@ export function StatsTab({
 
           {/* Process List */}
           {filteredProcesses.length > 0 && (
-            <div className="border border-border bg-card">
-              <div className="border-b border-border p-4">
-                <h4 className="text-sm font-semibold">Process List</h4>
-                {processes?.truncated && (
-                  <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
-                    Showing first {processes.limit ?? filteredProcesses.length} of{" "}
-                    {processes.totalProcesses ?? "many"} processes.
-                  </p>
-                )}
-              </div>
+            <PanelShell
+              title="Process List"
+              description={
+                processes?.truncated
+                  ? `Showing first ${processes.limit ?? filteredProcesses.length} of ${
+                      processes.totalProcesses ?? "many"
+                    } processes.`
+                  : undefined
+              }
+            >
               <div className="overflow-x-auto">
                 <div className="max-h-[calc(2rem*9+2.25rem+4px)] overflow-auto">
                   <table className="w-full">
-                    <thead className="sticky top-0 bg-card z-10">
+                    <thead className="sticky top-0 z-10 bg-muted/60 dark:bg-muted">
                       <tr className="text-left border-b border-border">
                         {filteredTitles.map((title) => (
                           <th
@@ -366,7 +367,7 @@ export function StatsTab({
                   </table>
                 </div>
               </div>
-            </div>
+            </PanelShell>
           )}
         </>
       )}

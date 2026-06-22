@@ -80,6 +80,7 @@ export const nodes = pgTable(
     type: nodeTypeEnum('type').notNull().default('nginx'),
     hostname: varchar('hostname', { length: 255 }).notNull(),
     displayName: varchar('display_name', { length: 255 }),
+    appearanceColor: varchar('appearance_color', { length: 32 }),
     status: nodeStatusEnum('status').notNull().default('pending'),
     serviceCreationLocked: boolean('service_creation_locked').notNull().default(false),
 

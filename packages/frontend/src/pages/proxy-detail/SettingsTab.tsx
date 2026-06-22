@@ -225,8 +225,7 @@ export function SettingsTab({
           </div>
           {canManage && (
             <Button
-              size="sm"
-              className="h-7 w-fit px-2.5 text-xs"
+              className="w-fit"
               onClick={onSaveTemplateSettings}
               disabled={!hasTemplateSettingsChanged || isSavingTemplate}
             >
@@ -237,7 +236,7 @@ export function SettingsTab({
         </div>
         <div className="p-4 space-y-4">
           <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">Template</label>
+            <label className="text-xs text-muted-foreground">Template</label>
             <Select
               value={nginxTemplateId || "__none__"}
               onValueChange={(v) => onNginxTemplateChange(v === "__none__" ? "" : v)}
@@ -286,7 +285,7 @@ export function SettingsTab({
                               setTemplateForwardScheme(value as ForwardScheme)
                             }
                           >
-                            <SelectTrigger className="h-9 text-xs border-0 rounded-none shadow-none focus:ring-1 focus:ring-inset focus:ring-ring">
+                            <SelectTrigger className="h-9 border-0 rounded-none shadow-none focus:ring-1 focus:ring-inset focus:ring-ring">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
@@ -355,7 +354,7 @@ export function SettingsTab({
                               onTemplateVariableChange(variable.name, value === "true")
                             }
                           >
-                            <SelectTrigger className="h-9 text-xs border-0 rounded-none shadow-none focus:ring-1 focus:ring-inset focus:ring-ring">
+                            <SelectTrigger className="h-9 border-0 rounded-none shadow-none focus:ring-1 focus:ring-inset focus:ring-ring">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
@@ -456,7 +455,7 @@ export function SettingsTab({
               onChange={setCacheEnabled}
             />
             <div className="px-4 py-3">
-              <label className="text-xs font-medium text-muted-foreground">Max Age (seconds)</label>
+              <label className="text-xs text-muted-foreground">Max Age (seconds)</label>
               <NumericInput
                 value={cacheMaxAge}
                 onChange={(v) => setCacheMaxAge(v)}
@@ -477,7 +476,7 @@ export function SettingsTab({
             />
             <div className="px-4 py-3 grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <label className="text-xs font-medium text-muted-foreground">Requests/sec</label>
+                <label className="text-xs text-muted-foreground">Requests/sec</label>
                 <NumericInput
                   value={rateLimitRPS}
                   onChange={setRateLimitRPS}
@@ -486,7 +485,7 @@ export function SettingsTab({
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-xs font-medium text-muted-foreground">Burst</label>
+                <label className="text-xs text-muted-foreground">Burst</label>
                 <NumericInput
                   value={rateLimitBurst}
                   onChange={setRateLimitBurst}
@@ -510,7 +509,7 @@ export function SettingsTab({
           />
           <div className="border-t border-border px-4 py-3 grid grid-cols-1 md:grid-cols-2 gap-3">
             <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground">URL Path</label>
+              <label className="text-xs text-muted-foreground">URL Path</label>
               <Input
                 value={healthCheckUrl}
                 onChange={(e) => setHealthCheckUrl(e.target.value)}
@@ -519,7 +518,7 @@ export function SettingsTab({
               />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground">Expected Status</label>
+              <label className="text-xs text-muted-foreground">Expected Status</label>
               <Input
                 type="number"
                 value={healthCheckExpectedStatus ?? ""}
@@ -531,9 +530,7 @@ export function SettingsTab({
               />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground">
-                Slow Threshold (Nx avg)
-              </label>
+              <label className="text-xs text-muted-foreground">Slow Threshold (Nx avg)</label>
               <Input
                 type="number"
                 min={0}
@@ -547,7 +544,7 @@ export function SettingsTab({
               </p>
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground">Expected Body</label>
+              <label className="text-xs text-muted-foreground">Expected Body</label>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-[11rem_minmax(0,1fr)]">
                 <Select
                   value={healthCheckBodyMatchMode}
@@ -599,19 +596,12 @@ export function SettingsTab({
               <>
                 <Button
                   variant="outline"
-                  size="sm"
-                  className="h-7 px-2.5 text-xs"
                   onClick={() => setCustomHeaders([...customHeaders, { name: "", value: "" }])}
                 >
                   <Plus className="h-3.5 w-3.5" />
                   Add
                 </Button>
-                <Button
-                  size="sm"
-                  className="h-7 px-2.5 text-xs"
-                  onClick={onSaveCustom}
-                  disabled={!hasHeadersChanged || isSavingCustom}
-                >
+                <Button onClick={onSaveCustom} disabled={!hasHeadersChanged || isSavingCustom}>
                   <Save className="h-3.5 w-3.5" />
                   Save
                 </Button>
@@ -685,8 +675,6 @@ export function SettingsTab({
               <>
                 <Button
                   variant="outline"
-                  size="sm"
-                  className="h-7 px-2.5 text-xs"
                   onClick={() =>
                     setCustomRewrites([
                       ...customRewrites,
@@ -697,12 +685,7 @@ export function SettingsTab({
                   <Plus className="h-3.5 w-3.5" />
                   Add
                 </Button>
-                <Button
-                  size="sm"
-                  className="h-7 px-2.5 text-xs"
-                  onClick={onSaveCustom}
-                  disabled={!hasRewritesChanged || isSavingCustom}
-                >
+                <Button onClick={onSaveCustom} disabled={!hasRewritesChanged || isSavingCustom}>
                   <Save className="h-3.5 w-3.5" />
                   Save
                 </Button>

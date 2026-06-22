@@ -1,6 +1,9 @@
+import { Save } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
+import { PanelShell } from "@/components/common/PanelShell";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -17,13 +20,33 @@ interface AuthProvisioningSectionProps {
   canEdit: boolean;
 }
 
+const BYTES_PER_MEGABYTE = 1024 * 1024;
+const DEFAULT_FILE_UPLOAD_MAX_BYTES = 100 * BYTES_PER_MEGABYTE;
+
+function bytesToMegabytes(bytes: number) {
+  return Math.round(bytes / BYTES_PER_MEGABYTE);
+}
+
+function withDefaultGeneralSettings(settings: AuthProvisioningSettings | null) {
+  if (!settings) return null;
+  return {
+    ...settings,
+    generalSettings: settings.generalSettings ?? {
+      fileUploadMaxBytes: DEFAULT_FILE_UPLOAD_MAX_BYTES,
+    },
+  };
+}
+
 export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProps) {
-  const [settings, setSettings] = useState<AuthProvisioningSettings | null>(
-    () => api.getCached<AuthProvisioningSettings>("settings:auth-provisioning") ?? null
+  const [settings, setSettings] = useState<AuthProvisioningSettings | null>(() =>
+    withDefaultGeneralSettings(
+      api.getCached<AuthProvisioningSettings>("settings:auth-provisioning") ?? null
+    )
   );
   const [isSavingAutoCreate, setIsSavingAutoCreate] = useState(false);
   const [isSavingVerifiedEmail, setIsSavingVerifiedEmail] = useState(false);
   const [isSavingGroup, setIsSavingGroup] = useState(false);
+  const [isSavingGeneral, setIsSavingGeneral] = useState(false);
   const [isSavingMcp, setIsSavingMcp] = useState(false);
   const [isSavingOAuthCompatibility, setIsSavingOAuthCompatibility] = useState(false);
   const [isSavingNetwork, setIsSavingNetwork] = useState(false);
@@ -40,6 +63,14 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
         .getCached<AuthProvisioningSettings>("settings:auth-provisioning")
         ?.outboundWebhookPolicy.allowedPrivateCidrs.join(", ") ?? ""
   );
+  const [fileUploadLimitMb, setFileUploadLimitMb] = useState(() =>
+    String(
+      bytesToMegabytes(
+        api.getCached<AuthProvisioningSettings>("settings:auth-provisioning")?.generalSettings
+          ?.fileUploadMaxBytes ?? DEFAULT_FILE_UPLOAD_MAX_BYTES
+      )
+    )
+  );
   const skipNextCidrsBlur = useRef(false);
   const skipNextWebhookCidrsBlur = useRef(false);
 
@@ -47,9 +78,12 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
     try {
       const settingsData = await api.getAuthProvisioningSettings();
       api.setCache("settings:auth-provisioning", settingsData);
-      setSettings(settingsData);
+      setSettings(withDefaultGeneralSettings(settingsData));
       setTrustedProxyCidrs(settingsData.networkSecurity.trustedProxyCidrs.join(", "));
       setWebhookPrivateCidrs(settingsData.outboundWebhookPolicy.allowedPrivateCidrs.join(", "));
+      setFileUploadLimitMb(
+        String(bytesToMegabytes(settingsData.generalSettings.fileUploadMaxBytes))
+      );
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to load Gateway settings");
     }
@@ -123,6 +157,60 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
     } finally {
       setIsSavingVerifiedEmail(false);
     }
+  };
+
+  const updateGeneralSettings = async (
+    patch: Partial<AuthProvisioningSettings["generalSettings"]>
+  ) => {
+    if (!settings || !canEdit) return;
+    setIsSavingGeneral(true);
+    const previous = settings;
+    const nextGeneralSettings = { ...settings.generalSettings, ...patch };
+    setSettings({ ...settings, generalSettings: nextGeneralSettings });
+    try {
+      const updated = await api.updateAuthProvisioningSettings({
+        generalSettings: nextGeneralSettings,
+      });
+      applySettings(updated);
+      setFileUploadLimitMb(String(bytesToMegabytes(updated.generalSettings.fileUploadMaxBytes)));
+      api.setCache("system:config", {
+        fileUploadMaxBytes: updated.generalSettings.fileUploadMaxBytes,
+      });
+      toast.success("Gateway settings updated");
+    } catch (err) {
+      setSettings(previous);
+      setFileUploadLimitMb(String(bytesToMegabytes(previous.generalSettings.fileUploadMaxBytes)));
+      toast.error(err instanceof Error ? err.message : "Failed to update Gateway settings");
+    } finally {
+      setIsSavingGeneral(false);
+    }
+  };
+
+  const getDraftFileUploadLimitBytes = () => {
+    if (!settings) return;
+    const value = Number(fileUploadLimitMb);
+    if (!Number.isFinite(value)) return null;
+    return Math.round(value) * BYTES_PER_MEGABYTE;
+  };
+
+  const draftFileUploadLimitBytes = getDraftFileUploadLimitBytes();
+  const generalHasChanges =
+    draftFileUploadLimitBytes != null &&
+    draftFileUploadLimitBytes !== settings?.generalSettings.fileUploadMaxBytes;
+
+  const saveFileUploadLimit = () => {
+    if (!settings) return;
+    const nextBytes = getDraftFileUploadLimitBytes();
+    if (nextBytes == null) {
+      toast.error("File upload limit must be a number");
+      return;
+    }
+    if (nextBytes < BYTES_PER_MEGABYTE || nextBytes > 500 * BYTES_PER_MEGABYTE) {
+      toast.error("File upload limit must be between 1 MB and 500 MB");
+      return;
+    }
+    if (nextBytes === settings.generalSettings.fileUploadMaxBytes) return;
+    updateGeneralSettings({ fileUploadMaxBytes: nextBytes });
   };
 
   const handleToggleMcpServer = async (checked: boolean) => {
@@ -247,13 +335,51 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
 
   return (
     <div className="space-y-4">
-      <div className="border border-border bg-card">
-        <div className="border-b border-border p-4">
-          <h2 className="font-semibold">Identity provisioning</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            OIDC sign-in behavior for Gateway users
-          </p>
+      <PanelShell
+        title="General settings"
+        description="Gateway-wide behavior and operational limits"
+        actions={
+          <Button
+            onClick={saveFileUploadLimit}
+            disabled={!canEdit || isSavingGeneral || !generalHasChanges}
+          >
+            <Save className="h-4 w-4" />
+            Save
+          </Button>
+        }
+        dirty={generalHasChanges}
+      >
+        <div className="divide-y divide-border">
+          <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+            <div>
+              <p className="text-sm font-medium">File upload limit</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Maximum file size accepted by Gateway file managers, in MB
+              </p>
+            </div>
+            <Input
+              className="w-full shrink-0 sm:max-w-40"
+              type="number"
+              min={1}
+              max={500}
+              step={1}
+              value={fileUploadLimitMb}
+              disabled={!canEdit || isSavingGeneral}
+              onChange={(event) => setFileUploadLimitMb(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  saveFileUploadLimit();
+                }
+              }}
+            />
+          </div>
         </div>
+      </PanelShell>
+
+      <PanelShell
+        title="Identity provisioning"
+        description="OIDC sign-in behavior for Gateway users"
+      >
         <div className="divide-y divide-border">
           <div className="flex items-center justify-between gap-4 px-4 py-3">
             <div>
@@ -309,15 +435,12 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
             </div>
           </div>
         </div>
-      </div>
+      </PanelShell>
 
-      <div className="border border-border bg-card">
-        <div className="border-b border-border p-4">
-          <h2 className="font-semibold">OAuth and MCP access</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Remote client compatibility and tool access
-          </p>
-        </div>
+      <PanelShell
+        title="OAuth and MCP access"
+        description="Remote client compatibility and tool access"
+      >
         <div className="divide-y divide-border">
           <div className="flex items-center justify-between gap-4 px-4 py-3">
             <div>
@@ -347,15 +470,12 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
             />
           </div>
         </div>
-      </div>
+      </PanelShell>
 
-      <div className="border border-border bg-card">
-        <div className="border-b border-border p-4">
-          <h2 className="font-semibold">Network trust</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Client address detection for rate limits and audit records
-          </p>
-        </div>
+      <PanelShell
+        title="Network trust"
+        description="Client address detection for rate limits and audit records"
+      >
         <div className="divide-y divide-border">
           <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
             <div>
@@ -412,7 +532,7 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
           </div>
 
           {settings.currentRequestIp.warning && (
-            <p className="bg-muted px-4 py-3 text-xs text-muted-foreground">
+            <p className="bg-muted/60 px-4 py-3 text-xs text-muted-foreground dark:bg-muted">
               {settings.currentRequestIp.warning}
             </p>
           )}
@@ -466,15 +586,12 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
             />
           </div>
         </div>
-      </div>
+      </PanelShell>
 
-      <div className="border border-border bg-card">
-        <div className="border-b border-border p-4">
-          <h2 className="font-semibold">Outbound webhook policy</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Private-network delivery rules for notification webhooks
-          </p>
-        </div>
+      <PanelShell
+        title="Outbound webhook policy"
+        description="Private-network delivery rules for notification webhooks"
+      >
         <div className="divide-y divide-border">
           <div className="flex items-center justify-between gap-4 px-4 py-3">
             <div>
@@ -530,7 +647,7 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
             />
           </div>
         </div>
-      </div>
+      </PanelShell>
     </div>
   );
 }

@@ -3372,6 +3372,7 @@ type DockerFileCommand struct {
 	Path          string                 `protobuf:"bytes,3,opt,name=path,proto3" json:"path,omitempty"`
 	MaxBytes      int64                  `protobuf:"varint,4,opt,name=max_bytes,json=maxBytes,proto3" json:"max_bytes,omitempty"`
 	Content       []byte                 `protobuf:"bytes,5,opt,name=content,proto3" json:"content,omitempty"`
+	TargetPath    string                 `protobuf:"bytes,6,opt,name=target_path,json=targetPath,proto3" json:"target_path,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3439,6 +3440,13 @@ func (x *DockerFileCommand) GetContent() []byte {
 		return x.Content
 	}
 	return nil
+}
+
+func (x *DockerFileCommand) GetTargetPath() string {
+	if x != nil {
+		return x.TargetPath
+	}
+	return ""
 }
 
 type DockerConfigPushCommand struct {
@@ -4691,13 +4699,15 @@ const file_gateway_v1_nginx_daemon_proto_rawDesc = "" +
 	"\x05stdin\x18\x05 \x01(\bR\x05stdin\x12\x12\n" +
 	"\x04rows\x18\x06 \x01(\x05R\x04rows\x12\x12\n" +
 	"\x04cols\x18\a \x01(\x05R\x04cols\x12\x12\n" +
-	"\x04user\x18\b \x01(\tR\x04user\"\x99\x01\n" +
+	"\x04user\x18\b \x01(\tR\x04user\"\xba\x01\n" +
 	"\x11DockerFileCommand\x12\x16\n" +
 	"\x06action\x18\x01 \x01(\tR\x06action\x12!\n" +
 	"\fcontainer_id\x18\x02 \x01(\tR\vcontainerId\x12\x12\n" +
 	"\x04path\x18\x03 \x01(\tR\x04path\x12\x1b\n" +
 	"\tmax_bytes\x18\x04 \x01(\x03R\bmaxBytes\x12\x18\n" +
-	"\acontent\x18\x05 \x01(\fR\acontent\"s\n" +
+	"\acontent\x18\x05 \x01(\fR\acontent\x12\x1f\n" +
+	"\vtarget_path\x18\x06 \x01(\tR\n" +
+	"targetPath\"s\n" +
 	"\x17DockerConfigPushCommand\x12:\n" +
 	"\n" +
 	"registries\x18\x01 \x03(\v2\x1a.gateway.v1.RegistryConfigR\n" +

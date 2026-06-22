@@ -17,6 +17,7 @@ import { createEnrollmentHandlers } from './services/enrollment.js';
 import { createLogStreamHandlers } from './services/log-stream.js';
 
 const logger = createChildLogger('GrpcServer');
+const GRPC_MAX_MESSAGE_BYTES = 512 * 1024 * 1024;
 
 function resolveProtoPath() {
   const moduleDir = dirname(fileURLToPath(import.meta.url));
@@ -118,6 +119,8 @@ export async function startGrpcServer(
     'grpc.keepalive_time_ms': 30000,
     'grpc.keepalive_timeout_ms': 10000,
     'grpc.keepalive_permit_without_calls': 1,
+    'grpc.max_send_message_length': GRPC_MAX_MESSAGE_BYTES,
+    'grpc.max_receive_message_length': GRPC_MAX_MESSAGE_BYTES,
   });
 
   // Register service handlers

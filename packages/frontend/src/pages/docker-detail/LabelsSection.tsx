@@ -37,15 +37,9 @@ export function LabelsSection({
         <>
           {action}
           {canEdit && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              onClick={addLabel}
-              aria-label="Add label"
-              title="Add label"
-            >
+            <Button onClick={addLabel}>
               <Plus className="h-3.5 w-3.5" />
+              Add
             </Button>
           )}
         </>
@@ -53,7 +47,7 @@ export function LabelsSection({
     >
       {labels.length > 0 ? (
         <>
-          <div className="grid grid-cols-[1fr_1fr] border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wider">
+          <div className="grid grid-cols-[1fr_1fr] border-b border-border bg-muted/60 text-xs font-medium text-muted-foreground uppercase tracking-wider dark:bg-muted">
             <div className="px-3 py-2">Key</div>
             <div className="px-3 py-2 border-l border-border">Value</div>
           </div>

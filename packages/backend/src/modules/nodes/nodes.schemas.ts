@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+export const NODE_APPEARANCE_COLORS = ['blue', 'red', 'green', 'yellow', 'purple', 'pink', 'orange'] as const;
+
 export const CreateNodeSchema = z.object({
   type: z.enum(['nginx', 'bastion', 'monitoring', 'docker']).default('nginx'),
   hostname: z.string().min(1).max(255),
@@ -7,7 +9,8 @@ export const CreateNodeSchema = z.object({
 });
 
 export const UpdateNodeSchema = z.object({
-  displayName: z.string().max(255).optional(),
+  displayName: z.string().max(255).nullable().optional(),
+  appearanceColor: z.enum(NODE_APPEARANCE_COLORS).nullable().optional(),
 });
 
 export const UpdateNodeServiceCreationLockSchema = z.object({

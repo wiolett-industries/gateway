@@ -62,6 +62,18 @@ describe('shouldSkipFallbackAudit', () => {
     ).toBe(true);
   });
 
+  it('skips Docker folder read and ordering routes that only affect list layout', () => {
+    expect(__testOnly.shouldSkipFallbackAudit('POST', '/api/docker/folders/placements')).toBe(true);
+    expect(__testOnly.shouldSkipFallbackAudit('PUT', '/api/docker/folders/reorder')).toBe(true);
+    expect(__testOnly.shouldSkipFallbackAudit('PUT', '/api/docker/folders/reorder-containers')).toBe(true);
+    expect(__testOnly.shouldSkipFallbackAudit('PUT', '/api/docker/folders/reorder-resources')).toBe(true);
+  });
+
+  it('keeps Docker folder create and delete routes eligible for service or fallback audit', () => {
+    expect(__testOnly.shouldSkipFallbackAudit('POST', '/api/docker/folders')).toBe(false);
+    expect(__testOnly.shouldSkipFallbackAudit('DELETE', '/api/docker/folders/folder-1')).toBe(false);
+  });
+
   it('keeps logging create/update/delete routes eligible for service or fallback audit', () => {
     expect(__testOnly.shouldSkipFallbackAudit('POST', '/api/logging/environments')).toBe(false);
     expect(

@@ -10,6 +10,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { Field } from "@/pages/settings/StatusPageSection";
 import type { StatusPageConfig, StatusPageIncidentSeverity } from "@/types";
 
@@ -60,7 +61,7 @@ export function StatusPageSettingsTab({
             </p>
           </div>
           {canManage && (
-            <Button size="sm" onClick={saveSettings} disabled={saving}>
+            <Button onClick={saveSettings} disabled={saving}>
               <Save className="h-4 w-4" />
               Save
             </Button>
@@ -77,13 +78,12 @@ export function StatusPageSettingsTab({
             />
           </Field>
           <Field label="Public description">
-            <textarea
+            <Textarea
               value={config.description}
               disabled={disabled}
               onChange={(event) =>
                 onConfigChange((prev) => ({ ...prev, description: event.target.value }))
               }
-              className="min-h-20 w-full border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
             />
           </Field>
           <div className="grid gap-4 sm:grid-cols-2">

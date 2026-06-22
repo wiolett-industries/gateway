@@ -1,5 +1,7 @@
 import { Link } from "react-router-dom";
+import { EmptyState } from "@/components/common/EmptyState";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
+import { PanelShell } from "@/components/common/PanelShell";
 import { Badge } from "@/components/ui/badge";
 import type { ProxyHost } from "@/types";
 
@@ -17,13 +19,14 @@ export function HealthOverviewCard({
   if (!hasScope("proxy:view")) return null;
 
   return (
-    <div className="border border-border bg-card">
-      <div className="flex items-center justify-between border-b border-border p-4">
-        <h2 className="font-semibold">Health Overview</h2>
+    <PanelShell
+      title="Health Overview"
+      actions={
         <Link to="/proxy-hosts" className="text-sm text-muted-foreground hover:text-foreground">
           View all
         </Link>
-      </div>
+      }
+    >
       {loading ? (
         <div className="flex items-center justify-center py-12">
           <div className="flex flex-col items-center gap-3">
@@ -70,15 +73,13 @@ export function HealthOverviewCard({
           ))}
         </div>
       ) : (
-        <div className="p-8 text-center text-sm text-muted-foreground">
-          No proxy hosts configured.{" "}
-          {hasScope("proxy:create") && (
-            <Link to="/proxy-hosts/new" className="text-foreground hover:underline">
-              Add one
-            </Link>
-          )}
-        </div>
+        <EmptyState
+          message="No proxy hosts configured."
+          actionLabel={hasScope("proxy:create") ? "Add one" : undefined}
+          actionHref={hasScope("proxy:create") ? "/proxy-hosts/new" : undefined}
+          embedded
+        />
       )}
-    </div>
+    </PanelShell>
   );
 }

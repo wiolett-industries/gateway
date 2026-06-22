@@ -301,7 +301,6 @@ export function StepExtKeyUsage({
           />
           <Button
             variant="outline"
-            size="sm"
             disabled={!customEkuOid.trim() || !/^\d+(\.\d+)+$/.test(customEkuOid)}
             onClick={() => {
               setExtKeyUsage([...extKeyUsage, customEkuOid.trim()]);
@@ -511,7 +510,6 @@ export function StepDistribution({
         ))}
         <Button
           variant="outline"
-          size="sm"
           onClick={() => setCrlDistributionPoints([...crlDistributionPoints, ""])}
         >
           <Plus className="h-4 w-4" /> Add CRL URL
@@ -585,7 +583,6 @@ export function StepPolicies({
         ))}
         <Button
           variant="outline"
-          size="sm"
           onClick={() =>
             setCertificatePolicies([...certificatePolicies, { oid: "", qualifier: "" }])
           }
@@ -666,7 +663,6 @@ export function StepCustomExtensions({
         ))}
         <Button
           variant="outline"
-          size="sm"
           onClick={() =>
             setCustomExtensions([...customExtensions, { oid: "", critical: false, value: "" }])
           }

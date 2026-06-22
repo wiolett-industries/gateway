@@ -19,6 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/services/api";
 import type { ACMEChallengeType, DNSChallenge } from "@/types";
 import { DNSChallengeVerification } from "./DNSChallengeVerification";
@@ -319,8 +320,8 @@ export function SSLCertificateCreateDialog({
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">Certificate PEM</label>
-                <textarea
-                  className="w-full h-32 bg-background border border-input p-3 font-mono text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                <Textarea
+                  className="h-32"
                   value={certPem}
                   onChange={(e) => setCertPem(e.target.value)}
                   placeholder={"-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"}
@@ -328,8 +329,8 @@ export function SSLCertificateCreateDialog({
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">Private Key PEM</label>
-                <textarea
-                  className="w-full h-32 bg-background border border-input p-3 font-mono text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                <Textarea
+                  className="h-32"
                   value={keyPem}
                   onChange={(e) => setKeyPem(e.target.value)}
                   placeholder={"-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"}
@@ -337,8 +338,8 @@ export function SSLCertificateCreateDialog({
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">Chain PEM (optional)</label>
-                <textarea
-                  className="w-full h-24 bg-background border border-input p-3 font-mono text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                <Textarea
+                  className="h-24"
                   value={chainPem}
                   onChange={(e) => setChainPem(e.target.value)}
                   placeholder={"-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"}

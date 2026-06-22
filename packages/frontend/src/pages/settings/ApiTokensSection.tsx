@@ -2,6 +2,8 @@ import { Copy, Key, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
+import { EmptyState } from "@/components/common/EmptyState";
+import { PanelShell } from "@/components/common/PanelShell";
 import { ScopeList } from "@/components/common/ScopeList";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -204,19 +206,16 @@ export function ApiTokensSection({
 
   return (
     <>
-      <div className="border border-border bg-card">
-        <div className="flex items-center justify-between border-b border-border p-4">
-          <div>
-            <h2 className="font-semibold">API Tokens</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Granular tokens for programmatic access. AI is available to users only.
-            </p>
-          </div>
-          <Button size="sm" onClick={openTokenCreate}>
+      <PanelShell
+        title="API Tokens"
+        description="Granular tokens for programmatic access. AI is available to users only."
+        actions={
+          <Button onClick={openTokenCreate}>
             <Plus className="h-4 w-4" />
             Create Token
           </Button>
-        </div>
+        }
+      >
         <div>
           {tokens.length > 0 ? (
             <div className="divide-y divide-border">
@@ -261,12 +260,15 @@ export function ApiTokensSection({
               ))}
             </div>
           ) : (
-            <p className="px-4 py-4 text-center text-sm text-muted-foreground">
-              No API tokens created yet
-            </p>
+            <EmptyState
+              message="No API tokens created yet."
+              actionLabel="Create one"
+              onAction={openTokenCreate}
+              embedded
+            />
           )}
         </div>
-      </div>
+      </PanelShell>
 
       {/* Create/View Token Dialog */}
       <Dialog

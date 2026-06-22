@@ -749,6 +749,12 @@ const RAW_TOKEN_SCOPES = [
     desc: "View Docker task progress",
     group: "Docker: Tasks",
   },
+  {
+    value: "docker:tasks:manage",
+    label: "Manage Tasks",
+    desc: "Force-cancel active Docker tasks",
+    group: "Docker: Tasks",
+  },
   // Databases
   {
     value: "databases:view",

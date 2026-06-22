@@ -20,6 +20,7 @@ export type * from "./logging";
 export type {
   CreateNodeResponse,
   Node,
+  NodeAppearanceColor,
   NodeDetail,
   NodeHealthReport,
   NodeStatsReport,

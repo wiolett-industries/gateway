@@ -122,6 +122,7 @@ export interface AuditLogEntry {
   action: string;
   resourceType: string;
   resourceId: string | null;
+  resourceName?: string | null;
   details: Record<string, unknown> | null;
   ipAddress: string | null;
   userAgent: string | null;

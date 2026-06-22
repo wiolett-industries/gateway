@@ -173,6 +173,72 @@ describe('events websocket authentication', () => {
     handlers.onClose(new Event('close'), ws as any);
   });
 
+  it('filters docker file events by node-scoped file access', async () => {
+    const eventBus = new EventBusService();
+    container.registerInstance(EventBusService, eventBus);
+    mocks.resolveLiveSessionUser.mockResolvedValue({
+      user: { ...USER, scopes: ['docker:containers:files:node-1'] },
+      effectiveScopes: ['docker:containers:files:node-1'],
+    });
+    const ws = createWs();
+    const handlers = createEventsWSHandlers();
+
+    handlers.onOpen(new Event('open'), ws as any);
+    await authenticateEventsConnection(ws as any, 'session-1');
+    handlers.onMessage(
+      new MessageEvent('message', { data: JSON.stringify({ type: 'subscribe', channels: ['docker.file.changed'] }) }),
+      ws as any
+    );
+
+    expect(ws.send).toHaveBeenCalledWith(
+      JSON.stringify({ type: 'subscribed', channels: ['docker.file.changed'], rejected: [] })
+    );
+
+    eventBus.publish('docker.file.changed', {
+      nodeId: 'node-2',
+      containerId: 'container-1',
+      action: 'created',
+      path: '/tmp/other.txt',
+      parentPath: '/tmp',
+    });
+    eventBus.publish('docker.file.changed', {
+      nodeId: 'node-1',
+      containerId: 'container-1',
+      action: 'created',
+      path: '/tmp/app.txt',
+      parentPath: '/tmp',
+    });
+
+    expect(ws.send).not.toHaveBeenCalledWith(
+      JSON.stringify({
+        type: 'event',
+        channel: 'docker.file.changed',
+        payload: {
+          nodeId: 'node-2',
+          containerId: 'container-1',
+          action: 'created',
+          path: '/tmp/other.txt',
+          parentPath: '/tmp',
+        },
+      })
+    );
+    expect(ws.send).toHaveBeenCalledWith(
+      JSON.stringify({
+        type: 'event',
+        channel: 'docker.file.changed',
+        payload: {
+          nodeId: 'node-1',
+          containerId: 'container-1',
+          action: 'created',
+          path: '/tmp/app.txt',
+          parentPath: '/tmp',
+        },
+      })
+    );
+
+    handlers.onClose(new Event('close'), ws as any);
+  });
+
   it('does not treat database credential reveal as database event visibility', async () => {
     const eventBus = new EventBusService();
     container.registerInstance(EventBusService, eventBus);

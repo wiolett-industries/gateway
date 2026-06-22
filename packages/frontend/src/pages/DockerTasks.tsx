@@ -1,4 +1,14 @@
-import { RefreshCw, Trash2 } from "lucide-react";
+import {
+  Download,
+  GitBranch,
+  ListTodo,
+  type LucideIcon,
+  RefreshCw,
+  RotateCcw,
+  Square,
+  Trash2,
+  XCircle,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/common/EmptyState";
@@ -7,7 +17,13 @@ import { SearchFilterBar } from "@/components/common/SearchFilterBar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -17,7 +33,9 @@ import {
 } from "@/components/ui/select";
 import { useDeferredDialogState } from "@/hooks/use-deferred-dialog-state";
 import { useRealtime } from "@/hooks/use-realtime";
+import { nodeBadgeClassName } from "@/lib/node-appearance";
 import { api } from "@/services/api";
+import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
 import type { DockerTask, Node } from "@/types";
 import { isNodeIncompatible } from "@/types";
@@ -31,6 +49,31 @@ const STATUS_BADGE: Record<
   succeeded: "success",
   failed: "destructive",
 };
+
+const TASK_TYPE_ICONS: Record<string, LucideIcon> = {
+  deployment_deploy: GitBranch,
+  kill: XCircle,
+  pull: Download,
+  recreate: RotateCcw,
+  restart: RefreshCw,
+  stop: Square,
+  update: RefreshCw,
+  webhook_update: RefreshCw,
+};
+
+const ACTIVE_TASK_STATUSES = new Set(["pending", "running"]);
+
+function TaskTypeLabel({ type }: { type: string }) {
+  const Icon = TASK_TYPE_ICONS[type] ?? ListTodo;
+  return (
+    <span className="inline-flex min-w-0 items-center gap-2 whitespace-nowrap font-medium">
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted">
+        <Icon className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+      </span>
+      <span className="truncate">{type}</span>
+    </span>
+  );
+}
 
 function formatDuration(start: string, end?: string): string {
   const s = new Date(start).getTime();
@@ -54,6 +97,7 @@ function formatTime(dateStr: string): string {
 
 export function DockerTasks({ embedded }: { embedded?: boolean } = {}) {
   const { tasks, fetchTasks, selectedNodeId } = useDockerStore();
+  const canManageTasks = useAuthStore((s) => s.hasScope("docker:tasks:manage"));
 
   const [dockerNodes, setDockerNodes] = useState<Node[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -61,6 +105,7 @@ export function DockerTasks({ embedded }: { embedded?: boolean } = {}) {
   const [filterNode, setFilterNode] = useState("all");
   const [filterType, setFilterType] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
+  const [forceCancellingTaskId, setForceCancellingTaskId] = useState<string | null>(null);
   const {
     open: taskDetailsOpen,
     value: selectedTask,
@@ -97,9 +142,9 @@ export function DockerTasks({ embedded }: { embedded?: boolean } = {}) {
   });
 
   const nodeMap = useMemo(() => {
-    const map = new Map<string, string>();
+    const map = new Map<string, Pick<Node, "appearanceColor"> & { name: string }>();
     for (const n of dockerNodes) {
-      map.set(n.id, n.displayName || n.hostname);
+      map.set(n.id, { name: n.displayName || n.hostname, appearanceColor: n.appearanceColor });
     }
     return map;
   }, [dockerNodes]);
@@ -170,27 +215,34 @@ export function DockerTasks({ embedded }: { embedded?: boolean } = {}) {
       {
         key: "type",
         header: "Type",
-        render: (t) => <span className="font-medium whitespace-nowrap">{t.type}</span>,
+        width: "minmax(220px, 1.3fr)",
+        truncate: true,
+        render: (t) => <TaskTypeLabel type={t.type} />,
       },
       {
         key: "container",
         header: "Container",
+        width: "minmax(180px, 1fr)",
         truncate: true,
         render: (t) => (
-          <span className="text-muted-foreground">
+          <Badge variant="secondary" className="max-w-full font-mono">
             {t.containerName || t.containerId?.slice(0, 12) || "-"}
-          </span>
+          </Badge>
         ),
       },
       {
         key: "node",
         header: "Node",
+        width: "160px",
         truncate: true,
-        render: (t) => (
-          <span className="text-muted-foreground">
-            {nodeMap.get(t.nodeId) ?? t.nodeId.slice(0, 8)}
-          </span>
-        ),
+        render: (t) => {
+          const nodeInfo = nodeMap.get(t.nodeId);
+          return (
+            <Badge variant="secondary" className={nodeBadgeClassName(nodeInfo?.appearanceColor)}>
+              {nodeInfo?.name ?? t.nodeId.slice(0, 8)}
+            </Badge>
+          );
+        },
       },
       {
         key: "status",
@@ -231,6 +283,20 @@ export function DockerTasks({ embedded }: { embedded?: boolean } = {}) {
 
   const hasActiveFilters =
     search !== "" || filterNode !== "all" || filterType !== "all" || filterStatus !== "all";
+
+  const handleForceCancelTask = async (task: DockerTask) => {
+    setForceCancellingTaskId(task.id);
+    try {
+      const updatedTask = await api.forceCancelDockerTask(task.id);
+      setSelectedTask(updatedTask);
+      await fetchTasks();
+      toast.success("Task force-cancelled");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to force-cancel task");
+    } finally {
+      setForceCancellingTaskId(null);
+    }
+  };
 
   const handleClearCompleted = async () => {
     // Filter out completed/failed tasks visually
@@ -330,6 +396,8 @@ export function DockerTasks({ embedded }: { embedded?: boolean } = {}) {
           keyFn={(t) => t.id}
           onRowClick={setSelectedTask}
           scrollRef={scrollRef}
+          horizontalScroll
+          minWidth="900px"
           footer={
             hasMore ? (
               <div
@@ -375,15 +443,21 @@ export function DockerTasks({ embedded }: { embedded?: boolean } = {}) {
                 </div>
                 <div className="flex items-center justify-between px-4 py-3 min-w-0">
                   <span className="text-sm text-muted-foreground shrink-0">Container</span>
-                  <span className="text-sm truncate ml-4 min-w-0">
+                  <Badge variant="secondary" className="ml-4 max-w-full font-mono">
                     {selectedTask.containerName || selectedTask.containerId?.slice(0, 12) || "-"}
-                  </span>
+                  </Badge>
                 </div>
                 <div className="flex items-center justify-between px-4 py-3 min-w-0">
                   <span className="text-sm text-muted-foreground shrink-0">Node</span>
-                  <span className="text-sm truncate ml-4 min-w-0">
-                    {nodeMap.get(selectedTask.nodeId) ?? selectedTask.nodeId.slice(0, 8)}
-                  </span>
+                  <Badge
+                    variant="secondary"
+                    className={nodeBadgeClassName(
+                      nodeMap.get(selectedTask.nodeId)?.appearanceColor,
+                      "ml-4"
+                    )}
+                  >
+                    {nodeMap.get(selectedTask.nodeId)?.name ?? selectedTask.nodeId.slice(0, 8)}
+                  </Badge>
                 </div>
                 <div className="flex items-center justify-between px-4 py-3 min-w-0">
                   <span className="text-sm text-muted-foreground shrink-0">Status</span>
@@ -422,13 +496,25 @@ export function DockerTasks({ embedded }: { embedded?: boolean } = {}) {
                 </div>
               </div>
               {selectedTask.error && (
-                <div className="mt-3 bg-red-500/10 !border !border-red-500/50 p-3">
-                  <pre className="text-xs text-destructive whitespace-pre-wrap break-all font-mono">
+                <div className="mt-3 bg-red-500/15 p-3 text-red-600 dark:text-red-400">
+                  <pre className="text-xs whitespace-pre-wrap break-words font-mono">
                     {selectedTask.error}
                   </pre>
                 </div>
               )}
             </div>
+          )}
+          {selectedTask && canManageTasks && ACTIVE_TASK_STATUSES.has(selectedTask.status) && (
+            <DialogFooter>
+              <Button
+                variant="destructive"
+                onClick={() => handleForceCancelTask(selectedTask)}
+                disabled={forceCancellingTaskId === selectedTask.id}
+              >
+                <XCircle className="h-4 w-4" />
+                {forceCancellingTaskId === selectedTask.id ? "Cancelling..." : "Force Cancel"}
+              </Button>
+            </DialogFooter>
           )}
         </DialogContent>
       </Dialog>

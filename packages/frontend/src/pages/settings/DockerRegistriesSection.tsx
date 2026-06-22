@@ -2,6 +2,8 @@ import { Globe, Play, Plus, RefreshCw, Server, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
+import { EmptyState } from "@/components/common/EmptyState";
+import { PanelShell } from "@/components/common/PanelShell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -178,21 +180,18 @@ export function DockerRegistriesSection({ nodesList }: DockerRegistriesSectionPr
 
   return (
     <>
-      <div className="border border-border bg-card">
-        <div className="flex items-center justify-between border-b border-border p-4">
-          <div>
-            <h2 className="font-semibold">Docker Registries</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Configure private container registries for pulling images
-            </p>
-          </div>
-          {canCreateRegistry && (
-            <Button size="sm" onClick={openRegCreate}>
+      <PanelShell
+        title="Docker Registries"
+        description="Configure private container registries for pulling images"
+        actions={
+          canCreateRegistry ? (
+            <Button onClick={openRegCreate}>
               <Plus className="h-4 w-4" />
               Add Registry
             </Button>
-          )}
-        </div>
+          ) : null
+        }
+      >
         <div>
           {registries.length > 0 ? (
             <div className="divide-y divide-border">
@@ -261,12 +260,15 @@ export function DockerRegistriesSection({ nodesList }: DockerRegistriesSectionPr
               ))}
             </div>
           ) : (
-            <p className="px-4 py-4 text-center text-sm text-muted-foreground">
-              No registries configured. Add a registry to pull images from private sources.
-            </p>
+            <EmptyState
+              message="No registries configured."
+              actionLabel={canCreateRegistry ? "Add one" : undefined}
+              onAction={canCreateRegistry ? openRegCreate : undefined}
+              embedded
+            />
           )}
         </div>
-      </div>
+      </PanelShell>
 
       {/* Registry Add/Edit Dialog */}
       <Dialog open={regDialogOpen} onOpenChange={closeRegDialog}>

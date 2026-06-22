@@ -1,5 +1,9 @@
 import { Link } from "react-router-dom";
+import { EmptyState } from "@/components/common/EmptyState";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
+import { PanelShell } from "@/components/common/PanelShell";
+import { SimpleTable, type SimpleTableColumn } from "@/components/common/SimpleTable";
+import { Badge } from "@/components/ui/badge";
 import { formatRelativeDate } from "@/lib/utils";
 import type { AuditLogEntry } from "@/types";
 
@@ -14,19 +18,46 @@ export function RecentActivityCard({
   hasScope,
   loading = false,
 }: RecentActivityCardProps) {
+  const activityColumns: SimpleTableColumn<AuditLogEntry>[] = [
+    {
+      id: "user",
+      header: "User",
+      render: (entry) => entry.userName || entry.userEmail || "System",
+    },
+    {
+      id: "action",
+      header: "Action",
+      render: (entry) => <Badge variant="secondary">{entry.action}</Badge>,
+    },
+    {
+      id: "resource",
+      header: "Resource",
+      cellClassName: "text-muted-foreground",
+      render: (entry) =>
+        `${entry.resourceType}${entry.resourceId ? ` / ${entry.resourceId.slice(0, 8)}...` : ""}`,
+    },
+    {
+      id: "time",
+      header: "Time",
+      cellClassName: "text-muted-foreground",
+      render: (entry) => formatRelativeDate(entry.createdAt),
+    },
+  ];
+
   return (
-    <div className="border border-border bg-card">
-      <div className="flex items-center justify-between border-b border-border p-4">
-        <h2 className="font-semibold">Recent Activity</h2>
-        {hasScope("admin:audit") && (
+    <PanelShell
+      title="Recent Activity"
+      actions={
+        hasScope("admin:audit") ? (
           <Link
             to="/administration/audit"
             className="text-sm text-muted-foreground hover:text-foreground"
           >
             View all
           </Link>
-        )}
-      </div>
+        ) : null
+      }
+    >
       {loading ? (
         <div className="flex items-center justify-center py-12">
           <div className="flex flex-col items-center gap-3">
@@ -35,42 +66,22 @@ export function RecentActivityCard({
           </div>
         </div>
       ) : hasScope("admin:audit") && activity.length > 0 ? (
-        <div className="overflow-x-auto -mb-px">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-border text-left">
-                <th className="p-3 text-xs font-medium text-muted-foreground">User</th>
-                <th className="p-3 text-xs font-medium text-muted-foreground">Action</th>
-                <th className="p-3 text-xs font-medium text-muted-foreground">Resource</th>
-                <th className="p-3 text-xs font-medium text-muted-foreground">Time</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {activity.map((entry) => (
-                <tr key={entry.id}>
-                  <td className="p-3 text-sm">{entry.userName || entry.userEmail || "System"}</td>
-                  <td className="p-3 text-sm">
-                    <span className="font-mono text-xs bg-muted px-1.5 py-0.5">{entry.action}</span>
-                  </td>
-                  <td className="p-3 text-sm text-muted-foreground">
-                    {entry.resourceType}
-                    {entry.resourceId ? ` / ${entry.resourceId.slice(0, 8)}...` : ""}
-                  </td>
-                  <td className="p-3 text-sm text-muted-foreground">
-                    {formatRelativeDate(entry.createdAt)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <SimpleTable
+          columns={activityColumns}
+          rows={activity}
+          getRowKey={(entry) => entry.id}
+          tableClassName="min-w-[640px]"
+        />
       ) : (
-        <div className="p-8 text-center text-sm text-muted-foreground">
-          {hasScope("admin:audit")
-            ? "No recent activity"
-            : "Activity log is available to administrators"}
-        </div>
+        <EmptyState
+          message={
+            hasScope("admin:audit")
+              ? "No recent activity"
+              : "Activity log is available to administrators"
+          }
+          embedded
+        />
       )}
-    </div>
+    </PanelShell>
   );
 }

@@ -188,7 +188,7 @@ export async function startContainer(
     userId,
     resourceType: 'docker-container',
     resourceId: containerId,
-    details: { nodeId },
+    details: { nodeId, name, containerName: name },
   });
   ctx.emitContainer(nodeId, name, containerId, 'started');
 }
@@ -234,7 +234,7 @@ export async function stopContainer(
     userId,
     resourceType: 'docker-container',
     resourceId: containerId,
-    details: { nodeId },
+    details: { nodeId, name, containerName: name },
   });
 }
 
@@ -306,7 +306,7 @@ export async function restartContainer(
     userId,
     resourceType: 'docker-container',
     resourceId: containerId,
-    details: { nodeId },
+    details: { nodeId, name, containerName: name },
   });
 }
 
@@ -337,7 +337,7 @@ export async function killContainer(
     userId,
     resourceType: 'docker-container',
     resourceId: containerId,
-    details: { nodeId, signal },
+    details: { nodeId, name, containerName: name, signal },
   });
 }
 
@@ -359,7 +359,7 @@ export async function removeContainer(
     userId,
     resourceType: 'docker-container',
     resourceId: containerId,
-    details: { nodeId, force },
+    details: { nodeId, name, containerName: name, force },
   });
   if (ctx.folderService) {
     await ctx.folderService.deleteContainerAssignment(nodeId, name);
@@ -405,7 +405,7 @@ export async function renameContainer(
     userId,
     resourceType: 'docker-container',
     resourceId: containerId,
-    details: { nodeId, name: newName },
+    details: { nodeId, oldName, name: newName, containerName: newName },
   });
   ctx.emitContainer(nodeId, newName, containerId, 'renamed', { oldName });
 }
@@ -461,7 +461,7 @@ export async function duplicateContainer(
     userId,
     resourceType: 'docker-container',
     resourceId: containerId,
-    details: { nodeId, name },
+    details: { nodeId, sourceName, name, containerName: name },
   });
   const newId = (data?.Id ?? data?.id ?? '') as string;
   if (newId) ctx.emitContainer(nodeId, name, newId, 'duplicated', { sourceName });
@@ -529,7 +529,7 @@ export async function updateContainer(
     userId,
     resourceType: 'docker-container',
     resourceId: containerId,
-    details: { nodeId },
+    details: { nodeId, name, containerName: name },
   });
   if (hasImageChange) {
     const imageRef = imageRefWithTag(inspect?.Config?.Image ?? inspect?.Image, config.tag as string);
@@ -565,7 +565,7 @@ export async function liveUpdateContainer(
     userId,
     resourceType: 'docker-container',
     resourceId: containerId,
-    details: { nodeId },
+    details: { nodeId, name, containerName: name },
   });
 }
 
@@ -631,7 +631,7 @@ export async function recreateWithConfig(
       userId,
       resourceType: 'docker-container',
       resourceId: containerId,
-      details: { nodeId },
+      details: { nodeId, name, containerName: name },
     });
     if (!options?.skipWebhookCleanup && typeof config.image === 'string') {
       ctx.imageCleanupService?.scheduleCleanupForContainer(nodeId, name, config.image).catch(() => {});
@@ -788,7 +788,7 @@ export async function updateContainerEnv(
     userId,
     resourceType: 'docker-container',
     resourceId: containerId,
-    details: { nodeId },
+    details: { nodeId, name, containerName: name },
   });
 
   return data;

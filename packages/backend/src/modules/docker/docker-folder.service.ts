@@ -202,7 +202,7 @@ export class DockerFolderService {
     this.emitLayoutChanged('folder_deleted', id, nodeIds);
   }
 
-  async reorderFolders(input: ReorderDockerFoldersInput, userId: string) {
+  async reorderFolders(input: ReorderDockerFoldersInput, _userId: string) {
     const resourceType = input.resourceType;
     const folders = await this.db
       .select()
@@ -232,13 +232,6 @@ export class DockerFolderService {
         .set({ sortOrder: item.sortOrder, updatedAt: new Date() })
         .where(eq(dockerContainerFolders.id, item.id));
     }
-
-    await this.auditService.log({
-      userId,
-      action: 'docker_folder.reorder',
-      resourceType: 'docker_folder',
-      details: { items: input.items, folderResourceType: resourceType },
-    });
 
     this.emitLayoutChanged(
       'folders_reordered',
@@ -438,7 +431,7 @@ export class DockerFolderService {
     );
   }
 
-  async reorderResources(input: ReorderDockerResourcesInput, userId: string) {
+  async reorderResources(input: ReorderDockerResourcesInput, _userId: string) {
     const resourceType = input.resourceType;
     const assignmentRows = await this.getAssignmentsForResourceRefs(resourceType, input.items);
     if (assignmentRows.length !== input.items.length) {
@@ -483,13 +476,6 @@ export class DockerFolderService {
           )
         );
     }
-
-    await this.auditService.log({
-      userId,
-      action: resourceType === 'container' ? 'docker_container.reorder_in_folder' : 'docker_resource.reorder_in_folder',
-      resourceType: 'docker-resource',
-      details: { items: input.items, folderResourceType: resourceType },
-    });
 
     this.emitLayoutChanged('resources_reordered', null, [...new Set(input.items.map((item) => item.nodeId))]);
   }

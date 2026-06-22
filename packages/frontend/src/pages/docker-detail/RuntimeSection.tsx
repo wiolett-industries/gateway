@@ -76,7 +76,6 @@ export function RuntimeSection({
       actions={
         canEdit ? (
           <Button
-            size="sm"
             onClick={onApply}
             disabled={liveLoading || !hasRuntimeChanges || !!runtimeValidationError}
           >
@@ -94,9 +93,9 @@ export function RuntimeSection({
       )}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="space-y-1.5">
-          <label className="text-xs font-medium text-muted-foreground">Restart Policy</label>
+          <label className="text-xs text-muted-foreground">Restart Policy</label>
           <Select value={restartPolicy} onValueChange={setRestartPolicy} disabled={!canEdit}>
-            <SelectTrigger className="h-8 text-xs">
+            <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -108,13 +107,12 @@ export function RuntimeSection({
           </Select>
         </div>
         <div className="space-y-1.5">
-          <label className="text-xs font-medium text-muted-foreground">
+          <label className="text-xs text-muted-foreground">
             {restartPolicy === "on-failure" ? "Max Retries" : "PIDs Limit"}
           </label>
           {restartPolicy === "on-failure" ? (
             <Input
               type="number"
-              className="h-8 text-xs"
               value={maxRetries}
               onChange={(e) => setMaxRetries(e.target.value)}
               placeholder="0"
@@ -124,7 +122,6 @@ export function RuntimeSection({
           ) : (
             <Input
               type="number"
-              className="h-8 text-xs"
               value={pidsLimit}
               onChange={(e) => setPidsLimit(e.target.value)}
               placeholder="Unlimited"
@@ -136,10 +133,9 @@ export function RuntimeSection({
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="space-y-1.5">
-          <label className="text-xs font-medium text-muted-foreground">Memory Limit (MB)</label>
+          <label className="text-xs text-muted-foreground">Memory Limit (MB)</label>
           <Input
             type="number"
-            className="h-8 text-xs"
             value={memoryMB}
             onChange={(e) => setMemoryMB(e.target.value)}
             placeholder="Unlimited"
@@ -153,10 +149,9 @@ export function RuntimeSection({
           </p>
         </div>
         <div className="space-y-1.5">
-          <label className="text-xs font-medium text-muted-foreground">Swap (MB)</label>
+          <label className="text-xs text-muted-foreground">Swap (MB)</label>
           <Input
             type="number"
-            className="h-8 text-xs"
             value={memSwapMB}
             onChange={(e) => setMemSwapMB(e.target.value)}
             placeholder="-1 = unlimited, 0 = disabled"
@@ -174,10 +169,9 @@ export function RuntimeSection({
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="space-y-1.5">
-          <label className="text-xs font-medium text-muted-foreground">CPU Limit (cores)</label>
+          <label className="text-xs text-muted-foreground">CPU Limit (cores)</label>
           <Input
             type="number"
-            className="h-8 text-xs"
             value={cpuCount}
             onChange={(e) => setCpuCount(e.target.value)}
             placeholder="Unlimited"
@@ -191,10 +185,9 @@ export function RuntimeSection({
           )}
         </div>
         <div className="space-y-1.5">
-          <label className="text-xs font-medium text-muted-foreground">CPU Shares</label>
+          <label className="text-xs text-muted-foreground">CPU Shares</label>
           <Input
             type="number"
-            className="h-8 text-xs"
             value={cpuShares}
             onChange={(e) => setCpuShares(e.target.value)}
             placeholder="Default: 1024"
@@ -205,10 +198,9 @@ export function RuntimeSection({
       </div>
       {restartPolicy === "on-failure" && (
         <div className="space-y-1.5">
-          <label className="text-xs font-medium text-muted-foreground">PIDs Limit</label>
+          <label className="text-xs text-muted-foreground">PIDs Limit</label>
           <Input
             type="number"
-            className="h-8 text-xs"
             value={pidsLimit}
             onChange={(e) => setPidsLimit(e.target.value)}
             placeholder="Unlimited"

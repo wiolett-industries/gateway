@@ -13,6 +13,7 @@ function makeNode(overrides: Partial<Node> = {}): Node {
     type: "docker",
     hostname: "docker-1",
     displayName: null,
+    appearanceColor: null,
     status: "online",
     serviceCreationLocked: false,
     daemonVersion: "1.2.3",

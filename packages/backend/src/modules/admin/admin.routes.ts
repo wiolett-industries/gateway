@@ -15,6 +15,7 @@ import { AuthService } from '@/modules/auth/auth.service.js';
 import { AuthSettingsService } from '@/modules/auth/auth.settings.service.js';
 import { GroupService } from '@/modules/groups/group.service.js';
 import { McpSettingsService } from '@/modules/mcp/mcp-settings.service.js';
+import { GeneralSettingsService } from '@/modules/settings/general-settings.service.js';
 import { NetworkSettingsService } from '@/modules/settings/network-settings.service.js';
 import { OutboundWebhookPolicyService } from '@/modules/settings/outbound-webhook-policy.service.js';
 import type { AppEnv } from '@/types.js';
@@ -47,14 +48,16 @@ adminRoutes.openapi({ ...listAdminUsersRoute, middleware: requireScope('admin:us
 adminRoutes.openapi({ ...getAuthSettingsRoute, middleware: requireScope('settings:gateway:view') }, async (c) => {
   const authSettingsService = container.resolve(AuthSettingsService);
   const mcpSettingsService = container.resolve(McpSettingsService);
+  const generalSettingsService = container.resolve(GeneralSettingsService);
   const networkSettingsService = container.resolve(NetworkSettingsService);
   const outboundWebhookPolicyService = container.resolve(OutboundWebhookPolicyService);
   const groupService = container.resolve(GroupService);
   const actorScopes = c.get('effectiveScopes') || [];
 
-  const [settings, mcpSettings, networkSecurity, outboundWebhookPolicy, groups] = await Promise.all([
+  const [settings, mcpSettings, generalSettings, networkSecurity, outboundWebhookPolicy, groups] = await Promise.all([
     authSettingsService.getConfig(),
     mcpSettingsService.getConfig(),
+    generalSettingsService.getConfig(),
     networkSettingsService.getConfig(),
     outboundWebhookPolicyService.getConfig(),
     groupService.listGroups(),
@@ -64,6 +67,7 @@ adminRoutes.openapi({ ...getAuthSettingsRoute, middleware: requireScope('setting
   return c.json({
     ...settings,
     mcpServerEnabled: mcpSettings.serverEnabled,
+    generalSettings,
     networkSecurity,
     outboundWebhookPolicy,
     currentRequestIp: resolveClientIp(c.req.raw.headers, getRemoteAddress(c), networkSecurity),
@@ -78,6 +82,7 @@ adminRoutes.openapi({ ...getAuthSettingsRoute, middleware: requireScope('setting
 adminRoutes.openapi({ ...updateAuthSettingsRoute, middleware: requireScope('settings:gateway:edit') }, async (c) => {
   const authSettingsService = container.resolve(AuthSettingsService);
   const mcpSettingsService = container.resolve(McpSettingsService);
+  const generalSettingsService = container.resolve(GeneralSettingsService);
   const networkSettingsService = container.resolve(NetworkSettingsService);
   const outboundWebhookPolicyService = container.resolve(OutboundWebhookPolicyService);
   const groupService = container.resolve(GroupService);
@@ -98,9 +103,12 @@ adminRoutes.openapi({ ...updateAuthSettingsRoute, middleware: requireScope('sett
   }
 
   try {
-    const [updated, mcpSettings, networkSecurity, outboundWebhookPolicy] = await Promise.all([
+    const [updated, mcpSettings, generalSettings, networkSecurity, outboundWebhookPolicy] = await Promise.all([
       authSettingsService.updateConfig(input),
       mcpSettingsService.updateConfig({ serverEnabled: input.mcpServerEnabled }),
+      input.generalSettings
+        ? generalSettingsService.updateConfig(input.generalSettings)
+        : generalSettingsService.getConfig(),
       input.networkSecurity
         ? networkSettingsService.updateConfig(input.networkSecurity)
         : networkSettingsService.getConfig(),
@@ -123,6 +131,7 @@ adminRoutes.openapi({ ...updateAuthSettingsRoute, middleware: requireScope('sett
     return c.json({
       ...updated,
       mcpServerEnabled: mcpSettings.serverEnabled,
+      generalSettings,
       networkSecurity,
       outboundWebhookPolicy,
       currentRequestIp: resolveClientIp(c.req.raw.headers, getRemoteAddress(c), networkSecurity),

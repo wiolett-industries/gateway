@@ -325,7 +325,7 @@ export function DatabaseConsoleTab({ database }: { database: DatabaseConnection 
               <History className="h-4 w-4" />
             </Button>
           )}
-          <Button size="sm" onClick={() => void execute()} disabled={running}>
+          <Button onClick={() => void execute()} disabled={running}>
             {running ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (

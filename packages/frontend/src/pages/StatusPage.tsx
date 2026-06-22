@@ -39,6 +39,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import { useRealtime } from "@/hooks/use-realtime";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
@@ -931,10 +932,10 @@ function IncidentUpdateDialog({
             </Select>
           </Field>
           <Field label="Message">
-            <textarea
+            <Textarea
               value={message}
               onChange={(event) => setMessage(event.target.value)}
-              className="min-h-28 w-full border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className="min-h-28"
             />
           </Field>
         </div>

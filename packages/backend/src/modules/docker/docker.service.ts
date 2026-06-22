@@ -44,10 +44,18 @@ import {
   watchDockerTransition,
 } from './docker-lifecycle-watch.js';
 import {
+  abortFileUpload as abortDockerFileUpload,
+  appendFileUploadChunk as appendDockerFileUploadChunk,
+  completeFileUpload as completeDockerFileUpload,
+  createDirectory as createDockerDirectory,
+  createFile as createDockerFile,
+  deleteFile as deleteDockerFile,
   getContainerLogs as getDockerContainerLogs,
   getContainerStats as getDockerContainerStats,
   getContainerTop as getDockerContainerTop,
+  initFileUpload as initDockerFileUpload,
   listDirectory as listDockerDirectory,
+  moveFile as moveDockerFile,
   readFile as readDockerFile,
   writeFile as writeDockerFile,
 } from './docker-read-operations.js';
@@ -241,6 +249,7 @@ export class DockerManagementService {
     return {
       nodeDispatch: this.nodeDispatch,
       auditService: this.auditService,
+      eventBus: this.eventBus,
       parseResult: (result: { success: boolean; error?: string; detail?: string }) => this.parseResult(result),
     };
   }
@@ -906,8 +915,54 @@ export class DockerManagementService {
     return readDockerFile(this.readOperationContext(), nodeId, containerId, path);
   }
 
-  async writeFile(nodeId: string, containerId: string, path: string, content: string, userId: string) {
+  async writeFile(nodeId: string, containerId: string, path: string, content: string | Buffer, userId: string) {
     await this.validateDockerNode(nodeId);
     await writeDockerFile(this.readOperationContext(), nodeId, containerId, path, content, userId);
+  }
+
+  async createFile(
+    nodeId: string,
+    containerId: string,
+    path: string,
+    content: string | Buffer | undefined,
+    userId: string
+  ) {
+    await this.validateDockerNode(nodeId);
+    await createDockerFile(this.readOperationContext(), nodeId, containerId, path, content, userId);
+  }
+
+  async initFileUpload(nodeId: string, containerId: string, path: string, totalBytes: number, userId: string) {
+    await this.validateDockerNode(nodeId);
+    return initDockerFileUpload(this.readOperationContext(), nodeId, containerId, path, totalBytes, userId);
+  }
+
+  async appendFileUploadChunk(nodeId: string, containerId: string, uploadId: string, offset: number, content: Buffer) {
+    await this.validateDockerNode(nodeId);
+    return appendDockerFileUploadChunk(this.readOperationContext(), nodeId, containerId, uploadId, offset, content);
+  }
+
+  async completeFileUpload(nodeId: string, containerId: string, uploadId: string, path: string, totalBytes: number) {
+    await this.validateDockerNode(nodeId);
+    await completeDockerFileUpload(this.readOperationContext(), nodeId, containerId, uploadId, path, totalBytes);
+  }
+
+  async abortFileUpload(nodeId: string, containerId: string, uploadId: string) {
+    await this.validateDockerNode(nodeId);
+    await abortDockerFileUpload(this.readOperationContext(), nodeId, containerId, uploadId);
+  }
+
+  async createDirectory(nodeId: string, containerId: string, path: string, userId: string) {
+    await this.validateDockerNode(nodeId);
+    await createDockerDirectory(this.readOperationContext(), nodeId, containerId, path, userId);
+  }
+
+  async deleteFile(nodeId: string, containerId: string, path: string, userId: string) {
+    await this.validateDockerNode(nodeId);
+    await deleteDockerFile(this.readOperationContext(), nodeId, containerId, path, userId);
+  }
+
+  async moveFile(nodeId: string, containerId: string, fromPath: string, toPath: string, userId: string) {
+    await this.validateDockerNode(nodeId);
+    await moveDockerFile(this.readOperationContext(), nodeId, containerId, fromPath, toPath, userId);
   }
 }

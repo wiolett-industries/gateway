@@ -2,6 +2,7 @@ import { Copy, Key, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
+import { EmptyState } from "@/components/common/EmptyState";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -117,9 +118,7 @@ export function LoggingTokenPanel({
             ))}
           </div>
         ) : (
-          <p className="py-4 text-center text-sm text-muted-foreground">
-            No ingest tokens created yet
-          </p>
+          <EmptyState message="No ingest tokens created yet" embedded />
         )}
       </div>
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>

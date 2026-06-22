@@ -2,11 +2,15 @@ import { Moon, Sun } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { confirm } from "@/components/common/ConfirmDialog";
+import { EmptyState } from "@/components/common/EmptyState";
 import { PageTransition } from "@/components/common/PageTransition";
+import { PanelShell } from "@/components/common/PanelShell";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { deriveAllowedResourceIdsByScope, scopeMatches } from "@/lib/scope-utils";
+import { getInitials } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useUIStore } from "@/stores/ui";
@@ -198,17 +202,15 @@ export function Settings() {
 
           <TabsContent value="preferences" className="pb-0">
             <div className="space-y-4">
-              <div className="border border-border bg-card">
-                <div className="border-b border-border p-4">
-                  <h2 className="font-semibold">Profile</h2>
-                </div>
+              <PanelShell title="Profile">
                 {user && (
                   <div className="flex items-center gap-4 p-4">
-                    <div className="h-10 w-10 bg-muted flex items-center justify-center shrink-0">
-                      <span className="text-sm font-medium text-muted-foreground">
-                        {(user.name || user.email).charAt(0).toUpperCase()}
-                      </span>
-                    </div>
+                    <Avatar className="h-10 w-10 shrink-0">
+                      <AvatarImage src={user.avatarUrl ?? undefined} />
+                      <AvatarFallback className="text-sm">
+                        {getInitials(user.name || user.email)}
+                      </AvatarFallback>
+                    </Avatar>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium">{user.name || "Not set"}</p>
                       <p className="text-xs text-muted-foreground">{user.email}</p>
@@ -216,12 +218,9 @@ export function Settings() {
                     <Badge variant="secondary">{user.groupName}</Badge>
                   </div>
                 )}
-              </div>
+              </PanelShell>
 
-              <div className="border border-border bg-card">
-                <div className="border-b border-border p-4">
-                  <h2 className="font-semibold">Preferences</h2>
-                </div>
+              <PanelShell title="Preferences">
                 <div className="divide-y divide-border">
                   <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                     <div>
@@ -300,7 +299,7 @@ export function Settings() {
                     </>
                   )}
                 </div>
-              </div>
+              </PanelShell>
 
               <ApiTokensSection
                 user={user}
@@ -352,9 +351,9 @@ export function Settings() {
               )}
 
               {!canConfigAI && !canViewStatusPage && !canViewHousekeeping && (
-                <div className="border border-border bg-card p-6 text-center text-sm text-muted-foreground">
-                  No feature settings available for your account.
-                </div>
+                <PanelShell>
+                  <EmptyState message="No feature settings available for your account." embedded />
+                </PanelShell>
               )}
             </div>
           </TabsContent>
