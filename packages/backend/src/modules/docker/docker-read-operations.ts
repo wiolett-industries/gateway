@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto';
+import { commandResultDataToBuffer } from '@/lib/command-result-data.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
 import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import { DOCKER_LOG_TAIL_MAX } from './docker.schemas.js';
 
-type DockerDispatchResult = { success: boolean; error?: string; detail?: string };
+type DockerDispatchResult = { success: boolean; error?: string; detail?: string; data?: Buffer | Uint8Array | string };
 
 export interface DockerReadOperationContext {
   nodeDispatch: NodeDispatchService;
@@ -43,6 +44,7 @@ function publishFileChanged(
   });
 }
 
+export const DOCKER_FILE_READ_MAX_BYTES = 100 * 1024 * 1024;
 export const DOCKER_FILE_UPLOAD_CHUNK_BYTES = 50 * 1024 * 1024;
 
 export interface DockerFileUploadSession {
@@ -121,9 +123,20 @@ export async function readFile(context: DockerReadOperationContext, nodeId: stri
   const result = await context.nodeDispatch.sendDockerFileCommand(nodeId, 'read', {
     containerId,
     path,
-    maxBytes: 1048576,
+    maxBytes: DOCKER_FILE_READ_MAX_BYTES,
   });
-  return context.parseResult(result);
+  if (!result.success) {
+    return context.parseResult(result);
+  }
+  const data = commandResultDataToBuffer(result.data);
+  if (data.byteLength === 0 && result.detail) {
+    throw new AppError(
+      409,
+      'DOCKER_DAEMON_PROTOCOL_MISMATCH',
+      'Docker daemon returned a legacy file payload. Update and restart the Docker daemon.'
+    );
+  }
+  return data;
 }
 
 export async function writeFile(

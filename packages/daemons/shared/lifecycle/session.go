@@ -111,6 +111,15 @@ func runSession(ctx context.Context, conn *grpc.ClientConn, d *DaemonBase) error
 				return err
 			}
 			continue
+		case *pb.GatewayCommand_NodeFile:
+			// Handle node-level filesystem operations in shared lifecycle so all daemon types support them.
+			result := handleNodeFile(sessionCtx, cmd)
+			if err := writer.Send(&pb.DaemonMessage{
+				Payload: &pb.DaemonMessage_CommandResult{CommandResult: result},
+			}); err != nil {
+				return err
+			}
+			continue
 		case *pb.GatewayCommand_DockerImage:
 			// Image commands (especially pull) can take minutes — run async
 			go func(c *pb.GatewayCommand) {

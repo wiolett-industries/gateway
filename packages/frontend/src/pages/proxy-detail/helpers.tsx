@@ -23,8 +23,10 @@ export const HEALTH_LABEL: Record<string, string> = {
 /** Compute effective status: if currently online but had errors/slow in last 5 min, show "recovering" */
 export function effectiveHealthStatus(host: {
   healthStatus: string;
+  rawConfigEnabled?: boolean;
   healthHistory?: Array<{ ts: string; status: string; slow?: boolean }>;
 }): string {
+  if (host.rawConfigEnabled) return "disabled";
   if (host.healthStatus !== "online" || !host.healthHistory?.length) return host.healthStatus;
   const fiveMinAgo = Date.now() - 5 * 60 * 1000;
   const recent = host.healthHistory.filter((h) => new Date(h.ts).getTime() >= fiveMinAgo);

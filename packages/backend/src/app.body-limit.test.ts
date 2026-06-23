@@ -76,4 +76,44 @@ describe('request body limits', () => {
       'x'.repeat(1_600_000)
     );
   });
+
+  it('does not apply the global API body limit to Docker volume file write bodies', async () => {
+    await expectNotPayloadTooLarge(
+      '/api/docker/nodes/node-1/volumes/volume-1/files/write',
+      'PUT',
+      'x'.repeat(1_600_000)
+    );
+  });
+
+  it('does not apply the global API body limit to Docker volume file create bodies', async () => {
+    await expectNotPayloadTooLarge(
+      '/api/docker/nodes/node-1/volumes/volume-1/files/create',
+      'POST',
+      'x'.repeat(1_600_000)
+    );
+  });
+
+  it('does not apply the global API body limit to Docker volume file upload chunks', async () => {
+    await expectNotPayloadTooLarge(
+      '/api/docker/nodes/node-1/volumes/volume-1/files/uploads/upload-123456/chunks?offset=0',
+      'PUT',
+      'x'.repeat(1_600_000)
+    );
+  });
+
+  it('does not apply the global API body limit to node file write bodies', async () => {
+    await expectNotPayloadTooLarge('/api/nodes/node-1/files/write', 'PUT', 'x'.repeat(1_600_000));
+  });
+
+  it('does not apply the global API body limit to node file create bodies', async () => {
+    await expectNotPayloadTooLarge('/api/nodes/node-1/files/create', 'POST', 'x'.repeat(1_600_000));
+  });
+
+  it('does not apply the global API body limit to node file upload chunks', async () => {
+    await expectNotPayloadTooLarge(
+      '/api/nodes/node-1/files/uploads/upload-123456/chunks?offset=0',
+      'PUT',
+      'x'.repeat(1_600_000)
+    );
+  });
 });

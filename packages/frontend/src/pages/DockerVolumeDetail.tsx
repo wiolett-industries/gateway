@@ -1,8 +1,9 @@
-import { ArrowLeft, Download, EllipsisVertical, Save, Settings, Trash2, Type } from "lucide-react";
+import { Download, EllipsisVertical, Folder, Save, Settings, Trash2, Type } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
+import { PageBackButton } from "@/components/common/PageBackButton";
 import { PageTransition } from "@/components/common/PageTransition";
 import { PanelShell } from "@/components/common/PanelShell";
 import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
@@ -30,7 +31,7 @@ import { useUrlTab } from "@/hooks/use-url-tab";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import type { DockerVolume } from "@/types";
-import { FilesTab } from "./docker-detail/FilesTab";
+import { type FileManagerOperations, FilesTab } from "./docker-detail/FilesTab";
 import { LabelsSection } from "./docker-detail/LabelsSection";
 
 type LabelEntry = { key: string; value: string };
@@ -92,6 +93,12 @@ export function DockerVolumeDetail() {
   const canDeleteVolume =
     hasScope("docker:volumes:delete") || !!(nodeId && hasScope(`docker:volumes:delete:${nodeId}`));
   const canRenameVolume = canCreateVolume && canDeleteVolume;
+  const canReadVolumeFiles =
+    hasScope("docker:volumes:files:read") ||
+    !!(nodeId && hasScope(`docker:volumes:files:read:${nodeId}`));
+  const canWriteVolumeFiles =
+    hasScope("docker:volumes:files:write") ||
+    !!(nodeId && hasScope(`docker:volumes:files:write:${nodeId}`));
   const usedBy = useMemo<string[]>(() => {
     const raw = volume?.usedBy ?? (volume as any)?.UsedBy;
     return Array.isArray(raw) ? raw.filter((name): name is string => typeof name === "string") : [];
@@ -224,6 +231,50 @@ export function DockerVolumeDetail() {
     },
     [decodedVolumeName, nodeId]
   );
+  const canMutateVolumeFiles = canWriteVolumeFiles;
+  const fileOperations = useMemo<FileManagerOperations>(
+    () => ({
+      listDirectory: fetchDirectory,
+      readFile: (path) => api.readVolumeFile(nodeId!, decodedVolumeName, path),
+      openFile: (filePath, writable) => {
+        const params = new URLSearchParams({ path: filePath });
+        if (writable && canMutateVolumeFiles) params.set("writable", "1");
+        const url = `/docker/volume-file/${nodeId}/${encodeURIComponent(decodedVolumeName)}?${params}`;
+        const fileName = filePath.split("/").pop() || "file";
+        window.open(
+          url,
+          `volume-file-${decodedVolumeName}-${fileName}`,
+          "width=900,height=600,menubar=no,toolbar=no"
+        );
+      },
+      ...(canMutateVolumeFiles
+        ? {
+            createFile: (path, content, onProgress) =>
+              api.createVolumeFile(nodeId!, decodedVolumeName, path, content, onProgress),
+            createDirectory: (path) => api.createVolumeDirectory(nodeId!, decodedVolumeName, path),
+            deletePath: (path) => api.deleteVolumeFile(nodeId!, decodedVolumeName, path),
+            movePath: (fromPath, toPath) =>
+              api.moveVolumeFile(nodeId!, decodedVolumeName, fromPath, toPath),
+            initUpload: (path, totalBytes) =>
+              api.initVolumeFileUpload(nodeId!, decodedVolumeName, path, totalBytes),
+            uploadChunk: (uploadId, offset, content, onProgress) =>
+              api.uploadVolumeFileChunk(
+                nodeId!,
+                decodedVolumeName,
+                uploadId,
+                offset,
+                content,
+                onProgress
+              ),
+            completeUpload: (uploadId, path, totalBytes) =>
+              api.completeVolumeFileUpload(nodeId!, decodedVolumeName, uploadId, path, totalBytes),
+            abortUpload: (uploadId) =>
+              api.abortVolumeFileUpload(nodeId!, decodedVolumeName, uploadId),
+          }
+        : {}),
+    }),
+    [canMutateVolumeFiles, decodedVolumeName, fetchDirectory, nodeId]
+  );
 
   const handleExport = useCallback(async () => {
     if (!nodeId || !decodedVolumeName) return;
@@ -336,12 +387,10 @@ export function DockerVolumeDetail() {
   return (
     <PageTransition>
       <div className="h-full overflow-y-auto p-6">
-        <div className="max-w-7xl mx-auto space-y-6">
+        <div className="space-y-6">
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-4 min-w-0">
-              <Button variant="ghost" size="icon" onClick={() => navigate("/docker/volumes")}>
-                <ArrowLeft className="h-4 w-4" />
-              </Button>
+              <PageBackButton onClick={() => navigate("/docker/volumes")} />
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <h1 className="text-2xl font-bold truncate">{decodedVolumeName}</h1>
@@ -388,14 +437,25 @@ export function DockerVolumeDetail() {
 
           <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col min-h-0">
             <TabsList className="shrink-0">
-              <TabsTrigger value="files">Files</TabsTrigger>
-              <TabsTrigger value="settings">
-                <Settings className="h-3.5 w-3.5 mr-1" />
+              <TabsTrigger value="files" className="gap-1.5">
+                <Folder className="h-3.5 w-3.5" />
+                Files
+              </TabsTrigger>
+              <TabsTrigger value="settings" className="gap-1.5">
+                <Settings className="h-3.5 w-3.5" />
                 Settings
               </TabsTrigger>
             </TabsList>
             <TabsContent value="files" className="pb-0">
-              <FilesTab nodeId={nodeId!} canBrowse fetchDirectory={fetchDirectory} />
+              <FilesTab
+                nodeId={nodeId!}
+                canBrowse={canReadVolumeFiles}
+                operations={fileOperations}
+                realtimeEvent="docker.volume.file.changed"
+                realtimeMatches={(payload) =>
+                  payload.nodeId === nodeId && payload.volumeName === decodedVolumeName
+                }
+              />
             </TabsContent>
             <TabsContent value="settings" className="pb-0">
               <div className="space-y-6">

@@ -1,15 +1,20 @@
+import { z } from 'zod';
 import { container } from '@/container.js';
 import { hasScopeForResource } from '@/lib/permissions.js';
 import {
   DockerHealthCheckUpsertSchema,
   EnvUpdateSchema,
   FileBrowseSchema,
-  FileWriteSchema,
   SecretCreateSchema,
   SecretUpdateSchema,
 } from '@/modules/docker/docker.schemas.js';
 import type { DockerManagementService } from '@/modules/docker/docker.service.js';
 import type { User } from '@/types.js';
+
+const FileWriteToolSchema = z.object({
+  path: z.string().min(1),
+  content: z.string(),
+});
 
 export interface DockerConfigToolContext {
   dockerService: DockerManagementService;
@@ -45,11 +50,12 @@ export async function manageDockerContainerConfigTool(
   if (operation === 'read_file') {
     ensureToolScopeForResource(user, 'docker:containers:files', nodeId);
     const input = FileBrowseSchema.parse(args);
-    return context.dockerService.readFile(nodeId, containerId, input.path);
+    const content = await context.dockerService.readFile(nodeId, containerId, input.path);
+    return { path: input.path, content: Buffer.from(content).toString('utf-8') };
   }
   if (operation === 'write_file') {
     ensureToolScopeForResource(user, 'docker:containers:files', nodeId);
-    const input = FileWriteSchema.parse(args);
+    const input = FileWriteToolSchema.parse(args);
     await context.dockerService.writeFile(nodeId, containerId, input.path, input.content, user.id);
     return { success: true };
   }

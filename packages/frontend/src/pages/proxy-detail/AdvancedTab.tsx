@@ -1,4 +1,5 @@
 import { Save } from "lucide-react";
+import { PanelShell } from "@/components/common/PanelShell";
 import { Button } from "@/components/ui/button";
 import { CodeEditor } from "@/components/ui/code-editor";
 
@@ -24,27 +25,36 @@ export function AdvancedTab({
   canManage,
 }: AdvancedTabProps) {
   return (
-    <div className="flex-1 min-h-0 flex flex-col relative">
+    <PanelShell
+      title="Advanced Config"
+      description="Additional Nginx directives for this proxy host"
+      actions={
+        canManage ? (
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={onValidate}>
+              Validate
+            </Button>
+            <Button onClick={onSaveAdvanced} disabled={isSavingAdvanced}>
+              <Save className="h-4 w-4" />
+              Save
+            </Button>
+          </div>
+        ) : null
+      }
+      className="flex min-h-0 flex-1 flex-col"
+      bodyClassName="flex min-h-0 flex-1"
+      wrapHeader
+    >
       <CodeEditor
         value={advancedConfig}
         minHeight="0px"
+        bordered={false}
         onChange={(val) => {
           setAdvancedConfig(val);
           setEditorErrorLines([]);
         }}
         errorLines={editorErrorLines}
       />
-      {canManage && (
-        <div className="absolute right-2.5 bottom-2.5 z-10 flex items-center gap-2">
-          <Button variant="outline" onClick={onValidate}>
-            Validate
-          </Button>
-          <Button onClick={onSaveAdvanced} disabled={isSavingAdvanced}>
-            <Save className="h-4 w-4" />
-            Save
-          </Button>
-        </div>
-      )}
-    </div>
+    </PanelShell>
   );
 }

@@ -13,6 +13,7 @@ import { usePinnedNodesStore } from "@/stores/pinned-nodes";
 import { usePinnedProxiesStore } from "@/stores/pinned-proxies";
 import { useProxyStore } from "@/stores/proxy";
 import { useSSLStore } from "@/stores/ssl";
+import { useSystemConfigStore } from "@/stores/system-config";
 import { useUIStore } from "@/stores/ui";
 
 export function resetClientSessionState() {
@@ -106,4 +107,5 @@ export function resetClientSessionState() {
     sidebarContainerIds: [],
     containerMeta: {},
   });
+  useSystemConfigStore.getState().reset();
 }

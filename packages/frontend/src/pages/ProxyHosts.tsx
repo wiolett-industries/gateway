@@ -386,7 +386,9 @@ export function ProxyHosts() {
       label: "Health",
       width: "14%",
       renderCell: (host) => {
-        const status = host.effectiveHealthStatus || host.healthStatus;
+        const status = host.rawConfigEnabled
+          ? "disabled"
+          : host.effectiveHealthStatus || host.healthStatus;
         return (
           <Badge
             variant={

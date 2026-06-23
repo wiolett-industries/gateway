@@ -212,7 +212,7 @@ export const ProxyHostListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
   type: z.enum(['proxy', 'redirect', '404', 'raw']).optional(),
   enabled: z.coerce.boolean().optional(),
-  healthStatus: z.enum(['online', 'offline', 'degraded', 'unknown']).optional(),
+  healthStatus: z.enum(['online', 'offline', 'degraded', 'unknown', 'disabled']).optional(),
   search: z.string().max(255).optional(),
   nodeId: z.string().uuid().optional(),
 });

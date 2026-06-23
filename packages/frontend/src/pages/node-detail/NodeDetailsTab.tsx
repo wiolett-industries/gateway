@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { DetailRow } from "@/components/common/DetailRow";
 import { EmptyState } from "@/components/common/EmptyState";
+import { PanelShell } from "@/components/common/PanelShell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatBytes, formatUptime } from "@/lib/utils";
@@ -160,33 +161,25 @@ export function NodeDetailsTab({
       {/* Node Details — 2 cards side by side */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Identity */}
-        <div className="border border-border bg-card">
-          <div className="border-b border-border p-4">
-            <h2 className="font-semibold">Identity</h2>
-          </div>
-          <div className="divide-y divide-border">
-            <DetailRow
-              label="Node ID"
-              value={<span className="font-mono text-xs">{node.id}</span>}
-            />
-            <DetailRow label="Hostname" value={node.hostname} />
-            <DetailRow
-              label="Type"
-              value={
-                <Badge variant="secondary" className="uppercase">
-                  {node.type}
-                </Badge>
-              }
-            />
-            {node.osInfo && <DetailRow label="OS" value={node.osInfo} />}
-          </div>
-        </div>
+        <PanelShell title="Identity" bodyClassName="divide-y divide-border">
+          <DetailRow label="Node ID" value={<span className="font-mono text-xs">{node.id}</span>} />
+          <DetailRow label="Hostname" value={node.hostname} />
+          <DetailRow
+            label="Type"
+            value={
+              <Badge variant="secondary" className="uppercase">
+                {node.type}
+              </Badge>
+            }
+          />
+          {node.osInfo && <DetailRow label="OS" value={node.osInfo} />}
+        </PanelShell>
 
         {/* Runtime */}
-        <div className="border border-border bg-card">
-          <div className="flex items-center justify-between border-b border-border p-4">
-            <h2 className="font-semibold">Runtime</h2>
-            {!nodeUpdating && daemonUpdate.available && !pendingUpdateTarget && (
+        <PanelShell
+          title="Runtime"
+          actions={
+            !nodeUpdating && daemonUpdate.available && !pendingUpdateTarget ? (
               <Button
                 style={{ backgroundColor: "rgb(234 179 8)", color: "#111" }}
                 className="hover:opacity-90 disabled:opacity-50"
@@ -201,42 +194,42 @@ export function NodeDetailsTab({
                 <ArrowUpCircle className="h-3.5 w-3.5" />
                 Update to {daemonUpdate.latestVersion}
               </Button>
-            )}
-          </div>
-          <div className="divide-y divide-border [&>*:last-child]:border-b [&>*:last-child]:border-border">
-            <DetailRow
-              label="Daemon Version"
-              value={
-                <div className="flex items-center gap-2">
-                  {node.daemonVersion ? (
-                    <Badge variant="secondary" className="uppercase">
-                      {node.daemonVersion}
-                    </Badge>
-                  ) : (
-                    "Unknown"
-                  )}
-                  {(caps.versionMismatch as boolean) && <Badge variant="warning">Mismatch</Badge>}
-                  {nodeUpdating && (
-                    <Badge variant="warning">
-                      Updating{updateTargetVersion ? ` to ${updateTargetVersion}` : ""}
-                    </Badge>
-                  )}
-                </div>
-              }
-            />
-            {node.type === "nginx" && (
-              <DetailRow label="Nginx Version" value={String(caps.nginxVersion ?? "Unknown")} />
-            )}
-            {node.type === "docker" && (
-              <DetailRow label="Docker Version" value={String(caps.dockerVersion ?? "Unknown")} />
-            )}
-            <DetailRow label="Created" value={new Date(node.createdAt).toLocaleString()} />
-            <DetailRow
-              label="Last Seen"
-              value={node.lastSeenAt ? new Date(node.lastSeenAt).toLocaleString() : "Never"}
-            />
-          </div>
-        </div>
+            ) : null
+          }
+          bodyClassName="divide-y divide-border"
+        >
+          <DetailRow
+            label="Daemon Version"
+            value={
+              <div className="flex items-center gap-2">
+                {node.daemonVersion ? (
+                  <Badge variant="secondary" className="uppercase">
+                    {node.daemonVersion}
+                  </Badge>
+                ) : (
+                  "Unknown"
+                )}
+                {(caps.versionMismatch as boolean) && <Badge variant="warning">Mismatch</Badge>}
+                {nodeUpdating && (
+                  <Badge variant="warning">
+                    Updating{updateTargetVersion ? ` to ${updateTargetVersion}` : ""}
+                  </Badge>
+                )}
+              </div>
+            }
+          />
+          {node.type === "nginx" && (
+            <DetailRow label="Nginx Version" value={String(caps.nginxVersion ?? "Unknown")} />
+          )}
+          {node.type === "docker" && (
+            <DetailRow label="Docker Version" value={String(caps.dockerVersion ?? "Unknown")} />
+          )}
+          <DetailRow label="Created" value={new Date(node.createdAt).toLocaleString()} />
+          <DetailRow
+            label="Last Seen"
+            value={node.lastSeenAt ? new Date(node.lastSeenAt).toLocaleString() : "Never"}
+          />
+        </PanelShell>
       </div>
 
       {/* System Stats */}
@@ -244,15 +237,11 @@ export function NodeDetailsTab({
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:items-start">
           {/* Resources */}
           <div
-            className="border border-border bg-card"
             ref={(el) => {
               if (el) resourcesRef.current = el;
             }}
           >
-            <div className="border-b border-border p-4">
-              <h2 className="font-semibold">System Information</h2>
-            </div>
-            <div className="divide-y divide-border">
+            <PanelShell title="System Information" bodyClassName="divide-y divide-border">
               {"cpuModel" in caps && <DetailRow label="CPU" value={String(caps.cpuModel)} />}
               {"cpuCores" in caps && <DetailRow label="CPU Cores" value={String(caps.cpuCores)} />}
               {"architecture" in caps && (
@@ -266,17 +255,16 @@ export function NodeDetailsTab({
                 label="File Descriptors"
                 value={`${h.openFileDescriptors.toLocaleString()} / ${h.maxFileDescriptors.toLocaleString()}`}
               />
-            </div>
+            </PanelShell>
           </div>
 
           {/* Disk Mounts */}
-          <div
-            className="border border-border bg-card flex flex-col"
+          <PanelShell
+            title="Disk Mounts"
+            className="flex flex-col"
             style={{ height: resourcesHeight > 0 ? resourcesHeight : undefined }}
+            bodyClassName="flex flex-1 min-h-0 flex-col"
           >
-            <div className="border-b border-border p-4">
-              <h2 className="font-semibold">Disk Mounts</h2>
-            </div>
             {h.diskMounts && h.diskMounts.length > 0 ? (
               <div className="overflow-y-auto flex-1 min-h-0 -mb-px">
                 {h.diskMounts.map((m) => (
@@ -306,17 +294,16 @@ export function NodeDetailsTab({
             ) : (
               <EmptyState message="No disk data" embedded />
             )}
-          </div>
+          </PanelShell>
         </div>
       )}
 
       {/* Assigned Proxy Hosts — nginx nodes only */}
       {node.type === "nginx" && (
-        <div className="border border-border bg-card">
-          <div className="flex items-center justify-between border-b border-border p-4">
-            <h2 className="font-semibold">Assigned Proxy Hosts</h2>
-            <Badge variant="secondary">{proxyHosts.length}</Badge>
-          </div>
+        <PanelShell
+          title="Assigned Proxy Hosts"
+          actions={<Badge variant="secondary">{proxyHosts.length}</Badge>}
+        >
           {proxyHosts.length > 0 ? (
             <div className="overflow-x-auto">
               <table className="w-full">
@@ -355,7 +342,7 @@ export function NodeDetailsTab({
           ) : (
             <EmptyState message="No proxy hosts assigned yet" embedded />
           )}
-        </div>
+        </PanelShell>
       )}
     </div>
   );

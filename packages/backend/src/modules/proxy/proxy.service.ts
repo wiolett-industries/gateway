@@ -1,4 +1,4 @@
-import { and, count, desc, eq, ilike, inArray, sql } from 'drizzle-orm';
+import { and, count, desc, eq, ilike, inArray, or, sql } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import { accessLists } from '@/db/schema/access-lists.js';
 import { certificates } from '@/db/schema/certificates.js';
@@ -283,8 +283,15 @@ export class ProxyService {
       updatedAt: new Date(),
     };
 
+    // Raw mode bypasses managed upstream settings, so managed health checks are not meaningful.
+    const enablesRawMode = input.rawConfigEnabled === true || input.type === 'raw';
+    if (enablesRawMode) {
+      updateData.healthCheckEnabled = false;
+      updateData.healthStatus = 'disabled';
+    }
+
     // Update healthStatus when healthCheckEnabled changes
-    if (input.healthCheckEnabled !== undefined) {
+    if (!enablesRawMode && input.healthCheckEnabled !== undefined) {
       if (!input.healthCheckEnabled) {
         updateData.healthStatus = 'disabled';
       } else if (!existing.healthCheckEnabled) {
@@ -485,7 +492,11 @@ export class ProxyService {
       conditions.push(eq(proxyHosts.enabled, query.enabled));
     }
     if (query.healthStatus) {
-      conditions.push(eq(proxyHosts.healthStatus, query.healthStatus));
+      conditions.push(
+        query.healthStatus === 'disabled'
+          ? or(eq(proxyHosts.healthStatus, 'disabled'), eq(proxyHosts.rawConfigEnabled, true))!
+          : and(eq(proxyHosts.healthStatus, query.healthStatus), eq(proxyHosts.rawConfigEnabled, false))!
+      );
     }
     if (query.search) {
       // Search across domain names (cast jsonb to text for ilike)
@@ -511,8 +522,13 @@ export class ProxyService {
 
     return {
       data: entries.map(({ healthHistory, rawConfig: _rc, ...rest }) => {
-        let effectiveStatus = rest.healthStatus as string;
-        if (rest.healthStatus === 'online' && Array.isArray(healthHistory) && healthHistory.length > 0) {
+        let effectiveStatus = rest.rawConfigEnabled ? 'disabled' : (rest.healthStatus as string);
+        if (
+          !rest.rawConfigEnabled &&
+          rest.healthStatus === 'online' &&
+          Array.isArray(healthHistory) &&
+          healthHistory.length > 0
+        ) {
           const fiveMinAgo = Date.now() - 5 * 60 * 1000;
           const recent = (healthHistory as Array<{ ts?: string; status: string }>).filter((h) => {
             if (!h.ts) return false;

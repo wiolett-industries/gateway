@@ -108,6 +108,7 @@ export async function startGrpcServer(
     keepCase: false,
     longs: String,
     enums: String,
+    bytes: Buffer,
     defaults: true,
     oneofs: true,
   });

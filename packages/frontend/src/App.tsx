@@ -47,6 +47,7 @@ import { ApiRequestError } from "@/services/api-base";
 import { eventStream } from "@/services/event-stream";
 import { APP_STATUS_STORAGE_KEY, useAppStatusStore } from "@/stores/app-status";
 import { useAuthStore } from "@/stores/auth";
+import { useSystemConfigStore } from "@/stores/system-config";
 
 /** Helper to wrap a page element with a scope guard */
 function scoped(scope: string, element: React.ReactElement) {
@@ -177,8 +178,9 @@ function ProxyHostsPageGuard() {
 
 function CAsPageGuard() {
   const hasAnyScope = useAuthStore((s) => s.hasAnyScope);
+  const pkiEnabled = useSystemConfigStore((s) => s.config.features.pkiEnabled);
 
-  if (!hasAnyScope("pki:ca:view:root", "pki:ca:view:intermediate")) {
+  if (!pkiEnabled || !hasAnyScope("pki:ca:view:root", "pki:ca:view:intermediate")) {
     return <Navigate to="/" replace />;
   }
 
@@ -187,8 +189,9 @@ function CAsPageGuard() {
 
 function CADetailGuard() {
   const hasAnyScope = useAuthStore((s) => s.hasAnyScope);
+  const pkiEnabled = useSystemConfigStore((s) => s.config.features.pkiEnabled);
 
-  if (!hasAnyScope("pki:ca:view:root", "pki:ca:view:intermediate")) {
+  if (!pkiEnabled || !hasAnyScope("pki:ca:view:root", "pki:ca:view:intermediate")) {
     return <Navigate to="/" replace />;
   }
 
@@ -198,12 +201,35 @@ function CADetailGuard() {
 function CertificateDetailGuard() {
   const { id } = useParams<{ id: string }>();
   const hasScope = useAuthStore((s) => s.hasScope);
+  const pkiEnabled = useSystemConfigStore((s) => s.config.features.pkiEnabled);
 
-  if (!hasScope("pki:cert:view") && !(id && hasScope(`pki:cert:view:${id}`))) {
+  if (!pkiEnabled || (!hasScope("pki:cert:view") && !(id && hasScope(`pki:cert:view:${id}`)))) {
     return <Navigate to="/" replace />;
   }
 
   return <CertificateDetail />;
+}
+
+function CertificatesPageGuard() {
+  const hasScope = useAuthStore((s) => s.hasScope);
+  const pkiEnabled = useSystemConfigStore((s) => s.config.features.pkiEnabled);
+
+  if (!pkiEnabled || !hasScope("pki:cert:view")) {
+    return <Navigate to="/" replace />;
+  }
+
+  return <Certificates />;
+}
+
+function DomainsPageGuard() {
+  const hasScope = useAuthStore((s) => s.hasScope);
+  const domainsEnabled = useSystemConfigStore((s) => s.config.features.domainsEnabled);
+
+  if (!domainsEnabled || !hasScope("domains:view")) {
+    return <Navigate to="/" replace />;
+  }
+
+  return <Domains />;
 }
 
 function NginxTemplateEditGuard() {
@@ -559,6 +585,22 @@ export default function App() {
               }
             />
             <Route
+              path="/docker/volume-file/:nodeId/:volumeName"
+              element={
+                <PopoutAuthGate>
+                  <DockerFilePopout />
+                </PopoutAuthGate>
+              }
+            />
+            <Route
+              path="/nodes/file/:nodeId"
+              element={
+                <PopoutAuthGate>
+                  <DockerFilePopout />
+                </PopoutAuthGate>
+              }
+            />
+            <Route
               path="/docker/compose-logs/:nodeId/:project"
               element={
                 <PopoutAuthGate>
@@ -584,11 +626,11 @@ export default function App() {
                 path="/ssl-certificates"
                 element={scoped("ssl:cert:view", <SSLCertificates />)}
               />
-              <Route path="/domains" element={scoped("domains:view", <Domains />)} />
+              <Route path="/domains" element={<DomainsPageGuard />} />
               <Route path="/access-lists" element={scoped("acl:view", <AccessLists />)} />
               <Route path="/cas" element={<CAsPageGuard />} />
               <Route path="/cas/:id" element={<CADetailGuard />} />
-              <Route path="/certificates" element={scoped("pki:cert:view", <Certificates />)} />
+              <Route path="/certificates" element={<CertificatesPageGuard />} />
               <Route path="/certificates/:id" element={<CertificateDetailGuard />} />
               <Route path="/templates/:tab?" element={<TemplatesPage />} />
               <Route path="/administration" element={<AdministrationPageGuard />} />

@@ -1,12 +1,17 @@
 import {
-  ArrowLeft,
+  Activity,
   Code2,
   EllipsisVertical,
+  Folder,
+  LayoutDashboard,
+  ListTodo,
   Pin,
   Play,
   RotateCcw,
+  ScrollText,
   Settings,
   Skull,
+  SlidersHorizontal,
   Square,
   Terminal as TerminalIcon,
   Trash2,
@@ -15,6 +20,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
+import { PageBackButton } from "@/components/common/PageBackButton";
 import { PageTransition } from "@/components/common/PageTransition";
 import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
 import { Badge } from "@/components/ui/badge";
@@ -462,14 +468,7 @@ export function DockerDeploymentDetail() {
       >
         <div className="flex shrink-0 items-center justify-between gap-3">
           <div className="flex min-w-0 flex-1 items-center gap-3">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="shrink-0"
-              onClick={() => navigate("/docker")}
-            >
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
+            <PageBackButton onClick={() => navigate("/docker")} />
             <div className="min-w-0">
               <div className="flex min-w-0 items-center gap-2">
                 <h1 className="truncate text-2xl font-bold">{deployment.name}</h1>
@@ -617,38 +616,52 @@ export function DockerDeploymentDetail() {
           className="flex flex-col flex-1 min-h-0"
         >
           <TabsList className="shrink-0">
-            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="overview" className="gap-1.5">
+              <LayoutDashboard className="h-3.5 w-3.5" />
+              Overview
+            </TabsTrigger>
             {canViewContainer && (
-              <TabsTrigger value="logs" disabled={isTabDisabled("logs")}>
+              <TabsTrigger value="logs" disabled={isTabDisabled("logs")} className="gap-1.5">
+                <ScrollText className="h-3.5 w-3.5" />
                 Logs
               </TabsTrigger>
             )}
             {canUseConsole && (
-              <TabsTrigger value="console" disabled={isTabDisabled("console")}>
-                <TerminalIcon className="h-3.5 w-3.5 mr-1" />
+              <TabsTrigger value="console" disabled={isTabDisabled("console")} className="gap-1.5">
+                <TerminalIcon className="h-3.5 w-3.5" />
                 Console
               </TabsTrigger>
             )}
             {canUseFiles && (
-              <TabsTrigger value="files" disabled={isTabDisabled("files")}>
+              <TabsTrigger value="files" disabled={isTabDisabled("files")} className="gap-1.5">
+                <Folder className="h-3.5 w-3.5" />
                 Files
               </TabsTrigger>
             )}
             {canViewContainer && (
-              <TabsTrigger value="stats" disabled={isTabDisabled("stats")}>
+              <TabsTrigger value="stats" disabled={isTabDisabled("stats")} className="gap-1.5">
+                <Activity className="h-3.5 w-3.5" />
                 Monitoring
               </TabsTrigger>
             )}
-            {canUseEnvironment && <TabsTrigger value="environment">Environment</TabsTrigger>}
-            <TabsTrigger value="slots">Slots</TabsTrigger>
+            {canUseEnvironment && (
+              <TabsTrigger value="environment" className="gap-1.5">
+                <SlidersHorizontal className="h-3.5 w-3.5" />
+                Environment
+              </TabsTrigger>
+            )}
+            <TabsTrigger value="slots" className="gap-1.5">
+              <ListTodo className="h-3.5 w-3.5" />
+              Slots
+            </TabsTrigger>
             {canEdit && (
-              <TabsTrigger value="settings">
-                <Settings className="h-3.5 w-3.5 mr-1" />
+              <TabsTrigger value="settings" className="gap-1.5">
+                <Settings className="h-3.5 w-3.5" />
                 Settings
               </TabsTrigger>
             )}
-            <TabsTrigger value="config">
-              <Code2 className="h-3.5 w-3.5 mr-1" />
+            <TabsTrigger value="config" className="gap-1.5">
+              <Code2 className="h-3.5 w-3.5" />
               Config
             </TabsTrigger>
           </TabsList>

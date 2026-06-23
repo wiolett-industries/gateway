@@ -97,7 +97,11 @@ describe('admin Gateway settings route permissions', () => {
       getConfig: vi.fn().mockResolvedValue({ serverEnabled: true }),
     } as unknown as McpSettingsService);
     container.registerInstance(GeneralSettingsService, {
-      getConfig: vi.fn().mockResolvedValue({ fileUploadMaxBytes: 100 * 1024 * 1024 }),
+      getConfig: vi.fn().mockResolvedValue({
+        fileUploadMaxBytes: 100 * 1024 * 1024,
+        fileOpenMaxBytes: 10 * 1024 * 1024,
+        features: { pkiEnabled: true, domainsEnabled: true },
+      }),
     } as unknown as GeneralSettingsService);
     container.registerInstance(NetworkSettingsService, {
       getConfig: vi.fn().mockResolvedValue({
@@ -127,6 +131,8 @@ describe('admin Gateway settings route permissions', () => {
       mcpServerEnabled: true,
       generalSettings: {
         fileUploadMaxBytes: 100 * 1024 * 1024,
+        fileOpenMaxBytes: 10 * 1024 * 1024,
+        features: { pkiEnabled: true, domainsEnabled: true },
       },
       networkSecurity: {
         clientIpSource: 'auto',
@@ -171,7 +177,11 @@ describe('admin Gateway settings route permissions', () => {
       getConfig: vi.fn().mockResolvedValue({ serverEnabled: true }),
     } as unknown as McpSettingsService);
     container.registerInstance(GeneralSettingsService, {
-      getConfig: vi.fn().mockResolvedValue({ fileUploadMaxBytes: 100 * 1024 * 1024 }),
+      getConfig: vi.fn().mockResolvedValue({
+        fileUploadMaxBytes: 100 * 1024 * 1024,
+        fileOpenMaxBytes: 10 * 1024 * 1024,
+        features: { pkiEnabled: true, domainsEnabled: true },
+      }),
     } as unknown as GeneralSettingsService);
     container.registerInstance(NetworkSettingsService, {
       getConfig: vi.fn().mockResolvedValue({
@@ -205,7 +215,11 @@ describe('admin Gateway settings route permissions', () => {
 
   it('allows editing general file upload limit with settings:gateway:edit', async () => {
     registerSession(['settings:gateway:edit']);
-    const updateGeneralConfig = vi.fn().mockResolvedValue({ fileUploadMaxBytes: 50 * 1024 * 1024 });
+    const updateGeneralConfig = vi.fn().mockResolvedValue({
+      fileUploadMaxBytes: 50 * 1024 * 1024,
+      fileOpenMaxBytes: 10 * 1024 * 1024,
+      features: { pkiEnabled: true, domainsEnabled: true },
+    });
     container.registerInstance(AuthSettingsService, {
       updateConfig: vi.fn().mockResolvedValue({
         oidcAutoCreateUsers: true,
@@ -250,6 +264,8 @@ describe('admin Gateway settings route permissions', () => {
     expect(response.status).toBe(200);
     expect(updateGeneralConfig).toHaveBeenCalledWith({ fileUploadMaxBytes: 50 * 1024 * 1024 });
     expect(body.generalSettings.fileUploadMaxBytes).toBe(50 * 1024 * 1024);
+    expect(body.generalSettings.fileOpenMaxBytes).toBe(10 * 1024 * 1024);
+    expect(body.generalSettings.features).toEqual({ pkiEnabled: true, domainsEnabled: true });
   });
 
   it('allows editing OAuth extended callback compatibility with settings:gateway:edit', async () => {
@@ -267,7 +283,11 @@ describe('admin Gateway settings route permissions', () => {
       updateConfig: vi.fn().mockResolvedValue({ serverEnabled: true }),
     } as unknown as McpSettingsService);
     container.registerInstance(GeneralSettingsService, {
-      getConfig: vi.fn().mockResolvedValue({ fileUploadMaxBytes: 100 * 1024 * 1024 }),
+      getConfig: vi.fn().mockResolvedValue({
+        fileUploadMaxBytes: 100 * 1024 * 1024,
+        fileOpenMaxBytes: 10 * 1024 * 1024,
+        features: { pkiEnabled: true, domainsEnabled: true },
+      }),
     } as unknown as GeneralSettingsService);
     container.registerInstance(NetworkSettingsService, {
       getConfig: vi.fn().mockResolvedValue({

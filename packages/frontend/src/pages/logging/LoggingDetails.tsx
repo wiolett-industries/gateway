@@ -1,8 +1,9 @@
-import { ArrowLeft, EllipsisVertical, Plus, Save, Settings, Trash2 } from "lucide-react";
+import { EllipsisVertical, KeyRound, Plus, Save, ScrollText, Settings, Trash2 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { PageBackButton } from "@/components/common/PageBackButton";
 import { PageTransition } from "@/components/common/PageTransition";
 import { PanelShell } from "@/components/common/PanelShell";
 import { Badge } from "@/components/ui/badge";
@@ -93,9 +94,7 @@ export function LoggingSchemaDetail({
       <div className="h-full overflow-y-auto p-6 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-3">
-            <Button variant="ghost" size="icon" onClick={() => navigate("/logging/schemas")}>
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
+            <PageBackButton onClick={() => navigate("/logging/schemas")} />
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <h1 className="truncate text-2xl font-bold">{schema.name}</h1>
@@ -274,9 +273,7 @@ export function LoggingEnvironmentDetail({
       >
         <div className="flex flex-wrap items-center justify-between gap-2 shrink-0">
           <div className="flex min-w-0 items-center gap-3">
-            <Button variant="ghost" size="icon" onClick={() => navigate("/logging/environments")}>
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
+            <PageBackButton onClick={() => navigate("/logging/environments")} />
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <h1 className="truncate text-2xl font-bold">{environment.name}</h1>
@@ -341,10 +338,16 @@ export function LoggingEnvironmentDetail({
           className={cn("flex flex-col", isFullHeightTab && "flex-1 min-h-0")}
         >
           <TabsList className="shrink-0">
-            <TabsTrigger value="logs">Logs</TabsTrigger>
-            <TabsTrigger value="tokens">Tokens</TabsTrigger>
-            <TabsTrigger value="settings">
-              <Settings className="mr-1 h-3.5 w-3.5" />
+            <TabsTrigger value="logs" className="gap-1.5">
+              <ScrollText className="h-3.5 w-3.5" />
+              Logs
+            </TabsTrigger>
+            <TabsTrigger value="tokens" className="gap-1.5">
+              <KeyRound className="h-3.5 w-3.5" />
+              Tokens
+            </TabsTrigger>
+            <TabsTrigger value="settings" className="gap-1.5">
+              <Settings className="h-3.5 w-3.5" />
               Settings
             </TabsTrigger>
           </TabsList>

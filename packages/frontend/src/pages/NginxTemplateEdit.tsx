@@ -1,5 +1,4 @@
 import {
-  ArrowLeft,
   Eye,
   FlaskConical,
   HelpCircle,
@@ -13,6 +12,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
+import { PageBackButton } from "@/components/common/PageBackButton";
 import { PageTransition } from "@/components/common/PageTransition";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -443,9 +443,7 @@ export function NginxTemplateEdit() {
       <div className="h-full flex flex-col p-6 gap-4 overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-2 shrink-0">
           <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" onClick={() => navigate(backHref)}>
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
+            <PageBackButton onClick={() => navigate(backHref)} />
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-2xl font-bold">{isNew ? "Create Config Template" : name}</h1>

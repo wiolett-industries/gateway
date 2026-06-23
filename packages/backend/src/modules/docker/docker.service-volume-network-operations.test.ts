@@ -140,6 +140,165 @@ describe('DockerManagementService volume and network operations', () => {
     });
   });
 
+  it('routes volume file operations with audit and change events', async () => {
+    const jpgHeader = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
+    const dispatch = {
+      sendDockerVolumeCommand: vi
+        .fn()
+        .mockResolvedValueOnce({ success: true, data: jpgHeader.toString('base64') })
+        .mockResolvedValue({ success: true }),
+    };
+    const { service, audit, eventBus } = createService(dispatch);
+    const content = Buffer.from([0, 1, 2]);
+
+    await expect(service.readVolumeFile('node-1', 'data', '/app.txt')).resolves.toEqual(jpgHeader);
+    await service.writeVolumeFile('node-1', 'data', '/app.txt', content, 'user-1');
+    await service.createVolumeFile('node-1', 'data', '/new.txt', '', 'user-1');
+    await service.createVolumeDirectory('node-1', 'data', '/dir', 'user-1');
+    await service.deleteVolumeFile('node-1', 'data', '/old.txt', 'user-1');
+    await service.moveVolumeFile('node-1', 'data', '/dir', '/dir2', 'user-1');
+
+    expect(dispatch.sendDockerVolumeCommand).toHaveBeenNthCalledWith(1, 'node-1', 'read-file', {
+      name: 'data',
+      path: '/app.txt',
+      maxBytes: 104857600,
+    });
+    expect(dispatch.sendDockerVolumeCommand).toHaveBeenNthCalledWith(2, 'node-1', 'write-file', {
+      name: 'data',
+      path: '/app.txt',
+      content,
+    });
+    expect(dispatch.sendDockerVolumeCommand).toHaveBeenNthCalledWith(3, 'node-1', 'create-file', {
+      name: 'data',
+      path: '/new.txt',
+      content: '',
+    });
+    expect(dispatch.sendDockerVolumeCommand).toHaveBeenNthCalledWith(4, 'node-1', 'create-dir', {
+      name: 'data',
+      path: '/dir',
+    });
+    expect(dispatch.sendDockerVolumeCommand).toHaveBeenNthCalledWith(5, 'node-1', 'delete', {
+      name: 'data',
+      path: '/old.txt',
+    });
+    expect(dispatch.sendDockerVolumeCommand).toHaveBeenNthCalledWith(6, 'node-1', 'move', {
+      name: 'data',
+      path: '/dir',
+      targetPath: '/dir2',
+    });
+    expect(audit.log).toHaveBeenCalledWith({
+      action: 'docker.volume.file.write',
+      userId: 'user-1',
+      resourceType: 'docker-volume',
+      resourceId: 'data',
+      details: { nodeId: 'node-1', path: '/app.txt' },
+    });
+    expect(audit.log).toHaveBeenCalledWith({
+      action: 'docker.volume.file.create',
+      userId: 'user-1',
+      resourceType: 'docker-volume',
+      resourceId: 'data',
+      details: { nodeId: 'node-1', path: '/new.txt' },
+    });
+    expect(audit.log).toHaveBeenCalledWith({
+      action: 'docker.volume.file.create_directory',
+      userId: 'user-1',
+      resourceType: 'docker-volume',
+      resourceId: 'data',
+      details: { nodeId: 'node-1', path: '/dir' },
+    });
+    expect(audit.log).toHaveBeenCalledWith({
+      action: 'docker.volume.file.delete',
+      userId: 'user-1',
+      resourceType: 'docker-volume',
+      resourceId: 'data',
+      details: { nodeId: 'node-1', path: '/old.txt' },
+    });
+    expect(audit.log).toHaveBeenCalledWith({
+      action: 'docker.volume.file.move',
+      userId: 'user-1',
+      resourceType: 'docker-volume',
+      resourceId: 'data',
+      details: { nodeId: 'node-1', fromPath: '/dir', toPath: '/dir2' },
+    });
+    expect(eventBus.publish).toHaveBeenCalledWith('docker.volume.file.changed', {
+      nodeId: 'node-1',
+      volumeName: 'data',
+      action: 'updated',
+      path: '/app.txt',
+      kind: 'file',
+      parentPath: '/',
+      fromParentPath: undefined,
+      toParentPath: undefined,
+    });
+  });
+
+  it('routes chunked volume file uploads with audit and change events', async () => {
+    const dispatch = {
+      sendDockerVolumeCommand: vi.fn().mockResolvedValue({ success: true }),
+    };
+    const { service, audit, eventBus } = createService(dispatch);
+    const content = Buffer.from('hello');
+
+    const upload = await service.initVolumeFileUpload('node-1', 'data', '/big.bin', content.length, 'user-1');
+    await service.appendVolumeFileUploadChunk('node-1', 'data', upload.uploadId, 0, content);
+    await service.completeVolumeFileUpload('node-1', 'data', upload.uploadId, '/big.bin', content.length);
+
+    expect(upload.chunkSize).toBeGreaterThan(0);
+    expect(dispatch.sendDockerVolumeCommand).toHaveBeenNthCalledWith(1, 'node-1', 'upload-init', {
+      name: 'data',
+      path: upload.uploadId,
+      targetPath: '/big.bin',
+      maxBytes: content.length,
+    });
+    expect(dispatch.sendDockerVolumeCommand).toHaveBeenNthCalledWith(2, 'node-1', 'upload-chunk', {
+      name: 'data',
+      path: upload.uploadId,
+      targetPath: '/big.bin',
+      maxBytes: 0,
+      content,
+    });
+    expect(dispatch.sendDockerVolumeCommand).toHaveBeenNthCalledWith(3, 'node-1', 'upload-complete', {
+      name: 'data',
+      path: upload.uploadId,
+      targetPath: '/big.bin',
+      maxBytes: content.length,
+    });
+    expect(audit.log).toHaveBeenCalledWith({
+      action: 'docker.volume.file.create',
+      userId: 'user-1',
+      resourceType: 'docker-volume',
+      resourceId: 'data',
+      details: { nodeId: 'node-1', path: '/big.bin' },
+    });
+    expect(eventBus.publish).toHaveBeenCalledWith('docker.volume.file.changed', {
+      nodeId: 'node-1',
+      volumeName: 'data',
+      action: 'created',
+      path: '/big.bin',
+      kind: 'file',
+      parentPath: '/',
+      fromParentPath: undefined,
+      toParentPath: undefined,
+    });
+  });
+
+  it('aborts chunked volume file uploads', async () => {
+    const dispatch = {
+      sendDockerVolumeCommand: vi.fn().mockResolvedValue({ success: true }),
+    };
+    const { service } = createService(dispatch);
+
+    const upload = await service.initVolumeFileUpload('node-1', 'data', '/big.bin', 5, 'user-1');
+    await service.abortVolumeFileUpload('node-1', 'data', upload.uploadId);
+
+    expect(dispatch.sendDockerVolumeCommand).toHaveBeenNthCalledWith(2, 'node-1', 'upload-abort', {
+      name: 'data',
+      path: upload.uploadId,
+      targetPath: '/big.bin',
+    });
+  });
+
   it('creates networks with daemon field mapping, audit, and change events', async () => {
     const dispatch = {
       sendDockerNetworkCommand: vi.fn().mockResolvedValue({

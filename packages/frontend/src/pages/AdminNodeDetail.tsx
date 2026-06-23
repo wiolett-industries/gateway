@@ -1,8 +1,9 @@
-import { ArrowLeft, ArrowUpCircle, EllipsisVertical, Pencil, Pin, Trash2 } from "lucide-react";
+import { ArrowUpCircle, EllipsisVertical, Pencil, Pin, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
+import { PageBackButton } from "@/components/common/PageBackButton";
 import { PageTransition } from "@/components/common/PageTransition";
 import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
 import { Badge } from "@/components/ui/badge";
@@ -47,6 +48,7 @@ import { DockerContainers } from "./DockerContainers";
 import { DockerImages } from "./DockerImages";
 import { DockerNetworks } from "./DockerNetworks";
 import { DockerVolumes } from "./DockerVolumes";
+import { type FileManagerOperations, FilesTab } from "./docker-detail/FilesTab";
 import { NodeConfigTab } from "./node-detail/NodeConfigTab";
 import { NodeConsoleTab } from "./node-detail/NodeConsoleTab";
 import { NodeDetailsTab } from "./node-detail/NodeDetailsTab";
@@ -79,6 +81,7 @@ export function AdminNodeDetail() {
     [
       "details",
       "monitoring",
+      "files",
       "console",
       "configuration",
       "nginx-logs",
@@ -116,6 +119,10 @@ export function AdminNodeDetail() {
     !!(id && (hasScope(`nodes:config:view:${id}`) || hasScope(`nodes:config:edit:${id}`))) ||
     hasScope("nodes:config:view") ||
     hasScope("nodes:config:edit");
+  const canReadNodeFiles =
+    !!id && (hasScope("nodes:files:read") || hasScope(`nodes:files:read:${id}`));
+  const canWriteNodeFiles =
+    !!id && (hasScope("nodes:files:write") || hasScope(`nodes:files:write:${id}`));
   const isCompatibleNode = !!node && !isNodeIncompatible(node);
   const canManageServiceCreationLock =
     !!node &&
@@ -137,6 +144,7 @@ export function AdminNodeDetail() {
       ...(isCompatibleNode ? ["monitoring"] : []),
       ...(isCompatibleNode && node.type === "nginx" && canViewNodeConfig ? ["configuration"] : []),
       ...(isCompatibleNode && node.type === "nginx" && canViewNodeLogs ? ["nginx-logs"] : []),
+      ...(isCompatibleNode && canReadNodeFiles ? ["files"] : []),
       ...(isCompatibleNode && node.type === "docker"
         ? ["containers", "images", "volumes", "networks"]
         : []),
@@ -145,8 +153,48 @@ export function AdminNodeDetail() {
         : []),
       ...(canViewNodeLogs ? ["daemon-logs"] : []),
     ],
-    [canUseNodeConsole, canViewNodeConfig, canViewNodeLogs, isCompatibleNode, node, nodeUpdating]
+    [
+      canReadNodeFiles,
+      canUseNodeConsole,
+      canViewNodeConfig,
+      canViewNodeLogs,
+      isCompatibleNode,
+      node,
+      nodeUpdating,
+    ]
   );
+
+  const nodeFileOperations = useMemo<FileManagerOperations | undefined>(() => {
+    if (!id || !canReadNodeFiles) return undefined;
+    const readOperations = {
+      listDirectory: (path: string) => api.listNodeDir(id, path),
+      readFile: (path: string) => api.readNodeFile(id, path),
+      openFile: (filePath: string, writable = false) => {
+        const params = new URLSearchParams({ path: filePath });
+        if (writable && canWriteNodeFiles) params.set("writable", "1");
+        const fileName = filePath.split("/").pop() || "file";
+        window.open(
+          `/nodes/file/${id}?${params}`,
+          `node-file-${id}-${fileName}`,
+          "width=900,height=600,menubar=no,toolbar=no"
+        );
+      },
+    };
+    if (!canWriteNodeFiles) return readOperations;
+    return {
+      ...readOperations,
+      createFile: (path, content, onProgress) => api.createNodeFile(id, path, content, onProgress),
+      createDirectory: (path) => api.createNodeDirectory(id, path),
+      deletePath: (path) => api.deleteNodeFile(id, path),
+      movePath: (fromPath, toPath) => api.moveNodeFile(id, fromPath, toPath),
+      initUpload: (path, totalBytes) => api.initNodeFileUpload(id, path, totalBytes),
+      uploadChunk: (uploadId, offset, content, onProgress) =>
+        api.uploadNodeFileChunk(id, uploadId, offset, content, onProgress),
+      completeUpload: (uploadId, path, totalBytes) =>
+        api.completeNodeFileUpload(id, uploadId, path, totalBytes),
+      abortUpload: (uploadId) => api.abortNodeFileUpload(id, uploadId),
+    };
+  }, [canReadNodeFiles, canWriteNodeFiles, id]);
 
   const loadNode = useCallback(
     async (silent = false) => {
@@ -332,9 +380,7 @@ export function AdminNodeDetail() {
         {/* Header — matches ProxyHostDetail pattern */}
         <div className="flex items-start justify-between gap-3 shrink-0">
           <div className="flex min-w-0 flex-1 items-center gap-3">
-            <Button variant="ghost" size="icon" onClick={() => navigate("/nodes")}>
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
+            <PageBackButton onClick={() => navigate("/nodes")} />
             <div className="min-w-0">
               <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <h1 className="min-w-0 truncate text-2xl font-bold">
@@ -485,6 +531,11 @@ export function AdminNodeDetail() {
                 Monitoring
               </TabsTrigger>
             )}
+            {!isNodeIncompatible(node) && canReadNodeFiles && (
+              <TabsTrigger value="files" disabled={nodeUpdating}>
+                Files
+              </TabsTrigger>
+            )}
             {!isNodeIncompatible(node) && node.type === "nginx" && canViewNodeConfig && (
               <TabsTrigger value="configuration" disabled={nodeUpdating}>
                 Configuration
@@ -515,7 +566,7 @@ export function AdminNodeDetail() {
               !nodeUpdating &&
               node.status === "online" &&
               canUseNodeConsole && <TabsTrigger value="console">Console</TabsTrigger>}
-            {canViewNodeLogs && <TabsTrigger value="daemon-logs">Daemon Logs</TabsTrigger>}
+            {canViewNodeLogs && <TabsTrigger value="daemon-logs">Logs</TabsTrigger>}
           </TabsList>
 
           {isNodeIncompatible(node) && (
@@ -574,6 +625,21 @@ export function AdminNodeDetail() {
               <TabsContent value="nginx-logs" className="flex flex-col flex-1 min-h-0">
                 {activeTab === "nginx-logs" && (
                   <NodeNginxLogsTab nodeId={node.id} nodeStatus={node.status} />
+                )}
+              </TabsContent>
+            )}
+            {!isNodeIncompatible(node) && canReadNodeFiles && nodeFileOperations && (
+              <TabsContent value="files">
+                {activeTab === "files" && (
+                  <FilesTab
+                    nodeId={node.id}
+                    canBrowse={canReadNodeFiles}
+                    operations={nodeFileOperations}
+                    realtimeEvent="node.file.changed"
+                    realtimeMatches={(payload) =>
+                      (payload as { nodeId?: string } | undefined)?.nodeId === node.id
+                    }
+                  />
                 )}
               </TabsContent>
             )}

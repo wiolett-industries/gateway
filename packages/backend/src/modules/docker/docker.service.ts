@@ -67,19 +67,29 @@ import type { DockerRuntimeSettingsService } from './docker-runtime-settings.ser
 import type { DockerSecretService } from './docker-secret.service.js';
 import type { DockerTaskService } from './docker-task.service.js';
 import {
+  abortVolumeFileUpload as abortDockerVolumeFileUpload,
+  appendVolumeFileUploadChunk as appendDockerVolumeFileUploadChunk,
+  completeVolumeFileUpload as completeDockerVolumeFileUpload,
   connectContainerToNetwork as connectDockerContainerToNetwork,
   createNetwork as createDockerNetwork,
   createVolume as createDockerVolume,
+  createVolumeDirectory as createDockerVolumeDirectory,
+  createVolumeFile as createDockerVolumeFile,
+  deleteVolumeFile as deleteDockerVolumeFile,
   disconnectContainerFromNetwork as disconnectDockerContainerFromNetwork,
   exportVolume as exportDockerVolume,
+  initVolumeFileUpload as initDockerVolumeFileUpload,
   inspectVolume as inspectDockerVolume,
   listNetworks as listDockerNetworks,
   listVolumeFiles as listDockerVolumeFiles,
   listVolumes as listDockerVolumes,
+  moveVolumeFile as moveDockerVolumeFile,
+  readVolumeFile as readDockerVolumeFile,
   removeNetwork as removeDockerNetwork,
   removeVolume as removeDockerVolume,
   renameVolume as renameDockerVolume,
   updateVolumeLabels as updateDockerVolumeLabels,
+  writeVolumeFile as writeDockerVolumeFile,
 } from './docker-volume-network-operations.js';
 
 const logger = createChildLogger('DockerManagementService');
@@ -821,6 +831,70 @@ export class DockerManagementService {
   async listVolumeFiles(nodeId: string, name: string, path: string) {
     await this.validateDockerNode(nodeId);
     return listDockerVolumeFiles(this.volumeNetworkOperationContext(), nodeId, name, path);
+  }
+
+  async readVolumeFile(nodeId: string, name: string, path: string) {
+    await this.validateDockerNode(nodeId);
+    return readDockerVolumeFile(this.volumeNetworkOperationContext(), nodeId, name, path);
+  }
+
+  async writeVolumeFile(nodeId: string, name: string, path: string, content: string | Buffer, userId: string) {
+    await this.validateDockerNode(nodeId);
+    await writeDockerVolumeFile(this.volumeNetworkOperationContext(), nodeId, name, path, content, userId);
+  }
+
+  async createVolumeFile(nodeId: string, name: string, path: string, content: string | Buffer, userId: string) {
+    await this.validateDockerNode(nodeId);
+    await createDockerVolumeFile(this.volumeNetworkOperationContext(), nodeId, name, path, content, userId);
+  }
+
+  async initVolumeFileUpload(nodeId: string, name: string, path: string, totalBytes: number, userId: string) {
+    await this.validateDockerNode(nodeId);
+    return initDockerVolumeFileUpload(this.volumeNetworkOperationContext(), nodeId, name, path, totalBytes, userId);
+  }
+
+  async appendVolumeFileUploadChunk(nodeId: string, name: string, uploadId: string, offset: number, content: Buffer) {
+    await this.validateDockerNode(nodeId);
+    return appendDockerVolumeFileUploadChunk(
+      this.volumeNetworkOperationContext(),
+      nodeId,
+      name,
+      uploadId,
+      offset,
+      content
+    );
+  }
+
+  async completeVolumeFileUpload(nodeId: string, name: string, uploadId: string, path: string, totalBytes: number) {
+    await this.validateDockerNode(nodeId);
+    await completeDockerVolumeFileUpload(
+      this.volumeNetworkOperationContext(),
+      nodeId,
+      name,
+      uploadId,
+      path,
+      totalBytes
+    );
+  }
+
+  async abortVolumeFileUpload(nodeId: string, name: string, uploadId: string) {
+    await this.validateDockerNode(nodeId);
+    await abortDockerVolumeFileUpload(this.volumeNetworkOperationContext(), nodeId, name, uploadId);
+  }
+
+  async createVolumeDirectory(nodeId: string, name: string, path: string, userId: string) {
+    await this.validateDockerNode(nodeId);
+    await createDockerVolumeDirectory(this.volumeNetworkOperationContext(), nodeId, name, path, userId);
+  }
+
+  async deleteVolumeFile(nodeId: string, name: string, path: string, userId: string) {
+    await this.validateDockerNode(nodeId);
+    await deleteDockerVolumeFile(this.volumeNetworkOperationContext(), nodeId, name, path, userId);
+  }
+
+  async moveVolumeFile(nodeId: string, name: string, fromPath: string, toPath: string, userId: string) {
+    await this.validateDockerNode(nodeId);
+    await moveDockerVolumeFile(this.volumeNetworkOperationContext(), nodeId, name, fromPath, toPath, userId);
   }
 
   async exportVolume(nodeId: string, name: string) {

@@ -37,6 +37,7 @@ import type {
   UploadCertRequest,
   User,
 } from "@/types";
+import type { FileEntry } from "@/types/docker";
 import { withAuthApi } from "./api-auth";
 import { API_BASE, ApiClientBase } from "./api-base";
 import { withDatabaseApi } from "./api-databases";
@@ -473,6 +474,137 @@ class ApiClient extends withLoggingApi(
         body: content ? JSON.stringify({ content }) : undefined,
       })
     );
+  }
+
+  async listNodeDir(nodeId: string, path: string): Promise<FileEntry[]> {
+    const response = await this.request<{
+      data: FileEntry[];
+      total?: number;
+      limit?: number;
+      truncated?: boolean;
+    }>(`/nodes/${nodeId}/files?path=${encodeURIComponent(path)}`);
+    const data = response.data;
+    if (Array.isArray(data)) {
+      Object.defineProperty(data, "_listMeta", {
+        value: {
+          total: response.total,
+          limit: response.limit,
+          truncated: response.truncated,
+        },
+        enumerable: false,
+      });
+    }
+    return data;
+  }
+
+  async readNodeFile(nodeId: string, path: string): Promise<ArrayBuffer> {
+    return this.requestBinary(`/nodes/${nodeId}/files/read?path=${encodeURIComponent(path)}`);
+  }
+
+  async writeNodeFile(nodeId: string, path: string, content: string) {
+    const encoded = new TextEncoder().encode(content);
+    return this.unwrapData(
+      this.uploadRaw<{ data: unknown }>(
+        `/nodes/${nodeId}/files/write?path=${encodeURIComponent(path)}`,
+        {
+          method: "PUT",
+          body: encoded,
+          headers: { "Content-Type": "application/octet-stream" },
+        }
+      )
+    );
+  }
+
+  async createNodeFile(
+    nodeId: string,
+    path: string,
+    content: Blob | BufferSource | string = "",
+    onProgress?: (progress: { loaded: number; total: number }) => void
+  ) {
+    const body =
+      typeof content === "string"
+        ? new TextEncoder().encode(content)
+        : content instanceof Blob
+          ? content
+          : content;
+    return this.uploadRaw<void>(`/nodes/${nodeId}/files/create?path=${encodeURIComponent(path)}`, {
+      method: "POST",
+      body,
+      headers: { "Content-Type": "application/octet-stream" },
+      onProgress,
+    });
+  }
+
+  async initNodeFileUpload(
+    nodeId: string,
+    path: string,
+    totalBytes: number
+  ): Promise<{ uploadId: string; chunkSize: number }> {
+    return this.unwrapData(
+      this.request<{ data: { uploadId: string; chunkSize: number } }>(
+        `/nodes/${nodeId}/files/uploads`,
+        {
+          method: "POST",
+          body: JSON.stringify({ path, totalBytes }),
+        }
+      )
+    );
+  }
+
+  async uploadNodeFileChunk(
+    nodeId: string,
+    uploadId: string,
+    offset: number,
+    content: Blob,
+    onProgress?: (progress: { loaded: number; total: number }) => void
+  ): Promise<{ receivedBytes: number; totalBytes: number }> {
+    return this.unwrapData(
+      this.uploadRaw<{ data: { receivedBytes: number; totalBytes: number } }>(
+        `/nodes/${nodeId}/files/uploads/${uploadId}/chunks?offset=${offset}`,
+        {
+          method: "PUT",
+          body: content,
+          headers: { "Content-Type": "application/octet-stream" },
+          onProgress,
+        }
+      )
+    );
+  }
+
+  async completeNodeFileUpload(
+    nodeId: string,
+    uploadId: string,
+    path: string,
+    totalBytes: number
+  ): Promise<void> {
+    await this.request<void>(`/nodes/${nodeId}/files/uploads/${uploadId}/complete`, {
+      method: "POST",
+      body: JSON.stringify({ path, totalBytes }),
+    });
+  }
+
+  async abortNodeFileUpload(nodeId: string, uploadId: string): Promise<void> {
+    await this.request<void>(`/nodes/${nodeId}/files/uploads/${uploadId}`, { method: "DELETE" });
+  }
+
+  async createNodeDirectory(nodeId: string, path: string) {
+    return this.request<void>(`/nodes/${nodeId}/files/directory`, {
+      method: "POST",
+      body: JSON.stringify({ path }),
+    });
+  }
+
+  async deleteNodeFile(nodeId: string, path: string) {
+    return this.request<void>(`/nodes/${nodeId}/files?path=${encodeURIComponent(path)}`, {
+      method: "DELETE",
+    });
+  }
+
+  async moveNodeFile(nodeId: string, fromPath: string, toPath: string) {
+    return this.request<void>(`/nodes/${nodeId}/files/move`, {
+      method: "POST",
+      body: JSON.stringify({ fromPath, toPath }),
+    });
   }
 
   // ── AI Assistant ──

@@ -11,6 +11,7 @@ import { useCAStore } from "@/stores/ca";
 import { useNodesStore } from "@/stores/nodes";
 import { usePinnedNodesStore } from "@/stores/pinned-nodes";
 import { usePinnedProxiesStore } from "@/stores/pinned-proxies";
+import { useSystemConfigStore } from "@/stores/system-config";
 import { useUIStore } from "@/stores/ui";
 import { useUpdateStore } from "@/stores/update";
 import type { AuditLogEntry, DashboardStats, Node, NodeHealthReport, ProxyHost } from "@/types";
@@ -30,6 +31,7 @@ export function Dashboard() {
   const dashboardPinnedIds = usePinnedNodesStore((s) => s.dashboardNodeIds);
   const dashboardPinnedProxyIds = usePinnedProxiesStore((s) => s.dashboardProxyIds);
   const updateStatus = useUpdateStore((s) => s.status);
+  const pkiEnabled = useSystemConfigStore((s) => s.config.features.pkiEnabled);
   const showUpdateNotifications = useUIStore((s) => s.showUpdateNotifications);
   const canViewSystemCertificates = useAuthStore((s) => s.hasScope("admin:details:certificates"));
   const showSystemCertificatePreference = useUIStore((s) => s.showSystemCertificates);
@@ -83,7 +85,8 @@ export function Dashboard() {
     (hostId: string) => hasScope("proxy:view") || hasScope(`proxy:view:${hostId}`),
     [hasScope]
   );
-  const canViewCAs = hasScope("pki:ca:view:root") || hasScope("pki:ca:view:intermediate");
+  const canViewCAs =
+    pkiEnabled && (hasScope("pki:ca:view:root") || hasScope("pki:ca:view:intermediate"));
 
   const refreshNodes = useCallback(() => {
     if (!hasScopedAccess("nodes:details")) {
@@ -160,7 +163,10 @@ export function Dashboard() {
   }, [hasScopedAccess, showSystemCertificates]);
 
   const refreshExpiringPKI = useCallback(() => {
-    if (!hasScopedAccess("pki:cert:view")) return Promise.resolve();
+    if (!pkiEnabled || !hasScopedAccess("pki:cert:view")) {
+      setExpiringItems((prev) => prev.filter((i) => i.type !== "pki"));
+      return Promise.resolve();
+    }
     return api
       .listCertificates({ status: "active", limit: 100, showSystem: showSystemCertificates })
       .then((res) => {
@@ -176,7 +182,7 @@ export function Dashboard() {
         setExpiringItems((prev) => [...prev.filter((i) => i.type !== "pki"), ...expiring]);
       })
       .catch(() => {});
-  }, [hasScopedAccess, showSystemCertificates]);
+  }, [hasScopedAccess, pkiEnabled, showSystemCertificates]);
 
   const refreshPinnedProxies = useCallback(() => {
     if (dashboardPinnedProxyIds.length === 0) {
@@ -384,6 +390,10 @@ export function Dashboard() {
 
   // Collect expiring CAs from store
   useEffect(() => {
+    if (!pkiEnabled) {
+      setExpiringItems((prev) => prev.filter((i) => i.type !== "ca"));
+      return;
+    }
     const expiringCAs = (cas || [])
       .filter(
         (ca) =>
@@ -397,7 +407,7 @@ export function Dashboard() {
         daysLeft: daysUntil(ca.notAfter),
       }));
     setExpiringItems((prev) => [...prev.filter((i) => i.type !== "ca"), ...expiringCAs]);
-  }, [cas]);
+  }, [cas, pkiEnabled]);
 
   // Derive fallback stats from CA store when API stats not available
   const activeCAs = (cas || []).filter((ca) => ca.status === "active").length;
@@ -453,6 +463,7 @@ export function Dashboard() {
             displayStats={displayStats}
             nodesList={nodesList}
             hasScope={hasScopedAccess}
+            pkiEnabled={pkiEnabled}
           />
 
           {/* Pinned Proxy Host Cards */}
@@ -494,7 +505,7 @@ export function Dashboard() {
             loading={nodesLoading}
           />
 
-          <CertificateAuthoritiesCard cas={cas} hasScope={hasScope} />
+          {pkiEnabled && <CertificateAuthoritiesCard cas={cas} hasScope={hasScope} />}
 
           <RecentActivityCard activity={activity} hasScope={hasScope} loading={activityLoading} />
         </div>

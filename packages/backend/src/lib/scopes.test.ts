@@ -17,7 +17,7 @@ import {
 } from './scopes.js';
 
 function frontendResourceScopableScopes(): string[] {
-  const source = readFileSync(join(process.cwd(), '../frontend/src/types/index.ts'), 'utf8');
+  const source = readFileSync(join(process.cwd(), '../frontend/src/types/scopes.ts'), 'utf8');
   const match = source.match(/export const RESOURCE_SCOPABLE_SCOPES = \[([\s\S]*?)\] as const;/);
   if (!match) throw new Error('RESOURCE_SCOPABLE_SCOPES not found');
   return [...match[1].matchAll(/"([^"]+)"/g)].map((entry) => entry[1]);
@@ -91,10 +91,14 @@ describe('canonical scope definitions', () => {
       'ssl:cert:export',
       'proxy:raw:bypass',
       'nodes:console',
+      'nodes:files:read',
+      'nodes:files:write',
       'docker:containers:console',
       'docker:containers:files',
       'docker:containers:secrets',
       'docker:containers:mounts',
+      'docker:volumes:files:read',
+      'docker:volumes:files:write',
       'databases:query:read',
       'databases:query:write',
       'databases:query:admin',

@@ -77,7 +77,8 @@ import { authenticateEventsConnection, createEventsWSHandlers } from '@/ws/event
 const STATUS_PREVIEW_PREFIX = '/_status-preview';
 const HEALTH_REDIS_TIMEOUT_MS = 1000;
 const DOCKER_FILE_BODY_LIMIT_PATH =
-  /^\/api\/docker\/nodes\/[^/]+\/containers\/[^/]+\/files\/(?:write|create|uploads\/[^/]+\/chunks)$/;
+  /^\/api\/docker\/nodes\/[^/]+\/(?:containers\/[^/]+\/files\/(?:write|create|uploads\/[^/]+\/chunks)|volumes\/[^/]+\/files\/(?:write|create|uploads\/[^/]+\/chunks))$/;
+const NODE_FILE_BODY_LIMIT_PATH = /^\/api\/nodes\/[^/]+\/files\/(?:write|create|uploads\/[^/]+\/chunks)$/;
 
 function requestBodyLimit(maxSize: number): MiddlewareHandler<AppEnv> {
   return bodyLimit({
@@ -89,7 +90,7 @@ function requestBodyLimit(maxSize: number): MiddlewareHandler<AppEnv> {
 function requestBodyLimitDynamic(resolveMaxSize: () => Promise<number>): MiddlewareHandler<AppEnv> {
   return async (c, next) => {
     const maxSize = await resolveMaxSize();
-    await requestBodyLimit(maxSize)(c, next);
+    return requestBodyLimit(maxSize)(c, next);
   };
 }
 
@@ -214,10 +215,37 @@ export function createApp() {
     '/api/docker/nodes/:nodeId/containers/:containerId/files/uploads/:uploadId/chunks',
     requestBodyLimitDynamic(() => getFileUploadMaxBodyBytes(env.DOCKER_FILE_WRITE_MAX_BODY_BYTES))
   );
+  app.use(
+    '/api/docker/nodes/:nodeId/volumes/:name/files/write',
+    requestBodyLimitDynamic(() => getFileUploadMaxBodyBytes(env.DOCKER_FILE_WRITE_MAX_BODY_BYTES))
+  );
+  app.use(
+    '/api/docker/nodes/:nodeId/volumes/:name/files/create',
+    requestBodyLimitDynamic(() => getFileUploadMaxBodyBytes(env.DOCKER_FILE_WRITE_MAX_BODY_BYTES))
+  );
+  app.use(
+    '/api/docker/nodes/:nodeId/volumes/:name/files/uploads/:uploadId/chunks',
+    requestBodyLimitDynamic(() => getFileUploadMaxBodyBytes(env.DOCKER_FILE_WRITE_MAX_BODY_BYTES))
+  );
+  app.use(
+    '/api/nodes/:id/files/write',
+    requestBodyLimitDynamic(() => getFileUploadMaxBodyBytes(env.DOCKER_FILE_WRITE_MAX_BODY_BYTES))
+  );
+  app.use(
+    '/api/nodes/:id/files/create',
+    requestBodyLimitDynamic(() => getFileUploadMaxBodyBytes(env.DOCKER_FILE_WRITE_MAX_BODY_BYTES))
+  );
+  app.use(
+    '/api/nodes/:id/files/uploads/:uploadId/chunks',
+    requestBodyLimitDynamic(() => getFileUploadMaxBodyBytes(env.DOCKER_FILE_WRITE_MAX_BODY_BYTES))
+  );
   app.use('/api/setup/*', setupApiDisabledMiddleware);
   app.use(
     '/api/*',
-    requestBodyLimitExcept(env.REQUEST_BODY_MAX_BYTES, (path) => DOCKER_FILE_BODY_LIMIT_PATH.test(path))
+    requestBodyLimitExcept(
+      env.REQUEST_BODY_MAX_BYTES,
+      (path) => DOCKER_FILE_BODY_LIMIT_PATH.test(path) || NODE_FILE_BODY_LIMIT_PATH.test(path)
+    )
   );
 
   // Rate limiting for API and public PKI routes

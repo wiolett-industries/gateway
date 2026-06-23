@@ -264,7 +264,7 @@ export async function initializeContainer(): Promise<void> {
   const nodeDispatch = new NodeDispatchService(nodeRegistry, db);
   container.registerInstance(NodeDispatchService, nodeDispatch);
 
-  const nodesService = new NodesService(db, auditService, nodeRegistry, grpcIdentityService);
+  const nodesService = new NodesService(db, auditService, nodeRegistry, grpcIdentityService, nodeDispatch);
   container.registerInstance(NodesService, nodesService);
 
   const nodeFolderService = new NodeFolderService(db, auditService);

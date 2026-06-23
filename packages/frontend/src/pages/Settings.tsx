@@ -1,4 +1,4 @@
-import { Moon, Sun } from "lucide-react";
+import { Moon, ServerCog, SlidersHorizontal, Sparkles, Sun } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { confirm } from "@/components/common/ConfirmDialog";
@@ -195,9 +195,18 @@ export function Settings() {
 
         <Tabs value={activeTab} onValueChange={handleTabChange} className="flex flex-col">
           <TabsList className="shrink-0">
-            <TabsTrigger value="preferences">Preferences</TabsTrigger>
-            <TabsTrigger value="gateway">Gateway settings</TabsTrigger>
-            <TabsTrigger value="features">Features</TabsTrigger>
+            <TabsTrigger value="preferences" className="gap-1.5">
+              <SlidersHorizontal className="h-3.5 w-3.5" />
+              Preferences
+            </TabsTrigger>
+            <TabsTrigger value="gateway" className="gap-1.5">
+              <ServerCog className="h-3.5 w-3.5" />
+              Gateway settings
+            </TabsTrigger>
+            <TabsTrigger value="features" className="gap-1.5">
+              <Sparkles className="h-3.5 w-3.5" />
+              Features
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="preferences" className="pb-0">

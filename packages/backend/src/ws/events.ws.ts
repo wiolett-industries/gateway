@@ -68,6 +68,8 @@ function requiredScopeFor(channel: string): string | null {
   if (channel === 'docker.image-cleanup.changed') return 'docker:containers:edit';
   if (channel === 'docker.registry.changed') return 'docker:registries:view';
   if (channel === 'docker.file.changed') return 'docker:containers:files';
+  if (channel === 'docker.volume.file.changed') return 'docker:volumes:files:read';
+  if (channel === 'node.file.changed') return 'nodes:files:read';
   if (channel.startsWith('docker.container')) return 'docker:containers:view';
   if (channel.startsWith('docker.image')) return 'docker:images:view';
   if (channel.startsWith('docker.volume')) return 'docker:volumes:view';
@@ -142,6 +144,9 @@ function hasChannelAccess(scopes: string[], channel: string): boolean {
   if (channel === 'node.folder.changed') {
     return hasScopeBase(scopes, 'nodes:details') || hasScope(scopes, 'nodes:folders:manage');
   }
+  if (channel === 'node.file.changed') {
+    return hasScopeBase(scopes, 'nodes:files:read');
+  }
   if (channel === 'logging.logs.ingested') {
     return hasScopeBase(scopes, 'logs:read');
   }
@@ -215,6 +220,17 @@ function canReceiveChannelPayload(scopes: string[], channel: string, payload: un
     return (
       hasScope(scopes, 'docker:containers:files') || !!(nodeId && hasScope(scopes, `docker:containers:files:${nodeId}`))
     );
+  }
+  if (channel === 'docker.volume.file.changed') {
+    const nodeId = (payload as { nodeId?: string } | undefined)?.nodeId;
+    return (
+      hasScope(scopes, 'docker:volumes:files:read') ||
+      !!(nodeId && hasScope(scopes, `docker:volumes:files:read:${nodeId}`))
+    );
+  }
+  if (channel === 'node.file.changed') {
+    const nodeId = (payload as { nodeId?: string } | undefined)?.nodeId;
+    return hasScope(scopes, 'nodes:files:read') || !!(nodeId && hasScope(scopes, `nodes:files:read:${nodeId}`));
   }
   if (channel === 'docker.image-cleanup.changed') {
     const nodeId = (payload as { nodeId?: string } | undefined)?.nodeId;

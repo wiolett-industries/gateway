@@ -1,4 +1,4 @@
-import { asc, desc, eq, ilike, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, inArray, isNull, or, sql } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import { proxyHostFolders } from '@/db/schema/proxy-host-folders.js';
 import { proxyHosts } from '@/db/schema/proxy-hosts.js';
@@ -36,8 +36,13 @@ function toPlainHost(host: ProxyHostRow): Record<string, unknown> {
   }
 
   delete plain.healthHistory;
-  let effectiveStatus = host.healthStatus as string;
-  if (host.healthStatus === 'online' && Array.isArray(host.healthHistory) && host.healthHistory.length > 0) {
+  let effectiveStatus = host.rawConfigEnabled ? 'disabled' : (host.healthStatus as string);
+  if (
+    !host.rawConfigEnabled &&
+    host.healthStatus === 'online' &&
+    Array.isArray(host.healthHistory) &&
+    host.healthHistory.length > 0
+  ) {
     const fiveMinAgo = Date.now() - 5 * 60 * 1000;
     const recent = (host.healthHistory as Array<{ ts?: string; status: string }>).filter(
       (h) => h.ts && new Date(h.ts).getTime() >= fiveMinAgo
@@ -368,7 +373,11 @@ export class FolderService {
       conditions.push(eq(proxyHosts.enabled, query.enabled));
     }
     if (query.healthStatus) {
-      conditions.push(eq(proxyHosts.healthStatus, query.healthStatus));
+      conditions.push(
+        query.healthStatus === 'disabled'
+          ? or(eq(proxyHosts.healthStatus, 'disabled'), eq(proxyHosts.rawConfigEnabled, true))!
+          : and(eq(proxyHosts.healthStatus, query.healthStatus), eq(proxyHosts.rawConfigEnabled, false))!
+      );
     }
     if (query.search) {
       conditions.push(ilike(sql`${proxyHosts.domainNames}::text`, `%${query.search}%`));

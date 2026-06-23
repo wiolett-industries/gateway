@@ -1,9 +1,19 @@
-import { ArrowLeft, Pencil, Pin, Trash2 } from "lucide-react";
+import {
+  Code2,
+  Info,
+  Pencil,
+  Pin,
+  ScrollText,
+  Settings as SettingsIcon,
+  SlidersHorizontal,
+  Trash2,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
+import { PageBackButton } from "@/components/common/PageBackButton";
 import { PageTransition } from "@/components/common/PageTransition";
 import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
 import { CreateProxyHostDialog } from "@/components/proxy/CreateProxyHostDialog";
@@ -660,9 +670,7 @@ export function ProxyHostDetail() {
         {/* ── Header ─────────────────────────────────────────── */}
         <div className="flex flex-wrap items-center justify-between gap-2 shrink-0">
           <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" onClick={() => navigate("/proxy-hosts")}>
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
+            <PageBackButton onClick={() => navigate("/proxy-hosts")} />
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-2xl font-bold">{host.domainNames[0] || "Proxy Host"}</h1>
@@ -762,19 +770,34 @@ export function ProxyHostDetail() {
           className="flex flex-col flex-1 min-h-0"
         >
           <TabsList className="shrink-0">
-            {visibleTabs.includes("details") && <TabsTrigger value="details">Details</TabsTrigger>}
+            {visibleTabs.includes("details") && (
+              <TabsTrigger value="details" className="gap-1.5">
+                <Info className="h-3.5 w-3.5" />
+                Details
+              </TabsTrigger>
+            )}
             {visibleTabs.includes("settings") && (
-              <TabsTrigger value="settings" disabled={isRawMode}>
+              <TabsTrigger value="settings" disabled={isRawMode} className="gap-1.5">
+                <SettingsIcon className="h-3.5 w-3.5" />
                 Settings
               </TabsTrigger>
             )}
             {visibleTabs.includes("advanced") && (
-              <TabsTrigger value="advanced" disabled={isRawMode}>
+              <TabsTrigger value="advanced" disabled={isRawMode} className="gap-1.5">
+                <SlidersHorizontal className="h-3.5 w-3.5" />
                 Advanced
               </TabsTrigger>
             )}
-            {visibleTabs.includes("raw") && <TabsTrigger value="raw">Raw Config</TabsTrigger>}
-            <TabsTrigger value="logs">Logs</TabsTrigger>
+            {visibleTabs.includes("raw") && (
+              <TabsTrigger value="raw" className="gap-1.5">
+                <Code2 className="h-3.5 w-3.5" />
+                Raw Config
+              </TabsTrigger>
+            )}
+            <TabsTrigger value="logs" className="gap-1.5">
+              <ScrollText className="h-3.5 w-3.5" />
+              Logs
+            </TabsTrigger>
           </TabsList>
 
           {/* ── Details Tab ────────────────────────────────────── */}
@@ -895,8 +918,15 @@ export function ProxyHostDetail() {
         open={editOpen}
         onOpenChange={setEditOpen}
         existingHost={host}
-        onSuccess={() => {
+        onSuccess={(_, updatedHost) => {
           setEditOpen(false);
+          if (updatedHost) {
+            syncHostState(updatedHost);
+            setHealthHistory(
+              updatedHost.healthCheckEnabled ? (updatedHost.healthHistory ?? []) : []
+            );
+            return;
+          }
           loadHost();
         }}
       />

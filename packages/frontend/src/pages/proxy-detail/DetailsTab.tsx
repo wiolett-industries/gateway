@@ -2,6 +2,7 @@ import { Server } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { DetailRow } from "@/components/common/DetailRow";
+import { PanelShell } from "@/components/common/PanelShell";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/services/api";
 import type { ProxyHost } from "@/types";
@@ -38,150 +39,136 @@ export function DetailsTab({ host }: { host: ProxyHost }) {
     <div className="space-y-4">
       {/* Node Card */}
       {nodeInfo && (
-        <div
-          className="border border-border bg-card cursor-pointer hover:bg-accent transition-colors"
+        <PanelShell
+          className="cursor-pointer transition-colors hover:bg-accent"
+          bodyClassName="flex items-center justify-between p-4"
           onClick={() => navigate(`/nodes/${nodeInfo.id}`)}
         >
-          <div className="flex items-center justify-between p-4">
-            <div className="flex items-center gap-3">
-              <Server className="h-5 w-5 text-muted-foreground" />
-              <div>
-                <p className="text-sm font-medium">{nodeInfo.name}</p>
-                <p className="text-xs text-muted-foreground">Deployed on this node</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Badge variant="secondary" className="uppercase">
-                {nodeInfo.type}
-              </Badge>
-              <Badge
-                variant={
-                  nodeInfo.status === "online"
-                    ? "success"
-                    : nodeInfo.status === "offline" || nodeInfo.status === "error"
-                      ? "destructive"
-                      : "warning"
-                }
-                className="uppercase"
-              >
-                {nodeInfo.status}
-              </Badge>
+          <div className="flex items-center gap-3">
+            <Server className="h-5 w-5 text-muted-foreground" />
+            <div>
+              <p className="text-sm font-medium">{nodeInfo.name}</p>
+              <p className="text-xs text-muted-foreground">Deployed on this node</p>
             </div>
           </div>
-        </div>
+          <div className="flex items-center gap-2">
+            <Badge variant="secondary" className="uppercase">
+              {nodeInfo.type}
+            </Badge>
+            <Badge
+              variant={
+                nodeInfo.status === "online"
+                  ? "success"
+                  : nodeInfo.status === "offline" || nodeInfo.status === "error"
+                    ? "destructive"
+                    : "warning"
+              }
+              className="uppercase"
+            >
+              {nodeInfo.status}
+            </Badge>
+          </div>
+        </PanelShell>
       )}
 
       {/* Host Info + Health Check in one row */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Host Info Card */}
-        <div
-          className={`border border-border bg-card ${!host.healthCheckEnabled ? "md:col-span-2" : ""}`}
+        <PanelShell
+          title="Host Information"
+          className={!host.healthCheckEnabled ? "md:col-span-2" : ""}
+          bodyClassName="divide-y divide-border -mb-px [&>*:last-child]:border-b [&>*:last-child]:border-border"
         >
-          <div className="border-b border-border p-4">
-            <h2 className="font-semibold">Host Information</h2>
-          </div>
-          <div className="divide-y divide-border">
+          <DetailRow
+            label="Domains"
+            value={
+              <div className="flex flex-wrap justify-end gap-1">
+                {host.domainNames.map((d) => (
+                  <Badge key={d} variant="secondary">
+                    {d}
+                  </Badge>
+                ))}
+              </div>
+            }
+          />
+          {host.type === "proxy" && host.forwardHost && (
             <DetailRow
-              label="Domains"
-              value={
-                <div className="flex flex-wrap gap-1 justify-end">
-                  {host.domainNames.map((d) => (
-                    <Badge key={d} variant="secondary">
-                      {d}
-                    </Badge>
-                  ))}
-                </div>
-              }
+              label="Forward Target"
+              value={`${host.forwardScheme}://${host.forwardHost}:${host.forwardPort}`}
             />
-            {host.type === "proxy" && host.forwardHost && (
-              <DetailRow
-                label="Forward Target"
-                value={`${host.forwardScheme}://${host.forwardHost}:${host.forwardPort}`}
-              />
-            )}
-            {host.type === "redirect" && host.redirectUrl && (
-              <DetailRow
-                label="Redirect URL"
-                value={`${host.redirectUrl} (${host.redirectStatusCode})`}
-              />
-            )}
-            <DetailRow label="Created" value={new Date(host.createdAt).toLocaleString()} />
-            <DetailRow label="Updated" value={new Date(host.updatedAt).toLocaleString()} />
-          </div>
-        </div>
+          )}
+          {host.type === "redirect" && host.redirectUrl && (
+            <DetailRow
+              label="Redirect URL"
+              value={`${host.redirectUrl} (${host.redirectStatusCode})`}
+            />
+          )}
+          <DetailRow label="Created" value={new Date(host.createdAt).toLocaleString()} />
+          <DetailRow label="Updated" value={new Date(host.updatedAt).toLocaleString()} />
+        </PanelShell>
 
         {/* Health Check Status Card */}
         {host.healthCheckEnabled && (
-          <div className="border border-border bg-card">
-            <div className="border-b border-border p-4 flex items-center justify-between">
-              <h2 className="font-semibold">Health Check</h2>
-              {(() => {
-                const eff = effectiveHealthStatus(host);
-                return (
-                  <Badge variant={HEALTH_BADGE[eff] ?? "secondary"}>
-                    {HEALTH_LABEL[eff] ?? eff}
-                  </Badge>
-                );
-              })()}
-            </div>
-            <div className="divide-y divide-border">
-              <DetailRow label="URL Path" value={host.healthCheckUrl || "/"} />
-              <DetailRow label="Interval" value={`${host.healthCheckInterval || 30}s`} />
+          <PanelShell
+            title="Health Check"
+            actions={(() => {
+              const eff = effectiveHealthStatus(host);
+              return (
+                <Badge variant={HEALTH_BADGE[eff] ?? "secondary"}>{HEALTH_LABEL[eff] ?? eff}</Badge>
+              );
+            })()}
+            bodyClassName="divide-y divide-border -mb-px [&>*:last-child]:border-b [&>*:last-child]:border-border"
+          >
+            <DetailRow label="URL Path" value={host.healthCheckUrl || "/"} />
+            <DetailRow label="Interval" value={`${host.healthCheckInterval || 30}s`} />
+            <DetailRow
+              label="Expected Status"
+              value={
+                host.healthCheckExpectedStatus ? String(host.healthCheckExpectedStatus) : "Any 2xx"
+              }
+            />
+            {host.healthCheckExpectedBody && (
               <DetailRow
-                label="Expected Status"
-                value={
-                  host.healthCheckExpectedStatus
-                    ? String(host.healthCheckExpectedStatus)
-                    : "Any 2xx"
-                }
+                label="Expected Body"
+                value={`${HEALTH_BODY_MATCH_LABEL[host.healthCheckBodyMatchMode || "includes"]}: ${host.healthCheckExpectedBody}`}
               />
-              {host.healthCheckExpectedBody && (
-                <DetailRow
-                  label="Expected Body"
-                  value={`${HEALTH_BODY_MATCH_LABEL[host.healthCheckBodyMatchMode || "includes"]}: ${host.healthCheckExpectedBody}`}
-                />
-              )}
-              {host.lastHealthCheckAt && (
-                <DetailRow
-                  label="Last Check"
-                  value={new Date(host.lastHealthCheckAt).toLocaleString()}
-                />
-              )}
-            </div>
-          </div>
+            )}
+            {host.lastHealthCheckAt && (
+              <DetailRow
+                label="Last Check"
+                value={new Date(host.lastHealthCheckAt).toLocaleString()}
+              />
+            )}
+          </PanelShell>
         )}
       </div>
 
       {/* SSL Certificate Info (when SSL enabled) */}
       {host.sslEnabled && host.sslCertificate && (
-        <div className="border border-border bg-card">
-          <div className="border-b border-border p-4">
-            <h2 className="font-semibold">SSL Certificate</h2>
-          </div>
-          <div className="divide-y divide-border">
-            <DetailRow label="Name" value={host.sslCertificate.name} />
+        <PanelShell
+          title="SSL Certificate"
+          bodyClassName="divide-y divide-border -mb-px [&>*:last-child]:border-b [&>*:last-child]:border-border"
+        >
+          <DetailRow label="Name" value={host.sslCertificate.name} />
+          <DetailRow
+            label="Type"
+            value={<Badge variant="secondary">{host.sslCertificate.type}</Badge>}
+          />
+          <DetailRow
+            label="Status"
+            value={
+              <Badge variant={host.sslCertificate.status === "active" ? "success" : "destructive"}>
+                {host.sslCertificate.status}
+              </Badge>
+            }
+          />
+          {host.sslCertificate.notAfter && (
             <DetailRow
-              label="Type"
-              value={<Badge variant="secondary">{host.sslCertificate.type}</Badge>}
+              label="Expires"
+              value={new Date(host.sslCertificate.notAfter).toLocaleString()}
             />
-            <DetailRow
-              label="Status"
-              value={
-                <Badge
-                  variant={host.sslCertificate.status === "active" ? "success" : "destructive"}
-                >
-                  {host.sslCertificate.status}
-                </Badge>
-              }
-            />
-            {host.sslCertificate.notAfter && (
-              <DetailRow
-                label="Expires"
-                value={new Date(host.sslCertificate.notAfter).toLocaleString()}
-              />
-            )}
-          </div>
-        </div>
+          )}
+        </PanelShell>
       )}
     </div>
   );

@@ -1,6 +1,5 @@
 import {
   AlertTriangle,
-  ArrowLeft,
   Copy,
   Download,
   MoreVertical,
@@ -17,6 +16,7 @@ import { CertificateIssueDialog } from "@/components/certificates/CertificateIss
 import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
+import { PageBackButton } from "@/components/common/PageBackButton";
 import { PageTransition } from "@/components/common/PageTransition";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { Badge } from "@/components/ui/badge";
@@ -180,9 +180,7 @@ export function CADetail() {
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" onClick={() => navigate("/cas")}>
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
+            <PageBackButton onClick={() => navigate("/cas")} />
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-2xl font-bold">{ca.commonName}</h1>

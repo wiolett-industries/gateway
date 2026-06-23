@@ -13,6 +13,11 @@ const ContainerNameSchema = z
 const DOCKER_CONTAINER_PORTS_MAX = 256;
 const DOCKER_STOP_TIMEOUT_MAX_SECONDS = 300;
 const DockerStopTimeoutSchema = z.number().int().min(0).max(DOCKER_STOP_TIMEOUT_MAX_SECONDS);
+const DockerFilePathSchema = z
+  .string()
+  .min(1)
+  .refine((path) => path.startsWith('/'), 'Path must be absolute')
+  .refine((path) => !path.split('/').includes('..'), "Path must not contain '..'");
 
 // Container create
 export const ContainerCreateSchema = z.object({
@@ -154,32 +159,14 @@ export const LogQuerySchema = z.object({
 
 // File browse
 export const FileBrowseSchema = z.object({
-  path: z.string().default('/'),
+  path: DockerFilePathSchema.default('/'),
 });
 
 // File write
 export const DOCKER_FILE_WRITE_MAX_BYTES = FILE_UPLOAD_MAX_BYTES;
-export const DOCKER_FILE_WRITE_MAX_BASE64_LENGTH = Math.ceil(DOCKER_FILE_WRITE_MAX_BYTES / 3) * 4;
-
-export const FileWriteSchema = z.object({
-  path: z.string().min(1),
-  content: z
-    .string()
-    .max(DOCKER_FILE_WRITE_MAX_BASE64_LENGTH)
-    .regex(/^[A-Za-z0-9+/]*={0,2}$/), // base64-encoded content
-});
-
-export const FileCreateSchema = z.object({
-  path: z.string().min(1),
-  content: z
-    .string()
-    .max(DOCKER_FILE_WRITE_MAX_BASE64_LENGTH)
-    .regex(/^[A-Za-z0-9+/]*={0,2}$/)
-    .optional(),
-});
 
 export const FileUploadInitSchema = z.object({
-  path: z.string().min(1),
+  path: DockerFilePathSchema,
   totalBytes: z.number().int().min(0).max(FILE_UPLOAD_MAX_BYTES),
 });
 
@@ -188,13 +175,13 @@ export const FileUploadChunkQuerySchema = z.object({
 });
 
 export const FileUploadCompleteSchema = z.object({
-  path: z.string().min(1),
+  path: DockerFilePathSchema,
   totalBytes: z.number().int().min(0).max(FILE_UPLOAD_MAX_BYTES),
 });
 
 export const FileMoveSchema = z.object({
-  fromPath: z.string().min(1),
-  toPath: z.string().min(1),
+  fromPath: DockerFilePathSchema,
+  toPath: DockerFilePathSchema,
 });
 
 // Env update

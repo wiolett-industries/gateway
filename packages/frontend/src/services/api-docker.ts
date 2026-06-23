@@ -754,6 +754,138 @@ export function withDockerApi<TBase extends ApiClientBaseConstructor>(Base: TBas
       return withDockerListMeta(response);
     }
 
+    async readVolumeFile(nodeId: string, name: string, path: string): Promise<ArrayBuffer> {
+      return this.requestBinary(
+        `/docker/nodes/${nodeId}/volumes/${encodeURIComponent(name)}/files/read?path=${encodeURIComponent(path)}`
+      );
+    }
+
+    async writeVolumeFile(nodeId: string, name: string, path: string, content: string) {
+      const encoded = new TextEncoder().encode(content);
+      return this.unwrapData(
+        this.uploadRaw<{ data: unknown }>(
+          `/docker/nodes/${nodeId}/volumes/${encodeURIComponent(name)}/files/write?path=${encodeURIComponent(path)}`,
+          {
+            method: "PUT",
+            body: encoded,
+            headers: { "Content-Type": "application/octet-stream" },
+          }
+        )
+      );
+    }
+
+    async createVolumeFile(
+      nodeId: string,
+      name: string,
+      path: string,
+      content: Blob | BufferSource | string = "",
+      onProgress?: (progress: { loaded: number; total: number }) => void
+    ) {
+      const body =
+        typeof content === "string"
+          ? new TextEncoder().encode(content)
+          : content instanceof Blob
+            ? content
+            : content;
+      return this.uploadRaw<void>(
+        `/docker/nodes/${nodeId}/volumes/${encodeURIComponent(name)}/files/create?path=${encodeURIComponent(path)}`,
+        {
+          method: "POST",
+          body,
+          headers: { "Content-Type": "application/octet-stream" },
+          onProgress,
+        }
+      );
+    }
+
+    async initVolumeFileUpload(
+      nodeId: string,
+      name: string,
+      path: string,
+      totalBytes: number
+    ): Promise<{ uploadId: string; chunkSize: number }> {
+      return this.unwrapData(
+        this.request<{ data: { uploadId: string; chunkSize: number } }>(
+          `/docker/nodes/${nodeId}/volumes/${encodeURIComponent(name)}/files/uploads`,
+          {
+            method: "POST",
+            body: JSON.stringify({ path, totalBytes }),
+          }
+        )
+      );
+    }
+
+    async uploadVolumeFileChunk(
+      nodeId: string,
+      name: string,
+      uploadId: string,
+      offset: number,
+      content: Blob,
+      onProgress?: (progress: { loaded: number; total: number }) => void
+    ): Promise<{ receivedBytes: number; totalBytes: number }> {
+      return this.unwrapData(
+        this.uploadRaw<{ data: { receivedBytes: number; totalBytes: number } }>(
+          `/docker/nodes/${nodeId}/volumes/${encodeURIComponent(name)}/files/uploads/${uploadId}/chunks?offset=${offset}`,
+          {
+            method: "PUT",
+            body: content,
+            headers: { "Content-Type": "application/octet-stream" },
+            onProgress,
+          }
+        )
+      );
+    }
+
+    async completeVolumeFileUpload(
+      nodeId: string,
+      name: string,
+      uploadId: string,
+      path: string,
+      totalBytes: number
+    ): Promise<void> {
+      await this.request<void>(
+        `/docker/nodes/${nodeId}/volumes/${encodeURIComponent(name)}/files/uploads/${uploadId}/complete`,
+        {
+          method: "POST",
+          body: JSON.stringify({ path, totalBytes }),
+        }
+      );
+    }
+
+    async abortVolumeFileUpload(nodeId: string, name: string, uploadId: string): Promise<void> {
+      await this.request<void>(
+        `/docker/nodes/${nodeId}/volumes/${encodeURIComponent(name)}/files/uploads/${uploadId}`,
+        { method: "DELETE" }
+      );
+    }
+
+    async createVolumeDirectory(nodeId: string, name: string, path: string) {
+      return this.request<void>(
+        `/docker/nodes/${nodeId}/volumes/${encodeURIComponent(name)}/files/directory`,
+        {
+          method: "POST",
+          body: JSON.stringify({ path }),
+        }
+      );
+    }
+
+    async deleteVolumeFile(nodeId: string, name: string, path: string) {
+      return this.request<void>(
+        `/docker/nodes/${nodeId}/volumes/${encodeURIComponent(name)}/files?path=${encodeURIComponent(path)}`,
+        { method: "DELETE" }
+      );
+    }
+
+    async moveVolumeFile(nodeId: string, name: string, fromPath: string, toPath: string) {
+      return this.request<void>(
+        `/docker/nodes/${nodeId}/volumes/${encodeURIComponent(name)}/files/move`,
+        {
+          method: "POST",
+          body: JSON.stringify({ fromPath, toPath }),
+        }
+      );
+    }
+
     async exportDockerVolume(nodeId: string, name: string): Promise<Blob> {
       const response = await fetch(
         `${API_BASE}/docker/nodes/${nodeId}/volumes/${encodeURIComponent(name)}/export`,
@@ -868,11 +1000,13 @@ export function withDockerApi<TBase extends ApiClientBaseConstructor>(Base: TBas
       return withDockerListMeta(response);
     }
 
-    async readContainerFile(nodeId: string, containerId: string, path: string): Promise<string> {
-      return this.unwrapData(
-        this.request<{ data: string }>(
-          `/docker/nodes/${nodeId}/containers/${containerId}/files/read?path=${encodeURIComponent(path)}`
-        )
+    async readContainerFile(
+      nodeId: string,
+      containerId: string,
+      path: string
+    ): Promise<ArrayBuffer> {
+      return this.requestBinary(
+        `/docker/nodes/${nodeId}/containers/${containerId}/files/read?path=${encodeURIComponent(path)}`
       );
     }
 

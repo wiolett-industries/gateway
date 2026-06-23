@@ -1,10 +1,12 @@
 import {
+  AlertTriangle,
   CheckCircle2,
   ExternalLink,
   Eye,
   MoreVertical,
   Pencil,
   Plus,
+  Settings as SettingsIcon,
   ShieldCheck,
   Trash2,
 } from "lucide-react";
@@ -64,9 +66,9 @@ import {
 import { StatusPageSettingsTab } from "./status-page/StatusPageSettingsTab";
 
 const TABS = [
-  { value: "services", label: "Exposed Services" },
-  { value: "incidents", label: "Incidents" },
-  { value: "settings", label: "Settings" },
+  { value: "services", label: "Exposed Services", icon: ShieldCheck },
+  { value: "incidents", label: "Incidents", icon: AlertTriangle },
+  { value: "settings", label: "Settings", icon: SettingsIcon },
 ] as const;
 
 const DEFAULT_CONFIG: StatusPageConfig = {
@@ -509,7 +511,8 @@ export function StatusPage() {
         >
           <TabsList className="shrink-0">
             {TABS.map((tab) => (
-              <TabsTrigger key={tab.value} value={tab.value}>
+              <TabsTrigger key={tab.value} value={tab.value} className="gap-1.5">
+                <tab.icon className="h-3.5 w-3.5" />
                 {tab.label}
               </TabsTrigger>
             ))}

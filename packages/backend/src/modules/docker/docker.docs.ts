@@ -64,6 +64,7 @@ const containerUploadParams = pathParamSchema('nodeId', 'containerId', 'uploadId
 
 const imageParams = pathParamSchema('nodeId', 'imageId');
 const volumeParams = pathParamSchema('nodeId', 'name');
+const volumeUploadParams = pathParamSchema('nodeId', 'name', 'uploadId');
 const networkParams = pathParamSchema('nodeId', 'networkId');
 const registryParams = pathParamSchema('id');
 const taskParams = pathParamSchema('id');
@@ -270,7 +271,19 @@ export const readContainerFileRoute = appRoute({
   tags: ['Docker Files'],
   summary: 'Read a container file',
   request: { params: containerParams, query: FileBrowseSchema },
-  responses: okJson(UnknownDataResponseSchema),
+  responses: {
+    200: {
+      description: 'File bytes',
+      content: {
+        'application/octet-stream': {
+          schema: {
+            type: 'string',
+            format: 'binary',
+          },
+        },
+      },
+    },
+  },
 });
 export const writeContainerFileRoute = appRoute({
   method: 'put',
@@ -634,6 +647,112 @@ export const listVolumeFilesRoute = appRoute({
   summary: 'List volume files',
   request: { params: volumeParams, query: FileBrowseSchema },
   responses: okJson(UnknownDataResponseSchema),
+});
+export const readVolumeFileRoute = appRoute({
+  method: 'get',
+  path: '/nodes/{nodeId}/volumes/{name}/files/read',
+  tags: ['Docker Volumes'],
+  summary: 'Read a volume file',
+  request: { params: volumeParams, query: FileBrowseSchema },
+  responses: {
+    200: {
+      description: 'File bytes',
+      content: {
+        'application/octet-stream': {
+          schema: {
+            type: 'string',
+            format: 'binary',
+          },
+        },
+      },
+    },
+  },
+});
+export const writeVolumeFileRoute = appRoute({
+  method: 'put',
+  path: '/nodes/{nodeId}/volumes/{name}/files/write',
+  tags: ['Docker Volumes'],
+  summary: 'Write a volume file',
+  request: { params: volumeParams, query: FileBrowseSchema },
+  responses: successJson,
+});
+export const createVolumeFileRoute = appRoute({
+  method: 'post',
+  path: '/nodes/{nodeId}/volumes/{name}/files/create',
+  tags: ['Docker Volumes'],
+  summary: 'Create a volume file',
+  request: { params: volumeParams, query: FileBrowseSchema },
+  responses: successJson,
+});
+export const initVolumeFileUploadRoute = appRoute({
+  method: 'post',
+  path: '/nodes/{nodeId}/volumes/{name}/files/uploads',
+  tags: ['Docker Volumes'],
+  summary: 'Initialize a chunked volume file upload',
+  request: { params: volumeParams, ...jsonBody(FileUploadInitSchema) },
+  responses: okJson(
+    z.object({
+      data: z.object({
+        uploadId: z.string(),
+        chunkSize: z.number(),
+      }),
+    })
+  ),
+});
+export const uploadVolumeFileChunkRoute = appRoute({
+  method: 'put',
+  path: '/nodes/{nodeId}/volumes/{name}/files/uploads/{uploadId}/chunks',
+  tags: ['Docker Volumes'],
+  summary: 'Upload one chunk for a volume file upload',
+  request: { params: volumeUploadParams, query: FileUploadChunkQuerySchema },
+  responses: okJson(
+    z.object({
+      data: z.object({
+        receivedBytes: z.number(),
+        totalBytes: z.number(),
+      }),
+    })
+  ),
+});
+export const completeVolumeFileUploadRoute = appRoute({
+  method: 'post',
+  path: '/nodes/{nodeId}/volumes/{name}/files/uploads/{uploadId}/complete',
+  tags: ['Docker Volumes'],
+  summary: 'Complete a chunked volume file upload',
+  request: { params: volumeUploadParams, ...jsonBody(FileUploadCompleteSchema) },
+  responses: successJson,
+});
+export const abortVolumeFileUploadRoute = appRoute({
+  method: 'delete',
+  path: '/nodes/{nodeId}/volumes/{name}/files/uploads/{uploadId}',
+  tags: ['Docker Volumes'],
+  summary: 'Abort a chunked volume file upload',
+  request: { params: volumeUploadParams },
+  responses: successJson,
+});
+export const createVolumeDirectoryRoute = appRoute({
+  method: 'post',
+  path: '/nodes/{nodeId}/volumes/{name}/files/directory',
+  tags: ['Docker Volumes'],
+  summary: 'Create a volume directory',
+  request: { params: volumeParams, ...jsonBody(FileBrowseSchema) },
+  responses: successJson,
+});
+export const deleteVolumeFileRoute = appRoute({
+  method: 'delete',
+  path: '/nodes/{nodeId}/volumes/{name}/files',
+  tags: ['Docker Volumes'],
+  summary: 'Delete a volume file or directory',
+  request: { params: volumeParams, query: FileBrowseSchema },
+  responses: successJson,
+});
+export const moveVolumeFileRoute = appRoute({
+  method: 'post',
+  path: '/nodes/{nodeId}/volumes/{name}/files/move',
+  tags: ['Docker Volumes'],
+  summary: 'Move a volume file or directory',
+  request: { params: volumeParams, ...jsonBody(FileMoveSchema) },
+  responses: successJson,
 });
 export const exportVolumeRoute = appRoute({
   method: 'get',

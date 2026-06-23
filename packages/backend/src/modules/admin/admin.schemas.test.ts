@@ -23,6 +23,20 @@ describe('UpdateAuthProvisioningSettingsSchema', () => {
     const result = UpdateAuthProvisioningSettingsSchema.safeParse({
       generalSettings: {
         fileUploadMaxBytes: 100 * 1024 * 1024,
+        fileOpenMaxBytes: 10 * 1024 * 1024,
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts general feature visibility settings', () => {
+    const result = UpdateAuthProvisioningSettingsSchema.safeParse({
+      generalSettings: {
+        features: {
+          pkiEnabled: false,
+          domainsEnabled: true,
+        },
       },
     });
 
@@ -33,6 +47,7 @@ describe('UpdateAuthProvisioningSettingsSchema', () => {
     const result = UpdateAuthProvisioningSettingsSchema.safeParse({
       generalSettings: {
         fileUploadMaxBytes: 1024,
+        fileOpenMaxBytes: 10 * 1024 * 1024,
       },
     });
 

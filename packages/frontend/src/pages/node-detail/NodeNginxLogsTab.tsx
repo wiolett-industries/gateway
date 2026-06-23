@@ -39,6 +39,7 @@ interface NodeNginxLogsTabProps {
 
 export function NodeNginxLogsTab({ nodeId, nodeStatus }: NodeNginxLogsTabProps) {
   const [logs, setLogs] = useState<NginxLogEntry[]>([]);
+  const [streamError, setStreamError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -82,7 +83,20 @@ export function NodeNginxLogsTab({ nodeId, nodeStatus }: NodeNginxLogsTabProps) 
     });
     esRef.current = es;
 
-    es.addEventListener("connected", () => setLogs([]));
+    setStreamError(null);
+
+    es.addEventListener("connected", () => {
+      setStreamError(null);
+      setLogs([]);
+    });
+    es.addEventListener("log-error", (e) => {
+      try {
+        const data = JSON.parse(e.data) as { message?: string };
+        setStreamError(data.message || "Log stream is not available");
+      } catch {
+        setStreamError("Log stream is not available");
+      }
+    });
     es.addEventListener("log", (e) => {
       try {
         const entry = JSON.parse(e.data) as NginxLogEntry;
@@ -113,14 +127,6 @@ export function NodeNginxLogsTab({ nodeId, nodeStatus }: NodeNginxLogsTabProps) 
     return (
       <div className="flex flex-col items-center gap-2 py-16 border border-border bg-card">
         <p className="text-muted-foreground">Node is offline — nginx logs unavailable</p>
-      </div>
-    );
-  }
-
-  if (logs.length === 0 && !search && statusFilter === "all") {
-    return (
-      <div className="flex flex-col items-center gap-2 py-16 border border-border bg-card">
-        <p className="text-muted-foreground">No nginx logs yet</p>
       </div>
     );
   }
@@ -192,7 +198,7 @@ export function NodeNginxLogsTab({ nodeId, nodeStatus }: NodeNginxLogsTabProps) 
               {logs.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="text-center py-16 text-sm text-muted-foreground">
-                    Waiting for nginx logs...
+                    {streamError ?? "Waiting for nginx logs..."}
                   </td>
                 </tr>
               ) : (

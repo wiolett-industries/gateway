@@ -10,7 +10,7 @@ import {
   syntaxHighlighting,
 } from "@codemirror/language";
 import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
-import { Compartment, EditorState, RangeSetBuilder } from "@codemirror/state";
+import { Compartment, EditorState, Prec, RangeSetBuilder } from "@codemirror/state";
 import { Decoration, EditorView, highlightActiveLine, keymap, lineNumbers } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { useEffect, useRef } from "react";
@@ -416,39 +416,50 @@ const sqlLang = StreamLanguage.define<{ inBlockComment: boolean }>({
 
 const editorTheme = EditorView.theme({
   "&": {
-    backgroundColor: "hsl(var(--background))",
-    color: "hsl(var(--foreground))",
+    backgroundColor: "var(--color-background)",
+    color: "var(--color-foreground)",
     fontSize: "13px",
     fontFamily: "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace",
     height: "100%",
   },
   ".cm-scroller": {
+    backgroundColor: "var(--color-background)",
     overflow: "auto",
   },
   ".cm-content": {
-    caretColor: "hsl(var(--foreground))",
+    caretColor: "var(--color-foreground)",
     padding: "8px 0",
   },
   ".cm-gutters": {
-    backgroundColor: "hsl(var(--muted))",
-    color: "hsl(var(--muted-foreground))",
+    backgroundColor: "var(--color-background)",
+    color: "var(--color-muted-foreground)",
     border: "none",
-    borderRight: "1px solid hsl(var(--border))",
+    borderRight: "1px solid var(--color-border)",
   },
   ".cm-activeLine": {
-    backgroundColor: "hsl(var(--accent) / 0.3)",
+    backgroundColor: "transparent",
   },
   ".cm-activeLineGutter": {
-    backgroundColor: "hsl(var(--accent) / 0.3)",
+    backgroundColor: "transparent",
   },
   ".cm-selectionMatch": {
-    backgroundColor: "hsl(var(--accent) / 0.5)",
+    backgroundColor: "color-mix(in srgb, var(--color-accent) 50%, transparent)",
   },
   "&.cm-focused .cm-selectionBackground, .cm-selectionBackground": {
-    backgroundColor: "hsl(var(--accent) / 0.4)",
+    backgroundColor: "color-mix(in srgb, var(--color-accent) 40%, transparent)",
   },
   ".cm-cursor": {
-    borderLeftColor: "hsl(var(--foreground))",
+    borderLeftColor: "var(--color-foreground)",
+  },
+});
+
+const editorNoGutterBorderTheme = EditorView.theme({
+  "& .cm-gutters": {
+    border: "none",
+    borderRight: "none",
+  },
+  "& .cm-gutter, & .cm-lineNumbers": {
+    borderRight: "none",
   },
 });
 
@@ -530,6 +541,8 @@ interface CodeEditorProps {
   language?: "nginx" | "env" | "json" | "plain" | "sql";
   lineWrapping?: boolean;
   showLineNumbers?: boolean;
+  showGutterBorder?: boolean;
+  bordered?: boolean;
 }
 
 export function CodeEditor({
@@ -544,6 +557,8 @@ export function CodeEditor({
   language = "nginx",
   lineWrapping = true,
   showLineNumbers = true,
+  showGutterBorder = true,
+  bordered = true,
 }: CodeEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -580,6 +595,7 @@ export function CodeEditor({
             ]),
         ...(language === "json" ? [foldGutter(), keymap.of(foldKeymap)] : []),
         editorTheme,
+        ...(showGutterBorder ? [] : [Prec.highest(editorNoGutterBorderTheme)]),
         highlightStyles,
         ...(lineWrapping ? [EditorView.lineWrapping] : []),
         EditorState.readOnly.of(readOnly),
@@ -604,7 +620,7 @@ export function CodeEditor({
       view.destroy();
       viewRef.current = null;
     };
-  }, [readOnly, language, lineWrapping, showLineNumbers]);
+  }, [readOnly, language, lineWrapping, showLineNumbers, showGutterBorder]);
 
   // Sync external value
   useEffect(() => {
@@ -634,7 +650,7 @@ export function CodeEditor({
   return (
     <div
       ref={containerRef}
-      className={`border border-border overflow-hidden flex-1 min-h-0 ${className}`}
+      className={`${bordered ? "border border-border" : ""} overflow-hidden flex-1 min-h-0 ${className}`}
       style={{
         minHeight: height ? undefined : minHeight,
         ...(height && height !== "100%" ? { height } : {}),

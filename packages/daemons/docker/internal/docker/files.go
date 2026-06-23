@@ -1,8 +1,10 @@
 package docker
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -73,6 +75,200 @@ func ExportVolume(ctx context.Context, c *Client, volumeName string, maxBytes in
 	return data, nil
 }
 
+func ReadVolumeFile(ctx context.Context, c *Client, volumeName string, path string, maxBytes int64) ([]byte, error) {
+	targetPath, err := volumeTargetPath(path)
+	if err != nil {
+		return nil, err
+	}
+	if maxBytes <= 0 {
+		maxBytes = 1024 * 1024
+	}
+	if _, err := runVolumeHelper(ctx, c, volumeName, []string{"test", "-f", targetPath}, 1024); err != nil {
+		return nil, fmt.Errorf("not a regular/readable file: %s", path)
+	}
+	if _, err := runVolumeHelper(ctx, c, volumeName, []string{"test", "-r", targetPath}, 1024); err != nil {
+		return nil, fmt.Errorf("not a regular/readable file: %s", path)
+	}
+	content, err := readMountedVolumePathArchive(ctx, c, []mount.Mount{
+		{Type: mount.TypeVolume, Source: volumeName, Target: "/volume", ReadOnly: true},
+	}, targetPath, maxBytes)
+	if err != nil {
+		return nil, fmt.Errorf("read volume file: %w", err)
+	}
+	return content, nil
+}
+
+func WriteVolumeFile(ctx context.Context, c *Client, volumeName string, path string, content []byte) error {
+	targetPath, err := mutableVolumeTargetPath(path)
+	if err != nil {
+		return err
+	}
+	if _, err := runWritableVolumeHelper(ctx, c, volumeName, []string{"test", "-f", targetPath}, 1024); err != nil {
+		return fmt.Errorf("file is not writable: %s", path)
+	}
+	if _, err := runWritableVolumeHelper(ctx, c, volumeName, []string{"test", "-w", targetPath}, 1024); err != nil {
+		return fmt.Errorf("file is not writable: %s", path)
+	}
+	if _, err := runWritableVolumeHelperWithInput(ctx, c, volumeName, dockerWriteFileCommand(targetPath), content, 1024*1024); err != nil {
+		return fmt.Errorf("write volume file: %w", err)
+	}
+	return nil
+}
+
+func CreateVolumeFile(ctx context.Context, c *Client, volumeName string, path string, content []byte) error {
+	targetPath, err := mutableVolumeTargetPath(path)
+	if err != nil {
+		return err
+	}
+	parent := filepath.Dir(targetPath)
+	if _, err := runWritableVolumeHelper(ctx, c, volumeName, []string{"test", "-d", parent}, 1024); err != nil {
+		return fmt.Errorf("parent directory does not exist: %s", filepath.Dir(filepath.Clean(path)))
+	}
+	if _, err := runWritableVolumeHelper(ctx, c, volumeName, []string{"test", "-w", parent}, 1024); err != nil {
+		return fmt.Errorf("parent directory is not writable: %s", filepath.Dir(filepath.Clean(path)))
+	}
+	if _, err := runWritableVolumeHelperWithInput(ctx, c, volumeName, dockerWriteFileCommand(targetPath), content, 1024*1024); err != nil {
+		return fmt.Errorf("create volume file: %w", err)
+	}
+	return nil
+}
+
+func CreateVolumeDirectory(ctx context.Context, c *Client, volumeName string, path string) error {
+	targetPath, err := mutableVolumeTargetPath(path)
+	if err != nil {
+		return err
+	}
+	parent := filepath.Dir(targetPath)
+	if _, err := runWritableVolumeHelper(ctx, c, volumeName, []string{"test", "-d", parent}, 1024); err != nil {
+		return fmt.Errorf("parent directory does not exist: %s", filepath.Dir(filepath.Clean(path)))
+	}
+	if _, err := runWritableVolumeHelper(ctx, c, volumeName, []string{"test", "-w", parent}, 1024); err != nil {
+		return fmt.Errorf("parent directory is not writable: %s", filepath.Dir(filepath.Clean(path)))
+	}
+	if _, err := runWritableVolumeHelper(ctx, c, volumeName, []string{"mkdir", targetPath}, 1024); err != nil {
+		return fmt.Errorf("create volume directory: %w", err)
+	}
+	return nil
+}
+
+func DeleteVolumePath(ctx context.Context, c *Client, volumeName string, path string) error {
+	targetPath, err := mutableVolumeTargetPath(path)
+	if err != nil {
+		return err
+	}
+	if _, err := runWritableVolumeHelper(ctx, c, volumeName, []string{"rm", "-rf", targetPath}, 1024); err != nil {
+		return fmt.Errorf("delete volume path: %w", err)
+	}
+	return nil
+}
+
+func MoveVolumePath(ctx context.Context, c *Client, volumeName string, fromPath string, toPath string) error {
+	cleanFrom, cleanTo, err := validateMovePaths(fromPath, toPath)
+	if err != nil {
+		return err
+	}
+	targetFrom, err := volumeTargetPath(cleanFrom)
+	if err != nil {
+		return err
+	}
+	targetTo, err := volumeTargetPath(cleanTo)
+	if err != nil {
+		return err
+	}
+	parent := filepath.Dir(targetTo)
+	if _, err := runWritableVolumeHelper(ctx, c, volumeName, []string{"test", "-e", targetFrom}, 1024); err != nil {
+		return fmt.Errorf("source path does not exist: %s", cleanFrom)
+	}
+	if _, err := runWritableVolumeHelper(ctx, c, volumeName, []string{"test", "-d", parent}, 1024); err != nil {
+		return fmt.Errorf("target parent directory does not exist: %s", filepath.Dir(cleanTo))
+	}
+	if _, err := runWritableVolumeHelper(ctx, c, volumeName, []string{"test", "-w", parent}, 1024); err != nil {
+		return fmt.Errorf("target parent directory is not writable: %s", filepath.Dir(cleanTo))
+	}
+	if _, err := runWritableVolumeHelper(ctx, c, volumeName, []string{"test", "!", "-e", targetTo}, 1024); err != nil {
+		return fmt.Errorf("target path already exists: %s", cleanTo)
+	}
+	if _, err := runWritableVolumeHelper(ctx, c, volumeName, []string{"mv", targetFrom, targetTo}, 1024); err != nil {
+		return fmt.Errorf("move volume path: %w", err)
+	}
+	return nil
+}
+
+func InitVolumeChunkedFileUpload(ctx context.Context, c *Client, volumeName string, uploadID string, targetPath string, totalBytes int64) error {
+	if totalBytes < 0 {
+		return fmt.Errorf("total bytes must not be negative")
+	}
+	tempPath, cleanTarget, err := volumeUploadTempPath(uploadID, targetPath)
+	if err != nil {
+		return err
+	}
+	parent := filepath.Dir(cleanTarget)
+	if _, err := runWritableVolumeHelper(ctx, c, volumeName, []string{"test", "-d", parent}, 1024); err != nil {
+		return fmt.Errorf("parent directory does not exist: %s", filepath.Dir(filepath.Clean(targetPath)))
+	}
+	if _, err := runWritableVolumeHelper(ctx, c, volumeName, []string{"test", "-w", parent}, 1024); err != nil {
+		return fmt.Errorf("parent directory is not writable: %s", filepath.Dir(filepath.Clean(targetPath)))
+	}
+	if _, err := runWritableVolumeHelper(ctx, c, volumeName, []string{"rm", "-f", tempPath}, 1024); err != nil {
+		return fmt.Errorf("remove stale upload temp file: %w", err)
+	}
+	if _, err := runWritableVolumeHelper(ctx, c, volumeName, []string{"touch", tempPath}, 1024); err != nil {
+		return fmt.Errorf("create upload temp file: %w", err)
+	}
+	return nil
+}
+
+func WriteVolumeChunkedFileUpload(ctx context.Context, c *Client, volumeName string, uploadID string, targetPath string, offset int64, content []byte) error {
+	tempPath, _, err := volumeUploadTempPath(uploadID, targetPath)
+	if err != nil {
+		return err
+	}
+	command, err := dockerWriteFileChunkCommand(tempPath, offset)
+	if err != nil {
+		return err
+	}
+	if _, err := runWritableVolumeHelperWithInput(ctx, c, volumeName, command, content, 1024*1024); err != nil {
+		return fmt.Errorf("write upload chunk: %w", err)
+	}
+	return nil
+}
+
+func CompleteVolumeChunkedFileUpload(ctx context.Context, c *Client, volumeName string, uploadID string, targetPath string, totalBytes int64) error {
+	tempPath, cleanTarget, err := volumeUploadTempPath(uploadID, targetPath)
+	if err != nil {
+		return err
+	}
+	if totalBytes < 0 {
+		return fmt.Errorf("total bytes must not be negative")
+	}
+	sizeText, err := runWritableVolumeHelper(ctx, c, volumeName, []string{"stat", "-c", "%s", tempPath}, 1024)
+	if err != nil {
+		return fmt.Errorf("inspect upload temp file: %w", err)
+	}
+	size, err := strconv.ParseInt(strings.TrimSpace(string(sizeText)), 10, 64)
+	if err != nil {
+		return fmt.Errorf("parse upload temp file size: %w", err)
+	}
+	if size != totalBytes {
+		return fmt.Errorf("upload size mismatch: expected %d bytes, got %d bytes", totalBytes, size)
+	}
+	if _, err := runWritableVolumeHelper(ctx, c, volumeName, []string{"mv", "-f", tempPath, cleanTarget}, 1024); err != nil {
+		return fmt.Errorf("complete upload: %w", err)
+	}
+	return nil
+}
+
+func AbortVolumeChunkedFileUpload(ctx context.Context, c *Client, volumeName string, uploadID string, targetPath string) error {
+	tempPath, _, err := volumeUploadTempPath(uploadID, targetPath)
+	if err != nil {
+		return err
+	}
+	if _, err := runWritableVolumeHelper(ctx, c, volumeName, []string{"rm", "-f", tempPath}, 1024); err != nil {
+		return fmt.Errorf("abort upload: %w", err)
+	}
+	return nil
+}
+
 func CopyVolumeContents(ctx context.Context, c *Client, sourceVolume string, targetVolume string) error {
 	if strings.TrimSpace(sourceVolume) == "" || strings.TrimSpace(targetVolume) == "" {
 		return fmt.Errorf("source and target volume names are required")
@@ -98,16 +294,51 @@ func volumeTargetPath(path string) (string, error) {
 	return filepath.Join("/volume", strings.TrimPrefix(cleaned, "/")), nil
 }
 
+func mutableVolumeTargetPath(path string) (string, error) {
+	if err := validateMutablePath(path); err != nil {
+		return "", err
+	}
+	return volumeTargetPath(path)
+}
+
+func volumeUploadTempPath(uploadID string, targetPath string) (string, string, error) {
+	if err := validateUploadID(uploadID); err != nil {
+		return "", "", err
+	}
+	cleanTarget, err := mutableVolumeTargetPath(targetPath)
+	if err != nil {
+		return "", "", err
+	}
+	parent := filepath.Dir(cleanTarget)
+	return filepath.Join(parent, ".gateway-upload-"+uploadID+".tmp"), cleanTarget, nil
+}
+
 func runVolumeHelper(ctx context.Context, c *Client, volumeName string, command []string, maxBytes int64) ([]byte, error) {
+	return runVolumeHelperWithInput(ctx, c, volumeName, command, nil, maxBytes, true)
+}
+
+func runWritableVolumeHelper(ctx context.Context, c *Client, volumeName string, command []string, maxBytes int64) ([]byte, error) {
+	return runVolumeHelperWithInput(ctx, c, volumeName, command, nil, maxBytes, false)
+}
+
+func runWritableVolumeHelperWithInput(ctx context.Context, c *Client, volumeName string, command []string, input []byte, maxBytes int64) ([]byte, error) {
+	return runVolumeHelperWithInput(ctx, c, volumeName, command, input, maxBytes, false)
+}
+
+func runVolumeHelperWithInput(ctx context.Context, c *Client, volumeName string, command []string, input []byte, maxBytes int64, readOnly bool) ([]byte, error) {
 	if strings.TrimSpace(volumeName) == "" {
 		return nil, fmt.Errorf("volume name is required")
 	}
-	return runMountedVolumeHelper(ctx, c, []mount.Mount{
-		{Type: mount.TypeVolume, Source: volumeName, Target: "/volume", ReadOnly: true},
-	}, command, maxBytes)
+	return runMountedVolumeHelperWithInput(ctx, c, []mount.Mount{
+		{Type: mount.TypeVolume, Source: volumeName, Target: "/volume", ReadOnly: readOnly},
+	}, command, input, maxBytes)
 }
 
 func runMountedVolumeHelper(ctx context.Context, c *Client, mounts []mount.Mount, command []string, maxBytes int64) ([]byte, error) {
+	return runMountedVolumeHelperWithInput(ctx, c, mounts, command, nil, maxBytes)
+}
+
+func runMountedVolumeHelperWithInput(ctx context.Context, c *Client, mounts []mount.Mount, command []string, input []byte, maxBytes int64) ([]byte, error) {
 	if err := ensureVolumeHelperImage(ctx, c); err != nil {
 		return nil, err
 	}
@@ -120,6 +351,9 @@ func runMountedVolumeHelper(ctx context.Context, c *Client, mounts []mount.Mount
 			Cmd:          command,
 			AttachStdout: true,
 			AttachStderr: true,
+			AttachStdin:  input != nil,
+			OpenStdin:    input != nil,
+			StdinOnce:    input != nil,
 		},
 		HostConfig: &container.HostConfig{
 			Mounts: mounts,
@@ -133,8 +367,30 @@ func runMountedVolumeHelper(ctx context.Context, c *Client, mounts []mount.Mount
 		_, _ = c.cli.ContainerRemove(context.Background(), containerID, client.ContainerRemoveOptions{Force: true})
 	}()
 
+	var attachResp client.ContainerAttachResult
+	if input != nil {
+		attachCtx, attachCancel := context.WithTimeout(ctx, 30*time.Second)
+		defer attachCancel()
+		var err error
+		attachResp, err = c.cli.ContainerAttach(attachCtx, containerID, client.ContainerAttachOptions{
+			Stream: true,
+			Stdin:  true,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("attach helper container stdin: %w", err)
+		}
+		defer attachResp.Close()
+	}
+
 	if _, err := c.cli.ContainerStart(ctx, containerID, client.ContainerStartOptions{}); err != nil {
 		return nil, fmt.Errorf("start helper container: %w", err)
+	}
+
+	if input != nil {
+		go func() {
+			_, _ = attachResp.Conn.Write(input)
+			_ = attachResp.CloseWrite()
+		}()
 	}
 
 	wait := c.cli.ContainerWait(ctx, containerID, client.ContainerWaitOptions{Condition: container.WaitConditionNotRunning})
@@ -144,19 +400,89 @@ func runMountedVolumeHelper(ctx context.Context, c *Client, mounts []mount.Mount
 			return nil, fmt.Errorf("wait helper container: %w", err)
 		}
 	case response := <-wait.Result:
-		logs, logErr := readContainerLogs(ctx, c, containerID, maxBytes)
+		logs, stderr, logErr := readContainerLogs(ctx, c, containerID, maxBytes)
 		if response.StatusCode != 0 {
 			if logErr != nil {
 				return nil, fmt.Errorf("helper container exited with status %d", response.StatusCode)
 			}
-			return nil, fmt.Errorf("helper container exited with status %d: %s", response.StatusCode, strings.TrimSpace(string(logs)))
+			message := strings.TrimSpace(stderr)
+			if message == "" {
+				message = strings.TrimSpace(string(logs))
+			}
+			return nil, fmt.Errorf("helper container exited with status %d: %s", response.StatusCode, message)
 		}
 		return logs, logErr
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
 
-	return readContainerLogs(ctx, c, containerID, maxBytes)
+	logs, _, err := readContainerLogs(ctx, c, containerID, maxBytes)
+	return logs, err
+}
+
+func readMountedVolumePathArchive(ctx context.Context, c *Client, mounts []mount.Mount, targetPath string, maxBytes int64) ([]byte, error) {
+	if err := ensureVolumeHelperImage(ctx, c); err != nil {
+		return nil, err
+	}
+
+	createCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	created, err := c.cli.ContainerCreate(createCtx, client.ContainerCreateOptions{
+		Config: &container.Config{
+			Image: volumeHelperImage,
+			Cmd:   []string{"sleep", "60"},
+		},
+		HostConfig: &container.HostConfig{
+			Mounts: mounts,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create archive helper container: %w", err)
+	}
+	containerID := created.ID
+	defer func() {
+		_, _ = c.cli.ContainerRemove(context.Background(), containerID, client.ContainerRemoveOptions{Force: true})
+	}()
+
+	if _, err := c.cli.ContainerStart(ctx, containerID, client.ContainerStartOptions{}); err != nil {
+		return nil, fmt.Errorf("start archive helper container: %w", err)
+	}
+
+	archiveResult, err := c.cli.CopyFromContainer(ctx, containerID, client.CopyFromContainerOptions{SourcePath: targetPath})
+	if err != nil {
+		return nil, fmt.Errorf("archive path: %w", err)
+	}
+	archive := archiveResult.Content
+	defer archive.Close()
+
+	return readSingleRegularFileFromTar(archive, maxBytes)
+}
+
+func readSingleRegularFileFromTar(reader io.Reader, maxBytes int64) ([]byte, error) {
+	tr := tar.NewReader(reader)
+	for {
+		header, err := tr.Next()
+		if err == io.EOF {
+			return nil, fmt.Errorf("archive did not contain a regular file")
+		}
+		if err != nil {
+			return nil, fmt.Errorf("read archive: %w", err)
+		}
+		if header.FileInfo().IsDir() {
+			continue
+		}
+		if header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA {
+			return nil, fmt.Errorf("not a regular file")
+		}
+		if maxBytes <= 0 {
+			maxBytes = 1024 * 1024
+		}
+		var out bytes.Buffer
+		if _, err := io.CopyN(&out, tr, maxBytes); err != nil && err != io.EOF {
+			return nil, fmt.Errorf("read archived file: %w", err)
+		}
+		return out.Bytes(), nil
+	}
 }
 
 func ensureVolumeHelperImage(ctx context.Context, c *Client) error {
@@ -172,13 +498,13 @@ func ensureVolumeHelperImage(ctx context.Context, c *Client) error {
 	return nil
 }
 
-func readContainerLogs(ctx context.Context, c *Client, containerID string, maxBytes int64) ([]byte, error) {
+func readContainerLogs(ctx context.Context, c *Client, containerID string, maxBytes int64) ([]byte, string, error) {
 	logs, err := c.cli.ContainerLogs(ctx, containerID, client.ContainerLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("read helper logs: %w", err)
+		return nil, "", fmt.Errorf("read helper logs: %w", err)
 	}
 	defer logs.Close()
 
@@ -189,12 +515,9 @@ func readContainerLogs(ctx context.Context, c *Client, containerID string, maxBy
 		reader = io.LimitReader(logs, maxBytes)
 	}
 	if _, err := stdcopy.StdCopy(&stdout, &stderr, reader); err != nil {
-		return nil, fmt.Errorf("copy helper logs: %w", err)
+		return nil, "", fmt.Errorf("copy helper logs: %w", err)
 	}
-	if stderr.Len() > 0 {
-		return stdout.Bytes(), fmt.Errorf("%s", strings.TrimSpace(stderr.String()))
-	}
-	return stdout.Bytes(), nil
+	return stdout.Bytes(), stderr.String(), nil
 }
 
 // ReadFile reads up to maxBytes of a regular file from inside a container.
@@ -221,12 +544,12 @@ func ReadFile(ctx context.Context, c *Client, containerID string, path string, m
 	// Read with a timeout to prevent hangs on special files that slip through
 	readCtx, readCancel := context.WithTimeout(ctx, 10*time.Second)
 	defer readCancel()
-	stdout, err := execInContainer(readCtx, c, containerID, []string{"head", "-c", strconv.FormatInt(maxBytes, 10), path})
+	stdout, err := execInContainerBytes(readCtx, c, containerID, []string{"head", "-c", strconv.FormatInt(maxBytes, 10), path}, maxBytes+1024*1024)
 	if err != nil {
 		return nil, fmt.Errorf("read file: %w", err)
 	}
 
-	return []byte(stdout), nil
+	return stdout, nil
 }
 
 // WriteFile writes content to a regular, writable file inside a container.
@@ -256,7 +579,7 @@ func WriteFile(ctx context.Context, c *Client, containerID string, path string, 
 }
 
 func dockerWriteFileCommand(path string) []string {
-	return []string{"dd", "of=" + path, "bs=65536"}
+	return []string{"sh", "-c", "cat > \"$1\"", "sh", path}
 }
 
 func dockerWriteFileChunkCommand(path string, offset int64) ([]string, error) {
@@ -289,9 +612,6 @@ func CreateFile(ctx context.Context, c *Client, containerID string, path string,
 	if _, err := execInContainer(checkCtx, c, containerID, []string{"test", "-w", parent}); err != nil {
 		return fmt.Errorf("parent directory is not writable: %s", parent)
 	}
-	if _, err := execInContainer(checkCtx, c, containerID, []string{"test", "!", "-e", path}); err != nil {
-		return fmt.Errorf("file already exists: %s", path)
-	}
 
 	writeCtx, writeCancel := context.WithTimeout(ctx, 30*time.Second)
 	defer writeCancel()
@@ -318,9 +638,6 @@ func InitChunkedFileUpload(ctx context.Context, c *Client, containerID string, u
 	}
 	if _, err := execInContainer(checkCtx, c, containerID, []string{"test", "-w", parent}); err != nil {
 		return fmt.Errorf("parent directory is not writable: %s", parent)
-	}
-	if _, err := execInContainer(checkCtx, c, containerID, []string{"test", "!", "-e", cleanTarget}); err != nil {
-		return fmt.Errorf("file already exists: %s", cleanTarget)
 	}
 
 	initCtx, initCancel := context.WithTimeout(ctx, 30*time.Second)
@@ -363,9 +680,6 @@ func CompleteChunkedFileUpload(ctx context.Context, c *Client, containerID strin
 
 	checkCtx, checkCancel := context.WithTimeout(ctx, 5*time.Second)
 	defer checkCancel()
-	if _, err := execInContainer(checkCtx, c, containerID, []string{"test", "!", "-e", cleanTarget}); err != nil {
-		return fmt.Errorf("file already exists: %s", cleanTarget)
-	}
 	sizeText, err := execInContainer(checkCtx, c, containerID, []string{"stat", "-c", "%s", tempPath})
 	if err != nil {
 		return fmt.Errorf("inspect upload temp file: %w", err)
@@ -380,7 +694,7 @@ func CompleteChunkedFileUpload(ctx context.Context, c *Client, containerID strin
 
 	completeCtx, completeCancel := context.WithTimeout(ctx, 30*time.Second)
 	defer completeCancel()
-	if _, err := execInContainer(completeCtx, c, containerID, []string{"mv", tempPath, cleanTarget}); err != nil {
+	if _, err := execInContainer(completeCtx, c, containerID, []string{"mv", "-f", tempPath, cleanTarget}); err != nil {
 		return fmt.Errorf("complete upload: %w", err)
 	}
 	return nil
@@ -466,11 +780,19 @@ func validatePath(path string) error {
 	if !filepath.IsAbs(path) {
 		return fmt.Errorf("path must be absolute: %s", path)
 	}
-	cleaned := filepath.Clean(path)
-	if strings.Contains(cleaned, "..") {
+	if hasParentTraversalSegment(path) {
 		return fmt.Errorf("path must not contain '..': %s", path)
 	}
 	return nil
+}
+
+func hasParentTraversalSegment(path string) bool {
+	for _, segment := range strings.Split(path, "/") {
+		if segment == ".." {
+			return true
+		}
+	}
+	return false
 }
 
 func validateMutablePath(path string) error {
@@ -526,64 +848,98 @@ func validateMovePaths(fromPath string, toPath string) (string, string, error) {
 	return cleanFrom, cleanTo, nil
 }
 
-// execInContainer runs a command inside a container and returns stdout as a string.
+func splitDockerExecOutput(raw []byte) ([]byte, []byte) {
+	if !isDockerMultiplexedStream(raw) {
+		return raw, nil
+	}
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	if _, err := stdcopy.StdCopy(&stdoutBuf, &stderrBuf, bytes.NewReader(raw)); err == nil {
+		return stdoutBuf.Bytes(), stderrBuf.Bytes()
+	}
+
+	// Some Docker paths return plain stdout without the multiplex header. In that
+	// case the raw output is already the stdout payload.
+	return raw, nil
+}
+
+func isDockerMultiplexedStream(raw []byte) bool {
+	if len(raw) == 0 {
+		return true
+	}
+
+	data := raw
+	for len(data) > 0 {
+		if len(data) < 8 {
+			return false
+		}
+		if data[0] != 1 && data[0] != 2 {
+			return false
+		}
+		frameSize := int(binary.BigEndian.Uint32(data[4:8]))
+		data = data[8:]
+		if frameSize > len(data) {
+			return false
+		}
+		data = data[frameSize:]
+	}
+	return true
+}
+
+// execInContainerBytes runs a command inside a container and returns stdout as raw bytes.
 // Returns an error if the command exits with a non-zero status.
-func execInContainer(ctx context.Context, c *Client, containerID string, cmd []string) (string, error) {
+func execInContainerBytes(ctx context.Context, c *Client, containerID string, cmd []string, maxRead int64) ([]byte, error) {
 	createResult, err := c.cli.ExecCreate(ctx, containerID, client.ExecCreateOptions{
 		Cmd:          cmd,
 		AttachStdout: true,
 		AttachStderr: true,
 	})
 	if err != nil {
-		return "", fmt.Errorf("exec create: %w", err)
+		return nil, fmt.Errorf("exec create: %w", err)
 	}
 
 	attachResult, err := c.cli.ExecAttach(ctx, createResult.ID, client.ExecAttachOptions{})
 	if err != nil {
-		return "", fmt.Errorf("exec attach: %w", err)
+		return nil, fmt.Errorf("exec attach: %w", err)
 	}
 	defer attachResult.Close()
 
 	// Read all output with size limit to prevent OOM on unexpected large output.
 	// The 8-byte Docker multiplex header per frame is stripped below.
-	const maxRead = 10 * 1024 * 1024 // 10MB safety limit
+	if maxRead <= 0 {
+		maxRead = 10 * 1024 * 1024
+	}
 	raw, err := io.ReadAll(io.LimitReader(attachResult.Reader, maxRead))
 	if err != nil {
-		return "", fmt.Errorf("exec read: %w", err)
+		return nil, fmt.Errorf("exec read: %w", err)
 	}
 
-	// Strip Docker stream headers (8-byte header per frame: [stream_type(1)][padding(3)][size(4)])
-	var stdoutBuf, stderrBuf bytes.Buffer
-	data := raw
-	for len(data) >= 8 {
-		streamType := data[0]
-		frameSize := int(data[4])<<24 | int(data[5])<<16 | int(data[6])<<8 | int(data[7])
-		data = data[8:]
-		if frameSize > len(data) {
-			frameSize = len(data)
-		}
-		if streamType == 2 {
-			stderrBuf.Write(data[:frameSize])
-		} else {
-			stdoutBuf.Write(data[:frameSize])
-		}
-		data = data[frameSize:]
-	}
+	stdout, stderr := splitDockerExecOutput(raw)
 
 	// Check exit code
 	inspResult, inspErr := c.cli.ExecInspect(ctx, createResult.ID, client.ExecInspectOptions{})
 	if inspErr == nil && inspResult.ExitCode != 0 {
-		errMsg := strings.TrimSpace(stderrBuf.String())
+		errMsg := strings.TrimSpace(string(stderr))
 		if errMsg == "" {
-			errMsg = strings.TrimSpace(stdoutBuf.String())
+			errMsg = strings.TrimSpace(string(stdout))
 		}
 		if errMsg == "" {
 			errMsg = fmt.Sprintf("command exited with code %d", inspResult.ExitCode)
 		}
-		return "", fmt.Errorf("%s", errMsg)
+		return nil, fmt.Errorf("%s", errMsg)
 	}
 
-	return stdoutBuf.String(), nil
+	return stdout, nil
+}
+
+// execInContainer runs a command inside a container and returns stdout as a string.
+// Returns an error if the command exits with a non-zero status.
+func execInContainer(ctx context.Context, c *Client, containerID string, cmd []string) (string, error) {
+	stdout, err := execInContainerBytes(ctx, c, containerID, cmd, 10*1024*1024)
+	if err != nil {
+		return "", err
+	}
+	return string(stdout), nil
 }
 
 func execInContainerWithInput(ctx context.Context, c *Client, containerID string, cmd []string, input []byte) (string, error) {

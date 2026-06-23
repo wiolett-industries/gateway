@@ -17,7 +17,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PanelShell } from "@/components/common/PanelShell";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -652,7 +651,7 @@ export function PostgresExplorer({
           actions={
             <>
               <Button
-                variant="outline"
+                variant="ghost"
                 size="icon"
                 className="h-8 w-8"
                 onClick={() => setColumnsOpen(true)}
@@ -660,23 +659,21 @@ export function PostgresExplorer({
               >
                 <Settings className="h-3.5 w-3.5" />
               </Button>
-              {totalRows > 40 && (
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={onToggleFocus}
-                  title={focused ? "Collapse explorer" : "Expand explorer"}
-                >
-                  {focused ? (
-                    <Minimize2 className="h-3.5 w-3.5" />
-                  ) : (
-                    <Maximize2 className="h-3.5 w-3.5" />
-                  )}
-                </Button>
-              )}
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={onToggleFocus}
+                title={focused ? "Collapse explorer" : "Expand explorer"}
+              >
+                {focused ? (
+                  <Minimize2 className="h-3.5 w-3.5" />
+                ) : (
+                  <Maximize2 className="h-3.5 w-3.5" />
+                )}
+              </Button>
               {canWrite && (
                 <Button
-                  variant="outline"
+                  variant="ghost"
                   size="icon"
                   className="h-8 w-8"
                   onClick={() =>
@@ -765,7 +762,6 @@ export function PostgresExplorer({
                       title={`Sort by ${column.name}`}
                     >
                       <span className="min-w-0 truncate">{column.name}</span>
-                      {column.isPrimaryKey && <Badge variant="secondary">PK</Badge>}
                       <span className="ml-auto text-muted-foreground/80">
                         {sortBy === column.name ? (
                           sortOrder === "asc" ? (

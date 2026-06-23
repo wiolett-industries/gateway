@@ -3,6 +3,7 @@ import { container } from '@/container.js';
 import { openApiValidationHook } from '@/lib/openapi.js';
 import { hasScope } from '@/lib/permissions.js';
 import { AppError } from '@/middleware/error-handler.js';
+import { requireGatewayFeature } from '@/middleware/feature-flags.js';
 import { authMiddleware, requireScope } from '@/modules/auth/auth.middleware.js';
 import { SSLService } from '@/modules/ssl/ssl.service.js';
 import type { AppEnv } from '@/types.js';
@@ -22,6 +23,7 @@ import { DomainsService } from './domain.service.js';
 export const domainRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
 
 domainRoutes.use('*', authMiddleware);
+domainRoutes.use('*', requireGatewayFeature('domainsEnabled', 'Domains'));
 
 // List domains (paginated)
 domainRoutes.openapi({ ...listDomainsRoute, middleware: requireScope('domains:view') }, async (c) => {

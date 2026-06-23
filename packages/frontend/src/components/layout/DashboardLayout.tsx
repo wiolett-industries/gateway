@@ -15,6 +15,7 @@ import { useAIStore } from "@/stores/ai";
 import { useAuthStore } from "@/stores/auth";
 import { useCAStore } from "@/stores/ca";
 import { useDockerStore } from "@/stores/docker";
+import { useSystemConfigStore } from "@/stores/system-config";
 import { useUIStore } from "@/stores/ui";
 import { useUpdateStore } from "@/stores/update";
 import { AI_SCOPE, isNodeIncompatible, type User } from "@/types";
@@ -56,6 +57,7 @@ export function DashboardLayout() {
   const [isResizing, setIsResizing] = useState(false);
   const [hasNginxNodes, setHasNginxNodes] = useState(true); // default true to avoid flash
   const bootstrapCancelledRef = useRef(false);
+  const loadSystemConfig = useSystemConfigStore((state) => state.load);
 
   useEffect(() => {
     if (isAuthenticated) return;
@@ -140,6 +142,7 @@ export function DashboardLayout() {
                 .then((status) => useAIStore.getState().setEnabled(status.enabled))
                 .catch(() => {})
             : Promise.resolve(),
+          loadSystemConfig().catch(() => {}),
         ]);
 
         return { hasNginxNodes };
@@ -186,7 +189,7 @@ export function DashboardLayout() {
     return () => {
       bootstrapCancelledRef.current = true;
     };
-  }, [currentUser, logout, navigate, setLoading, setUser]);
+  }, [currentUser, loadSystemConfig, logout, navigate, setLoading, setUser]);
 
   useEffect(() => {
     const checkMobile = () => {
@@ -353,6 +356,7 @@ export function DashboardLayout() {
       }
       // Ctrl+H = new proxy host, Ctrl+S = new SSL cert, Ctrl+R = new root CA
       if (e.ctrlKey && !e.metaKey && !e.altKey) {
+        const features = useSystemConfigStore.getState().config.features;
         switch (e.key) {
           case "h":
             e.preventDefault();
@@ -365,6 +369,7 @@ export function DashboardLayout() {
             break;
           case "r":
             e.preventDefault();
+            if (!features.pkiEnabled) break;
             navigate("/cas");
             useUIStore.getState().openModal("createCA");
             break;
@@ -372,14 +377,14 @@ export function DashboardLayout() {
       }
       // Cmd+number navigation
       if (mod && !e.altKey && !e.shiftKey) {
+        const features = useSystemConfigStore.getState().config.features;
         const routes: Record<string, string> = {
           "1": "/",
           "2": "/proxy-hosts",
-          "3": "/domains",
+          ...(features.domainsEnabled ? { "3": "/domains" } : {}),
           "4": "/nginx-templates",
           "5": "/ssl-certificates",
-          "6": "/cas",
-          "7": "/certificates",
+          ...(features.pkiEnabled ? { "6": "/cas", "7": "/certificates" } : {}),
           "8": "/templates",
           "9": "/nodes",
           "0": "/access-lists",

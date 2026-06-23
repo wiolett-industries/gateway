@@ -42,6 +42,7 @@ import { useAIStore } from "@/stores/ai";
 import { useAuthStore } from "@/stores/auth";
 import { useCAStore } from "@/stores/ca";
 import { useDockerStore } from "@/stores/docker";
+import { useSystemConfigStore } from "@/stores/system-config";
 import { useUIStore } from "@/stores/ui";
 import type { Node, ProxyHost } from "@/types";
 
@@ -73,6 +74,8 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const { user, hasScope, hasAnyScope, hasScopedAccess, logout } = useAuthStore();
   const { cas } = useCAStore();
   const { setTheme, theme, toggleSidebar } = useUIStore();
+  const pkiEnabled = useSystemConfigStore((s) => s.config.features.pkiEnabled);
+  const domainsEnabled = useSystemConfigStore((s) => s.config.features.domainsEnabled);
   const recentPages = useUIStore((s) => s.recentPages);
   const containers = useDockerStore((s) => s.containers);
 
@@ -314,7 +317,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       label: "Templates",
       icon: Award,
       shortcut: "⌘7",
-      action: () => navigate("/templates/pki"),
+      action: () => navigate(pkiEnabled ? "/templates/pki" : "/templates/nginx"),
       scope: "pki:templates:view",
     },
     {
@@ -363,7 +366,13 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     }
     if (!i.scope) return true;
     if (i.label === "Authorities") {
-      return hasAnyScope("pki:ca:view:root", "pki:ca:view:intermediate");
+      return pkiEnabled && hasAnyScope("pki:ca:view:root", "pki:ca:view:intermediate");
+    }
+    if (i.label === "Certificates") {
+      return pkiEnabled && hasScopedAccess("pki:cert:view");
+    }
+    if (i.label === "Domains") {
+      return domainsEnabled && hasScopedAccess("domains:view");
     }
     if (i.label === "Logging") {
       const hasResourceScopedSchemaView = user
@@ -383,7 +392,10 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       );
     }
     if (i.label === "Templates") {
-      return hasScopedAccess("pki:templates:view") || hasScopedAccess("proxy:templates:view");
+      return (
+        (pkiEnabled && hasScopedAccess("pki:templates:view")) ||
+        hasScopedAccess("proxy:templates:view")
+      );
     }
     if (i.label === "Proxy Hosts") {
       return hasScopedAccess("proxy:view") || hasScope("proxy:folders:manage");
@@ -431,9 +443,10 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       scope: "pki:ca:create:root",
     },
   ];
-  const filteredActions = allActionItems.filter(
-    (i) => (!i.scope || hasScope(i.scope)) && matches(i.label)
-  );
+  const filteredActions = allActionItems.filter((i) => {
+    if (i.label === "Create Root CA" && !pkiEnabled) return false;
+    return (!i.scope || hasScope(i.scope)) && matches(i.label);
+  });
 
   const themeItems = [
     { label: "Light theme", icon: Sun, action: () => setTheme("light"), active: theme === "light" },
@@ -464,7 +477,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
           .slice(0, 5)
       : [];
   const filteredCAs =
-    searchQuery && hasAnyScope("pki:ca:view:root", "pki:ca:view:intermediate")
+    searchQuery && pkiEnabled && hasAnyScope("pki:ca:view:root", "pki:ca:view:intermediate")
       ? (cas || []).filter((ca) => fuzzyMatch(ca.commonName, searchQuery) > 0).slice(0, 5)
       : [];
 
@@ -634,6 +647,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 
             {/* CAs when no search */}
             {!searchQuery &&
+              pkiEnabled &&
               hasAnyScope("pki:ca:view:root", "pki:ca:view:intermediate") &&
               (cas || []).length > 0 && (
                 <>

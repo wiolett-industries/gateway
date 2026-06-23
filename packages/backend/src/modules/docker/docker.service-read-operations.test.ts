@@ -72,14 +72,12 @@ describe('DockerManagementService read and file operations', () => {
       sendDockerFileCommand: vi
         .fn()
         .mockResolvedValueOnce({ success: true, detail: JSON.stringify([{ name: 'app.log' }]) })
-        .mockResolvedValueOnce({ success: true, detail: JSON.stringify({ content: 'hello' }) }),
+        .mockResolvedValueOnce({ success: true, data: Buffer.from('hello') }),
     };
     const { service } = createService(dispatch);
 
     await expect(service.listDirectory('node-1', 'container-1', '/var/log')).resolves.toEqual([{ name: 'app.log' }]);
-    await expect(service.readFile('node-1', 'container-1', '/var/log/app.log')).resolves.toEqual({
-      content: 'hello',
-    });
+    await expect(service.readFile('node-1', 'container-1', '/var/log/app.log')).resolves.toEqual(Buffer.from('hello'));
     expect(dispatch.sendDockerFileCommand).toHaveBeenNthCalledWith(1, 'node-1', 'list', {
       containerId: 'container-1',
       path: '/var/log',
@@ -87,8 +85,32 @@ describe('DockerManagementService read and file operations', () => {
     expect(dispatch.sendDockerFileCommand).toHaveBeenNthCalledWith(2, 'node-1', 'read', {
       containerId: 'container-1',
       path: '/var/log/app.log',
-      maxBytes: 1048576,
+      maxBytes: 104857600,
     });
+  });
+
+  it('returns empty bytes when reading an empty file', async () => {
+    const dispatch = {
+      sendDockerFileCommand: vi.fn().mockResolvedValue({ success: true, data: Buffer.alloc(0) }),
+    };
+    const { service } = createService(dispatch);
+
+    await expect(service.readFile('node-1', 'container-1', '/tmp/empty.txt')).resolves.toEqual(Buffer.alloc(0));
+    expect(dispatch.sendDockerFileCommand).toHaveBeenCalledWith('node-1', 'read', {
+      containerId: 'container-1',
+      path: '/tmp/empty.txt',
+      maxBytes: 104857600,
+    });
+  });
+
+  it('decodes protobuf bytes strings when reading files', async () => {
+    const jpgHeader = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
+    const dispatch = {
+      sendDockerFileCommand: vi.fn().mockResolvedValue({ success: true, data: jpgHeader.toString('base64') }),
+    };
+    const { service } = createService(dispatch);
+
+    await expect(service.readFile('node-1', 'container-1', '/tmp/image.jpg')).resolves.toEqual(jpgHeader);
   });
 
   it('writes files and records an audit event', async () => {
@@ -143,7 +165,7 @@ describe('DockerManagementService read and file operations', () => {
     };
     const { service, audit, eventBus } = createService(dispatch);
 
-    await service.createFile('node-1', 'container-1', '/tmp/new.txt', 'SGVsbG8=', 'user-1');
+    await service.createFile('node-1', 'container-1', '/tmp/new.txt', 'Hello', 'user-1');
     await service.createDirectory('node-1', 'container-1', '/tmp/new-dir', 'user-1');
     await service.deleteFile('node-1', 'container-1', '/tmp/new.txt', 'user-1');
     await service.moveFile('node-1', 'container-1', '/tmp/new-dir', '/var/new-dir', 'user-1');
@@ -151,7 +173,7 @@ describe('DockerManagementService read and file operations', () => {
     expect(dispatch.sendDockerFileCommand).toHaveBeenNthCalledWith(1, 'node-1', 'create-file', {
       containerId: 'container-1',
       path: '/tmp/new.txt',
-      content: 'SGVsbG8=',
+      content: 'Hello',
     });
     expect(dispatch.sendDockerFileCommand).toHaveBeenNthCalledWith(2, 'node-1', 'create-dir', {
       containerId: 'container-1',

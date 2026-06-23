@@ -1,6 +1,7 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
 import { openApiValidationHook } from '@/lib/openapi.js';
+import { requireGatewayFeature } from '@/middleware/feature-flags.js';
 import { authMiddleware, requireScope } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import {
@@ -16,6 +17,7 @@ import { TemplatesService } from './templates.service.js';
 export const templateRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
 
 templateRoutes.use('*', authMiddleware);
+templateRoutes.use('*', requireGatewayFeature('pkiEnabled', 'PKI'));
 
 // List templates
 templateRoutes.openapi({ ...listTemplatesRoute, middleware: requireScope('pki:templates:view') }, async (c) => {

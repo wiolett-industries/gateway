@@ -80,6 +80,8 @@ Gateway uses a group-based permission system with nested group inheritance. Each
 | nodes:config:edit | Edit node nginx config (resource-scopable) |
 | nodes:logs | View daemon/nginx logs (resource-scopable) |
 | nodes:console | Open interactive shell (resource-scopable) |
+| nodes:files:read | Browse, open, copy, and download node files (resource-scopable) |
+| nodes:files:write | Create, edit, upload, move, and delete node files (resource-scopable) |
 
 ### Administration
 | Scope | Description |
@@ -146,6 +148,8 @@ Gateway uses a group-based permission system with nested group inheritance. Each
 | docker:volumes:view | List volumes |
 | docker:volumes:create | Create volumes |
 | docker:volumes:delete | Remove volumes |
+| docker:volumes:files:read | Browse/read volume files |
+| docker:volumes:files:write | Create/edit/upload/move/delete volume files |
 
 ### Docker: Networks
 | Scope | Description |

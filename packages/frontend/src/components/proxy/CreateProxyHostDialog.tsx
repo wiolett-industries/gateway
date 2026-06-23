@@ -41,8 +41,8 @@ interface CreateProxyHostDialogProps {
   onOpenChange: (open: boolean) => void;
   /** When editing, pre-fill with existing host data */
   existingHost?: ProxyHost | null;
-  /** Called on successful create/update with the host ID */
-  onSuccess?: (hostId: string) => void;
+  /** Called on successful create/update with the host ID and returned host payload when available. */
+  onSuccess?: (hostId: string, host?: ProxyHost) => void;
 }
 
 interface NodeOption {
@@ -341,9 +341,9 @@ export function CreateProxyHostDialog({
       }
 
       if (isEditing && existingHost) {
-        await api.updateProxyHost(existingHost.id, data);
+        const updated = await api.updateProxyHost(existingHost.id, data);
         toast.success("Proxy host updated");
-        onSuccess?.(existingHost.id);
+        onSuccess?.(existingHost.id, updated);
       } else {
         const created = await api.createProxyHost(data);
         toast.success("Proxy host created");

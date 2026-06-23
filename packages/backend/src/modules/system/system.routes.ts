@@ -46,7 +46,13 @@ systemRoutes.openapi(systemVersionRoute, async (c) => {
 systemRoutes.openapi(systemConfigRoute, async (c) => {
   const service = container.resolve(GeneralSettingsService);
   const config = await service.getConfig();
-  return c.json({ data: { fileUploadMaxBytes: config.fileUploadMaxBytes } });
+  return c.json({
+    data: {
+      fileUploadMaxBytes: config.fileUploadMaxBytes,
+      fileOpenMaxBytes: config.fileOpenMaxBytes,
+      features: config.features,
+    },
+  });
 });
 
 // POST /check-update — manual check against GitLab (admin only)

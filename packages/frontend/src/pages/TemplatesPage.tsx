@@ -6,6 +6,7 @@ import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderAct
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuthStore } from "@/stores/auth";
+import { useSystemConfigStore } from "@/stores/system-config";
 import { NginxTemplates } from "./NginxTemplates";
 import { Templates } from "./Templates";
 
@@ -30,11 +31,15 @@ export function TemplatesPage() {
   const { tab: tabParam } = useParams<{ tab?: string }>();
   const navigate = useNavigate();
   const { hasScope, hasScopedAccess } = useAuthStore();
+  const pkiEnabled = useSystemConfigStore((s) => s.config.features.pkiEnabled);
 
   const pkiCreateRef = useRef<(() => void) | null>(null);
   const nginxCreateRef = useRef<(() => void) | null>(null);
 
-  const visibleTabs = TABS.filter((t) => hasScopedAccess(t.scope));
+  const visibleTabs = TABS.filter((t) => {
+    if (t.value === "pki" && !pkiEnabled) return false;
+    return hasScopedAccess(t.scope);
+  });
   const activeTab =
     tabParam && visibleTabs.some((t) => t.value === tabParam)
       ? tabParam

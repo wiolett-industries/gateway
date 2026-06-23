@@ -39,6 +39,11 @@ export interface AuthProvisioningSettings {
   mcpServerEnabled: boolean;
   generalSettings: {
     fileUploadMaxBytes: number;
+    fileOpenMaxBytes: number;
+    features: {
+      pkiEnabled: boolean;
+      domainsEnabled: boolean;
+    };
   };
   networkSecurity: {
     clientIpSource: "auto" | "direct" | "reverse_proxy" | "cloudflare";

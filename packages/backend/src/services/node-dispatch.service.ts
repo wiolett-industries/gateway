@@ -232,16 +232,22 @@ export class NodeDispatchService {
       path?: string;
       maxBytes?: number;
       newName?: string;
+      content?: string | Buffer;
+      targetPath?: string;
     } = {},
     timeoutMs?: number
   ): Promise<CommandResult> {
     if (action !== 'list') {
       await this.assertNodeMutable(nodeId);
     }
+    const payload = {
+      ...options,
+      content: typeof options.content === 'string' ? Buffer.from(options.content) : options.content,
+    };
     return this.registry.sendCommand(
       nodeId,
       {
-        dockerVolume: { action, ...options } as any,
+        dockerVolume: { action, ...payload } as any,
       },
       timeoutMs
     );
@@ -329,6 +335,31 @@ export class NodeDispatchService {
     });
   }
 
+  async sendNodeFileCommand(
+    nodeId: string,
+    action: string,
+    options: {
+      path?: string;
+      targetPath?: string;
+      maxBytes?: number;
+      content?: string | Buffer;
+    } = {}
+  ): Promise<CommandResult> {
+    if (!['list', 'read'].includes(action)) {
+      await this.assertNodeMutable(nodeId);
+    }
+    const { content, ...rest } = options;
+    const payload: Record<string, unknown> = { action, ...rest };
+    if (Buffer.isBuffer(content)) {
+      payload.content = content;
+    } else if (content != null) {
+      payload.content = Buffer.from(content);
+    }
+    return this.registry.sendCommand(nodeId, {
+      nodeFile: payload as any,
+    });
+  }
+
   async sendDockerFileCommand(
     nodeId: string,
     action: string,
@@ -348,8 +379,7 @@ export class NodeDispatchService {
     if (Buffer.isBuffer(content)) {
       payload.content = content;
     } else if (content != null) {
-      // AI/tool calls still use base64 in JSON; REST uploads send raw bytes.
-      payload.content = Buffer.from(content, 'base64');
+      payload.content = Buffer.from(content);
     }
     return this.registry.sendCommand(nodeId, {
       dockerFile: payload as any,

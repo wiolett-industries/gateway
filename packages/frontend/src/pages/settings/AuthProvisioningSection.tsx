@@ -14,6 +14,11 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { api } from "@/services/api";
+import {
+  DEFAULT_GATEWAY_FEATURES,
+  useSystemConfigStore,
+  withDefaultSystemConfig,
+} from "@/stores/system-config";
 import type { AuthProvisioningSettings } from "@/types";
 
 interface AuthProvisioningSectionProps {
@@ -22,6 +27,12 @@ interface AuthProvisioningSectionProps {
 
 const BYTES_PER_MEGABYTE = 1024 * 1024;
 const DEFAULT_FILE_UPLOAD_MAX_BYTES = 100 * BYTES_PER_MEGABYTE;
+const DEFAULT_FILE_OPEN_MAX_BYTES = 10 * BYTES_PER_MEGABYTE;
+const DEFAULT_GENERAL_SETTINGS = {
+  fileUploadMaxBytes: DEFAULT_FILE_UPLOAD_MAX_BYTES,
+  fileOpenMaxBytes: DEFAULT_FILE_OPEN_MAX_BYTES,
+  features: DEFAULT_GATEWAY_FEATURES,
+};
 
 function bytesToMegabytes(bytes: number) {
   return Math.round(bytes / BYTES_PER_MEGABYTE);
@@ -31,8 +42,13 @@ function withDefaultGeneralSettings(settings: AuthProvisioningSettings | null) {
   if (!settings) return null;
   return {
     ...settings,
-    generalSettings: settings.generalSettings ?? {
-      fileUploadMaxBytes: DEFAULT_FILE_UPLOAD_MAX_BYTES,
+    generalSettings: {
+      ...DEFAULT_GENERAL_SETTINGS,
+      ...settings.generalSettings,
+      features: {
+        ...DEFAULT_GATEWAY_FEATURES,
+        ...settings.generalSettings?.features,
+      },
     },
   };
 }
@@ -71,6 +87,24 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
       )
     )
   );
+  const [fileOpenLimitMb, setFileOpenLimitMb] = useState(() =>
+    String(
+      bytesToMegabytes(
+        api.getCached<AuthProvisioningSettings>("settings:auth-provisioning")?.generalSettings
+          ?.fileOpenMaxBytes ?? DEFAULT_FILE_OPEN_MAX_BYTES
+      )
+    )
+  );
+  const [pkiEnabled, setPkiEnabled] = useState(
+    () =>
+      api.getCached<AuthProvisioningSettings>("settings:auth-provisioning")?.generalSettings
+        ?.features?.pkiEnabled ?? DEFAULT_GATEWAY_FEATURES.pkiEnabled
+  );
+  const [domainsEnabled, setDomainsEnabled] = useState(
+    () =>
+      api.getCached<AuthProvisioningSettings>("settings:auth-provisioning")?.generalSettings
+        ?.features?.domainsEnabled ?? DEFAULT_GATEWAY_FEATURES.domainsEnabled
+  );
   const skipNextCidrsBlur = useRef(false);
   const skipNextWebhookCidrsBlur = useRef(false);
 
@@ -84,6 +118,9 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
       setFileUploadLimitMb(
         String(bytesToMegabytes(settingsData.generalSettings.fileUploadMaxBytes))
       );
+      setFileOpenLimitMb(String(bytesToMegabytes(settingsData.generalSettings.fileOpenMaxBytes)));
+      setPkiEnabled(settingsData.generalSettings.features?.pkiEnabled ?? true);
+      setDomainsEnabled(settingsData.generalSettings.features?.domainsEnabled ?? true);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to load Gateway settings");
     }
@@ -165,21 +202,39 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
     if (!settings || !canEdit) return;
     setIsSavingGeneral(true);
     const previous = settings;
-    const nextGeneralSettings = { ...settings.generalSettings, ...patch };
+    const nextGeneralSettings = {
+      ...settings.generalSettings,
+      ...patch,
+      features: {
+        ...settings.generalSettings.features,
+        ...patch.features,
+      },
+    };
     setSettings({ ...settings, generalSettings: nextGeneralSettings });
     try {
       const updated = await api.updateAuthProvisioningSettings({
         generalSettings: nextGeneralSettings,
       });
-      applySettings(updated);
+      const nextSettings = withDefaultGeneralSettings(updated)!;
+      applySettings(nextSettings);
       setFileUploadLimitMb(String(bytesToMegabytes(updated.generalSettings.fileUploadMaxBytes)));
-      api.setCache("system:config", {
-        fileUploadMaxBytes: updated.generalSettings.fileUploadMaxBytes,
-      });
+      setFileOpenLimitMb(String(bytesToMegabytes(updated.generalSettings.fileOpenMaxBytes)));
+      setPkiEnabled(nextSettings.generalSettings.features.pkiEnabled);
+      setDomainsEnabled(nextSettings.generalSettings.features.domainsEnabled);
+      useSystemConfigStore.getState().setConfig(
+        withDefaultSystemConfig({
+          fileUploadMaxBytes: nextSettings.generalSettings.fileUploadMaxBytes,
+          fileOpenMaxBytes: nextSettings.generalSettings.fileOpenMaxBytes,
+          features: nextSettings.generalSettings.features,
+        })
+      );
       toast.success("Gateway settings updated");
     } catch (err) {
       setSettings(previous);
       setFileUploadLimitMb(String(bytesToMegabytes(previous.generalSettings.fileUploadMaxBytes)));
+      setFileOpenLimitMb(String(bytesToMegabytes(previous.generalSettings.fileOpenMaxBytes)));
+      setPkiEnabled(previous.generalSettings.features.pkiEnabled);
+      setDomainsEnabled(previous.generalSettings.features.domainsEnabled);
       toast.error(err instanceof Error ? err.message : "Failed to update Gateway settings");
     } finally {
       setIsSavingGeneral(false);
@@ -193,24 +248,56 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
     return Math.round(value) * BYTES_PER_MEGABYTE;
   };
 
-  const draftFileUploadLimitBytes = getDraftFileUploadLimitBytes();
-  const generalHasChanges =
-    draftFileUploadLimitBytes != null &&
-    draftFileUploadLimitBytes !== settings?.generalSettings.fileUploadMaxBytes;
+  const getDraftFileOpenLimitBytes = () => {
+    if (!settings) return;
+    const value = Number(fileOpenLimitMb);
+    if (!Number.isFinite(value)) return null;
+    return Math.round(value) * BYTES_PER_MEGABYTE;
+  };
 
-  const saveFileUploadLimit = () => {
+  const draftFileUploadLimitBytes = getDraftFileUploadLimitBytes();
+  const draftFileOpenLimitBytes = getDraftFileOpenLimitBytes();
+  const generalHasChanges =
+    (draftFileUploadLimitBytes != null &&
+      draftFileUploadLimitBytes !== settings?.generalSettings.fileUploadMaxBytes) ||
+    (draftFileOpenLimitBytes != null &&
+      draftFileOpenLimitBytes !== settings?.generalSettings.fileOpenMaxBytes) ||
+    pkiEnabled !== settings?.generalSettings.features.pkiEnabled ||
+    domainsEnabled !== settings?.generalSettings.features.domainsEnabled;
+
+  const saveGeneralSettings = () => {
     if (!settings) return;
     const nextBytes = getDraftFileUploadLimitBytes();
+    const nextOpenBytes = getDraftFileOpenLimitBytes();
     if (nextBytes == null) {
       toast.error("File upload limit must be a number");
+      return;
+    }
+    if (nextOpenBytes == null) {
+      toast.error("File open limit must be a number");
       return;
     }
     if (nextBytes < BYTES_PER_MEGABYTE || nextBytes > 500 * BYTES_PER_MEGABYTE) {
       toast.error("File upload limit must be between 1 MB and 500 MB");
       return;
     }
-    if (nextBytes === settings.generalSettings.fileUploadMaxBytes) return;
-    updateGeneralSettings({ fileUploadMaxBytes: nextBytes });
+    if (nextOpenBytes < BYTES_PER_MEGABYTE || nextOpenBytes > 100 * BYTES_PER_MEGABYTE) {
+      toast.error("File open limit must be between 1 MB and 100 MB");
+      return;
+    }
+    if (
+      nextBytes === settings.generalSettings.fileUploadMaxBytes &&
+      nextOpenBytes === settings.generalSettings.fileOpenMaxBytes &&
+      pkiEnabled === settings.generalSettings.features.pkiEnabled &&
+      domainsEnabled === settings.generalSettings.features.domainsEnabled
+    ) {
+      return;
+    }
+    updateGeneralSettings({
+      fileUploadMaxBytes: nextBytes,
+      fileOpenMaxBytes: nextOpenBytes,
+      features: { pkiEnabled, domainsEnabled },
+    });
   };
 
   const handleToggleMcpServer = async (checked: boolean) => {
@@ -340,7 +427,7 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
         description="Gateway-wide behavior and operational limits"
         actions={
           <Button
-            onClick={saveFileUploadLimit}
+            onClick={saveGeneralSettings}
             disabled={!canEdit || isSavingGeneral || !generalHasChanges}
           >
             <Save className="h-4 w-4" />
@@ -368,9 +455,59 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
               onChange={(event) => setFileUploadLimitMb(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter") {
-                  saveFileUploadLimit();
+                  saveGeneralSettings();
                 }
               }}
+            />
+          </div>
+          <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+            <div>
+              <p className="text-sm font-medium">File open limit</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Maximum file size opened or copied in the browser, in MB
+              </p>
+            </div>
+            <Input
+              className="w-full shrink-0 sm:max-w-40"
+              type="number"
+              min={1}
+              max={100}
+              step={1}
+              value={fileOpenLimitMb}
+              disabled={!canEdit || isSavingGeneral}
+              onChange={(event) => setFileOpenLimitMb(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  saveGeneralSettings();
+                }
+              }}
+            />
+          </div>
+          <div className="flex items-center justify-between gap-4 px-4 py-3">
+            <div>
+              <p className="text-sm font-medium">PKI</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Show PKI navigation and allow user access to authorities, certificates, and PKI
+                templates
+              </p>
+            </div>
+            <Switch
+              checked={pkiEnabled}
+              disabled={!canEdit || isSavingGeneral}
+              onChange={setPkiEnabled}
+            />
+          </div>
+          <div className="flex items-center justify-between gap-4 px-4 py-3">
+            <div>
+              <p className="text-sm font-medium">Domains</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Show domain management navigation and allow user access to managed domains
+              </p>
+            </div>
+            <Switch
+              checked={domainsEnabled}
+              disabled={!canEdit || isSavingGeneral}
+              onChange={setDomainsEnabled}
             />
           </div>
         </div>

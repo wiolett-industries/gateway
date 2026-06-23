@@ -10,6 +10,13 @@ export interface UpdateStatus {
 
 export interface SystemConfig {
   fileUploadMaxBytes: number;
+  fileOpenMaxBytes: number;
+  features: GatewayFeatureConfig;
+}
+
+export interface GatewayFeatureConfig {
+  pkiEnabled: boolean;
+  domainsEnabled: boolean;
 }
 
 export type LicenseTier = "community" | "homelab" | "enterprise";

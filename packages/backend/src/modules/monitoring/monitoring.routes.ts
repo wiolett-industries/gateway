@@ -1,13 +1,18 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
+import { eq } from 'drizzle-orm';
 import { streamSSE } from 'hono/streaming';
-import { container } from '@/container.js';
+import { container, TOKENS } from '@/container.js';
+import type { DrizzleClient } from '@/db/client.js';
+import { proxyHosts } from '@/db/schema/index.js';
 import { openApiValidationHook } from '@/lib/openapi.js';
 import { getResourceScopedIds, hasScope, hasScopeBase } from '@/lib/permissions.js';
 import { authMiddleware, requireScopeForResource } from '@/modules/auth/auth.middleware.js';
+import { NodeRegistryService } from '@/services/node-registry.service.js';
 import type { AppEnv } from '@/types.js';
 import { logRelay, type RelayedLogEntry } from './log-relay.service.js';
 import { dashboardStatsRoute, healthStatusRoute, proxyLogStreamRoute } from './monitoring.docs.js';
 import { MonitoringService } from './monitoring.service.js';
+import { subscribeNginxHostLogs } from './nginx-log-subscriptions.js';
 
 export const monitoringRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
 
@@ -75,11 +80,38 @@ monitoringRoutes.openapi(
       return c.json({ code: 'INVALID_ID', message: 'Invalid host ID' }, 400);
     }
 
+    const db = container.resolve(TOKENS.DrizzleClient) as DrizzleClient;
+    const [host] = await db
+      .select({ nodeId: proxyHosts.nodeId })
+      .from(proxyHosts)
+      .where(eq(proxyHosts.id, hostId))
+      .limit(1);
+
+    if (!host) return c.json({ code: 'NOT_FOUND', message: 'Proxy host not found' }, 404);
+
     return streamSSE(c, async (stream) => {
       await stream.writeSSE({
         data: JSON.stringify({ connected: true, hostId }),
         event: 'connected',
       });
+
+      if (!host.nodeId) {
+        await stream.writeSSE({
+          data: JSON.stringify({ message: 'Proxy host has no nginx node assigned' }),
+          event: 'log-error',
+        });
+        return;
+      }
+
+      const nodeRegistry = container.resolve(NodeRegistryService);
+      const subscription = subscribeNginxHostLogs(nodeRegistry, host.nodeId, hostId, 200);
+      if (!subscription.ok) {
+        await stream.writeSSE({
+          data: JSON.stringify({ message: subscription.message }),
+          event: 'log-error',
+        });
+        return;
+      }
 
       // Subscribe to log entries for this host
       const onLog = (entry: RelayedLogEntry) => {
@@ -96,6 +128,7 @@ monitoringRoutes.openapi(
       stream.onAbort(() => {
         clearInterval(keepalive);
         logRelay.off('log', onLog);
+        subscription.cleanup();
       });
 
       await new Promise(() => {});

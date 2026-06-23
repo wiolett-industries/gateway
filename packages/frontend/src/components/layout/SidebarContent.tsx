@@ -52,6 +52,7 @@ import { usePinnedContainersStore } from "@/stores/pinned-containers";
 import { usePinnedDatabasesStore } from "@/stores/pinned-databases";
 import { usePinnedNodesStore } from "@/stores/pinned-nodes";
 import { usePinnedProxiesStore } from "@/stores/pinned-proxies";
+import { useSystemConfigStore } from "@/stores/system-config";
 import { useUIStore } from "@/stores/ui";
 import { useUpdateStore } from "@/stores/update";
 import type { Node, ProxyHost } from "@/types";
@@ -189,6 +190,8 @@ export function SidebarContent({
   const [pinnedNodes, setPinnedNodes] = useState<Node[]>([]);
   const [statusPageEnabled, setStatusPageEnabled] = useState(false);
   const [loggingEnabled, setLoggingEnabled] = useState(false);
+  const pkiEnabled = useSystemConfigStore((s) => s.config.features.pkiEnabled);
+  const domainsEnabled = useSystemConfigStore((s) => s.config.features.domainsEnabled);
 
   const sidebarPinnedProxyIds = usePinnedProxiesStore((s) => s.sidebarProxyIds);
   const pinnedProxyRefreshTick = usePinnedProxiesStore((s) => s.refreshTick);
@@ -437,6 +440,7 @@ export function SidebarContent({
       // Hide entire Reverse Proxy group when no nginx nodes
       if (group.label === "Reverse Proxy" && !hasNginxNodes && !canAccessProxyHosts)
         return { ...group, items: [] };
+      if (group.label === "PKI" && !pkiEnabled) return { ...group, items: [] };
       return {
         ...group,
         items: group.items.filter((item) => {
@@ -449,7 +453,11 @@ export function SidebarContent({
           } else if (item.href === "/logging") {
             if (!canAccessLogging) return false;
           } else if (item.href === "/cas") {
-            if (!canAccessAuthorities) return false;
+            if (!pkiEnabled || !canAccessAuthorities) return false;
+          } else if (item.href === "/certificates") {
+            if (!pkiEnabled) return false;
+          } else if (item.href === "/domains") {
+            if (!domainsEnabled) return false;
           } else if (item.href === "/notifications") {
             if (!canAccessNotifications) return false;
           } else if (item.href === "/nodes") {
@@ -473,7 +481,7 @@ export function SidebarContent({
           // Templates: need at least one template scope
           if (
             item.href === "/templates" &&
-            !hasScopedAccess("pki:templates:view") &&
+            (!pkiEnabled || !hasScopedAccess("pki:templates:view")) &&
             !hasScopedAccess("proxy:templates:view")
           )
             return false;

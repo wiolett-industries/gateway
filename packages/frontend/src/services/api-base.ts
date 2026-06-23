@@ -341,6 +341,93 @@ export class ApiClientBase {
     return this.fetchRaw<T>(url, options);
   }
 
+  protected async requestBinary(endpoint: string, options: RequestInit = {}): Promise<ArrayBuffer> {
+    const url =
+      endpoint.startsWith("/auth") || endpoint.startsWith(API_BASE)
+        ? endpoint
+        : `${API_BASE}${endpoint}`;
+    const generation = this.sessionGeneration;
+    const method = (options.method || "GET").toUpperCase();
+    const headers = new Headers(options.headers);
+
+    if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+      headers.set("X-CSRF-Token", await this.getCsrfToken());
+    }
+
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        ...options,
+        credentials: "include",
+        headers,
+      });
+    } catch {
+      useAppStatusStore.getState().setMaintenanceActive(true);
+      throw new ApiRequestError("Service unavailable", {
+        status: 0,
+        code: "SERVICE_UNAVAILABLE",
+      });
+    }
+
+    if (response.status < 500) {
+      useAppStatusStore.getState().setMaintenanceActive(false);
+    }
+
+    this.assertSessionGeneration(generation);
+
+    if (!response.ok) {
+      const parsedError = await response.json().catch(() => undefined);
+      if (response.status === 429) {
+        const retryAfterSeconds = getRetryAfterSeconds(response);
+        useAppStatusStore.getState().activateRateLimit(retryAfterSeconds);
+        throw new ApiRequestError("Too many requests, please try again later", {
+          status: response.status,
+          code: "RATE_LIMIT_EXCEEDED",
+          retryAfterSeconds,
+        });
+      }
+      if (response.status === 401) {
+        this.clearCsrfToken();
+        useAuthStore.getState().logout();
+        window.location.href = getLoginRedirectUrl();
+        throw new ApiRequestError("Session expired", {
+          status: response.status,
+          code: "UNAUTHORIZED",
+        });
+      }
+      if (response.status === 403) {
+        const message = extractApiErrorMessage(parsedError, "Insufficient permissions");
+        if (message === "Invalid CSRF token") {
+          this.clearCsrfToken();
+        }
+        if (message === "Account is blocked") {
+          window.location.href = "/blocked";
+          throw new ApiRequestError("Account is blocked", {
+            status: response.status,
+            code: "ACCOUNT_BLOCKED",
+          });
+        }
+        throw new ApiRequestError(message, {
+          status: response.status,
+          code: "FORBIDDEN",
+        });
+      }
+
+      const fallback = response.status >= 500 ? "Service unavailable" : "An unknown error occurred";
+      throw new ApiRequestError(extractApiErrorMessage(parsedError, fallback), {
+        status: response.status,
+        code:
+          parsedError && typeof parsedError === "object"
+            ? ((parsedError as ApiError).code ?? undefined)
+            : undefined,
+      });
+    }
+
+    const data = await response.arrayBuffer();
+    this.assertSessionGeneration(generation);
+    return data;
+  }
+
   protected async uploadRaw<T>(
     endpoint: string,
     {

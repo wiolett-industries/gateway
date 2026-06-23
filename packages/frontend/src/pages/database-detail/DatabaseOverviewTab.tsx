@@ -2,6 +2,7 @@ import { Activity } from "lucide-react";
 import { useMemo } from "react";
 import { DetailRow } from "@/components/common/DetailRow";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
+import { PanelShell } from "@/components/common/PanelShell";
 import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/ui/stat-card";
 import type { DatabaseConnection, DatabaseMetricSnapshot } from "@/types";
@@ -206,68 +207,68 @@ export function DatabaseOverviewTab({
         ))}
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <div className="border border-border bg-card">
-          <div className="border-b border-border p-4">
-            <h2 className="font-semibold">Connection Details</h2>
-          </div>
-          <div className="divide-y divide-border -mb-px [&>*:last-child]:border-b [&>*:last-child]:border-border">
+        <PanelShell
+          title="Connection Details"
+          bodyClassName="divide-y divide-border -mb-px [&>*:last-child]:border-b [&>*:last-child]:border-border"
+        >
+          <DetailRow
+            label="Endpoint"
+            value={
+              <span className="block break-all font-mono">
+                {database.host}:{database.port}
+              </span>
+            }
+          />
+          <DetailRow
+            label="Target"
+            value={<span className="font-mono">{database.databaseName || "-"}</span>}
+          />
+          <DetailRow
+            label="TLS"
+            value={
+              <Badge variant={database.tlsEnabled ? "success" : "secondary"}>
+                {database.tlsEnabled ? "Enabled" : "Disabled"}
+              </Badge>
+            }
+          />
+          <DetailRow
+            label="Username"
+            value={<span className="font-mono">{database.username || "-"}</span>}
+          />
+        </PanelShell>
+
+        <PanelShell
+          title="Database Information"
+          bodyClassName="divide-y divide-border -mb-px [&>*:last-child]:border-b [&>*:last-child]:border-border"
+        >
+          <DetailRow
+            label="Status"
+            value={
+              <Badge variant={HEALTH_BADGE[healthStatus] ?? "secondary"}>
+                {formatHealthStatusLabel(healthStatus)}
+              </Badge>
+            }
+          />
+          <DetailRow label="Provider" value={<span className="capitalize">{database.type}</span>} />
+          <DetailRow
+            label="Last Check"
+            value={
+              database.lastHealthCheckAt
+                ? new Date(database.lastHealthCheckAt).toLocaleTimeString()
+                : "Never"
+            }
+          />
+          {database.lastError && (
             <DetailRow
-              label="Endpoint"
+              label="Last Error"
               value={
-                <span className="block break-all font-mono">
-                  {database.host}:{database.port}
+                <span className="block max-w-[24rem] break-words text-right">
+                  {database.lastError}
                 </span>
               }
             />
-            <DetailRow
-              label="Target"
-              value={<span className="font-mono">{database.databaseName || "-"}</span>}
-            />
-            <DetailRow label="TLS" value={database.tlsEnabled ? "Enabled" : "Disabled"} />
-            <DetailRow
-              label="Username"
-              value={<span className="font-mono">{database.username || "-"}</span>}
-            />
-          </div>
-        </div>
-
-        <div className="border border-border bg-card">
-          <div className="border-b border-border p-4">
-            <h2 className="font-semibold">Database Information</h2>
-          </div>
-          <div className="divide-y divide-border -mb-px [&>*:last-child]:border-b [&>*:last-child]:border-border">
-            <DetailRow
-              label="Status"
-              value={
-                <Badge variant={HEALTH_BADGE[healthStatus] ?? "secondary"}>
-                  {formatHealthStatusLabel(healthStatus)}
-                </Badge>
-              }
-            />
-            <DetailRow
-              label="Provider"
-              value={<span className="capitalize">{database.type}</span>}
-            />
-            <DetailRow
-              label="Last Check"
-              value={
-                database.lastHealthCheckAt
-                  ? new Date(database.lastHealthCheckAt).toLocaleTimeString()
-                  : "Never"
-              }
-            />
-            {database.lastError && (
-              <DetailRow
-                label="Last Error"
-                value={
-                  <span className="max-w-[24rem] text-right text-destructive">
-                    {database.lastError}
-                  </span>
-                }
-              />
-            )}
-          </div>
-        </div>
+          )}
+        </PanelShell>
       </div>
     </div>
   );

@@ -3,6 +3,7 @@ import { container } from '@/container.js';
 import { openApiValidationHook } from '@/lib/openapi.js';
 import { getResourceScopedIds, hasScope } from '@/lib/permissions.js';
 import { sanitizeFilename } from '@/lib/utils.js';
+import { requireGatewayFeature } from '@/middleware/feature-flags.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
 import {
   authMiddleware,
@@ -36,6 +37,7 @@ import { OCSPService } from './ocsp.service.js';
 export const certRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
 
 certRoutes.use('*', authMiddleware);
+certRoutes.use('*', requireGatewayFeature('pkiEnabled', 'PKI'));
 
 // List certificates (paginated, filterable)
 certRoutes.openapi({ ...listCertificatesRoute, middleware: requireScopeBase('pki:cert:view') }, async (c) => {

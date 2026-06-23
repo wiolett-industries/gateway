@@ -51,12 +51,10 @@ import {
   ContainerUpdateSchema,
   EnvUpdateSchema,
   FileBrowseSchema,
-  FileCreateSchema,
   FileMoveSchema,
   FileUploadChunkQuerySchema,
   FileUploadCompleteSchema,
   FileUploadInitSchema,
-  FileWriteSchema,
   LogQuerySchema,
   SecretCreateSchema,
   SecretUpdateSchema,
@@ -68,15 +66,7 @@ import { DockerSecretService } from './docker-secret.service.js';
 const DOCKER_RESOURCE_LIST_MAX = 1000;
 const DOCKER_CONTAINER_PORT_PREVIEW_MAX = 64;
 
-async function parseFileContentRequest(
-  c: Parameters<Parameters<OpenAPIHono<AppEnv>['openapi']>[1]>[0],
-  schema: typeof FileWriteSchema | typeof FileCreateSchema
-) {
-  const contentType = c.req.header('content-type') ?? '';
-  if (contentType.includes('application/json')) {
-    return schema.parse(await c.req.json());
-  }
-
+async function parseFileContentRequest(c: Parameters<Parameters<OpenAPIHono<AppEnv>['openapi']>[1]>[0]) {
   const path = FileBrowseSchema.parse(c.req.query()).path;
   const content = Buffer.from(await c.req.arrayBuffer());
   return { path, content };
@@ -532,7 +522,13 @@ export function registerContainerRoutes(router: OpenAPIHono<AppEnv>) {
       const rawQuery = c.req.query();
       const { path } = FileBrowseSchema.parse(rawQuery);
       const data = await service.readFile(nodeId, containerId, path);
-      return c.json({ data });
+      return new Response(new Uint8Array(data), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'Content-Length': String(data.byteLength),
+        },
+      });
     }
   );
 
@@ -544,10 +540,7 @@ export function registerContainerRoutes(router: OpenAPIHono<AppEnv>) {
       const nodeId = c.req.param('nodeId')!;
       const containerId = c.req.param('containerId')!;
       const user = c.get('user')!;
-      const { path, content } = await parseFileContentRequest(c, FileWriteSchema);
-      if (content === undefined) {
-        return c.json({ code: 'INVALID_BODY', message: 'content is required' }, 400);
-      }
+      const { path, content } = await parseFileContentRequest(c);
       await service.writeFile(nodeId, containerId, path, content, user.id);
       return c.json({ success: true });
     }
@@ -560,7 +553,7 @@ export function registerContainerRoutes(router: OpenAPIHono<AppEnv>) {
       const nodeId = c.req.param('nodeId')!;
       const containerId = c.req.param('containerId')!;
       const user = c.get('user')!;
-      const { path, content } = await parseFileContentRequest(c, FileCreateSchema);
+      const { path, content } = await parseFileContentRequest(c);
       await service.createFile(nodeId, containerId, path, content, user.id);
       return c.json({ success: true });
     }

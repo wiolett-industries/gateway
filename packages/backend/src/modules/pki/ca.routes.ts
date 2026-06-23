@@ -4,6 +4,7 @@ import { openApiValidationHook } from '@/lib/openapi.js';
 import { hasScope } from '@/lib/permissions.js';
 import { sanitizeFilename } from '@/lib/utils.js';
 import { AppError } from '@/middleware/error-handler.js';
+import { requireGatewayFeature } from '@/middleware/feature-flags.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
 import {
   authMiddleware,
@@ -37,6 +38,7 @@ import { ExportService } from './export.service.js';
 export const caRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
 
 caRoutes.use('*', authMiddleware);
+caRoutes.use('*', requireGatewayFeature('pkiEnabled', 'PKI'));
 
 function caTypeScope(prefix: 'pki:ca:view' | 'pki:ca:revoke', type: string) {
   return type === 'root' ? `${prefix}:root` : `${prefix}:intermediate`;

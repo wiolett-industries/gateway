@@ -9,13 +9,32 @@ const BODY_LIMIT_OVERHEAD_BYTES = 4096;
 export const FILE_UPLOAD_MIN_BYTES = 1 * 1024 * 1024;
 export const FILE_UPLOAD_DEFAULT_BYTES = 100 * 1024 * 1024;
 export const FILE_UPLOAD_MAX_BYTES = 500 * 1024 * 1024;
+export const FILE_OPEN_MIN_BYTES = 1 * 1024 * 1024;
+export const FILE_OPEN_DEFAULT_BYTES = 10 * 1024 * 1024;
+export const FILE_OPEN_MAX_BYTES = 100 * 1024 * 1024;
 
 export interface GeneralSettings {
   fileUploadMaxBytes: number;
+  fileOpenMaxBytes: number;
+  features: GeneralFeatureSettings;
+}
+
+export interface GeneralFeatureSettings {
+  pkiEnabled: boolean;
+  domainsEnabled: boolean;
 }
 
 export const DEFAULT_GENERAL_SETTINGS: GeneralSettings = {
   fileUploadMaxBytes: FILE_UPLOAD_DEFAULT_BYTES,
+  fileOpenMaxBytes: FILE_OPEN_DEFAULT_BYTES,
+  features: {
+    pkiEnabled: true,
+    domainsEnabled: true,
+  },
+};
+
+export type GeneralSettingsUpdate = Omit<Partial<GeneralSettings>, 'features'> & {
+  features?: Partial<GeneralFeatureSettings>;
 };
 
 export function fileUploadBodyLimitBytes(fileUploadMaxBytes: number): number {
@@ -39,9 +58,16 @@ export class GeneralSettingsService {
     return config;
   }
 
-  async updateConfig(updates: Partial<GeneralSettings>): Promise<GeneralSettings> {
+  async updateConfig(updates: GeneralSettingsUpdate): Promise<GeneralSettings> {
     const current = await this.getConfig();
-    const next = this.normalize({ ...current, ...updates });
+    const next = this.normalize({
+      ...current,
+      ...updates,
+      features: {
+        ...current.features,
+        ...updates.features,
+      },
+    });
     await this.db
       .insert(settings)
       .values({ key: SETTINGS_KEY, value: next, updatedAt: new Date() })
@@ -59,17 +85,51 @@ export class GeneralSettingsService {
     return fileUploadBodyLimitBytes(config.fileUploadMaxBytes);
   }
 
+  async getFileOpenMaxBytes(): Promise<number> {
+    const config = await this.getConfig();
+    return config.fileOpenMaxBytes;
+  }
+
+  async isFeatureEnabled(feature: keyof GeneralFeatureSettings): Promise<boolean> {
+    const config = await this.getConfig();
+    return config.features[feature];
+  }
+
   private normalize(value: unknown): GeneralSettings {
     const record = typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
     const rawFileUploadMaxBytes = Number(record.fileUploadMaxBytes);
     const fileUploadMaxBytes = Number.isInteger(rawFileUploadMaxBytes)
       ? rawFileUploadMaxBytes
       : DEFAULT_GENERAL_SETTINGS.fileUploadMaxBytes;
+    const rawFileOpenMaxBytes = Number(record.fileOpenMaxBytes);
+    const fileOpenMaxBytes = Number.isInteger(rawFileOpenMaxBytes)
+      ? rawFileOpenMaxBytes
+      : DEFAULT_GENERAL_SETTINGS.fileOpenMaxBytes;
 
     if (fileUploadMaxBytes < FILE_UPLOAD_MIN_BYTES || fileUploadMaxBytes > FILE_UPLOAD_MAX_BYTES) {
       throw new Error(`File upload limit must be between ${FILE_UPLOAD_MIN_BYTES} and ${FILE_UPLOAD_MAX_BYTES} bytes`);
     }
 
-    return { fileUploadMaxBytes };
+    if (fileOpenMaxBytes < FILE_OPEN_MIN_BYTES || fileOpenMaxBytes > FILE_OPEN_MAX_BYTES) {
+      throw new Error(`File open limit must be between ${FILE_OPEN_MIN_BYTES} and ${FILE_OPEN_MAX_BYTES} bytes`);
+    }
+
+    const features =
+      typeof record.features === 'object' && record.features !== null
+        ? (record.features as Record<string, unknown>)
+        : {};
+
+    return {
+      fileUploadMaxBytes,
+      fileOpenMaxBytes,
+      features: {
+        pkiEnabled:
+          typeof features.pkiEnabled === 'boolean' ? features.pkiEnabled : DEFAULT_GENERAL_SETTINGS.features.pkiEnabled,
+        domainsEnabled:
+          typeof features.domainsEnabled === 'boolean'
+            ? features.domainsEnabled
+            : DEFAULT_GENERAL_SETTINGS.features.domainsEnabled,
+      },
+    };
   }
 }

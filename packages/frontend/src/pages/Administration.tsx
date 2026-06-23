@@ -1,4 +1,4 @@
-import { Plus } from "lucide-react";
+import { Plus, ScrollText, Shield, Users } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { PageTransition } from "@/components/common/PageTransition";
@@ -153,9 +153,24 @@ export function Administration() {
           className={`flex flex-col ${usesFillLayout ? "mt-4 min-h-0 flex-1" : ""}`}
         >
           <TabsList>
-            {canUsers && <TabsTrigger value="users">Users</TabsTrigger>}
-            {canGroups && <TabsTrigger value="groups">Groups</TabsTrigger>}
-            {canAudit && <TabsTrigger value="audit">Audit Log</TabsTrigger>}
+            {canUsers && (
+              <TabsTrigger value="users" className="gap-1.5">
+                <Users className="h-3.5 w-3.5" />
+                Users
+              </TabsTrigger>
+            )}
+            {canGroups && (
+              <TabsTrigger value="groups" className="gap-1.5">
+                <Shield className="h-3.5 w-3.5" />
+                Groups
+              </TabsTrigger>
+            )}
+            {canAudit && (
+              <TabsTrigger value="audit" className="gap-1.5">
+                <ScrollText className="h-3.5 w-3.5" />
+                Audit Log
+              </TabsTrigger>
+            )}
           </TabsList>
 
           {canUsers && (

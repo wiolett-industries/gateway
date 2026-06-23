@@ -1,3 +1,4 @@
+import { Activity, Table2, Terminal } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -99,10 +100,13 @@ export function DatabaseDetail() {
   }, [load]);
 
   useEffect(() => {
-    if (database?.type === "redis" && activeTab === "explorer") {
+    if (
+      (database?.type === "redis" || liveHealthStatus === "offline") &&
+      activeTab === "explorer"
+    ) {
       setActiveTab("overview");
     }
-  }, [activeTab, database?.type, setActiveTab]);
+  }, [activeTab, database?.type, liveHealthStatus, setActiveTab]);
 
   useEffect(() => {
     if (liveHealthStatus === "offline" && activeTab === "console") {
@@ -240,6 +244,7 @@ export function DatabaseDetail() {
   const hideDatabaseChrome =
     explorerFocused && activeTab === "explorer" && database.type === "postgres";
   const consoleDisabled = liveHealthStatus === "offline";
+  const explorerDisabled = liveHealthStatus === "offline";
 
   return (
     <PageTransition>
@@ -279,12 +284,19 @@ export function DatabaseDetail() {
         >
           {!hideDatabaseChrome && (
             <TabsList className="shrink-0">
-              <TabsTrigger value="overview">Overview</TabsTrigger>
+              <TabsTrigger value="overview" className="gap-1.5">
+                <Activity className="h-3.5 w-3.5" />
+                Overview
+              </TabsTrigger>
               {canRead &&
                 (database.type === "postgres" ? (
-                  <TabsTrigger value="explorer">Explorer</TabsTrigger>
+                  <TabsTrigger value="explorer" disabled={explorerDisabled} className="gap-1.5">
+                    <Table2 className="h-3.5 w-3.5" />
+                    Explorer
+                  </TabsTrigger>
                 ) : (
-                  <TabsTrigger value="explorer" disabled>
+                  <TabsTrigger value="explorer" disabled className="gap-1.5">
+                    <Table2 className="h-3.5 w-3.5" />
                     <span className="flex items-center gap-2">
                       Explorer
                       <Badge variant="secondary">SOON</Badge>
@@ -292,7 +304,8 @@ export function DatabaseDetail() {
                   </TabsTrigger>
                 ))}
               {(canRead || canWrite || canAdmin) && (
-                <TabsTrigger value="console" disabled={consoleDisabled}>
+                <TabsTrigger value="console" disabled={consoleDisabled} className="gap-1.5">
+                  <Terminal className="h-3.5 w-3.5" />
                   Console
                 </TabsTrigger>
               )}
@@ -314,7 +327,7 @@ export function DatabaseDetail() {
               value="explorer"
               className={cn("flex flex-col flex-1 min-h-0", hideDatabaseChrome && "mt-0")}
             >
-              {database.type === "postgres" ? (
+              {database.type === "postgres" && !explorerDisabled ? (
                 <PostgresExplorer
                   database={database}
                   canWrite={canWrite || canAdmin}
@@ -322,6 +335,10 @@ export function DatabaseDetail() {
                   focused={explorerFocused}
                   onToggleFocus={() => setExplorerFocused((current) => !current)}
                 />
+              ) : explorerDisabled ? (
+                <div className="border border-border bg-card p-8 text-center text-sm text-muted-foreground">
+                  Explorer is unavailable while the database is offline.
+                </div>
               ) : (
                 <div className="border border-border bg-card p-8 text-center text-sm text-muted-foreground">
                   Redis explorer is coming soon.

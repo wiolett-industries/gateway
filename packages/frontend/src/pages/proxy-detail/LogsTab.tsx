@@ -1,4 +1,12 @@
 import { useEffect, useRef, useState } from "react";
+import {
+  ResourceListCell,
+  type ResourceListColumn,
+  ResourceListFrame,
+  ResourceListHeaderTable,
+  ResourceListRow,
+  ResourceListTable,
+} from "@/components/common/ResourceListLayout";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
@@ -32,8 +40,19 @@ const STATUS_VARIANT: Record<
   "5": "destructive",
 };
 
+const LOG_COLUMNS: ResourceListColumn<NginxLogEntry>[] = [
+  { id: "time", label: "Time", width: 160 },
+  { id: "type", label: "Type", width: 60 },
+  { id: "remoteAddr", label: "Remote Addr", width: 120 },
+  { id: "method", label: "Method", width: 60 },
+  { id: "path", label: "Path / Message" },
+  { id: "status", label: "Status", width: 60 },
+  { id: "size", label: "Size", width: 70 },
+];
+
 export function LogsTab({ hostId }: { hostId: string }) {
   const [logs, setLogs] = useState<NginxLogEntry[]>([]);
+  const [streamError, setStreamError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -71,7 +90,20 @@ export function LogsTab({ hostId }: { hostId: string }) {
     });
     esRef.current = es;
 
-    es.addEventListener("connected", () => setLogs([]));
+    setStreamError(null);
+
+    es.addEventListener("connected", () => {
+      setStreamError(null);
+      setLogs([]);
+    });
+    es.addEventListener("log-error", (e) => {
+      try {
+        const data = JSON.parse(e.data) as { message?: string };
+        setStreamError(data.message || "Log stream is not available");
+      } catch {
+        setStreamError("Log stream is not available");
+      }
+    });
     es.addEventListener("log", (e) => {
       try {
         const entry = JSON.parse(e.data) as NginxLogEntry;
@@ -107,18 +139,6 @@ export function LogsTab({ hostId }: { hostId: string }) {
     return () => es.close();
   }, [hostId, statusFilter, debouncedSearch]);
 
-  const colgroup = (
-    <colgroup>
-      <col style={{ width: "160px" }} />
-      <col style={{ width: "60px" }} />
-      <col style={{ width: "120px" }} />
-      <col style={{ width: "60px" }} />
-      <col />
-      <col style={{ width: "60px" }} />
-      <col style={{ width: "70px" }} />
-    </colgroup>
-  );
-
   return (
     <div className="flex flex-col flex-1 min-h-0 gap-2">
       <div className="flex shrink-0 flex-col gap-3 sm:flex-row">
@@ -143,76 +163,68 @@ export function LogsTab({ hostId }: { hostId: string }) {
         </Select>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-x-auto border border-border bg-card">
-        <div className="flex h-full min-w-[920px] flex-col">
-          <table className="w-full shrink-0" style={{ tableLayout: "fixed" }}>
-            {colgroup}
-            <thead>
-              <tr className="text-left border-b border-border">
-                <th className="p-3 text-xs font-medium text-muted-foreground">Time</th>
-                <th className="p-3 text-xs font-medium text-muted-foreground">Type</th>
-                <th className="p-3 text-xs font-medium text-muted-foreground">Remote Addr</th>
-                <th className="p-3 text-xs font-medium text-muted-foreground">Method</th>
-                <th className="p-3 text-xs font-medium text-muted-foreground">Path / Message</th>
-                <th className="p-3 text-xs font-medium text-muted-foreground">Status</th>
-                <th className="p-3 text-xs font-medium text-muted-foreground">Size</th>
-              </tr>
-            </thead>
-          </table>
-          <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
-            <table className="w-full" style={{ tableLayout: "fixed" }}>
-              {colgroup}
-              <tbody className="divide-y divide-border">
-                {logs.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="text-center py-16 text-sm text-muted-foreground">
-                      Waiting for log events...
-                    </td>
-                  </tr>
-                ) : (
-                  logs.map((entry, i) => {
-                    const isError = entry.logType === "error";
-                    return (
-                      <tr key={i}>
-                        <td className="p-3 text-sm text-muted-foreground whitespace-nowrap">
-                          {entry.timestamp}
-                        </td>
-                        <td className="p-3 text-sm">
-                          <Badge variant={isError ? "destructive" : "secondary"}>
-                            {isError ? "err" : "acc"}
-                          </Badge>
-                        </td>
-                        <td className="p-3 text-sm text-muted-foreground">
-                          {isError ? "\u2014" : entry.remoteAddr}
-                        </td>
-                        <td className="p-3 text-sm">{isError ? "\u2014" : entry.method}</td>
-                        <td
-                          className="p-3 text-sm truncate"
-                          title={isError ? entry.raw : entry.path}
-                        >
-                          {isError ? entry.raw : entry.path}
-                        </td>
-                        <td className="p-3 text-sm">
-                          {isError ? (
-                            <Badge variant="destructive">{entry.level || "err"}</Badge>
-                          ) : (
-                            <Badge variant={STATUS_VARIANT[String(entry.status)[0]] ?? "secondary"}>
-                              {entry.status}
-                            </Badge>
-                          )}
-                        </td>
-                        <td className="p-3 text-sm text-muted-foreground">
-                          {isError ? "\u2014" : entry.bodyBytesSent}
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+      <ResourceListFrame
+        minWidth={920}
+        className="min-h-0 flex-1"
+        innerClassName="flex h-full flex-col"
+      >
+        <ResourceListHeaderTable columns={LOG_COLUMNS} />
+        <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
+          <ResourceListTable columns={LOG_COLUMNS}>
+            {logs.length === 0 ? (
+              <ResourceListRow className="opacity-100">
+                <ResourceListCell
+                  colSpan={7}
+                  align="center"
+                  contentClassName="justify-center py-16"
+                >
+                  {streamError ?? "Waiting for log events..."}
+                </ResourceListCell>
+              </ResourceListRow>
+            ) : (
+              logs.map((entry, i) => {
+                const isError = entry.logType === "error";
+                return (
+                  <ResourceListRow key={i} className="opacity-100">
+                    <ResourceListCell contentClassName="whitespace-nowrap text-sm text-muted-foreground">
+                      {entry.timestamp}
+                    </ResourceListCell>
+                    <ResourceListCell>
+                      <Badge variant={isError ? "destructive" : "secondary"}>
+                        {isError ? "err" : "acc"}
+                      </Badge>
+                    </ResourceListCell>
+                    <ResourceListCell contentClassName="text-sm text-muted-foreground">
+                      {isError ? "\u2014" : entry.remoteAddr}
+                    </ResourceListCell>
+                    <ResourceListCell contentClassName="text-sm">
+                      {isError ? "\u2014" : entry.method}
+                    </ResourceListCell>
+                    <ResourceListCell
+                      contentClassName="truncate text-sm"
+                      title={isError ? entry.raw : entry.path}
+                    >
+                      {isError ? entry.raw : entry.path}
+                    </ResourceListCell>
+                    <ResourceListCell>
+                      {isError ? (
+                        <Badge variant="destructive">{entry.level || "err"}</Badge>
+                      ) : (
+                        <Badge variant={STATUS_VARIANT[String(entry.status)[0]] ?? "secondary"}>
+                          {entry.status}
+                        </Badge>
+                      )}
+                    </ResourceListCell>
+                    <ResourceListCell contentClassName="text-sm text-muted-foreground">
+                      {isError ? "\u2014" : entry.bodyBytesSent}
+                    </ResourceListCell>
+                  </ResourceListRow>
+                );
+              })
+            )}
+          </ResourceListTable>
         </div>
-      </div>
+      </ResourceListFrame>
     </div>
   );
 }

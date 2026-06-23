@@ -25,9 +25,15 @@ import {
   Upload,
 } from "lucide-react";
 import type { ChangeEvent, DragEvent, MouseEvent, ReactNode } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
+import {
+  type ResourceListColumn,
+  ResourceListFrame,
+  ResourceListHeaderTable,
+  ResourceListTable,
+} from "@/components/common/ResourceListLayout";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -38,9 +44,10 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { useRealtime } from "@/hooks/use-realtime";
+import { isImageFileName } from "@/lib/file-types";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
-import type { FileEntry } from "@/types";
+import type { FileEntry, SystemConfig } from "@/types";
 import { formatBytes } from "./helpers";
 
 // ── Types ────────────────────────────────────────────────────────
@@ -51,6 +58,13 @@ interface TreeNode extends FileEntry {
   expanded: boolean;
   loading: boolean;
 }
+
+const FILE_TABLE_COLUMNS: ResourceListColumn<TreeNode>[] = [
+  { id: "name", label: "Name" },
+  { id: "size", label: "Size", width: "6rem", align: "right" },
+  { id: "modified", label: "Last Modified", width: "11rem" },
+  { id: "mode", label: "Mode", width: "7rem" },
+];
 
 type ContextMenuState = {
   x: number;
@@ -63,9 +77,38 @@ type CreateDialogState = {
   directory: string;
 };
 
+type UploadProgressHandler = (progress: { loaded: number; total: number }) => void;
+
+export type FileManagerOperations = {
+  listDirectory?: (path: string) => Promise<FileEntry[]>;
+  readFile?: (path: string) => Promise<ArrayBuffer>;
+  openFile?: (path: string, writable?: boolean) => void;
+  createFile?: (
+    path: string,
+    content: Blob | BufferSource | string,
+    onProgress?: UploadProgressHandler
+  ) => Promise<unknown>;
+  createDirectory?: (path: string) => Promise<unknown>;
+  deletePath?: (path: string) => Promise<unknown>;
+  movePath?: (fromPath: string, toPath: string) => Promise<unknown>;
+  initUpload?: (
+    path: string,
+    totalBytes: number
+  ) => Promise<{ uploadId: string; chunkSize: number }>;
+  uploadChunk?: (
+    uploadId: string,
+    offset: number,
+    content: Blob,
+    onProgress?: UploadProgressHandler
+  ) => Promise<unknown>;
+  completeUpload?: (uploadId: string, path: string, totalBytes: number) => Promise<unknown>;
+  abortUpload?: (uploadId: string) => Promise<unknown>;
+};
+
 type DockerFileChangedPayload = {
   nodeId?: string;
   containerId?: string;
+  volumeName?: string;
   action?: "created" | "updated" | "deleted" | "moved";
   path?: string;
   parentPath?: string;
@@ -75,7 +118,7 @@ type DockerFileChangedPayload = {
   toParentPath?: string;
 };
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const DEFAULT_FILE_OPEN_MAX_BYTES = 10 * 1024 * 1024;
 const DEFAULT_UPLOAD_MAX_BYTES = 100 * 1024 * 1024;
 const CHUNKED_UPLOAD_THRESHOLD_BYTES = 50 * 1024 * 1024;
 
@@ -87,8 +130,17 @@ function hasTruncatedListing(nodes: TreeNode[]): boolean {
   );
 }
 
-function isOpenableFile(node: TreeNode) {
-  return !node.isDir && !node.isSymlink && !node.isSpecial && node.size <= MAX_FILE_SIZE;
+function canReadRegularFile(node: TreeNode) {
+  if (node.isDir || node.isSymlink || node.isSpecial) return false;
+  return true;
+}
+
+function isOpenableFile(node: TreeNode, openMaxBytes: number) {
+  return canReadRegularFile(node) && node.size <= openMaxBytes;
+}
+
+function canCopyFileContents(node: TreeNode, openMaxBytes: number) {
+  return canReadRegularFile(node) && !isImageFileName(node.name) && node.size <= openMaxBytes;
 }
 
 function parentPath(path: string) {
@@ -116,31 +168,6 @@ function sortFileEntries<T extends FileEntry>(entries: T[]) {
       sensitivity: "base",
     });
   });
-}
-
-function decodeFilePayload(payload: unknown) {
-  let text = typeof payload === "string" ? payload : JSON.stringify(payload ?? "", null, 2);
-  try {
-    const standardBase64 = normalizeBase64(text);
-    text = decodeURIComponent(escape(atob(standardBase64)));
-  } catch {
-    /* keep original payload */
-  }
-  return text;
-}
-
-function normalizeBase64(value: string) {
-  return value.replace(/-/g, "+").replace(/_/g, "/");
-}
-
-function decodeFilePayloadBytes(payload: unknown) {
-  const text = typeof payload === "string" ? payload : JSON.stringify(payload ?? "");
-  const binary = atob(normalizeBase64(text));
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
-  }
-  return bytes;
 }
 
 function isExternalFileDrag(event: DragEvent) {
@@ -211,6 +238,20 @@ function insertTreeNode(
   });
 }
 
+function findDirectoryChildren(nodes: TreeNode[], directory: string): TreeNode[] | null {
+  if (directory === "/") return nodes;
+  for (const node of nodes) {
+    if (normalizeFilePath(node.path) === directory) {
+      return node.children;
+    }
+    if (node.children) {
+      const children = findDirectoryChildren(node.children, directory);
+      if (children) return children;
+    }
+  }
+  return null;
+}
+
 function moveTreeNode(
   nodes: TreeNode[],
   sourcePath: string,
@@ -240,19 +281,64 @@ export function FilesTab({
   containerId,
   canBrowse,
   fetchDirectory,
+  operations,
+  realtimeEvent = "docker.file.changed",
+  realtimeMatches,
 }: {
   nodeId: string;
   containerId?: string;
   canBrowse?: boolean;
   fetchDirectory?: (path: string) => Promise<FileEntry[]>;
+  operations?: FileManagerOperations;
+  realtimeEvent?: string | null;
+  realtimeMatches?: (payload: DockerFileChangedPayload) => boolean;
 }) {
   const { hasScope } = useAuthStore();
   const canBrowseFiles =
     canBrowse ??
     (hasScope("docker:containers:files") || hasScope(`docker:containers:files:${nodeId}`));
-  const canMutateFiles = !!containerId && !fetchDirectory;
+  const containerOperations = useMemo<FileManagerOperations | undefined>(() => {
+    if (!containerId) return undefined;
+    return {
+      listDirectory: (path) => api.listContainerDir(nodeId, containerId, path),
+      readFile: (path) => api.readContainerFile(nodeId, containerId, path),
+      openFile: (filePath, writable) => {
+        const params = new URLSearchParams({ path: filePath });
+        if (writable) params.set("writable", "1");
+        const url = `/docker/file/${nodeId}/${containerId}?${params}`;
+        const fileName = filePath.split("/").pop() || "file";
+        window.open(
+          url,
+          `file-${containerId}-${fileName}`,
+          "width=900,height=600,menubar=no,toolbar=no"
+        );
+      },
+      createFile: (path, content, onProgress) =>
+        api.createContainerFile(nodeId, containerId, path, content, onProgress),
+      createDirectory: (path) => api.createContainerDirectory(nodeId, containerId, path),
+      deletePath: (path) => api.deleteContainerFile(nodeId, containerId, path),
+      movePath: (fromPath, toPath) => api.moveContainerFile(nodeId, containerId, fromPath, toPath),
+      initUpload: (path, totalBytes) =>
+        api.initContainerFileUpload(nodeId, containerId, path, totalBytes),
+      uploadChunk: (uploadId, offset, content, onProgress) =>
+        api.uploadContainerFileChunk(nodeId, containerId, uploadId, offset, content, onProgress),
+      completeUpload: (uploadId, path, totalBytes) =>
+        api.completeContainerFileUpload(nodeId, containerId, uploadId, path, totalBytes),
+      abortUpload: (uploadId) => api.abortContainerFileUpload(nodeId, containerId, uploadId),
+    };
+  }, [containerId, nodeId]);
+  const fileOperations = operations ?? containerOperations;
+  const canReadFiles = !!fileOperations?.readFile;
+  const canOpenFiles = !!fileOperations?.openFile;
+  const canMutateFiles = !!(
+    fileOperations?.createFile &&
+    fileOperations.createDirectory &&
+    fileOperations.deletePath &&
+    fileOperations.movePath
+  );
   const [roots, setRoots] = useState<TreeNode[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [isContextMenuVisible, setIsContextMenuVisible] = useState(false);
   const [createDialog, setCreateDialog] = useState<CreateDialogState | null>(null);
@@ -261,8 +347,11 @@ export function FilesTab({
   const [pendingMovePaths, setPendingMovePaths] = useState<Set<string>>(() => new Set());
   const [uploadMaxBytes, setUploadMaxBytes] = useState(
     () =>
-      api.getCached<{ fileUploadMaxBytes: number }>("system:config")?.fileUploadMaxBytes ??
-      DEFAULT_UPLOAD_MAX_BYTES
+      api.getCached<SystemConfig>("system:config")?.fileUploadMaxBytes ?? DEFAULT_UPLOAD_MAX_BYTES
+  );
+  const [openMaxBytes, setOpenMaxBytes] = useState(
+    () =>
+      api.getCached<SystemConfig>("system:config")?.fileOpenMaxBytes ?? DEFAULT_FILE_OPEN_MAX_BYTES
   );
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const uploadDirectoryRef = useRef("/");
@@ -284,9 +373,12 @@ export function FilesTab({
 
   const fetchDir = useCallback(
     async (dirPath: string): Promise<TreeNode[]> => {
-      const data: FileEntry[] = fetchDirectory
-        ? await fetchDirectory(dirPath)
-        : await api.listContainerDir(nodeIdRef.current, containerIdRef.current, dirPath);
+      const data: FileEntry[] =
+        fileOperations?.listDirectory !== undefined
+          ? await fileOperations.listDirectory(dirPath)
+          : fetchDirectory
+            ? await fetchDirectory(dirPath)
+            : await api.listContainerDir(nodeIdRef.current, containerIdRef.current, dirPath);
       return sortFileEntries(data ?? []).map((entry) => ({
         ...entry,
         path: dirPath === "/" ? `/${entry.name}` : `${dirPath}/${entry.name}`,
@@ -295,7 +387,7 @@ export function FilesTab({
         loading: false,
       }));
     },
-    [fetchDirectory]
+    [fetchDirectory, fileOperations]
   );
 
   const reloadDirectory = useCallback(
@@ -320,9 +412,11 @@ export function FilesTab({
     [fetchDir]
   );
 
-  useRealtime(canMutateFiles ? "docker.file.changed" : null, (payload) => {
+  useRealtime(realtimeEvent, (payload) => {
     const event = payload as DockerFileChangedPayload;
-    if (event.nodeId !== nodeIdRef.current || event.containerId !== containerIdRef.current) {
+    if (realtimeMatches) {
+      if (!realtimeMatches(event)) return;
+    } else if (event.nodeId !== nodeIdRef.current || event.containerId !== containerIdRef.current) {
       return;
     }
 
@@ -361,6 +455,7 @@ export function FilesTab({
       .then((config) => {
         api.setCache("system:config", config);
         setUploadMaxBytes(config.fileUploadMaxBytes);
+        setOpenMaxBytes(config.fileOpenMaxBytes);
       })
       .catch(() => {
         /* keep fallback limit */
@@ -372,10 +467,12 @@ export function FilesTab({
     if (!canBrowseFiles) {
       setIsLoading(false);
       setRoots([]);
+      setLoadError(null);
       return;
     }
     let cancelled = false;
     setIsLoading(true);
+    setLoadError(null);
     fetchDir("/")
       .then((nodes) => {
         if (!cancelled) {
@@ -383,8 +480,12 @@ export function FilesTab({
           setIsLoading(false);
         }
       })
-      .catch(() => {
-        if (!cancelled) setIsLoading(false);
+      .catch((err) => {
+        if (!cancelled) {
+          setRoots([]);
+          setLoadError(err instanceof Error ? err.message : "Failed to list directory");
+          setIsLoading(false);
+        }
       });
     return () => {
       cancelled = true;
@@ -493,36 +594,26 @@ export function FilesTab({
   // Open file in a separate window
   const openFile = useCallback(
     (filePath: string, writable?: boolean) => {
-      if (!containerId) return;
-      const params = new URLSearchParams({ path: filePath });
-      if (writable) params.set("writable", "1");
-      const url = `/docker/file/${nodeId}/${containerId}?${params}`;
-      const fileName = filePath.split("/").pop() || "file";
-      window.open(
-        url,
-        `file-${containerId}-${fileName}`,
-        "width=900,height=600,menubar=no,toolbar=no"
-      );
+      fileOperations?.openFile?.(filePath, writable);
     },
-    [nodeId, containerId]
+    [fileOperations]
   );
 
   const readFileContent = useCallback(
     async (filePath: string) => {
-      if (!containerId) throw new Error("Container file operations are unavailable");
-      const payload = await api.readContainerFile(nodeId, containerId, filePath);
-      return decodeFilePayload(payload);
+      if (!fileOperations?.readFile) throw new Error("File read is unavailable");
+      const bytes = await fileOperations.readFile(filePath);
+      return new TextDecoder().decode(bytes);
     },
-    [nodeId, containerId]
+    [fileOperations]
   );
 
   const readFileBytes = useCallback(
     async (filePath: string) => {
-      if (!containerId) throw new Error("Container file operations are unavailable");
-      const payload = await api.readContainerFile(nodeId, containerId, filePath);
-      return decodeFilePayloadBytes(payload);
+      if (!fileOperations?.readFile) throw new Error("File read is unavailable");
+      return fileOperations.readFile(filePath);
     },
-    [nodeId, containerId]
+    [fileOperations]
   );
 
   const openCreateDialog = useCallback(
@@ -535,20 +626,25 @@ export function FilesTab({
   );
 
   const handleCreateEntry = useCallback(async () => {
-    if (!containerId || !createDialog) return;
+    if (!createDialog || !fileOperations?.createFile || !fileOperations.createDirectory) return;
     const name = newEntryName.trim();
     if (!name || name.includes("/")) {
       toast.error("Enter a name without slashes");
+      return;
+    }
+    const existingEntries = findDirectoryChildren(rootsRef.current, createDialog.directory);
+    if (existingEntries?.some((entry) => entry.name === name)) {
+      toast.error(`${createDialog.type === "file" ? "File" : "Folder"} already exists`);
       return;
     }
     const path = joinPath(createDialog.directory, name);
     setIsCreatingEntry(true);
     try {
       if (createDialog.type === "file") {
-        await api.createContainerFile(nodeId, containerId, path, "");
+        await fileOperations.createFile(path, "");
         toast.success("File created");
       } else {
-        await api.createContainerDirectory(nodeId, containerId, path);
+        await fileOperations.createDirectory(path);
         toast.success("Folder created");
       }
       setCreateDialog(null);
@@ -558,7 +654,7 @@ export function FilesTab({
     } finally {
       setIsCreatingEntry(false);
     }
-  }, [containerId, createDialog, newEntryName, nodeId, reloadDirectory]);
+  }, [createDialog, fileOperations, newEntryName, reloadDirectory]);
 
   const handleUploadClick = useCallback(
     (directory: string) => {
@@ -571,7 +667,7 @@ export function FilesTab({
 
   const uploadFiles = useCallback(
     async (directory: string, files: globalThis.File[]) => {
-      if (!containerId) return;
+      if (!fileOperations?.createFile) return;
       if (files.length === 0) return;
       const oversized = files.filter((file) => file.size > uploadMaxBytes);
       if (oversized.length > 0) {
@@ -613,38 +709,32 @@ export function FilesTab({
             );
           };
 
-          if (file.size > CHUNKED_UPLOAD_THRESHOLD_BYTES) {
-            const { uploadId, chunkSize } = await api.initContainerFileUpload(
-              nodeId,
-              containerId,
-              path,
-              file.size
-            );
+          if (
+            file.size > CHUNKED_UPLOAD_THRESHOLD_BYTES &&
+            fileOperations.initUpload &&
+            fileOperations.uploadChunk &&
+            fileOperations.completeUpload &&
+            fileOperations.abortUpload
+          ) {
+            const { uploadId, chunkSize } = await fileOperations.initUpload(path, file.size);
             let chunkOffset = 0;
             try {
               while (chunkOffset < file.size) {
                 const chunk = file.slice(chunkOffset, Math.min(file.size, chunkOffset + chunkSize));
                 const offsetForProgress = chunkOffset;
-                await api.uploadContainerFileChunk(
-                  nodeId,
-                  containerId,
-                  uploadId,
-                  chunkOffset,
-                  chunk,
-                  ({ loaded }) => updateProgress(offsetForProgress + loaded)
+                await fileOperations.uploadChunk(uploadId, chunkOffset, chunk, ({ loaded }) =>
+                  updateProgress(offsetForProgress + loaded)
                 );
                 chunkOffset += chunk.size;
                 updateProgress(chunkOffset);
               }
-              await api.completeContainerFileUpload(nodeId, containerId, uploadId, path, file.size);
+              await fileOperations.completeUpload(uploadId, path, file.size);
             } catch (err) {
-              await api
-                .abortContainerFileUpload(nodeId, containerId, uploadId)
-                .catch(() => undefined);
+              await fileOperations.abortUpload(uploadId).catch(() => undefined);
               throw err;
             }
           } else {
-            await api.createContainerFile(nodeId, containerId, path, file, ({ loaded }) => {
+            await fileOperations.createFile(path, file, ({ loaded }) => {
               updateProgress(loaded);
             });
           }
@@ -665,7 +755,7 @@ export function FilesTab({
         });
       }
     },
-    [containerId, nodeId, reloadDirectory, uploadMaxBytes]
+    [fileOperations, reloadDirectory, uploadMaxBytes]
   );
 
   const handleUploadChange = useCallback(
@@ -698,7 +788,7 @@ export function FilesTab({
 
   const handleMovePath = useCallback(
     async (source: TreeNode, targetDirectory: string) => {
-      if (!containerId) return;
+      if (!fileOperations?.movePath) return;
       const normalizedSourcePath = normalizeFilePath(source.path);
       const normalizedTargetDirectory = normalizeFilePath(targetDirectory);
       const destination = joinPath(normalizedTargetDirectory, source.name);
@@ -733,7 +823,7 @@ export function FilesTab({
         return next;
       });
       try {
-        await api.moveContainerFile(nodeId, containerId, source.path, destination);
+        await fileOperations.movePath(source.path, destination);
       } catch (err) {
         rootsRef.current = previousRoots;
         setRoots(previousRoots);
@@ -747,7 +837,7 @@ export function FilesTab({
         });
       }
     },
-    [containerId, nodeId]
+    [fileOperations]
   );
 
   const handleDragEnd = useCallback(
@@ -763,7 +853,7 @@ export function FilesTab({
   const handleCopyFile = useCallback(
     async (node: TreeNode) => {
       closeContextMenu();
-      if (!isOpenableFile(node)) return;
+      if (!canCopyFileContents(node, openMaxBytes)) return;
       try {
         await navigator.clipboard.writeText(await readFileContent(node.path));
         toast.success("File content copied");
@@ -771,13 +861,13 @@ export function FilesTab({
         toast.error(err instanceof Error ? err.message : "Failed to copy file");
       }
     },
-    [closeContextMenu, readFileContent]
+    [closeContextMenu, openMaxBytes, readFileContent]
   );
 
   const handleDownloadFile = useCallback(
     async (node: TreeNode) => {
       closeContextMenu();
-      if (!isOpenableFile(node)) return;
+      if (!canReadRegularFile(node)) return;
       try {
         const bytes = await readFileBytes(node.path);
         const blob = new Blob([bytes], { type: "application/octet-stream" });
@@ -797,7 +887,7 @@ export function FilesTab({
   const handleDeletePath = useCallback(
     async (node: TreeNode) => {
       closeContextMenu();
-      if (!containerId) return;
+      if (!fileOperations?.deletePath) return;
       const confirmed = await confirm({
         title: node.isDir ? "Delete Folder" : "Delete File",
         description: `Delete "${node.path}"? This cannot be undone.`,
@@ -806,14 +896,14 @@ export function FilesTab({
       });
       if (!confirmed) return;
       try {
-        await api.deleteContainerFile(nodeId, containerId, node.path);
+        await fileOperations.deletePath(node.path);
         toast.success(node.isDir ? "Folder deleted" : "File deleted");
         await reloadDirectory(parentPath(node.path));
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Failed to delete");
       }
     },
-    [closeContextMenu, containerId, nodeId, reloadDirectory]
+    [closeContextMenu, fileOperations, reloadDirectory]
   );
 
   const openContextMenu = useCallback((event: MouseEvent, node: TreeNode | null) => {
@@ -859,58 +949,62 @@ export function FilesTab({
           onDropFiles={handleExternalDrop}
           onDragOverFiles={handleExternalDragOver}
         >
-          <div className="border border-border bg-card">
-            <div
-              className="overflow-x-auto -mb-px"
-              onContextMenu={(event) => openContextMenu(event, null)}
-            >
-              <table className="w-full">
-                <thead className="bg-muted/60 dark:bg-muted">
-                  <tr className="border-b border-border text-left">
-                    <th className="p-3 text-xs font-medium text-muted-foreground">Name</th>
-                    <th className="p-3 text-xs font-medium text-muted-foreground w-24 text-right">
-                      Size
-                    </th>
-                    <th className="p-3 text-xs font-medium text-muted-foreground w-44">
-                      Last Modified
-                    </th>
-                    <th className="p-3 text-xs font-medium text-muted-foreground w-28">Mode</th>
+          <div onContextMenu={(event) => openContextMenu(event, null)}>
+            <ResourceListFrame minWidth={900}>
+              <ResourceListHeaderTable columns={FILE_TABLE_COLUMNS} />
+              <ResourceListTable
+                columns={FILE_TABLE_COLUMNS}
+                bodyClassName="divide-y divide-border"
+              >
+                {isLoading && (
+                  <tr>
+                    <td
+                      colSpan={FILE_TABLE_COLUMNS.length}
+                      className="p-8 text-center text-muted-foreground text-sm"
+                    >
+                      <Loader2 className="h-4 w-4 animate-spin inline mr-2" />
+                      Loading...
+                    </td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {isLoading && (
-                    <tr>
-                      <td colSpan={4} className="p-8 text-center text-muted-foreground text-sm">
-                        <Loader2 className="h-4 w-4 animate-spin inline mr-2" />
-                        Loading...
-                      </td>
-                    </tr>
-                  )}
-                  {!isLoading && roots.length === 0 && (
-                    <tr>
-                      <td colSpan={4} className="p-8 text-center text-muted-foreground text-sm">
-                        Empty directory
-                      </td>
-                    </tr>
-                  )}
-                  {!isLoading &&
-                    roots.map((node) => (
-                      <TreeRow
-                        key={node.path}
-                        node={node}
-                        depth={0}
-                        canDrag={canMutateFiles}
-                        pendingMovePaths={pendingMovePaths}
-                        onToggle={toggleDir}
-                        onOpenFile={openFile}
-                        onContextMenu={openContextMenu}
-                        onDropFiles={handleExternalDrop}
-                        onDragOverFiles={handleExternalDragOver}
-                      />
-                    ))}
-                </tbody>
-              </table>
-            </div>
+                )}
+                {!isLoading && loadError && (
+                  <tr>
+                    <td
+                      colSpan={FILE_TABLE_COLUMNS.length}
+                      className="p-8 text-center text-muted-foreground text-sm"
+                    >
+                      {loadError}
+                    </td>
+                  </tr>
+                )}
+                {!isLoading && !loadError && roots.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={FILE_TABLE_COLUMNS.length}
+                      className="p-8 text-center text-muted-foreground text-sm"
+                    >
+                      Empty directory
+                    </td>
+                  </tr>
+                )}
+                {!isLoading &&
+                  roots.map((node) => (
+                    <TreeRow
+                      key={node.path}
+                      node={node}
+                      depth={0}
+                      canDrag={canMutateFiles}
+                      pendingMovePaths={pendingMovePaths}
+                      openMaxBytes={openMaxBytes}
+                      onToggle={toggleDir}
+                      onOpenFile={canOpenFiles ? openFile : undefined}
+                      onContextMenu={openContextMenu}
+                      onDropFiles={handleExternalDrop}
+                      onDragOverFiles={handleExternalDragOver}
+                    />
+                  ))}
+              </ResourceListTable>
+            </ResourceListFrame>
           </div>
         </RootDropZone>
       </DndContext>
@@ -920,6 +1014,9 @@ export function FilesTab({
           y={contextMenu.y}
           node={contextMenu.node}
           canMutate={canMutateFiles}
+          canRead={canReadFiles}
+          canOpen={canOpenFiles}
+          openMaxBytes={openMaxBytes}
           visible={isContextMenuVisible}
           onCreateFile={(directory) => openCreateDialog("file", directory)}
           onCreateFolder={(directory) => openCreateDialog("folder", directory)}
@@ -969,6 +1066,9 @@ function FileContextMenu({
   y,
   node,
   canMutate,
+  canRead,
+  canOpen: canOpenInViewer,
+  openMaxBytes,
   visible,
   onCreateFile,
   onCreateFolder,
@@ -982,6 +1082,9 @@ function FileContextMenu({
   y: number;
   node: TreeNode | null;
   canMutate: boolean;
+  canRead: boolean;
+  canOpen: boolean;
+  openMaxBytes: number;
   visible: boolean;
   onCreateFile: (directory: string) => void;
   onCreateFolder: (directory: string) => void;
@@ -992,8 +1095,9 @@ function FileContextMenu({
   onDelete: (node: TreeNode) => void;
 }) {
   const targetDirectory = node?.isDir ? node.path : parentPath(node?.path ?? "/");
-  const canOpen = !!node && isOpenableFile(node);
-  const canFileRead = canMutate && canOpen;
+  const canOpen = !!node && isOpenableFile(node, openMaxBytes);
+  const canFileRead = canRead && !!node && canCopyFileContents(node, openMaxBytes);
+  const canDownload = canRead && !!node && canReadRegularFile(node);
   const menuStyle = {
     left: Math.max(8, Math.min(x, window.innerWidth - 260)),
     top: Math.max(8, Math.min(y, window.innerHeight - 320)),
@@ -1046,7 +1150,7 @@ function FileContextMenu({
       <FileContextMenuItem
         icon={<ExternalLink />}
         label="Open file"
-        disabled={!canFileRead}
+        disabled={!canOpenInViewer || !canOpen}
         onSelect={() => node && onOpenFile(node)}
       />
       <FileContextMenuItem
@@ -1058,7 +1162,7 @@ function FileContextMenu({
       <FileContextMenuItem
         icon={<Download />}
         label="Download file"
-        disabled={!canFileRead}
+        disabled={!canDownload}
         onSelect={() => node && onDownloadFile(node)}
       />
       <FileContextMenuSeparator />
@@ -1115,6 +1219,7 @@ function TreeRow({
   depth,
   canDrag,
   pendingMovePaths,
+  openMaxBytes,
   onToggle,
   onOpenFile,
   onContextMenu,
@@ -1125,6 +1230,7 @@ function TreeRow({
   depth: number;
   canDrag: boolean;
   pendingMovePaths: Set<string>;
+  openMaxBytes: number;
   onToggle: (path: string) => void;
   onOpenFile?: (path: string, writable?: boolean) => void;
   onContextMenu: (event: MouseEvent, node: TreeNode) => void;
@@ -1132,8 +1238,7 @@ function TreeRow({
   onDragOverFiles: (event: DragEvent) => void;
 }) {
   const indent = depth * 20;
-  const isNonDirSymlink = node.isSymlink && !node.isDir;
-  const isOpenable = !!onOpenFile && !node.isDir && !isNonDirSymlink && !node.isSpecial;
+  const isOpenable = !!onOpenFile && isOpenableFile(node, openMaxBytes);
   const isPendingMove = isPathPending(node.path, pendingMovePaths);
   const canInteract = !isPendingMove;
   const effectiveCanDrag = canDrag && canInteract;
@@ -1176,9 +1281,11 @@ function TreeRow({
     if (!canInteract) return;
     if (node.isDir) return;
     if (!isOpenable) {
-      // blocked — symlink or special file
-    } else if (node.size > MAX_FILE_SIZE) {
-      toast.error(`File too large to open (${formatBytes(node.size)}, max 10 MB)`);
+      if (node.size > openMaxBytes) {
+        toast.error(
+          `File too large to open (${formatBytes(node.size)}, max ${formatBytes(openMaxBytes)})`
+        );
+      }
     } else {
       onOpenFile?.(node.path, node.isWritable);
     }
@@ -1254,6 +1361,7 @@ function TreeRow({
             depth={depth + 1}
             canDrag={canDrag}
             pendingMovePaths={pendingMovePaths}
+            openMaxBytes={openMaxBytes}
             onToggle={onToggle}
             onOpenFile={onOpenFile}
             onContextMenu={onContextMenu}

@@ -617,6 +617,128 @@ func (p *DockerPlugin) handleVolumeCommand(cmd *pb.DockerVolumeCommand, result *
 		}
 		result.Detail = encodeBase64(content)
 
+	case "read-file":
+		if cmd.Name == "" || cmd.Path == "" {
+			result.Success = false
+			result.Error = "name and path are required for volume file read"
+			return
+		}
+		content, err := ReadVolumeFile(ctx, p.client, cmd.Name, cmd.Path, cmd.MaxBytes)
+		if err != nil {
+			result.Success = false
+			result.Error = err.Error()
+			return
+		}
+		result.Data = content
+
+	case "write-file":
+		if cmd.Name == "" || cmd.Path == "" {
+			result.Success = false
+			result.Error = "name and path are required for volume file write"
+			return
+		}
+		if err := WriteVolumeFile(ctx, p.client, cmd.Name, cmd.Path, cmd.Content); err != nil {
+			result.Success = false
+			result.Error = err.Error()
+			return
+		}
+
+	case "create-file":
+		if cmd.Name == "" || cmd.Path == "" {
+			result.Success = false
+			result.Error = "name and path are required for volume file create"
+			return
+		}
+		if err := CreateVolumeFile(ctx, p.client, cmd.Name, cmd.Path, cmd.Content); err != nil {
+			result.Success = false
+			result.Error = err.Error()
+			return
+		}
+
+	case "upload-init":
+		if cmd.Name == "" || cmd.Path == "" || cmd.TargetPath == "" {
+			result.Success = false
+			result.Error = "name, upload id, and target_path are required for volume upload init"
+			return
+		}
+		if err := InitVolumeChunkedFileUpload(ctx, p.client, cmd.Name, cmd.Path, cmd.TargetPath, cmd.MaxBytes); err != nil {
+			result.Success = false
+			result.Error = err.Error()
+			return
+		}
+
+	case "upload-chunk":
+		if cmd.Name == "" || cmd.Path == "" || cmd.TargetPath == "" {
+			result.Success = false
+			result.Error = "name, upload id, and target_path are required for volume upload chunk"
+			return
+		}
+		if err := WriteVolumeChunkedFileUpload(ctx, p.client, cmd.Name, cmd.Path, cmd.TargetPath, cmd.MaxBytes, cmd.Content); err != nil {
+			result.Success = false
+			result.Error = err.Error()
+			return
+		}
+
+	case "upload-complete":
+		if cmd.Name == "" || cmd.Path == "" || cmd.TargetPath == "" {
+			result.Success = false
+			result.Error = "name, upload id, and target_path are required for volume upload complete"
+			return
+		}
+		if err := CompleteVolumeChunkedFileUpload(ctx, p.client, cmd.Name, cmd.Path, cmd.TargetPath, cmd.MaxBytes); err != nil {
+			result.Success = false
+			result.Error = err.Error()
+			return
+		}
+
+	case "upload-abort":
+		if cmd.Name == "" || cmd.Path == "" || cmd.TargetPath == "" {
+			result.Success = false
+			result.Error = "name, upload id, and target_path are required for volume upload abort"
+			return
+		}
+		if err := AbortVolumeChunkedFileUpload(ctx, p.client, cmd.Name, cmd.Path, cmd.TargetPath); err != nil {
+			result.Success = false
+			result.Error = err.Error()
+			return
+		}
+
+	case "create-dir":
+		if cmd.Name == "" || cmd.Path == "" {
+			result.Success = false
+			result.Error = "name and path are required for volume directory create"
+			return
+		}
+		if err := CreateVolumeDirectory(ctx, p.client, cmd.Name, cmd.Path); err != nil {
+			result.Success = false
+			result.Error = err.Error()
+			return
+		}
+
+	case "delete":
+		if cmd.Name == "" || cmd.Path == "" {
+			result.Success = false
+			result.Error = "name and path are required for volume file delete"
+			return
+		}
+		if err := DeleteVolumePath(ctx, p.client, cmd.Name, cmd.Path); err != nil {
+			result.Success = false
+			result.Error = err.Error()
+			return
+		}
+
+	case "move":
+		if cmd.Name == "" || cmd.Path == "" || cmd.TargetPath == "" {
+			result.Success = false
+			result.Error = "name, path, and target_path are required for volume file move"
+			return
+		}
+		if err := MoveVolumePath(ctx, p.client, cmd.Name, cmd.Path, cmd.TargetPath); err != nil {
+			result.Success = false
+			result.Error = err.Error()
+			return
+		}
+
 	case "create":
 		if cmd.Name == "" {
 			result.Success = false
@@ -1054,8 +1176,7 @@ func (p *DockerPlugin) handleFileCommand(cmd *pb.DockerFileCommand, result *pb.C
 			result.Error = err.Error()
 			return
 		}
-		// Return content as base64 to safely transport binary data
-		result.Detail = encodeBase64(content)
+		result.Data = content
 
 	case "write":
 		if cmd.ContainerId == "" || cmd.Path == "" {
