@@ -802,11 +802,11 @@ export function AuditLog({
       </div>
 
       <Dialog open={configOpen} onOpenChange={setConfigOpen}>
-        <DialogContent className="sm:grid-rows-[auto,minmax(0,1fr),auto] sm:max-h-[calc(100vh-6rem)] sm:overflow-hidden sm:max-w-4xl">
+        <DialogContent className="sm:max-w-4xl">
           <DialogHeader>
             <DialogTitle>Configure Audit View</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 px-1 sm:min-h-0 sm:overflow-y-auto md:grid md:gap-4 md:space-y-0 md:grid-cols-2">
+          <div className="space-y-4 px-1 md:grid md:grid-cols-2 md:gap-4 md:space-y-0">
             <AuditOptionChecklist
               title="Hidden Actions"
               description="Checked actions are excluded by the backend before pagination."
@@ -845,11 +845,11 @@ export function AuditLog({
       </Dialog>
 
       <Dialog open={exportOpen} onOpenChange={setExportOpen}>
-        <DialogContent className="sm:grid-rows-[auto,minmax(0,1fr),auto] sm:max-h-[calc(100vh-6rem)] sm:overflow-hidden sm:max-w-5xl">
+        <DialogContent className="sm:max-w-5xl">
           <DialogHeader>
             <DialogTitle>Download Audit Log</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 px-1 sm:min-h-0 sm:overflow-y-auto">
+          <div className="space-y-4 px-1">
             <div className="grid gap-3 md:grid-cols-2">
               <div>
                 <label className="text-sm font-medium">From</label>
@@ -912,12 +912,12 @@ export function AuditLog({
       </Dialog>
 
       <Dialog open={!!selectedEntry} onOpenChange={(open) => !open && setSelectedEntry(null)}>
-        <DialogContent className="grid-rows-[auto,minmax(0,1fr)] max-h-[calc(100vh-6rem)] max-w-[calc(100vw-2rem)] overflow-hidden sm:max-w-3xl">
+        <DialogContent className="max-w-[calc(100vw-2rem)] sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>Audit Entry Details</DialogTitle>
           </DialogHeader>
           {selectedEntry ? (
-            <div className="min-h-0 min-w-0 space-y-4 overflow-y-auto pr-1">
+            <div className="min-w-0 space-y-4 pr-1">
               <div className="grid gap-3 text-sm sm:grid-cols-6">
                 <AuditDetail
                   className="sm:col-span-2"
@@ -1025,7 +1025,7 @@ function AuditOptionChecklist({
       className="min-h-0"
       headerClassName="px-3 py-2"
     >
-      <div className="max-h-72 overflow-y-auto">
+      <div>
         {options.length === 0 ? (
           <p className="px-3 py-4 text-sm text-muted-foreground">{emptyMessage}</p>
         ) : (

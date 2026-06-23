@@ -73,7 +73,7 @@ export function AIToolAccessModal({
         </DialogHeader>
 
         <div className="min-w-0 space-y-2">
-          <div className="max-h-96 overflow-y-auto overflow-x-hidden border border-border">
+          <div className="overflow-x-hidden border border-border">
             {categories.map((category, ci) => (
               <div key={category}>
                 {ci > 0 && <Separator />}

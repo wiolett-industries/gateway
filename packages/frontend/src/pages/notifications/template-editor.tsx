@@ -214,7 +214,7 @@ export function TemplateCheatsheetLink({
         <HelpCircle className="h-3.5 w-3.5" /> Variables & helpers cheatsheet
       </button>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Template Cheatsheet</DialogTitle>
             <DialogDescription>

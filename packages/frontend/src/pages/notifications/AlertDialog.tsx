@@ -431,10 +431,7 @@ export function AlertDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        className="max-w-3xl max-h-[85vh] overflow-y-auto"
-        onOpenAutoFocus={(e) => e.preventDefault()}
-      >
+      <DialogContent className="max-w-3xl" onOpenAutoFocus={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle>{isEdit ? "Edit Alert" : "New Alert"}</DialogTitle>
           <DialogDescription>
@@ -803,7 +800,7 @@ export function AlertDialog({
                       className="border-0 border-b border-border rounded-none h-9 text-sm focus-visible:ring-0"
                       disabled={!scopeEnabled}
                     />
-                    <div className="max-h-[30vh] overflow-y-auto">
+                    <div className="max-sm:max-h-[30vh] max-sm:overflow-y-auto">
                       {filteredResources.length === 0 ? (
                         <p className="p-3 text-sm text-muted-foreground">No resources found.</p>
                       ) : (
@@ -879,7 +876,7 @@ export function AlertDialog({
                         placeholder="Search webhooks..."
                         className="border-0 border-b border-border rounded-none h-9 text-sm focus-visible:ring-0"
                       />
-                      <div className="max-h-[25vh] overflow-y-auto">
+                      <div className="max-sm:max-h-[25vh] max-sm:overflow-y-auto">
                         {filteredWebhooks.map((wh) => (
                           <label
                             key={wh.id}
@@ -934,7 +931,7 @@ export function AlertDialog({
           </AnimatePresence>
         </AnimatedHeight>
 
-        <DialogFooter>
+        <DialogFooter className="shrink-0">
           {step === 1 && (
             <>
               <Button variant="outline" onClick={() => onOpenChange(false)}>

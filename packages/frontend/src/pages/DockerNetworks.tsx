@@ -608,7 +608,7 @@ export function DockerNetworks({
       </Dialog>
       {/* Network Details Dialog */}
       <Dialog open={networkDetailsOpen} onOpenChange={onNetworkDetailsOpenChange}>
-        <DialogContent className="max-h-[80vh] max-w-full overflow-x-hidden overflow-y-auto sm:max-w-xl">
+        <DialogContent className="max-w-full sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>Network Details</DialogTitle>
             <DialogDescription>

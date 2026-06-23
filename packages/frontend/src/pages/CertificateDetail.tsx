@@ -2,9 +2,11 @@ import { Copy, Download, MoreVertical, ShieldOff } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
+import { DetailRow } from "@/components/common/DetailRow";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageBackButton } from "@/components/common/PageBackButton";
 import { PageTransition } from "@/components/common/PageTransition";
+import { PanelShell } from "@/components/common/PanelShell";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -119,6 +121,10 @@ export function CertificateDetail() {
   }
 
   const expiryDays = daysUntil(cert.notAfter);
+  const canExportCertificate =
+    hasScope(`pki:cert:export:${cert.id}`) || hasScope("pki:cert:export");
+  const canRevokeCertificate =
+    hasScope(`pki:cert:revoke:${cert.id}`) || hasScope("pki:cert:revoke");
 
   return (
     <PageTransition>
@@ -147,19 +153,23 @@ export function CertificateDetail() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => handleDownload("pem")}>
-                  <Download className="h-4 w-4" />
-                  Download PEM
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleDownload("der")}>
-                  <Download className="h-4 w-4" />
-                  Download DER
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleDownload("pkcs12")}>
-                  <Download className="h-4 w-4" />
-                  Download PKCS#12
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
+                {canExportCertificate && (
+                  <>
+                    <DropdownMenuItem onClick={() => handleDownload("pem")}>
+                      <Download className="h-4 w-4" />
+                      Download PEM
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleDownload("der")}>
+                      <Download className="h-4 w-4" />
+                      Download DER
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleDownload("pkcs12")}>
+                      <Download className="h-4 w-4" />
+                      Download PKCS#12
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                  </>
+                )}
                 <DropdownMenuItem
                   onClick={() => {
                     navigator.clipboard.writeText(cert.serialNumber);
@@ -169,7 +179,7 @@ export function CertificateDetail() {
                   <Copy className="h-4 w-4" />
                   Copy Serial Number
                 </DropdownMenuItem>
-                {cert.certificatePem && (
+                {canExportCertificate && cert.certificatePem && (
                   <DropdownMenuItem
                     onClick={() => {
                       navigator.clipboard.writeText(cert.certificatePem!);
@@ -180,7 +190,7 @@ export function CertificateDetail() {
                     Copy PEM
                   </DropdownMenuItem>
                 )}
-                {hasScope("pki:cert:revoke") && cert.status === "active" && !cert.isSystem && (
+                {canRevokeCertificate && cert.status === "active" && !cert.isSystem && (
                   <>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
@@ -197,98 +207,84 @@ export function CertificateDetail() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          {/* Details */}
-          <div className="border border-border bg-card lg:col-span-2">
-            <div className="border-b border-border p-4">
-              <h2 className="font-semibold">Certificate Details</h2>
-            </div>
-            <div className="p-4 space-y-3">
-              <InfoRow label="Common Name" value={cert.commonName} />
-              {cert.subjectDn && <InfoRow label="Subject DN" value={cert.subjectDn} />}
-              {cert.issuerDn && <InfoRow label="Issuer DN" value={cert.issuerDn} />}
-              <InfoRow label="Serial Number" value={formatSerialNumber(cert.serialNumber)} />
-              <InfoRow label="Key Algorithm" value={cert.keyAlgorithm} />
-              <InfoRow label="Valid From" value={formatDate(cert.notBefore)} />
-              <InfoRow label="Valid Until" value={formatDate(cert.notAfter)} />
-              {cert.templateId && <InfoRow label="Template ID" value={cert.templateId} />}
-              <InfoRow label="Issued By" value={cert.issuedById || "—"} />
-              {cert.revokedAt && (
-                <>
-                  <InfoRow label="Revoked At" value={formatDate(cert.revokedAt)} />
-                  <InfoRow
-                    label="Revocation Reason"
-                    value={cert.revocationReason || "unspecified"}
-                  />
-                </>
-              )}
-            </div>
-          </div>
+        <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
+          <PanelShell title="Certificate Details" bodyClassName="divide-y divide-border">
+            <DetailRow label="Common Name" value={cert.commonName} />
+            {cert.subjectDn && <DetailRow label="Subject DN" value={cert.subjectDn} />}
+            {cert.issuerDn && <DetailRow label="Issuer DN" value={cert.issuerDn} />}
+            <DetailRow label="Serial Number" value={formatSerialNumber(cert.serialNumber)} />
+            <DetailRow label="Key Algorithm" value={cert.keyAlgorithm} />
+            {cert.templateId && <DetailRow label="Template ID" value={cert.templateId} />}
+            <DetailRow label="Issued By" value={cert.issuedById || "—"} />
+          </PanelShell>
 
-          {/* Side info */}
-          <div className="space-y-4">
-            {/* SANs */}
+          <PanelShell title="Validity & Usage" bodyClassName="divide-y divide-border">
+            <DetailRow label="Valid From" value={formatDate(cert.notBefore)} />
+            <DetailRow label="Valid Until" value={formatDate(cert.notAfter)} />
+            <DetailRow
+              label="Validity"
+              value={
+                <span>
+                  {expiryDays > 0
+                    ? `Expires in ${expiryDays} days`
+                    : hoursUntil(cert.notAfter) > 0
+                      ? `Expires in ${hoursUntil(cert.notAfter)} hours`
+                      : "Expired"}
+                </span>
+              }
+            />
+            {cert.revokedAt && (
+              <>
+                <DetailRow label="Revoked At" value={formatDate(cert.revokedAt)} />
+                <DetailRow
+                  label="Revocation Reason"
+                  value={cert.revocationReason || "unspecified"}
+                />
+              </>
+            )}
             {(cert.sans?.length ?? 0) > 0 && (
-              <div className="border border-border bg-card p-4 space-y-2">
-                <h3 className="font-semibold text-sm">Subject Alternative Names</h3>
-                <div className="space-y-1">
-                  {cert.sans.map((san, i) => (
-                    <p key={i} className="text-sm font-mono text-muted-foreground">
-                      {san}
-                    </p>
-                  ))}
-                </div>
-              </div>
+              <DetailRow
+                label="SANs"
+                value={
+                  <span className="flex max-w-full flex-col items-end gap-1">
+                    {cert.sans.map((san, i) => (
+                      <span key={i} className="max-w-full break-all">
+                        {san}
+                      </span>
+                    ))}
+                  </span>
+                }
+              />
             )}
-
-            {/* Key Usage */}
             {(cert.keyUsage?.length ?? 0) > 0 && (
-              <div className="border border-border bg-card p-4 space-y-2">
-                <h3 className="font-semibold text-sm">Key Usage</h3>
-                <div className="flex flex-wrap gap-1">
-                  {cert.keyUsage.map((ku) => (
-                    <Badge key={ku} variant="secondary">
-                      {ku}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
+              <DetailRow
+                label="Key Usage"
+                value={
+                  <span className="flex max-w-full flex-wrap justify-end gap-1">
+                    {cert.keyUsage.map((ku) => (
+                      <Badge key={ku} variant="secondary">
+                        {ku}
+                      </Badge>
+                    ))}
+                  </span>
+                }
+              />
             )}
-
-            {/* Extended Key Usage */}
             {(cert.extKeyUsage?.length ?? 0) > 0 && (
-              <div className="border border-border bg-card p-4 space-y-2">
-                <h3 className="font-semibold text-sm">Extended Key Usage</h3>
-                <div className="flex flex-wrap gap-1">
-                  {cert.extKeyUsage.map((eku) => (
-                    <Badge key={eku} variant="secondary">
-                      {eku}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
+              <DetailRow
+                label="Extended Key Usage"
+                value={
+                  <span className="flex max-w-full flex-wrap justify-end gap-1">
+                    {cert.extKeyUsage.map((eku) => (
+                      <Badge key={eku} variant="secondary">
+                        {eku}
+                      </Badge>
+                    ))}
+                  </span>
+                }
+              />
             )}
-
-            {/* Expiry info */}
-            <div className="border border-border bg-card p-4 space-y-2">
-              <h3 className="font-semibold text-sm">Validity</h3>
-              <p
-                className={`text-sm font-medium ${
-                  expiryDays <= 0
-                    ? "text-destructive"
-                    : expiryDays <= 30
-                      ? "text-[color:var(--color-warning)]"
-                      : "text-[color:var(--color-success)]"
-                }`}
-              >
-                {expiryDays > 0
-                  ? `Expires in ${expiryDays} days`
-                  : hoursUntil(cert.notAfter) > 0
-                    ? `Expires in ${hoursUntil(cert.notAfter)} hours`
-                    : "Expired"}
-              </p>
-            </div>
-          </div>
+          </PanelShell>
         </div>
         {/* Revoke Dialog */}
         <Dialog open={revokeDialogOpen} onOpenChange={setRevokeDialogOpen}>
@@ -328,14 +324,5 @@ export function CertificateDetail() {
         </Dialog>
       </div>
     </PageTransition>
-  );
-}
-
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-start justify-between gap-4">
-      <span className="text-sm text-muted-foreground shrink-0">{label}</span>
-      <span className="text-sm font-medium text-right break-all">{value}</span>
-    </div>
   );
 }

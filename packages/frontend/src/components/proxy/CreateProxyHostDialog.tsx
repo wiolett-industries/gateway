@@ -367,7 +367,7 @@ export function CreateProxyHostDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-3xl sm:[&>div:nth-child(2)]:flex-none sm:[&>div:nth-child(2)]:[overflow:visible]">
+      <DialogContent className="max-w-3xl">
         <DialogHeader>
           <DialogTitle>{isEditing ? "Edit Proxy Host" : "Create Proxy Host"}</DialogTitle>
           <DialogDescription>

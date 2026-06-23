@@ -624,7 +624,7 @@ export function IncidentDialog({
               </SelectContent>
             </Select>
           </Field>
-          <div className="max-h-48 space-y-2 overflow-y-auto border border-border p-3">
+          <div className="space-y-2 border border-border p-3">
             {services.map((service) => (
               <label key={service.id} className="flex items-center gap-2 text-sm">
                 <input

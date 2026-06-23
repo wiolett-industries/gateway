@@ -168,10 +168,7 @@ export function WebhookDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        className="max-w-3xl max-h-[85vh] overflow-y-auto"
-        onOpenAutoFocus={(e) => e.preventDefault()}
-      >
+      <DialogContent className="max-w-3xl" onOpenAutoFocus={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle>{isEdit ? "Edit Webhook" : "New Webhook"}</DialogTitle>
           <DialogDescription>
@@ -236,45 +233,60 @@ export function WebhookDialog({
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-sm font-medium">Custom Headers</label>
-                  <div className="border border-input rounded-md overflow-hidden">
-                    <div className="grid grid-cols-[1fr_1fr_36px] bg-muted/50 border-b border-border text-xs font-medium text-muted-foreground">
-                      <div className="px-3 py-1.5">Header</div>
-                      <div className="px-3 py-1.5 border-l border-border">Value</div>
+                  <div className="overflow-hidden border border-border">
+                    <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_2.25rem] border-b border-border bg-muted/60 text-xs font-medium uppercase tracking-wider text-muted-foreground dark:bg-muted">
+                      <div className="px-3 py-2">Header</div>
+                      <div className="border-l border-border px-3 py-2">Value</div>
                       <div />
                     </div>
                     {headers.map((h, idx) => (
                       <div
                         key={idx}
-                        className="grid grid-cols-[1fr_1fr_36px] border-b border-border last:border-b-0"
+                        className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_2.25rem] border-b border-border last:border-b-0"
                       >
                         <Input
                           value={h.key}
                           onChange={(e) => updateHeader(idx, "key", e.target.value)}
-                          className="h-9 text-xs font-mono border-0 rounded-none focus-visible:ring-0 focus-visible:ring-offset-0"
+                          className="h-9 rounded-none border-0 font-mono text-xs shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
                           placeholder="Content-Type"
                         />
-                        <div className="flex items-center border-l border-border">
-                          <Input
-                            value={h.value}
-                            onChange={(e) => updateHeader(idx, "value", e.target.value)}
-                            className="h-9 text-xs font-mono border-0 rounded-none focus-visible:ring-0 focus-visible:ring-offset-0 flex-1 min-w-0"
-                            placeholder="application/json"
-                          />
+                        <Input
+                          value={h.value}
+                          onChange={(e) => updateHeader(idx, "value", e.target.value)}
+                          className="h-9 rounded-none border-0 border-l border-border font-mono text-xs shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+                          placeholder="application/json"
+                        />
+                        <div className="flex border-l border-border">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-9 w-9 shrink-0 rounded-none"
+                            onClick={() => removeHeader(idx)}
+                          >
+                            <Minus className="h-3.5 w-3.5" />
+                          </Button>
                         </div>
+                      </div>
+                    ))}
+                    <div className="grid grid-cols-[minmax(0,1fr)_2.25rem] bg-muted/60 dark:bg-muted">
+                      <button
+                        type="button"
+                        className="h-9 min-w-0 cursor-pointer"
+                        aria-label="Add header"
+                        onClick={addHeader}
+                      />
+                      <div className="flex border-l border-border">
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-9 w-9 shrink-0 rounded-none border-l border-border"
-                          onClick={() => removeHeader(idx)}
+                          className="h-9 w-9 shrink-0 rounded-none"
+                          onClick={addHeader}
                         >
-                          <Minus className="h-3.5 w-3.5" />
+                          <Plus className="h-3.5 w-3.5" />
                         </Button>
                       </div>
-                    ))}
+                    </div>
                   </div>
-                  <Button variant="outline" size="sm" className="mt-1.5" onClick={addHeader}>
-                    <Plus className="h-3.5 w-3.5 mr-1" /> Add Header
-                  </Button>
                 </div>
               </motion.div>
             )}
@@ -306,7 +318,7 @@ export function WebhookDialog({
             )}
           </AnimatePresence>
         </AnimatedHeight>
-        <DialogFooter>
+        <DialogFooter className="shrink-0">
           {step === 1 ? (
             <>
               <Button variant="outline" onClick={() => onOpenChange(false)}>

@@ -493,7 +493,7 @@ export function SSLCertificates() {
         onCreated={fetchCertificates}
       />
       <Dialog open={!!pendingRenewal} onOpenChange={(open) => !open && setPendingRenewal(null)}>
-        <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>
               {pendingRenewal?.operation === "renewal" ? "Verify DNS Renewal" : "Verify DNS Issue"}

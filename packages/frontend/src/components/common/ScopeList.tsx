@@ -164,7 +164,7 @@ export function ScopeList({
     const rest = scopes.filter((s) => !matchesQuery(s, q));
 
     return (
-      <div className="max-h-[40vh] overflow-y-auto">
+      <div className="max-sm:max-h-[40vh] max-sm:overflow-y-auto">
         {matches.map((scope) => (
           <ScopeRow
             key={scope.value}
@@ -216,7 +216,7 @@ export function ScopeList({
 
   // No search: render grouped by category
   return (
-    <div className="max-h-[40vh] overflow-y-auto">
+    <div className="max-sm:max-h-[40vh] max-sm:overflow-y-auto">
       {categories.map((cat) => {
         const catScopes = scopes.filter((s) => s.group === cat);
         if (catScopes.length === 0) return null;

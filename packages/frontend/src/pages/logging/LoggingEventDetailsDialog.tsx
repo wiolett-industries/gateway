@@ -12,12 +12,12 @@ export function LoggingEventDetailsDialog({
 }) {
   return (
     <Dialog open={!!event} onOpenChange={onOpenChange}>
-      <DialogContent className="grid-rows-[auto,minmax(0,1fr)] max-h-[calc(100vh-6rem)] max-w-[calc(100vw-2rem)] overflow-hidden sm:max-w-3xl">
+      <DialogContent className="max-w-[calc(100vw-2rem)] sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>Log Event</DialogTitle>
         </DialogHeader>
         {event && (
-          <div className="min-h-0 min-w-0 space-y-4 overflow-y-auto pr-1">
+          <div className="min-w-0 space-y-4 pr-1">
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant={loggingSeverityBadgeVariant(event.severity)}>{event.severity}</Badge>
               <span className="text-sm text-muted-foreground">

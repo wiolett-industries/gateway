@@ -85,4 +85,19 @@ describe("WebhooksTab", () => {
       expect(getWebhookPresets).toHaveBeenCalled();
     });
   });
+
+  it("does not replay a stale create token when the webhooks tab mounts", async () => {
+    vi.spyOn(api, "listWebhooks").mockResolvedValue({
+      data: [makeWebhook()],
+      total: 1,
+      page: 1,
+      limit: 100,
+      totalPages: 1,
+    });
+
+    renderWithRouter(<WebhooksTab canRead canManage openCreateToken={3} />);
+
+    await screen.findByText("Ops Discord");
+    expect(screen.queryByRole("heading", { name: "New Webhook" })).not.toBeInTheDocument();
+  });
 });

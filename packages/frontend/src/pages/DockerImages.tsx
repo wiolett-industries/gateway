@@ -654,7 +654,7 @@ export function DockerImages({
 
       {/* Image Details Dialog */}
       <Dialog open={detailsOpen} onOpenChange={onDetailsOpenChange}>
-        <DialogContent className="max-h-[80vh] max-w-full overflow-x-hidden overflow-y-auto sm:max-w-xl">
+        <DialogContent className="max-w-full sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>Image Details</DialogTitle>
             <DialogDescription>

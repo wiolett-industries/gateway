@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
+import { SimpleTable, type SimpleTableColumn } from "@/components/common/SimpleTable";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -69,7 +70,7 @@ export function AlertsTab({
   );
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<AlertRule | null>(null);
-  const lastHandledCreateToken = useRef(0);
+  const lastHandledCreateToken = useRef(openCreateToken);
 
   const load = useCallback(
     async (options?: { showLoading?: boolean }) => {
@@ -161,6 +162,89 @@ export function AlertsTab({
   if (isLoading) return <LoadingSpinner />;
 
   const visibleRules = canRead ? rules : [];
+  const columns: SimpleTableColumn<AlertRule>[] = [
+    {
+      id: "name",
+      header: "Name",
+      render: (rule) => <span className="text-sm font-medium">{rule.name}</span>,
+    },
+    {
+      id: "category",
+      header: "Category",
+      render: (rule) => <Badge variant="secondary">{rule.category}</Badge>,
+    },
+    {
+      id: "condition",
+      header: "Condition",
+      render: (rule) => (
+        <span className="text-sm text-muted-foreground">{formatAlertCondition(rule)}</span>
+      ),
+    },
+    {
+      id: "scope",
+      header: "Scope",
+      render: (rule) => (
+        <span className="text-sm text-muted-foreground">
+          {rule.resourceIds.length === 0 ? "All" : `${rule.resourceIds.length} selected`}
+        </span>
+      ),
+    },
+    {
+      id: "severity",
+      header: "Severity",
+      render: (rule) => <Badge variant={SEV_BADGE[rule.severity]}>{rule.severity}</Badge>,
+    },
+    {
+      id: "webhooks",
+      header: "Webhooks",
+      render: (rule) => <Badge variant="secondary">{rule.webhookIds.length}</Badge>,
+    },
+    {
+      id: "active",
+      header: "Active",
+      className: "w-16",
+      cellClassName: "w-16",
+      render: (rule) => (
+        <div onClick={(event) => event.stopPropagation()}>
+          <Switch
+            checked={rule.enabled}
+            onChange={() => {
+              if (canManage) toggle(rule);
+            }}
+            disabled={!canManage}
+          />
+        </div>
+      ),
+    },
+    {
+      id: "actions",
+      header: "",
+      align: "right",
+      className: "w-12",
+      cellClassName: "w-12",
+      render: (rule) =>
+        canManage ? (
+          <div onClick={(event) => event.stopPropagation()}>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8">
+                  <MoreVertical className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => openEdit(rule)}>
+                  <Pencil className="h-4 w-4" /> Edit
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => del(rule)} className="text-destructive">
+                  <Trash2 className="h-4 w-4" /> Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        ) : null,
+    },
+  ];
 
   return (
     <div className="space-y-4">
@@ -171,79 +255,12 @@ export function AlertsTab({
         <EmptyState message="No alerts configured. Create an alert to start receiving notifications." />
       ) : (
         <div className="border border-border bg-card">
-          <div className="overflow-x-auto -mb-px">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-border text-left">
-                  <th className="p-3 text-xs font-medium text-muted-foreground">Name</th>
-                  <th className="p-3 text-xs font-medium text-muted-foreground">Category</th>
-                  <th className="p-3 text-xs font-medium text-muted-foreground">Condition</th>
-                  <th className="p-3 text-xs font-medium text-muted-foreground">Scope</th>
-                  <th className="p-3 text-xs font-medium text-muted-foreground">Severity</th>
-                  <th className="p-3 text-xs font-medium text-muted-foreground">Webhooks</th>
-                  <th className="p-3 text-xs font-medium text-muted-foreground w-16">Active</th>
-                  <th className="p-3 text-xs font-medium text-muted-foreground w-10" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {visibleRules.map((r) => (
-                  <tr
-                    key={r.id}
-                    className={
-                      canManage ? "hover:bg-accent transition-colors cursor-pointer" : undefined
-                    }
-                    onClick={canManage ? () => openEdit(r) : undefined}
-                  >
-                    <td className="p-3">
-                      <span className="text-sm font-medium">{r.name}</span>
-                    </td>
-                    <td className="p-3">
-                      <Badge variant="secondary">{r.category}</Badge>
-                    </td>
-                    <td className="p-3 text-sm text-muted-foreground">{formatAlertCondition(r)}</td>
-                    <td className="p-3 text-sm text-muted-foreground">
-                      {r.resourceIds.length === 0 ? "All" : `${r.resourceIds.length} selected`}
-                    </td>
-                    <td className="p-3">
-                      <Badge variant={SEV_BADGE[r.severity]}>{r.severity}</Badge>
-                    </td>
-                    <td className="p-3">
-                      <Badge variant="secondary">{r.webhookIds.length}</Badge>
-                    </td>
-                    <td className="p-3" onClick={(e) => e.stopPropagation()}>
-                      <Switch
-                        checked={r.enabled}
-                        onChange={() => {
-                          if (canManage) toggle(r);
-                        }}
-                        disabled={!canManage}
-                      />
-                    </td>
-                    <td className="p-3" onClick={(e) => e.stopPropagation()}>
-                      {canManage && (
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
-                              <MoreVertical className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => openEdit(r)}>
-                              <Pencil className="h-4 w-4" /> Edit
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem onClick={() => del(r)} className="text-destructive">
-                              <Trash2 className="h-4 w-4" /> Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <SimpleTable
+            columns={columns}
+            rows={visibleRules}
+            getRowKey={(rule) => rule.id}
+            onRowClick={canManage ? openEdit : undefined}
+          />
         </div>
       )}
       <AlertDialog

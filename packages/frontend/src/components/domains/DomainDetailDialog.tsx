@@ -168,7 +168,7 @@ export function DomainDetailDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{domain?.domain || "Loading..."}</DialogTitle>
           <DialogDescription>

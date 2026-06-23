@@ -112,7 +112,7 @@ const DialogContent = React.forwardRef<
         <DialogPrimitive.Content
           ref={ref}
           className={cn(
-            "dialog-content relative z-50 flex w-full max-w-none flex-col overflow-hidden border bg-background p-0 shadow-lg outline-none",
+            "dialog-content relative z-50 flex w-full max-w-none flex-col border bg-background p-0 shadow-lg outline-none",
             "max-h-[85dvh]",
             "sm:mx-auto sm:my-auto sm:max-h-none sm:max-w-lg",
             contentClassName,
@@ -139,7 +139,7 @@ const DialogContent = React.forwardRef<
           {bodyChildren.length > 0 ? (
             <div
               className={cn(
-                "min-h-0 min-w-0 flex-1 overflow-y-auto px-4 max-sm:overscroll-contain sm:px-6",
+                "min-h-0 min-w-0 px-4 max-sm:flex-1 max-sm:overflow-y-auto max-sm:overscroll-contain sm:px-6",
                 bodyChildren.length > 1 && "grid gap-4",
                 hasHeader ? "pt-0" : "pt-4 sm:pt-6",
                 hasFooter ? "pb-0" : "pb-4 sm:pb-6"

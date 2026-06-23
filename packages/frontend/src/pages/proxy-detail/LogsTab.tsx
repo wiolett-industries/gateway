@@ -451,7 +451,7 @@ export function LogsTab({ hostId }: { hostId: string }) {
       </ResourceListFrame>
 
       <Dialog open={!!selectedLog} onOpenChange={(open) => !open && setSelectedLog(null)}>
-        <DialogContent className="max-h-[80vh] max-w-full overflow-x-hidden overflow-y-auto sm:max-w-xl">
+        <DialogContent className="max-w-full sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>Log Details</DialogTitle>
             <DialogDescription>

@@ -390,11 +390,11 @@ export function DatabaseConsoleTab({ database }: { database: DatabaseConnection 
       </div>
 
       <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
-        <DialogContent className="sm:max-w-3xl max-h-[80vh] flex flex-col overflow-hidden">
+        <DialogContent className="sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>Query History</DialogTitle>
           </DialogHeader>
-          <div className="min-h-0 overflow-auto border border-border">
+          <div className="overflow-x-auto border border-border">
             {history.length > 0 ? (
               history.map((entry) => (
                 <button

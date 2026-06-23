@@ -5,6 +5,7 @@ import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
+import { SimpleTable, type SimpleTableColumn } from "@/components/common/SimpleTable";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -237,6 +238,99 @@ export function PkiTemplatesTab({
   const isLastStep = step === WIZARD_STEPS.length - 1;
   const canProceed =
     step === 0 ? name.trim() !== "" && validityDays >= 1 && validityDays <= 3650 : true;
+  const templateColumns: SimpleTableColumn<Template>[] = [
+    {
+      id: "name",
+      header: "Name",
+      render: (template) => (
+        <div className="flex min-w-0 items-center gap-2">
+          <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <span className="truncate text-sm font-medium">{template.name}</span>
+          {template.isBuiltin && <Badge>Built-in</Badge>}
+        </div>
+      ),
+    },
+    {
+      id: "description",
+      header: "Description",
+      render: (template) => (
+        <span className="line-clamp-1 text-sm text-muted-foreground">
+          {template.description || "No description"}
+        </span>
+      ),
+    },
+    {
+      id: "type",
+      header: "Type",
+      render: (template) => <Badge variant="secondary">{template.certType}</Badge>,
+    },
+    {
+      id: "algorithm",
+      header: "Algorithm",
+      render: (template) => <Badge variant="secondary">{template.keyAlgorithm}</Badge>,
+    },
+    {
+      id: "validity",
+      header: "Validity",
+      render: (template) => <Badge variant="secondary">{template.validityDays}d</Badge>,
+    },
+    {
+      id: "usage",
+      header: "Usage",
+      render: (template) => (
+        <div className="flex flex-wrap gap-1">
+          {(template.keyUsage?.length ?? 0) > 0 && (
+            <Badge variant="secondary">{template.keyUsage.length} KU</Badge>
+          )}
+          {(template.extKeyUsage?.length ?? 0) > 0 && (
+            <Badge variant="secondary">{template.extKeyUsage.length} EKU</Badge>
+          )}
+          {(template.crlDistributionPoints?.length ?? 0) > 0 && (
+            <Badge variant="secondary">CRL</Badge>
+          )}
+          {(template.customExtensions?.length ?? 0) > 0 && (
+            <Badge variant="secondary">{template.customExtensions.length} ext</Badge>
+          )}
+        </div>
+      ),
+    },
+    {
+      id: "actions",
+      header: "",
+      align: "right",
+      className: "w-12",
+      cellClassName: "w-12",
+      render: (template) =>
+        (canEditTemplates || canDeleteTemplates) && !template.isBuiltin ? (
+          <div onClick={(event) => event.stopPropagation()}>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8">
+                  <MoreVertical className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {canEditTemplates && (
+                  <DropdownMenuItem onClick={() => openEdit(template)}>
+                    <Pencil className="h-4 w-4" />
+                    Edit
+                  </DropdownMenuItem>
+                )}
+                {canDeleteTemplates && (
+                  <DropdownMenuItem
+                    onClick={() => handleDelete(template)}
+                    className="text-destructive"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Delete
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        ) : null,
+    },
+  ];
 
   if (!canListTemplates) {
     return null;
@@ -266,64 +360,16 @@ export function PkiTemplatesTab({
 
         {/* Template grid */}
         {templates.length > 0 ? (
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {templates.map((template) => (
-              <div key={template.id} className="border border-border bg-card p-4 space-y-3">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-2">
-                    <FileText className="h-4 w-4 text-muted-foreground" />
-                    <h3 className="font-semibold text-sm">{template.name}</h3>
-                  </div>
-                  {(canEditTemplates || canDeleteTemplates) && !template.isBuiltin && (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-8 w-8">
-                          <MoreVertical className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        {canEditTemplates && (
-                          <DropdownMenuItem onClick={() => openEdit(template)}>
-                            <Pencil className="h-4 w-4" />
-                            Edit
-                          </DropdownMenuItem>
-                        )}
-                        {canDeleteTemplates && (
-                          <DropdownMenuItem
-                            onClick={() => handleDelete(template)}
-                            className="text-destructive"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                            Delete
-                          </DropdownMenuItem>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  )}
-                </div>
-                <p className="text-sm text-muted-foreground line-clamp-2">
-                  {template.description || "No description"}
-                </p>
-                <div className="flex flex-wrap gap-1">
-                  <Badge variant="secondary">{template.certType}</Badge>
-                  <Badge variant="secondary">{template.keyAlgorithm}</Badge>
-                  <Badge variant="secondary">{template.validityDays}d</Badge>
-                  {template.isBuiltin && <Badge>Built-in</Badge>}
-                  {(template.keyUsage?.length ?? 0) > 0 && (
-                    <Badge variant="secondary">{template.keyUsage.length} KU</Badge>
-                  )}
-                  {(template.extKeyUsage?.length ?? 0) > 0 && (
-                    <Badge variant="secondary">{template.extKeyUsage.length} EKU</Badge>
-                  )}
-                  {(template.crlDistributionPoints?.length ?? 0) > 0 && (
-                    <Badge variant="secondary">CRL</Badge>
-                  )}
-                  {(template.customExtensions?.length ?? 0) > 0 && (
-                    <Badge variant="secondary">{template.customExtensions.length} ext</Badge>
-                  )}
-                </div>
-              </div>
-            ))}
+          <div className="border border-border bg-card">
+            <SimpleTable
+              columns={templateColumns}
+              rows={templates}
+              getRowKey={(template) => template.id}
+              onRowClick={(template) => {
+                if (canEditTemplates && !template.isBuiltin) openEdit(template);
+              }}
+              isRowClickable={(template) => canEditTemplates && !template.isBuiltin}
+            />
           </div>
         ) : (
           <EmptyState
@@ -336,7 +382,7 @@ export function PkiTemplatesTab({
 
         {/* Wizard Dialog */}
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogContent className="sm:max-w-2xl max-h-[85vh] flex flex-col">
+          <DialogContent className="sm:max-w-2xl">
             <DialogHeader>
               <DialogTitle>{editing ? "Edit Template" : "Create Template"}</DialogTitle>
             </DialogHeader>
@@ -358,7 +404,7 @@ export function PkiTemplatesTab({
             </div>
 
             {/* Step content */}
-            <div className="flex-1 overflow-y-auto min-h-0 space-y-4 px-1 -mx-1 pb-1">
+            <div className="-mx-1 space-y-4 px-1 pb-1">
               {step === 0 && (
                 <StepGeneral
                   name={name}

@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
+import { SimpleTable, type SimpleTableColumn } from "@/components/common/SimpleTable";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -38,7 +39,7 @@ export function WebhooksTab({
   );
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingWh, setEditingWh] = useState<NotificationWebhook | null>(null);
-  const lastHandledCreateToken = useRef(0);
+  const lastHandledCreateToken = useRef(openCreateToken);
 
   const load = useCallback(
     async (options?: { showLoading?: boolean }) => {
@@ -141,6 +142,85 @@ export function WebhooksTab({
   if (isLoading) return <LoadingSpinner />;
 
   const visibleWebhooks = canRead ? webhooks : [];
+  const columns: SimpleTableColumn<NotificationWebhook>[] = [
+    {
+      id: "name",
+      header: "Name",
+      render: (webhook) => <span className="text-sm font-medium">{webhook.name}</span>,
+    },
+    {
+      id: "url",
+      header: "URL",
+      render: (webhook) => (
+        <span className="block max-w-[300px] truncate font-mono text-sm text-muted-foreground">
+          {webhook.url}
+        </span>
+      ),
+    },
+    {
+      id: "method",
+      header: "Method",
+      render: (webhook) => <Badge variant="secondary">{webhook.method}</Badge>,
+    },
+    {
+      id: "preset",
+      header: "Preset",
+      render: (webhook) =>
+        webhook.templatePreset ? (
+          <Badge variant="secondary">{webhook.templatePreset}</Badge>
+        ) : (
+          <span className="text-xs text-muted-foreground">custom</span>
+        ),
+    },
+    {
+      id: "active",
+      header: "Active",
+      className: "w-16",
+      cellClassName: "w-16",
+      render: (webhook) => (
+        <div onClick={(event) => event.stopPropagation()}>
+          <Switch
+            checked={webhook.enabled}
+            onChange={() => {
+              if (canManage) toggle(webhook);
+            }}
+            disabled={!canManage}
+          />
+        </div>
+      ),
+    },
+    {
+      id: "actions",
+      header: "",
+      align: "right",
+      className: "w-12",
+      cellClassName: "w-12",
+      render: (webhook) =>
+        canManage ? (
+          <div onClick={(event) => event.stopPropagation()}>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8">
+                  <MoreVertical className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => test(webhook)}>
+                  <Send className="h-4 w-4" /> Test
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => openEdit(webhook)}>
+                  <Pencil className="h-4 w-4" /> Edit
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => del(webhook)} className="text-destructive">
+                  <Trash2 className="h-4 w-4" /> Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        ) : null,
+    },
+  ];
 
   return (
     <div className="space-y-4">
@@ -151,82 +231,12 @@ export function WebhooksTab({
         <EmptyState message="No webhooks configured. Create a webhook to configure notification delivery." />
       ) : (
         <div className="border border-border bg-card">
-          <div className="overflow-x-auto -mb-px">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-border text-left">
-                  <th className="p-3 text-xs font-medium text-muted-foreground">Name</th>
-                  <th className="p-3 text-xs font-medium text-muted-foreground">URL</th>
-                  <th className="p-3 text-xs font-medium text-muted-foreground">Method</th>
-                  <th className="p-3 text-xs font-medium text-muted-foreground">Preset</th>
-                  <th className="p-3 text-xs font-medium text-muted-foreground w-16">Active</th>
-                  <th className="p-3 text-xs font-medium text-muted-foreground w-10" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {visibleWebhooks.map((wh) => (
-                  <tr
-                    key={wh.id}
-                    className={
-                      canManage ? "hover:bg-accent transition-colors cursor-pointer" : undefined
-                    }
-                    onClick={canManage ? () => openEdit(wh) : undefined}
-                  >
-                    <td className="p-3">
-                      <span className="text-sm font-medium">{wh.name}</span>
-                    </td>
-                    <td className="p-3">
-                      <span className="text-sm text-muted-foreground font-mono truncate block max-w-[300px]">
-                        {wh.url}
-                      </span>
-                    </td>
-                    <td className="p-3">
-                      <Badge variant="secondary">{wh.method}</Badge>
-                    </td>
-                    <td className="p-3">
-                      {wh.templatePreset ? (
-                        <Badge variant="secondary">{wh.templatePreset}</Badge>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">custom</span>
-                      )}
-                    </td>
-                    <td className="p-3" onClick={(e) => e.stopPropagation()}>
-                      <Switch
-                        checked={wh.enabled}
-                        onChange={() => {
-                          if (canManage) toggle(wh);
-                        }}
-                        disabled={!canManage}
-                      />
-                    </td>
-                    <td className="p-3" onClick={(e) => e.stopPropagation()}>
-                      {canManage && (
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
-                              <MoreVertical className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => test(wh)}>
-                              <Send className="h-4 w-4" /> Test
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => openEdit(wh)}>
-                              <Pencil className="h-4 w-4" /> Edit
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem onClick={() => del(wh)} className="text-destructive">
-                              <Trash2 className="h-4 w-4" /> Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <SimpleTable
+            columns={columns}
+            rows={visibleWebhooks}
+            getRowKey={(webhook) => webhook.id}
+            onRowClick={canManage ? openEdit : undefined}
+          />
         </div>
       )}
       <WebhookDialog

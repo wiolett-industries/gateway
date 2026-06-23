@@ -553,7 +553,7 @@ export function NginxTemplateEdit() {
       </div>
 
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
-        <DialogContent className="w-[92vw] sm:max-w-[58rem] h-[88vh] flex flex-col overflow-hidden">
+        <DialogContent className="flex h-[88vh] w-[92vw] flex-col sm:max-w-[58rem]">
           <DialogHeader>
             <DialogTitle>Rendered Preview</DialogTitle>
             <DialogDescription>Preview the template rendered with sample data.</DialogDescription>
@@ -578,7 +578,7 @@ export function NginxTemplateEdit() {
       </Dialog>
 
       <Dialog open={cheatsheetOpen} onOpenChange={setCheatsheetOpen}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Template Cheatsheet</DialogTitle>
             <DialogDescription>
@@ -634,14 +634,14 @@ export function NginxTemplateEdit() {
 
       {!isBuiltin && (
         <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-          <DialogContent className="w-[90vw] sm:max-w-[42rem] max-h-[85vh] flex flex-col overflow-hidden">
+          <DialogContent className="w-[90vw] sm:max-w-[42rem]">
             <DialogHeader>
               <DialogTitle>Template Settings</DialogTitle>
               <DialogDescription>
                 Configure custom variables that proxy hosts can fill when using this template.
               </DialogDescription>
             </DialogHeader>
-            <div className="flex-1 min-h-0 flex flex-col border border-border bg-card overflow-hidden">
+            <div className="border border-border bg-card">
               <div className="flex items-center justify-between p-4 border-b border-border shrink-0">
                 <div>
                   <h3 className="text-sm font-semibold">Custom Variables</h3>
@@ -655,7 +655,7 @@ export function NginxTemplateEdit() {
                   Add
                 </Button>
               </div>
-              <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+              <div className="overflow-x-hidden">
                 <div className="w-full min-w-0">
                   {variables.length > 0 && (
                     <div className="grid grid-cols-[9rem_7rem_8rem_minmax(0,1fr)_2.25rem] border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wider sticky top-0 z-10 bg-card">

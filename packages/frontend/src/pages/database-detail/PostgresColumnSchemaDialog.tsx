@@ -59,12 +59,12 @@ export function PostgresColumnSchemaDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-3xl max-h-[82vh] flex flex-col overflow-hidden">
+      <DialogContent className="sm:max-w-3xl">
         <DialogHeader className="shrink-0">
           <DialogTitle>Column Types</DialogTitle>
         </DialogHeader>
         {metadata ? (
-          <div className="min-h-0 overflow-auto border border-border">
+          <div className="overflow-x-auto border border-border">
             <div
               className={`grid ${
                 canChangeColumnTypes

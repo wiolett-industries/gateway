@@ -5,6 +5,11 @@ import { api } from "@/services/api";
 import { renderWithRouter } from "@/test/render";
 import type { AlertCategoryDef, AlertRule, NotificationWebhook } from "@/types";
 import { AlertDialog } from "./AlertDialog";
+import { AlertsTab } from "./AlertsTab";
+
+vi.mock("@/hooks/use-realtime", () => ({
+  useRealtime: vi.fn(),
+}));
 
 vi.mock("./template-editor", () => ({
   AnimatedHeight: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -86,6 +91,7 @@ function makeRule(): AlertRule {
 
 describe("AlertDialog", () => {
   beforeEach(() => {
+    api.resetSessionState();
     vi.restoreAllMocks();
     vi.spyOn(api, "getAlertCategories").mockResolvedValue([makeCategory()]);
     vi.spyOn(api, "listWebhooks").mockResolvedValue({
@@ -102,6 +108,10 @@ describe("AlertDialog", () => {
       limit: 100,
       totalPages: 0,
     });
+  });
+
+  afterEach(() => {
+    api.resetSessionState();
   });
 
   it("keeps edit defaults and submits the alert update payload", async () => {
@@ -136,5 +146,23 @@ describe("AlertDialog", () => {
     });
     expect(onOpenChange).toHaveBeenCalledWith(false);
     expect(onSaved).toHaveBeenCalled();
+  });
+
+  it("does not replay a stale create token when the alerts tab mounts", async () => {
+    vi.spyOn(api, "listAlertRules").mockResolvedValue({
+      data: [makeRule()],
+      total: 1,
+      page: 1,
+      limit: 100,
+      totalPages: 1,
+    });
+
+    renderWithRouter(<AlertsTab canRead canManage openCreateToken={3} />, {
+      path: "/notifications",
+      route: "/notifications",
+    });
+
+    await screen.findByText("CPU High");
+    expect(screen.queryByRole("heading", { name: "New Alert" })).not.toBeInTheDocument();
   });
 });

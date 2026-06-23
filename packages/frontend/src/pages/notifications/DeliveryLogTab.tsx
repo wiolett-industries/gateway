@@ -3,6 +3,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/common/EmptyState";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
+import {
+  ResourceListCell,
+  type ResourceListColumn,
+  ResourceListFrame,
+  ResourceListHeaderTable,
+  ResourceListRow,
+  ResourceListTable,
+} from "@/components/common/ResourceListLayout";
 import { SearchFilterBar } from "@/components/common/SearchFilterBar";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -31,6 +39,17 @@ const STATUS_BADGE: Record<string, "success" | "destructive" | "warning" | "seco
   retrying: "warning",
   pending: "secondary",
 };
+
+const DELIVERY_COLUMNS: ResourceListColumn<WebhookDelivery>[] = [
+  { id: "status", label: "", width: "56px" },
+  { id: "webhook", label: "Webhook", width: "220px" },
+  { id: "event", label: "Event" },
+  { id: "severity", label: "Severity", width: "120px" },
+  { id: "http", label: "HTTP", width: "96px" },
+  { id: "time", label: "Time", width: "96px" },
+  { id: "attempt", label: "Attempt", width: "100px" },
+  { id: "when", label: "When", width: "180px" },
+];
 
 export function DeliveryLogTab({ refreshToken }: { refreshToken: number }) {
   const [deliveries, setDeliveries] = useState<WebhookDelivery[]>(
@@ -158,9 +177,18 @@ export function DeliveryLogTab({ refreshToken }: { refreshToken: number }) {
   }, [fetchPage, hasMore, loadingMore, isLoading]);
 
   const sIcon = (s: string) => {
-    if (s === "success") return <CheckCircle2 className="h-4 w-4 text-emerald-500" />;
-    if (s === "failed") return <XCircle className="h-4 w-4 text-red-500" />;
-    return <Clock className="h-4 w-4 text-amber-500" />;
+    const icon =
+      s === "success" ? (
+        <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+      ) : s === "failed" ? (
+        <XCircle className="h-4 w-4 text-red-500" />
+      ) : (
+        <Clock className="h-4 w-4 text-amber-500" />
+      );
+
+    return (
+      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted">{icon}</span>
+    );
   };
 
   const filteredDeliveries = useMemo(() => {
@@ -182,7 +210,7 @@ export function DeliveryLogTab({ refreshToken }: { refreshToken: number }) {
   if (isLoading && deliveries.length === 0) return <LoadingSpinner />;
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 min-w-0 gap-4">
+    <div className="flex min-w-0 flex-col gap-4">
       <SearchFilterBar
         placeholder="Search by webhook, event, severity, or HTTP status..."
         search={searchInput}
@@ -211,96 +239,84 @@ export function DeliveryLogTab({ refreshToken }: { refreshToken: number }) {
       {deliveries.length === 0 ? (
         <EmptyState message="No deliveries yet. Delivery attempts will appear here when alerts fire." />
       ) : (
-        <div className="min-w-0 border border-border bg-card">
-          <div ref={scrollRef} className="max-h-[calc(100vh-18rem)] overflow-auto -mb-px">
-            <table className="w-full min-w-[56rem]">
-              <thead>
-                <tr className="border-b border-border text-left">
-                  <th className="p-3 text-xs font-medium text-muted-foreground w-10" />
-                  <th className="p-3 text-xs font-medium text-muted-foreground">Webhook</th>
-                  <th className="p-3 text-xs font-medium text-muted-foreground">Event</th>
-                  <th className="p-3 text-xs font-medium text-muted-foreground">Severity</th>
-                  <th className="p-3 text-xs font-medium text-muted-foreground">HTTP</th>
-                  <th className="p-3 text-xs font-medium text-muted-foreground">Time</th>
-                  <th className="p-3 text-xs font-medium text-muted-foreground">Attempt</th>
-                  <th className="p-3 text-xs font-medium text-muted-foreground">When</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {filteredDeliveries.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className="p-6 text-center text-sm text-muted-foreground">
-                      No deliveries match the current search.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredDeliveries.map((d) => (
-                    <tr
-                      key={d.id}
-                      className="hover:bg-accent transition-colors cursor-pointer"
-                      onClick={() => void openDeliveryDetail(d)}
-                    >
-                      <td className="p-3">{sIcon(d.status)}</td>
-                      <td className="p-3">
-                        <span className="text-sm font-medium">
-                          {d.webhookName ?? d.webhookId.slice(0, 8)}
-                        </span>
-                      </td>
-                      <td className="p-3">
-                        <span className="text-sm font-mono text-muted-foreground">
-                          {d.eventType}
-                        </span>
-                      </td>
-                      <td className="p-3">
-                        <Badge variant={SEV_BADGE[d.severity] ?? "secondary"}>{d.severity}</Badge>
-                      </td>
-                      <td className="p-3">
-                        {d.responseStatus ? (
-                          <Badge variant={d.responseStatus < 300 ? "success" : "destructive"}>
-                            {d.responseStatus}
-                          </Badge>
-                        ) : (
-                          <span className="text-sm text-muted-foreground">—</span>
-                        )}
-                      </td>
-                      <td className="p-3">
-                        <span className="text-sm text-muted-foreground">
-                          {d.responseTimeMs != null ? `${d.responseTimeMs}ms` : "—"}
-                        </span>
-                      </td>
-                      <td className="p-3">
-                        <span className="text-sm text-muted-foreground">
-                          {d.attempt}/{d.maxAttempts}
-                        </span>
-                      </td>
-                      <td className="p-3">
-                        <span className="text-xs text-muted-foreground">
-                          {new Date(d.createdAt).toLocaleString()}
-                        </span>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-              <tfoot>
-                <tr>
-                  <td colSpan={8}>
-                    <div
-                      ref={sentinelRef}
-                      className="py-4 text-center text-xs text-muted-foreground"
-                    >
-                      {loadingMore
-                        ? "Loading more..."
-                        : !hasMore && deliveries.length > 0
-                          ? "End of log"
-                          : ""}
-                    </div>
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
+        <ResourceListFrame minWidth={896} innerClassName="flex flex-col">
+          <ResourceListHeaderTable columns={DELIVERY_COLUMNS} />
+          <div ref={scrollRef} className="max-h-[calc(100dvh-18rem)] overflow-auto">
+            <ResourceListTable
+              columns={DELIVERY_COLUMNS}
+              bodyClassName="[&>tr:last-child]:border-b-0"
+            >
+              {filteredDeliveries.length === 0 ? (
+                <ResourceListRow className="opacity-100">
+                  <ResourceListCell colSpan={8} contentClassName="block p-0">
+                    <EmptyState message="No deliveries match the current search." embedded />
+                  </ResourceListCell>
+                </ResourceListRow>
+              ) : (
+                filteredDeliveries.map((d) => (
+                  <ResourceListRow
+                    key={d.id}
+                    interactive
+                    onClick={() => void openDeliveryDetail(d)}
+                  >
+                    <ResourceListCell>{sIcon(d.status)}</ResourceListCell>
+                    <ResourceListCell>
+                      <span className="text-sm font-medium">
+                        {d.webhookName ?? d.webhookId.slice(0, 8)}
+                      </span>
+                    </ResourceListCell>
+                    <ResourceListCell contentClassName="min-w-0">
+                      <span className="truncate font-mono text-sm text-muted-foreground">
+                        {d.eventType}
+                      </span>
+                    </ResourceListCell>
+                    <ResourceListCell>
+                      <Badge variant={SEV_BADGE[d.severity] ?? "secondary"}>{d.severity}</Badge>
+                    </ResourceListCell>
+                    <ResourceListCell>
+                      {d.responseStatus ? (
+                        <Badge variant={d.responseStatus < 300 ? "success" : "destructive"}>
+                          {d.responseStatus}
+                        </Badge>
+                      ) : (
+                        <span className="text-sm text-muted-foreground">—</span>
+                      )}
+                    </ResourceListCell>
+                    <ResourceListCell>
+                      <span className="text-sm text-muted-foreground">
+                        {d.responseTimeMs != null ? `${d.responseTimeMs}ms` : "—"}
+                      </span>
+                    </ResourceListCell>
+                    <ResourceListCell>
+                      <span className="text-sm text-muted-foreground">
+                        {d.attempt}/{d.maxAttempts}
+                      </span>
+                    </ResourceListCell>
+                    <ResourceListCell>
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(d.createdAt).toLocaleString()}
+                      </span>
+                    </ResourceListCell>
+                  </ResourceListRow>
+                ))
+              )}
+              <ResourceListRow className="border-b-0 opacity-100">
+                <ResourceListCell colSpan={8} contentClassName="block p-0">
+                  <div
+                    ref={sentinelRef}
+                    className="flex min-h-12 items-center justify-center px-4 py-3 text-xs text-muted-foreground"
+                  >
+                    {loadingMore
+                      ? "Loading more..."
+                      : !hasMore && deliveries.length > 0
+                        ? "End of logs"
+                        : null}
+                  </div>
+                </ResourceListCell>
+              </ResourceListRow>
+            </ResourceListTable>
           </div>
-        </div>
+        </ResourceListFrame>
       )}
       {detail && (
         <Dialog
@@ -311,7 +327,7 @@ export function DeliveryLogTab({ refreshToken }: { refreshToken: number }) {
             setDetail(null);
           }}
         >
-          <DialogContent className="max-w-xl max-h-[80vh] overflow-y-auto">
+          <DialogContent className="max-w-xl">
             <DialogHeader>
               <DialogTitle>Delivery Details</DialogTitle>
             </DialogHeader>
