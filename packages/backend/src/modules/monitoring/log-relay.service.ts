@@ -22,12 +22,55 @@ export interface RelayedDaemonLogEntry {
   fields: Record<string, string>;
 }
 
+export interface NginxLogSubscribeAck {
+  hostId: string;
+}
+
+export const NGINX_LOG_SUBSCRIBE_ACK_EVENT = 'subscribe-ack';
+
 /**
  * In-memory relay for nginx access log entries.
  * gRPC log-stream handler emits entries here, SSE endpoints subscribe.
  */
 export const logRelay = new EventEmitter();
 logRelay.setMaxListeners(100);
+
+const NGINX_LOG_BUFFER_SIZE = 300;
+const nginxLogBuffers = new Map<string, RelayedLogEntry[]>();
+
+function nginxLogEntryKey(entry: RelayedLogEntry): string {
+  return [
+    entry.logType,
+    entry.timestamp,
+    entry.remoteAddr,
+    entry.method,
+    entry.path,
+    entry.status,
+    entry.bodyBytesSent,
+    entry.raw,
+    entry.level,
+  ].join('\u0000');
+}
+
+/** Buffer proxy-host nginx log entries for replay on SSE connect. */
+logRelay.on('log', (entry: RelayedLogEntry) => {
+  let buf = nginxLogBuffers.get(entry.hostId);
+  if (!buf) {
+    buf = [];
+    nginxLogBuffers.set(entry.hostId, buf);
+  }
+  const key = nginxLogEntryKey(entry);
+  if (buf.some((item) => nginxLogEntryKey(item) === key)) return;
+  buf.push(entry);
+  if (buf.length > NGINX_LOG_BUFFER_SIZE) {
+    buf.splice(0, buf.length - NGINX_LOG_BUFFER_SIZE);
+  }
+});
+
+/** Get buffered nginx logs for a proxy host. */
+export function getNginxLogHistory(hostId: string): RelayedLogEntry[] {
+  return nginxLogBuffers.get(hostId) ?? [];
+}
 
 /**
  * In-memory relay for daemon operational log entries with a per-node ring buffer.

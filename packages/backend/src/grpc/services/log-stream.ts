@@ -2,7 +2,7 @@ import type { ServerDuplexStream } from '@grpc/grpc-js';
 import { eq } from 'drizzle-orm';
 import { nodes } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
-import { logRelay } from '@/modules/monitoring/log-relay.service.js';
+import { logRelay, NGINX_LOG_SUBSCRIBE_ACK_EVENT } from '@/modules/monitoring/log-relay.service.js';
 import type { LogStreamControl, LogStreamMessage } from '../generated/types.js';
 import { extractDaemonCertificateIdentity, normalizeCertificateSerial } from '../interceptors/auth.js';
 import type { GrpcServerDeps } from '../server.js';
@@ -97,6 +97,7 @@ export function createLogStreamHandlers(deps: GrpcServerDeps) {
           }
           if (msg.subscribeAck) {
             logger.debug('Log subscribe ack', { hostId: msg.subscribeAck.hostId });
+            logRelay.emit(NGINX_LOG_SUBSCRIBE_ACK_EVENT, { hostId: msg.subscribeAck.hostId });
           } else if (msg.entry) {
             // Relay log entry to SSE consumers via the in-memory relay.
             logRelay.emit('log', {

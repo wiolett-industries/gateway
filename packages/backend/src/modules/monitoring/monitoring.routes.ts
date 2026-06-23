@@ -9,7 +9,7 @@ import { getResourceScopedIds, hasScope, hasScopeBase } from '@/lib/permissions.
 import { authMiddleware, requireScopeForResource } from '@/modules/auth/auth.middleware.js';
 import { NodeRegistryService } from '@/services/node-registry.service.js';
 import type { AppEnv } from '@/types.js';
-import { logRelay, type RelayedLogEntry } from './log-relay.service.js';
+import { getNginxLogHistory, logRelay, type RelayedLogEntry } from './log-relay.service.js';
 import { dashboardStatsRoute, healthStatusRoute, proxyLogStreamRoute } from './monitoring.docs.js';
 import { MonitoringService } from './monitoring.service.js';
 import { subscribeNginxHostLogs } from './nginx-log-subscriptions.js';
@@ -69,8 +69,6 @@ monitoringRoutes.openapi(healthStatusRoute, async (c) => {
   return c.json({ data: overview });
 });
 
-// Live log streaming via SSE for a specific proxy host
-// Logs are relayed from daemon nodes via gRPC LogStream → logRelay EventEmitter → SSE
 monitoringRoutes.openapi(
   { ...proxyLogStreamRoute, middleware: requireScopeForResource('proxy:view', 'hostId') },
   async (c) => {
@@ -104,7 +102,7 @@ monitoringRoutes.openapi(
       }
 
       const nodeRegistry = container.resolve(NodeRegistryService);
-      const subscription = subscribeNginxHostLogs(nodeRegistry, host.nodeId, hostId, 200);
+      const subscription = subscribeNginxHostLogs(nodeRegistry, host.nodeId, hostId, 0);
       if (!subscription.ok) {
         await stream.writeSSE({
           data: JSON.stringify({ message: subscription.message }),
@@ -120,6 +118,10 @@ monitoringRoutes.openapi(
         }
       };
       logRelay.on('log', onLog);
+
+      for (const entry of getNginxLogHistory(hostId)) {
+        await stream.writeSSE({ data: JSON.stringify(entry), event: 'log' });
+      }
 
       const keepalive = setInterval(() => {
         stream.writeSSE({ data: '', event: 'ping' }).catch(() => clearInterval(keepalive));

@@ -15,6 +15,7 @@ import {
 import {
   daemonLogRelay,
   getDaemonLogHistory,
+  getNginxLogHistory,
   logRelay,
   type RelayedDaemonLogEntry,
   type RelayedLogEntry,
@@ -117,6 +118,21 @@ const RESOURCE_SCOPED_DOCKER_NODE_SCOPES = [
   'docker:networks:delete',
   'docker:networks:edit',
 ] as const;
+
+function nginxLogEntryKey(entry: RelayedLogEntry): string {
+  return [
+    entry.hostId,
+    entry.logType,
+    entry.timestamp,
+    entry.remoteAddr,
+    entry.method,
+    entry.path,
+    entry.status,
+    entry.bodyBytesSent,
+    entry.raw,
+    entry.level,
+  ].join('\u0000');
+}
 
 function hasBroadDockerNodeListAccess(scopes: string[]) {
   return BROAD_DOCKER_VIEW_SCOPES.some((scope) => hasScope(scopes, scope));
@@ -743,6 +759,26 @@ nodesRoutes.openapi({ ...nodeNginxLogsRoute, middleware: requireScopeForResource
     }
 
     const nodeRegistry = container.resolve(NodeRegistryService);
+    const sentKeys = new Set<string>();
+    const writeLog = async (entry: RelayedLogEntry) => {
+      if (!matchesFilter(entry)) return;
+      const key = nginxLogEntryKey(entry);
+      if (sentKeys.has(key)) return;
+      sentKeys.add(key);
+      await stream.writeSSE({ data: JSON.stringify(entry), event: 'log' });
+    };
+
+    const onLog = (entry: RelayedLogEntry) => {
+      writeLog(entry).catch(() => {});
+    };
+    logRelay.on('log', onLog);
+
+    for (const hostId of visibleHostIds) {
+      for (const entry of getNginxLogHistory(hostId)) {
+        await writeLog(entry);
+      }
+    }
+
     const subscriptions = Array.from(visibleHostIds, (hostId) =>
       subscribeNginxHostLogs(nodeRegistry, nodeId, hostId, 200)
     );
@@ -753,13 +789,6 @@ nodesRoutes.openapi({ ...nodeNginxLogsRoute, middleware: requireScopeForResource
         event: 'log-error',
       });
     }
-
-    const onLog = (entry: RelayedLogEntry) => {
-      if (matchesFilter(entry)) {
-        stream.writeSSE({ data: JSON.stringify(entry), event: 'log' }).catch(() => {});
-      }
-    };
-    logRelay.on('log', onLog);
 
     const keepalive = setInterval(() => {
       stream.writeSSE({ data: '', event: 'ping' }).catch(() => clearInterval(keepalive));

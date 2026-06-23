@@ -1,4 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  type ResourceListColumn,
+  ResourceListFrame,
+  ResourceListHeaderTable,
+} from "@/components/common/ResourceListLayout";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
@@ -36,6 +41,13 @@ const LEVEL_VARIANT: Record<
   warn: "warning",
   error: "destructive",
 };
+
+const LOG_COLUMNS: ResourceListColumn<LogEntry>[] = [
+  { id: "time", label: "Time", width: "180px" },
+  { id: "level", label: "Level", width: "80px" },
+  { id: "component", label: "Component", width: "120px" },
+  { id: "message", label: "Message" },
+];
 
 interface NodeLogsTabProps {
   nodeId: string;
@@ -112,7 +124,7 @@ export function NodeLogsTab({ nodeId, nodeStatus }: NodeLogsTabProps) {
   }
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 gap-2">
+    <div className="flex flex-col flex-1 min-h-0 gap-4">
       {/* Filters */}
       <div className="flex shrink-0 flex-col gap-3 sm:flex-row">
         <div className="flex-1">
@@ -138,58 +150,46 @@ export function NodeLogsTab({ nodeId, nodeStatus }: NodeLogsTabProps) {
         </div>
       </div>
 
-      {/* Table */}
-      <div className="min-h-0 flex-1 overflow-x-auto border border-border bg-card">
-        <div className="flex h-full min-w-[860px] flex-col">
-          {/* Fixed header */}
-          <div
-            className="grid shrink-0 border-b border-border text-left text-xs font-medium text-muted-foreground"
-            style={{ gridTemplateColumns: "180px 80px 120px 1fr" }}
-          >
-            <div className="p-3">Time</div>
-            <div className="p-3">Level</div>
-            <div className="p-3">Component</div>
-            <div className="p-3">Message</div>
-          </div>
-          {/* Scrollable body */}
-          <VirtualLogList
-            lines={logs}
-            keyFn={(_, i) => i}
-            estimateLineHeight={44}
-            renderLine={(line) => {
-              const entry = line as LogEntry;
-              return (
-                <div
-                  className="grid border-b border-border"
-                  style={{ gridTemplateColumns: "180px 80px 120px 1fr" }}
-                >
-                  <div className="p-3 text-sm text-muted-foreground whitespace-nowrap">
-                    {entry.timestamp}
-                  </div>
-                  <div className="p-3 text-sm">
-                    <Badge
-                      variant={LEVEL_VARIANT[entry.level] ?? "secondary"}
-                      className="uppercase"
-                    >
-                      {entry.level}
-                    </Badge>
-                  </div>
-                  <div className="p-3 text-sm text-muted-foreground">
-                    {entry.component || "daemon"}
-                  </div>
-                  <div className="p-3 text-sm">{formatMessage(entry)}</div>
+      <ResourceListFrame
+        minWidth={860}
+        className="min-h-0 flex-1"
+        innerClassName="flex h-full flex-col"
+      >
+        <ResourceListHeaderTable columns={LOG_COLUMNS} />
+        <VirtualLogList
+          lines={logs}
+          keyFn={(_, i) => i}
+          estimateLineHeight={44}
+          renderLine={(line) => {
+            const entry = line as LogEntry;
+            return (
+              <div
+                className="grid border-b border-border"
+                style={{ gridTemplateColumns: "180px 80px 120px 1fr" }}
+              >
+                <div className="p-3 text-sm text-muted-foreground whitespace-nowrap">
+                  {entry.timestamp}
                 </div>
-              );
-            }}
-            className="min-h-0 flex-1 overflow-y-auto"
-            emptyState={
-              <div className="text-center py-16 text-sm text-muted-foreground">
-                Waiting for logs...
+                <div className="p-3 text-sm">
+                  <Badge variant={LEVEL_VARIANT[entry.level] ?? "secondary"} className="uppercase">
+                    {entry.level}
+                  </Badge>
+                </div>
+                <div className="p-3 text-sm text-muted-foreground">
+                  {entry.component || "daemon"}
+                </div>
+                <div className="p-3 text-sm">{formatMessage(entry)}</div>
               </div>
-            }
-          />
-        </div>
-      </div>
+            );
+          }}
+          className="min-h-0 flex-1 overflow-y-auto"
+          emptyState={
+            <div className="text-center py-16 text-sm text-muted-foreground">
+              Waiting for logs...
+            </div>
+          }
+        />
+      </ResourceListFrame>
     </div>
   );
 }

@@ -434,7 +434,7 @@ const editorTheme = EditorView.theme({
     backgroundColor: "var(--color-background)",
     color: "var(--color-muted-foreground)",
     border: "none",
-    borderRight: "1px solid var(--color-border)",
+    borderRight: "none",
   },
   ".cm-activeLine": {
     backgroundColor: "transparent",
@@ -453,13 +453,9 @@ const editorTheme = EditorView.theme({
   },
 });
 
-const editorNoGutterBorderTheme = EditorView.theme({
+const editorGutterBorderTheme = EditorView.theme({
   "& .cm-gutters": {
-    border: "none",
-    borderRight: "none",
-  },
-  "& .cm-gutter, & .cm-lineNumbers": {
-    borderRight: "none",
+    borderRight: "1px solid var(--color-border)",
   },
 });
 
@@ -557,7 +553,7 @@ export function CodeEditor({
   language = "nginx",
   lineWrapping = true,
   showLineNumbers = true,
-  showGutterBorder = true,
+  showGutterBorder = false,
   bordered = true,
 }: CodeEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -595,7 +591,7 @@ export function CodeEditor({
             ]),
         ...(language === "json" ? [foldGutter(), keymap.of(foldKeymap)] : []),
         editorTheme,
-        ...(showGutterBorder ? [] : [Prec.highest(editorNoGutterBorderTheme)]),
+        ...(showGutterBorder ? [Prec.highest(editorGutterBorderTheme)] : []),
         highlightStyles,
         ...(lineWrapping ? [EditorView.lineWrapping] : []),
         EditorState.readOnly.of(readOnly),

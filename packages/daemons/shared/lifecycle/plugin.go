@@ -6,6 +6,7 @@ import (
 
 	pb "github.com/wiolett-industries/gateway/daemon-shared/gatewayv1"
 	"github.com/wiolett-industries/gateway/daemon-shared/stream"
+	"google.golang.org/grpc"
 )
 
 // FatalError is returned when the daemon must exit and NOT retry.
@@ -62,4 +63,10 @@ type DaemonPlugin interface {
 
 	// SetLogger replaces the plugin's logger (called when session logger is created).
 	SetLogger(logger *slog.Logger)
+}
+
+// LogStreamPlugin is implemented by plugins that maintain a separate
+// bidirectional log stream beside the command stream.
+type LogStreamPlugin interface {
+	RunLogStream(ctx context.Context, conn *grpc.ClientConn)
 }

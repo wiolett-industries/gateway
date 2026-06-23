@@ -57,6 +57,10 @@ func runSession(ctx context.Context, conn *grpc.ClientConn, d *DaemonBase) error
 	}
 	defer d.plugin.OnSessionEnd()
 
+	if logStreamer, ok := d.plugin.(LogStreamPlugin); ok {
+		go logStreamer.RunLogStream(sessionCtx, conn)
+	}
+
 	// Start health reporter in background
 	go runHealthReporter(sessionCtx, d, writer)
 

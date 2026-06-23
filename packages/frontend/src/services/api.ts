@@ -1060,6 +1060,20 @@ class ApiClient extends withLoggingApi(
     });
   }
 
+  createProxyLogStreamWebSocket(hostId: string, tail = 200): WebSocket {
+    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+    return new WebSocket(
+      `${proto}//${window.location.host}/api/monitoring/logs/${hostId}/ws?tail=${tail}`
+    );
+  }
+
+  createNodeNginxLogStreamWebSocket(nodeId: string, tail = 200): WebSocket {
+    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+    return new WebSocket(
+      `${proto}//${window.location.host}/api/nodes/${nodeId}/nginx-logs/ws?tail=${tail}`
+    );
+  }
+
   // ── Domains ────────────────────────────────────────────────────
 
   async listDomains(params?: {

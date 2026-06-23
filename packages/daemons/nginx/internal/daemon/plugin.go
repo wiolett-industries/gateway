@@ -173,10 +173,33 @@ func (p *NginxPlugin) runLogCleanup(ctx context.Context) {
 // RunLogStream runs the log streaming loop for the nginx daemon.
 // This is called from the daemon wrapper which has access to the connection.
 func (p *NginxPlugin) RunLogStream(ctx context.Context, conn *grpc.ClientConn) {
+	backoff := 500 * time.Millisecond
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+
+		err := p.runLogStreamSession(ctx, conn)
+		if ctx.Err() != nil {
+			return
+		}
+		p.logger.Debug("log stream stopped, reconnecting", "error", err)
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(backoff):
+		}
+		if backoff < 5*time.Second {
+			backoff *= 2
+		}
+	}
+}
+
+func (p *NginxPlugin) runLogStreamSession(ctx context.Context, conn *grpc.ClientConn) error {
 	rawStream, err := connector.OpenLogStream(ctx, conn)
 	if err != nil {
-		p.logger.Debug("failed to open log stream", "error", err)
-		return
+		return fmt.Errorf("open log stream: %w", err)
 	}
 
 	logStream := stream.NewLogStreamWriter(rawStream)
@@ -187,8 +210,10 @@ func (p *NginxPlugin) RunLogStream(ctx context.Context, conn *grpc.ClientConn) {
 	for {
 		ctrl, err := logStream.Recv()
 		if err != nil {
-			p.logger.Debug("log stream recv error", "error", err)
-			break
+			for _, cancel := range tailers {
+				cancel()
+			}
+			return fmt.Errorf("receive log control: %w", err)
 		}
 
 		if ctrl.GetSubscribe() != nil {
@@ -202,6 +227,37 @@ func (p *NginxPlugin) RunLogStream(ctx context.Context, conn *grpc.ClientConn) {
 				continue
 			}
 
+			accessLogPath := fmt.Sprintf("%s/proxy-%s.access.log", p.cfg.Nginx.LogsDir, hostId)
+			errorLogPath := fmt.Sprintf("%s/proxy-%s.error.log", p.cfg.Nginx.LogsDir, hostId)
+
+			if tailLines < 0 {
+				lines, _ := nginx.TailLastN(accessLogPath, -tailLines)
+				for _, line := range lines {
+					parsed := nginx.ParseLogLine(hostId, line)
+					logStream.Send(&pb.LogStreamMessage{
+						Payload: &pb.LogStreamMessage_Entry{
+							Entry: &pb.LogEntry{
+								HostId:        hostId,
+								Timestamp:     parsed.Timestamp,
+								RemoteAddr:    parsed.RemoteAddr,
+								Method:        parsed.Method,
+								Path:          parsed.Path,
+								Status:        int32(parsed.Status),
+								BodyBytesSent: parsed.BodyBytesSent,
+								Raw:           parsed.Raw,
+								LogType:       "access",
+							},
+						},
+					})
+				}
+				logStream.Send(&pb.LogStreamMessage{
+					Payload: &pb.LogStreamMessage_SubscribeAck{
+						SubscribeAck: &pb.LogSubscribeAck{HostId: hostId},
+					},
+				})
+				continue
+			}
+
 			// Cancel existing tailer for this host if any
 			if cancel, ok := tailers[hostId]; ok {
 				cancel()
@@ -210,32 +266,30 @@ func (p *NginxPlugin) RunLogStream(ctx context.Context, conn *grpc.ClientConn) {
 			tailCtx, cancel := context.WithCancel(ctx)
 			tailers[hostId] = cancel
 
-			accessLogPath := fmt.Sprintf("%s/proxy-%s.access.log", p.cfg.Nginx.LogsDir, hostId)
-			errorLogPath := fmt.Sprintf("%s/proxy-%s.error.log", p.cfg.Nginx.LogsDir, hostId)
+			if tailLines > 0 {
+				lines, _ := nginx.TailLastN(accessLogPath, tailLines)
+				for _, line := range lines {
+					parsed := nginx.ParseLogLine(hostId, line)
+					logStream.Send(&pb.LogStreamMessage{
+						Payload: &pb.LogStreamMessage_Entry{
+							Entry: &pb.LogEntry{
+								HostId:        hostId,
+								Timestamp:     parsed.Timestamp,
+								RemoteAddr:    parsed.RemoteAddr,
+								Method:        parsed.Method,
+								Path:          parsed.Path,
+								Status:        int32(parsed.Status),
+								BodyBytesSent: parsed.BodyBytesSent,
+								Raw:           parsed.Raw,
+								LogType:       "access",
+							},
+						},
+					})
+				}
+			}
 
 			// Tail access logs
-			go func(hid string, lp string, tl int) {
-				if tl > 0 {
-					lines, _ := nginx.TailLastN(lp, tl)
-					for _, line := range lines {
-						parsed := nginx.ParseLogLine(hid, line)
-						logStream.Send(&pb.LogStreamMessage{
-							Payload: &pb.LogStreamMessage_Entry{
-								Entry: &pb.LogEntry{
-									HostId:        hid,
-									Timestamp:     parsed.Timestamp,
-									RemoteAddr:    parsed.RemoteAddr,
-									Method:        parsed.Method,
-									Path:          parsed.Path,
-									Status:        int32(parsed.Status),
-									BodyBytesSent: parsed.BodyBytesSent,
-									Raw:           parsed.Raw,
-									LogType:       "access",
-								},
-							},
-						})
-					}
-				}
+			go func(hid string, lp string) {
 				lines := make(chan string, 100)
 				go nginx.TailFile(tailCtx, lp, lines)
 				for line := range lines {
@@ -256,7 +310,7 @@ func (p *NginxPlugin) RunLogStream(ctx context.Context, conn *grpc.ClientConn) {
 						},
 					})
 				}
-			}(hostId, accessLogPath, tailLines)
+			}(hostId, accessLogPath)
 
 			// Tail error logs
 			go func(hid string, lp string) {
@@ -291,8 +345,5 @@ func (p *NginxPlugin) RunLogStream(ctx context.Context, conn *grpc.ClientConn) {
 		}
 	}
 
-	// Cleanup all tailers
-	for _, cancel := range tailers {
-		cancel()
-	}
+	return nil
 }

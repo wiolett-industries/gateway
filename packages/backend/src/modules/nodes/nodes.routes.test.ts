@@ -30,6 +30,7 @@ vi.mock('@/modules/auth/auth.middleware.js', () => ({
 vi.mock('@/modules/monitoring/log-relay.service.js', () => ({
   daemonLogRelay: {},
   getDaemonLogHistory: vi.fn(),
+  getNginxLogHistory: vi.fn(),
   logRelay: {},
 }));
 

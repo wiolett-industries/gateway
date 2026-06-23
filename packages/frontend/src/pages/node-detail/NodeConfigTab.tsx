@@ -2,6 +2,7 @@ import { RefreshCw, Save } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
+import { PanelShell } from "@/components/common/PanelShell";
 import { Button } from "@/components/ui/button";
 import { CodeEditor } from "@/components/ui/code-editor";
 import { cn } from "@/lib/utils";
@@ -121,7 +122,27 @@ export function NodeConfigTab({ nodeId, nodeStatus, actionLocked = false }: Node
   const hasChanges = configContent !== originalConfig;
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 relative">
+    <PanelShell
+      title="Nginx Config"
+      description="Edit and validate the node nginx configuration"
+      actions={
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" onClick={handleTest} disabled={isTesting || actionLocked}>
+            <RefreshCw className={cn("h-4 w-4", isTesting && "animate-spin")} />
+            Validate
+          </Button>
+          {canManage && (
+            <Button onClick={handleSave} disabled={isSaving || !hasChanges || actionLocked}>
+              <Save className="h-4 w-4" />
+              Save
+            </Button>
+          )}
+        </div>
+      }
+      className="flex min-h-0 flex-1 flex-col"
+      bodyClassName="flex min-h-0 flex-1"
+      wrapHeader
+    >
       <CodeEditor
         value={configContent}
         onChange={
@@ -134,19 +155,9 @@ export function NodeConfigTab({ nodeId, nodeStatus, actionLocked = false }: Node
         }
         readOnly={!canManage || actionLocked}
         errorLines={errorLines}
+        minHeight="0px"
+        bordered={false}
       />
-      <div className="absolute right-2.5 bottom-2.5 z-10 flex items-center gap-2">
-        <Button variant="outline" onClick={handleTest} disabled={isTesting || actionLocked}>
-          <RefreshCw className={cn("h-4 w-4", isTesting && "animate-spin")} />
-          Validate
-        </Button>
-        {canManage && (
-          <Button onClick={handleSave} disabled={isSaving || !hasChanges || actionLocked}>
-            <Save className="h-4 w-4" />
-            Save
-          </Button>
-        )}
-      </div>
-    </div>
+    </PanelShell>
   );
 }

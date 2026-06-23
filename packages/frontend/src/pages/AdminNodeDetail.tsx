@@ -232,10 +232,11 @@ export function AdminNodeDetail() {
   );
 
   useEffect(() => {
+    if (!node) return;
     if (!visibleTabs.includes(activeTab)) {
       setActiveTab("details");
     }
-  }, [activeTab, setActiveTab, visibleTabs]);
+  }, [activeTab, node, setActiveTab, visibleTabs]);
 
   useEffect(() => {
     loadNode();

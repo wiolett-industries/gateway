@@ -52,7 +52,9 @@ import { licenseRoutes } from '@/modules/license/license.routes.js';
 import { loggingRoutes } from '@/modules/logging/logging.routes.js';
 import { mcpRoutes } from '@/modules/mcp/mcp.routes.js';
 import { monitoringRoutes } from '@/modules/monitoring/monitoring.routes.js';
+import { createProxyLogStreamWSHandlers } from '@/modules/monitoring/proxy-logs.ws.js';
 import { createNodeExecWSHandlers } from '@/modules/nodes/node-exec.ws.js';
+import { createNodeNginxLogStreamWSHandlers } from '@/modules/nodes/node-nginx-logs.ws.js';
 import { nodesRoutes } from '@/modules/nodes/nodes.routes.js';
 import { notificationRoutes } from '@/modules/notifications/notification.routes.js';
 import { oauthMetadataRoutes, oauthRoutes } from '@/modules/oauth/oauth.routes.js';
@@ -265,6 +267,8 @@ export function createApp() {
   app.use('/api/nodes/:nodeId/exec', streamRateLimitMiddleware);
   app.use('/api/docker/nodes/:nodeId/containers/:containerId/logs/stream', streamRateLimitMiddleware);
   app.use('/api/docker/nodes/:nodeId/compose/:project/logs/stream', streamRateLimitMiddleware);
+  app.use('/api/monitoring/logs/:hostId/ws', streamRateLimitMiddleware);
+  app.use('/api/nodes/:nodeId/nginx-logs/ws', streamRateLimitMiddleware);
 
   // Safely no-ops when user is not set (unauthenticated); route-level authMiddleware handles 401
   app.use('/api/*', requireActiveUser);
@@ -429,6 +433,40 @@ export function createApp() {
         isAllowedWebSocketOrigin
       );
       return createDockerLogStreamWSHandlers(nodeId, containerId, tail, credential);
+    })
+  );
+
+  // Proxy host log stream WebSocket endpoint
+  app.get(
+    '/api/monitoring/logs/:hostId/ws',
+    upgradeWebSocket((c) => {
+      const hostId = c.req.param('hostId') ?? '';
+      const requestedTail = Number(c.req.query('tail')) || 100;
+      const tail = Math.min(Math.max(Math.trunc(requestedTail), 1), DOCKER_LOG_TAIL_MAX);
+      const credential = getProgrammaticWebSocketCredential(
+        c.req.header('cookie'),
+        c.req.header('origin'),
+        c.req.header('authorization'),
+        isAllowedWebSocketOrigin
+      );
+      return createProxyLogStreamWSHandlers(hostId, tail, credential);
+    })
+  );
+
+  // Node-wide nginx log stream WebSocket endpoint
+  app.get(
+    '/api/nodes/:nodeId/nginx-logs/ws',
+    upgradeWebSocket((c) => {
+      const nodeId = c.req.param('nodeId') ?? '';
+      const requestedTail = Number(c.req.query('tail')) || 100;
+      const tail = Math.min(Math.max(Math.trunc(requestedTail), 1), DOCKER_LOG_TAIL_MAX);
+      const credential = getProgrammaticWebSocketCredential(
+        c.req.header('cookie'),
+        c.req.header('origin'),
+        c.req.header('authorization'),
+        isAllowedWebSocketOrigin
+      );
+      return createNodeNginxLogStreamWSHandlers(nodeId, tail, credential);
     })
   );
 

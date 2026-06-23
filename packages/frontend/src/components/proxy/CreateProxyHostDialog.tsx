@@ -367,7 +367,7 @@ export function CreateProxyHostDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+      <DialogContent className="max-w-3xl sm:[&>div:nth-child(2)]:flex-none sm:[&>div:nth-child(2)]:[overflow:visible]">
         <DialogHeader>
           <DialogTitle>{isEditing ? "Edit Proxy Host" : "Create Proxy Host"}</DialogTitle>
           <DialogDescription>
@@ -461,10 +461,13 @@ export function CreateProxyHostDialog({
                     {domainNames.map((domain, i) => (
                       <motion.div
                         key={`domain-${i}`}
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: "auto" }}
-                        exit={{ opacity: 0, height: 0 }}
-                        transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
+                        initial={{ opacity: 0, y: 4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 4 }}
+                        transition={{
+                          opacity: { duration: 0.12 },
+                          y: { duration: 0.12, ease: [0.25, 0.1, 0.25, 1] },
+                        }}
                         className="flex gap-2"
                       >
                         <DomainAutocompleteInput
