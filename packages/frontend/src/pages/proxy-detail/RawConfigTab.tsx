@@ -60,6 +60,8 @@ export function RawConfigTab({
           value={rawConfig}
           minHeight="0px"
           bordered={false}
+          showGutterBorder={false}
+          readOnly={!canManage}
           onChange={(val) => {
             setRawConfig(val);
             setEditorErrorLines([]);
@@ -93,6 +95,7 @@ export function RawConfigTab({
           readOnly
           minHeight="0px"
           bordered={false}
+          showGutterBorder={false}
         />
       )}
     </PanelShell>

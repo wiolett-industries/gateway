@@ -62,6 +62,7 @@ export function ProxyHostDetail() {
   const canViewAdvancedConfig = !!id && hasScope(`proxy:advanced:${id}`);
   const canViewRawConfig = !!id && hasScope(`proxy:raw:read:${id}`);
   const canWriteRawConfig = !!id && hasScope(`proxy:raw:write:${id}`);
+  const canEditProxyHost = !!id && (hasScope("proxy:edit") || hasScope(`proxy:edit:${id}`));
   const visibleTabs = useMemo(
     () => [
       "details",
@@ -274,7 +275,7 @@ export function ProxyHostDetail() {
   // ── Toggle switch handler (immediate save) ────────────────────
   const handleToggle = useCallback(
     async (field: string, value: boolean) => {
-      if (!id || !host) return;
+      if (!id || !host || !canEditProxyHost) return;
       if (
         field === "sslEnabled" &&
         value &&
@@ -286,7 +287,7 @@ export function ProxyHostDetail() {
       }
       try {
         const updated = await api.updateProxyHost(id, { [field]: value } as any);
-        setHost(updated);
+        syncHostState(updated);
         toast.success(
           `${field.replace(/([A-Z])/g, " $1").replace(/^./, (s) => s.toUpperCase())} updated`
         );
@@ -294,23 +295,23 @@ export function ProxyHostDetail() {
         toast.error(err instanceof Error ? err.message : "Failed to update");
       }
     },
-    [id, host]
+    [canEditProxyHost, id, host, syncHostState]
   );
 
   const handleSslCertificateChange = useCallback(
     async (value: string) => {
-      if (!id) return;
+      if (!id || !canEditProxyHost) return;
       try {
         const updated = await api.updateProxyHost(id, {
           sslCertificateId: value || null,
         });
-        setHost(updated);
+        syncHostState(updated);
         toast.success("SSL certificate updated");
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Failed to update SSL certificate");
       }
     },
-    [id]
+    [canEditProxyHost, id, syncHostState]
   );
 
   const selectedTemplate = useMemo(
@@ -404,7 +405,7 @@ export function ProxyHostDetail() {
   );
 
   const handleSaveTemplateSettings = useCallback(async () => {
-    if (!id) return;
+    if (!id || !canEditProxyHost) return;
     setIsSavingTemplate(true);
     try {
       const vars = nginxTemplateId
@@ -427,14 +428,7 @@ export function ProxyHostDetail() {
             }
           : {}),
       });
-      setHost(updated);
-      setNginxTemplateId(updated.nginxTemplateId || "");
-      setTemplateVariables(updated.templateVariables || {});
-      setTemplateForwardScheme(updated.forwardScheme || "http");
-      setTemplateForwardHost(updated.forwardHost || "");
-      setTemplateForwardPort(updated.forwardPort || 80);
-      setTemplateRedirectUrl(updated.redirectUrl || "");
-      setTemplateRedirectStatusCode(updated.redirectStatusCode || 301);
+      syncHostState(updated);
       toast.success("Template settings updated");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to update template settings");
@@ -444,6 +438,7 @@ export function ProxyHostDetail() {
   }, [
     host,
     id,
+    canEditProxyHost,
     nginxTemplateId,
     normalizeTemplateVariables,
     templateForwardHost,
@@ -452,11 +447,12 @@ export function ProxyHostDetail() {
     templateRedirectStatusCode,
     templateRedirectUrl,
     templateVariables,
+    syncHostState,
   ]);
 
   // ── Save custom config ────────────────────────────────────────
   const handleSaveCustom = async () => {
-    if (!id) return;
+    if (!id || !canEditProxyHost) return;
     setIsSavingCustom(true);
     try {
       const updated = await api.updateProxyHost(id, {
@@ -469,7 +465,7 @@ export function ProxyHostDetail() {
           : undefined,
         customRewrites: customRewrites.filter((r) => r.source.trim() !== ""),
       });
-      setHost(updated);
+      syncHostState(updated);
       toast.success("Custom config saved");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to save custom config");
@@ -480,6 +476,7 @@ export function ProxyHostDetail() {
 
   // ── Validate config — returns true if valid ──────────────────
   const handleValidate = async (): Promise<boolean> => {
+    if ((isRawMode && !canWriteRawConfig) || (!isRawMode && !canViewAdvancedConfig)) return false;
     try {
       const configToValidate = isRawMode ? rawConfig : advancedConfig;
       const result = await api.validateProxyConfig(
@@ -511,7 +508,7 @@ export function ProxyHostDetail() {
 
   // ── Save advanced config ──────────────────────────────────────
   const handleSaveAdvanced = async () => {
-    if (!id) return;
+    if (!id || !canViewAdvancedConfig) return;
     if (advancedConfig) {
       const valid = await handleValidate();
       if (!valid) return;
@@ -519,8 +516,7 @@ export function ProxyHostDetail() {
     setIsSavingAdvanced(true);
     try {
       const updated = await saveProxyHostAdvancedConfig(api, id, advancedConfig);
-      setHost(updated);
-      setAdvancedConfig(updated.advancedConfig || "");
+      syncHostState(updated);
       toast.success("Advanced config saved");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to save advanced config");
@@ -531,13 +527,13 @@ export function ProxyHostDetail() {
 
   // ── Save raw config ───────────────────────────────────────────
   const handleSaveRaw = async () => {
-    if (!id) return;
+    if (!id || !canWriteRawConfig) return;
     const valid = await handleValidate();
     if (!valid) return;
     setIsSavingRaw(true);
     try {
       const updated = await api.updateProxyHost(id, { rawConfig });
-      setHost(updated);
+      syncHostState(updated);
       toast.success("Raw config saved");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to save raw config");
@@ -572,21 +568,20 @@ export function ProxyHostDetail() {
 
   const handleAccessListChange = useCallback(
     async (value: string) => {
-      if (!id) return;
+      if (!id || !canEditProxyHost) return;
 
       setAccessListId(value);
 
       try {
         const updated = await saveProxyHostAccessList(api, id, value);
-        setHost(updated);
-        setAccessListId(updated.accessListId || "");
+        syncHostState(updated);
         toast.success("Access list updated");
       } catch (err) {
         setAccessListId(host?.accessListId || "");
         toast.error(err instanceof Error ? err.message : "Failed to update");
       }
     },
-    [host?.accessListId, id]
+    [canEditProxyHost, host?.accessListId, id, syncHostState]
   );
 
   // Track changes per section
@@ -618,7 +613,7 @@ export function ProxyHostDetail() {
 
   // ── Auto-save health check settings on change (debounced) ─────
   useEffect(() => {
-    if (!id || !host || !hasHealthCheckChanged) return;
+    if (!id || !host || !hasHealthCheckChanged || !canEditProxyHost) return;
     const timer = setTimeout(() => {
       api
         .updateProxyHost(id, {
@@ -630,7 +625,7 @@ export function ProxyHostDetail() {
             healthCheckExpectedBody.trim() === "" ? undefined : healthCheckBodyMatchMode,
           healthCheckSlowThreshold: healthCheckSlowThreshold || undefined,
         })
-        .then((updated) => setHost(updated))
+        .then((updated) => syncHostState(updated))
         .catch(() => {});
     }, 800);
     return () => clearTimeout(timer);
@@ -643,6 +638,8 @@ export function ProxyHostDetail() {
     healthCheckExpectedBody,
     healthCheckBodyMatchMode,
     healthCheckSlowThreshold,
+    canEditProxyHost,
+    syncHostState,
   ]);
 
   // Navigate away from disabled tabs when raw mode changes
@@ -651,6 +648,12 @@ export function ProxyHostDetail() {
       setActiveTab("details");
     }
   }, [activeTab, isRawMode, setActiveTab]);
+
+  useEffect(() => {
+    if (activeTab === "raw" && host && !isRawMode) {
+      void loadRenderedConfig();
+    }
+  }, [activeTab, host, isRawMode, loadRenderedConfig]);
 
   // ── Loading state ─────────────────────────────────────────────
   if (isLoading || !host) {
@@ -853,7 +856,7 @@ export function ProxyHostDetail() {
                 onSaveTemplateSettings={handleSaveTemplateSettings}
                 isSavingTemplate={isSavingTemplate}
                 hasTemplateSettingsChanged={hasTemplateSettingsChanged}
-                canManage={hasScope("proxy:edit")}
+                canManage={canEditProxyHost}
                 hasHeadersChanged={hasHeadersChanged}
                 hasRewritesChanged={hasRewritesChanged}
                 healthCheckUrl={healthCheckUrl}

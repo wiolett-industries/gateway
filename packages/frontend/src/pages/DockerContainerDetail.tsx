@@ -298,7 +298,7 @@ export function DockerContainerDetail() {
     if (!ok) return;
     setActionLoading(true);
     try {
-      await api.removeContainer(nodeId!, containerId!, true);
+      await api.removeContainer(nodeId!, containerId!, false);
       usePinnedContainersStore.getState().removePin(containerId!);
       toast.success("Container removed");
       invalidate("containers", "tasks");

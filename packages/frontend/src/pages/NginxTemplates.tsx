@@ -241,6 +241,7 @@ export function NginxTemplates({
               language="nginx"
               height="100%"
               minHeight="100%"
+              showGutterBorder={false}
             />
           </div>
         </DialogContent>

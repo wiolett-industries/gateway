@@ -441,9 +441,9 @@ export function withDockerApi<TBase extends ApiClientBaseConstructor>(Base: TBas
     }
 
     async removeContainer(nodeId: string, containerId: string, force = false): Promise<void> {
-      await this.request<void>(`/docker/nodes/${nodeId}/containers/${containerId}`, {
+      const query = force ? "?force=true" : "";
+      await this.request<void>(`/docker/nodes/${nodeId}/containers/${containerId}${query}`, {
         method: "DELETE",
-        body: JSON.stringify({ force }),
       });
     }
 

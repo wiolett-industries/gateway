@@ -429,7 +429,7 @@ Gateway provides Portainer-like Docker container management through a daemon run
 - **Start/Stop/Restart/Kill**: Lifecycle management (transitions tracked as tasks)
 - **Recreate**: Stop + remove + create with new config (preserves name, secrets auto-injected)
 - **Duplicate**: Clone a container with a new name (secrets are copied too)
-- **Remove**: Delete container (must be stopped unless force=true)
+- **Remove**: Delete container (must be stopped first)
 
 ## Environment Variables & Secrets
 - Regular env vars: stored in container config, visible to all users with view access

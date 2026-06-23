@@ -42,7 +42,6 @@ domainRoutes.openapi({ ...listDomainsRoute, middleware: requireScope('domains:vi
 domainRoutes.openapi({ ...searchDomainsRoute, middleware: requireScope('domains:view') }, async (c) => {
   const domainsService = container.resolve(DomainsService);
   const q = c.req.query('q') || '';
-  if (q.length < 1) return c.json({ data: [] });
   const results = await domainsService.searchDomains(q);
   return c.json({ data: results });
 });

@@ -352,6 +352,20 @@ export async function removeContainer(
   await ctx.assertNotManagedDeploymentInternal(nodeId, containerId);
   const name = await ctx.resolveContainerName(nodeId, containerId);
   ctx.requireNoTransition(nodeId, name);
+  const inspect = await ctx.inspectContainer(nodeId, containerId);
+  const state = String(inspect?.State?.Status ?? inspect?.state ?? inspect?.State ?? '').toLowerCase();
+  const isActive =
+    inspect?.State?.Running === true ||
+    inspect?.State?.Paused === true ||
+    inspect?.State?.Restarting === true ||
+    ['running', 'paused', 'restarting'].includes(state);
+  if (isActive) {
+    throw new AppError(
+      409,
+      'CONTAINER_RUNNING',
+      'Stop the container before removing it. Active containers cannot be removed from Gateway.'
+    );
+  }
   const result = await ctx.nodeDispatch.sendDockerContainerCommand(nodeId, 'remove', { containerId, force });
   ctx.parseResult(result);
   await ctx.auditService.log({

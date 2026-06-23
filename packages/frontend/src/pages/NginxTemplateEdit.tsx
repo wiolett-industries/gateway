@@ -547,6 +547,7 @@ export function NginxTemplateEdit() {
             readOnly={isBuiltin}
             errorLines={templateDiagnostics.errorLines}
             errorRanges={templateDiagnostics.errorRanges}
+            showGutterBorder={false}
           />
         </div>
       </div>
@@ -569,6 +570,7 @@ export function NginxTemplateEdit() {
                 readOnly
                 className="h-full border-border"
                 minHeight="0"
+                showGutterBorder={false}
               />
             )}
           </div>

@@ -61,7 +61,9 @@ vi.mock("./proxy-detail/LogsTab", () => ({
 }));
 
 vi.mock("./proxy-detail/RawConfigTab", () => ({
-  RawConfigTab: () => <div>Raw config tab</div>,
+  RawConfigTab: ({ renderedConfig }: { renderedConfig: string }) => (
+    <div>Raw config tab {renderedConfig}</div>
+  ),
 }));
 
 function makeProxyHost(overrides: Record<string, unknown> = {}) {
@@ -174,6 +176,32 @@ describe("ProxyHostDetail", () => {
     expect(screen.getByTestId("access-list-value")).toHaveTextContent("__none__");
   });
 
+  it("does not update settings when the user cannot edit the proxy host", async () => {
+    useAuthStore.setState({
+      user: makeUser({
+        scopes: ["proxy:view:host-1"],
+      }),
+      isAuthenticated: true,
+      isLoading: false,
+    });
+    vi.spyOn(api, "getProxyHost").mockResolvedValue(makeProxyHost());
+    const updateSpy = vi.spyOn(api, "updateProxyHost").mockResolvedValue(makeProxyHost());
+
+    renderWithRouter(<ProxyHostDetail />, {
+      path: "/proxy-hosts/:id/:tab",
+      route: "/proxy-hosts/host-1/settings",
+      extraRoutes: <Route path="/proxy-hosts" element={<div>Proxy Hosts</div>} />,
+    });
+
+    expect(await screen.findByTestId("access-list-value")).toHaveTextContent("acl-1");
+    fireEvent.click(screen.getByRole("button", { name: "Clear access list" }));
+
+    await waitFor(() => {
+      expect(updateSpy).not.toHaveBeenCalled();
+    });
+    expect(screen.getByTestId("access-list-value")).toHaveTextContent("acl-1");
+  });
+
   it("clears advanced config with an explicit null and keeps the editor empty after resync", async () => {
     vi.spyOn(api, "getProxyHost").mockResolvedValue(makeProxyHost());
     vi.spyOn(api, "updateProxyHost").mockResolvedValue(
@@ -200,5 +228,28 @@ describe("ProxyHostDetail", () => {
       });
     });
     expect(textarea.value).toBe("");
+  });
+
+  it("loads rendered config when reloading directly on the raw tab", async () => {
+    useAuthStore.setState({
+      user: makeUser({
+        scopes: ["proxy:raw:read:host-1"],
+      }),
+      isAuthenticated: true,
+      isLoading: false,
+    });
+    vi.spyOn(api, "getProxyHost").mockResolvedValue(makeProxyHost());
+    vi.spyOn(api, "getRenderedProxyConfig").mockResolvedValue({
+      rendered: "server { listen 80; }",
+    });
+
+    renderWithRouter(<ProxyHostDetail />, {
+      path: "/proxy-hosts/:id/:tab",
+      route: "/proxy-hosts/host-1/raw",
+      extraRoutes: <Route path="/proxy-hosts" element={<div>Proxy Hosts</div>} />,
+    });
+
+    expect(await screen.findByText(/Raw config tab server/)).toBeInTheDocument();
+    expect(api.getRenderedProxyConfig).toHaveBeenCalledWith("host-1");
   });
 });

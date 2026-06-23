@@ -58,7 +58,7 @@ export function QuickStatsCard({
   }
 
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-[repeat(auto-fit,minmax(14rem,1fr))]">
       {hasScope("proxy:view") && (
         <StatCard
           title="Proxy Hosts"

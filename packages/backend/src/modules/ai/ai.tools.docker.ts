@@ -334,13 +334,16 @@ export const DOCKER_AI_TOOLS: AIToolDefinition[] = [
   },
   {
     name: 'remove_docker_container',
-    description: 'Remove a Docker container. The container must be stopped first unless force is true.',
+    description: 'Remove a Docker container. The container must be stopped first.',
     parameters: {
       type: 'object',
       properties: {
         nodeId: { type: 'string', description: 'Docker node ID' },
         containerId: { type: 'string', description: 'Container ID' },
-        force: { type: 'boolean', description: 'Force remove even if running (default false)' },
+        force: {
+          type: 'boolean',
+          description: 'Force removal of a stopped container if Docker requires it (default false)',
+        },
       },
       required: ['nodeId', 'containerId'],
     },

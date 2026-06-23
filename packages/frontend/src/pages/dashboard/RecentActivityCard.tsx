@@ -18,6 +18,8 @@ export function RecentActivityCard({
   hasScope,
   loading = false,
 }: RecentActivityCardProps) {
+  if (!hasScope("admin:audit")) return null;
+
   const activityColumns: SimpleTableColumn<AuditLogEntry>[] = [
     {
       id: "user",
@@ -48,14 +50,12 @@ export function RecentActivityCard({
     <PanelShell
       title="Recent Activity"
       actions={
-        hasScope("admin:audit") ? (
-          <Link
-            to="/administration/audit"
-            className="text-sm text-muted-foreground hover:text-foreground"
-          >
-            View all
-          </Link>
-        ) : null
+        <Link
+          to="/administration/audit"
+          className="text-sm text-muted-foreground hover:text-foreground"
+        >
+          View all
+        </Link>
       }
     >
       {loading ? (
@@ -65,7 +65,7 @@ export function RecentActivityCard({
             <p className="text-sm text-muted-foreground">Loading activity...</p>
           </div>
         </div>
-      ) : hasScope("admin:audit") && activity.length > 0 ? (
+      ) : activity.length > 0 ? (
         <SimpleTable
           columns={activityColumns}
           rows={activity}
@@ -73,14 +73,7 @@ export function RecentActivityCard({
           tableClassName="min-w-[640px]"
         />
       ) : (
-        <EmptyState
-          message={
-            hasScope("admin:audit")
-              ? "No recent activity"
-              : "Activity log is available to administrators"
-          }
-          embedded
-        />
+        <EmptyState message="No recent activity" embedded />
       )}
     </PanelShell>
   );

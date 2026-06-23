@@ -57,6 +57,31 @@ describe('ProxyService helpers', () => {
     });
   });
 
+  it('does not block unrelated updates when an existing host has stale SSL state without a certificate', () => {
+    expect(() =>
+      __testOnly.assertSslPrerequisitesForUpdate(
+        { sslEnabled: true, sslCertificateId: null, internalCertificateId: null },
+        { accessListId: 'access-list-1' } as any
+      )
+    ).not.toThrow();
+  });
+
+  it('still requires a certificate when enabling SSL or removing the certificate from enabled SSL', () => {
+    expect(() =>
+      __testOnly.assertSslPrerequisitesForUpdate(
+        { sslEnabled: false, sslCertificateId: null, internalCertificateId: null },
+        { sslEnabled: true }
+      )
+    ).toThrow(AppError);
+
+    expect(() =>
+      __testOnly.assertSslPrerequisitesForUpdate(
+        { sslEnabled: true, sslCertificateId: 'cert-1', internalCertificateId: null },
+        { sslCertificateId: null }
+      )
+    ).toThrow(AppError);
+  });
+
   it('strips proxy health history without mutating the remaining host fields', () => {
     expect(
       __testOnly.stripProxyHealthHistory({

@@ -49,6 +49,8 @@ export function AdvancedTab({
         value={advancedConfig}
         minHeight="0px"
         bordered={false}
+        showGutterBorder={false}
+        readOnly={!canManage}
         onChange={(val) => {
           setAdvancedConfig(val);
           setEditorErrorLines([]);

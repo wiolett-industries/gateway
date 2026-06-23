@@ -16,6 +16,18 @@ export interface CertPaths {
   sslChainPath: string | null;
 }
 
+export interface SslPrerequisiteState {
+  sslEnabled: boolean;
+  sslCertificateId?: string | null;
+  internalCertificateId?: string | null;
+}
+
+export interface SslPrerequisitePatch {
+  sslEnabled?: boolean;
+  sslCertificateId?: string | null;
+  internalCertificateId?: string | null;
+}
+
 const STATUS_PAGE_SYSTEM_HOST_ROLLBACK_FIELDS = [
   'type',
   'domainNames',
@@ -96,6 +108,26 @@ export function rawConfigAuditDetails(input: { rawConfig?: unknown }, options: P
   };
 }
 
+export function assertSslPrerequisites(input: SslPrerequisiteState) {
+  if (input.sslEnabled && !input.sslCertificateId && !input.internalCertificateId) {
+    throw new AppError(400, 'SSL_CERTIFICATE_REQUIRED', 'An SSL certificate must be selected before enabling HTTPS');
+  }
+}
+
+export function assertSslPrerequisitesForUpdate(existing: SslPrerequisiteState, input: SslPrerequisitePatch) {
+  const sslEnabled = input.sslEnabled ?? existing.sslEnabled;
+  const sslCertificateId = input.sslCertificateId !== undefined ? input.sslCertificateId : existing.sslCertificateId;
+  const internalCertificateId =
+    input.internalCertificateId !== undefined ? input.internalCertificateId : existing.internalCertificateId;
+  const touchesSslPrerequisites =
+    input.sslEnabled === true ||
+    (sslEnabled && (input.sslCertificateId !== undefined || input.internalCertificateId !== undefined));
+
+  if (touchesSslPrerequisites) {
+    assertSslPrerequisites({ sslEnabled, sslCertificateId, internalCertificateId });
+  }
+}
+
 export function stripProxyHealthHistory<T extends { healthHistory?: unknown }>(host: T): Omit<T, 'healthHistory'> {
   const { healthHistory: _healthHistory, ...rest } = host;
   return rest;
@@ -128,6 +160,7 @@ export function getStatusPageUpstream(upstreamUrl: string | null | undefined): {
 }
 
 export const __testOnly = {
+  assertSslPrerequisitesForUpdate,
   buildStatusPageSystemHostRollbackData,
   getStatusPageUpstream,
   matchesExpectedBody,

@@ -17,6 +17,8 @@ import type { PaginatedResponse } from '@/types.js';
 import type { NginxTemplateService } from './nginx-template.service.js';
 import type { CreateProxyHostInput, ProxyHostListQuery, UpdateProxyHostInput } from './proxy.schemas.js';
 import {
+  assertSslPrerequisites,
+  assertSslPrerequisitesForUpdate,
   buildStatusPageSystemHostRollbackData,
   type CertPaths,
   getStatusPageUpstream,
@@ -65,16 +67,6 @@ export class ProxyService {
   }
   private emitHost(id: string, action: string, domain?: string) {
     this.eventBus?.publish('proxy.host.changed', { id, action, domain });
-  }
-
-  private assertSslPrerequisites(input: {
-    sslEnabled: boolean;
-    sslCertificateId?: string | null;
-    internalCertificateId?: string | null;
-  }) {
-    if (input.sslEnabled && !input.sslCertificateId && !input.internalCertificateId) {
-      throw new AppError(400, 'SSL_CERTIFICATE_REQUIRED', 'An SSL certificate must be selected before enabling HTTPS');
-    }
   }
 
   private async applyConfigToNode(hostId: string, config: string, nodeId: string | null): Promise<void> {
@@ -135,7 +127,7 @@ export class ProxyService {
       }
     }
 
-    this.assertSslPrerequisites({
+    assertSslPrerequisites({
       sslEnabled: input.sslEnabled,
       sslCertificateId: input.sslCertificateId,
       internalCertificateId: input.internalCertificateId,
@@ -270,12 +262,7 @@ export class ProxyService {
       await assertNodeAllowsServiceCreation(this.db, input.nodeId, 'nginx');
     }
 
-    this.assertSslPrerequisites({
-      sslEnabled: input.sslEnabled ?? existing.sslEnabled,
-      sslCertificateId: input.sslCertificateId !== undefined ? input.sslCertificateId : existing.sslCertificateId,
-      internalCertificateId:
-        input.internalCertificateId !== undefined ? input.internalCertificateId : existing.internalCertificateId,
-    });
+    assertSslPrerequisitesForUpdate(existing, input);
 
     // 2. Update DB
     const updateData: Record<string, unknown> = {
