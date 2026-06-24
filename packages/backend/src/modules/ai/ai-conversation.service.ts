@@ -3,6 +3,8 @@ import type { DrizzleClient } from '@/db/client.js';
 import { aiConversationMessages, aiConversations } from '@/db/schema/index.js';
 import type { PageContext } from './ai.types.js';
 
+const RETAIN_FULL_TOOL_OUTPUT_COUNT = 10;
+
 export interface AIConversationSummary {
   id: string;
   title: string;
@@ -71,6 +73,7 @@ export class AIConversationService {
     const title = normalizeTitle(input.title);
     const now = new Date();
     const lastContext = normalizeContext(input.lastContext);
+    const messages = sanitizeConversationMessagesForStorage(input.messages);
 
     const existing = await this.db.query.aiConversations.findFirst({
       where: and(eq(aiConversations.userId, userId), eq(aiConversations.title, title)),
@@ -98,10 +101,10 @@ export class AIConversationService {
       }
 
       await tx.delete(aiConversationMessages).where(eq(aiConversationMessages.conversationId, conversationId!));
-      if (input.messages.length > 0) {
+      if (messages.length > 0) {
         await tx
           .insert(aiConversationMessages)
-          .values(input.messages.map((message, index) => toConversationMessage(conversationId!, message, index)));
+          .values(messages.map((message, index) => toConversationMessage(conversationId!, message, index)));
       }
     });
 
@@ -136,11 +139,12 @@ export class AIConversationService {
         .where(eq(aiConversations.id, existing.id));
 
       if (input.messages) {
+        const messages = sanitizeConversationMessagesForStorage(input.messages);
         await tx.delete(aiConversationMessages).where(eq(aiConversationMessages.conversationId, existing.id));
-        if (input.messages.length > 0) {
+        if (messages.length > 0) {
           await tx
             .insert(aiConversationMessages)
-            .values(input.messages.map((message, index) => toConversationMessage(existing.id, message, index)));
+            .values(messages.map((message, index) => toConversationMessage(existing.id, message, index)));
         }
       }
     });
@@ -227,6 +231,51 @@ function normalizeContext(context: SaveAIConversationInput['lastContext']): Reco
 
 function normalizeToolsets(toolsets: string[]): string[] {
   return [...new Set(toolsets.map((toolset) => toolset.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+}
+
+export function sanitizeConversationMessagesForStorage(messages: unknown[]): unknown[] {
+  const retainedToolCallIds = collectRetainedToolCallIds(messages);
+  return messages.map((message) => sanitizeConversationMessage(message, retainedToolCallIds));
+}
+
+function collectRetainedToolCallIds(messages: unknown[]): Set<string> {
+  const toolCallIds: string[] = [];
+  for (const message of messages) {
+    const record = toRecord(message);
+    if (!record || !Array.isArray(record.toolCalls)) continue;
+    for (const toolCall of record.toolCalls) {
+      const toolRecord = toRecord(toolCall);
+      if (!toolRecord || toolRecord.name === 'ask_question' || typeof toolRecord.id !== 'string') continue;
+      toolCallIds.push(toolRecord.id);
+    }
+  }
+  return new Set(toolCallIds.slice(-RETAIN_FULL_TOOL_OUTPUT_COUNT));
+}
+
+function sanitizeConversationMessage(message: unknown, retainedToolCallIds: Set<string>): unknown {
+  const record = toRecord(message);
+  if (!record || !Array.isArray(record.toolCalls)) return message;
+  return {
+    ...record,
+    toolCalls: record.toolCalls.map((toolCall) => sanitizeToolCall(toolCall, retainedToolCallIds)),
+  };
+}
+
+function sanitizeToolCall(toolCall: unknown, retainedToolCallIds: Set<string>): unknown {
+  const record = toRecord(toolCall);
+  if (!record || record.name === 'ask_question' || typeof record.id !== 'string') return toolCall;
+  if (retainedToolCallIds.has(record.id) || !Object.hasOwn(record, 'result')) return toolCall;
+  return {
+    ...record,
+    result: {
+      summary: 'Tool output omitted from saved conversation after the latest 10 tool calls.',
+      fullOutputOmitted: true,
+    },
+  };
+}
+
+function toRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }
 
 function toConversationMessage(conversationId: string, message: unknown, index: number) {
