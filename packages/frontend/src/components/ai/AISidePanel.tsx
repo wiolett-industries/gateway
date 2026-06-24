@@ -1,8 +1,26 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { Send, Sparkles, Square, X } from "lucide-react";
+import {
+  Check,
+  MessageSquare,
+  Send,
+  Shield,
+  ShieldAlert,
+  ShieldCheck,
+  Sparkles,
+  Square,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocation, useParams } from "react-router-dom";
+import { confirm } from "@/components/common/ConfirmDialog";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { ResizeHandle } from "@/components/ui/resize-handle";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
@@ -67,18 +85,55 @@ function usePageContext(): PageContext {
 }
 
 const SLASH_COMMANDS = [
+  { name: "new", description: "Start new conversation" },
   { name: "clear", description: "Clear conversation" },
+  { name: "compact", description: "Compact saved context" },
   { name: "context", description: "Show token usage" },
-  { name: "save", description: "Save conversation" },
-  { name: "restore", description: "Restore conversation" },
-  { name: "drop", description: "Delete saved conversation" },
 ];
+
+function userMessagesAfterLastCompact(messages: ReturnType<typeof useAIStore.getState>["messages"]): number {
+  const lastCompactIndex = messages.reduce(
+    (latest, message, index) => (message.compactMarker ? index : latest),
+    -1
+  );
+  return messages.slice(lastCompactIndex + 1).filter((message) => message.role === "user").length;
+}
+
+function formatConversationDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const now = new Date();
+  if (date.toDateString() === now.toDateString()) {
+    const diffMs = Math.max(0, now.getTime() - date.getTime());
+    const diffMinutes = Math.floor(diffMs / 60000);
+    if (diffMinutes < 1) return "now";
+    if (diffMinutes < 60) return `${diffMinutes} min ago`;
+    return `${Math.floor(diffMinutes / 60)} h ago`;
+  }
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+async function confirmBypassEverythingMode(): Promise<boolean> {
+  return confirm({
+    title: "Enable AI bypass delete approvals?",
+    description:
+      "The AI assistant will create, modify, and delete resources without asking for your confirmation.",
+    confirmLabel: "Enable",
+    variant: "destructive",
+  });
+}
+
+type AIApprovalMode = "normal" | "bypass-write" | "bypass-everything";
 
 function PanelContent({ onClose }: { onClose: () => void }) {
   const {
     messages,
     isStreaming,
     isConnected,
+    isConnecting,
+    connectionError,
+    recentConversations,
+    isLoadingRecentConversations,
     retryAfter,
     sendMessage,
     approveTool,
@@ -86,6 +141,9 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     answerQuestion,
     stopStreaming,
     handleSlashCommand,
+    fetchRecentConversations,
+    loadConversation,
+    deleteConversation,
   } = useAIStore();
 
   const [input, setInput] = useState("");
@@ -95,6 +153,48 @@ function PanelContent({ onClose }: { onClose: () => void }) {
   const shouldStickToBottomRef = useRef(true);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const context = usePageContext();
+  const {
+    aiBypassCreateApprovals,
+    aiBypassEditApprovals,
+    aiBypassDeleteApprovals,
+    setAIBypassCreateApprovals,
+    setAIBypassEditApprovals,
+    setAIBypassDeleteApprovals,
+  } = useUIStore();
+  const canCompact = userMessagesAfterLastCompact(messages) > 3;
+  const visibleSlashCommands = SLASH_COMMANDS.filter((command) => command.name !== "compact" || canCompact);
+  const approvalMode: AIApprovalMode = aiBypassDeleteApprovals
+    ? "bypass-everything"
+    : aiBypassCreateApprovals || aiBypassEditApprovals
+      ? "bypass-write"
+      : "normal";
+  const approvalModeLabel =
+    approvalMode === "bypass-everything"
+      ? "AI mode: bypass everything"
+      : approvalMode === "bypass-write"
+        ? "AI mode: bypass edit and creation"
+        : "AI mode: normal";
+
+  const setApprovalMode = useCallback(
+    async (mode: AIApprovalMode) => {
+      if (
+        mode === "bypass-everything" &&
+        !aiBypassDeleteApprovals &&
+        !(await confirmBypassEverythingMode())
+      ) {
+        return;
+      }
+      setAIBypassCreateApprovals(mode !== "normal");
+      setAIBypassEditApprovals(mode !== "normal");
+      setAIBypassDeleteApprovals(mode === "bypass-everything");
+    },
+    [
+      aiBypassDeleteApprovals,
+      setAIBypassCreateApprovals,
+      setAIBypassDeleteApprovals,
+      setAIBypassEditApprovals,
+    ]
+  );
 
   // WS lifecycle managed by store subscription to aiPanelOpen — no connect/disconnect here
 
@@ -137,9 +237,14 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     return () => clearTimeout(timer);
   }, []);
 
+  useEffect(() => {
+    if (messages.length === 0) void fetchRecentConversations();
+  }, [fetchRecentConversations, messages.length]);
+
   const handleSend = useCallback(async () => {
     const text = input.trim();
     if (!text) return;
+    if (isStreaming) return;
 
     if (text.startsWith("/")) {
       const handled = await handleSlashCommand(text);
@@ -154,7 +259,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     setSlashResults([]);
     if (textareaRef.current) textareaRef.current.style.height = "auto";
     sendMessage(text, context);
-  }, [input, context, sendMessage, handleSlashCommand]);
+  }, [input, context, isStreaming, sendMessage, handleSlashCommand]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     // Slash command navigation
@@ -171,15 +276,11 @@ function PanelContent({ onClose }: { onClose: () => void }) {
       }
       if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
         e.preventDefault();
+        if (isStreaming) return;
         const cmd = slashResults[slashIndex];
-        if (cmd.name === "clear" || cmd.name === "context") {
-          handleSlashCommand(`/${cmd.name}`);
-          setInput("");
-          setSlashResults([]);
-        } else {
-          setInput(`/${cmd.name} `);
-          setSlashResults([]);
-        }
+        handleSlashCommand(`/${cmd.name}`);
+        setInput("");
+        setSlashResults([]);
         return;
       }
       if (e.key === "Escape") {
@@ -206,7 +307,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     // Slash command detection
     if (val.startsWith("/") && !val.includes(" ")) {
       const query = val.slice(1).toLowerCase();
-      const matches = SLASH_COMMANDS.filter((c) => c.name.startsWith(query));
+      const matches = visibleSlashCommands.filter((c) => c.name.startsWith(query));
       setSlashResults(matches);
       setSlashIndex(0);
     } else {
@@ -257,6 +358,48 @@ function PanelContent({ onClose }: { onClose: () => void }) {
             Ask me anything about your infrastructure
           </p>
           <QuickActionChips onSelect={handleQuickAction} />
+          {(isLoadingRecentConversations || recentConversations.length > 0) && (
+            <div className="mt-4 w-full max-w-[340px] border border-border">
+              <div className="border-b border-border px-3 py-2 text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+                Recent
+              </div>
+              {isLoadingRecentConversations ? (
+                <div className="px-3 py-3 text-xs text-muted-foreground">Loading...</div>
+              ) : (
+                recentConversations.map((conversation) => (
+                  <div
+                    key={conversation.id}
+                    className="group flex items-center border-b border-border last:border-b-0 hover:bg-muted/50 focus-within:bg-muted/50"
+                  >
+                    <button
+                      type="button"
+                      className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left"
+                      onClick={() => void loadConversation(conversation.id)}
+                    >
+                      <MessageSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-xs text-foreground">{conversation.title}</span>
+                        <span className="block truncate text-[11px] text-muted-foreground">
+                          {conversation.messageCount} messages
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-[11px] text-muted-foreground">
+                        {formatConversationDate(conversation.updatedAt)}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`Delete ${conversation.title}`}
+                      className="mr-0 flex h-6 w-0 shrink-0 translate-x-1 items-center justify-center overflow-hidden text-muted-foreground opacity-0 transition-[width,margin,opacity,transform,color] duration-150 hover:text-destructive group-hover:mr-2 group-hover:w-6 group-hover:translate-x-0 group-hover:opacity-100 group-focus-within:mr-2 group-focus-within:w-6 group-focus-within:translate-x-0 group-focus-within:opacity-100"
+                      onClick={() => void deleteConversation(conversation.id)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
         </div>
       ) : (
         <div
@@ -289,9 +432,9 @@ function PanelContent({ onClose }: { onClose: () => void }) {
       )}
 
       {/* Connection status */}
-      {!isConnected && (
+      {!isConnected && (isConnecting || connectionError) && (
         <div className="text-xs text-muted-foreground text-center py-1.5 border-t border-border">
-          Connecting...
+          {isConnecting ? "Connecting..." : connectionError}
         </div>
       )}
 
@@ -324,14 +467,10 @@ function PanelContent({ onClose }: { onClose: () => void }) {
                     className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors ${i === slashIndex ? "bg-muted" : "hover:bg-muted/50"}`}
                     onMouseDown={(e) => {
                       e.preventDefault();
-                      if (cmd.name === "clear" || cmd.name === "context") {
-                        handleSlashCommand(`/${cmd.name}`);
-                        setInput("");
-                        setSlashResults([]);
-                      } else {
-                        setInput(`/${cmd.name} `);
-                        setSlashResults([]);
-                      }
+                      if (isStreaming) return;
+                      handleSlashCommand(`/${cmd.name}`);
+                      setInput("");
+                      setSlashResults([]);
                     }}
                   >
                     <span className="font-mono text-muted-foreground">/{cmd.name}</span>
@@ -352,8 +491,43 @@ function PanelContent({ onClose }: { onClose: () => void }) {
               placeholder={isStreaming ? "AI is responding..." : "Ask anything... (/ commands)"}
               disabled={!isConnected || !!retryAfter}
               rows={1}
-              className="block min-h-0 resize-none border-0 px-3 py-2.5 pr-10 leading-5 focus-visible:ring-0"
+              className="block min-h-0 resize-none border-0 px-3 py-2.5 pr-[4.75rem] leading-5 focus-visible:ring-0"
             />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  className="absolute right-9 p-1.5 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-30"
+                  style={{ bottom: "calc(50% - 14px)" }}
+                  title={approvalModeLabel}
+                  aria-label={approvalModeLabel}
+                >
+                  {approvalMode === "bypass-everything" ? (
+                    <ShieldAlert className="h-4 w-4" />
+                  ) : approvalMode === "bypass-write" ? (
+                    <ShieldCheck className="h-4 w-4" />
+                  ) : (
+                    <Shield className="h-4 w-4" />
+                  )}
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" side="top" className="w-64">
+                <DropdownMenuItem onClick={() => void setApprovalMode("normal")}>
+                  <Shield className="h-4 w-4" />
+                  <span>Normal</span>
+                  {approvalMode === "normal" && <Check className="ml-auto h-4 w-4" />}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => void setApprovalMode("bypass-write")}>
+                  <ShieldCheck className="h-4 w-4" />
+                  <span>Bypass edit and creation</span>
+                  {approvalMode === "bypass-write" && <Check className="ml-auto h-4 w-4" />}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => void setApprovalMode("bypass-everything")}>
+                  <ShieldAlert className="h-4 w-4" />
+                  <span>Bypass everything</span>
+                  {approvalMode === "bypass-everything" && <Check className="ml-auto h-4 w-4" />}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <button
               className="absolute right-1.5 p-1.5 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-30"
               style={{ bottom: "calc(50% - 14px)" }}

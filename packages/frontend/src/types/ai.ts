@@ -20,6 +20,7 @@ export interface AIMessage {
   toolCalls?: AIToolCall[];
   isStreaming?: boolean;
   localOnly?: boolean;
+  compactMarker?: boolean;
   rawToolCalls?: Array<{
     id: string;
     type: string;

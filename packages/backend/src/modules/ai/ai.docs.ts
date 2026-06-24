@@ -22,6 +22,7 @@ Gateway AI starts conversations with a small base tool surface. Domain-specific 
 - After discovery, use internal_documentation for workflow details and argument shapes.
 
 Use find_resource whenever the user gives a name, domain, hostname, image, container name, certificate name, logging environment/schema name, database name, or other visible identifier and you need the actual ID or nodeId.
+Use find_resource with an empty query and a concrete type when the user asks to list resources by type, for example Docker containers.
 
 ## Rule
 - Use get_current_context when the user refers to the page or resource they are currently viewing.
@@ -32,6 +33,8 @@ Use find_resource whenever the user gives a name, domain, hostname, image, conta
 
 ## Examples
 - Find a container named api: find_resource({ query: "api", types: ["docker_container"] })
+- List Docker containers: find_resource({ query: "", types: ["docker_container"], limit: 50 })
+- List Docker nodes: find_resource({ query: "", types: ["node"], limit: 50 })
 - Find a proxy host by domain: find_resource({ query: "example.com", types: ["proxy_host"] })
 - Find a logging schema: find_resource({ query: "nginx", types: ["logging_schema"] })
 - Search all readable resources: find_resource({ query: "production" })`,

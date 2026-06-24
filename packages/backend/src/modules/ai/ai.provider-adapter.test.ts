@@ -32,15 +32,19 @@ const TOOLS = [
   },
 ];
 
-async function collectEvents(client: unknown, config: AIConfig = BASE_CONFIG) {
+async function collectEvents(
+  client: unknown,
+  config: AIConfig = BASE_CONFIG,
+  messages: Record<string, unknown>[] = [
+    { role: 'system', content: 'You are helpful.' },
+    { role: 'user', content: 'set env' },
+  ]
+) {
   const events = [];
   for await (const event of streamModelResponse({
     client: client as any,
     config,
-    messages: [
-      { role: 'system', content: 'You are helpful.' },
-      { role: 'user', content: 'set env' },
-    ],
+    messages,
     tools: TOOLS,
     signal: new AbortController().signal,
   })) {
@@ -167,5 +171,148 @@ describe('AI provider adapter', () => {
         },
       },
     ]);
+  });
+
+  it('omits orphan tool outputs before sending Responses input', async () => {
+    async function* responseStream() {
+      yield { type: 'response.output_text.delta', delta: 'ok' };
+    }
+    const create = vi.fn().mockResolvedValue(responseStream());
+
+    await collectEvents({ responses: { create } }, BASE_CONFIG, [
+      { role: 'system', content: 'You are helpful.' },
+      { role: 'assistant', content: null, tool_calls: [] },
+      { role: 'tool', tool_call_id: 'call-missing', content: '{"ok":true}' },
+      { role: 'user', content: 'continue' },
+    ]);
+
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: [{ role: 'user', content: 'continue' }],
+      }),
+      expect.any(Object)
+    );
+  });
+
+  it('omits tool outputs when the matching tool call cannot be converted for Responses', async () => {
+    async function* responseStream() {
+      yield { type: 'response.output_text.delta', delta: 'ok' };
+    }
+    const create = vi.fn().mockResolvedValue(responseStream());
+
+    await collectEvents({ responses: { create } }, BASE_CONFIG, [
+      { role: 'system', content: 'You are helpful.' },
+      {
+        role: 'assistant',
+        content: null,
+        tool_calls: [{ id: 'call-without-name', type: 'function', function: { arguments: '{}' } }],
+      },
+      { role: 'tool', tool_call_id: 'call-without-name', content: '{"ok":true}' },
+      { role: 'user', content: 'continue' },
+    ]);
+
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: [{ role: 'user', content: 'continue' }],
+      }),
+      expect.any(Object)
+    );
+  });
+
+  it('uses call_id from Responses argument done events when output item was not observed', async () => {
+    async function* responseStream() {
+      yield {
+        type: 'response.function_call_arguments.done',
+        output_index: 0,
+        item_id: 'fc-item-1',
+        call_id: 'call-1',
+        name: 'manage_docker_container_config',
+        arguments: '{"containerId":"container-1"}',
+      };
+    }
+    const create = vi.fn().mockResolvedValue(responseStream());
+    const events = await collectEvents({ responses: { create } });
+
+    expect(events).toEqual([
+      {
+        type: 'model_response',
+        response: {
+          content: '',
+          toolCalls: [
+            {
+              id: 'call-1',
+              name: 'manage_docker_container_config',
+              arguments: '{"containerId":"container-1"}',
+            },
+          ],
+        },
+      },
+    ]);
+  });
+
+  it('preserves Responses function call name when arguments done event omits it', async () => {
+    async function* responseStream() {
+      yield {
+        type: 'response.output_item.added',
+        output_index: 0,
+        item: {
+          type: 'function_call',
+          call_id: 'call-1',
+          name: 'discover_tools',
+          arguments: '',
+        },
+      };
+      yield {
+        type: 'response.function_call_arguments.done',
+        output_index: 0,
+        item_id: 'fc-item-1',
+        arguments: '{"category":"Docker","includeTools":true}',
+      };
+    }
+    const create = vi.fn().mockResolvedValue(responseStream());
+    const events = await collectEvents({ responses: { create } });
+
+    expect(events).toEqual([
+      {
+        type: 'model_response',
+        response: {
+          content: '',
+          toolCalls: [
+            {
+              id: 'call-1',
+              name: 'discover_tools',
+              arguments: '{"category":"Docker","includeTools":true}',
+            },
+          ],
+        },
+      },
+    ]);
+  });
+
+  it('omits orphan tool outputs before sending Chat Completions messages', async () => {
+    async function* chatStream() {
+      yield { choices: [{ delta: { content: 'ok' } }] };
+    }
+    const create = vi.fn().mockResolvedValue(chatStream());
+
+    await collectEvents(
+      { chat: { completions: { create } } },
+      { ...BASE_CONFIG, endpointMode: 'chat_completions' },
+      [
+        { role: 'system', content: 'You are helpful.' },
+        { role: 'assistant', content: null, tool_calls: [] },
+        { role: 'tool', tool_call_id: 'call-missing', content: '{"ok":true}' },
+        { role: 'user', content: 'continue' },
+      ]
+    );
+
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messages: [
+          { role: 'system', content: 'You are helpful.' },
+          { role: 'user', content: 'continue' },
+        ],
+      })
+    );
   });
 });

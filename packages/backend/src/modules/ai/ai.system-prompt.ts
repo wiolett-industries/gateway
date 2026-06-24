@@ -101,7 +101,7 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
     `- Use discover_tools when you are unsure which Gateway tool handles a task. It returns callable tool categories and, with category/query/includeTools, the relevant callable tool names.`
   );
   parts.push(
-    `- Use find_resource FIRST when the user names a resource and you need an ID, nodeId, or exact type. It searches globally across readable resources. Do not manually list all nodes and then scan each node for Docker resources unless find_resource failed or the user explicitly asked for per-node enumeration.`
+    `- Use find_resource FIRST when the user names a resource and you need an ID, nodeId, or exact type. It searches globally across readable resources. For type-scoped listing, use an empty query with a concrete type, e.g. find_resource({ query: "", types: ["docker_container"], limit: 50 }). Do not manually list all nodes and then scan each node for Docker resources unless find_resource failed or the user explicitly asked for per-node enumeration.`
   );
   if (hasScopeBase(user.scopes, 'docker:containers:view')) {
     parts.push(

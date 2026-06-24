@@ -2,6 +2,7 @@ import type { WSClientMessage, WSServerMessage } from "@/types/ai";
 
 type MessageHandler = (msg: WSServerMessage) => void;
 type StatusHandler = (connected: boolean) => void;
+type ErrorHandler = (message: string) => void;
 
 const PING_INTERVAL = 15_000;
 const PONG_TIMEOUT = 5_000;
@@ -13,6 +14,7 @@ export class AIWebSocketClient {
   private ws: WebSocket | null = null;
   private messageHandler: MessageHandler | null = null;
   private statusHandler: StatusHandler | null = null;
+  private errorHandler: ErrorHandler | null = null;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private pongTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -40,11 +42,13 @@ export class AIWebSocketClient {
       try {
         this.ws = new WebSocket(url);
       } catch {
+        this.errorHandler?.("Failed to create AI connection");
         resolve(false);
         return;
       }
 
       const timeout = setTimeout(() => {
+        this.errorHandler?.("AI connection timed out");
         resolve(false);
         this.cleanupSocket();
         this.scheduleReconnect();
@@ -74,6 +78,7 @@ export class AIWebSocketClient {
         if (msg.type === "auth_error") {
           clearTimeout(timeout);
           this.intentionalClose = true; // don't reconnect on auth failure
+          this.errorHandler?.(msg.message);
           resolve(false);
           this.cleanupSocket();
           return;
@@ -90,6 +95,7 @@ export class AIWebSocketClient {
       this.ws.onerror = () => {
         clearTimeout(timeout);
         if (!this._isConnected) {
+          this.errorHandler?.("AI connection failed");
           resolve(false);
         }
       };
@@ -131,6 +137,10 @@ export class AIWebSocketClient {
 
   onStatusChange(handler: StatusHandler): void {
     this.statusHandler = handler;
+  }
+
+  onConnectionError(handler: ErrorHandler): void {
+    this.errorHandler = handler;
   }
 
   // ── Ping/pong liveness detection ──

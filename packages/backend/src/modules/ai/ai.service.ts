@@ -753,6 +753,7 @@ export class AIService {
       }
 
       // If no tool calls, we're done
+      toolCalls = toolCalls.filter((tc) => tc.id && tc.name);
       if (toolCalls.length === 0) {
         messages.push({ role: 'assistant', content: contentBuffer });
         yield { type: 'done', requestId };
@@ -1000,6 +1001,7 @@ export class AIService {
         return;
       }
 
+      toolCalls = toolCalls.filter((tc) => tc.id && tc.name);
       if (toolCalls.length === 0) {
         yield { type: 'done', requestId };
         return;

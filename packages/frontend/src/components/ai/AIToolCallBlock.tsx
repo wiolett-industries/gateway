@@ -76,10 +76,20 @@ interface AIToolCallBlockProps {
 
 export function AIToolCallBlock({ toolCall, onApprove, onReject }: AIToolCallBlockProps) {
   const [expanded, setExpanded] = useState(false);
-  const Icon = CATEGORY_ICONS[toolCall.name] || ShieldCheck;
+  const safeToolCall = toolCall && typeof toolCall === "object" ? toolCall : ({} as Partial<AIToolCall>);
+  const toolName =
+    typeof safeToolCall.name === "string" && safeToolCall.name ? safeToolCall.name : "unknown_tool";
+  const toolArguments =
+    safeToolCall.arguments &&
+    typeof safeToolCall.arguments === "object" &&
+    !Array.isArray(safeToolCall.arguments)
+      ? safeToolCall.arguments
+      : {};
+  const Icon = CATEGORY_ICONS[toolName] || ShieldCheck;
+  const toolStatus = safeToolCall.status ?? "failed";
 
   const statusIcon = () => {
-    switch (toolCall.status) {
+    switch (toolStatus) {
       case "running":
         return <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />;
       case "completed":
@@ -94,17 +104,17 @@ export function AIToolCallBlock({ toolCall, onApprove, onReject }: AIToolCallBlo
   };
 
   const isSkipped =
-    toolCall.result &&
-    typeof toolCall.result === "object" &&
-    "skipped" in (toolCall.result as Record<string, unknown>);
+    safeToolCall.result &&
+    typeof safeToolCall.result === "object" &&
+    "skipped" in (safeToolCall.result as Record<string, unknown>);
   const toolLabel =
-    toolCall.name.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) +
+    toolName.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) +
     (isSkipped ? " (skipped)" : "");
 
-  const hasArgs = Object.keys(toolCall.arguments).length > 0;
-  const hasResult = toolCall.result !== undefined && !isSkipped;
-  const hasError = !!toolCall.error;
-  const hasContent = hasArgs || hasResult || hasError || toolCall.status === "rejected";
+  const hasArgs = Object.keys(toolArguments).length > 0;
+  const hasResult = safeToolCall.result !== undefined && !isSkipped;
+  const hasError = !!safeToolCall.error;
+  const hasContent = hasArgs || hasResult || hasError || toolStatus === "rejected";
 
   return (
     <div className="border border-border bg-muted/30 text-xs my-1.5">
@@ -128,7 +138,7 @@ export function AIToolCallBlock({ toolCall, onApprove, onReject }: AIToolCallBlo
         {!isSkipped && statusIcon()}
       </button>
 
-      {toolCall.status === "awaiting_approval" && toolCall.name !== "ask_question" && (
+      {toolStatus === "awaiting_approval" && toolName !== "ask_question" && (
         <div className="flex items-center gap-2 px-2.5 py-2 border-t border-border bg-yellow-500/5">
           <span className="flex-1 text-yellow-600 dark:text-yellow-400 text-xs">
             This action requires your approval
@@ -139,7 +149,7 @@ export function AIToolCallBlock({ toolCall, onApprove, onReject }: AIToolCallBlo
             className="h-6 px-2 text-xs"
             onClick={(e) => {
               e.stopPropagation();
-              onReject?.(toolCall.id);
+              if (typeof safeToolCall.id === "string") onReject?.(safeToolCall.id);
             }}
           >
             Reject
@@ -149,7 +159,7 @@ export function AIToolCallBlock({ toolCall, onApprove, onReject }: AIToolCallBlo
             className="h-6 px-2 text-xs"
             onClick={(e) => {
               e.stopPropagation();
-              onApprove?.(toolCall.id);
+              if (typeof safeToolCall.id === "string") onApprove?.(safeToolCall.id);
             }}
           >
             Approve
@@ -165,22 +175,22 @@ export function AIToolCallBlock({ toolCall, onApprove, onReject }: AIToolCallBlo
         <div className="overflow-hidden">
           {hasArgs && (
             <pre className="text-[11px] bg-muted px-2.5 py-1.5 overflow-x-auto whitespace-pre-wrap border-t border-border">
-              {JSON.stringify(toolCall.arguments, null, 2)}
+              {JSON.stringify(toolArguments, null, 2)}
             </pre>
           )}
           {hasResult && (
             <pre className="text-[11px] bg-muted/50 px-2.5 py-1.5 overflow-x-auto whitespace-pre-wrap max-h-48 border-t border-border">
-              {typeof toolCall.result === "string"
-                ? toolCall.result
-                : JSON.stringify(toolCall.result, null, 2)}
+              {typeof safeToolCall.result === "string"
+                ? safeToolCall.result
+                : JSON.stringify(safeToolCall.result, null, 2)}
             </pre>
           )}
           {hasError && (
             <p className="text-destructive px-2.5 py-1.5 border-t border-border">
-              {toolCall.error}
+              {safeToolCall.error}
             </p>
           )}
-          {toolCall.status === "rejected" && (
+          {toolStatus === "rejected" && (
             <p className="text-muted-foreground italic px-2.5 py-1.5 border-t border-border">
               Rejected by user
             </p>
@@ -199,7 +209,14 @@ export function QuestionBlock({
   onAnswer?: (id: string, answer: string) => void;
 }) {
   const [answerText, setAnswerText] = useState("");
-  const args = toolCall.arguments as {
+  const safeToolCall = toolCall && typeof toolCall === "object" ? toolCall : ({} as Partial<AIToolCall>);
+  const args = (
+    safeToolCall.arguments &&
+    typeof safeToolCall.arguments === "object" &&
+    !Array.isArray(safeToolCall.arguments)
+      ? safeToolCall.arguments
+      : {}
+  ) as {
     question?: string;
     options?: Array<{ label: string; description?: string }>;
     allowFreeText?: boolean;
@@ -208,16 +225,17 @@ export function QuestionBlock({
   const options = args.options || [];
   const allowFreeText =
     args.allowFreeText !== undefined ? args.allowFreeText : options.length === 0;
-  const isAnswered = toolCall.status === "completed" || toolCall.status === "failed";
+  const status = safeToolCall.status ?? "failed";
+  const isAnswered = status === "completed" || status === "failed";
 
   const handleSubmit = (text: string) => {
     if (!text.trim()) return;
-    onAnswer?.(toolCall.id, text.trim());
+    if (typeof safeToolCall.id === "string") onAnswer?.(safeToolCall.id, text.trim());
   };
 
   // Already answered
   if (isAnswered) {
-    const answer = (toolCall.result as { answer?: string })?.answer;
+    const answer = (safeToolCall.result as { answer?: string })?.answer;
     return (
       <div className="border border-border bg-muted/30 my-1.5 px-3 py-2">
         <p className="text-sm text-muted-foreground">{question}</p>
@@ -227,7 +245,7 @@ export function QuestionBlock({
   }
 
   // Not yet active (e.g. still processing on backend)
-  if (toolCall.status !== "awaiting_approval" && toolCall.status !== "running") {
+  if (status !== "awaiting_approval" && status !== "running") {
     return (
       <div className="border border-border bg-muted/30 my-1.5 px-3 py-2">
         <p className="text-sm text-muted-foreground">{question}</p>

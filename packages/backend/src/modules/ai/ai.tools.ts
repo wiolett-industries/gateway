@@ -52,13 +52,14 @@ export const AI_TOOLS: AIToolDefinition[] = [
   {
     name: 'find_resource',
     description:
-      'Global resource search. Use this FIRST when the user names a resource but you need its ID, nodeId, or exact type. It searches across readable nodes, Docker containers/images/volumes/networks, proxy hosts, certificates, domains, logging resources, databases, notifications, and more. Do not manually list every node and then scan each node when find_resource can search the resource type directly.',
+      'Global resource search and type-scoped listing. Use this FIRST when the user names a resource but you need its ID, nodeId, or exact type. When the user asks to list resources of a type, pass an empty query with that type, for example { query: "", types: ["docker_container"] }. It searches across readable nodes, Docker containers/images/volumes/networks, proxy hosts, certificates, domains, logging resources, databases, notifications, and more. Do not manually list every node and then scan each node when find_resource can search the resource type directly.',
     parameters: {
       type: 'object',
       properties: {
         query: {
           type: 'string',
-          description: 'Search text, resource name, hostname, domain, ID, image, or key fragment.',
+          description:
+            'Search text, resource name, hostname, domain, ID, image, or key fragment. Use an empty string only when types is provided and you want to list resources of that type.',
         },
         types: {
           type: 'array',
@@ -97,7 +98,6 @@ export const AI_TOOLS: AIToolDefinition[] = [
           description: 'Maximum matches to return across all resource types (default 25, max 50).',
         },
       },
-      required: ['query'],
     },
     destructive: false,
     category: 'Discovery',

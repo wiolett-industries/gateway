@@ -43,12 +43,12 @@ function createService({
 }
 
 describe('AIService resource search tool', () => {
-  it('requires a non-empty query before delegating searches', async () => {
+  it('requires a query or a concrete resource type before delegating searches', async () => {
     const proxyService = { listProxyHosts: vi.fn() };
     const service = createService({ proxyService });
 
     await expect(service.executeTool(BASE_USER, 'find_resource', { query: '   ' })).resolves.toEqual({
-      error: 'query is required',
+      error: 'query or types is required',
       invalidateStores: [],
     });
     expect(proxyService.listProxyHosts).not.toHaveBeenCalled();
@@ -128,5 +128,41 @@ describe('AIService resource search tool', () => {
       expect.objectContaining({ type: 'docker_container', id: 'container-1', name: 'api', nodeId: 'node-1' }),
       expect.objectContaining({ type: 'docker_container', id: 'container-2', name: 'worker', nodeId: 'node-2' }),
     ]);
+  });
+
+  it('lists typed resources when query is empty', async () => {
+    const nodesService = {
+      list: vi.fn().mockResolvedValue({
+        data: [{ id: 'node-1' }],
+        totalPages: 1,
+      }),
+    };
+    const dockerService = {
+      listContainers: vi
+        .fn()
+        .mockResolvedValue([
+          { Id: 'container-1', Name: '/api', Image: 'gateway/api:latest', State: 'running' },
+          { Id: 'container-2', Name: '/db', Image: 'postgres:16', State: 'exited' },
+        ]),
+    };
+    const service = createService({ nodesService, dockerService });
+
+    const result = await service.executeTool(
+      { ...BASE_USER, scopes: ['docker:containers:view:node-1'] },
+      'find_resource',
+      { query: '', types: ['docker_container'], limit: 50 }
+    );
+
+    expect(result.error).toBeUndefined();
+    expect(nodesService.list).toHaveBeenCalledWith(
+      { type: 'docker', page: 1, limit: 100 },
+      { allowedIds: ['node-1'] }
+    );
+    expect(dockerService.listContainers).toHaveBeenCalledWith('node-1');
+    expect((result.result as { results: Array<{ id: string; nodeId: string }> }).results).toEqual([
+      expect.objectContaining({ type: 'docker_container', id: 'container-1', name: 'api', nodeId: 'node-1' }),
+      expect.objectContaining({ type: 'docker_container', id: 'container-2', name: 'db', nodeId: 'node-1' }),
+    ]);
+    expect(result.result).toMatchObject({ query: '', total: 2, truncated: false });
   });
 });

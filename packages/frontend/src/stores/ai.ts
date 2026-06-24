@@ -1,9 +1,11 @@
 import { create } from "zustand";
 import {
-  dropConversation,
+  compactConversation,
+  deleteConversation,
+  getConversation,
   listConversations,
-  restoreConversation,
   saveConversation,
+  type AIConversationSummary,
 } from "@/services/ai-conversations";
 import { AIWebSocketClient } from "@/services/ai-websocket";
 import { api } from "@/services/api";
@@ -25,7 +27,59 @@ import type {
   WSServerMessage,
 } from "@/types/ai";
 
-function getToolActionType(toolName: string): ToolActionType {
+const CREATE_OPERATIONS = new Set([
+  "create",
+  "clone",
+  "upload",
+  "issue_from_csr",
+  "insert_row",
+  "add_column",
+  "create_secret",
+  "create_update",
+]);
+const EDIT_OPERATIONS = new Set([
+  "update",
+  "renew",
+  "verify_dns",
+  "check_dns",
+  "connect",
+  "disconnect",
+  "resolve",
+  "promote",
+  "write_file",
+  "update_env",
+  "update_secret",
+  "upsert_webhook",
+  "regenerate_webhook_token",
+  "upsert_health_check",
+  "test_health_check",
+  "update_row",
+  "update_column_type",
+  "set_key",
+  "expire_key",
+  "execute_command",
+]);
+const DELETE_OPERATIONS = new Set([
+  "delete",
+  "delete_secret",
+  "delete_webhook",
+  "delete_row",
+  "delete_column",
+  "delete_key",
+]);
+
+function getOperationActionType(operation: string): ToolActionType {
+  if (CREATE_OPERATIONS.has(operation)) return "create";
+  if (EDIT_OPERATIONS.has(operation)) return "edit";
+  if (DELETE_OPERATIONS.has(operation)) return "delete";
+  return "other";
+}
+
+function getToolActionType(toolName: string, args?: Record<string, unknown>): ToolActionType {
+  const operation = typeof args?.operation === "string" ? args.operation : "";
+  if (toolName.startsWith("manage_") && operation) {
+    return getOperationActionType(operation);
+  }
   if (
     toolName.startsWith("create_") ||
     toolName.startsWith("issue_") ||
@@ -45,9 +99,9 @@ function getToolActionType(toolName: string): ToolActionType {
   return "other";
 }
 
-function shouldAutoApprove(toolName: string): boolean {
+function shouldAutoApprove(toolName: string, args?: Record<string, unknown>): boolean {
   const ui = useUIStore.getState();
-  const action = getToolActionType(toolName);
+  const action = getToolActionType(toolName, args);
   if (action === "create" && ui.aiBypassCreateApprovals) return true;
   if (action === "edit" && ui.aiBypassEditApprovals) return true;
   if (action === "delete" && ui.aiBypassDeleteApprovals) return true;
@@ -188,8 +242,12 @@ function compactLogText(value: string, label: string): unknown {
 
 interface AIState {
   messages: AIMessage[];
+  recentConversations: AIConversationSummary[];
+  isLoadingRecentConversations: boolean;
   isStreaming: boolean;
   isConnected: boolean;
+  isConnecting: boolean;
+  connectionError: string | null;
   isEnabled: boolean | null;
   retryAfter: number | null;
   savedName: string | null;
@@ -206,6 +264,9 @@ interface AIState {
   answerQuestion: (toolCallId: string, answer: string) => void;
   stopStreaming: () => void;
   clearMessages: () => void;
+  fetchRecentConversations: () => Promise<void>;
+  loadConversation: (conversationId: string) => Promise<void>;
+  deleteConversation: (conversationId: string) => Promise<void>;
   setEnabled: (enabled: boolean) => void;
   handleSlashCommand: (input: string) => Promise<boolean>;
   setMessages: (messages: AIMessage[]) => void;
@@ -218,6 +279,14 @@ let retryTimer: ReturnType<typeof setInterval> | null = null;
 function titleFromContent(content: string): string {
   const title = content.trim().replace(/\s+/g, " ").slice(0, 48);
   return title || "New conversation";
+}
+
+function userMessagesAfterLastCompact(messages: AIMessage[]): number {
+  const lastCompactIndex = messages.reduce(
+    (latest, message, index) => (message.compactMarker ? index : latest),
+    -1
+  );
+  return messages.slice(lastCompactIndex + 1).filter((message) => message.role === "user").length;
 }
 
 async function ensureActiveConversation(
@@ -240,6 +309,7 @@ async function ensureActiveConversation(
       savedName: saved.title,
       lastContext: saved.lastContext ?? context ?? state.lastContext,
     });
+    void useAIStore.getState().fetchRecentConversations();
     return saved.id;
   } catch {
     return null;
@@ -293,8 +363,12 @@ function buildChatMessages(messages: AIMessage[]): ChatMessage[] {
 
 export const useAIStore = create<AIState>()((set, get) => ({
   messages: [],
+  recentConversations: [],
+  isLoadingRecentConversations: false,
   isStreaming: false,
   isConnected: false,
+  isConnecting: false,
+  connectionError: null,
   isEnabled: null,
   retryAfter: null,
   savedName: null,
@@ -303,10 +377,21 @@ export const useAIStore = create<AIState>()((set, get) => ({
   pendingApprovalToolCallId: null,
 
   connect: async () => {
-    if (!useAuthStore.getState().user) return false;
+    const auth = useAuthStore.getState();
+    if (!auth.user && auth.isLoading) {
+      set({ isConnecting: true, connectionError: null });
+      return false;
+    }
+    if (!auth.user) {
+      set({ isConnecting: false, connectionError: "Not authenticated" });
+      return false;
+    }
     if (wsClient?.isConnected) {
-      set({ isConnected: true });
+      set({ isConnected: true, isConnecting: false, connectionError: null });
       return true;
+    }
+    if (wsClient && get().isConnecting) {
+      return false;
     }
     if (wsClient) {
       wsClient.disconnect();
@@ -314,22 +399,33 @@ export const useAIStore = create<AIState>()((set, get) => ({
     }
 
     wsClient = new AIWebSocketClient();
+    set({ isConnecting: true, connectionError: null });
     wsClient.onMessage((msg: WSServerMessage) => {
       handleWSMessage(msg, set, get);
     });
     wsClient.onStatusChange((connected) => {
-      set({ isConnected: connected });
+      set({ isConnected: connected, isConnecting: false, connectionError: connected ? null : get().connectionError });
       if (!connected) set({ isStreaming: false });
+    });
+    wsClient.onConnectionError((message) => {
+      set({ connectionError: message, isConnecting: false });
     });
 
     const ok = await wsClient.connect();
+    if (!ok) {
+      set((state) => ({
+        isConnecting: false,
+        isConnected: false,
+        connectionError: state.connectionError ?? (useAuthStore.getState().isLoading ? null : "AI connection failed"),
+      }));
+    }
     return ok;
   },
 
   disconnect: () => {
     wsClient?.disconnect();
     wsClient = null;
-    set({ isConnected: false, isStreaming: false });
+    set({ isConnected: false, isConnecting: false, connectionError: null, isStreaming: false });
   },
 
   sendMessage: (content: string, context?: PageContext) => {
@@ -481,6 +577,61 @@ export const useAIStore = create<AIState>()((set, get) => ({
 
   clearMessages: () => {
     set({ messages: [], savedName: null, activeConversationId: null, lastContext: null });
+    void get().fetchRecentConversations();
+  },
+
+  fetchRecentConversations: async () => {
+    if (!useAuthStore.getState().user) return;
+    set({ isLoadingRecentConversations: true });
+    try {
+      const conversations = await listConversations(5);
+      set({ recentConversations: conversations, isLoadingRecentConversations: false });
+    } catch {
+      set({ isLoadingRecentConversations: false });
+    }
+  },
+
+  loadConversation: async (conversationId: string) => {
+    try {
+      const conversation = await getConversation(conversationId);
+      set({
+        messages: conversation.messages,
+        savedName: conversation.title,
+        activeConversationId: conversation.id,
+        lastContext: conversation.lastContext,
+      });
+    } catch {
+      const localMsg: AIMessage = {
+        id: generateId(),
+        role: "assistant",
+        content: "Failed to load conversation.",
+        localOnly: true,
+      };
+      set((state) => ({ messages: [...state.messages, localMsg] }));
+    }
+  },
+
+  deleteConversation: async (conversationId: string) => {
+    try {
+      await deleteConversation(conversationId);
+      set((state) => ({
+        recentConversations: state.recentConversations.filter(
+          (conversation) => conversation.id !== conversationId
+        ),
+        ...(state.activeConversationId === conversationId
+          ? { messages: [], savedName: null, activeConversationId: null, lastContext: null }
+          : {}),
+      }));
+      void get().fetchRecentConversations();
+    } catch {
+      const localMsg: AIMessage = {
+        id: generateId(),
+        role: "assistant",
+        content: "Failed to delete conversation.",
+        localOnly: true,
+      };
+      set((state) => ({ messages: [...state.messages, localMsg] }));
+    }
   },
 
   setEnabled: (enabled: boolean) => {
@@ -492,12 +643,13 @@ export const useAIStore = create<AIState>()((set, get) => ({
   },
 
   handleSlashCommand: async (input: string): Promise<boolean> => {
+    if (get().isStreaming) return true;
     const parts = input.trim().split(/\s+/);
     const cmd = parts[0]?.toLowerCase();
-    const arg = parts.slice(1).join(" ");
 
-    if (cmd === "/clear") {
-      set({ messages: [] });
+    if (cmd === "/clear" || cmd === "/new") {
+      set({ messages: [], savedName: null, activeConversationId: null, lastContext: null });
+      void get().fetchRecentConversations();
       return true;
     }
 
@@ -520,135 +672,51 @@ export const useAIStore = create<AIState>()((set, get) => ({
       return true;
     }
 
-    if (cmd === "/save") {
-      if (!arg) {
+    if (cmd === "/compact") {
+      const state = get();
+      if (userMessagesAfterLastCompact(state.messages) <= 3) return true;
+      const messages = state.messages.filter((m) => !m.localOnly);
+      if (messages.length === 0) {
         const localMsg: AIMessage = {
           id: generateId(),
           role: "assistant",
-          content: "Usage: `/save <name>`",
+          content: "Nothing to compact yet.",
           localOnly: true,
         };
-        set((state) => ({ messages: [...state.messages, localMsg] }));
+        set((current) => ({ messages: [...current.messages, localMsg] }));
         return true;
       }
+
       try {
-        const saved = await saveConversation(
-          arg,
-          get().messages.filter((m) => !m.localOnly),
-          get().lastContext
-        );
+        const conversation = state.activeConversationId
+          ? await compactConversation(state.activeConversationId, messages, state.lastContext)
+          : await saveConversation(
+              state.savedName ?? titleFromContent(messages.find((m) => m.role === "user")?.content ?? "New conversation"),
+              messages,
+              state.lastContext
+            );
+        const localMsg: AIMessage = {
+          id: generateId(),
+          role: "assistant",
+          content: `Compacted **${conversation.title}**. Full tool outputs are kept for the latest 10 tool calls.`,
+          localOnly: true,
+          compactMarker: true,
+        };
         set({
-          savedName: saved.title,
-          activeConversationId: saved.id,
-          lastContext: saved.lastContext,
+          messages: [...conversation.messages, localMsg],
+          savedName: conversation.title,
+          activeConversationId: conversation.id,
+          lastContext: conversation.lastContext,
         });
-        const localMsg: AIMessage = {
-          id: generateId(),
-          role: "assistant",
-          content: `Conversation saved as **${saved.title}** — will auto-save on new messages`,
-          localOnly: true,
-        };
-        set((state) => ({ messages: [...state.messages, localMsg] }));
+        void get().fetchRecentConversations();
       } catch {
         const localMsg: AIMessage = {
           id: generateId(),
           role: "assistant",
-          content: "Failed to save conversation.",
+          content: "Failed to compact conversation.",
           localOnly: true,
         };
-        set((state) => ({ messages: [...state.messages, localMsg] }));
-      }
-      return true;
-    }
-
-    if (cmd === "/restore") {
-      if (!arg) {
-        const convos = await listConversations();
-        const list =
-          convos.length > 0
-            ? convos
-                .map((c) => `- **${c.name}** (${new Date(c.savedAt).toLocaleDateString()})`)
-                .join("\n")
-            : "No saved conversations.";
-        const localMsg: AIMessage = {
-          id: generateId(),
-          role: "assistant",
-          content: `**Saved conversations:**\n${list}\n\nUsage: \`/restore <name>\``,
-          localOnly: true,
-        };
-        set((state) => ({ messages: [...state.messages, localMsg] }));
-        return true;
-      }
-      try {
-        const conversation = await restoreConversation(arg);
-        if (conversation) {
-          set({
-            messages: conversation.messages,
-            savedName: conversation.title,
-            activeConversationId: conversation.id,
-            lastContext: conversation.lastContext,
-          });
-          const localMsg: AIMessage = {
-            id: generateId(),
-            role: "assistant",
-            content: `Restored **${conversation.title}** (${conversation.messages.length} messages)`,
-            localOnly: true,
-          };
-          set((state) => ({ messages: [...state.messages, localMsg] }));
-        } else {
-          const localMsg: AIMessage = {
-            id: generateId(),
-            role: "assistant",
-            content: `Conversation **${arg}** not found.`,
-            localOnly: true,
-          };
-          set((state) => ({ messages: [...state.messages, localMsg] }));
-        }
-      } catch {
-        const localMsg: AIMessage = {
-          id: generateId(),
-          role: "assistant",
-          content: "Failed to restore conversation.",
-          localOnly: true,
-        };
-        set((state) => ({ messages: [...state.messages, localMsg] }));
-      }
-      return true;
-    }
-
-    if (cmd === "/drop") {
-      if (!arg) {
-        const localMsg: AIMessage = {
-          id: generateId(),
-          role: "assistant",
-          content: "Usage: `/drop <name>`",
-          localOnly: true,
-        };
-        set((state) => ({ messages: [...state.messages, localMsg] }));
-        return true;
-      }
-      try {
-        await dropConversation(arg);
-        set((state) =>
-          state.savedName === arg
-            ? { savedName: null, activeConversationId: null, lastContext: null }
-            : {}
-        );
-        const localMsg: AIMessage = {
-          id: generateId(),
-          role: "assistant",
-          content: `Deleted **${arg}**`,
-          localOnly: true,
-        };
-        set((state) => ({ messages: [...state.messages, localMsg] }));
-      } catch {
-        const localMsg: AIMessage = {
-          id: generateId(),
-          role: "assistant",
-          content: "Failed to delete conversation.",
-          localOnly: true,
-        };
-        set((state) => ({ messages: [...state.messages, localMsg] }));
+        set((current) => ({ messages: [...current.messages, localMsg] }));
       }
       return true;
     }
@@ -667,8 +735,12 @@ export function resetAIStateForAuthChange() {
   wsClient = null;
   useAIStore.setState({
     messages: [],
+    recentConversations: [],
+    isLoadingRecentConversations: false,
     isStreaming: false,
     isConnected: false,
+    isConnecting: false,
+    connectionError: null,
     retryAfter: null,
     savedName: null,
     activeConversationId: null,
@@ -709,7 +781,7 @@ function handleWSMessage(
     }
 
     case "tool_approval_required":
-      if (shouldAutoApprove(msg.name)) {
+      if (shouldAutoApprove(msg.name, msg.arguments)) {
         if (currentRequestId) {
           wsClient?.send({
             type: "tool_approval",
@@ -769,23 +841,6 @@ function handleWSMessage(
         messages: state.messages.map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m)),
       }));
       currentRequestId = null;
-      // Auto-save if conversation was previously saved
-      const { savedName, messages: msgs, lastContext } = get();
-      if (savedName) {
-        saveConversation(
-          savedName,
-          msgs.filter((m) => !m.localOnly),
-          lastContext
-        )
-          .then((saved) => {
-            useAIStore.setState({
-              activeConversationId: saved.id,
-              savedName: saved.title,
-              lastContext: saved.lastContext ?? lastContext,
-            });
-          })
-          .catch(() => {});
-      }
       break;
     }
 
@@ -828,5 +883,21 @@ useUIStore.subscribe((state) => {
     } else {
       useAIStore.getState().disconnect();
     }
+  }
+});
+
+let prevAuthUserId: string | null = useAuthStore.getState().user?.id ?? null;
+let prevAuthLoading = useAuthStore.getState().isLoading;
+useAuthStore.subscribe((state) => {
+  const nextUserId = state.user?.id ?? null;
+  const authChanged = prevAuthUserId !== nextUserId || prevAuthLoading !== state.isLoading;
+  prevAuthUserId = nextUserId;
+  prevAuthLoading = state.isLoading;
+
+  if (!authChanged || !useUIStore.getState().aiPanelOpen) return;
+  if (state.user) {
+    void useAIStore.getState().connect();
+  } else if (!state.isLoading) {
+    useAIStore.setState({ isConnecting: false, connectionError: "Not authenticated" });
   }
 });

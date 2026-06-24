@@ -201,33 +201,32 @@ export function AIConfigSection() {
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                 Provider
               </p>
-              <div>
-                <label className="text-xs text-muted-foreground">Base URL</label>
-                <Input
-                  className="mt-1 text-sm"
-                  placeholder="https://api.openai.com/v1"
-                  value={aiConfig.providerUrl}
-                  onChange={(e) => setAiConfig({ ...aiConfig, providerUrl: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground">Endpoint</label>
-                <Select
-                  value={aiConfig.endpointMode || "auto"}
-                  onValueChange={(endpointMode) => setAiConfig({ ...aiConfig, endpointMode })}
-                >
-                  <SelectTrigger className="mt-1 text-sm">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="auto">Auto</SelectItem>
-                    <SelectItem value="responses">Responses API</SelectItem>
-                    <SelectItem value="chat_completions">Chat Completions</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Use Responses for GPT-5 reasoning with tools; use Chat for compatible providers.
-                </p>
+              <div className="grid grid-cols-[minmax(0,1fr)_180px] gap-2">
+                <div>
+                  <label className="text-xs text-muted-foreground">Base URL</label>
+                  <Input
+                    className="mt-1 text-sm"
+                    placeholder="https://api.openai.com/v1"
+                    value={aiConfig.providerUrl}
+                    onChange={(e) => setAiConfig({ ...aiConfig, providerUrl: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">Endpoint</label>
+                  <Select
+                    value={aiConfig.endpointMode || "auto"}
+                    onValueChange={(endpointMode) => setAiConfig({ ...aiConfig, endpointMode })}
+                  >
+                    <SelectTrigger className="mt-1 text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="auto">Auto</SelectItem>
+                      <SelectItem value="responses">Responses API</SelectItem>
+                      <SelectItem value="chat_completions">Chat Completions</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
               <div>
                 <label className="text-xs text-muted-foreground">Model</label>

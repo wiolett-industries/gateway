@@ -12,11 +12,11 @@ type ResourceSearchDeps = {
 
 export async function findResource(deps: ResourceSearchDeps, user: User, args: Record<string, unknown>) {
   const query = String(args.query ?? '').trim();
-  if (!query) throw new Error('query is required');
-
   const requestedTypes = Array.isArray(args.types)
     ? new Set(args.types.map((type) => String(type).trim()).filter(Boolean))
     : new Set<string>();
+  if (!query && requestedTypes.size === 0) throw new Error('query or types is required');
+
   const typeWanted = (...types: string[]) =>
     requestedTypes.size === 0 || types.some((type) => requestedTypes.has(type));
   const limitValue = typeof args.limit === 'number' ? args.limit : Number(args.limit);

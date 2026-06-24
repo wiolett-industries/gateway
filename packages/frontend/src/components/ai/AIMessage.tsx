@@ -11,9 +11,11 @@ interface AIMessageProps {
 }
 
 export function AIMessage({ message, onApprove, onReject, onAnswer }: AIMessageProps) {
+  const content = typeof message.content === "string" ? message.content : "";
+
   if (message.role === "user") {
     // Strip hidden system instructions (e.g. from command palette "Ask AI")
-    const displayContent = message.content
+    const displayContent = content
       .replace(/<system-instruction>[\s\S]*?<\/system-instruction>\s*/g, "")
       .trim();
     return (
@@ -30,21 +32,21 @@ export function AIMessage({ message, onApprove, onReject, onAnswer }: AIMessageP
       <div className="flex justify-center">
         <div className="max-w-[90%] bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
           <Markdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-            {message.content}
+            {content}
           </Markdown>
         </div>
       </div>
     );
   }
 
-  const hasContent = !!message.content;
+  const hasContent = !!content;
   const hasToolCalls = !!message.toolCalls?.length;
   const allToolsDone =
     hasToolCalls &&
     message.toolCalls!.every(
       (tc) => tc.status === "completed" || tc.status === "failed" || tc.status === "rejected"
     );
-  const hasError = message.content?.includes("**Error:**");
+  const hasError = content.includes("**Error:**");
 
   const hasActiveQuestion =
     hasToolCalls &&
@@ -82,9 +84,9 @@ export function AIMessage({ message, onApprove, onReject, onAnswer }: AIMessageP
 
         {/* Text content */}
         {hasContent && (
-          <div className="prose prose-sm dark:prose-invert !max-w-none break-words prose-p:my-1 prose-headings:my-2 prose-ul:my-1 prose-ol:my-1 prose-pre:my-0 prose-table:my-0 prose-code:text-xs prose-pre:text-xs prose-pre:rounded-none prose-code:rounded-none prose-code:break-all [&>*:first-child]:!mt-0 [&>*:last-child]:!mb-0">
+          <div className="prose prose-sm dark:prose-invert !max-w-none break-words prose-p:my-1 prose-headings:my-2 prose-ul:my-1 prose-ol:my-1 prose-pre:my-0 prose-table:my-0 prose-code:text-xs prose-pre:text-xs prose-pre:rounded-none prose-code:rounded-none prose-code:before:content-none prose-code:after:content-none [&>*:first-child]:!mt-0 [&>*:last-child]:!mb-0">
             <Markdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-              {message.content}
+              {content}
             </Markdown>
           </div>
         )}
@@ -148,7 +150,7 @@ const markdownComponents = {
       );
     }
     return (
-      <code className="bg-muted px-1 py-0.5 text-xs" {...props}>
+      <code className="break-words bg-muted px-1 py-0.5 text-xs" {...props}>
         {children}
       </code>
     );

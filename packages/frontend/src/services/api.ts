@@ -810,6 +810,29 @@ class ApiClient extends withLoggingApi(
     return res.data;
   }
 
+  async updateAIConversation(
+    id: string,
+    patch: {
+      title?: string;
+      messages?: AIMessage[];
+      lastContext?: PageContext | null;
+    }
+  ) {
+    const res = await this.request<{
+      data: {
+        id: string;
+        title: string;
+        updatedAt: string;
+        messages: AIMessage[];
+        lastContext: PageContext | null;
+      };
+    }>(`/ai/conversations/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(patch),
+    });
+    return res.data;
+  }
+
   async deleteAIConversation(id: string): Promise<void> {
     await this.request(`/ai/conversations/${id}`, { method: "DELETE" });
   }

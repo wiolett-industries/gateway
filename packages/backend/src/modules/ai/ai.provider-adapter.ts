@@ -1,4 +1,5 @@
 import type OpenAI from 'openai';
+import { inspect } from 'node:util';
 import type { AIConfig } from './ai.types.js';
 
 export interface NormalizedToolCall {
@@ -28,6 +29,7 @@ interface StreamModelOptions {
 }
 
 type ProviderEndpoint = 'chat_completions' | 'responses';
+const DEBUG_OPENAI_RESPONSES = process.env.AI_DEBUG_OPENAI_RESPONSES === '1';
 
 export function resolveAIProviderEndpoint(config: AIConfig): ProviderEndpoint {
   if (config.endpointMode === 'chat_completions' || config.endpointMode === 'responses') {
@@ -59,9 +61,10 @@ async function* streamChatCompletionsModel({
   tools,
   signal,
 }: StreamModelOptions): AsyncGenerator<ModelProviderEvent> {
+  const normalizedMessages = filterOrphanToolMessages(messages);
   const stream = await client.chat.completions.create({
     model: config.model || 'gpt-4o',
-    messages: messages as unknown as OpenAI.ChatCompletionMessageParam[],
+    messages: normalizedMessages as unknown as OpenAI.ChatCompletionMessageParam[],
     tools: tools.length > 0 ? (tools as OpenAI.ChatCompletionTool[]) : undefined,
     stream: true,
     ...(config.maxTokensField === 'max_tokens'
@@ -123,7 +126,7 @@ function splitInstructions(messages: Record<string, unknown>[]): { instructions:
   const instructions: string[] = [];
   const input: unknown[] = [];
 
-  for (const message of messages) {
+  for (const message of filterOrphanToolMessages(messages)) {
     const role = message.role;
     const content = typeof message.content === 'string' ? message.content : '';
 
@@ -143,19 +146,13 @@ function splitInstructions(messages: Record<string, unknown>[]): { instructions:
       if (content) input.push({ role: 'assistant', content });
       const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
       for (const toolCall of toolCalls) {
-        if (!toolCall || typeof toolCall !== 'object') continue;
-        const call = toolCall as {
-          id?: unknown;
-          function?: { name?: unknown; arguments?: unknown };
-        };
-        const callId = typeof call.id === 'string' ? call.id : undefined;
-        const name = typeof call.function?.name === 'string' ? call.function.name : undefined;
-        if (!callId || !name) continue;
+        const call = normalizeChatToolCall(toolCall);
+        if (!call) continue;
         input.push({
           type: 'function_call',
-          call_id: callId,
-          name,
-          arguments: typeof call.function?.arguments === 'string' ? call.function.arguments : '{}',
+          call_id: call.id,
+          name: call.name,
+          arguments: call.arguments,
         });
       }
       continue;
@@ -199,6 +196,10 @@ async function* streamResponsesModel({
 
   for await (const event of stream) {
     if (signal.aborted) throw abortError();
+    if (DEBUG_OPENAI_RESPONSES) {
+      console.log('[AI DEBUG] OpenAI Responses stream event');
+      console.log(inspect(event, { depth: null, colors: false, maxArrayLength: null, maxStringLength: null }));
+    }
 
     if (event.type === 'response.output_text.delta') {
       content += event.delta;
@@ -224,23 +225,72 @@ async function* streamResponsesModel({
     if (event.type === 'response.function_call_arguments.done') {
       const acc = byOutputIndex.get(event.output_index);
       if (acc) {
-        acc.name = event.name;
+        if (typeof event.name === 'string' && event.name) acc.name = event.name;
         acc.arguments = event.arguments;
       } else {
+        const eventWithCallId = event as unknown as { call_id?: unknown };
+        const callId = typeof eventWithCallId.call_id === 'string' ? eventWithCallId.call_id : event.item_id;
         byOutputIndex.set(event.output_index, {
-          id: event.item_id,
-          name: event.name,
+          id: callId,
+          name: typeof event.name === 'string' ? event.name : '',
           arguments: event.arguments,
         });
       }
     }
   }
 
-  yield { type: 'model_response', response: { content, toolCalls: Array.from(byOutputIndex.values()) } };
+  yield {
+    type: 'model_response',
+    response: { content, toolCalls: Array.from(byOutputIndex.values()).filter((toolCall) => toolCall.id && toolCall.name) },
+  };
 }
 
 function abortError(): Error {
   const error = new Error('Aborted');
   error.name = 'AbortError';
   return error;
+}
+
+function filterOrphanToolMessages(messages: Record<string, unknown>[]): Record<string, unknown>[] {
+  const availableToolCallIds = new Set<string>();
+  const result: Record<string, unknown>[] = [];
+
+  for (const message of messages) {
+    if (message.role === 'assistant') {
+      const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
+      const validToolCalls = toolCalls.filter((toolCall) => normalizeChatToolCall(toolCall) !== null);
+      for (const toolCall of validToolCalls) {
+        availableToolCallIds.add(normalizeChatToolCall(toolCall)!.id);
+      }
+      const content = typeof message.content === 'string' ? message.content : '';
+      if (!content && validToolCalls.length === 0) continue;
+      result.push(validToolCalls.length > 0 ? { ...message, tool_calls: validToolCalls } : message);
+      continue;
+    }
+
+    if (message.role === 'tool') {
+      const callId = typeof message.tool_call_id === 'string' ? message.tool_call_id : undefined;
+      if (!callId || !availableToolCallIds.has(callId)) continue;
+    }
+
+    result.push(message);
+  }
+
+  return result;
+}
+
+function normalizeChatToolCall(toolCall: unknown): { id: string; name: string; arguments: string } | null {
+  if (!toolCall || typeof toolCall !== 'object') return null;
+  const call = toolCall as {
+    id?: unknown;
+    function?: { name?: unknown; arguments?: unknown };
+  };
+  const id = typeof call.id === 'string' && call.id ? call.id : null;
+  const name = typeof call.function?.name === 'string' && call.function.name ? call.function.name : null;
+  if (!id || !name) return null;
+  return {
+    id,
+    name,
+    arguments: typeof call.function?.arguments === 'string' ? call.function.arguments : '{}',
+  };
 }
