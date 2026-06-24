@@ -97,6 +97,11 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
   parts.push(
     `- Use find_resource FIRST when the user names a resource and you need an ID, nodeId, or exact type. It searches globally across readable resources. Do not manually list all nodes and then scan each node for Docker resources unless find_resource failed or the user explicitly asked for per-node enumeration.`
   );
+  if (hasScopeBase(user.scopes, 'docker:containers:view')) {
+    parts.push(
+      `- Docker container IDs are volatile. If a Docker tool returns "No such container", do NOT conclude the workload is gone. First use find_resource with the last known container name/node/image to check whether it was recreated with a new ID.`
+    );
+  }
 
   if (hasScopeBase(user.scopes, 'pki:cert:view') || hasScopeBase(user.scopes, 'ssl:cert:view')) {
     parts.push(

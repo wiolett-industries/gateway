@@ -4,10 +4,12 @@ export type WebSearchProvider = 'tavily' | 'brave' | 'serper' | 'searxng' | 'exa
 
 export type MaxTokensField = 'max_tokens' | 'max_completion_tokens';
 export type ReasoningEffort = 'low' | 'medium' | 'high' | 'none';
+export type AIEndpointMode = 'auto' | 'chat_completions' | 'responses';
 
 export interface AIConfig {
   enabled: boolean;
   providerUrl: string;
+  endpointMode: AIEndpointMode;
   model: string;
   maxCompletionTokens: number;
   maxTokensField: MaxTokensField;

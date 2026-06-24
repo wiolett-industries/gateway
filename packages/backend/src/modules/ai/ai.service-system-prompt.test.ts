@@ -107,6 +107,22 @@ describe('AIService system prompt', () => {
     expect(prompt).toContain('Use find_resource FIRST');
   });
 
+  it('warns Docker-scoped users to recover stale container IDs through resource search', async () => {
+    const monitoringService = {
+      getDashboardStats: vi.fn().mockRejectedValue(new Error('stats unavailable')),
+    };
+    const service = createService({ monitoringService });
+
+    const prompt = await service.buildSystemPrompt({
+      ...BASE_USER,
+      scopes: ['docker:containers:view'],
+    });
+
+    expect(prompt).toContain('Docker container IDs are volatile');
+    expect(prompt).toContain('If a Docker tool returns "No such container"');
+    expect(prompt).toContain('find_resource');
+  });
+
   it('continues without inventory or CA sections when optional context fetches are unavailable', async () => {
     const caService = {
       getCATree: vi.fn(),

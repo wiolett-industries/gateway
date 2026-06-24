@@ -22,6 +22,7 @@ interface PendingApproval {
   messages: Record<string, unknown>[];
   pageContext?: PageContext;
   allQuestions?: Array<{ id: string; args: Record<string, unknown> }>;
+  queuedApprovals?: Array<{ id: string; name: string; arguments: Record<string, unknown> }>;
 }
 
 interface WSConnectionState {
@@ -221,7 +222,8 @@ export function createWSHandlers() {
             abortController.signal,
             msg.requestId,
             (msg as any).answer,
-            (msg as any).answers
+            (msg as any).answers,
+            pending.queuedApprovals
           );
 
           for await (const evt of generator) {
@@ -234,8 +236,9 @@ export function createWSHandlers() {
                 messages: approvalEvt._pendingMessages || pending.messages,
                 pageContext: pending.pageContext,
                 allQuestions: approvalEvt._allQuestions,
+                queuedApprovals: approvalEvt._queuedApprovals,
               };
-              const { _pendingMessages, _allQuestions, ...clientEvt } = approvalEvt;
+              const { _pendingMessages, _allQuestions, _queuedApprovals, ...clientEvt } = approvalEvt;
               send(ws, clientEvt);
             } else {
               send(ws, evt);
@@ -297,8 +300,9 @@ export function createWSHandlers() {
                 messages: approvalEvt._pendingMessages || [],
                 pageContext: msg.context,
                 allQuestions: approvalEvt._allQuestions,
+                queuedApprovals: approvalEvt._queuedApprovals,
               };
-              const { _pendingMessages, _allQuestions, ...clientEvt } = approvalEvt;
+              const { _pendingMessages, _allQuestions, _queuedApprovals, ...clientEvt } = approvalEvt;
               send(ws, clientEvt);
             } else {
               send(ws, evt);

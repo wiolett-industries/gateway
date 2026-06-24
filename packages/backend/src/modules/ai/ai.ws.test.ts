@@ -80,6 +80,22 @@ function hangingRedis() {
   return { pipeline };
 }
 
+function allowingRedis() {
+  const pipeline = {
+    zremrangebyscore: vi.fn(() => pipeline),
+    zcard: vi.fn(() => pipeline),
+    zadd: vi.fn(() => pipeline),
+    expire: vi.fn(() => pipeline),
+    exec: vi.fn().mockResolvedValue([
+      [null, 0],
+      [null, 0],
+      [null, 1],
+      [null, 1],
+    ]),
+  };
+  return { pipeline: vi.fn(() => pipeline) };
+}
+
 afterEach(() => {
   container.reset();
 });
@@ -211,5 +227,83 @@ describe('AI websocket authentication', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('keeps queued destructive approvals on the backend without leaking queue fields to the client', async () => {
+    registerAiWsDependencies(USER);
+    container.registerInstance(TOKENS.RedisClient, allowingRedis() as any);
+
+    const resumeAfterApproval = vi.fn(async function* () {
+      yield { type: 'done', requestId: 'request-4' } as const;
+    });
+    const streamChat = vi.fn(async function* () {
+      yield {
+        type: 'tool_approval_required',
+        requestId: 'request-4',
+        id: 'tool-1',
+        name: 'manage_docker_container_config',
+        arguments: { containerId: 'container-1' },
+        _pendingMessages: [{ role: 'assistant', content: null }],
+        _queuedApprovals: [{ id: 'tool-2', name: 'start_docker_container', arguments: { containerId: 'container-1' } }],
+      } as any;
+    });
+    container.registerInstance(AIService, { streamChat, resumeAfterApproval } as unknown as AIService);
+
+    const ws = createWs();
+    const handlers = createWSHandlers();
+
+    handlers.onOpen(new Event('open'), ws as any);
+    const authenticated = await authenticateWSConnection(ws as any, 'session-1');
+    expect(authenticated).toBe(true);
+
+    await handlers.onMessage(
+      new MessageEvent('message', {
+        data: JSON.stringify({
+          type: 'chat',
+          requestId: 'request-4',
+          messages: [{ role: 'user', content: 'set env then start' }],
+        }),
+      }),
+      ws as any
+    );
+
+    const approvalFrame = ws.send.mock.calls
+      .map(([payload]) => JSON.parse(payload))
+      .find((payload) => payload.type === 'tool_approval_required');
+    expect(approvalFrame).toEqual({
+      type: 'tool_approval_required',
+      requestId: 'request-4',
+      id: 'tool-1',
+      name: 'manage_docker_container_config',
+      arguments: { containerId: 'container-1' },
+    });
+
+    await handlers.onMessage(
+      new MessageEvent('message', {
+        data: JSON.stringify({
+          type: 'tool_approval',
+          requestId: 'request-4',
+          toolCallId: 'tool-1',
+          approved: true,
+        }),
+      }),
+      ws as any
+    );
+    handlers.onClose(new Event('close'), ws as any);
+
+    expect(resumeAfterApproval).toHaveBeenCalledWith(
+      USER,
+      'tool-1',
+      'manage_docker_container_config',
+      { containerId: 'container-1' },
+      true,
+      [{ role: 'assistant', content: null }],
+      undefined,
+      expect.any(AbortSignal),
+      'request-4',
+      undefined,
+      undefined,
+      [{ id: 'tool-2', name: 'start_docker_container', arguments: { containerId: 'container-1' } }]
+    );
   });
 });

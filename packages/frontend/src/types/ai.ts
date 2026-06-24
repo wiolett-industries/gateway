@@ -30,10 +30,12 @@ export interface AIMessage {
 // ── AI Configuration ──
 
 export type WebSearchProvider = "tavily" | "brave" | "serper" | "searxng" | "exa";
+export type AIEndpointMode = "auto" | "chat_completions" | "responses";
 
 export interface AIConfig {
   enabled: boolean;
   providerUrl: string;
+  endpointMode: AIEndpointMode;
   model: string;
   maxCompletionTokens: number;
   maxTokensField: "max_tokens" | "max_completion_tokens";

@@ -34,6 +34,7 @@ import { executeNotificationTool, NOTIFICATION_TOOL_NAMES } from './ai.notificat
 import { executePkiCaTool, PKI_CA_TOOL_NAMES } from './ai.pki-ca-tools.js';
 import { executePkiCertificateTool, PKI_CERTIFICATE_TOOL_NAMES } from './ai.pki-certificate-tools.js';
 import { executePkiTemplateTool, PKI_TEMPLATE_TOOL_NAMES } from './ai.pki-template-tools.js';
+import { streamModelResponse } from './ai.provider-adapter.js';
 import { executeProxyTool, PROXY_TOOL_NAMES } from './ai.proxy-tools.js';
 import { findResource } from './ai.resource-search.js';
 import {
@@ -63,6 +64,57 @@ import type {
 import { executeWebSearch } from './ai.web-search.js';
 
 const logger = createChildLogger('AIService');
+
+type QueuedApproval = {
+  id: string;
+  name: string;
+  arguments: Record<string, unknown>;
+};
+
+function compactToolResultForModel(toolName: string, value: unknown): unknown {
+  if (value == null) return value;
+  if (toolName === 'get_docker_container_logs') return compactLogLikeResult(value, 'Docker container logs');
+  if (toolName === 'manage_logging' && isRecord(value) && Array.isArray(value.rows)) {
+    return compactLogLikeResult(value.rows, 'Structured log search results');
+  }
+  if (typeof value === 'string' && value.length > 4000) {
+    return compactLogText(value, 'Large text tool output');
+  }
+  if (Array.isArray(value) && value.length > 25) {
+    return {
+      summary: `Large array tool output omitted from model context (${value.length} items).`,
+      count: value.length,
+      sample: [...value.slice(0, 5), ...value.slice(-5)],
+      fullOutputOmitted: true,
+    };
+  }
+  return value;
+}
+
+function compactLogLikeResult(value: unknown, label: string): unknown {
+  if (typeof value === 'string') return compactLogText(value, label);
+  if (!Array.isArray(value)) return value;
+  return {
+    summary: `${label} omitted from model context (${value.length} entries).`,
+    count: value.length,
+    sample: [...value.slice(0, 3), ...value.slice(-5)],
+    fullOutputOmitted: true,
+  };
+}
+
+function compactLogText(value: string, label: string): unknown {
+  const lines = value.split(/\r?\n/).filter(Boolean);
+  return {
+    summary: `${label} omitted from model context (${lines.length} lines, ${value.length} chars).`,
+    lineCount: lines.length,
+    sample: [...lines.slice(0, 3), ...lines.slice(-5)],
+    fullOutputOmitted: true,
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
 
 export class AIService {
   constructor(
@@ -529,77 +581,36 @@ export class AIService {
 
       messages = trimToTokenBudget(messages, maxContextTokens);
 
-      let stream: Awaited<ReturnType<typeof client.chat.completions.create>> | undefined;
+      let contentBuffer = '';
+      let toolCalls: Array<{ id: string; name: string; arguments: string }> = [];
+
       try {
-        stream = await client.chat.completions.create({
-          model: config.model || 'gpt-4o',
-          messages: messages as unknown as OpenAI.ChatCompletionMessageParam[],
-          tools: tools.length > 0 ? (tools as OpenAI.ChatCompletionTool[]) : undefined,
-          stream: true,
-          ...(config.maxTokensField === 'max_tokens'
-            ? { max_tokens: config.maxCompletionTokens }
-            : { max_completion_tokens: config.maxCompletionTokens }),
-          ...(config.reasoningEffort && config.reasoningEffort !== 'none'
-            ? ({ reasoning_effort: config.reasoningEffort } as Record<string, unknown>)
-            : {}),
-        });
+        for await (const event of streamModelResponse({ client, config, messages, tools, signal })) {
+          if (event.type === 'text_delta') {
+            contentBuffer += event.content;
+            yield { type: 'text_delta', requestId, content: event.content };
+          } else {
+            contentBuffer = event.response.content;
+            toolCalls = event.response.toolCalls;
+          }
+        }
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to call AI provider';
+        if (err instanceof Error && err.name === 'AbortError') return;
+        const message = err instanceof Error ? err.message : 'Stream error';
         logger.error('OpenAI API error', { error: err });
         yield { type: 'error', requestId, message };
         yield { type: 'done', requestId };
         return;
       }
 
-      let contentBuffer = '';
-      const toolCallAccumulators: Map<number, { id: string; name: string; arguments: string }> = new Map();
-      let hasToolCalls = false;
-
-      try {
-        for await (const chunk of stream) {
-          if (signal.aborted) return;
-
-          const delta = chunk.choices[0]?.delta;
-          if (!delta) continue;
-
-          // Text content
-          if (delta.content) {
-            contentBuffer += delta.content;
-            yield { type: 'text_delta', requestId, content: delta.content };
-          }
-
-          // Tool calls (accumulated incrementally)
-          if (delta.tool_calls) {
-            hasToolCalls = true;
-            for (const tc of delta.tool_calls) {
-              const idx = tc.index;
-              if (!toolCallAccumulators.has(idx)) {
-                toolCallAccumulators.set(idx, { id: tc.id || '', name: tc.function?.name || '', arguments: '' });
-              }
-              const acc = toolCallAccumulators.get(idx)!;
-              if (tc.id) acc.id = tc.id;
-              if (tc.function?.name) acc.name = tc.function.name;
-              if (tc.function?.arguments) acc.arguments += tc.function.arguments;
-            }
-          }
-        }
-      } catch (err) {
-        if (err instanceof Error && err.name === 'AbortError') return;
-        const message = err instanceof Error ? err.message : 'Stream error';
-        yield { type: 'error', requestId, message };
-        yield { type: 'done', requestId };
-        return;
-      }
-
       // If no tool calls, we're done
-      if (!hasToolCalls) {
+      if (toolCalls.length === 0) {
         messages.push({ role: 'assistant', content: contentBuffer });
         yield { type: 'done', requestId };
         return;
       }
 
       // Process tool calls
-      const toolCalls = Array.from(toolCallAccumulators.values());
       const rawToolCalls = toolCalls.map((tc) => ({
         id: tc.id,
         type: 'function' as const,
@@ -623,50 +634,38 @@ export class AIService {
         return { ...tc, parsedArgs };
       });
 
-      // Separate: questions, destructive (first only), and immediate tools
+      // Separate questions, destructive approvals, and immediate read-only tools.
       const questionTools: typeof parsedToolCalls = [];
-      let destructiveTool: (typeof parsedToolCalls)[number] | null = null;
+      const destructiveTools: typeof parsedToolCalls = [];
 
       for (const tc of parsedToolCalls) {
         if (tc.name === 'ask_question') {
           questionTools.push(tc);
           continue;
         }
-        if (isDestructiveTool(tc.name) && !destructiveTool) {
-          destructiveTool = tc;
+        if (isDestructiveTool(tc.name)) {
+          destructiveTools.push(tc);
           continue;
         }
 
         yield { type: 'tool_call_start', requestId, id: tc.id, name: tc.name, arguments: tc.parsedArgs };
 
-        if (isDestructiveTool(tc.name)) {
-          // Additional destructive tool — skip
-          messages.push({
-            role: 'tool',
-            tool_call_id: tc.id,
-            content: JSON.stringify({ skipped: 'Another action is pending approval.' }),
-          });
-          yield {
-            type: 'tool_result',
-            requestId,
-            id: tc.id,
-            name: tc.name,
-            result: { skipped: 'Another action is pending approval.' },
-          };
-        } else {
-          const result = await this.executeTool(user, tc.name, tc.parsedArgs);
-          messages.push({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify(result.error || result.result) });
-          yield {
-            type: 'tool_result',
-            requestId,
-            id: tc.id,
-            name: tc.name,
-            result: result.result,
-            error: result.error,
-          };
-          if (result.invalidateStores.length > 0) {
-            yield { type: 'invalidate_stores', requestId, stores: result.invalidateStores };
-          }
+        const result = await this.executeTool(user, tc.name, tc.parsedArgs);
+        messages.push({
+          role: 'tool',
+          tool_call_id: tc.id,
+          content: JSON.stringify(result.error || compactToolResultForModel(tc.name, result.result)),
+        });
+        yield {
+          type: 'tool_result',
+          requestId,
+          id: tc.id,
+          name: tc.name,
+          result: result.result,
+          error: result.error,
+        };
+        if (result.invalidateStores.length > 0) {
+          yield { type: 'invalidate_stores', requestId, stores: result.invalidateStores };
         }
       }
 
@@ -689,8 +688,9 @@ export class AIService {
         return;
       }
 
-      // Destructive tool pause
-      if (destructiveTool) {
+      // Destructive tool pause. Queue later destructive calls instead of returning fake "skipped" tool results.
+      if (destructiveTools.length > 0) {
+        const [destructiveTool, ...queued] = destructiveTools;
         yield {
           type: 'tool_call_start',
           requestId,
@@ -705,6 +705,7 @@ export class AIService {
           name: destructiveTool.name,
           arguments: destructiveTool.parsedArgs,
           _pendingMessages: messages,
+          _queuedApprovals: queued.map((tc) => ({ id: tc.id, name: tc.name, arguments: tc.parsedArgs })),
         } as any;
         return;
       }
@@ -729,7 +730,8 @@ export class AIService {
     signal: AbortSignal,
     requestId: string,
     answer?: string,
-    answers?: Record<string, string>
+    answers?: Record<string, string>,
+    queuedApprovals: QueuedApproval[] = []
   ): AsyncGenerator<WSServerMessage> {
     if (toolName === 'ask_question') {
       // Batch answers: { toolCallId: answer, ... }
@@ -764,7 +766,7 @@ export class AIService {
       pendingMessages.push({
         role: 'tool',
         tool_call_id: toolCallId,
-        content: JSON.stringify(result.error || result.result),
+        content: JSON.stringify(result.error || compactToolResultForModel(toolName, result.result)),
       });
       yield {
         type: 'tool_result',
@@ -777,6 +779,27 @@ export class AIService {
       if (result.invalidateStores.length > 0) {
         yield { type: 'invalidate_stores', requestId, stores: result.invalidateStores };
       }
+    }
+
+    if (queuedApprovals.length > 0) {
+      const [nextApproval, ...remainingApprovals] = queuedApprovals;
+      yield {
+        type: 'tool_call_start',
+        requestId,
+        id: nextApproval.id,
+        name: nextApproval.name,
+        arguments: nextApproval.arguments,
+      };
+      yield {
+        type: 'tool_approval_required',
+        requestId,
+        id: nextApproval.id,
+        name: nextApproval.name,
+        arguments: nextApproval.arguments,
+        _pendingMessages: pendingMessages,
+        _queuedApprovals: remainingApprovals,
+      } as any;
+      return;
     }
 
     // Continue streaming with the updated messages
@@ -800,70 +823,34 @@ export class AIService {
     for (let round = 0; round < maxRounds; round++) {
       if (signal.aborted) return;
 
-      let stream: Awaited<ReturnType<typeof client.chat.completions.create>> | undefined;
+      let contentBuffer = '';
+      let toolCalls: Array<{ id: string; name: string; arguments: string }> = [];
+
       try {
-        stream = await client.chat.completions.create({
-          model: config.model || 'gpt-4o',
-          messages: messages as unknown as OpenAI.ChatCompletionMessageParam[],
-          tools: tools.length > 0 ? (tools as OpenAI.ChatCompletionTool[]) : undefined,
-          stream: true,
-          ...(config.maxTokensField === 'max_tokens'
-            ? { max_tokens: config.maxCompletionTokens }
-            : { max_completion_tokens: config.maxCompletionTokens }),
-          ...(config.reasoningEffort && config.reasoningEffort !== 'none'
-            ? ({ reasoning_effort: config.reasoningEffort } as Record<string, unknown>)
-            : {}),
-        });
+        for await (const event of streamModelResponse({ client, config, messages, tools, signal })) {
+          if (event.type === 'text_delta') {
+            contentBuffer += event.content;
+            yield { type: 'text_delta', requestId, content: event.content };
+          } else {
+            contentBuffer = event.response.content;
+            toolCalls = event.response.toolCalls;
+          }
+        }
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to call AI provider';
+        if (err instanceof Error && err.name === 'AbortError') return;
+        const message = err instanceof Error ? err.message : 'Stream error';
+        logger.error('OpenAI API error', { error: err });
         yield { type: 'error', requestId, message };
         yield { type: 'done', requestId };
         return;
       }
 
-      let contentBuffer = '';
-      const toolCallAccumulators: Map<number, { id: string; name: string; arguments: string }> = new Map();
-      let hasToolCalls = false;
-
-      try {
-        for await (const chunk of stream) {
-          if (signal.aborted) return;
-          const delta = chunk.choices[0]?.delta;
-          if (!delta) continue;
-
-          if (delta.content) {
-            contentBuffer += delta.content;
-            yield { type: 'text_delta', requestId, content: delta.content };
-          }
-
-          if (delta.tool_calls) {
-            hasToolCalls = true;
-            for (const tc of delta.tool_calls) {
-              const idx = tc.index;
-              if (!toolCallAccumulators.has(idx)) {
-                toolCallAccumulators.set(idx, { id: tc.id || '', name: tc.function?.name || '', arguments: '' });
-              }
-              const acc = toolCallAccumulators.get(idx)!;
-              if (tc.id) acc.id = tc.id;
-              if (tc.function?.name) acc.name = tc.function.name;
-              if (tc.function?.arguments) acc.arguments += tc.function.arguments;
-            }
-          }
-        }
-      } catch (err) {
-        if (err instanceof Error && err.name === 'AbortError') return;
-        yield { type: 'error', requestId, message: err instanceof Error ? err.message : 'Stream error' };
-        yield { type: 'done', requestId };
-        return;
-      }
-
-      if (!hasToolCalls) {
+      if (toolCalls.length === 0) {
         yield { type: 'done', requestId };
         return;
       }
 
       // Process tool calls
-      const toolCalls = Array.from(toolCallAccumulators.values());
       const rawToolCalls = toolCalls.map((tc) => ({
         id: tc.id,
         type: 'function' as const,
@@ -883,46 +870,35 @@ export class AIService {
       });
 
       const questionTools2: typeof parsedToolCalls = [];
-      let destructiveTool2: (typeof parsedToolCalls)[number] | null = null;
+      const destructiveTools2: typeof parsedToolCalls = [];
 
       for (const tc of parsedToolCalls) {
         if (tc.name === 'ask_question') {
           questionTools2.push(tc);
           continue;
         }
-        if (isDestructiveTool(tc.name) && !destructiveTool2) {
-          destructiveTool2 = tc;
+        if (isDestructiveTool(tc.name)) {
+          destructiveTools2.push(tc);
           continue;
         }
 
         yield { type: 'tool_call_start', requestId, id: tc.id, name: tc.name, arguments: tc.parsedArgs };
-        if (isDestructiveTool(tc.name)) {
-          messages.push({
-            role: 'tool',
-            tool_call_id: tc.id,
-            content: JSON.stringify({ skipped: 'Another action is pending approval.' }),
-          });
-          yield {
-            type: 'tool_result',
-            requestId,
-            id: tc.id,
-            name: tc.name,
-            result: { skipped: 'Another action is pending approval.' },
-          };
-        } else {
-          const result = await this.executeTool(user, tc.name, tc.parsedArgs);
-          messages.push({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify(result.error || result.result) });
-          yield {
-            type: 'tool_result',
-            requestId,
-            id: tc.id,
-            name: tc.name,
-            result: result.result,
-            error: result.error,
-          };
-          if (result.invalidateStores.length > 0) {
-            yield { type: 'invalidate_stores', requestId, stores: result.invalidateStores };
-          }
+        const result = await this.executeTool(user, tc.name, tc.parsedArgs);
+        messages.push({
+          role: 'tool',
+          tool_call_id: tc.id,
+          content: JSON.stringify(result.error || compactToolResultForModel(tc.name, result.result)),
+        });
+        yield {
+          type: 'tool_result',
+          requestId,
+          id: tc.id,
+          name: tc.name,
+          result: result.result,
+          error: result.error,
+        };
+        if (result.invalidateStores.length > 0) {
+          yield { type: 'invalidate_stores', requestId, stores: result.invalidateStores };
         }
       }
 
@@ -943,7 +919,8 @@ export class AIService {
         return;
       }
 
-      if (destructiveTool2) {
+      if (destructiveTools2.length > 0) {
+        const [destructiveTool2, ...queued] = destructiveTools2;
         yield {
           type: 'tool_call_start',
           requestId,
@@ -958,6 +935,7 @@ export class AIService {
           name: destructiveTool2.name,
           arguments: destructiveTool2.parsedArgs,
           _pendingMessages: messages,
+          _queuedApprovals: queued.map((tc) => ({ id: tc.id, name: tc.name, arguments: tc.parsedArgs })),
         } as any;
         return;
       }

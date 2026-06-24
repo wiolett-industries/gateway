@@ -3,11 +3,19 @@ import type { DrizzleClient } from '@/db/client.js';
 import { settings } from '@/db/schema/settings.js';
 import { isPrivateUrl } from '@/lib/utils.js';
 import type { CryptoService } from '@/services/crypto.service.js';
-import type { AIConfig, EncryptedValue, MaxTokensField, ReasoningEffort, WebSearchProvider } from './ai.types.js';
+import type {
+  AIConfig,
+  AIEndpointMode,
+  EncryptedValue,
+  MaxTokensField,
+  ReasoningEffort,
+  WebSearchProvider,
+} from './ai.types.js';
 
 const AI_SETTINGS_DEFAULTS: Record<string, unknown> = {
   'ai:enabled': false,
   'ai:provider_url': '',
+  'ai:endpoint_mode': 'auto',
   'ai:api_key_encrypted': null,
   'ai:model': '',
   'ai:max_completion_tokens': 8192,
@@ -47,6 +55,7 @@ export class AISettingsService {
     return {
       enabled: getValue<boolean>('ai:enabled'),
       providerUrl: getValue<string>('ai:provider_url'),
+      endpointMode: getValue<AIEndpointMode>('ai:endpoint_mode'),
       model: getValue<string>('ai:model'),
       maxCompletionTokens: getValue<number>('ai:max_completion_tokens'),
       maxTokensField: getValue<MaxTokensField>('ai:max_tokens_field'),
@@ -96,6 +105,7 @@ export class AISettingsService {
     const keyMap: Record<string, string> = {
       enabled: 'ai:enabled',
       providerUrl: 'ai:provider_url',
+      endpointMode: 'ai:endpoint_mode',
       model: 'ai:model',
       customSystemPrompt: 'ai:custom_system_prompt',
       rateLimitMax: 'ai:rate_limit_max',

@@ -136,6 +136,56 @@ function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+function compactToolResultForModel(toolName: string, value: unknown): unknown {
+  if (value == null) return value;
+  if (toolName === "get_docker_container_logs")
+    return compactLogLikeResult(value, "Docker container logs");
+  if (
+    toolName === "manage_logging" &&
+    typeof value === "object" &&
+    value !== null &&
+    Array.isArray((value as { rows?: unknown }).rows)
+  ) {
+    return compactLogLikeResult(
+      (value as { rows: unknown[] }).rows,
+      "Structured log search results"
+    );
+  }
+  if (typeof value === "string" && value.length > 4000) {
+    return compactLogText(value, "Large text tool output");
+  }
+  if (Array.isArray(value) && value.length > 25) {
+    return {
+      summary: `Large array tool output omitted from model context (${value.length} items).`,
+      count: value.length,
+      sample: [...value.slice(0, 5), ...value.slice(-5)],
+      fullOutputOmitted: true,
+    };
+  }
+  return value;
+}
+
+function compactLogLikeResult(value: unknown, label: string): unknown {
+  if (typeof value === "string") return compactLogText(value, label);
+  if (!Array.isArray(value)) return value;
+  return {
+    summary: `${label} omitted from model context (${value.length} entries).`,
+    count: value.length,
+    sample: [...value.slice(0, 3), ...value.slice(-5)],
+    fullOutputOmitted: true,
+  };
+}
+
+function compactLogText(value: string, label: string): unknown {
+  const lines = value.split(/\r?\n/).filter(Boolean);
+  return {
+    summary: `${label} omitted from model context (${lines.length} lines, ${value.length} chars).`,
+    lineCount: lines.length,
+    sample: [...lines.slice(0, 3), ...lines.slice(-5)],
+    fullOutputOmitted: true,
+  };
+}
+
 interface AIState {
   messages: AIMessage[];
   isStreaming: boolean;
@@ -192,7 +242,7 @@ function buildChatMessages(messages: AIMessage[]): ChatMessage[] {
             const content = tc.error
               ? JSON.stringify({ error: tc.error })
               : tc.result !== undefined
-                ? JSON.stringify(tc.result)
+                ? JSON.stringify(compactToolResultForModel(tc.name, tc.result))
                 : "{}";
             result.push({
               role: "tool",

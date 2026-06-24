@@ -23,6 +23,7 @@ import { useAIStore } from "@/stores/ai";
 interface AIConfigState {
   enabled: boolean;
   providerUrl: string;
+  endpointMode: string;
   model: string;
   maxCompletionTokens: number;
   maxTokensField: string;
@@ -58,6 +59,7 @@ export function AIConfigSection() {
     return (
       aiConfig.enabled !== aiSavedConfig.enabled ||
       aiConfig.providerUrl !== aiSavedConfig.providerUrl ||
+      aiConfig.endpointMode !== aiSavedConfig.endpointMode ||
       aiConfig.model !== aiSavedConfig.model ||
       aiConfig.maxCompletionTokens !== aiSavedConfig.maxCompletionTokens ||
       aiConfig.maxTokensField !== aiSavedConfig.maxTokensField ||
@@ -112,6 +114,7 @@ export function AIConfigSection() {
     const updates: Record<string, unknown> = {
       enabled: aiConfig.enabled,
       providerUrl: aiConfig.providerUrl,
+      endpointMode: aiConfig.endpointMode,
       model: aiConfig.model,
       maxCompletionTokens: aiConfig.maxCompletionTokens,
       maxTokensField: aiConfig.maxTokensField,
@@ -206,6 +209,25 @@ export function AIConfigSection() {
                   value={aiConfig.providerUrl}
                   onChange={(e) => setAiConfig({ ...aiConfig, providerUrl: e.target.value })}
                 />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground">Endpoint</label>
+                <Select
+                  value={aiConfig.endpointMode || "auto"}
+                  onValueChange={(endpointMode) => setAiConfig({ ...aiConfig, endpointMode })}
+                >
+                  <SelectTrigger className="mt-1 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="auto">Auto</SelectItem>
+                    <SelectItem value="responses">Responses API</SelectItem>
+                    <SelectItem value="chat_completions">Chat Completions</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Use Responses for GPT-5 reasoning with tools; use Chat for compatible providers.
+                </p>
               </div>
               <div>
                 <label className="text-xs text-muted-foreground">Model</label>

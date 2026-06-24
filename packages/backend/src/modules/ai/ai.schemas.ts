@@ -33,6 +33,7 @@ export const ChatRequestSchema = z.object({
 export const AIConfigUpdateSchema = z.object({
   enabled: z.boolean().optional(),
   providerUrl: z.union([z.string().url(), z.literal('')]).optional(),
+  endpointMode: z.enum(['auto', 'chat_completions', 'responses']).optional(),
   apiKey: z.string().optional(),
   model: z.string().optional(),
   customSystemPrompt: z.string().optional(),
