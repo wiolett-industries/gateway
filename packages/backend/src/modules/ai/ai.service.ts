@@ -129,6 +129,18 @@ function boolArg(value: unknown): boolean {
   return value === true;
 }
 
+function mergeToolsets(existing: string[], added: string[]): string[] {
+  return [...new Set([...existing, ...added].map((toolset) => toolset.trim()).filter(Boolean))].sort((a, b) =>
+    a.localeCompare(b)
+  );
+}
+
+function discoveredToolsetsFromResult(value: unknown): string[] {
+  return isRecord(value) && Array.isArray(value.discoveredToolsets)
+    ? value.discoveredToolsets.filter((toolset): toolset is string => typeof toolset === 'string')
+    : [];
+}
+
 export class AIService {
   constructor(
     private readonly settingsService: AISettingsService,
@@ -608,6 +620,30 @@ export class AIService {
     };
   }
 
+  private async getConversationDiscoveredToolsets(user: User, conversationId?: string): Promise<string[] | undefined> {
+    if (!conversationId) return undefined;
+    try {
+      const conversation = await container.resolve(AIConversationService).getConversation(user.id, conversationId);
+      return conversation?.discoveredToolsets ?? [];
+    } catch (error) {
+      logger.warn('Failed to load AI conversation discovered toolsets', {
+        conversationId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return [];
+    }
+  }
+
+  private buildModelTools(
+    config: { disabledTools: string[]; webSearchEnabled: boolean },
+    user: User,
+    discoveredToolsets: string[] | undefined
+  ) {
+    return getOpenAITools(config.disabledTools, user.scopes, config.webSearchEnabled, {
+      discoveredToolsets,
+    });
+  }
+
   private async persistToolRuntimeState(
     user: User,
     options: ToolExecutionOptions,
@@ -615,10 +651,7 @@ export class AIService {
     result: unknown
   ): Promise<void> {
     if (!options.conversationId) return;
-    const discoveredToolsets =
-      toolName === 'discover_tools' && isRecord(result) && Array.isArray(result.discoveredToolsets)
-        ? result.discoveredToolsets.filter((toolset): toolset is string => typeof toolset === 'string')
-        : undefined;
+    const discoveredToolsets = toolName === 'discover_tools' ? discoveredToolsetsFromResult(result) : undefined;
 
     if (!options.pageContext && (!discoveredToolsets || discoveredToolsets.length === 0)) return;
 
@@ -674,7 +707,8 @@ export class AIService {
     });
 
     const systemPrompt = await this.buildSystemPrompt(user, pageContext);
-    const tools = getOpenAITools(config.disabledTools, user.scopes, config.webSearchEnabled);
+    let discoveredToolsets = await this.getConversationDiscoveredToolsets(user, conversationId);
+    let tools = this.buildModelTools(config, user, discoveredToolsets);
 
     // Build messages array: system + client messages
     let messages: Record<string, unknown>[] = [
@@ -766,6 +800,10 @@ export class AIService {
         yield { type: 'tool_call_start', requestId, id: tc.id, name: tc.name, arguments: tc.parsedArgs };
 
         const result = await this.executeTool(user, tc.name, tc.parsedArgs, { pageContext, conversationId });
+        if (tc.name === 'discover_tools') {
+          discoveredToolsets = mergeToolsets(discoveredToolsets ?? [], discoveredToolsetsFromResult(result.result));
+          tools = this.buildModelTools(config, user, discoveredToolsets);
+        }
         messages.push({
           role: 'tool',
           tool_call_id: tc.id,
@@ -931,7 +969,8 @@ export class AIService {
       baseURL: config.providerUrl || undefined,
     });
 
-    const tools = getOpenAITools(config.disabledTools, user.scopes, config.webSearchEnabled);
+    let discoveredToolsets = await this.getConversationDiscoveredToolsets(user, conversationId);
+    let tools = this.buildModelTools(config, user, discoveredToolsets);
     const messages = trimToTokenBudget(pendingMessages, config.maxContextTokens);
 
     // Continue with remaining rounds
@@ -1000,6 +1039,10 @@ export class AIService {
 
         yield { type: 'tool_call_start', requestId, id: tc.id, name: tc.name, arguments: tc.parsedArgs };
         const result = await this.executeTool(user, tc.name, tc.parsedArgs, { pageContext, conversationId });
+        if (tc.name === 'discover_tools') {
+          discoveredToolsets = mergeToolsets(discoveredToolsets ?? [], discoveredToolsetsFromResult(result.result));
+          tools = this.buildModelTools(config, user, discoveredToolsets);
+        }
         messages.push({
           role: 'tool',
           tool_call_id: tc.id,

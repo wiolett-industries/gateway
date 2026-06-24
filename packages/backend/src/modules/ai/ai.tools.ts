@@ -916,6 +916,14 @@ export const AI_TOOLS: AIToolDefinition[] = [
 ];
 
 const destructiveSet = new Set(AI_TOOLS.filter((t) => t.destructive).map((t) => t.name));
+const BASE_AI_TOOL_NAMES = new Set([
+  'discover_tools',
+  'get_current_context',
+  'find_resource',
+  'ask_question',
+  'internal_documentation',
+  'web_search',
+]);
 
 export function isDestructiveTool(name: string): boolean {
   return destructiveSet.has(name);
@@ -937,11 +945,14 @@ export const TOOL_STORE_INVALIDATION_MAP: Record<string, string[]> = Object.from
 export function getOpenAITools(
   disabledTools: string[],
   userScopes: string[],
-  webSearchEnabled: boolean
+  webSearchEnabled: boolean,
+  options: { discoveredToolsets?: string[] } = {}
 ): Array<{ type: 'function'; function: { name: string; description: string; parameters: Record<string, unknown> } }> {
+  const discoveredToolsets = options.discoveredToolsets === undefined ? undefined : new Set(options.discoveredToolsets);
   return AI_TOOLS.filter((t) => {
     if (disabledTools.includes(t.name)) return false;
     if (t.name === 'web_search' && !webSearchEnabled) return false;
+    if (discoveredToolsets && !BASE_AI_TOOL_NAMES.has(t.name) && !discoveredToolsets.has(t.category)) return false;
     // Every tool must have a requiredScope — reject tools without one
     if (!t.requiredScope) return false;
     return canUseAiTool(t.name, t.requiredScope, userScopes);

@@ -164,6 +164,33 @@ describe('AI tool scope filtering', () => {
     expect(getOpenAITools([], ['feat:ai:use'], true).map((tool) => tool.function.name)).toContain('web_search');
   });
 
+  it('can narrow model-visible tools to base tools plus discovered categories', () => {
+    const baseToolNames = getOpenAITools([], ['feat:ai:use', 'logs:schemas:view', 'docker:containers:view'], true, {
+      discoveredToolsets: [],
+    }).map((tool) => tool.function.name);
+
+    expect(baseToolNames).toEqual(
+      expect.arrayContaining([
+        'discover_tools',
+        'get_current_context',
+        'find_resource',
+        'ask_question',
+        'internal_documentation',
+        'web_search',
+      ])
+    );
+    expect(baseToolNames).not.toContain('manage_logging');
+    expect(baseToolNames).not.toContain('list_docker_containers');
+
+    const loggingToolNames = getOpenAITools([], ['feat:ai:use', 'logs:schemas:view', 'docker:containers:view'], false, {
+      discoveredToolsets: ['Logging'],
+    }).map((tool) => tool.function.name);
+
+    expect(loggingToolNames).toContain('manage_logging');
+    expect(loggingToolNames).not.toContain('list_docker_containers');
+    expect(loggingToolNames).not.toContain('web_search');
+  });
+
   it('keeps logging and status-page tool registry contracts stable', () => {
     const manageLogging = AI_TOOLS.find((tool) => tool.name === 'manage_logging');
     expect(AI_TOOLS.filter((tool) => tool.category === 'Logging').map((tool) => tool.name)).toEqual(['manage_logging']);
